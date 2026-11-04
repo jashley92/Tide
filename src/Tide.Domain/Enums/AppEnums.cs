@@ -142,6 +142,22 @@ public enum MetricFormat
     Number = 3,
 }
 
+/// <summary>The chart a metric group's slide in present mode draws under its numbers. Stored; append, never renumber.</summary>
+public enum MetricChart
+{
+    /// <summary>A line per metric over the last 30 days (the default).</summary>
+    Trend = 0,
+
+    /// <summary>A donut of the current values, the total in the middle.</summary>
+    Share = 1,
+
+    /// <summary>Horizontal bars of the current values, side by side.</summary>
+    Bars = 2,
+
+    /// <summary>No chart: the numbers alone.</summary>
+    None = 3,
+}
+
 /// <summary>Where a metric's value came from. Stored; append, never renumber.</summary>
 public enum MetricSource
 {

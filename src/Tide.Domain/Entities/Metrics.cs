@@ -4,8 +4,9 @@ using Tide.Domain.Enums;
 namespace Tide.Domain.Entities;
 
 /// <summary>
-/// A group of opening metrics ("Alert queue"): one block of tiles on the metrics slide. Admin-defined, with a stable
-/// <see cref="Key"/>; retired, never deleted, once a metric in it has values.
+/// A group of opening metrics ("Alert queue"): its own slide in present mode, its numbers over the <see cref="Chart"/>
+/// an administrator chose. Admin-defined, with a stable <see cref="Key"/>; retired, never deleted, once a metric in it
+/// has values.
 /// </summary>
 public class MetricGroup : AuditableEntity
 {
@@ -13,6 +14,9 @@ public class MetricGroup : AuditableEntity
     public string Name { get; set; } = string.Empty;
     public int SortOrder { get; set; }
     public bool IsRetired { get; set; }
+
+    /// <summary>What the group's slide draws under its numbers: a trend, a donut, bars, or nothing.</summary>
+    public MetricChart Chart { get; set; } = MetricChart.Trend;
 
     public List<MetricDefinition> Metrics { get; set; } = [];
 }

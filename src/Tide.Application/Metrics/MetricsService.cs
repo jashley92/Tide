@@ -25,6 +25,10 @@ public sealed record MetricTile(MetricDefinition Metric, decimal? Value, string?
     /// </summary>
     public (DateOnly Date, decimal Value)? Reference { get; init; }
 
+    /// <summary>The values a group slide's trend chart plots, one per <see cref="MetricDay.TrendDays"/> (null where a day
+    /// has none, so a gap stays a gap rather than reading as 0).</summary>
+    public IReadOnlyList<decimal?> Trend { get; init; } = [];
+
     public string Display => Value is { } v ? MetricMath.Format(Metric.Format, v) : "—";
 }
 
@@ -34,6 +38,10 @@ public sealed record MetricGroupDay(MetricGroup Group, IReadOnlyList<MetricTile>
 public sealed record MetricDay(DateOnly Date, IReadOnlyList<MetricGroupDay> Groups)
 {
     public bool Any => Groups.Count > 0;
+
+    /// <summary>The business days in the <see cref="MetricsService.TrendDays"/> calendar days ending on <see cref="Date"/>,
+    /// oldest first: the dates each tile's <see cref="MetricTile.Trend"/> has a value (or null) for.</summary>
+    public IReadOnlyList<DateOnly> TrendDays { get; init; } = [];
 
     /// <summary>The metrics that flag a missing value and have none on this date.</summary>
     public IReadOnlyList<MetricDefinition> Missing => Groups.SelectMany(g => g.Tiles)
@@ -71,6 +79,9 @@ public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, 
 {
     /// <summary>Business days a sparkline covers (about four weeks).</summary>
     public const int SparkDays = 20;
+
+    /// <summary>Calendar days a group slide's trend chart covers.</summary>
+    public const int TrendDays = 30;
 
     /// <summary>How far back a comparison looks for an earlier value.</summary>
     public const int LookBackDays = 120;
@@ -117,6 +128,7 @@ public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, 
                 .ToListAsync(ct))
             .ToLookup(v => v.DefinitionId);
         var sparkDays = MetricMath.BusinessDaysEnding(day, SparkDays, clock?.Days);
+        var trendDays = MetricMath.WorkingDaysWithin(day, TrendDays, clock?.Days);
 
         return new MetricDay(day, groups.Select(g => new MetricGroupDay(g, g.Metrics.Select(m =>
         {
@@ -129,8 +141,9 @@ public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, 
             {
                 ImportedFrom = today?.Source == MetricSource.Imported ? today.EnteredByName : null,
                 Reference = previous,
+                Trend = trendDays.Select(d => byDate.TryGetValue(d, out var v) ? v : (decimal?)null).ToList(),
             };
-        }).ToList())).ToList());
+        }).ToList())).ToList()) { TrendDays = trendDays };
     }
 
     /// <summary>Every metric, retired ones too, and its values from <paramref name="from"/> to <paramref name="to"/>.</summary>
@@ -255,6 +268,17 @@ public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, 
             db.MetricGroups.Remove(group);
         }
         else group.IsRetired = retired;
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Sets the chart a group's slide draws under its numbers.</summary>
+    public async Task SetGroupChartAsync(Guid id, MetricChart chart, CancellationToken ct = default)
+    {
+        RequireAdmin();
+        if (!Enum.IsDefined(chart)) throw new ArgumentException("Choose a chart.");
+        await using var db = await dbs.CreateAsync(ct);
+        var group = await db.MetricGroups.FirstOrDefaultAsync(g => g.Id == id, ct) ?? throw new KeyNotFoundException("That group no longer exists.");
+        group.Chart = chart;
         await db.SaveChangesAsync(ct);
     }
 

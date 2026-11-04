@@ -1,0 +1,105 @@
+@* The chart under a group's numbers on its present-mode slide, the one an administrator chose for the group: a trend
+   over the last 30 days, a donut of the current values, or bars of them. Server-rendered SVG (the CSP allows no chart
+   script), its geometry worked out by MetricCharts. Each metric keeps its colour from the key to the chart, and the key
+   says its name and value, so the colour is never the only cue. *@
+@using Tide.Application.Metrics
+
+@switch (Group.Group.Chart)
+{
+    case MetricChart.Trend:
+        var trend = MetricCharts.Trend(Days, Group.Tiles);
+        @if (trend is null)
+        {
+            <div class="tide-mchart-empty">No history yet</div>
+        }
+        else
+        {
+            <figure class="tide-mchart tide-mchart-trend">
+                <figcaption class="tide-mchart-key">
+                    @foreach (var l in trend.Lines)
+                    {
+                        <span><i class="tide-mchart-swatch @LineChart.Series(l.Series)" aria-hidden="true"></i>@l.Name <strong>@l.Current</strong></span>
+                    }
+                    @if (trend.Lines.Any(l => l.Breaches.Count > 0))
+                    {
+                        <span class="tide-mchart-breach-key"><i class="tide-mchart-ring" aria-hidden="true"></i>past a threshold</span>
+                    }
+                </figcaption>
+                <svg viewBox="0 0 @Num(MetricCharts.TrendWidth) @Num(MetricCharts.TrendHeight)" role="img"
+                     aria-label="@($"{Group.Group.Name} over the last 30 days, {trend.FirstDate} to {trend.LastDate}")">
+                    @foreach (var t in trend.Ticks)
+                    {
+                        <line class="tide-mchart-grid" x1="@Num(MetricCharts.PlotLeft)" y1="@Num(t.Y)" x2="@Num(MetricCharts.PlotRight)" y2="@Num(t.Y)" />
+                        @Text("tide-mchart-label", MetricCharts.PlotLeft - 16, t.Y, "end", t.Label, middle: true)
+                    }
+                    <line class="tide-mchart-axis" x1="@Num(MetricCharts.PlotLeft)" y1="@Num(MetricCharts.PlotBottom)" x2="@Num(MetricCharts.PlotRight)" y2="@Num(MetricCharts.PlotBottom)" />
+                    @Text("tide-mchart-label", MetricCharts.PlotLeft, MetricCharts.TrendHeight - 12, "start", trend.FirstDate)
+                    @Text("tide-mchart-label", MetricCharts.PlotRight, MetricCharts.TrendHeight - 12, "end", trend.LastDate)
+                    @foreach (var l in trend.Lines)
+                    {
+                        <g class="@LineChart.Series(l.Series)">
+                            @foreach (var points in l.Lines) { <polyline points="@points" /> }
+                            @foreach (var d in l.Dots) { <circle class="tide-mchart-dot" cx="@Num(d.X)" cy="@Num(d.Y)" r="7" /> }
+                            @foreach (var b in l.Breaches) { <circle class="tide-mchart-ring tide-level-@b.Level.ToString().ToLowerInvariant()" cx="@Num(b.X)" cy="@Num(b.Y)" r="11" /> }
+                        </g>
+                    }
+                </svg>
+            </figure>
+        }
+        break;
+    case MetricChart.Share:
+        var donut = MetricCharts.Share(Group.Tiles);
+        @if (donut.Empty)
+        {
+            <div class="tide-mchart-empty">Nothing to share out: no value is above 0</div>
+        }
+        else
+        {
+            <figure class="tide-mchart tide-mchart-share">
+                <svg viewBox="0 0 @Num(MetricCharts.DonutSize) @Num(MetricCharts.DonutSize)" role="img" aria-label="@($"{Group.Group.Name}: share of {donut.Total}")">
+                    @foreach (var s in donut.Slices.Where(s => s.Path is not null))
+                    {
+                        <path class="@LineChart.Series(s.Series)" d="@s.Path" />
+                    }
+                    @Text("tide-mchart-total", MetricCharts.DonutSize / 2, MetricCharts.DonutSize / 2 - 6, "middle", donut.Total, middle: true)
+                    @Text("tide-mchart-label", MetricCharts.DonutSize / 2, MetricCharts.DonutSize / 2 + 44, "middle", "in all")
+                </svg>
+                <figcaption>
+                    <ul class="tide-mchart-legend">
+                        @foreach (var s in donut.Slices)
+                        {
+                            <li><i class="tide-mchart-swatch @LineChart.Series(s.Series)" aria-hidden="true"></i><span>@s.Name</span><strong>@s.Value</strong><span class="tide-mchart-pct">@(s.Percent ?? "")</span></li>
+                        }
+                    </ul>
+                </figcaption>
+            </figure>
+        }
+        break;
+    case MetricChart.Bars:
+        <ul class="tide-mchart tide-mchart-bars" aria-label="@($"{Group.Group.Name}, side by side")">
+            @foreach (var b in MetricCharts.Bars(Group.Tiles))
+            {
+                <li>
+                    <span class="tide-mchart-bar-name">@b.Name</span>
+                    <span class="tide-mchart-bar-track"><span class="tide-mchart-bar @LineChart.Series(b.Series)" style="width: @Pct(b.Fraction)"></span></span>
+                    <strong>@b.Value</strong>
+                </li>
+            }
+        </ul>
+        break;
+}
+
+@code {
+    [Parameter, EditorRequired] public MetricGroupDay Group { get; set; } = default!;
+
+    /// <summary>The days the trend covers (<see cref="MetricDay.TrendDays"/>), oldest first.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<DateOnly> Days { get; set; } = [];
+
+    private static string Num(double v) => v.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    // An SVG text element: written out, since Razor reads a <text> tag as its own.
+    private static MarkupString Text(string css, double x, double y, string anchor, string content, bool middle = false) => new(
+        $"<text class=\"{css}\" x=\"{Num(x)}\" y=\"{Num(y)}\" text-anchor=\"{anchor}\"{(middle ? " dominant-baseline=\"middle\"" : "")}>{System.Net.WebUtility.HtmlEncode(content)}</text>");
+
+    private static string Pct(double f) => (f * 100).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "%";
+}

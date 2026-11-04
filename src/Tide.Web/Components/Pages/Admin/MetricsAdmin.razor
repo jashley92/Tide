@@ -53,6 +53,14 @@
                     <h2 class="tide-card-title mb-0">@g.Name @if (g.IsRetired) { <Badge>Retired</Badge> }</h2>
                     <div class="tide-muted small"><span class="tide-data">@g.Key</span></div>
                 </div>
+                @if (!g.IsRetired)
+                {
+                    <label class="tide-field-label mb-0 align-self-center" for="chart-@g.Id">Chart on its slide</label>
+                    <select id="chart-@g.Id" class="form-select form-select-sm w-auto" value="@g.Chart" disabled="@_busy" title="What the group's present-mode slide draws under its numbers"
+                            @onchange="e => SetChart(g, e.Value as string)">
+                        @foreach (var c in Enum.GetValues<MetricChart>()) { <option value="@c">@ChartName(c)</option> }
+                    </select>
+                }
                 <button class="tide-icon-btn" title="Move up" aria-label="Move @g.Name up" disabled="@(gi == 0)" @onclick="() => Run(() => MetricsSvc.MoveGroupAsync(g.Id, -1))"><span class="bi bi-arrow-up" aria-hidden="true"></span></button>
                 <button class="tide-icon-btn" title="Move down" aria-label="Move @g.Name down" disabled="@(gi == _groups.Count - 1)" @onclick="() => Run(() => MetricsSvc.MoveGroupAsync(g.Id, 1))"><span class="bi bi-arrow-down" aria-hidden="true"></span></button>
                 <button class="btn btn-outline-secondary btn-sm" @onclick="() => { _renaming = g.Id; _groupName = g.Name; }">Rename</button>
@@ -166,6 +174,23 @@
         MetricDirection.LowerIsBetter => "Lower is better",
         _ => "Neutral",
     };
+
+    /// <summary>A chart as the set-up page names it.</summary>
+    internal static string ChartName(MetricChart c) => c switch
+    {
+        MetricChart.Share => "Share of the whole",
+        MetricChart.Bars => "Side by side",
+        MetricChart.None => "None",
+        _ => "Trend (30 days)",
+    };
+
+    private Task SetChart(MetricGroup g, string? value) => Enum.TryParse<MetricChart>(value, out var chart) && chart != g.Chart
+        ? Run(async () =>
+        {
+            await MetricsSvc.SetGroupChartAsync(g.Id, chart);
+            Toasts.Show($"{g.Name} shows {ChartName(chart).ToLowerInvariant()} on its slide.");
+        })
+        : Task.CompletedTask;
 
     private static string Threshold(MetricDefinition m, decimal? t) => t is { } v ? MetricMath.Format(m.Format, v) : "—";
 
