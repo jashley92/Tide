@@ -5,6 +5,7 @@
 @inject MetricsService MetricsSvc
 @inject OrgClock Clock
 @inject ToastService Toasts
+@inject NavigationManager Nav
 
 <PageTitle>Metric history · TIDE</PageTitle>
 
@@ -75,8 +76,22 @@ else
         }
     </div>
 
-    <div class="tide-card-scroll tide-card">
+    var columns = MetricHistoryColumns.Group(_history.Metrics);
+    var shown = MetricHistoryColumns.Shown(columns, _chosen);
+    <div class="tide-card">
         <h2>Values <span class="tide-count tide-muted fw-normal">(@_history.Values.Count)</span></h2>
+        @if (columns.Count > 1)
+        {
+            @* Which groups' columns show; kept in the address, so a reload or a shared link shows the same ones. *@
+            <div class="tide-mh-filter" role="group" aria-label="Groups shown">
+                <button type="button" class="tide-chip tide-chip-pick @(shown.Count == columns.Count ? "selected" : "")" aria-pressed="@Ui.Aria(shown.Count == columns.Count)" @onclick="ShowAll">All groups</button>
+                @foreach (var g in columns)
+                {
+                    var on = shown.Count != columns.Count && shown.Contains(g);
+                    <button type="button" class="tide-chip tide-chip-pick @(on ? "selected" : "")" aria-pressed="@Ui.Aria(on)" @onclick="() => Pick(columns, g.Key)">@g.Name <span class="tide-muted">@g.Metrics.Count</span></button>
+                }
+            </div>
+        }
         @{ var byDay = _history.Values.ToLookup(v => v.BriefDate); var dates = byDay.Select(g => g.Key).OrderDescending().ToList(); }
         @if (dates.Count == 0)
         {
@@ -84,36 +99,68 @@ else
         }
         else
         {
-            <table class="tide-table">
-                <thead>
-                    <tr>
-                        <th>Day</th>
-                        @foreach (var m in _history.Metrics)
-                        {
-                            <th class="tide-table-num" title="@m.Group?.Name">@m.Name@(m.IsRetired ? " (retired)" : "")</th>
-                        }
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var d in dates)
+            @* Scrolls both ways inside its own box, so the group and metric headings stay above and the day stays beside. *@
+            <div class="tide-mh-scroll" tabindex="0" role="region" aria-label="Metric values by day">
+                <table class="tide-table tide-mh-table">
+                    @foreach (var g in shown)
                     {
-                        var row = byDay[d].ToDictionary(v => v.DefinitionId);
-                        <tr>
-                            <td class="text-nowrap"><a href="@Ui.BriefUrl(d)">@Ui.ShortDay(d)</a></td>
-                            @foreach (var m in _history.Metrics)
+                        <colgroup span="@g.Metrics.Count"></colgroup>
+                    }
+                    <thead>
+                        <tr class="tide-mh-groups">
+                            <th scope="col" rowspan="2" class="tide-mh-day">Day</th>
+                            @foreach (var g in shown)
                             {
-                                var v = row.GetValueOrDefault(m.Id);
-                                <td class="tide-table-num @(v is null ? "" : LevelClass(m, v.Value))" title="@v?.Note">@(v is null ? "—" : MetricMath.Format(m.Format, v.Value))</td>
+                                <th scope="colgroup" colspan="@g.Metrics.Count" class="tide-mh-group"><span>@g.Name</span></th>
                             }
                         </tr>
-                    }
-                </tbody>
-            </table>
+                        <tr class="tide-mh-metrics">
+                            @foreach (var g in shown)
+                            {
+                                @for (var i = 0; i < g.Metrics.Count; i++)
+                                {
+                                    var m = g.Metrics[i];
+                                    <th scope="col" class="tide-table-num @(i == 0 ? "tide-mh-gstart" : "")" title="@(g.Name): @m.Name">@m.Name@(m.IsRetired ? " (retired)" : "")</th>
+                                }
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var d in dates)
+                        {
+                            var row = byDay[d].ToDictionary(v => v.DefinitionId);
+                            <tr>
+                                <th scope="row" class="tide-mh-day text-nowrap"><a href="@Ui.BriefUrl(d)">@Ui.ShortDay(d)</a></th>
+                                @foreach (var g in shown)
+                                {
+                                    @for (var i = 0; i < g.Metrics.Count; i++)
+                                    {
+                                        var m = g.Metrics[i];
+                                        var v = row.GetValueOrDefault(m.Id);
+                                        <td class="tide-table-num @(i == 0 ? "tide-mh-gstart" : "") @(v is null ? "" : LevelClass(m, v.Value))">
+                                            @(v is null ? "—" : MetricMath.Format(m.Format, v.Value))
+                                            @if (!string.IsNullOrWhiteSpace(v?.Note))
+                                            {
+                                                @* The note: in a title for the pointer, and read out with the value. *@
+                                                <span class="bi bi-chat-left-text tide-mh-note" title="@v.Note" aria-hidden="true"></span><span class="visually-hidden">Note: @v.Note</span>
+                                            }
+                                        </td>
+                                    }
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
         }
     </div>
 }
 
 @code {
+    /// <summary>The groups whose columns show, by key (MetricHistoryColumns); none for all of them.</summary>
+    [SupplyParameterFromQuery(Name = MetricHistoryColumns.Parameter)] public string? GroupsParam { get; set; }
+
+    private IReadOnlySet<string> _chosen = new HashSet<string>();
     private DateOnly _from, _to;
     private MetricHistory? _history;
     private IReadOnlyList<DateOnly> _days = [];
@@ -126,6 +173,19 @@ else
         _to = Clock.CurrentBriefDate;
         _from = _to.AddDays(-30);
         return Load();
+    }
+
+    protected override void OnParametersSet() => _chosen = MetricHistoryColumns.Parse(GroupsParam);
+
+    // The choice goes in the address (replacing it, so Back leaves the page rather than stepping through the chips).
+    internal void Pick(IReadOnlyList<MetricColumnGroup> columns, string key) => Choose(MetricHistoryColumns.Toggle(columns, _chosen, key));
+
+    internal void ShowAll() => Choose(new HashSet<string>());
+
+    private void Choose(IReadOnlySet<string> keys)
+    {
+        _chosen = keys;
+        Nav.NavigateTo(Nav.GetUriWithQueryParameter(MetricHistoryColumns.Parameter, MetricHistoryColumns.Query(keys)), replace: true);
     }
 
     private Task Range(int days)

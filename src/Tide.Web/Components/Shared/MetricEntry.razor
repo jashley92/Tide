@@ -6,7 +6,11 @@
    are missing whenever that changes, for the brief's step strip and its Mark ready confirmation.
    A colleague's save to the day's numbers re-reads them in place (LiveChanges, naming them in a toast), so the step
    strip and the edition check follow too. A box being typed in, or holding something that isn't a number, keeps what's
-   in it, and its row says they changed it. *@
+   in it, and its row says they changed it.
+   With many groups the form says where you are: a bar that stays in view under the page's own header, with the overall
+   count and a chip per group (filled of total, a tick when done, highlighted while a box in it has focus; clicking one
+   jumps to its first empty box). Each group is a panel of its own with its count, and one whose numbers are all in
+   folds to a line of its values once you move on from it (MetricEntryProgress says when). *@
 @using System.Globalization
 @using Tide.Application.Metrics
 @inject MetricsService MetricsSvc
@@ -48,72 +52,136 @@
             <div class="tide-missing mb-2"><span class="bi bi-exclamation-circle" aria-hidden="true"></span>
                 @_day.Missing.Count metric@(_day.Missing.Count == 1 ? " has" : "s have") no value for this day.</div>
         }
+        @* Where you are: the overall count and a chip per group, kept in view while the form scrolls. *@
+        <div class="tide-mentry-bar">
+            <div class="tide-mentry-overall">
+                <span class="fw-semibold">@_progress.Summary</span>
+                <progress class="tide-mentry-meter" value="@_progress.Entered" max="@Math.Max(1, _progress.Total)" aria-hidden="true"></progress>
+            </div>
+            <div class="tide-mentry-chips">
+                @foreach (var p in _progress.Groups)
+                {
+                    var current = _lastGroup == p.GroupId;
+                    var css = "tide-mentry-chip" + (p.Complete ? " is-done" : "") + (current ? " is-current" : "");
+                    if (_canEdit)
+                    {
+                        <button type="button" class="@css" aria-label="@p.AccessibleName" aria-current="@(current ? "true" : null)"
+                                aria-controls="@GroupDomId(p.GroupId)" @onclick="() => Jump(p.GroupId)">
+                            @p.Name <span class="tide-mentry-chip-count">@p.Entered/@p.Total</span>
+                            @if (p.Complete) { <span class="bi bi-check-lg" aria-hidden="true"></span> }
+                        </button>
+                    }
+                    else
+                    {
+                        <span class="@css"><span aria-hidden="true">@p.Name <span class="tide-mentry-chip-count">@p.Entered/@p.Total</span></span><span class="visually-hidden">@p.AccessibleName</span>
+                            @if (p.Complete) { <span class="bi bi-check-lg" aria-hidden="true"></span> }
+                        </span>
+                    }
+                }
+            </div>
+        </div>
         @foreach (var g in _day.Groups)
         {
-            <div class="tide-metric-group">
-                <h3>@g.Group.Name</h3>
-                @foreach (var t in g.Tiles)
+            var gid = g.Group.Id;
+            var dom = GroupDomId(gid);
+            var count = _progress.Groups.FirstOrDefault(p => p.GroupId == gid);
+            var folded = _canEdit && _progress.IsFolded(gid);
+            var toggles = _canEdit && (folded || _progress.Foldable(gid));
+            var panel = "tide-mentry-group" + (folded ? " is-folded" : "") + (_lastGroup == gid ? " is-current" : "");
+            <section class="@panel" id="@dom" aria-labelledby="@(dom + "-h")" @key="gid">
+                <h3 class="tide-mentry-group-head">
+                    @if (toggles)
+                    {
+                        <button type="button" class="tide-collapse-btn" id="@(dom + "-h")" aria-expanded="@(folded ? "false" : "true")" aria-controls="@(dom + "-rows")" @onclick="() => Toggle(gid)">
+                            <span class="bi @(folded ? "bi-chevron-right" : "bi-chevron-down")" aria-hidden="true"></span> @g.Group.Name
+                        </button>
+                    }
+                    else
+                    {
+                        <span id="@(dom + "-h")">@g.Group.Name</span>
+                    }
+                    @if (count is not null)
+                    {
+                        <span class="tide-mentry-group-count @(count.Complete ? "is-done" : "")">@count.Count @if (count.Complete) { <span class="bi bi-check-lg" aria-hidden="true"></span> }</span>
+                    }
+                </h3>
+                <div id="@(dom + "-rows")">
+                @if (folded)
                 {
-                    var id = "metric-" + t.Metric.Id.ToString("N");
-                    var bad = _invalid.GetValueOrDefault(t.Metric.Id);
-                    <div class="tide-metric-row" @key="t.Metric.Id">
-                        <label for="@id">@t.Metric.Name@(Unit(t.Metric.Format))</label>
-                        @if (_canEdit)
+                    @* Finished: one line of its values (and level marks). *@
+                    <ul class="tide-mentry-folded">
+                        @foreach (var t in g.Tiles)
                         {
-                            <div>
-                                <div class="d-flex align-items-center">
-                                    <input id="@id" class="form-control form-control-sm tide-metric-value @LevelClass(t) @(bad is null ? "" : "is-invalid")" inputmode="decimal" autocomplete="off"
-                                           value="@(bad ?? Shown(t.Metric.Id, false, Raw(t.Value)))" aria-invalid="@(bad is null ? null : "true")" aria-describedby="@(bad is null ? null : id + "-error")"
-                                           @onchange="e => SaveValue(t, e.Value?.ToString())" @onfocus="() => Entering(t.Metric.Id, false)" @onblur="() => Left(t.Metric.Id, false)" />
-                                    <LevelMark Level="t.Level" />
-                                    @if (t.ImportedFrom is { } from)
+                            <li @key="t.Metric.Id"><span class="tide-mentry-folded-name">@t.Metric.Name</span> <span class="tide-table-num fw-semibold @LevelClass(t)">@t.Display<LevelMark Level="t.Level" /></span></li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    @foreach (var t in g.Tiles)
+                    {
+                        var id = "metric-" + t.Metric.Id.ToString("N");
+                        var bad = _invalid.GetValueOrDefault(t.Metric.Id);
+                        <div class="tide-metric-row" @key="t.Metric.Id">
+                            <label for="@id">@t.Metric.Name@(Unit(t.Metric.Format))</label>
+                            @if (_canEdit)
+                            {
+                                <div>
+                                    <div class="d-flex align-items-center">
+                                        <input id="@id" @ref="_boxes[t.Metric.Id]" class="form-control form-control-sm tide-metric-value @LevelClass(t) @(bad is null ? "" : "is-invalid")" inputmode="decimal" autocomplete="off"
+                                               value="@(bad ?? Shown(t.Metric.Id, false, Raw(t.Value)))" aria-invalid="@(bad is null ? null : "true")" aria-describedby="@(bad is null ? null : id + "-error")"
+                                               @onchange="e => SaveValue(t, e.Value?.ToString())" @onfocus="() => Entering(t.Metric.Id, false)" @onblur="() => Left(t.Metric.Id, false)" />
+                                        <LevelMark Level="t.Level" />
+                                        @if (t.ImportedFrom is { } from)
+                                        {
+                                            <span class="bi bi-file-earmark-arrow-down tide-muted ms-1" title="@from" role="img" aria-label="@from"></span>
+                                        }
+                                    </div>
+                                    @if (bad is not null)
                                     {
-                                        <span class="bi bi-file-earmark-arrow-down tide-muted ms-1" title="@from" role="img" aria-label="@from"></span>
+                                        <div id="@(id + "-error")" class="tide-metric-error">Not a number.</div>
                                     }
                                 </div>
-                                @if (bad is not null)
-                                {
-                                    <div id="@(id + "-error")" class="tide-metric-error">Not a number.</div>
-                                }
-                            </div>
-                        }
-                        else
-                        {
-                            <span class="tide-table-num fw-semibold @LevelClass(t)">@t.Display<LevelMark Level="t.Level" /></span>
-                        }
-                        <span class="tide-metric-prev">
-                            @if (t.Reference is { } r)
-                            {
-                                @* A chip of its own, so the value to compare with doesn't read as part of the row's text. *@
-                                <span class="tide-metric-ref" title="@r.Date.ToString("dddd, MMMM d", CultureInfo.InvariantCulture)"><span class="visually-hidden">Last value, </span><span class="tide-metric-ref-date">@MetricMath.ReferenceLabel(r.Date, Date, Clock.Days)</span><span class="tide-metric-ref-value">@MetricMath.Format(t.Metric.Format, r.Value)</span></span>
-                                @if (t.Previous is not null)
-                                {
-                                    <text> &middot; </text><MetricChange Tile="t" ShowDate="false" />
-                                }
                             }
                             else
                             {
-                                <MetricChange Tile="t" />
+                                <span class="tide-table-num fw-semibold @LevelClass(t)">@t.Display<LevelMark Level="t.Level" /></span>
                             }
-                        </span>
-                        @if (_canEdit)
-                        {
-                            <input class="form-control form-control-sm tide-metric-note" placeholder="Note (optional)" maxlength="300" aria-label="Note for @t.Metric.Name"
-                                   value="@Shown(t.Metric.Id, true, t.Note)" @onchange="e => SaveNote(t, e.Value?.ToString())"
-                                   @onfocus="() => Entering(t.Metric.Id, true)" @onblur="() => Left(t.Metric.Id, true)" />
-                        }
-                        else
-                        {
-                            <span class="small tide-muted">@t.Note</span>
-                        }
-                        @if (_elsewhere.GetValueOrDefault(t.Metric.Id) is { } by)
-                        {
-                            <div class="tide-metric-elsewhere" role="status"><span class="bi bi-exclamation-triangle" aria-hidden="true"></span>
-                                @by changed @t.Metric.Name while you were editing it (now @t.Display). What you typed is still in the box; saving it replaces theirs.</div>
-                        }
-                    </div>
+                            <span class="tide-metric-prev">
+                                @if (t.Reference is { } r)
+                                {
+                                    @* A chip of its own, so the value to compare with doesn't read as part of the row's text. *@
+                                    <span class="tide-metric-ref" title="@r.Date.ToString("dddd, MMMM d", CultureInfo.InvariantCulture)"><span class="visually-hidden">Last value, </span><span class="tide-metric-ref-date">@MetricMath.ReferenceLabel(r.Date, Date, Clock.Days)</span><span class="tide-metric-ref-value">@MetricMath.Format(t.Metric.Format, r.Value)</span></span>
+                                    @if (t.Previous is not null)
+                                    {
+                                        <text> &middot; </text><MetricChange Tile="t" ShowDate="false" />
+                                    }
+                                }
+                                else
+                                {
+                                    <MetricChange Tile="t" />
+                                }
+                            </span>
+                            @if (_canEdit)
+                            {
+                                <input class="form-control form-control-sm tide-metric-note" placeholder="Note (optional)" maxlength="300" aria-label="Note for @t.Metric.Name"
+                                       value="@Shown(t.Metric.Id, true, t.Note)" @onchange="e => SaveNote(t, e.Value?.ToString())"
+                                       @onfocus="() => Entering(t.Metric.Id, true)" @onblur="() => Left(t.Metric.Id, true)" />
+                            }
+                            else
+                            {
+                                <span class="small tide-muted">@t.Note</span>
+                            }
+                            @if (_elsewhere.GetValueOrDefault(t.Metric.Id) is { } by)
+                            {
+                                <div class="tide-metric-elsewhere" role="status"><span class="bi bi-exclamation-triangle" aria-hidden="true"></span>
+                                    @by changed @t.Metric.Name while you were editing it (now @t.Display). What you typed is still in the box; saving it replaces theirs.</div>
+                            }
+                        </div>
+                    }
                 }
-            </div>
+                </div>
+            </section>
         }
         </div>
     </div>
@@ -146,6 +214,17 @@
 
     // Who changed a metric's value or note while it was being edited here, by metric.
     private readonly Dictionary<Guid, string> _elsewhere = [];
+
+    // The counts for the bar and the panels, and which finished groups are folded (for the date they were read for).
+    private MetricEntryProgress _progress = new();
+    private DateOnly? _progressFor;
+
+    // The group of the box last focused: its chip is highlighted, and moving on to another group folds it if it's done.
+    private Guid? _lastGroup;
+
+    // A box to focus once the form has rendered (a chip's jump, or a group unfolded), and the boxes by metric.
+    private Guid? _focusNext;
+    private readonly Dictionary<Guid, ElementReference> _boxes = [];
 
     private LiveChanges? _live;
     private volatile string _topic = "";
@@ -181,12 +260,68 @@
         _canEdit = CurrentUser.Has(Permission.EnterMetrics) && !_locked;
         _day = await MetricsSvc.GetDayAsync(Date);
         _open ??= _day.Missing.Count > 0;
+        if (_progressFor != Date) (_progress, _progressFor, _lastGroup) = (new MetricEntryProgress(), Date, null);
+        Recount();
         await Report();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusNext is not { } metric || !_boxes.TryGetValue(metric, out var box)) return;
+        _focusNext = null;
+        try { await box.FocusAsync(); }
+        catch (JSDisconnectedException) { /* the circuit has gone: there's nothing to focus */ }
+    }
+
+    private string GroupDomId(Guid group) => _id + "-g-" + group.ToString("N");
+
+    // The counts and folds follow the day as it is now, and the boxes holding what isn't a number or a colleague's change.
+    private void Recount()
+    {
+        if (_day is not null) _progress.Update(_day, new HashSet<Guid>([.. _invalid.Keys, .. _elsewhere.Keys]));
+    }
+
+    // Focus moving into another group (or to its chip) is leaving the group it was in: a finished one folds then.
+    private void MovedTo(Guid? group)
+    {
+        if (_lastGroup is { } was && was != group) _progress.Left(was, group);
+        _lastGroup = group;
+    }
+
+    /// <summary>A group's chip: opens it if it's folded and focuses its first empty box (its first box when none is).</summary>
+    internal void Jump(Guid group)
+    {
+        MovedTo(group);
+        _progress.Unfold(group);
+        _focusNext = _progress.JumpTarget(group);
+        StateHasChanged();
+    }
+
+    /// <summary>A finished group's heading: unfolds it (focusing its first box), or folds it again.</summary>
+    internal void Toggle(Guid group)
+    {
+        if (_progress.Unfold(group))
+        {
+            MovedTo(group);
+            _focusNext = _progress.MetricsOf(group).Select(m => (Guid?)m).FirstOrDefault();
+        }
+        else
+        {
+            _progress.Fold(group);
+        }
+        StateHasChanged();
     }
 
     private string? Shown(Guid metric, bool note, string? saved) => _kept.TryGetValue((metric, note), out var kept) ? kept : saved;
 
-    internal void Entering(Guid metric, bool note) => _focus = (metric, note);
+    internal void Entering(Guid metric, bool note)
+    {
+        _focus = (metric, note);
+        var group = _progress.GroupOf(metric);
+        if (group == _lastGroup) return;
+        MovedTo(group);
+        StateHasChanged();
+    }
 
     internal void Left(Guid metric, bool note)
     {
@@ -194,6 +329,7 @@
         // Left without saving: the box shows what's saved now. One still holding what isn't a number keeps it, and the note.
         if (!_kept.Remove((metric, note))) return;
         if (!_invalid.ContainsKey(metric) && !_kept.Keys.Any(k => k.Metric == metric)) _elsewhere.Remove(metric);
+        Recount();
         StateHasChanged();
     }
 
@@ -220,6 +356,7 @@
             var now = after.GetValueOrDefault(id);
             if (was?.Value != now?.Value || was?.Note != now?.Note) _elsewhere[id] = who;
         }
+        Recount();
         await Report();
         Toasts.Show($"{who} updated the numbers.");
         StateHasChanged();
@@ -242,6 +379,7 @@
             if (!MetricMath.TryParseValue(text, out var v))
             {
                 _invalid[t.Metric.Id] = text;
+                Recount();
                 Toasts.Error($"'{text}' isn't a number TIDE can keep.");
                 StateHasChanged();
                 return;
@@ -261,6 +399,7 @@
         Settled(t.Metric.Id, true);
         if (current?.Value is { } v) return Save(current, v, note);
         if (!string.IsNullOrWhiteSpace(note)) Toasts.Error($"Enter a value for {t.Metric.Name} before its note.");
+        Recount();
         return Task.CompletedTask;
     }
 
@@ -280,5 +419,6 @@
             await Report();
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { Recount(); }
     }
 }
