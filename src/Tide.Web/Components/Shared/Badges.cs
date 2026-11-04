@@ -356,9 +356,11 @@ public static class Ui
 
 /// <summary>A tab in a <see cref="TabBar"/>: a link, current by its address, or by <see cref="Key"/> when it stands for
 /// several pages. <see cref="Attention"/> is a short mark beside it ("new": a newer release is out). <see cref="Ticked"/>:
-/// its count just changed live (a colleague's work), and ticks to say so.</summary>
+/// its count just changed live (a colleague's work), and ticks to say so. <see cref="Warning"/>: the count is of something
+/// wrong, not of items ("2" sources failing), so it's drawn as a warning and this says what it counts to a screen reader
+/// ("failing"). <see cref="Apart"/>: the tab is of another kind than those before it, and stands apart from them.</summary>
 public sealed record TabBarItem(string Label, string Href, string? Icon = null, string? Key = null, int? Count = null, string? Attention = null,
-    bool Ticked = false);
+    bool Ticked = false, string? Warning = null, bool Apart = false);
 
 public enum TabLevel { Page, Sub }
 

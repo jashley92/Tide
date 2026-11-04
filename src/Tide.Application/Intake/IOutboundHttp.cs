@@ -25,6 +25,10 @@ public sealed class IntakeOptions
     /// <summary>The shortest poll interval a source may have, in minutes.</summary>
     public int MinPollMinutes { get; set; } = 15;
 
+    /// <summary>The analyst pull-now window, in minutes (at least 1): a source pulled within it, on schedule or by hand,
+    /// can't be pulled again from Triage's Sources tab until it's passed. Administrators' Poll now on Sources isn't held to it.</summary>
+    public int PullNowMinutes { get; set; } = 15;
+
     /// <summary>Days a feed item that wasn't shortlisted or promoted is kept.</summary>
     public int RetentionDays { get; set; } = 90;
 

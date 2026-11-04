@@ -109,6 +109,7 @@ public static class SettingsCatalog
         new("Intake", "Polling", OperationalSettings.IntakeEnabled, EditedIn: SourcesPage),
         new("Intake", "Feed items kept (days)", OperationalSettings.RetentionDays, EditedIn: SourcesPage),
         new("Intake", "Shortest poll (minutes)", OperationalSettings.MinPollMinutes, EditedIn: SourcesPage),
+        new("Intake", "Analyst pull-now window (minutes)", OperationalSettings.PullNowMinutes, EditedIn: SourcesPage),
         new("Intake", "Skip sponsored items", OperationalSettings.SkipSponsored, EditedIn: SourcesPage),
         new("Intake", "Sponsored markers", OperationalSettings.SponsoredMarkers, EditedIn: SourcesPage),
         new("Intake", "Not sponsorship (exceptions)", OperationalSettings.SponsoredExceptions, EditedIn: SourcesPage),

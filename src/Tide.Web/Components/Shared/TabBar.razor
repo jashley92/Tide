@@ -16,7 +16,7 @@
             @if (i.Key is not null)
             {
                 var on = IsActive(i);
-                <a class="tide-tabbar-item @(on ? "active" : "")" href="@i.Href" aria-current="@(on ? "page" : null)">
+                <a class="@ItemCss(i, on)" href="@i.Href" aria-current="@(on ? "page" : null)">
                     @Inner(i)
                 </a>
             }
@@ -33,7 +33,7 @@ else if (PanelId is not null)
         @foreach (var i in Items)
         {
             var on = IsActive(i);
-            <button type="button" role="tab" id="@TabId(PanelId, i.Key)" class="tide-tabbar-item @(on ? "active" : "")"
+            <button type="button" role="tab" id="@TabId(PanelId, i.Key)" class="@ItemCss(i, on)"
                     aria-selected="@(on ? "true" : "false")" aria-controls="@PanelId" tabindex="@(on ? "0" : "-1")"
                     @onclick="() => OnSelect.InvokeAsync(i.Key)">
                 @Inner(i)
@@ -47,7 +47,7 @@ else
         @foreach (var i in Items)
         {
             var on = IsActive(i);
-            <button type="button" class="tide-tabbar-item @(on ? "active" : "")" aria-pressed="@(on ? "true" : "false")"
+            <button type="button" class="@ItemCss(i, on)" aria-pressed="@(on ? "true" : "false")"
                     @onclick="() => OnSelect.InvokeAsync(i.Key)">
                 @Inner(i)
             </button>
@@ -77,13 +77,19 @@ else
 
     private string Css => $"tide-tabbar tide-tabbar-{(Level == TabLevel.Sub ? "sub" : "page")} {Class}".TrimEnd();
 
+    private static string ItemCss(TabBarItem i, bool on) => "tide-tabbar-item " + (on ? "active" : "") + (i.Apart ? " tide-tabbar-apart" : "");
+
     private bool IsActive(TabBarItem i) => string.Equals(i.Key, Active, StringComparison.Ordinal);
 
     private static RenderFragment Inner(TabBarItem i) => @<text>
         @if (i.Icon is not null) { <span class="bi @i.Icon" aria-hidden="true"></span> }
         <span>@i.Label</span>
         @* Keyed by the number, so a count that changes again while it's ticking is a new element and ticks again. *@
-        @if (i.Count is { } n) { <span class="tide-tabbar-count@(i.Ticked ? " tide-live-tick" : "")" @key="n">@n</span> }
+        @if (i.Count is { } n && i.Warning is { } warning)
+        {
+            <span class="tide-tabbar-count tide-tabbar-warn@(i.Ticked ? " tide-live-tick" : "")" @key="n"><span class="bi bi-exclamation-triangle-fill" aria-hidden="true"></span>@n<span class="visually-hidden">@(" " + warning)</span></span>
+        }
+        else if (i.Count is { } count) { <span class="tide-tabbar-count@(i.Ticked ? " tide-live-tick" : "")" @key="count">@count</span> }
         @if (i.Attention is { } note) { <span class="tide-tabbar-new">@note</span> }
     </text>;
 }

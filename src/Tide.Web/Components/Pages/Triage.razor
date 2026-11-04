@@ -31,9 +31,23 @@
     </div>
 </div>
 
-<TabBar Label="Inbox" Items="@(Tabs.Select(t => new TabBarItem(t.Item2, "", Key: t.Item1.ToString(), Count: _counts.GetValueOrDefault(t.Item1), Ticked: _tabMarks?.IsMarked(t.Item1) == true)).ToList())"
-        Active="@_status.ToString()" OnSelect="k => SetStatus(Enum.Parse<FeedItemStatus>(k!))" />
+<TabBar Label="Inbox" Items="@TabItems()" Active="@(_sourcesTab ? SourcesKey : _status.ToString())" OnSelect="SelectTab" />
 
+@if (_sourcesTab)
+{
+    @* The polled sources in place of the list: when each was last pulled, and Pull now (held to the pull-now window). *@
+    <div class="tide-card p-0">
+        @if (!_loaded) { <LoadingBlock /> }
+        else
+        {
+            <PolledSourcesTable Sources="_polled" Now="Time.GetUtcNow()" PollingOn="IntakeOpts.CurrentValue.Enabled" Window="Intake.PullWindow"
+                                Pulling="_pulling" OnPull="Pull" />
+        }
+    </div>
+}
+else
+{
+<div class="tide-inbox-view">
 <div class="tide-filters">
     <select class="tide-maxw-sm form-select form-select-sm" aria-label="Source" @bind="_sourceId" @bind:after="Load">
         <option value="">All sources</option>
@@ -313,6 +327,8 @@
 </div>
 @if (_reading) { @ReadingPane() }
 </div>
+</div>
+}
 @* What changed live, in words: the toast says what a colleague did; this says what it did to the list here. *@
 <div class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">@_said</div>
 
@@ -482,6 +498,67 @@
     ];
 
     private FeedItemStatus _status = FeedItemStatus.New;
+
+    // The Sources tab (?tab=sources): the polled sources in place of an inbox, last of the tabs and set apart from them.
+    internal const string SourcesKey = "Sources";
+    private bool _sourcesTab;
+    private IReadOnlyList<PolledSource> _polled = [];
+    private Guid? _pulling;          // the source this tab is pulling now
+    private ITimer? _ticking;        // re-renders the Sources tab's times ("12 min ago") as they pass
+
+    /// <summary>How many polled sources' last poll failed: the Sources tab's count, a warning (none: no count).</summary>
+    internal static int? FailingCount(IEnumerable<PolledSource> sources) => sources.Count(s => s.Failing) is > 0 and var n ? n : null;
+
+    private List<TabBarItem> TabItems() =>
+    [
+        .. Tabs.Select(t => new TabBarItem(t.Item2, "", Key: t.Item1.ToString(), Count: _counts.GetValueOrDefault(t.Item1), Ticked: _tabMarks?.IsMarked(t.Item1) == true)),
+        new TabBarItem("Sources", "", Icon: "bi-rss", Key: SourcesKey, Count: FailingCount(_polled), Warning: "failing", Apart: true),
+    ];
+
+    private Task SelectTab(string? key) => key == SourcesKey ? ShowSources() : SetStatus(Enum.Parse<FeedItemStatus>(key!));
+
+    /// <summary>Shows the Sources tab.</summary>
+    internal async Task ShowSources()
+    {
+        _sourcesTab = true;
+        _older = false;
+        _reading = false;
+        _promoting = null;
+        _promotingGroup = null;
+        _attaching = false;
+        _marks.Clear();
+        await RememberTab();
+        await Load();
+    }
+
+    // The tab chosen goes in the address (?tab=sources), so a reload or a copied link opens it.
+    private async Task RememberTab()
+    {
+        var address = _sourcesTab ? "triage?tab=sources" : Address(_status, _sourceId, _search, _sinceLast, null, 0);
+        try { await JS.InvokeVoidAsync("tideTriage.remember", address); }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) { }   // rendered without a browser (prerendering, tests)
+    }
+
+    /// <summary>Pull now on the Sources tab: the source is polled (unless it was within the pull-now window, or is being
+    /// pulled), the row and the tab counts are read again, and the other open pages hear of it as of a poll.</summary>
+    internal async Task Pull(Guid id)
+    {
+        if (_pulling is not null) return;
+        var name = _polled.FirstOrDefault(s => s.Id == id)?.Name ?? "the source";
+        _pulling = id;
+        try
+        {
+            var result = await Intake.PullNowAsync(id);
+            if (result.Error is null) Toasts.Show($"Pulled {name}: {(result.New == 0 ? "no new items" : result.New == 1 ? "1 new item" : $"{result.New} new items")}.");
+            else Toasts.Error($"Pulled {name}, but it failed: {result.Error}");
+            Changes.Publish(new Change(ChangeFeed.Triage, "system", "", Origin.Id));
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _pulling = null; }
+        await Load();
+        StateHasChanged();
+    }
     private Guid? _sourceId;
     private string? _search;
     private string _reason = IntakeService.DismissReasons[0];       // for "dismiss all"
@@ -781,7 +858,9 @@
         _tabMarks = new LiveMarks<FeedItemStatus>(InvokeAsync, StateHasChanged);
         _sources = await Intake.SourcesAsync(includeRetired: true);
         _lastBriefAt = await Intake.LastBriefAtAsync();
-        if (Enum.TryParse<FeedItemStatus>(TabParam, ignoreCase: true, out var tab) && Enum.IsDefined(tab)) _status = tab;
+        if (string.Equals(TabParam, SourcesKey, StringComparison.OrdinalIgnoreCase)) _sourcesTab = true;
+        else if (Enum.TryParse<FeedItemStatus>(TabParam, ignoreCase: true, out var tab) && Enum.IsDefined(tab)) _status = tab;
+        _ticking = Time.CreateTimer(_ => { if (_sourcesTab && !_disposed) _ = InvokeAsync(StateHasChanged); }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
         _sourceId = SourceParam is { } sid && _sources.Any(s => s.Id == sid) ? sid : null;
         _search = string.IsNullOrWhiteSpace(SearchParam) ? null : SearchParam.Trim();
         _sinceLast = SinceParam == true && _lastBriefAt is not null;
@@ -868,6 +947,8 @@
 
     internal async Task SetStatus(FeedItemStatus status)
     {
+        var fromSources = _sourcesTab;
+        _sourcesTab = false;
         _status = status;
         _older = false;
         _selected = 0;
@@ -875,6 +956,7 @@
         _promotingGroup = null;
         _attaching = false;
         _marks.Clear();
+        if (fromSources) await RememberTab();
         await Load();
     }
 
@@ -950,10 +1032,13 @@
         try
         {
             var status = _status;
-            var rows = await Intake.InboxAsync(new InboxFilter(status, _sourceId, _search, Since: _sinceLast ? _lastBriefAt : null, Older: _older && status == FeedItemStatus.New, Sort: _sort));
-            var missed = status == FeedItemStatus.New ? await Intake.MissedAsync() : [];
+            var sourcesTab = _sourcesTab;
+            // The Sources tab shows no items: only the tab counts and the polled sources are read for it.
+            var rows = sourcesTab ? [] : await Intake.InboxAsync(new InboxFilter(status, _sourceId, _search, Since: _sinceLast ? _lastBriefAt : null, Older: _older && status == FeedItemStatus.New, Sort: _sort));
+            var missed = !sourcesTab && status == FeedItemStatus.New ? await Intake.MissedAsync() : [];
             var (counts, older) = await Intake.TallyAsync();
             var cves = await Cves.GetAsync(rows.SelectMany(r => r.Item.CveList));
+            var polled = await Intake.PolledSourcesAsync();
             // A later read started meanwhile (more typing in the search box, another tab or filter, a colleague's change):
             // it shows the list as it's asked for now. These rows, read for what was asked before, would replace it if
             // they came back last.
@@ -961,8 +1046,8 @@
             // What was shown, compared from here: a read that was dropped changed nothing on screen.
             var keep = Current is { } current ? KeyOf(current) : ((Guid Id, bool Head)?)null;
             var (rowsWere, linesWere, selectedWas, countsWere, readWas) = (_rows, _lines, _selected, _counts, _readAt);
-            (_rows, _missed, _counts, _cves) = (rows, missed, counts, cves);
-            _olderCount = status == FeedItemStatus.New ? older : 0;
+            (_rows, _missed, _counts, _cves, _polled) = (rows, missed, counts, cves, polled);
+            _olderCount = !sourcesTab && status == FeedItemStatus.New ? older : 0;
             _readAt = reading;
             BuildLines();
             var kept = keep is { } k && SelectItem(k.Id, k.Head);
@@ -1073,6 +1158,11 @@
     [JSInvokable]
     public async Task OnTriageKey(string action)
     {
+        if (_sourcesTab)
+        {
+            StateHasChanged();   // no items there: the letters and arrows have nothing to act on
+            return;
+        }
         if (_promoting is not null)
         {
             // The form has the keys (triage.js sends only Esc while it's open).
@@ -1300,6 +1390,7 @@
         _live?.Dispose();
         _marks?.Dispose();
         _tabMarks?.Dispose();
+        if (_ticking is not null) await _ticking.DisposeAsync();
         try { await JS.InvokeVoidAsync("tideTriage.stop"); }
         catch (JSDisconnectedException) { }
         catch (InvalidOperationException) { }

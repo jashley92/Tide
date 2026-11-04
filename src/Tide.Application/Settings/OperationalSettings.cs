@@ -33,6 +33,7 @@ public static class OperationalSettings
     public const string IntakeEnabled = "Intake:Enabled";
     public const string RetentionDays = "Intake:RetentionDays";
     public const string MinPollMinutes = "Intake:MinPollMinutes";
+    public const string PullNowMinutes = "Intake:PullNowMinutes";
     public const string SkipSponsored = "Intake:SkipSponsored";
     public const string SponsoredMarkers = "Intake:SponsoredMarkers";
     public const string SponsoredExceptions = "Intake:SponsoredExceptions";
@@ -79,6 +80,7 @@ public static class OperationalSettings
         [IntakeEnabled] = Switch,
         [RetentionDays] = Number("Days feed items are kept", 7, 3650),
         [MinPollMinutes] = Number("The shortest poll", 5, 24 * 60),
+        [PullNowMinutes] = Number("The analyst pull-now window", 1, 24 * 60),
         [SkipSponsored] = Switch,
         [SponsoredMarkers] = v => SponsoredFilter.Normalize("The marker list", v, required: true),
         [SponsoredExceptions] = v => SponsoredFilter.Normalize("The exception list", v, required: false),
@@ -164,6 +166,7 @@ public static class OperationalSettings
         s.Use(IntakeEnabled, v => o.Enabled = bool.Parse(v));
         s.Use(RetentionDays, v => o.RetentionDays = int.Parse(v, Invariant));
         s.Use(MinPollMinutes, v => o.MinPollMinutes = int.Parse(v, Invariant));
+        s.Use(PullNowMinutes, v => o.PullNowMinutes = int.Parse(v, Invariant));
         s.Use(SkipSponsored, v => o.SkipSponsored = bool.Parse(v));
         s.Use(SponsoredMarkers, v => o.SponsoredMarkers = v);
         s.Use(SponsoredExceptions, v => o.SponsoredExceptions = v);

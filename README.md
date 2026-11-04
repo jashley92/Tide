@@ -47,6 +47,12 @@ that only look sponsored. Both lists are edited on Sources, with a Test box that
 be skipped and by which marker. A skipped item counts toward the source's "filtered out" figure, which says which
 markers matched.
 
+**Sources tab.** The last tab lists the sources TIDE polls: when each was last pulled ("12 min ago", the exact time on
+hover), when it's next due, and how its last pull went (items added, or the error). Its count is the number of sources
+whose last poll failed, shown as a warning. *Pull now* takes in a source's latest items straight away, once per
+analyst pull-now window (15 minutes by default, set on Sources): a source pulled within it, on schedule or by hand,
+shows when it can be pulled again instead.
+
 **Reading the article here:**
 - **V reads it.** The selected item's article opens in a pane beside the list, fetched once from its page (the
   source's fetch setting and body selector apply; a source set to Never isn't fetched). Inline adverts are taken out:
