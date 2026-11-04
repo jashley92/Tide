@@ -5,9 +5,16 @@ using System.Runtime.Versioning;
 namespace Tide.Web.Security;
 
 /// <summary>
-/// Turns a Windows account name (<c>DOMAIN\sam</c>) into the person's real display name. Windows
+/// What AD says about a person: their display name and their email address (the <c>mail</c> attribute). Either may be
+/// missing. The email is only ever what AD holds; a UPN that looks like an address is never taken for one.
+/// </summary>
+public sealed record DirectoryPerson(string? DisplayName, string? Email);
+
+/// <summary>
+/// Turns a Windows account name (<c>DOMAIN\sam</c>) into the person's real display name and email address. Windows
 /// authentication only gives us <c>DOMAIN\sam</c>; this looks up the AD display name (e.g. "Jordan
-/// Rivera") so the UI never shows the domain or the bare logon name. A name found is cached for the process lifetime;
+/// Rivera") so the UI never shows the domain or the bare logon name, and their <c>mail</c> in the same call, as a Windows
+/// sign-in carries no email claim. A person found is cached for the process lifetime;
 /// every failure path degrades gracefully to the bare username (never the domain), and is tried again after
 /// <see cref="RetryUnresolved"/>, so one domain-controller blip doesn't fix "jdoe" as someone's name until the
 /// app pool recycles (written into the user mirror and into hashed records such as assignments).
@@ -22,8 +29,8 @@ public sealed class WindowsNames
 {
     public static readonly TimeSpan RetryUnresolved = TimeSpan.FromMinutes(5);
 
-    /// <summary>How long a request waits for a display name before showing the bare username. Short: only a
-    /// name is at stake, and it's put right once the lookup lands.</summary>
+    /// <summary>How long a request waits for a display name (and email) before showing the bare username. Short: only a
+    /// name and an address are at stake, and they're put right once the lookup lands.</summary>
     public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(2);
 
     /// <summary>Lookups running at once in one domain, including ones still blocked after their callers gave up.</summary>
@@ -32,22 +39,23 @@ public sealed class WindowsNames
     /// <summary>Lookups in one domain still blocked after timing out, past which it isn't asked again.</summary>
     public const int MaxHung = 2;
 
-    private static readonly WindowsNames Shared = new();
+    /// <summary>The process-wide lookup the sign-in, <see cref="CurrentUser"/> and the user mirror share.</summary>
+    internal static WindowsNames Shared { get; } = new();
 
-    private readonly ConcurrentDictionary<string, (string? Name, DateTimeOffset RetryAfterUtc)> _cache = new(StringComparer.OrdinalIgnoreCase);
-    private readonly BoundedDirectoryCalls<string?> _calls;
+    private readonly ConcurrentDictionary<string, (DirectoryPerson? Person, DateTimeOffset RetryAfterUtc)> _cache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly BoundedDirectoryCalls<DirectoryPerson?> _calls;
     private readonly TimeSpan _timeout;
     private readonly TimeProvider _time;
 
-    /// <param name="query">The display name for a <c>DOMAIN\sam</c>, or null (tests stand in for AD here).</param>
+    /// <param name="query">What AD holds for a <c>DOMAIN\sam</c>, or null (tests stand in for AD here).</param>
     /// <param name="log">Told when a lookup is written off as never returning; the shared, failure-proof
     /// <see cref="DirectoryLog"/> by default (the shared instance outlives any one host).</param>
-    public WindowsNames(Func<string, string?>? query = null, TimeSpan? timeout = null, TimeProvider? time = null, ILogger? log = null)
+    public WindowsNames(Func<string, DirectoryPerson?>? query = null, TimeSpan? timeout = null, TimeProvider? time = null, ILogger? log = null)
     {
-        var lookup = query ?? ResolveDisplayName;
+        var lookup = query ?? ResolvePerson;
         _timeout = timeout ?? Timeout;
         _time = time ?? TimeProvider.System;
-        _calls = new BoundedDirectoryCalls<string?>(
+        _calls = new BoundedDirectoryCalls<DirectoryPerson?>(
             names => names.ToDictionary(n => n, n => Safe(lookup, n), StringComparer.OrdinalIgnoreCase),
             Landed, DomainOf, MaxInFlight, MaxHung, _time, log ?? DirectoryLog.Instance);
     }
@@ -76,6 +84,17 @@ public sealed class WindowsNames
         return Kept(identityName!);
     }
 
+    /// <summary>
+    /// The AD email address (<c>mail</c>) of a <c>DOMAIN\sam</c> account, from the same lookup and cache as its display
+    /// name (one AD call gives both). Null when it isn't a domain account, AD has no <c>mail</c> for it, or AD didn't answer
+    /// in time (then it's asked again, as for the name). Never throws.
+    /// </summary>
+    public async Task<string?> EmailAsync(string? identityName)
+    {
+        if (!Known(identityName, out _)) await _calls.WaitAsync([identityName!], _timeout);
+        return identityName is not null && _cache.TryGetValue(identityName, out var cached) ? cached.Person?.Email : null;
+    }
+
     // The answer without asking AD: for a name that isn't DOMAIN\sam, one kept, or one that failed a moment ago.
     private bool Known(string? identityName, out string? name)
     {
@@ -85,9 +104,9 @@ public sealed class WindowsNames
         if (slash < 0) return true;                         // not DOMAIN\sam (dev auth, UPN, plain name)
         name = identityName[(slash + 1)..];
         if (name.Length == 0) return true;                  // no sam to look up
-        if (_cache.TryGetValue(identityName, out var cached) && (cached.Name is not null || _time.GetUtcNow() < cached.RetryAfterUtc))
+        if (_cache.TryGetValue(identityName, out var cached) && (cached.Person is not null || _time.GetUtcNow() < cached.RetryAfterUtc))
         {
-            name = cached.Name ?? name;
+            name = cached.Person?.DisplayName ?? name;
             return true;
         }
         return false;
@@ -95,33 +114,41 @@ public sealed class WindowsNames
 
     // What's kept once the wait ends; the bare username when the lookup hasn't landed (or found nothing).
     private string Kept(string identityName) =>
-        _cache.TryGetValue(identityName, out var cached) && cached.Name is not null
-            ? cached.Name
+        _cache.TryGetValue(identityName, out var cached) && cached.Person?.DisplayName is { } name
+            ? name
             : identityName[(identityName.IndexOf('\\') + 1)..];
 
-    private void Landed(IReadOnlyList<string> names, IReadOnlyDictionary<string, string?> found)
+    // A person with a name or an address is kept; one with neither (or no answer) is tried again after RetryUnresolved.
+    private void Landed(IReadOnlyList<string> names, IReadOnlyDictionary<string, DirectoryPerson?> found)
     {
         var retry = _time.GetUtcNow() + RetryUnresolved;
         foreach (var n in names)
-            _cache[n] = found.GetValueOrDefault(n) is { } name ? (name, DateTimeOffset.MaxValue) : (null, retry);
+            _cache[n] = found.GetValueOrDefault(n) is { } person ? (person, DateTimeOffset.MaxValue) : (null, retry);
     }
 
     private static string DomainOf(string domainAndSam) => domainAndSam[..domainAndSam.IndexOf('\\')];
 
-    private static string? Safe(Func<string, string?> lookup, string domainAndSam)
+    private static DirectoryPerson? Safe(Func<string, DirectoryPerson?> lookup, string domainAndSam)
     {
-        try { return lookup(domainAndSam) is { } n && !string.IsNullOrWhiteSpace(n) ? n.Trim() : null; }
-        catch { return null; }   // degrade to the bare username, tried again after RetryUnresolved
+        try
+        {
+            if (lookup(domainAndSam) is not { } found) return null;
+            var person = new DirectoryPerson(Trimmed(found.DisplayName), Trimmed(found.Email));
+            return person.DisplayName is null && person.Email is null ? null : person;
+        }
+        catch { return null; }   // degrade to the bare username and no email, tried again after RetryUnresolved
     }
 
-    private static string? ResolveDisplayName(string domainAndSam)
+    private static string? Trimmed(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    private static DirectoryPerson? ResolvePerson(string domainAndSam)
     {
         if (!OperatingSystem.IsWindows()) return null;
         return ResolveOnWindows(domainAndSam);
     }
 
     [SupportedOSPlatform("windows")]
-    private static string? ResolveOnWindows(string domainAndSam)
+    private static DirectoryPerson? ResolveOnWindows(string domainAndSam)
     {
         try
         {
@@ -144,11 +171,12 @@ public sealed class WindowsNames
                 name = string.Join(' ',
                     new[] { user.GivenName, user.Surname }.Where(s => !string.IsNullOrWhiteSpace(s)));
 
-            return string.IsNullOrWhiteSpace(name) ? null : name.Trim();
+            // The mail attribute, read in the same call. The UPN is not an address, however much it may look like one.
+            return new DirectoryPerson(name, user.EmailAddress);
         }
         catch
         {
-            // AD unreachable, insufficient rights, or a non-domain account — degrade to the bare username.
+            // AD unreachable, insufficient rights, or a non-domain account — degrade to the bare username, no email.
             return null;
         }
     }

@@ -8,7 +8,8 @@ namespace Tide.Web.Security;
 
 /// <summary>
 /// For Windows-authenticated users, translates AD group membership into role and permission claims
-/// using the database-backed <see cref="IRoleDirectory"/>. Applied only in Windows auth mode.
+/// using the database-backed <see cref="IRoleDirectory"/>, and adds the person's AD email address (<c>mail</c>), which a
+/// Windows sign-in doesn't carry. Applied only in Windows auth mode.
 /// </summary>
 public sealed class RoleClaimsTransformer : IClaimsTransformation
 {
@@ -21,12 +22,16 @@ public sealed class RoleClaimsTransformer : IClaimsTransformation
     private static ILogger? _log;
     private readonly IRoleDirectory _directory;
     private readonly SidNames? _sids;
+    private readonly WindowsNames _names;
 
     /// <param name="sids">Tests only: stands in for the shared SID lookup.</param>
-    public RoleClaimsTransformer(IRoleDirectory directory, ILogger<RoleClaimsTransformer>? log = null, SidNames? sids = null)
+    /// <param name="names">Tests only: stands in for the shared display-name and email lookup.</param>
+    public RoleClaimsTransformer(IRoleDirectory directory, ILogger<RoleClaimsTransformer>? log = null, SidNames? sids = null,
+        WindowsNames? names = null)
     {
         _directory = directory;
         _sids = sids;
+        _names = names ?? WindowsNames.Shared;
         if (log is not null) _log = log;
         DirectoryLog.Use(log);
     }
@@ -47,11 +52,18 @@ public sealed class RoleClaimsTransformer : IClaimsTransformation
         if (!groups.Complete && !GroupsIncomplete(principal))
             principal.AddIdentity(new ClaimsIdentity { Label = IncompleteLabel });
         var roleNames = _directory.RolesForGroups(groups.Names);
-        if (roleNames.Count == 0)
-            return principal;
 
         // Unauthenticated (no authentication type), so it's never read as the sign-in's groups.
         var identity = new ClaimsIdentity { Label = GrantsLabel };
+
+        // A Windows sign-in has no email; AD's mail is added, from the lookup that names the person (cached, so no
+        // extra AD call). An email the sign-in already carries is never replaced. None found (none in AD, or AD late): none
+        // added, and the user mirror keeps the address it had.
+        if (!principal.HasClaim(c => c.Type == ClaimTypes.Email) && await _names.EmailAsync(principal.Identity.Name) is { } email)
+            identity.AddClaim(new Claim(ClaimTypes.Email, email));
+        if (roleNames.Count == 0 && !identity.Claims.Any())
+            return principal;
+
         foreach (var role in roleNames)
         {
             // From the claims. A WindowsPrincipal's IsInRole translated the name in AD (unbounded, on every

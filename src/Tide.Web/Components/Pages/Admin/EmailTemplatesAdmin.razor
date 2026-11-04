@@ -75,7 +75,7 @@ else
                         <button class="btn btn-outline-secondary btn-sm" @onclick="Reset" disabled="@(_busy || !sel.IsCustomized)">Back to the default</button>
                         <span class="tide-etpl-sep" aria-hidden="true"></span>
                         <button class="btn btn-outline-secondary btn-sm" @onclick="SendTest" disabled="@(_busy || string.IsNullOrWhiteSpace(CurrentUser.Email))"
-                                title="@(string.IsNullOrWhiteSpace(CurrentUser.Email) ? "Your account has no email address." : $"Sends the draft on screen to {CurrentUser.Email}. It isn't saved.")">
+                                title="@(string.IsNullOrWhiteSpace(CurrentUser.Email) ? "Your directory account has no email address (the mail attribute)." : $"Sends the draft on screen to {CurrentUser.Email}. It isn't saved.")">
                             <span class="bi bi-send" aria-hidden="true"></span> Send me a test
                         </button>
                     </div>

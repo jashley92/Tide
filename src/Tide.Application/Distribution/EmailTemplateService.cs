@@ -114,7 +114,7 @@ public sealed class EmailTemplateService(IAppDbContextFactory dbs, ICurrentUser 
         var t = EmailTemplateCatalog.ById(id) ?? throw new KeyNotFoundException("There's no such email template.");
         foreach (var (part, text) in new[] { (EmailPart.Subject, subject), (EmailPart.Heading, heading), (EmailPart.Body, body) })
             if (EmailTemplateCatalog.Problem(t, part, text) is { } problem) throw new ArgumentException(problem);
-        if (string.IsNullOrWhiteSpace(user.Email)) throw new InvalidOperationException("Your account has no email address, so there's nowhere to send a test.");
+        if (string.IsNullOrWhiteSpace(user.Email)) throw new InvalidOperationException("Your directory account has no email address (the mail attribute), so a test can't be sent to you.");
         var preview = Preview(id, subject, heading, body);
         return await email.SendAsync(new OutgoingEmail([user.Email], "[TEST] " + preview.Subject, preview.Html, ToText(preview.Html), []), ct);
     }

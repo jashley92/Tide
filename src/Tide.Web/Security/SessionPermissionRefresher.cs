@@ -38,7 +38,7 @@ public sealed class SessionPermissionRefresher
 
     /// <summary>
     /// The principal with its roles and permissions brought up to date, or <c>null</c> when nothing changed (so the
-    /// caller doesn't churn the auth state). Identity claims (name, SID, UPN, groups) are kept as they were.
+    /// caller doesn't churn the auth state). Identity claims (name, SID, UPN, groups, the email) are kept as they were.
     /// </summary>
     public ClaimsPrincipal? Refresh(ClaimsPrincipal principal) =>
         principal.Identity?.IsAuthenticated != true ? null
@@ -73,6 +73,10 @@ public sealed class SessionPermissionRefresher
                 i.AuthenticationType, i.NameClaimType, i.RoleClaimType))
             .ToList();
         var granted = new ClaimsIdentity { Label = RoleClaimsTransformer.GrantsLabel };
+        // The email address the sign-in added from AD rides on the grants identity; it's kept, not re-derived.
+        foreach (var e in principal.Identities.Where(i => !i.IsAuthenticated && i.Label == RoleClaimsTransformer.GrantsLabel)
+                     .SelectMany(i => i.FindAll(ClaimTypes.Email)))
+            granted.AddClaim(e.Clone());
         foreach (var r in roles) granted.AddClaim(new Claim(ClaimTypes.Role, r));
         foreach (var p in permNames) granted.AddClaim(new Claim(AppClaimTypes.Permission, p));
         identities.Add(granted);

@@ -339,6 +339,36 @@ public class DistributionTests : IDisposable
         (await ctx.Briefs.SingleAsync()).Status.Should().Be(BriefStatus.Presented, "a test copy leaves the brief as it was (its meeting held), not Sent");
     }
 
+    // A Windows sign-in has no email claim; the address comes from AD's mail with the display name.
+    [Fact]
+    public async Task SendTest_ForAWindowsSignIn_GoesToTheAddressInAd()
+    {
+        await Brief();
+        var principal = await new Tide.Web.Security.RoleClaimsTransformer(
+                new OneGroupRoles(DirectoryEmailTests.AnalystSid, AppRole.Analyst), sids: DirectoryEmailTests.NoSidNames(),
+                names: DirectoryEmailTests.Ad("Jordan Rivera", "jordan.rivera@contoso.com"))
+            .TransformAsync(DirectoryEmailTests.WindowsSignIn(groupSids: DirectoryEmailTests.AnalystSid));
+
+        var result = await _db.Distribution(user: DirectoryEmailTests.UserOf(principal)).SendTestAsync(Day, Edition.Team);
+
+        result.Status.Should().Be(EmailSendStatus.Sent);
+        _db.Email.Sent.Single().To.Should().Equal("jordan.rivera@contoso.com");
+    }
+
+    [Fact]
+    public async Task SendTest_WithNoAddressInAd_SaysTheMailAttributeIsMissing()
+    {
+        await Brief();
+        var principal = await new Tide.Web.Security.RoleClaimsTransformer(
+                new OneGroupRoles(DirectoryEmailTests.AnalystSid, AppRole.Analyst), sids: DirectoryEmailTests.NoSidNames(),
+                names: DirectoryEmailTests.Ad("Jordan Rivera", null))
+            .TransformAsync(DirectoryEmailTests.WindowsSignIn(groupSids: DirectoryEmailTests.AnalystSid));
+
+        await FluentActions.Invoking(() => _db.Distribution(user: DirectoryEmailTests.UserOf(principal)).SendTestAsync(Day, Edition.Team))
+            .Should().ThrowAsync<InvalidOperationException>().WithMessage("*no email address (the mail attribute)*");
+        _db.Email.Sent.Should().BeEmpty();
+    }
+
     [Theory]
     [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
     public async Task Readers_SeeOnlySentPublicEditions_AndOnlyTheirImages(string provider)
