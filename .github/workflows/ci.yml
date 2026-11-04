@@ -61,7 +61,7 @@ jobs:
       - name: SonarQube Cloud analysis (begin)
         if: env.SONAR_TOKEN != '' && !startsWith(github.ref, 'refs/tags/')
         run: >-
-          dotnet sonarscanner begin /k:"jashley92_Tide" /o:"jashley92" /d:sonar.token="$SONAR_TOKEN"
+          dotnet sonarscanner begin /k:"jashley92_Tide2" /o:"jashley92" /d:sonar.token="$SONAR_TOKEN"
           /d:sonar.host.url="https://sonarcloud.io"
           /d:sonar.qualitygate.wait=true /d:sonar.qualitygate.timeout=600
           /d:sonar.cs.opencover.reportsPaths="tests/**/TestResults/*/coverage.opencover.xml"
