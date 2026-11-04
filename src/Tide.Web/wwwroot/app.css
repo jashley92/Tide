@@ -1678,3 +1678,57 @@ button.tide-cite[aria-expanded="true"] { border-color: var(--tide-accent); }
 @media (max-width: 900px) { .tide-review-layout { grid-template-columns: minmax(0, 1fr); } }
 .tide-adv-heat .tide-adv-gap { box-shadow: inset 0 0 0 2px var(--tide-threat); }
 @media (forced-colors: active) { .tide-adv-heat span { border: 1px solid CanvasText; } }
+
+/* Many metric groups. The day's numbers form (MetricEntry): a progress bar that stays in view under the page's own
+   sticky header (.top-row, 3.25rem), a bordered panel per group with its count, and finished groups folded to a line. */
+.tide-mentry-bar { position: sticky; top: 3.25rem; z-index: 6; background: var(--tide-surface); border-bottom: 1px solid var(--tide-border);
+    margin: 0 calc(-1 * var(--tide-space-2)) var(--tide-space-3); padding: var(--tide-space-2); }
+.tide-mentry-overall { display: flex; align-items: center; gap: var(--tide-space-3); font-size: var(--tide-text-sm); margin-bottom: var(--tide-space-2); }
+.tide-mentry-meter { flex: 1; max-width: 16rem; height: .4rem; appearance: none; border: 0; border-radius: var(--tide-radius-pill); background: var(--tide-chip-bg); overflow: hidden; }
+.tide-mentry-meter::-webkit-progress-bar { background: var(--tide-chip-bg); border-radius: var(--tide-radius-pill); }
+.tide-mentry-meter::-webkit-progress-value { background: var(--tide-accent); border-radius: var(--tide-radius-pill); }
+.tide-mentry-meter::-moz-progress-bar { background: var(--tide-accent); border-radius: var(--tide-radius-pill); }
+.tide-mentry-chips { display: flex; flex-wrap: wrap; gap: var(--tide-space-1); }
+.tide-mentry-chip { display: inline-flex; align-items: center; gap: var(--tide-space-1); font: inherit; font-size: var(--tide-text-xs); line-height: 1.4;
+    padding: .15rem var(--tide-space-2); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-pill); background: var(--tide-surface); color: var(--tide-text); }
+button.tide-mentry-chip { cursor: pointer; }
+button.tide-mentry-chip:hover { background: var(--tide-surface-2); }
+button.tide-mentry-chip:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
+.tide-mentry-chip-count { font-family: var(--tide-font-data); color: var(--tide-text-muted); }
+.tide-mentry-chip.is-done { background: var(--tide-ok-soft); border-color: transparent; }
+.tide-mentry-chip.is-done .bi { color: var(--tide-ok); }
+.tide-mentry-chip.is-current { border-color: var(--tide-accent); box-shadow: inset 0 0 0 1px var(--tide-accent); background: var(--tide-accent-soft); }
+.tide-mentry-group { border: 1px solid var(--tide-border); border-radius: var(--tide-radius-lg); padding: var(--tide-space-2) var(--tide-space-3); margin-bottom: var(--tide-space-3); }
+.tide-mentry-group.is-current { border-color: var(--tide-accent); }
+.tide-mentry-group.is-folded { background: var(--tide-surface-2); }
+.tide-mentry-group-head { display: flex; align-items: center; gap: var(--tide-space-2); font-size: var(--tide-text-base); font-weight: var(--tide-weight-semibold);
+    margin: 0 0 var(--tide-space-1); padding-bottom: var(--tide-space-1); border-bottom: 1px solid var(--tide-border); }
+.tide-mentry-group.is-folded .tide-mentry-group-head { border-bottom: 0; padding-bottom: 0; }
+.tide-mentry-group-count { margin-left: auto; font-size: var(--tide-text-xs); font-weight: var(--tide-weight-medium); color: var(--tide-text-muted); white-space: nowrap; }
+.tide-mentry-group-count.is-done { color: var(--tide-ok); }
+.tide-mentry-folded { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--tide-space-1) var(--tide-space-4); font-size: var(--tide-text-sm); }
+.tide-mentry-folded-name { color: var(--tide-text-muted); }
+.tide-mentry-group .tide-metric-value, .tide-mentry-group .tide-metric-note { scroll-margin-top: 12rem; }   /* clear of the header, the bar and the group heading */
+@media (forced-colors: active) { .tide-mentry-chip.is-current, .tide-mentry-group.is-current { outline: 2px solid Highlight; } }
+
+/* The metric history table with many metrics (MetricsHistory): groups over their columns, a line between groups, and
+   the headings and the Day column kept in view while the table scrolls inside its own box. */
+.tide-mh-filter { display: flex; flex-wrap: wrap; gap: var(--tide-space-1); margin-bottom: var(--tide-space-3); }
+.tide-mh-filter .tide-chip { margin: 0; font: inherit; font-size: var(--tide-text-sm); }
+.tide-mh-scroll { overflow: auto; max-height: calc(100vh - 10rem); position: relative; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-md); }
+.tide-mh-scroll:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
+.tide-mh-scroll .tide-mh-table { display: table; width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; }
+.tide-mh-table thead th { position: sticky; background: var(--tide-surface); z-index: 2; }
+.tide-mh-table .tide-mh-groups th { top: 0; height: 2rem; box-sizing: border-box; }
+.tide-mh-table .tide-mh-metrics th { top: 2rem; }
+.tide-mh-table th.tide-mh-group { text-align: left; color: var(--tide-text); border-left: 2px solid var(--tide-border-strong); }
+.tide-mh-table th.tide-mh-group > span { position: sticky; left: 7.5rem; }   /* a wide group's name stays beside the Day column */
+.tide-mh-table .tide-mh-day { position: sticky; left: 0; min-width: 7rem; background: var(--tide-surface); z-index: 1; border-right: 1px solid var(--tide-border-strong); text-align: left; }
+.tide-mh-table thead .tide-mh-day { z-index: 3; top: 0; vertical-align: bottom; }
+.tide-mh-table tbody th.tide-mh-day { font-weight: var(--tide-weight-regular); font-size: inherit; text-transform: none; letter-spacing: normal; color: inherit; }
+.tide-mh-table .tide-mh-gstart { border-left: 2px solid var(--tide-border-strong); }
+.tide-mh-note { font-size: .7rem; color: var(--tide-text-muted); margin-left: var(--tide-space-1); vertical-align: 1px; }
+
+/* A metric's daily note in the edition's numbers (EditionNumbers): a short muted line under the value, two lines at most. */
+.tide-ed-numbers-table .tide-ed-numbers-note { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-clamp: 2; overflow: hidden;
+    white-space: normal; max-width: 16rem; margin-left: auto; font-size: var(--tide-text-xs); font-weight: var(--tide-weight-regular); color: var(--tide-text-muted); text-align: right; }
