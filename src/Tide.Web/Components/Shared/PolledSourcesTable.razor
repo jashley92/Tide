@@ -1,0 +1,80 @@
+@* Triage's Sources tab: each polled source, when it was last pulled (on schedule or by hand), when it's next due, how the
+   last pull went, and Pull now. A source pulled within the pull-now window shows when it can be pulled again, on a
+   disabled button, rather than failing when pressed. *@
+@inject OrgClock Clock
+
+@if (Sources.Count == 0)
+{
+    <EmptyState Icon="bi-rss" Title="No sources are polled">An administrator adds sources, and turns them on, under Administration › Sources.</EmptyState>
+}
+else
+{
+    <p class="small tide-muted px-3 pt-3 mb-1">
+        The sources TIDE polls, paused ones left out. Pull one now to take in its latest items; each can be pulled once in
+        @PullTimes.Wait(Window) of its last pull, scheduled or by hand.@(PollingOn ? "" : " Scheduled polling is off, so sources are only pulled by hand.")
+    </p>
+    <table class="tide-table tide-pull-table">
+        <thead><tr><th scope="col">Source</th><th scope="col">Last pulled</th><th scope="col">Next due</th><th scope="col">Last result</th><th scope="col"><span class="visually-hidden">Pull now</span></th></tr></thead>
+        <tbody>
+            @foreach (var s in Sources)
+            {
+                <tr @key="s.Id">
+                    <td class="fw-semibold">@s.Name@if (s.Kind == SourceKind.CisaKev) { <span class="tide-muted fw-normal small"> · KEV catalog</span> }</td>
+                    <td class="text-nowrap">
+                        @if (s.LastPolledAtUtc is { } at) { <abbr title="@Ui.When(Clock, at)">@PullTimes.Ago(Now - at)</abbr> }
+                        else { <span class="tide-muted">Never</span> }
+                    </td>
+                    <td class="text-nowrap">
+                        @if (!PollingOn) { <span class="tide-muted">Polling is off</span> }
+                        else if (s.NextDueUtc is { } due && due > Now) { <abbr title="@Ui.When(Clock, due)">in @PullTimes.Wait(due - Now)</abbr> }
+                        else { <span>Due now</span> }
+                    </td>
+                    <td>
+                        @if (s.LastError is { } error)
+                        {
+                            <div class="tide-pull-error" title="@error"><span class="bi bi-exclamation-triangle-fill" aria-hidden="true"></span> @Ui.Clip(error, 90)</div>
+                        }
+                        else if (s.LastNewItems is { } n) { <span>@(n == 0 ? "OK, no new items" : n == 1 ? "1 new item" : $"{n} new items")</span> }
+                        else if (s.LastPolledAtUtc is null) { <span class="tide-muted">Not pulled yet</span> }
+                        else { <span>OK</span> }
+                    </td>
+                    <td class="text-end text-nowrap">
+                        @if (s.Pulling || Pulling == s.Id)
+                        {
+                            <button type="button" class="btn btn-outline-secondary btn-sm" disabled><span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Pulling…</button>
+                        }
+                        else if (!s.Pullable(Now) && s.PullableAtUtc is { } pullable)
+                        {
+                            var why = PullTimes.TooSoon(s.LastPolledAtUtc!.Value, pullable, Now);
+                            <button type="button" class="btn btn-outline-secondary btn-sm" disabled title="@why" aria-label="@($"Pull {s.Name} now. {why}")">
+                                <span class="bi bi-hourglass-split" aria-hidden="true"></span> Again in @PullTimes.Wait(pullable - Now)</button>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(Pulling is not null)" aria-label="@($"Pull {s.Name} now")"
+                                    @onclick="() => OnPull.InvokeAsync(s.Id)"><span class="bi bi-arrow-repeat" aria-hidden="true"></span> Pull now</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<PolledSource> Sources { get; set; } = [];
+
+    /// <summary>The time the page is drawn at, for "12 min ago" and the pull-now window.</summary>
+    [Parameter, EditorRequired] public DateTimeOffset Now { get; set; }
+
+    /// <summary>Whether scheduled polling is on (otherwise nothing is due).</summary>
+    [Parameter] public bool PollingOn { get; set; }
+
+    /// <summary>The analyst pull-now window.</summary>
+    [Parameter] public TimeSpan Window { get; set; }
+
+    /// <summary>The source this page is pulling now, if any: every Pull now waits for it.</summary>
+    [Parameter] public Guid? Pulling { get; set; }
+
+    [Parameter] public EventCallback<Guid> OnPull { get; set; }
+}

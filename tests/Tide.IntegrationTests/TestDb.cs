@@ -480,7 +480,10 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public IntakeService Intake(IntakeOptions? options = null, TimeProvider? time = null) =>
         new(this, User, Http, Articles(), new StaticOptionsMonitor<IntakeOptions>(options ?? new IntakeOptions { Enabled = true, MinPollMinutes = 5 }),
-            time ?? TimeProvider.System);
+            time ?? TimeProvider.System, polls: Polls);
+
+    /// <summary>The sources being polled, shared by every <see cref="Intake"/> as the app's singleton is.</summary>
+    public SourcePollGuard Polls { get; } = new();
 
     public Tide.Application.Api.ApiTokenService ApiTokens(TimeProvider? time = null) => new(this, User, time ?? TimeProvider.System);
 

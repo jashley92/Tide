@@ -49,6 +49,7 @@ public static class DependencyInjection
         services.AddScoped<ConfigBundleService>();
         services.AddSingleton<CveRunLog>();
         services.AddSingleton<SponsoredLog>();
+        services.AddSingleton<SourcePollGuard>();
         services.AddSingleton(TimeProvider.System);
         // The operational settings saved in Administration, laid over the server's values (OperationalSettings).
         services.AddSingleton<SavedSettings>();

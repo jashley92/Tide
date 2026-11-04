@@ -114,8 +114,11 @@ public sealed record InboxRow(FeedItem Item, Source Source, FeedItem? Similar, I
 /// articles. Old items nobody kept are pruned.
 /// </summary>
 public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, IOutboundHttp http, ArticleService articles,
-    IOptionsMonitor<IntakeOptions> options, TimeProvider time, SponsoredLog? sponsoredLog = null)
+    IOptionsMonitor<IntakeOptions> options, TimeProvider time, SponsoredLog? sponsoredLog = null, SourcePollGuard? polls = null)
 {
+    // The app's one guard (a singleton); a service made without one guards only its own polls.
+    private readonly SourcePollGuard _polls = polls ?? new SourcePollGuard();
+
     /// <summary>How far back a new item is compared with others for a similar title.</summary>
     public static readonly TimeSpan SimilarWindow = TimeSpan.FromDays(7);
 
@@ -236,16 +239,72 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         return added;
     }
 
-    /// <summary>An administrator polls a source now (enabled or not, and whether or not intake is switched on).</summary>
+    private const string NoFeed = "Items come to this source through the API: there's no feed to poll.";
+    private const string Busy = "This source is being pulled now. Its new items arrive in a moment.";
+
+    /// <summary>An administrator polls a source now (enabled or not, and whether or not intake is switched on), on
+    /// Administration › Sources: not held to the analyst pull-now window. Refused only while it's being polled.</summary>
     public async Task<PollResult> PollNowAsync(Guid id, CancellationToken ct = default)
     {
         RequireAdmin();
         // A source the API proposes to has no feed: "polling" its placeholder address only recorded a failure on it.
         await using (var db = await dbs.CreateAsync(ct))
             if (await db.Sources.AsNoTracking().AnyAsync(s => s.Id == id && s.Kind == SourceKind.Api, ct))
-                throw new InvalidOperationException("Items come to this source through the API: there's no feed to poll.");
-        return await PollAsync(id, ct);
+                throw new InvalidOperationException(NoFeed);
+        return await ExclusiveAsync(id, () => PollAsync(id, ct)) ?? throw new InvalidOperationException(Busy);
     }
+
+    /// <summary>The analysts' pull-now window (<see cref="IntakeOptions.PullNowMinutes"/>, at least a minute): a source
+    /// pulled within it, on schedule or by hand, can't be pulled from Triage again until it's passed.</summary>
+    public TimeSpan PullWindow => TimeSpan.FromMinutes(Math.Max(1, options.CurrentValue.PullNowMinutes));
+
+    /// <summary>
+    /// The sources that are polled, for Triage's Sources tab: enabled feeds and the KEV catalog, by name. Paused and
+    /// retired sources aren't polled and aren't listed, nor are those the API proposes to (they have no feed).
+    /// </summary>
+    public async Task<IReadOnlyList<PolledSource>> PolledSourcesAsync(CancellationToken ct = default)
+    {
+        RequireTriage();
+        await using var db = await dbs.CreateAsync(ct);
+        var sources = await Polled(db.Sources.AsNoTracking()).OrderBy(s => s.Name).ToListAsync(ct);
+        var window = PullWindow;
+        return [.. sources.Select(s => new PolledSource(s.Id, s.Name, s.Kind, s.LastPolledAtUtc, s.LastPolledAtUtc + Interval(s),
+            s.LastSuccessAtUtc is null ? null : s.LastNewItems, s.LastError, s.LastPolledAtUtc + window, _polls.IsRunning(s.Id)))];
+    }
+
+    /// <summary>
+    /// An analyst pulls a polled source now, from Triage (whether or not intake is switched on). Refused within the
+    /// pull-now window of its last pull, scheduled or forced, for everyone (administrators too: theirs without the window
+    /// is <see cref="PollNowAsync"/>), and while it's being pulled, so two people pressing at once make one pull.
+    /// </summary>
+    public async Task<PollResult> PullNowAsync(Guid id, CancellationToken ct = default)
+    {
+        RequireTriage();
+        return await ExclusiveAsync(id, async () =>
+        {
+            // Read once the source is ours: a pull that finished a moment ago has moved its last pull.
+            Source source;
+            await using (var db = await dbs.CreateAsync(ct))
+                source = await db.Sources.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct) ?? throw new KeyNotFoundException("That source no longer exists.");
+            if (source.Kind == SourceKind.Api) throw new InvalidOperationException(NoFeed);
+            if (!source.Enabled || source.IsRetired) throw new InvalidOperationException("That source is paused, so it isn't pulled. An administrator turns it on under Administration › Sources.");
+            var now = time.GetUtcNow();
+            if (source.LastPolledAtUtc + PullWindow is { } pullable && now < pullable)
+                throw new PullTooSoonException(PullTimes.TooSoon(source.LastPolledAtUtc!.Value, pullable, now), pullable);
+            return await PollAsync(id, ct);
+        }) ?? throw new InvalidOperationException(Busy);
+    }
+
+    // Runs a poll of the source unless it's being polled already; null when it was.
+    private async Task<PollResult?> ExclusiveAsync(Guid sourceId, Func<Task<PollResult>> poll)
+    {
+        if (!_polls.TryStart(sourceId)) return null;
+        try { return await poll(); }
+        finally { _polls.Finished(sourceId); }
+    }
+
+    private static IQueryable<Source> Polled(IQueryable<Source> sources) =>
+        sources.Where(s => s.Enabled && !s.IsRetired && s.Kind != SourceKind.Api);
 
     // --- polling ----------------------------------------------------------------------------------------------
 
@@ -257,11 +316,12 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         List<Guid> due;
         await using (var db = await dbs.CreateAsync(ct))
         {
-            var sources = await db.Sources.AsNoTracking().Where(s => s.Enabled && !s.IsRetired && s.Kind != SourceKind.Api).ToListAsync(ct);
+            var sources = await Polled(db.Sources.AsNoTracking()).ToListAsync(ct);
             due = sources.Where(s => s.LastPolledAtUtc is null || now - s.LastPolledAtUtc >= Interval(s)).Select(s => s.Id).ToList();
         }
         var added = 0;
-        foreach (var id in due) added += (await PollAsync(id, ct)).New;
+        // One being pulled by hand at this moment is left to that pull.
+        foreach (var id in due) added += (await ExclusiveAsync(id, () => PollAsync(id, ct)))?.New ?? 0;
         return added;
     }
 
