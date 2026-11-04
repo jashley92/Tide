@@ -14,7 +14,7 @@
 #
 # Usage: tools/ci/check-sonar-quality-gate.sh [<sha>]      (default: $GITHUB_SHA, else HEAD)
 # Env:   SONAR_TOKEN (absent: skipped with a warning, as on forks), SONAR_HOST_URL (https://sonarcloud.io),
-#        SONAR_PROJECT_KEY (jashley92_Tide), SONAR_BRANCH (main), SONAR_WAIT_SECONDS (900), SONAR_POLL_SECONDS (30)
+#        SONAR_PROJECT_KEY (jashley92_Tide2), SONAR_BRANCH (main), SONAR_WAIT_SECONDS (900), SONAR_POLL_SECONDS (30)
 # Needs: curl, jq, git (for the commit date; without it every page is searched).
 set -euo pipefail
 shopt -s inherit_errexit   # a failing jq or api call inside $(...) stops the check too
@@ -23,7 +23,7 @@ sha="${1:-${GITHUB_SHA:-$(git rev-parse HEAD)}}"
 sha="$(git rev-parse --verify --quiet "$sha^{commit}" 2>/dev/null || echo "$sha")"   # a tag or short SHA, run locally
 host="${SONAR_HOST_URL:-https://sonarcloud.io}"
 host="${host%/}"
-project="${SONAR_PROJECT_KEY:-jashley92_Tide}"
+project="${SONAR_PROJECT_KEY:-jashley92_Tide2}"
 branch="${SONAR_BRANCH:-main}"
 wait_seconds="${SONAR_WAIT_SECONDS:-900}"
 poll_seconds="${SONAR_POLL_SECONDS:-30}"
