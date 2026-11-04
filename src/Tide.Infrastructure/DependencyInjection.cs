@@ -1,0 +1,64 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Tide.Application.Abstractions;
+using Tide.Application.Assist;
+using Tide.Application.Distribution;
+using Tide.Application.Intake;
+using Tide.Infrastructure.Assist;
+using Tide.Infrastructure.Notifications;
+using Tide.Infrastructure.Persistence;
+using Tide.Infrastructure.Security;
+using Tide.Infrastructure.Storage;
+
+namespace Tide.Infrastructure;
+
+public static class DependencyInjection
+{
+    /// <summary>Registers persistence, the role and user directories, file storage and email.</summary>
+    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration config)
+    {
+        services.Configure<RoleMappingOptions>(config.GetSection("RoleMapping"));
+
+        var provider = config.GetValue<string>("Database:Provider") ?? "Sqlite";
+        var connectionString = config.GetConnectionString("Default");
+
+        // A context FACTORY, not a shared context: Blazor Server keeps one DI scope for a whole circuit, so a held
+        // context would be used by overlapping event handlers. Services take IAppDbContextFactory and make a short-lived
+        // context per operation. The factory is scoped so each context gets the scope's audit interceptor (which reads
+        // the current user).
+        void ConfigureProvider(IServiceProvider sp, DbContextOptionsBuilder options)
+        {
+            if (provider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
+                options.UseSqlServer(
+                    connectionString ?? throw new InvalidOperationException("ConnectionStrings:Default is required for SqlServer."),
+                    // Production migrations live in their own assembly, so startup applies the SQL Server set.
+                    sql => sql.MigrationsAssembly(AppDbContextFactory.SqlServerMigrationsAssembly).EnableRetryOnFailure());
+            else
+                options.UseSqlite(connectionString ?? "Data Source=App_Data/tide.db");
+            options.AddInterceptors(sp.GetRequiredService<AuditInterceptor>(), sp.GetRequiredService<ChangeInterceptor>());
+        }
+
+        services.AddScoped<AuditInterceptor>();
+        // What a save changed reaches colleagues' open pages (the feed is one per app; the origin one per circuit).
+        services.AddSingleton<ChangeFeed>();
+        services.AddScoped<ChangeOrigin>();
+        services.AddScoped<ChangeInterceptor>();
+        services.AddDbContextFactory<AppDbContext>(ConfigureProvider, lifetime: ServiceLifetime.Scoped);
+        services.AddScoped<IAppDbContextFactory, AppDbContextFactoryAdapter>();
+        // For the few Infrastructure pieces that make their own scope (the directories, start-up).
+        services.AddScoped(sp => sp.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContext());
+
+        services.AddSingleton<IRoleDirectory, RoleDirectory>();
+        services.AddSingleton<IUserDirectory, UserDirectory>();
+        services.AddSingleton<IFileStore, DiskFileStore>();
+        services.AddSingleton<MetricDropFolder>();
+        services.Configure<EmailOptions>(config.GetSection("Email"));
+        services.AddSingleton<OutboundCircuit>();
+        services.AddSingleton<IEmailSender, EmailSender>();
+        services.AddSingleton<IOutboundHttp, OutboundHttp>();
+        services.AddSingleton<IThreatIntelAssistant, AzureOpenAiAssistant>();
+        services.AddScoped<DatabaseInitializer>();
+        return services;
+    }
+}

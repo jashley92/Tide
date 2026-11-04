@@ -1,0 +1,222 @@
+@page "/admin/organization"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@using Tide.Application.Settings
+@inject OperationalSettingsService Settings
+@inject OrgClock Clock
+@inject HolidayService Holidays
+@inject ToastService Toasts
+
+<PageTitle>Organization settings · TIDE</PageTitle>
+
+@* The time zone, meeting time and team name, saved in the app over the server's Org values (the installer's answers). *@
+<div class="tide-page-head">
+    <div>
+        <h1 class="tide-admin-title">Organization settings</h1>
+        <div class="tide-sub">Until saved here, the server's value (<code>Org</code> in <code>appsettings.Production.json</code>, from the installer) is used.</div>
+    </div>
+</div>
+
+<section class="tide-card" aria-labelledby="org-title">
+    <h2 id="org-title"><span class="bi bi-building" aria-hidden="true"></span> Organization</h2>
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label class="tide-field-label" for="org-name">Team name</label>
+            <input id="org-name" class="form-control form-control-sm" maxlength="@OperationalSettings.MaxTeamName" @bind="_teamName" aria-describedby="org-name-help" />
+            <div class="form-text" id="org-name-help">Shown in the header, on slides and in the brief's email.</div>
+        </div>
+        <div class="col-md-6">
+            <label class="tide-field-label" for="org-zone">Time zone</label>
+            <select id="org-zone" class="form-select form-select-sm" @bind="Zone" aria-describedby="org-zone-help">
+                @foreach (var (id, label) in _zones)
+                {
+                    <option value="@id">@label</option>
+                }
+            </select>
+            <div class="form-text" id="org-zone-help">Used for all dates and times in TIDE.</div>
+        </div>
+        <div class="col-md-6">
+            <label class="tide-field-label" for="org-meeting">The brief meets at</label>
+            <input id="org-meeting" type="time" class="tide-maxw-xs form-control form-control-sm" @bind="_meeting" @bind:format="HH:mm" aria-describedby="org-meeting-help" />
+            <div class="form-text" id="org-meeting-help">The brief-not-ready nudge stops at this time.</div>
+        </div>
+    </div>
+    <button type="button" class="btn btn-primary btn-sm mt-3" disabled="@_busy" @onclick="Save">Save</button>
+</section>
+
+@* EP-82: the days the team doesn't work besides weekends. *@
+<section class="tide-card" aria-labelledby="holidays-title">
+    <h2 id="holidays-title"><span class="bi bi-calendar-x" aria-hidden="true"></span> Holidays</h2>
+    <p class="small tide-muted">Days off besides weekends: no brief is expected, no reminders are sent, and they don't count towards action deadlines.</p>
+    @if (_shown.Count == 0)
+    {
+        <p class="small mb-2">No holidays from @_thisYear on. Add them below, or import your organization's calendar.</p>
+    }
+    else
+    {
+        <table class="tide-table mb-2" aria-label="Holidays">
+            <thead><tr><th scope="col">Date</th><th scope="col">Holiday</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
+            <tbody>
+                @foreach (var h in _shown)
+                {
+                    <tr @key="h.Date">
+                        <td class="text-nowrap tide-data">@h.Date.ToString("ddd MMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture)</td>
+                        <td>@h.Name</td>
+                        <td class="text-end"><button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" aria-label="@($"Remove {h.Name}")" @onclick="() => Remove(h)">Remove</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+    @if (_earlier > 0) { <p class="small tide-muted">@_earlier earlier holiday@(_earlier == 1 ? "" : "s") kept, for the rota and deadlines of those days.</p> }
+    <div class="row g-2 align-items-end">
+        <div class="col-sm-4 col-md-3">
+            <label class="tide-field-label" for="holiday-date">Date</label>
+            <input id="holiday-date" type="date" class="form-control form-control-sm" @bind="_newDate" />
+        </div>
+        <div class="col-sm-8 col-md-5">
+            <label class="tide-field-label" for="holiday-name">Name</label>
+            <input id="holiday-name" class="form-control form-control-sm" maxlength="@Holiday.MaxName" placeholder="Thanksgiving" @bind="_newName" />
+        </div>
+        <div class="col-md-4">
+            <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" @onclick="Add">Add holiday</button>
+        </div>
+    </div>
+    <div class="d-flex flex-wrap gap-3 align-items-center mt-3">
+        <div>
+            <label class="tide-field-label" for="holiday-ics">Import a calendar (.ics)</label>
+            <InputFile id="holiday-ics" OnChange="Import" accept=".ics,text/calendar" disabled="@_busy" class="form-control form-control-sm" />
+        </div>
+        @if (_copyFrom is { } year)
+        {
+            <button type="button" class="btn btn-outline-secondary btn-sm align-self-end" disabled="@_busy" @onclick="() => Copy(year)">Copy @year to @(year + 1)</button>
+        }
+    </div>
+    <div class="form-text">A calendar file from Outlook or your government's holiday list adds each all-day event. Copying a year keeps each date
+        and name; check the ones that move, such as the 4th Thursday of November.</div>
+    @if (_skipped.Count > 0)
+    {
+        <div class="alert alert-warning small mt-2 mb-0" role="status">
+            <strong>Not added:</strong>
+            <ul class="mb-0">@foreach (var s in _skipped) { <li>@s</li> }</ul>
+        </div>
+    }
+</section>
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    private ConfirmDialog _confirm = default!;
+    private IReadOnlyList<(string Id, string Label)> _zones = [];
+    private string _teamName = "";
+
+    // The zone chosen (internal so a test can choose one).
+    internal string Zone { get; set; } = "";
+    private TimeOnly _meeting;
+    private bool _busy;
+
+    // The holidays from this year on, how many are older, and the latest year to copy to the next (when that's empty).
+    private IReadOnlyList<Holiday> _shown = [];
+    private int _earlier;
+    private int _thisYear;
+    private int? _copyFrom;
+    private DateOnly _newDate;
+    private string _newName = "";
+    private IReadOnlyList<string> _skipped = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        Load();
+        _newDate = Clock.Today;
+        await LoadHolidays();
+    }
+
+    private async Task LoadHolidays()
+    {
+        var all = await Holidays.ListAsync();
+        _thisYear = Clock.Today.Year;
+        _shown = all.Where(h => h.Date.Year >= _thisYear).ToList();
+        _earlier = all.Count - _shown.Count;
+        var latest = all.Count == 0 ? (int?)null : all.Max(h => h.Date.Year);
+        _copyFrom = latest is { } y && y >= _thisYear - 1 ? y : null;
+    }
+
+    internal Task Add() => Change(async () =>
+    {
+        var added = await Holidays.AddAsync(_newDate, _newName);
+        _newName = "";
+        _skipped = [];
+        Toasts.Show($"{added.Name} added: {Ui.Day(added.Date)} is a day off.");
+    });
+
+    private Task Remove(Holiday h) => Change(async () =>
+    {
+        await Holidays.RemoveAsync(h.Date);
+        Toasts.Show($"{h.Name} removed: {Ui.Day(h.Date)} is a working day again.");
+    });
+
+    private Task Import(InputFileChangeEventArgs e) => Change(async () =>
+    {
+        if (e.File.Size > HolidayService.MaxCalendarBytes) throw new ArgumentException(HolidayService.TooBig);
+        await using var stream = e.File.OpenReadStream(maxAllowedSize: HolidayService.MaxCalendarBytes);
+        using var copy = new MemoryStream();
+        await stream.CopyToAsync(copy);
+        Report(await Holidays.ImportAsync(copy.ToArray()), $"from {e.File.Name}");
+    });
+
+    private Task Copy(int year) => Change(async () => Report(await Holidays.CopyYearAsync(year), $"from {year}; check the dates that move"));
+
+    private void Report(HolidayImport result, string from)
+    {
+        _skipped = result.Skipped;
+        Toasts.Show(result.Added.Count == 0 ? "No holidays added." : $"{result.Added.Count} holiday{(result.Added.Count == 1 ? "" : "s")} added {from}.");
+    }
+
+    private async Task Change(Func<Task> change)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await change();
+            await LoadHolidays();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    private void Load()
+    {
+        _teamName = Clock.TeamName;
+        Zone = Clock.Zone.Id;
+        _meeting = Clock.MeetingTime;
+        _zones = OperationalSettings.TimeZoneChoices(Zone);
+        // A Windows id from the server (Eastern Standard Time) is shown as its IANA one, which is what's saved.
+        if (!_zones.Any(z => z.Id == Zone) && TimeZoneInfo.TryConvertWindowsIdToIanaId(Zone, out var iana)) Zone = iana;
+    }
+
+    // Changing the time zone asks first: brief dates and reminder times follow it.
+    internal async Task Save()
+    {
+        if (_busy) return;
+        var zoneChanged = !string.Equals(Zone, Clock.Zone.Id, StringComparison.Ordinal)
+                          && !(TimeZoneInfo.TryConvertWindowsIdToIanaId(Clock.Zone.Id, out var was) && was == Zone);
+        if (zoneChanged && !await _confirm.Ask($"Change the time zone to {Zone}?",
+                "Brief dates, the meeting time and reminder times follow the time zone: \"today's\" brief, the reminder and digest " +
+                "times and the brief-not-ready nudge all move to it at once, and times already shown are shown in it.", "Change time zone")) return;
+        _busy = true;
+        try
+        {
+            await Settings.SaveAsync(new Dictionary<string, string?>
+            {
+                [OperationalSettings.TeamName] = _teamName,
+                [OperationalSettings.TimeZone] = Zone,
+                [OperationalSettings.MeetingTime] = _meeting.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture),
+            });
+            Load();
+            Toasts.Show("Saved.");
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+}

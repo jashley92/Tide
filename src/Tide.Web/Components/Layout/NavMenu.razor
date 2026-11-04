@@ -1,0 +1,119 @@
+@implements IDisposable
+@inject NavigationManager Nav
+@inject ICurrentUser CurrentUser
+@inject IntakeService Intake
+@inject ActionService Actions
+@inject IJSRuntime JS
+@using Microsoft.Extensions.Logging
+@inject ILogger<NavMenu> Log
+
+<div class="tide-side-head">
+    <a class="tide-brand" href="">
+        <span class="tide-brand-mark" aria-hidden="true">T</span>
+        <span class="tide-brand-text">
+            <span class="tide-brand-name">TIDE</span>
+            <span class="tide-brand-sub">Threat Intelligence Daily Exchange</span>
+        </span>
+    </a>
+    @* Collapse to icons and back, at the top of the sidebar (desktop only; on a phone the menu button
+       below rules). Wired CSP-safely in theme.js (tideNav.toggle), which keeps aria-expanded and the tooltip in step; the state is
+       remembered per browser and put on <html> before paint by theme-init.js. *@
+    <button type="button" id="nav-collapse-toggle" class="tide-side-collapse" aria-controls="tide-nav-links" aria-expanded="true"
+            title="Collapse the sidebar" aria-label="Collapse or expand the sidebar"><span class="bi bi-chevron-double-left" aria-hidden="true"></span></button>
+    @* On a phone the sidebar is a bar across the top and this opens the links. Wired CSP-safely in
+       theme.js (tideNav.setOpen), which keeps aria-expanded in step. *@
+    <button type="button" id="nav-menu-toggle" class="tide-menu-btn" aria-controls="tide-nav-links" aria-expanded="false"
+            aria-label="Menu"><span class="bi bi-list" aria-hidden="true"></span></button>
+</div>
+
+<nav aria-label="Main" id="tide-nav-links">
+    <ul class="tide-nav">
+        @* Every page this person may open, under small group labels, the daily ones first. NavPages says
+           who sees each, and the command palette reads it too. A label is text, not a control: every link is shown.
+           Collapsed to icons, a label is a thin line between its group and the one above. *@
+        @foreach (var group in NavPages.GroupsFor(CurrentUser))
+        {
+            var id = "nav-group-" + group.First().Key;
+            <li class="tide-nav-group">
+                <span class="tide-nav-group-label" id="@id">@group.Key</span>
+                <ul aria-labelledby="@id">
+                    @foreach (var page in group)
+                    {
+                        <li>@Link(page)</li>
+                    }
+                </ul>
+            </li>
+        }
+    </ul>
+</nav>
+
+@code {
+    private int _newItems;
+    private int _myOverdue;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+        await LoadCountsAsync();
+    }
+
+    // Brings the collapse button's aria-expanded in step: this render replaced the prerendered one theme.js had set.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try { await JS.InvokeVoidAsync("tideNav.start"); }
+        catch (JSDisconnectedException) { /* the circuit has gone */ }
+    }
+
+    // The counts are two COUNT queries, run when the menu starts and on each navigation (so after triaging or closing
+    // actions, the next page shows the new numbers), never on a re-render.
+    // The menu sits outside the page's error boundary, so a failed count keeps the last one rather than ending the
+    // session: the counts are a hint, and the next navigation reads them again.
+    // A failure is logged once a streak (the first of a run of failures), so a lasting fault is seen without a line per
+    // navigation.
+    private bool _countsFailing;
+
+    internal async Task LoadCountsAsync()
+    {
+        try
+        {
+            _newItems = CurrentUser.Has(Permission.WriteArticles) ? await Intake.NewCountAsync() : 0;
+            _myOverdue = CurrentUser.Has(Permission.WorkActions) ? await Actions.MyOverdueCountAsync() : 0;
+            _countsFailing = false;
+        }
+        catch (Exception ex)
+        {
+            // The counts stay as they were.
+            if (!_countsFailing) Log.LogWarning(ex, "The sidebar's counts couldn't be read; they show their last values until a read works.");
+            _countsFailing = true;
+        }
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => _ = InvokeAsync(async () =>
+    {
+        await LoadCountsAsync();
+        StateHasChanged();
+    });
+
+    /// <summary>A link's name with its count, as a screen reader hears it ("Triage, 4 new"); the plain name at zero.</summary>
+    public static string CountTitle(string name, int count, string what) => count > 0 ? $"{name}, {count} {what}" : name;
+
+    // A link with its icon. Triage and Actions carry their counts, in the name a screen reader hears too.
+    private RenderFragment Link(NavPage link)
+    {
+        var (count, what, alert) = link.Key switch
+        {
+            NavPages.Triage => (_newItems, "new", false),
+            NavPages.Actions => (_myOverdue, "overdue for you", true),
+            _ => (0, "", false),
+        };
+        var name = CountTitle(link.Label, count, what);
+        return @<NavLink href="@link.Href" Match="link.Match" title="@name" aria-label="@(what.Length > 0 ? name : null)"><span class="bi @link.Icon" aria-hidden="true"></span><span class="tide-nav-label">@link.Label</span>@Count(count, alert)</NavLink>;
+    }
+
+    private static RenderFragment? Count(int count, bool alert) => count > 0
+        ? @<span class="@(alert ? "tide-nav-count is-alert" : "tide-nav-count")" aria-hidden="true">@(count > 99 ? "99+" : count)</span>
+        : null;
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+}

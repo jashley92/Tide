@@ -1,0 +1,115 @@
+@* "Add article" on the running order: the articles that could go on the brief (BriefService.CandidatesAsync: ready
+   ones first, then drafts, carried-over ones included), with "Only mine" and, off by default, "Show articles already
+   briefed" (presented ones), in the one confirmation dialog (ConfirmDialog). Tick any number and add them together;
+   PickAsync answers with their ids, in the order shown, or none when cancelled. Above them, what's shortlisted in triage:
+   not an article yet, so each has Promote, which opens the item's promote form in triage. *@
+@inject ICurrentUser CurrentUser
+
+<ConfirmDialog @ref="_dialog" Form="true" Wide="true" Title="Add articles to this brief" ConfirmIcon="bi-plus-lg"
+               ConfirmLabel="@AddLabel"
+               ConfirmDisabled="@(PickedCount == 0)">
+    @if (Shortlist.Count > 0)
+    {
+        <h3 class="tide-field-label" id="add-shortlist">Shortlisted in triage</h3>
+        <ul class="tide-pick-list mb-3" aria-labelledby="add-shortlist">
+            @foreach (var s in Shortlist)
+            {
+                <li @key="s.Item.Id">
+                    <span class="tide-pick-text">
+                        <span class="fw-semibold">@s.Item.Title</span>
+                        <span class="tide-run-meta">
+                            <span>@s.Source.Name</span>
+                            <TlpBadge Level="s.Source.DefaultTlp" />
+                            @if (s.Item.StatusByName is not null) { <span>shortlisted by @s.Item.StatusByName</span> }
+                        </span>
+                    </span>
+                    <a class="btn btn-outline-secondary btn-sm ms-auto" href="@PromoteHref(s.Item.Id)" aria-label="Promote “@s.Item.Title”">Promote</a>
+                </li>
+            }
+        </ul>
+    }
+    <div class="d-flex flex-wrap gap-3 align-items-center justify-content-between mb-2">
+        <div class="d-flex flex-wrap gap-3">
+            <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" id="add-only-mine" @bind="_onlyMine" />
+                <label class="form-check-label small" for="add-only-mine">Only mine</label>
+            </div>
+            <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" id="add-briefed" @bind="_showBriefed" />
+                <label class="form-check-label small" for="add-briefed">Show articles already briefed</label>
+            </div>
+        </div>
+        <a class="small" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article</a>
+    </div>
+    <p class="tide-muted small">Ready articles first, then drafts from the last @BriefService.CandidateDays days and any carried
+        over from an earlier brief@(_showBriefed ? ", then ones already briefed" : "").
+        @Shown.Count() shown.</p>
+    @if (!Shown.Any())
+    {
+        <EmptyState Icon="bi-inbox" Title="No articles waiting" Compact="true"><a href="articles?new=1">Write one</a>.</EmptyState>
+    }
+    else
+    {
+        <ul class="tide-pick-list">
+            @foreach (var c in Shown)
+            {
+                var id = "pick-" + c.Id.ToString("N");
+                <li @key="c.Id">
+                    <input class="form-check-input" type="checkbox" id="@id" checked="@_picked.Contains(c.Id)" @onchange="e => Toggle(c.Id, e.Value is true)" />
+                    <label for="@id">
+                        <span class="fw-semibold">@c.Title</span>
+                        <span class="tide-run-meta">
+                            <ClassBadge Classification="c.Classification" Priority="c.Priority" />
+                            <TlpBadge Level="c.Tlp" />
+                            <StatusBadge Status="@c.Status.ToString()" />
+                            <span>by @c.AuthorName</span>
+                            @if (c.LastBriefed is { } lb) { <span title="Already on the brief for @Ui.Day(lb)">briefed @Ui.ShortDay(lb)</span> }
+                        </span>
+                    </label>
+                    <a class="small ms-auto" href="articles/@c.Id" aria-label="Open “@c.Title”">Open</a>
+                </li>
+            }
+        </ul>
+    }
+</ConfirmDialog>
+
+@code {
+    /// <summary>The most shortlisted items the picker lists.</summary>
+    public const int MaxShortlist = 20;
+
+    /// <summary>The articles that could go on the brief.</summary>
+    [Parameter] public IReadOnlyList<BriefCandidate> Candidates { get; set; } = [];
+
+    /// <summary>Triage's shortlist, listed first with Promote.</summary>
+    [Parameter] public IReadOnlyList<InboxRow> Shortlist { get; set; } = [];
+
+    private ConfirmDialog _dialog = default!;
+    private readonly HashSet<Guid> _picked = [];
+    private bool _onlyMine, _showBriefed;
+
+    // Ticks stay while a colleague's change re-reads the candidates; one whose article has gone (or is now hidden) isn't counted.
+    private int PickedCount => Shown.Count(c => _picked.Contains(c.Id));
+
+    private string AddLabel => PickedCount switch { 0 => "Add", 1 => "Add 1 article", var n => $"Add {n} articles" };
+
+    // Still to be briefed first (in the service's order), then, when asked for, the ones already presented.
+    private IEnumerable<BriefCandidate> Shown => (_onlyMine ? Candidates.Where(c => c.AuthorId == CurrentUser.UserId) : Candidates)
+        .Where(c => _showBriefed || c.Available).OrderBy(c => c.Available ? 0 : 1);
+
+    /// <summary>Triage's Shortlisted tab at this item, with its promote form open.</summary>
+    internal static string PromoteHref(Guid itemId) => $"triage?tab=shortlisted&at={itemId}&promote=true";
+
+    private void Toggle(Guid id, bool on)
+    {
+        if (on) _picked.Add(id);
+        else _picked.Remove(id);
+    }
+
+    /// <summary>Opens the dialog; the ticked articles' ids (only those still shown), or none when cancelled.</summary>
+    public async Task<IReadOnlyList<Guid>> PickAsync()
+    {
+        _picked.Clear();
+        if (!await _dialog.Ask("Add articles to this brief", null, "Add", danger: false)) return [];
+        return Shown.Where(c => _picked.Contains(c.Id)).Select(c => c.Id).ToList();
+    }
+}

@@ -1,0 +1,393 @@
+@page "/articles"
+@attribute [Authorize(Policy = Policies.ReadTeamEdition)]
+@using Tide.Application.Scorecard
+@inject ArticleService ArticleSvc
+@inject ScorecardService Scorecard
+@inject NavigationManager Nav
+@inject ToastService Toasts
+@inject OrgClock Clock
+@inject ICurrentUser CurrentUser
+@inject ChangeFeed Feed
+@inject ChangeOrigin Origin
+@implements IDisposable
+
+<PageTitle>Articles · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <h1>Articles</h1>
+    </div>
+    @if (CurrentUser.Has(Permission.WriteArticles) && !_showNew)
+    {
+        <button class="btn btn-primary" @onclick="() => _showNew = true"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article</button>
+    }
+</div>
+
+@if (_showNew)
+{
+    <div class="tide-card">
+        <h2>New article</h2>
+        <form @onsubmit="Create" @onsubmit:preventDefault="true">
+            <div class="row g-2">
+                <div class="col-12">
+                    <label class="tide-field-label" for="new-title">Title</label>
+                    <input id="new-title" class="form-control" @bind="_title" maxlength="300" placeholder="What happened, in a headline" autofocus />
+                </div>
+                <div class="col-md-4">
+                    <label class="tide-field-label" for="new-source">Source</label>
+                    <input id="new-source" class="form-control" @bind="_source" maxlength="200" placeholder="BleepingComputer, FS-ISAC, CrowdStrike…" />
+                </div>
+                <div class="col-md-6">
+                    <label class="tide-field-label" for="new-url">Link</label>
+                    <input id="new-url" class="form-control" @bind="_url" maxlength="2000" placeholder="https://…" />
+                </div>
+                <div class="col-md-2">
+                    <label class="tide-field-label">TLP</label>
+                    <TlpSelect @bind-Value="_tlp" Label="The article's TLP" />
+                </div>
+            </div>
+            <div class="form-text">Private sources (an ISAC, a vendor portal) usually require TLP:AMBER or a licence. Set it now: screenshots take the article's marking.</div>
+            <div class="mt-3 d-flex gap-2">
+                <button type="submit" class="btn btn-primary" disabled="@_busy">Create and edit</button>
+                <button type="button" class="btn btn-outline-secondary" @onclick="() => _showNew = false">Cancel</button>
+            </div>
+        </form>
+    </div>
+}
+
+<div class="tide-card">
+    <DataTable TItem="ArticleSummary" Items="_rows" Columns="Columns" Key="r => r.Id" One="article" Many="articles" Caption="Articles"
+               FilterLabel="Filter articles" FilterPlaceholder="Titles, sources, CVEs, indicators" Filter="@_filter.Search" DefaultSort="Newest"
+               ServerSide="true" Total="_total" PageSize="PageSize" PageInAddress="true" Busy="_reading"
+               Filtered="_filter.Narrowed" OnQuery="Query">
+        <Toolbar>
+            <select class="tide-maxw-xs form-select form-select-sm" aria-label="Status" value="@(_filter.Status?.ToString() ?? "")" @onchange="SetStatus">
+                <option value="">Any status</option>
+                @foreach (var s in Enum.GetValues<ArticleStatus>())
+                {
+                    <option value="@s">@s</option>
+                }
+            </select>
+            @* The tactic is out here, beside the status: a list opened from a Trends tactic says so where it's seen. *@
+            <select id="af-tactic" class="tide-maxw-xs form-select form-select-sm" aria-label="ATT&CK tactic"
+                    value="@(_filter.Tactic is { } tactic ? AttackMatrix.TacticId(tactic) : "")" @onchange="SetTactic">
+                <option value="">Any ATT&amp;CK tactic</option>
+                @foreach (var t in AttackMatrix.Tactics)
+                {
+                    <option value="@AttackMatrix.TacticId(t)">@AttackMatrix.TacticName(t)</option>
+                }
+            </select>
+            <button type="button" class="btn btn-sm btn-outline-secondary" aria-expanded="@Ui.Aria(_showFilters)" aria-controls="article-filters"
+                    @onclick="ToggleFilters">
+                <span class="bi bi-funnel" aria-hidden="true"></span> More filters
+            </button>
+        </Toolbar>
+        <Filters>
+            <fieldset id="article-filters" class="tide-article-filters" hidden="@(!_showFilters)">
+                <legend class="visually-hidden">More filters</legend>
+                @if (_showFilters)
+                {
+                    <div class="tide-article-filter">
+                        <label class="tide-field-label" for="af-from">Counted from</label>
+                        <input id="af-from" type="date" class="form-control form-control-sm" value="@Day(_filter.From)" @onchange="e => Go(_filter with { From = Date(e) })" aria-describedby="af-dates-help" />
+                    </div>
+                    <div class="tide-article-filter">
+                        <label class="tide-field-label" for="af-to">to</label>
+                        <input id="af-to" type="date" class="form-control form-control-sm" value="@Day(_filter.To)" @onchange="e => Go(_filter with { To = Date(e) })" aria-describedby="af-dates-help" />
+                    </div>
+                    <div class="tide-article-filter">
+                        <label class="tide-field-label" for="af-assess">Assessment</label>
+                        <select id="af-assess" class="form-select form-select-sm" value="@(_filter.Assessment?.ToString() ?? "")" @onchange="SetAssessment">
+                            <option value="">Any assessment</option>
+                            @foreach (var a in Enum.GetValues<ArticleAssessment>())
+                            {
+                                <option value="@a">@ArticleFilter.AssessmentName(a)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="tide-article-filter">
+                        <label class="tide-field-label" for="af-tag">Scorecard tag</label>
+                        <select id="af-tag" class="form-select form-select-sm" value="@TagValue" @onchange="SetTag">
+                            <option value="">Any tag</option>
+                            <option value="tag:@ArticleFilter.None">No scorecard tag</option>
+                            @foreach (var c in _categories)
+                            {
+                                <optgroup label="@c.Name">
+                                    <option value="category:@c.Key">Any in @c.Name</option>
+                                    @foreach (var t in c.Tags.OrderBy(t => t.SortOrder).ThenBy(t => t.Name))
+                                    {
+                                        <option value="tag:@t.Key">@t.Name</option>
+                                    }
+                                </optgroup>
+                            }
+                        </select>
+                    </div>
+                    <div class="tide-article-filter">
+                        <label class="tide-field-label" for="af-technique">Technique</label>
+                        <input id="af-technique" class="form-control form-control-sm tide-data" list="af-techniques" placeholder="T1566, or a name" autocomplete="off"
+                               value="@(_filter.Technique ?? "")" @onchange="SetTechnique" aria-describedby="af-technique-help" />
+                        <datalist id="af-techniques">
+                            <option value="@ArticleFilter.None">No technique</option>
+                            @foreach (var t in AttackCatalog.All)
+                            {
+                                <option value="@t.Id">@t.Name</option>
+                            }
+                        </datalist>
+                        <label class="form-check-label small mt-1 d-block">
+                            <input type="checkbox" class="form-check-input me-1" checked="@_filter.WithSubtechniques" disabled="@(!CanTakeSubs)"
+                                   @onchange="e => Go(_filter with { WithSubtechniques = e.Value is true })" /> and its sub-techniques
+                        </label>
+                    </div>
+                    <p class="small tide-muted tide-article-filter-help">
+                        <span id="af-dates-help">An article counts on the day it was first briefed, or the day it was written if it never went on a brief (drafts that never did are left out), as on Trends.</span>
+                        <span id="af-technique-help">With a tactic too, it's that technique under the tactic.</span>
+                    </p>
+                }
+            </fieldset>
+            @if (_chips.Count > 0)
+            {
+                <div class="tide-filter-chips" role="group" aria-label="Filters in force">
+                    @foreach (var c in _chips)
+                    {
+                        <span class="tide-chip">@c.Label<a href="@Href(c.Without)" class="tide-chip-remove" aria-label="Remove the filter @c.Label" title="Remove"><span class="bi bi-x-lg" aria-hidden="true"></span></a></span>
+                    }
+                    <a href="@Href(_filter.Cleared())" class="small tide-filter-clear">Clear filters</a>
+                </div>
+            }
+        </Filters>
+        <Empty>
+            @if (_filter.Narrowed)
+            {
+                <EmptyState Icon="bi-search" Title="No articles match these filters">
+                    <Actions><a class="btn btn-outline-secondary btn-sm" href="@Href(_filter.Cleared())">Clear filters</a></Actions>
+                    <ChildContent>Try removing one.</ChildContent>
+                </EmptyState>
+            }
+            else
+            {
+                <EmptyState Icon="bi-newspaper" Title="No articles yet">Write one, or promote an item from triage.</EmptyState>
+            }
+        </Empty>
+        <RowTemplate Context="r">
+            <td>
+                <a href="articles/@r.Id">@r.Title</a>
+                @if (!string.IsNullOrWhiteSpace(r.SourceName))
+                {
+                    <div class="tide-muted small">@r.SourceName</div>
+                }
+                @if (r.MatchedTechniques.Count > 0)
+                {
+                    @* Why an ATT&CK filter listed it: the article's techniques it matched. *@
+                    <div class="tide-row-techniques" role="group" aria-label="Matching techniques">
+                        @foreach (var id in r.MatchedTechniques)
+                        {
+                            <span class="tide-chip tide-chip-technique">@ArticleFilter.TechniqueName(id)</span>
+                        }
+                    </div>
+                }
+            </td>
+            <td><ClassBadge Classification="r.Classification" Priority="r.Priority" /></td>
+            <td><TlpBadge Level="r.Tlp" /></td>
+            <td><StatusBadge Status="@r.Status.ToString()" /></td>
+            <td class="small">
+                @foreach (var (d, i) in r.BriefDates.Select((d, i) => (d, i)))
+                {
+                    @(i > 0 ? ", " : "")<a href="@Ui.BriefUrl(d)">@Ui.ShortDay(d)</a>
+                }
+            </td>
+            <td class="small tide-muted">@r.AuthorName<br />@Ui.When(Clock, r.CreatedAtUtc)</td>
+        </RowTemplate>
+    </DataTable>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "new")] public int? New { get; set; }
+
+    // The filters are the address's (ArticleFilter.ToQuery), so a link opens the list narrowed and Back undoes a change.
+    [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
+
+    /// <summary>The page of the list, from 1 (DataTable's <c>?page=</c>).</summary>
+    // Text, not a number: "?page=abc" or one too big for an int is the first page, not a broken page.
+    [SupplyParameterFromQuery(Name = DataTable<ArticleSummary>.PageParameter)] public string? PageParam { get; set; }
+    [SupplyParameterFromQuery(Name = "status")] public string? StatusParam { get; set; }
+    [SupplyParameterFromQuery(Name = "from")] public string? FromParam { get; set; }
+    [SupplyParameterFromQuery(Name = "to")] public string? ToParam { get; set; }
+    [SupplyParameterFromQuery(Name = "assess")] public string? AssessParam { get; set; }
+    [SupplyParameterFromQuery(Name = "tag")] public string? TagParam { get; set; }
+    [SupplyParameterFromQuery(Name = "category")] public string? CategoryParam { get; set; }
+    [SupplyParameterFromQuery(Name = "tactic")] public string? TacticParam { get; set; }
+    [SupplyParameterFromQuery(Name = "technique")] public string? TechniqueParam { get; set; }
+    [SupplyParameterFromQuery(Name = "withsubs")] public string? WithSubsParam { get; set; }
+
+    // The list is the server's: it filters, sorts and counts, and the page asks for 50 more at a time.
+    private const int PageSize = 50;
+
+    private static readonly IReadOnlyList<TableColumn<ArticleSummary>> Columns =
+    [
+        new("title", "Article") { SortBy = r => r.Title },
+        new("assessment", "Assessment"),
+        new("tlp", "TLP") { SortBy = r => r.Tlp },
+        new("status", "Status") { SortBy = r => r.Status },
+        new("briefed", "Briefed"),
+        new("written", "Written") { SortBy = r => r.CreatedAtUtc, DescendingFirst = true },
+    ];
+
+    private IReadOnlyList<ArticleSummary>? _rows;
+    private int _total, _page = 1, _loadedPage;
+    private ArticleFilter _filter = new();
+    private ArticleFilter? _loaded;
+    private IReadOnlyList<FilterChip> _chips = [];
+    private IReadOnlyList<ScorecardCategory> _categories = [];
+    private bool _showFilters, _filtersToggled;
+    private static readonly TableSort Newest = new("written", true);
+    private TableSort? _sort = Newest;
+    private bool _showNew;
+    private bool _busy, _reading;
+    private string? _title, _source, _url;
+    private TlpLevel _tlp = TlpLevel.Clear;
+
+    // A colleague wrote, saved or deleted an article: re-read the page shown (the same page, so the
+    // scroll stays), with the same filters and sort. A new article being typed in stays as it is.
+    private LiveChanges? _live;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _live = new LiveChanges(Feed, Origin, c => c.Topic == ChangeFeed.Articles, InvokeAsync, async heard =>
+        {
+            if (_loaded is null || _reading) return;   // a read is under way, and it will show theirs
+            try { await Load(); }
+            catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+            Toasts.Show($"{LiveChanges.Who(heard)} updated the articles.");
+            StateHasChanged();
+        });
+        _categories = await Scorecard.ListAsync(includeRetired: true);
+    }
+
+    public void Dispose() => _live?.Dispose();
+
+    // ?new=1 opens the form, also when this page is already open (the command palette's New article). A new filter or
+    // page in the address (a chip removed, the pager, Back) lists afresh.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (New == 1 && CurrentUser.Has(Permission.WriteArticles)) _showNew = true;
+        var query = new Dictionary<string, string?>
+        {
+            ["q"] = Q, ["status"] = StatusParam, ["from"] = FromParam, ["to"] = ToParam, ["assess"] = AssessParam, ["tag"] = TagParam,
+            ["category"] = CategoryParam, ["tactic"] = TacticParam, ["technique"] = TechniqueParam, ["withsubs"] = WithSubsParam,
+        };
+        _filter = ArticleFilter.FromQuery(name => query.GetValueOrDefault(name));
+        _chips = _filter.Chips(TagName, CategoryName);
+        // More filters opens on any of its own in force (a Trends link's period, say), until the user opens or closes it.
+        if (!_filtersToggled && PanelNarrowed) _showFilters = true;
+        _page = TableView.PageFrom(PageParam);
+        if (_filter != _loaded || _page != _loadedPage) await Load();
+    }
+
+    private string? TagName(string key) => _categories.SelectMany(c => c.Tags).FirstOrDefault(t => t.Key == key)?.Name;
+
+    private string? CategoryName(string key) => _categories.FirstOrDefault(c => c.Key == key)?.Name;
+
+    private bool PanelNarrowed => _filter.From is not null || _filter.To is not null || _filter.Assessment is not null || _filter.Tag is not null
+                                  || _filter.Category is not null || _filter.Technique is not null;
+
+    private void ToggleFilters()
+    {
+        _filtersToggled = true;
+        _showFilters = !_showFilters;
+    }
+
+    private string TagValue => _filter.Tag is { } t ? "tag:" + t : _filter.Category is { } c ? "category:" + c : "";
+
+    // Sub-techniques go with a technique that has them: not "none", nor a sub-technique itself.
+    private bool CanTakeSubs => _filter.Technique is { } t && t != ArticleFilter.None && !t.Contains('.');
+
+    private static string Day(DateOnly? d) => d is { } day ? Ui.IsoDay(day) : "";
+
+    private static DateOnly? Date(ChangeEventArgs e) =>
+        Ui.TryParseDay(e.Value?.ToString(), out var d) ? d : null;
+
+    // The list with this filter: a link's (a chip's remove, Clear filters), or where Go goes.
+    private string Href(ArticleFilter f) => Nav.GetUriWithQueryParameters("articles", f.ToQuery());
+
+    private void Go(ArticleFilter f, bool replace = false) => Nav.NavigateTo(Href(f), replace: replace);
+
+    private void SetStatus(ChangeEventArgs e) =>
+        Go(_filter with { Status = Enum.TryParse<ArticleStatus>(e.Value?.ToString(), out var s) ? s : null });
+
+    private void SetAssessment(ChangeEventArgs e) =>
+        Go(_filter with { Assessment = Enum.TryParse<ArticleAssessment>(e.Value?.ToString(), out var a) ? a : null });
+
+    // One select picks a tag, a whole category ("Any in …"), or no tag.
+    private void SetTag(ChangeEventArgs e)
+    {
+        var v = e.Value?.ToString() ?? "";
+        Go(_filter with
+        {
+            Tag = v.StartsWith("tag:", StringComparison.Ordinal) ? v[4..] : null,
+            Category = v.StartsWith("category:", StringComparison.Ordinal) ? v[9..] : null,
+        });
+    }
+
+    private void SetTactic(ChangeEventArgs e) => Go(_filter with { Tactic = ArticleFilter.ParseTactic(e.Value?.ToString()) });
+
+    // The box takes an id ("t1566", "T1566 Phishing"), or "none"; anything else is dropped, as the address would drop it.
+    private void SetTechnique(ChangeEventArgs e)
+    {
+        var typed = ArticleFilter.FromQuery(name => name == "technique" ? e.Value?.ToString()?.Trim().Split(' ', 2)[0] : null).Technique;
+        Go(_filter with { Technique = typed, WithSubtechniques = _filter.WithSubtechniques && typed is not null && typed != ArticleFilter.None && !typed.Contains('.') });
+    }
+
+    private async Task Load()
+    {
+        var sort = _sort?.Key switch
+        {
+            "title" => ArticleSort.Title,
+            "tlp" => ArticleSort.Tlp,
+            "status" => ArticleSort.Status,
+            _ => ArticleSort.Written,
+        };
+        var (filter, number, asked, sorted) = (_filter, _page, _page, _sort);
+        _reading = true;
+        try
+        {
+            var page = await ArticleSvc.PageAsync(filter, sort, _sort?.Descending ?? true, PageSize, (number - 1) * PageSize);
+            // A page past the end (an old link, or the list shrank): the last page instead.
+            if (page.Rows.Count == 0 && page.Total > 0 && number > 1)
+            {
+                number = TableView.Pages(page.Total, PageSize);
+                page = await ArticleSvc.PageAsync(filter, sort, _sort?.Descending ?? true, PageSize, (number - 1) * PageSize);
+            }
+            // Moved on meanwhile (another filter, page or sort): the later read draws it. A read in the order before, landing
+            // last, would show its rows under the new sort's arrow.
+            if (filter != _filter || asked != _page || sorted != _sort) return;
+            (_loaded, _loadedPage, _page) = (filter, number, number);
+            // Fell back to the last page: the address says so, so it isn't read again as the page past the end.
+            if (number != asked) Nav.NavigateTo(Nav.GetUriWithQueryParameter(DataTable<ArticleSummary>.PageParameter, number == 1 ? null : number), replace: true);
+            _rows = page.Rows;
+            _total = page.Total;
+        }
+        finally { _reading = false; }
+    }
+
+    // New words go into the address in place (not a step for Back per pause in typing), at the first page. A new sort
+    // lists again from the first page, dropping ?page= from the address when it's there.
+    private async Task Query(TableQuery q)
+    {
+        _sort = q.Sort;
+        if ((q.Filter ?? "") != (_filter.Search ?? "")) Go(_filter with { Search = q.Filter }, replace: true);
+        else if (_page > 1) Go(_filter, replace: true);
+        else await Load();
+    }
+
+    private async Task Create()
+    {
+        if (_busy) return;   // Enter and a click together: one draft
+        _busy = true;
+        try
+        {
+            var id = await ArticleSvc.CreateAsync(_title ?? "", _source, _url, _tlp);
+            Nav.NavigateTo($"articles/{id}");   // stays busy: a second click can arrive before the page moves on
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); _busy = false; }
+    }
+}

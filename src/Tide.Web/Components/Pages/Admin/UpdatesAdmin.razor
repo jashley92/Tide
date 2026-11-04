@@ -1,0 +1,196 @@
+@page "/admin/system/updates"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@using Tide.Application.Operations
+@inject UpdateCheckService Updates
+@inject UpdateSettings UpdateSetting
+@inject Microsoft.Extensions.Options.IOptionsMonitor<UpdateOptions> Options
+@inject OrgClock Clock
+@inject ToastService Toasts
+@inject Tide.Application.Settings.OperationalSettingsService Settings
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
+@implements IDisposable
+
+<PageTitle>Updates · TIDE</PageTitle>
+
+@* Updates: the running version, any newer release with its notes, and how to upgrade with the bundle
+   upgrade script (deploy/Upgrade-Tide.ps1). The app never upgrades itself: the app pool's account can't write its own binaries, by design. *@
+<div class="tide-page-head">
+    <div>
+        <h1 class="tide-admin-title">Updates</h1>
+    </div>
+</div>
+
+<section class="tide-card" aria-labelledby="upd-server">
+    <h2 id="upd-server" class="d-flex justify-content-between align-items-center">
+        <span><span class="bi bi-cloud-arrow-down" aria-hidden="true"></span> This server</span>
+        <button type="button" class="btn btn-sm btn-outline-primary" @onclick="CheckNow" disabled="@(_checking || !Updates.Enabled)">
+            @(_checking ? "Checking…" : "Check now")
+        </button>
+    </h2>
+    <table class="tide-kv mb-3">
+        <tbody>
+            <tr><th scope="row">Running</th><td><span class="tide-data">@AppVersionInfo.Display</span></td></tr>
+            <tr><th scope="row">Status</th><td>@StateText(S)</td></tr>
+            @if (S.CheckedAtUtc is { } at)
+            {
+                <tr><th scope="row">Last checked</th><td>@Ui.When(Clock, at)</td></tr>
+            }
+            <tr><th scope="row">Releases from</th><td><span class="tide-data">github.com/@Options.CurrentValue.Repository</span> <span class="tide-muted small">(Updates:Repository)</span></td></tr>
+        </tbody>
+    </table>
+
+    <div class="form-check form-switch">
+        <input @key="_drawn" class="form-check-input" type="checkbox" role="switch" id="upd-enabled" checked="@Updates.Enabled" @onchange="Toggle" disabled="@_saving" />
+        <label class="form-check-label" for="upd-enabled">Check for new releases</label>
+    </div>
+    <div class="d-flex flex-wrap gap-2 align-items-end mt-2">
+        <div>
+            <label class="tide-field-label" for="upd-hours">Check every (hours)</label>
+            <input id="upd-hours" type="number" min="6" max="168" class="tide-maxw-xs form-control form-control-sm" @bind="_hours" aria-describedby="upd-hours-help" />
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@_saving" @onclick="SaveInterval">Save interval</button>
+    </div>
+    <div class="form-text" id="upd-hours-help">
+        One anonymous request to GitHub's public releases list, through the server's proxy (<code>Intake:Proxy</code>) when one is set, about every
+        @UpdateCheckHostedService.Interval(Options.CurrentValue).TotalHours hours (6 to 168). Nothing about this install is sent. Off by default. Without internet access, the check reports that it failed, after @UpdateCheckService.TimeLimit.TotalSeconds seconds at most.
+        @(Updates.Running?.IsPrerelease == true ? "This server runs a pre-release, so pre-releases count." : "")
+    </div>
+    @if (S.State == UpdateState.Failed)
+    {
+        <p class="small mt-2 mb-0"><span class="bi bi-exclamation-triangle" aria-hidden="true"></span> Couldn't check: @S.Problem. Releases found by an
+            earlier check stay listed below.</p>
+    }
+</section>
+
+@if (S.Latest is { } latest && S.State != UpdateState.DevBuild)
+{
+    <section class="tide-card" aria-labelledby="upd-how">
+        <h2 id="upd-how"><span class="bi bi-terminal" aria-hidden="true"></span> How to upgrade to @latest.Tag</h2>
+        <p class="small">Read the release's notes below first. Then, on the web server:</p>
+        @if (_kept is null)
+        {
+            <p class="small">Download <a href="@(latest.BundleUrl ?? latest.PageUrl)" target="_blank" rel="noopener noreferrer">tide-@(latest.Tag).zip</a>
+                (on another machine if this one has no internet access), copy it to the server, and run the bundle's upgrade script:</p>
+        }
+        <pre class="tide-query tide-query-sample tide-system-cmd" id="upd-cmd">@UpgradeCommand.For(latest.Tag, _kept)</pre>
+        <p class="small">
+            The script checks the bundle's SHA-256 against the release (when the server can reach GitHub), backs up the database, <code>appsettings.Production.json</code> and the
+            current files, swaps in the new build (keeping the settings, <code>logs</code> and <code>App_Data</code>), and rolls back if it doesn't
+            start. With <code>SchemaMode = 'AppMigrates'</code> the app updates its database when it starts; with <code>DbaApplies</code> the DBA
+            applies the release's schema first, and the script stops without changing anything until they have. Add <code>-WhatIf</code> to run
+            only its checks.
+            @if (_kept is not null)
+            {
+                <text>A server without internet access: download the bundle elsewhere and use <code>-BundleZip</code> instead of <code>-Version</code>.</text>
+            }
+            else
+            {
+                <text>From then on, the upgrade keeps its scripts beside the site and this card shows a one-line command.</text>
+            }
+        </p>
+        <p class="small">Then run <code>Verify-Install.ps1</code> (docs/UPGRADE.md, "Upgrading with Upgrade-Tide.ps1").</p>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-copy-target="upd-cmd" data-copy-status="upd-cmd-status">
+            <span class="bi bi-clipboard" aria-hidden="true"></span> Copy the commands
+        </button>
+        <span id="upd-cmd-status" class="small tide-muted ms-2" role="status"></span>
+    </section>
+}
+
+@if (S.Releases.Count > 0)
+{
+    <section class="tide-card" aria-labelledby="upd-releases">
+        <h2 id="upd-releases"><span class="bi bi-journal-text" aria-hidden="true"></span>
+            @(S.State == UpdateState.DevBuild ? "The latest releases (this is a development build, so there's nothing to compare)" : "Newer releases")</h2>
+        @foreach (var r in S.Releases)
+        {
+            <article class="mb-3">
+                <h3 class="h6 mb-1">
+                    <a href="@r.PageUrl" target="_blank" rel="noopener noreferrer">TIDE @r.Version</a>
+                    @if (r.Version.IsPrerelease) { <Badge Class="ms-1">Pre-release</Badge> }
+                    @if (r.PublishedAtUtc is { } when) { <span class="small tide-muted fw-normal ms-1">@Ui.When(Clock, when)</span> }
+                </h3>
+                @if (!string.IsNullOrWhiteSpace(r.Notes))
+                {
+                    <div class="tide-release-notes small"><Md Text="@r.Notes" /></div>
+                }
+            </article>
+        }
+    </section>
+}
+
+@code {
+    private bool _checking, _saving;
+    // Bumped when a change is refused, so the switch is drawn afresh and shows the setting as it is, not as clicked.
+    private int _drawn;
+
+    private int _hours;
+
+    private UpdateStatus S => Updates.Status;
+    private KeptDeployScripts? _kept;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _kept = UpgradeCommand.FindKept(Env.ContentRootPath);
+        _hours = (int)UpdateCheckHostedService.Interval(Options.CurrentValue).TotalHours;
+        Updates.Changed += OnChanged;
+        try { Updates.Enabled = await UpdateSetting.GetEnabledAsync(); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Updates.Changed -= OnChanged;
+
+    private async Task Toggle(ChangeEventArgs e)
+    {
+        var on = e.Value is true || (e.Value is string s && bool.TryParse(s, out var b) && b);
+        _saving = true;
+        try
+        {
+            await UpdateSetting.SaveEnabledAsync(on);
+            Updates.Enabled = on;
+            Toasts.Show(on ? "The update check is on. Check now, or it checks within a few minutes." : "The update check is off.");
+        }
+        catch (Exception ex)
+        {
+            _drawn++;
+            Toasts.Error(UserFacingError.For(ex));
+        }
+        finally { _saving = false; }
+    }
+
+    internal async Task SaveInterval()
+    {
+        if (_saving) return;
+        _saving = true;
+        try
+        {
+            await Settings.SaveAsync(new Dictionary<string, string?>
+            {
+                [Tide.Application.Settings.OperationalSettings.UpdateIntervalHours] = _hours.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            });
+            Toasts.Show("Saved.");
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _saving = false; }
+    }
+
+    private async Task CheckNow()
+    {
+        _checking = true;
+        try { await Updates.CheckAsync(manual: true); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _checking = false; }
+    }
+
+    private static string StateText(UpdateStatus s) => s.State switch
+    {
+        UpdateState.Disabled => "The check is off.",
+        UpdateState.NotChecked => "Not checked yet: the first check runs a few minutes after start, or now with Check now.",
+        UpdateState.UpToDate => "Up to date.",
+        UpdateState.Available => $"TIDE {s.Latest!.Version} is available.",
+        UpdateState.DevBuild => "A development build: nothing to compare. Release bundles are checked.",
+        _ => "Couldn't check.",
+    };
+}

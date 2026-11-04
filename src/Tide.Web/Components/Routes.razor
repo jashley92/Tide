@@ -1,0 +1,15 @@
+@inject NavigationManager Nav
+
+<Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFoundPage)">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+            <NotAuthorized>
+                <AccessDenied Path="@Nav.ToBaseRelativePath(Nav.Uri)" />
+            </NotAuthorized>
+            <Authorizing>
+                <div class="p-4">Checking access&hellip;</div>
+            </Authorizing>
+        </AuthorizeRouteView>
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+</Router>

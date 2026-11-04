@@ -1,0 +1,193 @@
+@page "/admin/system"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@using Tide.Application.Operations
+@inject SystemDiagnostics Diagnostics
+@inject OrgClock Clock
+@inject ToastService Toasts
+
+<PageTitle>Diagnostics · TIDE</PageTitle>
+
+@* Diagnostics: the checks first, with where each is fixed, then the detail behind them. *@
+<div class="tide-page-head">
+    <div>
+        <h1 class="tide-admin-title">Diagnostics</h1>
+        @if (_report is { } r) { <div class="tide-sub">Checked @Ui.When(Clock, r.CheckedAtUtc).</div> }
+    </div>
+    <button type="button" class="btn btn-outline-secondary" @onclick="Refresh" disabled="@_busy">
+        <span class="bi bi-arrow-clockwise" aria-hidden="true"></span> @(_busy ? "Checking…" : "Check again")
+    </button>
+</div>
+
+@if (_report is null && !_busy)
+{
+    @* The check failed (the toast says why): Check again tries it again, rather than a spinner that never ends. *@
+    <div class="tide-card"><EmptyState Icon="bi-exclamation-triangle" Title="Checks failed to run" /></div>
+}
+else if (_report is not { } report)
+{
+    <LoadingBlock />
+}
+else
+{
+    <section class="tide-card" aria-labelledby="diag-checks">
+        <h2 id="diag-checks"><span class="bi bi-heart-pulse" aria-hidden="true"></span> Health checks</h2>
+        <table class="tide-table">
+            <tbody>
+                @foreach (var c in report.Checks)
+                {
+                    <tr>
+                        <td class="tide-col-lg text-nowrap">@c.Label</td>
+                        <td class="tide-col-sm text-nowrap"><CheckBadge Level="c.Level" /></td>
+                        <td>
+                            @c.Detail
+                            @if (c.Level is not CheckLevel.Ok && c.FixHref is { } fix) { <a class="ms-2 small" href="@fix">Where it's set</a> }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+
+    <div class="tide-admin-index mb-3">
+        <section class="tide-card mb-0" aria-labelledby="diag-build">
+            <h2 id="diag-build"><span class="bi bi-cpu" aria-hidden="true"></span> This server</h2>
+            <table class="tide-kv">
+                <tbody>
+                    <tr><th scope="row">Version</th><td><span class="tide-data">@report.Build.Version</span> <a class="small ms-1" href="admin/system/updates">Updates</a></td></tr>
+                    <tr><th scope="row">Runtime</th><td>@report.Build.Runtime</td></tr>
+                    <tr><th scope="row">Operating system</th><td>@report.Build.Os</td></tr>
+                    <tr><th scope="row">Environment</th><td>@report.Build.Environment</td></tr>
+                    <tr><th scope="row">Machine</th><td>@report.Build.Machine</td></tr>
+                    <tr><th scope="row">Runs as</th><td>@report.Build.Account@if (report.Build.AppPool is { } pool) { <span class="tide-muted"> in app pool @pool</span> }</td></tr>
+                    <tr><th scope="row">Up since</th><td>@Ui.When(Clock, report.Build.StartedUtc) <span class="tide-muted">(@Uptime(report.CheckedAtUtc - report.Build.StartedUtc))</span></td></tr>
+                    <tr><th scope="row">Folder</th><td class="tide-data small">@report.Build.ContentRoot</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section class="tide-card mb-0" aria-labelledby="diag-db">
+            <h2 id="diag-db"><span class="bi bi-database" aria-hidden="true"></span> Database</h2>
+            <table class="tide-kv">
+                <tbody>
+                    <tr><th scope="row">Provider</th><td>@report.Database.Provider</td></tr>
+                    <tr><th scope="row">Answers</th><td><CheckBadge Level="@(report.Database.Reachable ? CheckLevel.Ok : CheckLevel.Problem)" /> @report.Database.Problem</td></tr>
+                    <tr><th scope="row">Schema</th><td>@(report.Database.AppliesItsOwn ? "Applied by the app at start" : "Applied by a DBA (deploy/sql)")</td></tr>
+                    <tr><th scope="row">Migrations applied</th><td>@report.Database.Applied @if (report.Database.LatestApplied is { } latest) { <span class="tide-muted small d-block tide-data">latest @latest</span> }</td></tr>
+                    <tr>
+                        <th scope="row">Not yet applied</th>
+                        <td>
+                            @if (report.Database.Pending.Count == 0) { <span class="tide-muted">None</span> }
+                            else { @foreach (var m in report.Database.Pending) { <div class="tide-data small">@m</div> } }
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            <p class="small tide-muted mt-2 mb-0">The connection is on <a href="admin/system/server">Server configuration</a>, without its password.</p>
+        </section>
+
+        <section class="tide-card mb-0" aria-labelledby="diag-email">
+            <h2 id="diag-email"><span class="bi bi-envelope" aria-hidden="true"></span> Email delivery</h2>
+            <table class="tide-kv">
+                <tbody>
+                    <tr><th scope="row">Sending</th><td>@(report.Email.Enabled ? "On" : "Off: nothing is emailed (Email:Enabled)")</td></tr>
+                    <tr><th scope="row">Delivery</th><td>@report.Email.Delivery</td></tr>
+                    <tr><th scope="row">Signs in</th><td>@report.Email.SignIn</td></tr>
+                    @if (report.Email.BackedOffFor > TimeSpan.Zero)
+                    {
+                        <tr><th scope="row">Backed off</th><td>The relay failed several times; sends wait @Math.Ceiling(report.Email.BackedOffFor.TotalMinutes) more minute(s).</td></tr>
+                    }
+                    @if (report.Email.Problem is { } problem)
+                    {
+                        <tr><th scope="row">Problem</th><td class="text-danger">@problem</td></tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+
+        <section class="tide-card mb-0" aria-labelledby="diag-storage">
+            <h2 id="diag-storage"><span class="bi bi-hdd" aria-hidden="true"></span> Storage</h2>
+            <table class="tide-kv">
+                <tbody>
+                    @foreach (var s in report.Storage)
+                    {
+                        <tr>
+                            <th scope="row">@s.Label</th>
+                            <td>
+                                @if (s.Path is { } path) { <div class="tide-data small">@path</div> }
+                                <div class="small">
+                                    @(s.Path is null ? "" : !s.Exists ? "Doesn't exist. " : s.Writable switch { true => "Writable. ", false => "Not writable by the app pool. ", _ => "" })
+                                    @if (s.FreeBytes is { } free) { @($"{FormatBytes(free)} free. ") }
+                                    @s.Note
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    </div>
+
+    <section class="tide-card" aria-labelledby="diag-jobs">
+        <h2 id="diag-jobs"><span class="bi bi-clock-history" aria-hidden="true"></span> Background jobs</h2>
+        <p class="small tide-muted">Since the app last started.
+            @if (report.Sources.Enabled > 0) { <text>@report.Sources.Enabled source@(report.Sources.Enabled == 1 ? " is" : "s are") turned on; @report.Sources.Failing failing. </text> }
+            @if (report.LastCveRun is { } cve) { <text>The last CVE refresh was @Ui.When(Clock, cve.AtUtc).</text> }
+        </p>
+        <table class="tide-table">
+            <thead><tr><th>Job</th><th>State</th><th>Last run</th><th>Next</th></tr></thead>
+            <tbody>
+                @foreach (var j in report.Jobs)
+                {
+                    <tr>
+                        <td>
+                            <div class="fw-semibold">@j.Job.Name</div>
+                            <div class="small tide-muted">@j.Job.Schedule</div>
+                        </td>
+                        <td class="text-nowrap">
+                            @if (j.Running) { <Badge Tone="BadgeTone.Info">Running</Badge> }
+                            else if (!j.Enabled) { <Badge>Off</Badge> }
+                            else if (j.LastSucceeded == false) { <CheckBadge Level="CheckLevel.Attention" /> }
+                            else if (j.LastSucceeded == true) { <CheckBadge Level="CheckLevel.Ok" /> }
+                            else { <Badge>Not run yet</Badge> }
+                        </td>
+                        <td>
+                            @if (j.LastFinishedUtc is { } done)
+                            {
+                                <div class="text-nowrap">@Ui.When(Clock, done)</div>
+                                @if (j.LastSucceeded == true && j.LastDetail is { } detail) { <div class="small tide-muted">@detail</div> }
+                            }
+                            else { <span class="tide-muted">—</span> }
+                            @if (j.LastError is { } error)
+                            {
+                                <div class="small text-danger">@(j.LastSucceeded == false ? "" : $"Earlier, {Ui.When(Clock, j.LastErrorAtUtc!.Value)}: ")@error</div>
+                            }
+                        </td>
+                        <td class="text-nowrap">@(j.Enabled && j.NextDueUtc is { } next ? Ui.When(Clock, next) : "—")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+}
+
+@code {
+    private DiagnosticsReport? _report;
+    private bool _busy;
+
+    protected override Task OnInitializedAsync() => Refresh();
+
+    private async Task Refresh()
+    {
+        _busy = true;
+        try { _report = await Diagnostics.RunAsync(); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    internal static string Uptime(TimeSpan t) =>
+        t.TotalDays >= 1 ? $"{(int)t.TotalDays} d {t.Hours} h" : t.TotalHours >= 1 ? $"{(int)t.TotalHours} h {t.Minutes} min" : $"{Math.Max(0, t.Minutes)} min";
+
+    internal static string FormatBytes(long bytes) =>
+        bytes >= 1L << 30 ? $"{bytes / (double)(1L << 30):0.#} GB" : bytes >= 1L << 20 ? $"{bytes / (double)(1L << 20):0.#} MB" : $"{bytes / 1024.0:0.#} KB";
+}

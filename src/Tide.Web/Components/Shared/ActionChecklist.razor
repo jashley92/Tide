@@ -1,0 +1,132 @@
+@* An action's checklist: its items to tick, for whoever works the action. Compact (on a board card) it's only the
+   items; in full (on the action's page) items can also be added and taken off, and a playbook's steps applied. *@
+@inject ActionService ActionSvc
+@inject PlaybookService PlaybookSvc
+@inject ToastService Toasts
+
+@if (_items is null)
+{
+    <LoadingBlock Rows="@(Compact ? 1 : 2)" Columns="1" Label="Loading the checklist…" />
+}
+else
+{
+    @if (_items.Count == 0 && Compact)
+    {
+        <div class="small tide-muted">Nothing on the checklist.</div>
+    }
+    <ul class="tide-checklist @(Compact ? "tide-checklist-compact" : "")">
+        @foreach (var i in _items)
+        {
+            var id = $"chk-{i.Id:N}";
+            <li @key="i.Id" class="@(i.IsDone ? "done" : "")">
+                <input type="checkbox" class="form-check-input" id="@id" checked="@i.IsDone" disabled="@(!CanWork || _busy)"
+                       @onchange="e => Tick(i, e.Value is true)" />
+                <label for="@id">@i.Text</label>
+                @if (!Compact && i.IsDone && i.DoneByName is not null)
+                {
+                    <span class="small tide-muted">@i.DoneByName</span>
+                }
+                @if (!Compact && CanWork)
+                {
+                    <button type="button" class="btn btn-link btn-sm p-0 ms-auto tide-checklist-remove" aria-label="Take “@i.Text” off the checklist"
+                            disabled="@_busy" @onclick="() => Remove(i)"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+                }
+            </li>
+        }
+    </ul>
+    @if (!Compact && CanWork)
+    {
+        <div class="d-flex gap-2 mt-2">
+            <input class="form-control form-control-sm" maxlength="@ActionChecklistItem.MaxText" aria-label="New checklist item" placeholder="Add an item"
+                   @ref="_newInput" @bind="_newItem" @bind:event="oninput" @onkeydown="OnNewKey" />
+            <button class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@(_busy || string.IsNullOrWhiteSpace(_newItem))" @onclick="Add">Add</button>
+        </div>
+        @if (_playbooks.Count > 0)
+        {
+            <div class="d-flex gap-2 mt-2 align-items-center">
+                <select class="form-select form-select-sm" aria-label="Playbook to apply" @bind="_playbookId">
+                    <option value="">Apply a playbook…</option>
+                    @foreach (var p in _playbooks) { <option value="@p.Id">@p.Name (@p.Steps.Count step@(p.Steps.Count == 1 ? "" : "s"))</option> }
+                </select>
+                <button class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@(_busy || _playbookId is null)" @onclick="Apply">Apply</button>
+            </div>
+            <div class="form-text">Adds the playbook's steps that aren't on the checklist yet.</div>
+        }
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid ActionId { get; set; }
+    [Parameter, EditorRequired] public ActionKind Kind { get; set; }
+    [Parameter] public bool CanWork { get; set; }
+    [Parameter] public bool Compact { get; set; }
+
+    /// <summary>Focus the new item's box once it's drawn: the page's empty checklist was just opened to add one.</summary>
+    [Parameter] public bool Autofocus { get; set; }
+
+    /// <summary>After a change: the board recounts its progress, the page reloads its history.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private IReadOnlyList<ActionChecklistItem>? _items;
+    private IReadOnlyList<Playbook> _playbooks = [];
+    private Guid? _playbookId;
+    private string? _newItem;
+    private bool _busy, _focused;
+    private ElementReference _newInput;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await Load();
+        if (!Compact && CanWork) _playbooks = await PlaybookSvc.ForKindAsync(Kind);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!Autofocus || _focused || _items is null || Compact || !CanWork) return;
+        _focused = true;
+        try { await _newInput.FocusAsync(); }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task Load() => _items = await ActionSvc.ChecklistAsync(ActionId);
+
+    private Task Tick(ActionChecklistItem i, bool done) => Run(() => ActionSvc.SetChecklistItemAsync(i.Id, done));
+
+    private Task Remove(ActionChecklistItem i) => Run(() => ActionSvc.RemoveChecklistItemAsync(i.Id));
+
+    private Task Add() => Run(async () =>
+    {
+        await ActionSvc.AddChecklistItemAsync(ActionId, _newItem ?? "");
+        _newItem = null;
+    });
+
+    private async Task OnNewKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_newItem)) await Add();
+    }
+
+    private Task Apply() => Run(async () =>
+    {
+        var added = await ActionSvc.ApplyPlaybookAsync(ActionId, _playbookId!.Value);
+        _playbookId = null;
+        Toasts.Show(added == 0 ? "Its steps were all on the checklist already." : $"{added} step{(added == 1 ? "" : "s")} added.");
+    });
+
+    private async Task Run(Func<Task> change)
+    {
+        if (_busy) return;   // Enter pressed twice in the box, or a second click: one step each
+        _busy = true;
+        try
+        {
+            await change();
+            await Load();
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            await Load();
+        }
+        finally { _busy = false; }
+    }
+}

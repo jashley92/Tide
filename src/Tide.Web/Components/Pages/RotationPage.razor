@@ -1,0 +1,336 @@
+@page "/rotation"
+@attribute [Authorize(Policy = Policies.ReadTeamEdition)]
+@using System.Globalization
+@using Tide.Application.Rotation
+@inject RotationService Rotation
+@inject ReminderService Reminders
+@inject ICurrentUser CurrentUser
+@inject ToastService Toasts
+@inject OrgClock Clock
+@inject ChangeFeed Feed
+@inject ChangeOrigin Origin
+@implements IDisposable
+
+<PageTitle>Brief rotation · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <h1>Brief rotation</h1>
+        <div class="tide-sub">
+            @if (_today?.AnalystName is { } who)
+            {
+                <span>Presenting @BriefDayText: <strong>@who</strong>@(_today.IsChanged ? $" (covering {_today.RegularName})" : "")</span>
+                @if (_week is not null && _week != who) { <span> &middot; this week's rota: @_week</span> }
+            }
+            else
+            {
+                <span>Nobody is on the rota @BriefDayText@(CurrentUser.Has(Permission.Administer) ? ": fill the weeks under Administration > Rotation." : ".")</span>
+            }
+        </div>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary" href="rotation/my.ics" download><span class="bi bi-calendar-plus" aria-hidden="true"></span> My brief days (.ics)</a>
+        @if (_canRequest)
+        {
+            <button class="btn btn-primary" @onclick="StartRequest"><span class="bi bi-arrow-left-right" aria-hidden="true"></span> Swap or get cover</button>
+        }
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-xl-8">
+        @if (_form is not null)
+        {
+            <div class="tide-card">
+                <h2>Swap or get cover</h2>
+                <div class="row g-2">
+                    <div class="col-md-4">
+                        <label class="tide-field-label" for="r-kind">What</label>
+                        <select id="r-kind" class="form-select form-select-sm" @bind="_form.Kind">
+                            <option value="@RotationChangeKind.Cover">Someone covers my days</option>
+                            <option value="@RotationChangeKind.Swap">Swap days or weeks</option>
+                        </select>
+                    </div>
+                    @if (CurrentUser.Has(Permission.Administer))
+                    {
+                        <div class="col-md-4">
+                            <label class="tide-field-label" for="r-req">Whose days</label>
+                            <select id="r-req" class="form-select form-select-sm" @bind="_form.RequesterId">
+                                <option value="">Mine</option>
+                                @foreach (var m in _members.Where(m => m.UserId != CurrentUser.UserId)) { <option value="@m.UserId">@m.DisplayName</option> }
+                            </select>
+                        </div>
+                    }
+                    <div class="col-md-4">
+                        <label class="tide-field-label" for="r-partner">@(_form.Kind == RotationChangeKind.Swap ? "Swap with" : "Covered by")</label>
+                        <select id="r-partner" class="form-select form-select-sm" @bind="_form.PartnerId">
+                            <option value="">Choose&hellip;</option>
+                            @foreach (var m in _members.Where(m => m.IsActive && m.UserId != (string.IsNullOrEmpty(_form.RequesterId) ? CurrentUser.UserId : _form.RequesterId)))
+                            {
+                                <option value="@m.UserId">@m.DisplayName</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3"><label class="tide-field-label" for="r-gf">@(_form.Kind == RotationChangeKind.Swap ? "I give from" : "From")</label><input id="r-gf" type="date" class="form-control form-control-sm" @bind="_form.GiveFrom" /></div>
+                    <div class="col-md-3"><label class="tide-field-label" for="r-gt">To</label><input id="r-gt" type="date" class="form-control form-control-sm" @bind="_form.GiveTo" /></div>
+                    @if (_form.Kind == RotationChangeKind.Swap)
+                    {
+                        <div class="col-md-3"><label class="tide-field-label" for="r-tf">I take from</label><input id="r-tf" type="date" class="form-control form-control-sm" @bind="_form.TakeFrom" /></div>
+                        <div class="col-md-3"><label class="tide-field-label" for="r-tt">To</label><input id="r-tt" type="date" class="form-control form-control-sm" @bind="_form.TakeTo" /></div>
+                    }
+                    <div class="col-12"><label class="tide-field-label" for="r-note">Note (optional)</label><input id="r-note" class="form-control form-control-sm" maxlength="500" @bind="_form.Note" placeholder="Out at a conference that week" /></div>
+                </div>
+                <p class="form-text">The colleague is emailed to approve or decline. The manager is notified once it's approved.</p>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-primary btn-sm" disabled="@(_busy || string.IsNullOrEmpty(_form.PartnerId))" @onclick="Request">Send the request</button>
+                    <button class="btn btn-outline-secondary btn-sm" @onclick="() => _form = null">Cancel</button>
+                </div>
+            </div>
+        }
+
+        <div class="tide-card">
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <button class="tide-icon-btn" title="Previous month" aria-label="Previous month" @onclick="() => Month(-1)"><span class="bi bi-chevron-left" aria-hidden="true"></span></button>
+                <h2 class="tide-card-title mb-0">@_month.ToString("MMMM yyyy", CultureInfo.InvariantCulture)</h2>
+                <button class="tide-icon-btn" title="Next month" aria-label="Next month" @onclick="() => Month(1)"><span class="bi bi-chevron-right" aria-hidden="true"></span></button>
+                @if (_month != new DateOnly(Rotation.Today.Year, Rotation.Today.Month, 1))
+                {
+                    <button class="btn btn-link btn-sm" @onclick="() => Month(0)">Today</button>
+                }
+            </div>
+            <table class="tide-rota">
+                <thead><tr><th>Week of</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th></tr></thead>
+                <tbody>
+                    @* Every week the month touches, so one that's all holidays still shows them. *@
+                    @for (var start = RotationService.WeekStart(_month); start <= _month.AddMonths(1).AddDays(-1); start = start.AddDays(7))
+                    {
+                        var weekStart = start;
+                        var week = _days.Where(d => RotationService.WeekStart(d.Date) == weekStart).ToList();
+                        var inThisWeek = RotationService.WeekStart(Rotation.Today) == weekStart;
+                        <tr class="@(inThisWeek ? "tide-rota-now" : "")">
+                            <th>@weekStart.ToString("MMM d", CultureInfo.InvariantCulture)<div class="small tide-muted fw-normal">@(week.FirstOrDefault()?.RegularName ?? (week.Count == 0 ? "No brief" : "Nobody"))</div></th>
+                            @for (var i = 0; i < 5; i++)
+                            {
+                                var date = weekStart.AddDays(i);
+                                var d = week.FirstOrDefault(x => x.Date == date);
+                                <td class="@(d is null ? "tide-rota-out" : "") @(d?.AnalystId == CurrentUser.UserId ? "tide-rota-mine" : "") @(date == Clock.CurrentBriefDate ? "tide-rota-today" : "")">
+                                    @if (d is not null)
+                                    {
+                                        <div class="small tide-muted">@date.Day</div>
+                                        <div class="@(d.IsChanged ? "fw-semibold" : "")">@(d.AnalystName ?? "—")</div>
+                                        @if (d.IsChanged) { <div class="small tide-muted">for @d.RegularName</div> }
+                                    }
+                                    else if (Clock.Days.HolidayOn(date) is { } holiday)
+                                    {
+                                        <div class="small tide-muted">@date.Day</div>
+                                        <div class="small tide-muted">@holiday</div>
+                                        <div class="small tide-muted">No brief</div>
+                                    }
+                                </td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="col-xl-4">
+        <div class="tide-card">
+            <h2>Coming up for you</h2>
+            @if (_upcoming is null) { <LoadingBlock /> }
+            else
+            {
+                @foreach (var c in _upcoming.ToApprove)
+                {
+                    <div class="tide-waiting mb-2" @key="c.Id">
+                        <div class="small fw-semibold">Waiting for you</div>
+                        <div class="small mb-1">@RotationService.Describe(c)</div>
+                        @if (c.Note is not null) { <div class="small tide-muted mb-1">&ldquo;@c.Note&rdquo;</div> }
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="() => Decide(c.Id, true)">Approve</button>
+                            <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Decide(c.Id, false)">Decline</button>
+                        </div>
+                    </div>
+                }
+                @if (_upcoming.MyRuns.Count == 0)
+                {
+                    <p class="small tide-muted">You're not presenting in the next ten weeks.</p>
+                }
+                <ul class="tide-timeline mb-2">
+                    @foreach (var r in _upcoming.MyRuns.Take(6))
+                    {
+                        <li><span class="bi bi-calendar-event" aria-hidden="true"></span> Presenting @(r.From == r.To ? Ui.Day(r.From) : $"{Ui.ShortDay(r.From)} to {Ui.ShortDay(r.To)}")</li>
+                    }
+                </ul>
+                @foreach (var c in _upcoming.MyRequests)
+                {
+                    <div class="small border-top pt-2 mt-2" @key="c.Id">
+                        <div>Waiting for @c.PartnerName: @RotationService.Describe(c, brief: true)</div>
+                        <button class="btn btn-link btn-sm p-0" disabled="@_busy" @onclick="() => Cancel(c.Id)">Withdraw</button>
+                    </div>
+                }
+                <p class="small tide-muted mt-2 mb-0">
+                    @if (Reminders.IsEnabled(ReminderKind.Presenting)) { <span><span class="bi bi-bell" aria-hidden="true"></span> You're emailed at @Reminders.Options.ReminderTime the business day before each stretch you present.</span> }
+                    else { <span>Rotation reminder emails are off.</span> }
+                </p>
+            }
+        </div>
+
+        <div class="tide-card">
+            <h2>Swaps and cover</h2>
+            @if (_changes.Count == 0) { <EmptyState Icon="bi-arrow-left-right" Title="None yet." Compact="true" /> }
+            @foreach (var c in _changes.Take(15))
+            {
+                <div class="small py-1 border-bottom" @key="c.Id">
+                    <Badge Tone="@(c.Status == RotationChangeStatus.Approved ? BadgeTone.Ok : BadgeTone.Neutral)">@c.Status</Badge>
+                    @RotationService.Describe(c, brief: true)
+                    @if (c.Status == RotationChangeStatus.Approved && CurrentUser.Has(Permission.Administer) && HasDaysToCome(c))
+                    {
+                        <button class="btn btn-link btn-sm p-0 ms-1" disabled="@_busy" @onclick="() => Cancel(c.Id)">Undo</button>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+
+@code {
+    private DateOnly _month;
+    private IReadOnlyList<RotationDay> _days = [];
+    private RotationDay? _today;
+    private string BriefDayText => Clock.CurrentBriefDate == Clock.Today ? "today" : "on " + Ui.ShortDay(Clock.CurrentBriefDate);
+    private string? _week;
+    private Upcoming? _upcoming;
+    private IReadOnlyList<RotationChange> _changes = [];
+    private IReadOnlyList<RotationMember> _members = [];
+    private RotationRequest? _form;
+    private bool _busy, _canRequest;
+
+    // A colleague asked, approved, declined or withdrew, or an administrator changed the weeks: re-read in place, once per
+    // burst, and say what it means for this person. A request being filled in is the page's own and stays as it is.
+    private LiveChanges? _live;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _live = new LiveChanges(Feed, Origin, c => c.Topic == ChangeFeed.Rotation, InvokeAsync, async heard =>
+        {
+            if (_busy) return;   // this page's own action re-reads when it's done, and reads theirs with it
+            var before = _upcoming;
+            _members = await Rotation.MembersAsync();
+            await Load();
+            var who = LiveChanges.Who(heard);
+            if (_upcoming is { } after) Toasts.Show(Heard(before, after, _changes, who) ?? $"{who} updated the rotation.");
+            StateHasChanged();
+        });
+        _month = new DateOnly(Rotation.Today.Year, Rotation.Today.Month, 1);
+        _members = await Rotation.MembersAsync();
+        _canRequest = CurrentUser.Has(Permission.WriteArticles) && (_members.Any(m => m.UserId == CurrentUser.UserId) || CurrentUser.Has(Permission.Administer));
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        try
+        {
+            var month = _month;
+            var from = RotationService.WeekStart(month);
+            var to = month.AddMonths(1).AddDays(-1);
+            var days = await Rotation.CalendarAsync(from, to);
+            if (month != _month) return;   // paged on again meanwhile: the later month's read draws it
+            _days = days;
+            // The brief day Today shows (on a weekend or evening, the next business day), not the calendar date.
+            var briefDay = Clock.CurrentBriefDate;
+            var today = (await Rotation.CalendarAsync(briefDay, briefDay)).FirstOrDefault();
+            _today = today;
+            _week = today?.RegularName;
+            _upcoming = await Rotation.UpcomingAsync();
+            _changes = await Rotation.ChangesAsync();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    public void Dispose() => _live?.Dispose();
+
+    /// <summary>Whether a change still moves a day to come, so undoing it changes who presents: either half of a swap.</summary>
+    internal bool HasDaysToCome(RotationChange c) =>
+        c.GiveTo >= Rotation.Today || (c.TakeTo is { } takeTo && takeTo >= Rotation.Today);
+
+    /// <summary>What a colleague's change to the rotation means for this person: a request now waiting for them, or an
+    /// answer to one of theirs (its status read from <paramref name="changes"/>); null when it's neither.</summary>
+    public static string? Heard(Upcoming? before, Upcoming after, IReadOnlyList<RotationChange> changes, string who)
+    {
+        var known = before?.ToApprove.Select(c => c.Id).ToHashSet() ?? [];
+        var asked = after.ToApprove.Count(c => !known.Contains(c.Id));
+        if (asked > 0) return asked == 1 ? $"{who} sent you a swap or cover request." : $"{who} sent you {asked} swap or cover requests.";
+        var still = after.MyRequests.Select(c => c.Id).ToHashSet();
+        var answered = before?.MyRequests.FirstOrDefault(c => !still.Contains(c.Id));
+        if (answered is not null)
+        {
+            return changes.FirstOrDefault(c => c.Id == answered.Id)?.Status switch
+            {
+                RotationChangeStatus.Approved => $"{who} approved your request.",
+                RotationChangeStatus.Declined => $"{who} declined your request.",
+                _ => $"{who} answered your request.",
+            };
+        }
+        return null;
+    }
+
+    private Task Month(int by)
+    {
+        _month = by == 0 ? new DateOnly(Rotation.Today.Year, Rotation.Today.Month, 1) : _month.AddMonths(by);
+        return Load();
+    }
+
+    private void StartRequest()
+    {
+        var next = Clock.CurrentBriefDate;   // the next brief day: on a weekend, Monday, not today
+        _form = new RotationRequest { GiveFrom = next, GiveTo = next };
+    }
+
+    // Each of these sends email or changes the rota: once per click, however fast the clicks.
+    private async Task Request()
+    {
+        if (_busy || _form is null) return;
+        _busy = true;
+        try
+        {
+            await Rotation.RequestAsync(_form!);
+            Toasts.Show("Request sent.");
+            _form = null;
+            await Load();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    internal async Task Decide(Guid id, bool approve)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            if (approve) await Rotation.ApproveAsync(id);
+            else await Rotation.DeclineAsync(id);
+            Toasts.Show(approve ? "Approved: the rotation is updated." : "Declined.");
+            await Load();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    private async Task Cancel(Guid id)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await Rotation.CancelAsync(id);
+            await Load();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+}

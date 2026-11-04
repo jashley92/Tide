@@ -1,0 +1,18 @@
+@* A trend line's counts as small bars, oldest first, the current period's in the accent colour. Coloured by CSS. *@
+@using Tide.Application.Trends
+
+@{
+    var max = Math.Max(1, Row.Ids.Max(p => p.Count));
+    var n = Row.Ids.Count;
+}
+<svg class="tide-trend-bars" viewBox="0 0 @(n * 7) 18" width="@(n * 7)" height="18" role="img" aria-label="@Row.Name: @string.Join(", ", Row.Ids.Select(p => p.Count))">
+    @for (var i = 0; i < n; i++)
+    {
+        var h = Row.Count(i) == 0 ? 1 : Math.Max(2, 18 * Row.Count(i) / max);
+        <rect x="@(i * 7)" y="@(18 - h)" width="5" height="@h" class="@(i == n - 1 ? "now" : "")" />
+    }
+</svg>
+
+@code {
+    [Parameter, EditorRequired] public TrendRow Row { get; set; } = default!;
+}

@@ -1,0 +1,40 @@
+@* A CVE with what's known about it: CVSS (coloured by severity), EPSS, and a KEV mark when CISA lists it as exploited. *@
+@using System.Globalization
+
+<span class="tide-chip tide-cve @(Record?.IsKev == true ? "tide-cve-kev" : "")" title="@Title">
+    <a class="tide-data" href="@($"https://nvd.nist.gov/vuln/detail/{CveId}")" target="_blank" rel="noopener noreferrer">@CveId</a>
+    @if (Record?.CvssScore is { } score)
+    {
+        <span class="tide-cvss tide-cvss-@Severity(score)">@score.ToString("0.0", CultureInfo.InvariantCulture)</span>
+    }
+    @if (Record?.EpssScore is { } epss)
+    {
+        <span class="tide-epss" title="EPSS: chance of exploitation in the next 30 days">@epss.ToString("P0", CultureInfo.InvariantCulture)</span>
+    }
+    @if (Record?.IsKev == true)
+    {
+        <span class="tide-kev">KEV</span>
+    }
+</span>
+
+@code {
+    [Parameter, EditorRequired] public string CveId { get; set; } = "";
+    [Parameter] public CveRecord? Record { get; set; }
+
+    private static string Severity(decimal score) => score >= 9 ? "critical" : score >= 7 ? "high" : score >= 4 ? "medium" : "low";
+
+    private string Title
+    {
+        get
+        {
+            if (Record is null) return "Not enriched yet";
+            var parts = new List<string>();
+            if (Record.Vendor is not null || Record.Product is not null) parts.Add($"{Record.Vendor} {Record.Product}".Trim());
+            if (Record.CvssScore is { } s) parts.Add($"CVSS {s.ToString("0.0", CultureInfo.InvariantCulture)} {Record.CvssSeverity}");
+            if (Record.EpssScore is { } e) parts.Add($"EPSS {e.ToString("P1", CultureInfo.InvariantCulture)} (percentile {Record.EpssPercentile?.ToString("P0", CultureInfo.InvariantCulture)})");
+            if (Record.IsKev) parts.Add($"On CISA KEV since {(Record.KevAddedDate is { } added ? Ui.IsoDay(added) : "")}{(Record.KevDueDate is { } d ? $", due {Ui.IsoDay(d)}" : "")}{(Record.KevRansomware ? ", ransomware use" : "")}");
+            if (Record.Description is not null) parts.Add(Record.Description.Length > 300 ? Record.Description[..300] + "…" : Record.Description);
+            return string.Join("\n", parts);
+        }
+    }
+}

@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Tide.Domain\Tide.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Generated from MITRE ATT&CK Enterprise (see Mitre/AttackCatalog.cs). -->
+    <EmbeddedResource Include="Mitre\attack-techniques.json" />
+    <EmbeddedResource Include="Mitre\attack-retired.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Tide.UnitTests" />
+    <InternalsVisibleTo Include="Tide.IntegrationTests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AngleSharp" Version="1.9.1" />
+    <PackageReference Include="Markdig" Version="1.5.1" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.*" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.*" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.*" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.*" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.*" />
+  </ItemGroup>
+
+</Project>

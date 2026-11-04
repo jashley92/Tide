@@ -1,0 +1,109 @@
+@page "/admin/queries"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@inject HuntQueryBuilder Queries
+@inject ToastService Toasts
+
+<PageTitle>Query templates · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <h1 class="tide-admin-title">Query templates</h1>
+        <div class="tide-sub">The hunt queries TIDE writes from an article's indicators. Indicators are split by kind before they reach a template:
+            IPv4 and IPv6 addresses, and each hash algorithm, are kinds of their own, so each can query the fields that hold it.
+            <span class="tide-data">@QueryDialects.Placeholder</span> is where that kind's values go, written as the language writes a list.
+            <span class="tide-data">@QueryDialects.DaysPlaceholder</span>, if used, is how many days back to look: at least 30, more when the articles hunted from are older.
+            A kind with no template (or turned off) is named in a comment in the query and left out. TIDE never runs a query itself.</div>
+    </div>
+</div>
+
+<TabBar Label="Query language" Items="@(QueryDialects.All.Select(d => new TabBarItem(d.Name, "", Key: d.Key)).ToList())" Active="@_dialect" PanelId="query-panel"
+        OnSelect="k => { _dialect = k!; _editing = null; }" />
+
+<div role="tabpanel" id="query-panel" aria-labelledby="@TabBar.TabId("query-panel", _dialect)">
+    @foreach (var row in _rows.Where(r => r.Dialect.Key == _dialect))
+    {
+        var key = (row.Dialect.Key, row.Kind);
+        <div class="tide-card" @key="key">
+            <h2>
+                @HuntValues.Label(row.Kind)
+                @if (row.IsOff) { <Badge>Turned off</Badge> }
+                else if (row.Saved is not null) { <Badge Tone="BadgeTone.Ok">Customized</Badge> }
+                else if (row.Default is not null) { <Badge>Built-in</Badge> }
+                else { <Badge>No template</Badge> }
+            </h2>
+            @if (_editing == key)
+            {
+                <textarea class="tide-query" spellcheck="false" aria-label="Template for @HuntValues.Label(row.Kind)" @bind="_text"></textarea>
+                <div class="form-text">Leave it empty to turn this kind off.</div>
+                <div class="d-flex gap-2 mt-2">
+                    <button class="btn btn-primary btn-sm" @onclick="() => Save(row, _text)">Save</button>
+                    <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editing = null">Cancel</button>
+                </div>
+            }
+            else
+            {
+                @if (!string.IsNullOrEmpty(row.Effective))
+                {
+                    <pre class="tide-query-auto tide-query">@row.Effective</pre>
+                }
+                else
+                {
+                    <p class="small tide-muted">@(row.IsOff ? "Values of this kind are left out of generated hunts." : $"{row.Dialect.Name} has no built-in query for this kind; its values are left out until you add one.")</p>
+                }
+                <div class="d-flex gap-2 flex-wrap">
+                    <button class="btn btn-outline-secondary btn-sm" @onclick="() => Edit(row)">
+                        <span class="bi @(string.IsNullOrEmpty(row.Effective) ? "bi-plus-lg" : "bi-pencil")"></span> @(string.IsNullOrEmpty(row.Effective) ? "Add a template" : "Edit")
+                    </button>
+                    @if (!string.IsNullOrEmpty(row.Effective))
+                    {
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => Save(row, string.Empty)">Turn off</button>
+                    }
+                    @if (row.Saved is not null)
+                    {
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => Reset(row)">@(row.Default is null ? "Remove" : "Back to the built-in template")</button>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<QueryTemplateRow> _rows = [];
+    private string _dialect = QueryDialects.All[0].Key;
+    private (string, HuntValueKind)? _editing;
+    private string? _text;
+
+    protected override Task OnInitializedAsync() => Load();
+
+    private async Task Load() => _rows = await Queries.TemplatesAsync();
+
+    private void Edit(QueryTemplateRow row)
+    {
+        _editing = (row.Dialect.Key, row.Kind);
+        _text = string.IsNullOrEmpty(row.Effective) ? row.Dialect.Comment("Your query; the values go where the placeholder is") + "\n" + QueryDialects.Placeholder : row.Effective;
+    }
+
+    private async Task Save(QueryTemplateRow row, string? text)
+    {
+        try
+        {
+            await Queries.SaveTemplateAsync(row.Dialect.Key, row.Kind, text);
+            _editing = null;
+            await Load();
+            Toasts.Show(string.IsNullOrWhiteSpace(text) ? $"{HuntValues.Label(row.Kind)} turned off." : "Template saved.");
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    private async Task Reset(QueryTemplateRow row)
+    {
+        try
+        {
+            await Queries.ResetTemplateAsync(row.Dialect.Key, row.Kind);
+            await Load();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+}

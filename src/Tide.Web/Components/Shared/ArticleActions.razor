@@ -1,0 +1,31 @@
+@* The follow-up actions raised from an article, and a link to raise another. *@
+@inject ActionService ActionSvc
+@inject ICurrentUser CurrentUser
+
+<div class="tide-card">
+    <h2>Actions <span class="tide-count">(@_rows.Count)</span></h2>
+    @if (_rows.Count == 0)
+    {
+        <p class="small tide-muted mb-2">No follow-up actions yet.</p>
+    }
+    @foreach (var r in _rows)
+    {
+        <div class="d-flex gap-2 align-items-start py-1 border-bottom small" @key="r.Id">
+            <a class="tide-action-num" href="@Ui.ActionUrl(r.Number)">@Ui.ActionLabel(r.Number)</a>
+            <span class="flex-grow-1">@r.Title<span class="tide-muted"> &middot; @r.TeamName</span></span>
+            @if (r.IsOpen) { <SlaBadge State="r.Sla(ActionSvc.Today, ActionSvc.Days)" Due="r.DueDate" Today="ActionSvc.Today" /> } else { <ActionStatusBadge Status="r.Status" /> }
+        </div>
+    }
+    @if (CurrentUser.Has(Permission.WriteArticles))
+    {
+        <a class="btn btn-outline-secondary btn-sm mt-2" href="@($"actions/new?article={ArticleId}")"><span class="bi bi-plus-lg" aria-hidden="true"></span> New action</a>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Guid ArticleId { get; set; }
+
+    private IReadOnlyList<ActionRow> _rows = [];
+
+    protected override async Task OnParametersSetAsync() => _rows = await ActionSvc.ForArticleAsync(ArticleId);
+}

@@ -1,0 +1,177 @@
+@* An action's status as one row of toggle buttons, for whoever may work it: a click moves it there straight away.
+   Done, Cancelled and Not applicable first open a small prompt in place for the outcome and a note (ActionCloseFields,
+   the board's close rules); Esc or Cancel puts it back. A move goes through ActionService.MoveAsync from the status
+   this page shows, so one that someone else has moved since is refused rather than overwriting theirs. The buttons
+   aren't disabled while a move saves (a second click is ignored instead), so focus stays where it was. *@
+@inject ActionService ActionSvc
+@inject ToastService Toasts
+
+<div class="tide-status-row">
+    <span class="tide-field-label mb-0" id="status-label">Status</span>
+    <div class="tide-status-seg" role="group" aria-labelledby="status-label">
+        @foreach (var s in Enum.GetValues<ActionStatus>())
+        {
+            var on = Shown == s;
+            <button type="button" @key="s" class="tide-status-opt @(on ? "on" : "")" aria-pressed="@(on ? "true" : "false")" data-status="@s"
+                    @ref="_buttons[s]" @onclick="() => Pick(s)">@ActionService.StatusName(s)</button>
+        }
+    </div>
+    @if (!Action.IsOpen && _closing is null)
+    {
+        <button type="button" class="btn btn-link btn-sm p-0" @onclick="EditOutcome">Change the outcome</button>
+    }
+</div>
+@if (_closing is { } c)
+{
+    <div class="tide-status-prompt" role="group" aria-labelledby="status-prompt-title" @onkeydown="OnPromptKey">
+        <div class="tide-status-prompt-title" id="status-prompt-title">
+            @(c.To == c.From ? $"The outcome of {Ui.ActionLabel(Action.Number)}" : $"Move {Ui.ActionLabel(Action.Number)} to {ActionService.StatusName(c.To)}")
+        </div>
+        <div class="tide-status-prompt-fields">
+            <ActionCloseFields Kind="Action.Kind" Current="Action.Outcome" To="c.To" Id="status-close" Autofocus="true" Outcome="_outcome" OutcomeChanged="Choose" Note="@_note" NoteChanged="Write" />
+        </div>
+        <div class="d-flex gap-2 mt-2">
+            <button type="button" class="btn btn-primary btn-sm" disabled="@(!ActionCloseFields.CanClose(c.To, _outcome))" @onclick="Confirm">
+                @(c.To == c.From ? "Save the outcome" : $"Move to {ActionService.StatusName(c.To)}")
+            </button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="Revert">Cancel</button>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public ActionItem Action { get; set; } = default!;
+
+    /// <summary>After a move: the page reloads the action.</summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
+    /// <summary>The prompt opened (true) or closed: the page says it's being edited, and keeps it open over a live reload.</summary>
+    [Parameter] public EventCallback<bool> Prompting { get; set; }
+
+    /// <summary>The prompt's move was refused because the action moved since it opened: the page says it changed elsewhere.</summary>
+    [Parameter] public EventCallback Stale { get; set; }
+
+    /// <summary>A move waiting on its outcome: from the status the page showed when it opened, to a closed one.</summary>
+    private sealed record PendingClose(ActionStatus From, ActionStatus To);
+
+    private readonly Dictionary<ActionStatus, ElementReference> _buttons = [];
+    private PendingClose? _closing;
+    private ActionOutcome _outcome;
+    private string? _note;
+    private bool _busy;
+    private ActionStatus? _focus;
+
+    /// <summary>The status the buttons show: the one being closed to while the prompt is open.</summary>
+    private ActionStatus Shown => _closing?.To ?? Action.Status;
+
+    /// <summary>Whether the outcome prompt is open.</summary>
+    public bool IsPrompting => _closing is not null;
+
+    /// <summary>The prompt's outcome, as chosen.</summary>
+    public void Choose(ActionOutcome outcome) => _outcome = outcome;
+
+    /// <summary>The prompt's note, as written.</summary>
+    public void Write(string? note) => _note = note;
+
+    /// <summary>A status button: an open status moves now; a closed one asks for the outcome first.</summary>
+    public async Task Pick(ActionStatus to)
+    {
+        if (_busy || to == Shown) return;
+        if (ActionItem.IsClosedStatus(to))
+        {
+            await Open(new PendingClose(_closing?.From ?? Action.Status, to), ActionOutcome.None, null);
+            return;
+        }
+        var from = _closing?.From ?? Action.Status;
+        if (to == from)
+        {
+            await Revert();   // back to where it was, with the prompt open: nothing to move
+            return;
+        }
+        await Close();
+        await Move(from, to, ActionOutcome.None, null);
+    }
+
+    /// <summary>A closed action's outcome and note, changed without moving it.</summary>
+    public Task EditOutcome() => Open(new PendingClose(Action.Status, Action.Status), Action.Outcome, Action.OutcomeNote);
+
+    /// <summary>The prompt's button: move with the outcome chosen (Done refuses none, as the service does).</summary>
+    public async Task Confirm()
+    {
+        if (_busy || _closing is not { } c || !ActionCloseFields.CanClose(c.To, _outcome)) return;
+        if (await Move(c.From, c.To, _outcome, _note)) await Close();
+    }
+
+    /// <summary>Esc or Cancel: the prompt closes and the buttons show the status as it was.</summary>
+    public async Task Revert()
+    {
+        if (_closing is null) return;
+        _focus = Action.Status;
+        await Close();
+    }
+
+    // Both redraw now: the page's own reload, or a test, may call them from outside an event.
+    private async Task Open(PendingClose pending, ActionOutcome outcome, string? note)
+    {
+        var opening = _closing is null;
+        _closing = pending;
+        _outcome = outcome;
+        _note = note;
+        if (opening) await Prompting.InvokeAsync(true);
+        StateHasChanged();
+    }
+
+    private async Task Close()
+    {
+        if (_closing is null) return;
+        _closing = null;
+        await Prompting.InvokeAsync(false);
+        StateHasChanged();
+    }
+
+    private async Task OnPromptKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") await Revert();
+    }
+
+    // True when it moved. A refused move is a toast; one refused because it moved meanwhile reloads (a one-click move,
+    // with nothing to lose) or leaves the prompt open for the page to say so (an outcome being written).
+    private async Task<bool> Move(ActionStatus from, ActionStatus to, ActionOutcome outcome, string? note)
+    {
+        _busy = true;
+        try
+        {
+            if (from == to) await ActionSvc.ChangeOutcomeAsync(Action.Id, to, outcome, note);
+            else await ActionSvc.MoveAsync(Action.Id, from, to, outcome, note);
+            _focus = to;
+            Toasts.Show(from == to ? "Outcome saved." : $"{Ui.ActionLabel(Action.Number)} moved to {ActionService.StatusName(to)}.");
+            await Changed.InvokeAsync();
+            return true;
+        }
+        catch (StaleEditException ex)
+        {
+            if (_closing is not null) await Stale.InvokeAsync();
+            else
+            {
+                Toasts.Error(ex.Message);
+                await Changed.InvokeAsync();
+            }
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            return false;
+        }
+        finally { _busy = false; }
+    }
+
+    // Focus goes back to the status button once the prompt closes, or onto the one just moved to.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focus is not { } s || _busy) return;
+        _focus = null;
+        try { if (_buttons.TryGetValue(s, out var b)) await b.FocusAsync(); }
+        catch (JSDisconnectedException) { }
+    }
+}

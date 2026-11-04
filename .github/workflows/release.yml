@@ -1,0 +1,148 @@
+name: Release
+
+# Build a deployable bundle and publish it as a GitHub Release whenever a version tag is pushed:
+#   git tag v0.1.0-alpha.1 && git push origin v0.1.0-alpha.1
+# A tag with a suffix (v0.1.0-alpha.1, -beta.N, -rc.N) is published as a pre-release; a plain vX.Y.Z as a release.
+# Releases are cut from main only. The bundle is the published app plus the deploy scripts, so a server needs no .NET
+# SDK or NuGet access (docs/UPGRADE.md).
+on:
+  push:
+    tags: [ 'v*' ]
+
+permissions:
+  contents: read
+
+# Only keep the latest run per tag.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Every CI gate on the tagged commit itself, SQL Server included: a tag can sit on a commit CI never ran (a docs-only
+  # commit skips it) or one whose CI failed. Sonar is the exception (CI skips it on tags): see the release job.
+  gates:
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+    permissions:
+      contents: read
+
+  release:
+    needs: gates
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create the GitHub Release and upload assets
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0   # main and the earlier release tags
+          # The job's token can write releases; it isn't left in .git/config for the restore and build that follow
+          # (package build targets run there). gh gets it from GH_TOKEN for the one step that needs it.
+          persist-credentials: false
+
+      # vX.Y.Z, or vX.Y.Z-alpha.N / -beta.N / -rc.N for a pre-release, on a commit that's on main.
+      - name: Version tag on main
+        id: version
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
+            echo "::error::'$tag' isn't a release tag. Use vX.Y.Z, or vX.Y.Z-alpha.N (or -beta.N, -rc.N) for a pre-release."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$tag is on a commit that isn't on main. Releases are cut from main: tag a commit there."
+            exit 1
+          fi
+          if [[ "$tag" == *-* ]]; then echo "prerelease=true" >> "$GITHUB_OUTPUT"; else echo "prerelease=false" >> "$GITHUB_OUTPUT"; fi
+
+      # The gates job skips Sonar (analysis is for main and PRs, not tags), so ask SonarQube Cloud for the quality gate of
+      # the analysis CI on main made of this commit, and refuse to release unless it passed. It waits up to 15 minutes for
+      # main's CI to finish the analysis. Without SONAR_TOKEN (forks) it warns and skips.
+      - name: SonarQube Cloud quality gate passed on main
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: bash tools/ci/check-sonar-quality-gate.sh "$GITHUB_SHA"
+
+      # Refuse to ship a release that edits or removes a migration an earlier release (alphas included) shipped: databases
+      # installed from that release could not upgrade to this one.
+      - name: Released migrations are immutable
+        run: bash tools/ci/check-migrations-immutable.sh
+
+      # The release body is the version's section of docs/UPGRADE.md. A release must have one; an alpha without one gets
+      # GitHub's generated list of the pull requests merged since the previous tag instead. Checked first, so a release
+      # without notes fails before anything is built.
+      - name: Release notes from docs/UPGRADE.md
+        id: notes
+        env:
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          if bash tools/ci/extract-release-notes.sh "${GITHUB_REF_NAME}" > release-notes.md; then
+            prev="$(git tag --list 'v[0-9]*' --sort=-v:refname --merged HEAD | grep -vx "${GITHUB_REF_NAME}" | head -n1 || true)"
+            if [[ -n "$prev" ]]; then
+              printf '\n**Full changelog**: https://github.com/%s/compare/%s...%s\n' "$GITHUB_REPOSITORY" "$prev" "$GITHUB_REF_NAME" >> release-notes.md
+            fi
+            echo "file=release-notes.md" >> "$GITHUB_OUTPUT"
+          elif [[ "$PRERELEASE" == true ]]; then
+            echo "::notice::No '### ${GITHUB_REF_NAME}' section in docs/UPGRADE.md; the pre-release gets GitHub's generated notes."
+            echo "file=" >> "$GITHUB_OUTPUT"
+          else
+            exit 1
+          fi
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: |
+          dotnet restore
+          dotnet tool restore
+
+      # Stamp the tag's version into the assemblies (they'd otherwise all read 1.0.0); the SDK appends the commit (+sha).
+      # No test run here: the gates job ran the whole suite on this commit, and this job only starts once it passed.
+      - name: Build
+        run: dotnet build --no-restore -c Release -p:Version="${GITHUB_REF_NAME#v}" -p:TideReleaseBuild=true
+
+      - name: No un-migrated model changes (SQL Server + SQLite)
+        run: |
+          TIDE_MIGRATIONS_PROVIDER=SqlServer dotnet ef migrations has-pending-model-changes --no-build --configuration Release \
+            --project src/Tide.Migrations.SqlServer --startup-project src/Tide.Web --context AppDbContext
+          dotnet ef migrations has-pending-model-changes --no-build --configuration Release \
+            --project src/Tide.Infrastructure --startup-project src/Tide.Web --context AppDbContext
+
+      # Framework-dependent, portable publish (no RID), the same shape Install-Tide.ps1 produces, so the app runs under IIS
+      # in-process with the .NET 10 Hosting Bundle.
+      - name: Publish web app
+        run: dotnet publish src/Tide.Web -c Release -o publish/app --nologo -p:Version="${GITHUB_REF_NAME#v}" -p:TideReleaseBuild=true
+
+      - name: Assemble release bundle
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME}"
+          root="bundle/tide-${version}"
+          mkdir -p "$root"
+          cp -r publish/app "$root/app"
+          cp -r deploy "$root/deploy"
+          # The SQL Server migration ids this release carries, for comparing with a database's __EFMigrationsHistory.
+          ls src/Tide.Migrations.SqlServer/Migrations \
+            | grep -E '^[0-9]+_.*\.cs$' | grep -v '\.Designer\.cs$' \
+            | sed 's/\.cs$//' | sort > "$root/migrations-sqlserver.txt"
+          printf 'Version: %s\nCommit:  %s\nBuilt:   %s\n' \
+            "$version" "$GITHUB_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$root/VERSION.txt"
+          ( cd bundle && zip -qr "tide-${version}.zip" "tide-${version}" \
+            && sha256sum "tide-${version}.zip" > "tide-${version}.zip.sha256" )
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+          NOTES_FILE: ${{ steps.notes.outputs.file }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME}"
+          args=(--title "Tide ${version}" --verify-tag)
+          if [[ -n "$NOTES_FILE" ]]; then args+=(--notes-file "$NOTES_FILE"); else args+=(--generate-notes); fi
+          if [[ "$PRERELEASE" == true ]]; then args+=(--prerelease --latest=false); fi
+          gh release create "$version" "bundle/tide-${version}.zip" "bundle/tide-${version}.zip.sha256" "${args[@]}"

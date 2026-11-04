@@ -1,0 +1,124 @@
+@* The "?" overlay: the keyboard shortcuts of the page you're on and those that work everywhere (Shortcuts), with the
+   switch that turns single-letter shortcuts off (WCAG 2.1.4). That switch is the one in the account menu (theme.js,
+   tideShortcuts), not a second setting. "?" opens it when you aren't typing in a field, unless letter shortcuts are
+   off; the button in the top bar always does. Focus moves in and back, and Tab stays inside (dialog.js). *@
+@implements IAsyncDisposable
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+@if (ShowButton)
+{
+    <button type="button" class="tide-shortcuts-btn" aria-haspopup="dialog" aria-keyshortcuts="Shift+?" aria-label="Keyboard shortcuts"
+            title="Keyboard shortcuts (?)" @onclick="Open">
+        <span class="bi bi-question-circle" aria-hidden="true"></span>
+    </button>
+}
+
+@if (_open)
+{
+    <div class="tide-modal-scrim" @onclick="Close">
+        <div class="tide-modal tide-shortcuts" role="dialog" aria-modal="true" aria-labelledby="@(_id)-title" @onclick:stopPropagation="true" @onkeydown="OnKey">
+            <div class="tide-shortcuts-head">
+                <h2 class="tide-modal-title" id="@(_id)-title">Keyboard shortcuts</h2>
+                <button type="button" class="btn-close" aria-label="Close" @ref="_closeBtn" @onclick="Close"></button>
+            </div>
+            <div class="form-check form-switch tide-shortcuts-switch">
+                <input class="form-check-input" type="checkbox" role="switch" id="@(_id)-letters" checked="@_letters" @onchange="SetLetters" />
+                <label class="form-check-label" for="@(_id)-letters">Single-letter shortcuts</label>
+            </div>
+            <p class="tide-shortcuts-hint">
+                Letter keys (and <kbd>?</kbd>) don't fire while typing in a field. Turn them off for speech input or screen reader quick keys; arrows and Ctrl shortcuts still work. Also in the account menu; saved in this browser.
+            </p>
+            <div class="tide-shortcuts-body">
+                @foreach (var group in _groups)
+                {
+                    <table class="tide-shortcuts-table">
+                        <caption>@group.Title</caption>
+                        <tbody>
+                            @foreach (var s in group.Keys)
+                            {
+                                <tr class="@(s.Letter && !_letters ? "is-off" : null)">
+                                    <th scope="row">
+                                        @for (var i = 0; i < s.Keys.Count; i++)
+                                        {
+                                            if (i > 0) { <span class="tide-shortcuts-or"> or </span> }
+                                            <kbd>@s.Keys[i]</kbd>
+                                        }
+                                    </th>
+                                    <td>@s.What@(s.Letter && !_letters ? " (off)" : "")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>Whether to draw the button in the top bar; present mode has the "?" key only.</summary>
+    [Parameter] public bool ShowButton { get; set; } = true;
+
+    private readonly string _id = "shortcuts-" + Guid.NewGuid().ToString("N")[..8];
+    private IReadOnlyList<ShortcutGroup> _groups = [];
+    private bool _open, _shown, _letters = true;
+    private ElementReference _closeBtn;
+    private DotNetObjectReference<ShortcutsOverlay>? _ref;
+
+    /// <summary>Opens the list for the page you're on ("?", through palette.js, or the button).</summary>
+    [JSInvokable]
+    public async Task Open()
+    {
+        if (_open) return;
+        _groups = Shortcuts.For(Nav.ToBaseRelativePath(Nav.Uri));
+        try { _letters = await JS.InvokeAsync<bool>("tideShortcuts.on"); }
+        catch (JSException) { /* the default stands */ }
+        catch (JSDisconnectedException) { return; }
+        _open = true;
+        StateHasChanged();
+    }
+
+    private void Close() => _open = false;
+
+    private void OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") Close();
+    }
+
+    private async Task SetLetters(ChangeEventArgs e)
+    {
+        var on = e.Value is true;
+        try
+        {
+            await JS.InvokeVoidAsync("tideShortcuts.set", on);
+            _letters = on;
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (firstRender)
+            {
+                _ref = DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("tidePalette.startOverlay", _ref, _id);
+            }
+            if (_open == _shown) return;
+            _shown = _open;
+            if (_open) await JS.InvokeVoidAsync("tideDialog.open", _closeBtn);
+            else await JS.InvokeVoidAsync("tideDialog.close");
+        }
+        catch (JSDisconnectedException) { /* the circuit has gone */ }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { if (_ref is not null) await JS.InvokeVoidAsync("tidePalette.stopOverlay", _id); }
+        catch (JSDisconnectedException) { /* the circuit has gone */ }
+        _ref?.Dispose();
+    }
+}

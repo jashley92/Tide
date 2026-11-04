@@ -1,0 +1,146 @@
+@using Tide.Application.Reviews
+@inject ReviewService Reviews
+@inject ToastService Toasts
+@inject OrgClock Clock
+@inject ICurrentUser Me
+
+@* EP-80: the article's review, in the editor. The author asks a colleague (this week's presenter is suggested), sees
+   where it stands, and resolves each comment; an edit after approval shows the approval is out of date. Optional
+   unless an administrator requires it; the Send dialog says which articles haven't been reviewed. *@
+
+@if (_state is { } s)
+{
+    <section class="tide-card tide-review-card" aria-labelledby="review-h">
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+            <h2 id="review-h" class="h6 mb-0"><span class="bi bi-person-check" aria-hidden="true"></span> Review</h2>
+            @if (s.Review is not { } r)
+            {
+                <span class="small tide-muted">Not reviewed@(_rule == ReviewRule.Off ? " (optional)" : "").</span>
+            }
+            else
+            {
+                <Badge Tone="@Tone(s)">@Status(s)</Badge>
+                <span class="small tide-muted">@(r.DecidedAtUtc is { } d ? Ui.When(Clock, d) : "asked " + Ui.When(Clock, r.RequestedAtUtc))</span>
+                <a class="small ms-auto" href="@($"articles/{Article.Id}/review")">@(r.ReviewerId == Me.UserId && r.Status == ReviewStatus.Asked ? "Review it" : "Open the review")</a>
+            }
+        </div>
+
+        @if (s.Review is { } open && open.Comments.Count > 0)
+        {
+            <ul class="tide-review-comments">
+                @foreach (var c in open.Comments)
+                {
+                    <li class="@(c.ResolvedAtUtc is null ? "" : "resolved")">
+                        <div class="small"><strong>@c.AuthorName</strong> on @ReviewService.FieldLabel(c.Field)@(c.Quote is { } q ? $": “{Ui.Clip(q, 80)}”" : "")</div>
+                        <div>@c.Text</div>
+                        @if (CanWrite)
+                        {
+                            <button type="button" class="btn btn-link btn-sm p-0" disabled="@_busy" @onclick="() => Resolve(c.Id, c.ResolvedAtUtc is null)">
+                                @(c.ResolvedAtUtc is null ? "Resolve" : $"Resolved by {c.ResolvedByName}: reopen")</button>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+
+        @if (CanWrite && Asking(s))
+        {
+            <div class="d-flex gap-2 flex-wrap align-items-center mt-2">
+                @if (_reviewers.Count == 0)
+                {
+                    <span class="small tide-muted">There's no one else to ask yet.</span>
+                }
+                else
+                {
+                    <label class="small" for="review-who">@(s.Review is null ? "Ask" : "Ask again:")</label>
+                    <select id="review-who" class="form-select form-select-sm w-auto" @bind="_reviewerId">
+                        @foreach (var who in _reviewers) { <option value="@who.Id">@who.Name@(who.Presenting ? " (presenting this week)" : "")</option> }
+                    </select>
+                    <input class="form-control form-control-sm tide-maxw-sm" maxlength="@ArticleReview.MaxNote" placeholder="What to look at (optional)" aria-label="Note for the reviewer" @bind="_note" />
+                    <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(_busy || string.IsNullOrEmpty(_reviewerId))" @onclick="Ask">Ask for review</button>
+                }
+            </div>
+        }
+        else if (CanWrite && s.Review is { Status: ReviewStatus.Asked } waiting && waiting.ReviewerId != Me.UserId)
+        {
+            <button type="button" class="btn btn-link btn-sm p-0 mt-1" disabled="@_busy" @onclick="() => Withdraw(waiting.Id)">Take the request back</button>
+        }
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired] public Article Article { get; set; } = default!;
+    [Parameter] public bool CanWrite { get; set; }
+
+    private ReviewState? _state;
+    private ReviewRule _rule;
+    private IReadOnlyList<Reviewer> _reviewers = [];
+    private string? _reviewerId, _note;
+    private bool _busy;
+    private Guid _loadedFor;
+    private Guid _loadedVersion, _loadedContent;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Again when the article changes, or is saved or a screenshot comes or goes (which can put an approval out of date).
+        var content = ReviewService.ContentVersion(Article);
+        if (_loadedFor == Article.Id && _loadedVersion == Article.EditVersion && _loadedContent == content) return;
+        // Another article: the reviewer chosen and the note written were for the last one.
+        if (_loadedFor != Article.Id) (_reviewerId, _note) = (null, null);
+        (_loadedFor, _loadedVersion, _loadedContent) = (Article.Id, Article.EditVersion, content);
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        try
+        {
+            _state = await Reviews.ForArticleAsync(Article.Id);
+            _rule = await Reviews.RuleAsync();
+            if (CanWrite)
+            {
+                _reviewers = await Reviews.ReviewersAsync(Article.Id);
+                _reviewerId ??= (_reviewers.FirstOrDefault(r => r.Id == _state.Review?.ReviewerId) ?? _reviewers.FirstOrDefault())?.Id;
+            }
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    // Asking is offered with no review yet, after changes were asked, or when an approval went out of date.
+    private static bool Asking(ReviewState s) => s.Review is null || s.Review.Status == ReviewStatus.ChangesAsked || s.OutOfDate;
+
+    private static string Status(ReviewState s) => s.Review switch
+    {
+        { Status: ReviewStatus.Asked } r => $"Waiting for {r.ReviewerName}",
+        { Status: ReviewStatus.ChangesAsked } r => $"{r.ReviewerName} asked for changes" + (s.OpenComments > 0 ? $" ({s.OpenComments} open)" : ""),
+        { Status: ReviewStatus.Approved } r when s.OutOfDate => $"Changed since {r.ReviewerName} approved it",
+        { Status: ReviewStatus.Approved } r => $"Approved by {r.ReviewerName}",
+        _ => "Not reviewed",
+    };
+
+    private static BadgeTone Tone(ReviewState s) => s.Approved ? BadgeTone.Ok : s.Review?.Status == ReviewStatus.Asked ? BadgeTone.Info : BadgeTone.Warn;
+
+    private async Task Run(Func<Task> work, string? done = null)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await work();
+            if (done is not null) Toasts.Show(done);
+            await Load();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    private Task Ask() => Run(async () =>
+    {
+        await Reviews.AskAsync(Article.Id, _reviewerId!, _note);
+        _note = null;
+    }, $"Asked {_reviewers.FirstOrDefault(r => r.Id == _reviewerId)?.Name} to review it.");
+
+    private Task Withdraw(Guid id) => Run(() => Reviews.WithdrawAsync(id), "The request was taken back.");
+
+    private Task Resolve(Guid id, bool resolved) => Run(() => Reviews.ResolveAsync(id, resolved));
+}

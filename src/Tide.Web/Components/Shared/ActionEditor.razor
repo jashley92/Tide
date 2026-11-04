@@ -1,0 +1,217 @@
+@* The fields of an action, for a new one and for an edit. A new action's due date follows the SLA target for its
+   priority and kind until someone sets it; on a saved action, a new priority offers its SLA date. *@
+@inject ActionService ActionSvc
+@inject PlaybookService PlaybookSvc
+
+<div class="row g-2">
+    <div class="col-12">
+        <label class="tide-field-label" for="a-title">What needs doing</label>
+        <input id="a-title" class="form-control" maxlength="@ActionItem.MaxTitle" @bind="Form.Title" placeholder="Sweep proxy and DNS logs for the advisory's indicators" />
+    </div>
+    <div class="col-md-4">
+        <label class="tide-field-label" for="a-kind">Kind</label>
+        <select id="a-kind" class="form-select form-select-sm" @bind="Form.Kind" @bind:after="KindChanged">
+            @foreach (var k in Enum.GetValues<ActionKind>()) { <option value="@k">@ActionService.KindName(k)</option> }
+        </select>
+    </div>
+    <div class="col-md-2">
+        <label class="tide-field-label" for="a-prio">Priority</label>
+        <select id="a-prio" class="form-select form-select-sm" @bind="Form.Priority" @bind:after="PriorityChanged">
+            @foreach (var p in Enum.GetValues<Priority>()) { <option value="@p">@p</option> }
+        </select>
+    </div>
+    <div class="col-md-3">
+        <label class="tide-field-label" for="a-team">Team</label>
+        <select id="a-team" class="form-select form-select-sm" @bind="Form.TeamId" @bind:after="TeamChangedAsync">
+            @if (Form.TeamId == Guid.Empty) { <option value="@Guid.Empty">Choose a team</option> }
+            @foreach (var t in Teams.Where(t => !t.IsRetired || t.Id == Form.TeamId)) { <option value="@t.Id">@t.Name</option> }
+        </select>
+    </div>
+    @if (_duplicates.Count > 0)
+    {
+        <div class="col-12">
+            <div class="tide-missing small" role="status">
+                <span class="bi bi-exclamation-triangle" aria-hidden="true"></span>
+                Already open for this story, same kind and team:
+                @foreach (var d in _duplicates) { <a class="ms-1" href="actions/@d.Number">@Ui.ActionLabel(d.Number) @d.Title</a> }
+            </div>
+        </div>
+    }
+    <div class="col-md-3">
+        <label class="tide-field-label" for="a-due">Due</label>
+        <input id="a-due" type="date" class="form-control form-control-sm" @bind="Form.DueDate" @bind:after="() => _dueTouched = true" />
+        @if (IsNew && Form.DueDate is { } due && due < ActionSvc.Today)
+        {
+            <div class="form-text text-danger">That date has passed: the action will be overdue at once, and closing it will count as missed.</div>
+        }
+        else if (IsNew && !_dueTouched && Form.DueDate is not null)
+        {
+            <div class="form-text">From the SLA target.</div>
+        }
+        else if (_offer is { } offer && offer != Form.DueDate)
+        {
+            @* A changed priority on a saved action offers its SLA date; it never moves the date by itself (ADR 0008). *@
+            <div class="form-text" role="status">
+                Due &rarr; @Ui.ShortDay(offer) per the @Form.Priority SLA?
+                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="UseOffer">Use it</button>
+            </div>
+        }
+    </div>
+    <div class="col-md-4">
+        <label class="tide-field-label" for="a-assignee">Assignee</label>
+        <select id="a-assignee" class="form-select form-select-sm" @bind="Form.AssigneeId" @bind:after="AssigneeChanged">
+            <option value="">Unassigned (the team's)</option>
+            @if (!string.IsNullOrEmpty(Form.AssigneeId) && Candidates.All(c => c.Id != Form.AssigneeId))
+            {
+                <option value="@Form.AssigneeId">@Form.AssigneeName</option>
+            }
+            @* The chosen team's members first; anyone else an analyst may assign after them. *@
+            @if (Members.Any())
+            {
+                <optgroup label="@($"{TeamName} members")">
+                    @foreach (var c in Members) { <option value="@c.Id">@c.Name</option> }
+                </optgroup>
+            }
+            @if (Others.Any())
+            {
+                <optgroup label="@(Members.Any() ? "Everyone else" : "People")">
+                    @foreach (var c in Others) { <option value="@c.Id">@c.Name</option> }
+                </optgroup>
+            }
+        </select>
+    </div>
+    @if (IsNew)
+    {
+        <div class="col-md-3">
+            <label class="tide-field-label" for="a-raised">For a past day's brief</label>
+            <input id="a-raised" type="date" class="form-control form-control-sm" max="@Ui.IsoDay(ActionSvc.Today)" @bind="Form.RaisedOn" />
+            <div class="form-text">Optional: reports count it on that day; its SLA still starts today.</div>
+        </div>
+    }
+    <div class="col-md-3">
+        <label class="tide-field-label" for="a-ticket">Ticket</label>
+        <input id="a-ticket" class="form-control form-control-sm" maxlength="100" @bind="Form.TicketRef" placeholder="CHG0012345" />
+    </div>
+    <div class="col-md-5">
+        <label class="tide-field-label" for="a-ticket-url">Ticket link</label>
+        <input id="a-ticket-url" class="form-control form-control-sm" maxlength="2000" @bind="Form.TicketUrl" placeholder="https://itsm.example.org/…" />
+    </div>
+    @if (IsNew && _playbooks.Count > 0)
+    {
+        <div class="col-md-6">
+            <label class="tide-field-label" for="a-playbook">Playbook</label>
+            <select id="a-playbook" class="form-select form-select-sm" @bind="Form.PlaybookId">
+                <option value="">None: no checklist to start with</option>
+                @foreach (var p in _playbooks) { <option value="@p.Id">@p.Name (@p.Steps.Count step@(p.Steps.Count == 1 ? "" : "s"))</option> }
+            </select>
+            @if (_playbooks.FirstOrDefault(p => p.Id == Form.PlaybookId) is { } chosen)
+            {
+                <ol class="tide-playbook-preview small">
+                    @foreach (var s in chosen.Steps) { <li>@s.Text</li> }
+                </ol>
+            }
+            else
+            {
+                <div class="form-text">Its steps become the action's checklist.</div>
+            }
+        </div>
+    }
+    <div class="col-12">
+        <label class="tide-field-label" for="a-desc">Details (Markdown)</label>
+        <textarea id="a-desc" class="form-control form-control-sm" rows="4" maxlength="8000" @bind="Form.Description"
+                  placeholder="Scope, where to look, what counts as a hit, who to tell."></textarea>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ActionForm Form { get; set; } = default!;
+    [Parameter, EditorRequired] public IReadOnlyList<Team> Teams { get; set; } = [];
+
+    /// <summary>Everyone known (for an analyst, who may assign anyone); null limits the choice to the team's members.</summary>
+    [Parameter] public IReadOnlyList<AppUser>? People { get; set; }
+    [Parameter] public bool IsNew { get; set; }
+
+    private bool _dueTouched;
+
+    private IEnumerable<(string Id, string Name)> Candidates => Members.Concat(Others);
+
+    private string TeamName => Teams.FirstOrDefault(t => t.Id == Form.TeamId)?.Name ?? "Team";
+
+    private IEnumerable<(string Id, string Name)> Members =>
+        (Teams.FirstOrDefault(t => t.Id == Form.TeamId)?.Members.Select(m => (Id: m.UserId, Name: m.DisplayName)) ?? []).OrderBy(x => x.Name);
+
+    private IEnumerable<(string Id, string Name)> Others =>
+        (People?.Select(p => (Id: p.Sid, Name: p.DisplayName)) ?? []).Where(p => Members.All(m => m.Id != p.Id)).OrderBy(x => x.Name);
+
+    private IReadOnlyList<ActionRow> _duplicates = [];
+
+    private IReadOnlyList<Playbook> _playbooks = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (IsNew && Form.DueDate is null) await Suggest();
+        else _dueTouched = true;
+        await CheckDuplicates();
+        await LoadPlaybooks();
+    }
+
+    private async Task KindChanged()
+    {
+        await Suggest();
+        await CheckDuplicates();
+        await LoadPlaybooks();
+    }
+
+    // A new action's playbooks are its kind's and those for any kind; one chosen for another kind is let go.
+    private async Task LoadPlaybooks()
+    {
+        if (!IsNew) return;
+        _playbooks = await PlaybookSvc.ForKindAsync(Form.Kind);
+        if (_playbooks.All(p => p.Id != Form.PlaybookId)) Form.PlaybookId = null;
+    }
+
+    private async Task TeamChangedAsync()
+    {
+        TeamChanged();
+        await CheckDuplicates();
+    }
+
+    // A new action from an article: is the same team already doing this for the story?
+    private async Task CheckDuplicates() =>
+        _duplicates = IsNew && Form.ArticleId is { } article && Form.TeamId != Guid.Empty
+            ? await ActionSvc.LikelyDuplicatesAsync(article, Form.Kind, Form.TeamId)
+            : [];
+
+    // The SLA date a saved action's new priority would give it, offered under the due date until used.
+    private DateOnly? _offer;
+
+    private async Task Suggest()
+    {
+        if (IsNew && !_dueTouched) Form.DueDate = await ActionSvc.SuggestedDueAsync(Form.Priority, Form.Kind);
+    }
+
+    private async Task PriorityChanged()
+    {
+        if (IsNew) await Suggest();
+        else _offer = await ActionSvc.SuggestedDueAsync(Form.Priority, Form.Kind);
+    }
+
+    private void UseOffer()
+    {
+        Form.DueDate = _offer;
+        _offer = null;
+    }
+
+    private void TeamChanged()
+    {
+        // An assignee who isn't on the new team (and isn't offered otherwise) is cleared.
+        if (!string.IsNullOrEmpty(Form.AssigneeId) && Candidates.All(c => c.Id != Form.AssigneeId))
+        {
+            Form.AssigneeId = null;
+            Form.AssigneeName = null;
+        }
+    }
+
+    private void AssigneeChanged() =>
+        Form.AssigneeName = string.IsNullOrEmpty(Form.AssigneeId) ? null : Candidates.FirstOrDefault(c => c.Id == Form.AssigneeId).Name ?? Form.AssigneeName;
+}

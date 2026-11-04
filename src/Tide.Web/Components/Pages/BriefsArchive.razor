@@ -1,0 +1,54 @@
+@page "/briefs"
+@attribute [Authorize(Policy = Policies.ReadTeamEdition)]
+@inject BriefService BriefSvc
+@inject OrgClock Clock
+@inject Microsoft.Extensions.Options.IOptionsMonitor<Tide.Application.Settings.DistributionOptions> DistributionOptions
+
+<PageTitle>Brief archive · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <h1>Brief archive</h1>
+    </div>
+    <a class="btn btn-primary" href="@Ui.BriefUrl(Clock.CurrentBriefDate)"><span class="bi bi-journal-text" aria-hidden="true"></span> Today's brief</a>
+</div>
+
+<div class="tide-card">
+    <DataTable TItem="BriefSummary" Items="_rows" Columns="Columns" Key="r => r.Id" One="brief" Many="briefs" Caption="Briefs" PageInAddress="true"
+               FilterLabel="Filter briefs" FilterPlaceholder="A day, a month, who presented" Filter="@Q" DefaultSort="Newest" PageSize="60">
+        <Empty><EmptyState Icon="bi-archive" Title="No briefs yet" /></Empty>
+        <RowTemplate Context="r">
+            <td><a href="@Ui.BriefUrl(r.BriefDate)">@Ui.Day(r.BriefDate)</a></td>
+            <td>@r.AnalystName</td>
+            <td class="tide-table-num">@r.Articles</td>
+            <td class="tide-table-num">@r.Threats</td>
+            <td><StatusBadge Status="@Label(r)" /></td>
+        </RowTemplate>
+    </DataTable>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
+
+    private static readonly TableSort Newest = new("day", true);
+
+    // Every brief (a row a day), filtered and sorted here, 60 shown at a time. The status filter finds the label shown.
+    private IReadOnlyList<TableColumn<BriefSummary>> Columns => _columns ??=
+    [
+        new("day", "Day") { SortBy = r => r.BriefDate, DescendingFirst = true, FilterBy = r => Ui.Day(r.BriefDate) + " " + Ui.IsoDay(r.BriefDate) },
+        new("presenter", "Presented by") { SortBy = r => r.AnalystName, FilterBy = r => r.AnalystName },
+        new("articles", "Articles") { SortBy = r => r.Articles, DescendingFirst = true, Class = "tide-table-num" },
+        new("threats", "Threats") { SortBy = r => r.Threats, DescendingFirst = true, Class = "tide-table-num" },
+        new("status", "Status") { SortBy = r => r.Status, FilterBy = r => r.Status + " " + Label(r) },
+    ];
+
+    private IReadOnlyList<TableColumn<BriefSummary>>? _columns;
+
+    // "Distributed" for a brief finished without email; "SharePoint to post" while its required SharePoint copy waits.
+    private string Label(BriefSummary r) => BriefSteps.StatusLabel(r.Status, r.DistributedAtUtc is not null && !r.Emailed, r.SharePointPostedAtUtc is not null,
+        DistributionOptions.CurrentValue.RequireSharePoint && r.SharePointRequired);
+
+    private IReadOnlyList<BriefSummary>? _rows;
+
+    protected override async Task OnInitializedAsync() => _rows = await BriefSvc.ListAsync(take: null);
+}

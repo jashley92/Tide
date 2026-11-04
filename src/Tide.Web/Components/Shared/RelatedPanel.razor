@@ -1,0 +1,102 @@
+@* The editor's Related tab (in ReaderPreview): what's already been written about the same thing (RelatedService), the
+   newest few, each linked, with why it's related, when it was briefed and by whom, and the actions raised from it that
+   are still open. For a writer, "Mention" puts an action's number in why it matters ("A-13 (open)", never how late,
+   which would go stale in a sent brief), but only while that part is TLP:AMBER or higher, since it's internal status;
+   "Same story" puts this article in the related one's story, or starts one for both (ReaderPreview asks first). Analysts
+   and action owners only: the editor is never shown to Readers. *@
+@inject OrgClock Clock
+
+<section class="tide-related" aria-labelledby="related-h">
+    <h3 id="related-h" class="tide-subhead mt-0">Related work</h3>
+    @if (Work is null)
+    {
+        <p class="tide-muted small mb-0">Looking for related work…</p>
+    }
+    else if (Work.Articles.Count == 0)
+    {
+        <p class="tide-muted small mb-0">Nothing else shares a CVE, a link or the story with this article.</p>
+    }
+    else
+    {
+        <ul class="tide-related-list">
+            @foreach (var a in Work.Articles)
+            {
+                <li class="tide-related-item" @key="a.Id">
+                    <a class="tide-related-title" href="articles/@a.Id">@a.Title</a>
+                    <div class="tide-related-meta">
+                        @string.Join(", ", a.Why) &middot;
+                        @(a.LastBriefed is { } d ? "Briefed " + Ui.ShortDay(d) : "Not briefed yet") &middot; @a.AuthorName
+                        @if (a.StoryName is { } story) { <text> &middot; Story: @story</text> }
+                    </div>
+                    @if (CanWrite && (a.StoryId is null || a.StoryId != StoryId))
+                    {
+                        <button type="button" class="btn btn-outline-secondary btn-sm mt-1" aria-label="@SameStoryLabel(a)" @onclick="() => OnSameStory.InvokeAsync(a)">
+                            <span class="bi bi-collection" aria-hidden="true"></span> Same story
+                        </button>
+                    }
+                    @if (a.OpenActions.Count > 0)
+                    {
+                        <ul class="tide-related-actions" aria-label="Open actions from “@a.Title”">
+                            @foreach (var x in a.OpenActions)
+                            {
+                                <li @key="x.Number">
+                                    <div>
+                                        <a href="actions/@x.Number" class="tide-data">@Ui.ActionLabel(x.Number)</a> @x.Title
+                                        <div class="tide-related-meta">
+                                            @ActionService.StatusName(x.Status) &middot; @x.TeamName &middot; @(x.AssigneeName ?? "Unassigned")
+                                            @if (x.DueDate is { } due) { <text> &middot; due @Ui.ShortDay(due)</text> }
+                                            @if (ActionSla.LateText(x.DueDate, Clock.Today) is { } late) { <text> &middot; </text><span class="tide-related-late">@late</span> }
+                                        </div>
+                                    </div>
+                                    @if (CanWrite)
+                                    {
+                                        <button type="button" class="btn btn-link btn-sm p-0" disabled="@(!CanMention)"
+                                                title="@(CanMention ? null : MentionOff)" aria-label="Mention @Ui.ActionLabel(x.Number) in why it matters"
+                                                @onclick="() => OnMention.InvokeAsync(RelatedService.MentionText(x))">Mention</button>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+                </li>
+            }
+        </ul>
+        @if (CanWrite && !CanMention && Work.Articles.Any(a => a.OpenActions.Count > 0))
+        {
+            <p class="tide-muted small mb-0">@MentionOff</p>
+        }
+    }
+    @if (Work is { More: true, SearchQuery: { } q })
+    {
+        <a class="small d-inline-block mt-2" href="search?q=@Uri.EscapeDataString(q)">Open in Search (@Work.Total in all)</a>
+    }
+    else if (Work is { More: true })
+    {
+        <p class="tide-muted small mb-0 mt-2">@Work.Total related in all; the newest @Work.Articles.Count are shown.</p>
+    }
+</section>
+
+@code {
+    /// <summary>What RelatedService found; null while it's looking.</summary>
+    [Parameter] public RelatedWork? Work { get; set; }
+
+    /// <summary>The story this article is in now (it may have changed since the page loaded).</summary>
+    [Parameter] public Guid? StoryId { get; set; }
+
+    /// <summary>Whether the person writes articles: Mention and Same story are for them.</summary>
+    [Parameter] public bool CanWrite { get; set; }
+
+    /// <summary>The TLP of why it matters, as on screen: an action is mentioned only in AMBER-or-higher text.</summary>
+    [Parameter] public TlpLevel WhyTlp { get; set; }
+
+    [Parameter] public EventCallback<string> OnMention { get; set; }
+    [Parameter] public EventCallback<RelatedArticle> OnSameStory { get; set; }
+
+    internal const string MentionOff = "Why it matters is below TLP:AMBER, so actions (internal status) aren't mentioned in it. Raise its TLP to mention one.";
+
+    private bool CanMention => WhyTlp >= TlpLevel.Amber;
+
+    private static string SameStoryLabel(RelatedArticle a) => a.StoryName is { } s
+        ? $"Put this article in the story “{s}”"
+        : $"Start a story with this article and “{a.Title}”";
+}

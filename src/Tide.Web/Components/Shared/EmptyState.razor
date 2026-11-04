@@ -1,0 +1,24 @@
+@* Nothing to show: an icon, what's (not) here, why or what to do next, and the way forward. Say
+   which kind of empty it is: "nothing matches these filters" and "nothing yet" read differently. Compact is the same
+   thing smaller, for a panel inside a card (the send log, a chart's list). *@
+<div class="tide-empty-state @(Compact ? "tide-empty-state-compact" : "") @Class">
+    <span class="bi @Icon tide-empty-state-icon" aria-hidden="true"></span>
+    <div class="tide-empty-state-title">@Title</div>
+    @if (ChildContent is not null)
+    {
+        <div class="tide-empty-state-msg">@ChildContent</div>
+    }
+    @if (Actions is not null)
+    {
+        <div class="tide-empty-state-actions">@Actions</div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Icon { get; set; } = "bi-inbox";
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public bool Compact { get; set; }
+}

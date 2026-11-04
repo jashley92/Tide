@@ -1,0 +1,149 @@
+@* Triage's "Attach to…": the selected item as another report of an article being written, rather than a new one. The
+   button opens a combobox in the row: a filter box over the recent drafts, ready articles and those on today's brief,
+   newest first (IntakeService.AttachTargetsAsync; never one already presented or sent). The box keeps focus and
+   aria-activedescendant names the highlighted article; the arrows, Home and End move it, Enter picks it, Esc closes and
+   gives focus back to the button. Triage's letter keys leave the box alone (it's a text field). The page does the
+   attaching (OnPick), as its other buttons do. *@
+@inject IntakeService Intake
+@inject OrgClock Clock
+@inject ToastService Toasts
+
+<div class="tide-attach" @onclick:stopPropagation="true">
+    <button type="button" class="btn btn-outline-secondary btn-sm" aria-expanded="@(_open ? "true" : "false")" aria-controls="@(_id)-panel"
+            disabled="@Disabled" @ref="_button" @onclick="Toggle">
+        <span class="bi bi-link-45deg" aria-hidden="true"></span> Attach to&hellip;
+    </button>
+    @if (_open)
+    {
+        var shown = Shown;
+        <div class="tide-attach-panel" id="@(_id)-panel">
+            <input @ref="_input" type="text" class="form-control form-control-sm" role="combobox" autocomplete="off" spellcheck="false" maxlength="200"
+                   aria-expanded="@(shown.Count > 0 ? "true" : "false")" aria-controls="@(_id)-list" aria-autocomplete="list"
+                   aria-activedescendant="@(shown.Count > 0 ? OptionId(_active) : null)"
+                   aria-label="Attach it to which article? Type to filter" placeholder="Filter recent articles"
+                   @bind="_filter" @bind:event="oninput" @bind:after="Filtered" @onkeydown="OnKey" />
+            <ul class="tide-attach-list" id="@(_id)-list" role="listbox" aria-label="Recent articles">
+                @for (var i = 0; i < shown.Count; i++)
+                {
+                    var t = shown[i];
+                    <li class="@(i == _active ? "tide-attach-opt is-active" : "tide-attach-opt")" role="option" id="@OptionId(i)" @key="t.Id"
+                        aria-selected="@(i == _active ? "true" : "false")" @onclick="() => Pick(t)">
+                        <span class="tide-attach-title">@t.Title</span>
+                        <span class="tide-attach-meta">@(t.OnBrief ? "On today's brief" : t.Status.ToString()) &middot; @t.AuthorName &middot; @Ui.When(Clock, t.CreatedAtUtc)</span>
+                    </li>
+                }
+            </ul>
+            @if (shown.Count == 0)
+            {
+                <p class="tide-attach-empty">@(_targets is null ? "Loading…" : _targets.Count == 0 ? "No drafts or ready articles to attach it to." : "Nothing matches.")</p>
+            }
+            <div class="form-text m-0" aria-hidden="true">&uarr; &darr; to choose, Enter attaches, Esc closes</div>
+            <div class="visually-hidden" role="status">@(_targets is null ? "" : $"{shown.Count} article{(shown.Count == 1 ? "" : "s")}")</div>
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>Off while the page is busy with another step.</summary>
+    [Parameter] public bool Disabled { get; set; }
+
+    /// <summary>The article picked: the page attaches the item to it.</summary>
+    [Parameter] public EventCallback<AttachTarget> OnPick { get; set; }
+
+    /// <summary>The picker opened (true) or closed: Triage holds a colleague's changes back while it's open.</summary>
+    [Parameter] public EventCallback<bool> OpenChanged { get; set; }
+
+    /// <summary>The most articles listed at once; the filter finds the rest.</summary>
+    public const int MaxShown = 50;
+
+    private readonly string _id = "attach-" + Guid.NewGuid().ToString("N")[..8];
+    private IReadOnlyList<AttachTarget>? _targets;
+    private string _filter = "";
+    private bool _open, _focusInput, _focusButton;
+    private int _active;
+    private ElementReference _button, _input;
+
+    private string OptionId(int i) => $"{_id}-opt-{i}";
+
+    internal IReadOnlyList<AttachTarget> Shown
+    {
+        get
+        {
+            var q = _filter.Trim();
+            return (_targets ?? []).Where(t => q.Length == 0 || t.Title.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || t.AuthorName.Contains(q, StringComparison.OrdinalIgnoreCase))
+                .Take(MaxShown).ToList();
+        }
+    }
+
+    internal async Task Toggle()
+    {
+        if (_open)
+        {
+            await Close();
+            return;
+        }
+        (_open, _filter, _active, _focusInput) = (true, "", 0, true);
+        await OpenChanged.InvokeAsync(true);
+        try { _targets = await Intake.AttachTargetsAsync(Clock.CurrentBriefDate); }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            _targets = [];
+        }
+        StateHasChanged();
+    }
+
+    private async Task Close()
+    {
+        _open = false;
+        _focusButton = true;
+        await OpenChanged.InvokeAsync(false);
+        StateHasChanged();
+    }
+
+    private void Filtered() => _active = 0;
+
+    internal async Task OnKey(KeyboardEventArgs e)
+    {
+        var shown = Shown;
+        switch (e.Key)
+        {
+            case "ArrowDown": _active = shown.Count == 0 ? 0 : (_active + 1) % shown.Count; break;
+            case "ArrowUp": _active = shown.Count == 0 ? 0 : (_active - 1 + shown.Count) % shown.Count; break;
+            case "Home" when e.CtrlKey || _filter.Length == 0: _active = 0; break;
+            case "End" when e.CtrlKey || _filter.Length == 0: _active = Math.Max(0, shown.Count - 1); break;
+            case "Enter":
+                if (_active < shown.Count) await Pick(shown[_active]);
+                break;
+            case "Escape": await Close(); break;
+        }
+        StateHasChanged();
+    }
+
+    private async Task Pick(AttachTarget t)
+    {
+        _open = false;
+        await OpenChanged.InvokeAsync(false);
+        await OnPick.InvokeAsync(t);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (_focusInput && _open)
+            {
+                _focusInput = false;
+                await _input.FocusAsync();
+            }
+            if (_focusButton)
+            {
+                _focusButton = false;
+                await _button.FocusAsync();
+            }
+        }
+        catch (JSDisconnectedException) { /* the tab has gone */ }
+        catch (InvalidOperationException) { /* not rendered interactively (a prerender or a test) */ }
+    }
+}

@@ -1,0 +1,340 @@
+@* Hunt queries on an action (ADR 0006): generate one from the article's indicators (or its story's) in a chosen query
+   language, or add a hand-written one, copy it into the SIEM, and record what it found. TIDE never runs the query.
+   The language last used is remembered in the browser. A sweep or hunt whose query came back clean closes in one step,
+   "No hits, close": only once the query was copied here (or written by hand), saying how many days it searched, and
+   with the values it left out acknowledged. *@
+@inject ActionService ActionSvc
+@inject IJSRuntime JS
+@inject ScreenshotService Shots
+@inject OrgClock Clock
+@inject ToastService Toasts
+
+<div class="tide-card">
+    <h2>Hunt queries <span class="tide-count tide-muted fw-normal">(@Action.Hunts.Count)</span></h2>
+    @if (CanWork)
+    {
+        <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
+            <select class="tide-maxw-md form-select form-select-sm" aria-label="Query language" @bind="_dialect" @bind:after="RememberDialect">
+                @foreach (var d in QueryDialects.All) { <option value="@d.Key">@d.Name</option> }
+            </select>
+            @if (_sources.ArticleIndicators > 0)
+            {
+                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Generate(false)"><span class="bi bi-terminal" aria-hidden="true"></span> Generate from @_sources.ArticleIndicators indicator@(_sources.ArticleIndicators == 1 ? "" : "s")</button>
+            }
+            @if (_sources.StoryArticles > 1 && _sources.StoryIndicators > _sources.ArticleIndicators)
+            {
+                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Generate(true)"><span class="bi bi-diagram-3" aria-hidden="true"></span> From the story's @_sources.StoryArticles articles (@_sources.StoryIndicators indicators)</button>
+            }
+            <button class="btn btn-link btn-sm" @onclick="() => _writing = !_writing">Write one by hand</button>
+        </div>
+        @if (_sources.StoryIndicators == 0)
+        {
+            <p class="small tide-muted">@(Action.Article is null ? "Not from an article, so there are no indicators. Write a query by hand." : "No indicators on the article. Add them there, or write a query by hand.")</p>
+        }
+        @if (_writing)
+        {
+            <div class="mb-3">
+                <textarea class="tide-query" spellcheck="false" aria-label="Your query" placeholder="A behavioural hunt, for example: php-fpm spawning a shell" @bind="_ownText"></textarea>
+                <div class="d-flex gap-2 mt-2">
+                    <button class="btn btn-primary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_ownText))" @onclick="AddOwn">Add the query</button>
+                    <button class="btn btn-outline-secondary btn-sm" @onclick="() => _writing = false">Cancel</button>
+                </div>
+            </div>
+        }
+    }
+    @foreach (var h in Action.Hunts)
+    {
+        var id = "hunt-" + h.Id.ToString("N");
+        <div class="tide-hunt" @key="h.Id">
+            <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
+                <strong>@HuntQueryBuilder.DialectName(h.Dialect)</strong>
+                @if (h.GeneratedText.Length == 0) { <Badge>hand-written</Badge> }
+                <span class="small tide-muted">@h.CreatedByName &middot; @Ui.When(Clock, h.CreatedAtUtc)</span>
+                <span class="ms-auto small">
+                    <HuntBadge Result="h.Result" OfOneHunt="true" Count="h.ResultCount" />
+                </span>
+            </div>
+            @if (_editingHunt == h.Id)
+            {
+                <textarea class="tide-query" spellcheck="false" aria-label="Query" @bind="_huntText"></textarea>
+                <div class="d-flex gap-2 mt-2">
+                    <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="() => SaveText(h)">Save query</button>
+                    <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editingHunt = null">Cancel</button>
+                </div>
+            }
+            else
+            {
+                <pre id="@id" class="tide-query">@h.Text</pre>
+                <div class="d-flex gap-2 align-items-center flex-wrap">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="@id" data-copy-status="@(id + "-status")" @onclick="() => _copied.Add(h.Id)"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
+                    @if (CanWork)
+                    {
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => EditText(h)"><span class="bi bi-pencil" aria-hidden="true"></span> Edit</button>
+                        @if (h.Result == HuntResult.NotRun)
+                        {
+                            <button class="btn btn-outline-secondary btn-sm" @onclick="() => StartRecord(h)"><span class="bi bi-check2-square" aria-hidden="true"></span> Record the result</button>
+                            <button class="btn btn-link btn-sm" disabled="@_busy" @onclick="() => Remove(h)">Remove</button>
+                        }
+                    }
+                    <span id="@(id + "-status")" class="small tide-muted" role="status" aria-live="polite"></span>
+                </div>
+                @if (CanClose(h))
+                {
+                    var draft = Draft(h);
+                    var leftOut = HuntQueryBuilder.LeftOut(h.GeneratedText);
+                    var ready = Ready(h, draft, leftOut);
+                    <div class="tide-hunt-close">
+                        <label class="tide-field-label mb-0" for="@(id + "-days")">Searched</label>
+                        <input id="@(id + "-days")" type="number" min="1" max="3650" class="form-control form-control-sm tide-w-count" @bind="draft.Window" />
+                        <span class="small">days</span>
+                        @if (leftOut > 0)
+                        {
+                            <div class="form-check mb-0">
+                                <input class="form-check-input" type="checkbox" id="@(id + "-checked")" @bind="draft.Checked" />
+                                <label class="form-check-label small" for="@(id + "-checked")">I've checked the @(leftOut == 1 ? "value" : $"{leftOut} values") the query left out</label>
+                            </div>
+                        }
+                        <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_busy || !ready)" aria-describedby="@(ready ? null : id + "-why")" @onclick="() => CloseClean(h)">
+                            <span class="bi bi-check2-circle" aria-hidden="true"></span> No hits, close
+                        </button>
+                        @if (!ready)
+                        {
+                            <span id="@(id + "-why")" class="small tide-muted">@Why(h, draft, leftOut)</span>
+                        }
+                    </div>
+                }
+            }
+            @if (h.Result != HuntResult.NotRun)
+            {
+                <div class="small mt-2">
+                    Run by @h.RunByName@(h.RunAtUtc is { } at ? $" on {Ui.When(Clock, at)}" : "")@(h.Notes is not null ? ": " + h.Notes : ".")
+                </div>
+                @if (h.EditedAfterResultAtUtc is { } edited)
+                {
+                    <div class="small tide-muted">Edited after its result was recorded (@Ui.When(Clock, edited)).</div>
+                }
+                @if (h.EvidenceFileId is { } ev)
+                {
+                    <button type="button" class="tide-zoom tide-zoom-inline mt-2" aria-label="Open the evidence for this hunt" @onclick="() => OpenEvidence(h, ev)"><img src="@Ui.ImageUrl(ev)" alt="Evidence for this hunt" class="tide-evidence-thumb border rounded" /></button>
+                }
+            }
+        </div>
+    }
+</div>
+
+<ScreenshotDialog Set="EvidenceSet" @bind-Open="_shot" />
+
+@* Recording what a query found: the result, how many hits, notes and an optional screenshot, in one step. *@
+<ConfirmDialog @ref="_record" Form="true" ConfirmDisabled="@(_result == HuntResult.NotRun)" Confirming="Record">
+    <div class="d-flex gap-3 flex-wrap align-items-end">
+        <div>
+            <div class="tide-field-label" id="hunt-r-label">Result</div>
+            <div class="btn-group btn-group-sm" role="group" aria-labelledby="hunt-r-label">
+                <input type="radio" class="btn-check" name="hunt-r" id="hunt-r-no" checked="@(_result == HuntResult.NoHits)" @onchange="() => _result = HuntResult.NoHits" />
+                <label class="btn btn-outline-secondary" for="hunt-r-no">No hits</label>
+                <input type="radio" class="btn-check" name="hunt-r" id="hunt-r-hits" checked="@(_result == HuntResult.Hits)" @onchange="() => _result = HuntResult.Hits" />
+                <label class="btn btn-outline-secondary" for="hunt-r-hits">Hits</label>
+            </div>
+        </div>
+        @if (_result == HuntResult.Hits)
+        {
+            <div>
+                <label class="tide-field-label" for="hunt-r-count">How many</label>
+                <input id="hunt-r-count" type="number" min="0" class="form-control form-control-sm tide-w-count" @bind="_count" />
+            </div>
+        }
+    </div>
+    <div class="mt-2">
+        <label class="tide-field-label" for="hunt-r-notes">Notes</label>
+        <input id="hunt-r-notes" class="form-control form-control-sm" maxlength="2000" @bind="_notes" placeholder="Time range searched, what the hits were" />
+    </div>
+    <div class="mt-2">
+        <label class="tide-field-label" for="hunt-r-ev">Evidence screenshot (optional)</label>
+        <InputFile id="hunt-r-ev" class="form-control form-control-sm" accept="image/png,image/jpeg,image/gif,image/webp" OnChange="PickEvidence" />
+    </div>
+</ConfirmDialog>
+
+@code {
+    [Parameter, EditorRequired] public ActionItem Action { get; set; } = default!;
+    [Parameter] public bool CanWork { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private const string DialectPref = "hunt-dialect";
+
+    // The language this person used last, from the browser (theme.js's tidePrefs), once the panel is drawn.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || !CanWork) return;
+        try
+        {
+            if (QueryDialects.Find(await JS.InvokeAsync<string?>("tidePrefs.get", DialectPref)) is { } d && d.Key != _dialect)
+            {
+                _dialect = d.Key;
+                StateHasChanged();
+            }
+        }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { }   // the script isn't there (an old cached page): the first language stands
+    }
+
+    private async Task RememberDialect()
+    {
+        try { await JS.InvokeVoidAsync("tidePrefs.set", DialectPref, _dialect); }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { }
+    }
+
+    // --- "No hits, close" ------------------------------------------------------------------------------------------
+
+    /// <summary>What closing a query's action as clean needs said: the days searched, and that left-out values were checked.</summary>
+    private sealed class CloseDraft
+    {
+        public int? Window { get; set; }
+        public bool Checked { get; set; }
+    }
+
+    private readonly Dictionary<Guid, CloseDraft> _drafts = [];
+
+    // Queries copied from this panel: only one of those (or a hand-written one) can close the action as clean.
+    private readonly HashSet<Guid> _copied = [];
+
+    private CloseDraft Draft(HuntQuery h)
+    {
+        if (!_drafts.TryGetValue(h.Id, out var d)) _drafts[h.Id] = d = new CloseDraft { Window = HuntQueryBuilder.WindowOf(h.GeneratedText) };
+        return d;
+    }
+
+    private bool CanClose(HuntQuery h) =>
+        CanWork && h.Result == HuntResult.NotRun && Action.IsOpen && Action.Kind is ActionKind.IocSweep or ActionKind.ThreatHunt;
+
+    private bool Ready(HuntQuery h, CloseDraft d, int leftOut) =>
+        (h.GeneratedText.Length == 0 || _copied.Contains(h.Id)) && d.Window is >= 1 and <= 3650 && (leftOut == 0 || d.Checked);
+
+    private string Why(HuntQuery h, CloseDraft d, int leftOut) =>
+        h.GeneratedText.Length > 0 && !_copied.Contains(h.Id) ? "Copy the query and run it first."
+        : d.Window is not (>= 1 and <= 3650) ? "Say how many days it searched."
+        : leftOut > 0 && !d.Checked ? "Tick that you've checked the values it left out."
+        : "";
+
+    private Task CloseClean(HuntQuery h) => Run(async () =>
+    {
+        var d = Draft(h);
+        await ActionSvc.CloseWithNoHitsAsync(h.Id, d.Window ?? 0, d.Checked);
+        Toasts.Show($"No hits recorded; {Ui.ActionLabel(Action.Number)} is done.");
+    });
+
+    private string _dialect = QueryDialects.All[0].Key;
+    private bool _busy, _writing;
+    private ScreenshotDialog.Shot? _shot;   // the evidence screenshot open in the dialog
+    private IReadOnlyList<ScreenshotDialog.Shot> EvidenceSet => _shot is null ? [] : [_shot];
+
+    private void OpenEvidence(HuntQuery h, Guid fileId) => _shot = new ScreenshotDialog.Shot(fileId, $"hunt-evidence-{h.Dialect}.png");
+    private string? _ownText;
+    private HuntSources _sources = new(0, 0, 0);
+
+    // Read when the action is read (the page hands over a new one after each save), not on every redraw of the page
+    // around it, which happens on each keystroke in its comment box.
+    private ActionItem? _sourcesFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (ReferenceEquals(Action, _sourcesFor)) return;
+        _sourcesFor = Action;
+        try { _sources = await ActionSvc.HuntSourcesAsync(Action.Id); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+    private Guid? _editingHunt, _recording;
+    private ConfirmDialog _record = default!;
+    private string? _huntText, _notes;
+    private HuntResult _result;
+    private int? _count;
+    private ScreenshotUpload? _evidence;
+
+    private void EditText(HuntQuery h)
+    {
+        _editingHunt = h.Id;
+        _huntText = h.Text;
+    }
+
+    private async Task StartRecord(HuntQuery h)
+    {
+        _recording = h.Id;
+        _result = HuntResult.NotRun;
+        _count = null;
+        _notes = null;
+        _evidence = null;
+        await _record.Ask($"Record the {HuntQueryBuilder.DialectName(h.Dialect)} query's result", null, "Save the result", danger: false);
+        _recording = null;
+    }
+
+    private async Task PickEvidence(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            using var ms = new MemoryStream();
+            await using var stream = e.File.OpenReadStream(Shots.MaxBytes);
+            await stream.CopyToAsync(ms);
+            _evidence = new ScreenshotUpload(e.File.Name, ms.ToArray());
+        }
+        catch (IOException) { Toasts.Error("That file is too large."); }
+    }
+
+    private Task Generate(bool fromStory) => Run(async () =>
+    {
+        await RememberDialect();
+        await ActionSvc.GenerateHuntAsync(Action.Id, _dialect, fromStory);
+        Toasts.Show("Query generated.");
+    });
+
+    private Task AddOwn() => Run(async () =>
+    {
+        await RememberDialect();
+        await ActionSvc.AddHandWrittenHuntAsync(Action.Id, _dialect, _ownText ?? "");
+        _ownText = null;
+        _writing = false;
+        Toasts.Show("Query added.");
+    });
+
+    private Task SaveText(HuntQuery h) => Run(async () =>
+    {
+        await ActionSvc.SaveHuntTextAsync(h.Id, _huntText ?? "");
+        _editingHunt = null;
+    });
+
+    // The dialog's button: it closes once the result is recorded, and stays open on what was entered if that's refused.
+    // The screenshot is stored first (the recording names it); a refused recording deletes it again, so neither the
+    // refusal nor a retry leaves a file nothing holds.
+    private Task<bool> Record() => Run(async () =>
+    {
+        Guid? evidence = _evidence is null ? null : await Shots.StoreEvidenceAsync(_evidence);
+        try { await ActionSvc.RecordHuntResultAsync(_recording!.Value, _result, _count, _notes, evidence); }
+        catch when (evidence is not null)
+        {
+            try { await Shots.DiscardEvidenceAsync(evidence.Value); }
+            catch (Exception) { /* the refusal is what the person needs to hear; an orphan file is harmless */ }
+            throw;
+        }
+        Toasts.Show("Result recorded.");
+    });
+
+    private Task Remove(HuntQuery h) => Run(() => ActionSvc.RemoveHuntAsync(h.Id));
+
+    // True when it worked; a failure is a toast.
+    private async Task<bool> Run(Func<Task> action)
+    {
+        if (_busy) return false;   // a second click while one runs: a query is generated or added once
+        _busy = true;
+        try
+        {
+            await action();
+            await Changed.InvokeAsync();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            return false;
+        }
+        finally { _busy = false; }
+    }
+}

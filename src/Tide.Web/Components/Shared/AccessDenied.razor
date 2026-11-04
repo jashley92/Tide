@@ -1,0 +1,24 @@
+@inject ICurrentUser CurrentUser
+
+<div class="tide-card-narrow tide-card">
+    <h1 class="h4">You don't have access to this page</h1>
+    @if (!CurrentUser.IsAuthenticated)
+    {
+        <p class="tide-muted">You aren't signed in. Reload the page to sign in with your Windows account.</p>
+    }
+    else
+    {
+        <p>You're signed in as <strong>@CurrentUser.DisplayName</strong>@(CurrentUser.Roles.Count == 0 ? ", with no TIDE role." : $", as {string.Join(", ", CurrentUser.Roles)}.")</p>
+        <p class="tide-muted">TIDE roles come from Active Directory groups. Ask a TIDE administrator to add a group you're in,
+            or to add you to one of the groups they've mapped.</p>
+        @if (!string.IsNullOrEmpty(Path))
+        {
+            <p class="tide-muted small mb-0">Page: <span class="tide-data">/@Path</span></p>
+        }
+    }
+    <a class="btn btn-outline-secondary btn-sm mt-2" href="">Go to the start page</a>
+</div>
+
+@code {
+    [Parameter] public string? Path { get; set; }
+}

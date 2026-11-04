@@ -1,0 +1,149 @@
+@* One article as an edition shows it: the brief's edition preview (EditionView) and the editor's reader preview
+   (ReaderPreview) both draw it with this, so they never disagree. It draws only what the cut carries. The two slots are
+   for the editor's preview alone and draw nothing unless given: LeftOut stands in place of a part the edition leaves
+   out (and replaces the count of them), Missing in place of a bottom line, bullets or recommended actions not written
+   yet. Whatever those slots say stays in the editor: the email and SharePoint copies have their own renderer. *@
+@using Tide.Application.Distribution
+@using Tide.Application.Indicators
+
+@{ var a = Article.Article; }
+<article>
+    <div class="d-flex gap-2 align-items-center flex-wrap">
+        @if (Number is { } n)
+        {
+            <span class="tide-muted">@n.</span>
+        }
+        <ClassBadge Classification="a.Classification" Priority="a.Priority" />
+        <TlpBadge Level="a.Tlp" />
+        @if (Article.Marking > a.Tlp)
+        {
+            <span class="tide-muted small" title="Some of this article is marked higher than the article itself">holds <TlpBadge Level="Article.Marking" /></span>
+        }
+        @if (!string.IsNullOrWhiteSpace(a.SourceName))
+        {
+            <span class="tide-muted small">@a.SourceName</span>
+        }
+    </div>
+    <h3>@a.Title</h3>
+    @if (Missing is not null && string.IsNullOrWhiteSpace(a.Bluf))
+    {
+        @Missing(ArticlePart.BottomLine)
+    }
+    else
+    {
+        <p class="tide-bluf mb-1">@a.Bluf</p>
+    }
+    @if (Article.Bullets.Count > 0 || (LeftOut is not null && a.Bullets.Count > 0))
+    {
+        <ul>
+            @foreach (var b in LeftOut is null ? Article.Bullets : a.Bullets.OrderBy(b => b.SortOrder).ToList())
+            {
+                if (Article.Bullets.Contains(b))
+                {
+                    <li><Md Text="@b.Text" Inline="true" />@if (a.Effective(b.Tlp) > a.Tlp) { <text> </text><TlpBadge Level="a.Effective(b.Tlp)" /> }</li>
+                }
+                else
+                {
+                    <li class="tide-left-out-item">@LeftOut!(a.Effective(b.Tlp))</li>
+                }
+            }
+        </ul>
+    }
+    else if (Missing is not null && a.Bullets.Count == 0)
+    {
+        @Missing(ArticlePart.Bullets)
+    }
+    @if (Article.ShowWhy)
+    {
+        <div class="small fw-semibold mt-2">Why it matters to us @if (a.Effective(a.WhyItMattersTlp) > a.Tlp) { <TlpBadge Level="a.Effective(a.WhyItMattersTlp)" /> }</div>
+        <Md Text="@a.WhyItMatters" />
+    }
+    else if (LeftOut is not null && !string.IsNullOrWhiteSpace(a.WhyItMatters))
+    {
+        <div class="small fw-semibold mt-2">Why it matters to us</div>
+        @LeftOut(a.Effective(a.WhyItMattersTlp))
+    }
+    @if (!string.IsNullOrWhiteSpace(a.RecommendedActions))
+    {
+        <div class="small fw-semibold mt-2">Recommended actions</div>
+        <Md Text="@a.RecommendedActions" />
+    }
+    else if (Missing is not null)
+    {
+        @Missing(ArticlePart.Recommended)
+    }
+    @foreach (var s in LeftOut is null ? Article.Screenshots : a.Screenshots.OrderBy(s => s.SortOrder).ToList())
+    {
+        if (Article.Screenshots.Contains(s))
+        {
+            <img src="@Ui.ImageUrl(s.FileId)" alt="@(s.Caption ?? "Screenshot")" title="@s.Caption" loading="lazy" />
+        }
+        else
+        {
+            @LeftOut!(a.Effective(s.Tlp))
+        }
+    }
+    @if (a.Techniques.Count > 0)
+    {
+        <div class="mt-2">
+            @foreach (var t in a.Techniques.Select(t => AttackCatalog.Find(t.TechniqueId)).OfType<AttackTechnique>().OrderBy(t => t.Id))
+            {
+                <span class="tide-chip tide-chip-technique" title="@t.Name">@t.Id @t.Name</span>
+            }
+        </div>
+    }
+    @if (a.Cves.Count > 0)
+    {
+        <div class="small tide-muted">CVEs: <span class="tide-data">@string.Join(", ", a.Cves.Select(c => c.CveId).Order())</span></div>
+    }
+    @if (Article.Indicators.Count > 0)
+    {
+        <div class="small fw-semibold mt-2">Indicators (@Article.Indicators.Count)</div>
+        <ul class="tide-edition-iocs">
+            @foreach (var ind in Article.Indicators.Take(BriefRenderer.MaxIndicatorsShown))
+            {
+                <li><span class="tide-muted">@IndicatorLabels.For(ind.Type)</span> <span class="tide-data">@IndicatorLabels.Shown(ind.Type, ind.Value)</span></li>
+            }
+        </ul>
+        @if (Article.Indicators.Count > BriefRenderer.MaxIndicatorsShown)
+        {
+            <div class="small tide-muted">Showing @BriefRenderer.MaxIndicatorsShown of @Article.Indicators.Count. The email says to export the brief's indicators for the full list.</div>
+        }
+    }
+    @if (Article.Actions.Count > 0)
+    {
+        <div class="small fw-semibold mt-2">Follow-up actions (@Article.Actions.Count)</div>
+        <ul>
+            @foreach (var x in Article.Actions)
+            {
+                <li><a href="@Ui.ActionUrl(x.Number)" class="tide-action-num">@Ui.ActionLabel(x.Number)</a> @x.Title <span class="tide-muted small">@BriefRenderer.ActionMeta(x)</span></li>
+            }
+        </ul>
+    }
+    @if (!string.IsNullOrWhiteSpace(a.SourceUrl))
+    {
+        <div class="small"><a href="@a.SourceUrl" target="_blank" rel="noopener noreferrer">Source</a></div>
+    }
+    @if (LeftOut is null && Article.WithheldParts > 0)
+    {
+        <div class="tide-withheld">@Article.WithheldParts restricted @(Article.WithheldParts == 1 ? "part was" : "parts were") left out of this edition.</div>
+    }
+    @ChildContent
+</article>
+
+@code {
+    /// <summary>The article as the edition cuts it.</summary>
+    [Parameter, EditorRequired] public EditionArticle Article { get; set; } = default!;
+
+    /// <summary>Its place in the brief, shown before it; none in the editor.</summary>
+    [Parameter] public int? Number { get; set; }
+
+    /// <summary>For the editor only: drawn where a part above the ceiling is left out, given that part's marking.</summary>
+    [Parameter] public RenderFragment<TlpLevel>? LeftOut { get; set; }
+
+    /// <summary>For the editor only: drawn where a bottom line, bullets or recommended actions aren't written yet.</summary>
+    [Parameter] public RenderFragment<ArticlePart>? Missing { get; set; }
+
+    /// <summary>For the editor only: drawn at the end of the article.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

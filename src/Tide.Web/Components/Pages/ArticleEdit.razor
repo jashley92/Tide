@@ -1,0 +1,36 @@
+@page "/articles/{Id:guid}"
+@attribute [Authorize(Policy = Policies.ReadTeamEdition)]
+
+@* An article: the editor (ArticleEditorPanel holds the fields, saving and everything around them) and, beside it, what
+   readers get (ReaderPreview): the article as an edition will carry it, its gaps, its related work (whose "Mention"
+   writes into the editor's why it matters), and the details the rail used to hold.
+   ?edition=company opens the preview on the company-wide edition. On today's brief, BriefStepper walks to the article
+   before or after it, in the edition the preview shows. *@
+<ArticleEditorPanel Id="Id" @ref="_panel">
+    <Stepper>
+        <BriefStepper ArticleId="Id" EditionKey="@_edition" />
+    </Stepper>
+    <Aside Context="ed">
+        <ReaderPreview State="ed" EditionKey="@_edition" EditionChanged="e => _edition = e" OnFocus="Focus" OnFix="Fix" OnMention="Mention" />
+    </Aside>
+</ArticleEditorPanel>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    /// <summary>The edition the preview opens on: <c>company</c>, or the team edition.</summary>
+    [SupplyParameterFromQuery(Name = "edition")] public string? EditionKey { get; set; }
+
+    private ArticleEditorPanel? _panel;
+
+    // The edition the preview shows: from the address, then as it's switched (which changes the address without a navigation).
+    private string? _edition;
+
+    protected override void OnParametersSet() => _edition = EditionKey;
+
+    private Task Focus(ArticlePart part) => _panel?.FocusFieldAsync(part) ?? Task.CompletedTask;
+
+    private Task Fix(ArticleFix fix) => _panel?.FixAsync(fix) ?? Task.CompletedTask;
+
+    private Task Mention(string text) => _panel?.MentionAsync(text) ?? Task.CompletedTask;
+}

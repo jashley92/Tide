@@ -1,0 +1,88 @@
+@* Who else has this brief, article, action or triage item open right now: overlapping
+   initials in each person's own colour, "Robin is viewing" on hover. Someone with unsaved changes there shows a pencil and
+   "is editing", so it isn't told by colour alone. Joins the place while shown and leaves when it closes (a closed tab is
+   cleared by its circuit); with Join off it only watches, for a list row showing who has that item open. Self isn't
+   shown: this is about who else is here. *@
+@inject Presence Together
+@inject ICurrentUser CurrentUser
+@inject PresenceCircuit Circuit
+@implements IDisposable
+
+@* The status region stays on the page (empty when no one else is here), so a screen reader announces arrivals. *@
+@if (!Compact || _others.Count > 0)
+{
+    <span class="tide-presence @(Compact ? "tide-presence-sm" : "")" role="@(Compact ? null : "status")">
+        @if (_others.Count > 0)
+        {
+            @foreach (var p in _others.Take(MaxAvatars))
+            {
+                <span class="tide-presence-dot tide-avatar-@Ui.AvatarSwatch(p.UserId) @(p.Editing ? "is-editing" : "")" @key="p.UserId"
+                      title="@Says(p)" aria-hidden="true">
+                    @MainLayout.Initials(p.Name)
+                    @if (p.Editing) { <span class="tide-presence-edit bi bi-pencil-fill"></span> }
+                </span>
+            }
+            @if (_others.Count > MaxAvatars)
+            {
+                <span class="tide-presence-dot tide-presence-more" title="@string.Join(", ", _others.Skip(MaxAvatars).Select(Says))" aria-hidden="true">+@(_others.Count - MaxAvatars)</span>
+            }
+            <span class="visually-hidden">@Sentence</span>
+        }
+    </span>
+}
+
+@code {
+    /// <summary>The place, e.g. "brief:2026-10-22" or "article:{id}".</summary>
+    [Parameter, EditorRequired] public string Place { get; set; } = "";
+
+    /// <summary>Whether this page has unsaved changes there, so the others see "editing".</summary>
+    [Parameter] public bool Editing { get; set; }
+
+    /// <summary>Off for a list row: shows who has the item open without joining it.</summary>
+    [Parameter] public bool Join { get; set; } = true;
+
+    /// <summary>Smaller avatars, for a list row or a card.</summary>
+    [Parameter] public bool Compact { get; set; }
+
+    private const int MaxAvatars = 4;
+    private string? _joined;
+    private IPresenceVisit? _visit;
+    private IReadOnlyList<PresentPerson> _others = [];
+
+    protected override void OnInitialized() => Together.Changed += OnChanged;
+
+    protected override void OnParametersSet()
+    {
+        // A new place, or a row that became (or stopped being) the selected one: join or leave accordingly.
+        if (Place != _joined || Join != (_visit is not null))
+        {
+            _visit?.Dispose();
+            _visit = null;
+            _joined = Place;
+            if (Join) _visit = Together.Join(Place, CurrentUser.UserId, CurrentUser.DisplayName, Circuit.CircuitId);
+            _others = Together.Others(Place, CurrentUser.UserId);
+        }
+        _visit?.SetEditing(Editing);
+    }
+
+    private static string Says(PresentPerson p) => $"{p.Name} is {(p.Editing ? "editing" : "viewing")}";
+
+    // "Also here: Robin (editing), Sam." for a screen reader, announced as people come and go.
+    private string Sentence => "Also here: " + string.Join(", ", _others.Select(p => p.Editing ? $"{p.Name} (editing)" : p.Name)) + ".";
+
+    private void OnChanged(string place)
+    {
+        if (place != _joined) return;
+        _ = InvokeAsync(() =>
+        {
+            _others = Together.Others(place, CurrentUser.UserId);
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        Together.Changed -= OnChanged;
+        _visit?.Dispose();
+    }
+}

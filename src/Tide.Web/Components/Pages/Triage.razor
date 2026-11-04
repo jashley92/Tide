@@ -1,0 +1,1309 @@
+@page "/triage"
+@attribute [Authorize(Policy = Policies.WriteArticles)]
+@inject IntakeService Intake
+@inject CveService Cves
+@inject NavigationManager Nav
+@inject ToastService Toasts
+@inject OrgClock Clock
+@inject IJSRuntime JS
+@inject ChangeFeed Changes
+@inject ChangeOrigin Origin
+@inject ICurrentUser Me
+@inject TimeProvider Time
+@inject Microsoft.Extensions.Options.IOptionsMonitor<IntakeOptions> IntakeOpts
+@inject Tide.Application.Stack.StackService Stack
+@inject ReadingService Reading
+@implements IAsyncDisposable
+
+<PageTitle>Triage · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <h1>Triage</h1>
+        <div class="tide-sub"><span class="tide-kbd">J</span>/<span class="tide-kbd">K</span> move,
+            <span class="tide-kbd">S</span> shortlist, <span class="tide-kbd">X</span> dismiss, <span class="tide-kbd">D</span> duplicate,
+            <span class="tide-kbd">P</span> promote to an article, <span class="tide-kbd">O</span> open the source, <span class="tide-kbd">V</span> read it here, <span class="tide-kbd">R</span> put back,
+            <span class="tide-kbd">Enter</span> or <span class="tide-kbd">&rarr;</span> open a group.
+            Times are @ZoneLabel.</div>
+    </div>
+    <div class="d-flex gap-2 align-items-center">
+        <a class="btn btn-outline-secondary" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> Write one by hand</a>
+    </div>
+</div>
+
+<TabBar Label="Inbox" Items="@(Tabs.Select(t => new TabBarItem(t.Item2, "", Key: t.Item1.ToString(), Count: _counts.GetValueOrDefault(t.Item1), Ticked: _tabMarks?.IsMarked(t.Item1) == true)).ToList())"
+        Active="@_status.ToString()" OnSelect="k => SetStatus(Enum.Parse<FeedItemStatus>(k!))" />
+
+<div class="tide-filters">
+    <select class="tide-maxw-sm form-select form-select-sm" aria-label="Source" @bind="_sourceId" @bind:after="Load">
+        <option value="">All sources</option>
+        @foreach (var s in _sources) { <option value="@s.Id">@s.Name</option> }
+    </select>
+    <input class="tide-maxw-sm form-control form-control-sm" placeholder="Search titles and CVEs" aria-label="Search" @bind="_search" @bind:event="oninput" @bind:after="SearchChanged" />
+    <div class="form-check mb-0">
+        <input class="form-check-input" type="checkbox" id="since-last" @bind="_sinceLast" @bind:after="Load" disabled="@(_lastBriefAt is null)" />
+        <label class="form-check-label small" for="since-last">Since the last brief@(_lastBriefAt is { } at ? $" ({Ui.When(Clock, at)})" : "")</label>
+    </div>
+    @if (_status is FeedItemStatus.New or FeedItemStatus.Shortlisted)
+    {
+        @* EP-81: newest first stays the default; "Likely used" is a choice this browser remembers. *@
+        <div class="btn-group btn-group-sm" role="group" aria-label="Order">
+            <button type="button" class="btn @(_sort == InboxSort.Newest ? "btn-secondary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(_sort == InboxSort.Newest)"
+                    @onclick="() => SetSort(InboxSort.Newest)">Newest</button>
+            <button type="button" class="btn @(_sort == InboxSort.Likely ? "btn-secondary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(_sort == InboxSort.Likely)"
+                    title="By how many items like each one the team promoted. What we run, watched adversaries and KEV stay on top." @onclick="() => SetSort(InboxSort.Likely)">Likely used</button>
+        </div>
+    }
+    @if (_status == FeedItemStatus.New && _rows.Count > 0)
+    {
+        <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="AskDismissAll">Dismiss all @_rows.Count shown…</button>
+    }
+    @* A colleague's change heard while a promote form or the attach picker is open waits, so the row being worked on
+       doesn't move; it shows when the form closes, or now from here. *@
+    @if (_waiting.Count > 0 && Deferring)
+    {
+        <button type="button" class="tide-live-pill" @onclick="ShowWaiting">
+            <span class="tide-live-pill-dot" aria-hidden="true"></span> Updates waiting<span class="visually-hidden">: show them now</span>
+        </button>
+    }
+    <span class="tide-muted small ms-auto">@(_sources.Count == 0 ? "No sources yet: an administrator adds them under Administration > Sources." : "")</span>
+</div>
+
+@if (_status == FeedItemStatus.New && !_older && _missed.Count > 0 && !_missedHidden)
+{
+    @* EP-81: a story dismissed this week that names a KEV-listed CVE or a watched adversary, and reached no brief. *@
+    <div class="alert alert-warning tide-missed" role="status">
+        <div><strong>Missed this week?</strong> @_missed.Count dismissed item@(_missed.Count == 1 ? "" : "s") name@(_missed.Count == 1 ? "s" : "") something we track, and no brief covered @(_missed.Count == 1 ? "it" : "them").</div>
+        <ul class="tide-missed-list">
+            @foreach (var m in _missed.Take(5))
+            {
+                <li><span class="fw-semibold">@m.Item.Title</span> <span class="tide-muted">· @m.SourceName · @m.Why.</span>
+                    <button type="button" class="btn btn-link btn-sm p-0 ms-1" disabled="@_busy" @onclick="() => PutBack(m)">Put back in New</button></li>
+            }
+        </ul>
+        <button type="button" class="btn btn-link btn-sm p-0" @onclick="HideMissed">Hide until next week</button>
+    </div>
+}
+
+<div class="tide-triage-layout@(_reading ? " reading" : "")">
+<div class="tide-card p-0">
+    @if (_rows.Count == 0)
+    {
+        @if (_loaded)
+        {
+            <EmptyState Icon="@(_status == FeedItemStatus.New ? "bi-check2-circle" : "bi-inbox")" Title="@EmptyText" />
+        }
+        else
+        {
+            <LoadingBlock />
+        }
+    }
+    @{ var ghosts = GhostsByLine(); }
+    <ol class="tide-triage">
+        @if (_older)
+        {
+            <li class="tide-triage-section">Older: new items untouched for @AgeText. KEV-listed ones, those with a high EPSS score and those naming a product on Our stack stay in New.
+                <button type="button" class="btn btn-link btn-sm p-0 ms-1" @onclick="() => ShowOlder(false)">Back to New</button></li>
+        }
+        @foreach (var (line, i) in _lines.Select((l, i) => (l, i)))
+        {
+            foreach (var g in ghosts.GetValueOrDefault(i) ?? []) { @Ghost(g) }
+            @* What names a product on Our stack comes first, under its own heading. *@
+            @if (AnyWeRun && i == 0 && WeRunOf(line) is not null) { <li class="tide-triage-section" aria-hidden="true">Matches what we run</li> }
+            @if (AnyWeRun && i > 0 && WeRunOf(line) is null && WeRunOf(_lines[i - 1]) is not null && line.Group is null) { <li class="tide-triage-section" aria-hidden="true">Everything else</li> }
+            var selected = i == _selected;
+            if (line.Row is null && line.Group is { } group)
+            {
+                var lead = line.Members[0];
+                var open = IsOpen(group);
+                @* A suggested group: one line for the event, the newest headline on it. It opens (its toggle, Enter or →)
+                   to the reports themselves, each a row with all its actions. X and S (or their buttons) dismiss or
+                   shortlist all its reports after a confirmation; nothing is merged or set aside without a click. *@
+                var groupNew = line.Members.Any(m => _marks.IsUnseen(m.Item.Id));
+                <li class="tide-triage-row tide-triage-group @(selected ? "selected" : "") @GroupCss(line)" aria-current="@(selected ? "true" : null)"
+                    aria-label="@(GroupLabel(line) + (groupNew ? NewNote : ""))" tabindex="@(selected ? "0" : "-1")" @key="@("group-" + group.Newest)"
+                    @onclick="() => Pick(i)" @onfocus="() => Pick(i)">
+                    <div class="tide-triage-head">
+                        <button type="button" class="tide-group-toggle" aria-expanded="@Ui.Aria(open)"
+                                aria-label="@(open ? "Hide" : "Show") the @line.Members.Count reports" @onclick:stopPropagation="true" @onclick="() => Toggle(i)">
+                            <span class="bi @(open ? "bi-chevron-down" : "bi-chevron-right")" aria-hidden="true"></span>
+                        </button>
+                        <span class="tide-group-label"><span class="bi bi-collection" aria-hidden="true"></span> Looks like one event: @line.Members.Count reports · @group.Sources feeds</span>
+                        @if (groupNew) { <span class="tide-live-new">New</span> }
+                    </div>
+                    <div class="tide-group-newest">Newest: <span class="tide-triage-title">“@lead.Item.Title”</span></div>
+                    <div class="tide-triage-meta">
+                        <span>@lead.Source.Name</span>
+                        <span>@Ui.When(Clock, lead.Item.PublishedAtUtc ?? lead.Item.FetchedAtUtc)</span>
+                        @if (WeRunOf(line) is { } groupRuns) { @WeRunChip(groupRuns) }
+                        @if (group.Shared.Count > 0) { <span>In common: @string.Join(", ", group.Shared)</span> }
+                        @foreach (var cve in group.Cves.Take(6)) { <CveChip CveId="@cve" Record="@_cves.GetValueOrDefault(cve)" /> }
+                        @if (group.Cves.Count > 6) { <span>+@(group.Cves.Count - 6) more CVEs</span> }
+                    </div>
+                    @if (selected)
+                    {
+                        @if (_promoting == group.Newest && _promotingGroup is not null)
+                        {
+                            @PromoteFields(GroupTlp(line), $"From the sources: {Tlp.Label(GroupTlp(line))}, the most restrictive", $"Promote {line.Members.Count} as one and write")
+                        }
+                        else
+                        {
+                            <div class="d-flex gap-2 flex-wrap mt-2">
+                                <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => OpenGroupPromote(line)">
+                                    <span class="bi bi-file-earmark-plus" aria-hidden="true"></span> Promote as one article (@line.Members.Count sources) <span class="tide-kbd">P</span></button>
+                                @* Only new reports are shortlisted or dismissed as a group, as the S and X keys are. *@
+                                @if (_status == FeedItemStatus.New)
+                                {
+                                    <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => ActOnGroup(line, TriageStep.Shortlist)">Shortlist the @line.Members.Count <span class="tide-kbd">S</span></button>
+                                    <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => ActOnGroup(line, TriageStep.Dismiss)">Dismiss the @line.Members.Count <span class="tide-kbd">X</span></button>
+                                }
+                                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Split(i)">Not the same: split</button>
+                                <button class="btn btn-outline-secondary btn-sm" @onclick:stopPropagation="true" @onclick="() => Toggle(i)">@(open ? "Hide" : "Show") the @line.Members.Count reports</button>
+                            </div>
+                        }
+                    }
+                </li>
+                continue;
+            }
+            var row = line.Row!;
+            var item = row.Item;
+            @* The rows are one tab stop, the selected one (triage.js moves focus with the selection); focusing a row,
+               by Tab or a click, selects it. A report in an open group is indented under it, its excerpt always shown. *@
+            var unseen = _marks.IsUnseen(item.Id);
+            <li class="tide-triage-row@(line.Group is not null ? " tide-triage-member" : "") @(selected ? "selected" : "") @_marks.Css(item.Id)" aria-current="@(selected ? "true" : null)" aria-label="@(item.Title + (unseen ? NewNote : ""))"
+                tabindex="@(selected ? "0" : "-1")" @key="item.Id" @onclick="() => Pick(i)" @onfocus="() => Pick(i)">
+                <div class="d-flex gap-2 align-items-start">
+                    <div class="flex-grow-1">
+                        @* The title does what the tab is for: in New and Shortlisted it opens the row's promote form (as P
+                           does); a promoted item's goes to its article; a dismissed or duplicate one's just selects the row.
+                           The source opens from its own icon (or O), in a new tab. *@
+                        <div class="tide-triage-head">
+                            @if (Promotable(item.Status))
+                            {
+                                <button type="button" class="tide-triage-title tide-triage-title-btn" title="Promote to an article" disabled="@_busy"
+                                        @onclick:stopPropagation="true" @onclick="() => PromoteFromTitle(i)">@item.Title</button>
+                            }
+                            else if (item.Status == FeedItemStatus.Promoted && item.ArticleId is { } articleId)
+                            {
+                                <a class="tide-triage-title" href="articles/@articleId" title="Open the article" @onclick:stopPropagation="true">@item.Title</a>
+                            }
+                            else
+                            {
+                                <span class="tide-triage-title">@item.Title</span>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(item.Url))
+                            {
+                                <a class="tide-triage-link tide-triage-source" href="@item.Url" target="_blank" rel="noopener noreferrer"
+                                   title="Open the source in a new tab" aria-label="Open the source in a new tab" @onclick:stopPropagation="true"><span class="bi bi-box-arrow-up-right" aria-hidden="true"></span></a>
+                            }
+                            @if (unseen) { <span class="tide-live-new">New</span> }
+                            @* Who else has this item selected; selecting it here joins them. *@
+                            <PresenceNote Place="@($"triage:{item.Id}")" Join="selected" Compact="true" />
+                        </div>
+                        <div class="tide-triage-meta">
+                            <span>@row.Source.Name</span>
+                            <span class="tide-reliability" title="Source reliability (Admiralty scale)">@row.Source.Reliability</span>
+                            <TlpBadge Level="row.Source.DefaultTlp" />
+                            @if (row.WeRun is { } runs) { @WeRunChip(runs) }
+                            @if (row.Watching is { } watching)
+                            {
+                                <a class="tide-badge tide-badge-warn tide-werun-chip" href="@($"adversaries/{watching.Id}")" title="A watched adversary: open its profile" @onclick:stopPropagation="true">Watching: @watching.Name</a>
+                            }
+                            <span>@Ui.When(Clock, item.PublishedAtUtc ?? item.FetchedAtUtc)</span>
+                            @foreach (var cve in item.CveList.Take(6)) { <CveChip CveId="@cve" Record="@_cves.GetValueOrDefault(cve)" /> }
+                            @if (row.Similar is { } sim) { <Badge Tone="BadgeTone.Warn" Title="@sim.Title" Class="tide-badge-wrap">Looks like: @Short(sim.Title)</Badge> }
+                            @if (row.SameCve.Count > 0)
+                            {
+                                <button type="button" class="tide-badge tide-badge-warn tide-badge-wrap tide-chip-button" title="@($"Show the items with {row.SharedCve}")"
+                                        @onclick:stopPropagation="true" @onclick="() => ShowSameCve(row)">Same CVE as @row.SameCve.Count other new item@(row.SameCve.Count == 1 ? "" : "s")</button>
+                            }
+                            @foreach (var c in row.Coverage)
+                            {
+                                <Badge Tone="BadgeTone.Info" Class="tide-badge-wrap">@c.Why covered@(c.BriefDate is { } d ? $" {Ui.ShortDay(d)}" : ""): <a href="articles/@c.ArticleId" @onclick:stopPropagation="true">@Short(c.ArticleTitle)</a></Badge>
+                            }
+                            @if (item.Status == FeedItemStatus.Dismissed && item.DismissReason is not null) { <span>Dismissed: @item.DismissReason</span> }
+                            @if (item.Status != FeedItemStatus.New && item.StatusByName is not null)
+                            {
+                                <span>by @item.StatusByName@(item.StatusAtUtc is { } decidedAt ? ", " + Ui.When(Clock, decidedAt) : "")</span>
+                            }
+                            @if (item.Status == FeedItemStatus.Promoted && item.ArticleId is { } aid) { <a href="articles/@aid" @onclick:stopPropagation="true">Open the article</a> }
+                        </div>
+                        @if (item.Status != FeedItemStatus.Promoted && FollowUp(row) is { } followUp) { <div class="tide-triage-follow">@followUp</div> }
+                        @if (row.Likely is { } likely) { <div class="tide-triage-likely"><span class="tide-likely-count">@likely.Promoted/@likely.Decided</span> @likely.Why</div> }
+                    </div>
+                </div>
+                @if (!selected && line.Group is not null && !string.IsNullOrWhiteSpace(item.Excerpt)) { <div class="tide-triage-excerpt">@item.Excerpt</div> }
+                @if (selected)
+                {
+                    @if (!string.IsNullOrWhiteSpace(item.Excerpt)) { <div class="tide-triage-excerpt">@item.Excerpt</div> }
+                    @if (!string.IsNullOrWhiteSpace(row.Source.LicenseNote)) { <div class="small text-danger mb-2"><span class="bi bi-shield-exclamation" aria-hidden="true"></span> @row.Source.LicenseNote</div> }
+                    @if (item.Status != FeedItemStatus.Promoted && (row.Coverage.Any(c => c.Attachable) || (item.Status == FeedItemStatus.New && row.SameCve.Count > 0)))
+                    {
+                        @* One story, many reports: keep a follow-up's link on the article that covers it, and set the rest aside. *@
+                        <div class="d-flex gap-2 flex-wrap mb-2">
+                            @foreach (var c in row.Coverage.Where(c => c.Attachable).DistinctBy(c => c.ArticleId).Take(3))
+                            {
+                                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Attach(row, c.ArticleId, c.ArticleTitle)">
+                                    <span class="bi bi-link-45deg" aria-hidden="true"></span> Add as a source of “@Short(c.ArticleTitle)”</button>
+                            }
+                            @if (item.Status == FeedItemStatus.New && row.SameCve.Count > 0)
+                            {
+                                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => DismissSameCve(row)">
+                                    Dismiss the @row.SameCve.Count other@(row.SameCve.Count == 1 ? "" : "s") with its CVE as covered</button>
+                            }
+                        </div>
+                    }
+                    @if (_promoting == item.Id && _promotingGroup is null && item.Status != FeedItemStatus.Promoted)
+                    {
+                        @PromoteFields(row.Source.DefaultTlp, $"From the source: {Tlp.Label(row.Source.DefaultTlp)}", "Promote and write")
+                    }
+                    else
+                    {
+                        <div class="d-flex gap-2 flex-wrap">
+                            @if (item.Status != FeedItemStatus.Promoted)
+                            {
+                                <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Promote)"><span class="bi bi-file-earmark-plus" aria-hidden="true"></span> Promote <span class="tide-kbd">P</span></button>
+                                @if (item.Status != FeedItemStatus.Shortlisted) { <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Shortlist)">Shortlist <span class="tide-kbd">S</span></button> }
+                                @if (item.Status != FeedItemStatus.Dismissed)
+                                {
+                                    <select class="form-select form-select-sm w-auto" aria-label="Reason for dismissing it" @bind="_itemReason" @onclick:stopPropagation="true">
+                                        @foreach (var r in IntakeService.DismissReasons) { <option value="@r">@r</option> }
+                                    </select>
+                                }
+                                @if (item.Status != FeedItemStatus.Dismissed) { <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Dismiss)">Dismiss <span class="tide-kbd">X</span></button> }
+                                @if (row.Similar is not null && item.Status != FeedItemStatus.Duplicate) { <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Duplicate)">Duplicate <span class="tide-kbd">D</span></button> }
+                                @if (item.Status != FeedItemStatus.New) { <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Restore)">Put back <span class="tide-kbd">R</span></button> }
+                                @if (Promotable(item.Status)) { <AttachPicker Disabled="_busy" OnPick="t => Attach(row, t.Id, t.Title)" OpenChanged="open => _attaching = open" /> }
+                                @if (row.WeRun is null)
+                                {
+                                    @if (_addingStack == item.Id)
+                                    {
+                                        <span class="d-inline-flex gap-1 align-items-center" @onclick:stopPropagation="true">
+                                            <label class="visually-hidden" for="stack-add-@item.Id">Product we run</label>
+                                            <input id="stack-add-@item.Id" class="form-control form-control-sm w-auto" maxlength="100" placeholder="Product, e.g. GitLab"
+                                                   @bind="_stackName" @bind:event="oninput" @onkeydown="StackKey" />
+                                            <button type="button" class="btn btn-primary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_stackName))" @onclick="AddToStack">Add</button>
+                                            <button type="button" class="btn btn-link btn-sm" @onclick="() => _addingStack = null">Cancel</button>
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => { _addingStack = item.Id; _stackName = null; }">Add to what we run…</button>
+                                    }
+                                }
+                            }
+                        </div>
+                    }
+                }
+            </li>
+        }
+        @foreach (var g in ghosts.GetValueOrDefault(_lines.Count) ?? []) { @Ghost(g) }
+    </ol>
+    @if (_status == FeedItemStatus.New && !_older && _olderCount > 0)
+    {
+        @* Untouched items fold away rather than pile up: kept, searchable, and a click away. *@
+        <button type="button" class="btn btn-outline-secondary btn-sm mt-2" @onclick="() => ShowOlder(true)">
+            <span class="bi bi-archive" aria-hidden="true"></span> Older: @_olderCount new item@(_olderCount == 1 ? "" : "s") untouched for @AgeText</button>
+    }
+    @* The list holds the newest InboxFilter.Take items; say so when there are more, rather than end as if that's all. *@
+    @if (_rows.Count >= ShownAtMost && _counts.GetValueOrDefault(_status) > _rows.Count)
+    {
+        <p class="small tide-muted mt-2 mb-0">Showing the newest @_rows.Count of @_counts.GetValueOrDefault(_status). Choose a source or search to reach older ones.</p>
+    }
+</div>
+@if (_reading) { @ReadingPane() }
+</div>
+@* What changed live, in words: the toast says what a colleague did; this says what it did to the list here. *@
+<div class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">@_said</div>
+
+<ConfirmDialog @ref="_confirm" />
+@* "Dismiss all": the reason goes with every one of them, so it's chosen in the confirmation. *@
+<ConfirmDialog @ref="_dismissAll">
+    <label class="tide-field-label" for="dismiss-all-reason">Dismiss them as</label>
+    <select id="dismiss-all-reason" class="form-select form-select-sm mb-2" @bind="_reason">
+        @foreach (var r in IntakeService.DismissReasons) { <option value="@r">@r</option> }
+    </select>
+</ConfirmDialog>
+
+@code {
+    private ConfirmDialog _confirm = default!, _dismissAll = default!;
+
+    // The reading pane (EP-76): the selected item's article, fetched from its page on V (or "Read it here") and kept for
+    // colleagues and the editor. While it's open it follows the selection, showing a report's text when it's kept and
+    // offering to read it when it isn't; nothing is fetched without a keypress or a click. A group's line reads its
+    // newest report.
+    private bool _reading;
+    private Guid? _fetching;   // the item being fetched, one at a time
+    private ReadingText? _read;
+    private InboxRow? _readRow;
+    private IReadOnlyDictionary<string, CveRecord> _readCves = new Dictionary<string, CveRecord>();
+
+    // Whether the item the pane shows is the one being fetched.
+    private bool ReadingBusy => _fetching is { } f && f == _readRow?.Item.Id;
+
+    private InboxRow? ReadableRow => Current is { } line ? line.Row ?? line.Members.FirstOrDefault() : null;
+
+    // Selecting a line by click or focus: the pane follows it.
+    private async Task Pick(int i)
+    {
+        var was = _selected;
+        Select(i);
+        if (i != was) await Follow();
+    }
+
+    // The pane shows the newly selected item's kept text, or offers to read it.
+    private async Task Follow()
+    {
+        if (!_reading) return;
+        var row = ReadableRow;
+        if (row?.Item.Id == _readRow?.Item.Id) return;
+        _readRow = row;
+        _read = null;
+        if (row is null) return;
+        try { await Show(await Reading.KeptAsync(row.Item.Id)); }
+        catch (Exception ex) when (ex is ArgumentException or ForbiddenException) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    /// <summary>V or "Read it here": opens the pane on the selected item and fetches its text when it isn't kept.</summary>
+    internal async Task Read(bool again = false)
+    {
+        if (ReadableRow is not { } row || _fetching is not null) return;
+        _reading = true;
+        if (!again && _readRow?.Item.Id == row.Item.Id && _read is { HasText: true }) return;
+        _readRow = row;
+        _read = null;
+        _fetching = row.Item.Id;
+        StateHasChanged();
+        try { await Show(await Reading.ReadAsync(row.Item.Id, again)); }
+        catch (Exception ex) when (ex is ArgumentException or ForbiddenException) { await Show(ReadingText.Failed(row.Item.Id, UserFacingError.For(ex))); }
+        finally { _fetching = null; }
+    }
+
+    // A slow fetch can finish after the selection moved on: its text is dropped unless its item is still the one shown.
+    private async Task Show(ReadingText? text)
+    {
+        if (text is not null && text.ItemId != _readRow?.Item.Id) return;
+        _read = text;
+        _readCves = text is { Cves.Count: > 0 } ? await Cves.GetAsync(text.Cves) : new Dictionary<string, CveRecord>();
+    }
+
+    private static string MarkCss(ReadingMark m) => m switch
+    {
+        ReadingMark.Cve => "tide-read-cve",
+        ReadingMark.Indicator => "tide-read-ioc",
+        ReadingMark.WeRun => "tide-read-werun",
+        _ => "",
+    };
+
+    private RenderFragment ReadingPane() => __builder =>
+    {
+        var row = _readRow;
+        <aside class="tide-card tide-reading" aria-label="The article" aria-busy="@Ui.Aria(ReadingBusy)">
+            <div class="tide-reading-head">
+                <h2 class="tide-reading-title">@(row?.Item.Title ?? "Choose an item to read")</h2>
+                <button type="button" class="btn-close" aria-label="Close the article" title="Close (Esc)" @onclick="() => _reading = false"></button>
+            </div>
+            @if (row is not null)
+            {
+                <div class="tide-triage-meta mb-2">
+                    <span>@row.Source.Name</span>
+                    @if (_read is { HasText: true } r)
+                    {
+                        <span>@r.Length.ToString("N0") characters</span>
+                        @if (r.FetchedAtUtc is { } at) { <span>read @Ui.When(Clock, at)</span> }
+                        @if (r.How is { Length: > 0 } how) { <span>body found by @how</span> }
+                    }
+                </div>
+                @if (ReadingBusy)
+                {
+                    <LoadingBlock />
+                }
+                else if (_read is { HasText: true } text)
+                {
+                    <div class="tide-reading-text" tabindex="0" aria-label="The article's text">
+                        @foreach (var span in text.Spans)
+                        {
+                            if (span.Mark == ReadingMark.None) { @span.Text }
+                            else { <mark class="@MarkCss(span.Mark)">@span.Text</mark> }
+                        }
+                    </div>
+                    <div class="tide-reading-found small">
+                        @foreach (var cve in text.Cves.Take(8)) { <CveChip CveId="@cve" Record="@_readCves.GetValueOrDefault(cve)" /> }
+                        <span>@Found(text)</span>
+                    </div>
+                }
+                else if (_read is { Problem: { } problem })
+                {
+                    <div class="alert alert-warning small" role="status">@problem</div>
+                    @if (!string.IsNullOrWhiteSpace(row.Item.Excerpt)) { <div class="tide-triage-excerpt">@row.Item.Excerpt</div> }
+                }
+                else
+                {
+                    @if (!string.IsNullOrWhiteSpace(row.Item.Excerpt)) { <div class="tide-triage-excerpt">@row.Item.Excerpt</div> }
+                    <p class="small tide-muted">Not read yet.</p>
+                }
+                <div class="d-flex gap-2 flex-wrap mt-2">
+                    @if (_read is { HasText: true })
+                    {
+                        <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@ReadingBusy" @onclick="() => Read(again: true)"><span class="bi bi-arrow-clockwise" aria-hidden="true"></span> Read again</button>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn btn-primary btn-sm" disabled="@(_fetching is not null)" @onclick="() => Read()"><span class="bi bi-book" aria-hidden="true"></span> Read it here <span class="tide-kbd">V</span></button>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(row.Item.Url))
+                    {
+                        <a class="btn btn-outline-secondary btn-sm" href="@row.Item.Url" target="_blank" rel="noopener noreferrer"><span class="bi bi-box-arrow-up-right" aria-hidden="true"></span> Open the site <span class="tide-kbd">O</span></a>
+                    }
+                </div>
+                <p class="form-text mb-0 mt-2">For reading here only: the text isn't sent or exported, and it's deleted after @ReadingDaysText.</p>
+            }
+        </aside>
+    };
+
+    private string ReadingDaysText => Math.Clamp(IntakeOpts.CurrentValue.ReadingDays, 1, 30) is var d && d == 7 ? "a week" : $"{d} day{(d == 1 ? "" : "s")}";
+
+    /// <summary>"Found here: 2 CVEs · 3 indicators · Our stack: GitLab".</summary>
+    internal static string Found(ReadingText text)
+    {
+        var parts = new List<string>();
+        if (text.Cves.Count > 0) parts.Add($"{text.Cves.Count} CVE{(text.Cves.Count == 1 ? "" : "s")}");
+        if (text.Indicators.Count > 0) parts.Add($"{text.Indicators.Count} indicator{(text.Indicators.Count == 1 ? "" : "s")}");
+        if (text.WeRun.Count > 0) parts.Add("Our stack: " + string.Join(", ", text.WeRun));
+        return parts.Count == 0 ? "No CVEs, indicators or products we run found in it." : "Found here: " + string.Join(" · ", parts);
+    }
+
+    internal enum TriageStep { Shortlist, Dismiss, Duplicate, Promote, Restore }
+
+    private static readonly (FeedItemStatus, string)[] Tabs =
+    [
+        (FeedItemStatus.New, "New"), (FeedItemStatus.Shortlisted, "Shortlisted"), (FeedItemStatus.Promoted, "Promoted"),
+        (FeedItemStatus.Dismissed, "Dismissed"), (FeedItemStatus.Duplicate, "Duplicates"),
+    ];
+
+    private FeedItemStatus _status = FeedItemStatus.New;
+    private Guid? _sourceId;
+    private string? _search;
+    private string _reason = IntakeService.DismissReasons[0];       // for "dismiss all"
+    private string _itemReason = IntakeService.DismissReasons[0];   // for one item (X)
+    private bool _sinceLast;
+    private InboxSort _sort;
+    private IReadOnlyList<MissedItem> _missed = [];
+    private bool _missedHidden;
+    private DateTimeOffset? _lastBriefAt;
+    private CancellationTokenSource? _typing;
+
+    private string ZoneLabel => Clock.Zone.IsDaylightSavingTime(Clock.Now) ? Clock.Zone.DaylightName : Clock.Zone.StandardName;
+    private IReadOnlyList<Source> _sources = [];
+    private IReadOnlyList<InboxRow> _rows = [];
+    private List<Line> _lines = [];
+    private readonly HashSet<Guid> _open = [];    // the groups shown open, by their reports' ids
+    private readonly HashSet<Guid> _apart = [];   // reports whose group was split ("Not the same"), for this visit only
+    private IReadOnlyDictionary<FeedItemStatus, int> _counts = new Dictionary<FeedItemStatus, int>();
+    private static readonly int ShownAtMost = new InboxFilter().Take;
+
+    // The product from Our stack that a line names: its own, or (a group's line) any of its reports'.
+    private static Tide.Application.Stack.StackEntry? WeRunOf(Line line) => line.Row?.WeRun ?? line.Members.Select(m => m.WeRun).FirstOrDefault(w => w is not null);
+    private bool AnyWeRun => !_older && _rows.Any(r => r.WeRun is not null);
+
+    // "Add to what we run…" on a row: the product's name, added to Our stack (or found there), and the list read again.
+    private Guid? _addingStack;
+    private string? _stackName;
+
+    private Task StackKey(KeyboardEventArgs e) => e.Key == "Enter" ? AddToStack() : Task.CompletedTask;
+
+    internal async Task AddToStack()
+    {
+        if (_busy || string.IsNullOrWhiteSpace(_stackName)) return;
+        _busy = true;
+        try
+        {
+            var name = _stackName.Trim();
+            await Stack.AddByNameAsync(name);
+            _addingStack = null;
+            Toasts.Show($"{name} added to Our stack.");
+            await Load();
+        }
+        catch (Exception ex) when (ex is ArgumentException or ForbiddenException) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    // The chip on a row naming what we run: it opens the product's page (its notes, versions and history).
+    private RenderFragment WeRunChip(Tide.Application.Stack.StackEntry e) => __builder =>
+    {
+        <a class="tide-badge tide-badge-ok tide-werun-chip" href="@($"stack/{e.Id}")" title="On Our stack: open its notes and history" @onclick:stopPropagation="true">We run: @e.Name</a>
+    };
+
+    // The New tab's fold of items that aged out (IntakeOptions.AgeDays), and whether it's what's shown.
+    private bool _older;
+    private int _olderCount;
+    private string AgeText => IntakeOpts.CurrentValue.AgeDays is var d && d == 7 ? "a week" : $"{d} day{(d == 1 ? "" : "s")}";
+
+    // EP-81: the order, kept in this browser.
+    private async Task SetSort(InboxSort sort)
+    {
+        if (_sort == sort) return;
+        _sort = sort;
+        _selected = 0;
+        try { await JS.InvokeVoidAsync("tideTriage.pref", "sort", sort == InboxSort.Likely ? nameof(InboxSort.Likely) : null); }
+        catch (JSDisconnectedException) { }
+        await Load();
+    }
+
+    // The ISO week, so "Hide until next week" lasts until Monday.
+    private static string ThisWeek => System.Globalization.ISOWeek.GetYear(DateTime.UtcNow) + "-" + System.Globalization.ISOWeek.GetWeekOfYear(DateTime.UtcNow);
+
+    private async Task HideMissed()
+    {
+        _missedHidden = true;
+        try { await JS.InvokeVoidAsync("tideTriage.pref", "missed-hidden", ThisWeek); }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task PutBack(MissedItem missed)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await Intake.RestoreAsync(missed.Item.Id);
+            Toasts.Show($"Put back in New: {Short(missed.Item.Title)}");
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+        await Load();
+    }
+
+    private async Task ShowOlder(bool on)
+    {
+        _older = on;
+        _selected = 0;
+        await Load();
+    }
+
+    // X or S on a group's line: every report in it, once confirmed (a group can hide what one report adds).
+    internal async Task ActOnGroup(Line line, TriageStep what)
+    {
+        if (_busy || line.Members.Count == 0 || _status != FeedItemStatus.New) return;
+        var n = line.Members.Count;
+        var dismiss = what == TriageStep.Dismiss;
+        if (!await _confirm.Ask(dismiss ? $"Dismiss the {n} reports?" : $"Shortlist the {n} reports?",
+                $"Every report in \u201C{Short(line.Members[0].Item.Title)}\u201D goes{(dismiss ? ", for everyone: the inbox is shared" : " to Shortlisted")}. To keep one, open the group and act on it alone.",
+                dismiss ? $"Dismiss {n}" : $"Shortlist {n}")) return;
+        _busy = true;
+        try
+        {
+            var ids = line.Members.Select(m => m.Item.Id).ToList();
+            // The count done, not the group's size: a colleague may have acted on some of them first.
+            var done = dismiss ? await Intake.DismissManyAsync(ids, _itemReason) : await Intake.ShortlistManyAsync(ids);
+            Announce();
+            Toasts.Show(done == 0 ? "Nothing changed: a colleague got to those reports first."
+                : $"{(dismiss ? "Dismissed" : "Shortlisted")} {done} report{(done == 1 ? "" : "s")}.");
+            await Load();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+    private IReadOnlyDictionary<string, CveRecord> _cves = new Dictionary<string, CveRecord>();
+    private int _selected;
+    private bool _loaded, _busy;
+    private DotNetObjectReference<Triage>? _ref;
+
+    // The item whose promote form is open in its row (or the newest report of the group whose form is open in the
+    // group's line), and what the form holds.
+    private Guid? _promoting;
+    private TriageGroup? _promotingGroup;
+    private PromoteForm _pf = new();
+    private PrioritySuggestion? _suggested;
+    private string? _focus;   // a tideTriage call that moves focus once the next render is on screen
+
+    private string EmptyText => _status switch
+    {
+        FeedItemStatus.New => "Inbox zero. New items arrive as the sources are polled.",
+        FeedItemStatus.Shortlisted => "Nothing shortlisted.",
+        _ => "Nothing here.",
+    };
+
+    // Promote asks four things in the row itself (an item's, or a group's), then opens the draft. Enter (in the title)
+    // promotes; Esc or Cancel closes it and gives focus back to the row. The letter keys are off while it's open.
+    private RenderFragment PromoteFields(TlpLevel fromSources, string fromText, string submit) =>
+        @<form class="tide-promote-form tide-card mb-0 mt-1" aria-label="Promote to an article" @onsubmit="SubmitPromote" @onclick:stopPropagation="true">
+            <div class="mb-2">
+                <label class="tide-field-label" for="promote-title">Article title</label>
+                <input id="promote-title" class="form-control form-control-sm" required maxlength="@ArticleService.MaxTitle" @bind="_pf.Title" @bind:event="oninput" />
+            </div>
+            <div class="d-flex gap-3 flex-wrap align-items-end mb-2">
+                <div>
+                    <span class="tide-field-label" id="promote-kind">Classification</span>
+                    <div class="btn-group" role="group" aria-labelledby="promote-kind">
+                        <input type="radio" class="btn-check" name="promote-kind" id="promote-threat" checked="@(_pf.Classification == Classification.Threat)"
+                               @onchange="() => _pf.Classification = Classification.Threat" />
+                        <label class="btn btn-outline-secondary btn-sm" for="promote-threat"><span class="bi bi-exclamation-triangle" aria-hidden="true"></span> Threat</label>
+                        <input type="radio" class="btn-check" name="promote-kind" id="promote-info" checked="@(_pf.Classification == Classification.Informational)"
+                               @onchange="() => _pf.Classification = Classification.Informational" />
+                        <label class="btn btn-outline-secondary btn-sm" for="promote-info"><span class="bi bi-info-circle" aria-hidden="true"></span> Informational</label>
+                    </div>
+                </div>
+                @if (_pf.Classification == Classification.Threat)
+                {
+                    <div>
+                        <label class="tide-field-label" for="promote-priority">Priority</label>
+                        <select id="promote-priority" class="form-select form-select-sm w-auto" value="@(_pf.Priority?.ToString() ?? "")" @onchange="SetPromotePriority"
+                                aria-describedby="@(_suggested is null ? null : "promote-suggested")">
+                            <option value="">Choose&hellip;</option>
+                            <option value="P1">P1: act today</option>
+                            <option value="P2">P2: this week</option>
+                            <option value="P3">P3: this month</option>
+                            <option value="P4">P4: when convenient</option>
+                        </select>
+                    </div>
+                    @* Why the priority was prefilled, from the item's CVE data (CveService.SuggestedPriority). *@
+                    @if (_suggested is { } sp)
+                    {
+                        <span class="form-text m-0" id="promote-suggested">Suggested @sp.Priority: @sp.Reason</span>
+                    }
+                }
+                <div>
+                    <span class="tide-field-label">TLP</span>
+                    <TlpSelect Value="@(_pf.Tlp ?? fromSources)" ValueChanged="v => _pf.Tlp = v" Label="The article's TLP" Class="w-auto" />
+                </div>
+                <span class="form-text m-0">@fromText</span>
+            </div>
+            <div class="d-flex gap-2 flex-wrap align-items-center">
+                <button type="submit" class="btn btn-primary btn-sm" disabled="@_busy"><span class="bi bi-pencil-square" aria-hidden="true"></span> @submit</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="CancelPromote">Cancel</button>
+                <span class="form-text m-0">Enter promotes, Esc cancels</span>
+            </div>
+        </form>;
+
+    private static string Short(string s) => s.Length > 60 ? s[..60] + "…" : s;
+
+    /// <summary>
+    /// A line of the list: an item's row (<see cref="Row"/>); a suggested group's own line (no row; its reports, newest
+    /// first, in <see cref="Members"/>); or a report shown under its open group (both a row and the group).
+    /// </summary>
+    internal sealed record Line(InboxRow? Row, TriageGroup? Group, IReadOnlyList<InboxRow> Members);
+
+    private Line? Current => _selected < _lines.Count ? _lines[_selected] : null;
+
+    private bool IsOpen(TriageGroup group) => group.Ids.Any(_open.Contains);
+
+    private static string GroupLabel(Line line) =>
+        $"Looks like one event: {line.Members.Count} reports from {line.Group!.Sources} feeds. Newest: {line.Members[0].Item.Title}";
+
+    // A group's article starts at the most restrictive of its sources' TLPs.
+    private static TlpLevel GroupTlp(Line line) => line.Members.Max(m => m.Source.DefaultTlp);
+
+    // The list as shown: each group the inbox suggests (and nobody split) where its newest report would be, with its
+    // reports under it while it's open; every other item as its own row.
+    private void BuildLines()
+    {
+        var byId = _rows.ToDictionary(r => r.Item.Id);
+        var placed = new HashSet<Guid>();
+        var lines = new List<Line>();
+        foreach (var row in _rows)
+        {
+            if (!placed.Add(row.Item.Id)) continue;
+            if (row.Group is { } group && !group.Ids.Any(_apart.Contains))
+            {
+                var members = group.Ids.Select(byId.GetValueOrDefault).OfType<InboxRow>().ToList();
+                placed.UnionWith(group.Ids);
+                lines.Add(new Line(null, group, members));
+                if (IsOpen(group)) lines.AddRange(members.Select(m => new Line(m, group, [])));
+            }
+            else lines.Add(new Line(row, null, []));
+        }
+        _lines = lines;
+    }
+
+    // Selects an item's line: its own row (or its row under an open group), or else its closed group's line; with
+    // head, its group's line first. False when it isn't shown.
+    private bool SelectItem(Guid id, bool head = false)
+    {
+        var at = head ? -1 : _lines.FindIndex(l => l.Row?.Item.Id == id);
+        if (at < 0) at = _lines.FindIndex(l => l.Row is null && l.Group!.Ids.Contains(id));
+        if (at < 0) return false;
+        _selected = at;
+        return true;
+    }
+
+    // Opens or closes the group the line belongs to (its own line or a report under it), selecting the group's line.
+    internal void Toggle(int i)
+    {
+        if (i >= _lines.Count || _lines[i].Group is not { } group) return;
+        if (IsOpen(group)) _open.ExceptWith(group.Ids);
+        else _open.UnionWith(group.Ids);
+        if (_promotingGroup is null && _promoting is { } p && group.Ids.Contains(p)) _promoting = null;
+        BuildLines();
+        SelectItem(group.Newest, head: true);
+    }
+
+    // "Not the same": the group's reports go back to rows of their own, until the page is left (nothing is stored).
+    internal void Split(int i)
+    {
+        if (i >= _lines.Count || _lines[i] is not { Row: null, Group: { } group }) return;
+        _apart.UnionWith(group.Ids);
+        _open.ExceptWith(group.Ids);
+        if (_promotingGroup is not null && group.Ids.Contains(_promotingGroup.Newest)) CancelPromote();
+        BuildLines();
+        SelectItem(group.Newest);
+        _focus = "tideTriage.focusRow";
+        Toasts.Show($"Split into {group.Ids.Count} rows, until you leave this page.");
+    }
+
+    // The address Back returns to after "Promote and write" (Address), and the brief's "Promote" on a shortlisted item:
+    // the tab, the filters, the row (by id, or by place when the item has left the tab), and whether its promote form opens.
+    [SupplyParameterFromQuery(Name = "tab")] public string? TabParam { get; set; }
+    [SupplyParameterFromQuery(Name = "source")] public Guid? SourceParam { get; set; }
+    [SupplyParameterFromQuery(Name = "q")] public string? SearchParam { get; set; }
+    [SupplyParameterFromQuery(Name = "since")] public bool? SinceParam { get; set; }
+    [SupplyParameterFromQuery(Name = "at")] public Guid? AtParam { get; set; }
+    [SupplyParameterFromQuery(Name = "row")] public int? RowParam { get; set; }
+    [SupplyParameterFromQuery(Name = "promote")] public bool? PromoteParam { get; set; }
+
+    /// <summary>Triage's address at a tab, filters and row, for Back to return to.</summary>
+    internal static string Address(FeedItemStatus status, Guid? sourceId, string? search, bool sinceLast, Guid? at, int row)
+    {
+        var query = new List<string> { "tab=" + status.ToString().ToLowerInvariant() };
+        if (sourceId is { } s) query.Add("source=" + s);
+        if (!string.IsNullOrWhiteSpace(search)) query.Add("q=" + Uri.EscapeDataString(search.Trim()));
+        if (sinceLast) query.Add("since=true");
+        if (at is { } id) query.Add("at=" + id);
+        if (row > 0) query.Add("row=" + row);
+        return "triage?" + string.Join("&", query);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // First, so a page closed during the loads below has already stopped listening.
+        _live = new LiveChanges(Changes, Origin, c => c.Topic == ChangeFeed.Triage, InvokeAsync, Heard);
+        _marks = new LiveMarks<Guid>(InvokeAsync, StateHasChanged);
+        _tabMarks = new LiveMarks<FeedItemStatus>(InvokeAsync, StateHasChanged);
+        _sources = await Intake.SourcesAsync(includeRetired: true);
+        _lastBriefAt = await Intake.LastBriefAtAsync();
+        if (Enum.TryParse<FeedItemStatus>(TabParam, ignoreCase: true, out var tab) && Enum.IsDefined(tab)) _status = tab;
+        _sourceId = SourceParam is { } sid && _sources.Any(s => s.Id == sid) ? sid : null;
+        _search = string.IsNullOrWhiteSpace(SearchParam) ? null : SearchParam.Trim();
+        _sinceLast = SinceParam == true && _lastBriefAt is not null;
+        _selected = Math.Max(0, RowParam ?? 0);
+        await Load();
+        Arrive();
+    }
+
+    // Arriving at a row from the address: it's selected (Load found it by id, or kept its place), focused and scrolled
+    // into view, with its promote form open when asked for. A report in a group opens the group to it.
+    private void Arrive()
+    {
+        if (AtParam is not { } at || _lines.Count == 0) return;
+        if (_rows.FirstOrDefault(r => r.Item.Id == at)?.Group is { } group && !group.Ids.Any(_apart.Contains) && !IsOpen(group))
+        {
+            _open.UnionWith(group.Ids);
+            BuildLines();
+        }
+        SelectItem(at);
+        if (PromoteParam == true && Current?.Row is { } row && row.Item.Id == at && Promotable(row.Item.Status)) OpenPromote(row);
+        else _focus = "tideTriage.focusSelected";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (firstRender)
+            {
+                _ref = DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("tideTriage.start", _ref);
+                // This browser's choices: the order, and the missed-stories notice hidden for this week.
+                _missedHidden = await JS.InvokeAsync<string?>("tideTriage.pref", "missed-hidden") == ThisWeek;
+                if (await JS.InvokeAsync<string?>("tideTriage.pref", "sort") == nameof(InboxSort.Likely))
+                {
+                    _sort = InboxSort.Likely;
+                    await Load();
+                }
+                StateHasChanged();
+            }
+            // The promote form just opened (its title takes focus) or closed (the row gets it back).
+            if (_focus is { } focus)
+            {
+                _focus = null;
+                await JS.InvokeVoidAsync(focus);
+            }
+            // The form or the picker that held a colleague's changes back has closed: they show now.
+            if (_waiting.Count > 0 && !Deferring && !_applying)
+            {
+                await ApplyWaiting();
+                StateHasChanged();
+            }
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    // Selecting another row closes a promote form (or the attach picker) left open on this one. A row that arrived live
+    // has been seen once it's selected: its "New" marker goes.
+    private void Select(int i)
+    {
+        if (i != _selected)
+        {
+            _promoting = null;
+            _promotingGroup = null;
+            _attaching = false;
+        }
+        _selected = i;
+        if (Current is not { } line) return;
+        if (line.Row is { } row) _marks.Seen(row.Item.Id);
+        else foreach (var m in line.Members) _marks.Seen(m.Item.Id);
+    }
+
+    /// <summary>Whether an item's title opens its promote form: in the inboxes still to decide (New, Shortlisted).</summary>
+    internal static bool Promotable(FeedItemStatus status) => status is FeedItemStatus.New or FeedItemStatus.Shortlisted;
+
+    // A click on a title: selects its row and opens the row's promote form, or puts focus back in a form already open.
+    internal void PromoteFromTitle(int i)
+    {
+        if (i >= _lines.Count || _busy || _lines[i].Row is not { } row || !Promotable(row.Item.Status)) return;
+        Select(i);
+        if (_promoting == row.Item.Id && _promotingGroup is null) _focus = "tideTriage.focusPromote";
+        else OpenPromote(row);
+    }
+
+    internal async Task SetStatus(FeedItemStatus status)
+    {
+        _status = status;
+        _older = false;
+        _selected = 0;
+        _promoting = null;
+        _promotingGroup = null;
+        _attaching = false;
+        _marks.Clear();
+        await Load();
+    }
+
+    // Someone else triaged, or a poll brought items: re-read the list once per burst (LiveChanges skips this tab's own
+    // changes), keeping the selected item selected and showing what changed: rows that arrive slide in highlighted,
+    // rows that changed are highlighted, rows that left fade out saying who sent them where, the tab counts tick, and
+    // one toast says what the colleague (or the feeds) did. Never under a promote form or the attach picker: there the
+    // changes wait, and a pill says so, until it closes or the pill is chosen.
+    private LiveChanges? _live;
+    private LiveMarks<Guid> _marks = default!;
+    private LiveMarks<FeedItemStatus>? _tabMarks;
+    private readonly List<Change> _waiting = [];
+    private bool _applying, _attaching, _disposed;
+    private string? _said;               // the polite announcement of what the last live change did here
+    private DateTimeOffset _readAt;      // when the rows were last read: an item fetched since came from the feeds
+
+    private const string NewNote = " (new)";
+
+    private bool Deferring => _busy || _promoting is not null || _attaching;
+
+    private async Task Heard(IReadOnlyList<Change> heard)
+    {
+        if (_disposed) return;
+        _waiting.AddRange(heard);
+        if (Deferring)
+        {
+            _said = "Updates waiting. They show when you close this, or choose Updates waiting.";
+            StateHasChanged();
+            return;
+        }
+        await ApplyWaiting();
+        StateHasChanged();
+    }
+
+    /// <summary>The "Updates waiting" pill: shows the changes held back now, the form left open.</summary>
+    internal async Task ShowWaiting()
+    {
+        await ApplyWaiting();
+        StateHasChanged();
+    }
+
+    // Shows the changes heard and held back.
+    private async Task ApplyWaiting()
+    {
+        if (_waiting.Count == 0 || _applying) return;
+        _applying = true;
+        try
+        {
+            var heard = _waiting.ToList();
+            _waiting.Clear();
+            await Load(heard);
+        }
+        finally { _applying = false; }
+    }
+
+    // What this tab did, for the others: who, from which circuit (so this one skips it).
+    private void Announce() => Changes.Publish(new Change(ChangeFeed.Triage, Me.UserId, Me.IsAuthenticated ? Me.DisplayName : "", Origin.Id));
+
+    private static (Guid Id, bool Head) KeyOf(Line line) => (line.Row?.Item.Id ?? line.Group!.Newest, line.Row is null);
+
+    private Task Load() => Load(null);
+
+    // Counts the reads started, so only the latest one's rows are shown.
+    private int _loads;
+
+    // Reads the list. Live (with what was heard), it's compared with what was shown, and the differences are marked.
+    private async Task Load(IReadOnlyList<Change>? heard)
+    {
+        // The selected line stays selected: the same item's row, or the same group's line (which a new report may have
+        // joined). If a colleague took it away, the next line that's still there is selected instead.
+        var reading = Time.GetUtcNow();
+        var load = ++_loads;
+        try
+        {
+            var status = _status;
+            var rows = await Intake.InboxAsync(new InboxFilter(status, _sourceId, _search, Since: _sinceLast ? _lastBriefAt : null, Older: _older && status == FeedItemStatus.New, Sort: _sort));
+            var missed = status == FeedItemStatus.New ? await Intake.MissedAsync() : [];
+            var (counts, older) = await Intake.TallyAsync();
+            var cves = await Cves.GetAsync(rows.SelectMany(r => r.Item.CveList));
+            // A later read started meanwhile (more typing in the search box, another tab or filter, a colleague's change):
+            // it shows the list as it's asked for now. These rows, read for what was asked before, would replace it if
+            // they came back last.
+            if (load != _loads) return;
+            // What was shown, compared from here: a read that was dropped changed nothing on screen.
+            var keep = Current is { } current ? KeyOf(current) : ((Guid Id, bool Head)?)null;
+            var (rowsWere, linesWere, selectedWas, countsWere, readWas) = (_rows, _lines, _selected, _counts, _readAt);
+            (_rows, _missed, _counts, _cves) = (rows, missed, counts, cves);
+            _olderCount = status == FeedItemStatus.New ? older : 0;
+            _readAt = reading;
+            BuildLines();
+            var kept = keep is { } k && SelectItem(k.Id, k.Head);
+            if (!kept && (keep is null || !SelectNextOf(linesWere, selectedWas))) _selected = Math.Clamp(_selected, 0, Math.Max(0, _lines.Count - 1));
+            if (heard is null) _waiting.Clear();   // read afresh: whatever was waiting is in it
+            else await ShowChanges(heard, rowsWere, countsWere, readWas, kept ? null : keep?.Id);
+            // Someone else promoted or set aside the item being promoted, or one of the group's reports: its form goes,
+            // and focus back to the list.
+            if (_promoting is { } p && !StillPromoting(p))
+            {
+                _promoting = null;
+                _promotingGroup = null;
+                _focus = "tideTriage.focusRow";
+            }
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        _loaded = true;
+    }
+
+    // The line after the one that was selected (or else before it) that's still shown, selected; false when none is.
+    private bool SelectNextOf(List<Line> was, int at)
+    {
+        for (var j = at + 1; j < was.Count; j++)
+            if (SelectItem(KeyOf(was[j]).Id, KeyOf(was[j]).Head)) return true;
+        for (var j = Math.Min(at, was.Count) - 1; j >= 0; j--)
+            if (SelectItem(KeyOf(was[j]).Id, KeyOf(was[j]).Head)) return true;
+        return false;
+    }
+
+    // A live reload's differences: marked on the rows and tabs, told in one toast (unless it was all this person's own
+    // doing, in another tab) and announced. lostId is the item that was selected, if it's no longer shown.
+    private async Task ShowChanges(IReadOnlyList<Change> heard, IReadOnlyList<InboxRow> was, IReadOnlyDictionary<FeedItemStatus, int> countsWere,
+        DateTimeOffset readWas, Guid? lostId)
+    {
+        var diff = LiveDiff.Of(was, _rows, r => r.Item.Id, TriageNews.Signature);
+        _tabMarks?.Mark(Tabs.Select(t => t.Item1).Where(s => countsWere.GetValueOrDefault(s) != _counts.GetValueOrDefault(s)), LiveMark.Changed);
+        if (diff.IsEmpty) return;
+        var colleagues = LiveChanges.Who(heard.Where(c => c.ActorId != "system"));
+        var now = diff.Left.Count == 0 ? new Dictionary<Guid, FeedItem>() : (await Intake.ItemsAsync(diff.Left)).ToDictionary(i => i.Id);
+        var titles = was.GroupBy(r => r.Item.Id).ToDictionary(g => g.Key, g => g.First().Item.Title);
+        string Gone(Guid id) => TriageNews.Left(_status, titles[id], now.GetValueOrDefault(id), colleagues);
+        _marks.Apply(diff, Gone, unseen: true);
+
+        var polled = heard.Any(c => c.ActorId == "system");
+        var newElsewhere = polled && _status != FeedItemStatus.New
+            ? _counts.GetValueOrDefault(FeedItemStatus.New) - countsWere.GetValueOrDefault(FeedItemStatus.New) : 0;
+        var arrived = diff.Arrived.Select(id => _rows.First(r => r.Item.Id == id).Item).ToList();
+        var leftNow = diff.Left.Select(id => now.GetValueOrDefault(id)).ToList();
+        var entered = _counts.GetValueOrDefault(_status) - countsWere.GetValueOrDefault(_status) + leftNow.Count(i => i is not null && i.Status != _status);
+        var summary = TriageNews.Summary(_status, leftNow, arrived, readWas, colleagues, newElsewhere, entered);
+        if (summary is not null && !heard.All(c => c.ActorId == Me.UserId)) Toasts.Show(summary);
+
+        var said = new List<string>();
+        if (diff.Arrived.Count > 0) said.Add($"{Items(diff.Arrived.Count)} arrived.");
+        if (diff.Left.Count > 0) said.Add($"{Items(diff.Left.Count)} left this list.");
+        if (diff.Changed.Count > 0) said.Add($"{Items(diff.Changed.Count)} changed.");
+        if (lostId is { } lost && diff.Left.Contains(lost))
+        {
+            said.Add($"{Gone(lost)}. {(Current is null ? "The list is empty." : "The next item is selected.")}");
+            _focus ??= "tideTriage.focusRow";   // its row went with focus in it: the next one takes focus (unless focus is elsewhere)
+        }
+        _said = string.Join(" ", said);
+    }
+
+    private static string Items(int n) => n == 1 ? "1 item" : $"{n} items";
+
+    // The ghosts of rows that left, by the line they stand before (the list's length: at the end).
+    private Dictionary<int, List<LiveGhost<Guid>>> GhostsByLine()
+    {
+        var at = new Dictionary<int, List<LiveGhost<Guid>>>();
+        if (_marks is null) return at;
+        foreach (var g in _marks.Ghosts)
+        {
+            var i = g.AtEnd ? -1 : _lines.FindIndex(l => l.Row?.Item.Id == g.Before || (l.Row is null && l.Group!.Ids.Contains(g.Before)));
+            if (i < 0) i = _lines.Count;
+            if (!at.TryGetValue(i, out var list)) at[i] = list = [];
+            list.Add(g);
+        }
+        return at;
+    }
+
+    // A group's line is marked as its reports are: arrived if one arrived, else changed if one changed.
+    private string GroupCss(Line line)
+    {
+        var css = line.Members.Select(m => _marks.Css(m.Item.Id)).Where(c => c.Length > 0).ToList();
+        return css.Contains("tide-live-arrived") ? "tide-live-arrived" : css.FirstOrDefault() ?? "";
+    }
+
+    // A row that left: a line saying who sent it where, which fades and collapses (screen readers hear it from the
+    // status line instead).
+    private static RenderFragment Ghost(LiveGhost<Guid> g) =>
+        @<li class="tide-live-ghost" @key="@("ghost-" + g.Key)" aria-hidden="true"><span class="bi bi-arrow-right-circle" aria-hidden="true"></span> @g.Text</li>;
+
+    // Whether the form open on the selected line can stay: the item is still there to promote, or the group still holds
+    // every report it held (it may have gained one, which the form then takes too).
+    private bool StillPromoting(Guid id)
+    {
+        if (_promotingGroup is { } was)
+        {
+            if (Current is not { Row: null, Group: { } now } || !was.Ids.All(now.Ids.Contains)) return false;
+            _promotingGroup = now;
+            _promoting = now.Newest;
+            return true;
+        }
+        return Current?.Row is { } row && row.Item.Id == id && row.Item.Status != FeedItemStatus.Promoted;
+    }
+
+    [JSInvokable]
+    public async Task OnTriageKey(string action)
+    {
+        if (_promoting is not null)
+        {
+            // The form has the keys (triage.js sends only Esc while it's open).
+            if (action == "cancel") CancelPromote();
+            StateHasChanged();
+            return;
+        }
+        switch (action)
+        {
+            case "next": _selected = Math.Min(_selected + 1, Math.Max(0, _lines.Count - 1)); await Follow(); break;
+            case "prev": _selected = Math.Max(_selected - 1, 0); await Follow(); break;
+            case "read": await Read(); break;
+            case "close-reading": _reading = false; break;
+            // On a group's line, Enter opens or closes it and → opens it; ← closes the group a line is in.
+            case "toggle": if (Current is { Row: null }) Toggle(_selected); break;
+            case "expand": if (Current is { Row: null, Group: { } g } && !IsOpen(g)) Toggle(_selected); break;
+            case "collapse": if (Current is { Group: { } open } && IsOpen(open)) Toggle(_selected); break;
+            case "shortlist": await Act(TriageStep.Shortlist); break;
+            case "dismiss": await Act(TriageStep.Dismiss); break;
+            case "duplicate": await Act(TriageStep.Duplicate); break;
+            case "promote": await Act(TriageStep.Promote); break;
+            case "restore": await Act(TriageStep.Restore); break;
+        }
+        StateHasChanged();
+    }
+
+    private async Task Act(TriageStep what)
+    {
+        if (Current is not { } line || _busy) return;
+        // A group's line promotes as one (P), and shortlists or dismisses all its reports (S, X) once confirmed; the
+        // other letters act on one report at a time, in the open group.
+        if (line.Row is not { } row)
+        {
+            if (what == TriageStep.Promote) OpenGroupPromote(line);
+            else if (what is TriageStep.Shortlist or TriageStep.Dismiss && _status == FeedItemStatus.New) await ActOnGroup(line, what);
+            return;
+        }
+        if (row.Item.Status == FeedItemStatus.Promoted) return;
+        if (what == TriageStep.Duplicate && row.Similar is null) return;
+        if (what == TriageStep.Promote)
+        {
+            OpenPromote(row);
+            return;
+        }
+        _busy = true;
+        try
+        {
+            switch (what)
+            {
+                case TriageStep.Shortlist: await Intake.ShortlistAsync(row.Item.Id); break;
+                case TriageStep.Dismiss: await Intake.DismissAsync(row.Item.Id, _itemReason); break;
+                case TriageStep.Duplicate: await Intake.MarkDuplicateAsync(row.Item.Id); break;
+                case TriageStep.Restore: await Intake.RestoreAsync(row.Item.Id); break;
+            }
+            Announce();
+            await Load();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    // Prefilled as most items go: the item's title, a threat when it names a CVE (informational otherwise), and the
+    // source's TLP. A threat's priority is what its CVE data suggests (KEV, EPSS, CVSS), with the reason shown, or P3.
+    private void OpenPromote(InboxRow row)
+    {
+        var item = row.Item;
+        var threat = item.CveList.Any();
+        _suggested = threat
+            ? CveService.SuggestedPriority(item.CveList.Select(c => _cves.GetValueOrDefault(c)).OfType<CveRecord>(), item.Title, Clock.Today)
+            : null;
+        _pf = new PromoteForm
+        {
+            Title = item.Title.Length > ArticleService.MaxTitle ? item.Title[..(ArticleService.MaxTitle - 1)] + "…" : item.Title,
+            Classification = threat ? Classification.Threat : Classification.Informational,
+            Priority = threat ? _suggested?.Priority ?? Priority.P3 : null,
+            Tlp = row.Source.DefaultTlp,
+        };
+        _promoting = item.Id;
+        _promotingGroup = null;
+        _focus = "tideTriage.focusPromote";
+    }
+
+    // "Promote as one article": the form prefilled from the newest report, a threat when any report names a CVE (the
+    // priority suggested from all their CVEs), at the most restrictive of the sources' TLPs.
+    internal void OpenGroupPromote(Line line)
+    {
+        if (line is not { Row: null, Group: { } group } || _busy) return;
+        var lead = line.Members[0].Item;
+        var cves = line.Members.SelectMany(m => m.Item.CveList).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var threat = cves.Count > 0;
+        _suggested = threat
+            ? CveService.SuggestedPriority(cves.Select(c => _cves.GetValueOrDefault(c)).OfType<CveRecord>(), lead.Title, Clock.Today)
+            : null;
+        _pf = new PromoteForm
+        {
+            Title = lead.Title.Length > ArticleService.MaxTitle ? lead.Title[..(ArticleService.MaxTitle - 1)] + "…" : lead.Title,
+            Classification = threat ? Classification.Threat : Classification.Informational,
+            Priority = threat ? _suggested?.Priority ?? Priority.P3 : null,
+            Tlp = GroupTlp(line),
+        };
+        _promoting = group.Newest;
+        _promotingGroup = group;
+        _focus = "tideTriage.focusPromote";
+    }
+
+    private void SetPromotePriority(ChangeEventArgs e) =>
+        _pf.Priority = Enum.TryParse<Priority>(e.Value?.ToString(), out var p) ? p : null;
+
+    private void CancelPromote()
+    {
+        _promoting = null;
+        _promotingGroup = null;
+        _focus = "tideTriage.focusRow";
+    }
+
+    internal async Task SubmitPromote()
+    {
+        if (_promoting is not { } id || _busy) return;
+        var group = _promotingGroup;
+        _busy = true;
+        try
+        {
+            var articleId = group is null ? await Intake.PromoteAsync(id, _pf) : await Intake.PromoteAsOneAsync(group.Ids, _pf);
+            Announce();
+            Toasts.Show(group is null ? "Promoted to a draft article." : $"Promoted {group.Ids.Count} reports as one draft article.");
+            // The browser's Back comes back here, to this tab, these filters and this row (or the one that took its place).
+            try { await JS.InvokeVoidAsync("tideTriage.remember", Address(_status, _sourceId, _search, _sinceLast, id, _selected)); }
+            catch (JSDisconnectedException) { }
+            catch (InvalidOperationException) { }   // rendered without a browser (prerendering, tests)
+            Nav.NavigateTo($"articles/{articleId}");
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    // "Same CVE as 1 other new item": the inbox searched for that CVE, so the items sit together to compare. Clearing the
+    // search box brings the rest back.
+    internal async Task ShowSameCve(InboxRow row)
+    {
+        if (row.SharedCve is not { } cve) return;
+        _search = cve;
+        await Load();
+        StateHasChanged();
+    }
+
+    // Search as you type, once typing pauses.
+    private async Task SearchChanged()
+    {
+        if (_typing is not null) await _typing.CancelAsync();
+        _typing?.Dispose();
+        var typing = _typing = new CancellationTokenSource();
+        try { await Task.Delay(300, typing.Token); }
+        catch (TaskCanceledException) { return; }
+        await Load();
+    }
+
+    /// <summary>
+    /// "Follow-up to Thu Oct 22: A-13, A-14 open": for an item covered before, the first brief that covered it and the
+    /// actions still open on the articles that did. Null when no covering article has been briefed.
+    /// </summary>
+    internal static string? FollowUp(InboxRow row)
+    {
+        if (row.Coverage.Where(c => c.BriefDate is not null).MinBy(c => c.BriefDate) is not { BriefDate: { } first }) return null;
+        var open = row.Coverage.SelectMany(c => c.OpenActions).Distinct().Order().Select(Ui.ActionLabel).ToList();
+        return $"Follow-up to {Ui.ShortDay(first)}: " + (open.Count == 0 ? "no actions open" : string.Join(", ", open) + " open");
+    }
+
+    private async Task Attach(InboxRow row, Guid articleId, string title)
+    {
+        _busy = true;
+        try
+        {
+            await Intake.AttachAsync(row.Item.Id, articleId);
+            Announce();
+            Toasts.Show($"Added as a source of “{Short(title)}”.");
+            _focus = "tideTriage.focusRow";
+            await Load();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    private async Task DismissSameCve(InboxRow row)
+    {
+        if (!await _confirm.Ask("Dismiss the items with this CVE?", $"The {row.SameCve.Count} other new item(s) with this item's CVE are dismissed as already covered. The inbox is shared, so they go for everyone.", "Dismiss them")) return;
+        _busy = true;
+        try
+        {
+            var n = await Intake.DismissSameCveAsync(row.Item.Id, row.SameCve);
+            Announce();
+            Toasts.Show($"Dismissed {n} item{(n == 1 ? "" : "s")} as already covered.");
+            await Load();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    // The items the question counted: the list can reload while it's open (a poll, a colleague), and only what was
+    // shown when it was asked goes.
+    internal async Task AskDismissAll()
+    {
+        var shown = _rows.Select(r => r.Item.Id).ToList();
+        var n = shown.Count;
+        if (!await _dismissAll.Ask($"Dismiss all {n} shown?", "The inbox is shared.", $"Dismiss {n}")) return;
+        await DismissAll(shown);
+    }
+
+    private async Task DismissAll(IReadOnlyList<Guid> ids)
+    {
+        _busy = true;
+        try
+        {
+            var n = await Intake.DismissManyAsync(ids, _reason);
+            Announce();
+            Toasts.Show($"Dismissed {n} item{(n == 1 ? "" : "s")}.");
+            await Load();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        _live?.Dispose();
+        _marks?.Dispose();
+        _tabMarks?.Dispose();
+        try { await JS.InvokeVoidAsync("tideTriage.stop"); }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) { }
+        _ref?.Dispose();
+        _typing?.Dispose();
+    }
+}

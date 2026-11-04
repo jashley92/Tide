@@ -1,0 +1,156 @@
+@page "/coverage"
+@attribute [Authorize(Policy = Policies.WriteArticles)]
+@using Tide.Application.Detections
+@inject DetectionService Detections
+@inject TeamService Teams
+@inject OrgClock Clock
+@inject ToastService Toasts
+@inject ICurrentUser Me
+
+@* EP-79: what the team briefed against what the SOC detects. "Covered" means a current, enabled rule is tagged with the
+   technique, which isn't proof it fires on it; the page says "tagged". Rule names are internal: never in an edition. *@
+
+<PageTitle>Coverage · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <h1>Coverage</h1>
+        <div class="tide-sub">ATT&amp;CK techniques from articles briefed in the last @DetectionService.CoverageDays days. Covered: an enabled rule is <em>tagged</em> with the technique, its parent or a sub-technique; a tag isn't proof of detection. Internal: never included in an edition.</div>
+    </div>
+    @if (Me.Has(Permission.Administer))
+    {
+        <a class="btn btn-outline-secondary" href="admin/detections"><span class="bi bi-shield-check" aria-hidden="true"></span> Detection rules</a>
+    }
+</div>
+
+@if (_report is not { } r)
+{
+    <LoadingBlock />
+}
+else
+{
+    <p class="small tide-muted">
+        @if (r.Imports.Count == 0)
+        {
+            <span>No rules imported; every technique shows as a gap. @(Me.Has(Permission.Administer) ? "Import them under Administration › Detection rules." : "An administrator imports them under Administration.")</span>
+        }
+        else
+        {
+            @foreach (var i in r.Imports)
+            {
+                <span class="me-3">@DetectionService.SourceName(i.Source): @i.Rules rules (@i.Enabled enabled), @(i.Source == DetectionSource.Api ? "pushed" : "imported") @Ui.When(Clock, i.At)</span>
+            }
+        }
+    </p>
+    <div class="tide-stat-row">
+        <div class="tide-stat"><div class="tide-stat-label">Techniques briefed</div><div class="tide-stat-value">@r.Rows.Count</div></div>
+        <div class="tide-stat"><div class="tide-stat-label">With a tagged rule</div><div class="tide-stat-value">@r.Covered</div>
+            @if (r.Rows.Count > 0) { <div class="small tide-muted">@(((double)r.Covered / r.Rows.Count).ToString("0%", System.Globalization.CultureInfo.InvariantCulture))</div> }</div>
+        <div class="tide-stat"><div class="tide-stat-label">No enabled rule</div><div class="tide-stat-value">@r.Gaps</div>
+            <div class="small tide-muted">@r.GapsWatched used by watched adversaries</div></div>
+        <div class="tide-stat"><div class="tide-stat-label">Gaps with an open action</div><div class="tide-stat-value">@r.GapsWithAction</div></div>
+    </div>
+
+    <section class="tide-card" aria-labelledby="gaps-h">
+        <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
+            <h2 id="gaps-h" class="h6 mb-0">Briefed, with no enabled rule</h2>
+            <span class="small tide-muted">Watched adversaries' techniques first, then the most briefed.</span>
+            @if (_teams.Count > 0 && r.Gaps > 0)
+            {
+                <label class="small ms-auto" for="gap-team">Raise actions for</label>
+                <select id="gap-team" class="form-select form-select-sm w-auto" @bind="_teamId">
+                    @foreach (var t in _teams) { <option value="@t.Id">@t.Name</option> }
+                </select>
+            }
+        </div>
+        @if (r.Gaps == 0)
+        {
+            <p class="small tide-muted mb-0">@(r.Rows.Count == 0 ? "No techniques on the articles briefed in this window." : "Every technique briefed has an enabled rule tagged with it.")</p>
+        }
+        else
+        {
+            <div class="tide-dt-scroll">
+                <table class="table table-sm mb-0 tide-table">
+                    <thead><tr><th scope="col">Technique</th><th scope="col" class="text-end">Briefed</th><th scope="col">Watched adversary</th><th scope="col">Rules</th><th scope="col"><span class="visually-hidden">Action</span></th></tr></thead>
+                    <tbody>
+                        @foreach (var row in r.Rows.Where(x => x.Gap))
+                        {
+                            <tr>
+                                <td><a href="@AttackMatrix.TechniqueUrl(row.TechniqueId)" target="_blank" rel="noopener noreferrer" class="tide-data">@row.TechniqueId</a> @(row.Name == row.TechniqueId ? "" : row.Name)</td>
+                                <td class="text-end">@row.Briefed</td>
+                                <td>@(row.Watched.Count == 0 ? "—" : string.Join(", ", row.Watched))</td>
+                                <td><RuleCount Rules="row.Rules" /></td>
+                                <td class="text-end">
+                                    @if (row.ActionOpen)
+                                    {
+                                        <a href="@Ui.ActionUrl(row.ActionNumber!.Value)">@Ui.ActionLabel(row.ActionNumber!.Value) open</a>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="btn btn-sm @(row.Watched.Count > 0 ? "btn-primary" : "btn-outline-secondary")" disabled="@(_busy || _teamId == Guid.Empty)"
+                                                @onclick="() => Raise(row)">@(row.ActionNumber is { } closed ? $"Raise again (A-{closed} closed)" : "Raise action")</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    @if (r.Covered > 0)
+    {
+        <details class="tide-card">
+            <summary class="fw-semibold">Briefed, with a tagged rule (@r.Covered)</summary>
+            <div class="tide-dt-scroll mt-2">
+                <table class="table table-sm mb-0 tide-table">
+                    <thead><tr><th scope="col">Technique</th><th scope="col" class="text-end">Briefed</th><th scope="col">Rules tagged</th></tr></thead>
+                    <tbody>
+                        @foreach (var row in r.Rows.Where(x => !x.Gap))
+                        {
+                            <tr>
+                                <td><span class="tide-data">@row.TechniqueId</span> @(row.Name == row.TechniqueId ? "" : row.Name)</td>
+                                <td class="text-end">@row.Briefed</td>
+                                <td><RuleCount Rules="row.Rules" /> <span class="small tide-muted">@string.Join(", ", row.Rules.Names.Take(3))@(row.Rules.Names.Count > 3 ? $", +{row.Rules.Names.Count - 3} more" : "")</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </details>
+    }
+}
+
+@code {
+    private CoverageReport? _report;
+    private IReadOnlyList<Team> _teams = [];
+    private Guid _teamId;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _teams = await Teams.ListAsync();
+            // The detection engineering team, when there's one by that name; else the first.
+            _teamId = (_teams.FirstOrDefault(t => t.Name.Contains("detection", StringComparison.OrdinalIgnoreCase)) ?? _teams.FirstOrDefault())?.Id ?? Guid.Empty;
+            _report = await Detections.CoverageAsync();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    private async Task Raise(CoverageRow row)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            var number = await Detections.RaiseAsync(row.TechniqueId, _teamId);
+            Toasts.Show($"Raised A-{number} for {row.TechniqueId}.");
+            _report = await Detections.CoverageAsync();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+}

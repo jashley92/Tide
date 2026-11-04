@@ -1,0 +1,280 @@
+@page "/admin/api"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@using Tide.Application.Api
+@inject ApiTokenService Tokens
+@inject WebhookService Webhooks
+@inject OrgClock Clock
+@inject TimeProvider Time
+@inject ToastService Toasts
+@inject IJSRuntime JS
+
+<PageTitle>API access · TIDE</PageTitle>
+
+@* EP-75: who may call TIDE's API, and where TIDE posts when things happen. A token or a webhook secret is shown once,
+   when it's made; only a hash (a token) or an encrypted copy (a secret) is kept. *@
+<div class="tide-page-head">
+    <div>
+        <h1 class="tide-admin-title">API access</h1>
+        <div class="tide-sub">Each token has only the scopes it needs and reads nothing above its TLP. Changes are audited under the token's name. Reference:
+            <a href="api/v1/openapi.json" target="_blank" rel="noopener">api/v1/openapi.json</a>. A server can also call with Windows sign-in (a gMSA), limited to the roles of its AD groups.</div>
+    </div>
+</div>
+
+@if (_issued is { } issued)
+{
+    <div class="alert alert-success" role="status">
+        <div class="fw-semibold mb-1">The token for @issued.Name. Copy it now: TIDE keeps only a hash and can't show it again.</div>
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+            <code class="tide-data" id="issued-token">@issued.Value</code>
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => Copy(issued.Value)"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
+            <button type="button" class="btn btn-sm btn-link" @onclick="() => _issued = null">Done</button>
+        </div>
+    </div>
+}
+
+<section class="tide-card" aria-labelledby="api-callers">
+    <h2 id="api-callers"><span class="bi bi-key" aria-hidden="true"></span> Callers</h2>
+    @if (_tokens is null)
+    {
+        <LoadingBlock />
+    }
+    else if (_tokens.Count == 0)
+    {
+        <p class="small tide-muted">No tokens yet.</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead><tr><th scope="col">Caller</th><th scope="col">Scopes</th><th scope="col">Reads up to</th><th scope="col">Expires</th><th scope="col">Last used</th><th scope="col"><span class="visually-hidden">Revoke</span></th></tr></thead>
+                <tbody>
+                    @foreach (var t in _tokens)
+                    {
+                        var active = t.Active(Time.GetUtcNow());
+                        <tr class="@(active ? "" : "tide-muted")">
+                            <td><strong>@t.Name</strong> <span class="tide-data small">····@t.Hint</span></td>
+                            <td class="small">@string.Join(" ", t.Scopes)</td>
+                            <td><TlpBadge Level="t.MaxTlp" /></td>
+                            <td class="small">@(t.RevokedAtUtc is { } r ? $"revoked {Ui.When(Clock, r)}" : t.ExpiresAtUtc <= Time.GetUtcNow() ? "expired" : Ui.When(Clock, t.ExpiresAtUtc))</td>
+                            <td class="small">@(t.LastUsedAtUtc is { } u ? $"{Ui.When(Clock, u)} · {t.Calls:N0} calls" : "never")</td>
+                            <td class="text-end">@if (active) { <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => Revoke(t)">Revoke</button> }</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <h3 class="tide-subhead mt-3">Issue a token</h3>
+    <div class="row g-2">
+        <div class="col-md-5">
+            <label class="tide-field-label" for="tok-name">Caller</label>
+            <input id="tok-name" class="form-control form-control-sm" maxlength="@Tide.Domain.Entities.ApiToken.MaxName" placeholder="XSOAR playbooks" @bind="_name" />
+        </div>
+        <div class="col-md-3">
+            <span class="tide-field-label" aria-hidden="true">Reads up to</span>
+            <TlpSelect Value="@_tlp" ValueChanged="v => _tlp = v" Label="The highest TLP it reads" />
+        </div>
+        <div class="col-md-2">
+            <label class="tide-field-label" for="tok-days">Days</label>
+            <input id="tok-days" type="number" class="form-control form-control-sm" min="1" max="@ApiTokenService.MaxDays" @bind="_days" />
+        </div>
+    </div>
+    <fieldset class="mt-2">
+        <legend class="tide-field-label">Scopes</legend>
+        @foreach (var scope in ApiScopes.All)
+        {
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="@($"scope-{scope.Name.Replace(':', '-')}")" checked="@_scopes.Contains(scope.Name)"
+                       @onchange="e => Toggle(_scopes, scope.Name, e)" />
+                <label class="form-check-label small" for="@($"scope-{scope.Name.Replace(':', '-')}")"><code>@scope.Name</code>: @scope.About</label>
+            </div>
+        }
+    </fieldset>
+    <button type="button" class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="Issue"><span class="bi bi-plus-lg" aria-hidden="true"></span> Issue the token</button>
+</section>
+
+@if (_secret is { } added)
+{
+    <div class="alert alert-success" role="status">
+        <div class="fw-semibold mb-1">The signing secret for @added.Url. Copy it now into the receiver: TIDE can't show it again.</div>
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+            <code class="tide-data">@added.Value</code>
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => Copy(added.Value)"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
+            <button type="button" class="btn btn-sm btn-link" @onclick="() => _secret = null">Done</button>
+        </div>
+    </div>
+}
+
+<section class="tide-card" aria-labelledby="api-hooks">
+    <h2 id="api-hooks"><span class="bi bi-broadcast" aria-hidden="true"></span> Webhooks</h2>
+    <p class="small">TIDE posts JSON when an action is raised, when one becomes overdue, and when a brief is sent, checking every minute.
+        An action raised or a brief sent goes once it's at least 30 seconds old.
+        Each post carries <code>X-Tide-Signature: sha256=</code> and the HMAC-SHA256, with the webhook's secret, of the
+        <code>X-Tide-Timestamp</code> value, a dot and the body, so the receiver can tell it came from TIDE. A failed post is tried again
+        at the next run, with the same <code>X-Tide-Event-Id</code> (the body's <code>id</code>), so the receiver can drop a repeat.
+        An action is posted with its article's TLP as <code>marking</code>, and one raised from an article above the team edition's
+        ceiling isn't posted at all: a webhook gets what the team edition's readers do.</p>
+    @if (_hooks is { Count: > 0 })
+    {
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead><tr><th scope="col">Address</th><th scope="col">Events</th><th scope="col">Last post</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+                <tbody>
+                    @foreach (var h in _hooks)
+                    {
+                        <tr class="@(h.Enabled ? "" : "tide-muted")">
+                            <td class="tide-data small">@h.Url</td>
+                            <td class="small">@string.Join(" · ", h.Events)</td>
+                            <td class="small">
+                                @if (h.LastAtUtc is { } at)
+                                {
+                                    <span class="tide-badge @(h.LastError is null ? "tide-badge-ok" : "tide-badge-warn")">@(h.LastStatus?.ToString() ?? "failed")</span>
+                                    <span> @Ui.When(Clock, at)</span>
+                                    @if (h.LastError is { } err) { <div class="tide-field-error">@err</div> }
+                                }
+                                else { <span>none yet</span> }
+                            </td>
+                            <td class="text-end text-nowrap">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="() => Test(h)">Send a test</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => Enable(h, !h.Enabled)">@(h.Enabled ? "Turn off" : "Turn on")</button>
+                                <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => Remove(h)">Remove</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    <h3 class="tide-subhead mt-3">Add a webhook</h3>
+    <div class="row g-2 align-items-end">
+        <div class="col-md-7">
+            <label class="tide-field-label" for="hook-url">Address (https)</label>
+            <input id="hook-url" type="url" class="form-control form-control-sm tide-data" maxlength="2000" placeholder="https://xsoar.example.org/hooks/tide" @bind="_hookUrl" />
+        </div>
+        <div class="col-md-5">
+            <fieldset>
+                <legend class="tide-field-label">Events</legend>
+                @foreach (var e in WebhookService.Events)
+                {
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" id="@($"ev-{e.Replace('.', '-')}")" checked="@_events.Contains(e)" @onchange="x => Toggle(_events, e, x)" />
+                        <label class="form-check-label small" for="@($"ev-{e.Replace('.', '-')}")">@e</label>
+                    </div>
+                }
+            </fieldset>
+        </div>
+    </div>
+    <button type="button" class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="AddHook"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add the webhook</button>
+</section>
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    private ConfirmDialog _confirm = default!;
+    private IReadOnlyList<ApiTokenRow>? _tokens;
+    private IReadOnlyList<WebhookRow>? _hooks;
+    private string? _name, _hookUrl;
+    private Tide.Domain.Enums.TlpLevel _tlp = Tide.Domain.Enums.TlpLevel.Green;
+    private int _days = 90;
+    private readonly HashSet<string> _scopes = [];
+    private readonly HashSet<string> _events = [WebhookService.ActionRaised];
+    private bool _busy;
+    private sealed record Shown(string Name, string Value);
+    private sealed record ShownSecret(string Url, string Value);
+    private Shown? _issued;
+    private ShownSecret? _secret;
+
+    protected override Task OnInitializedAsync() => Load();
+
+    private async Task Load()
+    {
+        _tokens = await Tokens.ListAsync();
+        _hooks = await Webhooks.ListAsync();
+    }
+
+    private static void Toggle(HashSet<string> set, string value, ChangeEventArgs e)
+    {
+        if (e.Value is true) set.Add(value);
+        else set.Remove(value);
+    }
+
+    // A second click while one is being made does nothing: two would be two live tokens, one never shown.
+    internal async Task Issue()
+    {
+        if (_busy) return;
+        _busy = true;
+        var name = (_name ?? "").Trim();
+        try
+        {
+            var issued = await Tokens.IssueAsync(name, _scopes, _tlp, _days);
+            _issued = new Shown(name, issued.Token);
+            (_name, _days) = (null, 90);
+            _scopes.Clear();
+            await Load();
+        }
+        catch (Exception ex) when (ex is ArgumentException or ForbiddenException) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    private async Task Revoke(ApiTokenRow t)
+    {
+        if (!await _confirm.Ask($"Revoke the token for {t.Name}?", "Calls with it are refused from now on. It can't be turned back on: issue a new one instead.", "Revoke")) return;
+        await Tokens.RevokeAsync(t.Id);
+        Toasts.Show($"Revoked the token for {t.Name}.");
+        await Load();
+    }
+
+    internal async Task AddHook()
+    {
+        if (_busy) return;
+        _busy = true;
+        var url = (_hookUrl ?? "").Trim();
+        try
+        {
+            var added = await Webhooks.AddAsync(url, _events);
+            _secret = new ShownSecret(url, added.Secret);
+            _hookUrl = null;
+            await Load();
+        }
+        catch (Exception ex) when (ex is ArgumentException or ForbiddenException) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    private async Task Test(WebhookRow h)
+    {
+        _busy = true;
+        try
+        {
+            var (status, error) = await Webhooks.TestAsync(h.Id);
+            if (error is null) Toasts.Show($"The test reached {h.Url} ({status}).");
+            else Toasts.Error(error);
+            await Load();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task Enable(WebhookRow h, bool on)
+    {
+        await Webhooks.SetEnabledAsync(h.Id, on);
+        await Load();
+    }
+
+    private async Task Remove(WebhookRow h)
+    {
+        if (!await _confirm.Ask("Remove the webhook?", $"TIDE stops posting to {h.Url}.", "Remove")) return;
+        await Webhooks.RemoveAsync(h.Id);
+        await Load();
+    }
+
+    private async Task Copy(string text)
+    {
+        try
+        {
+            if (await JS.InvokeAsync<bool>("tideCopy", text)) Toasts.Show("Copied.");
+            else Toasts.Error("It couldn't be copied. Select it and copy it instead.");
+        }
+        catch (JSDisconnectedException) { }
+    }
+}

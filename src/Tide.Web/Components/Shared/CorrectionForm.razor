@@ -1,0 +1,299 @@
+@* Sending a correction of one send (ADR 0015), in the Send dialog in place of the editions: the kind (a correction, or
+   a TLP slip), the articles it's about, a note, then the confirmation (CorrectionPlan) with the rendered correction,
+   the tick, and for a slip a second tick that it can't be recalled. Any change to the form clears the confirmation, so
+   what's sent is what was shown. It goes to the original send's recipients only. *@
+@using Tide.Application.Distribution
+@inject CorrectionService Corrections
+@inject OrgClock Clock
+
+<section class="tide-card tide-correction" aria-labelledby="correct-h">
+    <h3 class="tide-card-title" id="correct-h" tabindex="-1" @ref="_heading">
+        @if (_start is null) { <span>Send a correction</span> }
+        else { <span>Correct the @BriefRenderer.EditionName(_start.Send.Edition).ToLowerInvariant() sent @Ui.When(Clock, _start.Send.SentAtUtc)</span> <TlpBadge Level="_start.Send.Marking" /> }
+    </h3>
+    @if (_start is null)
+    {
+        @if (_error is not null) { <p class="small text-danger" role="alert">@_error</p> }
+        else { <LoadingBlock Rows="2" Label="Loading the send…" /> }
+    }
+    else
+    {
+        <p class="small tide-muted mb-2">A correction is a short email of its own to the @_start.Send.RecipientCount @(_start.Send.RecipientCount == 1 ? "address" : "addresses") the send went to. It can't be recalled either.</p>
+        @if (_start.Last is { } last)
+        {
+            <div class="small mb-2 text-danger"><span class="bi bi-exclamation-triangle" aria-hidden="true"></span>
+                A @(last.IsTlpSlip ? "TLP slip notice" : "correction") of this send @(last.Status == SendStatus.Unknown ? "may have gone" : "went") @Ui.When(Clock, last.SentAtUtc) by @last.SentByName.</div>
+        }
+        <fieldset class="mb-2">
+            <legend class="tide-field-label">What it is</legend>
+            <div class="form-check">
+                <input class="form-check-input" type="radio" name="correction-kind" id="kind-fix" checked="@(!_slip)" disabled="@_busy" @onchange="() => SetSlip(false)" />
+                <label class="form-check-label small" for="kind-fix">A correction: something in it was wrong, and here's what changed</label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="radio" name="correction-kind" id="kind-slip" checked="@_slip" disabled="@_busy" @onchange="() => SetSlip(true)" />
+                <label class="form-check-label small" for="kind-slip">A TLP slip: something went to an audience it shouldn't have</label>
+            </div>
+        </fieldset>
+
+        <fieldset class="mb-2">
+            <legend class="tide-field-label">@(_slip ? "Where it was (optional)" : "The articles it's about")</legend>
+            @if (_start.Sections.Count == 0)
+            {
+                <p class="small tide-muted mb-0">That send had no articles.</p>
+            }
+            @foreach (var s in _start.Sections)
+            {
+                var id = $"correct-art-{s.Number}";
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="@id" checked="@_picked.ContainsKey(s.Number)" disabled="@(_busy || (s.ArticleId is null && Matched(s) is null))"
+                           @onchange="e => Pick(s, e.Value is true)" />
+                    <label class="form-check-label small" for="@id">@s.Number. @s.Headline</label>
+                    @if (s.ArticleId is null)
+                    {
+                        <select class="form-select form-select-sm tide-correction-match mt-1" aria-label="@($"The article that article {s.Number} was")" disabled="@_busy"
+                                value="@(Matched(s)?.ToString() ?? "")" @onchange="e => Match(s, e.Value?.ToString())">
+                            <option value="">Which article on the brief was it?</option>
+                            @foreach (var a in _start.BriefArticles)
+                            {
+                                <option value="@a.Id">@a.Title</option>
+                            }
+                        </select>
+                    }
+                </div>
+            }
+        </fieldset>
+
+        @if (_slip)
+        {
+            <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" id="correct-name" checked="@_nameHeadline" disabled="@_busy" @onchange="e => Set(() => _nameHeadline = e.Value is true)" />
+                <label class="form-check-label small" for="correct-name">The headline isn't what slipped: name the article by its headline too (otherwise only by number)</label>
+            </div>
+        }
+
+        <label class="tide-field-label" for="correct-note">@(_slip ? "A note (optional)" : "What changed (required)")</label>
+        @if (_slip)
+        {
+            <p class="small text-danger mb-1" id="correct-note-warn"><span class="bi bi-exclamation-triangle" aria-hidden="true"></span>
+                Don't repeat, quote or summarize what slipped: the notice already says what to do.</p>
+        }
+        <textarea class="form-control form-control-sm" id="correct-note" rows="3" maxlength="@CorrectionService.MaxNote" disabled="@_busy"
+                  aria-describedby="@(_slip ? "correct-note-warn" : null)" @bind="Note" @bind:event="oninput"></textarea>
+        <div class="d-flex gap-2 align-items-center flex-wrap mt-1 mb-2">
+            <span class="small">The note is marked</span>
+            <TlpSelect Value="_noteTlp" ValueChanged="v => Set(() => _noteTlp = v)" Label="The note's TLP" Class="w-auto" Disabled="_busy" />
+        </div>
+        @if (_slip)
+        {
+            <p class="small tide-muted">Only the send's recipients are told. If it was forwarded beyond them, follow the organization's incident process.</p>
+        }
+
+        <div class="d-flex gap-2 flex-wrap align-items-center">
+            <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(_busy || !CanPlan)" @onclick="Plan">
+                <span class="bi bi-eye" aria-hidden="true"></span> Check the @(_slip ? "slip notice" : "correction")</button>
+            <button type="button" class="btn btn-link btn-sm" disabled="@_busy" @onclick="Back">Back to the send</button>
+        </div>
+        <div class="small mt-1" aria-live="polite">@_error</div>
+
+        @if (_plan is { } plan)
+        {
+            <div class="tide-correction-confirm mt-3" aria-labelledby="correct-confirm-h">
+                <h4 class="tide-field-label" id="correct-confirm-h">What goes</h4>
+                <div class="small mb-1">Marked <TlpBadge Level="plan.Marking" />: @Tlp.Meaning(plan.Marking)</div>
+                <div class="small mb-1">Subject: <strong>@plan.Subject</strong></div>
+                <div class="small mb-1">To the @plan.Recipients.Count @(plan.Recipients.Count == 1 ? "address" : "addresses") the send went to:</div>
+                <div class="tide-recipients mb-2">@string.Join("; ", plan.Recipients)</div>
+                @if (ListNote(plan) is { } differs)
+                {
+                    <div class="small mb-2"><span class="bi bi-info-circle" aria-hidden="true"></span> @differs</div>
+                }
+                <div class="small tide-muted mb-2" title="@SendConfirmation.FingerprintHelp">Checked version <span class="tide-recipients">@SendConfirmation.ShortFingerprint(plan.Fingerprint)</span><span class="visually-hidden">: @SendConfirmation.FingerprintHelp</span></div>
+                <div class="tide-published tide-correction-preview" aria-label="The @(_slip ? "slip notice" : "correction") as readers get it" role="region">@((MarkupString)plan.WebHtml)</div>
+                <div class="form-check mt-2 mb-0">
+                    <input class="form-check-input" type="checkbox" id="correct-checked" checked="@_checked" disabled="@_busy" @onchange="e => { _checked = e.Value is true; }" />
+                    <label class="form-check-label small" for="correct-checked">@CheckedLabel(plan)</label>
+                </div>
+                @if (plan.Request.IsTlpSlip)
+                {
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" id="correct-recall" checked="@_noRecall" disabled="@_busy" @onchange="e => { _noRecall = e.Value is true; }" />
+                        <label class="form-check-label small" for="correct-recall">I understand the email was not and cannot be recalled: this only tells the recipients to delete it</label>
+                    </div>
+                }
+                <div class="d-flex gap-2 flex-wrap align-items-center mt-2">
+                    <button type="button" class="btn @(plan.Request.IsTlpSlip ? "btn-danger" : "btn-primary") btn-sm" disabled="@(_busy || !Ready(plan))" @onclick="() => SendNow(plan)">
+                        <span class="bi bi-send-check" aria-hidden="true"></span> @Label(plan)</button>
+                </div>
+                @if (!plan.EmailEnabled)
+                {
+                    <p class="small tide-muted mt-2 mb-0">Email is turned off on this server (Email:Enabled), so nothing can be sent.</p>
+                }
+            </div>
+        }
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public Guid SendId { get; set; }
+
+    /// <summary>Raised after a correction went to the relay (whatever its outcome), with what was logged.</summary>
+    [Parameter] public EventCallback<BriefCorrection> Sent { get; set; }
+
+    /// <summary>Raised by "Back to the send", without sending.</summary>
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private CorrectionStart? _start;
+    private CorrectionPlan? _plan;
+    private readonly Dictionary<int, Guid> _picked = [];
+    private readonly Dictionary<int, Guid> _matched = [];   // an older send's sections, matched to an article by hand
+    private string _note = "";
+    private TlpLevel _noteTlp = TlpLevel.Clear;
+    private bool _slip, _nameHeadline, _checked, _noRecall, _busy;
+    private string? _error;
+    private ElementReference _heading;
+    private Guid _loaded;
+
+    private string Note
+    {
+        get => _note;
+        set => Set(() => _note = value);
+    }
+
+    private bool CanPlan => _slip || (_picked.Count > 0 && !string.IsNullOrWhiteSpace(_note));
+
+    internal bool Ticked => _checked;
+    internal CorrectionStart? Start => _start;
+    internal CorrectionPlan? Confirmation => _plan;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loaded == SendId) return;
+        _loaded = SendId;
+        _start = null;
+        _error = null;
+        try { _start = await Corrections.StartAsync(SendId); }
+        catch (Exception ex) { _error = UserFacingError.For(ex); }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await _heading.FocusAsync();
+    }
+
+    /// <summary>The tick's words, naming the marking and the original recipients.</summary>
+    public static string CheckedLabel(CorrectionPlan plan) =>
+        $"I've checked the marking ({Tlp.Label(plan.Marking)}) and the recipients ({plan.Recipients.Count} {(plan.Recipients.Count == 1 ? "address" : "addresses")} the send went to)";
+
+    /// <summary>The send button, named for what goes: "Send the correction to 12".</summary>
+    public static string Label(CorrectionPlan plan) => $"Send the {(plan.Request.IsTlpSlip ? "slip notice" : "correction")} to {plan.Recipients.Count}";
+
+    /// <summary>How the edition's list differs from the send's recipients now, when it does. No one is added.</summary>
+    public static string? ListNote(CorrectionPlan plan)
+    {
+        if (plan.NewOnList == 0 && plan.OffList == 0) return null;
+        var parts = new List<string>();
+        if (plan.NewOnList > 0) parts.Add($"{plan.NewOnList} {(plan.NewOnList == 1 ? "address" : "addresses")} on the list now didn't get the send, so won't get this");
+        if (plan.OffList > 0) parts.Add($"{plan.OffList} that got the send {(plan.OffList == 1 ? "is" : "are")} no longer on the list, and still get{(plan.OffList == 1 ? "s" : "")} this");
+        return "The edition's list has changed since: " + string.Join("; ", parts) + ".";
+    }
+
+    private bool Ready(CorrectionPlan plan) =>
+        _checked && (!plan.Request.IsTlpSlip || _noRecall) && plan.EmailEnabled && plan.Recipients.Count > 0;
+
+    private Guid? Matched(CorrectableSection s) => s.ArticleId ?? (_matched.TryGetValue(s.Number, out var id) ? id : null);
+
+    // Anything changed: the confirmation shown is no longer what would go.
+    private void Set(Action change)
+    {
+        change();
+        _plan = null;
+        _checked = false;
+        _noRecall = false;
+        StateHasChanged();
+    }
+
+    internal void SetSlip(bool slip) => Set(() => _slip = slip);
+
+    internal void Pick(CorrectableSection s, bool on) => Set(() =>
+    {
+        if (on && Matched(s) is { } id) _picked[s.Number] = id;
+        else _picked.Remove(s.Number);
+    });
+
+    internal void Match(CorrectableSection s, string? value) => Set(() =>
+    {
+        if (Guid.TryParse(value, out var id)) _matched[s.Number] = id;
+        else _matched.Remove(s.Number);
+        if (_picked.ContainsKey(s.Number))
+        {
+            if (Matched(s) is { } m) _picked[s.Number] = m;
+            else _picked.Remove(s.Number);
+        }
+    });
+
+    internal void Write(string note, TlpLevel tlp = TlpLevel.Clear) => Set(() => { _note = note; _noteTlp = tlp; });
+
+    internal void Tick(bool on, bool noRecall = false)
+    {
+        _checked = on;
+        _noRecall = noRecall;
+        StateHasChanged();
+    }
+
+    private CorrectionRequest Request() =>
+        new(SendId, _slip, _picked.Select(p => new CorrectedSection(p.Key, p.Value)).ToList(), _note, _noteTlp, _nameHeadline);
+
+    internal async Task Plan()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            _plan = await Corrections.PlanAsync(Request());
+            _checked = false;
+            _noRecall = false;
+        }
+        catch (Exception ex) { _error = UserFacingError.For(ex); }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+
+    // The correction as confirmed. A refusal says why and shows it again as it is now, to check and confirm again.
+    internal async Task<bool> SendNow(CorrectionPlan plan)
+    {
+        _busy = true;
+        _error = null;
+        var noRecall = _noRecall;
+        _checked = false;
+        _noRecall = false;
+        try
+        {
+            var sent = await Corrections.SendAsync(plan, noRecall);
+            await Sent.InvokeAsync(sent);
+            return true;
+        }
+        catch (InvalidOperationException ex)
+        {
+            _error = UserFacingError.For(ex) + " It's shown again as it is now: check it and send again.";
+            try { _plan = await Corrections.PlanAsync(plan.Request); }
+            catch (Exception again) { _plan = null; _error = UserFacingError.For(again); }
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _error = UserFacingError.For(ex);
+            return false;
+        }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+
+    private Task Back() => Closed.InvokeAsync();
+}

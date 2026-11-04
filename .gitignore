@@ -1,0 +1,32 @@
+# Build output
+bin/
+obj/
+TestResults/
+[Dd]ebug/
+[Rr]elease/
+*.user
+
+# Rider / VS
+.idea/
+.vs/
+
+# Claude Code local worktrees / scratch
+
+# Local app data (dev database, screenshot store)
+App_Data/
+*.db
+*.db-shm
+*.db-wal
+
+# Secrets / local config overrides
+appsettings.*.local.json
+secrets.json
+
+# Internal planning docs, kept local
+BACKLOG.md
+
+# Filled-in install answers file (names AD groups/hosts/account); the *.template.psd1 stays tracked.
+tide.config.psd1
+# Generated production config (written on the target host by Install-Tide.ps1).
+appsettings.Production.json
+.claude/

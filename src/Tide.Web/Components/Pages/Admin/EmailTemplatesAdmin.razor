@@ -1,0 +1,208 @@
+@page "/admin/email-templates"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@using Tide.Application.Distribution
+@inject EmailTemplateService Templates
+@inject ICurrentUser CurrentUser
+@inject ToastService Toasts
+
+<PageTitle>Email templates · TIDE</PageTitle>
+
+@* Email templates: the wording of each notification email, with a live preview. *@
+<div class="tide-page-head">
+    <div>
+        <h1 class="tide-admin-title">Email templates</h1>
+        <div class="tide-sub">Reminder and rotation emails. <span class="tide-data">{{Name}}</span> inserts a value when the email is sent; values typed by analysts are never read as formatting. The header, footer and TLP marking are fixed. The brief's email is generated from the brief and isn't listed.</div>
+    </div>
+</div>
+
+@if (_views is null)
+{
+    <p class="tide-muted" role="status">Loading…</p>
+}
+else
+{
+    <div class="tide-etpl">
+        <nav class="tide-etpl-list" aria-label="Email templates">
+            @foreach (var v in _views)
+            {
+                var current = v.Template.Id == _id;
+                <button type="button" class="tide-etpl-item @(current ? "active" : "")" aria-current="@(current ? "true" : null)"
+                        @onclick="() => Select(v.Template.Id)" disabled="@_busy">
+                    <span>@v.Template.Title</span>
+                    @if (_drafts.ContainsKey(v.Template.Id) || (current && Unsaved)) { <Badge Tone="BadgeTone.Warn">Unsaved</Badge> }
+                    else if (v.IsCustomized) { <Badge Tone="BadgeTone.Ok">Customized</Badge> }
+                </button>
+            }
+        </nav>
+
+        @if (Selected is { } sel)
+        {
+            <div class="tide-etpl-main">
+                <section class="tide-card" aria-labelledby="etpl-title">
+                    <h2 id="etpl-title">@sel.Template.Title @if (sel.IsCustomized) { <Badge Tone="BadgeTone.Ok">Customized</Badge> }</h2>
+                    <p class="small tide-muted">@sel.Template.Description</p>
+
+                    <label class="tide-field-label" for="etpl-subject">Subject</label>
+                    <input id="etpl-subject" class="form-control form-control-sm" maxlength="@EmailTemplateCatalog.MaxLine"
+                           @bind="_subject" @bind:event="oninput" @bind:after="UpdatePreview" />
+
+                    <label class="tide-field-label mt-2" for="etpl-heading">Heading</label>
+                    <input id="etpl-heading" class="form-control form-control-sm" maxlength="@EmailTemplateCatalog.MaxLine"
+                           @bind="_heading" @bind:event="oninput" @bind:after="UpdatePreview" aria-describedby="etpl-heading-help" />
+                    <div class="form-text" id="etpl-heading-help">The large line in the email's dark header.</div>
+
+                    <label class="tide-field-label mt-2" for="etpl-body">Body</label>
+                    <textarea id="etpl-body" class="tide-query tide-etpl-body" spellcheck="true" maxlength="@EmailTemplateCatalog.MaxBody"
+                              @bind="_body" @bind:event="oninput" @bind:after="UpdatePreview" aria-describedby="etpl-body-help"></textarea>
+                    <div class="form-text" id="etpl-body-help">Markdown: <span class="tide-data">**bold**</span>, <span class="tide-data">*italic*</span>,
+                        <span class="tide-data">- a list</span>, a blank line between paragraphs. HTML is shown as typed.</div>
+
+                    <div class="tide-etpl-tokens" role="group" aria-label="Values this email can fill in">
+                        <div class="small tide-muted">Insert a value at the end of the body:</div>
+                        @foreach (var token in sel.Template.Tokens)
+                        {
+                            <button type="button" class="btn btn-outline-secondary btn-sm tide-data" title="@token.Description"
+                                    aria-describedby="@($"etpl-tok-{token.Name}")" @onclick="() => AddToken(token.Name)">@($"{{{{{token.Name}}}}}")</button>
+                            <span id="@($"etpl-tok-{token.Name}")" class="visually-hidden">@token.Description@(token.Required ? " The body needs it." : "")</span>
+                        }
+                    </div>
+
+                    @if (_error is not null) { <p class="text-danger small mt-2 mb-0" role="alert">@_error</p> }
+                    <div class="d-flex flex-wrap gap-2 align-items-center mt-3">
+                        <button class="btn btn-primary btn-sm" @onclick="Save" disabled="@(_busy || !Unsaved)">Save</button>
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="Revert" disabled="@(_busy || !Unsaved)">Discard changes</button>
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="Reset" disabled="@(_busy || !sel.IsCustomized)">Back to the default</button>
+                        <span class="tide-etpl-sep" aria-hidden="true"></span>
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="SendTest" disabled="@(_busy || string.IsNullOrWhiteSpace(CurrentUser.Email))"
+                                title="@(string.IsNullOrWhiteSpace(CurrentUser.Email) ? "Your account has no email address." : $"Sends the draft on screen to {CurrentUser.Email}. It isn't saved.")">
+                            <span class="bi bi-send" aria-hidden="true"></span> Send me a test
+                        </button>
+                    </div>
+                </section>
+
+                <section class="tide-card" aria-labelledby="etpl-preview-title">
+                    <h2 id="etpl-preview-title"><span class="bi bi-eye" aria-hidden="true"></span> Preview <span class="small tide-muted fw-normal">with sample values</span></h2>
+                    @if (_preview is { } p)
+                    {
+                        <div class="small mb-2"><span class="tide-muted">Subject:</span> @p.Subject</div>
+                        <iframe class="tide-etpl-frame" title="Preview of the email" sandbox="" srcdoc="@p.Html"></iframe>
+                    }
+                </section>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private IReadOnlyList<EmailTemplateView>? _views;
+    private string _id = "";
+    private string _subject = "", _heading = "", _body = "";
+    private string _stamp = "";   // what was saved when the editor opened it, so a stale page can't write over a newer change
+    private EmailPreview? _preview;
+    private string? _error;
+    private bool _busy;
+
+    // What was typed into a template not yet saved, so moving to another one doesn't lose it.
+    private readonly Dictionary<string, (string Subject, string Heading, string Body, string Stamp)> _drafts = new();
+
+    private EmailTemplateView? Selected => _views?.FirstOrDefault(v => v.Template.Id == _id);
+
+    // Judged as the save would store it: one line and trimmed.
+    private bool Unsaved => Selected is { } v &&
+        (EmailTemplateCatalog.Normalize(EmailPart.Subject, _subject) != v.Subject
+         || EmailTemplateCatalog.Normalize(EmailPart.Heading, _heading) != v.Heading
+         || EmailTemplateCatalog.Normalize(EmailPart.Body, _body) != v.Body);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _views = await Templates.GetAllAsync();
+        if (_views.Count > 0) Select(_views[0].Template.Id);
+    }
+
+    private void Select(string id)
+    {
+        if (_busy) return;
+        if (Unsaved) _drafts[_id] = (_subject, _heading, _body, _stamp);
+        else _drafts.Remove(_id);
+        _id = id;
+        _error = null;
+        if (Selected is not { } v) return;
+        (_subject, _heading, _body, _stamp) = _drafts.Remove(id, out var draft) ? draft : (v.Subject, v.Heading, v.Body, v.Stamp);
+        UpdatePreview();
+    }
+
+    private void AddToken(string name)
+    {
+        _body = (_body.TrimEnd().Length == 0 ? "" : _body.TrimEnd() + " ") + $"{{{{{name}}}}}";
+        UpdatePreview();
+    }
+
+    private void UpdatePreview()
+    {
+        try { _preview = Templates.Preview(_id, _subject, _heading, _body); }
+        catch (Exception ex) { _error = UserFacingError.For(ex); }
+    }
+
+    private void Revert()
+    {
+        if (Selected is not { } v) return;
+        (_subject, _heading, _body, _stamp) = (v.Subject, v.Heading, v.Body, v.Stamp);
+        _error = null;
+        UpdatePreview();
+    }
+
+    private async Task Save()
+    {
+        if (_busy) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            await Templates.SaveAsync(_id, _subject, _heading, _body, _stamp);
+            await Reload();
+            Toasts.Show("Template saved.");
+        }
+        catch (Exception ex) { _error = UserFacingError.For(ex); }
+        finally { _busy = false; }
+    }
+
+    private async Task Reset()
+    {
+        if (_busy) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            await Templates.ResetAsync(_id);
+            await Reload();
+            Toasts.Show("Reset to default.");
+        }
+        catch (Exception ex) { _error = UserFacingError.For(ex); }
+        finally { _busy = false; }
+    }
+
+    // Reads the templates again and shows the selected one as saved.
+    private async Task Reload()
+    {
+        _views = await Templates.GetAllAsync();
+        if (Selected is { } v) (_subject, _heading, _body, _stamp) = (v.Subject, v.Heading, v.Body, v.Stamp);
+        UpdatePreview();
+    }
+
+    private async Task SendTest()
+    {
+        if (_busy) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            var result = await Templates.SendTestAsync(_id, _subject, _heading, _body);
+            if (result.Status == EmailSendStatus.Failed) _error = $"The test didn't send. {result.Error}";
+            else if (result.Status == EmailSendStatus.Disabled) Toasts.Show("Email is turned off on this server, so nothing was sent.");
+            else Toasts.Show($"Test sent to {CurrentUser.Email}. The draft isn't saved.");
+        }
+        catch (Exception ex) { _error = UserFacingError.For(ex); }
+        finally { _busy = false; }
+    }
+}

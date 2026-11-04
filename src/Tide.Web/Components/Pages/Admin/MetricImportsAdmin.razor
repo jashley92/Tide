@@ -1,0 +1,174 @@
+@page "/admin/metric-imports"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@using Tide.Application.Metrics
+@using Tide.Infrastructure.Storage
+@inject MetricImportService Imports
+@inject MetricDropFolder DropFolder
+@inject OrgClock Clock
+@inject ToastService Toasts
+@inject Tide.Application.Settings.OperationalSettingsService Settings
+@inject Microsoft.Extensions.Options.IOptionsMonitor<MetricImportOptions> Options
+
+<PageTitle>Metric imports · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <h1 class="tide-admin-title">Metric imports</h1>
+        <div class="tide-sub">Opening metric values from CSV files, uploaded here or dropped in a folder by a scheduled export. Re-importing a file changes nothing.</div>
+    </div>
+</div>
+
+<div class="tide-admin-index mb-3">
+    <div class="tide-card mb-0">
+        <h2><span class="bi bi-filetype-csv" aria-hidden="true"></span> The file</h2>
+        <p class="small mb-2">Comma-separated, one value per row. The first row names the columns: <code>date</code>, <code>metric_key</code>
+            and <code>value</code>, and optionally <code>note</code>. Other columns are ignored, so the
+            <a href="metrics">metrics page's export</a> reads back in.</p>
+        <pre class="tide-query tide-query-sample mb-2">date,metric_key,value,note
+2026-10-27,alert-queue-open,42,
+2026-10-27,alert-queue-older-than-24-hours,3,relay outage</pre>
+        <ul class="small tide-muted mb-0">
+            <li>Dates as 2026-10-27, business days up to today. Keys are on <a href="admin/metrics">Opening metrics</a>.</li>
+            <li>A value an analyst typed is kept, and so is a day whose brief has been sent.</li>
+            <li>An imported value can be typed over; later imports then leave it alone.</li>
+            <li>Up to @(MetricCsv.MaxBytes / 1024 / 1024) MB and @MetricCsv.MaxRows.ToString("N0") rows.</li>
+        </ul>
+    </div>
+
+    <div class="tide-card mb-0">
+        <h2><span class="bi bi-folder2-open" aria-hidden="true"></span> Drop folder</h2>
+        <p class="small mb-2">For a scheduled export to feed the metrics: CSV files left in this folder on the server are imported, then moved
+            to its <code>processed</code> (or <code>rejected</code>) folder and kept there for @MetricDropFolder.KeepFor.Days days.</p>
+        <div class="tide-data small text-break mb-2">@DropFolder.Inbox</div>
+        <div class="row g-2 align-items-end">
+            <div class="col-sm-6">
+                <div class="form-check form-switch mb-1">
+                    <input class="form-check-input" type="checkbox" role="switch" id="drop-on" @bind="_dropOn" />
+                    <label class="form-check-label" for="drop-on">Read the drop folder</label>
+                </div>
+            </div>
+            <div class="col-sm-6">
+                <label class="tide-field-label" for="drop-every">Every (minutes)</label>
+                <input id="drop-every" type="number" min="1" max="60" class="form-control form-control-sm" @bind="_dropMinutes" />
+            </div>
+        </div>
+        <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveDropFolder">Save drop folder</button>
+        <h3 class="h6 mt-3">Upload a file</h3>
+        <InputFile id="metric-csv" class="form-control form-control-sm" accept=".csv,text/csv" OnChange="Upload" disabled="@_busy" />
+        <div class="form-text">Imported as soon as it's chosen.</div>
+    </div>
+</div>
+
+<div class="tide-card">
+    <h2>Recent imports</h2>
+    @if (_recent is null)
+    {
+        <LoadingBlock />
+    }
+    else if (_recent.Count == 0)
+    {
+        <EmptyState Icon="bi-filetype-csv" Title="No imports yet" />
+    }
+    else
+    {
+        <table class="tide-table">
+            <thead>
+                <tr><th>Read</th><th>File</th><th>From</th><th class="tide-table-num">Rows</th><th class="tide-table-num">Applied</th>
+                    <th class="tide-table-num">Unchanged</th><th class="tide-table-num">Skipped</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var i in _recent)
+                {
+                    <tr @key="i.Id">
+                        <td class="text-nowrap">@Ui.When(Clock, i.ReadAtUtc)</td>
+                        <td>
+                            <span class="tide-data">@i.FileName</span>
+                            @if (i.Rejected)
+                            {
+                                <div class="small text-danger"><span class="bi bi-x-circle" aria-hidden="true"></span> Refused: @i.Problems</div>
+                            }
+                            else if (i.Problems is { Length: > 0 })
+                            {
+                                <details class="small">
+                                    <summary>Why @i.Skipped row@(i.Skipped == 1 ? " was" : "s were") skipped</summary>
+                                    <ul class="mb-0 ps-3">
+                                        @foreach (var line in i.Problems.Split('\n'))
+                                        {
+                                            <li>@line</li>
+                                        }
+                                    </ul>
+                                </details>
+                            }
+                        </td>
+                        <td>@i.ImportedByName</td>
+                        <td class="tide-table-num">@i.Rows</td>
+                        <td class="tide-table-num">@i.Applied</td>
+                        <td class="tide-table-num">@i.Unchanged</td>
+                        <td class="tide-table-num">@i.Skipped</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<MetricImport>? _recent;
+    private bool _busy, _dropOn;
+    private int _dropMinutes;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ReadSettings();
+        _recent = await Imports.RecentAsync();
+    }
+
+    // The drop folder settings in force: saved here, else the server's Metrics:Import values.
+    private void ReadSettings()
+    {
+        _dropOn = Options.CurrentValue.DropFolderEnabled;
+        _dropMinutes = Options.CurrentValue.PollMinutes;
+    }
+
+    internal async Task SaveDropFolder()
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await Settings.SaveAsync(new Dictionary<string, string?>
+            {
+                [Tide.Application.Settings.OperationalSettings.DropFolderEnabled] = _dropOn ? "true" : "false",
+                [Tide.Application.Settings.OperationalSettings.DropFolderPollMinutes] = _dropMinutes.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            });
+            ReadSettings();
+            Toasts.Show(_dropOn ? "The drop folder is on. It's read within a minute." : "The drop folder is off.");
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    private async Task Upload(InputFileChangeEventArgs e)
+    {
+        _busy = true;
+        try
+        {
+            var file = e.File;
+            if (file.Size > MetricCsv.MaxBytes)
+            {
+                Toasts.Error($"{file.Name} is larger than {MetricCsv.MaxBytes / 1024 / 1024} MB.");
+                return;
+            }
+            using var buffer = new MemoryStream();
+            await using (var stream = file.OpenReadStream(MetricCsv.MaxBytes))
+                await stream.CopyToAsync(buffer);
+            var result = await Imports.UploadAsync(file.Name, buffer.ToArray());
+            if (result.Rejected) Toasts.Error($"{result.FileName} wasn't imported: {result.Problems}");
+            else Toasts.Show($"{result.FileName}: {result.Applied} applied, {result.Unchanged} unchanged, {result.Skipped} skipped.");
+            _recent = await Imports.RecentAsync();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+}

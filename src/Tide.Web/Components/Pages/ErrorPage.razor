@@ -1,0 +1,28 @@
+@page "/error"
+@attribute [AllowAnonymous]
+@using System.Diagnostics
+
+<PageTitle>Error · TIDE</PageTitle>
+<div class="tide-maxw-2xl tide-card">
+    <h1 class="h4">Something went wrong</h1>
+    <p class="tide-muted">The error was logged. Try again; if it keeps happening, tell a TIDE administrator.</p>
+    @if (!string.IsNullOrEmpty(Reference))
+    {
+        <p class="small tide-muted">Give them this reference, so they can find the error in the log: <code class="user-select-all">@Reference</code></p>
+    }
+    <a class="btn btn-outline-secondary btn-sm" href="">Go to the start page</a>
+</div>
+
+@code {
+    [CascadingParameter] private HttpContext? HttpContext { get; set; }
+
+    /// <summary>
+    /// The failed request's trace (00-&lt;TraceId&gt;-&lt;SpanId&gt;-01), else its request id: the exception handler logs
+    /// the error in a scope carrying both, so either finds it. Read while the page is rendered for the failed request
+    /// and kept for the interactive render, which runs on the circuit with neither.
+    /// </summary>
+    [PersistentState]
+    public string? Reference { get; set; }
+
+    protected override void OnInitialized() => Reference ??= HttpContext is null ? null : Activity.Current?.Id ?? HttpContext.TraceIdentifier;
+}

@@ -1,0 +1,44 @@
+@* Numbered pages under a list that holds more than one page: Previous, the page numbers (a gap marked … in a long
+   run), Next. One page's rows are drawn at a time, so a long list never grows the page. The current page is marked
+   for screen readers (aria-current), and nothing is drawn when everything fits on one page. *@
+@if (Pages > 1)
+{
+    <nav class="tide-pager" aria-label="@($"Pages of {Many}")">
+        <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(Busy || Page <= 1)" @onclick="() => Go(Page - 1)">
+            <span class="bi bi-chevron-left" aria-hidden="true"></span> Previous</button>
+        <ul class="tide-pager-pages">
+            @foreach (var n in TableView.PageNumbers(Page, Pages))
+            {
+                if (n is not { } number)
+                {
+                    <li class="tide-pager-gap" aria-hidden="true">…</li>
+                }
+                else if (number == Page)
+                {
+                    <li><button type="button" class="btn btn-primary btn-sm" aria-current="page" aria-label="@($"Page {number}, this page")" disabled="@Busy">@number</button></li>
+                }
+                else
+                {
+                    <li><button type="button" class="btn btn-outline-secondary btn-sm" aria-label="@($"Page {number}")" disabled="@Busy" @onclick="() => Go(number)">@number</button></li>
+                }
+            }
+        </ul>
+        <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(Busy || Page >= Pages)" @onclick="() => Go(Page + 1)">
+            Next <span class="bi bi-chevron-right" aria-hidden="true"></span></button>
+    </nav>
+}
+
+@code {
+    /// <summary>The page shown, counting from 1, of <see cref="Pages"/>.</summary>
+    [Parameter, EditorRequired] public int Page { get; set; }
+    [Parameter, EditorRequired] public int Pages { get; set; }
+
+    /// <summary>What the pages are of, for the pager's name ("Pages of articles").</summary>
+    [Parameter, EditorRequired] public string Many { get; set; } = "";
+
+    /// <summary>A page is being read: the buttons wait.</summary>
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback<int> OnPage { get; set; }
+
+    private Task Go(int page) => page < 1 || page > Pages || page == Page ? Task.CompletedTask : OnPage.InvokeAsync(page);
+}

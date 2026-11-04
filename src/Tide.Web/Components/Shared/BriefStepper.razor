@@ -1,0 +1,45 @@
+@* Walking today's brief from the article page, without going back to Today: "On today's brief · 4 of 5  ‹ Previous
+   Next ›  Back to Today", in the brief's running order. The steps are plain links, so leaving unsaved changes goes
+   through the editor's guard as any other link does, and they keep the edition the preview shows (?edition=company).
+   At an end the step is there but dimmed. K and J press them (editor.js), unless focus is in a field.
+   Draws nothing for an article that isn't on today's brief. *@
+@inject BriefService Briefs
+
+@if (_at >= 0)
+{
+    <nav class="tide-stepper" aria-label="Today's brief">
+        <span>On today's brief &middot; <strong>@(_at + 1) of @_order.Count</strong></span>
+        @Step(_at - 1, "prev", "‹ Previous", "K", "K")
+        @Step(_at + 1, "next", "Next ›", "J", "J")
+        <a href="">Back to Today</a>
+    </nav>
+}
+
+@code {
+    /// <summary>The article shown.</summary>
+    [Parameter, EditorRequired] public Guid ArticleId { get; set; }
+
+    /// <summary>The edition the preview shows, as the address names it (<c>company</c>, or null for the team edition).</summary>
+    [Parameter] public string? EditionKey { get; set; }
+
+    private IReadOnlyList<BriefStop> _order = [];
+    private int _at = -1;
+    private Guid? _readFor;
+
+    // The running order is read again when the article changes, so a step lands where the brief is now.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_readFor == ArticleId) return;
+        _readFor = ArticleId;
+        _order = await Briefs.RunningOrderAsync(Briefs.CurrentDate);
+        _at = _order.Select(s => s.ArticleId).ToList().IndexOf(ArticleId);
+    }
+
+    /// <summary>The address of an article on the brief, in the edition shown.</summary>
+    public static string Href(Guid articleId, string? editionKey) =>
+        $"articles/{articleId}{(string.IsNullOrEmpty(editionKey) ? "" : "?edition=" + Uri.EscapeDataString(editionKey))}";
+
+    private RenderFragment Step(int i, string which, string label, string keys, string shown) => i >= 0 && i < _order.Count
+        ? @<a href="@Href(_order[i].ArticleId, EditionKey)" data-step="@which" aria-keyshortcuts="@keys" title="@_order[i].Title (@shown)">@label</a>
+        : @<a role="link" aria-disabled="true" class="tide-stepper-end">@label</a>;
+}

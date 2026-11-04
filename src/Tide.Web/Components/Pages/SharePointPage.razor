@@ -1,0 +1,99 @@
+@page "/briefs/{Day}/sharepoint"
+@attribute [Authorize(Policy = Policies.ReadTeamEdition)]
+@using Tide.Application.Distribution
+@inject DistributionService Distribution
+@inject ToastService Toasts
+@inject NavigationManager Nav
+
+<PageTitle>Copy for SharePoint · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <Breadcrumbs Items="@([new("Brief archive", "briefs"), new(Ui.ShortDay(_date), Ui.BriefUrl(_date)), new("Copy for SharePoint")])" />
+        <h1>Copy for SharePoint</h1>
+        <div class="tide-sub">The company-wide edition as plain headings, paragraphs and lists, nothing above @(_copy is null ? "the public ceiling" : Tlp.Label(_copy.Edition.Ceiling)).</div>
+    </div>
+    @if (_copy is not null && _held is null)
+    {
+        <div class="d-flex gap-2 flex-wrap align-items-center">
+            <button type="button" class="btn btn-primary" data-copy-target="sp-copy" data-copy-status="sp-status"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
+            @if (_copy.Images.Count > 0)
+            {
+                <button type="button" class="btn btn-outline-secondary" disabled="@_busy" @onclick="Images"><span class="bi bi-file-earmark-zip" aria-hidden="true"></span> Images (.zip, @_copy.Images.Count)</button>
+            }
+        </div>
+    }
+</div>
+
+@if (!_valid)
+{
+    <div class="tide-card"><p class="mb-0">That isn't a date.</p></div>
+}
+else if (_held is not null)
+{
+    @* EP-80: held for review, as the send is: the copy puts the same words in front of the company. *@
+    <div class="alert alert-danger small" role="status"><span class="bi bi-person-exclamation" aria-hidden="true"></span> @_held</div>
+}
+else if (_copy is null)
+{
+    @if (_missing) { <EmptyState Icon="bi-journal-x" Title="No brief for this day" /> } else { <LoadingBlock /> }
+}
+else
+{
+    <div class="tide-card">
+        <p class="small mb-1"><span id="sp-status" class="fw-semibold" role="status" aria-live="polite"></span></p>
+        <p class="small tide-muted mb-0">Paste into a SharePoint text web part. SharePoint drops pasted images: download the zip and add each image where its caption says (captions name the files, e.g. <span class="tide-data">01-…png</span>).</p>
+        <div class="mt-2">
+            <SharePointPosted Date="_date" ForThisBrief="@(_copy.Edition.Brief.Status != BriefStatus.Sent || _copy.Edition.Brief.SharePointRequired)" PostedAtUtc="_copy.Edition.Brief.SharePointPostedAtUtc" PostedByName="@_copy.Edition.Brief.SharePointPostedByName" Changed="Load" />
+        </div>
+    </div>
+    <div id="sp-copy" class="tide-published">@((MarkupString)_copy.Html)</div>
+}
+
+@code {
+    [Parameter] public string? Day { get; set; }
+
+    private DateOnly _date;
+    private bool _valid, _missing, _busy;
+    private string? _held;
+    private SharePointCopy? _copy;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var date = _date;
+        _valid = Ui.TryParseDay(Day, out _date);
+        // Another day (Back, or an address typed in the same tab): nothing of the last day's copy stays on screen.
+        if (!_valid || _date != date) (_copy, _missing) = (null, false);
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        _held = null;
+        if (!_valid) return;
+        try { _copy = await Distribution.SharePointAsync(_date, id => Ui.ImageUrl(id)); }
+        catch (KeyNotFoundException) { (_missing, _copy) = (true, null); }
+        catch (InvalidOperationException ex) { (_held, _copy) = (UserFacingError.For(ex), null); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    // The zip is held for review as the copy is, and an article may have changed since the page was read: ask again first,
+    // so a hold shows here with its reason (a download that's refused fails without one), and the copy is the current one.
+    internal async Task Images()
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            _copy = await Distribution.SharePointAsync(_date, id => Ui.ImageUrl(id));
+            Nav.NavigateTo($"briefs/{Ui.IsoDay(_date)}/sharepoint-images.zip", forceLoad: true);   // a download: the page stays
+        }
+        catch (InvalidOperationException ex) { (_held, _copy) = (UserFacingError.For(ex), null); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+}

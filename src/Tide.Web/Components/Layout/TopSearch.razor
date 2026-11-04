@@ -1,0 +1,19 @@
+@* The search box in the top bar: words, an action number, an indicator or a CVE, answered on the search page. *@
+@inject NavigationManager Nav
+
+<form class="tide-top-search" role="search" @onsubmit="Go" @onsubmit:preventDefault="true">
+    <span class="bi bi-search" aria-hidden="true"></span>
+    <input type="search" class="form-control form-control-sm" maxlength="500" aria-label="Search TIDE"
+           placeholder="Search, or look up an indicator or CVE" @bind="_text" />
+</form>
+
+@code {
+    private string? _text;
+
+    private void Go()
+    {
+        if (string.IsNullOrWhiteSpace(_text)) return;
+        Nav.NavigateTo("search?q=" + Uri.EscapeDataString(_text.Trim()));
+        _text = null;
+    }
+}

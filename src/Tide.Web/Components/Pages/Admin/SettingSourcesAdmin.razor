@@ -1,0 +1,80 @@
+@page "/admin/system/sources"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@using Tide.Application.Operations
+@inject SystemSettings Settings
+@inject OrgClock Clock
+@inject ToastService Toasts
+
+<PageTitle>Setting sources · TIDE</PageTitle>
+
+@* Setting sources: each setting's effective value and the provider it resolves from right now. *@
+<div class="tide-page-head">
+    <div>
+        <h1 class="tide-admin-title">Setting sources</h1>
+        <div class="tide-sub">Where each setting's value comes from right now. A value saved in Administration wins over the server's;
+            on the server, an environment variable wins over <code>appsettings.Production.json</code> (written by the installer from its
+            answers file), which wins over <code>appsettings.json</code>. Secrets show only whether they're set.</div>
+    </div>
+</div>
+
+<section class="tide-card" aria-labelledby="src-app">
+    <h2 id="src-app"><span class="bi bi-sliders" aria-hidden="true"></span> Changed in the app</h2>
+    @if (_inApp is null)
+    {
+        <LoadingBlock />
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="tide-table">
+                <thead><tr><th>Setting</th><th>Effective value</th><th>Source</th></tr></thead>
+                <tbody>
+                    @foreach (var r in _inApp)
+                    {
+                        <tr>
+                            <td>@r.Info.Label <code class="d-block small tide-muted">@r.Info.Key</code></td>
+                            <td><span class="tide-data small">@(r.Shown ?? "—")</span></td>
+                            <td>
+                                <SettingSourceBadge Source="@r.Source" />
+                                @if (r.FromDatabase) { <div class="small tide-muted">@r.SavedBy, @Ui.When(Clock, r.SavedAtUtc!.Value)</div> }
+                                <a class="small d-block" href="@r.Info.EditedIn">Change it</a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+<section class="tide-card" aria-labelledby="src-server">
+    <h2 id="src-server"><span class="bi bi-hdd-stack" aria-hidden="true"></span> Set on the server</h2>
+    <div class="table-responsive">
+        <table class="tide-table">
+            <thead><tr><th>Setting</th><th>Effective value</th><th>Source</th></tr></thead>
+            <tbody>
+                @foreach (var r in _server)
+                {
+                    <tr>
+                        <td>@r.Info.Label <code class="d-block small tide-muted">@r.Info.Key</code></td>
+                        <td><span class="tide-data small">@(r.Shown ?? "—")</span></td>
+                        <td><SettingSourceBadge Source="@r.Source" /></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@code {
+    private IReadOnlyList<SettingRow>? _inApp;
+    private IReadOnlyList<SettingRow> _server = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _server = Settings.Server();
+        try { _inApp = await Settings.InAppAsync(); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); _inApp = []; }
+    }
+}

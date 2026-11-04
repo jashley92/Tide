@@ -1,0 +1,18 @@
+@* The last few weeks of a metric as a small inline SVG line (days without a value are skipped). Coloured by CSS. *@
+@using Tide.Application.Metrics
+
+@if (Points.Length > 0)
+{
+    <svg class="tide-spark" viewBox="0 0 @Width @Height" width="@Width" height="@Height" preserveAspectRatio="none" role="img" aria-label="@Label">
+        <polyline points="@Points" />
+    </svg>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<decimal?> Values { get; set; } = [];
+    [Parameter] public int Width { get; set; } = 90;
+    [Parameter] public int Height { get; set; } = 22;
+    [Parameter] public string Label { get; set; } = "Trend over the last four weeks";
+
+    private string Points => MetricMath.SparkPoints(Values, Width, Height);
+}

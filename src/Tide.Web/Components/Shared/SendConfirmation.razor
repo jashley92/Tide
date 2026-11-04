@@ -1,0 +1,38 @@
+@* What a real send will do (ADR 0007), in the send's confirmation: a warning if it went before (or may have), the
+   marking and what it means, the subject, every recipient, and what's kept. The plan is the edition as it is now. *@
+@using Tide.Application.Distribution
+@inject OrgClock Clock
+
+@if (Plan.LastSentAtUtc is { } maybe && Plan.LastOutcomeUnknown)
+{
+    <div class="small mb-1 text-danger"><span class="bi bi-exclamation-triangle" aria-hidden="true"></span>
+        A send @Ui.When(Clock, maybe) by @Plan.LastSentBy may have gone: it failed partway, so whether the relay took it isn't known. Check with a recipient before sending again.</div>
+}
+else if (Plan.LastSentAtUtc is { } last)
+{
+    <div class="small mb-1 text-danger"><span class="bi bi-exclamation-triangle" aria-hidden="true"></span>
+        Already sent @Ui.When(Clock, last) by @Plan.LastSentBy. Everyone on the list gets it again.</div>
+}
+<div class="small mb-1">Marked <TlpBadge Level="Plan.Marking" />: @Tlp.Meaning(Plan.Marking)</div>
+<div class="small mb-1">Subject: <strong>@Plan.Subject</strong></div>
+<div class="small mb-1">To @Plan.Recipients.Count recipient@(Plan.Recipients.Count == 1 ? "" : "s"):</div>
+<div class="tide-recipients mb-2">@string.Join("; ", Plan.Recipients)</div>
+<div class="small tide-muted mb-1" title="@FingerprintHelp">Checked version <span class="tide-recipients">@ShortFingerprint(Plan.Fingerprint)</span><span class="visually-hidden">: @FingerprintHelp</span></div>
+<div class="small tide-muted">A copy of exactly what's sent is kept in the archive, and the brief is marked sent.@(Plan.Edition == Edition.Public ? " Readers will see it on the published briefs page." : "")</div>
+
+@code {
+    [Parameter, EditorRequired] public SendPlan Plan { get; set; } = default!;
+
+    /// <summary>The confirmation's title: "Send the team edition now?", or "again" once it has gone.</summary>
+    public static string Title(SendPlan plan) =>
+        $"Send the {BriefRenderer.EditionName(plan.Edition).ToLowerInvariant()} {(plan.LastSentAtUtc is null ? "now" : "again")}?";
+
+    /// <summary>The confirm button, named for the send: "Send to 12".</summary>
+    public static string Label(SendPlan plan) => $"Send to {plan.Recipients.Count}";
+
+    /// <summary>What the checked version is for, in its tooltip (and read out after it).</summary>
+    public const string FingerprintHelp = "If anything in the email changes before it goes, the send is refused and shown again to check.";
+
+    /// <summary>The fingerprint's first twelve characters, enough to tell two confirmations apart.</summary>
+    public static string ShortFingerprint(string fingerprint) => fingerprint.Length > 12 ? fingerprint[..12] : fingerprint;
+}

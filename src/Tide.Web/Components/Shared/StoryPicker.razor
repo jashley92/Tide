@@ -1,0 +1,182 @@
+@* Beside an article, out in the open (not folded under Details): the threat story it's part of, and a search to put it
+   in one or start one. With nothing typed the search offers the open stories that had an article most recently; typing
+   finds any story by name, closed ones too, and offers to start one by that name. It lists a few at a time
+   (StoryService.PickLimit), so it stays short however many stories there are. While the article is in none, the story a
+   related article is in comes first as a one-click suggestion. The story lives with ReaderPreview (StoryId,
+   StoryChanged), so the Related tab's "Same story" and this picker agree. *@
+@inject StoryService Stories
+@inject ICurrentUser CurrentUser
+@inject OrgClock Clock
+@inject ToastService Toasts
+
+<div class="tide-story-pick">
+    @if (_canWrite && (StoryId is null || _changing))
+    {
+        <h3 class="tide-subhead mt-0"><label for="story-pick">Threat story</label></h3>
+        @if (StoryId is null && Suggested is { } hint)
+        {
+            <div class="tide-story-hint mt-0 mb-2">
+                <span>A related article is in <strong>@hint.Name</strong>.</span>
+                <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Link(hint.Id)">Use it</button>
+            </div>
+        }
+        <input id="story-pick" type="search" class="form-control form-control-sm" maxlength="200" autocomplete="off"
+               placeholder="Find a story, or name a new one" aria-describedby="story-pick-help"
+               @bind="_text" @bind:event="oninput" @bind:after="Find" />
+        <div id="story-pick-help" class="visually-hidden">Matching stories are listed below. Choose one to put the article in it.</div>
+        <ul class="tide-story-results" aria-label="Stories" aria-live="polite">
+            @foreach (var s in _found)
+            {
+                <li @key="s.Id">
+                    <button type="button" class="tide-story-result" disabled="@_busy" @onclick="() => Link(s.Id)">
+                        <span class="tide-story-result-name">@s.Name</span>
+                        <span class="tide-story-result-meta">@Meta(s)</span>
+                    </button>
+                </li>
+            }
+            @if (CanStart)
+            {
+                <li>
+                    <button type="button" class="tide-story-result tide-story-result-new" disabled="@_busy" @onclick="StartStory">
+                        <span class="bi bi-plus-lg" aria-hidden="true"></span> Start a story called “@Text”
+                    </button>
+                </li>
+            }
+            else if (_found.Count == 0)
+            {
+                <li class="small tide-muted px-1">No open stories yet. Type a name to start one.</li>
+            }
+        </ul>
+        @if (_changing)
+        {
+            <button type="button" class="btn btn-link btn-sm px-0" @onclick="StopChanging">Keep it in @(_current?.Name ?? "its story")</button>
+        }
+    }
+    else
+    {
+        <h3 class="tide-subhead mt-0">Threat story</h3>
+        @if (StoryId is { } sid)
+        {
+            <a href="stories/@sid">@(_current?.Name ?? "Its story")</a>
+            @if (_current?.Status == StoryStatus.Closed) { <span class="small tide-muted"> (closed)</span> }
+            @if (_canWrite)
+            {
+                <div class="d-flex flex-wrap gap-3 mt-1">
+                    <button type="button" class="btn btn-link btn-sm p-0" disabled="@_busy" @onclick="StartChanging">Change</button>
+                    <button type="button" class="btn btn-link btn-sm p-0" disabled="@_busy" @onclick="() => Link(null)">Take it off the story</button>
+                </div>
+            }
+        }
+        else
+        {
+            <p class="small tide-muted mb-0">Not part of a story.</p>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Guid ArticleId { get; set; }
+
+    /// <summary>The story the article is in now.</summary>
+    [Parameter] public Guid? StoryId { get; set; }
+
+    /// <summary>A story to suggest while it's in none: a related article's.</summary>
+    [Parameter] public (Guid Id, string Name)? Suggested { get; set; }
+
+    /// <summary>The article was linked to a story, or taken off one (null).</summary>
+    [Parameter] public EventCallback<Guid?> StoryChanged { get; set; }
+
+    private IReadOnlyList<StoryRow> _found = [];
+    private StoryRow? _current;
+    private Guid? _shown;
+    private bool _canWrite, _busy, _loaded, _changing;
+    // What's typed in the search: the words to find, and the name a new story would take (internal for the tests).
+    internal string? _text;
+    private int _finding;
+
+    private string Text => (_text ?? "").Trim();
+
+    // A new story by the words typed, unless a story listed is already called that.
+    private bool CanStart => Text.Length > 0 && !_found.Any(s => string.Equals(s.Name, Text, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loaded && _shown == StoryId) return;
+        _loaded = true;
+        _shown = StoryId;
+        _canWrite = CurrentUser.Has(Permission.WriteArticles);
+        try
+        {
+            _current = StoryId is { } id ? await Stories.RowAsync(id) : null;
+            if (_canWrite && StoryId is null) await Find();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    // The stories for what's typed now; a slower answer for what was typed before is dropped.
+    internal async Task Find()
+    {
+        var mine = ++_finding;
+        var found = await Stories.FindAsync(_text);
+        if (mine != _finding) return;
+        _found = found;
+        StateHasChanged();
+    }
+
+    private async Task StartChanging()
+    {
+        _changing = true;
+        _text = null;
+        await Find();
+    }
+
+    private void StopChanging() => (_changing, _text) = (false, null);
+
+    private string Meta(StoryRow s)
+    {
+        var parts = new List<string> { s.Articles == 1 ? "1 article" : $"{s.Articles} articles" };
+        if (s.LastArticleAtUtc is { } last) parts.Add("latest " + Clock.ToLocal(last).ToString("MMM d", System.Globalization.CultureInfo.InvariantCulture));
+        if (s.Status == StoryStatus.Closed) parts.Add("closed");
+        return string.Join(" · ", parts);
+    }
+
+    private async Task Link(Guid? id)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await Stories.LinkAsync(ArticleId, id);
+            (_changing, _text) = (false, null);
+            Toasts.Show(id is null ? "Taken off the story." : "Linked to the story.");
+            await StoryChanged.InvokeAsync(id);
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    // Once per click: a double-click makes one story.
+    internal async Task StartStory()
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            var id = await Stories.CreateAsync(Text, null);
+            await Stories.LinkAsync(ArticleId, id);
+            (_changing, _text) = (false, null);
+            Toasts.Show("Story started.");
+            await StoryChanged.InvokeAsync(id);
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    /// <summary>Reads the stories again: one was started elsewhere on the page (the Related tab's "Same story").</summary>
+    public async Task RefreshAsync()
+    {
+        _current = StoryId is { } id ? await Stories.RowAsync(id) : null;
+        if (_canWrite) await Find();
+        StateHasChanged();
+    }
+}

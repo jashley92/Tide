@@ -1,0 +1,68 @@
+/* The command palette (CommandPalette, Ctrl+K) and the keyboard shortcuts list (ShortcutsOverlay, "?"), as in the hybrid
+   design. Both sit on the confirmation's scrim and card (.tide-modal in app.css), so Tab stays inside them (dialog.js).
+   Only the design tokens from app.css are used here. */
+
+/* The top bar: the search box with the Go to button beside it, and the shortcuts button by the account menu. */
+.tide-top-find { flex: 1; display: flex; align-items: center; gap: var(--tide-space-2); min-width: 0; max-width: 34rem; }
+.tide-top-end { display: flex; align-items: center; gap: var(--tide-space-2); }
+
+.tide-palette-btn { display: inline-flex; align-items: center; gap: var(--tide-space-2); height: 2rem; padding: 0 var(--tide-space-2) 0 var(--tide-space-3);
+    border: 1px solid var(--tide-border-strong); border-radius: var(--tide-radius-md); background: var(--tide-surface-2);
+    color: var(--tide-text-muted); font-size: var(--tide-text-sm); white-space: nowrap; }
+.tide-palette-btn:hover { color: var(--tide-text); border-color: var(--tide-text-muted); }
+.tide-palette-btn:focus-visible, .tide-shortcuts-btn:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
+
+.tide-shortcuts-btn { display: inline-grid; place-items: center; width: 2rem; height: 2rem; padding: 0; border: 0; border-radius: var(--tide-radius-round);
+    background: transparent; color: var(--tide-text-muted); font-size: var(--tide-text-md); }
+.tide-shortcuts-btn:hover { background: var(--tide-surface-2); color: var(--tide-text); }
+
+/* Keys, drawn as keycaps. */
+.tide-palette-kbd, .tide-palette kbd, .tide-shortcuts kbd { display: inline-block; font-family: var(--tide-font-data); font-size: var(--tide-text-xs);
+    font-weight: var(--tide-weight-medium); line-height: 1.3; padding: 0 var(--tide-space-1); border: 1px solid var(--tide-border-strong);
+    border-bottom-width: 2px; border-radius: var(--tide-radius-sm); background: var(--tide-surface); color: var(--tide-text-muted); box-shadow: none; }
+
+/* On a phone the search box is gone and the Go to button is an icon in its place. */
+@media (max-width: 640.98px) {
+    .tide-top-find { flex: 0 0 auto; }
+    .tide-palette-btn { width: 2rem; padding: 0; justify-content: center; }
+    .tide-palette-btn-label, .tide-palette-btn .tide-palette-kbd { display: none; }
+}
+
+/* The palette: near the top of the screen, as wide as a search box wants to be. */
+.tide-palette-scrim { place-items: start center; padding-top: 12vh; }
+.tide-palette { width: min(36rem, 100%); padding: 0; overflow: hidden; display: flex; flex-direction: column; max-height: 76vh; }
+.tide-palette-field { display: flex; align-items: center; gap: var(--tide-space-3); padding: 0 var(--tide-space-4); border-bottom: 1px solid var(--tide-border); }
+.tide-palette-field .bi { color: var(--tide-text-muted); }
+.tide-palette-input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--tide-text); padding: var(--tide-space-4) 0; font-size: var(--tide-text-md); }
+.tide-palette-input::placeholder { color: var(--tide-text-muted); }
+.tide-palette-input:focus { outline: none; }
+/* The box has the focus; its row shows it. */
+.tide-palette-field:focus-within { box-shadow: inset 0 -2px 0 var(--tide-focus-ring); }
+.tide-palette-list { list-style: none; margin: 0; padding: var(--tide-space-2); overflow-y: auto; }
+.tide-palette-list:empty { display: none; }
+.tide-palette-opt { display: flex; align-items: center; gap: var(--tide-space-3); padding: var(--tide-space-2) var(--tide-space-3);
+    border-radius: var(--tide-radius-md); cursor: pointer; font-size: var(--tide-text-base); }
+.tide-palette-opt:hover { background: var(--tide-surface-2); }
+.tide-palette-opt.is-active { background: var(--tide-accent-soft); box-shadow: inset 2px 0 0 var(--tide-accent); }
+.tide-palette-icon { color: var(--tide-text-muted); flex: 0 0 auto; }
+.tide-palette-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tide-palette-kind { flex: 0 0 auto; font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
+.tide-palette-empty { margin: 0; padding: var(--tide-space-4); color: var(--tide-text-muted); font-size: var(--tide-text-sm); }
+.tide-palette-foot { display: flex; flex-wrap: wrap; gap: var(--tide-space-4); padding: var(--tide-space-2) var(--tide-space-4);
+    border-top: 1px solid var(--tide-border); background: var(--tide-surface-2); color: var(--tide-text-muted); font-size: var(--tide-text-xs); }
+
+/* The shortcuts list. */
+.tide-shortcuts { width: min(34rem, 100%); max-height: calc(100vh - 2rem); display: flex; flex-direction: column; }
+.tide-shortcuts-head { display: flex; align-items: center; justify-content: space-between; gap: var(--tide-space-3); }
+.tide-shortcuts-head .tide-modal-title { margin: 0; }
+.tide-shortcuts-switch { margin: var(--tide-space-3) 0 var(--tide-space-1); }
+.tide-shortcuts-hint { color: var(--tide-text-muted); font-size: var(--tide-text-sm); margin: 0 0 var(--tide-space-2); }
+.tide-shortcuts-body { overflow-y: auto; }
+.tide-shortcuts-table { width: 100%; border-collapse: collapse; font-size: var(--tide-text-sm); margin-bottom: var(--tide-space-2); }
+.tide-shortcuts-table caption { caption-side: top; padding: var(--tide-space-3) 0 var(--tide-space-1); color: var(--tide-text-muted);
+    font-size: var(--tide-text-xs); font-weight: var(--tide-weight-semibold); text-transform: uppercase; letter-spacing: .05em; }
+.tide-shortcuts-table th, .tide-shortcuts-table td { padding: var(--tide-space-1) 0; border-bottom: 1px solid var(--tide-border); vertical-align: top; }
+.tide-shortcuts-table th { width: 42%; padding-right: var(--tide-space-3); font-weight: var(--tide-weight-regular); }
+.tide-shortcuts-or { color: var(--tide-text-muted); font-size: var(--tide-text-xs); }
+.tide-shortcuts-table tr.is-off td { color: var(--tide-text-muted); }
+.tide-shortcuts-table tr.is-off kbd { text-decoration: line-through; }

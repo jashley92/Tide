@@ -1,0 +1,176 @@
+@page "/metrics"
+@attribute [Authorize(Policy = Policies.ReadTeamEdition)]
+@using System.Globalization
+@using Tide.Application.Metrics
+@inject MetricsService MetricsSvc
+@inject OrgClock Clock
+@inject ToastService Toasts
+
+<PageTitle>Metric history · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <h1>Metric history</h1>
+        <div class="tide-sub">By business day, including retired metrics.</div>
+    </div>
+    <a class="btn btn-outline-secondary" href="@CsvUrl" download><span class="bi bi-filetype-csv" aria-hidden="true"></span> Export CSV</a>
+</div>
+
+<div class="tide-card">
+    <div class="d-flex gap-3 flex-wrap align-items-end">
+        <div>
+            <label class="tide-field-label" for="from">From</label>
+            <input id="from" type="date" class="form-control form-control-sm" @bind="_from" @bind:after="Load" />
+        </div>
+        <div>
+            <label class="tide-field-label" for="to">To</label>
+            <input id="to" type="date" class="form-control form-control-sm" @bind="_to" @bind:after="Load" />
+        </div>
+        <div class="d-flex gap-1">
+            @foreach (var (label, days) in new[] { ("30 days", 30), ("90 days", 90), ("1 year", 365) })
+            {
+                <button class="btn btn-outline-secondary btn-sm" @onclick="() => Range(days)">@label</button>
+            }
+        </div>
+        @if (_history is { Metrics.Count: > 0 })
+        {
+            <div class="ms-auto">
+                <label class="tide-field-label" for="chart-metric">Chart</label>
+                <select id="chart-metric" class="form-select form-select-sm" @bind="_chartId">
+                    @foreach (var m in _history.Metrics)
+                    {
+                        <option value="@m.Id">@m.Group?.Name: @m.Name@(m.IsRetired ? " (retired)" : "")</option>
+                    }
+                </select>
+            </div>
+        }
+    </div>
+</div>
+
+@if (_history is null)
+{
+    <LoadingBlock />
+}
+else if (_history.Metrics.Count == 0)
+{
+    <div class="tide-card"><EmptyState Icon="bi-graph-up" Title="No metrics defined">An administrator adds them under Administration &gt; Metrics.</EmptyState></div>
+}
+else
+{
+    var chart = _history.Metrics.FirstOrDefault(m => m.Id == _chartId) ?? _history.Metrics[0];
+    var series = _history.Values.Where(v => v.DefinitionId == chart.Id).OrderBy(v => v.BriefDate).ToList();
+    <div class="tide-card">
+        <h2>@chart.Group?.Name: @chart.Name <span class="tide-muted fw-normal small">@DirectionText(chart.Direction)</span></h2>
+        @if (series.Count < 2)
+        {
+            <EmptyState Icon="bi-graph-up" Title="Not enough data in this range" Compact="true" />
+        }
+        else
+        {
+            var days = _days;
+            var values = days.Select(d => series.FirstOrDefault(v => v.BriefDate == d)?.Value).ToList();
+            var format = chart.Format;
+            <LineChart Labels="@days.Select(Ui.ShortDay).ToList()" Lines="@([new LineChart.Line(chart.Name, values, v => MetricMath.Format(format, v))])"
+                       Label="@($"{chart.Name} from {Ui.ShortDay(days[0])} to {Ui.ShortDay(days[^1])}")" />
+        }
+    </div>
+
+    <div class="tide-card-scroll tide-card">
+        <h2>Values <span class="tide-count tide-muted fw-normal">(@_history.Values.Count)</span></h2>
+        @{ var byDay = _history.Values.ToLookup(v => v.BriefDate); var dates = byDay.Select(g => g.Key).OrderDescending().ToList(); }
+        @if (dates.Count == 0)
+        {
+            <EmptyState Icon="bi-table" Title="No data in this range" Compact="true" />
+        }
+        else
+        {
+            <table class="tide-table">
+                <thead>
+                    <tr>
+                        <th>Day</th>
+                        @foreach (var m in _history.Metrics)
+                        {
+                            <th class="tide-table-num" title="@m.Group?.Name">@m.Name@(m.IsRetired ? " (retired)" : "")</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var d in dates)
+                    {
+                        var row = byDay[d].ToDictionary(v => v.DefinitionId);
+                        <tr>
+                            <td class="text-nowrap"><a href="@Ui.BriefUrl(d)">@Ui.ShortDay(d)</a></td>
+                            @foreach (var m in _history.Metrics)
+                            {
+                                var v = row.GetValueOrDefault(m.Id);
+                                <td class="tide-table-num @(v is null ? "" : LevelClass(m, v.Value))" title="@v?.Note">@(v is null ? "—" : MetricMath.Format(m.Format, v.Value))</td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+}
+
+@code {
+    private DateOnly _from, _to;
+    private MetricHistory? _history;
+    private IReadOnlyList<DateOnly> _days = [];
+    private Guid _chartId;
+
+    private string CsvUrl => $"metrics/export.csv?from={Ui.IsoDay(_from)}&to={Ui.IsoDay(_to)}";
+
+    protected override Task OnInitializedAsync()
+    {
+        _to = Clock.CurrentBriefDate;
+        _from = _to.AddDays(-30);
+        return Load();
+    }
+
+    private Task Range(int days)
+    {
+        _to = Clock.CurrentBriefDate;
+        _from = _to.AddDays(-days);
+        return Load();
+    }
+
+    // Each read is numbered: one that lands after a later change to the dates is dropped, so it can't put back the
+    // dates it was asked for over the ones just chosen.
+    private int _reading;
+
+    private async Task Load()
+    {
+        var reading = ++_reading;
+        try
+        {
+            var history = await MetricsSvc.HistoryAsync(_from, _to);
+            if (reading != _reading) return;
+            _history = history;
+            (_from, _to) = (_history.From, _history.To);
+            var days = new List<DateOnly>();
+            // Working days, and a holiday someone entered numbers for anyway.
+            var entered = _history.Values.Select(v => v.BriefDate).ToHashSet();
+            for (var d = _from; d <= _to; d = d.AddDays(1))
+                if (Clock.Days.IsWorkingDay(d) || (!WorkingDays.IsWeekend(d) && entered.Contains(d))) days.Add(d);
+            _days = days.Count > 0 ? days : [_to];
+            if (_history.Metrics.All(m => m.Id != _chartId)) _chartId = _history.Metrics.FirstOrDefault(m => !m.IsRetired)?.Id ?? Guid.Empty;
+        }
+        catch (Exception ex) when (reading == _reading) { Toasts.Error(UserFacingError.For(ex)); }
+        catch (Exception) { /* a later read has the dates now */ }
+    }
+
+    private static string DirectionText(MetricDirection d) => d switch
+    {
+        MetricDirection.HigherIsBetter => "higher is better",
+        MetricDirection.LowerIsBetter => "lower is better",
+        _ => "neutral",
+    };
+
+    private static string LevelClass(MetricDefinition m, decimal v) => MetricMath.LevelOf(m, v) switch
+    {
+        MetricLevel.Critical => "tide-level-critical",
+        MetricLevel.Warn => "tide-level-warn",
+        _ => "",
+    };
+}

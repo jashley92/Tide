@@ -1,0 +1,630 @@
+@page "/admin/sources"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@inject IntakeService Intake
+@inject CveService Cves
+@inject Microsoft.Extensions.Options.IOptionsMonitor<IntakeOptions> IntakeOptionsMonitor
+@inject OrgClock Clock
+@inject ToastService Toasts
+@inject IJSRuntime JS
+@inject OperationalSettingsService Settings
+@inject Microsoft.Extensions.Options.IOptionsMonitor<CveOptions> CveOptionsMonitor
+@inject SponsoredLog Sponsored
+@inject Tide.Application.Assist.AssistService Assist
+@using Tide.Application.Settings
+
+<PageTitle>Sources · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <h1 class="tide-admin-title">Sources</h1>
+        <div class="tide-sub">Automatic polling: <strong>@(IntakeOptionsMonitor.CurrentValue.Enabled ? "on" : "off")</strong></div>
+    </div>
+    <div class="d-flex gap-3 align-items-center">
+        <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="show-retired" @bind="_showRetired" @bind:after="Load" />
+            <label class="form-check-label" for="show-retired">Show retired</label>
+        </div>
+        <button class="btn btn-outline-secondary" aria-expanded="@Ui.Aria(Starter is not null)" aria-controls="starter" @onclick="OpenStarter"><span class="bi bi-collection" aria-hidden="true"></span> Starter sources</button>
+        <button class="btn btn-primary" @onclick="() => _form = new SourceForm()"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add a source</button>
+    </div>
+</div>
+
+@if (Starter is not null)
+{
+    <section id="starter" class="tide-card" aria-labelledby="starter-title">
+        <h2 id="starter-title"><span class="bi bi-collection" aria-hidden="true"></span> Starter sources</h2>
+        <p class="small tide-muted">Added paused at TLP:CLEAR. To start polling one, edit it and turn on "Poll it".</p>
+        @StarterList(true)
+        <details class="mt-3">
+            <summary>More sources (@StarterSources.All.Count(x => !x.Recommended))</summary>
+            <p class="small tide-muted mt-2 mb-2">Additional news and vendor research. News here mostly repeats the recommended sources.</p>
+            @StarterList(false)
+        </details>
+        <div class="d-flex gap-2 mt-3">
+            <button class="btn btn-primary btn-sm" disabled="@(_busy || Starter.Count == 0)" @onclick="AddStarter">Add @Starter.Count source@(Starter.Count == 1 ? "" : "s")</button>
+            <button class="btn btn-outline-secondary btn-sm" @onclick="() => Starter = null">Cancel</button>
+        </div>
+    </section>
+}
+
+@if (_form is not null)
+{
+    <div class="tide-card-form tide-card">
+        <h2>@(_form.Id is null ? "New source" : "Edit source")</h2>
+        <div class="row g-2">
+            <div class="col-md-5"><label class="tide-field-label" for="s-name">Name</label><input id="s-name" class="form-control form-control-sm" maxlength="100" @bind="_form.Name" /></div>
+            <div class="col-md-3">
+                <label class="tide-field-label" for="s-kind">Kind</label>
+                <select id="s-kind" class="form-select form-select-sm" @bind="_form.Kind" @bind:after="KindChanged">
+                    <option value="@SourceKind.Feed">RSS or Atom feed</option>
+                    <option value="@SourceKind.CisaKev">CISA KEV catalog</option>
+                </select>
+            </div>
+            <div class="col-md-4"><label class="tide-field-label" for="s-poll">Poll every (minutes)</label><input id="s-poll" type="number" min="@IntakeOptionsMonitor.CurrentValue.MinPollMinutes" class="form-control form-control-sm" @bind="_form.PollMinutes" /></div>
+            <div class="col-12"><label class="tide-field-label" for="s-url">Feed address</label><input id="s-url" class="form-control form-control-sm tide-data" maxlength="2000" @bind="_form.Url" placeholder="@(_form.Kind == SourceKind.CisaKev ? Cves.Options.KevUrl : "https://example.org/feed.xml")" /></div>
+            <div class="col-md-4"><label class="tide-field-label">Articles start at</label><TlpSelect @bind-Value="_form.DefaultTlp" Label="Default TLP" /></div>
+            <div class="col-md-4">
+                <label class="tide-field-label" for="s-rel">Reliability</label>
+                <select id="s-rel" class="form-select form-select-sm" @bind="_form.Reliability">
+                    @foreach (var r in Enum.GetValues<SourceReliability>()) { <option value="@r">@r: @ReliabilityText(r)</option> }
+                </select>
+            </div>
+            <div class="col-md-4 d-flex align-items-end"><div class="form-check"><input id="s-en" class="form-check-input" type="checkbox" @bind="_form.Enabled" /><label class="form-check-label" for="s-en">Poll it</label></div></div>
+            <div class="col-12"><label class="tide-field-label" for="s-lic">License or handling note (optional)</label><input id="s-lic" class="form-control form-control-sm" maxlength="500" @bind="_form.LicenseNote" placeholder="Members only: don't forward outside the company" /></div>
+            @if (_form.Kind == SourceKind.Feed)
+            {
+                <div class="col-12 mt-3">
+                    <h3 class="h6 mb-0"><span class="bi bi-funnel" aria-hidden="true"></span> Filter (optional)</h3>
+                    <div class="form-text mt-0">An item is taken in when it has one of the "only" tags <em>or</em> its title mentions one of the "only"
+                        words (with neither set, every item is). Anything with a "skip" tag or word is left out. Separate entries with commas.</div>
+                </div>
+                <div class="col-md-6">
+                    <label class="tide-field-label" for="s-only">Only take items tagged</label>
+                    <input id="s-only" class="form-control form-control-sm" maxlength="2000" @bind="_form.OnlyCategories" @bind:event="oninput" placeholder="Security" aria-describedby="s-only-help" />
+                    <div class="form-text" id="s-only-help">The labels the feed puts on each item (its RSS or Atom categories), matched whole in any case.</div>
+                </div>
+                <div class="col-md-6">
+                    <label class="tide-field-label" for="s-skip">Skip items tagged</label>
+                    <input id="s-skip" class="form-control form-control-sm" maxlength="2000" @bind="_form.SkipCategories" @bind:event="oninput" placeholder="Deals, Sponsored" aria-describedby="s-skip-help" />
+                    <div class="form-text" id="s-skip-help">An item with any of these is left out, whatever else it's tagged.</div>
+                </div>
+                <div class="col-12 small">
+                    @if (SeenFor(_form) is { Count: > 0 } seen)
+                    {
+                        <span class="tide-muted me-1">Tags from the last poll (click to add to Only):</span>
+                        @foreach (var tag in seen)
+                        {
+                            var on = CategoryFilter.Parse(_form.OnlyCategories).Contains(tag, StringComparer.OrdinalIgnoreCase);
+                            <button type="button" class="tide-tag-pick @(on ? "on" : "")" aria-pressed="@Ui.Aria(on)" @onclick="() => ToggleOnly(tag)">@tag</button>
+                        }
+                    }
+                    else
+                    {
+                        <span class="tide-muted">@(_sources.FirstOrDefault(x => x.Id == _form.Id)?.LastSuccessAtUtc is null
+                            ? "The tags this feed uses are listed here after it's polled."
+                            : "The last read carried no tags, so this feed can only be filtered by title.")</span>
+                    }
+                </div>
+                <div class="col-md-6">
+                    <label class="tide-field-label" for="s-only-w">Only take items whose title mentions</label>
+                    <input id="s-only-w" class="form-control form-control-sm" maxlength="2000" @bind="_form.OnlyTitleWords" placeholder="ransomware, zero-day, CVE" aria-describedby="s-only-w-help" />
+                    <div class="form-text" id="s-only-w-help">Words or phrases, matched as whole words in any case: "ransomware" matches "Ransomware gang", not "ransomwares".</div>
+                </div>
+                <div class="col-md-6">
+                    <label class="tide-field-label" for="s-skip-w">Skip items whose title mentions</label>
+                    <input id="s-skip-w" class="form-control form-control-sm" maxlength="2000" @bind="_form.SkipTitleWords" placeholder="deal, giveaway, webinar" aria-describedby="s-skip-w-help" />
+                    <div class="form-text" id="s-skip-w-help">An item whose title has any of these is left out.</div>
+                </div>
+                <div class="col-12 mt-3">
+                    <h3 class="h6 mb-0"><span class="bi bi-file-earmark-text" aria-hidden="true"></span> Article fetching (for drafting)</h3>
+                    <div class="form-text mt-0">When an analyst drafts an article from this source, whether its page may be fetched to give the draft the full text.</div>
+                </div>
+                <div class="col-md-6">
+                    <label class="tide-field-label" for="s-fetch">Fetch articles</label>
+                    <select id="s-fetch" class="form-select form-select-sm" @bind="_form.ArticleFetch" aria-describedby="s-fetch-help">
+                        <option value="@ArticleFetch.TideOnly">TIDE fetches them</option>
+                        <option value="@ArticleFetch.Open">Open site: TIDE, then the AI provider's web search</option>
+                        <option value="@ArticleFetch.Never">Never (paste only)</option>
+                    </select>
+                    <div class="form-text" id="s-fetch-help">The AI provider looks an article up only when TIDE can't fetch it, for TLP:CLEAR articles, and only when web grounding is on (Ai:WebGrounding).</div>
+                </div>
+                <div class="col-md-6">
+                    <label class="tide-field-label" for="s-sel">Article body selector (optional)</label>
+                    <input id="s-sel" class="form-control form-control-sm tide-data" maxlength="@Source.MaxBodySelector" @bind="_form.ArticleBodySelector" @bind:event="oninput"
+                           placeholder="div.article-content" aria-describedby="s-sel-help" />
+                    <div class="form-text" id="s-sel-help">Only for a site the automatic finder gets wrong: a CSS selector for the article's body.</div>
+                </div>
+                <div class="col-12">
+                    <label class="tide-field-label" for="s-rm">Also remove (optional)</label>
+                    <input id="s-rm" class="form-control form-control-sm tide-data" maxlength="@Source.MaxRemoveSelector" @bind="_form.ArticleRemoveSelector" @bind:event="oninput"
+                           placeholder=".promo-inline, div[data-widget=newsletter]" aria-describedby="s-rm-help" />
+                    <div class="form-text" id="s-rm-help">A CSS selector for blocks this site puts in its articles that aren't the article, on top of the adverts removed for every source.</div>
+                </div>
+                <div class="col-12">
+                    <label class="tide-field-label" for="s-test-url">Test with an article's address</label>
+                    <div class="input-group input-group-sm">
+                        <input id="s-test-url" class="form-control tide-data" maxlength="2000" @bind="_testUrl" @bind:event="oninput" placeholder="https://…" />
+                        <button type="button" class="btn btn-outline-secondary" disabled="@(_busy || string.IsNullOrWhiteSpace(_testUrl))" @onclick="TestFetch">Test</button>
+                    </div>
+                    @if (_tested is { } t)
+                    {
+                        <div class="alert @(t.Usable ? "alert-info" : "alert-warning") small mt-2 mb-0" role="status">
+                            @if (t.Usable)
+                            {
+                                <text>Found @t.Text.Length.ToString("N0") characters with @t.How. It starts: “@Ui.Clip(FirstLine(t.Text), 160)”</text>
+                            }
+                            else
+                            {
+                                @t.Problem
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+        <div class="d-flex gap-2 mt-3">
+            <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="Save">Save</button>
+            <button class="btn btn-outline-secondary btn-sm" @onclick="() => _form = null">Cancel</button>
+        </div>
+    </div>
+}
+
+<div class="tide-card">
+    @if (_sources.Count == 0)
+    {
+        <EmptyState Icon="bi-rss" Title="No sources yet" />
+    }
+    else
+    {
+        <table class="tide-table">
+            <thead><tr><th>Source</th><th>Kind</th><th>Every</th><th>Last poll</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var s in _sources)
+                {
+                    <tr @key="s.Id" class="@(s.IsRetired ? "tide-retired" : "")">
+                        <td>
+                            <span class="fw-semibold">@s.Name</span> <span class="tide-reliability">@s.Reliability</span> <TlpBadge Level="s.DefaultTlp" />
+                            @if (!s.Enabled) { <Badge>Paused</Badge> }
+                            @if (s.IsRetired) { <Badge>Retired</Badge> }
+                            @* The list hides a key or password in the address (?apikey=, user:pw@); the edit form shows it as stored. *@
+                            <div class="tide-maxw-lg small tide-muted tide-data text-truncate">@Tide.Application.Operations.SecretMask.Url(s.Url)</div>
+                            @if (FilterSummary(s) is { } summary)
+                            {
+                                <div class="small"><span class="bi bi-funnel" aria-hidden="true"></span> @summary</div>
+                            }
+                        </td>
+                        <td class="small">@(s.Kind switch { SourceKind.CisaKev => "CISA KEV", SourceKind.Api => "API", _ => "Feed" })</td>
+                        <td class="small text-nowrap">@s.PollMinutes min@(s.ConsecutiveFailures > 0 ? $" (backed off ×{1 << Math.Min(s.ConsecutiveFailures, 4)})" : "")</td>
+                        <td class="small">
+                            @if (s.LastPolledAtUtc is { } at) { <div>@Ui.When(Clock, at)</div> } else { <div class="tide-muted">Never</div> }
+                            @if (s.LastError is not null) { <div class="text-danger">@s.LastError</div> }
+                            else if (s.LastSuccessAtUtc is not null)
+                            {
+                                <div class="tide-muted">@s.LastNewItems new@(s.LastFilteredOut > 0 ? $" · {s.LastFilteredOut} filtered out" : "")</div>
+                                @if (Sponsored.For(s.Id) is { Count: > 0 } skipped)
+                                {
+                                    @* Why: which marker each sponsored item matched, from this server's last poll of the source. *@
+                                    <details class="tide-muted">
+                                        <summary>@skipped.Count sponsored: @string.Join(", ", skipped.Sample.Select(k => $"'{k.Marker}'").Distinct())</summary>
+                                        <ul class="mb-0 ps-3">
+                                            @foreach (var k in skipped.Sample) { <li>@k.Title <span class="tide-data">(@k.Field.ToLowerInvariant(): '@k.Marker')</span></li> }
+                                        </ul>
+                                    </details>
+                                }
+                            }
+                        </td>
+                        <td class="text-end text-nowrap">
+                            @if (s.Kind != SourceKind.Api) { <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Poll(s)">Poll now</button> }
+                            <button class="btn btn-outline-secondary btn-sm" @onclick="() => _form = SourceForm.From(s)">Edit</button>
+                            <button class="btn btn-outline-secondary btn-sm" title="A source with no items is deleted; otherwise it's retired" aria-label="@(s.IsRetired ? "Bring back" : "Retire") @s.Name" @onclick="() => Retire(s.Name, s.IsRetired, () => Intake.SetSourceRetiredAsync(s.Id, !s.IsRetired))">@(s.IsRetired ? "Bring back" : "Retire")</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+<section class="tide-card" aria-labelledby="intake-title">
+    <h2 id="intake-title"><span class="bi bi-broadcast" aria-hidden="true"></span> Polling</h2>
+    <p class="small tide-muted">Until saved here, the server's <span class="tide-data">Intake</span> values apply.</p>
+    <div class="row g-3 align-items-end">
+        <div class="col-md-4">
+            <div class="form-check form-switch mb-1">
+                <input class="form-check-input" type="checkbox" role="switch" id="intake-on" @bind="_intake.Enabled" />
+                <label class="form-check-label" for="intake-on">Poll the sources</label>
+            </div>
+        </div>
+        <div class="col-sm-6 col-md-4">
+            <label class="tide-field-label" for="intake-min">Shortest poll a source may have (minutes)</label>
+            <input id="intake-min" type="number" min="5" max="1440" class="form-control form-control-sm" @bind="_intake.MinPollMinutes" />
+        </div>
+        <div class="col-sm-6 col-md-4">
+            <label class="tide-field-label" for="intake-keep">Feed items nobody kept are retained (days)</label>
+            <input id="intake-keep" type="number" min="7" max="3650" class="form-control form-control-sm" @bind="_intake.RetentionDays" aria-describedby="intake-keep-help" />
+        </div>
+    </div>
+    <div class="form-text" id="intake-keep-help">Items nobody kept are pruned after that many days, and an item published longer ago isn't taken in, so a pruned item doesn't come back.</div>
+    <div class="row g-3 align-items-end mt-0">
+        <div class="col-sm-6 col-md-4">
+            <label class="tide-field-label" for="intake-read">Time allowed to read an article (seconds)</label>
+            <input id="intake-read" type="number" min="2" max="60" class="form-control form-control-sm" @bind="_intake.ReadSeconds" aria-describedby="intake-read-help" />
+        </div>
+    </div>
+    <div class="form-text" id="intake-read-help">Reading an article's page, in triage or for the editor, stops after this long and says so. 6 suits most servers; give a slow one longer.</div>
+    <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveIntake">Save polling</button>
+</section>
+
+<section class="tide-card" aria-labelledby="sponsored-title">
+    <h2 id="sponsored-title"><span class="bi bi-megaphone" aria-hidden="true"></span> Sponsored items</h2>
+    <p class="small tide-muted">A feed item that reads as sponsored isn't taken in, and counts as filtered out. A marker matches as whole words, ignoring
+        case, in an item's author, source, tags, title or the first @SponsoredFilter.SummaryStart characters of its summary; a hyphen and a space are
+        alike. A marker inside an exception doesn't count, so "state-sponsored hackers" is kept, and nor does "sponsored" where a state is named
+        as the sponsor ("Iran-sponsored", "Chinese sponsored", "sponsored by the North Korean regime"). One phrase per line.</p>
+    <div class="form-check form-switch mb-2">
+        <input class="form-check-input" type="checkbox" role="switch" id="sponsored-on" @bind="_skipSponsored" />
+        <label class="form-check-label" for="sponsored-on">Skip sponsored items</label>
+    </div>
+    <div class="row g-3">
+        <div class="col-md-4">
+            <label class="tide-field-label" for="sponsored-markers">Markers</label>
+            <textarea id="sponsored-markers" class="form-control form-control-sm" rows="6" @bind="Markers" @bind:event="oninput"></textarea>
+        </div>
+        <div class="col-md-4">
+            <label class="tide-field-label" for="sponsored-exceptions">Exceptions (not sponsorship)</label>
+            <textarea id="sponsored-exceptions" class="form-control form-control-sm" rows="6" @bind="Exceptions" @bind:event="oninput"></textarea>
+        </div>
+        <div class="col-md-4">
+            <label class="tide-field-label" for="sponsored-test">Test a title, author or tag</label>
+            <input id="sponsored-test" class="form-control form-control-sm" maxlength="500" @bind="Probe" @bind:event="oninput"
+                   placeholder="Sponsored by TryHackMe" aria-describedby="sponsored-verdict" />
+            <div id="sponsored-verdict" class="small mt-1" role="status">
+                @if (string.IsNullOrWhiteSpace(Probe)) { <span class="tide-muted">Uses the lists as typed, before they're saved.</span> }
+                else if (Verdict() is { Sponsored: true } hit) { <span><span class="bi bi-slash-circle" aria-hidden="true"></span> Skipped: matches '@hit.Marker'</span> }
+                else if (Verdict() is { StoppedBy: { } stop }) { <span><span class="bi bi-check-circle" aria-hidden="true"></span> Kept: '@stop' is an exception</span> }
+                else { <span><span class="bi bi-check-circle" aria-hidden="true"></span> Kept: no marker</span> }
+            </div>
+        </div>
+    </div>
+    <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveSponsored">Save sponsored items</button>
+</section>
+
+<section class="tide-card" aria-labelledby="ads-title">
+    <h2 id="ads-title"><span class="bi bi-eraser" aria-hidden="true"></span> Adverts in fetched articles</h2>
+    <p class="small tide-muted">Taken out when an article's page is read, in triage or for the editor. Blocks whose class or id names an ad slot always are.
+        A label matches a whole line in any case; end it with * to match a short line that starts with it. One per line.</p>
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label class="tide-field-label" for="ad-selectors">Selectors to remove</label>
+            <textarea id="ad-selectors" class="form-control form-control-sm tide-data" rows="6" @bind="AdSelectors" @bind:event="oninput"></textarea>
+        </div>
+        <div class="col-md-6">
+            <label class="tide-field-label" for="ad-labels">Label lines to remove</label>
+            <textarea id="ad-labels" class="form-control form-control-sm" rows="6" @bind="AdLabels" @bind:event="oninput"></textarea>
+        </div>
+    </div>
+    <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveAds">Save adverts</button>
+</section>
+
+<section class="tide-card" aria-labelledby="older-title">
+    <h2 id="older-title"><span class="bi bi-archive" aria-hidden="true"></span> Older items</h2>
+    <p class="small tide-muted">A new item nobody has touched for the days below folds into "Older" at the end of Triage's New tab: kept, searchable,
+        and a click away. Items naming a KEV-listed CVE, or a CVE with an EPSS score of @((IntakeService.AgeExemptEpss * 100).ToString("0", System.Globalization.CultureInfo.InvariantCulture))% or more, never age.</p>
+    <div class="row g-3">
+        <div class="col-md-3">
+            <label class="tide-field-label" for="age-days">Days before an untouched item ages</label>
+            <input id="age-days" type="number" min="1" max="90" class="form-control form-control-sm" @bind="_ageDays" />
+        </div>
+    </div>
+    <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveAgeing">Save</button>
+</section>
+
+<section class="tide-card" aria-labelledby="cve-title">
+    <h2 id="cve-title"><span class="bi bi-shield-exclamation" aria-hidden="true"></span> CVE enrichment</h2>
+    <p class="small tide-muted">CVSS from NVD, the EPSS exploit-prediction score from FIRST, and CISA's known exploited list, for the CVEs on articles and recent
+        feed items. KEV and EPSS are refreshed on the interval below, NVD weekly@(string.IsNullOrWhiteSpace(Cves.Options.NvdApiKey) ? "; NVD without an API key is slow (one CVE every 6.5 seconds)" : "").
+        The addresses and the NVD key are set on the server.</p>
+    <div class="row g-3 align-items-end mb-2">
+        <div class="col-md-4">
+            <div class="form-check form-switch mb-1">
+                <input class="form-check-input" type="checkbox" role="switch" id="cve-on" @bind="_cve.Enabled" />
+                <label class="form-check-label" for="cve-on">Refresh on a schedule</label>
+            </div>
+        </div>
+        <div class="col-sm-6 col-md-4">
+            <label class="tide-field-label" for="cve-hours">Refresh every (hours)</label>
+            <input id="cve-hours" type="number" min="1" max="168" class="form-control form-control-sm" @bind="_cve.RefreshHours" />
+        </div>
+        <div class="col-sm-6 col-md-4">
+            <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="SaveCve">Save CVE enrichment</button>
+        </div>
+    </div>
+    @if (Cves.LastRun is { } run)
+    {
+        <p class="small">Last run @Ui.When(Clock, run.AtUtc): @run.Kev on KEV, @run.Epss EPSS scores, @run.Nvd from NVD.@if (run.Error is not null) { <span class="text-danger"> @run.Error</span> }</p>
+    }
+    <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="Refresh"><span class="bi bi-arrow-repeat" aria-hidden="true"></span> Refresh now</button>
+</section>
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    private static string Filtered(PollResult r) =>
+        r.FilteredOut > 0 ? $", {r.FilteredOut} left out by the filter{(r.Sponsored > 0 ? $" ({r.Sponsored} sponsored)" : "")}" : "";
+
+    // "Only tagged Security or titles with ransomware · skipping tagged Deals, titles with webinar"
+    private static string? FilterSummary(Source s)
+    {
+        static string Side(string? tags, string? words) => string.Join(" or ", new[]
+        {
+            tags is null ? null : "tagged " + CategoryFilter.Show(tags),
+            words is null ? null : "titles with " + CategoryFilter.Show(words),
+        }.OfType<string>());
+        var only = Side(s.OnlyCategories, s.OnlyTitleWords);
+        var skip = Side(s.SkipCategories, s.SkipTitleWords);
+        var parts = new[] { only.Length > 0 ? "Only " + only : null, skip.Length > 0 ? (only.Length > 0 ? "skipping " : "Skipping ") + skip : null }.OfType<string>().ToList();
+        return parts.Count == 0 ? null : string.Join(" · ", parts);
+    }
+
+    private IReadOnlyList<string> SeenFor(SourceForm form) =>
+        CategoryFilter.Parse(_sources.FirstOrDefault(x => x.Id == form.Id)?.SeenCategories);
+
+    private void ToggleOnly(string tag)
+    {
+        var tags = CategoryFilter.Parse(_form!.OnlyCategories).ToList();
+        if (tags.RemoveAll(t => string.Equals(t, tag, StringComparison.OrdinalIgnoreCase)) == 0) tags.Add(tag);
+        _form.OnlyCategories = string.Join(", ", tags);
+    }
+
+    private ConfirmDialog _confirm = default!;
+    private IReadOnlyList<Source> _sources = [];
+    private (bool Enabled, int MinPollMinutes, int RetentionDays, int ReadSeconds) _intake;
+    private (bool Enabled, int RefreshHours) _cve;
+    private bool _skipSponsored;
+    // The sponsored lists as typed (one phrase per line), and the Test box's text; internal for the render tests.
+    internal string Markers { get; set; } = "";
+    internal string Exceptions { get; set; } = "";
+    internal string Probe { get; set; } = "";
+    // The advert lists as typed (one per line); internal for the render tests.
+    internal string AdSelectors { get; set; } = "";
+    internal string AdLabels { get; set; } = "";
+    // The ageing window: days before an untouched new item folds into Older.
+    private int _ageDays = 7;
+
+    internal SponsoredCheck Verdict() =>
+        new SponsoredFilter(SponsoredFilter.Parse(Markers), SponsoredFilter.Parse(Exceptions)).Check(Probe);
+
+    private static string Lines(string stored) => string.Join('\n', SponsoredFilter.Parse(stored));
+
+    // The polling and CVE settings in force: saved here, else the server's.
+    private void ReadSettings()
+    {
+        var i = IntakeOptionsMonitor.CurrentValue;
+        _intake = (i.Enabled, i.MinPollMinutes, i.RetentionDays, (int)i.ReadBudget.TotalSeconds);   // as the reader takes it
+        _skipSponsored = i.SkipSponsored;
+        Markers = Lines(i.SponsoredMarkers ?? SponsoredFilter.DefaultMarkers);
+        Exceptions = Lines(i.SponsoredExceptions ?? SponsoredFilter.DefaultExceptions);
+        _ageDays = i.AgeDays;
+        AdSelectors = Lines(i.AdSelectors ?? Tide.Application.Assist.ArticleCleanup.DefaultSelectors);
+        AdLabels = Lines(i.AdLabels ?? Tide.Application.Assist.ArticleCleanup.DefaultLabels);
+        var c = CveOptionsMonitor.CurrentValue;
+        _cve = (c.Enabled, c.RefreshHours);
+    }
+
+    private static string Switch(bool on) => on ? "true" : "false";
+
+    internal Task SaveIntake() => Run(async () =>
+    {
+        await Settings.SaveAsync(new Dictionary<string, string?>
+        {
+            [OperationalSettings.IntakeEnabled] = Switch(_intake.Enabled),
+            [OperationalSettings.MinPollMinutes] = _intake.MinPollMinutes.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            [OperationalSettings.RetentionDays] = _intake.RetentionDays.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            [OperationalSettings.ReadSeconds] = _intake.ReadSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        });
+        ReadSettings();
+        Toasts.Show(_intake.Enabled ? "Polling is on. Due sources are polled within a minute." : "Polling settings saved; polling is off.");
+    });
+
+    internal Task SaveSponsored() => Run(async () =>
+    {
+        await Settings.SaveAsync(new Dictionary<string, string?>
+        {
+            [OperationalSettings.SkipSponsored] = Switch(_skipSponsored),
+            [OperationalSettings.SponsoredMarkers] = Markers,
+            [OperationalSettings.SponsoredExceptions] = Exceptions,
+        });
+        ReadSettings();
+        Toasts.Show(_skipSponsored ? "Sponsored items are skipped from the next poll." : "Sponsored-item settings saved; sponsored items are taken in.");
+    });
+
+    internal Task SaveAds() => Run(async () =>
+    {
+        await Settings.SaveAsync(new Dictionary<string, string?>
+        {
+            [OperationalSettings.AdSelectors] = AdSelectors,
+            [OperationalSettings.AdLabels] = AdLabels,
+        });
+        ReadSettings();
+        Toasts.Show("Saved.");
+    });
+
+    internal Task SaveAgeing() => Run(async () =>
+    {
+        await Settings.SaveAsync(new Dictionary<string, string?>
+        {
+            [OperationalSettings.AgeDays] = _ageDays.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        });
+        ReadSettings();
+        Toasts.Show("Saved.");
+    });
+
+    internal Task SaveCve() => Run(async () =>
+    {
+        await Settings.SaveAsync(new Dictionary<string, string?>
+        {
+            [OperationalSettings.CveEnabled] = Switch(_cve.Enabled),
+            [OperationalSettings.CveRefreshHours] = _cve.RefreshHours.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        });
+        ReadSettings();
+        Toasts.Show(_cve.Enabled ? "CVE enrichment is on. A refresh that's due starts within a minute." : "CVE enrichment settings saved; the scheduled refresh is off.");
+    });
+    private SourceForm? _form;
+    private bool _showRetired, _busy;
+
+    // The starter list while it's open: the names ticked. The sources already here (by name or address, retired too)
+    // show as added and can't be ticked.
+    internal HashSet<string>? Starter { get; private set; }
+    private IReadOnlyList<Source> _everySource = [];
+
+    private bool IsHere(StarterSource s) =>
+        _everySource.Any(h => string.Equals(h.Name, s.Name, StringComparison.OrdinalIgnoreCase) || h.Url == s.Url);
+
+    internal async Task OpenStarter()
+    {
+        if (Starter is not null) { Starter = null; return; }
+        _everySource = await Intake.SourcesAsync(includeRetired: true);
+        Starter = StarterSources.All.Where(s => s.Recommended && !IsHere(s)).Select(s => s.Name).ToHashSet();
+        StateHasChanged();
+    }
+
+    private void Tick(string name, bool on)
+    {
+        if (on) Starter!.Add(name); else Starter!.Remove(name);
+    }
+
+    internal Task AddStarter() => Run(async () =>
+    {
+        var added = await Intake.AddStarterSourcesAsync(Starter!);
+        Starter = null;
+        Toasts.Show($"Added {added} source{(added == 1 ? "" : "s")}, paused. Turn one on with Edit, then \"Poll it\".");
+    });
+
+    private RenderFragment StarterList(bool recommended) => @<div class="row g-3">
+        @foreach (var group in StarterSources.All.Where(x => x.Recommended == recommended).GroupBy(x => x.Group))
+        {
+            <div class="col-md-4">
+                <h3 class="h6">@group.Key</h3>
+                @foreach (var s in group)
+                {
+                    var id = "starter-" + string.Concat(s.Name.Where(char.IsLetterOrDigit));
+                    var here = IsHere(s);
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="@id" disabled="@here" checked="@(!here && Starter!.Contains(s.Name))"
+                               @onchange="e => Tick(s.Name, e.Value is true)" />
+                        <label class="form-check-label" for="@id">@s.Name <span class="tide-reliability">@s.Reliability</span>@if (here) { <text> </text><Badge>Added</Badge> }</label>
+                    </div>
+                }
+            </div>
+        }
+    </div>;
+
+    // The article fetching Test: what TIDE's own fetch finds at an address with the selector as typed.
+    private string? _testUrl;
+    private Tide.Application.Assist.ExtractedText? _tested;
+
+    private static string FirstLine(string text) => text.Split('\n', 2)[0];
+
+    internal async Task TestFetch()
+    {
+        if (_form is null) return;
+        _busy = true;
+        try { _tested = await Assist.TestFetchAsync(_testUrl, _form.ArticleBodySelector, _form.ArticleRemoveSelector); }
+        catch (Exception ex) when (ex is ArgumentException or ForbiddenException) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    protected override Task OnInitializedAsync()
+    {
+        ReadSettings();
+        return Load();
+    }
+
+    private async Task Load() => _sources = await Intake.SourcesAsync(_showRetired);
+
+    private static string ReliabilityText(SourceReliability r) => r switch
+    {
+        SourceReliability.A => "completely reliable",
+        SourceReliability.B => "usually reliable",
+        SourceReliability.C => "fairly reliable",
+        SourceReliability.D => "not usually reliable",
+        SourceReliability.E => "unreliable",
+        _ => "can't be judged",
+    };
+
+    // Picking the KEV catalog fills in its usual name and address (still editable, e.g. for an internal mirror).
+    private void KindChanged()
+    {
+        if (_form!.Kind != SourceKind.CisaKev) return;
+        if (string.IsNullOrWhiteSpace(_form.Name)) _form.Name = "CISA KEV";
+        if (string.IsNullOrWhiteSpace(_form.Url)) _form.Url = Cves.Options.KevUrl;
+    }
+
+    // A new source is polled straight away when polling is on (the poller would within the minute anyway), so its row
+    // shows how that went instead of "Never" until the page is reloaded.
+    private Task Save() => Run(async () =>
+    {
+        if (_form!.Kind == SourceKind.CisaKev && string.IsNullOrWhiteSpace(_form.Url)) _form.Url = Cves.Options.KevUrl;
+        var isNew = _form.Id is null;
+        var pollNow = isNew && _form.Enabled && IntakeOptionsMonitor.CurrentValue.Enabled;
+        var id = await Intake.SaveSourceAsync(_form);
+        _form = null;
+        if (!pollNow)
+        {
+            Toasts.Show("Source saved.");
+            return;
+        }
+        var result = await Intake.PollNowAsync(id);
+        if (result.Error is null) Toasts.Show($"Source saved and polled: {result.New} new of {result.Seen}{Filtered(result)}.");
+        else Toasts.Error($"Source saved, but its first poll failed: {result.Error}");
+    });
+
+    private async Task Poll(Source s)
+    {
+        _busy = true;
+        try
+        {
+            var result = await Intake.PollNowAsync(s.Id);
+            if (result.Error is null) Toasts.Show($"{s.Name}: {result.New} new of {result.Seen}{Filtered(result)}.");
+            else Toasts.Error($"{s.Name}: {result.Error}");
+            await Load();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    private async Task Refresh()
+    {
+        _busy = true;
+        try
+        {
+            var run = await Cves.EnrichNowAsync();
+            if (run is null) Toasts.Show("A refresh is already running.");
+            else if (run.Error is null) Toasts.Show($"CVE data refreshed: {run.Kev} on KEV, {run.Epss} EPSS, {run.Nvd} NVD.");
+            else Toasts.Error(run.Error);
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    private async Task Retire(string name, bool isRetired, Func<Task> action)
+    {
+        if (await Retiring.ConfirmAsync(_confirm, name, isRetired)) await Run(action);
+    }
+
+    // One change at a time: a second click while one runs (a double-click on Add) does nothing, so nothing is added
+    // twice. The buttons are disabled meanwhile.
+    private async Task Run(Func<Task> action)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await action();
+            await Load();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+}

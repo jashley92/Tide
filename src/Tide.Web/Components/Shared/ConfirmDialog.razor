@@ -1,0 +1,154 @@
+@* "Are you sure?" before something that can't be taken back: a modal that says what will happen, with
+   Cancel and a button named for the action ("Delete draft"), not the browser's OK/Cancel box. Focus moves in when it
+   opens, Tab stays inside (dialog.js), Escape or a click outside cancels, and focus goes back to the button that asked.
+   Usage: <ConfirmDialog @ref="_confirm" />, then  if (!await _confirm.Ask("Delete draft?", "…", "Delete draft")) return;
+   It is also the one dialog for a short step that needs a detail or two first (the outcome of a move to Done, a hunt's
+   result): the child content is the body, shown under the message, with ConfirmDisabled until it's complete. Form
+   puts focus in its first field rather than on Cancel; Confirming runs the step, keeping the dialog open (its buttons
+   disabled meanwhile) unless it returns true, so a refusal leaves what was typed in place. CloseOnly is the same dialog
+   for a panel whose own buttons do the work (sending the brief from Today): just Close, focus on the body's first
+   control, and Ask answers false. *@
+@implements IDisposable
+@inject IJSRuntime JS
+
+@if (_open)
+{
+    <div class="tide-modal-scrim" @onclick="Cancel">
+        <div class="tide-modal @(Wide ? "tide-modal-wide" : "")" role="@(Form || CloseOnly ? "dialog" : "alertdialog")" aria-modal="true" aria-labelledby="@_titleId"
+             aria-describedby="@DescribedBy" @onclick:stopPropagation="true" @onkeydown="OnKey">
+            <h2 class="tide-modal-title" id="@_titleId">@(Title ?? _title)</h2>
+            @if (!string.IsNullOrEmpty(_message))
+            {
+                <p class="tide-modal-body" id="@_bodyId">@_message</p>
+            }
+            @if (ChildContent is not null)
+            {
+                <div class="tide-modal-content" id="@_contentId" @ref="_content">@ChildContent</div>
+            }
+            <div class="tide-modal-actions">
+                <button type="button" class="btn btn-outline-secondary btn-sm" @ref="_cancel" disabled="@_busy" @onclick="Cancel">@(CloseOnly ? "Close" : "Cancel")</button>
+                @if (!CloseOnly)
+                {
+                    <button type="button" class="btn @(_danger ? "btn-danger" : "btn-primary") btn-sm" disabled="@(_busy || ConfirmDisabled)" @onclick="Confirm">
+                        @if (ConfirmIcon is not null)
+                        {
+                            <span class="bi @ConfirmIcon me-1" aria-hidden="true"></span>
+                        }
+                        @(ConfirmLabel ?? _confirmLabel)
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>The body under the message: what's about to happen in full, or the fields the step needs.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>Holds the confirm button back (a required field still empty).</summary>
+    [Parameter] public bool ConfirmDisabled { get; set; }
+
+    /// <summary>A Bootstrap icon for the confirm button ("bi-send-check").</summary>
+    [Parameter] public string? ConfirmIcon { get; set; }
+
+    /// <summary>
+    /// The title and the confirm button's name as they are now, in place of Ask's, for a dialog whose subject can change
+    /// while it's open (a send re-read after a refusal).
+    /// </summary>
+    [Parameter] public string? Title { get; set; }
+
+    /// <inheritdoc cref="Title"/>
+    [Parameter] public string? ConfirmLabel { get; set; }
+
+    /// <summary>The body is fields to fill: a dialog (not an alert), with focus in its first field.</summary>
+    [Parameter] public bool Form { get; set; }
+
+    /// <summary>No confirm button, only Close: the body's own buttons act (a dialog, described by its title alone).</summary>
+    [Parameter] public bool CloseOnly { get; set; }
+
+    /// <summary>Room for a row of fields.</summary>
+    [Parameter] public bool Wide { get; set; }
+
+    /// <summary>
+    /// Runs when the confirm button is pressed, with both buttons disabled until it finishes. True closes the dialog (and
+    /// Ask answers true); false keeps it open, as when the step was refused and the body now says why.
+    /// </summary>
+    [Parameter] public Func<Task<bool>>? Confirming { get; set; }
+
+    private readonly string _titleId = "confirm-" + Guid.NewGuid().ToString("N")[..8];
+    private string _bodyId => _titleId + "-body";
+    private string _contentId => _titleId + "-content";
+    private bool _open, _shown, _danger, _busy;
+    private string _title = "", _message = "", _confirmLabel = "";
+    private TaskCompletionSource<bool>? _answer;
+    private ElementReference _cancel, _content;
+
+    // An alert is described by what it says; a form's fields describe themselves.
+    private string? DescribedBy => !string.IsNullOrEmpty(_message) ? _bodyId : ChildContent is not null && !Form && !CloseOnly ? _contentId : null;
+
+    /// <summary>
+    /// Asks, and answers true when the person chose <paramref name="confirmLabel"/>. <paramref name="danger"/> colours that
+    /// button as destructive (the default); pass false for a choice that isn't (taking over an action, ending a meeting).
+    /// The message may be empty when the child content says it all.
+    /// </summary>
+    public Task<bool> Ask(string title, string? message, string confirmLabel, bool danger = true)
+    {
+        _answer?.TrySetResult(false);
+        _answer = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        (_title, _message, _confirmLabel, _danger, _busy, _open) = (title, message ?? "", confirmLabel, danger, false, true);
+        StateHasChanged();
+        return _answer.Task;
+    }
+
+    internal void Cancel()
+    {
+        if (!_busy) Close(false);
+    }
+
+    internal async Task Confirm()
+    {
+        if (_busy) return;   // a second click while the step runs
+        if (Confirming is null)
+        {
+            Close(true);
+            return;
+        }
+        _busy = true;
+        try
+        {
+            if (await Confirming()) Close(true);
+        }
+        finally { _busy = false; }
+    }
+
+    private void Close(bool answer)
+    {
+        _open = false;
+        _answer?.TrySetResult(answer);
+        _answer = null;
+    }
+
+    private void OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") Cancel();
+    }
+
+    // Cancel takes focus when it opens (the safe choice, as Enter then cancels), or a form's first field does; focus goes
+    // back when it closes.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_open == _shown) return;
+        _shown = _open;
+        try
+        {
+            if (_open && CloseOnly && ChildContent is not null) await JS.InvokeVoidAsync("tideDialog.openFirstControl", _content, _cancel);
+            else if (_open && Form && ChildContent is not null) await JS.InvokeVoidAsync("tideDialog.openFirst", _content, _cancel);
+            else if (_open) await JS.InvokeVoidAsync("tideDialog.open", _cancel);
+            else await JS.InvokeVoidAsync("tideDialog.close");
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    public void Dispose() => _answer?.TrySetResult(false);
+}

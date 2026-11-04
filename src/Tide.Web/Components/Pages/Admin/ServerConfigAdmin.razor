@@ -1,0 +1,50 @@
+@page "/admin/system/server"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@using Tide.Application.Operations
+@inject SystemSettings Settings
+
+<PageTitle>Server configuration · TIDE</PageTitle>
+
+@* Server configuration: what's set on the host, read-only. A secret shows only whether it's set, a
+   connection string its server and database, an address without any credential in it. *@
+<div class="tide-page-head">
+    <div>
+        <h1 class="tide-admin-title">Server configuration</h1>
+        <div class="tide-sub">Set on the server in <code>appsettings.Production.json</code> (the installer writes it) or environment variables,
+            and shown here read-only. Change these on the host and restart the app pool. Secrets show only whether they're set.</div>
+        <p class="small tide-muted mt-2 mb-0" id="server-why">These control sign-in, data storage, network access and mail, so a mistake could lock everyone out or expose the server. They're changed on the host only. Operational settings (time zone, reminders, polling, imports) are changed in the app.</p>
+    </div>
+</div>
+
+<div class="tide-admin-index">
+    @foreach (var group in _rows.GroupBy(r => r.Info.Group))
+    {
+        <section class="tide-card mb-0">
+            <h2>@group.Key</h2>
+            <table class="tide-kv">
+                <tbody>
+                    @foreach (var r in group)
+                    {
+                        <tr>
+                            <th scope="row">@r.Info.Label <code class="d-block small tide-muted">@r.Info.Key</code></th>
+                            <td>
+                                @if (r.Shown is null) { <span class="tide-muted">Not set</span> }
+                                else if (r.Shown == SecretMask.SetSecret) { <Badge Tone="BadgeTone.Ok" Icon="bi-lock-fill">Set</Badge> }
+                                else { <span class="tide-data small">@r.Shown</span> }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+</div>
+
+<p class="small tide-muted mt-3 mb-0">Value sources, including settings changed in the app: <a href="admin/system/sources">Setting sources</a>.</p>
+
+@code {
+    private IReadOnlyList<SettingRow> _rows = [];
+
+    protected override void OnInitialized() => _rows = Settings.Server();
+}

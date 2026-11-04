@@ -1,0 +1,452 @@
+@page "/trends"
+@attribute [Authorize(Policy = Policies.ReadTeamEdition)]
+@using System.Globalization
+@inject TrendsService TrendsSvc
+@inject ActionService ActionSvc
+@inject NavigationManager Nav
+@inject ToastService Toasts
+@inject OrgClock Clock
+
+<PageTitle>Trends · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <h1>Trends</h1>
+        <div class="tide-sub">An article counts in the period it was first briefed, or written if never briefed.</div>
+    </div>
+    @if (_report is not null)
+    {
+        <div class="d-flex gap-2 flex-wrap">
+            <a class="btn btn-outline-secondary" href="@ArticlesCsvUrl("articles:all", _report.Current)" download title="Every article counted in @_report.Current.Label, with its tags and techniques"><span class="bi bi-filetype-csv" aria-hidden="true"></span> @_report.Current.Label articles</a>
+            <a class="btn btn-outline-secondary" href="@($"trends/export.csv?p={_end.Key}&n={_span}{SubsQuery}")" download title="Every line below, with its count in each period"><span class="bi bi-filetype-csv" aria-hidden="true"></span> Trend table</a>
+        </div>
+    }
+</div>
+
+<div class="tide-card">
+    <div class="d-flex gap-3 flex-wrap align-items-center">
+        <div class="btn-group" role="group" aria-label="Period">
+            @foreach (var k in new[] { PeriodKind.Week, PeriodKind.Month, PeriodKind.Quarter })
+            {
+                <button type="button" class="btn btn-sm @(_end.Kind == k ? "btn-primary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(_end.Kind == k)"
+                        @onclick="() => Go(p: Switched(k))">@(k switch { PeriodKind.Week => "Weekly", PeriodKind.Month => "Monthly", _ => "Quarterly" })</button>
+            }
+        </div>
+        <div class="d-flex gap-1 align-items-center">
+            <button type="button" class="btn btn-outline-secondary btn-sm" title="Earlier" aria-label="Earlier" @onclick="() => Go(p: _end.Previous)"><span class="bi bi-chevron-left" aria-hidden="true"></span></button>
+            <strong class="tide-trend-period">@_end.Label@(TrendsSvc.IsPartial(_end) ? " (to date)" : "")</strong>
+            <button type="button" class="btn btn-outline-secondary btn-sm" title="Later" aria-label="Later" disabled="@(TrendsSvc.IsPartial(_end))" @onclick="() => Go(p: _end.Next)"><span class="bi bi-chevron-right" aria-hidden="true"></span></button>
+        </div>
+        <div class="btn-group" role="group" aria-label="Range">
+            @foreach (var n in TrendsService.Spans(_end.Kind))
+            {
+                <button type="button" class="btn btn-sm @(_span == n ? "btn-primary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(_span == n)"
+                        @onclick="() => Go(span: n)">@n @(_end.Kind switch { PeriodKind.Week => "weeks", PeriodKind.Month => "months", _ => "quarters" })</button>
+            }
+        </div>
+        <span class="small tide-muted">Compared with @_end.Previous.Label.</span>
+    </div>
+</div>
+
+@if (_report is null)
+{
+    <LoadingBlock />
+}
+else
+{
+    var articles = _report.Find("articles:all")!;
+    var threats = _report.Find("articles:threat")!;
+    var raised = _report.Find("actions:raised")!;
+    var overdue = _report.Find("actions:overdue-at-end")!;
+    var hunted = _report.Find("actions:hunted")!;
+    var hits = _report.Find("actions:hits")!;
+    @* Each tile opens what it counts (the drill-down below), and says how it compares with the period before. *@
+    <div class="tide-load-nums tide-trend-tiles">
+        <a href="@Href(line: articles.Key, at: _end)" title="The articles counted in @_end.Label"><strong>@articles.Current</strong><span>Articles</span><small><TrendChange Row="articles" /></small></a>
+        <a href="@Href(line: threats.Key, at: _end)" title="The threats counted in @_end.Label"><strong>@threats.Current</strong><span>Threats</span><small><TrendChange Row="threats" /></small></a>
+        <a href="@Href(view: "actions", line: raised.Key, at: _end)" title="The actions raised in @_end.Label"><strong>@raised.Current</strong><span>Actions raised</span><small><TrendChange Row="raised" /></small></a>
+        <a href="@Href(view: "actions", line: TrendsOnTimeKey, at: _end)" title="Done on time out of done with a due date; an action with no due date is neither">
+            <strong>@Percent(_report.OnTimeRatio)</strong><span>Done on time</span>
+            <small class="tide-muted">@(_report.Find("actions:done")!.Current) done &middot; @Percent(_report.PreviousOnTimeRatio) in @_end.Previous.Label</small></a>
+    </div>
+    <h2 class="tide-trend-outcomes-h">Outcomes</h2>
+    <div class="tide-load-nums tide-trend-tiles">
+        <a href="@Href(view: "actions", line: overdue.Key, at: _end)" class="@(overdue.Current > 0 ? "bad" : "")" title="Open and past due when @_end.Label ended (or today)"><strong>@overdue.Current</strong><span>Overdue at period end</span><small><TrendChange Row="overdue" /></small></a>
+        @foreach (var o in _report.Outcomes)
+        {
+            <div title="From raised to done, for actions done in @_end.Label"><strong>@Days(o.Current)</strong><span>@o.Name</span><small class="tide-muted">@Days(o.Previous) in @_end.Previous.Label</small></div>
+        }
+        <a href="@Href(view: "actions", line: hits.Key, at: _end)" title="Actions whose hunt found something, of those hunted in @_end.Label"><strong>@hits.Current of @hunted.Current</strong><span>Hunts with hits</span><small class="tide-muted">@hunted.Previous hunted in @_end.Previous.Label</small></a>
+    </div>
+
+    @* Each view is its own address (Go), so these are links, not tabs. *@
+    <TabBar Label="Report" Items="@(Views.Select(v => new TabBarItem(v.Label, Href(view: v.View, line: null), Key: v.View)).ToList())" Active="@_view" />
+
+    var charted = Charted;
+    <div class="tide-card">
+        <div class="d-flex justify-content-between align-items-baseline gap-2 flex-wrap">
+            <h2 class="tide-card-title">@ChartTitle <span class="tide-muted fw-normal small">by @(_end.Kind switch { PeriodKind.Week => "week", PeriodKind.Month => "month", _ => "quarter" })@(TrendsSvc.IsPartial(_end) ? $", {_end.Label} to date" : "")</span></h2>
+            <div class="d-flex gap-2 flex-wrap align-items-center">
+                <button type="button" class="btn btn-outline-secondary btn-sm" title="Every line in the table below that counted something" @onclick="ChartAllShown">Chart all shown</button>
+                @if (_view == "attack" && _tactic is null)
+                {
+                    <button type="button" class="btn btn-outline-secondary btn-sm" title="Every technique seen, from every tactic" @onclick="() => Go(chart: TrendChart.AllTechniques)">Chart all techniques</button>
+                }
+                <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(charted.Count == 0)" @onclick="() => Go(chart: TrendChart.None)">Clear chart</button>
+            </div>
+        </div>
+        <div class="small tide-muted mb-2">Select rows to chart@(_view == "attack" ? ", from any tactic" : ""). Click a key entry to remove it.</div>
+        @if (charted.Count == 0)
+        {
+            <EmptyState Icon="bi-graph-up" Title="No lines selected" Compact="true" />
+        }
+        else
+        {
+            <LineChart Labels="@_report.Periods.Select(p => p.Label).ToList()" FromZero="true" Label="@($"{ChartTitle}, {_report.Periods[0].Label} to {_report.Current.Label}")"
+                       Lines="@charted.Select(r => new LineChart.Line(r.Name, Enumerable.Range(0, _report.Periods.Count).Select(i => (decimal?)r.Count(i)).ToList(), Count)).ToList()"
+                       OnTakeOff="@(i => ToggleChart(charted[i]))" />
+        }
+    </div>
+
+    <div class="tide-trends">
+        <div class="tide-card tide-trend-table">
+            @if (_view == "attack" && _tactic is { } drilled)
+            {
+                <nav class="d-flex align-items-center gap-2 mb-2" aria-label="ATT&CK level">
+                    <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" @onclick="() => Go(tactic: null)"><span class="bi bi-chevron-left" aria-hidden="true"></span> All tactics</button>
+                    <span class="small tide-muted">Techniques that put an article under @drilled.Name. A technique in several tactics shows under each.</span>
+                </nav>
+            }
+            @if (_view == "attack")
+            {
+                <label class="form-check-label small mb-2 d-inline-block"><input type="checkbox" class="form-check-input me-1" checked="@(!_report.RollUpSubtechniques)" @onchange="ToggleSubs" /> Count sub-techniques separately</label>
+            }
+            <table class="tide-table">
+                <thead>
+                    <tr>
+                        <th>@(_view switch { "attack" => "Tactic or technique", "actions" => "Actions", _ => "Category or tag" })</th>
+                        @for (var i = 0; i < _report.Periods.Count; i++)
+                        {
+                            var p = _report.Periods[i];
+                            <th class="tide-table-num @(i == _report.Periods.Count - 1 ? "tide-trend-now" : "")" title="@p.Start.ToString("MMM d", CultureInfo.InvariantCulture) – @p.End.ToString("MMM d, yyyy", CultureInfo.InvariantCulture)">@p.Label</th>
+                        }
+                        <th class="tide-table-num">Change</th>
+                        <th><span class="visually-hidden">Trend</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @{ string? group = null; }
+                    @foreach (var row in Rows)
+                    {
+                        if (row.Group != group && !(row.IsRollup && row.Name == row.Group))
+                        {
+                            group = row.Group;
+                            <tr class="tide-trend-group"><th colspan="@(_report.Periods.Count + 3)">@group</th></tr>
+                        }
+                        group = row.Group;
+                        var slot = TrendChart.Slot(charted, row);
+                        <tr class="@(row.IsRollup ? "tide-trend-rollup" : "")" @key="row.Key">
+                            <td>
+                                @if (slot >= 0) { <i class="tide-chart-swatch @LineChart.Series(slot) me-1" aria-hidden="true"></i> }
+                                @if (_view == "attack" && _tactic is null && row.Key.StartsWith("tactic:", StringComparison.Ordinal) && _report.TechniquesOf(row.Key).Any())
+                                {
+                                    <button type="button" class="tide-trend-drill-in" title="Techniques under @row.Name" @onclick="() => Go(tactic: row.Key)">@row.Name <span class="bi bi-chevron-right" aria-hidden="true"></span></button>
+                                }
+                                else { @row.Name }
+                            </td>
+                            @for (var i = 0; i < _report.Periods.Count; i++)
+                            {
+                                var p = _report.Periods[i];
+                                var n = row.Count(i);
+                                var on = _line == row.Key && _at == p;
+                                <td class="tide-table-num @(i == _report.Periods.Count - 1 ? "tide-trend-now" : "")">
+                                    @if (n == 0) { <span class="tide-muted">·</span> }
+                                    else { <button type="button" class="tide-trend-cell @(on ? "active" : "")" aria-pressed="@Ui.Aria(on)" title="@row.Name, @p.Label" @onclick="() => Go(line: row.Key, at: p)">@n</button> }
+                                </td>
+                            }
+                            <td class="tide-table-num text-nowrap"><TrendChange Row="row" /></td>
+                            <td>
+                                <button type="button" class="tide-trend-chart-toggle @(slot >= 0 ? "active" : "")" aria-pressed="@Ui.Aria(slot >= 0)"
+                                        title="@(slot >= 0 ? "Take off the chart" : "Chart this line")" aria-label="@(slot >= 0 ? $"Take {row.Name} off the chart" : $"Chart {row.Name}")" @onclick="() => ToggleChart(slot >= 0 ? charted[slot] : row)"><TrendBars Row="row" /></button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <aside class="tide-card tide-trend-drill" aria-live="polite">
+            @if (_drillRow is null || _at is not { } at)
+            {
+                <EmptyState Icon="bi-hand-index" Title="Select a number to list what it counts." Compact="true" />
+            }
+            else
+            {
+                var isAction = _report.IsActionRow(_drillRow);
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                    <h2 class="mb-1">@_drillRow.Name <span class="tide-muted fw-normal">· @at.Label</span></h2>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="() => Go(line: null)"></button>
+                </div>
+                <div class="small tide-muted mb-3">
+                    @if (isAction) { <span>@(_drillActions?.Count ?? 0) action@((_drillActions?.Count ?? 0) == 1 ? "" : "s")</span> }
+                    else
+                    {
+                        <span>@(_drillArticles?.Count ?? 0) article@((_drillArticles?.Count ?? 0) == 1 ? "" : "s")</span>
+                        <span> · <a href="@ArticlesCsvUrl(_drillRow.Key, at)" download>Export CSV</a></span>
+                    }
+                </div>
+                @if (!isAction && _report.ArticlesFilter(_drillRow, at) is { } filter)
+                {
+                    // The same articles on the article list, to sort and narrow further; and the line's over every period.
+                    var count = _drillArticles?.Count ?? 0;
+                    var all = _drillRow.Ids.Sum(p => p.Count);
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                        @if (count > 0)
+                        {
+                            <a class="btn btn-sm btn-outline-primary" href="@ArticlesHref(filter)"><span class="bi bi-list-ul" aria-hidden="true"></span> Open @(count == 1 ? "this article" : $"these {count} articles") in Articles</a>
+                        }
+                        @if (all > count && _report.ArticlesFilter(_drillRow) is { } whole)
+                        {
+                            <a class="small" href="@ArticlesHref(whole)">All @all, @_report.Periods[0].Label – @_report.Current.Label, in Articles</a>
+                        }
+                    </div>
+                }
+                @if (isAction)
+                {
+                    <ul class="tide-trend-articles">
+                        @foreach (var r in _drillActions ?? [])
+                        {
+                            <li @key="r.Id">
+                                <div><a class="tide-action-num" href="@Ui.ActionUrl(r.Number)">@Ui.ActionLabel(r.Number)</a> <a href="@Ui.ActionUrl(r.Number)">@r.Title</a></div>
+                                <div class="small d-flex gap-2 flex-wrap align-items-center my-1">
+                                    <span>@ActionService.KindName(r.Kind) <PriorityBadge Priority="r.Priority" /></span>
+                                    <span class="tide-muted">@r.TeamName</span>
+                                    <ActionStatusBadge Status="r.Status" />
+                                    @if (r.Outcome != ActionOutcome.None) { <span class="tide-muted">@ActionService.OutcomeName(r.Outcome)</span> }
+                                </div>
+                                <div class="small tide-muted">
+                                    @* The day it counts on: one raised for a past day's brief is that day's (ADR 0013), as the line counts it. *@
+                                    Raised @Ui.ShortDay(r.RaisedOn ?? DateOnly.FromDateTime(Clock.ToLocal(r.CreatedAtUtc).DateTime))@if (r.DueDate is { } due) { <span>, due @Ui.ShortDay(due)</span> }@if (r.ClosedDate is { } closed) { <span>, closed @Ui.ShortDay(closed)</span> }
+                                </div>
+                                @if (r.ArticleTitle is not null) { <div class="small tide-muted"><span class="bi bi-newspaper" aria-hidden="true"></span> <a href="articles/@r.ArticleId">@r.ArticleTitle</a></div> }
+                            </li>
+                        }
+                    </ul>
+                }
+                else if (_drillArticles is not null)
+                {
+                    <ul class="tide-trend-articles">
+                        @foreach (var a in _drillArticles)
+                        {
+                            <li @key="a.Id">
+                                <div><a href="articles/@a.Id">@a.Title</a></div>
+                                <div class="small d-flex gap-2 flex-wrap align-items-center my-1">
+                                    <TlpBadge Level="a.Tlp" /> <ClassBadge Classification="a.Classification" Priority="a.Priority" />
+                                    <span class="tide-muted">@(a.Briefed ? "Briefed" : "Written") @Ui.ShortDay(a.CountedOn)</span>
+                                    @if (a.Actions > 0) { <span class="tide-muted"><span class="bi bi-list-check" aria-hidden="true"></span> @a.Actions action@(a.Actions == 1 ? "" : "s")</span> }
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(a.Bluf)) { <div class="small">@a.Bluf</div> }
+                                @if (a.Tags.Count + a.Techniques.Count > 0)
+                                {
+                                    <div class="mt-1">
+                                        @foreach (var t in a.Tags) { <span class="tide-chip">@t</span> }
+                                        @foreach (var t in a.Techniques) { <a class="tide-chip tide-data" href="@AttackMatrix.TechniqueUrl(t)" target="_blank" rel="noopener noreferrer" title="@AttackCatalog.Find(t)?.Name">@t</a> }
+                                    </div>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+            }
+        </aside>
+    </div>
+}
+
+@code {
+    private const string TrendsOnTimeKey = "actions:on-time";
+    private static string Percent(double? ratio) => ratio is { } r ? r.ToString("0%", CultureInfo.InvariantCulture) : "—";
+    private static string Days(double? days) => days is { } d ? d.ToString("0.#", CultureInfo.InvariantCulture) : "—";
+
+    private static readonly (string View, string Label)[] Views = [("tags", "Scorecard tags"), ("attack", "ATT&CK"), ("actions", "Actions")];
+
+    [SupplyParameterFromQuery(Name = "p")] public string? PeriodParam { get; set; }
+    [SupplyParameterFromQuery(Name = "view")] public string? ViewParam { get; set; }
+    [SupplyParameterFromQuery(Name = "subs")] public bool Subs { get; set; }
+    [SupplyParameterFromQuery(Name = "line")] public string? LineParam { get; set; }
+    [SupplyParameterFromQuery(Name = "at")] public string? AtParam { get; set; }
+    [SupplyParameterFromQuery(Name = "n")] public int? SpanParam { get; set; }
+    [SupplyParameterFromQuery(Name = "chart")] public string? ChartParam { get; set; }
+    [SupplyParameterFromQuery(Name = "tactic")] public string? TacticParam { get; set; }
+
+    private TrendReport? _report;
+    private (Period End, bool Subs, int Span)? _loaded;
+    private Period _end;
+    private int _span;
+    private TrendRow? _tactic;
+    private string _view = "tags";
+    private string? _line;
+    private Period? _at;
+    private TrendRow? _drillRow;
+    private IReadOnlyList<TrendArticle>? _drillArticles;
+    private IReadOnlyList<ActionRow>? _drillActions;
+
+    private string SubsQuery => Subs ? "&subs=true" : "";
+
+    // Every line the view lists at its top level. A chart's keys resolve against these and, in ATT&CK, every tactic's
+    // techniques (TrendChart), so the chart doesn't depend on which level of the table is showing.
+    private IReadOnlyList<TrendRow> ViewLines => _view switch
+    {
+        "attack" => _report!.Attack,
+        "actions" => _report!.Actions,
+        _ => [.. _report!.Articles, .. _report.Tags],
+    };
+
+    // The table's lines: the view's, or a tactic and its techniques.
+    private IEnumerable<TrendRow> Rows => _view == "attack" && _tactic is { } t
+        ? [t with { Group = t.Name, IsRollup = true }, .. _report!.TechniquesOf(t.Key)]
+        : ViewLines;
+
+    // A tactic's own chart is its techniques; lines picked can come from anywhere in ATT&CK.
+    private string ChartTitle => _view switch
+    {
+        "attack" when _tactic is { } t && ChartParam is null => t.Name + " techniques",
+        "attack" => "ATT&CK tactics and techniques",
+        "actions" => "Actions",
+        _ => "Scorecard tags",
+    };
+
+    // The lines on the chart: the ones picked (?chart=, from any level of the view), else the view's busiest: the
+    // categories, the tactics (or a tactic and its techniques), or the actions raised, closed and still open.
+    private List<TrendRow> Charted
+    {
+        get
+        {
+            if (ChartParam is not null) return [.. TrendChart.Resolve(_report!, ViewLines, ChartParam)];
+            var rows = Rows.ToList();
+            static IEnumerable<TrendRow> Busiest(IEnumerable<TrendRow> lines, int n) =>
+                lines.Where(r => r.Any).OrderByDescending(r => r.Ids.Sum(p => p.Count)).Take(n);
+            return _view switch
+            {
+                "actions" => rows.Where(r => r.Key is "actions:raised" or "actions:closed" or "actions:open-at-end").ToList(),
+                "attack" when _tactic is not null => [rows[0], .. Busiest(rows.Skip(1), 3)],
+                "attack" => Busiest(rows.Where(r => r.Key.StartsWith("tactic:", StringComparison.Ordinal)), 5).ToList(),
+                _ => Busiest(rows.Where(r => r.Key.StartsWith("category:", StringComparison.Ordinal)), 5).DefaultIfEmpty(rows[0]).ToList(),
+            };
+        }
+    }
+
+    private static string Count(decimal v) => v.ToString("#,0", CultureInfo.InvariantCulture);
+
+    // Each read is numbered: one that lands after a later click (another period, cell or view) is dropped, so the table
+    // and the drill-down always show what the address asks for.
+    private int _reading;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var reading = ++_reading;
+        _end = Period.Parse(PeriodParam) ?? TrendsSvc.DefaultEnd(PeriodKind.Month);
+        _span = TrendsService.SpanOrDefault(_end.Kind, SpanParam);
+        _view = Views.Any(v => v.View == ViewParam) ? ViewParam! : "tags";
+        _line = LineParam;
+        _at = Period.Parse(AtParam) is { } at && at.Kind == _end.Kind ? at : null;
+        try
+        {
+            if (_loaded != (_end, Subs, _span))
+            {
+                var end = _end;
+                var report = await TrendsSvc.ReportAsync(end, rollUpSubtechniques: !Subs, span: _span);
+                if (reading != _reading) return;
+                _report = report;
+                // Opened without a period on an empty last month (a new install, or early in the month after a quiet
+                // one): show the month so far instead of a table of zeros.
+                if (PeriodParam is null && _report.Find("articles:all")!.Current == 0 && TrendsSvc.CurrentPeriod(_end.Kind) is var now && now != _end)
+                {
+                    _end = now;
+                    report = await TrendsSvc.ReportAsync(now, rollUpSubtechniques: !Subs, span: _span);
+                    if (reading != _reading) return;
+                    _report = report;
+                }
+                _loaded = (_end, Subs, _span);
+            }
+            _tactic = _view == "attack" && TacticParam?.StartsWith("tactic:", StringComparison.Ordinal) == true ? _report?.Find(TacticParam) : null;
+            await LoadDrill(reading);
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    private async Task LoadDrill(int reading)
+    {
+        _drillArticles = null;
+        _drillActions = null;
+        _drillRow = _report?.Find(_line);
+        var index = _at is { } at ? _report!.Periods.ToList().IndexOf(at) : -1;
+        if (_drillRow is null || index < 0)
+        {
+            _drillRow = null;
+            return;
+        }
+        var ids = _drillRow.Ids[index];
+        if (_report!.IsActionRow(_drillRow))
+        {
+            var actions = await ActionSvc.ListByIdAsync(ids);
+            if (reading == _reading) _drillActions = actions;
+        }
+        else
+        {
+            var articles = await TrendsSvc.ArticlesAsync(ids, _report.CountedOn);
+            if (reading == _reading) _drillArticles = articles;
+        }
+    }
+
+    // Each change goes into the address, so a view can be bookmarked or sent, and Back steps through it. A line of ""
+    // keeps the open drill-down; null closes it. Likewise a tactic or chart of "" keeps it. The chart stays as you go in
+    // and out of a tactic; a new view starts it afresh.
+    private void Go(Period? p = null, string? view = null, string? line = "", Period? at = null, bool? subs = null, int? span = null,
+        string? tactic = "", string? chart = "") =>
+        Nav.NavigateTo(Href(p, view, line, at, subs, span, tactic, chart));
+
+    // Another kind of period, the one holding this period's last day; for a period still going on (whose last day hasn't
+    // come), the one holding today, so a month to date doesn't become a week that hasn't started.
+    internal Period Switched(PeriodKind kind) => TrendsSvc.IsPartial(_end) ? TrendsSvc.CurrentPeriod(kind) : Period.Of(kind, _end.End);
+
+    // The address Go goes to: also the href of a link to it (the report views).
+    private string Href(Period? p = null, string? view = null, string? line = "", Period? at = null, bool? subs = null, int? span = null,
+        string? tactic = "", string? chart = "")
+    {
+        var newView = view is not null && view != _view;
+        var keepTactic = newView ? null : tactic == "" ? _tactic?.Key : tactic;
+        var keepChart = newView ? null : chart == "" ? ChartParam : chart;
+        var end = p ?? _end;
+        var keepLine = line == "" ? _line : line;
+        var keepAt = line == "" ? _at : at;
+        if (end != _end) keepAt = keepAt is { } a && a.Kind == end.Kind ? a : null;
+        var query = new Dictionary<string, object?>
+        {
+            ["p"] = end.Key,
+            ["view"] = view ?? _view,
+            ["subs"] = (subs ?? Subs) ? "true" : null,
+            ["line"] = keepAt is null ? null : keepLine,
+            ["at"] = keepLine is null ? null : keepAt?.Key,
+            ["n"] = TrendsService.SpanOrDefault(end.Kind, span ?? _span) is var n && n != TrendsService.Span(end.Kind) ? n : null,
+            ["tactic"] = keepTactic,
+            ["chart"] = keepChart,
+        };
+        return Nav.GetUriWithQueryParameters("trends", query);
+    }
+
+    // Counting sub-techniques separately changes what a technique key means, so the chart starts afresh too.
+    private void ToggleSubs(ChangeEventArgs e) => Go(subs: e.Value is true, line: null, tactic: null, chart: null);
+
+    // The default lines become the picked ones the first time one is toggled. A row whose technique is charted from
+    // another tactic takes that line off (the table passes the charted line).
+    private void ToggleChart(TrendRow row) =>
+        Go(chart: TrendChart.Toggle(_report!, ViewLines, ChartParam ?? string.Join(',', Charted.Select(r => r.Key)), row.Key));
+
+    // Every line the table lists, as one short item in the address: the view's, or a tactic and all its techniques.
+    private void ChartAllShown() => Go(chart: _tactic is { } t ? $"{t.Key},{TrendChart.AllUnder(t.Key)}" : TrendChart.All);
+
+    private string ArticlesHref(ArticleFilter filter) => Nav.GetUriWithQueryParameters("articles", filter.ToQuery());
+
+    // With the page's way of counting sub-techniques, so a technique line's file lists the articles its drill-down does.
+    private string ArticlesCsvUrl(string line, Period at) => $"trends/articles.csv?p={at.Key}&line={Uri.EscapeDataString(line)}{SubsQuery}";
+}

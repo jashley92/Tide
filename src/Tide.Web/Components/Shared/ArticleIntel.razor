@@ -1,0 +1,39 @@
+@* Beside an article: what's known about its CVEs (CVSS, EPSS, KEV) with a hint when they suggest a threat. (The threat
+   story it's part of has its own picker, StoryPicker, out in the open.) *@
+@inject CveService Cves
+
+@if (CveIds.Count > 0)
+{
+    <div class="tide-card">
+        <h2>CVE context</h2>
+        @foreach (var id in CveIds) { <CveChip CveId="@id" Record="@_records.GetValueOrDefault(id)" /> }
+        @if (_records.Count == 0)
+        {
+            <p class="small tide-muted mb-0 mt-1">Not enriched yet: CVSS, EPSS and KEV appear once the CVE data is refreshed.</p>
+        }
+        @foreach (var hint in _hints)
+        {
+            <div class="small mt-2 @(Classification == Classification.Threat ? "tide-muted" : "text-danger")"><span class="bi bi-exclamation-triangle" aria-hidden="true"></span> @hint@(Classification == Classification.Threat ? "" : " Consider classifying it as a threat.")</div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid ArticleId { get; set; }
+    [Parameter] public IReadOnlyList<string> CveIds { get; set; } = [];
+    [Parameter] public Classification Classification { get; set; }
+
+    private IReadOnlyDictionary<string, CveRecord> _records = new Dictionary<string, CveRecord>();
+    private IReadOnlyList<string> _hints = [];
+
+    // What it was last read for: the page around it redraws as the article is typed, which needn't read again.
+    private (Guid Article, IReadOnlyList<string> Cves)? _readFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_readFor is { } r && r.Article == ArticleId && r.Cves.SequenceEqual(CveIds)) return;
+        _readFor = (ArticleId, CveIds.ToList());
+        _records = await Cves.GetAsync(CveIds);
+        _hints = CveService.ThreatHints(_records.Values);
+    }
+}

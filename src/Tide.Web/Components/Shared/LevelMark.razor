@@ -1,0 +1,13 @@
+@* A metric past a threshold, said by an icon and (for screen readers) words, not by its colour alone. *@
+@using Tide.Application.Metrics
+@if (Level != MetricLevel.Normal)
+{
+    <span class="bi @(Level == MetricLevel.Critical ? "bi-exclamation-octagon-fill" : "bi-exclamation-triangle-fill") tide-level-@Level.ToString().ToLowerInvariant() ms-1"
+          title="@Words" aria-hidden="true"></span><span class="visually-hidden">(@Words)</span>
+}
+
+@code {
+    [Parameter, EditorRequired] public MetricLevel Level { get; set; }
+
+    private string Words => Level == MetricLevel.Critical ? "past the critical threshold" : "past the warning threshold";
+}

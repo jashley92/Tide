@@ -1,0 +1,532 @@
+@* "Draft from the sources" (EP-70, ADR 0004), in the article editor for analysts. The article's text is pasted, or
+   fetched from its link (TIDE fetches it; for an Open source whose page TIDE can't read, the AI provider's web search
+   may find it). The provider drafts from it, with the feed summary, the CVE records and our notes on what we run when
+   the TLP limit allows; with no provider, "Copy a prompt" gives the text to run in an approved tool and the answer is
+   pasted back. Either way TIDE checks every suggestion, and each one goes into the form only when the analyst accepts
+   it, as an ordinary unsaved edit. Nothing is sent above the limit, and the card says why. *@
+@using Tide.Application.Assist
+@inject AssistService Assist
+@inject ToastService Toasts
+@inject IJSRuntime JS
+
+<section class="tide-card tide-section tide-draft-assist" aria-labelledby="sec-draft">
+    <h2 id="sec-draft" class="mb-0">
+        <button type="button" class="tide-disclosure" aria-expanded="@(_open ? "true" : "false")" aria-controls="sec-draft-body" @onclick="() => _open = !_open">
+            <span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span>
+            <span class="bi bi-stars" aria-hidden="true"></span> Draft from the sources
+            <span class="tide-disclosure-sum">@Summary()</span>
+        </button>
+    </h2>
+    <div id="sec-draft-body" class="tide-disclosure-body" hidden="@(!_open)">
+        @if (_status is null)
+        {
+            <LoadingBlock />
+        }
+        else if (_status.Blocked is { } blocked)
+        {
+            <div class="alert alert-warning small mb-0" role="status"><span class="bi bi-shield-lock" aria-hidden="true"></span> Drafting is unavailable: @blocked</div>
+        }
+        else
+        {
+            <label class="tide-field-label" for="draft-text">Article text</label>
+            <textarea id="draft-text" class="form-control form-control-sm" rows="6" maxlength="@ArticleText.MaxChars" aria-describedby="draft-text-help"
+                      placeholder="Paste the article, or a report's text. Or fetch it from the link." @bind="_sourceText" @bind:event="oninput" @bind:after="TextEdited"></textarea>
+            <div class="form-text" id="draft-text-help">
+                @if (!string.IsNullOrWhiteSpace(_sourceText))
+                {
+                    <span>@_sourceText.Trim().Length.ToString("N0") characters@(_origin is null ? ", pasted" : $", {_origin}").</span>
+                }
+                It's sent at the article's TLP and isn't saved.
+            </div>
+            @if (_fetchProblem is not null)
+            {
+                <div class="tide-field-error" role="alert">@_fetchProblem</div>
+            }
+            @* EP-77: the article's other reports, each a numbered source of the draft when it has text. *@
+            <div class="tide-draft-sources mt-2">
+                <div class="tide-field-label">Other reports@(_others.Count > 0 ? $" ({_others.Count})" : "")</div>
+                @foreach (var o in _others)
+                {
+                    <div class="tide-draft-source" @key="o.Url">
+                        <input type="checkbox" class="form-check-input" id="@($"src-{o.Url.GetHashCode():x}")" checked="@o.Use" disabled="@(o.Text is null)"
+                               @onchange="e => o.Use = e.Value is true" />
+                        <label class="form-check-label" for="@($"src-{o.Url.GetHashCode():x}")">@o.Name</label>
+                        @if (o.Text is { } t)
+                        {
+                            <span class="tide-muted small">@t.Length.ToString("N0") characters, @(o.Origin ?? "pasted")</span>
+                        }
+                        else if (o.Problem is { } why)
+                        {
+                            <span class="tide-field-error small">@why</span>
+                        }
+                        else if (_status.Fetch != Tide.Domain.Enums.ArticleFetch.Never)
+                        {
+                            <button type="button" class="btn btn-link btn-sm p-0" disabled="@_busy" @onclick="() => FetchOther(o)">Fetch it</button>
+                        }
+                    </div>
+                }
+                <div class="d-flex gap-2 mt-1 flex-wrap align-items-center">
+                    <label class="visually-hidden" for="draft-add-link">Another report's address</label>
+                    <input id="draft-add-link" class="form-control form-control-sm tide-maxw-sm" type="url" maxlength="2000" placeholder="Add another report: https://…"
+                           @bind="_newLink" @bind:event="oninput" />
+                    <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_newLink))" @onclick="AddLink">Add and fetch</button>
+                    @if (_others.Any(o => o.Text is null && o.Problem is null))
+                    {
+                        <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="FetchAll">Fetch all</button>
+                    }
+                </div>
+                <div class="form-text">Each source with text is numbered in the draft, and every claim says which it came from.</div>
+            </div>
+            <div class="d-flex gap-2 mt-2 flex-wrap">
+                @if (_status.Fetch != Tide.Domain.Enums.ArticleFetch.Never)
+                {
+                    <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_busy || !HasLink)" title="@(HasLink ? null : "The article has no link")" @onclick="Fetch">
+                        <span class="bi bi-cloud-download" aria-hidden="true"></span> Fetch the article
+                    </button>
+                }
+                @if (_status.ProviderReady)
+                {
+                    <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" @onclick="Draft"><span class="bi bi-stars" aria-hidden="true"></span> Draft from the sources</button>
+                }
+                <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="CopyPrompt"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy a prompt</button>
+            </div>
+            <div class="form-text">
+                @if (_status.ProviderReady)
+                {
+                    <span>Sent to @_status.Provider at @Tlp.Label(_status.InputTlp). @(_status.SendsOurNotes ? "Our notes on what we run go with it (AMBER)." : $"Our notes on what we run stay here: they're AMBER and the limit is {Tlp.Label(_status.MaxTlp)}.")</span>
+                }
+                else
+                {
+                    <span>No AI provider is set up. Copy a prompt, run it in an AI tool your organisation has approved, and paste its answer below.</span>
+                }
+            </div>
+            @if (_pasting)
+            {
+                <label class="tide-field-label mt-2" for="draft-answer">The tool's answer (JSON)</label>
+                <textarea id="draft-answer" class="form-control form-control-sm tide-data" rows="4" placeholder='{ "bottomLine": "…", "bullets": [ … ] }'
+                          @bind="_answer" @bind:event="oninput"></textarea>
+                <button type="button" class="btn btn-primary btn-sm mt-2" disabled="@(_busy || string.IsNullOrWhiteSpace(_answer))" @onclick="CheckPasted">Check and show suggestions</button>
+            }
+
+            @if (_result is { } r)
+            {
+                var s = r.Suggestions;
+                <div class="tide-draft-suggestions mt-3" aria-live="polite">
+                    <div class="d-flex flex-wrap gap-2 align-items-baseline">
+                        <h3 class="tide-subhead mb-0">Suggestions</h3>
+                        <span class="tide-muted small">@_accepted accepted · @_rejected rejected · @Pending() to decide</span>
+                    </div>
+                    <div class="tide-muted small mb-2">Based on: @r.BasedOn</div>
+                    @if (Dropped(s) is { } dropped)
+                    {
+                        <div class="tide-muted small mb-2">@dropped</div>
+                    }
+                    @if (Pending() == 0)
+                    {
+                        <p class="small mb-0">Nothing left to decide. Accepted text is in the form: edit it as you would your own, then save.</p>
+                    }
+
+                    @foreach (var d in s.Disagreements)
+                    {
+                        <div class="alert alert-warning small py-2 mb-2" role="note"><strong>Sources differ:</strong> @d.Point @Markers(d.Sources)</div>
+                    }
+                    @if (s.Bluf is { } bluf && !_done.Contains("bluf"))
+                    {
+                        @Item("bluf", "Bottom line", bluf, string.IsNullOrWhiteSpace(Form.Bluf) ? "Use it" : "Replace mine", () => Form.Bluf = bluf, Cites(s.BlufSources, null, true))
+                    }
+                    @foreach (var (b, i) in s.Bullets.Select((b, i) => (b, i)))
+                    {
+                        if (_done.Contains($"bullet:{i}")) continue;
+                        var cited = r.SourceNames.Count == 0 || b.Supported;
+                        @Item($"bullet:{i}", $"Bullet {i + 1}", b.Text, cited ? "Add" : "Add anyway", () => AddBullet(b.Text), Cites(b.Sources, b.Quote, b.QuoteFound, $"bullet:{i}"), flagged: !cited)
+                    }
+                    @if (s.WhyItMatters is { } why && !_done.Contains("why"))
+                    {
+                        @Item("why", "Why it matters to us (AMBER)", why, string.IsNullOrWhiteSpace(Form.WhyItMatters) ? "Use it" : "Add to mine", () => AddWhy(why))
+                    }
+                    @if (s.RecommendedActions is { } rec && !_done.Contains("rec"))
+                    {
+                        @Item("rec", "Recommended actions", rec, string.IsNullOrWhiteSpace(Form.RecommendedActions) ? "Use it" : "Add to mine", () => AddRecommended(rec))
+                    }
+                    @foreach (var t in s.Techniques.Where(t => !_done.Contains("t:" + t.Id)))
+                    {
+                        @Item("t:" + t.Id, "ATT&CK technique", $"{t.Id} {t.Name}" + (t.Reason is null ? "" : $": {t.Reason}"), "Add", () => { if (!Form.TechniqueIds.Contains(t.Id)) Form.TechniqueIds.Add(t.Id); })
+                    }
+                    @foreach (var t in s.Tags.Where(t => !_done.Contains("g:" + t.Id)))
+                    {
+                        @Item("g:" + t.Id, "Scorecard tag", t.Name, "Add", () => Form.TagIds.Add(t.Id))
+                    }
+                    @foreach (var c in s.Cves.Where(c => !_done.Contains("c:" + c.Id)))
+                    {
+                        @Item("c:" + c.Id, c.InSource ? "CVE" : "CVE (not in the text)", c.Id, "Add", () => { if (!Form.Cves.Contains(c.Id)) Form.Cves.Add(c.Id); })
+                    }
+                    @if (PendingIndicators().Count > 0)
+                    {
+                        <div class="tide-draft-item">
+                            <div class="tide-field-label">Indicators</div>
+                            <div class="tide-suggest">
+                                @foreach (var ind in PendingIndicators())
+                                {
+                                    var key = IndicatorKey(ind);
+                                    <label @key="key">
+                                        <input type="checkbox" class="form-check-input" checked="@_pickIndicators.Contains(key)" @onchange="e => Pick(key, e)" />
+                                        <span class="tide-chip mb-0">@Ui.IndicatorLabel(ind.Type)</span>
+                                        <span class="tide-ioc">@Tide.Domain.Observables.IocObservable.Defang(ind.Type, ind.Value)</span>
+                                        @if (ind.InSource)
+                                        {
+                                            <span class="tide-badge tide-badge-ok">in the text</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="tide-badge tide-badge-warn" title="The text the draft was based on doesn't have it. Check it before adding.">not in the text</span>
+                                        }
+                                    </label>
+                                }
+                            </div>
+                            <div class="d-flex gap-2 mt-2">
+                                <button type="button" class="btn btn-primary btn-sm" disabled="@(_pickIndicators.Count == 0)" @onclick="AddPickedIndicators">Add @_pickIndicators.Count checked</button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="RejectIndicators">Reject the rest</button>
+                            </div>
+                        </div>
+                    }
+                    <div class="tide-muted small mt-2">@(r.Provider) · prompt v@(DraftPrompt.Version) · recorded with what was sent (a hash) and what you accept.</div>
+                </div>
+            }
+        }
+    </div>
+</section>
+
+@code {
+    /// <summary>The article being edited.</summary>
+    [Parameter, EditorRequired] public Guid ArticleId { get; set; }
+
+    /// <summary>The editor's form: accepted suggestions go straight into it.</summary>
+    [Parameter, EditorRequired] public ArticleForm Form { get; set; } = default!;
+
+    /// <summary>Called after an accepted suggestion changed the form (the editor marks it unsaved).</summary>
+    [Parameter] public EventCallback OnEdited { get; set; }
+
+    private AssistStatus? _status;
+    private bool _open, _busy, _pasting;
+    private string? _sourceText, _origin, _fetchProblem, _answer;
+    private Result? _result;
+    private readonly HashSet<string> _done = [];
+    private readonly HashSet<string> _pickIndicators = [];
+    private int _accepted, _rejected;
+    private Guid? _loadedFor;
+    private List<Other> _others = [];
+    private string? _newLink, _passage;
+
+    /// <summary>Another report of the article, as a source of the draft: its text once kept or fetched.</summary>
+    private sealed class Other(string url, string name, string? text, string? origin)
+    {
+        public string Url { get; } = url;
+        public string Name { get; } = name;
+        public string? Text { get; set; } = text;
+        public string? Origin { get; set; } = origin;
+        public string? Problem { get; set; }
+        public bool Use { get; set; } = text is not null;
+    }
+
+    // What the draft is made from: the article's own text, then each other report that has text and is ticked.
+    private List<DraftSource> Sources()
+    {
+        var sources = new List<DraftSource>();
+        if (!string.IsNullOrWhiteSpace(_sourceText))
+            sources.Add(new DraftSource(string.IsNullOrWhiteSpace(Form.SourceName) ? "the article" : Form.SourceName, _sourceText, _origin, Form.SourceUrl));
+        sources.AddRange(_others.Where(o => o.Use && o.Text is not null).Select(o => new DraftSource(o.Name, o.Text!, o.Origin, o.Url)));
+        return sources;
+    }
+
+    private async Task FetchOther(Other o)
+    {
+        _busy = true;
+        try { await Fetched(o); }
+        finally { _busy = false; }
+    }
+
+    // One at a time, politely: each report's page is fetched in turn.
+    internal async Task FetchAll()
+    {
+        _busy = true;
+        try
+        {
+            foreach (var o in _others.Where(o => o.Text is null && o.Problem is null).ToList())
+            {
+                await Fetched(o);
+                StateHasChanged();
+            }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task Fetched(Other o)
+    {
+        try
+        {
+            var got = await Assist.FetchAsync(ArticleId, o.Url, null, Form.Tlp);
+            if (got.Text is null) o.Problem = got.Problem;
+            else (o.Text, o.Origin, o.Use) = (got.Text, got.Origin, true);
+        }
+        catch (Exception ex) when (ex is ArgumentException or ForbiddenException) { o.Problem = UserFacingError.For(ex); }
+    }
+
+    internal async Task AddLink()
+    {
+        var url = _newLink?.Trim();
+        if (string.IsNullOrEmpty(url)) return;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var u) || u.Scheme is not ("http" or "https")) { Toasts.Error("Enter a report's http or https address."); return; }
+        if (_others.Count >= AssistService.MaxSources - 1) { Toasts.Error($"A draft is made from at most {AssistService.MaxSources} sources."); return; }
+        if (_others.Any(o => o.Url == url) || url == Form.SourceUrl) { Toasts.Show("That report is already a source."); return; }
+        var o = new Other(url, u.Host, null, null);
+        _others.Add(o);
+        _newLink = null;
+        await FetchOther(o);
+    }
+    private Tide.Domain.Enums.TlpLevel? _statusTlp;
+
+    /// <summary>A draft's suggestions with who answered ("AzureOpenAI · gpt-5-mini", or "Pasted"), and the sources' names
+    /// in the order the suggestions number them.</summary>
+    private sealed record Result(Guid DraftId, Suggestions Suggestions, string BasedOn, string Provider, IReadOnlyList<string> SourceNames);
+
+    private bool HasLink => Uri.TryCreate(Form.SourceUrl, UriKind.Absolute, out var u) && u.Scheme is "http" or "https";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // A new article starts the card open while it has no bottom line; the status follows the article's TLP.
+        if (_loadedFor != ArticleId)
+        {
+            _loadedFor = ArticleId;
+            (_open, _sourceText, _origin, _fetchProblem, _answer, _result, _pasting) = (string.IsNullOrWhiteSpace(Form.Bluf), null, null, null, null, null, false);
+            _done.Clear();
+            (_accepted, _rejected) = (0, 0);
+            // The text read in triage before promoting, when it's kept: no second fetch. The same for its other reports.
+            _others = [];
+            try
+            {
+                if (await Assist.KeptTextAsync(ArticleId) is { Text: { } kept } got) (_sourceText, _origin) = (kept, got.Origin);
+                _others = (await Assist.OtherSourcesAsync(ArticleId)).Select(o => new Other(o.Url, o.Name, o.Text, o.Origin)).ToList();
+            }
+            catch (ForbiddenException) { }
+        }
+        if (_statusTlp != Form.Tlp)
+        {
+            _statusTlp = Form.Tlp;
+            try { _status = await Assist.StatusAsync(ArticleId, Form.Tlp); }
+            catch (ForbiddenException) { _status = null; }
+        }
+    }
+
+    private string Summary() => _result is null ? "a first draft for you to check" : $"{_accepted} accepted · {Pending()} to decide";
+
+    private void TextEdited() => _origin = string.IsNullOrWhiteSpace(_sourceText) ? null : _origin;
+
+    internal async Task Fetch()
+    {
+        _busy = true;
+        _fetchProblem = null;
+        try
+        {
+            var got = await Assist.FetchAsync(ArticleId, Form.SourceUrl, Form.Title, Form.Tlp);
+            if (got.Text is null) _fetchProblem = got.Problem;
+            else (_sourceText, _origin) = (got.Text, got.Origin);
+        }
+        catch (Exception ex) when (ex is ArgumentException or ForbiddenException) { _fetchProblem = UserFacingError.For(ex); }
+        finally { _busy = false; }
+    }
+
+    internal async Task Draft()
+    {
+        _busy = true;
+        try
+        {
+            var r = await Assist.DraftAsync(ArticleId, Form, Sources());
+            Show(r, $"{(_status?.Provider == AiOptions.AzureOpenAI ? "Azure OpenAI" : _status?.Provider)} · {r.Model}");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    internal async Task CopyPrompt()
+    {
+        _busy = true;
+        try
+        {
+            var prompt = await Assist.PromptAsync(ArticleId, Form, Sources());
+            _pasting = true;
+            if (await JS.InvokeAsync<bool>("tideCopy", prompt)) Toasts.Show("Prompt copied. Run it in an approved AI tool and paste its answer here.");
+            else Toasts.Error("Couldn't copy the prompt. Check clipboard permissions.");
+        }
+        catch (JSDisconnectedException) { /* the tab has gone */ }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    internal async Task CheckPasted()
+    {
+        _busy = true;
+        try
+        {
+            var r = await Assist.FromPastedAsync(ArticleId, Form, Sources(), _answer);
+            Show(r, "Pasted answer");
+            _answer = null;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    private void Show(DraftResult r, string provider)
+    {
+        _result = new(r.DraftId, r.Suggestions, r.BasedOn, provider, r.SourceNames);
+        _passage = null;
+        _done.Clear();
+        (_accepted, _rejected) = (0, 0);
+        _pickIndicators.Clear();
+        foreach (var i in r.Suggestions.Indicators.Where(i => i.InSource)) _pickIndicators.Add(IndicatorKey(i));
+        if (r.Suggestions.Count == 0) Toasts.Show("No usable draft. Add more source text and try again.");
+    }
+
+    // One suggestion, by its key ("bluf", "bullet:2", "t:T1190"), with its Accept and Reject buttons, what it cites, and
+    // (flagged) a secondary Accept for one that cites nothing or misquotes.
+    private RenderFragment Item(string key, string label, string text, string accept, Action apply, RenderFragment? cites = null, bool flagged = false) => __builder =>
+    {
+        <div class="tide-draft-item" @key="key">
+            <div class="tide-field-label">@label</div>
+            <div class="tide-draft-text">@text @cites</div>
+            <div class="d-flex gap-2 mt-1">
+                <button type="button" class="btn @(flagged ? "btn-outline-secondary" : "btn-primary") btn-sm" aria-label="@($"{accept}: {label}")" @onclick="() => Accept(key, apply)">@accept</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" aria-label="@($"Reject: {label}")" @onclick="() => Reject(key)">Reject</button>
+            </div>
+        </div>
+    };
+
+    // Source markers ([1] [3]) after a suggestion: each opens the quote it gave, saying when the quote isn't in the
+    // source; "no source" when it cites none (only once the draft had numbered sources).
+    private RenderFragment Cites(IReadOnlyList<int> sources, string? quote, bool quoteFound, string? key = null) => __builder =>
+    {
+        if (_result is not { SourceNames.Count: > 0 } r) return;
+        if (sources.Count == 0)
+        {
+            <span class="tide-cite tide-cite-none" title="It cites none of the sources. Check it before adding.">no source</span>
+            return;
+        }
+        @Markers(sources, key)
+        if (key is not null && _passage == key)
+        {
+            <div class="tide-passage">
+                <strong>[@sources[0]] @r.SourceNames[sources[0] - 1]:</strong>
+                @if (quote is null) { <span> no quote given.</span> }
+                else { <span> “@quote”</span> }
+                @if (!quoteFound) { <div class="tide-field-error small">That quote isn't in the source it cites. Check the claim before adding it.</div> }
+            </div>
+        }
+        else if (key is not null && !quoteFound)
+        {
+            <span class="tide-cite tide-cite-none" title="The quote it gave isn't in the source it cites.">quote not found</span>
+        }
+    };
+
+    private RenderFragment Markers(IReadOnlyList<int> sources, string? key = null) => __builder =>
+    {
+        var names = _result?.SourceNames ?? [];
+        foreach (var n in sources.Where(n => n >= 1 && n <= names.Count))
+        {
+            if (key is null) { <span class="tide-cite" title="@names[n - 1]">@n</span> }
+            else
+            {
+                <button type="button" class="tide-cite" title="@($"{names[n - 1]}: show the quote")" aria-expanded="@(_passage == key ? "true" : "false")"
+                        @onclick="() => _passage = _passage == key ? null : key">@n</button>
+            }
+        }
+    };
+
+    internal async Task Accept(string key, Action apply)
+    {
+        apply();
+        _done.Add(key);
+        _accepted++;
+        await OnEdited.InvokeAsync();
+        await Record(true, 1);
+    }
+
+    internal async Task Reject(string key)
+    {
+        _done.Add(key);
+        _rejected++;
+        await Record(false, 1);
+    }
+
+    private async Task Record(bool accepted, int count)
+    {
+        if (_result is null) return;
+        try { await Assist.RecordAsync(_result.DraftId, accepted, count); }
+        catch (ForbiddenException) { /* counted only for analysts, who are the only ones here */ }
+    }
+
+    private void AddBullet(string text)
+    {
+        if (Form.Bullets.Count >= Tide.Domain.Entities.Article.MaxBullets) { Toasts.Error($"An article has at most {Tide.Domain.Entities.Article.MaxBullets} bullets."); return; }
+        // An empty bullet left from "Add a bullet" is filled first.
+        if (Form.Bullets.Find(b => string.IsNullOrWhiteSpace(b.Text)) is { } empty) empty.Text = text;
+        else Form.Bullets.Add(new BulletForm { Text = text, Tlp = Form.Tlp });
+    }
+
+    // Internal context: the paragraph is kept at AMBER or above, whatever it was.
+    private void AddWhy(string text)
+    {
+        var why = Form.WhyItMatters?.TrimEnd() ?? "";
+        Form.WhyItMatters = why.Length == 0 ? text : why + "\n\n" + text;
+        if (Form.WhyItMattersTlp < Tide.Domain.Enums.TlpLevel.Amber) Form.WhyItMattersTlp = Tide.Domain.Enums.TlpLevel.Amber;
+    }
+
+    private void AddRecommended(string text)
+    {
+        var rec = Form.RecommendedActions?.TrimEnd() ?? "";
+        Form.RecommendedActions = rec.Length == 0 ? text : rec + "\n" + text;
+    }
+
+    private static string IndicatorKey(SuggestedIndicator i) => DraftChecks.IndicatorKey(i.Type, i.Value);
+
+    private List<SuggestedIndicator> PendingIndicators() => _result?.Suggestions.Indicators.Where(i => !_done.Contains("i:" + IndicatorKey(i))).ToList() ?? [];
+
+    private void Pick(string key, ChangeEventArgs e)
+    {
+        if (e.Value is true) _pickIndicators.Add(key);
+        else _pickIndicators.Remove(key);
+    }
+
+    internal async Task AddPickedIndicators()
+    {
+        var picked = PendingIndicators().Where(i => _pickIndicators.Contains(IndicatorKey(i))).ToList();
+        foreach (var i in picked)
+        {
+            Form.Indicators.Add(new IndicatorForm { Type = i.Type, Value = i.Value });
+            _done.Add("i:" + IndicatorKey(i));
+        }
+        _pickIndicators.Clear();
+        _accepted += picked.Count;
+        await OnEdited.InvokeAsync();
+        await Record(true, picked.Count);
+    }
+
+    internal async Task RejectIndicators()
+    {
+        var rest = PendingIndicators();
+        foreach (var i in rest) _done.Add("i:" + IndicatorKey(i));
+        _pickIndicators.Clear();
+        _rejected += rest.Count;
+        await Record(false, rest.Count);
+    }
+
+    // Every suggestion has one key, so what's left is the count less those decided.
+    private int Pending() => _result is null ? 0 : _result.Suggestions.Count - _done.Count;
+
+    private static string? Dropped(Suggestions s)
+    {
+        var parts = new List<string>();
+        if (s.DroppedTechniques > 0) parts.Add($"{s.DroppedTechniques} technique{(s.DroppedTechniques == 1 ? "" : "s")} not in the ATT&CK catalog");
+        if (s.DroppedTags > 0) parts.Add(s.DroppedTags == 1 ? "1 tag that isn't configured" : $"{s.DroppedTags} tags that aren't configured");
+        if (s.DroppedIndicators > 0) parts.Add($"{s.DroppedIndicators} indicator{(s.DroppedIndicators == 1 ? "" : "s")} that couldn't be read");
+        return parts.Count == 0 ? null : "Left out by the checks: " + string.Join("; ", parts) + ".";
+    }
+}

@@ -1,0 +1,58 @@
+@inherits LayoutComponentBase
+
+<a class="tide-skip-link" href="#main-content">Skip to content</a>
+
+<div class="page">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row">
+            <span class="tide-muted small">@Clock.TeamName</span>
+            <div class="tide-top-find">
+                <AuthorizeView Policy="@Policies.ReadTeamEdition">
+                    <TopSearch />
+                </AuthorizeView>
+                @* Ctrl+K from anywhere; it lists only what this person may open. *@
+                <CommandPalette />
+            </div>
+            <AuthorizeView>
+                <Authorized>
+                    <div class="tide-top-end">
+                        <ShortcutsOverlay />
+                        <ProfileMenu />
+                    </div>
+                </Authorized>
+            </AuthorizeView>
+        </div>
+
+        <article id="main-content" tabindex="-1" class="content">
+            <LiveMeetingJoin />
+            <PageBoundary>@Body</PageBoundary>
+        </article>
+    </main>
+</div>
+
+<ToastHost />
+
+<div id="blazor-error-ui">
+    Something went wrong. Reload the page to continue.
+    <a href="" class="reload">Reload</a>
+    <button type="button" class="dismiss" aria-label="Dismiss">&times;</button>
+</div>
+
+@code {
+    [Inject] private OrgClock Clock { get; set; } = default!;
+
+    public static string Initials(string? name)
+    {
+        var parts = (name ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length switch
+        {
+            0 => "?",
+            1 => parts[0][..1].ToUpperInvariant(),
+            _ => (parts[0][..1] + parts[^1][..1]).ToUpperInvariant(),
+        };
+    }
+}

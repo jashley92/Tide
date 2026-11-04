@@ -1,0 +1,28 @@
+@* "You are here" and the way back: ancestors are links, the last crumb is this page. The › separators
+   are drawn in CSS; on a phone only the way back stays ("‹ Actions"), since the heading right below repeats the rest. *@
+@if (Items is { Count: > 0 })
+{
+    <nav class="tide-crumbs" aria-label="Breadcrumb">
+        <ol>
+            @for (var i = 0; i < Items.Count; i++)
+            {
+                var c = Items[i];
+                var last = i == Items.Count - 1;
+                <li>
+                    @if (!last && c.Href is not null)
+                    {
+                        <a href="@c.Href">@c.Label</a>
+                    }
+                    else
+                    {
+                        <span aria-current="@(last ? "page" : null)">@c.Label</span>
+                    }
+                </li>
+            }
+        </ol>
+    </nav>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<Crumb>? Items { get; set; }
+}

@@ -1,0 +1,152 @@
+@page "/admin/scorecard"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@inject Tide.Application.Scorecard.ScorecardService Scorecard
+@inject ToastService Toasts
+@inject IJSRuntime JS
+
+<PageTitle>Scorecard tags · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <h1 class="tide-admin-title">Scorecard tags</h1>
+        <div class="tide-sub">Tags roll up to their category. Renaming keeps history; a used tag is retired, not deleted.</div>
+    </div>
+    <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" id="show-retired" @bind="_showRetired" @bind:after="Load" />
+        <label class="form-check-label" for="show-retired">Show retired</label>
+    </div>
+</div>
+
+@foreach (var (cat, ci) in _cats.Select((c, i) => (c, i)))
+{
+    <div class="tide-card @(cat.IsRetired ? "tide-retired" : "")" @key="cat.Id">
+        <div class="d-flex flex-wrap gap-2 align-items-start mb-2">
+            @if (_editing == cat.Id)
+            {
+                <input class="tide-maxw-md form-control form-control-sm" @bind="_editName" aria-label="Category name" />
+                <input class="form-control form-control-sm" @bind="_editDescription" placeholder="Description" aria-label="Category description" />
+                <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="() => SaveCategory(cat.Id)">Save</button>
+                <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editing = null">Cancel</button>
+            }
+            else
+            {
+                <div class="flex-grow-1">
+                    <h2 class="tide-card-title mb-0">@cat.Name @if (cat.IsRetired) { <Badge>Retired</Badge> }</h2>
+                    <div class="tide-muted small">@cat.Description <span class="tide-data ms-1">@cat.Key</span></div>
+                </div>
+                <button class="tide-icon-btn" title="Move up" aria-label="Move @cat.Name up" disabled="@(ci == 0)" @onclick="() => Run(() => Scorecard.MoveCategoryAsync(cat.Id, -1))"><span class="bi bi-arrow-up" aria-hidden="true"></span></button>
+                <button class="tide-icon-btn" title="Move down" aria-label="Move @cat.Name down" disabled="@(ci == _cats.Count - 1)" @onclick="() => Run(() => Scorecard.MoveCategoryAsync(cat.Id, 1))"><span class="bi bi-arrow-down" aria-hidden="true"></span></button>
+                <button class="btn btn-outline-secondary btn-sm" @onclick="() => Edit(cat.Id, cat.Name, cat.Description)">Rename</button>
+                <button class="btn btn-outline-secondary btn-sm" aria-label="@(cat.IsRetired ? "Bring back" : "Retire") @cat.Name" @onclick="() => Retire(cat.Name, cat.IsRetired, () => Scorecard.SetCategoryRetiredAsync(cat.Id, !cat.IsRetired))">@(cat.IsRetired ? "Bring back" : "Retire")</button>
+            }
+        </div>
+        <table class="tide-table">
+            <tbody>
+                @foreach (var (tag, ti) in cat.Tags.Select((t, i) => (t, i)))
+                {
+                    <tr @key="tag.Id" class="@(tag.IsRetired ? "tide-retired" : "")">
+                        @if (_editing == tag.Id)
+                        {
+                            <td><input class="form-control form-control-sm" @bind="_editName" aria-label="Tag name" /></td>
+                            <td><input class="form-control form-control-sm" @bind="_editDescription" placeholder="Description" aria-label="Tag description" /></td>
+                            <td class="text-end text-nowrap">
+                                <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="() => SaveTag(tag.Id)">Save</button>
+                                <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editing = null">Cancel</button>
+                            </td>
+                        }
+                        else
+                        {
+                            <td class="tide-col-third"><span class="fw-semibold">@tag.Name</span> @if (tag.IsRetired) { <Badge>Retired</Badge> }</td>
+                            <td class="tide-muted small">@tag.Description</td>
+                            <td class="text-end text-nowrap">
+                                <button class="tide-icon-btn" title="Move up" aria-label="Move @tag.Name up" disabled="@(ti == 0)" @onclick="() => Run(() => Scorecard.MoveTagAsync(tag.Id, -1))"><span class="bi bi-arrow-up" aria-hidden="true"></span></button>
+                                <button class="tide-icon-btn" title="Move down" aria-label="Move @tag.Name down" disabled="@(ti == cat.Tags.Count - 1)" @onclick="() => Run(() => Scorecard.MoveTagAsync(tag.Id, 1))"><span class="bi bi-arrow-down" aria-hidden="true"></span></button>
+                                <button class="btn btn-outline-secondary btn-sm" @onclick="() => Edit(tag.Id, tag.Name, tag.Description)">Rename</button>
+                                <button class="btn btn-outline-secondary btn-sm" title="Unused tags are deleted; used ones are retired"
+                                        aria-label="@(tag.IsRetired ? "Bring back" : "Retire") @tag.Name" @onclick="() => Retire(tag.Name, tag.IsRetired, () => Scorecard.SetTagRetiredAsync(tag.Id, !tag.IsRetired))">@(tag.IsRetired ? "Bring back" : "Retire")</button>
+                            </td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (!cat.IsRetired)
+        {
+            <div class="d-flex gap-2 mt-2">
+                <input class="tide-maxw-md form-control form-control-sm" placeholder="New tag" aria-label="New tag in @cat.Name"
+                       value="@_newTag.GetValueOrDefault(cat.Id)" @onchange="e => SetNewTag(cat.Id, e)" />
+                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => AddTag(cat.Id)"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add tag</button>
+            </div>
+        }
+    </div>
+}
+
+<div class="tide-card">
+    <h2>New category</h2>
+    <div class="d-flex gap-2 flex-wrap">
+        <input class="tide-maxw-md form-control form-control-sm" placeholder="Name" aria-label="New category name" @bind="_newCategory" />
+        <input class="tide-maxw-xl form-control form-control-sm" placeholder="What the board reads it as (optional)" aria-label="New category description" @bind="_newCategoryDescription" />
+        <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="AddCategory">Add category</button>
+    </div>
+</div>
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    private ConfirmDialog _confirm = default!;
+    private IReadOnlyList<ScorecardCategory> _cats = [];
+    private bool _showRetired, _busy;
+    private Guid? _editing;
+    private string? _editName, _editDescription, _newCategory, _newCategoryDescription;
+    private readonly Dictionary<Guid, string> _newTag = [];
+
+    protected override Task OnInitializedAsync() => Load();
+
+    private async Task Load() => _cats = await Scorecard.ListAsync(_showRetired);
+
+    private void SetNewTag(Guid categoryId, ChangeEventArgs e) => _newTag[categoryId] = e.Value?.ToString() ?? "";
+
+    private void Edit(Guid id, string name, string? description)
+    {
+        _editing = id;
+        _editName = name;
+        _editDescription = description;
+    }
+
+    private Task SaveCategory(Guid id) => Run(async () => { await Scorecard.UpdateCategoryAsync(id, _editName ?? "", _editDescription); _editing = null; });
+
+    private Task SaveTag(Guid id) => Run(async () => { await Scorecard.UpdateTagAsync(id, _editName ?? "", _editDescription); _editing = null; });
+
+    private Task AddTag(Guid categoryId) => Run(async () =>
+    {
+        await Scorecard.AddTagAsync(categoryId, _newTag.GetValueOrDefault(categoryId) ?? "", null);
+        _newTag.Remove(categoryId);
+    });
+
+    private Task AddCategory() => Run(async () =>
+    {
+        await Scorecard.AddCategoryAsync(_newCategory ?? "", _newCategoryDescription);
+        _newCategory = _newCategoryDescription = null;
+    });
+
+    private async Task Retire(string name, bool isRetired, Func<Task> action)
+    {
+        if (await Retiring.ConfirmAsync(_confirm, name, isRetired)) await Run(action);
+    }
+
+    // One change at a time: a second click while one runs (a double-click on Add) does nothing, so nothing is added
+    // twice. The buttons are disabled meanwhile.
+    private async Task Run(Func<Task> action)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await action();
+            await Load();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+}

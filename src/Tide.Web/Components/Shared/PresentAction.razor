@@ -1,0 +1,135 @@
+@* An action opened over a slide in present mode, as the presenter shows it to the room: its facts, details, checklist,
+   comments and history. Whoever may work it can move its status and tick its checklist here; everything else is on
+   the action's page. Team edition only (ADR 0005): Present draws it only there. *@
+@inject ActionService ActionSvc
+@inject OrgClock Clock
+
+@{ var a = Detail.Action; }
+@* A region, not a dialog: present.js still has the keys, so Esc closes it and the arrows move on (which closes it too). *@
+<section class="tide-present-action" aria-labelledby="present-action-title">
+    <div class="tide-present-action-head">
+        <h2 id="present-action-title"><span class="tide-action-num">@Ui.ActionLabel(a.Number)</span> @a.Title</h2>
+        @if (Kicker is not null) { <span class="tide-present-help">@Kicker</span> }
+        <a class="btn btn-sm btn-outline-secondary ms-auto" href="@Ui.ActionUrl(a.Number)" target="_blank" rel="noopener">Open the page</a>
+        @if (CanClose)
+        {
+            <button type="button" class="btn btn-sm btn-outline-secondary" aria-label="Close @Ui.ActionLabel(a.Number)" title="Close (Esc)" @ref="_close" @onclick="Close"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+        }
+    </div>
+    <div class="tide-present-action-body">
+        @if (Detail.CanWork)
+        {
+            <ActionStatusControl @key="(a.Id, Version)" Action="a" Changed="OnChanged" Stale="OnChanged" />
+        }
+        else
+        {
+            <div><ActionStatusBadge Status="a.Status" /> @if (a.Outcome != ActionOutcome.None) { <span>@ActionService.OutcomeName(a.Outcome)</span> }</div>
+        }
+        <dl class="tide-facts">
+            <div class="tide-fact"><dt>Due</dt><dd>@(a.DueDate is { } due ? Ui.Day(due) : "No due date") <SlaBadge State="ActionSla.StateOf(a, ActionSvc.Today, Clock.Days)" Due="a.DueDate" Today="ActionSvc.Today" /></dd></div>
+            <div class="tide-fact"><dt>Assignee</dt><dd>@(a.AssigneeName ?? "Unassigned")</dd></div>
+            <div class="tide-fact"><dt>Team</dt><dd>@a.Team?.Name</dd></div>
+            <div class="tide-fact"><dt>Priority</dt><dd><PriorityBadge Priority="a.Priority" /></dd></div>
+            <div class="tide-fact"><dt>Kind</dt><dd>@ActionService.KindName(a.Kind)</dd></div>
+        </dl>
+        <div class="tide-present-action-cols">
+            <div>
+                @if (!string.IsNullOrWhiteSpace(a.Description))
+                {
+                    <div class="tide-slide-section">Details</div>
+                    <Md Text="@a.Description" />
+                }
+                @if (!a.IsOpen && a.OutcomeNote is not null)
+                {
+                    <div class="tide-slide-section">Outcome</div>
+                    <p>@ActionService.OutcomeName(a.Outcome): @a.OutcomeNote</p>
+                }
+                @if (a.Checklist.Count > 0)
+                {
+                    <div class="tide-slide-section">Checklist <span class="tide-present-help">@a.Checklist.Count(i => i.IsDone) of @a.Checklist.Count done</span></div>
+                    <ActionChecklist @key="(a.Id, Version)" ActionId="a.Id" Kind="a.Kind" CanWork="Detail.CanWork" Compact="true" OnChanged="OnChanged" />
+                }
+                <div class="tide-slide-section">Comments (@a.Comments.Count)</div>
+                @if (a.Comments.Count == 0) { <div class="tide-present-help">None yet.</div> }
+                @foreach (var c in a.Comments)
+                {
+                    <div class="tide-comment" @key="c.Id">
+                        <div class="tide-present-help"><strong>@c.AuthorName</strong> &middot; @Ui.When(Clock, c.AtUtc)@(c.EditedAtUtc is not null ? " (edited)" : "")</div>
+                        @if (c.Text.Length > 0) { <Md Text="@c.Text" /> }
+                        @{ var shots = c.Files.Where(f => f.IsImage).OrderBy(f => f.SortOrder).ToList(); }
+                        @if (shots.Count > 0)
+                        {
+                            <div class="tide-comment-shots">
+                                @foreach (var f in shots)
+                                {
+                                    <button type="button" class="tide-zoom" aria-label="Open @f.FileName" @onclick="() => OpenShot(shots, f)">
+                                        <img src="@Ui.ImageUrl(f.FileId)" alt="Screenshot: @f.FileName" loading="lazy" />
+                                    </button>
+                                }
+                            </div>
+                        }
+                        @foreach (var f in c.Files.Where(f => !f.IsImage).OrderBy(f => f.SortOrder))
+                        {
+                            <div class="tide-present-help"><span class="bi bi-paperclip" aria-hidden="true"></span> @f.FileName</div>
+                        }
+                    </div>
+                }
+            </div>
+            <div>
+                <div class="tide-slide-section">History</div>
+                <ul class="tide-timeline">
+                    @foreach (var e in a.Events)
+                    {
+                        <li><span class="tide-present-help">@Ui.When(Clock, e.AtUtc) &middot; @e.ByName</span><div>@e.Text</div></li>
+                    }
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+<ScreenshotDialog Set="_shotSet" @bind-Open="_shot" />
+
+@code {
+    [Parameter, EditorRequired] public ActionDetail Detail { get; set; } = default!;
+
+    /// <summary>Goes up when the action is re-read after someone else's change, so the status and checklist start afresh.</summary>
+    [Parameter] public int Version { get; set; }
+
+    /// <summary>A word on whose it is: "Shown to everyone following", "Tester's showing this".</summary>
+    [Parameter] public string? Kicker { get; set; }
+
+    /// <summary>Whether this page may close it: not a follower held by the presenter's lock.</summary>
+    [Parameter] public bool CanClose { get; set; } = true;
+
+    /// <summary>Takes focus once drawn: this page opened it.</summary>
+    [Parameter] public bool Autofocus { get; set; }
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>After a status move or a tick here: the page re-reads the action.</summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private ElementReference _close;
+    private int? _focused;
+    private ScreenshotDialog.Shot? _shot;
+    private IReadOnlyList<ScreenshotDialog.Shot> _shotSet = [];
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!Autofocus || !CanClose || _focused == Detail.Action.Number) return;
+        _focused = Detail.Action.Number;
+        try { await _close.FocusAsync(); }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+
+    private Task Close() => CanClose ? OnClose.InvokeAsync() : Task.CompletedTask;
+
+    private Task OnChanged() => Changed.InvokeAsync();
+
+    private void OpenShot(IEnumerable<ActionCommentFile> shots, ActionCommentFile f)
+    {
+        _shotSet = shots.Select(s => new ScreenshotDialog.Shot(s.FileId, s.FileName)).ToList();
+        _shot = _shotSet.First(s => s.FileId == f.FileId);
+    }
+}

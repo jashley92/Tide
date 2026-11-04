@@ -1,0 +1,74 @@
+@* Leaving a page with unsaved changes: Save and leave, Discard and leave, or Stay, in place of the browser's OK/Cancel
+   box that couldn't offer to save. Drawn as ConfirmDialog is: focus moves to Stay when it opens (the safe choice, so
+   Enter stays), Tab stays inside (dialog.js), Escape or a click outside stays, and focus goes back to what had it.
+   Usage, from a NavigationLock's OnBeforeInternalNavigation:  switch (await _leave.Ask("…")) { case LeaveDialog.Choice.Save: … } *@
+@implements IDisposable
+@inject IJSRuntime JS
+
+@if (_open)
+{
+    <div class="tide-modal-scrim" @onclick="Stay">
+        <div class="tide-modal" role="alertdialog" aria-modal="true" aria-labelledby="@_titleId" aria-describedby="@_bodyId"
+             @onclick:stopPropagation="true" @onkeydown="OnKey">
+            <h2 class="tide-modal-title" id="@_titleId">Leave with unsaved changes?</h2>
+            <p class="tide-modal-body" id="@_bodyId">@_message</p>
+            <div class="tide-modal-actions tide-modal-actions-wrap">
+                <button type="button" class="btn btn-outline-secondary btn-sm" @ref="_stay" @onclick="Stay">Stay</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => Close(Choice.Discard)">Discard and leave</button>
+                <button type="button" class="btn btn-primary btn-sm" @onclick="() => Close(Choice.Save)">Save and leave</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>What to do with the unsaved changes.</summary>
+    public enum Choice { Stay, Save, Discard }
+
+    private readonly string _titleId = "leave-" + Guid.NewGuid().ToString("N")[..8];
+    private string _bodyId => _titleId + "-body";
+    private bool _open, _shown;
+    private string _message = "";
+    private TaskCompletionSource<Choice>? _answer;
+    private ElementReference _stay;
+
+    /// <summary>Asks what to do with the unsaved changes; <paramref name="message"/> says what they are. A second ask
+    /// (another navigation while this one waits) answers the first with Stay.</summary>
+    public Task<Choice> Ask(string message)
+    {
+        _answer?.TrySetResult(Choice.Stay);
+        _answer = new TaskCompletionSource<Choice>(TaskCreationOptions.RunContinuationsAsynchronously);
+        (_message, _open) = (message, true);
+        StateHasChanged();
+        return _answer.Task;
+    }
+
+    internal void Stay() => Close(Choice.Stay);
+
+    internal void Close(Choice choice)
+    {
+        if (!_open) return;
+        _open = false;
+        _answer?.TrySetResult(choice);
+        _answer = null;
+    }
+
+    private void OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") Stay();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_open == _shown) return;
+        _shown = _open;
+        try
+        {
+            if (_open) await JS.InvokeVoidAsync("tideDialog.open", _stay);
+            else await JS.InvokeVoidAsync("tideDialog.close");
+        }
+        catch (JSDisconnectedException) { /* the tab has gone */ }
+    }
+
+    public void Dispose() => _answer?.TrySetResult(Choice.Stay);
+}

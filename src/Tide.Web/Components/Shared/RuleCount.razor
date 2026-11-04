@@ -1,0 +1,14 @@
+@using Tide.Application.Detections
+@* EP-79: how many of the SOC's current rules are tagged with a technique, as a small badge. Internal only: it's never
+   rendered in an edition. *@
+
+<Badge Tone="@(Rules.Enabled > 0 ? BadgeTone.Ok : BadgeTone.Danger)" Class="tide-rule-count" Title="@Title">@Rules.Label</Badge>
+
+@code {
+    [Parameter, EditorRequired] public TechniqueRules Rules { get; set; } = default!;
+
+    private string Title => Rules.Names.Count == 0
+        ? "No current detection rule is tagged with it"
+        : "Tagged in: " + string.Join(", ", Rules.Names.Take(5)) + (Rules.Names.Count > 5 ? $", and {Rules.Names.Count - 5} more" : "")
+          + (Rules.Disabled > 0 ? $" ({Rules.Disabled} disabled)" : "");
+}

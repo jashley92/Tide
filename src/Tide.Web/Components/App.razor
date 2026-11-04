@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    @* The app's root: "/" for a site of its own, "/tide/" when installed as an application within another site. *@
+    <base href="@BaseHref" />
+    <script src="js/theme-init.js?v=20261029-navgroups"></script>
+    <link rel="stylesheet" href="bootstrap/bootstrap.min.css?v=5.3.3" />
+    <link rel="stylesheet" href="lib/bootstrap-icons/bootstrap-icons.min.css?v=1.11.3" />
+    <link rel="stylesheet" href="app.css?v=20261104-simplify" />
+    <link rel="stylesheet" href="palette.css?v=20261029a" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <HeadOutlet @rendermode="InteractiveServer" />
+</head>
+
+<body>
+    <Routes @rendermode="InteractiveServer" />
+
+    @* The circuit-disconnect UI. Static host markup (not a component) so it stays in the DOM and styled while the
+       circuit is frozen. The framework toggles components-reconnect-{show,failed,rejected}; the buttons are wired
+       CSP-safely in theme.js. *@
+    <div id="components-reconnect-modal" class="reconnect-modal">
+        <div class="reconnect-card" role="alertdialog" aria-live="assertive" aria-label="Connection to the server">
+            <div class="reconnect-body reconnect-when-show">
+                <h2 id="reconnect-title" class="reconnect-title">Reconnecting&hellip;</h2>
+                <p>The connection to the server was lost. Trying again
+                    (attempt <span id="components-reconnect-current-attempt"></span> of <span id="components-reconnect-max-retries"></span>)&hellip;</p>
+            </div>
+            <div class="reconnect-body reconnect-when-failed">
+                <h2 class="reconnect-title">Can&rsquo;t reach the server</h2>
+                <p>Check your network connection, then try again.</p>
+                <button type="button" id="components-reconnect-retry" class="btn btn-primary btn-sm">Try again</button>
+            </div>
+            <div class="reconnect-body reconnect-when-rejected">
+                <h2 class="reconnect-title">Session expired</h2>
+                <p>The server is back, but this session was lost. Reload to continue; an unsaved edit may need redoing.</p>
+                <button type="button" id="components-reconnect-reload" class="btn btn-primary btn-sm">Reload the page</button>
+            </div>
+        </div>
+    </div>
+
+    @* Self-hosted scripts carry ?v= so a change ships: browsers cache them by URL. Bump it when a file changes. *@
+    <script src="_framework/blazor.web.js"></script>
+    <script src="js/theme.js?v=20261104-simplify"></script>
+    <script src="js/paste-drop.js?v=20261103-text"></script>
+    <script src="js/present.js?v=20261104-simplify"></script>
+    <script src="js/clipboard.js?v=20261026a"></script>
+    <script src="js/triage.js?v=20261104-simplify"></script>
+    <script src="js/dialog.js?v=20261102-rv"></script>
+    <script src="js/chart.js?v=20261029-chartall4"></script>
+    <script src="js/board.js?v=20261029-menu"></script>
+    <script src="js/brief-order.js?v=20261029a"></script>
+    <script src="js/tabs.js?v=20261029a"></script>
+    <script src="js/pager.js?v=20261103-pages2"></script>
+    <script src="js/autogrow.js?v=20261029a"></script>
+    <script src="js/palette.js?v=20261104-simplify"></script>
+    <script src="js/editor.js?v=20261104-simplify"></script>
+</body>
+
+</html>
+
+@code {
+    [CascadingParameter] private HttpContext? HttpContext { get; set; }
+
+    private string BaseHref => (HttpContext?.Request.PathBase.Value ?? "") + "/";
+}

@@ -1,0 +1,201 @@
+@page "/admin/card-rules"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@inject CardRuleService RuleSvc
+@inject TeamService TeamSvc
+@inject ToastService Toasts
+
+<PageTitle>Card rules · TIDE</PageTitle>
+
+<ConfirmDialog @ref="_confirm" />
+
+<div class="tide-page-head">
+    <div>
+        <h1 class="tide-admin-title">Card rules</h1>
+        <div class="tide-sub">An action matching all of a rule's conditions gets its label; the first matching rule sets its colour. Rules shown as filters appear as chips above the board and list.</div>
+    </div>
+    @if (_editing is null)
+    {
+        <button class="btn btn-primary" @onclick="New"><span class="bi bi-plus-lg" aria-hidden="true"></span> New rule</button>
+    }
+</div>
+
+@if (_editing is not null)
+{
+    <div class="tide-card-form tide-card">
+        <h2>@(_isNew ? "New rule" : "Edit " + _editing.Name)</h2>
+        <div class="row g-2">
+            <div class="col-md-5">
+                <label class="tide-field-label" for="cr-name">Label</label>
+                <input id="cr-name" class="form-control form-control-sm" maxlength="60" @bind="_editing.Name" placeholder="P1 overdue" />
+            </div>
+            <div class="col-md-3">
+                <label class="tide-field-label" for="cr-colour">Colour</label>
+                <select id="cr-colour" class="form-select form-select-sm" @bind="_editing.Colour">
+                    @foreach (var c in Enum.GetValues<CardColour>()) { <option value="@c">@c</option> }
+                </select>
+            </div>
+            <div class="col-md-4 d-flex align-items-end gap-3">
+                <span class="tide-rule-label @Ui.RuleClass(_editing.Colour)">@(string.IsNullOrWhiteSpace(_editing.Name) ? "Preview" : _editing.Name)</span>
+            </div>
+
+            <div class="col-12"><div class="tide-field-label mt-2 mb-0">Matches actions that are…</div></div>
+            <div class="col-md-3">
+                <label class="tide-field-label" for="cr-kind">Kind</label>
+                <select id="cr-kind" class="form-select form-select-sm" @bind="_editing.Kind">
+                    <option value="">Any kind</option>
+                    @foreach (var k in Enum.GetValues<ActionKind>()) { <option value="@k">@ActionService.KindName(k)</option> }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="tide-field-label" for="cr-prio">Priority</label>
+                <select id="cr-prio" class="form-select form-select-sm" @bind="_editing.PriorityAtLeast">
+                    <option value="">Any</option>
+                    @foreach (var p in Enum.GetValues<Priority>()) { <option value="@p">@(p == Priority.P1 ? "P1" : $"{p} or higher")</option> }
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="tide-field-label" for="cr-team">Team</label>
+                <select id="cr-team" class="form-select form-select-sm" @bind="_editing.TeamId">
+                    <option value="">Any team</option>
+                    @foreach (var t in _teams) { <option value="@t.Id">@t.Name</option> }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="tide-field-label" for="cr-status">Status</label>
+                <select id="cr-status" class="form-select form-select-sm" @bind="_editing.Status">
+                    <option value="">Any</option>
+                    @foreach (var s in Enum.GetValues<ActionStatus>()) { <option value="@s">@ActionService.StatusName(s)</option> }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="tide-field-label" for="cr-sla">SLA</label>
+                <select id="cr-sla" class="form-select form-select-sm" @bind="_editing.Sla">
+                    <option value="@CardRuleSla.Any">Any</option>
+                    <option value="@CardRuleSla.Overdue">Overdue</option>
+                    <option value="@CardRuleSla.DueSoon">Due soon</option>
+                    <option value="@CardRuleSla.OverdueOrDueSoon">Overdue or due soon</option>
+                </select>
+            </div>
+            <div class="col-12 d-flex flex-wrap gap-3">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="cr-unassigned" @bind="_editing.Unassigned" />
+                    <label class="form-check-label small" for="cr-unassigned">Unassigned</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="cr-checklist" @bind="_editing.HasChecklist" />
+                    <label class="form-check-label small" for="cr-checklist">Have a checklist</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="cr-part" @bind="_editing.IsPart" />
+                    <label class="form-check-label small" for="cr-part">Part of another action</label>
+                </div>
+            </div>
+            <div class="col-12 d-flex flex-wrap gap-3 mt-1">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="cr-filter" @bind="_editing.ShowAsFilter" />
+                    <label class="form-check-label small" for="cr-filter">Show as a filter chip</label>
+                </div>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="cr-active" @bind="_editing.IsActive" />
+                    <label class="form-check-label small" for="cr-active">On</label>
+                </div>
+            </div>
+        </div>
+        <div class="d-flex gap-2 mt-3">
+            <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="Save">Save rule</button>
+            <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editing = null">Cancel</button>
+        </div>
+    </div>
+}
+
+@if (_rules.Count == 0)
+{
+    <EmptyState Icon="bi-palette" Title="No card rules yet" />
+}
+else
+{
+    <div class="tide-card">
+        <table class="tide-table">
+            <thead><tr><th>Label</th><th>Matches</th><th>Filter</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var (r, i) in _rules.Select((r, i) => (r, i)))
+                {
+                    <tr @key="r.Id" class="@(r.IsActive ? "" : "tide-muted")">
+                        <td><span class="tide-rule-label @Ui.RuleClass(r.Colour)">@r.Name</span>@if (!r.IsActive) { <span class="small"> (off)</span> }</td>
+                        <td class="small">@ActionRules.Describe(r, id => _teams.FirstOrDefault(t => t.Id == id)?.Name)</td>
+                        <td class="small">@(r.ShowAsFilter ? "Yes" : "No")</td>
+                        <td class="text-nowrap text-end">
+                            <button class="btn btn-outline-secondary btn-sm" aria-label="Move @r.Name up" disabled="@(i == 0)" @onclick="() => Move(r, -1)"><span class="bi bi-arrow-up" aria-hidden="true"></span></button>
+                            <button class="btn btn-outline-secondary btn-sm" aria-label="Move @r.Name down" disabled="@(i == _rules.Count - 1)" @onclick="() => Move(r, 1)"><span class="bi bi-arrow-down" aria-hidden="true"></span></button>
+                            <button class="btn btn-outline-secondary btn-sm" aria-label="Edit @r.Name" @onclick="() => Edit(r)"><span class="bi bi-pencil" aria-hidden="true"></span></button>
+                            <button class="btn btn-outline-secondary btn-sm" aria-label="Delete @r.Name" @onclick="() => Delete(r)"><span class="bi bi-trash" aria-hidden="true"></span></button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private ConfirmDialog _confirm = default!;
+    private IReadOnlyList<ActionCardRule> _rules = [];
+    private IReadOnlyList<Team> _teams = [];
+    private ActionCardRule? _editing;
+    private bool _busy, _isNew;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _teams = await TeamSvc.ListAsync(includeRetired: true);
+        await Load();
+    }
+
+    private async Task Load() => _rules = await RuleSvc.ListAsync(includeInactive: true);
+
+    private void New()
+    {
+        _editing = new ActionCardRule();
+        _isNew = true;
+    }
+
+    // A detached copy, so Cancel leaves the list as it was.
+    private void Edit(ActionCardRule r)
+    {
+        _editing = new ActionCardRule
+        {
+            Id = r.Id, Name = r.Name, Colour = r.Colour, IsActive = r.IsActive, ShowAsFilter = r.ShowAsFilter, Kind = r.Kind,
+            PriorityAtLeast = r.PriorityAtLeast, TeamId = r.TeamId, Status = r.Status, Sla = r.Sla, Unassigned = r.Unassigned,
+            HasChecklist = r.HasChecklist, IsPart = r.IsPart,
+        };
+        _isNew = false;
+    }
+
+    private Task Save() => Run(async () =>
+    {
+        await RuleSvc.SaveAsync(_editing!);
+        Toasts.Show($"{_editing!.Name.Trim()} saved.");
+        _editing = null;
+    });
+
+    private Task Move(ActionCardRule r, int by) => Run(() => RuleSvc.MoveAsync(r.Id, by));
+
+    private async Task Delete(ActionCardRule r)
+    {
+        if (!await _confirm.Ask($"Delete {r.Name}?", "Cards and rows lose its colour and label, and its filter chip goes.", "Delete rule")) return;
+        await Run(() => RuleSvc.DeleteAsync(r.Id));
+    }
+
+    private async Task Run(Func<Task> change)
+    {
+        if (_busy) return;   // a second click while a save runs: one rule or playbook, not two
+        _busy = true;
+        try
+        {
+            await change();
+            await Load();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+}

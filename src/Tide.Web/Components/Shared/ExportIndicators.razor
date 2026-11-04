@@ -1,0 +1,31 @@
+@* Export the indicators of an article, a brief or a story as STIX 2.1 or CSV, up to a TLP: articles marked above it are
+   left out whole. *@
+
+<div class="tide-export">
+    <button type="button" class="btn btn-outline-secondary" aria-expanded="@Ui.Aria(_open)" @onclick="() => _open = !_open">
+        <span class="bi bi-box-arrow-up" aria-hidden="true"></span> Export indicators
+    </button>
+    @if (_open)
+    {
+        <div class="tide-export-panel">
+            <label class="tide-field-label">Include articles marked up to</label>
+            <TlpSelect @bind-Value="_ceiling" Label="Highest TLP to include" />
+            <div class="d-flex gap-2 mt-2">
+                <a class="btn btn-primary btn-sm" href="@Url("stix")" download><span class="bi bi-filetype-json" aria-hidden="true"></span> STIX 2.1</a>
+                <a class="btn btn-outline-secondary btn-sm" href="@Url("csv")" download><span class="bi bi-filetype-csv" aria-hidden="true"></span> CSV</a>
+            </div>
+            <div class="form-text">Each object carries its article's TLP marking. STIX leaves out host names, process names and "other" indicators; the CSV has every one.</div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ExportScope Scope { get; set; }
+    [Parameter, EditorRequired] public string Key { get; set; } = "";
+
+    private bool _open;
+    private TlpLevel _ceiling = TlpLevel.Red;
+
+    private string Url(string format) =>
+        $"exports/{Scope.ToString().ToLowerInvariant()}/{Uri.EscapeDataString(Key)}?format={format}&tlp={Tlp.Key(_ceiling)}";
+}

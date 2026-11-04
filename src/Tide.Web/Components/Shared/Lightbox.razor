@@ -1,0 +1,44 @@
+@* A screenshot shown full size over the page: a modal dialog. Its close button takes focus; a click anywhere, Escape,
+   Enter or Space closes it, Tab stays inside, and focus goes back to the screenshot that opened it. *@
+@inject IJSRuntime JS
+@if (FileId is { } id)
+{
+    <div class="tide-lightbox" role="dialog" aria-modal="true" aria-label="@(Caption ?? "Screenshot")" @onclick="Close"
+         @onkeydown="OnKey">
+        <button type="button" class="tide-lightbox-close" aria-label="Close" @ref="_close"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+        <figure class="m-0">
+            <img src="@Ui.ImageUrl(id)" alt="@(Caption ?? "Screenshot")" />
+            @if (!string.IsNullOrWhiteSpace(Caption))
+            {
+                <figcaption>@Caption</figcaption>
+            }
+        </figure>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid? FileId { get; set; }
+    [Parameter] public string? Caption { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private ElementReference _close;
+    private Guid? _shown;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (FileId == _shown) return;
+        var opened = FileId is not null && _shown is null;
+        var closed = FileId is null && _shown is not null;
+        _shown = FileId;
+        try
+        {
+            if (opened) await JS.InvokeVoidAsync("tideDialog.open", _close);
+            else if (closed) await JS.InvokeVoidAsync("tideDialog.close");
+        }
+        catch (JSDisconnectedException) { /* the circuit went away: nothing to focus */ }
+    }
+
+    private Task OnKey(KeyboardEventArgs e) => e.Key is "Escape" or "Enter" or " " ? Close() : Task.CompletedTask;
+
+    private Task Close() => OnClose.InvokeAsync();
+}

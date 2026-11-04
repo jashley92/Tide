@@ -1,0 +1,183 @@
+@page "/admin/detections"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@using Tide.Application.Detections
+@inject DetectionService Detections
+@inject OrgClock Clock
+@inject ToastService Toasts
+
+<PageTitle>Detection rules · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <h1 class="tide-admin-title">Detection rules</h1>
+        <div class="tide-sub">Used by Coverage. TIDE stores each rule's name, ID, ATT&amp;CK tags, platform and state; it never edits or runs them. Rules missing from a source's latest import stop counting. Internal: never included in an edition.</div>
+    </div>
+    <a class="btn btn-outline-secondary" href="coverage"><span class="bi bi-shield-check" aria-hidden="true"></span> Coverage</a>
+</div>
+
+<section class="tide-card" aria-labelledby="import-h">
+    <h2 id="import-h" class="h6">Import</h2>
+    <div class="d-flex gap-2 flex-wrap align-items-center">
+        <label class="visually-hidden" for="det-source">What the file is</label>
+        <select id="det-source" class="form-select form-select-sm w-auto" @bind="_source">
+            <option value="@DetectionSource.Sentinel">Sentinel analytics-rules export (.json, or a .zip of them)</option>
+            <option value="@DetectionSource.Sigma">Sigma rules (.yml, or a .zip of a folder)</option>
+            <option value="@DetectionSource.Csv">CSV (@DetectionParsers.CsvColumnsHelp)</option>
+        </select>
+        <InputFile OnChange="Import" accept="@Accept" disabled="@_busy" aria-label="Rules file" />
+        <a class="btn btn-sm btn-outline-secondary" href="@SampleCsv" download="tide-detection-rules-sample.csv">
+            <span class="bi bi-download" aria-hidden="true"></span> Sample CSV</a>
+    </div>
+    <p class="small tide-muted mt-2 mb-0">CSV header row: name, techniques; optional id, platform, enabled. Techniques are separated by semicolons, commas or spaces; enabled is yes or no (yes when blank); a rule with no
+        id is known by its name.</p>
+    <p class="small tide-muted mt-1 mb-0">Up to @(DetectionParsers.MaxUploadBytes / 1024 / 1024) MB. Another tool can push its rules instead, with an API token that has the <span class="tide-data">detections:write</span> scope.</p>
+    @if (_result is { } r)
+    {
+        <div class="alert alert-info mt-2 mb-0" role="status">
+            @r.Added added, @r.Changed changed, @r.Unchanged unchanged@(r.NotInImport > 0 ? $"; {r.NotInImport} of this source's rules weren't in it and no longer count" : "").
+            @if (r.Problems.Count > 0)
+            {
+                <ul class="small mb-0 mt-1">@foreach (var p in r.Problems) { <li>@p</li> }</ul>
+            }
+        </div>
+    }
+</section>
+
+@if (_imports.Count > 0)
+{
+    <section class="tide-card" aria-labelledby="sources-h">
+        <h2 id="sources-h" class="h6">Latest imports</h2>
+        <ul class="list-unstyled mb-0 small">
+            @foreach (var i in _imports)
+            {
+                <li>@DetectionService.SourceName(i.Source): @i.Rules rules, @i.Enabled enabled, @(i.Source == DetectionSource.Api ? "pushed" : "imported") @Ui.When(Clock, i.At)</li>
+            }
+        </ul>
+    </section>
+}
+
+@if (_callers.Count > 0)
+{
+    <section class="tide-card" aria-labelledby="callers-h">
+        <h2 id="callers-h" class="h6">Pushed sets</h2>
+        <p class="small tide-muted">Each API caller has its own set; its latest push counts until the next. A set not pushed for @DetectionService.PushQuietDays days or more is marked but still counts. A set stops counting when its token is revoked or expires and no active token has the same name.</p>
+        <ul class="list-unstyled mb-0 small">
+            @foreach (var c in _callers)
+            {
+                <li class="d-flex gap-2 align-items-center mb-1">
+                    <span>@c.Name: @c.Rules rule@(c.Rules == 1 ? "" : "s"), pushed @Ui.When(Clock, c.PushedAtUtc)</span>
+                    @if (!c.Counts) { <Badge Tone="BadgeTone.Warn">token revoked or expired: no longer counts</Badge> }
+                    else if (c.Quiet) { <Badge>not pushed for @((int)(Clock.Now - c.PushedAtUtc).TotalDays) days</Badge> }
+                    <button type="button" class="btn btn-sm btn-outline-danger ms-auto" disabled="@_busy" @onclick="() => Remove(c)">Remove</button>
+                </li>
+            }
+        </ul>
+    </section>
+}
+
+<section class="tide-card p-0" aria-labelledby="rules-h">
+    <div class="d-flex gap-2 align-items-center p-3 pb-2 flex-wrap">
+        <h2 id="rules-h" class="h6 mb-0">Rules (@_rules.Count)</h2>
+        <input class="form-control form-control-sm tide-maxw-sm ms-auto" placeholder="Search names and techniques" aria-label="Search rules"
+               @bind="_search" @bind:event="oninput" @bind:after="Load" />
+    </div>
+    @if (_rules.Count == 0)
+    {
+        <EmptyState Icon="bi-shield" Title="@(string.IsNullOrWhiteSpace(_search) ? "No rules yet" : "No matching rules")" />
+    }
+    else
+    {
+        <div class="tide-dt-scroll">
+            <table class="table table-sm mb-0 tide-table">
+                <thead><tr><th scope="col">Name</th><th scope="col">Techniques</th><th scope="col">Platform</th><th scope="col">From</th><th scope="col">State</th></tr></thead>
+                <tbody>
+                    @foreach (var row in _rules.Take(ShownAtMost))
+                    {
+                        <tr>
+                            <td>@row.Rule.Name</td>
+                            <td class="tide-data small">@(row.Rule.Techniques.Length == 0 ? "—" : row.Rule.Techniques.Replace(",", ", "))</td>
+                            <td class="small">@row.Rule.Platform</td>
+                            <td class="small">@DetectionService.SourceName(row.Rule.Source)</td>
+                            <td>
+                                @if (!row.Current) { <Badge Tone="BadgeTone.Warn" Title="@($"Last seen {Ui.When(Clock, row.Rule.LastSeenAtUtc)}")">@(row.Rule.Source == DetectionSource.Api ? "no longer counts" : "not in the last import")</Badge> }
+                                else if (row.Rule.Enabled) { <Badge Tone="BadgeTone.Ok">enabled</Badge> }
+                                else { <Badge>disabled</Badge> }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (_rules.Count > ShownAtMost) { <p class="small tide-muted p-3 mb-0">Showing the first @ShownAtMost. Search to find others.</p> }
+    }
+</section>
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    private const int ShownAtMost = 500;
+    private ConfirmDialog _confirm = default!;
+    private IReadOnlyList<DetectionCallerSet> _callers = [];
+    private DetectionSource _source = DetectionSource.Sentinel;
+    private IReadOnlyList<DetectionRow> _rules = [];
+    private IReadOnlyList<DetectionImportState> _imports = [];
+    private DetectionImport? _result;
+    private string? _search;
+    private bool _busy;
+
+    /// <summary>The sample a CSV can start from (wwwroot/samples), which the tests read with the CSV parser.</summary>
+    internal const string SampleCsv = "samples/detection-rules.csv";
+
+    private string Accept => _source switch
+    {
+        DetectionSource.Sentinel => ".json,.zip",
+        DetectionSource.Sigma => ".yml,.yaml,.zip",
+        _ => ".csv,.zip",
+    };
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        try
+        {
+            (_rules, _imports) = await Detections.ListAsync(_search);
+            _callers = await Detections.CallersAsync();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    private async Task Remove(DetectionCallerSet c)
+    {
+        if (_busy) return;
+        if (!await _confirm.Ask($"Remove the rules pushed by {c.Name}?", $"Its {c.Rules} rule{(c.Rules == 1 ? "" : "s")} stop counting on Coverage now. If it pushes again, its new push counts.", "Remove")) return;
+        _busy = true;
+        try
+        {
+            var gone = await Detections.RemoveCallerAsync(c.Caller);
+            Toasts.Show($"Removed {gone} rule{(gone == 1 ? "" : "s")} pushed by {c.Name}.");
+            await Load();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    private async Task Import(InputFileChangeEventArgs e)
+    {
+        if (_busy) return;
+        _busy = true;
+        _result = null;
+        try
+        {
+            await using var stream = e.File.OpenReadStream(maxAllowedSize: DetectionParsers.MaxUploadBytes);
+            using var copy = new MemoryStream();
+            await stream.CopyToAsync(copy);
+            _result = await Detections.ImportAsync(_source, e.File.Name, copy.ToArray());
+            await Load();
+        }
+        catch (IOException) { Toasts.Error($"The file is larger than {DetectionParsers.MaxUploadBytes / 1024 / 1024} MB."); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+}

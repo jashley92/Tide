@@ -1,0 +1,220 @@
+@page "/admin/system/bundle"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@using Tide.Application.Operations
+@inject SystemSettings Settings
+@inject ConfigBundleService Bundles
+@inject NavigationManager Nav
+@inject ToastService Toasts
+
+<PageTitle>Configuration bundle · TIDE</PageTitle>
+
+@* The configuration bundle, in two parts: the install answers file this server would be installed with (for
+   the installer), and what administrators set up in the app (for another TIDE). Neither carries a secret. *@
+<div class="tide-page-head">
+    <div>
+        <h1 class="tide-admin-title">Configuration bundle</h1>
+        <div class="tide-sub">The installer answers file (to repair, upgrade or replicate this server) and the in-app setup (to import into another TIDE). Neither contains passwords, keys or tokens.</div>
+    </div>
+</div>
+
+<section class="tide-card" aria-labelledby="bundle-answers">
+    <h2 id="bundle-answers" class="d-flex justify-content-between align-items-center">
+        <span><span class="bi bi-file-earmark-code" aria-hidden="true"></span> Install answers file</span>
+        <a class="btn btn-sm btn-outline-primary" href="admin/system/tide.config.psd1" download="@InstallAnswers.FileName">
+            <span class="bi bi-download" aria-hidden="true"></span> Download @InstallAnswers.FileName
+        </a>
+    </h2>
+    <p class="small mb-2">The answers <code>Install-Database.ps1</code> and <code>Install-Tide.ps1</code> read (<code>-ConfigFile</code>), as
+        <code>deploy/tide.config.template.psd1</code> lays them out, filled in from what this server knows: the SQL Server instance and
+        database from its connection string (without any credential), the app pool and its account, the folders, the AD groups mapped
+        to each role, and the organization. A value it can't know is left blank and marked. Check it before you use it.</p>
+    @if (_answers is null)
+    {
+        <LoadingBlock />
+    }
+    else
+    {
+        <details>
+            <summary class="small">Show the file</summary>
+            <pre class="tide-query tide-query-sample mt-2">@_answers</pre>
+        </details>
+    }
+</section>
+
+<section class="tide-card" aria-labelledby="bundle-export">
+    <h2 id="bundle-export" class="d-flex justify-content-between align-items-center">
+        <span><span class="bi bi-box-arrow-down" aria-hidden="true"></span> The app's setup: export</span>
+        <a class="btn btn-sm btn-outline-primary" href="admin/system/config-bundle.json" download>
+            <span class="bi bi-download" aria-hidden="true"></span> Download the bundle
+        </a>
+    </h2>
+    <p class="small mb-2">One JSON file with what administrators set up in the app:</p>
+    @if (_current is { } b)
+    {
+        <ul class="small mb-2">
+            <li>@Plural(b.Settings.Count, "setting") changed in the app (organization settings, reminders, polling, CVE enrichment, metric imports, edition ceilings and recipients, SLA targets, the update check)</li>
+            <li>@Plural(b.RoleMappings.Count, "AD group mapping")</li>
+            <li>@Plural(b.Sources.Count, "source")@if (b.Sources.Count(s => s.UrlHidden) is > 0 and var hidden) { <text>, @hidden with a key in its address that's left out</text> }</li>
+            <li>@Plural(b.Scorecard.Count, "scorecard category", "scorecard categories") and @Plural(b.Scorecard.Sum(c => c.Tags.Count), "tag")</li>
+            <li>@Plural(b.QueryTemplates.Count, "query template")</li>
+        </ul>
+    }
+    <p class="small tide-muted mb-0">Never articles, briefs, actions, people or the audit trail, and never the server's own settings
+        (those are in the answers file and <code>appsettings.Production.json</code>).</p>
+</section>
+
+<section class="tide-card" aria-labelledby="bundle-import">
+    <h2 id="bundle-import"><span class="bi bi-box-arrow-in-up" aria-hidden="true"></span> The app's setup: import</h2>
+    <p class="small mb-2">Choose a bundle exported from another TIDE to see what it would change here. Nothing is written until you import it.
+        Import only adds and updates: an item is matched by its name or key, and nothing here is removed. Every change is in the audit trail.</p>
+    <div class="alert alert-warning small py-2">
+        <span class="bi bi-exclamation-triangle" aria-hidden="true"></span> AD group mappings change who can use this TIDE. Check them in the
+        preview, since group names differ between domains.
+    </div>
+    <InputFile id="bundle-file" class="form-control form-control-sm" accept=".json,application/json" OnChange="Choose" disabled="@_busy" />
+    <div class="form-text">Up to @(ConfigBundle.MaxBytes / 1024 / 1024) MB.</div>
+
+    @if (_preview is { } p)
+    {
+        <div class="mt-3">
+            <p class="mb-2">
+                <strong>@_fileName</strong>, exported @p.Bundle.ExportedAtUtc.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)
+                by @p.Bundle.ExportedBy from TIDE @p.Bundle.AppVersion.
+                @if (_imported) { <Badge Tone="BadgeTone.Ok" Icon="bi-check-circle-fill" Class="ms-1">Imported</Badge> }
+            </p>
+            <p class="small">
+                @(_imported ? "It added" : "It would add") @p.Count(BundleChangeKind.Add) and @(_imported ? "updated" : "update") @p.Count(BundleChangeKind.Update);
+                @p.Count(BundleChangeKind.Unchanged) already match@(p.Count(BundleChangeKind.Skipped) > 0 ? $", and {p.Count(BundleChangeKind.Skipped)} can't be imported" : "").
+            </p>
+            @if (p.Warnings > 0 && !_imported)
+            {
+                <div class="alert alert-warning small py-2" role="note">
+                    <span class="bi bi-exclamation-triangle" aria-hidden="true"></span>
+                    @(p.Warnings == 1 ? "1 change needs" : $"{p.Warnings} changes need") a careful look before you import: marked below.
+                    They give Admin, or a role to everyone who signs in.
+                </div>
+            }
+            <div class="table-responsive">
+                <table class="tide-table">
+                    <thead><tr><th>Area</th><th>Item</th><th>Change</th></tr></thead>
+                    <tbody>
+                        @foreach (var c in p.Changes.Where(c => _showAll || c.Kind != BundleChangeKind.Unchanged))
+                        {
+                            <tr class="@(c.Warning ? "tide-bundle-warn" : null)">
+                                <td class="text-nowrap">@c.Area</td>
+                                <td class="text-break">@c.Item</td>
+                                <td>
+                                    <Badge Tone="ChangeTone(c.Kind)">@ChangeName(c.Kind)</Badge>
+                                    @if (c.Detail is { } d)
+                                    {
+                                        @if (c.Warning)
+                                        {
+                                            <div class="small tide-bundle-warn-text text-break"><span class="bi bi-exclamation-triangle-fill me-1" aria-hidden="true"></span>@d</div>
+                                        }
+                                        else
+                                        {
+                                            <div class="small tide-muted text-break">@d</div>
+                                        }
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="d-flex gap-2 align-items-center mt-2">
+                @if (!_imported)
+                {
+                    <button type="button" class="btn btn-primary btn-sm" @onclick="Import" disabled="@(_busy || !p.HasChanges)">
+                        @(p.HasChanges ? $"Import {p.Count(BundleChangeKind.Add) + p.Count(BundleChangeKind.Update)} change(s)" : "Nothing to import")
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="Clear" disabled="@_busy">Cancel</button>
+                }
+                <button type="button" class="btn btn-link btn-sm" @onclick="() => _showAll = !_showAll">@(_showAll ? "Hide what already matches" : "Show what already matches")</button>
+            </div>
+        </div>
+    }
+</section>
+
+@code {
+    private string? _answers;
+    private ConfigBundle? _current;
+    private BundlePreview? _preview;
+    private ConfigBundle? _chosen;
+    private string? _fileName;
+    private bool _busy, _imported, _showAll;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _answers = InstallAnswers.Write(await Settings.InstallFactsAsync(new Uri(Nav.BaseUri).AbsolutePath.TrimEnd('/')));
+            _current = await Bundles.ExportAsync();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    private async Task Choose(InputFileChangeEventArgs e)
+    {
+        _busy = true;
+        _imported = false;
+        _preview = null;
+        try
+        {
+            var file = e.File;
+            if (file.Size > ConfigBundle.MaxBytes)
+            {
+                Toasts.Error($"{file.Name} is larger than {ConfigBundle.MaxBytes / 1024 / 1024} MB.");
+                return;
+            }
+            using var buffer = new MemoryStream();
+            await using (var stream = file.OpenReadStream(ConfigBundle.MaxBytes))
+                await stream.CopyToAsync(buffer);
+            _chosen = ConfigBundle.Parse(buffer.ToArray());
+            _fileName = file.Name;
+            _preview = await Bundles.PreviewAsync(_chosen);
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    private async Task Import()
+    {
+        if (_chosen is null) return;
+        _busy = true;
+        try
+        {
+            _preview = await Bundles.ImportAsync(_chosen);
+            _imported = true;
+            _current = await Bundles.ExportAsync();
+            Toasts.Show($"Imported {_fileName}: {_preview.Count(BundleChangeKind.Add)} added, {_preview.Count(BundleChangeKind.Update)} updated.");
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    private void Clear()
+    {
+        _preview = null;
+        _chosen = null;
+    }
+
+    private static string Plural(int n, string one, string? many = null) => $"{n} {(n == 1 ? one : many ?? one + "s")}";
+
+    private static string ChangeName(BundleChangeKind k) => k switch
+    {
+        BundleChangeKind.Add => "Add",
+        BundleChangeKind.Update => "Update",
+        BundleChangeKind.Skipped => "Can't import",
+        _ => "Already matches",
+    };
+
+    private static BadgeTone ChangeTone(BundleChangeKind k) => k switch
+    {
+        BundleChangeKind.Add => BadgeTone.Ok,
+        BundleChangeKind.Update => BadgeTone.Info,
+        BundleChangeKind.Skipped => BadgeTone.Warn,
+        _ => BadgeTone.Neutral,
+    };
+}

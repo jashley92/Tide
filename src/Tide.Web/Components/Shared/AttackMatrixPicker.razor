@@ -1,0 +1,277 @@
+@* The ATT&CK matrix picker: tactics are columns in matrix order, techniques stack beneath every
+   tactic they belong to, and sub-techniques fold under their parent. An article tags techniques, not technique-tactic
+   pairs, so a technique ticked in one column shows ticked in each of its columns. Add and remove freely; Apply hands back
+   the new set, Cancel or Escape drops it. Ids that left the catalogue (retired since the article was tagged) are kept
+   in their own strip, with the technique that replaced them, until they're removed.
+   Usage: @if (open) { <AttackMatrixPicker Current="ids" OnApply="…" OnCancel="…" /> } *@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<div class="tide-atkm-backdrop" @onclick="Cancel"></div>
+<div class="tide-atkm-panel" role="dialog" aria-modal="true" aria-labelledby="@_titleId" @onkeydown="OnPanelKey">
+    <div class="tide-atkm-head">
+        <h2 class="tide-atkm-title" id="@_titleId">
+            <span class="bi bi-diagram-3 me-2" aria-hidden="true"></span>ATT&amp;CK techniques <span class="tide-muted small fw-normal">@AttackCatalog.Version</span>
+        </h2>
+        <div class="tide-atkm-search">
+            <span class="bi bi-search" aria-hidden="true"></span>
+            <input @ref="_filterBox" class="form-control form-control-sm" placeholder="Filter by id or name: T1566, phishing"
+                   value="@_filter" @oninput="OnFilter" aria-label="Filter techniques" />
+            @if (_filter.Length > 0)
+            {
+                <button type="button" class="btn btn-sm btn-link p-0" @onclick="ClearFilter">Clear</button>
+            }
+        </div>
+        <button type="button" class="btn-close" aria-label="Close" @onclick="Cancel"></button>
+    </div>
+
+    @if (AttackCatalog.Retired(_filter) is { } filtered)
+    {
+        <div class="tide-atkm-note small" role="status">
+            <span class="bi bi-info-circle" aria-hidden="true"></span> @AttackCatalog.RetiredText(filtered)
+            @if (filtered.ReplacedBy is { } by && !_selected.Contains(by.Id))
+            {
+                <button type="button" class="btn btn-link btn-sm p-0 ms-1" @onclick="() => Select(by.Id)">Select @by.Id</button>
+            }
+        </div>
+    }
+
+    <div class="tide-atkm-grid">
+        @foreach (var col in Matrix)
+        {
+            var rows = VisibleRows(col);
+            var selN = rows.Count(r => _selected.Contains(r.Parent.Id) || r.Subs.Any(s => _selected.Contains(s.Id)));
+            <div class="tide-atkm-col" style="--tac:@Ui.TacticColor(col.Tactic)">
+                <div class="tide-atkm-colhead" title="@($"{AttackMatrix.TacticId(col.Tactic)}: {AttackMatrix.TacticDescription(col.Tactic)}")">
+                    <span class="bi @Ui.TacticGlyph(col.Tactic)" aria-hidden="true"></span>
+                    <span class="tide-atkm-colname">@AttackMatrix.TacticName(col.Tactic)</span>
+                    @if (selN > 0) { <span class="tide-atkm-colcount" aria-label="@selN selected">@selN</span> }
+                </div>
+                <div class="tide-atkm-cells">
+                    @foreach (var row in rows)
+                    {
+                        var pid = row.Parent.Id;
+                        var expanded = _expanded.Contains(pid) || (_filter.Length > 0 && row.Subs.Any(Matches));
+                        <div class="tide-atkm-cell @CellClass(pid, row.ParentInTactic)"
+                             role="button" tabindex="0" aria-pressed="@(row.ParentInTactic ? (_selected.Contains(pid) ? "true" : "false") : null)"
+                             aria-expanded="@(row.ParentInTactic || row.Subs.Count == 0 ? null : (expanded ? "true" : "false"))"
+                             aria-label="@($"{pid} {row.Parent.Name}, {AttackMatrix.TacticName(col.Tactic)}")"
+                             @onclick="() => ToggleParent(row)" @onkeydown="e => { if (IsActivate(e)) ToggleParent(row); }">
+                            @if (row.Subs.Count > 0)
+                            {
+                                <button type="button" class="tide-atkm-exp" @onclick="() => ToggleExpand(pid)" @onclick:stopPropagation="true" @onkeydown:stopPropagation="true"
+                                        aria-label="@(expanded ? "Collapse" : "Expand") the sub-techniques of @pid" aria-expanded="@(expanded ? "true" : "false")">
+                                    <span class="bi @(expanded ? "bi-caret-down-fill" : "bi-caret-right-fill")" aria-hidden="true"></span>
+                                </button>
+                            }
+                            else
+                            {
+                                <span class="tide-atkm-exp-spacer"></span>
+                            }
+                            <span class="tide-atkm-tid">@pid</span>
+                            <span class="tide-atkm-tname" title="@row.Parent.Name">@row.Parent.Name</span>
+                            @if (row.Subs.Count > 0) { <span class="tide-atkm-subn" title="@row.Subs.Count sub-techniques">@row.Subs.Count</span> }
+                            @if (_selected.Contains(pid)) { <span class="bi bi-check2 tide-atkm-tick" aria-hidden="true"></span> }
+                        </div>
+                        @if (expanded)
+                        {
+                            @foreach (var sub in ShownSubs(row))
+                            {
+                                <div class="tide-atkm-cell tide-atkm-subcell @CellClass(sub.Id, true)"
+                                     role="button" tabindex="0" aria-pressed="@(_selected.Contains(sub.Id) ? "true" : "false")"
+                                     aria-label="@($"{sub.Id} {sub.Name}, {AttackMatrix.TacticName(col.Tactic)}")"
+                                     @onclick="() => Toggle(sub.Id)" @onkeydown="e => { if (IsActivate(e)) Toggle(sub.Id); }">
+                                    <span class="tide-atkm-tid">@sub.Id</span>
+                                    <span class="tide-atkm-tname" title="@sub.Name">@sub.Name</span>
+                                    @if (_selected.Contains(sub.Id)) { <span class="bi bi-check2 tide-atkm-tick" aria-hidden="true"></span> }
+                                </div>
+                            }
+                        }
+                    }
+                    @if (rows.Count == 0) { <div class="tide-atkm-empty">None match</div> }
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (RetiredSelected() is { Count: > 0 } retired)
+    {
+        <div class="tide-atkm-retired">
+            <span class="tide-muted small">No longer in ATT&amp;CK @AttackCatalog.Version:</span>
+            @foreach (var id in retired)
+            {
+                var gone = AttackCatalog.Retired(id);
+                <span class="tide-chip tide-chip-technique" title="@(gone is null ? "Not in the catalog" : AttackCatalog.RetiredText(gone))">
+                    @id
+                    <button type="button" aria-label="Remove @id" @onclick="() => _selected.Remove(id)"><span class="bi bi-x" aria-hidden="true"></span></button>
+                </span>
+                @if (gone?.ReplacedBy is { } by && !_selected.Contains(by.Id))
+                {
+                    <button type="button" class="btn btn-link btn-sm p-0 me-2" @onclick="() => Replace(id, by.Id)">Replace with @by.Id</button>
+                }
+            }
+        </div>
+    }
+
+    <div class="tide-atkm-foot">
+        <div class="tide-atkm-summary small tide-muted" role="status">
+            @_selected.Count selected@(Changes() is { } c ? $" · {c} on apply" : "")
+        </div>
+        <button type="button" class="btn btn-outline-secondary btn-sm ms-auto me-2" @onclick="Cancel">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" @onclick="Apply">Apply</button>
+    </div>
+</div>
+
+@code {
+    /// <summary>The technique ids the article has now.</summary>
+    [Parameter] public IReadOnlyCollection<string> Current { get; set; } = [];
+    /// <summary>The chosen ids, in matrix order.</summary>
+    [Parameter] public EventCallback<IReadOnlyList<string>> OnApply { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private readonly string _titleId = "atkm-" + Guid.NewGuid().ToString("N")[..8];
+    private readonly HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _expanded = new(StringComparer.OrdinalIgnoreCase);
+    private string _filter = "";
+    private bool _initialized;
+    private ElementReference _filterBox;
+
+    // Enter or Space activates a cell (role="button"), like a native button; a held key acts once.
+    private static bool IsActivate(KeyboardEventArgs e) => e is { Repeat: false, Key: "Enter" or " " };
+
+    protected override void OnParametersSet()
+    {
+        if (_initialized) return;
+        _initialized = true;
+        foreach (var id in Current) _selected.Add(id.Trim().ToUpperInvariant());
+        // Open the parent of any sub-technique already tagged, so what's chosen is in view.
+        foreach (var id in _selected)
+        {
+            var dot = id.IndexOf('.');
+            if (dot > 0) _expanded.Add(id[..dot]);
+        }
+    }
+
+    // --- the matrix, built once from the catalogue ---
+    private sealed record Row(AttackTechnique Parent, bool ParentInTactic, IReadOnlyList<AttackTechnique> Subs);
+    private sealed record Col(MitreTactic Tactic, IReadOnlyList<Row> Rows);
+    private static IReadOnlyList<Col>? _matrix;
+    private static IReadOnlyList<Col> Matrix => _matrix ??= Build();
+
+    private static List<Col> Build()
+    {
+        var all = AttackCatalog.All;
+        var parents = all.Where(t => !t.IsSubtechnique).ToDictionary(t => t.Id, StringComparer.OrdinalIgnoreCase);
+        var subsByParent = all.Where(t => t.IsSubtechnique)
+            .GroupBy(t => t.ParentId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.OrderBy(x => x.Id, StringComparer.Ordinal).ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var cols = new List<Col>();
+        foreach (var tac in AttackMatrix.Tactics)
+        {
+            // A parent is listed under a tactic when it, or any of its sub-techniques, belongs to it. One that's there only
+            // for its subs is a heading: clicking it opens them rather than tagging it.
+            var ids = parents.Values.Where(p => p.Tactics.Contains(tac)).Select(p => p.Id)
+                .Concat(subsByParent.Where(kv => kv.Value.Exists(s => s.Tactics.Contains(tac))).Select(kv => kv.Key))
+                .Where(parents.ContainsKey)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Order(StringComparer.Ordinal);
+
+            var rows = ids.Select(pid =>
+            {
+                var parent = parents[pid];
+                var subs = subsByParent.TryGetValue(pid, out var sl) ? sl.Where(s => s.Tactics.Contains(tac)).ToList() : [];
+                return new Row(parent, parent.Tactics.Contains(tac), subs);
+            }).ToList();
+            cols.Add(new Col(tac, rows));
+        }
+        return cols;
+    }
+
+    // --- filtering ---
+    private bool Matches(AttackTechnique t) =>
+        _filter.Length == 0
+        || t.Id.Contains(_filter, StringComparison.OrdinalIgnoreCase)
+        || t.Name.Contains(_filter, StringComparison.OrdinalIgnoreCase);
+
+    private List<Row> VisibleRows(Col col) =>
+        _filter.Length == 0 ? col.Rows.ToList() : col.Rows.Where(r => Matches(r.Parent) || r.Subs.Any(Matches)).ToList();
+
+    // While filtering, a parent opened for its matching sub-techniques shows only those; all of them when it matches itself.
+    private IEnumerable<AttackTechnique> ShownSubs(Row row) =>
+        _filter.Length == 0 || Matches(row.Parent) ? row.Subs : row.Subs.Where(Matches);
+
+    private void OnFilter(ChangeEventArgs e) => _filter = (e.Value?.ToString() ?? "").Trim();
+    private void ClearFilter() => _filter = "";
+
+    // --- selection ---
+    private string CellClass(string id, bool selectable)
+    {
+        if (!selectable) return "tide-atkm-heading";
+        return _selected.Contains(id) ? "tide-atkm-on" : "";
+    }
+
+    private void ToggleParent(Row row)
+    {
+        if (row.ParentInTactic) Toggle(row.Parent.Id);
+        else ToggleExpand(row.Parent.Id);
+    }
+
+    private void Toggle(string id)
+    {
+        if (!_selected.Remove(id)) _selected.Add(id.ToUpperInvariant());
+    }
+
+    private void Select(string id) => _selected.Add(id.ToUpperInvariant());
+
+    private void Replace(string retiredId, string byId)
+    {
+        _selected.Remove(retiredId);
+        Select(byId);
+    }
+
+    private void ToggleExpand(string parentId)
+    {
+        if (!_expanded.Add(parentId)) _expanded.Remove(parentId);
+    }
+
+    private List<string> RetiredSelected() =>
+        _selected.Where(id => AttackCatalog.Find(id) is null).Order(StringComparer.Ordinal).ToList();
+
+    // --- summary and apply ---
+    private string? Changes()
+    {
+        var current = new HashSet<string>(Current.Select(c => c.Trim()), StringComparer.OrdinalIgnoreCase);
+        var added = _selected.Count(id => !current.Contains(id));
+        var removed = current.Count(id => !_selected.Contains(id));
+        return added + removed == 0 ? null : $"+{added} / −{removed}";
+    }
+
+    // Matrix order (by the technique's first tactic), then id; ids that left the catalogue go last.
+    private async Task Apply() => await OnApply.InvokeAsync(_selected
+        .OrderBy(id => AttackCatalog.Find(id) is { } t ? AttackMatrix.TacticRank(t.PrimaryTactic) : int.MaxValue)
+        .ThenBy(id => id, StringComparer.Ordinal)
+        .ToList());
+
+    private async Task Cancel() => await OnCancel.InvokeAsync();
+
+    // Escape closes without applying, like Tide's other dialogs.
+    private async Task OnPanelKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") await Cancel();
+    }
+
+    // Focus starts in the filter box, Tab stays in the panel (dialog.js), and focus goes back to the opener on close.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try { await JS.InvokeVoidAsync("tideDialog.open", _filterBox); }
+        catch (JSDisconnectedException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JS.InvokeVoidAsync("tideDialog.close"); }
+        catch (JSDisconnectedException) { }
+    }
+}

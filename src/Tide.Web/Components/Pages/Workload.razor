@@ -1,0 +1,125 @@
+@page "/workload"
+@attribute [Authorize(Policy = Policies.WorkActions)]
+@inject ActionService ActionSvc
+@inject ToastService Toasts
+@inject ChangeFeed Feed
+@inject ChangeOrigin Origin
+@implements IDisposable
+
+<PageTitle>Workload · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <Breadcrumbs Items="@([new("Actions", "actions"), new("Workload")])" />
+        <h1>Workload</h1>
+        <div class="tide-sub">Met: last week's closures that were on time.</div>
+    </div>
+</div>
+
+@if (_failed)
+{
+    @* The error toast says what happened; this says the page has nothing to show, rather than loading for ever. *@
+    <div class="tide-card"><EmptyState Icon="bi-exclamation-triangle" Title="Failed to load the workload" /></div>
+}
+else if (_load is null)
+{
+    <LoadingBlock />
+}
+else if (_load.Count == 0)
+{
+    <div class="tide-card"><EmptyState Icon="bi-people" Title="No teams yet">An administrator adds them under Administration &gt; Teams &amp; SLA.</EmptyState></div>
+}
+else
+{
+    <div class="tide-load">
+        @foreach (var t in _load)
+        {
+            <div class="tide-card mb-0" @key="t.Team.Id">
+                <h2><a href="@($"actions?view=open&team={t.Team.Id}")">@t.Team.Name</a></h2>
+                <div class="tide-load-nums">
+                    <div><a href="@($"actions?view=open&team={t.Team.Id}")" aria-label="@t.Open open for @t.Team.Name"><strong class="@Tick(t, "open")">@t.Open</strong></a><span>Open</span></div>
+                    <div class="@(t.Overdue > 0 ? "bad" : "")"><a href="@($"actions?view=overdue&team={t.Team.Id}")" aria-label="@t.Overdue overdue for @t.Team.Name"><strong class="@Tick(t, "overdue")">@t.Overdue</strong></a><span>Overdue</span></div>
+                    <div><strong class="@Tick(t, "soon")">@t.DueSoon</strong><span>Due soon</span></div>
+                    <div><strong class="@Tick(t, "blocked")">@t.Blocked</strong><span>Blocked</span></div>
+                    <div class="@(t.P1 > 0 ? "bad" : "")"><strong class="@Tick(t, "p1")">@t.P1</strong><span>P1</span></div>
+                </div>
+                <div class="small tide-muted mb-2">Last 7 days: @t.ClosedLastWeek done, @t.MetLastWeek on time</div>
+                @if (t.ByAssignee.Count > 0)
+                {
+                    <table class="tide-table">
+                        <thead><tr><th>Holder</th><th class="tide-table-num">Open</th><th class="tide-table-num">Overdue</th><th class="tide-table-num">P1</th></tr></thead>
+                        <tbody>
+                            @foreach (var h in t.ByAssignee)
+                            {
+                                <tr class="@_marks?.Css(HolderKey(t, h))" @key="HolderKey(t, h)">
+                                    <td><a href="@($"actions?view=open&team={t.Team.Id}&assignee={Uri.EscapeDataString(h.AssigneeId ?? ActionFilter.Unassigned)}")">@h.Assignee</a></td>
+                                    <td class="tide-table-num">@h.Open</td>
+                                    <td class="tide-table-num @(h.Overdue > 0 ? "tide-level-critical" : "")">@h.Overdue</td>
+                                    <td class="tide-table-num">@h.P1</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private IReadOnlyList<TeamLoad>? _load;
+    private bool _failed;
+
+    // A colleague created, took, moved or closed an action: re-read the counts in place, once per burst, as the board does.
+    // The numbers that changed tick, and the holders' rows that arrived or changed are highlighted a moment.
+    private LiveChanges? _live;
+    private LiveMarks<string>? _marks;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _marks = new LiveMarks<string>(InvokeAsync, StateHasChanged);
+        _live = new LiveChanges(Feed, Origin, c => c.Topic == ChangeFeed.Actions, InvokeAsync, async _ =>
+        {
+            var was = _load;
+            await Load();
+            if (was is not null && _load is not null)
+            {
+                _marks.Apply(LiveDiff.Of(was.SelectMany(Numbers), _load.SelectMany(Numbers), n => n.Key, n => n.Value));
+                _marks.Apply(LiveDiff.Of(was.SelectMany(Holders), _load.SelectMany(Holders), h => h.Key, h => h.Row));
+            }
+            StateHasChanged();
+        });
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        try
+        {
+            _load = await ActionSvc.WorkloadAsync();
+            _failed = false;
+        }
+        catch (Exception ex)
+        {
+            _failed = true;
+            Toasts.Error(UserFacingError.For(ex));
+        }
+    }
+
+    private static IEnumerable<(string Key, int Value)> Numbers(TeamLoad t) =>
+        [(NumberKey(t, "open"), t.Open), (NumberKey(t, "overdue"), t.Overdue), (NumberKey(t, "soon"), t.DueSoon), (NumberKey(t, "blocked"), t.Blocked), (NumberKey(t, "p1"), t.P1)];
+
+    private static IEnumerable<(string Key, AssigneeLoad Row)> Holders(TeamLoad t) => t.ByAssignee.Select(h => (HolderKey(t, h), h));
+
+    private static string NumberKey(TeamLoad t, string number) => $"{t.Team.Id}:{number}";
+
+    private static string HolderKey(TeamLoad t, AssigneeLoad h) => $"{t.Team.Id}:holder:{h.AssigneeId}";
+
+    private string? Tick(TeamLoad t, string number) => _marks?.IsMarked(NumberKey(t, number)) == true ? "tide-live-tick" : null;
+
+    public void Dispose()
+    {
+        _live?.Dispose();
+        _marks?.Dispose();
+    }
+}

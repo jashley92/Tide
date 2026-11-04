@@ -1,0 +1,59 @@
+@* Whether the brief's company-wide copy was posted to SharePoint, and who said so when: on the SharePoint copy, in the
+   Send dialog and on a sent brief. An analyst marks it (or takes it back). Where an administrator requires it
+   (Distribution:RequireSharePoint), the brief isn't finished until it's marked. *@
+@using Tide.Application.Distribution
+@inject DistributionService Distribution
+@inject ICurrentUser CurrentUser
+@inject ToastService Toasts
+@inject OrgClock Clock
+
+<div class="tide-sharepoint-posted small d-flex gap-2 flex-wrap align-items-center">
+    @if (PostedAtUtc is { } at)
+    {
+        <span><span class="bi bi-check2-circle" aria-hidden="true"></span> Posted to SharePoint by @PostedByName, @Ui.When(Clock, at).</span>
+        @if (CanMark)
+        {
+            <button type="button" class="btn btn-link btn-sm p-0" disabled="@_busy" @onclick="() => Mark(false)">Undo</button>
+        }
+    }
+    else
+    {
+        <span class="@(Required ? "" : "tide-muted")"><span class="bi bi-cloud-upload" aria-hidden="true"></span>
+            Not posted to SharePoint yet@(Required ? " (required to finish the brief)" : "").</span>
+        @if (CanMark)
+        {
+            <button type="button" class="btn btn-outline-primary btn-sm" disabled="@_busy" @onclick="() => Mark(true)">Mark posted to SharePoint</button>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public DateOnly Date { get; set; }
+    [Parameter] public DateTimeOffset? PostedAtUtc { get; set; }
+    [Parameter] public string? PostedByName { get; set; }
+
+    /// <summary>Raised once it's marked or taken back, so the page reads the brief again.</summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
+    /// <summary>Whether this brief waits for its SharePoint copy: one sent before the requirement was on doesn't
+    /// (<see cref="Tide.Domain.Entities.Brief.SharePointRequired"/>).</summary>
+    [Parameter] public bool ForThisBrief { get; set; } = true;
+
+    private bool _busy;
+    private bool Required => Distribution.SharePointRequired && ForThisBrief;
+    private bool CanMark => CurrentUser.Has(Permission.PresentBriefs);
+
+    internal async Task Mark(bool posted)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await Distribution.MarkSharePointPostedAsync(Date, posted);
+            Toasts.Show(posted ? "Marked posted to SharePoint." : "No longer marked posted.");
+            await Changed.InvokeAsync();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+}

@@ -1,0 +1,25 @@
+@* A TLP picker. Floor (the article's own marking) leaves out the levels below it, since a part never counts lower; a
+   value stored below the floor shows as the floor, which is what it counts as. The options are keyed so the
+   browser keeps the chosen one selected when the floor moves and options come and go. *@
+<select class="form-select form-select-sm @Class" aria-label="@Label" title="@Label" value="@Shown" @onchange="Changed" disabled="@Disabled">
+    @foreach (var level in Ui.TlpLevels.Where(l => Floor is not { } f || l >= f))
+    {
+        <option @key="level" value="@level">@Tlp.Label(level)</option>
+    }
+</select>
+
+@code {
+    [Parameter] public TlpLevel Value { get; set; }
+    [Parameter] public EventCallback<TlpLevel> ValueChanged { get; set; }
+    [Parameter] public TlpLevel? Floor { get; set; }
+    [Parameter] public string Label { get; set; } = "TLP";
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+
+    private TlpLevel Shown => Floor is { } f && Value < f ? f : Value;
+
+    private async Task Changed(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<TlpLevel>(e.Value?.ToString(), out var level)) await ValueChanged.InvokeAsync(level);
+    }
+}

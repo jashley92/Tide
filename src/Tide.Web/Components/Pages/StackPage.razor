@@ -1,0 +1,238 @@
+@page "/stack"
+@page "/stack/{Id:guid}"
+@attribute [Authorize(Policy = Policies.ReadTeamEdition)]
+@using Tide.Application.Stack
+@inject StackService Stack
+@inject TeamService TeamSvc
+@inject ICurrentUser CurrentUser
+@inject NavigationManager Nav
+@inject ToastService Toasts
+@inject OrgClock Clock
+
+@* Our stack (EP-25): the products the organization runs, kept by analysts. The list shows each product's versions, team
+   and how much has been written about it; a product's page has its other names, versions and notes, and its history:
+   the articles tagged with it or naming it, and their actions. Triage lifts items that name a product, and an article
+   can be tagged with any number of them from the editor. *@
+
+<PageTitle>@(_detail?.Product.Name ?? "Our stack") · TIDE</PageTitle>
+
+@if (Id is null)
+{
+    <div class="tide-page-head">
+        <div>
+            <h1>Our stack</h1>
+            <div class="tide-sub">Triage raises new items that name a product or one of its aliases; those items never age out. Changes are audited.</div>
+        </div>
+    </div>
+    @if (_canWrite)
+    {
+        <div class="tide-card">
+            <h2>Add a product</h2>
+            <div class="row g-2 align-items-end">
+                <div class="col-md-4"><label class="tide-field-label" for="new-name">Product</label>
+                    <input id="new-name" class="form-control form-control-sm" maxlength="100" placeholder="GitLab" @bind="_newName" /></div>
+                <div class="col-md-5"><label class="tide-field-label" for="new-others">Other names it's reported under</label>
+                    <input id="new-others" class="form-control form-control-sm" maxlength="500" placeholder="GitLab CE; GitLab Runner" @bind="_newOthers" /></div>
+                <div class="col-md-3"><button class="btn btn-primary btn-sm w-100" disabled="@_busy" @onclick="Add">Add</button></div>
+            </div>
+        </div>
+    }
+    <div class="tide-card">
+        @if (_list is null)
+        {
+            <LoadingBlock />
+        }
+        else if (_list.Count == 0)
+        {
+            <EmptyState Icon="bi-hdd-stack" Title="Nothing on Our stack yet.">Add the products you run, or add one from a triage item ("Add to what we run…").</EmptyState>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="tide-table">
+                    <caption class="visually-hidden">Our stack</caption>
+                    <thead><tr><th scope="col">Product</th><th scope="col">Versions</th><th scope="col">Team</th><th scope="col">Checked</th>
+                        <th scope="col" class="tide-table-num">Articles</th><th scope="col" class="tide-table-num">Open actions</th></tr></thead>
+                    <tbody>
+                        @foreach (var r in _list)
+                        {
+                            <tr class="@(r.Product.IsRetired ? "tide-muted" : "")" @key="r.Product.Id">
+                                <td><a href="@($"stack/{r.Product.Id}")">@r.Product.Name</a>
+                                    @if (r.Product.OtherNames is { } o) { <div class="small tide-muted">also @o</div> }
+                                    @if (r.Product.IsRetired) { <Badge Tone="BadgeTone.Neutral">Retired</Badge> }</td>
+                                <td>@(r.Product.Versions ?? "—")</td>
+                                <td>@(r.TeamName ?? "—")</td>
+                                <td>@(r.Product.CheckedOn is { } c ? Ui.ShortDay(c) : "—")</td>
+                                <td class="tide-table-num">@r.Articles</td>
+                                <td class="tide-table-num">@r.OpenActions</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" id="show-retired" checked="@_showRetired" @onchange="ToggleRetired" />
+                <label class="form-check-label small" for="show-retired">Show retired products</label>
+            </div>
+        }
+    </div>
+}
+else if (_detail is null)
+{
+    @if (_loaded) { <div class="tide-card"><EmptyState Icon="bi-hdd-stack" Title="Product not found"><a href="stack">Back to Our stack</a></EmptyState></div> }
+    else { <LoadingBlock /> }
+}
+else
+{
+    var p = _detail.Product;
+    <nav aria-label="Breadcrumb" class="tide-crumbs"><a href="stack">Our stack</a> &rsaquo; @p.Name</nav>
+    <div class="tide-page-head">
+        <div>
+            <h1>@p.Name @if (p.IsRetired) { <Badge Tone="BadgeTone.Neutral">Retired</Badge> }</h1>
+            <div class="tide-sub">@(_detail.TeamName is { } t ? $"{t} · " : "")@(p.CheckedOn is { } c ? $"checked {Ui.ShortDay(c)}" : "not checked yet")
+                @if (p.ModifiedAtUtc is { } m) { <text> &middot; edited @Ui.When(Clock, m)</text> }</div>
+        </div>
+        @if (_canWrite)
+        {
+            <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Retire(!p.IsRetired)">@(p.IsRetired ? "Bring back" : "Retire")</button>
+        }
+    </div>
+    <div class="tide-today-grid">
+        <div>
+            <section class="tide-card" aria-labelledby="stack-about-h">
+                <h2 id="stack-about-h">About it <TlpBadge Level="TlpLevel.Amber" /></h2>
+                @if (_canWrite && _form is { } f)
+                {
+                    <div class="row g-2">
+                        <div class="col-md-6"><label class="tide-field-label" for="f-name">Product</label>
+                            <input id="f-name" class="form-control form-control-sm" maxlength="100" @bind="f.Name" /></div>
+                        <div class="col-md-6"><label class="tide-field-label" for="f-others">Other names it's reported under</label>
+                            <input id="f-others" class="form-control form-control-sm" maxlength="500" placeholder="Separate with semicolons" @bind="f.OtherNames" /></div>
+                        <div class="col-md-6"><label class="tide-field-label" for="f-versions">Versions in use</label>
+                            <input id="f-versions" class="form-control form-control-sm" maxlength="200" placeholder="17.11.3 self-managed" @bind="f.Versions" /></div>
+                        <div class="col-md-3"><label class="tide-field-label" for="f-team">Owning team</label>
+                            <select id="f-team" class="form-select form-select-sm" @bind="TeamValue">
+                                <option value="">None</option>
+                                @foreach (var team in _teams) { <option value="@team.Id">@team.Name</option> }
+                            </select></div>
+                        <div class="col-md-3"><label class="tide-field-label" for="f-checked">Checked on</label>
+                            <input id="f-checked" type="date" class="form-control form-control-sm" @bind="f.CheckedOn" /></div>
+                        <div class="col-12"><label class="tide-field-label" for="f-notes">Notes (Markdown)</label>
+                            <textarea id="f-notes" class="form-control form-control-sm tide-autogrow" rows="5" maxlength="4000"
+                                      placeholder="Where it runs, who to ask, change windows, past decisions" @bind="f.Notes"></textarea></div>
+                    </div>
+                    <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="Save">Save</button>
+                }
+                else
+                {
+                    <dl class="tide-stack-facts">
+                        <dt>Other names</dt><dd>@(p.OtherNames ?? "—")</dd>
+                        <dt>Versions</dt><dd>@(p.Versions ?? "—")</dd>
+                    </dl>
+                    @if (p.Notes is { } notes) { <Md Text="@notes" /> } else { <p class="small tide-muted mb-0">No notes yet.</p> }
+                }
+            </section>
+        </div>
+        <div>
+            <section class="tide-card" aria-labelledby="stack-articles-h">
+                <h2 id="stack-articles-h">Articles <span class="tide-count">(@_detail.Articles.Count)</span></h2>
+                @if (_detail.Articles.Count == 0) { <div class="small tide-muted">No articles yet.</div> }
+                <ul class="list-unstyled mb-0">
+                    @foreach (var a in _detail.Articles)
+                    {
+                        <li class="tide-stack-row"><a href="@($"articles/{a.Id}")">@a.Title</a>
+                            <span class="small tide-muted">@Ui.ShortDay(a.On) &middot; @(a.Tagged ? "tagged" : "names it")</span></li>
+                    }
+                </ul>
+            </section>
+            <section class="tide-card" aria-labelledby="stack-actions-h">
+                <h2 id="stack-actions-h">Actions <span class="tide-count">(@_detail.Actions.Count)</span></h2>
+                @if (_detail.Actions.Count == 0) { <div class="small tide-muted">No actions yet.</div> }
+                <ul class="list-unstyled mb-0">
+                    @foreach (var a in _detail.Actions)
+                    {
+                        <li class="tide-stack-row"><PriorityBadge Priority="a.Priority" /> <a href="@Ui.ActionUrl(a.Number)">@Ui.ActionLabel(a.Number)</a> @a.Title
+                            <span class="small tide-muted">&middot; @a.TeamName &middot; @(a.AssigneeName ?? "unassigned")</span>
+                            <ActionStatusBadge Status="a.Status" /></li>
+                    }
+                </ul>
+            </section>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+
+    private IReadOnlyList<StackRow>? _list;
+    private StackDetail? _detail;
+    private StackForm? _form;
+    private IReadOnlyList<Tide.Domain.Entities.Team> _teams = [];
+    private bool _canWrite, _busy, _loaded, _showRetired;
+    private string? _newName, _newOthers;
+
+    private string TeamValue
+    {
+        get => _form?.TeamId?.ToString() ?? "";
+        set { if (_form is not null) _form.TeamId = Guid.TryParse(value, out var g) ? g : null; }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _canWrite = CurrentUser.Has(Permission.WriteArticles);
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        try
+        {
+            if (Id is { } id)
+            {
+                _detail = await Stack.GetAsync(id);
+                _form = _detail is null ? null : StackForm.From(_detail.Product);
+                if (_canWrite && _teams.Count == 0) _teams = await TeamSvc.ListAsync();
+            }
+            else _list = await Stack.ListAsync(_showRetired);
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        _loaded = true;
+    }
+
+    private async Task ToggleRetired(ChangeEventArgs e)
+    {
+        _showRetired = e.Value is true;
+        await Load();
+    }
+
+    private async Task Run(Func<Task> step)
+    {
+        if (_busy) return;
+        _busy = true;
+        try { await step(); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    internal Task Add() => Run(async () =>
+    {
+        var id = await Stack.SaveAsync(new StackForm { Name = _newName ?? "", OtherNames = _newOthers });
+        Toasts.Show($"{_newName?.Trim()} added.");
+        (_newName, _newOthers) = (null, null);
+        Nav.NavigateTo($"stack/{id}");
+    });
+
+    internal Task Save() => Run(async () =>
+    {
+        await Stack.SaveAsync(_form!);
+        Toasts.Show("Saved.");
+        await Load();
+    });
+
+    private Task Retire(bool retired) => Run(async () =>
+    {
+        await Stack.SetRetiredAsync(_detail!.Product.Id, retired);
+        Toasts.Show(retired ? "Retired. Its history stays; triage no longer lifts it." : "Back on Our stack.");
+        await Load();
+    });
+}

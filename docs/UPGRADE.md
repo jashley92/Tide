@@ -1,0 +1,181 @@
+# Releases and upgrading TIDE
+
+How TIDE versions ship and how to move an install to a newer one. For a first install see **[INSTALL.md](INSTALL.md)**.
+
+> Development needs none of this: `git pull` and `dotnet run` against SQLite ([development.md](development.md)).
+
+---
+
+## How releases ship
+
+Each version tag builds a **release bundle** attached to the matching
+[GitHub Release](https://github.com/jashley92/Tide/releases): `tide-<version>.zip` and a `.sha256` beside it. The
+bundle holds the published app (`app/`), the deploy scripts (`deploy/`), the SQL Server migration ids it carries
+(`migrations-sqlserver.txt`) and a `VERSION.txt`. Deploying from it means **the server needs no .NET SDK and no NuGet
+access**. The version is stamped into the assemblies.
+
+The release workflow ([release.yml](../.github/workflows/release.yml)) refuses a tag unless:
+
+- it's a version: `vX.Y.Z`, or `vX.Y.Z-alpha.N` (`-beta.N`, `-rc.N`) for a pre-release;
+- its commit is on `main`;
+- every CI gate passes on that commit (build, tests, SQL Server migrations, migrations in sync with the model, the
+  vulnerable-package scan) and SonarQube Cloud's quality gate passed for it on `main`;
+- no migration that an earlier release shipped (alphas included) was edited or removed;
+- a release (not a pre-release) has its notes: a `### vX.Y.Z` section under [Notes](#notes) below.
+
+### Versions
+
+TIDE ships **releases from `main`**: `v1.0.0`, `v1.1.0` and so on, with `vX.Y.Z-rc.N` (or `-alpha.N`, `-beta.N`)
+for a pre-release. Pre-releases never show as the latest release. A release's description is its section under
+[Notes](#notes); a pre-release without one gets GitHub's list of the pull requests merged since the previous tag.
+
+Once a release ships (a pre-release too), its migrations are fixed: databases installed from it have to keep upgrading.
+Change the schema by adding a migration ([development.md](development.md#changing-the-schema)).
+
+### Cutting a release
+
+1. Merge what's going in to `main` and wait for CI on `main` to pass (SonarQube Cloud included).
+2. For a release, add its `### vX.Y.Z` section under [Notes](#notes) and merge that. For a pre-release it's optional.
+3. Tag the commit on `main` and push the tag:
+
+   ```bash
+   git tag v1.0.0 origin/main
+   git push origin v1.0.0
+   ```
+
+The Release workflow reruns the gates on that commit and publishes the release about 15 minutes later. If it fails,
+fix the cause on `main`, delete the tag (`git push origin :refs/tags/v1.0.0`, then `git tag -d`) and tag again.
+
+---
+
+## Installing or upgrading from a bundle
+
+A **first install** runs `Install-Tide.ps1` from the bundle ([below](#a-first-install-from-a-bundle)). Every
+**upgrade** after that runs `Upgrade-Tide.ps1`, which backs up, swaps the app's files, and rolls back if the new build
+doesn't start.
+
+### Upgrading with Upgrade-Tide.ps1
+
+In an elevated PowerShell on the web server. Once an install or upgrade has kept the deploy scripts beside the site
+(`<site folder>-deploy`, such as `D:\inetpub\tide-deploy`), an upgrade is one line, which **Administration › System ›
+Updates** shows with the newest version filled in:
+
+```powershell
+& 'D:\inetpub\tide-deploy\Upgrade-Tide.ps1' -Version v0.2.0
+```
+
+It downloads `tide-v0.2.0.zip` and its `.sha256` from this repository's releases (through `-Proxy` if the server needs
+one), refuses a bundle whose hash doesn't match, and hands over to the bundle's own copy of the script, so a fix to the
+upgrade itself takes effect in the upgrade that ships it. `-Version latest` takes the newest release (or, before 1.0,
+the newest pre-release). A server without outbound HTTPS: download the bundle elsewhere, copy it over, and pass it
+instead:
+
+```powershell
+Unblock-File .\tide-v0.2.0.zip
+Expand-Archive .\tide-v0.2.0.zip -DestinationPath .
+cd .\tide-v0.2.0\deploy
+.\Upgrade-Tide.ps1 -BundleZip ..\..\tide-v0.2.0.zip
+```
+
+Unblock the one file you copied: a downloaded zip is marked as coming from the internet, Windows carries the mark onto
+every file unzipped from it, and the scripts then won't run under the usual `RemoteSigned` policy. Don't loosen the
+machine's policy. With `-BundleZip`, the script checks the zip against the `.sha256` of the release its `VERSION.txt`
+names when the server can reach GitHub, and warns that it couldn't when it can't. The hash shows the bundle arrived
+whole; it doesn't show who published it, so take bundles only from this repository's
+[Releases](https://github.com/jashley92/Tide/releases) page.
+
+Installed under another site (`Install-Tide.ps1 -ParentSite Intranet -AppPath tide`)? Name that site and the path:
+`-SiteName Intranet -AppPath tide`. The kept copy remembers both, and the Updates page's command includes them.
+
+What it does, in order:
+
+1. **Resolves the install** from IIS and the site's `appsettings.Production.json`: the site folder, the app pool, the
+   SQL Server instance and database, the schema mode (`Database:ApplyMigrations`), and the address it probes
+   (`<site>/health`, from the site's binding; `-HealthUrl` overrides it).
+2. **Preflight**, which changes nothing:
+   - the ASP.NET Core Module and the .NET 10 runtime are installed, and SQL Server answers;
+   - the database's `__EFMigrationsHistory` against the release's `migrations-sqlserver.txt`. It stops if the database
+     has a migration the release doesn't (a newer or different lineage), or TIDE's tables but no history, the state
+     that makes the app fail at startup with "There is already an object named ...";
+   - **DbaApplies:** it stops unless the database already has every migration the release lists, and names the ones
+     missing. The upgrade never migrates a DbaApplies database: have the DBA apply the release's schema script from
+     the bundle's `deploy\sql` folder first, then run the upgrade again;
+   - settings a newer release added that the file lacks: a data folder (added under the data root; pass `-DataRoot`
+     when it can't be worked out), or a server setting (added at the value the app already uses without it, so nothing
+     changes until you edit it). A setting already there is never changed, and secrets (`Email__SmtpPassword`,
+     `Cve__NvdApiKey`) stay in environment variables. Comments in the file are read past, as the app reads them, but
+     adding a setting writes the file again without them (it says so first; the copy in step 3 keeps them);
+   - the anonymous `/health` and `/api/v1` carve-outs, and that the server can reach the site at the probe address.
+
+   **`-WhatIf` stops here**, having reported all of it.
+3. **Backs up**: a `COPY_ONLY` full backup of the database (to SQL Server's default backup folder; `-SkipDbBackup` when
+   your backup product's is current), `appsettings.Production.json`, and a snapshot of the site folder, under
+   `<site folder's parent>\tide-upgrade-backups\<time>` (or `-BackupRoot`).
+4. **Deploys**: adds the missing settings and the carve-outs, stops the pool (waiting until its worker has let go of the
+   files), copies the release's `app` folder over the site, and removes what the earlier release shipped under
+   `wwwroot`, and the assemblies at the top of the folder, that this one doesn't. `appsettings.Production.json` (and
+   its `.new`), `logs` and `App_Data` stay, and the data root is outside the site.
+5. **Starts and warms up**: on AppMigrates the first start applies the new migrations; it polls `/health` for up to 11
+   minutes (past the 10-minute `startupTimeLimit`). If TIDE doesn't answer `Healthy`, it puts the previous files back
+   and starts the pool again; if the new build had already applied migrations, it leaves the pool **stopped** and says
+   so: restore the pre-upgrade database backup, then start the pool. It writes `VERSION.txt` into the site (the
+   version, the one before, when and who), and refreshes the kept deploy scripts.
+
+Then run `Verify-Install.ps1` ([INSTALL.md](INSTALL.md#5-check-it)); the script prints the command.
+
+Upgrading from the repository instead: `-Build` publishes the app (it needs the .NET 10 SDK on the server) and reads the
+migration list from the source; `-AppSource <folder>` takes an app already published. Both run the same checks.
+
+**Rolling back by hand**, if the automatic rollback couldn't: stop the pool, copy `site-rollback` from the backup folder
+over the site folder (leave `appsettings.Production.json`, `logs` and `App_Data`), restore the pre-upgrade database
+backup if the new build migrated, and start the pool.
+
+### A first install from a bundle
+
+1. Download `tide-<version>.zip` and its `.sha256` from [Releases](https://github.com/jashley92/Tide/releases), check
+   it (`(Get-FileHash .\tide-<version>.zip).Hash` matches the hash in the `.sha256`), then unblock and unzip it as
+   above.
+2. From the bundle's `deploy` folder, with your `tide.config.psd1`, run `Install-Database.ps1`, then the installer
+   ([INSTALL.md](INSTALL.md)):
+
+   ```powershell
+   .\Install-Tide.ps1 -ConfigFile .\tide.config.psd1
+   ```
+
+   It sees it's in a bundle and copies the bundle's `app` folder into the site folder (`SitePath`); no SDK is needed. It
+   keeps the deploy scripts beside the site, so the next upgrade is `Upgrade-Tide.ps1 -Version`.
+3. Run `Verify-Install.ps1` ([INSTALL.md](INSTALL.md#5-check-it)).
+
+Re-running `Install-Tide.ps1` over an install still works as a repair: it stops the pool, copies the bundle's app over
+the site, removes what the release no longer ships, and keeps `appsettings.Production.json`. It takes no backup and
+doesn't roll back, so upgrade with `Upgrade-Tide.ps1`.
+
+Lost the server's `tide.config.psd1`? **Administration › System › Configuration bundle** writes one from what the
+running server knows (its SQL Server instance and database, app pool, folders, AD groups and organization; never a
+credential), with anything it can't know left blank and marked.
+
+### Knowing when there's a new release
+
+**Administration › System › Updates** shows the running version and, once an administrator turns the check on there
+(or sets `Updates:CheckEnabled` on the server), asks GitHub's public releases list for newer ones about once a day
+(the interval is set on the same page; `Updates:CheckIntervalHours` is the server's default), through `Intake:Proxy` when one is set. A newer release is marked on the
+Administration tabs, with its notes and the upgrade command above. The check is one anonymous request with a 10-second limit:
+it's off by default, and a server without internet access just shows that it couldn't check. A server on a
+pre-release follows pre-releases; one on a release doesn't. While the repository is private, GitHub answers an
+anonymous request with 404, and the page says so.
+
+---
+
+## Notes
+
+Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
+any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
+
+### v1.0.0
+
+The first public release. A server on any `v0.1.0-alpha` release upgrades to it as usual (`Upgrade-Tide.ps1 -Version
+latest`): every migration the alphas shipped is unchanged, and new ones are added on top.
+
+- **Webhooks** post an event once it's 30 seconds old, so a save still being written is never skipped.
+- **Reviewers** can be any user who can write articles, Admins included.
+- **New-TideConfig.ps1** suggests `Intranet` as the parent IIS site when installing under one; type your own site's name.

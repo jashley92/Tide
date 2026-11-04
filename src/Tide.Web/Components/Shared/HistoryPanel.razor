@@ -1,0 +1,118 @@
+@using Tide.Application.History
+@inject HistoryService History
+@inject OrgClock Clock
+@inject ICurrentUser CurrentUser
+
+@* Who changed what and when on an article or a brief, newest first, read from the audit log (HistoryService). Closed
+   until asked for, and loaded then, 50 at a time. Analysts only: the log holds every field at every marking, so it's
+   never drawn for an action owner or a Reader (the service refuses them too). *@
+@if (CurrentUser.Has(Permission.WriteArticles))
+{
+    <section class="tide-card tide-section" aria-labelledby="@(_id)-head">
+        <h2 id="@(_id)-head" class="mb-0">
+            <button type="button" class="tide-disclosure" aria-expanded="@(_open ? "true" : "false")" aria-controls="@(_id)-body" @onclick="Toggle">
+                <span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span>
+                History
+                <span class="tide-disclosure-sum">who changed what, and when</span>
+            </button>
+        </h2>
+        <div id="@(_id)-body" class="tide-disclosure-body" hidden="@(!_open)">
+            @if (_entries is null)
+            {
+                <p class="small tide-muted mb-0">@(_error ?? "Loading…")</p>
+            }
+            else if (_entries.Count == 0)
+            {
+                <p class="small tide-muted mb-0">No changes recorded yet.</p>
+            }
+            else
+            {
+                <ul class="tide-timeline tide-history">
+                    @foreach (var e in _entries)
+                    {
+                        <li @key="e.Id">
+                            <span class="tide-muted">@Ui.When(Clock, e.AtUtc) &middot; @e.UserName</span>
+                            <div class="fw-semibold">@e.What</div>
+                            <ChangeLines Changes="e.Changes" Changed="@(e.What == "Changed")" />
+                        </li>
+                    }
+                </ul>
+                @if (_hasMore)
+                {
+                    <button type="button" class="btn btn-outline-secondary btn-sm mt-2" disabled="@_busy" @onclick="More">Show @HistoryService.PageSize older</button>
+                }
+            }
+        </div>
+    </section>
+}
+
+@code {
+    /// <summary>The article or brief.</summary>
+    [Parameter, EditorRequired] public Guid Id { get; set; }
+
+    /// <summary>Whether <see cref="Id"/> is a brief (else an article).</summary>
+    [Parameter] public bool Brief { get; set; }
+
+    /// <summary>Changes when the thing is saved, so an open history reloads with the new change at the top.</summary>
+    [Parameter] public Guid Version { get; set; }
+
+    private readonly string _id = "hist-" + Guid.NewGuid().ToString("N")[..8];
+    private bool _open, _busy, _hasMore;
+    private int _next;
+    private List<HistoryEntry>? _entries;
+    private string? _error;
+    private Guid _loadedFor, _loadedVersion;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor != Id) _entries = null;
+        if (_open && (_loadedFor != Id || _loadedVersion != Version)) await Load();
+    }
+
+    /// <summary>Opens or closes it; opening loads it (and reloads it when the thing was saved since).</summary>
+    public async Task Toggle()
+    {
+        _open = !_open;
+        if (_open && (_entries is null || _loadedFor != Id || _loadedVersion != Version)) await Load();
+        StateHasChanged();
+    }
+
+    private async Task Load()
+    {
+        _loadedFor = Id;
+        _loadedVersion = Version;
+        _error = null;
+        try
+        {
+            var page = await Fetch(0);
+            _entries = page.Entries.ToList();
+            _hasMore = page.HasMore;
+            _next = page.Next;
+        }
+        catch (Exception ex) { _entries = null; _error = UserFacingError.For(ex); }
+    }
+
+    internal async Task More()
+    {
+        _busy = true;
+        try
+        {
+            var page = await Fetch(_next);
+            // The log grows at the top: a change saved since the first page (a brief's send marks its articles presented,
+            // which doesn't move the edit version) pushes the rows down, so this page starts with ones already shown.
+            // Each is shown once.
+            var shown = (_entries ?? []).Select(e => e.Id).ToHashSet();
+            _entries = [.. _entries ?? [], .. page.Entries.Where(e => !shown.Contains(e.Id))];
+            _hasMore = page.HasMore;
+            _next = page.Next;
+        }
+        catch (Exception ex) { _error = UserFacingError.For(ex); }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+
+    private Task<HistoryPage> Fetch(int skip) => Brief ? History.BriefAsync(Id, skip) : History.ArticleAsync(Id, skip);
+}

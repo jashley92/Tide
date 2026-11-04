@@ -1,0 +1,341 @@
+@typeparam TItem
+@implements IDisposable
+@inject NavigationManager Nav
+@* The one list table: a filter box that narrows as you type, a count that says how many there are ("Showing 8 of 12
+   articles"), headings that sort (real buttons, with aria-sort), optional group headings, an empty state that names
+   the filter, and numbered pages rather than a silent cut-off: one page's rows are drawn at a time, so a long list never
+   grows the page (with PageInAddress the page is ?page=, so Back and a link return to it). A group heading counts every
+   matching row in the group, not only this page's, and says how many are on other pages (a group with none on this page
+   keeps its heading). It filters and sorts the rows it's given; with ServerSide the page does both, and reads one page
+   at a time (the list is too long to load), and says how many there are in Total. On a phone the table
+   scrolls inside its card, with a shadow at the edge that has more. TableView holds the logic. *@
+<div class="tide-dt">
+    <div class="tide-dt-bar">
+        @if (ServerSide || Columns.Any(c => c.FilterBy is not null))
+        {
+            <div class="tide-dt-filter" role="search">
+                <span class="bi bi-search" aria-hidden="true"></span>
+                <label class="visually-hidden" for="@_id">@FilterLabel</label>
+                <input id="@_id" type="search" class="form-control form-control-sm" maxlength="200" autocomplete="off"
+                       placeholder="@FilterPlaceholder" value="@_typed" @oninput="Typed" @onkeydown="FilterKey" />
+                @if (_typed.Length > 0)
+                {
+                    <button type="button" class="tide-dt-clear" aria-label="Clear the filter" title="Clear the filter" @onclick="ClearFilter"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+                }
+            </div>
+        }
+        @Toolbar
+        @if (Items is not null)
+        {
+            <span class="tide-dt-count" role="status">@CountText</span>
+        }
+    </div>
+    @Filters
+
+    @if (Items is null)
+    {
+        <LoadingBlock />
+    }
+    else if (_view.Count == 0)
+    {
+        @if (_filter.Length > 0)
+        {
+            <EmptyState Icon="bi-search" Title="@($"No {Many} match ‘{_filter}’")">
+                <Actions><button type="button" class="btn btn-outline-secondary btn-sm" @onclick="ClearFilter">Clear the filter</button></Actions>
+                <ChildContent>Try fewer or other words.</ChildContent>
+            </EmptyState>
+        }
+        else if (Empty is not null)
+        {
+            @Empty
+        }
+        else
+        {
+            <EmptyState Title="@($"No {Many} yet")" />
+        }
+    }
+    else
+    {
+        <div class="tide-dt-scroll" tabindex="0" role="region" aria-labelledby="@(_id)-cap">
+            <table class="tide-table">
+                <caption id="@(_id)-cap" class="visually-hidden">@Caption@SortedText</caption>
+                <thead>
+                    <tr>
+                        @foreach (var c in Columns)
+                        {
+                            <th scope="col" class="@c.Class" aria-sort="@TableView.AriaSort(_sort, c.Key)">
+                                @if (c.Sortable)
+                                {
+                                    <button type="button" class="tide-sort" @onclick="() => SortBy(c)">@c.Title<span class="bi @SortIcon(c)" aria-hidden="true"></span></button>
+                                }
+                                else
+                                {
+                                    @c.Title
+                                }
+                            </th>
+                        }
+                    </tr>
+                </thead>
+                @if (GroupBy is null)
+                {
+                    <tbody>
+                        @foreach (var r in _view)
+                        {
+                            @Row(r)
+                        }
+                    </tbody>
+                }
+                else
+                {
+                    @foreach (var g in TableView.Group(_view, _rows, GroupBy, GroupOrder))
+                    {
+                        <tbody>
+                            <tr class="tide-dt-group">
+                                <th colspan="@Columns.Count" scope="rowgroup">
+                                    @g.Name <span class="tide-count">@g.Total</span>
+                                    @if (g.Hidden > 0)
+                                    {
+                                        <span class="tide-dt-group-more"><span aria-hidden="true">&middot; </span>@(g.Rows.Count == 0 ? "on other pages" : $"{g.Hidden} on other pages")</span>
+                                    }
+                                </th>
+                            </tr>
+                            @foreach (var r in g.Rows)
+                            {
+                                @Row(r)
+                            }
+                        </tbody>
+                    }
+                }
+            </table>
+        </div>
+        <Pager Page="_page" Pages="TableView.Pages(_matching, PageSize)" Many="@Many" Busy="Busy" OnPage="GoTo" />
+    }
+</div>
+
+@code {
+    /// <summary>The rows (null while loading). With <see cref="ServerSide"/>, the page's rows as they come back.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<TItem>? Items { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyList<TableColumn<TItem>> Columns { get; set; } = [];
+
+    /// <summary>A row's cells (its <c>td</c>s).</summary>
+    [Parameter, EditorRequired] public RenderFragment<TItem> RowTemplate { get; set; } = default!;
+    [Parameter] public Func<TItem, object>? Key { get; set; }
+    [Parameter] public Func<TItem, string?>? RowClass { get; set; }
+
+    /// <summary>What the rows are, for the count and the empty state: "article", "articles".</summary>
+    [Parameter, EditorRequired] public string One { get; set; } = "";
+    [Parameter, EditorRequired] public string Many { get; set; } = "";
+
+    /// <summary>The table's name for screen readers ("Articles"); the sort is said after it.</summary>
+    [Parameter, EditorRequired] public string Caption { get; set; } = "";
+    [Parameter] public string FilterLabel { get; set; } = "Filter";
+    [Parameter] public string? FilterPlaceholder { get; set; }
+
+    /// <summary>The filter to start with (a page's <c>?q=</c>). A new one later (Back to another <c>?q=</c>) replaces the box's.</summary>
+    [Parameter] public string? Filter { get; set; }
+
+    /// <summary>The sort to start with, and to go back to when it changes (another view). Null: as the rows came.</summary>
+    [Parameter] public TableSort? DefaultSort { get; set; }
+
+    /// <summary>Other filters (a status select), beside the filter box.</summary>
+    [Parameter] public RenderFragment? Toolbar { get; set; }
+
+    /// <summary>A row under the bar for more filters, or the chips of those in force.</summary>
+    [Parameter] public RenderFragment? Filters { get; set; }
+
+    /// <summary>Whether the page's own filters narrow the rows, so the count says "matching".</summary>
+    [Parameter] public bool Filtered { get; set; }
+
+    /// <summary>What to say when there are no rows at all and no filter: "nothing yet", or what the other filters left.</summary>
+    [Parameter] public RenderFragment? Empty { get; set; }
+
+    /// <summary>Rows on a page.</summary>
+    [Parameter] public int PageSize { get; set; } = 100;
+
+    /// <summary>The page is the address's <c>?page=</c> (missing for the first), so Back and a link return to it. For the
+    /// one table on a page; a page with ServerSide reads the same parameter to know which rows to load.</summary>
+    [Parameter] public bool PageInAddress { get; set; }
+
+    /// <summary>The address parameter <see cref="PageInAddress"/> uses.</summary>
+    public const string PageParameter = "page";
+
+    /// <summary>Group headings ("Name (count)"), in <see cref="GroupOrder"/>'s order.</summary>
+    [Parameter] public Func<TItem, string>? GroupBy { get; set; }
+    [Parameter] public IReadOnlyList<string>? GroupOrder { get; set; }
+
+    /// <summary>
+    /// The page filters, sorts and pages: <see cref="OnQuery"/> asks it for a page of a filter and sort (the first, after
+    /// a new filter or sort), <see cref="Items"/> are that page's rows, and <see cref="Total"/> is how many there are in all.
+    /// With <see cref="PageInAddress"/>, moving to another page changes the address instead, and the page reads it.
+    /// </summary>
+    [Parameter] public bool ServerSide { get; set; }
+    [Parameter] public int Total { get; set; }
+    [Parameter] public EventCallback<TableQuery> OnQuery { get; set; }
+
+    /// <summary>A page is being read: the pager waits.</summary>
+    [Parameter] public bool Busy { get; set; }
+
+    /// <summary>How long typing pauses before the filter applies.</summary>
+    private const int DebounceMs = 250;
+
+    private readonly string _id = "dt-" + Guid.NewGuid().ToString("N")[..8];
+    private string _typed = "", _filter = "", _given = "";
+    private TableSort? _sort, _default;
+    private bool _started;
+    private int _page = 1;
+    private int _matching;
+    private IReadOnlyList<TItem> _view = [];
+    private IReadOnlyList<TItem> _rows = [];   // every matching row, in order: _view is the first of them
+    private CancellationTokenSource? _debounce;
+
+    protected override void OnParametersSet()
+    {
+        if (!_started)
+        {
+            _started = true;
+            _typed = _filter = _given = (Filter ?? "").Trim();
+            _sort = _default = DefaultSort;
+            if (PageInAddress) Nav.LocationChanged += AddressChanged;
+        }
+        else
+        {
+            if (DefaultSort != _default)
+            {
+                _sort = _default = DefaultSort;
+                _page = 1;
+            }
+            if ((Filter ?? "").Trim() is var given && given != _given)
+            {
+                _given = given;
+                if (given != _filter) { CancelPending(); _typed = _filter = given; _page = 1; }
+            }
+        }
+        if (PageInAddress) _page = AddressPage();
+        Refresh();
+    }
+
+    // The page in the address: ?page=3, else the first.
+    private int AddressPage()
+    {
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Nav.Uri).Query);
+        return TableView.PageFrom(query.TryGetValue(PageParameter, out var v) ? v.ToString() : null);
+    }
+
+    // Back, Forward or a pager click moved the address: show its page.
+    private void AddressChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        var page = AddressPage();
+        if (page == _page) return;
+        _page = page;
+        _ = InvokeAsync(() =>
+        {
+            Refresh();
+            StateHasChanged();
+        });
+    }
+
+    private void Refresh()
+    {
+        if (Items is null) { _view = _rows = []; _matching = 0; return; }
+        if (ServerSide)
+        {
+            // The page read the last page for one past the end: count and pager say so too.
+            (_view, _rows, _matching) = (Items, Items, Total);
+            _page = Math.Clamp(_page, 1, TableView.Pages(Total, PageSize));
+            return;
+        }
+        var rows = _rows = TableView.Sort(TableView.Filter(Items, Columns, _filter), Columns, _sort);
+        _matching = rows.Count;
+        // A page past the end (the list shrank, or an old link) shows the last one.
+        _page = Math.Clamp(_page, 1, TableView.Pages(rows.Count, PageSize));
+        _view = rows.Count > PageSize ? rows.Skip((_page - 1) * PageSize).Take(PageSize).ToList() : rows;
+    }
+
+
+    private string CountText => TableView.Count((_page - 1) * PageSize + 1, _view.Count, _matching, ServerSide ? null : Items?.Count, _filter.Length > 0 || Filtered, One, Many);
+
+    private string SortedText => _sort is { } s && Columns.FirstOrDefault(c => c.Key == s.Key) is { } col
+        ? $", sorted by {col.Title.ToLowerInvariant()}, {(s.Descending ? "descending" : "ascending")}" : "";
+
+    private string SortIcon(TableColumn<TItem> c) => TableView.AriaSort(_sort, c.Key) switch
+    {
+        "ascending" => "bi-arrow-up",
+        "descending" => "bi-arrow-down",
+        _ => "bi-arrow-down-up",
+    };
+
+    private RenderFragment Row(TItem r) => @<tr @key="Key is null ? r : Key(r)" class="@RowClass?.Invoke(r)">@RowTemplate(r)</tr>;
+
+    private async Task Typed(ChangeEventArgs e)
+    {
+        _typed = e.Value?.ToString() ?? "";
+        CancelPending();
+        var pending = _debounce = new CancellationTokenSource();
+        try { await Task.Delay(DebounceMs, pending.Token); }
+        catch (TaskCanceledException) { return; }
+        await Apply(_typed);
+    }
+
+    private async Task FilterKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") { CancelPending(); await Apply(_typed); }
+        else if (e.Key == "Escape" && _typed.Length > 0) await ClearFilter();
+    }
+
+    private async Task ClearFilter()
+    {
+        CancelPending();
+        _typed = "";
+        await Apply("");
+    }
+
+    private async Task Apply(string text)
+    {
+        text = text.Trim();
+        if (text == _filter) return;
+        _filter = text;
+        await Changed();
+    }
+
+    private async Task SortBy(TableColumn<TItem> c)
+    {
+        _sort = TableView.Toggle(_sort, c);
+        await Changed();
+    }
+
+    // A new filter or sort starts at the first page. With the page in the address, a server-side table's page drops
+    // ?page= itself, as it moves the address for the new filter or sort.
+    private async Task Changed()
+    {
+        var wasPage = _page;
+        _page = 1;
+        if (ServerSide) await OnQuery.InvokeAsync(new TableQuery(_filter, _sort));
+        else if (PageInAddress && wasPage > 1) Nav.NavigateTo(Nav.GetUriWithQueryParameter(PageParameter, (int?)null), replace: true);
+        Refresh();
+    }
+
+    internal async Task GoTo(int page)
+    {
+        if (PageInAddress)
+        {
+            Nav.NavigateTo(Nav.GetUriWithQueryParameter(PageParameter, page == 1 ? null : page));
+            return;
+        }
+        _page = page;
+        if (ServerSide) await OnQuery.InvokeAsync(new TableQuery(_filter, _sort, page));
+        Refresh();
+    }
+
+    private void CancelPending()
+    {
+        _debounce?.Cancel();
+        _debounce?.Dispose();
+        _debounce = null;
+    }
+
+    public void Dispose()
+    {
+        CancelPending();
+        if (PageInAddress) Nav.LocationChanged -= AddressChanged;
+    }
+}

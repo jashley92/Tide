@@ -1,0 +1,165 @@
+@* The article's products from Our stack (EP-25), in the editor's Related tab: each tagged product with its versions,
+   the start of its notes, and how much else has been written about it; the products the article names but isn't tagged
+   with, offered as a one-click tag; and, for analysts, a picker to tag any product or add a new one. Tagging is optional
+   and saved straight away. *@
+@using Tide.Application.Stack
+@inject StackService Stack
+@inject ToastService Toasts
+@inject ChangeFeed Feed
+@inject ChangeOrigin Origin
+@implements IDisposable
+
+<div class="tide-card tide-stack-card">
+    <h2>We run <a class="ms-auto small fw-normal" href="stack">Our stack</a></h2>
+    @if (_stack is null)
+    {
+        <LoadingBlock Rows="1" />
+    }
+    else
+    {
+        @if (_stack.Tagged.Count == 0)
+        {
+            <p class="small tide-muted mb-2">No product tagged.</p>
+        }
+        @foreach (var p in _stack.Tagged)
+        {
+            var d = _details.GetValueOrDefault(p.Id);
+            <div class="tide-stack-tag" @key="p.Id">
+                <div class="d-flex gap-2 align-items-baseline flex-wrap">
+                    <a class="fw-semibold" href="@($"stack/{p.Id}")">@p.Name</a>
+                    @if (p.Versions is { } v) { <span class="small">@v</span> }
+                    @if (CanWrite)
+                    {
+                        <button type="button" class="btn btn-link btn-sm p-0 ms-auto" disabled="@_busy" aria-label="@($"Untag {p.Name}")" @onclick="() => Untag(p.Id)">Untag</button>
+                    }
+                </div>
+                @if (p.Notes is { } notes) { <div class="small tide-muted">@Short(notes)</div> }
+                @if (d is not null)
+                {
+                    var others = d.Articles.Count(a => a.Id != ArticleId);
+                    var open = d.Actions.Count(a => !Tide.Domain.Entities.ActionItem.IsClosedStatus(a.Status));
+                    <div class="small"><a href="@($"stack/{p.Id}")">@others other article@(others == 1 ? "" : "s") &middot; @open open action@(open == 1 ? "" : "s")</a></div>
+                }
+                @if (CanWrite && OnMention.HasDelegate)
+                {
+                    <button type="button" class="btn btn-outline-secondary btn-sm mt-1" @onclick="() => OnMention.InvokeAsync(MentionText(p))">Mention in Why it matters</button>
+                }
+            </div>
+        }
+        @if (CanWrite && _stack.Suggested.Count > 0)
+        {
+            <div class="small mt-2">Names @(string.Join(", ", _stack.Suggested.Select(s => s.Name))):
+                @foreach (var s in _stack.Suggested)
+                {
+                    <button type="button" class="btn btn-outline-secondary btn-sm ms-1" disabled="@_busy" @onclick="() => Tag(s.Id)">Tag @s.Name</button>
+                }
+            </div>
+        }
+        @if (CanWrite)
+        {
+            <div class="d-flex gap-1 mt-2 flex-wrap">
+                <label class="visually-hidden" for="stack-pick-@ArticleId">Tag a product</label>
+                <input id="stack-pick-@ArticleId" class="form-control form-control-sm w-auto flex-grow-1" list="stack-list-@ArticleId" maxlength="100"
+                       placeholder="Tag a product, or add one" @bind="_pick" @bind:event="oninput" />
+                <datalist id="stack-list-@ArticleId">
+                    @foreach (var p in _all) { <option value="@p.Name"></option> }
+                </datalist>
+                <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_pick))" @onclick="TagPicked">Tag</button>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Guid ArticleId { get; set; }
+    [Parameter] public bool CanWrite { get; set; }
+
+    /// <summary>Adds text to why it matters, as the Related tab's "Mention" does.</summary>
+    [Parameter] public EventCallback<string> OnMention { get; set; }
+
+    private ArticleStack? _stack;
+    private IReadOnlyList<Tide.Domain.Entities.StackProduct> _all = [];
+    private readonly Dictionary<Guid, StackDetail?> _details = new();
+    private string? _pick;
+    private bool _busy;
+
+    // A colleague's tag or untag on this article (or any save of it) reloads the card; one heard during this card's own
+    // change is read once that change is done.
+    private LiveChanges? _live;
+    private volatile string _topic = "", _tagsTopic = "";
+    private bool _heardWhileBusy;
+
+    protected override void OnInitialized() =>
+        _live = new LiveChanges(Feed, Origin, c => c.Topic == _topic || c.Topic == _tagsTopic, InvokeAsync, async _ =>
+        {
+            if (_busy) { _heardWhileBusy = true; return; }
+            await Load();
+            StateHasChanged();
+        });
+
+    public void Dispose() => _live?.Dispose();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _topic = ChangeFeed.Article(ArticleId);
+        _tagsTopic = ChangeFeed.ArticleTags(ArticleId);
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        try
+        {
+            _stack = await Stack.ForArticleAsync(ArticleId);
+            if (CanWrite) _all = await Stack.ProductsAsync();
+            _details.Clear();
+            foreach (var p in _stack.Tagged) _details[p.Id] = await Stack.GetAsync(p.Id);
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    // The start of the notes as plain text (no Markdown marks), for the card.
+    private static string Short(string text)
+    {
+        var plain = System.Text.RegularExpressions.Regex.Replace(text, @"[*_#`>]+", "", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromSeconds(1))
+            .Replace('\n', ' ');
+        return plain.Length > 160 ? plain[..160].TrimEnd() + "…" : plain;
+    }
+
+    private static string MentionText(Tide.Domain.Entities.StackProduct p) =>
+        $"We run {p.Name}{(p.Versions is { } v ? $" ({v})" : "")}.";
+
+    // One tag added or removed, not the list as this card last read it, which would drop a colleague's tags since.
+    private async Task Change(Func<Task> change, string done)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await change();
+            Toasts.Show(done);
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally
+        {
+            // Read again if a colleague's change was heard while this one was reading.
+            do { _heardWhileBusy = false; await Load(); } while (_heardWhileBusy);
+            _busy = false;
+        }
+    }
+
+    internal Task Tag(Guid id) => Change(() => Stack.TagArticleAsync(ArticleId, id), "Tagged.");
+
+    internal Task Untag(Guid id) => Change(() => Stack.UntagArticleAsync(ArticleId, id), "Untagged.");
+
+    // The name typed: a product on the list, or a new one added by name (it can be filled in on Our stack).
+    internal async Task TagPicked()
+    {
+        if (_busy || string.IsNullOrWhiteSpace(_pick)) return;
+        Guid id;
+        try { id = _all.FirstOrDefault(p => string.Equals(p.Name, _pick.Trim(), StringComparison.OrdinalIgnoreCase))?.Id ?? await Stack.AddByNameAsync(_pick); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); return; }
+        _pick = null;
+        await Tag(id);
+    }
+}

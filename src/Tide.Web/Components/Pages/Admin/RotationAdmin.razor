@@ -1,0 +1,167 @@
+@page "/admin/rotation"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@using System.Globalization
+@using Tide.Application.Rotation
+@inject RotationService Rotation
+@inject IUserDirectory Users
+@inject ToastService Toasts
+
+<PageTitle>Rotation · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <h1 class="tide-admin-title">Brief rotation</h1>
+        <div class="tide-sub">Swaps and cover are approved by the colleague taking the days. The managers below are notified of each.</div>
+    </div>
+    <a class="btn btn-outline-secondary" href="rotation"><span class="bi bi-calendar3" aria-hidden="true"></span> The calendar</a>
+</div>
+
+<div class="row g-3">
+    <div class="col-xl-5">
+        <div class="tide-card">
+            <h2>Roster <span class="tide-count">(@_members.Count(m => m.IsActive))</span></h2>
+            <table class="tide-table mb-2">
+                <tbody>
+                    @foreach (var (m, i) in _members.Select((m, i) => (m, i)))
+                    {
+                        <tr @key="m.UserId" class="@(m.IsActive ? null : "tide-inactive")">
+                            <td><span class="tide-muted me-1">@(i + 1).</span>@m.DisplayName @if (!m.IsActive) { <Badge>Out</Badge> }</td>
+                            <td class="text-end text-nowrap">
+                                <button class="tide-icon-btn" title="Earlier" aria-label="Earlier" disabled="@(i == 0)" @onclick="() => Run(() => Rotation.MoveMemberAsync(m.UserId, -1))"><span class="bi bi-arrow-up" aria-hidden="true"></span></button>
+                                <button class="tide-icon-btn" title="Later" aria-label="Later" disabled="@(i == _members.Count - 1)" @onclick="() => Run(() => Rotation.MoveMemberAsync(m.UserId, 1))"><span class="bi bi-arrow-down" aria-hidden="true"></span></button>
+                                <button class="btn btn-outline-secondary btn-sm" @onclick="() => Run(() => Rotation.SetMemberActiveAsync(m.UserId, !m.IsActive))">@(m.IsActive ? "Take out" : "Put back")</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <div class="d-flex gap-2">
+                <select class="form-select form-select-sm" aria-label="Person to add" @bind="_add">
+                    <option value="">Add an analyst&hellip;</option>
+                    @foreach (var p in _people.Where(p => _members.All(m => m.UserId != p.Sid))) { <option value="@p.Sid">@p.DisplayName</option> }
+                </select>
+                <button class="btn btn-outline-secondary btn-sm" disabled="@(_busy || string.IsNullOrEmpty(_add))" @onclick="Add">Add</button>
+            </div>
+            <div class="form-text">People appear here once they've signed in to TIDE.</div>
+        </div>
+
+        <div class="tide-card">
+            <h2>Managers to notify</h2>
+            <textarea class="form-control form-control-sm tide-data" rows="2" aria-label="Manager email addresses" placeholder="cti-manager@example.org" @bind="_managers"></textarea>
+            <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveManagers">Save</button>
+        </div>
+    </div>
+
+    <div class="col-xl-7">
+        <div class="tide-card">
+            <h2>Weekly rota</h2>
+            <div class="d-flex gap-2 align-items-center mb-2">
+                <button class="btn btn-outline-secondary btn-sm" @onclick="() => Shift(-Page)">&larr; Earlier weeks</button>
+                @if (_start != RotationService.WeekStart(Rotation.Today))
+                {
+                    <button class="btn btn-outline-secondary btn-sm" @onclick="() => Shift(0)">This week</button>
+                }
+                <button class="btn btn-outline-secondary btn-sm" @onclick="() => Shift(Page)">Later weeks &rarr;</button>
+                <span class="small tide-muted">From the week of @_start.ToString("MMM d, yyyy", CultureInfo.InvariantCulture)</span>
+            </div>
+            <div class="d-flex gap-2 align-items-end mb-3 flex-wrap">
+                <div><label class="tide-field-label" for="g-from">Fill from the week of</label><input id="g-from" type="date" class="form-control form-control-sm" @bind="_from" /></div>
+                <div><label class="tide-field-label" for="g-n">Weeks</label><input id="g-n" type="number" min="1" max="52" class="tide-w-count form-control form-control-sm" @bind="_weeks" /></div>
+                <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="Generate">Fill empty weeks in roster order</button>
+            </div>
+            <table class="tide-table">
+                <thead><tr><th>Week of</th><th>Presenting</th></tr></thead>
+                <tbody>
+                    @foreach (var week in _rota)
+                    {
+                        <tr @key="week.Key">
+                            <td class="text-nowrap">@week.Key.ToString("ddd MMM d, yyyy", CultureInfo.InvariantCulture)</td>
+                            <td>
+                                <select class="tide-maxw-md form-select form-select-sm" aria-label="Presenting the week of @week.Key" value="@(week.Value ?? "")" @onchange="e => SetWeek(week.Key, e.Value?.ToString())">
+                                    <option value="">Nobody</option>
+                                    @foreach (var m in _members) { <option value="@m.UserId">@m.DisplayName</option> }
+                                </select>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<RotationMember> _members = [];
+    private IReadOnlyList<AppUser> _people = [];
+    private List<KeyValuePair<DateOnly, string?>> _rota = [];
+    private string? _add, _managers;
+    private bool _busy;
+    private DateOnly _from;
+    private int _weeks = 12;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _from = RotationService.WeekStart(Rotation.Today);
+        _people = await Users.ListAsync();
+        _managers = string.Join(Environment.NewLine, await Rotation.ManagerEmailsAsync());
+        await Load();
+    }
+
+    // The rota shown: 16 weeks from _start, which pages back (to see or correct past weeks) and forward.
+    private const int Page = 16;
+    private DateOnly _start;
+
+    private async Task Shift(int weeks)
+    {
+        _start = weeks == 0 ? RotationService.WeekStart(Rotation.Today) : _start.AddDays(7 * weeks);
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        _members = await Rotation.MembersAsync();
+        if (_start == default) _start = RotationService.WeekStart(Rotation.Today);
+        var start = _start;
+        var days = await Rotation.CalendarAsync(start, start.AddDays(7 * Page - 1));
+        if (start != _start) return;   // paged on again meanwhile: the later page's read draws it
+        _rota = days.GroupBy(d => RotationService.WeekStart(d.Date))
+            .Select(g => new KeyValuePair<DateOnly, string?>(g.Key, g.First().RegularId)).ToList();
+    }
+
+    private Task Add() => Run(async () =>
+    {
+        var p = _people.First(x => x.Sid == _add);
+        await Rotation.AddMemberAsync(p.Sid, p.DisplayName);
+        _add = null;
+    });
+
+    private Task Generate() => Run(async () =>
+    {
+        var n = await Rotation.GenerateAsync(_from, _weeks);
+        Toasts.Show($"Filled {n} week{(n == 1 ? "" : "s")}.");
+    });
+
+    private Task SetWeek(DateOnly week, string? userId) => Run(() => Rotation.SetWeekAsync(week, userId));
+
+    private Task SaveManagers() => Run(async () =>
+    {
+        await Rotation.SaveManagerEmailsAsync(_managers);
+        Toasts.Show("Saved.");
+    });
+
+    // One change at a time: a second click while one runs (a double-click on Add) does nothing, so nothing is added
+    // twice. The buttons are disabled meanwhile.
+    private async Task Run(Func<Task> action)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await action();
+            await Load();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+}

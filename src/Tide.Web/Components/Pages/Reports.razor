@@ -1,0 +1,207 @@
+@page "/reports"
+@attribute [Authorize(Policy = Policies.ReadTeamEdition)]
+@using System.Globalization
+@inject ReportService ReportSvc
+@inject TrendsService TrendsSvc
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject ToastService Toasts
+
+@* The report a team lead owes for a week, a month or a quarter (EP-22): the headline numbers against the period before,
+   the outcomes, the opening metrics, the topics and techniques briefed most, and the actions by team, from the same
+   counts as Trends and Metrics. Each section has room for the lead's assessment, which prints with the report; it isn't
+   saved. ?p= is the period (2026-10, 2026-Q4, 2026-W44); the last full month by default. *@
+
+<PageTitle>Reports · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <h1>Reports</h1>
+        <div class="tide-sub">Compared with the previous period. Assessments print with the report but aren't saved.</div>
+    </div>
+    @if (_report is not null)
+    {
+        <div class="d-flex gap-2 flex-wrap tide-noprint">
+            <button type="button" class="btn btn-outline-secondary" @onclick="Print"><span class="bi bi-printer" aria-hidden="true"></span> Print</button>
+            <a class="btn btn-outline-secondary" href="@($"reports/export.csv?p={_period.Key}")" download><span class="bi bi-filetype-csv" aria-hidden="true"></span> CSV</a>
+        </div>
+    }
+</div>
+
+<div class="tide-card tide-noprint">
+    <div class="d-flex gap-3 flex-wrap align-items-center">
+        <div class="btn-group" role="group" aria-label="Period">
+            @foreach (var k in new[] { PeriodKind.Week, PeriodKind.Month, PeriodKind.Quarter })
+            {
+                <button type="button" class="btn btn-sm @(_period.Kind == k ? "btn-primary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(_period.Kind == k)"
+                        @onclick="() => Go(Switched(k))">@(k switch { PeriodKind.Week => "Week", PeriodKind.Month => "Month", _ => "Quarter" })</button>
+            }
+        </div>
+        <div class="d-flex gap-1 align-items-center">
+            <button type="button" class="btn btn-outline-secondary btn-sm" aria-label="Earlier" title="Earlier" @onclick="() => Go(_period.Previous)"><span class="bi bi-chevron-left" aria-hidden="true"></span></button>
+            <strong>@_period.Label@(TrendsSvc.IsPartial(_period) ? " (to date)" : "")</strong>
+            <button type="button" class="btn btn-outline-secondary btn-sm" aria-label="Later" title="Later" disabled="@TrendsSvc.IsPartial(_period)" @onclick="() => Go(_period.Next)"><span class="bi bi-chevron-right" aria-hidden="true"></span></button>
+        </div>
+        <span class="small tide-muted">Compared with @_period.Previous.Label.</span>
+    </div>
+</div>
+
+@if (_report is not { } r)
+{
+    <LoadingBlock />
+}
+else
+{
+    <h2 class="tide-report-title">@ReportName(r.Period)@(r.Partial ? " (to date)" : "") <TlpBadge Level="TlpLevel.Amber" /></h2>
+
+    <section class="tide-card" aria-labelledby="rep-headlines">
+        <h2 id="rep-headlines">1 &middot; Headlines <span class="small tide-muted fw-normal ms-auto">vs @r.Period.Previous.Label</span></h2>
+        @Figures(r.Headlines)
+        @Assessment("headlines")
+    </section>
+
+    <section class="tide-card" aria-labelledby="rep-outcomes">
+        <h2 id="rep-outcomes">2 &middot; Outcomes <span class="small tide-muted fw-normal ms-auto">vs @r.Period.Previous.Label</span></h2>
+        @Figures(r.Outcomes)
+        @Assessment("outcomes")
+    </section>
+
+    <section class="tide-card" aria-labelledby="rep-metrics">
+        <h2 id="rep-metrics">3 &middot; Opening metrics</h2>
+        @if (r.Metrics.Count == 0)
+        {
+            <EmptyState Icon="bi-graph-up" Title="No opening metrics defined" Compact="true">An administrator defines them under Administration &gt; Opening metrics.</EmptyState>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="tide-table tide-report-table">
+                    <thead><tr><th scope="col">Metric</th><th scope="col" class="tide-table-num">Latest</th><th scope="col" class="tide-table-num">Average</th>
+                        <th scope="col" class="tide-table-num">Range</th><th scope="col" class="tide-table-num">Days missing</th><th scope="col" class="tide-table-num">Days past a threshold</th></tr></thead>
+                    <tbody>
+                        @foreach (var m in r.Metrics)
+                        {
+                            <tr>
+                                <th scope="row">@m.Group &middot; @m.Metric.Name</th>
+                                <td class="tide-table-num">@Value(m.Metric, m.Latest)</td>
+                                <td class="tide-table-num">@Value(m.Metric, m.Average)</td>
+                                <td class="tide-table-num">@(m.Lowest is null ? "—" : $"{Value(m.Metric, m.Lowest)}–{Value(m.Metric, m.Highest)}")</td>
+                                <td class="tide-table-num">@m.Missing</td>
+                                <td class="tide-table-num @(m.Breaches > 0 ? "tide-report-bad" : "")">@m.Breaches</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        @Assessment("metrics")
+    </section>
+
+    <section class="tide-card" aria-labelledby="rep-topics">
+        <h2 id="rep-topics">4 &middot; Topics and techniques</h2>
+        <div class="row g-3">
+            <div class="col-md-6">@Tops("Scorecard topics", r.Topics, "tags")</div>
+            <div class="col-md-6">@Tops("ATT&CK techniques", r.Techniques, "attack")</div>
+        </div>
+        @Assessment("topics")
+    </section>
+
+    <section class="tide-card" aria-labelledby="rep-teams">
+        <h2 id="rep-teams">5 &middot; Actions raised by team</h2>
+        @Tops(null, r.ByTeam, "actions")
+        @Assessment("teams")
+    </section>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "p")] public string? PeriodParam { get; set; }
+
+    private Period _period;
+    private PeriodReport? _report;
+    private readonly Dictionary<string, string> _notes = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _period = Period.Parse(PeriodParam) ?? TrendsSvc.DefaultEnd(PeriodKind.Month);
+        _report = null;
+        try { _report = await ReportSvc.BuildAsync(_period); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    private void Go(Period p) => Nav.NavigateTo(Nav.GetUriWithQueryParameter("p", p.Key));
+
+    // Another kind of period, the one holding this period's last day; for a period still going on (whose last day hasn't
+    // come), the one holding today, so a month to date doesn't become a week that hasn't started.
+    internal Period Switched(PeriodKind kind) => TrendsSvc.IsPartial(_period) ? TrendsSvc.CurrentPeriod(kind) : Period.Of(kind, _period.End);
+
+    private async Task Print()
+    {
+        try { await JS.InvokeVoidAsync("print"); } catch (JSDisconnectedException) { }
+    }
+
+    private static string ReportName(Period p) => p.Kind switch
+    {
+        PeriodKind.Week => $"Weekly report · {p.Label}",
+        PeriodKind.Month => $"Monthly report · {p.Start.ToString("MMMM yyyy", CultureInfo.InvariantCulture)}",
+        _ => $"Quarterly report · {p.Label}",
+    };
+
+    private static string Value(Tide.Domain.Entities.MetricDefinition m, decimal? v) => v is { } n ? Tide.Application.Metrics.MetricMath.Format(m.Format, n) : "—";
+
+    // "1 day", not "1 days": the shown number decides, so no floating-point comparison.
+    private static string Num(double? v, string unit)
+    {
+        if (v is not { } n) return "—";
+        var shown = n.ToString("0.#", CultureInfo.InvariantCulture);
+        return shown + (unit == " days" && shown == "1" ? " day" : unit);
+    }
+
+    // A trend line's numbers open in Trends, on the line, for this period.
+    private string TrendsLink(string line, string view) => $"trends?p={_period.Key}&view={view}&line={Uri.EscapeDataString(line)}&at={_period.Key}";
+
+    private RenderFragment Figures(IReadOnlyList<ReportFigure> figures) => __builder =>
+    {
+        <div class="table-responsive">
+            <table class="tide-table tide-report-table">
+                <thead><tr><th scope="col">Measure</th><th scope="col" class="tide-table-num">@_period.Label</th><th scope="col" class="tide-table-num">@_period.Previous.Label</th><th scope="col" class="tide-table-num">Change</th></tr></thead>
+                <tbody>
+                    @foreach (var f in figures)
+                    {
+                        <tr>
+                            <th scope="row">@if (f.Line is { } line) { <a href="@TrendsLink(line, line.StartsWith("actions:", StringComparison.Ordinal) ? "actions" : "tags")">@f.Name</a> } else { @f.Name }</th>
+                            <td class="tide-table-num">@Num(f.Current, f.Unit)</td>
+                            <td class="tide-table-num">@Num(f.Previous, f.Unit)</td>
+                            <td class="tide-table-num">@(f.Change is { } c ? (c > 0 ? "+" : "") + c.ToString("0.#", CultureInfo.InvariantCulture) : "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    };
+
+    private RenderFragment Tops(string? title, IReadOnlyList<ReportTop> tops, string view) => __builder =>
+    {
+        @if (title is not null) { <h3 class="tide-report-sub">@title</h3> }
+        @if (tops.Count == 0)
+        {
+            <div class="small tide-muted">Nothing counted in @_period.Label.</div>
+        }
+        else
+        {
+            <ol class="tide-report-tops">
+                @foreach (var t in tops)
+                {
+                    <li><a href="@TrendsLink(t.Line, view)">@t.Name</a> <span class="tide-muted">&middot; @t.Current@(t.Change != 0 ? $" ({(t.Change > 0 ? "+" : "")}{t.Change})" : "")</span></li>
+                }
+            </ol>
+        }
+    };
+
+    private RenderFragment Assessment(string section) => __builder =>
+    {
+        var id = "assess-" + section;
+        <label class="tide-field-label mt-2" for="@id">Assessment</label>
+        <textarea id="@id" class="form-control form-control-sm tide-autogrow" rows="2" maxlength="4000" placeholder="What this means, in your words (prints with the report; not saved)"
+                  value="@_notes.GetValueOrDefault(section)" @onchange="e => _notes[section] = e.Value?.ToString() ?? string.Empty"></textarea>
+    };
+}

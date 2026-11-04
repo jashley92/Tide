@@ -1,0 +1,155 @@
+@* A brief's running order: each article with what it still needs inline ("Needs: Bottom line"). Someone who builds
+   briefs can drag a row above or below another (brief-order.js), or use its Move up and Move down buttons (the keyboard
+   path; focus stays on the moved row), and take it off. The page does the saving, through the callbacks. *@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+@if (Items.Count == 0)
+{
+    <EmptyState Icon="bi-list-ol" Title="No articles yet." Compact="true" />
+}
+<ol class="tide-order" @ref="_root">
+    @foreach (var (item, i) in Items.Select((x, i) => (x, i)))
+    {
+        var a = item.Article!;
+        var gaps = Readiness.GetValueOrDefault(a.Id) ?? [];
+        <li class="tide-order-row" @key="item.Id" data-id="@item.Id" draggable="@(CanEdit ? "true" : null)">
+            @if (CanEdit)
+            {
+                <span class="tide-drag-handle bi bi-grip-vertical" title="Drag to reorder" aria-hidden="true"></span>
+            }
+            <span class="tide-run-num">@(i + 1)</span>
+            <div class="tide-order-main">
+                <a class="tide-run-title" href="articles/@a.Id">@a.Title</a>
+                <div class="tide-run-meta">
+                    <ClassBadge Classification="a.Classification" Priority="a.Priority" />
+                    <TlpBadge Level="a.Tlp" />
+                    <StatusBadge Status="@a.Status.ToString()" />
+                    <span>@a.AuthorName</span>
+                    @if (a.HighestTlp > a.Tlp)
+                    {
+                        <span title="Some of this article is marked higher than the article itself">holds <TlpBadge Level="a.HighestTlp" /></span>
+                    }
+                    <span>@a.Bullets.Count bullet@(a.Bullets.Count == 1 ? "" : "s")</span>
+                    @if (a.Screenshots.Count > 0) { <span>&middot; @a.Screenshots.Count screenshot@(a.Screenshots.Count == 1 ? "" : "s")</span> }
+                    @if (a.Tlp > PublicMax) { <span title="Left out of the company-wide edition"><span class="bi bi-eye-slash" aria-hidden="true"></span> team only</span> }
+                    @if (ShowDiscussed)
+                    {
+                        <span class="@(item.Discussed ? "tide-discussed-yes" : "tide-muted")"><span class="bi @(item.Discussed ? "bi-check2-circle" : "bi-dash-circle")" aria-hidden="true"></span> @(item.Discussed ? "discussed" : "not discussed")</span>
+                    }
+                </div>
+                @if (gaps.Count > 0)
+                {
+                    <div class="tide-needs">
+                        @foreach (var g in gaps)
+                        {
+                            <span class="tide-need @(g.Blocking ? "is-blocking" : "")" title="@g.Message">
+                                <span class="bi @(g.Blocking ? "bi-x-circle" : "bi-exclamation-circle")" aria-hidden="true"></span>
+                                <span class="visually-hidden">@(g.Blocking ? "Blocking:" : "Warning:")</span> Needs: @g.Short
+                            </span>
+                        }
+                    </div>
+                }
+            </div>
+            @if (CanEdit)
+            {
+                <div class="tide-order-ctrl">
+                    <button type="button" class="tide-icon-btn" data-move="up" title="Move up" aria-label="Move “@a.Title” up" disabled="@(i == 0 || Busy)" @onclick="() => Move(item.Id, -1)"><span class="bi bi-arrow-up" aria-hidden="true"></span></button>
+                    <button type="button" class="tide-icon-btn" data-move="down" title="Move down" aria-label="Move “@a.Title” down" disabled="@(i == Items.Count - 1 || Busy)" @onclick="() => Move(item.Id, 1)"><span class="bi bi-arrow-down" aria-hidden="true"></span></button>
+                    <button type="button" class="tide-icon-btn" title="Take off this brief" aria-label="Take “@a.Title” off this brief" disabled="@Busy" @onclick="() => Remove(item)"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+                </div>
+            }
+        </li>
+    }
+</ol>
+
+@code {
+    /// <summary>The brief's items, in order, with their articles loaded.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<BriefItem> Items { get; set; } = [];
+
+    /// <summary>What each article still needs, by article id (<see cref="BriefService.Readiness"/>).</summary>
+    [Parameter] public IReadOnlyDictionary<Guid, IReadOnlyList<ArticleCheck>> Readiness { get; set; } = new Dictionary<Guid, IReadOnlyList<ArticleCheck>>();
+
+    /// <summary>The rows can be moved and taken off.</summary>
+    [Parameter] public bool CanEdit { get; set; }
+
+    /// <summary>A save is under way: the buttons wait.</summary>
+    [Parameter] public bool Busy { get; set; }
+
+    /// <summary>The company-wide edition's ceiling: an article above it is marked "team only".</summary>
+    [Parameter] public TlpLevel PublicMax { get; set; } = TlpLevel.Green;
+
+    /// <summary>The meeting is over: each row says whether it was discussed.</summary>
+    [Parameter] public bool ShowDiscussed { get; set; }
+
+    /// <summary>Move an item (its id) up (-1) or down (+1).</summary>
+    [Parameter] public EventCallback<(Guid Item, int By)> OnMove { get; set; }
+
+    /// <summary>Take an item off the brief.</summary>
+    [Parameter] public EventCallback<BriefItem> OnRemove { get; set; }
+
+    /// <summary>Put the items (their ids) in this order: a drop of the one <c>Moved</c>.</summary>
+    [Parameter] public EventCallback<(IReadOnlyList<Guid> Order, Guid Moved)> OnReorder { get; set; }
+
+    private ElementReference _root;
+    private DotNetObjectReference<RunningOrder>? _self;
+    private (Guid Item, string Dir)? _focusAfter;
+    private bool _focusUndo;
+
+    private async Task Move(Guid item, int by)
+    {
+        await OnMove.InvokeAsync((item, by));
+        _focusAfter = (item, by < 0 ? "up" : "down");
+        StateHasChanged();
+    }
+
+    private async Task Remove(BriefItem item)
+    {
+        await OnRemove.InvokeAsync(item);
+        _focusUndo = true;
+        StateHasChanged();
+    }
+
+    /// <summary>A row dropped next to another (brief-order.js): just after it when <paramref name="after"/>.</summary>
+    [JSInvokable]
+    public async Task OnRowDropped(string id, string target, bool after)
+    {
+        if (!CanEdit || Busy || !Guid.TryParse(id, out var moved) || !Guid.TryParse(target, out var next)) return;
+        var ids = Items.Select(i => i.Id).ToList();
+        var order = BriefOrder.Dropped(ids, moved, next, after);
+        if (order.SequenceEqual(ids)) return;
+        await OnReorder.InvokeAsync((order, moved));
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (firstRender && CanEdit)
+            {
+                _self = DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("tideOrder.start", _self, _root);
+            }
+            if (_focusAfter is { } f)
+            {
+                _focusAfter = null;
+                await JS.InvokeVoidAsync("tideOrder.focus", _root, f.Item.ToString(), f.Dir);
+            }
+            if (_focusUndo)
+            {
+                _focusUndo = false;
+                await JS.InvokeVoidAsync("tideOrder.focusUndo");
+            }
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        // Only a list that started (interactively, after its first render) has anything to stop.
+        if (_self is null) return;
+        try { await JS.InvokeVoidAsync("tideOrder.stop"); }
+        catch (JSDisconnectedException) { }
+        _self.Dispose();
+    }
+}

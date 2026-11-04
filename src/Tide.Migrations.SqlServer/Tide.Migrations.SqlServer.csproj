@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The SQL Server (production) EF Core migrations, in their own assembly so they can sit beside the SQLite
+    (development) migrations in Tide.Infrastructure. One DbContext model carries one migrations set per assembly (one
+    ModelSnapshot), so the providers are split by assembly. Chosen at runtime by MigrationsAssembly in
+    Tide.Infrastructure/DependencyInjection.cs, and at design time by the TIDE_MIGRATIONS_PROVIDER environment variable
+    that AppDbContextFactory reads.
+  -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\Tide.Infrastructure\Tide.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.*" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.*">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>

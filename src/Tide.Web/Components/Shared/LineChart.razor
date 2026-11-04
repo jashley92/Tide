@@ -1,0 +1,119 @@
+@* One or more lines over the same dates or periods, drawn the same way everywhere (metrics, trends): an SVG line per
+   series on a shared value axis, and over it a stop per date that the pointer or the arrow keys land on. The stop
+   carries what the tooltip says (the date, then each line's value in its own format); js/chart.js shows it. Coloured by
+   CSS, in series order: twelve colours, then the same twelve again dashed, so every line keeps its own look (Series). *@
+@using System.Globalization
+@using Tide.Application.Metrics
+
+@{
+    var known = Lines.SelectMany(l => l.Values).OfType<decimal>().ToList();
+    var range = MetricMath.ChartRange(known, FromZero);
+    var n = Labels.Count;
+    double X(int i) => n > 1 ? 100.0 * i / (n - 1) : 50;
+    double Y(decimal v) => 100 * (1 - MetricMath.ChartHeight(v, range));
+    var stops = Enumerable.Range(0, n).Where(i => Lines.Any(l => l.Values[i] is not null)).ToList();
+    var formatAxis = Lines.Count > 0 ? Lines[0].Format : (Func<decimal, string>)(v => v.ToString(CultureInfo.InvariantCulture));
+}
+<figure class="tide-chart-box">
+    @if (Lines.Count > 1)
+    {
+        <figcaption class="tide-chart-legend">
+            @for (var s = 0; s < Lines.Count; s++)
+            {
+                var at = s;
+                if (OnTakeOff.HasDelegate)
+                {
+                    <button type="button" class="tide-chart-legend-item" title="Take off the chart" aria-label="Take @Lines[s].Name off the chart" @onclick="() => OnTakeOff.InvokeAsync(at)"><i class="tide-chart-swatch @Series(s)" aria-hidden="true"></i>@Lines[s].Name<span class="bi bi-x" aria-hidden="true"></span></button>
+                }
+                else
+                {
+                    <span><i class="tide-chart-swatch @Series(s)" aria-hidden="true"></i>@Lines[s].Name</span>
+                }
+            }
+        </figcaption>
+    }
+    <div class="tide-chart-frame">
+        <div class="tide-chart-axis" aria-hidden="true"><span>@formatAxis(range.Max)</span><span>@formatAxis(range.Min)</span></div>
+        <div class="tide-chart-plot @(stops.Count <= 40 ? "tide-chart-dotted" : "") @(Lines.Count > 6 ? "tide-chart-tall" : "")" tabindex="0" role="group" aria-roledescription="chart"
+             aria-label="@Label. Use the arrow keys to read each value." data-chart>
+            <svg viewBox="0 0 1000 300" preserveAspectRatio="none" aria-hidden="true">
+                <line class="tide-chart-grid" x1="0" y1="0" x2="1000" y2="0" />
+                <line class="tide-chart-grid" x1="0" y1="150" x2="1000" y2="150" />
+                <line class="tide-chart-base" x1="0" y1="300" x2="1000" y2="300" />
+                @for (var s = 0; s < Lines.Count; s++)
+                {
+                    var line = Lines[s];
+                    var points = string.Join(' ', Enumerable.Range(0, n).Where(i => line.Values[i] is not null)
+                        .Select(i => string.Create(CultureInfo.InvariantCulture, $"{X(i) * 10:0.#},{Y(line.Values[i]!.Value) * 3:0.#}")));
+                    <polyline class="@Series(s)" points="@points" />
+                }
+            </svg>
+            @foreach (var i in stops)
+            {
+                var tip = Tip(i);
+                <span class="tide-chart-stop" style="left: @Pct(X(i))" data-title="@tip.Title" data-more="@tip.More">
+                    @for (var rank = 0; rank < tip.Order.Count; rank++)
+                    {
+                        var s = tip.Order[rank];
+                        var v = Lines[s].Values[i]!.Value;
+                        <i class="tide-chart-dot @Series(s)" style="top: @Pct(Y(v))" data-name="@(Lines.Count > 1 ? Lines[s].Name : null)" data-value="@Lines[s].Format(v)" data-rest="@(rank >= TipLines ? "" : null)"></i>
+                    }
+                </span>
+            }
+            <div class="tide-chart-tip" aria-live="polite"></div>
+        </div>
+        @if (n > 0)
+        {
+            <span></span>
+            <div class="tide-chart-dates" aria-hidden="true"><span>@Labels[0]</span>@if (n > 2) { <span>@Labels[n / 2]</span> }<span>@Labels[^1]</span></div>
+        }
+    </div>
+</figure>
+
+@code {
+    /// <summary>A line on the chart: a value per label (null where there's none), shown with <see cref="Format"/>.</summary>
+    public sealed record Line(string Name, IReadOnlyList<decimal?> Values, Func<decimal, string> Format);
+
+    /// <summary>How many series colours the stylesheet defines (--tide-chart-1..12), and how many dash patterns it
+    /// draws them in after the solid round (tide-chart-d1..3).</summary>
+    private const int Colours = 12;
+    private const int Dashes = 3;
+
+    /// <summary>The classes that colour series <paramref name="s"/> (from 0) and its swatches: its colour, and from the
+    /// thirteenth line on a dash pattern too, so no two of the first 48 lines look the same.</summary>
+    public static string Series(int s) => (s / Colours % (Dashes + 1)) is var dash and > 0
+        ? string.Create(CultureInfo.InvariantCulture, $"tide-chart-s{s % Colours + 1} tide-chart-d{dash}")
+        : string.Create(CultureInfo.InvariantCulture, $"tide-chart-s{s % Colours + 1}");
+
+    /// <summary>What each point is: a day or a period, oldest first. Every line has a value (or null) for each.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<string> Labels { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<Line> Lines { get; set; } = [];
+    /// <summary>What the chart shows, for screen readers.</summary>
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    /// <summary>Start the value axis at zero (counts), rather than at the lowest value (metrics).</summary>
+    [Parameter] public bool FromZero { get; set; }
+    /// <summary>When set, each line in the key is a button that takes it off the chart (by its index in
+    /// <see cref="Lines"/>).</summary>
+    [Parameter] public EventCallback<int> OnTakeOff { get; set; }
+
+    /// <summary>How many lines the tooltip lists at one point; the rest are summed up in a line under them.</summary>
+    internal const int TipLines = 10;
+
+    /// <summary>
+    /// What the tooltip says at point <paramref name="i"/>: the lines with a value there, highest first (ties in series
+    /// order), so the top <see cref="TipLines"/> are the ones it lists. With more, its title says so, and the line under
+    /// them counts the rest ("+ 19 more, all 0"), so the reading stays short enough to sit inside the chart.
+    /// </summary>
+    internal (string Title, string? More, IReadOnlyList<int> Order) Tip(int i)
+    {
+        var order = Enumerable.Range(0, Lines.Count).Where(s => Lines[s].Values[i] is not null)
+            .OrderByDescending(s => Lines[s].Values[i]!.Value).ToList();
+        if (order.Count <= TipLines) return (Labels[i], null, order);
+        var rest = order.Skip(TipLines).ToList();
+        var same = rest.Select(s => Lines[s].Values[i]!.Value).Distinct().ToList();
+        var more = $"+ {rest.Count} more" + (same.Count == 1 ? $", all {Lines[rest[0]].Format(same[0])}" : "");
+        return ($"{Labels[i]}, top {TipLines} of {order.Count}", more, order);
+    }
+
+    private static string Pct(double v) => v.ToString("0.##", CultureInfo.InvariantCulture) + "%";
+}

@@ -1,0 +1,1047 @@
+@page "/briefs/{Day}"
+@attribute [Authorize(Policy = Policies.ReadTeamEdition)]
+@inject BriefService BriefSvc
+@inject Tide.Application.Settings.DistributionSettings Distribution
+@inject IUserDirectory Users
+@inject NavigationManager Nav
+@inject ToastService Toasts
+@inject OrgClock Clock
+@inject ICurrentUser CurrentUser
+@inject Tide.Application.Rotation.RotationService Rotation
+@inject Tide.Application.Distribution.DistributionService Sends
+@inject Tide.Application.Metrics.MetricsService MetricsSvc
+@inject IntakeService Intake
+@inject ArticleService ArticleSvc
+@inject ActionService ActionSvc
+@inject MeetingService MeetingSvc
+@inject ChangeFeed Feed
+@inject ChangeOrigin Origin
+@implements IDisposable
+
+@* A day's brief. Today's is the start page (Home renders this with AsToday): the step strip, the running order, the
+   numbers, the edition check and the meeting, with My actions, the rotation and recent articles beside them; its
+   /briefs/{day} address redirects there. Every day's brief, today's too, has a preview of both editions for
+   proofreading at /briefs/{day}?tab=preview, a tab beside the running order. The strip's Send step opens the Send
+   dialog. Old links keep working: ?tab=team or company opens the preview with that edition picked for a narrow
+   screen, and ?tab=distribute opens the Send dialog (the send log, for someone who can't send).
+   Whoever works actions gets their teams' queue on Today. Someone who can't write articles (an action owner) can't act on
+   the steps, the running order or the edition check, so their Today leads with the queue and keeps only a read-only
+   summary of the brief; it's drawn by permission, never by role name. *@
+
+<PageTitle>@(AsToday ? "Today" : "Brief " + Ui.ShortDay(_date)) · TIDE</PageTitle>
+
+@if (!_validDay)
+{
+    <div class="tide-card"><h1 class="h4">That isn't a date</h1><a href="briefs">Back to the brief archive</a></div>
+}
+else
+{
+    <div class="tide-page-head">
+        <div>
+            <div class="d-flex gap-2 align-items-center mb-1">
+                <a class="small" href="@Ui.BriefUrl(Clock.Days.Previous(_date))">&larr; @Ui.ShortDay(Clock.Days.Previous(_date))</a>
+                <span class="tide-muted small">&middot;</span>
+                <a class="small" href="@Ui.BriefUrl(Clock.Days.Next(_date))">@Ui.ShortDay(Clock.Days.Next(_date)) &rarr;</a>
+                @if (!IsToday)
+                {
+                    <span class="tide-muted small">&middot;</span>
+                    <a class="small" href="">Today's</a>
+                }
+            </div>
+            <ChangedElsewhere By="@_changedBy" What="brief's presenter or opening note" Consequence="Saving now would replace theirs." OnReload="ReloadTheirs" />
+            <h1>@(AsToday ? "Today, " : "Brief for ")@Ui.Day(_date)</h1>
+            @if (AsToday && Clock.Days.HolidayOn(Clock.Today) is { } holiday)
+            {
+                <div class="alert alert-info small py-2 mb-2" role="status"><span class="bi bi-calendar-x me-1" aria-hidden="true"></span>@holiday: no brief today. This is the next one.</div>
+            }
+            <PresenceNote Place="@($"brief:{Ui.IsoDay(_date)}")" Editing="DetailsDirty" />
+            <div class="tide-sub d-flex gap-2 align-items-center flex-wrap">
+                @if (_brief is not null)
+                {
+                    <StatusBadge Status="@StatusLabel" />
+                    <span>Presented by @_brief.AnalystName</span>
+                }
+                @if ((_brief?.MeetingHeldAtUtc ?? _brief?.PresentedAtUtc) is { } held)
+                {
+                    <span>&middot; met @Ui.When(Clock, held)</span>
+                    @if (_brief!.Items.Count > 0)
+                    {
+                        <span>&middot; @_brief.Items.Count(i => i.Discussed) of @_brief.Items.Count discussed</span>
+                    }
+                    @if (_brief.PresentedAtUtc is { } rec && Clock.ToLocal(rec).Date != Clock.ToLocal(held).Date)
+                    {
+                        <span title="When the meeting was recorded as over">&middot; recorded @Ui.When(Clock, rec)</span>
+                    }
+                }
+                else
+                {
+                    <span>@(_brief is null ? "" : "· ")meets at @MeetsAt @ZoneLabel</span>
+                }
+            </div>
+        </div>
+        @if (_brief is not null)
+        {
+            @* One primary button, the brief's next step as the strip has it (BriefSteps.Next); the rest are secondary. *@
+            var next = BriefSteps.Next(_brief.Status, _brief.Items.Count, BriefSteps.SharePointDue(_brief, Sends.SharePointRequired));
+            var canPresent = CurrentUser.Has(Permission.PresentBriefs);
+            <div class="d-flex gap-2 flex-wrap">
+                @if (_brief.Items.Count > 0)
+                {
+                    <ExportIndicators Scope="ExportScope.Brief" Key="@Ui.IsoDay(_date)" />
+                }
+                @if (_canWrite && next == BriefNext.MarkReady)
+                {
+                    <button class="btn btn-primary" disabled="@_busy" @onclick="AskReady"><span class="bi bi-check2-square" aria-hidden="true"></span> Mark ready</button>
+                }
+                else if (_canWrite && _brief.Status == BriefStatus.Ready)
+                {
+                    <button class="btn btn-outline-secondary" disabled="@_busy" @onclick="() => MarkReady(false)">Back to draft</button>
+                }
+                <LiveMeetingJoin Day="_date">
+                    @if (canPresent && _brief.Items.Count > 0)
+                    {
+                        <a class="btn @(next == BriefNext.Present ? "btn-primary" : "btn-outline-secondary")" href="@Ui.PresentUrl(_date)"><span class="bi bi-easel" aria-hidden="true"></span> Present</a>
+                    }
+                </LiveMeetingJoin>
+                @if (canPresent && next == BriefNext.Send)
+                {
+                    <button type="button" class="btn btn-primary" @onclick="AskSend"><span class="bi bi-send" aria-hidden="true"></span> @(Sends.EmailEnabled ? "Send" : "Distribute")</button>
+                }
+                @if (next == BriefNext.PostToSharePoint)
+                {
+                    <a class="btn btn-primary" href="@($"briefs/{Ui.IsoDay(_date)}/sharepoint")"><span class="bi bi-cloud-upload" aria-hidden="true"></span> Post to SharePoint</a>
+                }
+                @if (next == BriefNext.ViewAsSent && _asSent.Count > 0)
+                {
+                    <a class="btn btn-primary" href="@($"sends/{_asSent[0].Id}/email")" target="_blank" rel="noopener"><span class="bi bi-envelope-open" aria-hidden="true"></span> View as sent</a>
+                }
+            </div>
+        }
+    </div>
+
+    @if (_past && _brief?.Status is not BriefStatus.Sent)
+    {
+        <div class="tide-past-day mb-3" role="note">
+            <span class="bi bi-clock-history" aria-hidden="true"></span>
+            <div>
+                <strong>You're working on a past day's brief (@Ui.Day(_date)).</strong>
+                The numbers are that day's@(_brief?.Status is BriefStatus.Presented ? "." : ", and ending the meeting records it at that day's meeting time unless you choose another.")
+                @if (_rotaDay is { AnalystId: { } rotaId } && _brief is not null && rotaId != _brief.AnalystId)
+                {
+                    <div class="mt-1">
+                        The brief rotation has @_rotaDay.AnalystName for this day, but @_brief.AnalystName presented it.
+                        @if (_canWrite && (CurrentUser.UserId == rotaId || CurrentUser.UserId == _brief.AnalystId || CurrentUser.Has(Permission.Administer)))
+                        {
+                            <button class="btn btn-sm btn-outline-secondary ms-1" disabled="@_busy" @onclick="RecordCover">Record @_brief.AnalystName as cover</button>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @if (_brief?.Status is BriefStatus.Sent)
+    {
+        <div class="tide-past-day mb-3" role="note">
+            <span class="bi bi-send-check" aria-hidden="true"></span>
+            <div>
+                @if (_brief.DistributedAtUtc is { } distributed && _asSent.Count == 0)
+                {
+                    <strong>This brief was distributed without email</strong>
+                    <span>(marked by @_brief.DistributedByName, @Ui.When(Clock, distributed)).</span>
+                }
+                else
+                {
+                    <strong>This brief has been sent.</strong>
+                }
+                The edition preview shows its articles as they are now; an edit made since doesn't change what went out.
+                @if (Sends.SharePointRequired || _brief.SharePointPostedAtUtc is not null)
+                {
+                    <div class="mt-1">
+                        <SharePointPosted Date="_date" ForThisBrief="@(_brief.Status != BriefStatus.Sent || _brief.SharePointRequired)" PostedAtUtc="_brief.SharePointPostedAtUtc" PostedByName="@_brief.SharePointPostedByName" Changed="Load" />
+                    </div>
+                }
+                @if (_asSent.Count > 0)
+                {
+                    <span>As sent:</span>
+                    @foreach (var (s, i) in _asSent.Select((s, i) => (s, i)))
+                    {
+                        @if (i > 0) { <span aria-hidden="true">&middot;</span> }
+                        <a class="ms-1" href="@($"sends/{s.Id}/email")" target="_blank" rel="noopener">@Tide.Application.Distribution.BriefRenderer.EditionName(s.Edition)</a>
+                    }
+                    @if (CurrentUser.Has(Permission.PresentBriefs))
+                    {
+                        @* A mistake that went out: a short email of its own to the send's recipients (ADR 0015). *@
+                        <div class="mt-1">
+                            @foreach (var s in _asSent)
+                            {
+                                <button type="button" class="btn btn-outline-secondary btn-sm me-1 mb-1" @onclick="() => AskCorrection(s.Id)">
+                                    <span class="bi bi-pencil-square" aria-hidden="true"></span> Send a correction of the @Tide.Application.Distribution.BriefRenderer.EditionName(s.Edition).ToLowerInvariant()</button>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    }
+
+    @if (_loading && _brief is null)
+    {
+        <LoadingBlock />
+    }
+    else if (_brief is null)
+    {
+        <div class="tide-today-grid">
+            <div>
+                @if (!_canWrite) { @Queue() }
+                <div class="tide-card">
+                    <EmptyState Icon="bi-journal-text" Title="@(IsToday ? "Nothing on today's brief yet." : "There's no brief for this day yet.")">
+                        <ChildContent>
+                            @if (Clock.Days.DayOffReason(_date) is { } why)
+                            {
+                                <span>@why, and briefs are held on working days. The next is @Ui.Day(Clock.Days.Next(_date)).</span>
+                            }
+                        </ChildContent>
+                        <Actions>
+                            @if (_canWrite && Clock.Days.IsWorkingDay(_date))
+                            {
+                                <button class="btn btn-primary" disabled="@_busy" @onclick="Start">Start the brief</button>
+                            }
+                        </Actions>
+                    </EmptyState>
+                </div>
+                @if (AsToday && _canWrite) { <MetricEntry Date="_date" Collapsible="true" MissingChanged="n => _missingNumbers = n" /> }
+            </div>
+            <div>
+                @if (AsToday) { @Side() }
+            </div>
+        </div>
+    }
+    else
+    {
+        @if (AsToday && !_canWrite)
+        {
+            @OwnerToday()
+        }
+        else if (AsToday)
+        {
+            @Panel()
+        }
+        else
+        {
+            <TabBar Label="Brief" PanelId="brief-panel" Active="@_tab.ToString(System.Globalization.CultureInfo.InvariantCulture)" OnSelect="SelectTab"
+                    Items="@([new("Running order", "", Key: "0", Count: _brief.Items.Count), new("Preview both editions", "", Key: "1")])" />
+            <div role="tabpanel" id="brief-panel" aria-labelledby="@TabBar.TabId("brief-panel", _tab.ToString(System.Globalization.CultureInfo.InvariantCulture))">
+                @Panel()
+            </div>
+        }
+    }
+}
+
+<AddArticlesDialog @ref="_add" Candidates="_candidates" Shortlist="_shortlist" />
+<ConfirmDialog @ref="_confirm" />
+@* The Send step: the test copy and each edition's confirmation, in a dialog; only the send log for someone who can't send. *@
+<ConfirmDialog @ref="_send" CloseOnly="true" Wide="true" Title="@SendTitle">
+    <DistributePanel Date="_date" Sent="Load" Correct="_correct" MeetingHeld="@((_brief?.MeetingHeldAtUtc ?? _brief?.PresentedAtUtc) is not null || _brief?.Status == BriefStatus.Sent)"
+                     BriefId="_brief?.Id" Ended="Load" Brief="_brief" />
+</ConfirmDialog>
+
+@code {
+    [Parameter] public string? Day { get; set; }
+
+    /// <summary>Drawn as Today, the start page: no tabs (Today links to the preview of both editions), with My actions,
+    /// the rotation and recent articles beside the brief.</summary>
+    [Parameter] public bool AsToday { get; set; }
+
+    /// <summary>What to open (TabFor): preview, the old team and company tabs, or distribute (the running order otherwise).</summary>
+    [SupplyParameterFromQuery(Name = "tab")] public string? TabQuery { get; set; }
+
+    private DateOnly _date;
+    private ConfirmDialog _confirm = default!, _send = default!;
+    private AddArticlesDialog _add = default!;
+    private bool _validDay = true, _loading = true, _busy, _canWrite, _past;
+    private Tide.Application.Rotation.RotationDay? _rotaDay;
+    private Tide.Application.Rotation.Upcoming? _upcoming;
+    private ILookup<Guid, EditionAction>? _actions;
+    private Brief? _brief;
+    private MeetingRecord _meeting = MeetingRecord.None;
+    private IReadOnlyList<BriefCandidate> _candidates = [];
+    private IReadOnlyList<InboxRow> _shortlist = [];   // shortlisted triage items, at the top of the Add article picker
+    private IReadOnlyList<ArticleSummary> _recent = [];
+    private IReadOnlyList<ActionRow>? _mine;
+    private TeamQueue? _queue;
+    private int? _newInFeed;
+
+    // Null until the numbers have been read (and when no metrics are defined), so the edition check leaves them out.
+    private int? _missingNumbers;
+    private Tide.Application.Metrics.MetricDay? _metrics;   // the day's numbers, for the team edition in the preview
+
+    private IReadOnlyDictionary<Guid, IReadOnlyList<ArticleCheck>> _readiness = new Dictionary<Guid, IReadOnlyList<ArticleCheck>>();
+    private IReadOnlyList<AppUser> _people = [];
+    private string _analystId = "";
+    private string? _intro;
+    private TlpLevel _introTlp;
+    private int _tab;
+    private Edition _shown = Edition.Team;   // the edition the preview shows on a narrow screen
+    private TlpLevel _publicMax = TlpLevel.Green, _teamMax = TlpLevel.AmberStrict;
+    private IReadOnlyList<BriefSend> _asSent = [];
+    private IReadOnlyList<BriefSend>? _sends;
+
+    // The brief's status as the archive and the step strip say it: "Distributed", "SharePoint to post".
+    private string StatusLabel => BriefSteps.StatusLabel(_brief!.Status, _brief.DistributedAtUtc is not null && _asSent.Count == 0,
+        _brief.SharePointPostedAtUtc is not null, Sends.SharePointRequired && _brief.SharePointRequired);
+    private IReadOnlyList<Edition> _nothingToSend = [];   // an edition every article is above the ceiling of can't go
+
+    private bool IsToday => _date == Clock.CurrentBriefDate;
+
+    private string MeetsAt => Clock.MeetingTime.ToString("h:mm tt", System.Globalization.CultureInfo.InvariantCulture);
+
+    private string ZoneLabel => Clock.Zone.IsDaylightSavingTime(Clock.Now) ? Clock.Zone.DaylightName : Clock.Zone.StandardName;
+
+    private int Count(Classification c) => _brief?.Items.Count(i => i.Article?.Classification == c) ?? 0;
+
+    private int ReadyCount => Ordered().Count(i => !Blocked(i.ArticleId));
+    // What "Add article (N available)" counts: articles still to be briefed, not ones already presented.
+    private int Available => _candidates.Count(c => c.Available);
+
+    private bool Blocked(Guid articleId) => _readiness.GetValueOrDefault(articleId)?.Any(c => c.Blocking) ?? false;
+
+    private Guid? FirstNeedingWork => Ordered().Where(i => Blocked(i.ArticleId)).Select(i => (Guid?)i.ArticleId).FirstOrDefault();
+
+    // Drawn from what's loaded, so a number saved below the strip (MissingChanged) shows in it straight away.
+    private IReadOnlyList<BriefStep> Steps => BriefSteps.For(_brief!, _newInFeed, _missingNumbers ?? 0, MeetsAt, _sends, _nothingToSend, Sends.SharePointRequired);
+
+    /// <summary>What a ?tab= opens: the preview of both editions (Preview, with Shown the one a narrow screen shows), or
+    /// the running order with the Send dialog open (Send), or just the running order.</summary>
+    public sealed record BriefTab(bool Preview, Edition Shown = Edition.Team, bool Send = false);
+
+    /// <summary>The tab a ?tab= names: preview; team and company, the old edition tabs, which open the preview with that
+    /// edition picked; distribute, the old Distribute tab, which opens the Send dialog; otherwise the running order.</summary>
+    public static BriefTab TabFor(string? query) => query is not null && Tabs.TryGetValue(query, out var tab) ? tab : new(false);
+
+    private static readonly Dictionary<string, BriefTab> Tabs = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["preview"] = new(true),
+        ["team"] = new(true),
+        ["company"] = new(true, Edition.Public),
+        ["distribute"] = new(false, Send: true),
+    };
+
+    private string SendTitle => (CurrentUser.Has(Permission.PresentBriefs), Sends.EmailEnabled) switch
+    {
+        (false, _) => "Send log",
+        (true, true) => "Send the brief",
+        _ => "Distribute the brief",
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _validDay = Ui.TryParseDay(Day, out _date);
+        if (!_validDay) return;
+        var tab = TabFor(TabQuery);
+        _tab = !AsToday && tab.Preview ? 1 : 0;
+        _shown = tab.Shown;
+        // Today's running order is the start page, so today's address goes there, still opening the Send dialog if asked.
+        if (!AsToday && IsToday && _tab == 0)
+        {
+            Nav.NavigateTo(tab.Send ? "?tab=distribute" : "", replace: true);
+            return;
+        }
+        _canWrite = CurrentUser.Has(Permission.WriteArticles);
+        _past = BriefSvc.IsPast(_date);
+        (_publicMax, _teamMax) = await Distribution.GetAsync();
+        if (_canWrite) _people = await Users.ListAsync();
+        if (AsToday)
+        {
+            _recent = (await ArticleSvc.ListAsync(take: 8)).ToList();
+            _upcoming = await Rotation.UpcomingAsync();
+        }
+        _brief = null;   // another day: "Loading" until it's read (a reload after an action keeps the page, and focus, in place)
+        await Load();
+        if (tab.Send && _brief is not null)
+        {
+            // The old Distribute tab's link: the Send dialog, once it's drawn (the first render, which yielding lets happen).
+            if (_send is null) await Task.Yield();
+            if (_send is not null) _ = AskSend();
+        }
+    }
+
+    // Today's address with a tab, once the running order is picked, goes back to the start page.
+    private async Task SelectTab(string? key)
+    {
+        var tab = int.Parse(key!, System.Globalization.CultureInfo.InvariantCulture);
+        if (tab == 0 && IsToday) Nav.NavigateTo("");
+        else _tab = tab;
+        if (_tab == 1) await LoadNumbers();   // typed on the running order a moment ago, perhaps
+    }
+
+    // The day's numbers as the team email will carry them, for the preview of both editions.
+    private async Task LoadNumbers()
+    {
+        _metrics = await MetricsSvc.GetDayAsync(_date);
+        _open = await ActionSvc.OutstandingAsync(_date, _teamMax);
+    }
+
+    // The overdue actions the team email lists after the numbers, for its preview.
+    private OpenActionsReview? _open;
+
+    /// <summary>What this page shows: the day's brief (or its start), and each article on it.</summary>
+    public static HashSet<string> Follow(Brief? brief, DateOnly date)
+    {
+        HashSet<string> topics = [ChangeFeed.BriefDay(date)];
+        if (brief is null) return topics;
+        topics.Add(ChangeFeed.Brief(brief.Id));
+        foreach (var item in brief.Items) topics.Add(ChangeFeed.Article(item.ArticleId));
+        return topics;
+    }
+
+    private IEnumerable<BriefItem> Ordered() => _brief!.Items.Where(i => i.Article is not null).OrderBy(i => i.SortOrder);
+
+    // A colleague's save to this brief, or to an article on it: re-read in place. Unsaved presenter or opening-note edits
+    // are kept, and if the colleague changed those too, ChangedElsewhere says so. The day's numbers re-read alone (the
+    // numbers form follows them itself; the preview's team edition is read here), and on Today so do My actions and the
+    // team queue when a colleague's action changes.
+    private LiveChanges? _live;
+    private volatile HashSet<string> _follow = [];
+    private string? _changedBy;
+
+    protected override void OnInitialized()
+    {
+        _live = new LiveChanges(Feed, Origin, c => _follow.Contains(c.Topic), InvokeAsync, OnChangedElsewhere);
+        _actionMarks = new LiveMarks<Guid>(InvokeAsync, StateHasChanged);
+        _around = new LiveChanges(Feed, Origin, c => (c.Topic == ChangeFeed.Rotation && AsToday) || c.Topic == ChangeFeed.Articles,
+            InvokeAsync, OnAroundChanged);
+        _meetingLive = new LiveChanges(Feed, Origin, c => _brief is { } b && c.Topic == ChangeFeed.Meeting(b.Id), InvokeAsync, OnMeetingChanged);
+    }
+
+    // Around the brief rather than on it: Today's "Coming up for you" and "Recently written", and the articles the Add
+    // article count and picker offer. Each is re-read alone; an open picker keeps what's ticked (AddArticlesDialog).
+    private LiveChanges? _around;
+
+    // The meeting's record (who attended, the notes) as it grows, while the meeting runs: re-read alone, without a
+    // toast, which a note every minute would make a nuisance.
+    private LiveChanges? _meetingLive;
+
+    private async Task OnMeetingChanged(IReadOnlyList<Change> changes)
+    {
+        if (_brief is null) return;
+        _meeting = await MeetingSvc.GetAsync(_brief.Id);
+        StateHasChanged();
+    }
+
+    // The notes grouped by the article on screen when each was written, in the running order; the meeting's own last.
+    private IEnumerable<(string Title, IEnumerable<MeetingNote> Notes)> NoteGroups()
+    {
+        var items = _brief!.Items.ToDictionary(i => i.ArticleId);
+        return _meeting.Notes.GroupBy(n => n.ArticleId)
+            .Select(g => (Item: g.Key is { } id ? items.GetValueOrDefault(id) : null, Notes: g))
+            .OrderBy(g => g.Notes.Key is null ? int.MaxValue : g.Item?.SortOrder ?? int.MaxValue - 1)
+            .Select(g => (g.Notes.Key is null ? "The meeting" : g.Item?.Article?.Title ?? "An article since taken off", (IEnumerable<MeetingNote>)g.Notes));
+    }
+
+    private async Task OnAroundChanged(IReadOnlyList<Change> changes)
+    {
+        if (_busy) return;   // this page's own action reloads when it's done, and reads theirs with it
+        try
+        {
+            if (AsToday && changes.Any(c => c.Topic == ChangeFeed.Rotation))
+            {
+                var before = _upcoming;
+                _upcoming = await Rotation.UpcomingAsync();
+                _rotaDay = (await Rotation.CalendarAsync(_date, _date)).FirstOrDefault();
+                if (RotationPage.Heard(before, _upcoming, [], LiveChanges.Who(changes)) is { } news) Toasts.Show(news);
+            }
+            if (changes.Any(c => c.Topic == ChangeFeed.Articles))
+            {
+                if (AsToday) _recent = (await ArticleSvc.ListAsync(take: 8)).ToList();
+                if (_canWrite && _brief is not null) _candidates = await BriefSvc.CandidatesAsync(_brief.Id);
+            }
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        StateHasChanged();
+    }
+
+    private bool DetailsDirty => _brief is not null && (_analystId != _brief.AnalystId
+        || (_intro ?? "").Trim() != (_brief.Intro ?? "").Trim() || _introTlp != _brief.IntroTlp);
+
+    // What else this page follows, beyond the brief it shows.
+    private HashSet<string> Followed()
+    {
+        var topics = Follow(_brief, _date);
+        topics.Add(ChangeFeed.MetricsDay(_date));
+        topics.Add(ChangeFeed.Metrics);
+        if (ShowsActions) topics.Add(ChangeFeed.Actions);
+        return topics;
+    }
+
+    private bool ShowsActions => AsToday && CurrentUser.Has(Permission.WorkActions);
+
+    private async Task OnChangedElsewhere(IReadOnlyList<Change> changes)
+    {
+        if (_busy) return;   // this page's own action reloads when it's done, and reads theirs with it
+        if (changes.All(c => ChangeFeed.IsMetricsOf(c, _date) || c.Topic == ChangeFeed.Actions))
+        {
+            await OnNumbersOrActions(changes);
+            return;
+        }
+        var who = LiveChanges.Who(changes);
+        var mine = DetailsDirty ? (_analystId, _intro, _introTlp) : ((string, string?, TlpLevel)?)null;
+        var theirsBefore = (_brief?.AnalystId, _brief?.Intro, _brief?.IntroTlp);
+        await Load();
+        if (mine is { } m && _brief is not null)
+        {
+            (_analystId, _intro, _introTlp) = m;
+            if ((_brief.AnalystId, _brief.Intro, _brief.IntroTlp) != theirsBefore) _changedBy = who;
+        }
+        if (_changedBy is null) Toasts.Show($"{who} updated this brief.");
+        StateHasChanged();
+    }
+
+    // Only the day's numbers or the actions changed: the brief stays as it is, unsaved edits and all.
+    private async Task OnNumbersOrActions(IReadOnlyList<Change> changes)
+    {
+        var numbers = changes.Where(c => ChangeFeed.IsMetricsOf(c, _date)).ToList();
+        var actions = changes.Where(c => c.Topic == ChangeFeed.Actions).ToList();
+        // On the running order the numbers form re-reads them, and says so, itself.
+        if (numbers.Count > 0 && _tab == 1)
+        {
+            await LoadNumbers();
+            Toasts.Show($"{LiveChanges.Who(numbers)} updated the numbers.");
+        }
+        if (actions.Count > 0 && ShowsActions)
+        {
+            await LoadActions(live: true);
+            Toasts.Show($"{LiveChanges.Who(actions)} updated an action.");
+        }
+        StateHasChanged();
+    }
+
+    // My actions and the team queue, on Today. Live (a colleague's change), the rows it brought or changed are
+    // highlighted a moment.
+    private LiveMarks<Guid>? _actionMarks;
+
+    private async Task LoadActions(bool live = false)
+    {
+        var (mine, queue) = (_mine, _queue);
+        _mine = await ActionSvc.ListAsync(new ActionFilter(ActionView.Mine));
+        _queue = await ActionSvc.TeamQueueAsync();
+        if (!live || _actionMarks is null) return;
+        if (mine is not null) _actionMarks.Apply(LiveDiff.Of(mine.Take(6), _mine.Take(6), r => r.Id, r => r));
+        if (queue is not null) _actionMarks.Apply(LiveDiff.Of(queue.Rows, _queue.Rows, r => r.Id, r => r));
+    }
+
+    private async Task ReloadTheirs()
+    {
+        await Load();
+        Toasts.Show("Reloaded. Your unsaved changes were dropped.");
+    }
+
+    public void Dispose()
+    {
+        _live?.Dispose();
+        _actionMarks?.Dispose();
+        _around?.Dispose();
+        _meetingLive?.Dispose();
+    }
+
+    private async Task Load()
+    {
+        _loading = true;
+        _changedBy = null;
+        _brief = await BriefSvc.GetAsync(_date);
+        _follow = Followed();
+        _rotaDay = (await Rotation.CalendarAsync(_date, _date)).FirstOrDefault();
+        if (ShowsActions) await LoadActions();
+        if (_brief is not null)
+        {
+            _readiness = BriefService.Readiness(_brief, _publicMax);
+            _analystId = _brief.AnalystId;
+            _intro = _brief.Intro;
+            _introTlp = _brief.IntroTlp;
+            if (_canWrite)
+            {
+                _candidates = await BriefSvc.CandidatesAsync(_brief.Id);
+                _shortlist = await Intake.InboxAsync(new InboxFilter(FeedItemStatus.Shortlisted, Take: AddArticlesDialog.MaxShortlist));
+            }
+            _actions = await BriefSvc.EditionActionsAsync(_brief);
+            _meeting = await MeetingSvc.GetAsync(_brief.Id);
+            _newInFeed = _canWrite ? await Intake.NewCountAsync() : null;
+            // The send log, for the Send step; the latest real send of each edition, for the "as sent" links on a sent brief.
+            _sends = await Sends.SendsAsync(_date);
+            _nothingToSend = _brief.Items.Count == 0 ? []
+                : new[] { (Edition.Team, _teamMax), (Edition.Public, _publicMax) }
+                    .Where(e => BriefEditions.Build(_brief, e.Item1, e.Item2).Articles.Count == 0).Select(e => e.Item1).ToList();
+            if (_tab == 1) await LoadNumbers();
+            _asSent = _brief.Status == BriefStatus.Sent
+                ? _sends.Where(x => !x.IsTest && x.Status == SendStatus.Sent)
+                    .GroupBy(x => x.Edition).Select(g => g.First()).OrderBy(x => x.Edition).ToList()
+                : [];
+        }
+        _loading = false;
+    }
+
+    private Task Start() => Run(async () => { await BriefSvc.GetOrStartAsync(_date); }, "Brief started.");
+
+    private async Task AskAdd()
+    {
+        var picked = await _add.PickAsync();
+        if (picked.Count == 0) return;
+        await Run(async () =>
+        {
+            foreach (var id in picked) await BriefSvc.AddArticleAsync(_brief!.Id, id);
+        }, picked.Count == 1 ? "Added to the end of the running order." : $"Added {picked.Count} articles to the end of the running order.");
+    }
+
+    // Taken off with an Undo that puts it back where it was.
+    private Task Remove(BriefItem item)
+    {
+        var at = Ordered().ToList().FindIndex(i => i.Id == item.Id);
+        var title = item.Article?.Title ?? "The article";
+        return Run(() => BriefSvc.RemoveItemAsync(_brief!.Id, item.Id), null,
+            () => Toasts.Show($"Took “{title}” off the brief (the article is kept).",
+                async () =>
+                {
+                    // From the toast: this page re-renders itself, as the click wasn't on it.
+                    await Run(() => BriefSvc.AddArticleAsync(_brief!.Id, item.ArticleId, at), $"Put “{title}” back at {at + 1}.");
+                    StateHasChanged();
+                }));
+    }
+
+    private Task Move(Guid itemId, int by) => Run(() => BriefSvc.MoveItemAsync(_brief!.Id, itemId, by), null,
+        () => Toasts.Show($"Moved to {Ordered().ToList().FindIndex(i => i.Id == itemId) + 1} of {_brief!.Items.Count}."));
+
+    private Task Reorder((IReadOnlyList<Guid> Order, Guid Moved) drop) => Run(() => BriefSvc.ReorderAsync(_brief!.Id, drop.Order), null,
+        () => Toasts.Show($"Moved to {Ordered().ToList().FindIndex(i => i.Id == drop.Moved) + 1} of {_brief!.Items.Count}."));
+
+    private Task MarkReady(bool ready) =>
+        Run(() => BriefSvc.MarkReadyAsync(_brief!.Id, ready), ready ? "Ready for the meeting." : "Back to draft.");
+
+    // The checks that don't block Ready (a missing tag, no recommended actions) still deserve a second look first.
+    private int Warnings => _readiness.Values.Sum(v => v.Count(c => !c.Blocking));
+
+    /// <summary>What the Mark ready confirmation lists, or null when nothing is left to look at (or something blocks it,
+    /// which the service refuses with its own reason).</summary>
+    public static string? ReadyWarning(int warnings, int missingNumbers, bool blocked)
+    {
+        if (blocked) return null;
+        var parts = new List<string>();
+        if (warnings > 0) parts.Add($"{warnings} warning{(warnings == 1 ? "" : "s")} on the running order");
+        if (missingNumbers > 0) parts.Add($"{BriefSteps.Numbers(missingNumbers)} not entered");
+        return parts.Count == 0 ? null : string.Join(" and ", parts) + ".";
+    }
+
+    internal async Task AskReady()
+    {
+        if (ReadyWarning(Warnings, _missingNumbers ?? 0, _readiness.Values.Any(v => v.Any(c => c.Blocking))) is { } warning
+            && !await _confirm.Ask("Ready anyway?", warning, "Mark ready", danger: false)) return;
+        await MarkReady(true);
+    }
+
+    internal Task AskSend()
+    {
+        _correct = null;
+        return _send.Ask("Send the brief", null, "");
+    }
+
+    // The Send dialog, opened on the correction of one send.
+    internal Task AskCorrection(Guid sendId)
+    {
+        _correct = sendId;
+        return _send.Ask("Send the brief", null, "");
+    }
+
+    private Guid? _correct;   // the send the Send dialog opens the correction of, if any
+
+    private Task Take(ActionRow r) => Run(() => ActionSvc.TakeAsync(r.Id), $"You took {Ui.ActionLabel(r.Number)} on.");
+
+    private Task RecordCover() => Run(() => Rotation.RecordPastCoverAsync(_date), "Recorded in the brief rotation.");
+
+    private Task SaveDetails()
+    {
+        var name = _people.FirstOrDefault(p => p.Sid == _analystId)?.DisplayName ?? _brief!.AnalystName;
+        return Run(() => BriefSvc.SetDetailsAsync(_brief!.Id, _analystId, name, _intro, _introTlp), "Saved.");
+    }
+
+    private async Task Run(Func<Task> action, string? done, Action? then = null)
+    {
+        _busy = true;
+        try
+        {
+            await action();
+            await Load();
+            if (done is not null) Toasts.Show(done);
+            then?.Invoke();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    // The running order (with the steps, numbers, edition check and meeting) or the preview of both editions: Today
+    // draws the running order bare; /briefs/{day} draws either inside the tab panel.
+    private RenderFragment Panel() => __builder =>
+    {
+            if (_brief is null) return; // only drawn once the brief has loaded
+            @if (_tab == 0)
+            {
+                @* The producer's steps, readiness and edition check are for those who make the brief; an action owner reading a
+                   brief sees its running order and numbers, not work they can't do. *@
+                @if (_canWrite)
+                {
+                    <StepStrip Steps="Steps" Day="_date" FirstNeedingWork="FirstNeedingWork" CanTriage="_canWrite" CanPresent="CurrentUser.Has(Permission.PresentBriefs)"
+                               CanMarkReady="@(_canWrite && _brief.Status == BriefStatus.Draft && _brief.Items.Count > 0)" OnMarkReady="AskReady" Busy="_busy"
+                               OnSend="AskSend" />
+                }
+                <div class="tide-today-grid">
+                    <div>
+                        <section class="tide-card" aria-labelledby="running-order-h">
+                            <h2 id="running-order-h">Running order
+                                <span class="ms-auto small fw-normal tide-muted">@Ordered().Count() article@(_brief.Items.Count == 1 ? "" : "s") &middot; @Count(Classification.Threat) threat@(Count(Classification.Threat) == 1 ? "" : "s") &middot; @Count(Classification.Informational) informational</span></h2>
+                            @if (_canWrite && _brief.Status != BriefStatus.Sent)
+                            {
+                            }
+                            <RunningOrder Items="Ordered().ToList()" Readiness="@(_canWrite ? _readiness : NoReadiness)" CanEdit="@(_canWrite && _brief.Status != BriefStatus.Sent)" Busy="_busy"
+                                          PublicMax="_publicMax" ShowDiscussed="@(_brief.Status is BriefStatus.Presented or BriefStatus.Sent)"
+                                          OnMove="m => Move(m.Item, m.By)" OnRemove="Remove" OnReorder="Reorder" />
+                            <div class="tide-order-foot">
+                                @if (_canWrite && _brief.Status != BriefStatus.Sent)
+                                {
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="AskAdd">
+                                        <span class="bi bi-plus-lg" aria-hidden="true"></span> Add article@(Available > 0 ? $" ({Available} available)" : "")
+                                    </button>
+                                    <a class="btn btn-link btn-sm" href="articles?new=1">New article</a>
+                                }
+                                @if (_canWrite) { <span class="small tide-muted ms-auto">@ReadyCount of @Ordered().Count() ready</span> }
+                            </div>
+                        </section>
+                        <MetricEntry Date="_date" Collapsible="true" MissingChanged="n => _missingNumbers = n" />
+                    </div>
+                    <div>
+                        @if (_canWrite)
+                        {
+                            <EditionCheck Brief="_brief" Day="_date" TeamMax="_teamMax" PublicMax="_publicMax" HasNumbers="_missingNumbers is not null" MissingNumbers="_missingNumbers ?? 0" />
+                        }
+                        @Meeting()
+                        <HistoryPanel Id="_brief.Id" Brief="true" Version="_brief.EditVersion" />
+                        @if (AsToday) { @Side() }
+                    </div>
+                </div>
+            }
+            else
+            {
+                @* For proofreading the whole brief: both editions as readers get them, side by side (one at a time, with
+                   the switch, on a narrow screen). *@
+                <div class="tide-seg tide-both-switch" role="group" aria-label="Edition to show">
+                    @foreach (var (edition, name) in Shows)
+                    {
+                        <button type="button" class="tide-seg-opt @(_shown == edition ? "on" : "")" aria-pressed="@Ui.Aria(_shown == edition)"
+                                @onclick="() => _shown = edition">@name</button>
+                    }
+                </div>
+                <div class="tide-both">
+                    @Proof(BriefEditions.Build(_brief, Edition.Team, _teamMax, _actions) with { Open = _open }, "proof-team-h",
+                        $"What the security teams see: everything up to {Tlp.Label(_teamMax)}.")
+                    @Proof(BriefEditions.Build(_brief, Edition.Public, _publicMax), "proof-company-h",
+                        $"What the company sees (the SharePoint copy): nothing above {Tlp.Label(_publicMax)}. Restricted bullets, screenshots and articles are left out, not just hidden.")
+                </div>
+            }
+    };
+
+    private static readonly (Edition Edition, string Name)[] Shows = [(Edition.Team, "Team"), (Edition.Public, "Company-wide")];
+
+    // One edition in the preview, headed by its name, its marking and who it's for.
+    private RenderFragment Proof(BriefEdition cut, string headingId, string audience) => __builder =>
+    {
+        <section class="tide-both-ed @(_shown == cut.Edition ? "is-shown" : "")" aria-labelledby="@headingId">
+            <h2 class="tide-both-head" id="@headingId">@Tide.Application.Distribution.BriefRenderer.EditionName(cut.Edition) <TlpBadge Level="cut.Marking" /></h2>
+            <p class="tide-both-for">@audience</p>
+            <EditionView Edition="cut" Metrics="_metrics" Open="_open" />
+        </section>
+    };
+
+    // The presenter, when it meets and the opening note: editable by analysts, read by everyone else.
+    private RenderFragment Meeting() => __builder =>
+    {
+        <section class="tide-card" aria-labelledby="meeting-h">
+            <h2 id="meeting-h">Meeting <span class="ms-auto small fw-normal tide-muted">@Ui.ShortDay(_date) &middot; @MeetsAt @ZoneLabel</span></h2>
+            @if (_rotaDay is { AnalystName: { } rota } && !_past)
+            {
+                <p class="small mb-2">The rotation has <strong>@rota</strong>@(_rotaDay.IsChanged ? $", covering {_rotaDay.RegularName}" : "") for this day.</p>
+            }
+            @if (_canWrite && _brief!.Status != BriefStatus.Sent)
+            {
+                <label class="tide-field-label" for="analyst">Presenting analyst</label>
+                <select id="analyst" class="form-select form-select-sm mb-2" @bind="_analystId">
+                    @if (!_people.Any(p => p.Sid == _analystId))
+                    {
+                        <option value="@_analystId">@_brief.AnalystName</option>
+                    }
+                    @foreach (var p in _people)
+                    {
+                        <option value="@p.Sid">@p.DisplayName@(p.Sid == CurrentUser.UserId ? " (you)" : "")</option>
+                    }
+                </select>
+                <div class="d-flex gap-2 align-items-center justify-content-between">
+                    <label class="tide-field-label" for="intro">Opening note (optional)</label>
+                    <TlpSelect Value="_introTlp" ValueChanged="v => _introTlp = v" Label="The opening note's TLP" Class="w-auto mb-1" />
+                </div>
+                <textarea id="intro" class="form-control form-control-sm" rows="2" maxlength="2000" @bind="_intro"
+                          placeholder="Shown on the title slide: a quiet day, a theme, a reminder."></textarea>
+                <div class="small tide-muted mt-1">An edition whose ceiling is below its TLP leaves it out.</div>
+                <button class="btn btn-outline-secondary btn-sm mt-2" disabled="@_busy" @onclick="SaveDetails">Save</button>
+            }
+            else
+            {
+                <dl class="tide-dl mb-0">
+                    <dt>Presenter</dt><dd>@_brief!.AnalystName</dd>
+                    <dt>Opening note</dt>
+                    <dd>
+                        @if (string.IsNullOrWhiteSpace(_brief.Intro))
+                        {
+                            <span class="tide-muted">None</span>
+                        }
+                        else
+                        {
+                            <TlpBadge Level="_brief.IntroTlp" /> @_brief.Intro
+                        }
+                    </dd>
+                </dl>
+            }
+            @if (_meeting.Attendees.Count > 0)
+            {
+                <h3 class="tide-subhead">Attended</h3>
+                <div class="small">@string.Join(", ", _meeting.Attendees.Select(a => a.Name))</div>
+            }
+            @if (_meeting.Notes.Count > 0)
+            {
+                <h3 class="tide-subhead">Meeting notes</h3>
+                @foreach (var (title, notes) in NoteGroups())
+                {
+                    <div class="tide-meeting-notes-group">
+                        <div class="tide-muted small">@title</div>
+                        <ul class="tide-meeting-notes small">
+                            @foreach (var n in notes)
+                            {
+                                <li><strong>@n.AuthorName</strong> <span class="tide-muted">@Ui.Time(Clock, n.AtUtc)</span> @n.Text</li>
+                            }
+                        </ul>
+                    </div>
+                }
+            }
+        </section>
+    };
+
+    // Today for someone who works actions but can't write articles: their teams' queue first, then what's on today's
+    // brief (its state and headlines, read-only: the steps, the running order's controls and the edition check are the
+    // producers'), the meeting, and beside them the rotation and recent articles.
+    private RenderFragment OwnerToday() => __builder =>
+    {
+        <div class="tide-today-grid">
+            <div>
+                @Queue()
+                <section class="tide-card" aria-labelledby="todays-brief-h">
+                    <h2 id="todays-brief-h">Today's brief <StatusBadge Status="@StatusLabel" />
+                        <a class="ms-auto small fw-normal" href="@($"{Ui.BriefUrl(_date)}?tab=preview")">Read it</a></h2>
+                    @if (Ordered().Any())
+                    {
+                        <ol class="tide-published-heads mb-0">
+                            @foreach (var i in Ordered())
+                            {
+                                <li>@i.Article!.Title</li>
+                            }
+                        </ol>
+                    }
+                    else
+                    {
+                        <EmptyState Icon="bi-journal-text" Title="Nothing on today's brief yet." Compact="true" />
+                    }
+                </section>
+            </div>
+            <div>
+                @Meeting()
+                @Side()
+            </div>
+        </div>
+    };
+
+    // The open actions of my teams that are mine or nobody's, mine first, each by due date; Take it on an unassigned one.
+    private RenderFragment Queue() => __builder =>
+    {
+        @if (_queue is { } q)
+        {
+            <section class="tide-card" aria-labelledby="team-queue-h">
+                <h2 id="team-queue-h">My team's queue <span class="tide-count">(@q.Total)</span>
+                    <a class="ms-auto small fw-normal" href="actions?view=myteams">My teams</a></h2>
+                @if (!q.OnATeam)
+                {
+                    <EmptyState Icon="bi-people" Title="You're not on a team." Compact="true" />
+                }
+                else if (q.Rows.Count == 0)
+                {
+                    <EmptyState Icon="bi-check2-circle" Title="Nothing waiting for you or your team." Compact="true" />
+                }
+                else
+                {
+                    <p class="small tide-muted mb-1">@q.Mine yours and @q.Unassigned unassigned.</p>
+                }
+                @foreach (var r in q.Rows)
+                {
+                    <div class="tide-queue-row @_actionMarks?.Css(r.Id)" @key="r.Id">
+                        <a class="tide-action-num" href="@Ui.ActionUrl(r.Number)">@Ui.ActionLabel(r.Number)</a>
+                        <span class="tide-queue-title">
+                            @r.Title
+                            <span class="tide-queue-meta">
+                                @ActionService.KindName(r.Kind) &middot; @r.TeamName &middot; @(r.AssigneeId is null ? "Unassigned" : "Yours")
+                                @if (ActionSla.LateText(r.DueDate, ActionSvc.Today) is { } late)
+                                {
+                                    <span>&middot; <span class="tide-queue-late">@late</span></span>
+                                }
+                            </span>
+                        </span>
+                        @if (r.AssigneeId is null)
+                        {
+                            <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@_busy" @onclick="() => Take(r)"
+                                    aria-label="@($"Take {Ui.ActionLabel(r.Number)} on: {r.Title}")">Take it</button>
+                        }
+                        else
+                        {
+                            <SlaBadge State="r.Sla(ActionSvc.Today, Clock.Days)" Due="r.DueDate" />
+                        }
+                    </div>
+                }
+                @if (q.Total > q.Rows.Count)
+                {
+                    <a class="small d-inline-block mt-2" href="actions?view=myteams">All @q.Total in My teams</a>
+                }
+            </section>
+        }
+    };
+
+    private RenderFragment MyActions() => __builder =>
+    {
+        @if (_mine is not null)
+        {
+            <section class="tide-card" aria-labelledby="my-actions-h">
+                <h2 id="my-actions-h">My actions <span class="tide-count">(@_mine.Count)</span> <a class="ms-auto small fw-normal" href="actions?view=mine">All</a></h2>
+                @if (_mine.Count == 0)
+                {
+                    <EmptyState Icon="bi-check2-circle" Title="Nothing assigned to you." Compact="true" />
+                }
+                @foreach (var r in _mine.Take(6))
+                {
+                    <div class="d-flex gap-2 align-items-start py-1 border-bottom small @_actionMarks?.Css(r.Id)" @key="r.Id">
+                        <a class="tide-action-num" href="@Ui.ActionUrl(r.Number)">@Ui.ActionLabel(r.Number)</a>
+                        <span class="flex-grow-1">@r.Title</span>
+                        <SlaBadge State="r.Sla(ActionSvc.Today, Clock.Days)" Due="r.DueDate" Today="ActionSvc.Today" />
+                    </div>
+                }
+            </section>
+        }
+    };
+
+    // An analyst on a team: one Actions card, their own and the team's unassigned ones on two tabs, where My actions and
+    // the team queue used to list the same rows twice.
+    private RenderFragment ActionsCard() => __builder =>
+    {
+        @if (_mine is not null && _queue is { } q)
+        {
+            var unassigned = q.Rows.Where(r => r.AssigneeId is null).ToList();
+            var team = _actionsTab == "team";
+            <section class="tide-card" aria-labelledby="actions-card-h">
+                <h2 id="actions-card-h">Actions <a class="ms-auto small fw-normal" href="@(team ? "actions?view=myteams" : "actions?view=mine")">All</a></h2>
+                <div class="tide-seg mb-2" role="group" aria-label="Whose actions">
+                    <button type="button" class="tide-seg-opt @(team ? "" : "on")" aria-pressed="@(team ? "false" : "true")" @onclick="@(() => _actionsTab = "mine")">Mine <span class="tide-count">@_mine.Count</span></button>
+                    <button type="button" class="tide-seg-opt @(team ? "on" : "")" aria-pressed="@Ui.Aria(team)" @onclick="@(() => _actionsTab = "team")">Team, unassigned <span class="tide-count">@q.Unassigned</span></button>
+                </div>
+                @if (!team)
+                {
+                    @if (_mine.Count == 0) { <EmptyState Icon="bi-check2-circle" Title="Nothing assigned to you." Compact="true" /> }
+                    @foreach (var r in _mine.Take(6))
+                    {
+                        <div class="d-flex gap-2 align-items-start py-1 border-bottom small @_actionMarks?.Css(r.Id)" @key="r.Id">
+                            <a class="tide-action-num" href="@Ui.ActionUrl(r.Number)">@Ui.ActionLabel(r.Number)</a>
+                            <span class="flex-grow-1">@r.Title</span>
+                            <SlaBadge State="r.Sla(ActionSvc.Today, Clock.Days)" Due="r.DueDate" Today="ActionSvc.Today" />
+                        </div>
+                    }
+                }
+                else
+                {
+                    @if (unassigned.Count == 0) { <EmptyState Icon="bi-check2-circle" Title="Nothing unassigned on your teams." Compact="true" /> }
+                    @foreach (var r in unassigned)
+                    {
+                        <div class="tide-queue-row @_actionMarks?.Css(r.Id)" @key="r.Id">
+                            <a class="tide-action-num" href="@Ui.ActionUrl(r.Number)">@Ui.ActionLabel(r.Number)</a>
+                            <span class="tide-queue-title">@r.Title
+                                <span class="tide-queue-meta">@ActionService.KindName(r.Kind) &middot; @r.TeamName
+                                    @if (ActionSla.LateText(r.DueDate, ActionSvc.Today) is { } late) { <span>&middot; <span class="tide-queue-late">@late</span></span> }
+                                </span>
+                            </span>
+                            <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@_busy" @onclick="() => Take(r)"
+                                    aria-label="@($"Take {Ui.ActionLabel(r.Number)} on: {r.Title}")">Take it</button>
+                        </div>
+                    }
+                }
+            </section>
+        }
+    };
+
+    private string _actionsTab = "mine";
+
+    // What a reader of the brief who can't write is shown of each article's readiness: nothing.
+    private static readonly IReadOnlyDictionary<Guid, IReadOnlyList<ArticleCheck>> NoReadiness = new Dictionary<Guid, IReadOnlyList<ArticleCheck>>();
+
+    // Beside today's brief: an analyst's actions (on a team, with the team's unassigned ones; action owners have the
+    // queue first), the rotation and recent articles.
+    private RenderFragment Side() => __builder =>
+    {
+        @if (_canWrite)
+        {
+            <ReviewsForYou />
+            @if (_queue is { OnATeam: true }) { @ActionsCard() } else { @MyActions() }
+        }
+        <section class="tide-card" aria-labelledby="coming-up-h">
+            <h2 id="coming-up-h">Coming up for you <a class="ms-auto small fw-normal" href="rotation">Rotation</a></h2>
+            @if (_upcoming is { } up)
+            {
+                @if (up.ToApprove.Count > 0)
+                {
+                    <div class="small text-danger mb-1"><span class="bi bi-exclamation-circle" aria-hidden="true"></span> <a href="rotation">@up.ToApprove.Count swap or cover request@(up.ToApprove.Count == 1 ? "" : "s") waiting for you</a></div>
+                }
+                @if (up.MyRuns.Count == 0)
+                {
+                    <div class="small tide-muted">You're not on the rotation in the coming weeks.</div>
+                }
+                <ul class="list-unstyled small mb-0">
+                    @foreach (var run in up.MyRuns.Take(3))
+                    {
+                        <li>You present @(run.From == run.To ? Ui.ShortDay(run.From) : $"{Ui.ShortDay(run.From)} to {Ui.ShortDay(run.To)}")</li>
+                    }
+                </ul>
+            }
+        </section>
+        <section class="tide-card" aria-labelledby="recent-h">
+            <h2 id="recent-h">Recently written <span class="tide-count">(@_recent.Count)</span></h2>
+            @if (_recent.Count == 0)
+            {
+                <EmptyState Icon="bi-file-earmark-text" Title="No articles yet." Compact="true" />
+            }
+            <ul class="list-unstyled mb-0">
+                @foreach (var r in _recent)
+                {
+                    <li class="mb-2">
+                        <a href="articles/@r.Id" class="fw-semibold text-decoration-none">@r.Title</a>
+                        <div class="tide-run-meta">
+                            <ClassBadge Classification="r.Classification" Priority="r.Priority" />
+                            <StatusBadge Status="@r.Status.ToString()" />
+                            <span>@r.AuthorName &middot; @Ui.When(Clock, r.CreatedAtUtc)</span>
+                        </div>
+                    </li>
+                }
+            </ul>
+            @if (_canWrite)
+            {
+                <a class="btn btn-outline-secondary btn-sm mt-2" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article</a>
+            }
+        </section>
+    };
+}

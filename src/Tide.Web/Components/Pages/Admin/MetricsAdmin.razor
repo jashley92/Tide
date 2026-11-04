@@ -1,0 +1,243 @@
+@page "/admin/metrics"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@using System.Globalization
+@using Tide.Application.Metrics
+@inject MetricsService MetricsSvc
+@inject ToastService Toasts
+@inject IJSRuntime JS
+
+<PageTitle>Opening metrics set-up · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <h1 class="tide-admin-title">Opening metrics</h1>
+        <div class="tide-sub">Renaming keeps a metric's history. A metric with values is retired, not deleted.</div>
+    </div>
+    <div class="d-flex gap-3 align-items-center">
+        <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="show-retired" @bind="_showRetired" @bind:after="Load" />
+            <label class="form-check-label" for="show-retired">Show retired</label>
+        </div>
+    </div>
+</div>
+
+@if (_groups.Count == 0)
+{
+    <div class="tide-card">
+        <h2>Start from an example?</h2>
+        <p class="small tide-muted">Optional generic examples: a status breakdown, a queue with an ageing count, an SLA split. Nothing is added until imported.</p>
+        <ul class="small">
+            @foreach (var (group, metrics) in MetricsService.ExampleSet)
+            {
+                <li><strong>@group</strong>: @string.Join(", ", metrics.Select(m => m.Name))</li>
+            }
+        </ul>
+        <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="ImportExamples"><span class="bi bi-box-arrow-in-down" aria-hidden="true"></span> Import the example set</button>
+    </div>
+}
+
+@foreach (var (g, gi) in _groups.Select((g, i) => (g, i)))
+{
+    <div class="tide-card @(g.IsRetired ? "tide-retired" : "")" @key="g.Id">
+        <div class="d-flex gap-2 align-items-start mb-2">
+            @if (_renaming == g.Id)
+            {
+                <input class="tide-maxw-md form-control form-control-sm" @bind="_groupName" aria-label="Group name" />
+                <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="() => RenameGroup(g.Id)">Save</button>
+                <button class="btn btn-outline-secondary btn-sm" @onclick="() => _renaming = null">Cancel</button>
+            }
+            else
+            {
+                <div class="flex-grow-1">
+                    <h2 class="tide-card-title mb-0">@g.Name @if (g.IsRetired) { <Badge>Retired</Badge> }</h2>
+                    <div class="tide-muted small"><span class="tide-data">@g.Key</span></div>
+                </div>
+                <button class="tide-icon-btn" title="Move up" aria-label="Move @g.Name up" disabled="@(gi == 0)" @onclick="() => Run(() => MetricsSvc.MoveGroupAsync(g.Id, -1))"><span class="bi bi-arrow-up" aria-hidden="true"></span></button>
+                <button class="tide-icon-btn" title="Move down" aria-label="Move @g.Name down" disabled="@(gi == _groups.Count - 1)" @onclick="() => Run(() => MetricsSvc.MoveGroupAsync(g.Id, 1))"><span class="bi bi-arrow-down" aria-hidden="true"></span></button>
+                <button class="btn btn-outline-secondary btn-sm" @onclick="() => { _renaming = g.Id; _groupName = g.Name; }">Rename</button>
+                <button class="btn btn-outline-secondary btn-sm" title="A group with no values yet is deleted; otherwise it's retired"
+                        aria-label="@(g.IsRetired ? "Bring back" : "Retire") @g.Name" @onclick="() => Retire(g.Name, g.IsRetired, () => MetricsSvc.SetGroupRetiredAsync(g.Id, !g.IsRetired))">@(g.IsRetired ? "Bring back" : "Retire")</button>
+            }
+        </div>
+        <table class="tide-table">
+            <thead><tr><th>Metric</th><th>Format</th><th>Good when</th><th>Warn / critical</th><th>Flag missing</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var (m, mi) in g.Metrics.Select((m, i) => (m, i)))
+                {
+                    <tr @key="m.Id" class="@(m.IsRetired ? "tide-retired" : "")">
+                        <td><span class="fw-semibold">@m.Name</span> @if (m.IsRetired) { <Badge>Retired</Badge> }<div class="tide-data small tide-muted">@m.Key</div></td>
+                        <td class="small">@m.Format</td>
+                        <td class="small">@Direction(m.Direction)</td>
+                        <td class="small tide-table-num">@Threshold(m, m.WarnThreshold) / @Threshold(m, m.CriticalThreshold)</td>
+                        <td class="small">@(m.FlagMissing ? "Yes" : "No")</td>
+                        <td class="text-end text-nowrap">
+                            <button class="tide-icon-btn" title="Move up" aria-label="Move @m.Name up" disabled="@(mi == 0)" @onclick="() => Run(() => MetricsSvc.MoveMetricAsync(m.Id, -1))"><span class="bi bi-arrow-up" aria-hidden="true"></span></button>
+                            <button class="tide-icon-btn" title="Move down" aria-label="Move @m.Name down" disabled="@(mi == g.Metrics.Count - 1)" @onclick="() => Run(() => MetricsSvc.MoveMetricAsync(m.Id, 1))"><span class="bi bi-arrow-down" aria-hidden="true"></span></button>
+                            <button class="btn btn-outline-secondary btn-sm" @onclick="() => Edit(MetricForm.From(m))">Edit</button>
+                            <button class="btn btn-outline-secondary btn-sm" title="A metric with no values yet is deleted; otherwise it's retired"
+                                    aria-label="@(m.IsRetired ? "Bring back" : "Retire") @m.Name" @onclick="() => Retire(m.Name, m.IsRetired, () => MetricsSvc.SetMetricRetiredAsync(m.Id, !m.IsRetired))">@(m.IsRetired ? "Bring back" : "Retire")</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (!g.IsRetired)
+        {
+            <button class="btn btn-outline-secondary btn-sm mt-2" @onclick="() => Edit(new MetricForm { GroupId = g.Id })"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add a metric</button>
+        }
+    </div>
+}
+
+<div class="tide-card">
+    <h2>New group</h2>
+    <div class="d-flex gap-2 flex-wrap">
+        <input class="tide-maxw-md form-control form-control-sm" placeholder="e.g. Alert queue" aria-label="New group name" @bind="_newGroup" />
+        <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="AddGroup">Add group</button>
+        @if (_groups.Count > 0)
+        {
+            <button class="btn btn-link btn-sm ms-auto" disabled="@_busy" @onclick="ImportExamples">Import the example set</button>
+        }
+    </div>
+</div>
+
+<ConfirmDialog @ref="_confirm" />
+@* A metric's settings, new or changed: saving closes it, and a refusal (a threshold that isn't a number) leaves it open. *@
+<ConfirmDialog @ref="_metric" Form="true" Wide="true" Confirming="SaveMetric">
+    @if (_form is not null)
+    {
+        <div class="row g-2">
+            <div class="col-md-4">
+                <label class="tide-field-label" for="m-name">Name</label>
+                <input id="m-name" class="form-control form-control-sm" maxlength="100" @bind="_form.Name" />
+            </div>
+            <div class="col-md-2">
+                <label class="tide-field-label" for="m-format">Format</label>
+                <select id="m-format" class="form-select form-select-sm" @bind="_form.Format">
+                    @foreach (var f in Enum.GetValues<MetricFormat>()) { <option value="@f">@f</option> }
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="tide-field-label" for="m-direction">Good when</label>
+                <select id="m-direction" class="form-select form-select-sm" @bind="_form.Direction">
+                    @foreach (var d in Enum.GetValues<MetricDirection>()) { <option value="@d">@Direction(d)</option> }
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="tide-field-label" for="m-group">Group</label>
+                <select id="m-group" class="form-select form-select-sm" @bind="_form.GroupId">
+                    @foreach (var og in _groups.Where(x => !x.IsRetired)) { <option value="@og.Id">@og.Name</option> }
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="tide-field-label" for="m-warn">Warning threshold</label>
+                <input id="m-warn" class="form-control form-control-sm" inputmode="decimal" @bind="_warn" placeholder="none" />
+            </div>
+            <div class="col-md-3">
+                <label class="tide-field-label" for="m-crit">Critical threshold</label>
+                <input id="m-crit" class="form-control form-control-sm" inputmode="decimal" @bind="_critical" placeholder="none" />
+            </div>
+            <div class="col-md-6 d-flex align-items-end">
+                <div class="form-check">
+                    <input id="m-flag" class="form-check-input" type="checkbox" @bind="_form.FlagMissing" />
+                    <label class="form-check-label small" for="m-flag">Call it out on the brief page when a day has no value</label>
+                </div>
+            </div>
+        </div>
+        <p class="form-text mb-0">@ThresholdHelp(_form.Direction)</p>
+    }
+</ConfirmDialog>
+
+@code {
+    private ConfirmDialog _confirm = default!, _metric = default!;
+    private IReadOnlyList<MetricGroup> _groups = [];
+    private bool _showRetired, _busy;
+    private Guid? _renaming;
+    private string? _groupName, _newGroup, _warn, _critical;
+    private MetricForm? _form;
+
+    protected override Task OnInitializedAsync() => Load();
+
+    private async Task Load() => _groups = await MetricsSvc.ListAsync(_showRetired);
+
+    private static string Direction(MetricDirection d) => d switch
+    {
+        MetricDirection.HigherIsBetter => "Higher is better",
+        MetricDirection.LowerIsBetter => "Lower is better",
+        _ => "Neutral",
+    };
+
+    private static string Threshold(MetricDefinition m, decimal? t) => t is { } v ? MetricMath.Format(m.Format, v) : "—";
+
+    private static string ThresholdHelp(MetricDirection d) => d == MetricDirection.HigherIsBetter
+        ? "A value at or below a threshold colours it (critical must be at or below warning)."
+        : "A value at or above a threshold colours it (critical must be at or above warning).";
+
+    private async Task Edit(MetricForm form)
+    {
+        _form = form;
+        _warn = form.WarnThreshold?.ToString("0.####", CultureInfo.InvariantCulture);
+        _critical = form.CriticalThreshold?.ToString("0.####", CultureInfo.InvariantCulture);
+        await _metric.Ask(form.Id is null ? "New metric" : "Edit metric", null, "Save", danger: false);
+        _form = null;
+    }
+
+    private static decimal? Parse(string? text, string label)
+    {
+        var t = (text ?? "").Replace(",", "").Trim();
+        if (t.Length == 0) return null;
+        return decimal.TryParse(t, NumberStyles.Number, CultureInfo.InvariantCulture, out var v) ? v
+            : throw new ArgumentException($"The {label} threshold isn't a number.");
+    }
+
+    private Task<bool> SaveMetric() => Run(async () =>
+    {
+        _form!.WarnThreshold = Parse(_warn, "warning");
+        _form.CriticalThreshold = Parse(_critical, "critical");
+        await MetricsSvc.SaveMetricAsync(_form);
+        Toasts.Show("Metric saved.");
+    });
+
+    private Task RenameGroup(Guid id) => Run(async () =>
+    {
+        await MetricsSvc.RenameGroupAsync(id, _groupName ?? "");
+        _renaming = null;
+    });
+
+    private Task AddGroup() => Run(async () =>
+    {
+        await MetricsSvc.AddGroupAsync(_newGroup ?? "");
+        _newGroup = null;
+    });
+
+    private Task ImportExamples() => Run(async () =>
+    {
+        var added = await MetricsSvc.ImportExampleSetAsync();
+        Toasts.Show(added == 0 ? "The example groups are already here." : $"Added {added} example group{(added == 1 ? "" : "s")}.");
+    });
+
+    private async Task Retire(string name, bool isRetired, Func<Task> action)
+    {
+        if (await Retiring.ConfirmAsync(_confirm, name, isRetired)) await Run(action);
+    }
+
+    // One change at a time: a second click while one runs (a double-click on Add group) does nothing, so nothing is
+    // added twice. The buttons are disabled meanwhile. True when it worked; a failure is a toast.
+    private async Task<bool> Run(Func<Task> action)
+    {
+        if (_busy) return false;
+        _busy = true;
+        try
+        {
+            await action();
+            await Load();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            return false;
+        }
+        finally { _busy = false; }
+    }
+}

@@ -1,0 +1,31 @@
+@* What was done about an indicator or CVE: the actions raised from the articles it's on, and how their hunts went. *@
+
+<h3 class="tide-card-title mt-4">Actions raised</h3>
+@if (Actions.Items.Count == 0)
+{
+    <p class="small tide-muted mb-0">None from these articles.</p>
+}
+else
+{
+    <table class="tide-table">
+        <thead><tr><th>#</th><th>Action</th><th>Team</th><th>Status</th><th>Hunt</th></tr></thead>
+        <tbody>
+            @foreach (var a in Actions.Items)
+            {
+                <tr @key="a.Id">
+                    <td>@if (CanOpen) { <a class="tide-action-num" href="@Ui.ActionUrl(a.Number)">@Ui.ActionLabel(a.Number)</a> } else { <span class="tide-action-num">@Ui.ActionLabel(a.Number)</span> }</td>
+                    <td>@if (CanOpen) { <a href="@Ui.ActionUrl(a.Number)">@a.Title</a> } else { @a.Title }</td>
+                    <td class="small">@a.TeamName<div class="tide-muted">@(a.AssigneeName ?? "Unassigned")</div></td>
+                    <td class="small"><ActionStatusBadge Status="a.Status" /></td>
+                    <td class="small">@if (a.Hunted is null) { <span class="tide-muted">None</span> } else { <HuntBadge Result="a.Hunted" /> }</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (Actions.More) { <p class="small tide-muted mt-2">Showing the latest @Actions.Items.Count of @Actions.Total.ToString("N0", System.Globalization.CultureInfo.InvariantCulture).</p> }
+}
+
+@code {
+    [Parameter, EditorRequired] public HitList<ActionHit> Actions { get; set; } = HitList<ActionHit>.None;
+    [Parameter] public bool CanOpen { get; set; }
+}

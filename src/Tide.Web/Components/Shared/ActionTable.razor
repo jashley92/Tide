@@ -1,0 +1,98 @@
+@inject OrgClock Clock
+
+@* A list of actions: number, title (with its article), kind and priority, team and assignee, due date and SLA, status.
+   One DataTable: filtered as you type, sorted by any heading, grouped by kind or by urgency when asked. *@
+
+<DataTable TItem="ActionRow" Items="Rows" Columns="Columns" Key="r => r.Id" One="action" Many="actions" Caption="@Caption"
+           FilterLabel="Filter actions" FilterPlaceholder="Title, A-number, team, person or article" Filter="@Filter" DefaultSort="DefaultSort"
+           RowClass="RuleClass" GroupBy="Grouping" GroupOrder="GroupNames" Toolbar="Toolbar" Empty="Empty" PageInAddress="PageInAddress">
+    <RowTemplate Context="r">
+        <td><a class="tide-action-num" href="@Ui.ActionUrl(r.Number)">@Ui.ActionLabel(r.Number)</a></td>
+        <td>
+            @if (r.ParentNumber is { } parent)
+            {
+                <a class="tide-kcard-parent small d-block" href="@Ui.ActionUrl(parent)"><span class="bi bi-arrow-return-right" aria-hidden="true"></span> Part of @Ui.ActionLabel(parent)</a>
+            }
+            <a href="@Ui.ActionUrl(r.Number)">@r.Title</a>
+            <PresenceNote Place="@Tide.Web.Components.Pages.ActionPage.ActionPlace(r.Number)" Join="false" Compact="true" />
+            @if (ActionRules.For(Rules, r, Today, Clock.Days) is { Count: > 0 } matched)
+            {
+                <div class="tide-kcard-labels">@foreach (var rule in matched) { <span class="tide-rule-label @Ui.RuleClass(rule.Colour)">@rule.Name</span> }</div>
+            }
+            @if (r.ChecklistTotal > 0)
+            {
+                <div class="small tide-muted"><span class="bi bi-list-check" aria-hidden="true"></span> @r.ChecklistDone/@r.ChecklistTotal on the checklist</div>
+            }
+            @if (r.ArticleTitle is not null)
+            {
+                <div class="small tide-muted"><span class="bi bi-newspaper" aria-hidden="true"></span> @r.ArticleTitle</div>
+            }
+            @if (r.Children > 0)
+            {
+                <div class="small tide-muted"><span class="bi bi-diagram-3" aria-hidden="true"></span> @r.Children part@(r.Children == 1 ? "" : "s")</div>
+            }
+        </td>
+        <td class="small text-nowrap">@ActionService.KindName(r.Kind) <PriorityBadge Priority="r.Priority" /></td>
+        <td class="small">@r.TeamName<div class="tide-muted">@(r.AssigneeName ?? "Unassigned")</div></td>
+        <td class="small text-nowrap">
+            @if (r.DueDate is { } d) { <div>@Ui.ShortDay(d)</div> }
+            <SlaBadge State="r.Sla(Today, Clock.Days)" Due="r.DueDate" Today="Today" />
+        </td>
+        <td class="small"><ActionStatusBadge Status="r.Status" />@if (r.Outcome != ActionOutcome.None) { <div class="tide-muted">@ActionService.OutcomeName(r.Outcome)</div> }</td>
+    </RowTemplate>
+</DataTable>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<ActionRow>? Rows { get; set; }
+    [Parameter, EditorRequired] public DateOnly Today { get; set; }
+
+    /// <summary>The administrators' card rules: a row takes the first matching one's colour, and every match's label.</summary>
+    [Parameter] public IReadOnlyList<ActionCardRule> Rules { get; set; } = [];
+
+    [Parameter] public string Caption { get; set; } = "Actions";
+    [Parameter] public string? Filter { get; set; }
+
+    /// <summary>The page is the address's ?page= (the one list on the page): see DataTable.</summary>
+    [Parameter] public bool PageInAddress { get; set; }
+    [Parameter] public TableSort? DefaultSort { get; set; }
+    [Parameter] public bool GroupByKind { get; set; }
+
+    /// <summary>Under Overdue, Due today, This week, Later and Blocked (the Mine view), when not grouped by kind.</summary>
+    [Parameter] public bool GroupByUrgency { get; set; }
+
+    [Parameter] public RenderFragment? Toolbar { get; set; }
+    [Parameter] public RenderFragment? Empty { get; set; }
+
+    /// <summary>The list's order: soonest due first (no date last), as the open views come.</summary>
+    public static readonly TableSort SoonestDue = new("due", false);
+
+    private static readonly IReadOnlyList<string> KindOrder = Enum.GetValues<ActionKind>().Select(ActionService.KindName).ToList();
+
+    private static readonly IReadOnlyList<TableColumn<ActionRow>> Columns =
+    [
+        new("number", "#") { SortBy = r => r.Number, FilterBy = r => Ui.ActionLabel(r.Number) },
+        new("title", "Action") { SortBy = r => r.Title, FilterBy = r => r.Title + " " + r.ArticleTitle },
+        new("kind", "Kind") { SortBy = r => r.Kind, FilterBy = r => ActionService.KindName(r.Kind) },
+        new("team", "Team") { SortBy = r => r.TeamName, FilterBy = r => r.TeamName + " " + (r.AssigneeName ?? "Unassigned") },
+        new("due", "Due") { SortBy = r => r.DueDate },
+        new("status", "Status") { SortBy = r => r.Status },
+    ];
+
+    private static readonly IReadOnlyList<string> UrgencyOrder = Enum.GetValues<ActionUrgency>().Select(ActionSla.UrgencyName).ToList();
+
+    private Func<ActionRow, string>? Grouping => GroupByKind ? KindOf : GroupByUrgency ? UrgencyOf : null;
+    private IReadOnlyList<string> GroupNames => GroupByKind ? KindOrder : UrgencyOrder;
+
+    private static string KindOf(ActionRow r) => ActionService.KindName(r.Kind);
+    private string UrgencyOf(ActionRow r) => ActionSla.UrgencyName(r.Urgency(Today, Clock.Days));
+
+    /// <summary>The rows a colleague's change just brought or changed, highlighted a moment (the page marks them).</summary>
+    [Parameter] public LiveMarks<Guid>? Live { get; set; }
+
+    private string? RuleClass(ActionRow r)
+    {
+        var rule = ActionRules.For(Rules, r, Today, Clock.Days) is { Count: > 0 } matched ? "tide-ruled " + Ui.RuleClass(matched[0].Colour) : null;
+        var live = Live?.Css(r.Id);
+        return string.IsNullOrEmpty(live) ? rule : rule is null ? live : rule + " " + live;
+    }
+}

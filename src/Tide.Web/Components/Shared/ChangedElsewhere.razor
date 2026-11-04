@@ -1,0 +1,27 @@
+@* Someone else saved what this page is editing: TIDE never reloads over a draft, it says so. The unsaved changes
+   stay on screen to copy from, and Reload shows the other person's version. Nothing renders until there's something
+   to say; the status region announces it. *@
+<div role="status">
+    @if (By is not null)
+    {
+        <div class="tide-changed-elsewhere">
+            <span class="bi bi-exclamation-triangle" aria-hidden="true"></span>
+            <span><strong>@By saved this @What while you were editing.</strong> Your changes are still here; copy anything you
+                need, then reload to see theirs. @Consequence</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" @onclick="OnReload">Reload</button>
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>Who saved it, or null when no one has.</summary>
+    [Parameter] public string? By { get; set; }
+
+    /// <summary>The thing, e.g. "article".</summary>
+    [Parameter] public string What { get; set; } = "page";
+
+    /// <summary>What saving the draft now would do: refused where the edit version guards it, or replace theirs.</summary>
+    [Parameter] public string Consequence { get; set; } = "Saving now would be refused.";
+
+    [Parameter] public EventCallback OnReload { get; set; }
+}

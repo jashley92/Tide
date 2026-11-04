@@ -1,0 +1,389 @@
+@* The actions board: a column per status, a card per action. A card the person may work can be dragged to another column
+   (board.js), or moved with its Move menu from the keyboard; either way ActionService.MoveAsync checks and makes the move.
+   A move to a closed column asks for the outcome first, as the action's page does.
+   It's shared live: a card someone else is dragging says who has it and lights the column it's over (BoardDrags), and a
+   card someone else moved slides in from its old column and says who moved it. *@
+@implements IAsyncDisposable
+@inject ActionService ActionSvc
+@inject ToastService Toasts
+@inject IJSRuntime JS
+@inject BoardDrags Drags
+@inject ChangeOrigin Origin
+@inject PresenceCircuit Circuit
+@inject ICurrentUser CurrentUser
+@inject OrgClock Clock
+
+@{ var drags = Drags.Others(CurrentUser.UserId); }
+<div class="tide-kanban" @ref="_root" aria-label="Actions board">
+    @foreach (var status in Enum.GetValues<ActionStatus>())
+    {
+        var cards = Board.In(status);
+        var incoming = drags.Where(d => d.Over == status).ToList();
+        <section class="tide-kcol @(ActionItem.IsClosedStatus(status) ? "tide-kcol-closed" : "") @(incoming.Count > 0 ? "tide-kcol-incoming" : "")" data-status="@status" aria-labelledby="kcol-@status">
+            <h2 class="tide-kcol-head" id="kcol-@status">
+                <ActionStatusBadge Status="status" /> <span class="tide-count tide-muted fw-normal">@cards.Count</span>
+                @foreach (var d in incoming)
+                {
+                    <span class="tide-kcol-incoming-by" title="@d.Name is moving a card here"><span class="bi bi-arrow-down-circle" aria-hidden="true"></span> @d.Name</span>
+                }
+            </h2>
+            @if (ActionItem.IsClosedStatus(status))
+            {
+                <div class="tide-kcol-sub">Last @ActionService.BoardClosedDays days</div>
+            }
+            <div class="tide-kcol-cards">
+                @foreach (var r in cards)
+                {
+                    var canMove = Board.CanMove(r);
+                    var matched = ActionRules.For(Rules, r, Today, ActionSvc.Days);
+                    var held = drags.FirstOrDefault(d => d.ActionId == r.Id);
+                    var arrived = _arrived.TryGetValue(r.Id, out var a) ? a : ((string Name, int Ticket, bool Moved)?)null;
+                    <article @key="r.Id" class="tide-kcard @(matched.Count > 0 ? "tide-ruled " + Ui.RuleClass(matched[0].Colour) : "") @(held is not null ? "tide-kcard-held" : "") @(arrived is not null ? "tide-kcard-arrived" : "")"
+                             draggable="@(canMove ? "true" : "false")" data-id="@r.Id" data-status="@r.Status">
+                        <div class="tide-kcard-head">
+                            <a class="tide-action-num" href="@Ui.ActionUrl(r.Number)" draggable="false">@Ui.ActionLabel(r.Number)</a>
+                            <PriorityBadge Priority="r.Priority" />
+                            <span class="tide-muted small ms-auto text-truncate">@ActionService.KindName(r.Kind)</span>
+                        </div>
+                        @if (held is not null)
+                        {
+                            <div class="tide-kcard-note"><span class="bi bi-arrows-move" aria-hidden="true"></span> @held.Name is moving this@(held.Over is { } o ? $" to {ActionService.StatusName(o)}" : "")</div>
+                        }
+                        else if (arrived is { } ar)
+                        {
+                            <div class="tide-kcard-note"><span class="bi @(ar.Moved ? "bi-arrow-right-circle" : "bi-plus-circle")" aria-hidden="true"></span> @(ar.Moved ? "Moved" : "Added") by @ar.Name</div>
+                        }
+                        @if (r.ParentNumber is { } parent)
+                        {
+                            <a class="tide-kcard-parent small" href="@Ui.ActionUrl(parent)" draggable="false">
+                                <span class="bi bi-arrow-return-right" aria-hidden="true"></span> Part of @Ui.ActionLabel(parent)
+                            </a>
+                        }
+                        <a class="tide-kcard-title" href="@Ui.ActionUrl(r.Number)" draggable="false">@r.Title</a>
+                        @if (matched.Count > 0)
+                        {
+                            <div class="tide-kcard-labels">
+                                @foreach (var rule in matched) { <span class="tide-rule-label @Ui.RuleClass(rule.Colour)">@rule.Name</span> }
+                            </div>
+                        }
+                        @if (r.Children > 0)
+                        {
+                            <div class="small tide-muted"><span class="bi bi-diagram-3" aria-hidden="true"></span> @r.Children part@(r.Children == 1 ? "" : "s")</div>
+                        }
+                        @if (r.ChecklistTotal > 0)
+                        {
+                            var open = _checklistFor.Contains(r.Id);
+                            <button type="button" class="tide-kcard-progress" aria-expanded="@(open ? "true" : "false")"
+                                    aria-label="Checklist for @Ui.ActionLabel(r.Number): @r.ChecklistDone of @r.ChecklistTotal done" @onclick="() => ToggleChecklist(r.Id)">
+                                <span class="bi @(r.ChecklistDone == r.ChecklistTotal ? "bi-check2-square" : "bi-list-check")" aria-hidden="true"></span>
+                                <span>@r.ChecklistDone/@r.ChecklistTotal</span>
+                                <span class="tide-kcard-bar" aria-hidden="true"><span style="width: @(r.ChecklistDone * 100 / r.ChecklistTotal)%"></span></span>
+                                <span class="bi @(open ? "bi-chevron-up" : "bi-chevron-down")" aria-hidden="true"></span>
+                            </button>
+                            @if (open)
+                            {
+                                <ActionChecklist ActionId="r.Id" Kind="r.Kind" CanWork="canMove" Compact="true" OnChanged="OnChanged" />
+                            }
+                        }
+                        <div class="tide-kcard-meta small">
+                            <span class="bi bi-person" aria-hidden="true"></span> @(r.AssigneeName ?? "Unassigned") <span class="tide-muted">&middot; @r.TeamName</span>
+                        </div>
+                        <div class="tide-kcard-foot small">
+                            @if (!r.IsOpen)
+                            {
+                                <span class="tide-muted">Closed @(r.ClosedDate is { } c ? Ui.ShortDay(c) : "")@(r.Outcome != ActionOutcome.None ? $" · {ActionService.OutcomeName(r.Outcome)}" : "")</span>
+                            }
+                            else if (r.DueDate is { } d)
+                            {
+                                <span>Due @Ui.ShortDay(d)</span> <SlaBadge State="r.Sla(Today, ActionSvc.Days)" Due="r.DueDate" Today="Today" />
+                            }
+                            else
+                            {
+                                <span class="tide-muted">@Age(r)</span>
+                            }
+                            @if (canMove)
+                            {
+                                <button type="button" class="btn btn-link btn-sm tide-kcard-move ms-auto" aria-haspopup="menu" aria-expanded="@(_menuFor == r.Id ? "true" : "false")"
+                                        aria-controls="@(_menuFor == r.Id ? $"move-menu-{r.Id}" : null)"
+                                        aria-label="Move @Ui.ActionLabel(r.Number)" disabled="@_busy" @onclick="() => ToggleMenu(r.Id)">
+                                    Move <span class="bi bi-chevron-down" aria-hidden="true"></span>
+                                </button>
+                            }
+                        </div>
+                        @if (_menuFor == r.Id)
+                        {
+                            @* A menu: opening it focuses its first option, the arrows move between them, Esc closes it and
+                               focus goes back to Move (board.js), and Tab leaves it closed. *@
+                            <div class="tide-kcard-menu" id="move-menu-@r.Id" role="menu" aria-label="Move @Ui.ActionLabel(r.Number) to" @onkeydown="OnMenuKey">
+                                @foreach (var to in Enum.GetValues<ActionStatus>().Where(s => s != r.Status))
+                                {
+                                    <button type="button" role="menuitem" tabindex="-1" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => MoveFromMenu(r, to)">@ActionService.StatusName(to)</button>
+                                }
+                            </div>
+                        }
+                    </article>
+                }
+                @if (cards.Count == 0)
+                {
+                    <div class="tide-kcol-empty">Nothing here.</div>
+                }
+            </div>
+        </section>
+    }
+</div>
+<div class="visually-hidden" role="status">@_said</div>
+
+@* A move to a closed column asks for the outcome (required for Done) and an optional note first. *@
+<ConfirmDialog @ref="_closeDialog" Form="true" Confirming="ConfirmClose"
+               ConfirmDisabled="@(_closing is { } closing && !ActionCloseFields.CanClose(closing.To, _outcome))">
+    @if (_closing is { } pending)
+    {
+        <ActionCloseFields Kind="pending.Card.Kind" Current="pending.Card.Outcome" To="pending.To" Id="kclose" @bind-Outcome="_outcome" @bind-Note="_note" />
+    }
+</ConfirmDialog>
+
+@code {
+    [Parameter, EditorRequired] public ActionBoard Board { get; set; } = default!;
+    [Parameter, EditorRequired] public DateOnly Today { get; set; }
+
+    /// <summary>The administrators' card rules: a card takes the first matching one's colour, and every match's label.</summary>
+    [Parameter] public IReadOnlyList<ActionCardRule> Rules { get; set; } = [];
+
+    /// <summary>After a move (or a refused one): the page reloads the board.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    /// <summary>Who last changed each card, from the changes a live reload heard: a card that changed column says so.</summary>
+    [Parameter] public IReadOnlyDictionary<Guid, string> MovedBy { get; set; } = new Dictionary<Guid, string>();
+
+    /// <summary>How long a card someone else moved says who moved it.</summary>
+    private static readonly TimeSpan ArrivedFor = TimeSpan.FromSeconds(6);
+
+    private sealed record PendingClose(ActionRow Card, ActionStatus To);
+
+    private ElementReference _root;
+    private ConfirmDialog _closeDialog = default!;
+    private DotNetObjectReference<ActionKanban>? _self;
+    private Guid? _menuFor;
+    // The card whose Move menu just opened (focus goes to its first option), or that the menu just moved (focus goes
+    // back to its Move button, in its new column).
+    private Guid? _focusMenu, _focusMove;
+    private PendingClose? _closing;
+    private bool _busy;
+    private ActionOutcome _outcome;
+    private string? _note;
+
+    // The columns the cards were in at the last render, to see which moved; the cards this tab moved itself (its own
+    // reload isn't news); the ones someone else moved, saying so for a moment; and the slides still to play.
+    private Dictionary<Guid, ActionStatus>? _was;
+    private readonly HashSet<Guid> _mine = [];
+    private readonly Dictionary<Guid, (string Name, int Ticket, bool Moved)> _arrived = [];
+    private List<object> _toPlay = [];
+    private int _ticket;
+    private string? _said;
+    private readonly CancellationTokenSource _gone = new();
+
+    protected override void OnInitialized() => Drags.Changed += OnDragsChanged;
+
+    protected override void OnParametersSet()
+    {
+        var was = _was;
+        _was = Board.Cards.ToDictionary(c => c.Id, c => c.Status);
+        if (was is null) return;
+        var moved = Board.Cards.Where(c => was.TryGetValue(c.Id, out var s) && s != c.Status && !_mine.Remove(c.Id)).ToList();
+        // A card that's new here, heard from a colleague (so not a view or filter this person chose): it glows in too.
+        var added = Board.Cards.Where(c => !was.ContainsKey(c.Id) && MovedBy.ContainsKey(c.Id)).ToList();
+        if (moved.Count == 0 && added.Count == 0) return;
+        var ticket = ++_ticket;
+        var said = new List<string>();
+        foreach (var c in moved)
+        {
+            var name = MovedBy.TryGetValue(c.Id, out var n) && !string.IsNullOrWhiteSpace(n) ? n : "Someone";
+            _arrived[c.Id] = (name, ticket, true);
+            _toPlay.Add(new { id = c.Id, from = was[c.Id].ToString() });
+            said.Add($"{name} moved {Ui.ActionLabel(c.Number)} to {ActionService.StatusName(c.Status)}.");
+        }
+        foreach (var c in added)
+        {
+            var name = string.IsNullOrWhiteSpace(MovedBy[c.Id]) ? "Someone" : MovedBy[c.Id];
+            _arrived[c.Id] = (name, ticket, false);
+            said.Add($"{name} added {Ui.ActionLabel(c.Number)} to {ActionService.StatusName(c.Status)}.");
+        }
+        _said = string.Join(" ", said);
+        _ = Settle(ticket);
+    }
+
+    // After a moment the moved cards stop saying who moved them (unless they've moved again since).
+    private async Task Settle(int ticket)
+    {
+        try
+        {
+            await Task.Delay(ArrivedFor, _gone.Token);
+            await InvokeAsync(() =>
+            {
+                foreach (var id in _arrived.Where(kv => kv.Value.Ticket == ticket).Select(kv => kv.Key).ToList()) _arrived.Remove(id);
+                StateHasChanged();
+            });
+        }
+        catch (OperationCanceledException) { /* the board closed */ }
+        catch (ObjectDisposedException) { /* the board closed */ }
+    }
+
+    // Someone picked up, carried or let go of a card: show it.
+    private void OnDragsChanged(string board) => _ = InvokeAsync(StateHasChanged);
+
+    /// <summary>This tab picked up a card, or carried it over another column (null: its own, or none).</summary>
+    [JSInvokable]
+    public void OnDragging(string id, string? over)
+    {
+        if (!Guid.TryParse(id, out var cardId) || Board.Cards.FirstOrDefault(c => c.Id == cardId) is not { } card || !Board.CanMove(card)) return;
+        ActionStatus? to = Enum.TryParse<ActionStatus>(over, out var s) && s != card.Status ? s : null;
+        Drags.Report(Origin.Id, Circuit.CircuitId, cardId, CurrentUser.UserId, CurrentUser.DisplayName, to);
+    }
+
+    /// <summary>This tab let go of the card: dropped it, or the drag was cancelled.</summary>
+    [JSInvokable]
+    public void OnDragEnded() => Drags.End(Origin.Id);
+
+    private string Age(ActionRow r)
+    {
+        // Today is the organization's day, so the day it was opened is too (not the UTC date, a day out every evening
+        // west of Greenwich and every morning east of it).
+        var days = Today.DayNumber - DateOnly.FromDateTime(Clock.ToLocal(r.CreatedAtUtc).DateTime).DayNumber;
+        return days <= 0 ? "Opened today" : $"Opened {days}d ago";
+    }
+
+    private readonly HashSet<Guid> _checklistFor = [];
+
+    private void ToggleMenu(Guid id)
+    {
+        _menuFor = _menuFor == id ? null : id;
+        _focusMenu = _menuFor;
+    }
+
+    private void ToggleChecklist(Guid id)
+    {
+        if (!_checklistFor.Remove(id)) _checklistFor.Add(id);
+    }
+
+    private void OnMenuKey(KeyboardEventArgs e)
+    {
+        if (e.Key is "Escape" or "Tab") _menuFor = null;
+    }
+
+    private async Task MoveFromMenu(ActionRow card, ActionStatus to)
+    {
+        await Move(card, to);
+        _focusMove = card.Id;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task OnCardDropped(string id, string from, string to)
+    {
+        if (!Guid.TryParse(id, out var cardId) || !Enum.TryParse<ActionStatus>(to, out var status)) return;
+        var card = Board.Cards.FirstOrDefault(c => c.Id == cardId);
+        if (card is null || card.Status.ToString() != from)
+        {
+            // Moved (or taken off the board) by someone else while it was held: nothing moves, and the person is told why.
+            Toasts.Show(card is null
+                ? "That action was moved by someone else; the board is up to date."
+                : $"{Ui.ActionLabel(card.Number)} was moved by someone else; the board is up to date.");
+            StateHasChanged();
+            return;
+        }
+        await Move(card, status);
+        StateHasChanged();
+    }
+
+    private async Task Move(ActionRow card, ActionStatus to)
+    {
+        _menuFor = null;
+        if (ActionItem.IsClosedStatus(to))
+        {
+            _closing = new PendingClose(card, to);
+            _outcome = ActionOutcome.None;   // Done: chosen in the dialog; otherwise optional
+            _note = null;
+            StateHasChanged();   // a drop comes from script, not an event: draw the dialog's fields for this card first
+            var column = ActionService.StatusName(to);
+            await _closeDialog.Ask($"Move {Ui.ActionLabel(card.Number)} to {column}", card.Title, $"Move to {column}", danger: false);
+            _closing = null;
+            return;
+        }
+        await Run(card, to, ActionOutcome.None, null);
+    }
+
+    // The dialog's button: true closes it (moved, or the card changed underneath and the board reloaded).
+    private async Task<bool> ConfirmClose() =>
+        _closing is not { } p || await Run(p.Card, p.To, _outcome, _note) || _closing is null;
+
+    private async Task<bool> Run(ActionRow card, ActionStatus to, ActionOutcome outcome, string? note)
+    {
+        _busy = true;
+        try
+        {
+            _mine.Add(card.Id);
+            await ActionSvc.MoveAsync(card.Id, card.Status, to, outcome, note);
+            Toasts.Show($"{Ui.ActionLabel(card.Number)} moved to {ActionService.StatusName(to)}.");
+            await OnChanged.InvokeAsync();
+            return true;
+        }
+        catch (StaleEditException ex)
+        {
+            _mine.Remove(card.Id);
+            Toasts.Error(ex.Message);
+            _closing = null;
+            await OnChanged.InvokeAsync();
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _mine.Remove(card.Id);
+            Toasts.Error(UserFacingError.For(ex));
+            return false;
+        }
+        finally { _busy = false; }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (firstRender)
+            {
+                _self = DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("tideBoard.start", _self, _root);
+            }
+            if (_focusMenu is { } open)
+            {
+                _focusMenu = null;
+                await JS.InvokeVoidAsync("tideBoard.focusMenu", open.ToString());
+            }
+            if (_focusMove is { } moved)
+            {
+                _focusMove = null;
+                await JS.InvokeVoidAsync("tideBoard.focusMove", moved.ToString());
+            }
+            if (_toPlay.Count > 0)
+            {
+                var moves = _toPlay;
+                _toPlay = [];
+                await JS.InvokeVoidAsync("tideBoard.play", moves);
+            }
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Drags.Changed -= OnDragsChanged;
+        Drags.End(Origin.Id);
+        await _gone.CancelAsync();
+        _gone.Dispose();
+        // Only a board that started (interactively, after its first render) has anything to stop: a prerendered one
+        // can't call JavaScript at all, and trying fails its page.
+        if (_self is null) return;
+        try { await JS.InvokeVoidAsync("tideBoard.stop"); }
+        catch (JSDisconnectedException) { }
+        _self.Dispose();
+    }
+}

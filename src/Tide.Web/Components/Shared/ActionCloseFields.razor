@@ -1,0 +1,50 @@
+@* What closing an action asks for, wherever it's closed (the board's dialog, the action page's status prompt): the
+   outcome, which Done needs and Cancelled or Not applicable may have, from the outcomes ActionService allows for the
+   action's kind (and the one it has, if another), and an optional note. CanClose says when it's ready. *@
+
+<label class="tide-field-label" for="@Id-outcome">Outcome@(To == ActionStatus.Done ? "" : " (optional)")</label>
+<select class="form-select form-select-sm mb-2" id="@Id-outcome" @ref="_outcome" @bind:get="Outcome" @bind:set="OutcomeChanged.InvokeAsync">
+    @if (To == ActionStatus.Done)
+    {
+        <option value="@ActionOutcome.None" disabled>Choose…</option>
+    }
+    @foreach (var o in ActionService.OutcomesFor(Kind, To, Current))
+    {
+        <option value="@o">@(o == ActionOutcome.None ? "None" : ActionService.OutcomeName(o))</option>
+    }
+</select>
+<label class="tide-field-label" for="@Id-note">Note (optional)</label>
+<textarea class="form-control form-control-sm" id="@Id-note" rows="2" maxlength="2000" @bind:get="Note" @bind:set="NoteChanged.InvokeAsync"></textarea>
+
+@code {
+    [Parameter, EditorRequired] public ActionKind Kind { get; set; }
+
+    /// <summary>The closed status it's moving to.</summary>
+    [Parameter, EditorRequired] public ActionStatus To { get; set; }
+
+    /// <summary>The action's outcome now: offered even when its kind's outcomes don't include it (closed before they narrowed).</summary>
+    [Parameter] public ActionOutcome Current { get; set; }
+
+    [Parameter] public ActionOutcome Outcome { get; set; }
+    [Parameter] public EventCallback<ActionOutcome> OutcomeChanged { get; set; }
+    [Parameter] public string? Note { get; set; }
+    [Parameter] public EventCallback<string?> NoteChanged { get; set; }
+
+    /// <summary>The fields' id prefix, unique on the page.</summary>
+    [Parameter] public string Id { get; set; } = "close";
+
+    /// <summary>Focus the outcome when the fields appear (an inline prompt that just opened).</summary>
+    [Parameter] public bool Autofocus { get; set; }
+
+    private ElementReference _outcome;
+
+    /// <summary>Whether a move to <paramref name="to"/> with <paramref name="outcome"/> may go ahead: Done needs an outcome.</summary>
+    public static bool CanClose(ActionStatus to, ActionOutcome outcome) => to != ActionStatus.Done || outcome != ActionOutcome.None;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || !Autofocus) return;
+        try { await _outcome.FocusAsync(); }
+        catch (JSDisconnectedException) { }
+    }
+}

@@ -1,0 +1,106 @@
+@page "/admin/source-health"
+@using System.Globalization
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@inject IntakeService Intake
+@inject OrgClock Clock
+@inject ToastService Toasts
+
+<PageTitle>Source health · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <h1 class="tide-admin-title">Source health</h1>
+        <div class="tide-sub">Volume and use of each source, from triage decisions over the last
+            @TriageLearning.WindowDays days (or as long as dismissed items are kept). A source that sent at least
+            @IntakeService.PauseMinItems items in @IntakeService.PauseAfterDays days with none promoted or shortlisted is suggested for pausing.</div>
+    </div>
+    <a class="btn btn-outline-secondary" href="admin/sources"><span class="bi bi-rss" aria-hidden="true"></span> Sources</a>
+</div>
+
+@if (_rows is null)
+{
+    <LoadingBlock />
+}
+else if (_rows.Count == 0)
+{
+    <EmptyState Icon="bi-rss" Title="No sources yet" />
+}
+else
+{
+    <div class="tide-card p-0 tide-dt-scroll">
+        <table class="table table-sm mb-0 tide-table">
+            <thead>
+                <tr>
+                    <th scope="col">Source</th>
+                    <th scope="col" class="text-end">Items a week</th>
+                    <th scope="col" class="text-end">Decided</th>
+                    <th scope="col" class="text-end">Promoted</th>
+                    <th scope="col">Last promoted</th>
+                    <th scope="col" class="text-end" title="The median time from an item arriving to someone deciding it">Median to triage</th>
+                    <th scope="col"><span class="visually-hidden">Suggestion</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _rows)
+                {
+                    <tr>
+                        <td>
+                            <a href="@($"triage?source={r.Source.Id}")" title="Its items in triage">@r.Source.Name</a>
+                            @if (!r.Source.Enabled) { <Badge Class="ms-1">paused</Badge> }
+                        </td>
+                        <td class="text-end">@r.PerWeek.ToString("0.#", CultureInfo.InvariantCulture)</td>
+                        <td class="text-end">@r.Decided</td>
+                        <td class="text-end">@(r.PromotedShare is { } share ? $"{r.Promoted} ({share.ToString("0%", CultureInfo.InvariantCulture)})" : "—")</td>
+                        <td>@(r.LastPromotedAtUtc is { } at ? Ui.When(Clock, at) : "Never")</td>
+                        <td class="text-end">@Wait(r.MedianToTriage)</td>
+                        <td class="text-end">
+                            @if (r.SuggestPause)
+                            {
+                                <Badge Tone="BadgeTone.Warn" Class="me-1" Title="@($"Nothing from it promoted or shortlisted in {IntakeService.PauseAfterDays} days")">Pause?</Badge>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Pause(r)">Pause polling</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <p class="tide-muted small mt-2">Decided: promoted, dismissed or marked a duplicate. A paused source keeps its items.</p>
+}
+
+@code {
+    private IReadOnlyList<SourceRecord>? _rows;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        try { _rows = await Intake.SourceHealthAsync(); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); _rows = []; }
+    }
+
+    private async Task Pause(SourceRecord row)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await Intake.SetSourceEnabledAsync(row.Source.Id, false);
+            Toasts.Show($"{row.Source.Name} paused.");
+            await Load();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    // "35 min", "1 h 50", "3 d".
+    internal static string Wait(TimeSpan? wait) => wait switch
+    {
+        null => "—",
+        { TotalHours: < 1 } w => $"{Math.Max(1, (int)w.TotalMinutes)} min",
+        { TotalDays: < 1 } w => w.Minutes == 0 ? $"{(int)w.TotalHours} h" : $"{(int)w.TotalHours} h {w.Minutes:00}",
+        { } w => $"{(int)w.TotalDays} d",
+    };
+}

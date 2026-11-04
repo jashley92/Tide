@@ -1,0 +1,374 @@
+@page "/admin/teams"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@inject TeamService TeamSvc
+@inject SlaSettings Sla
+@inject OperationalSettingsService Settings
+@inject ReminderService Reminders
+@inject IUserDirectory Users
+@inject OrgClock Clock
+@inject ToastService Toasts
+@inject IJSRuntime JS
+@using Tide.Application.Settings
+
+<PageTitle>Teams &amp; SLA · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <h1 class="tide-admin-title">Teams &amp; SLA</h1>
+    </div>
+    <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" id="show-retired" @bind="_showRetired" @bind:after="Load" />
+        <label class="form-check-label" for="show-retired">Show retired</label>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-xl-7">
+        @foreach (var (t, i) in _teams.Select((t, i) => (t, i)))
+        {
+            <div class="tide-card @(t.IsRetired ? "tide-retired" : "")" @key="t.Id">
+                @if (_editing == t.Id)
+                {
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-5"><input class="form-control form-control-sm" @bind="_name" aria-label="Team name" /></div>
+                        <div class="col-md-7"><input class="form-control form-control-sm" @bind="_email" placeholder="Team mailbox (optional)" aria-label="Team mailbox" /></div>
+                        <div class="col-12"><input class="form-control form-control-sm" @bind="_description" placeholder="What the team does (optional)" aria-label="Team description" /></div>
+                    </div>
+                    <div class="d-flex gap-2 mb-2">
+                        <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="() => Save(t.Id)">Save</button>
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editing = null">Cancel</button>
+                    </div>
+                }
+                else
+                {
+                    <div class="d-flex gap-2 align-items-start mb-2">
+                        <div class="flex-grow-1">
+                            <h2 class="tide-card-title mb-0">@t.Name @if (t.IsRetired) { <Badge>Retired</Badge> }</h2>
+                            <div class="tide-muted small">@t.Description @if (t.Email is not null) { <span class="tide-data ms-1">@t.Email</span> }</div>
+                        </div>
+                        <button class="tide-icon-btn" title="Move up" aria-label="Move @t.Name up" disabled="@(i == 0)" @onclick="() => Run(() => TeamSvc.MoveAsync(t.Id, -1))"><span class="bi bi-arrow-up" aria-hidden="true"></span></button>
+                        <button class="tide-icon-btn" title="Move down" aria-label="Move @t.Name down" disabled="@(i == _teams.Count - 1)" @onclick="() => Run(() => TeamSvc.MoveAsync(t.Id, 1))"><span class="bi bi-arrow-down" aria-hidden="true"></span></button>
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => Edit(t)">Edit</button>
+                        <button class="btn btn-outline-secondary btn-sm" title="A team that never owned an action is deleted; otherwise it's retired"
+                                aria-label="@(t.IsRetired ? "Bring back" : "Retire") @t.Name" @onclick="() => Retire(t.Name, t.IsRetired, () => TeamSvc.SetRetiredAsync(t.Id, !t.IsRetired))">@(t.IsRetired ? "Bring back" : "Retire")</button>
+                    </div>
+                }
+                <div>
+                    @foreach (var m in t.Members)
+                    {
+                        <span class="tide-chip">@m.DisplayName
+                            <button type="button" aria-label="Take @m.DisplayName off @t.Name" @onclick="() => RemoveMember(t.Name, t.Id, m.UserId, m.DisplayName)"><span class="bi bi-x" aria-hidden="true"></span></button>
+                        </span>
+                    }
+                    @if (t.Members.Count == 0) { <span class="small tide-muted">No members yet.</span> }
+                </div>
+                @if (!t.IsRetired)
+                {
+                    <div class="d-flex gap-2 mt-2">
+                        <select class="tide-maxw-md form-select form-select-sm" aria-label="Person to add to @t.Name" value="@_add.GetValueOrDefault(t.Id)" @onchange="e => _add[t.Id] = e.Value?.ToString() ?? string.Empty">
+                            <option value="">Add a person&hellip;</option>
+                            @foreach (var p in _people.Where(p => t.Members.All(m => m.UserId != p.Sid)))
+                            {
+                                <option value="@p.Sid">@p.DisplayName</option>
+                            }
+                        </select>
+                        <button class="btn btn-outline-secondary btn-sm" disabled="@(_busy || string.IsNullOrEmpty(_add.GetValueOrDefault(t.Id)))" @onclick="() => AddMember(t.Id)">Add</button>
+                    </div>
+                    <div class="form-text">People appear here once they've signed in to TIDE.</div>
+                }
+            </div>
+        }
+
+        <div class="tide-card">
+            <h2>New team</h2>
+            <div class="row g-2">
+                <div class="col-md-5"><input class="form-control form-control-sm" placeholder="Name (e.g. Vulnerability Management)" aria-label="New team name" @bind="_newName" /></div>
+                <div class="col-md-5"><input class="form-control form-control-sm" placeholder="Team mailbox (optional)" aria-label="New team mailbox" @bind="_newEmail" /></div>
+                <div class="col-md-2"><button class="btn btn-primary btn-sm w-100" disabled="@_busy" @onclick="AddTeam">Add team</button></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-5">
+        <div class="tide-card">
+            <h2>SLA targets</h2>
+            <p class="small tide-muted">Business days a new action gets before it's due. A kind's target, when set, wins over the priority's. Blank or 0: none.</p>
+            <table class="tide-table mb-2">
+                <tbody>
+                    @foreach (var p in Enum.GetValues<Priority>())
+                    {
+                        <tr>
+                            <td>Priority <strong>@p</strong></td>
+                            <td class="tide-col-sm"><input type="number" min="0" max="@ActionSla.MaxDays" class="form-control form-control-sm" aria-label="Business days for @p" value="@_byPriority.GetValueOrDefault(p)" @onchange="e => _byPriority[p] = ParseDays(e)" /></td>
+                        </tr>
+                    }
+                    @foreach (var k in Enum.GetValues<ActionKind>())
+                    {
+                        <tr>
+                            <td class="small">@ActionService.KindName(k)</td>
+                            <td><input type="number" min="0" max="@ActionSla.MaxDays" class="form-control form-control-sm" aria-label="Business days for @ActionService.KindName(k)" value="@_byKind.GetValueOrDefault(k)" @onchange="e => _byKind[k] = ParseDays(e)" placeholder="priority's" /></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="SaveSla">Save targets</button>
+        </div>
+
+        <section class="tide-card" aria-labelledby="rem-title">
+            <h2 id="rem-title">Reminders and digests</h2>
+            <p class="small tide-muted">All off by default; each is sent once. Times in @Clock.Zone.Id
+                (<a href="admin/organization">Organization settings</a>). Until saved here, the server's <span class="tide-data">Notifications</span> values apply.</p>
+            <div class="row g-2 mb-2">
+                <div class="col-sm-6">
+                    <label class="tide-field-label" for="rem-time">Due-soon and overdue reminders go at</label>
+                    <input id="rem-time" type="time" class="form-control form-control-sm" @bind="_rem.ReminderTime" @bind:format="HH:mm" aria-describedby="rem-time-help" />
+                    <div class="form-text" id="rem-time-help">On business days; the brief rotation reminder goes then too.</div>
+                </div>
+            </div>
+            <table class="tide-table mb-2">
+                <tbody>
+                    @foreach (var kind in Enum.GetValues<ReminderKind>())
+                    {
+                        var last = Reminders.LastRun(kind);
+                        var id = "rem-on-" + kind;
+                        <tr>
+                            <td>
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="@id" checked="@_rem.On.GetValueOrDefault(kind)" @onchange="e => _rem.On[kind] = e.Value is true" />
+                                    <label class="form-check-label" for="@id">@KindText(kind)</label>
+                                </div>
+                                <div class="small tide-muted">@KindAbout(kind)@(last is null ? "" : $" · last run {Ui.When(Clock, last.AtUtc)}: {(last.Error ?? $"{last.Sent} sent")}")</div>
+                            </td>
+                            <td class="text-end"><button class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@_busy" aria-label="Run @KindText(kind) now" @onclick="() => RunNow(kind)">Run now</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <div class="row g-2">
+                <div class="col-sm-6">
+                    <label class="tide-field-label" for="rem-digest-day">Digest goes on</label>
+                    <select id="rem-digest-day" class="form-select form-select-sm" @bind="_rem.DigestDay">
+                        @foreach (var d in Week) { <option value="@d">@d</option> }
+                    </select>
+                </div>
+                <div class="col-sm-6">
+                    <label class="tide-field-label" for="rem-digest-time">Digest goes at</label>
+                    <input id="rem-digest-time" type="time" class="form-control form-control-sm" @bind="_rem.DigestTime" @bind:format="HH:mm" />
+                </div>
+                <div class="col-sm-6">
+                    <label class="tide-field-label" for="rem-bnr-time">Brief-not-ready nudge at</label>
+                    <input id="rem-bnr-time" type="time" class="form-control form-control-sm" @bind="_rem.BriefNotReadyTime" @bind:format="HH:mm" aria-describedby="rem-bnr-help" />
+                    <div class="form-text" id="rem-bnr-help">Before the meeting (@Clock.MeetingTime.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture)), or it isn't sent.</div>
+                </div>
+                <div class="col-12">
+                    <label class="tide-field-label" for="rem-bnr-to">Told when there's no brief yet</label>
+                    <textarea id="rem-bnr-to" class="form-control form-control-sm tide-data" rows="2" @bind="_rem.Recipients" placeholder="cti-lead@example.org" aria-describedby="rem-bnr-to-help"></textarea>
+                    <div class="form-text" id="rem-bnr-to-help">The team lead or a team mailbox, when the day has no brief or its analyst has no address. Separate addresses with commas or lines.</div>
+                </div>
+            </div>
+            <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveReminders">Save reminders</button>
+        </section>
+    </div>
+</div>
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    private ConfirmDialog _confirm = default!;
+    private IReadOnlyList<Team> _teams = [];
+    private IReadOnlyList<AppUser> _people = [];
+    private bool _showRetired, _busy;
+    private Guid? _editing;
+    private string? _name, _email, _description, _newName, _newEmail;
+    private readonly Dictionary<Guid, string> _add = [];
+    private readonly Dictionary<Priority, int?> _byPriority = [];
+    private readonly Dictionary<ActionKind, int?> _byKind = [];
+    private ReminderForm _rem = new();
+
+    private static readonly DayOfWeek[] Week =
+        [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday];
+
+    // The reminder settings as the form edits them, from the settings in force (saved here, else the server's).
+    private sealed class ReminderForm
+    {
+        public Dictionary<ReminderKind, bool> On { get; } = [];
+        public TimeOnly ReminderTime { get; set; }
+        public DayOfWeek DigestDay { get; set; }
+        public TimeOnly DigestTime { get; set; }
+        public TimeOnly BriefNotReadyTime { get; set; }
+        public string? Recipients { get; set; }
+
+        public static ReminderForm From(ReminderService r)
+        {
+            var o = r.Options;
+            var form = new ReminderForm
+            {
+                ReminderTime = Time(o.ReminderTime, 8), DigestDay = o.Digest.Day, DigestTime = Time(o.Digest.Time, 8),
+                BriefNotReadyTime = Time(o.BriefNotReady.Time, 10), Recipients = string.Join(Environment.NewLine, o.BriefNotReady.Recipients ?? []),
+            };
+            foreach (var kind in Enum.GetValues<ReminderKind>()) form.On[kind] = r.IsEnabled(kind);
+            return form;
+        }
+
+        private static TimeOnly Time(string? text, int fallbackHour) =>
+            TimeOnly.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, out var t) ? t : new TimeOnly(fallbackHour, 0);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Before the first await: the page renders as soon as one yields (on SQL Server they do), and the reminder
+        // switches read this form.
+        _rem = ReminderForm.From(Reminders);
+        _people = await Users.ListAsync();
+        var targets = await Sla.GetAsync();
+        foreach (var p in Enum.GetValues<Priority>()) _byPriority[p] = targets.ByPriority.TryGetValue(p, out var v) ? v : null;
+        foreach (var k in Enum.GetValues<ActionKind>()) _byKind[k] = targets.ByKind.TryGetValue(k, out var v) ? v : null;
+        await Load();
+    }
+
+    private async Task Load() => _teams = await TeamSvc.ListAsync(_showRetired);
+
+    private static int? ParseDays(ChangeEventArgs e) => int.TryParse(e.Value?.ToString(), out var v) ? v : null;
+
+    private static string KindText(ReminderKind k) => k switch
+    {
+        ReminderKind.DueSoon => "Due-soon reminders",
+        ReminderKind.Overdue => "Overdue reminders",
+        ReminderKind.Digest => "Weekly team digest",
+        ReminderKind.Presenting => "Brief rotation reminder",
+        _ => "Brief-not-ready nudge",
+    };
+
+    private static string KindAbout(ReminderKind k) => k switch
+    {
+        ReminderKind.DueSoon => "Actions due today or the next business day, to their owners",
+        ReminderKind.Overdue => "Actions past due, to their owners",
+        ReminderKind.Digest => "Each team's week, to its mailbox or members",
+        ReminderKind.Presenting => "To whoever presents the next business day",
+        _ => "To the presenting analyst, if today's brief isn't ready",
+    };
+
+    private static string Hm(TimeOnly t) => t.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string Switch(bool on) => on ? "true" : "false";
+
+    internal async Task SaveReminders()
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await Settings.SaveAsync(new Dictionary<string, string?>
+            {
+                [OperationalSettings.ReminderTime] = Hm(_rem.ReminderTime),
+                [OperationalSettings.DueSoon] = Switch(_rem.On[ReminderKind.DueSoon]),
+                [OperationalSettings.Overdue] = Switch(_rem.On[ReminderKind.Overdue]),
+                [OperationalSettings.Presenting] = Switch(_rem.On[ReminderKind.Presenting]),
+                [OperationalSettings.Digest] = Switch(_rem.On[ReminderKind.Digest]),
+                [OperationalSettings.DigestDay] = _rem.DigestDay.ToString(),
+                [OperationalSettings.DigestTime] = Hm(_rem.DigestTime),
+                [OperationalSettings.BriefNotReady] = Switch(_rem.On[ReminderKind.BriefNotReady]),
+                [OperationalSettings.BriefNotReadyTime] = Hm(_rem.BriefNotReadyTime),
+                [OperationalSettings.BriefNotReadyRecipients] = _rem.Recipients,
+            });
+            _rem = ReminderForm.From(Reminders);
+            Toasts.Show("Saved. Applies within five minutes.");
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    private void Edit(Team t)
+    {
+        _editing = t.Id;
+        _name = t.Name;
+        _email = t.Email;
+        _description = t.Description;
+    }
+
+    private Task Save(Guid id) => Run(async () =>
+    {
+        await TeamSvc.UpdateAsync(id, _name ?? "", _description, _email);
+        _editing = null;
+    });
+
+    private Task AddTeam() => Run(async () =>
+    {
+        await TeamSvc.AddAsync(_newName ?? "", null, _newEmail);
+        _newName = _newEmail = null;
+    });
+
+    private Task AddMember(Guid teamId) => Run(async () =>
+    {
+        var sid = _add.GetValueOrDefault(teamId);
+        var person = _people.FirstOrDefault(p => p.Sid == sid) ?? throw new ArgumentException("Choose a person.");
+        await TeamSvc.AddMemberAsync(teamId, person.Sid, person.DisplayName);
+        _add.Remove(teamId);
+    });
+
+    private async Task SaveSla()
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await Sla.SaveAsync(_byPriority, _byKind);
+            Toasts.Show("SLA targets saved.");
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    // Sends the reminder emails now: once per click, however fast the clicks.
+    private async Task RunNow(ReminderKind kind)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            var sent = await Reminders.RunNowAsync(kind);
+            Toasts.Show($"{KindText(kind)}: {sent} email{(sent == 1 ? "" : "s")} sent.");
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    private async Task Retire(string name, bool isRetired, Func<Task> action)
+    {
+        if (await Retiring.ConfirmAsync(_confirm, name, isRetired)) await Run(action);
+    }
+
+    // Taking someone off hands their open actions for the team back to it, unassigned: asked first, and said after.
+    private async Task RemoveMember(string team, Guid teamId, string userId, string name)
+    {
+        if (!await _confirm.Ask($"Take {name} off {team}?",
+                $"Their open actions for {team} go back to the team, unassigned, so someone there picks them up. Each one's history says so.",
+                "Take off")) return;
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            var handed = await TeamSvc.RemoveMemberAsync(teamId, userId);
+            await Load();
+            Toasts.Show(handed == 0 ? $"{name} is off {team}." : $"{name} is off {team}; {handed} open action{(handed == 1 ? "" : "s")} went back to the team.");
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    // One change at a time: a second click while one runs (a double-click on Add) does nothing, so nothing is added
+    // twice. The buttons are disabled meanwhile.
+    private async Task Run(Func<Task> action)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await action();
+            await Load();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+}

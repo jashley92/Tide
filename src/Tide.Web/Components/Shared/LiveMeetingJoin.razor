@@ -1,0 +1,59 @@
+@* A brief meeting going on now, for those on the team edition: as a banner across every page ("Brief meeting is live ·
+   Join", with the presenter and how many are in it), or, given a Day, a Join button in place of what's normally shown
+   there (the brief's Present button). Keeps up as meetings start and end. *@
+@inject LiveMeetings Meetings
+@inject ICurrentUser CurrentUser
+@implements IDisposable
+
+@if (Shown is { } live)
+{
+    @if (Day is null)
+    {
+        <div class="tide-live-banner" role="status">
+            <span class="tide-live-dot" aria-hidden="true"></span>
+            <span class="tide-presence-dot tide-avatar-@Ui.AvatarSwatch(live.PresenterId)" title="@live.PresenterName" aria-hidden="true">@MainLayout.Initials(live.PresenterName)</span>
+            <span><strong>Brief meeting is live</strong> &middot; @live.PresenterName presenting &middot; @live.People.Count in it</span>
+            <a class="btn btn-sm btn-primary ms-auto" href="@Ui.PresentUrl(live.Day)">Join</a>
+        </div>
+    }
+    else
+    {
+        <a class="btn btn-primary" href="@Ui.PresentUrl(live.Day)"><span class="bi bi-broadcast" aria-hidden="true"></span> Join meeting <span class="tide-live-count">@live.People.Count</span></a>
+    }
+}
+else
+{
+    @ChildContent
+}
+
+@code {
+    /// <summary>The brief's day, for a Join button on that brief; null for the banner, which shows any meeting.</summary>
+    [Parameter] public DateOnly? Day { get; set; }
+
+    /// <summary>What's shown when no meeting is going on (the brief's own Present button).</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private LiveMeetingView? Shown => !CurrentUser.Has(Permission.ReadTeamEdition) ? null
+        : Day is { } day ? Meetings.Get(day)
+        : Meetings.Live().LastOrDefault();
+
+    // What's drawn: which meeting, who presents and how many are in it. A slide moving changes none of it.
+    private (DateOnly, string, int)? _drawn;
+
+    private static (DateOnly, string, int)? Key(LiveMeetingView? live) => live is null ? null : (live.Day, live.PresenterName, live.People.Count);
+
+    protected override void OnInitialized() => Meetings.Changed += OnChanged;
+
+    protected override void OnAfterRender(bool firstRender) => _drawn = Key(Shown);
+
+    private void OnChanged(MeetingChange change)
+    {
+        if (Day is { } mine && mine != change.Day) return;
+        _ = InvokeAsync(() =>
+        {
+            if (Key(Shown) != _drawn) StateHasChanged();
+        });
+    }
+
+    public void Dispose() => Meetings.Changed -= OnChanged;
+}

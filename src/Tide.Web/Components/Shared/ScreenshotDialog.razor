@@ -1,0 +1,97 @@
+@* A screenshot opened from an article, a comment or a hunt: a titled modal with the image on a quiet
+   panel, and Download and Close. Several screenshots step with Previous and Next (round from the last to the first), the
+   left and right arrow keys, and "2 of 4". Escape or a click outside closes it; a click on the image doesn't. Close takes
+   focus when it opens, Tab stays inside (dialog.js), and focus goes back to the thumbnail that opened it. *@
+@inject IJSRuntime JS
+
+@if (Open is { } shot)
+{
+    var at = IndexOf(shot.FileId);
+    var many = Set.Count > 1 && at >= 0;
+    <div class="tide-modal-scrim" @onclick="Close">
+        <div class="tide-modal tide-shot-dialog" role="dialog" aria-modal="true" aria-labelledby="@_titleId"
+             @onclick:stopPropagation="true" @onkeydown="OnKey">
+            <div class="tide-shot-dialog-head">
+                <h2 class="tide-modal-title" id="@_titleId">
+                    <span class="bi bi-image" aria-hidden="true"></span> Screenshot@(many ? $" {at + 1} of {Set.Count}" : "")
+                </h2>
+                <span class="tide-shot-dialog-name">@shot.Name</span>
+                <button type="button" class="btn-close" aria-label="Close" @onclick="Close"></button>
+            </div>
+            <div class="tide-shot-dialog-body">
+                <img src="@Ui.ImageUrl(shot.FileId)" alt="@AltText(shot, at, many)" />
+            </div>
+            <div class="tide-modal-actions">
+                @if (many)
+                {
+                    <div class="me-auto d-flex align-items-center gap-2">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" aria-label="Previous screenshot" title="Previous screenshot (Left arrow)"
+                                @onclick="() => Step(-1)"><span class="bi bi-chevron-left" aria-hidden="true"></span></button>
+                        <span class="small tide-muted" aria-live="polite">@(at + 1) of @Set.Count</span>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" aria-label="Next screenshot" title="Next screenshot (Right arrow)"
+                                @onclick="() => Step(1)"><span class="bi bi-chevron-right" aria-hidden="true"></span></button>
+                    </div>
+                }
+                <a class="btn btn-outline-primary btn-sm" href="@Ui.DownloadUrl(shot.FileId)" download>
+                    <span class="bi bi-download" aria-hidden="true"></span> Download
+                </a>
+                <button type="button" class="btn btn-outline-secondary btn-sm" @ref="_close" @onclick="Close">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>One screenshot: its stored file, and the name or caption shown beside the title (empty: none). It downloads
+    /// under the name it was stored with.</summary>
+    public sealed record Shot(Guid FileId, string Name);
+
+    private string AltText(Shot shot, int at, bool many) =>
+        (many ? $"Screenshot {at + 1} of {Set.Count}" : "Screenshot") + (shot.Name.Length > 0 ? $": {shot.Name}" : "");
+
+    /// <summary>The screenshots the open one steps through, in order (one: no stepping).</summary>
+    [Parameter] public IReadOnlyList<Shot> Set { get; set; } = [];
+
+    /// <summary>The screenshot open now, or null when the dialog is closed.</summary>
+    [Parameter] public Shot? Open { get; set; }
+    [Parameter] public EventCallback<Shot?> OpenChanged { get; set; }
+
+    private readonly string _titleId = "shot-" + Guid.NewGuid().ToString("N")[..8];
+    private ElementReference _close;
+    private bool _shown;
+
+    private Task Close() => OpenChanged.InvokeAsync(null);
+
+    private Task Step(int by)
+    {
+        var at = Open is null ? -1 : IndexOf(Open.FileId);
+        if (at < 0 || Set.Count < 2) return Task.CompletedTask;
+        return OpenChanged.InvokeAsync(Set[((at + by) % Set.Count + Set.Count) % Set.Count]);
+    }
+
+    // The arrows step (with Alt, Ctrl or Meta they're the browser's); Escape closes. Nothing in the dialog takes text.
+    private Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") return Close();
+        if (!e.AltKey && !e.CtrlKey && !e.MetaKey && e.Key is "ArrowLeft" or "ArrowRight") return Step(e.Key == "ArrowLeft" ? -1 : 1);
+        return Task.CompletedTask;
+    }
+
+    private int IndexOf(Guid fileId)
+    {
+        for (var i = 0; i < Set.Count; i++) if (Set[i].FileId == fileId) return i;
+        return -1;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if ((Open is not null) == _shown) return;
+        _shown = Open is not null;
+        try
+        {
+            if (_shown) await JS.InvokeVoidAsync("tideDialog.open", _close);
+            else await JS.InvokeVoidAsync("tideDialog.close");
+        }
+        catch (JSDisconnectedException) { /* the circuit went away: nothing to focus */ }
+    }
+}

@@ -1,0 +1,271 @@
+@page "/actions"
+@attribute [Authorize(Policy = Policies.WorkActions)]
+@using Tide.Domain.Common
+@inject ActionService ActionSvc
+@inject TeamService Teams
+@inject ICurrentUser CurrentUser
+@inject NavigationManager Nav
+@inject ToastService Toasts
+@inject ChangeFeed Feed
+@inject ChangeOrigin Origin
+@implements IDisposable
+@inject CardRuleService RuleSvc
+
+<PageTitle>Actions · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <h1>Actions</h1>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary" href="workload"><span class="bi bi-people" aria-hidden="true"></span> Workload</a>
+        @if (CurrentUser.Has(Permission.WriteArticles))
+        {
+            <a class="btn btn-primary" href="actions/new"><span class="bi bi-plus-lg" aria-hidden="true"></span> New action</a>
+        }
+    </div>
+</div>
+
+<div class="d-flex flex-wrap align-items-end gap-2">
+    <TabBar Label="Views" Class="flex-grow-1" Items="@(Views.Where(v => !_asBoard || OnBoard(v.Item1)).Select(v => new TabBarItem(v.Item2, "", Key: v.Item1.ToString())).ToList())"
+            Active="@_view.ToString()" OnSelect="k => SetView(Enum.Parse<ActionView>(k!))" />
+    <TabBar Label="Layout" Level="TabLevel.Sub" Class="mb-2" Active="@(_asBoard ? "board" : "list")" OnSelect="SetLayout"
+            Items="@([new TabBarItem("List", "", "bi-list-ul", "list"), new TabBarItem("Board", "", "bi-kanban", "board")])" />
+</div>
+
+<div class="tide-filters">
+    <select class="tide-maxw-sm form-select form-select-sm" aria-label="Team" @bind="_teamId" @bind:after="Refilter">
+        <option value="">All teams</option>
+        @foreach (var t in _teams)
+        {
+            <option value="@t.Id">@t.Name</option>
+        }
+    </select>
+    <select class="tide-maxw-sm form-select form-select-sm" aria-label="Kind" @bind="_kind" @bind:after="Refilter">
+        <option value="">All kinds</option>
+        @foreach (var k in Enum.GetValues<ActionKind>())
+        {
+            <option value="@k">@ActionService.KindName(k)</option>
+        }
+    </select>
+    @if (_assignee is not null)
+    {
+        <span class="tide-chip">
+            Held by @(_assignee == ActionFilter.Unassigned ? "nobody (the team's)" : Shown.FirstOrDefault()?.AssigneeName ?? "one person")
+            <button type="button" aria-label="Show every holder's" @onclick="ClearAssignee"><span class="bi bi-x" aria-hidden="true"></span></button>
+        </span>
+    }
+    @if (!_asBoard)
+    {
+        <div class="form-check form-switch ms-2">
+            <input class="form-check-input" type="checkbox" id="group-kind" @bind="_groupByKind" @bind:after="Remember" />
+            <label class="form-check-label small" for="group-kind">Group by kind</label>
+        </div>
+    }
+    @if (_asBoard)
+    {
+        <span class="tide-muted small ms-auto">@Count action@(Count == 1 ? "" : "s")</span>
+    }
+</div>
+
+@if (_rules.Any(r => r.ShowAsFilter))
+{
+    <div class="tide-rule-filters" role="group" aria-label="Filter by rule">
+        @foreach (var r in _rules.Where(r => r.ShowAsFilter))
+        {
+            var on = _ruleId == r.Id;
+            <button type="button" class="tide-rule-chip @Ui.RuleClass(r.Colour) @(on ? "on" : "")" aria-pressed="@Ui.Aria(on)" @onclick="() => SetRule(on ? null : r.Id)">
+                @r.Name <span class="tide-rule-chip-n">@Unfiltered.Count(c => ActionRules.Matches(r, c, ActionSvc.Today, ActionSvc.Days))</span>
+            </button>
+        }
+    </div>
+}
+
+@if (_asBoard)
+{
+    @if (_board is null)
+    {
+        <LoadingBlock />
+    }
+    else
+    {
+        <ActionKanban Board="@(_board with { Cards = Matching(_board.Cards) })" Today="ActionSvc.Today" Rules="_rules" MovedBy="_movedBy" OnChanged="Load" />
+    }
+}
+else
+{
+<div class="tide-card">
+    <ActionTable PageInAddress="true" Rows="@(_loading ? null : ListRows)" Today="ActionSvc.Today" Live="_marks" Rules="_rules" Filter="@Q" GroupByKind="_groupByKind" GroupByUrgency="ByUrgency"
+                 DefaultSort="@(_view == ActionView.Closed ? null : ActionTable.SoonestDue)" Caption="@(ViewName + (_view == ActionView.Closed ? ", most recently closed first" : ByUrgency ? ", grouped by when they're due" : ""))">
+        <Empty><EmptyState Icon="@(_view == ActionView.Overdue ? "bi-check2-circle" : "bi-list-check")" Title="@Empty" /></Empty>
+    </ActionTable>
+</div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "view")] public string? ViewParam { get; set; }
+    [SupplyParameterFromQuery(Name = "team")] public Guid? TeamParam { get; set; }
+    [SupplyParameterFromQuery(Name = "assignee")] public string? AssigneeParam { get; set; }
+    [SupplyParameterFromQuery(Name = "layout")] public string? LayoutParam { get; set; }
+    [SupplyParameterFromQuery(Name = "rule")] public Guid? RuleParam { get; set; }
+    [SupplyParameterFromQuery(Name = "group")] public string? GroupParam { get; set; }
+    [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
+
+    private static readonly (ActionView, string)[] Views =
+    [
+        (ActionView.Mine, "Mine"), (ActionView.MyTeams, "My teams"), (ActionView.Open, "All open"), (ActionView.Overdue, "Overdue"), (ActionView.Closed, "Recently closed"),
+    ];
+
+    private bool _loading = true, _groupByKind, _asBoard;
+    private ActionBoard? _board;
+
+    // The board's views are whose actions; Overdue and Recently closed are the list's (the board shows both by column and SLA).
+    private static bool OnBoard(ActionView v) => v is ActionView.Mine or ActionView.MyTeams or ActionView.Open;
+    private IReadOnlyList<ActionRow> Unfiltered => _asBoard ? _board?.Cards ?? [] : _rows;
+    private IReadOnlyList<ActionRow> Shown => Matching(Unfiltered);
+    private IReadOnlyList<ActionRow> ListRows => Matching(_rows);
+    private int Count => Shown.Count;
+    // Mine is grouped by when it's due, unless it's asked to be by kind.
+    private bool ByUrgency => _view == ActionView.Mine && !_groupByKind;
+    private string ViewName => Views.First(v => v.Item1 == _view).Item2 + " actions";
+
+    // The administrators' card rules, and the one chosen as a filter (?rule=).
+    private IReadOnlyList<ActionCardRule> _rules = [];
+    private Guid? _ruleId;
+
+    private IReadOnlyList<ActionRow> Matching(IReadOnlyList<ActionRow> rows) =>
+        _rules.FirstOrDefault(r => r.Id == _ruleId) is { } rule ? rows.Where(c => ActionRules.Matches(rule, c, ActionSvc.Today, ActionSvc.Days)).ToList() : rows;
+    private ActionView _view = ActionView.Open;
+    private Guid? _teamId;
+    private ActionKind? _kind;
+    private string? _assignee;   // from Workload: one holder's open actions
+    private IReadOnlyList<Team> _teams = [];
+    private IReadOnlyList<ActionRow> _rows = [];
+
+    private string Empty => _view switch
+    {
+        ActionView.Mine => "Nothing assigned to you.",
+        ActionView.MyTeams => "Your teams have no open actions (or you're on no team).",
+        ActionView.Overdue => "Nothing is overdue.",
+        ActionView.Closed => "Nothing closed in the last 90 days.",
+        _ => "No open actions.",
+    };
+
+    // A colleague created, took, moved or closed an action: re-read the list in place (no loading flash), once per burst.
+    // Each save is heard as the action's own topic too, which says whose card it was and who moved it (the board says so).
+    // In the list the rows it brought or changed are highlighted a moment.
+    private LiveChanges? _live;
+    private LiveMarks<Guid>? _marks;
+    private IReadOnlyDictionary<Guid, string> _movedBy = new Dictionary<Guid, string>();
+
+    private static Guid? ActionOf(Change c) =>
+        c.Topic.StartsWith("action:", StringComparison.Ordinal) && Guid.TryParse(c.Topic.AsSpan("action:".Length), out var id) ? id : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _marks = new LiveMarks<Guid>(InvokeAsync, StateHasChanged);
+        _live = new LiveChanges(Feed, Origin, c => c.Topic == ChangeFeed.Actions || ActionOf(c) is not null, InvokeAsync, async heard =>
+        {
+            if (!heard.Any(c => c.Topic == ChangeFeed.Actions)) return;   // only a comment or a hunt: nothing on the list changed
+            _movedBy = heard.Select(c => (Id: ActionOf(c), c.ActorName)).Where(x => x.Id is not null)
+                .GroupBy(x => x.Id!.Value).ToDictionary(g => g.Key, g => g.Last().ActorName);
+            try
+            {
+                var filter = new ActionFilter(_view, _teamId, _kind, AssigneeId: _assignee);
+                if (_asBoard) _board = await ActionSvc.BoardAsync(filter);
+                else
+                {
+                    var was = _rows;
+                    _rows = await ActionSvc.ListAsync(filter);
+                    _marks?.Apply(LiveDiff.Of(was, _rows, r => r.Id, r => r));
+                }
+            }
+            catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+            StateHasChanged();
+        });
+        _teams = await Teams.ListAsync();
+        _rules = await RuleSvc.ListAsync();
+    }
+
+    // The address as last applied. The page stays open when a link changes only the query (the sidebar's Actions from
+    // ?view=closed, a link to ?view=overdue), so the address is read whenever it changes, not only when the page opens.
+    // The page's own address updates (Remember) record what they write first, so they don't re-read it.
+    private (string? View, Guid? Team, string? Assignee, string? Layout, Guid? Rule, string? Group)? _applied;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var query = (ViewParam, TeamParam, AssigneeParam, LayoutParam, RuleParam, GroupParam);
+        if (_applied == query) return;
+        _applied = query;
+        _view = EnumNames.OrNull<ActionView>(ViewParam, ignoreCase: true) ?? ActionView.Mine;
+        _asBoard = string.Equals(LayoutParam, "board", StringComparison.OrdinalIgnoreCase);
+        _groupByKind = string.Equals(GroupParam, "kind", StringComparison.OrdinalIgnoreCase);
+        if (_asBoard && !OnBoard(_view)) _view = ActionView.Open;
+        _ruleId = _rules.Any(r => r.Id == RuleParam && r.ShowAsFilter) ? RuleParam : null;
+        _teamId = TeamParam;
+        _assignee = string.IsNullOrWhiteSpace(AssigneeParam) ? null : AssigneeParam;
+        await Load();
+    }
+
+    private Task ClearAssignee()
+    {
+        _assignee = null;
+        return Refilter();
+    }
+
+    // Another team, kind or holder: the list from its first page, as a new filter starts.
+    private Task Refilter()
+    {
+        TableView.FirstPage(Nav, DataTable<ActionRow>.PageParameter);
+        return Load();
+    }
+
+    private async Task SetView(ActionView view)
+    {
+        _view = view;
+        _assignee = null;
+        Remember();
+        await Load();
+    }
+
+    private async Task SetLayout(string? layout)
+    {
+        _asBoard = layout == "board";
+        if (_asBoard && !OnBoard(_view)) _view = ActionView.Open;
+        Remember();
+        await Load();
+    }
+
+    private void Remember()
+    {
+        _applied = (_view.ToString().ToLowerInvariant(), null, null, _asBoard ? "board" : null, _ruleId, !_asBoard && _groupByKind ? "kind" : null);
+        Nav.NavigateTo($"actions?view={_view.ToString().ToLowerInvariant()}{(_asBoard ? "&layout=board" : _groupByKind ? "&group=kind" : "")}{(_ruleId is { } r ? $"&rule={r}" : "")}", replace: true);
+    }
+
+    private void SetRule(Guid? id)
+    {
+        _ruleId = id;
+        Remember();
+    }
+
+    private async Task Load()
+    {
+        _loading = true;
+        _movedBy = new Dictionary<Guid, string>();   // what's shown next is this person's choice, not a colleague's news
+        _marks?.Clear();
+        try
+        {
+            var filter = new ActionFilter(_view, _teamId, _kind, AssigneeId: _assignee);
+            if (_asBoard) _board = await ActionSvc.BoardAsync(filter);
+            else _rows = await ActionSvc.ListAsync(filter);
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        _loading = false;
+    }
+
+    public void Dispose()
+    {
+        _live?.Dispose();
+        _marks?.Dispose();
+    }
+}

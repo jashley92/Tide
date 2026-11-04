@@ -1,0 +1,230 @@
+@page "/articles/{Id:guid}/review"
+@attribute [Authorize(Policy = Policies.WriteArticles)]
+@using Tide.Application.Reviews
+@using Tide.Application.Distribution
+@inject ReviewService Reviews
+@inject ArticleService Articles
+@inject Tide.Application.Settings.DistributionSettings Distribution
+@inject ToastService Toasts
+@inject OrgClock Clock
+@inject ICurrentUser Me
+@inject IJSRuntime JS
+
+@* EP-80: the review of an article, as the reviewer works it: the article as each edition will carry it, comments on its
+   parts (select words in the preview, then "Use the selected words"), the checklist, and Approve or Ask for changes.
+   The author sees the same page, comments and all, and resolves the comments in the editor. *@
+
+<PageTitle>Review · TIDE</PageTitle>
+
+@if (_article is null || _state is null)
+{
+    @if (_missing) { <div class="tide-card"><h1 class="h4">That article doesn't exist</h1><a href="articles">Back to articles</a></div> }
+    else if (_failed)
+    {
+        @* The error toast says what happened; this says the page has nothing to show, rather than loading for ever. *@
+        <div class="tide-card"><EmptyState Icon="bi-exclamation-triangle" Title="Failed to load the review" /></div>
+    }
+    else { <LoadingBlock /> }
+}
+else
+{
+    var r = _state.Review;
+    <div class="tide-page-head">
+        <div>
+            <Breadcrumbs Items="@([new("Articles", "articles"), new(Ui.Clip(_article.Title), $"articles/{_article.Id}"), new("Review")])" />
+            <h1>Review: @_article.Title</h1>
+            <div class="tide-sub">
+                @if (r is null) { <span>No review requested.</span> }
+                else
+                {
+                    <span>@(r.ReviewerId == Me.UserId ? "You're reviewing it" : $"{r.ReviewerName} is reviewing it") for @r.RequestedByName, asked @Ui.When(Clock, r.RequestedAtUtc).</span>
+                    @if (r.Note is { } note) { <span> “@note”</span> }
+                }
+            </div>
+        </div>
+        <a class="btn btn-outline-secondary" href="@($"articles/{_article.Id}")"><span class="bi bi-pencil" aria-hidden="true"></span> The editor</a>
+    </div>
+
+    @if (_changed)
+    {
+        <div class="alert alert-warning d-flex gap-2 align-items-center" role="status">
+            <span>The article has changed since you opened it. This page still shows what you read; read the new version before approving.</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary ms-auto text-nowrap" disabled="@_busy" @onclick="ReadAgain">Show the new version</button>
+        </div>
+    }
+
+    <div class="tide-review-layout">
+        <section class="tide-card" aria-labelledby="rv-ed-h">
+            <h2 id="rv-ed-h" class="visually-hidden">The article as each edition carries it</h2>
+            <TabBar Label="Edition" Level="TabLevel.Sub" Active="@_edition.ToString()" OnSelect="k => _edition = Enum.Parse<Edition>(k!)"
+                    Items="@([new(BriefRenderer.EditionName(Edition.Team), "", Key: Edition.Team.ToString()), new(BriefRenderer.EditionName(Edition.Public), "", Key: Edition.Public.ToString())])" />
+            @{ var p = _edition == Edition.Team ? _team : _company; }
+            <p class="small tide-muted">@BriefRenderer.EditionName(p!.Edition) &middot; up to <TlpBadge Level="p.Ceiling" /></p>
+            <div class="tide-review-article">
+                @if (p.Cut is { } cut) { <EditionArticleView Article="cut" /> }
+                else { <p class="tide-muted">Left out of this edition: the whole article is <TlpBadge Level="p.Article.Tlp" />, above <TlpBadge Level="p.Ceiling" />.</p> }
+            </div>
+        </section>
+
+        <div>
+            @if (r is not null && r.Status != ReviewStatus.Withdrawn)
+            {
+                <section class="tide-card" aria-labelledby="rv-c-h">
+                    <h2 id="rv-c-h" class="h6">Comments</h2>
+                    @if (r.Comments.Count == 0) { <p class="small tide-muted">None yet.</p> }
+                    <ul class="tide-review-comments">
+                        @foreach (var c in r.Comments)
+                        {
+                            <li class="@(c.ResolvedAtUtc is null ? "" : "resolved")">
+                                <div class="small"><strong>@c.AuthorName</strong> on @ReviewService.FieldLabel(c.Field) &middot; @Ui.When(Clock, c.CreatedAtUtc)</div>
+                                @if (c.Quote is { } q) { <div class="tide-review-quote">“@q”</div> }
+                                <div>@c.Text</div>
+                                @if (c.ResolvedAtUtc is not null) { <div class="small tide-muted">Resolved by @c.ResolvedByName</div> }
+                            </li>
+                        }
+                    </ul>
+                    <div class="tide-review-new">
+                        <label class="tide-field-label" for="rv-field">On</label>
+                        <select id="rv-field" class="form-select form-select-sm mb-1" @bind="_field">
+                            @foreach (var (key, label) in ReviewService.Fields(_article)) { <option value="@key">@label</option> }
+                        </select>
+                        <div class="d-flex gap-2 align-items-center mb-1">
+                            <input class="form-control form-control-sm" maxlength="@ReviewComment.MaxQuote" placeholder="The words it's about (optional)" aria-label="The words it's about" @bind="_quote" />
+                            <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" @onclick="UseSelection">Use the selected words</button>
+                        </div>
+                        <textarea class="form-control form-control-sm mb-1" rows="3" maxlength="@ReviewComment.MaxText" aria-label="Comment" placeholder="What should change, and why" @bind="_text" @bind:event="oninput"></textarea>
+                        <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_text))" @onclick="Comment">Add the comment</button>
+                    </div>
+                </section>
+
+                <section class="tide-card" aria-labelledby="rv-d-h">
+                    <h2 id="rv-d-h" class="h6">Checklist</h2>
+                    @{ var mine = r.ReviewerId == Me.UserId; var passed = r.Status == ReviewStatus.Asked ? _passed : ReviewService.Passed(r.Checks); }
+                    @foreach (var check in ReviewService.Checklist)
+                    {
+                        var id = "rv-check-" + check.Key;
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="@id" checked="@passed.Contains(check.Key)" disabled="@(!mine || r.Status != ReviewStatus.Asked)"
+                                   @onchange="e => Tick(check.Key, e.Value is true)" />
+                            <label class="form-check-label small" for="@id">@check.Text</label>
+                        </div>
+                    }
+                    @if (mine && r.Status == ReviewStatus.Asked)
+                    {
+                        <div class="d-flex gap-2 mt-2">
+                            <button type="button" class="btn btn-primary btn-sm" disabled="@(_busy || _changed)" @onclick="() => Decide(true)">Approve</button>
+                            <button type="button" class="btn btn-outline-primary btn-sm" disabled="@_busy" @onclick="() => Decide(false)">Ask for changes</button>
+                        </div>
+                        @if (_passed.Count < ReviewService.Checklist.Count) { <p class="small tide-muted mt-1 mb-0">Approving with an item unticked is allowed; say why in a comment.</p> }
+                    }
+                    else if (r.Status != ReviewStatus.Asked)
+                    {
+                        <p class="small mb-0">@(r.Status == ReviewStatus.Approved ? "Approved" : "Changes asked") by @r.ReviewerName @(r.DecidedAtUtc is { } d ? Ui.When(Clock, d) : "")@(_state.OutOfDate ? "; the article has changed since." : ".")</p>
+                    }
+                </section>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private Article? _article;
+    private ReviewState? _state;
+    private ArticlePreview? _team, _company;
+    private Edition _edition = Edition.Team;
+    private bool _missing, _failed, _busy;
+    private string _field = "general";
+    private string? _quote, _text;
+    private readonly HashSet<string> _passed = [];
+    private Guid _loadedFor;
+
+    // The content version of the article as shown: what an approval says the reviewer read (EP-80).
+    private Guid _read;
+
+    // The article changed since it was shown. A reload after a comment keeps showing (and recording as read) what the
+    // reviewer read, and says so, until they choose to read the new version: it never swaps the words silently.
+    private bool _changed;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Another article's review (Back, Forward): nothing of the last one's is carried over, ticks above all.
+        if (_loadedFor != Id)
+        {
+            _loadedFor = Id;
+            (_article, _state, _team, _company) = (null, null, null, null);
+            (_field, _quote, _text, _edition, _changed) = ("general", null, null, Edition.Team, false);
+            _passed.Clear();
+        }
+        await Load();
+    }
+
+    private async Task Load(bool readAgain = false)
+    {
+        try
+        {
+            var article = await Articles.GetAsync(Id);
+            _missing = article is null;
+            if (article is null) { _article = null; return; }
+            var content = ReviewService.ContentVersion(article);
+            if (!readAgain && _article?.Id == article.Id && content != _read) _changed = true;
+            else
+            {
+                var (publicMax, teamMax) = await Distribution.GetAsync();
+                var form = ArticleForm.From(article);
+                (_team, _company) = (ArticlePreview.Build(form, Edition.Team, teamMax), ArticlePreview.Build(form, Edition.Public, publicMax));
+                (_article, _read, _changed) = (article, content, false);
+            }
+            _state = await Reviews.ForArticleAsync(Id);
+            _failed = false;
+        }
+        catch (Exception ex)
+        {
+            _failed = true;
+            Toasts.Error(UserFacingError.For(ex));
+        }
+    }
+
+    private Task ReadAgain() => Load(readAgain: true);
+
+    private void Tick(string key, bool on)
+    {
+        if (on) _passed.Add(key);
+        else _passed.Remove(key);
+    }
+
+    private async Task UseSelection()
+    {
+        try
+        {
+            var words = await JS.InvokeAsync<string?>("tideEditor.selection");
+            if (!string.IsNullOrWhiteSpace(words)) _quote = words;
+            else Toasts.Show("Select words in the article first.");
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task Run(Func<Task> work, string done)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await work();
+            Toasts.Show(done);
+            await Load();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    private Task Comment() => Run(async () =>
+    {
+        await Reviews.CommentAsync(_state!.Review!.Id, _field, _quote, _text!);
+        (_quote, _text) = (null, null);
+    }, "Comment added.");
+
+    private Task Decide(bool approve) =>
+        Run(() => Reviews.DecideAsync(_state!.Review!.Id, approve, _passed, _read), approve ? "Approved." : "Changes asked: the author sees your comments.");
+}

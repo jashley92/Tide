@@ -1,0 +1,89 @@
+@* The tab bar: Page level (underlined; the sections of a page) and Sub level (segmented; the parts
+   of one section). It is one of three things, by what its items do:
+   - Links to other pages (Administration's groups): a <nav>, the current one aria-current="page". An item that stands
+     for several pages (an Administration group) is current by its Key.
+   - With OnSelect and PanelId, tabs that switch one panel in place (the brief's sections): a tablist. The page draws
+     the panel (role="tabpanel", id PanelId, aria-labelledby TabId(PanelId, Active)). The current tab is the one tab
+     stop; Left/Right/Home/End move to another and show it (tabs.js).
+   - With OnSelect alone, toggle buttons that choose what a list shows (the Actions views, Triage's inboxes): a group of
+     aria-pressed buttons.
+   With OnSelect, items are current by Key, and an item's Count is shown beside it. *@
+@if (!OnSelect.HasDelegate)
+{
+    <nav class="@Css" aria-label="@Label">
+        @foreach (var i in Items)
+        {
+            @if (i.Key is not null)
+            {
+                var on = IsActive(i);
+                <a class="tide-tabbar-item @(on ? "active" : "")" href="@i.Href" aria-current="@(on ? "page" : null)">
+                    @Inner(i)
+                </a>
+            }
+            else
+            {
+                <NavLink class="tide-tabbar-item" href="@i.Href" Match="NavLinkMatch.All">@Inner(i)</NavLink>
+            }
+        }
+    </nav>
+}
+else if (PanelId is not null)
+{
+    <div class="@Css" role="tablist" aria-label="@Label">
+        @foreach (var i in Items)
+        {
+            var on = IsActive(i);
+            <button type="button" role="tab" id="@TabId(PanelId, i.Key)" class="tide-tabbar-item @(on ? "active" : "")"
+                    aria-selected="@(on ? "true" : "false")" aria-controls="@PanelId" tabindex="@(on ? "0" : "-1")"
+                    @onclick="() => OnSelect.InvokeAsync(i.Key)">
+                @Inner(i)
+            </button>
+        }
+    </div>
+}
+else
+{
+    <div class="@Css" role="group" aria-label="@Label">
+        @foreach (var i in Items)
+        {
+            var on = IsActive(i);
+            <button type="button" class="tide-tabbar-item @(on ? "active" : "")" aria-pressed="@(on ? "true" : "false")"
+                    @onclick="() => OnSelect.InvokeAsync(i.Key)">
+                @Inner(i)
+            </button>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<TabBarItem> Items { get; set; } = [];
+    [Parameter] public TabLevel Level { get; set; } = TabLevel.Page;
+
+    /// <summary>For items with a Key: the key of the current one.</summary>
+    [Parameter] public string? Active { get; set; }
+
+    /// <summary>The bar's accessible name ("Administration").</summary>
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public string? Class { get; set; }
+
+    /// <summary>When set, items are buttons that call this with their Key instead of links.</summary>
+    [Parameter] public EventCallback<string?> OnSelect { get; set; }
+
+    /// <summary>With OnSelect: the id of the panel the items switch, which makes them tabs rather than toggles.</summary>
+    [Parameter] public string? PanelId { get; set; }
+
+    /// <summary>The id of a tab of the tablist that switches <paramref name="panelId"/>: the panel's aria-labelledby.</summary>
+    public static string TabId(string panelId, string? key) => $"{panelId}-tab-{key}";
+
+    private string Css => $"tide-tabbar tide-tabbar-{(Level == TabLevel.Sub ? "sub" : "page")} {Class}".TrimEnd();
+
+    private bool IsActive(TabBarItem i) => string.Equals(i.Key, Active, StringComparison.Ordinal);
+
+    private static RenderFragment Inner(TabBarItem i) => @<text>
+        @if (i.Icon is not null) { <span class="bi @i.Icon" aria-hidden="true"></span> }
+        <span>@i.Label</span>
+        @* Keyed by the number, so a count that changes again while it's ticking is a new element and ticks again. *@
+        @if (i.Count is { } n) { <span class="tide-tabbar-count@(i.Ticked ? " tide-live-tick" : "")" @key="n">@n</span> }
+        @if (i.Attention is { } note) { <span class="tide-tabbar-new">@note</span> }
+    </text>;
+}

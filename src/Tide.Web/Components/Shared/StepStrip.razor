@@ -1,0 +1,79 @@
+@* The brief's five steps in a row (BriefSteps): Triage · Write · Order · Present · Send, each with where it stands, and
+   the current one marked (aria-current="step"). A step's name is a link to where it's done, or the button that does it
+   (Order marks the brief ready; Send opens the send dialog), when the person can. *@
+
+<ol class="tide-steps" aria-label="Brief progress">
+    @foreach (var (s, i) in Steps.Select((x, i) => (x, i)))
+    {
+        <li class="tide-step is-@s.State.ToString().ToLowerInvariant()" aria-current="@(s.State == StepState.Current ? "step" : null)">
+            <span class="tide-step-ico" aria-hidden="true">
+                @if (s.State == StepState.Done)
+                {
+                    <span class="bi bi-check-lg"></span>
+                }
+                else if (s.State == StepState.Attention)
+                {
+                    <span class="bi bi-exclamation-lg"></span>
+                }
+                else
+                {
+                    @(i + 1)
+                }
+            </span>
+            <span class="tide-step-txt">
+                <span class="tide-step-label">
+                    @Label(s)
+                    @if (s.State == StepState.Current)
+                    {
+                        <span class="tide-step-now" aria-hidden="true">Now</span>
+                    }
+                </span>
+                <span class="tide-step-detail">@s.Detail</span>
+                <span class="visually-hidden">(@StateText(s.State))</span>
+            </span>
+        </li>
+    }
+</ol>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<BriefStep> Steps { get; set; } = [];
+
+    /// <summary>The brief's day, for the Present link.</summary>
+    [Parameter, EditorRequired] public DateOnly Day { get; set; }
+
+    /// <summary>The first article that still needs work: Write opens it.</summary>
+    [Parameter] public Guid? FirstNeedingWork { get; set; }
+
+    [Parameter] public bool CanTriage { get; set; }
+
+    [Parameter] public bool CanPresent { get; set; }
+
+    /// <summary>Order is a button that marks the brief ready (the page asks first if anything is missing).</summary>
+    [Parameter] public EventCallback OnMarkReady { get; set; }
+
+    /// <summary>Whether Order offers to mark the brief ready now.</summary>
+    [Parameter] public bool CanMarkReady { get; set; }
+
+    [Parameter] public bool Busy { get; set; }
+
+    /// <summary>Send opens the page's send dialog.</summary>
+    [Parameter] public EventCallback OnSend { get; set; }
+
+    private static string StateText(StepState s) => s switch
+    {
+        StepState.Done => "done",
+        StepState.Current => "current step",
+        StepState.Attention => "needs attention",
+        _ => "not started",
+    };
+
+    private RenderFragment Label(BriefStep s) => s.Kind switch
+    {
+        BriefStepKind.Triage when CanTriage => @<a href="triage">@s.Label</a>,
+        BriefStepKind.Write when FirstNeedingWork is { } id => @<a href="articles/@id" title="Open the first article that needs work">@s.Label</a>,
+        BriefStepKind.Order when CanMarkReady => @<button type="button" class="btn btn-link p-0 tide-step-btn" disabled="@Busy" @onclick="OnMarkReady" title="Mark the brief ready for the meeting">@s.Label</button>,
+        BriefStepKind.Present when CanPresent => @<a href="@Ui.PresentUrl(Day)">@s.Label</a>,
+        BriefStepKind.Send when CanPresent && OnSend.HasDelegate => @<button type="button" class="btn btn-link p-0 tide-step-btn" @onclick="OnSend" title="Send a test copy, then each edition">@s.Label</button>,
+        _ => @<span>@s.Label</span>,
+    };
+}

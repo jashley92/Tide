@@ -1,0 +1,22 @@
+@* A trend line's change from the previous period: arrow, difference and percentage ("▲ 3 (+50%)"), or "new" when the
+   previous period had none. Neutral in colour: more of a tag is neither better nor worse. *@
+@using System.Globalization
+@using Tide.Application.Metrics
+@using Tide.Application.Trends
+
+@if (Row.Change == 0)
+{
+    <span class="tide-trend-neutral">–</span>
+}
+else if (Row.ChangeRatio is not { } ratio)
+{
+    <span class="tide-trend-neutral" title="None the period before">▲ @Row.Change new</span>
+}
+else
+{
+    <span class="tide-trend-neutral">@MetricMath.Arrow(Row.Change) @Math.Abs(Row.Change) <span class="tide-muted">(@ratio.ToString("+0%;−0%", CultureInfo.InvariantCulture))</span></span>
+}
+
+@code {
+    [Parameter, EditorRequired] public TrendRow Row { get; set; } = default!;
+}

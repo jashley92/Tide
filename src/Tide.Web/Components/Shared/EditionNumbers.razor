@@ -1,0 +1,42 @@
+@* The day's numbers at the top of the team edition, as its email carries them (BriefRenderer's metrics block): by
+   group, each metric's value, its change from the business day it's compared with ("vs Fri"), and a sparkline. Drawn
+   in the brief's edition preview so it shows what's sent; the company-wide edition never carries them. *@
+@using Tide.Application.Metrics
+
+<section class="tide-ed-numbers" aria-labelledby="@_id">
+    <h3 class="tide-ed-numbers-head" id="@_id">The day's numbers</h3>
+    @foreach (var g in Day.Groups)
+    {
+        <table class="tide-ed-numbers-table">
+            <caption>@g.Group.Name</caption>
+            <tbody>
+                @foreach (var t in g.Tiles)
+                {
+                    <tr>
+                        <th scope="row">@t.Metric.Name</th>
+                        <td class="tide-ed-numbers-value @(t.Level == MetricLevel.Normal ? "" : "tide-level-" + t.Level.ToString().ToLowerInvariant())">@t.Display<LevelMark Level="t.Level" /></td>
+                        <td class="tide-ed-numbers-change">
+                            @if (t.Previous is { } p)
+                            {
+                                <span class="tide-trend-@p.Trend.ToString().ToLowerInvariant()">@MetricMath.Arrow(p.Delta) @MetricMath.FormatDelta(t.Metric.Format, p.Delta)</span>
+                                <span class="tide-muted"> vs @p.Date.ToString("ddd", System.Globalization.CultureInfo.InvariantCulture)</span>
+                            }
+                            else
+                            {
+                                <span class="tide-muted">@(t.Value is null ? "no value" : "no earlier value")</span>
+                            }
+                        </td>
+                        <td class="tide-ed-numbers-spark"><Sparkline Values="t.Spark" Width="80" Height="18" /></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+@code {
+    /// <summary>The day's metrics (MetricsService.GetDayAsync), as the team email is given them.</summary>
+    [Parameter, EditorRequired] public MetricDay Day { get; set; } = default!;
+
+    private readonly string _id = "ed-numbers-" + Guid.NewGuid().ToString("N")[..8];
+}

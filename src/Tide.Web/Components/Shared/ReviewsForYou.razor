@@ -1,0 +1,25 @@
+@using Tide.Application.Reviews
+@inject ReviewService Reviews
+@inject OrgClock Clock
+
+@* EP-80: on Today, the reviews colleagues have asked of you, oldest first. Nothing shows when there are none. *@
+
+@if (_asked.Count > 0)
+{
+    <section class="tide-card" aria-labelledby="reviews-h">
+        <h2 id="reviews-h"><span class="bi bi-person-check" aria-hidden="true"></span> Asked to review</h2>
+        <ul class="list-unstyled small mb-0">
+            @foreach (var r in _asked)
+            {
+                <li class="mb-1"><a href="@($"articles/{r.ArticleId}/review")">@Ui.Clip(r.Title, 60)</a>
+                    <span class="tide-muted">for @r.RequestedByName, @Ui.When(Clock, r.RequestedAtUtc)</span></li>
+            }
+        </ul>
+    </section>
+}
+
+@code {
+    private IReadOnlyList<ReviewAsked> _asked = [];
+
+    protected override async Task OnInitializedAsync() => _asked = await Reviews.AskedOfMeAsync();
+}

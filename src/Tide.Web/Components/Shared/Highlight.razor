@@ -1,0 +1,10 @@
+@* Text with the parts that matched a search marked. *@
+@foreach (var run in SearchText.Mark(Text, Forms))
+{
+    if (run.Hit) { <mark class="tide-mark">@run.Text</mark> } else { @run.Text }
+}
+
+@code {
+    [Parameter] public string? Text { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyList<string> Forms { get; set; } = [];
+}

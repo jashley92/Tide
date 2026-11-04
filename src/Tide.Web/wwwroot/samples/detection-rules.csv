@@ -1,0 +1,7 @@
+name,techniques,id,platform,enabled
+Encoded PowerShell command line,T1059.001,SOC-0001,Windows,yes
+LSASS memory read by a non-system process,T1003.001,SOC-0002,Windows,yes
+"Shadow copies deleted, then mass file renames",T1490;T1486,SOC-0003,Windows,yes
+Sign-in from two countries within an hour,T1078.004,SOC-0004,Entra ID,yes
+Inbox rule forwarding mail outside the company,T1114.003,SOC-0005,Microsoft 365,no
+Beaconing to a newly registered domain,T1071.001 T1568,,Network,

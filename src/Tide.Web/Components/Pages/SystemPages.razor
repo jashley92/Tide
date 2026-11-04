@@ -1,0 +1,9 @@
+@page "/access-denied"
+@attribute [AllowAnonymous]
+
+<PageTitle>No access · TIDE</PageTitle>
+<AccessDenied Path="@From?.TrimStart('/')" />
+
+@code {
+    [SupplyParameterFromQuery] public string? From { get; set; }
+}

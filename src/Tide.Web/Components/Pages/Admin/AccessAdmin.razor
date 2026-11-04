@@ -1,0 +1,204 @@
+@page "/admin/access"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@inject Tide.Application.Admin.RoleMappingService Mappings
+@inject Tide.Application.Settings.DistributionSettings Distribution
+@inject Tide.Application.Reviews.ReviewService Reviews
+@inject IRoleDirectory Directory
+@inject Tide.Application.Settings.OperationalSettingsService Operational
+@inject Microsoft.Extensions.Options.IOptionsMonitor<Tide.Application.Settings.DistributionOptions> DistributionOptions
+@inject ToastService Toasts
+
+<PageTitle>Access &amp; distribution · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <h1 class="tide-admin-title">Access &amp; distribution</h1>
+    </div>
+</div>
+
+<div class="tide-card">
+    <h2>Edition ceilings</h2>
+    <p class="tide-muted small">Anything marked above an edition's ceiling (article, bullet or screenshot) is left out of it. Company-wide: the SharePoint copy. Team: the security teams' copy and the meeting.</p>
+    <div class="row g-3 align-items-end">
+        <div class="col-md-4">
+            <label class="tide-field-label">Company-wide (public) edition</label>
+            <TlpSelect @bind-Value="_public" Label="Public edition ceiling" />
+        </div>
+        <div class="col-md-4">
+            <label class="tide-field-label">Team edition</label>
+            <TlpSelect @bind-Value="_team" Label="Team edition ceiling" />
+        </div>
+        <div class="col-md-4">
+            <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="SaveCeilings">Save ceilings</button>
+        </div>
+    </div>
+    @if (_public > _team)
+    {
+        <div class="text-danger small mt-2">The company-wide edition can't carry more than the team edition.</div>
+    }
+</div>
+
+<div class="tide-card">
+    <h2>Review before send</h2>
+    <p class="tide-muted small">The Send dialog lists unreviewed articles. When required, an edition holding one waits until it's approved (again after any edit).</p>
+    <div class="d-flex gap-2 flex-wrap align-items-center">
+        <label class="visually-hidden" for="review-rule">When review is required</label>
+        <select id="review-rule" class="form-select form-select-sm w-auto" @bind="_reviewRule">
+            <option value="@Tide.Application.Reviews.ReviewRule.Off">Optional: never required</option>
+            <option value="@Tide.Application.Reviews.ReviewRule.AmberAndAbove">Required for anything marked AMBER or above</option>
+            <option value="@Tide.Application.Reviews.ReviewRule.Threats">Required for threats</option>
+            <option value="@Tide.Application.Reviews.ReviewRule.AmberOrThreats">Required for threats and anything AMBER or above</option>
+        </select>
+        <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="SaveReviewRule">Save</button>
+    </div>
+</div>
+
+<div class="tide-card">
+    <h2>SharePoint</h2>
+    <p class="tide-muted small">Required, a brief isn't finished until someone marks its company-wide copy posted to SharePoint. Leave off if your team doesn't post one.</p>
+    <div class="d-flex gap-3 flex-wrap align-items-center">
+        <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" role="switch" id="require-sharepoint" @bind="_requireSharePoint" />
+            <label class="form-check-label" for="require-sharepoint">Require posting to SharePoint</label>
+        </div>
+        <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="SaveSharePoint">Save</button>
+    </div>
+</div>
+
+<div class="tide-card">
+    <h2>Email recipients</h2>
+    <p class="tide-muted small">Separate addresses with commas, semicolons or line breaks. An empty list means that edition isn't emailed.</p>
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label class="tide-field-label" for="team-recipients">Security team edition</label>
+            <textarea id="team-recipients" class="form-control form-control-sm tide-data" rows="4" @bind="_teamRecipients" placeholder="cti-team@example.org"></textarea>
+        </div>
+        <div class="col-md-6">
+            <label class="tide-field-label" for="public-recipients">Company-wide edition</label>
+            <textarea id="public-recipients" class="form-control form-control-sm tide-data" rows="4" @bind="_publicRecipients" placeholder="all-staff@example.org"></textarea>
+        </div>
+    </div>
+    <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveRecipients">Save recipients</button>
+</div>
+
+<div class="tide-card">
+    <h2>AD groups and roles</h2>
+    @if (!Directory.IsCurrent)
+    {
+        <div class="alert alert-warning small">The last change hasn't taken effect yet (the role directory couldn't reload). It's being retried.</div>
+    }
+    <table class="tide-table mb-3">
+        <thead><tr><th>Role</th><th>What it allows</th><th>AD groups</th></tr></thead>
+        <tbody>
+            @foreach (var role in Enum.GetValues<AppRole>())
+            {
+                <tr>
+                    <td class="fw-semibold">@role</td>
+                    <td class="tide-maxw-lg small tide-muted">@string.Join("; ", RoleDefinitions.SystemRoles[role].Select(Policies.Describe))</td>
+                    <td>
+                        @foreach (var m in _rows.Where(r => r.RoleName == role.ToString()))
+                        {
+                            <span class="tide-chip tide-data">@m.AdGroup
+                                <button type="button" aria-label="Remove @m.AdGroup" disabled="@_busy" @onclick="() => Remove(m.Id)"><span class="bi bi-x" aria-hidden="true"></span></button>
+                            </span>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <div class="d-flex gap-2 flex-wrap">
+        <input class="tide-maxw-md form-control form-control-sm" placeholder="DOMAIN\Group, Group, or a SID" aria-label="AD group" @bind="_group" />
+        <select class="tide-maxw-xs form-select form-select-sm" aria-label="Role" @bind="_role">
+            @foreach (var role in Enum.GetValues<AppRole>())
+            {
+                <option value="@role">@role</option>
+            }
+        </select>
+        <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="Add">Grant</button>
+    </div>
+    <p class="form-text mb-0">A bare group name matches a group in this server's own domain; name a trusted domain's group as DOMAIN\Group.
+        Changes reach open sessions within a couple of minutes.</p>
+</div>
+
+@code {
+    private IReadOnlyList<AdGroupRoleMapping> _rows = [];
+    private string? _group;
+    private AppRole _role = AppRole.Analyst;
+    private TlpLevel _public, _team;
+    private string? _teamRecipients, _publicRecipients;
+    private Tide.Application.Reviews.ReviewRule _reviewRule;
+
+    protected override async Task OnInitializedAsync()
+    {
+        (_public, _team) = await Distribution.GetAsync();
+        _teamRecipients = string.Join(Environment.NewLine, await Distribution.GetRecipientsAsync(Edition.Team));
+        _publicRecipients = string.Join(Environment.NewLine, await Distribution.GetRecipientsAsync(Edition.Public));
+        _reviewRule = await Reviews.RuleAsync();
+        _requireSharePoint = DistributionOptions.CurrentValue.RequireSharePoint;
+        await Load();
+    }
+
+    private bool _requireSharePoint;
+
+    internal Task SaveSharePoint() => Run(async () =>
+    {
+        await Operational.SaveAsync(new Dictionary<string, string?>
+        {
+            [Tide.Application.Settings.OperationalSettings.RequireSharePoint] = _requireSharePoint ? "true" : "false",
+        });
+        Toasts.Show("Saved.");
+    });
+
+    private Task SaveReviewRule() => Run(async () =>
+    {
+        await Reviews.SaveRuleAsync(_reviewRule);
+        Toasts.Show("Saved.");
+    });
+
+    private async Task Load() => _rows = await Mappings.ListAsync();
+
+    internal Task Add() => Run(async () =>
+    {
+        await Mappings.AddAsync(_group ?? "", _role);
+        _group = null;
+        await Load();
+        Toasts.Show("Granted.");
+    });
+
+    private Task Remove(Guid id) => Run(async () =>
+    {
+        await Mappings.RemoveAsync(id);
+        await Load();
+    });
+
+    private Task SaveRecipients() => Run(async () =>
+    {
+        // Both lists checked before either is saved: a bad company-wide address no longer leaves the team list saved
+        // behind an error that reads as if nothing was.
+        await Distribution.SaveRecipientsAsync(_teamRecipients, _publicRecipients);
+        _teamRecipients = string.Join(Environment.NewLine, await Distribution.GetRecipientsAsync(Edition.Team));
+        _publicRecipients = string.Join(Environment.NewLine, await Distribution.GetRecipientsAsync(Edition.Public));
+        Toasts.Show("Recipients saved.");
+    });
+
+    private Task SaveCeilings() => Run(async () =>
+    {
+        await Distribution.SaveAsync(_public, _team);
+        Toasts.Show("Edition ceilings saved.");
+    });
+
+    // One change at a time: a second click while one runs (a double-click on Grant) does nothing, so nothing is granted
+    // twice. The buttons are disabled meanwhile.
+    private bool _busy;
+
+    private async Task Run(Func<Task> action)
+    {
+        if (_busy) return;
+        _busy = true;
+        try { await action(); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+}

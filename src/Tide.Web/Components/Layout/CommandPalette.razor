@@ -1,0 +1,231 @@
+@* The command palette, as in the hybrid design: Ctrl+K (Cmd+K on a Mac) from anywhere, or the Go to button in the top
+   bar, opens one box for going to a page, starting an article or action, or opening an article, action or story found
+   as you type (SearchService). A modal dialog holding a combobox: the box keeps focus and aria-activedescendant names
+   the highlighted result; the arrows move it, Enter opens it, Escape closes and puts focus back (palette.js sends the
+   keys here, dialog.js keeps Tab inside). The entries are only those the person may use (PaletteEntries). *@
+@implements IAsyncDisposable
+@inject ICurrentUser CurrentUser
+@inject OrgClock Clock
+@inject NavigationManager Nav
+@inject SearchService Search
+@inject IJSRuntime JS
+@using Microsoft.Extensions.Logging
+@inject ILogger<CommandPalette> Log
+
+@if (ShowButton && _commands.Count > 0)
+{
+    <button type="button" class="tide-palette-btn" aria-haspopup="dialog" aria-keyshortcuts="Control+K Meta+K"
+            title="Go to a page, article or action (Ctrl+K)" @onclick="Open">
+        <span class="bi bi-arrow-return-right" aria-hidden="true"></span>
+        <span class="tide-palette-btn-label">Go to</span>
+        <kbd class="tide-palette-kbd" aria-hidden="true">Ctrl K</kbd>
+    </button>
+}
+
+@if (_open)
+{
+    var shown = Shown;
+    <div class="tide-modal-scrim tide-palette-scrim" @onclick="Close">
+        <div class="tide-modal tide-palette" role="dialog" aria-modal="true" aria-labelledby="@(_id)-title" @onclick:stopPropagation="true">
+            <h2 class="visually-hidden" id="@(_id)-title">Go to</h2>
+            <div class="tide-palette-field">
+                <span class="bi bi-search" aria-hidden="true"></span>
+                <input @ref="_input" type="text" class="tide-palette-input" data-palette-input role="combobox"
+                       aria-expanded="@(shown.Count > 0 ? "true" : "false")" aria-controls="@(_id)-list" aria-autocomplete="list"
+                       aria-activedescendant="@(shown.Count > 0 ? OptionId(_active) : null)"
+                       aria-label="Go to a page, or find an article, action or story" placeholder="Go to a page, or find an article, action (A-12) or story"
+                       autocomplete="off" spellcheck="false" maxlength="200"
+                       @bind="_query" @bind:event="oninput" @bind:after="OnQueryChanged" />
+            </div>
+            <ul class="tide-palette-list" id="@(_id)-list" role="listbox" aria-label="Results" data-palette-list>
+                @for (var i = 0; i < shown.Count; i++)
+                {
+                    var entry = shown[i];
+                    <li class="@(i == _active ? "tide-palette-opt is-active" : "tide-palette-opt")" role="option" id="@OptionId(i)"
+                        aria-selected="@(i == _active ? "true" : "false")" @onclick="() => Choose(entry)">
+                        <span class="bi @entry.Icon tide-palette-icon" aria-hidden="true"></span>
+                        <span class="tide-palette-label">@entry.Label</span>
+                        <span class="tide-palette-kind">@entry.Detail</span>
+                    </li>
+                }
+            </ul>
+            @if (_failed)
+            {
+                <p class="tide-palette-empty">The search didn't answer. Try again, or press Enter to open the search page.</p>
+            }
+            else if (shown.Count == 0)
+            {
+                <p class="tide-palette-empty">@(_searching ? "Searching…" : "Nothing matches.")</p>
+            }
+            <div class="tide-palette-foot" aria-hidden="true">
+                <span><kbd>&uarr;</kbd> <kbd>&darr;</kbd> to choose</span>
+                <span><kbd>Enter</kbd> to open</span>
+                <span><kbd>Esc</kbd> to close</span>
+            </div>
+            <div class="visually-hidden" role="status">@_said</div>
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>How long typing has to pause before the search runs.</summary>
+    public static readonly TimeSpan Debounce = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>Whether to draw the Go to button (the top bar); present mode has the keys only.</summary>
+    [Parameter] public bool ShowButton { get; set; } = true;
+
+    private readonly string _id = "palette-" + Guid.NewGuid().ToString("N")[..8];
+    private IReadOnlyList<PaletteEntry> _commands = [];
+    private IReadOnlyList<PaletteEntry>? _found;
+    private string _query = "", _said = "";
+    private bool _open, _shown, _restoreFocus, _searching, _failed, _searchFailing;
+    private int _active;
+    private ElementReference _input;
+    private CancellationTokenSource? _typing;
+    private DotNetObjectReference<CommandPalette>? _ref;
+
+    private bool CanSearch => CurrentUser.Has(Permission.ReadTeamEdition);
+
+    // The pages and commands that match what's typed, then what the search found (or, until it answers, the search page).
+    private IReadOnlyList<PaletteEntry> Shown
+    {
+        get
+        {
+            var q = _query.Trim();
+            var pages = PaletteEntries.Match(_commands, q);
+            if (!CanSearch || q.Length == 0) return pages;
+            return [.. pages, .. _found ?? [PaletteEntries.SearchAll(q)]];
+        }
+    }
+
+    private string OptionId(int i) => $"{_id}-opt-{i}";
+
+    protected override void OnInitialized() => _commands = PaletteEntries.For(CurrentUser, Clock.CurrentBriefDate);
+
+    /// <summary>Opens the palette, empty (Ctrl+K, through palette.js, or the Go to button).</summary>
+    [JSInvokable]
+    public void Open()
+    {
+        if (_open || _commands.Count == 0) return;
+        _typing?.Cancel();
+        (_open, _query, _found, _active, _searching, _failed, _said) = (true, "", null, 0, false, false, "");
+        StateHasChanged();
+    }
+
+    /// <summary>A combobox key from the box: down, up, first, last, enter or escape.</summary>
+    [JSInvokable]
+    public void OnKey(string key)
+    {
+        var shown = Shown;
+        switch (key)
+        {
+            case "down": _active = shown.Count == 0 ? 0 : (_active + 1) % shown.Count; break;
+            case "up": _active = shown.Count == 0 ? 0 : (_active - 1 + shown.Count) % shown.Count; break;
+            case "first": _active = 0; break;
+            case "last": _active = Math.Max(0, shown.Count - 1); break;
+            case "enter":
+                if (_active < shown.Count) Choose(shown[_active]);
+                break;
+            case "escape": Close(); break;
+        }
+        StateHasChanged();
+    }
+
+    // The pages filter at once; the search waits for a pause in typing, and a newer keystroke cancels the one waiting.
+    internal async Task OnQueryChanged()
+    {
+        _active = 0;
+        _found = null;
+        _failed = false;
+        if (_typing is not null) await _typing.CancelAsync();
+        var q = _query.Trim();
+        if (!CanSearch || !Searchable(q))
+        {
+            _searching = false;
+            _said = Said(Shown.Count);
+            return;
+        }
+        _typing = new CancellationTokenSource();
+        var token = _typing.Token;
+        _searching = true;
+        try
+        {
+            await Task.Delay(Debounce, token);
+            var results = await Search.SearchAsync(q, token);
+            if (token.IsCancellationRequested || !_open) return;
+            _found = PaletteEntries.FromSearch(results);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex) when (!token.IsCancellationRequested)
+        {
+            // The palette sits outside the page's error boundary, so a failed search must not escape and end the
+            // session: it says so quietly, and the search page entry stays to try there. Logged once a streak of failures.
+            if (!_searchFailing) Log.LogWarning(ex, "The command palette's search failed; it says so in the palette until a search works.");
+            _searchFailing = true;
+            _failed = true;
+            _searching = false;
+            _said = "The search didn't answer.";
+            return;
+        }
+        _searchFailing = false;
+        _searching = false;
+        _active = Math.Min(_active, Math.Max(0, Shown.Count - 1));
+        _said = Said(Shown.Count);
+    }
+
+    /// <summary>Whether a query is worth a search: two characters or more, or an action's number ("7", "A-7").</summary>
+    public static bool Searchable(string query) =>
+        query.Length >= 2 || SearchText.ActionNumber(query) is not null;
+
+    private static string Said(int count) => count switch
+    {
+        0 => "No results.",
+        1 => "1 result.",
+        _ => $"{count} results.",
+    };
+
+    private void Choose(PaletteEntry entry)
+    {
+        // Focus goes to the new page's heading (FocusOnNavigate), not back to what opened the palette.
+        _typing?.Cancel();
+        _open = false;
+        _restoreFocus = false;
+        Nav.NavigateTo(entry.Href);
+    }
+
+    private void Close()
+    {
+        _typing?.Cancel();
+        _open = false;
+        _restoreFocus = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (firstRender && _commands.Count > 0)
+            {
+                _ref = DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("tidePalette.startPalette", _ref, _id);
+            }
+            if (_open == _shown) return;
+            _shown = _open;
+            if (_open) await JS.InvokeVoidAsync("tidePalette.focus", _input);
+            else if (_restoreFocus) await JS.InvokeVoidAsync("tideDialog.close");
+        }
+        catch (JSDisconnectedException) { /* the circuit has gone */ }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_typing is not null) await _typing.CancelAsync();
+        _typing?.Dispose();
+        try { if (_ref is not null) await JS.InvokeVoidAsync("tidePalette.stopPalette", _id); }
+        catch (JSDisconnectedException) { /* the circuit has gone */ }
+        _ref?.Dispose();
+    }
+}

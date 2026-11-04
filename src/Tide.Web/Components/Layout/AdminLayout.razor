@@ -1,0 +1,99 @@
+@inherits LayoutComponentBase
+@layout MainLayout
+@inject NavigationManager Nav
+@inject Tide.Application.Operations.UpdateCheckService Updates
+@implements IDisposable
+
+@* The Administration frame: the sidebar has one "Administration" entry, and this is the navigation for
+   every admin page. Administration is the page's heading; under it the groups, as page tabs, and in a group of more
+   than one page its pages as sub-tabs. An admin page opts in with @layout AdminLayout, and its own title, under the
+   tabs, is the page's h1 (where FocusOnNavigate puts focus); "Administration" is drawn as large but isn't a heading. *@
+<div class="tide-admin">
+    <div class="tide-admin-head">
+        <p class="h1 tide-admin-name">Administration</p>
+    </div>
+    <TabBar Level="TabLevel.Page" Label="Administration" Class="tide-admin-tabs" Active="@ActiveGroup?.Label"
+            Items="@([.. Groups.Select(g => new TabBarItem(g.Label, g.Items[0].Href, Key: g.Label, Attention: UpdateNote(g.Items)))])" />
+    @if (ActiveGroup is { Items.Length: > 1 } group)
+    {
+        <TabBar Level="TabLevel.Sub" Label="@group.Label" Class="tide-admin-subtabs"
+                Items="@([.. group.Items.Select(i => new TabBarItem(i.Title, i.Href, i.Icon, Attention: UpdateNote([i])))])" />
+    }
+    <div class="tide-admin-pane">@Body</div>
+</div>
+
+@code {
+    public sealed record AdminPage(string Title, string Icon, string Href, string About);
+    public sealed record AdminGroup(string Label, AdminPage[] Items);
+
+    public const string UpdatesHref = "admin/system/updates";
+
+    public const string AuditHref = "admin/system/audit";
+
+    // "new" beside Updates (and its group) when the update check, which is off unless turned on, found a newer release.
+    private string? UpdateNote(IEnumerable<AdminPage> pages) => Updates.UpdateAvailable && pages.Any(p => p.Href == UpdatesHref) ? "new" : null;
+
+    protected override void OnInitialized() => Updates.Changed += OnUpdates;
+
+    private void OnUpdates() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Updates.Changed -= OnUpdates;
+
+    // Grouped by what an administrator is trying to do. The overview lists them too.
+    public static readonly AdminGroup[] Groups =
+    [
+        new("Overview",
+        [
+            new("Overview", "bi-speedometer2", "admin", "What's left to set up, and where everything is set."),
+        ]),
+        new("Organization",
+        [
+            new("Organization settings", "bi-building", "admin/organization", "The team's name, its time zone, when the brief meets, and its holidays."),
+            new("Teams & SLA", "bi-diagram-3", "admin/teams", "The teams that own actions, their members, SLA targets, and when reminder emails go."),
+            new("Brief rotation", "bi-arrow-repeat", "admin/rotation", "Who presents the brief, the weekly rota, and who's told about swaps and cover."),
+        ]),
+        new("Actions",
+        [
+            new("Playbooks", "bi-journal-check", "admin/playbooks", "Checklists for each kind of action, offered when one is created or worked."),
+            new("Card rules", "bi-palette", "admin/card-rules", "Which actions are coloured and labelled on the board and list, and the filter chips."),
+        ]),
+        new("Intelligence",
+        [
+            new("Sources", "bi-rss", "admin/sources", "The feeds and catalogs triage takes items from, and CVE enrichment."),
+            new("Source health", "bi-heart-pulse", "admin/source-health", "How much each source sends and how much of it the team uses, with feeds worth pausing."),
+            new("Scorecard tags", "bi-tags", "admin/scorecard", "The categories and tags articles are counted by on the board scorecard."),
+            new("Detection rules", "bi-shield-check", "admin/detections", "The SOC's rules, from Sentinel, Sigma, a CSV or the API, for Coverage."),
+            new("Query templates", "bi-terminal", "admin/queries", "How hunt queries are written for each SIEM and kind of indicator."),
+        ]),
+        new("Brief",
+        [
+            new("Opening metrics", "bi-speedometer", "admin/metrics", "The numbers the brief opens with, their thresholds, and their history."),
+            new("Metric imports", "bi-filetype-csv", "admin/metric-imports", "Metric values read from CSV: the drop folder, uploads, and what each import did."),
+        ]),
+        new("People & distribution",
+        [
+            new("Access & distribution", "bi-shield-lock", "admin/access", "Which AD groups get which role, the editions' TLP ceilings, and who each edition goes to."),
+            new("Email templates", "bi-envelope-paper", "admin/email-templates", "The wording of the reminder and rotation emails, with a preview and a test send."),
+            new("API access", "bi-plug", "admin/api", "Tokens for the SOC's other tools to call TIDE's API, and webhooks TIDE posts to."),
+        ]),
+        new("System",
+        [
+            new("Diagnostics", "bi-activity", "admin/system", "Whether TIDE is healthy: the database, background jobs, email and storage."),
+            new("Server configuration", "bi-hdd-stack", "admin/system/server", "What's set on the server, read-only. Secrets show only whether they're set."),
+            new("Setting sources", "bi-diagram-3", "admin/system/sources", "Where each setting's value comes from: the app, the installer's file, or the environment."),
+            new("Configuration bundle", "bi-box-seam", "admin/system/bundle", "This server's install answers file, and the app's setup to copy to another server."),
+            new("Audit log", "bi-journal-text", AuditHref, "Every change saved across TIDE: who made it, when, and what it was before and after."),
+            new("Updates", "bi-cloud-arrow-down", UpdatesHref, "Newer TIDE releases, and how to upgrade."),
+        ]),
+    ];
+
+    // The group the current page is in.
+    private AdminGroup? ActiveGroup
+    {
+        get
+        {
+            var path = Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimEnd('/');
+            return Groups.FirstOrDefault(g => g.Items.Any(i => string.Equals(i.Href, path, StringComparison.OrdinalIgnoreCase)));
+        }
+    }
+}

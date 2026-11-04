@@ -1,0 +1,240 @@
+@page "/admin/system/audit"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@using System.Globalization
+@using Tide.Application.History
+@inject AuditLogService Audit
+@inject NavigationManager Nav
+@inject OrgClock Clock
+@inject ToastService Toasts
+
+<PageTitle>Audit log · TIDE</PageTitle>
+
+@* The audit log: every change the audit interceptor recorded, across the whole system, newest first, with
+   who made it and what each field was before and after. Administrators only (the service checks too): the log holds
+   text at every TLP marking. The filters are the address's (AuditFilter.ToQuery), so a view can be bookmarked, and the
+   export takes the same ones. Secrets show only as set or changed (HistoryFormatter.AuditChanges). *@
+<div class="tide-page-head">
+    <div>
+        <h1 class="tide-admin-title">Audit log</h1>
+        <div class="tide-sub">Times in @Clock.Zone.Id. Secret values aren't shown.</div>
+    </div>
+    <a class="btn btn-outline-secondary" href="@ExportHref" download>
+        <span class="bi bi-filetype-csv" aria-hidden="true"></span> Export CSV
+    </a>
+</div>
+
+<div class="tide-card tide-audit">
+    <DataTable TItem="AuditRow" Items="_rows" Columns="Columns" Key="r => r.Id" One="change" Many="changes" Caption="Audit log"
+               FilterLabel="Search the changed values" FilterPlaceholder="Search the changed values" Filter="@_filter.Search"
+               ServerSide="true" Total="_total" PageSize="AuditLogService.PageSize" PageInAddress="true" Busy="_reading"
+               Filtered="@(_filter.Narrowed || _since is not null)" OnQuery="Query">
+        <Toolbar>
+            <select class="tide-maxw-xs form-select form-select-sm" aria-label="Who" value="@(_filter.Person ?? "")" @onchange="SetPerson">
+                <option value="">Anyone</option>
+                @foreach (var p in _people)
+                {
+                    <option value="@p.UserId">@p.Name</option>
+                }
+            </select>
+            <select class="tide-maxw-xs form-select form-select-sm" aria-label="Kind of record" value="@(_filter.Kind ?? "")" @onchange="SetKind">
+                <option value="">Any kind of record</option>
+                @foreach (var (type, name) in AuditKinds.All)
+                {
+                    <option value="@type">@name</option>
+                }
+            </select>
+            <select class="tide-maxw-xs form-select form-select-sm" aria-label="Action" value="@(_filter.Action?.ToString() ?? "")" @onchange="SetAction">
+                <option value="">Any action</option>
+                @foreach (var a in Enum.GetValues<AuditAction>())
+                {
+                    <option value="@a">@a</option>
+                }
+            </select>
+        </Toolbar>
+        <Filters>
+            <div class="tide-article-filters">
+                <div class="tide-article-filter">
+                    <label class="tide-field-label" for="al-from">From</label>
+                    <input id="al-from" type="date" class="form-control form-control-sm" value="@Day(_filter.From)" @onchange="e => Go(_filter with { From = Date(e) })" />
+                </div>
+                <div class="tide-article-filter">
+                    <label class="tide-field-label" for="al-to">to</label>
+                    <input id="al-to" type="date" class="form-control form-control-sm" value="@Day(_filter.To)" @onchange="e => Go(_filter with { To = Date(e) })" />
+                </div>
+                @if (_since is { } since)
+                {
+                    <p class="small tide-muted tide-article-filter-help" role="status">
+                        Action and word filters cover @AuditLogService.UnindexedDays days at a time: changes since @since.ToString("d MMM yyyy", CultureInfo.InvariantCulture). Set dates or a person to search further back.
+                    </p>
+                }
+            </div>
+            @if (_chips.Count > 0)
+            {
+                <div class="tide-filter-chips" role="group" aria-label="Filters in force">
+                    @foreach (var c in _chips)
+                    {
+                        <span class="tide-chip">@c.Label<a href="@Href(c.Without)" class="tide-chip-remove" aria-label="Remove the filter @c.Label" title="Remove"><span class="bi bi-x-lg" aria-hidden="true"></span></a></span>
+                    }
+                    <a href="@Href(_filter.Cleared())" class="small tide-filter-clear">Clear filters</a>
+                </div>
+            }
+        </Filters>
+        <Empty>
+            @if (_filter.Narrowed || _since is not null)
+            {
+                <EmptyState Icon="bi-search" Title="No changes match these filters">
+                    <Actions><a class="btn btn-outline-secondary btn-sm" href="@Href(_filter.Cleared())">Clear filters</a></Actions>
+                    <ChildContent>Try removing one, or choosing other dates.</ChildContent>
+                </EmptyState>
+            }
+            else
+            {
+                <EmptyState Icon="bi-journal-text" Title="No changes recorded yet" />
+            }
+        </Empty>
+        <RowTemplate Context="r">
+            <td class="small text-nowrap">@When(r.AtUtc)</td>
+            <td class="small">@r.UserName</td>
+            <td class="small">@r.What</td>
+            <td class="tide-audit-record">
+                <div class="small tide-muted">@r.Kind</div>
+                @if (r.Href is { } href)
+                {
+                    <a href="@href">@r.Record</a>
+                }
+                else
+                {
+                    <span class="@(r.Record == r.EntityKey ? "tide-data small" : null)">@r.Record</span>
+                }
+                @if (_filter.Key is null || _filter.Kind != r.EntityType || _filter.Key != r.EntityKey)
+                {
+                    <div><a class="small" href="@Href(_filter with { Kind = r.EntityType, Key = r.EntityKey })" aria-label="Only this record: @r.Record">Only this record</a></div>
+                }
+            </td>
+            <td class="small tide-audit-changes">
+                @if (r.Changes.Count == 0)
+                {
+                    <span class="tide-muted">@(r.Action == AuditAction.Deleted ? "Deleted." : "No tracked fields changed.")</span>
+                }
+                else
+                {
+                    <ChangeLines Changes="r.Changes" Changed="@(r.Action == AuditAction.Changed)" Deleted="@(r.Action == AuditAction.Deleted)" />
+                }
+            </td>
+        </RowTemplate>
+    </DataTable>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
+    [SupplyParameterFromQuery(Name = "who")] public string? WhoParam { get; set; }
+    [SupplyParameterFromQuery(Name = "kind")] public string? KindParam { get; set; }
+    [SupplyParameterFromQuery(Name = "key")] public string? KeyParam { get; set; }
+    [SupplyParameterFromQuery(Name = "from")] public string? FromParam { get; set; }
+    [SupplyParameterFromQuery(Name = "to")] public string? ToParam { get; set; }
+    [SupplyParameterFromQuery(Name = "action")] public string? ActionParam { get; set; }
+
+    /// <summary>The page of the log, from 1 (DataTable's <c>?page=</c>).</summary>
+    // Text, not a number: "?page=abc" or one too big for an int is the first page, not a broken page.
+    [SupplyParameterFromQuery(Name = DataTable<AuditRow>.PageParameter)] public string? PageParam { get; set; }
+
+    private static readonly IReadOnlyList<TableColumn<AuditRow>> Columns =
+    [
+        new("when", "When"),
+        new("who", "Who"),
+        new("action", "Action"),
+        new("record", "Record"),
+        new("changes", "Changes"),
+    ];
+
+    private IReadOnlyList<AuditRow>? _rows;
+    private int _total, _page = 1, _loadedPage;
+    private DateOnly? _since;
+    private AuditFilter _filter = new();
+    private AuditFilter? _loaded;
+    private IReadOnlyList<AuditChip> _chips = [];
+    private IReadOnlyList<AuditPerson> _people = [];
+    private bool _reading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _people = await Audit.PeopleAsync(); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    // A new filter or page in the address (a select, a chip removed, the pager, Back) lists afresh.
+    protected override async Task OnParametersSetAsync()
+    {
+        var query = new Dictionary<string, string?>
+        {
+            ["q"] = Q, ["who"] = WhoParam, ["kind"] = KindParam, ["key"] = KeyParam, ["from"] = FromParam, ["to"] = ToParam, ["action"] = ActionParam,
+        };
+        _filter = AuditFilter.FromQuery(name => query.GetValueOrDefault(name));
+        _page = TableView.PageFrom(PageParam);
+        if (_filter != _loaded || _page != _loadedPage) await Load();
+        _chips = _filter.Chips(PersonName, _filter.Key is null ? null : _rows?.FirstOrDefault()?.Record);
+    }
+
+    private string? PersonName(string id) => _people.FirstOrDefault(p => p.UserId == id)?.Name;
+
+    private string When(DateTimeOffset utc) => Clock.ToLocal(utc).ToString("MMM d, yyyy, h:mm tt", CultureInfo.InvariantCulture);
+
+    private static string Day(DateOnly? d) => d is { } day ? Ui.IsoDay(day) : "";
+
+    private static DateOnly? Date(ChangeEventArgs e) =>
+        Ui.TryParseDay(e.Value?.ToString(), out var d) ? d : null;
+
+    private string Href(AuditFilter f) => Nav.GetUriWithQueryParameters(AdminLayout.AuditHref, f.ToQuery());
+
+    private string ExportHref => Nav.GetUriWithQueryParameters("admin/system/audit.csv", _filter.ToQuery());
+
+    private void Go(AuditFilter f, bool replace = false) => Nav.NavigateTo(Href(f), replace: replace);
+
+    private void SetPerson(ChangeEventArgs e) => Go(_filter with { Person = e.Value?.ToString() is { Length: > 0 } p ? p : null });
+
+    // Another kind drops the record chosen, which was one of the old kind.
+    private void SetKind(ChangeEventArgs e) => Go(_filter with { Kind = e.Value?.ToString() is { Length: > 0 } k ? k : null, Key = null });
+
+    private void SetAction(ChangeEventArgs e) =>
+        Go(_filter with { Action = Enum.TryParse<AuditAction>(e.Value?.ToString(), out var a) && Enum.IsDefined(a) ? a : null });
+
+    private async Task Load()
+    {
+        var (filter, number, asked) = (_filter, _page, _page);
+        const int size = AuditLogService.PageSize;
+        _reading = true;
+        try
+        {
+            var page = await Audit.PageAsync(filter, size, (number - 1) * size);
+            // A page past the end (an old link, or the log was pruned): the last page instead.
+            if (page.Rows.Count == 0 && page.Total > 0 && number > 1)
+            {
+                number = TableView.Pages(page.Total, size);
+                page = await Audit.PageAsync(filter, size, (number - 1) * size);
+            }
+            if (filter != _filter || asked != _page) return;   // moved on meanwhile: the later read draws it
+            (_loaded, _loadedPage, _page) = (filter, number, number);
+            // Fell back to the last page: the address says so, so it isn't read again as the page past the end.
+            if (number != asked) Nav.NavigateTo(Nav.GetUriWithQueryParameter(DataTable<AuditRow>.PageParameter, number == 1 ? null : number), replace: true);
+            _rows = page.Rows;
+            _total = page.Total;
+            _since = page.Since;
+        }
+        catch (Exception ex)
+        {
+            (_loaded, _loadedPage) = (filter, number);
+            _rows ??= [];
+            Toasts.Error(UserFacingError.For(ex));
+        }
+        finally { _reading = false; }
+    }
+
+    // New words go into the address in place (not a step for Back per pause in typing), at the first page.
+    private async Task Query(TableQuery q)
+    {
+        if ((q.Filter ?? "") != (_filter.Search ?? "")) Go(_filter with { Search = q.Filter }, replace: true);
+        else if (_page > 1) Go(_filter, replace: true);
+        else await Load();
+    }
+}

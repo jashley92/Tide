@@ -1,0 +1,158 @@
+@* The account menu in the top right: the initials avatar opens a panel with who you are and your role,
+   your own settings (theme, letter shortcuts) as segmented toggles, your brief days as a calendar file, and About.
+   Settings are per browser, applied by theme.js. *@
+@inject ICurrentUser CurrentUser
+@inject IJSRuntime JS
+
+<div class="tide-profile">
+    <button type="button" class="tide-profile-btn" @onclick="Toggle" title="@CurrentUser.DisplayName"
+            aria-haspopup="true" aria-expanded="@(_open ? "true" : "false")" aria-label="Account menu">
+        <span class="tide-avatar" aria-hidden="true">@MainLayout.Initials(CurrentUser.DisplayName)</span>
+    </button>
+
+    @if (_open)
+    {
+        <div class="tide-profile-backdrop" @onclick="Close"></div>
+        <div class="tide-profile-panel" role="menu" aria-label="Account" @onkeydown="OnKey">
+            <div class="tide-profile-id">
+                <span class="tide-avatar tide-avatar-lg" aria-hidden="true">@MainLayout.Initials(CurrentUser.DisplayName)</span>
+                <div class="tide-profile-id-text">
+                    <div class="tide-profile-name" title="@CurrentUser.DisplayName">@CurrentUser.DisplayName</div>
+                    @if (Secondary is { } sub) { <div class="tide-profile-sub" title="@sub">@sub</div> }
+                </div>
+            </div>
+            @if (Roles.Count > 0)
+            {
+                <div class="tide-profile-roles">
+                    <span class="tide-profile-role">@RoleLabel(Roles[0])</span>
+                    @if (Roles.Count > 1)
+                    {
+                        <span class="tide-profile-role tide-profile-role-more" title="Also: @string.Join(", ", Roles.Skip(1).Select(RoleLabel))">+@(Roles.Count - 1)</span>
+                    }
+                </div>
+            }
+
+            <div class="tide-profile-sep"></div>
+
+            <div class="tide-profile-seg-row" role="group" aria-label="Theme">
+                <span class="bi @(_dark ? "bi-moon-stars" : "bi-sun")" aria-hidden="true"></span>
+                <span class="tide-profile-seg-label">Theme</span>
+                <span class="tide-seg" role="radiogroup" aria-label="Theme">
+                    <button type="button" class="tide-seg-opt @(!_dark ? "on" : "")" role="radio" aria-checked="@(!_dark ? "true" : "false")" @onclick="() => SetTheme(false)">Light</button>
+                    <button type="button" class="tide-seg-opt @(_dark ? "on" : "")" role="radio" aria-checked="@(_dark ? "true" : "false")" @onclick="() => SetTheme(true)">Dark</button>
+                </span>
+            </div>
+            <div class="tide-profile-seg-row" role="group" aria-label="Letter shortcuts">
+                <span class="bi bi-keyboard" aria-hidden="true"></span>
+                <span class="tide-profile-seg-label">Letter shortcuts</span>
+                <span class="tide-seg" role="radiogroup" aria-label="Letter shortcuts">
+                    <button type="button" class="tide-seg-opt @(_shortcuts ? "on" : "")" role="radio" aria-checked="@(_shortcuts ? "true" : "false")" @onclick="() => SetShortcuts(true)">On</button>
+                    <button type="button" class="tide-seg-opt @(!_shortcuts ? "on" : "")" role="radio" aria-checked="@(!_shortcuts ? "true" : "false")" @onclick="() => SetShortcuts(false)">Off</button>
+                </span>
+            </div>
+            <div class="tide-profile-seg-hint">Single-key shortcuts in triage, present mode and the editor. Arrows always work. Saved in this browser.</div>
+
+            @if (CurrentUser.Has(Permission.ReadTeamEdition))
+            {
+                <div class="tide-profile-sep"></div>
+                <a class="tide-profile-item" role="menuitem" href="rotation/my.ics" download @onclick="Close">
+                    <span class="bi bi-calendar-event" aria-hidden="true"></span>
+                    <span>My brief days (calendar file)</span>
+                </a>
+            }
+
+            <button type="button" class="tide-profile-item" role="menuitem" @onclick="() => _about = !_about" aria-expanded="@(_about ? "true" : "false")">
+                <span class="bi bi-info-circle" aria-hidden="true"></span>
+                <span>About</span>
+                <span class="bi bi-chevron-@(_about ? "up" : "down") tide-profile-caret" aria-hidden="true"></span>
+            </button>
+            @if (_about)
+            {
+                <div class="tide-profile-about">
+                    <div class="fw-semibold">TIDE</div>
+                    <div>Threat Intelligence Daily Exchange: write, brief, distribute and follow up the daily threat-intelligence brief.</div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool _open, _about, _dark, _shortcuts = true;
+
+    // Most privileged first, so the chip reads as access level.
+    private IReadOnlyList<AppRole> Roles => CurrentUser.Roles.OrderByDescending(r => r switch
+    {
+        AppRole.Admin => 3,
+        AppRole.Analyst => 2,
+        AppRole.ActionOwner => 1,
+        _ => 0,
+    }).ToList();
+
+    private static string RoleLabel(AppRole r) => r switch
+    {
+        AppRole.Admin => "Administrator",
+        AppRole.ActionOwner => "Action owner",
+        _ => r.ToString(),
+    };
+
+    // The UPN (or email) under the name, when it says something more.
+    private string? Secondary
+    {
+        get
+        {
+            var s = CurrentUser.UserPrincipalName ?? CurrentUser.Email;
+            return string.IsNullOrWhiteSpace(s) || string.Equals(s, CurrentUser.DisplayName, StringComparison.OrdinalIgnoreCase) ? null : s;
+        }
+    }
+
+    private async Task Toggle()
+    {
+        _open = !_open;
+        if (!_open) return;
+        _about = false;
+        // Show the settings as they are in this browser.
+        try
+        {
+            _dark = await JS.InvokeAsync<string>("tideTheme.current") == "dark";
+            _shortcuts = await JS.InvokeAsync<bool>("tideShortcuts.on");
+        }
+        catch (JSException) { /* the defaults stand */ }
+        catch (JSDisconnectedException) { }
+    }
+
+    private void Close()
+    {
+        _open = false;
+        _about = false;
+    }
+
+    private void OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") Close();
+    }
+
+    private async Task SetTheme(bool dark)
+    {
+        if (_dark == dark) return;
+        try
+        {
+            await JS.InvokeVoidAsync("tideTheme.apply", dark ? "dark" : "light");
+            _dark = dark;
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task SetShortcuts(bool on)
+    {
+        if (_shortcuts == on) return;
+        try
+        {
+            await JS.InvokeVoidAsync("tideShortcuts.set", on);
+            _shortcuts = on;
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+}

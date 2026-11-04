@@ -1,0 +1,246 @@
+using FluentAssertions;
+using Microsoft.AspNetCore.Components;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Tide.Application.Actions;
+using Tide.Application.Articles;
+using Tide.Application.Briefs;
+using Tide.Application.Org;
+using Tide.Domain.Entities;
+using Tide.Domain.Enums;
+using Tide.Infrastructure.Persistence;
+using Tide.Web.Components.Pages;
+using Tide.Web.Components.Shared;
+using static Tide.IntegrationTests.ComponentHarness;
+
+namespace Tide.IntegrationTests;
+
+/// <summary>
+/// The meeting's actions: each recommended line raised in one click from the article's slide, the wrap-up's gap, the
+/// brief header's one primary button, how late an overdue action is, and closing a clean sweep from its hunt panel.
+/// </summary>
+public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
+{
+    private DateOnly Today => app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;
+
+    private static DateOnly BusinessDaysBefore(DateOnly day, int n)
+    {
+        for (var i = 0; i < n; i++) day = WorkingDays.Weekdays.Previous(day);
+        return day;
+    }
+
+    // A past day's brief with one P1 threat article recommending two things, at the given status.
+    private async Task<(DateOnly Day, Guid Article)> BriefWithRecommendations(int daysBack, BriefStatus status = BriefStatus.Draft)
+    {
+        var day = BusinessDaysBefore(Today, daysBack);
+        await using var scope = SignedIn(app, SignIn.Analyst);
+        var articles = scope.ServiceProvider.GetRequiredService<ArticleService>();
+        var briefs = scope.ServiceProvider.GetRequiredService<BriefService>();
+        var id = await articles.CreateAsync($"GitLab takeover {daysBack}", "Vendor", null, TlpLevel.Clear);
+        var form = ArticleForm.From((await articles.GetAsync(id))!);
+        form.Bluf = "Exploited in the wild.";
+        form.Classification = Classification.Threat;
+        form.Priority = Priority.P1;
+        form.RecommendedActions = "- Patch GitLab to 17.3.2\n- Notify the service desk";
+        await articles.SaveAsync(form);
+        var brief = await briefs.GetOrStartAsync(day);
+        await briefs.AddArticleAsync(brief.Id, id);
+        if (status != BriefStatus.Draft)
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var b = await db.Briefs.SingleAsync(x => x.Id == brief.Id);
+            b.Status = status;
+            await db.SaveChangesAsync();
+        }
+        return (day, id);
+    }
+
+    [Fact]
+    public async Task TheArticleSlide_ListsEachRecommendedLine_WithAGuessedKind_AndARaisedOneShowsItsAction()
+    {
+        var (day, article) = await BriefWithRecommendations(12);
+        await using var r = await RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" });
+        await r.Click(p => p.OnPresentKey("last"));
+        var wrap = await r.Html();
+        wrap.Should().Contain("Recommended, with no action raised yet").And.Contain("<li>Patch GitLab to 17.3.2</li>").And.Contain("<li>Notify the service desk</li>");
+
+        await r.Click(p => p.OnPresentKey("prev"));
+        var slide = await r.Html();
+        slide.Should().Contain("class=\"tide-reco\"").And.Contain("aria-label=\"Kind for: Patch GitLab to 17.3.2\" value=\"PatchRemediate\"")
+            .And.Contain("aria-label=\"Kind for: Notify the service desk\" value=\"Awareness\"").And.Contain("Raise</button>")
+            .And.Contain("Another action: what needs doing", "the free-text add stays for anything else");
+
+        int number;
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+        {
+            var actions = scope.ServiceProvider.GetRequiredService<ActionService>();
+            var team = (await scope.ServiceProvider.GetRequiredService<TeamService>().ListAsync())[0].Id;
+            number = await actions.QuickAddAsync(article, "Patch GitLab to 17.3.2", ActionKind.PatchRemediate, team, null, day);
+            (await actions.GetAsync(number))!.Action.Priority.Should().Be(Priority.P1, "the article's priority");
+        }
+        await using var again = await RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" });
+        await again.Click(p => p.OnPresentKey("last"));
+        await again.Click(p => p.OnPresentKey("prev"));
+        var raised = await again.Html();
+        raised.Should().Contain($"Raised as <button type=\"button\" class=\"tide-action-num tide-action-open\" title=\"Open A-{number} here\">A-{number}</button>").And.Contain("disabled aria-describedby")
+            .And.NotContain("aria-label=\"Kind for: Patch GitLab to 17.3.2\"");
+        await again.Click(p => p.OnPresentKey("last"));
+        (await again.Html()).Should().NotContain("<li>Patch GitLab to 17.3.2</li>", "a raised line isn't a gap any more")
+            .And.Contain("<li>Notify the service desk</li>");
+    }
+
+    [Fact]
+    public async Task AnotherDayInTheAddress_StartsFromItsOwnFirstSlide_AndOneThatIsntADayShowsNoBrief()
+    {
+        var (first, _) = await BriefWithRecommendations(21);
+        var (second, _) = await BriefWithRecommendations(22);
+        await using var r = await RenderAsync<Present>(app, $"/present/{first:yyyy-MM-dd}", new() { ["Day"] = $"{first:yyyy-MM-dd}" });
+        await r.Click(p => p.OnPresentKey("last"));
+        (await r.Html()).Should().Contain("Recommended, with no action raised yet");
+
+        Task Address(string day) => r.Click(p => p.SetParametersAsync(ParameterView.FromDictionary(new Dictionary<string, object?> { ["Day"] = day })));
+        await Address($"{second:yyyy-MM-dd}");
+        var html = await r.Html();
+        html.Should().Contain($"Presenting the brief for {Ui.ShortDay(second)}").And.Contain("aria-label=\"Slide 1 of")
+            .And.NotContain("Recommended, with no action raised yet", "the last day's slide number doesn't carry over");
+
+        await Address("not-a-day");
+        (await r.Html()).Should().Contain("isn't a day").And.NotContain("GitLab takeover 22", "the last day's brief isn't shown under the new address");
+    }
+
+    [Fact]
+    public async Task TheTopBarsEnd_BringsTheWrapUpForward_AndOnTheWrapUpEndsTheMeeting()
+    {
+        // A past day's brief with an article nobody ticked off: the wrap-up has to be seen before the meeting ends.
+        var (day, _) = await BriefWithRecommendations(24);
+        await using var r = await RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" });
+        var endFromTop = typeof(Present).GetMethod("EndFromTop", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var redraw = typeof(ComponentBase).GetMethod("StateHasChanged", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        // As the button's click would: run it, then draw the page again.
+        async Task EndFromTop(Present p)
+        {
+            await (Task)endFromTop.Invoke(p, null)!;
+            redraw.Invoke(p, null);
+        }
+        async Task<BriefStatus> Status()
+        {
+            await using var scope = SignedIn(app, SignIn.Analyst);
+            return (await scope.ServiceProvider.GetRequiredService<AppDbContext>().Briefs.SingleAsync(b => b.BriefDate == day)).Status;
+        }
+
+        await r.Click(EndFromTop);
+        (await r.Html()).Should().Contain(": Wrap-up</div>", "the wrap-up slide is showing");
+        (await Status()).Should().Be(BriefStatus.Draft, "the first click only shows the wrap-up");
+
+        await r.Click(EndFromTop);
+        (await Status()).Should().Be(BriefStatus.Presented, "on the wrap-up, the top bar's End ends the meeting instead of doing nothing");
+    }
+
+    [Fact]
+    public async Task PresentMode_HasTheErrorBar_LikeEveryOtherPage()
+    {
+        var html = await app.CreateClient().GetStringAsync($"/present/{BusinessDaysBefore(Today, 23):yyyy-MM-dd}");
+
+        html.Should().Contain("id=\"blazor-error-ui\"", "without it a circuit that ends leaves the slides frozen with no word why");
+    }
+
+    private static string Header(string html)
+    {
+        var start = html.IndexOf("<div class=\"tide-page-head\">", StringComparison.Ordinal);
+        var end = html.IndexOf("aria-label=\"Brief progress\"", StringComparison.Ordinal);
+        start.Should().BeGreaterThanOrEqualTo(0);
+        return html[start..(end < 0 ? html.Length : end)];
+    }
+
+    private static int Count(string text, string what) => (text.Length - text.Replace(what, "", StringComparison.Ordinal).Length) / what.Length;
+
+    [Theory]
+    [InlineData(13, BriefStatus.Draft, "Mark ready</button>")]
+    [InlineData(14, BriefStatus.Ready, "Present</a>")]
+    [InlineData(15, BriefStatus.Presented, "Send</button>")]
+    public async Task TheBriefHeader_HasOnePrimaryButton_ItsNextStep(int daysBack, BriefStatus status, string primary)
+    {
+        var (day, _) = await BriefWithRecommendations(daysBack, status);
+        var head = Header(await app.CreateClient().GetStringAsync($"/briefs/{day:yyyy-MM-dd}"));
+
+        Count(head, "btn btn-primary").Should().Be(1);
+        var at = head.IndexOf("btn btn-primary", StringComparison.Ordinal);
+        var end = head.IndexOf(primary, at, StringComparison.Ordinal);
+        end.Should().BePositive();
+        head[at..end].Should().NotContain("</a>").And.NotContain("</button>", "the primary class is on that button");
+        if (status != BriefStatus.Ready) head.Should().Contain("btn btn-outline-secondary\" href=\"present/", "Present is still there, as a secondary button");
+    }
+
+    [Fact]
+    public async Task AnEmptyDraft_HasNoMarkReady()
+    {
+        var day = BusinessDaysBefore(Today, 16);
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            await scope.ServiceProvider.GetRequiredService<BriefService>().GetOrStartAsync(day);
+        var head = Header(await app.CreateClient().GetStringAsync($"/briefs/{day:yyyy-MM-dd}"));
+        head.Should().NotContain("Mark ready").And.NotContain("btn btn-primary");
+    }
+
+    [Fact]
+    public async Task AnOverdueBadge_SaysHowLate()
+    {
+        await using var scope = SignedIn(app, SignIn.Analyst);
+        var renderer = new Microsoft.AspNetCore.Components.Web.HtmlRenderer(scope.ServiceProvider,
+            scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>());
+        var html = await renderer.Dispatcher.InvokeAsync(async () => (await renderer.RenderComponentAsync<SlaBadge>(
+            Microsoft.AspNetCore.Components.ParameterView.FromDictionary(new Dictionary<string, object?>
+            {
+                ["State"] = SlaState.Overdue, ["Due"] = (DateOnly?)new DateOnly(2026, 10, 27), ["Today"] = (DateOnly?)new DateOnly(2026, 10, 30),
+            }))).ToHtmlString());
+        html.Should().Contain("Overdue &#xB7; 3 days</span>");
+        await renderer.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task TheHuntPanel_NotesAQueryEditedAfterItsResult()
+    {
+        int number;
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+        {
+            var actions = scope.ServiceProvider.GetRequiredService<ActionService>();
+            var team = (await scope.ServiceProvider.GetRequiredService<TeamService>().ListAsync())[0].Id;
+            number = await actions.CreateAsync(new ActionForm { Title = "Hunt for shells (edited)", Kind = ActionKind.ThreatHunt, TeamId = team });
+            var hunt = await actions.AddHandWrittenHuntAsync((await actions.GetAsync(number))!.Action.Id, "kql", "DeviceProcessEvents");
+            await actions.RecordHuntResultAsync(hunt.Id, HuntResult.Hits, 2, null, null);
+            await actions.SaveHuntTextAsync(hunt.Id, "DeviceProcessEvents | take 50");
+        }
+        await using var r = await RenderAsync<ActionPage>(app, "/actions/" + number, new() { ["Number"] = (int?)number });
+        (await r.HtmlOnce("Edited after its result")).Should().Contain("<div class=\"small tide-muted\">Edited after its result was recorded (");
+    }
+
+    [Fact]
+    public async Task ASweepsHuntPanel_OffersNoHitsClose_OnlyOnceTheQueryIsCopied()
+    {
+        int number;
+        Guid huntId;
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+        {
+            var articles = scope.ServiceProvider.GetRequiredService<ArticleService>();
+            var actions = scope.ServiceProvider.GetRequiredService<ActionService>();
+            var id = await articles.CreateAsync("Edge VPN zero-day (sweep)", "Vendor", null, TlpLevel.Clear);
+            var form = ArticleForm.From((await articles.GetAsync(id))!);
+            form.Bluf = "Exploited.";
+            form.Indicators = [new() { Type = IndicatorType.IpAddress, Value = "203.0.113.45" }];
+            await articles.SaveAsync(form);
+            var team = (await scope.ServiceProvider.GetRequiredService<TeamService>().ListAsync())[0].Id;
+            number = await actions.CreateAsync(new ActionForm { Title = "Sweep for the VPN IPs", Kind = ActionKind.IocSweep, TeamId = team, ArticleId = id });
+            huntId = (await actions.GenerateHuntAsync((await actions.GetAsync(number))!.Action.Id, "kql")).Id;
+        }
+        await using var r = await RenderAsync<ActionPage>(app, "/actions/" + number, new() { ["Number"] = (int?)number });
+        var html = await r.HtmlOnce("No hits, close");
+        html.Should().Contain("class=\"tide-hunt-close\"").And.Contain("value=\"30\"", "the query's own window")
+            .And.Contain("Copy the query and run it first.").And.NotContain("left out");
+        var button = html[html.LastIndexOf("<button", html.IndexOf("No hits, close", StringComparison.Ordinal), StringComparison.Ordinal)..];
+        button.Should().StartWith("<button type=\"button\" class=\"btn btn-outline-secondary btn-sm\" disabled");
+
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            await scope.ServiceProvider.GetRequiredService<ActionService>().CloseWithNoHitsAsync(huntId, 30, false);
+        await using var done = await RenderAsync<ActionPage>(app, "/actions/" + number, new() { ["Number"] = (int?)number });
+        (await done.HtmlOnce("Searched 30 days")).Should().NotContain("No hits, close", "a closed action has nothing left to close");
+    }
+}

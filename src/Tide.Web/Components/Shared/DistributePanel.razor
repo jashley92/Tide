@@ -1,0 +1,542 @@
+@* Sending the brief, in the dialog the step strip's Send step opens (BriefPage puts it in a ConfirmDialog): a test
+   copy of both editions to oneself first, then each edition's confirmation (SendConfirmation), its reader preview, a
+   tick that the marking and recipients were checked, and its own send button, held back until the tick. Below, the
+   send log, which is all someone who can't send sees. Sends go one at a time, refused if the edition changed since it
+   was shown. A send that went offers "Send a correction" (ADR 0015), which puts CorrectionForm in the editions' place;
+   the log lists each correction under the send it corrects. *@
+@using Tide.Application.Distribution
+@inject DistributionService Distribution
+@inject CorrectionService Corrections
+@inject Tide.Application.Metrics.MetricsService MetricsSvc
+@inject ICurrentUser CurrentUser
+@inject ToastService Toasts
+@inject OrgClock Clock
+@inject Tide.Application.Briefs.BriefService Briefs
+@inject Tide.Application.Reviews.ReviewService Reviews
+
+@if (_canSend && _correcting is { } correcting)
+{
+    <CorrectionForm @key="correcting" SendId="correcting" Sent="Corrected" Closed="StopCorrecting" />
+}
+else if (_canSend)
+{
+    @if (BeforeItsDay)
+    {
+        @* A brief goes from its own day (Distribution refuses it earlier): prepared on a Sunday, it's sent on Monday. *@
+        <div class="alert alert-info small py-2 mb-2" role="status">
+            <span class="bi bi-calendar-event" aria-hidden="true"></span>
+            The brief for @Ui.ShortDay(Date) can be sent from that day. Prepare it now and send it after the meeting; a test copy can go now.
+        </div>
+    }
+    else if (!MeetingHeld)
+    {
+        @* Sending doesn't end the meeting, and nothing goes until it's ended (or there wasn't one): ended, its articles are
+           marked presented. Present mode's End carries undiscussed articles over; this one marks them all presented. *@
+        <div class="alert alert-warning small py-2 mb-2" role="group" aria-labelledby="send-meeting-h">
+            <div id="send-meeting-h"><span class="bi bi-exclamation-triangle" aria-hidden="true"></span>
+                The meeting hasn't been ended. End it here, or <a href="@($"present/{Date:yyyy-MM-dd}")">in present mode</a> to carry
+                undiscussed articles to the next brief.</div>
+            <div class="d-flex gap-2 flex-wrap align-items-center mt-2">
+                <label class="small" for="send-held">Held at</label>
+                <input type="time" id="send-held" class="form-control form-control-sm w-auto" @bind="_heldAt" disabled="@_busy" />
+                <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(_busy || BriefId is null)" @onclick="EndMeeting">End the meeting</button>
+                <div class="form-check mb-0">
+                    <input class="form-check-input" type="checkbox" id="send-no-meeting" checked="@_withoutMeeting" disabled="@_busy"
+                           @onchange="e => _withoutMeeting = e.Value is true" />
+                    <label class="form-check-label small" for="send-no-meeting">Sent without a meeting</label>
+                </div>
+            </div>
+        </div>
+    }
+    @if (_reviewGaps.Count > 0)
+    {
+        @* EP-80: what hasn't had a colleague's approval. A warning, unless an administrator requires review for it. *@
+        var required = _reviewGaps.Count(g => g.Required);
+        <div class="alert @(required > 0 ? "alert-danger" : "alert-warning") small py-2 mb-2" role="status">
+            <span class="bi bi-person-exclamation" aria-hidden="true"></span>
+            @_reviewGaps.Count article@(_reviewGaps.Count == 1 ? " hasn't" : "s haven't") been reviewed:
+            @for (var i = 0; i < _reviewGaps.Count; i++)
+            {
+                var g = _reviewGaps[i];
+                <a href="@($"articles/{g.ArticleId}")">@Ui.Clip(g.Title, 50)</a><span> (@g.Why@(g.Required ? ", required" : ""))</span>@(i < _reviewGaps.Count - 1 ? "; " : ".")
+            }
+            @(required > 0 ? " An edition holding a required one waits until it's approved." : " Review isn't required.")
+        </div>
+    }
+    <p class="small tide-muted mb-2">Each edition goes to its own list, one at a time, and a send can't be recalled. Check them in your own inbox first.</p>
+    <div class="tide-send-test mb-3">
+        <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_busy || !EmailEnabled)" @onclick="SendTests">
+            <span class="bi bi-envelope" aria-hidden="true"></span> Send a test copy to me</button>
+        <span class="small tide-muted" aria-live="polite">@_testNote</span>
+    </div>
+    @foreach (var edition in Editions)
+    {
+        var plan = _plans.GetValueOrDefault(edition);
+        var id = $"send-{edition.ToString().ToLowerInvariant()}";
+        <section class="tide-card tide-send-edition" aria-labelledby="@(id)-h" @key="edition">
+            <h3 class="tide-card-title" id="@(id)-h">@BriefRenderer.EditionName(edition)
+                @if (plan is not null) { <TlpBadge Level="plan.Marking" /> }</h3>
+            @if (plan is null)
+            {
+                <LoadingBlock Rows="2" Label="Loading the send plan…" />
+            }
+            else
+            {
+                <div class="small mb-2">@Summary(plan)</div>
+                <SendConfirmation Plan="plan" />
+                @if (plan.Recipients.Count == 0 && CurrentUser.Has(Permission.Administer))
+                {
+                    <div class="small mt-1"><a href="admin/access">Set the list</a></div>
+                }
+                @if (_cuts.GetValueOrDefault(edition) is { } cut)
+                {
+                    @* The edition as readers get it, cut with the plan above. Step 3.3 swaps EditionView for the reader renderer. *@
+                    <details class="tide-send-preview">
+                        <summary>Preview the @BriefRenderer.EditionName(edition).ToLowerInvariant() as readers get it</summary>
+                        <EditionView Edition="cut" Metrics="_metrics" Open="_open" />
+                    </details>
+                }
+                <div class="form-check mt-2 mb-0">
+                    <input class="form-check-input" type="checkbox" id="@(id)-checked" checked="@_checked.Contains(edition)" disabled="@_busy"
+                           @onchange="e => Tick(edition, e.Value is true)" />
+                    <label class="form-check-label small" for="@(id)-checked">@CheckedLabel(plan)</label>
+                </div>
+                <div class="d-flex gap-2 flex-wrap align-items-center mt-2">
+                    <button type="button" class="btn btn-primary btn-sm" disabled="@(_busy || !_checked.Contains(edition) || !plan.EmailEnabled || plan.Recipients.Count == 0 || plan.Articles == 0 || !MaySend || HeldForReview(edition))"
+                            @onclick="() => SendNow(_plans[edition])"><span class="bi bi-send-check" aria-hidden="true"></span> @SendConfirmation.Label(plan)</button>
+                    <a class="btn btn-link btn-sm" href="@EmailUrl(edition)" target="_blank" rel="noopener">The email in a new tab</a>
+                    @if (edition == Edition.Public)
+                    {
+                        <a class="btn btn-link btn-sm" href="@($"briefs/{Ui.IsoDay(Date)}/sharepoint")">Copy for SharePoint</a>
+                    }
+                </div>
+                <div class="small mt-1" aria-live="polite">@_notes.GetValueOrDefault(edition)</div>
+                @if (!plan.EmailEnabled)
+                {
+                    <p class="small tide-muted mt-2 mb-0">Email is turned off on this server (Email:Enabled), so nothing can be sent.</p>
+                }
+            }
+        </section>
+    }
+    @if (!Distribution.EmailEnabled && Brief is not null)
+    {
+        @* Email off: the brief goes out another way, and someone says so here. It's finished as a send would finish it. *@
+        <section class="tide-card tide-send-edition" aria-labelledby="send-distributed-h">
+            <h3 class="tide-card-title" id="send-distributed-h">Distribute without email</h3>
+            @if (Brief.DistributedAtUtc is { } at)
+            {
+                <p class="small mb-0"><span class="bi bi-check2-circle" aria-hidden="true"></span> Marked distributed by @Brief.DistributedByName, @Ui.When(Clock, at).</p>
+            }
+            else if (Brief.Status == BriefStatus.Sent)
+            {
+                <p class="small mb-0">Sent.</p>
+            }
+            else
+            {
+                <p class="small mb-2">Email is off. Once the brief has gone out another way, mark it distributed: its numbers lock and it's finished.</p>
+                <div class="form-check mb-0">
+                    <input class="form-check-input" type="checkbox" id="send-gone-out" checked="@_goneOut" disabled="@_busy"
+                           @onchange="e => _goneOut = e.Value is true" />
+                    <label class="form-check-label small" for="send-gone-out">It's gone out</label>
+                </div>
+                <button type="button" class="btn btn-primary btn-sm mt-2" disabled="@(_busy || !_goneOut || !MaySend || _reviewGaps.Any(g => g.Required))"
+                        @onclick="MarkDistributed"><span class="bi bi-check2-square" aria-hidden="true"></span> Mark distributed</button>
+                <div class="small mt-1" aria-live="polite">@_distributedNote</div>
+            }
+        </section>
+    }
+    @if (Brief is not null && (Distribution.SharePointRequired || Brief.SharePointPostedAtUtc is not null))
+    {
+        <SharePointPosted Date="Date" ForThisBrief="@(Brief.Status != BriefStatus.Sent || Brief.SharePointRequired)" PostedAtUtc="Brief.SharePointPostedAtUtc" PostedByName="@Brief.SharePointPostedByName" Changed="Sent" />
+    }
+}
+@SendLog()
+
+@code {
+    [Parameter, EditorRequired] public DateOnly Date { get; set; }
+
+    /// <summary>Raised after a real send, so the page reloads the brief (now Sent).</summary>
+    [Parameter] public EventCallback Sent { get; set; }
+
+    /// <summary>Whether the brief's meeting was ended (it was held). Until it is, the dialog offers to end it, or to send
+    /// without a meeting, and holds the sends back.</summary>
+    [Parameter] public bool MeetingHeld { get; set; } = true;
+
+    /// <summary>The brief, so its meeting can be ended from here; and what to do once it is (the page reloads).</summary>
+    [Parameter] public Guid? BriefId { get; set; }
+    [Parameter] public EventCallback Ended { get; set; }
+
+    /// <summary>The brief as the page read it: whether it was marked distributed, and posted to SharePoint.</summary>
+    [Parameter] public Brief? Brief { get; set; }
+
+    private bool _goneOut;
+    private string? _distributedNote;
+
+    // Email off: the brief went out another way (DistributionService.MarkDistributedAsync).
+    internal async Task MarkDistributed()
+    {
+        if (_busy) return;
+        _busy = true;
+        _distributedNote = null;
+        try
+        {
+            await Distribution.MarkDistributedAsync(Date, _withoutMeeting);
+            Toasts.Show("Marked distributed.");
+            await Sent.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or KeyNotFoundException)
+        {
+            _distributedNote = UserFacingError.For(ex);
+            Toasts.Error(_distributedNote);
+        }
+        finally
+        {
+            _goneOut = false;
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+
+    private bool _withoutMeeting;
+    private Tide.Application.Actions.OpenActionsReview? _open;
+    private TimeOnly _heldAt;
+    private bool BeforeItsDay => Clock.Today < Date;
+    private bool MaySend => !BeforeItsDay && (MeetingHeld || _withoutMeeting);
+
+    /// <summary>"Sent without a meeting", as the box sets it (a test sets it directly).</summary>
+    internal void SendWithoutMeeting(bool on) => _withoutMeeting = on;
+
+    private async Task EndMeeting()
+    {
+        if (_busy || BriefId is not { } id) return;
+        _busy = true;
+        try
+        {
+            var local = Date.ToDateTime(_heldAt, DateTimeKind.Unspecified);
+            await Briefs.MarkPresentedAsync(id, new DateTimeOffset(local, Clock.Zone.GetUtcOffset(local)));
+            Toasts.Show("Meeting ended. The brief can be sent.");
+            await Ended.InvokeAsync();
+        }
+        // Any refusal is said in a toast, a colleague's save to the brief or one of its articles at that moment too, rather
+        // than taking the page down.
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    /// <summary>A send to open the correction of, once (the sent brief's "Send a correction" opens the dialog with it).</summary>
+    [Parameter] public Guid? Correct { get; set; }
+
+    private Guid? _opened;   // the Correct last acted on, so a reload after the correction doesn't open it again
+
+    private static readonly Edition[] Editions = [Edition.Team, Edition.Public];
+    private readonly Dictionary<Edition, SendPlan> _plans = [];
+    private readonly Dictionary<Edition, BriefEdition> _cuts = [];
+    private readonly Dictionary<Edition, string> _notes = [];
+    private string? _testNote;
+    private Tide.Application.Metrics.MetricDay? _metrics;   // the day's numbers, which the team edition's preview opens with
+
+    // The dialog's deliberate step: an edition's send waits for its tick, which goes whenever its plan is read again.
+    private readonly HashSet<Edition> _checked = [];
+    private IReadOnlyList<BriefSend> _sends = [];
+    private ILookup<Guid, BriefCorrection> _corrections = Array.Empty<BriefCorrection>().ToLookup(c => c.CorrectsSendId);
+    private IReadOnlySet<Guid> _withdrawn = new HashSet<Guid>();
+    private Guid? _correcting;   // the send a correction is being written for, in the editions' place
+    private bool _busy, _canSend;
+
+    /// <summary>Opens the correction of send <paramref name="sendId"/> (the sent brief's "Send a correction").</summary>
+    public void StartCorrection(Guid sendId)
+    {
+        _correcting = sendId;
+        StateHasChanged();
+    }
+
+    internal Guid? Correcting => _correcting;
+
+    private void StopCorrecting() => _correcting = null;
+
+    // A correction went to the relay: say how it went, and show the log with it.
+    private async Task Corrected(BriefCorrection c)
+    {
+        var done = c.Status == SendStatus.Sent
+            ? $"{(c.IsTlpSlip ? "Slip notice" : "Correction")} sent to {c.RecipientCount} recipient{(c.RecipientCount == 1 ? "" : "s")}."
+            : c.Error ?? "The relay didn't take the message.";
+        // A slip withdraws the day's sends so far whatever became of its email.
+        if (c.IsTlpSlip)
+            done += c.Status == SendStatus.Sent
+                ? " The day's sends so far are withdrawn from the published briefs: send the edition again to publish the corrected version."
+                : " The day's sends so far are withdrawn from the published briefs all the same; send the slip again to reach the recipients.";
+        if (c.Status == SendStatus.Sent) Toasts.Show(done);
+        else Toasts.Error(done);
+        _correcting = null;
+        await Load();
+        await Sent.InvokeAsync();
+    }
+
+    // A send whose outcome isn't known, settled once someone has asked a recipient (DistributionService.SettleAsync).
+    internal async Task Settle(Guid sendId, bool went)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await Distribution.SettleAsync(sendId, went);
+            Toasts.Show(went ? "Marked sent: it's archived, and can be corrected." : "Marked not sent.");
+            await Load();
+            await Sent.InvokeAsync();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+
+    // A correction whose outcome isn't known, settled the same way (CorrectionService.SettleAsync).
+    internal async Task SettleCorrection(Guid correctionId, bool went)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            var c = await Corrections.SettleAsync(correctionId, went);
+            Toasts.Show(!went ? "Marked not sent."
+                : c.IsTlpSlip ? "Marked sent: the sends it covers are withdrawn from the published briefs."
+                : "Marked sent.");
+            await Load();
+            await Sent.InvokeAsync();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+
+    // Only a real send the relay took can be corrected (nobody is known to have the others).
+    /// <summary>What the send log says under a send a TLP slip withdrew.</summary>
+    public const string WithdrawnNote = "Withdrawn from the published briefs by a TLP slip. Send the edition again to publish the corrected version.";
+
+    private static bool Correctable(BriefSend s) => !s.IsTest && s.Status == SendStatus.Sent;
+
+    private string EmailUrl(Edition e) => $"briefs/{Date:yyyy-MM-dd}/email/{e.ToString().ToLowerInvariant()}";
+
+    // Until the plans are read, the test copy is offered (and takes the dialog's first focus).
+    private bool EmailEnabled => _plans.Count == 0 || _plans.Values.Any(p => p.EmailEnabled);
+
+    internal void Tick(Edition e, bool on)
+    {
+        if (on) _checked.Add(e);
+        else _checked.Remove(e);
+        StateHasChanged();
+    }
+
+    internal bool Ticked(Edition e) => _checked.Contains(e);
+
+    /// <summary>The tick's words: "I've checked the marking (TLP:AMBER) and the recipients (2 addresses on the security team
+    /// edition list)". Addresses, not people: one may be a distribution list.</summary>
+    public static string CheckedLabel(SendPlan plan) =>
+        $"I've checked the marking ({Tlp.Label(plan.Marking)}) and the recipients ({plan.Recipients.Count} {(plan.Recipients.Count == 1 ? "address" : "addresses")} "
+        + $"on the {BriefRenderer.EditionName(plan.Edition).ToLowerInvariant()} list)";
+
+    private static string Summary(SendPlan plan) =>
+        $"{plan.Articles} article{(plan.Articles == 1 ? "" : "s")}, {plan.Images} image{(plan.Images == 1 ? "" : "s")}"
+        + (plan.WithheldArticles > 0 ? $"; {plan.WithheldArticles} restricted left out" : "")
+        + (plan.Edition == Edition.Team ? "; the day's numbers at the top" : "");
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_heldAt == default) _heldAt = Clock.MeetingTime;
+        _canSend = CurrentUser.Has(Permission.PresentBriefs);
+        if (Correct != _opened)
+        {
+            _opened = Correct;
+            _correcting = Correct;
+        }
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        try
+        {
+            if (_canSend)
+            {
+                foreach (var e in Editions)
+                {
+                    _plans[e] = await Distribution.PlanAsync(Date, e);
+                    _checked.Remove(e);
+                    _cuts[e] = await Distribution.EditionToSendAsync(Date, e);
+                }
+                _metrics = await MetricsSvc.GetDayAsync(Date);
+                _open = _cuts.TryGetValue(Edition.Team, out var team) ? team.Open : null;   // read with the cut, under its ceiling
+                _reviewGaps = await Reviews.GapsAsync(Date);
+            }
+            await LoadLog();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    // EP-80: the brief's articles without a current approval, and whether an edition holds a required one.
+    private IReadOnlyList<Tide.Application.Reviews.ReviewGap> _reviewGaps = [];
+
+    private bool HeldForReview(Edition e) =>
+        _cuts.TryGetValue(e, out var cut) && _reviewGaps.Any(g => g.Required && cut.Articles.Any(a => a.Article.Id == g.ArticleId));
+
+    private async Task LoadLog()
+    {
+        _sends = await Distribution.SendsAsync(Date);
+        _corrections = (await Corrections.CorrectionsAsync(Date)).ToLookup(c => c.CorrectsSendId);
+        _withdrawn = await Distribution.WithdrawnSendsAsync(Date);
+    }
+
+    internal async Task Replan(Edition e)
+    {
+        _plans[e] = await Distribution.PlanAsync(Date, e);
+        _checked.Remove(e);
+        _cuts[e] = await Distribution.EditionToSendAsync(Date, e);
+    }
+
+    // The dialog's test copy: both editions, to oneself, so they can be checked in an inbox before either goes.
+    internal async Task SendTests()
+    {
+        if (_busy) return;   // a second click while the first sends: one test copy each
+        _busy = true;
+        _testNote = null;
+        try
+        {
+            var failed = new List<string>();
+            foreach (var e in Editions)
+            {
+                var result = await Distribution.SendTestAsync(Date, e);
+                if (result.Status != EmailSendStatus.Sent) failed.Add($"{BriefRenderer.EditionName(e)}: {result.Error ?? "not sent"}.");
+            }
+            _testNote = failed.Count == 0
+                ? $"Test copies of both editions went to {CurrentUser.Email}."
+                : "A test copy wasn't sent. " + string.Join(" ", failed);
+            _sends = await Distribution.SendsAsync(Date);
+        }
+        catch (Exception ex) { _testNote = UserFacingError.For(ex); }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+
+    // One real send of the plan as it was shown. The dialog also says what happened beside the edition, as the toasts
+    // sit behind it. False when it was refused, and the edition is shown again as it is now.
+    internal async Task<bool> SendNow(SendPlan plan)
+    {
+        if (_busy) return false;   // a second click while the first sends: the edition goes once
+        _busy = true;
+        _notes.Remove(plan.Edition);
+        _checked.Remove(plan.Edition);
+        try
+        {
+            var send = await Distribution.SendAsync(plan, _withoutMeeting);
+            var done = send.Status == SendStatus.Sent
+                ? $"Sent to {send.RecipientCount} recipient{(send.RecipientCount == 1 ? "" : "s")}."
+                : send.Error ?? "The relay didn't take the message.";
+            if (send.Status == SendStatus.Sent) Toasts.Show(done);
+            else Toasts.Error(done);
+            _notes[plan.Edition] = done;
+            await Load();
+            await Sent.InvokeAsync();
+            return true;
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Refused (it changed since the confirmation, or can't go): show the edition as it is now to confirm again.
+            Toasts.Error(UserFacingError.For(ex));
+            _notes[plan.Edition] = UserFacingError.For(ex) + " It's shown again as it is now: check it and send again.";
+            try { await Replan(plan.Edition); }
+            catch (Exception again) { Toasts.Error(UserFacingError.For(again)); }
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            _notes[plan.Edition] = UserFacingError.For(ex);
+            return false;
+        }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+
+    // Every send of the day, newest first: tests, failures and the real ones.
+    private RenderFragment SendLog() => __builder =>
+    {
+            <div class="tide-card tide-card-scroll">
+                <h3 class="tide-card-title">Send log</h3>
+                @if (_sends.Count == 0)
+                {
+                    <EmptyState Icon="bi-send" Title="Nothing sent yet." Compact="true" />
+                }
+                else
+                {
+                    <table class="tide-table">
+                        <thead><tr><th>When</th><th>Edition</th><th>To</th><th>Outcome</th></tr></thead>
+                        <tbody>
+                            @foreach (var s in _sends)
+                            {
+                                <tr>
+                                    <td class="text-nowrap">@Ui.When(Clock, s.SentAtUtc)<div class="small tide-muted">@s.SentByName</div></td>
+                                    <td>@(s.Edition == Edition.Public ? "Company-wide" : "Team")@if (s.IsTest) { @(" ")<Badge>test</Badge> }<div><TlpBadge Level="s.Marking" /></div></td>
+                                    <td class="small" title="@s.Recipients">@s.RecipientCount</td>
+                                    <td class="small">
+                                        <StatusBadge Status="@s.Status.ToString()" />
+                                        @if (!s.IsTest && s.Status != SendStatus.Failed) { <div><a href="@($"sends/{s.Id}/email")" target="_blank" rel="noopener">View as sent</a></div> }
+                                        @if (s.Error is not null) { <div class="@(s.Status == SendStatus.Sent ? "tide-muted" : "text-danger")">@s.Error</div> }
+                                        @if (_withdrawn.Contains(s.Id))
+                                        {
+                                            @* A slip withdraws every company-wide send of the day made before it, a re-send put right included. *@
+                                            <div class="text-danger">@WithdrawnNote</div>
+                                        }
+                                        @if (_canSend && !s.IsTest && s.Status == SendStatus.Unknown && _correcting is null)
+                                        {
+                                            @* Once someone has asked a recipient: marked sent, it's archived and can be corrected. *@
+                                            <div class="d-flex gap-2 flex-wrap">
+                                                <button type="button" class="btn btn-link btn-sm p-0" disabled="@_busy" @onclick="() => Settle(s.Id, true)">It went: mark sent</button>
+                                                <button type="button" class="btn btn-link btn-sm p-0" disabled="@_busy" @onclick="() => Settle(s.Id, false)">It didn't: mark not sent</button>
+                                            </div>
+                                        }
+                                        @if (_canSend && Correctable(s) && _correcting is null)
+                                        {
+                                            <div><button type="button" class="btn btn-link btn-sm p-0" disabled="@_busy" @onclick="() => StartCorrection(s.Id)">Send a correction</button></div>
+                                        }
+                                    </td>
+                                </tr>
+                                @foreach (var c in _corrections[s.Id])
+                                {
+                                    @* A correction, under the send it corrects. *@
+                                    <tr class="tide-log-correction">
+                                        <td class="text-nowrap"><span class="bi bi-arrow-return-right tide-muted" aria-hidden="true"></span> @Ui.When(Clock, c.SentAtUtc)<div class="small tide-muted">@c.SentByName</div></td>
+                                        <td>@if (c.IsTlpSlip) { <Badge Tone="BadgeTone.Danger">TLP slip</Badge> } else { <Badge Tone="BadgeTone.Warn">Correction</Badge> }<div><TlpBadge Level="c.Marking" /></div></td>
+                                        <td class="small" title="@c.Recipients">@c.RecipientCount</td>
+                                        <td class="small">
+                                            <StatusBadge Status="@c.Status.ToString()" />
+                                            <div><a href="@($"corrections/{c.Id}/email")" target="_blank" rel="noopener">View as sent</a></div>
+                                            @if (c.Error is not null) { <div class="@(c.Status == SendStatus.Sent ? "tide-muted" : "text-danger")">@c.Error</div> }
+                                            @if (_canSend && c.Status == SendStatus.Unknown && _correcting is null)
+                                            {
+                                                @* As a send's: once someone has asked a recipient. A slip marked sent withdraws what it covers. *@
+                                                <div class="d-flex gap-2 flex-wrap">
+                                                    <button type="button" class="btn btn-link btn-sm p-0" disabled="@_busy" @onclick="() => SettleCorrection(c.Id, true)">It went: mark sent</button>
+                                                    <button type="button" class="btn btn-link btn-sm p-0" disabled="@_busy" @onclick="() => SettleCorrection(c.Id, false)">It didn't: mark not sent</button>
+                                                </div>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+    };
+}

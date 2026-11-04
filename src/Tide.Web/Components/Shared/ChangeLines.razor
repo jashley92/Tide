@@ -1,0 +1,50 @@
+@using Tide.Application.History
+
+@* The fields one save changed, as "Field: old → new" lines (HistoryFormatter), for the History panel and the audit log.
+   A record created shows what it was created with, and one deleted what it held; a long value is cut short until its
+   "Show" is pressed. *@
+@if (Changes.Count > 0)
+{
+    <ul class="tide-history-changes">
+        @foreach (var (c, i) in Changes.Select((c, i) => (c, i)))
+        {
+            var full = !c.IsLong || _shown.Contains(i);
+            var index = i;
+            <li>
+                <span class="tide-history-field">@c.Field:</span>
+                @if (Changed)
+                {
+                    <span>@Side(c.Before, full)</span> <span aria-label="changed to">&rarr;</span> <span>@Side(c.After, full)</span>
+                }
+                else
+                {
+                    <span>@Side(Deleted ? c.Before ?? c.After : c.After, full)</span>
+                }
+                @if (c.IsLong)
+                {
+                    <button type="button" class="btn btn-link btn-sm p-0 ms-1" aria-expanded="@(full ? "true" : "false")"
+                            aria-label="@(full ? "Show less of" : "Show all of") @c.Field" @onclick="() => Toggle(index)">@(full ? "Show less" : "Show")</button>
+                }
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<HistoryChange> Changes { get; set; } = [];
+
+    /// <summary>Old and new side by side; else the one side there is (what it was created with, or what was removed).</summary>
+    [Parameter] public bool Changed { get; set; }
+
+    /// <summary>A record deleted: its old values are the ones shown.</summary>
+    [Parameter] public bool Deleted { get; set; }
+
+    private readonly HashSet<int> _shown = [];
+
+    private void Toggle(int i)
+    {
+        if (!_shown.Remove(i)) _shown.Add(i);
+    }
+
+    private static string Side(string? value, bool full) => value is null ? "(none)" : full ? value : HistoryChange.Short(value)!;
+}

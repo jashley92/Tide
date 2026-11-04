@@ -1,0 +1,40 @@
+@inject ToastService Toasts
+@implements IDisposable
+
+@* Confirmations are announced politely; errors interrupt (role=alert), so a failed save isn't missed. *@
+<div class="tide-toasts">
+    <div role="status" aria-live="polite">
+        @foreach (var t in Toasts.Toasts.Where(t => !t.IsError)) { @Toast(t) }
+    </div>
+    <div role="alert" aria-live="assertive">
+        @foreach (var t in Toasts.Toasts.Where(t => t.IsError)) { @Toast(t) }
+    </div>
+</div>
+
+@code {
+    private RenderFragment Toast(ToastService.Toast t) => __builder =>
+    {
+        <div class="tide-toast @(t.IsError ? "tide-toast-error" : "")" @key="t.Id">
+            <span class="bi @(t.IsError ? "bi-exclamation-octagon" : "bi-check2-circle")" aria-hidden="true"></span>
+            <span>@t.Message</span>
+            @if (t.Undo is not null)
+            {
+                <button type="button" class="tide-toast-undo" @onclick="() => Undo(t.Id)">Undo</button>
+            }
+            <button type="button" aria-label="Dismiss" @onclick="() => Toasts.Dismiss(t.Id)"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+        </div>
+    };
+
+    // The toasts sit outside the page's error boundary, so an Undo that fails says so rather than ending the session.
+    internal async Task Undo(Guid id)
+    {
+        try { await Toasts.UndoAsync(id); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    protected override void OnInitialized() => Toasts.Changed += OnChanged;
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Toasts.Changed -= OnChanged;
+}

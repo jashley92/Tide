@@ -1,0 +1,113 @@
+@page "/admin"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@using Tide.Application.Admin
+@using Tide.Application.Actions
+@using Tide.Application.Intake
+@using Tide.Application.Metrics
+@using Tide.Application.Rotation
+@using Tide.Application.Settings
+@inject RoleMappingService Roles
+@inject DistributionSettings Distribution
+@inject TeamService Teams
+@inject RotationService Rotation
+@inject IntakeService Intake
+@inject MetricsService Metrics
+@inject Microsoft.Extensions.Options.IOptionsMonitor<IntakeOptions> IntakeOptions
+@inject HolidayService Holidays
+@inject ToastService Toasts
+
+<PageTitle>Administration · TIDE</PageTitle>
+
+@* The Administration landing: what a new install still needs, then where everything is set. *@
+<div class="tide-page-head">
+    <div>
+        <h1 class="tide-admin-title">Overview</h1>
+    </div>
+</div>
+
+@if (_steps is { } steps && steps.Any(s => !s.Done))
+{
+    <section class="tide-card" aria-labelledby="setup-title">
+        <h2 id="setup-title" class="d-flex justify-content-between align-items-center">
+            <span><span class="bi bi-list-check me-1" aria-hidden="true"></span>Getting started</span>
+            <span class="small tide-muted fw-normal">@steps.Count(s => s.Done) of @steps.Count done</span>
+        </h2>
+        <ul class="tide-setup">
+            @foreach (var step in steps)
+            {
+                <li>
+                    <span class="bi @(step.Done ? "bi-check-circle-fill tide-ok" : "bi-circle tide-muted")" aria-hidden="true"></span>
+                    <div class="flex-grow-1">
+                        <div class="@(step.Done ? "tide-muted" : "fw-semibold")">@step.Title <span class="visually-hidden">@(step.Done ? "(done)" : "(to do)")</span></div>
+                        @if (!step.Done) { <div class="small tide-muted">@step.Detail</div> }
+                    </div>
+                    @if (!step.Done) { <a class="btn btn-sm btn-outline-secondary text-nowrap" href="@step.Href">Go</a> }
+                </li>
+            }
+        </ul>
+    </section>
+}
+
+@if (_nextYearHolidays)
+{
+    <div class="alert alert-warning d-flex justify-content-between align-items-center gap-2" role="status">
+        <span><span class="bi bi-calendar-x me-1" aria-hidden="true"></span>Next year has no holidays yet, so its holidays would count as working days.</span>
+        <a class="btn btn-sm btn-outline-secondary text-nowrap" href="admin/organization">Add them</a>
+    </div>
+}
+
+<div class="tide-admin-index">
+    @foreach (var g in AdminLayout.Groups.Skip(1))
+    {
+        <section class="tide-card mb-0">
+            <h2>@g.Label</h2>
+            @foreach (var p in g.Items)
+            {
+                <a class="tide-admin-link" href="@p.Href">
+                    <span class="bi @p.Icon" aria-hidden="true"></span>
+                    <span><span class="fw-semibold">@p.Title</span><span class="d-block small tide-muted">@p.About</span></span>
+                </a>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private sealed record Step(string Title, string Detail, string Href, bool Done);
+
+    private IReadOnlyList<Step>? _steps;
+
+    // In December, once holidays are kept: next year has none yet (EP-82).
+    private bool _nextYearHolidays;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var mappings = await Roles.ListAsync();
+            var team = await Distribution.GetRecipientsAsync(Edition.Team);
+            var everyone = await Distribution.GetRecipientsAsync(Edition.Public);
+            var sources = await Intake.SourcesAsync();
+            _nextYearHolidays = await Holidays.NextYearMissingAsync();
+            _steps =
+            [
+                new("Give the CTI team the Analyst role", "Map the team's AD group to Analyst, and other teams' groups to Action owner or Reader.",
+                    "admin/access", mappings.Any(m => m.RoleName == nameof(AppRole.Analyst))),
+                new("Say who gets each edition", "Set the recipients of the team edition and of the company-wide edition.",
+                    "admin/access", team.Count > 0 && everyone.Count > 0),
+                new("Add the teams that own actions", "Each team, its members, and the SLA targets for its actions.",
+                    "admin/teams", (await Teams.ListAsync()).Count > 0),
+                new("Fill the brief rotation", "Who presents the brief, and the weekly rota.",
+                    "admin/rotation", (await Rotation.MembersAsync()).Count > 0),
+                new("Add intelligence sources", IntakeOptions.CurrentValue.Enabled
+                        ? "The feeds triage takes items from."
+                        : "The feeds triage takes items from. Polling is off until it's turned on, on the same page.",
+                    "admin/sources", sources.Count > 0),
+                new("Define the opening metrics", "Optional: the numbers the brief opens with.",
+                    "admin/metrics", (await Metrics.ListAsync()).Count > 0),
+            ];
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+}

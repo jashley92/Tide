@@ -1,0 +1,362 @@
+@page "/adversaries"
+@page "/adversaries/{Id:guid}"
+@attribute [Authorize(Policy = Policies.ReadTeamEdition)]
+@using Tide.Application.Adversaries
+@using Tide.Domain.Entities
+@inject AdversaryService Adversaries
+@inject Tide.Application.Detections.DetectionService Detections
+@inject ICurrentUser CurrentUser
+@inject NavigationManager Nav
+@inject ToastService Toasts
+@inject OrgClock Clock
+
+@* Adversary profiles (EP-73): the threat actors and campaigns the team reports on, one profile for every name each goes
+   by, built as Our stack is. A profile's page is its timeline (the articles tagged with it or naming it, and their
+   actions), the ATT&CK techniques across them (a Navigator layer to download), and its indicators. Articles that name
+   it but aren't tagged are listed for an analyst to link; nothing is linked automatically. *@
+
+<PageTitle>@(_detail?.Adversary.Name ?? "Adversaries") · TIDE</PageTitle>
+
+@if (Id is null)
+{
+    <div class="tide-page-head">
+        <div>
+            <h1>Adversaries</h1>
+            <div class="tide-sub">Threat actors and campaigns, under all their names. Watched profiles are marked in triage.</div>
+        </div>
+    </div>
+    @if (_canWrite)
+    {
+        <div class="tide-card">
+            <h2>Add a profile</h2>
+            <div class="row g-2 align-items-end">
+                <div class="col-md-4"><label class="tide-field-label" for="new-name">Name</label>
+                    <input id="new-name" class="form-control form-control-sm" maxlength="100" placeholder="Scattered Spider" @bind="_newName" /></div>
+                <div class="col-md-5"><label class="tide-field-label" for="new-aliases">Other names</label>
+                    <input id="new-aliases" class="form-control form-control-sm" maxlength="1000" placeholder="UNC3944; Octo Tempest; 0ktapus" @bind="_newAliases" /></div>
+                <div class="col-md-3"><button class="btn btn-primary btn-sm w-100" disabled="@_busy" @onclick="Add">Add</button></div>
+            </div>
+            <details class="mt-3">
+                <summary class="small">Import MITRE ATT&amp;CK's groups and campaigns</summary>
+                <p class="small mt-2 mb-2">Each group and campaign in Enterprise ATT&amp;CK becomes a profile with its MITRE id and aliases (not watched); one that matches a
+                    profile by id or name gains the names it lacks. Notes, motivation and sectors stay as you wrote them.</p>
+                <button type="button" class="btn btn-outline-secondary btn-sm mb-2" disabled="@_busy" @onclick="Fetch"><span class="bi bi-cloud-download" aria-hidden="true"></span> Fetch from MITRE</button>
+                <p class="small mb-1">No internet from this server? Save <a href="@AdversaryService.MitreTaxiiUrl" target="_blank" rel="noopener noreferrer">the groups from MITRE's TAXII server</a>
+                    elsewhere (sent with <code>Accept: application/taxii+json;version=2.1</code>) and upload the file (8 MB at most):</p>
+                <InputFile OnChange="Import" accept=".json,application/json" disabled="@_busy" aria-label="MITRE ATT&CK groups file" />
+            </details>
+        </div>
+    }
+    <div class="tide-card">
+        <DataTable TItem="AdversaryRow" Items="Shown" Columns="Columns" Key="r => r.Adversary.Id" One="profile" Many="profiles" Caption="Adversaries" PageInAddress="true"
+                   FilterLabel="Filter profiles" FilterPlaceholder="Filter by name, other name or MITRE id"
+                   RowClass="@(r => r.Adversary.IsRetired ? "tide-muted" : null)">
+            <Toolbar>
+                @if (_list is not null)
+                {
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" id="show-all" checked="@_showAll" @onchange="ToggleAll" />
+                        <label class="form-check-label small" for="show-all">Every profile, including ones never reported and retired ones</label>
+                    </div>
+                }
+            </Toolbar>
+            <Empty>
+                @if (_showAll) { <EmptyState Icon="bi-incognito" Title="No profiles yet.">Add the groups you report on, or import MITRE ATT&amp;CK's.</EmptyState> }
+                else { <EmptyState Icon="bi-incognito" Title="None reported or watched yet.">Tick "Every profile" to see the rest, or add the groups you report on.</EmptyState> }
+            </Empty>
+            <RowTemplate Context="r">
+                @{ var a = r.Adversary; }
+                <td><a href="@($"adversaries/{a.Id}")">@a.Name</a>
+                    @if (a.Watched) { <Badge Tone="BadgeTone.Warn">Watched</Badge> }
+                    @if (a.IsRetired) { <Badge Tone="BadgeTone.Neutral">@(a.MergedIntoId is null ? "Retired" : "Merged")</Badge> }
+                    @if (a.Aliases is { } al) { <div class="small tide-muted">also @Short(al, 120)</div> }</td>
+                <td>@a.Kind</td>
+                <td class="tide-data">@(a.MitreId ?? "—")</td>
+                <td class="tide-table-num">@r.Articles</td>
+                <td>@(r.LastReported is { } d ? Ui.ShortDay(d) : "—")</td>
+            </RowTemplate>
+        </DataTable>
+    </div>
+}
+else if (_detail is null)
+{
+    @if (_loaded) { <div class="tide-card"><EmptyState Icon="bi-incognito" Title="Profile not found"><a href="adversaries">Back to Adversaries</a></EmptyState></div> }
+    else { <LoadingBlock /> }
+}
+else
+{
+    var p = _detail.Adversary;
+    <nav aria-label="Breadcrumb" class="tide-crumbs"><a href="adversaries">Adversaries</a> &rsaquo; @p.Name</nav>
+    <div class="tide-page-head">
+        <div>
+            <h1>@p.Name @if (p.Watched) { <Badge Tone="BadgeTone.Warn">Watched</Badge> } @if (p.IsRetired) { <Badge Tone="BadgeTone.Neutral">Retired</Badge> }</h1>
+            <div class="tide-sub">@p.Kind@(p.MitreId is { } m ? $" · MITRE {m}" : "")@(p.Motivation is { } mo ? $" · {mo}" : "")@(p.Sectors is { } se ? $" · {se}" : "")
+                · @_detail.BriefedThisQuarter brief@(_detail.BriefedThisQuarter == 1 ? "" : "s") this quarter
+                @if (_detail.Articles.Count > 0) { <text> · last reported @Ui.ShortDay(_detail.Articles[0].On)</text> }</div>
+            @if (_detail.MergedIntoName is { } into) { <div class="small">Merged into <a href="@($"adversaries/{p.MergedIntoId}")">@into</a>.</div> }
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            @if (_detail.Techniques.Count > 0)
+            {
+                <a class="btn btn-outline-secondary btn-sm" href="@($"adversaries/{p.Id}/navigator.json")" download><span class="bi bi-grid-3x3" aria-hidden="true"></span> Navigator layer</a>
+            }
+            @if (_canWrite && !p.IsRetired)
+            {
+                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Watch(!p.Watched)">@(p.Watched ? "Stop watching" : "Watch in triage")</button>
+            }
+            @if (_canWrite)
+            {
+                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Retire(!p.IsRetired)">@(p.IsRetired ? "Bring back" : "Retire")</button>
+            }
+        </div>
+    </div>
+    <div class="tide-today-grid">
+        <div>
+            <section class="tide-card" aria-labelledby="adv-timeline-h">
+                <h2 id="adv-timeline-h">Timeline <span class="tide-count">(@_detail.Articles.Count articles · @_detail.Actions.Count actions · @_detail.Indicators indicators)</span></h2>
+                @if (_detail.Articles.Count == 0) { <div class="small tide-muted">No articles yet.</div> }
+                <ul class="list-unstyled mb-0">
+                    @foreach (var a in _detail.Articles)
+                    {
+                        <li class="tide-stack-row">@if (a.Priority is { } pr) { <PriorityBadge Priority="pr" /> } <a href="@($"articles/{a.Id}")">@a.Title</a>
+                            <span class="small tide-muted">@Ui.ShortDay(a.On) &middot; @(a.Tagged ? "tagged" : "names it")</span></li>
+                    }
+                </ul>
+                @if (_canWrite && _detail.Untagged.Count > 0)
+                {
+                    <div class="small mt-2">@_detail.Untagged.Count article@(_detail.Untagged.Count == 1 ? " names" : "s name") it but @(_detail.Untagged.Count == 1 ? "isn't" : "aren't") tagged. Check them, then
+                        <button type="button" class="btn btn-outline-secondary btn-sm ms-1" disabled="@_busy" @onclick="LinkAll">Tag the @_detail.Untagged.Count</button></div>
+                }
+            </section>
+            <section class="tide-card" aria-labelledby="adv-actions-h">
+                <h2 id="adv-actions-h">Actions <span class="tide-count">(@_detail.Actions.Count)</span></h2>
+                @if (_detail.Actions.Count == 0) { <div class="small tide-muted">No actions.</div> }
+                <ul class="list-unstyled mb-0">
+                    @foreach (var a in _detail.Actions)
+                    {
+                        <li class="tide-stack-row"><PriorityBadge Priority="a.Priority" /> <a href="@Ui.ActionUrl(a.Number)">@Ui.ActionLabel(a.Number)</a> @a.Title
+                            <span class="small tide-muted">&middot; @a.TeamName</span> <ActionStatusBadge Status="a.Status" /></li>
+                    }
+                </ul>
+            </section>
+        </div>
+        <div>
+            <section class="tide-card" aria-labelledby="adv-tech-h">
+                <h2 id="adv-tech-h">Techniques seen in our articles</h2>
+                @if (_detail.Techniques.Count == 0) { <div class="small tide-muted">None yet.</div> }
+                <div class="tide-adv-heat">
+                    @foreach (var t in _detail.Techniques)
+                    {
+                        var rules = _rules?.GetValueOrDefault(t.Id);
+                        <span class="@HeatCss(t, rules)" title="@HeatTitle(t, rules)">@t.Id @t.Name@(rules is null ? "" : " · " + rules.Label)</span>
+                    }
+                </div>
+                @if (_detail.Techniques.Count > 0)
+                {
+                    <div class="small tide-muted mt-1">Darker: in more of our articles.
+                        @if (_rules is not null) { <span>Outlined in red: no enabled detection rule is tagged with it (<a href="coverage">Coverage</a>).</span> }</div>
+                }
+            </section>
+            <section class="tide-card" aria-labelledby="adv-about-h">
+                <h2 id="adv-about-h">About it <TlpBadge Level="TlpLevel.Amber" /></h2>
+                @if (_canWrite && _form is { } f)
+                {
+                    <div class="row g-2">
+                        <div class="col-md-6"><label class="tide-field-label" for="f-name">Name</label>
+                            <input id="f-name" class="form-control form-control-sm" maxlength="100" @bind="f.Name" /></div>
+                        <div class="col-md-3"><label class="tide-field-label" for="f-kind">Kind</label>
+                            <select id="f-kind" class="form-select form-select-sm" @bind="f.Kind">
+                                <option value="@AdversaryKind.Actor">Actor</option><option value="@AdversaryKind.Campaign">Campaign</option>
+                            </select></div>
+                        <div class="col-md-3"><label class="tide-field-label" for="f-mitre">MITRE id</label>
+                            <input id="f-mitre" class="form-control form-control-sm tide-data" maxlength="5" placeholder="G1015" @bind="f.MitreId" /></div>
+                        <div class="col-12"><label class="tide-field-label" for="f-aliases">Other names</label>
+                            <input id="f-aliases" class="form-control form-control-sm" maxlength="1000" placeholder="Separate with semicolons" @bind="f.Aliases" /></div>
+                        <div class="col-md-6"><label class="tide-field-label" for="f-motive">Motivation</label>
+                            <input id="f-motive" class="form-control form-control-sm" maxlength="100" placeholder="Financial" @bind="f.Motivation" /></div>
+                        <div class="col-md-6"><label class="tide-field-label" for="f-sectors">Sectors it targets</label>
+                            <input id="f-sectors" class="form-control form-control-sm" maxlength="300" placeholder="Telecoms, retail" @bind="f.Sectors" /></div>
+                        <div class="col-12"><label class="tide-field-label" for="f-notes">Our notes (Markdown, internal)</label>
+                            <textarea id="f-notes" class="form-control form-control-sm tide-autogrow" rows="4" maxlength="4000"
+                                      placeholder="What we've seen, what to watch for, what we've changed because of it" @bind="f.Notes"></textarea></div>
+                    </div>
+                    <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="Save">Save</button>
+                    @if (!p.IsRetired && _others.Count > 0)
+                    {
+                        <details class="mt-3">
+                            <summary class="small">Merge into another profile</summary>
+                            <p class="small mt-2 mb-1">For two profiles that turn out to be one group: this one's tags move there, its names become that one's other names,
+                                and this one is retired, pointing at it.</p>
+                            <div class="d-flex gap-2 flex-wrap">
+                                <label class="visually-hidden" for="merge-into">Merge into</label>
+                                <select id="merge-into" class="form-select form-select-sm w-auto" @bind="_mergeInto">
+                                    <option value="">Choose a profile…</option>
+                                    @foreach (var o in _others) { <option value="@o.Adversary.Id">@o.Adversary.Name</option> }
+                                </select>
+                                <button class="btn btn-outline-danger btn-sm" disabled="@(_busy || _mergeInto is null)" @onclick="Merge">Merge</button>
+                            </div>
+                        </details>
+                    }
+                }
+                else
+                {
+                    <dl class="tide-stack-facts"><dt>Other names</dt><dd>@(p.Aliases ?? "—")</dd></dl>
+                    @if (p.Notes is { } notes) { <Md Text="@notes" /> } else { <p class="small tide-muted mb-0">No notes yet.</p> }
+                }
+            </section>
+        </div>
+    </div>
+}
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+
+    private ConfirmDialog _confirm = default!;
+    private IReadOnlyList<AdversaryRow>? _list;
+    private IReadOnlyList<AdversaryRow> _others = [];
+    private AdversaryDetail? _detail;
+    private AdversaryForm? _form;
+    private bool _canWrite, _busy, _loaded, _showAll;
+    private string? _newName, _newAliases;
+    private Guid? _mergeInto;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _canWrite = CurrentUser.Has(Permission.WriteArticles);
+        // Another page of the list (?page=) is the same list, already read: only a profile, or the list after one, reads afresh.
+        if (_loaded && Id is null && _shownId is null) return;
+        _shownId = Id;
+        await Load();
+    }
+
+    private Guid? _shownId;
+
+    private IReadOnlyDictionary<string, Tide.Application.Detections.TechniqueRules>? _rules;
+
+    private static string HeatCss(AdversaryTechnique t, Tide.Application.Detections.TechniqueRules? rules) =>
+        (t.Articles >= 3 ? "h2" : t.Articles == 2 ? "h1" : "") + (rules is { Enabled: 0 } ? " tide-adv-gap" : "");
+
+    private static string HeatTitle(AdversaryTechnique t, Tide.Application.Detections.TechniqueRules? rules) =>
+        $"{t.Id} {t.Name}: {t.Articles} article{(t.Articles == 1 ? "" : "s")}" + (rules is null ? "" : $"; {rules.Label} tagged");
+
+    private async Task Load()
+    {
+        try
+        {
+            if (Id is { } id)
+            {
+                _detail = await Adversaries.GetAsync(id);
+                _form = _detail is null ? null : AdversaryForm.From(_detail.Adversary);
+                // EP-79: each technique's rules, for analysts, once rules are imported.
+                _rules = _detail is { Techniques.Count: > 0 } d && CurrentUser.Has(Permission.WriteArticles)
+                    ? await Detections.ForTechniquesAsync(d.Techniques.Select(t => t.Id)) : null;
+                if (_canWrite) _others = (await Adversaries.ListAsync()).Where(r => r.Adversary.Id != id).OrderBy(r => r.Adversary.Name).ToList();
+            }
+            else
+            {
+                _list = await Adversaries.ListAsync(_showAll);
+                Shown = _showAll ? _list : _list.Where(r => r.Articles > 0 || r.Adversary.Watched).ToList();
+            }
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        _loaded = true;
+    }
+
+    // The list: the profiles reported on or watched, or (ticked) every one. DataTable filters, sorts and shows them 100 at a time.
+    internal IReadOnlyList<AdversaryRow>? Shown { get; private set; }
+
+    private static readonly IReadOnlyList<TableColumn<AdversaryRow>> Columns =
+    [
+        new("name", "Name") { SortBy = r => r.Adversary.Name, FilterBy = r => $"{r.Adversary.Name} {r.Adversary.Aliases} {r.Adversary.MitreId}" },
+        new("kind", "Kind") { SortBy = r => r.Adversary.Kind, FilterBy = r => r.Adversary.Kind.ToString() },
+        new("mitre", "MITRE") { SortBy = r => r.Adversary.MitreId ?? "" },
+        new("articles", "Articles") { SortBy = r => r.Articles, Class = "tide-table-num", DescendingFirst = true },
+        new("last", "Last reported") { SortBy = r => r.LastReported ?? DateOnly.MinValue, DescendingFirst = true },
+    ];
+
+    private static string Short(string text, int max) => text.Length > max ? text[..max].TrimEnd() + "…" : text;
+
+    internal async Task ToggleAll(ChangeEventArgs e)
+    {
+        _showAll = e.Value is true;
+        // Another list: from its first page, as a new filter starts.
+        TableView.FirstPage(Nav, DataTable<AdversaryRow>.PageParameter);
+        await Load();
+        StateHasChanged();
+    }
+
+    private async Task Run(Func<Task> step)
+    {
+        if (_busy) return;
+        _busy = true;
+        try { await step(); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    internal Task Add() => Run(async () =>
+    {
+        var id = await Adversaries.SaveAsync(new AdversaryForm { Name = _newName ?? "", Aliases = _newAliases });
+        (_newName, _newAliases) = (null, null);
+        Nav.NavigateTo($"adversaries/{id}");
+    });
+
+    internal Task Save() => Run(async () =>
+    {
+        await Adversaries.SaveAsync(_form!);
+        Toasts.Show("Saved.");
+        await Load();
+    });
+
+    private Task Watch(bool on) => Run(async () =>
+    {
+        await Adversaries.SetWatchedAsync(_detail!.Adversary.Id, on);
+        Toasts.Show(on ? "Watched: triage marks new items that name it." : "No longer watched.");
+        await Load();
+    });
+
+    private Task Retire(bool retired) => Run(async () =>
+    {
+        await Adversaries.SetRetiredAsync(_detail!.Adversary.Id, retired);
+        await Load();
+    });
+
+    internal Task LinkAll() => Run(async () =>
+    {
+        var n = await Adversaries.LinkAsync(_detail!.Adversary.Id, _detail.Untagged.Select(a => a.Id).ToList());
+        Toasts.Show($"Tagged {n} article{(n == 1 ? "" : "s")}.");
+        await Load();
+    });
+
+    private async Task Merge()
+    {
+        if (_mergeInto is not { } into || _detail is null) return;
+        var name = _others.First(o => o.Adversary.Id == into).Adversary.Name;
+        if (!await _confirm.Ask($"Merge {_detail.Adversary.Name} into {name}?", "Its tags move, its names become the other's, and it's retired. This can't be undone in one step.", "Merge")) return;
+        await Run(async () =>
+        {
+            await Adversaries.MergeAsync(_detail.Adversary.Id, into);
+            Nav.NavigateTo($"adversaries/{into}");
+        });
+    }
+
+    internal Task Fetch() => Run(async () =>
+    {
+        var r = await Adversaries.ImportFromMitreAsync();
+        Toasts.Show($"Imported from MITRE: {r.Added} added, {r.Updated} gained names, {r.Skipped} skipped (revoked or deprecated).");
+        await Load();
+    });
+
+    private Task Import(InputFileChangeEventArgs e) => Run(async () =>
+    {
+        await using var stream = e.File.OpenReadStream(maxAllowedSize: AdversaryService.MaxUploadBytes);
+        using var copy = new MemoryStream();
+        await stream.CopyToAsync(copy);
+        copy.Position = 0;
+        var r = await Adversaries.ImportMitreAsync(copy);
+        Toasts.Show($"Imported: {r.Added} added, {r.Updated} gained names, {r.Skipped} skipped (revoked or deprecated).");
+        await Load();
+    });
+}

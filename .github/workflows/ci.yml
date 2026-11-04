@@ -1,0 +1,189 @@
+name: CI
+
+# Skip runs for documentation-only changes to conserve Actions minutes.
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+  workflow_call:
+
+# Only keep the latest run per ref; cancel superseded in-progress runs.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      # SonarQube Cloud analysis wraps the build and test below. Every Sonar step is skipped when the secret is absent
+      # (fork PRs, or before the project is set up), so the build itself never depends on it.
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0   # release tags, for the released-migrations check
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Build.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore
+        id: restore
+        run: |
+          dotnet restore
+          dotnet tool restore
+
+      # EF migrations are generated: analysed for issues, but left out of coverage (CI proves them by applying them) and
+      # duplication (each schema change is a near-identical SQLite / SQL Server pair by design). Razor components and the
+      # deploy PowerShell and browser JS have no coverage tooling, so they're left out of coverage; all are still analysed.
+      # xml:S5734 wants X-Content-Type-Options in web.config; SecurityHeadersMiddleware sends it on every response.
+      - name: SonarQube Cloud analysis (begin)
+        if: env.SONAR_TOKEN != '' && !startsWith(github.ref, 'refs/tags/')
+        run: >-
+          dotnet sonarscanner begin /k:"jashley92_Tide" /o:"jashley92" /d:sonar.token="$SONAR_TOKEN"
+          /d:sonar.host.url="https://sonarcloud.io"
+          /d:sonar.qualitygate.wait=true /d:sonar.qualitygate.timeout=600
+          /d:sonar.cs.opencover.reportsPaths="tests/**/TestResults/*/coverage.opencover.xml"
+          /d:sonar.exclusions="**/*.ps1,**/*.psd1"
+          /d:sonar.cpd.exclusions="src/Tide.Migrations.SqlServer/Migrations/**,src/Tide.Infrastructure/Persistence/Migrations/**"
+          /d:sonar.coverage.exclusions="src/Tide.Migrations.SqlServer/Migrations/**,src/Tide.Infrastructure/Persistence/Migrations/**,**/*.razor,src/Tide.Web/Components/**,**/*.ps1,**/*.js,**/*.mjs"
+          /d:sonar.issue.ignore.multicriteria=hdr
+          /d:sonar.issue.ignore.multicriteria.hdr.ruleKey="xml:S5734"
+          /d:sonar.issue.ignore.multicriteria.hdr.resourceKey="**/web.config"
+
+      - name: Build
+        id: build
+        run: dotnet build --no-restore -c Release
+
+      - name: Test
+        run: >-
+          dotnet test --no-build -c Release --verbosity minimal
+          --collect "XPlat Code Coverage;Format=opencover"
+
+      - name: SonarQube Cloud analysis (end)
+        if: env.SONAR_TOKEN != '' && !startsWith(github.ref, 'refs/tags/')
+        run: dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
+
+      # Upgrade safety. A migration that shipped in a release must never be edited, removed or regenerated (databases
+      # from that release would stop upgrading), and the model must not drift from the migrations (EF refuses to
+      # Migrate() with un-migrated model changes, so the app wouldn't start). These don't depend on Sonar or the tests.
+      - name: Released migrations are immutable
+        if: ${{ !cancelled() }}
+        run: bash tools/ci/check-migrations-immutable.sh
+
+      - name: No un-migrated model changes (SQL Server + SQLite)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          TIDE_MIGRATIONS_PROVIDER=SqlServer dotnet ef migrations has-pending-model-changes --no-build --configuration Release \
+            --project src/Tide.Migrations.SqlServer --startup-project src/Tide.Web --context AppDbContext
+          dotnet ef migrations has-pending-model-changes --no-build --configuration Release \
+            --project src/Tide.Infrastructure --startup-project src/Tide.Web --context AppDbContext
+
+      # Fail the build on any known-vulnerable NuGet package (direct or transitive). bash runs with pipefail, so a scan
+      # that fails (the vulnerability data unreachable) fails the step rather than reading as "none found".
+      - name: Vulnerable package scan
+        if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
+        shell: bash
+        run: |
+          dotnet list package --vulnerable --include-transitive 2>&1 | tee vulnerable.log
+          if grep -q "has the following vulnerable packages" vulnerable.log; then
+            echo "::error::Vulnerable NuGet packages detected; see the scan output above."
+            exit 1
+          fi
+          echo "No vulnerable packages."
+
+      - name: Deprecated package report (informational)
+        if: always()
+        run: dotnet list package --deprecated 2>&1 | tee deprecated.log || true
+
+  # The production migrations, applied to a real SQL Server 2022 and applied again (a no-op), and the tests marked to run
+  # on SQL Server: the SQLite run above can't catch SQL Server-only failures (index sizes, cascade paths, type mappings,
+  # query translation).
+  sql-server:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      SA_PASSWORD: Tide!${{ github.run_id }}x   # throwaway container; not a secret
+    services:
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_SA_PASSWORD: Tide!${{ github.run_id }}x
+        ports: [ '1433:1433' ]
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P 'Tide!${{ github.run_id }}x' -Q 'SELECT 1' || exit 1"
+          --health-interval 10s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0   # release tags to upgrade from
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Apply the SQL Server migrations, twice
+        env:
+          TIDE_MIGRATIONS_PROVIDER: SqlServer
+          CONN: Server=localhost,1433;Database=TideCi;User Id=sa;Password=${{ env.SA_PASSWORD }};TrustServerCertificate=True;Encrypt=False
+        run: |
+          dotnet restore
+          dotnet tool restore
+          for i in 1 2; do
+            dotnet ef database update --project src/Tide.Migrations.SqlServer --startup-project src/Tide.Web \
+              --context AppDbContext --connection "$CONN"
+          done
+
+      # Tests that need production's database engine, skipped in the SQLite run above: [SqlServerFact] tests (e.g. every
+      # page rendered on SQL Server, whose queries yield where SQLite's finish at once) and the SqlServer rows of
+      # TestDb.Providers theories (ordering, dates, bulk updates). Each gets a throwaway database on this server.
+      - name: SQL Server tests
+        env:
+          TIDE_TEST_SQL: Server=localhost,1433;User Id=sa;Password=${{ env.SA_PASSWORD }};TrustServerCertificate=True;Encrypt=False
+        run: dotnet test tests/Tide.IntegrationTests -c Release --filter "DisplayName~SqlServer" --verbosity minimal
+
+      # Real upgrade test: install each recent release into a fresh database (migrate and seed the
+      # sample articles, briefs and actions), then start THIS build against the same database and require it to upgrade
+      # in place, healthy, with every migration recorded and the old release's rows intact. Catches lineage breaks,
+      # migrations that fail on existing data, and startup passes that break on a populated database, before a release.
+      - name: Upgrade from recent releases and the first release
+        env:
+          TIDE_TEST_SQL: Server=localhost,1433;User Id=sa;Password=${{ env.SA_PASSWORD }};TrustServerCertificate=True;Encrypt=False
+          SQLCMD: docker exec ${{ job.services.mssql.id }} /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P ${{ env.SA_PASSWORD }}
+        run: |
+          # The three newest releases reachable from this commit, plus the first release: an install upgrades straight
+          # from whatever it runs, so the oldest jump is tested too.
+          tags="$( { git tag --list 'v[0-9]*' --merged HEAD --sort=-v:refname | head -3
+                     git tag --list 'v[0-9]*' --merged HEAD --sort=v:refname | head -1; } | sort -u -V -r)"
+          if [ -z "$tags" ]; then echo "No release tags yet; nothing to upgrade from."; exit 0; fi
+          for tag in $tags; do
+            [ "$(git rev-parse "$tag^{commit}")" = "$(git rev-parse HEAD)" ] && continue
+            bash tools/upgrade-test/upgrade-path.sh "$tag"
+          done
+
+  # NOTE: CodeQL static analysis runs through GitHub's managed default setup (Settings > Code security), not a
+  # workflow here. The .NET analyzers still run on every build (AnalysisLevel=latest-recommended).

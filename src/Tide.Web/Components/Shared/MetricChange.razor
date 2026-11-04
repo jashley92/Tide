@@ -1,0 +1,27 @@
+@* A metric's change from the previous business day that has a value: arrow and difference, coloured by the metric's
+   direction, and the day it was compared with. *@
+@using Tide.Application.Metrics
+
+@if (Tile.Previous is { } p)
+{
+    <span class="tide-trend-@p.Trend.ToString().ToLowerInvariant()" title="@TrendTitle(p)">@MetricMath.Arrow(p.Delta) @MetricMath.FormatDelta(Tile.Metric.Format, p.Delta)</span>
+    @if (ShowDate)
+    {
+        <span class="tide-muted"> vs @p.Date.ToString("ddd MMM d", System.Globalization.CultureInfo.InvariantCulture)</span>
+    }
+}
+else if (Tile.Value is not null)
+{
+    <span class="tide-muted">no earlier value</span>
+}
+
+@code {
+    [Parameter, EditorRequired] public MetricTile Tile { get; set; } = default!;
+
+    /// <summary>Whether to name the day compared with (the entry form shows it beside the value instead).</summary>
+    [Parameter] public bool ShowDate { get; set; } = true;
+
+    private string TrendTitle(MetricComparison p) =>
+        $"{p.Trend switch { MetricTrend.Better => "Better than", MetricTrend.Worse => "Worse than", MetricTrend.Unchanged => "The same as", _ => "Compared with" }} " +
+        $"{MetricMath.Format(Tile.Metric.Format, p.Value)} on {p.Date.ToString("dddd, MMMM d", System.Globalization.CultureInfo.InvariantCulture)}";
+}

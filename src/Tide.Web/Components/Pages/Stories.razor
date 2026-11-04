@@ -1,0 +1,277 @@
+@page "/stories"
+@page "/stories/{Id:guid}"
+@attribute [Authorize(Policy = Policies.ReadTeamEdition)]
+@inject StoryService StorySvc
+@inject CveService Cves
+@inject ActionService ActionSvc
+@inject ICurrentUser CurrentUser
+@inject NavigationManager Nav
+@inject ToastService Toasts
+@inject OrgClock Clock
+@inject ChangeFeed Feed
+@inject ChangeOrigin Origin
+@implements IDisposable
+
+<PageTitle>@(_detail?.Story.Name ?? "Stories") · TIDE</PageTitle>
+
+@if (Id is null)
+{
+    <div class="tide-page-head">
+        <div>
+            <h1>Threat stories</h1>
+        </div>
+    </div>
+    @if (_canWrite)
+    {
+        <div class="tide-card-form tide-card">
+            <h2>New story</h2>
+            <div class="row g-2">
+                <div class="col-md-5"><input class="form-control form-control-sm" maxlength="200" placeholder="Name (e.g. Edge VPN exploitation, autumn 2026)" aria-label="Story name" @bind="_name" /></div>
+                <div class="col-md-5"><input class="form-control form-control-sm" maxlength="4000" placeholder="One line on what it is (optional)" aria-label="Story summary" @bind="_summary" /></div>
+                <div class="col-md-2"><button class="btn btn-primary btn-sm w-100" disabled="@_busy" @onclick="Create">Add story</button></div>
+            </div>
+        </div>
+    }
+    <div class="tide-card">
+        <DataTable TItem="StoryRow" Items="_list" Columns="Columns" Key="r => r.Id" One="story" Many="stories" Caption="Threat stories" PageInAddress="true"
+                   FilterLabel="Filter stories" FilterPlaceholder="Filter by name or status" Filter="@Q" DefaultSort="ByStatus">
+            <Empty><EmptyState Icon="bi-bezier2" Title="No stories yet">Start one from an article.</EmptyState></Empty>
+            <RowTemplate Context="r">
+                <td><a href="stories/@r.Id">@r.Name</a></td>
+                <td><Badge Tone="@(r.Status == StoryStatus.Active ? BadgeTone.Ok : BadgeTone.Neutral)">@r.Status</Badge></td>
+                <td class="tide-table-num">@r.Articles</td>
+                <td class="small tide-muted">@(r.LastArticleAtUtc is { } at ? Ui.When(Clock, at) : "")</td>
+            </RowTemplate>
+        </DataTable>
+    </div>
+}
+else if (_detail is null)
+{
+    @if (_loaded) { <EmptyState Icon="bi-question-circle" Title="Story not found"><a href="stories">All stories</a></EmptyState> } else { <LoadingBlock /> }
+}
+else
+{
+    var s = _detail.Story;
+    <div class="tide-page-head">
+        <div>
+            <Breadcrumbs Items="@([new("Stories", "stories"), new(Ui.Clip(s.Name))])" />
+            <h1>@s.Name</h1>
+            <div class="tide-sub"><Badge Tone="@(s.Status == StoryStatus.Active ? BadgeTone.Ok : BadgeTone.Neutral)">@s.Status</Badge> &middot; @_detail.Articles.Count article@(_detail.Articles.Count == 1 ? "" : "s")</div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            @if (_detail.Articles.Count > 0)
+            {
+                <ExportIndicators Scope="ExportScope.Story" Key="@s.Id.ToString()" />
+            }
+            @if (_canWrite && !_editing)
+            {
+                <button class="btn btn-outline-secondary" @onclick="StartEdit"><span class="bi bi-pencil" aria-hidden="true"></span> Edit</button>
+            }
+        </div>
+    </div>
+    <div class="row g-3">
+        <div class="col-lg-8">
+            @if (_editing)
+            {
+                <div class="tide-card">
+                    <div class="row g-2">
+                        <div class="col-md-8"><label class="tide-field-label" for="st-name">Name</label><input id="st-name" class="form-control form-control-sm" maxlength="200" @bind="_name" /></div>
+                        <div class="col-md-4">
+                            <label class="tide-field-label" for="st-status">Status</label>
+                            <select id="st-status" class="form-select form-select-sm" @bind="_status">
+                                @foreach (var st in Enum.GetValues<StoryStatus>()) { <option value="@st">@st</option> }
+                            </select>
+                        </div>
+                        <div class="col-12"><label class="tide-field-label" for="st-sum">Summary (Markdown)</label><textarea id="st-sum" class="form-control form-control-sm" rows="4" maxlength="4000" @bind="_summary"></textarea></div>
+                    </div>
+                    <div class="d-flex gap-2 mt-2">
+                        <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="Save">Save</button>
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editing = false">Cancel</button>
+                        @if (_detail.Articles.Count == 0) { <button class="btn btn-link btn-sm ms-auto text-danger" disabled="@_busy" @onclick="Delete">Delete the story</button> }
+                    </div>
+                </div>
+            }
+            else if (!string.IsNullOrWhiteSpace(s.Summary))
+            {
+                <div class="tide-card"><Md Text="@s.Summary" /></div>
+            }
+            <div class="tide-card">
+                <h2>Timeline</h2>
+                @if (_detail.Articles.Count == 0) { <EmptyState Icon="bi-journal-text" Title="No articles yet." Compact="true">Link one from the article's page.</EmptyState> }
+                <ol class="tide-story-timeline">
+                    @foreach (var a in _detail.Articles)
+                    {
+                        <li>
+                            <div class="small tide-muted">@Ui.When(Clock, a.PublishedAtUtc ?? a.CreatedAtUtc)@(_detail.BriefedOn.TryGetValue(a.Id, out var d) ? $" · briefed {Ui.ShortDay(d)}" : "")</div>
+                            <a class="fw-semibold" href="articles/@a.Id">@a.Title</a> <ClassBadge Classification="a.Classification" Priority="a.Priority" /> <TlpBadge Level="a.Tlp" />
+                            @if (!string.IsNullOrWhiteSpace(a.Bluf)) { <div class="small">@a.Bluf</div> }
+                        </li>
+                    }
+                </ol>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            @if (_detail.Cves.Count > 0)
+            {
+                <div class="tide-card"><h2>CVEs</h2>@foreach (var c in _detail.Cves) { <CveChip CveId="@c" Record="@_cveRecords.GetValueOrDefault(c)" /> }</div>
+            }
+            @if (_detail.Actors.Count > 0)
+            {
+                <div class="tide-card"><h2>Actors</h2>@foreach (var a in _detail.Actors) { <span class="tide-chip">@a</span> }</div>
+            }
+            @if (_detail.Techniques.Count > 0)
+            {
+                <div class="tide-card"><h2>ATT&amp;CK</h2>@foreach (var t in _detail.Techniques.Select(AttackCatalog.Find).OfType<AttackTechnique>()) { <span class="tide-chip tide-chip-technique" title="@t.Name">@t.Id @t.Name</span> }</div>
+            }
+            @if (_actions.Count > 0)
+            {
+                <div class="tide-card">
+                    <h2>Actions <span class="tide-count">(@_actions.Count)</span></h2>
+                    @foreach (var r in _actions)
+                    {
+                        <div class="d-flex gap-2 align-items-start py-1 border-bottom small">
+                            <a class="tide-action-num" href="@Ui.ActionUrl(r.Number)">@Ui.ActionLabel(r.Number)</a>
+                            <span class="flex-grow-1">@r.Title <span class="tide-muted">&middot; @r.TeamName</span></span>
+                            <ActionStatusBadge Status="r.Status" />
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+    [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
+
+    // Active stories first, as the list comes (the newest article first within a status).
+    private static readonly TableSort ByStatus = new("status", false);
+
+    private static readonly IReadOnlyList<TableColumn<StoryRow>> Columns =
+    [
+        new("name", "Story") { SortBy = r => r.Name, FilterBy = r => r.Name },
+        new("status", "Status") { SortBy = r => r.Status, FilterBy = r => r.Status.ToString() },
+        new("articles", "Articles") { SortBy = r => r.Articles, DescendingFirst = true, Class = "tide-table-num" },
+        new("latest", "Latest") { SortBy = r => r.LastArticleAtUtc, DescendingFirst = true },
+    ];
+
+    private IReadOnlyList<StoryRow>? _list;
+    private StoryDetail? _detail;
+    private IReadOnlyDictionary<string, CveRecord> _cveRecords = new Dictionary<string, CveRecord>();
+    private IReadOnlyList<ActionRow> _actions = [];
+    private bool _loaded, _canWrite, _editing, _busy;
+    private string? _name, _summary;
+    private StoryStatus _status;
+    private ConfirmDialog _confirm = default!;
+    private Guid? _shownId;
+
+    // A colleague added, edited or deleted a story, or (for the list's counts) an article: re-read in place. An open Edit
+    // form keeps what's typed in it; only the story it edits is re-read.
+    private LiveChanges? _live;
+
+    protected override void OnInitialized() =>
+        _live = new LiveChanges(Feed, Origin, c => c.Topic == ChangeFeed.Stories || (c.Topic == ChangeFeed.Articles && Id is null), InvokeAsync, async heard =>
+        {
+            if (_busy || !_loaded) return;   // a read or a step is under way, and it will show theirs
+            try
+            {
+                if (Id is null) _list = await StorySvc.ListAsync();
+                else await LoadStory();
+            }
+            catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+            Toasts.Show($"{LiveChanges.Who(heard)} updated the stories.");
+            StateHasChanged();
+        });
+
+    public void Dispose() => _live?.Dispose();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _canWrite = CurrentUser.Has(Permission.WriteArticles);
+        _loaded = false;
+        // The list and every story share this page, and so its fields: another story (or the list) starts with the edit
+        // form closed and empty, so one story's edit can't be saved onto another.
+        var listShown = _shownId == Id;   // the list was shown already (this is another of its pages)
+        if (_shownId != Id)
+        {
+            (_shownId, _editing, _name, _summary) = (Id, false, null, null);
+            _detail = null;
+        }
+        var id = Id;
+        if (id is null)
+        {
+            // Another page of the list (?page=) is the same list: it's read again only when coming to it.
+            if (_list is not null && listShown) { _loaded = true; return; }
+            var list = await StorySvc.ListAsync();
+            if (Id is null) _list = list;
+        }
+        else await LoadStory();
+        if (Id == id) _loaded = true;
+    }
+
+    // Read whole, then shown: a read that lands after the address moved to another story is dropped, so one story's
+    // details (and its Edit form, which copies them) never show under another's address.
+    private async Task LoadStory()
+    {
+        var id = Id!.Value;
+        var detail = await StorySvc.GetAsync(id);
+        if (detail is null)
+        {
+            if (Id == id) _detail = null;
+            return;
+        }
+        var cves = await Cves.GetAsync(detail.Cves);
+        var byArticle = await ActionSvc.ForArticlesAsync(detail.Articles.Select(a => a.Id).ToList());
+        if (Id != id) return;
+        (_detail, _cveRecords, _actions) = (detail, cves, detail.Articles.SelectMany(a => byArticle[a.Id]).ToList());
+    }
+
+    internal void StartEdit()
+    {
+        _editing = true;
+        _name = _detail!.Story.Name;
+        _summary = _detail.Story.Summary;
+        _status = _detail.Story.Status;
+    }
+
+    internal Task Create() => Run(async () =>
+    {
+        var id = await StorySvc.CreateAsync(_name ?? "", _summary);
+        _name = _summary = null;
+        Toasts.Show("Story added.");   // which also clears an error left from an earlier try
+        Nav.NavigateTo($"stories/{id}");
+    });
+
+    internal Task Save() => Run(async () =>
+    {
+        await StorySvc.UpdateAsync(Id!.Value, _name ?? "", _summary, _status);
+        _editing = false;
+        await LoadStory();
+    });
+
+    // Deleting can't be taken back, so it asks first.
+    private async Task Delete()
+    {
+        // The story the question was asked about: one left open while the address moved to another deletes nothing.
+        var id = Id;
+        if (!await _confirm.Ask("Delete this story?", "The story is deleted. This can't be undone.", "Delete story") || id != Id || id is null) return;
+        await Run(async () =>
+        {
+            await StorySvc.DeleteAsync(id.Value);
+            Nav.NavigateTo("stories");
+        });
+    }
+
+    // One step at a time: a second click while one runs does nothing (the buttons are disabled meanwhile).
+    private async Task Run(Func<Task> step)
+    {
+        if (_busy) return;
+        _busy = true;
+        try { await step(); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+}

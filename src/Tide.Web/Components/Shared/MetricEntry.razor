@@ -1,0 +1,284 @@
+@* The day's numbers: the opening metrics as one fast form, grouped, tabbing through the boxes. Each box saves when
+   it changes; the value it's compared with (the previous business day that has one, named by its date when that isn't
+   the day before) is beside it before today's is typed, and the change once it is. A blank box clears the value (a
+   missing value is shown as a dash, never as 0); one that isn't a number is marked on the box, with why under it. Once the day's brief is sent the numbers are fixed (an administrator can still correct them).
+   Collapsible folds the boxes away behind the heading (open while numbers are missing); MissingChanged hears how many
+   are missing whenever that changes, for the brief's step strip and its Mark ready confirmation.
+   A colleague's save to the day's numbers re-reads them in place (LiveChanges, naming them in a toast), so the step
+   strip and the edition check follow too. A box being typed in, or holding something that isn't a number, keeps what's
+   in it, and its row says they changed it. *@
+@using System.Globalization
+@using Tide.Application.Metrics
+@inject MetricsService MetricsSvc
+@inject ICurrentUser CurrentUser
+@inject ToastService Toasts
+@inject OrgClock Clock
+@inject ChangeFeed Feed
+@inject ChangeOrigin Origin
+@implements IDisposable
+
+@if (_day is { Any: true })
+{
+    <div class="tide-card" id="@_id">
+        @if (Collapsible)
+        {
+            <h2>
+                <button type="button" class="tide-collapse-btn" aria-expanded="@(Open ? "true" : "false")" aria-controls="@(_id + "-body")" @onclick="() => _open = !Open">
+                    <span class="bi @(Open ? "bi-chevron-down" : "bi-chevron-right")" aria-hidden="true"></span> @Heading
+                </button>
+                @if (!Open)
+                {
+                    <span class="small fw-normal @(_day.Missing.Count > 0 ? "tide-warn-text" : "tide-muted")">@Summary</span>
+                }
+                <a class="ms-auto small fw-normal" href="metrics">History</a>
+            </h2>
+        }
+        else
+        {
+            <h2>@Heading <a class="ms-auto small fw-normal" href="metrics">History</a></h2>
+        }
+        <div id="@(_id + "-body")" hidden="@(!Open)">
+        @if (_locked)
+        {
+            <p class="tide-muted small mb-2"><span class="bi bi-lock" aria-hidden="true"></span> The brief for this day has been sent, so these are the numbers that went out.
+                An administrator can correct them.</p>
+        }
+        @if (_day.Missing.Count > 0)
+        {
+            <div class="tide-missing mb-2"><span class="bi bi-exclamation-circle" aria-hidden="true"></span>
+                @_day.Missing.Count metric@(_day.Missing.Count == 1 ? " has" : "s have") no value for this day.</div>
+        }
+        @foreach (var g in _day.Groups)
+        {
+            <div class="tide-metric-group">
+                <h3>@g.Group.Name</h3>
+                @foreach (var t in g.Tiles)
+                {
+                    var id = "metric-" + t.Metric.Id.ToString("N");
+                    var bad = _invalid.GetValueOrDefault(t.Metric.Id);
+                    <div class="tide-metric-row" @key="t.Metric.Id">
+                        <label for="@id">@t.Metric.Name@(Unit(t.Metric.Format))</label>
+                        @if (_canEdit)
+                        {
+                            <div>
+                                <div class="d-flex align-items-center">
+                                    <input id="@id" class="form-control form-control-sm tide-metric-value @LevelClass(t) @(bad is null ? "" : "is-invalid")" inputmode="decimal" autocomplete="off"
+                                           value="@(bad ?? Shown(t.Metric.Id, false, Raw(t.Value)))" aria-invalid="@(bad is null ? null : "true")" aria-describedby="@(bad is null ? null : id + "-error")"
+                                           @onchange="e => SaveValue(t, e.Value?.ToString())" @onfocus="() => Entering(t.Metric.Id, false)" @onblur="() => Left(t.Metric.Id, false)" />
+                                    <LevelMark Level="t.Level" />
+                                    @if (t.ImportedFrom is { } from)
+                                    {
+                                        <span class="bi bi-file-earmark-arrow-down tide-muted ms-1" title="@from" role="img" aria-label="@from"></span>
+                                    }
+                                </div>
+                                @if (bad is not null)
+                                {
+                                    <div id="@(id + "-error")" class="tide-metric-error">Not a number.</div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <span class="tide-table-num fw-semibold @LevelClass(t)">@t.Display<LevelMark Level="t.Level" /></span>
+                        }
+                        <span class="tide-metric-prev">
+                            @if (t.Reference is { } r)
+                            {
+                                @* A chip of its own, so the value to compare with doesn't read as part of the row's text. *@
+                                <span class="tide-metric-ref" title="@r.Date.ToString("dddd, MMMM d", CultureInfo.InvariantCulture)"><span class="visually-hidden">Last value, </span><span class="tide-metric-ref-date">@MetricMath.ReferenceLabel(r.Date, Date, Clock.Days)</span><span class="tide-metric-ref-value">@MetricMath.Format(t.Metric.Format, r.Value)</span></span>
+                                @if (t.Previous is not null)
+                                {
+                                    <text> &middot; </text><MetricChange Tile="t" ShowDate="false" />
+                                }
+                            }
+                            else
+                            {
+                                <MetricChange Tile="t" />
+                            }
+                        </span>
+                        @if (_canEdit)
+                        {
+                            <input class="form-control form-control-sm tide-metric-note" placeholder="Note (optional)" maxlength="300" aria-label="Note for @t.Metric.Name"
+                                   value="@Shown(t.Metric.Id, true, t.Note)" @onchange="e => SaveNote(t, e.Value?.ToString())"
+                                   @onfocus="() => Entering(t.Metric.Id, true)" @onblur="() => Left(t.Metric.Id, true)" />
+                        }
+                        else
+                        {
+                            <span class="small tide-muted">@t.Note</span>
+                        }
+                        @if (_elsewhere.GetValueOrDefault(t.Metric.Id) is { } by)
+                        {
+                            <div class="tide-metric-elsewhere" role="status"><span class="bi bi-exclamation-triangle" aria-hidden="true"></span>
+                                @by changed @t.Metric.Name while you were editing it (now @t.Display). What you typed is still in the box; saving it replaces theirs.</div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public DateOnly Date { get; set; }
+
+    /// <summary>The heading folds the boxes away (open to begin with only while a number is missing).</summary>
+    [Parameter] public bool Collapsible { get; set; }
+
+    /// <summary>How many of the day's numbers are missing, each time that changes.</summary>
+    [Parameter] public EventCallback<int> MissingChanged { get; set; }
+
+    private readonly string _id = "numbers-" + Guid.NewGuid().ToString("N")[..8];
+    private MetricDay? _day;
+    private bool _canEdit, _locked;
+    private bool? _open;
+    private int? _reported;
+
+    // What was typed in a box that isn't a number, by metric, until the box holds one (or is cleared).
+    private readonly Dictionary<Guid, string> _invalid = [];
+
+    // The box being typed in (a metric's value, or its note), as the browser's focus says.
+    private (Guid Metric, bool Note)? _focus;
+
+    // What a box went on showing when a colleague's save re-read the day while it was being typed in, so the re-render
+    // doesn't overwrite the typing; dropped when the box is left or saved.
+    private readonly Dictionary<(Guid Metric, bool Note), string?> _kept = [];
+
+    // Who changed a metric's value or note while it was being edited here, by metric.
+    private readonly Dictionary<Guid, string> _elsewhere = [];
+
+    private LiveChanges? _live;
+    private volatile string _topic = "";
+
+    private string Heading => Date == Clock.CurrentBriefDate ? "Today's numbers" : "Numbers for " + Ui.ShortDay(Date);
+
+    // Settled on the first read, so entering the last missing number doesn't fold the boxes away mid-entry.
+    private bool Open => !Collapsible || _open == true;
+
+    private string Summary => _day?.Missing.Count is > 0 and var n
+        ? Tide.Application.Briefs.BriefSteps.Numbers(n) + " not entered"
+        : "All entered";
+
+    // Told only when the count changes, so a parent that re-renders on hearing it doesn't hear it again.
+    private async Task Report()
+    {
+        if (_day is not { Any: true }) return;   // no metrics kept: nothing to be missing
+        var missing = _day.Missing.Count;
+        if (_reported == missing) return;
+        _reported = missing;
+        await MissingChanged.InvokeAsync(missing);
+    }
+
+    protected override void OnInitialized() =>
+        _live = new LiveChanges(Feed, Origin, c => c.Topic == _topic || c.Topic == ChangeFeed.Metrics, InvokeAsync, OnChangedElsewhere);
+
+    public void Dispose() => _live?.Dispose();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _topic = ChangeFeed.MetricsDay(Date);
+        _locked = await MetricsSvc.IsLockedAsync(Date);
+        _canEdit = CurrentUser.Has(Permission.EnterMetrics) && !_locked;
+        _day = await MetricsSvc.GetDayAsync(Date);
+        _open ??= _day.Missing.Count > 0;
+        await Report();
+    }
+
+    private string? Shown(Guid metric, bool note, string? saved) => _kept.TryGetValue((metric, note), out var kept) ? kept : saved;
+
+    internal void Entering(Guid metric, bool note) => _focus = (metric, note);
+
+    internal void Left(Guid metric, bool note)
+    {
+        if (_focus == (metric, note)) _focus = null;
+        // Left without saving: the box shows what's saved now. One still holding what isn't a number keeps it, and the note.
+        if (!_kept.Remove((metric, note))) return;
+        if (!_invalid.ContainsKey(metric) && !_kept.Keys.Any(k => k.Metric == metric)) _elsewhere.Remove(metric);
+        StateHasChanged();
+    }
+
+    // A colleague's save to this day's numbers (or to the metrics kept): re-read in place. A box being typed in, or holding
+    // what isn't a number, keeps its text; if they changed that metric, its row says so.
+    internal async Task OnChangedElsewhere(IReadOnlyList<Change> changes)
+    {
+        var who = LiveChanges.Who(changes);
+        var before = Tiles(_day);
+        _locked = await MetricsSvc.IsLockedAsync(Date);
+        _canEdit = CurrentUser.Has(Permission.EnterMetrics) && !_locked;
+        _day = await MetricsSvc.GetDayAsync(Date);
+        var after = Tiles(_day);
+        HashSet<Guid> held = [.. _invalid.Keys];
+        if (_focus is { } f)
+        {
+            held.Add(f.Metric);
+            if (!_kept.ContainsKey(f) && before.TryGetValue(f.Metric, out var was))
+                _kept[f] = f.Note ? was.Note : Raw(was.Value);
+        }
+        foreach (var id in held)
+        {
+            var was = before.GetValueOrDefault(id);
+            var now = after.GetValueOrDefault(id);
+            if (was?.Value != now?.Value || was?.Note != now?.Note) _elsewhere[id] = who;
+        }
+        await Report();
+        Toasts.Show($"{who} updated the numbers.");
+        StateHasChanged();
+    }
+
+    private static Dictionary<Guid, MetricTile> Tiles(MetricDay? day) =>
+        day?.Groups.SelectMany(g => g.Tiles).ToDictionary(t => t.Metric.Id) ?? [];
+
+    private static string Unit(MetricFormat f) => f switch { MetricFormat.Percent => " (%)", MetricFormat.Hours => " (hours)", _ => "" };
+
+    private static string Raw(decimal? v) => v?.ToString("0.####", CultureInfo.InvariantCulture) ?? "";
+
+    private static string LevelClass(MetricTile t) => t.Level == MetricLevel.Normal ? "" : "tide-level-" + t.Level.ToString().ToLowerInvariant();
+
+    internal async Task SaveValue(MetricTile t, string? text)
+    {
+        decimal? value = null;
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            if (!MetricMath.TryParseValue(text, out var v))
+            {
+                _invalid[t.Metric.Id] = text;
+                Toasts.Error($"'{text}' isn't a number TIDE can keep.");
+                StateHasChanged();
+                return;
+            }
+            value = v;
+        }
+        _invalid.Remove(t.Metric.Id);
+        Settled(t.Metric.Id, false);
+        await Save(t, value, t.Note);
+        StateHasChanged();
+    }
+
+    private Task SaveNote(MetricTile t, string? note)
+    {
+        // Read the tile as it is now: the value may have been saved a moment ago, on the way into this box.
+        var current = _day?.Groups.SelectMany(g => g.Tiles).FirstOrDefault(x => x.Metric.Id == t.Metric.Id);
+        Settled(t.Metric.Id, true);
+        if (current?.Value is { } v) return Save(current, v, note);
+        if (!string.IsNullOrWhiteSpace(note)) Toasts.Error($"Enter a value for {t.Metric.Name} before its note.");
+        return Task.CompletedTask;
+    }
+
+    // A box's own text was saved (or found wanting): what it kept through a colleague's save, and the note, go.
+    private void Settled(Guid metric, bool note)
+    {
+        _kept.Remove((metric, note));
+        if (!_kept.Keys.Any(k => k.Metric == metric)) _elsewhere.Remove(metric);
+    }
+
+    private async Task Save(MetricTile t, decimal? value, string? note)
+    {
+        try
+        {
+            await MetricsSvc.SaveValueAsync(t.Metric.Id, Date, value, note);
+            _day = await MetricsSvc.GetDayAsync(Date);
+            await Report();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+}

@@ -1,0 +1,47 @@
+@inject NavigationManager Nav
+@implements IDisposable
+
+@* The layouts' error boundary. A component that throws would otherwise tear down the whole circuit; this keeps the shell
+   alive and shows a recover-in-place message, and it resets on navigation. *@
+<ErrorBoundary @ref="_boundary">
+    <ChildContent>@ChildContent</ChildContent>
+    <ErrorContent>
+        @if (Contained)
+        {
+            <div class="container py-5">@Card</div>
+        }
+        else
+        {
+            @Card
+        }
+    </ErrorContent>
+</ErrorBoundary>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>What the error message says hit the error ("This page", "The slides").</summary>
+    [Parameter] public string What { get; set; } = "This page";
+
+    /// <summary>Draws the message in a padded container, for a layout with no page frame around it (present mode).</summary>
+    [Parameter] public bool Contained { get; set; }
+
+    private ErrorBoundary? _boundary;
+
+    private RenderFragment Card => @<div class="tide-card">
+        <EmptyState Icon="bi-exclamation-triangle" Title="Something went wrong on this page">
+            <ChildContent>@What hit an error. Anything you already saved is safe.</ChildContent>
+            <Actions>
+                <button type="button" class="btn btn-primary btn-sm" @onclick="() => _boundary?.Recover()"><span class="bi bi-arrow-clockwise" aria-hidden="true"></span> Try again</button>
+                <a class="btn btn-outline-secondary btn-sm" href="@Nav.Uri" data-enhance-nav="false">Reload the page</a>
+                <a class="btn btn-outline-secondary btn-sm" href="">Go to today</a>
+            </Actions>
+        </EmptyState>
+    </div>;
+
+    protected override void OnInitialized() => Nav.LocationChanged += OnLocationChanged;
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => InvokeAsync(() => _boundary?.Recover());
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+}

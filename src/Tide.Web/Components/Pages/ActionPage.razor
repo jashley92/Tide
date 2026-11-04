@@ -1,0 +1,542 @@
+@page "/actions/new"
+@page "/actions/{Number:int}"
+@attribute [Authorize(Policy = Policies.WorkActions)]
+@inject ActionService ActionSvc
+@inject TeamService TeamSvc
+@inject ArticleService ArticleSvc
+@inject IUserDirectory Users
+@inject ICurrentUser CurrentUser
+@inject NavigationManager Nav
+@inject ToastService Toasts
+@inject ScreenshotService Shots
+@inject OrgClock Clock
+@inject IJSRuntime JS
+@inject ChangeFeed Feed
+@inject ChangeOrigin Origin
+@implements IDisposable
+
+<PageTitle>@(Number is { } n ? Ui.ActionLabel(n) : "New action") · TIDE</PageTitle>
+
+@if (Number is null)
+{
+    @* --- a new action --- *@
+    <div class="tide-page-head">
+        <div>
+            <Breadcrumbs Items="@([new("Actions", "actions"), new("New action")])" />
+            <h1>New action</h1>
+            @if (_parent is not null) { <div class="tide-sub">A part of <a href="@Ui.ActionUrl(_parent.Number)">@Ui.ActionLabel(_parent.Number) @_parent.Title</a></div> }
+            else if (_articleTitle is not null) { <div class="tide-sub">From the article <a href="articles/@_form.ArticleId">@_articleTitle</a></div> }
+        </div>
+    </div>
+    @if (!CurrentUser.Has(Permission.WriteArticles))
+    {
+        <div class="tide-card">Only analysts create actions.</div>
+    }
+    else if (_teams.Count == 0 && _loaded)
+    {
+        <div class="tide-card"><EmptyState Icon="bi-people" Title="No teams yet">An administrator adds them under Administration &gt; Teams &amp; SLA.</EmptyState></div>
+    }
+    else if (_loaded)
+    {
+        <div class="tide-card-form tide-card">
+            <ActionEditor @key="_form" Form="_form" Teams="_teams" People="_people" IsNew="true" />
+            <div class="d-flex gap-2 mt-3">
+                <button class="btn btn-primary" disabled="@_busy" @onclick="Create">Create action</button>
+                <a class="btn btn-outline-secondary" href="@(_form.ArticleId is { } a ? $"articles/{a}" : "actions")">Cancel</a>
+            </div>
+        </div>
+    }
+}
+else if (_detail is null)
+{
+    @if (_loaded) { <EmptyState Icon="bi-question-circle" Title="Action not found"><a href="actions">All actions</a></EmptyState> } else { <LoadingBlock /> }
+}
+else
+{
+    var a = _detail.Action;
+    var state = ActionSla.StateOf(a, ActionSvc.Today, Clock.Days);
+    <div class="tide-page-head">
+        <div>
+            <Breadcrumbs Items="@([new("Actions", "actions"), new(Ui.ActionLabel(a.Number))])" />
+            <ChangedElsewhere By="@_changedBy" What="action" OnReload="ReloadTheirs" />
+            <h1><span class="tide-action-num">@Ui.ActionLabel(a.Number)</span> @a.Title</h1>
+            <div class="tide-sub d-flex gap-2 align-items-center flex-wrap">
+                <PresenceNote Place="@ActionPlace(a.Number)" Editing="Editing" />
+                <ActionStatusBadge Status="a.Status" />
+                @if (a.Outcome != ActionOutcome.None) { <span>@ActionService.OutcomeName(a.Outcome)</span> }
+                @if (_detail.Parent is { } parentRow)
+                {
+                    <a class="tide-kcard-parent" href="@Ui.ActionUrl(parentRow.Number)"><span class="bi bi-arrow-return-right" aria-hidden="true"></span> Part of @Ui.ActionLabel(parentRow.Number)</a>
+                }
+            </div>
+        </div>
+        @if (_detail.CanWork)
+        {
+            <div class="d-flex gap-2 flex-wrap">
+                @if (a.IsOpen && a.AssigneeId != CurrentUser.UserId)
+                {
+                    <button class="btn btn-outline-secondary" disabled="@_busy" @onclick="Take"><span class="bi bi-person-check" aria-hidden="true"></span> Take it</button>
+                }
+                <button class="btn btn-outline-secondary" @onclick="StartEdit"><span class="bi bi-pencil" aria-hidden="true"></span> Edit</button>
+            </div>
+        }
+    </div>
+
+    @if (_detail.CanWork)
+    {
+        <ActionStatusControl @key="a.Id" @ref="_statusControl" Action="a" Changed="Reload" Prompting="OnPrompting" Stale="OnStatusStale" />
+    }
+
+    @* The facts someone opening an action looks for first, in one strip; the edit form changes them. *@
+    <dl class="tide-facts">
+        <div class="tide-fact"><dt>Due</dt><dd>@(a.DueDate is { } due ? Ui.Day(due) : "No due date") <SlaBadge State="state" Due="a.DueDate" Today="ActionSvc.Today" /></dd></div>
+        <div class="tide-fact"><dt>Assignee</dt><dd>@(a.AssigneeName ?? "Unassigned")</dd></div>
+        <div class="tide-fact"><dt>Team</dt><dd>@a.Team?.Name</dd></div>
+        <div class="tide-fact"><dt>Priority</dt><dd><PriorityBadge Priority="a.Priority" /></dd></div>
+        <div class="tide-fact"><dt>Kind</dt><dd>@ActionService.KindName(a.Kind)</dd></div>
+        <div class="tide-fact">
+            <dt>Ticket</dt>
+            <dd>
+                @if (a.TicketUrl is not null) { <a href="@a.TicketUrl" target="_blank" rel="noopener noreferrer">@(a.TicketRef ?? "Open the ticket")</a> }
+                else { @(a.TicketRef ?? "None") }
+            </dd>
+        </div>
+    </dl>
+
+    <div class="row g-3">
+        <div class="col-lg-8">
+            @if (_editing is not null)
+            {
+                <div class="tide-card">
+                    <h2>Edit</h2>
+                    <ActionEditor Form="_editing" Teams="_teams" People="@(CurrentUser.Has(Permission.WriteArticles) ? _people : null)" />
+                    <div class="d-flex gap-2 mt-3">
+                        <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="SaveEdit">Save</button>
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editing = null">Cancel</button>
+                    </div>
+                </div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(a.Description))
+            {
+                <div class="tide-card"><h2>Details</h2><Md Text="@a.Description" /></div>
+            }
+
+            @if (!a.IsOpen && (a.Outcome != ActionOutcome.None || a.OutcomeNote is not null))
+            {
+                <div class="tide-card">
+                    <h2>Outcome</h2>
+                    <p class="mb-0"><strong>@ActionService.OutcomeName(a.Outcome)</strong>@if (a.OutcomeNote is not null) { <span>: @a.OutcomeNote</span> }</p>
+                </div>
+            }
+            @* An empty checklist or parts is a button to start one, not an empty card; it opens in place. A sweep's or
+               hunt's queries are its work, so their panel is always open, ready to generate one. *@
+            @if (a.Checklist.Count == 0 && _detail.CanWork && !_addingChecklist)
+            {
+                <button type="button" class="tide-add-section" @onclick="() => _addingChecklist = true"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add checklist item</button>
+            }
+            else if (_detail.CanWork || a.Checklist.Count > 0)
+            {
+                var done = a.Checklist.Count(i => i.IsDone);
+                <div class="tide-card">
+                    <h2>
+                        Checklist
+                        @if (a.Checklist.Count > 0) { <span class="tide-count tide-muted fw-normal">(@done of @a.Checklist.Count done)</span> }
+                        @if (a.PlaybookName is not null) { <Badge Class="ms-auto">@a.PlaybookName playbook</Badge> }
+                    </h2>
+                    <ActionChecklist @key="a.Id" ActionId="a.Id" Kind="a.Kind" CanWork="_detail.CanWork" Autofocus="_addingChecklist" OnChanged="Reload" />
+                </div>
+            }
+
+            @if (a.Hunts.Count > 0 || (_detail.CanWork && a.Kind is ActionKind.IocSweep or ActionKind.ThreatHunt))
+            {
+                <HuntPanel @key="a.Id" Action="a" CanWork="_detail.CanWork" Changed="Reload" />
+            }
+
+            <div class="tide-card">
+                <h2>Comments <span class="tide-count tide-muted fw-normal">(@a.Comments.Count)</span></h2>
+                @foreach (var c in a.Comments)
+                {
+                    <div class="tide-comment" @key="c.Id">
+                        <div class="small tide-muted d-flex gap-2 align-items-center">
+                            <span><strong>@c.AuthorName</strong> &middot; @Ui.When(Clock, c.AtUtc)@(c.EditedAtUtc is not null ? " (edited)" : "")</span>
+                            @if (_detail.CanComment && (c.AuthorId == CurrentUser.UserId || CurrentUser.Has(Permission.Administer)) && _editingComment != c.Id)
+                            {
+                                <button class="btn btn-link btn-sm p-0 ms-auto" aria-label="Edit your comment from @Ui.When(Clock, c.AtUtc)" @onclick="() => EditComment(c)">Edit</button>
+                                <button class="btn btn-link btn-sm p-0" aria-label="Delete the comment from @Ui.When(Clock, c.AtUtc)" disabled="@_busy" @onclick="() => DeleteComment(c)">Delete</button>
+                            }
+                        </div>
+                        @if (_editingComment == c.Id)
+                        {
+                            <textarea class="form-control form-control-sm mt-1" rows="3" maxlength="8000" aria-label="Edit the comment" @bind="_commentEdit" @bind:event="oninput"></textarea>
+                            <div class="d-flex gap-2 mt-1">
+                                <button class="btn btn-primary btn-sm" disabled="@(_busy || (string.IsNullOrWhiteSpace(_commentEdit) && c.Files.Count == 0))" @onclick="() => SaveComment(c)">Save</button>
+                                <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editingComment = null">Cancel</button>
+                            </div>
+                        }
+                        else if (c.Text.Length > 0)
+                        {
+                            <Md Text="@c.Text" />
+                        }
+                        @if (c.Files.Count > 0)
+                        {
+                            var shots = c.Files.Where(f => f.IsImage).OrderBy(f => f.SortOrder).ToList();
+                            var evidence = c.Files.Where(f => !f.IsImage).OrderBy(f => f.SortOrder).ToList();
+                            @if (shots.Count > 0)
+                            {
+                                <div class="tide-comment-shots">
+                                    @foreach (var f in shots)
+                                    {
+                                        <button type="button" class="tide-zoom" aria-label="Open @f.FileName" @onclick="() => OpenShot(shots, f)">
+                                            <img src="@Ui.ImageUrl(f.FileId)" alt="Screenshot: @f.FileName" loading="lazy" />
+                                        </button>
+                                    }
+                                </div>
+                            }
+                            @if (evidence.Count > 0)
+                            {
+                                <ul class="tide-comment-files">
+                                    @foreach (var f in evidence)
+                                    {
+                                        <li>
+                                            <span class="bi bi-paperclip" aria-hidden="true"></span>
+                                            <a href="@Ui.DownloadUrl(f.FileId)" download="@f.FileName">@f.FileName</a>
+                                            <span class="tide-muted">@Ui.Size(f.SizeBytes)</span>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                        }
+                    </div>
+                }
+                @if (_detail.CanComment)
+                {
+                    <div id="comment-zone" class="tide-comment-compose mt-2">
+                        <textarea class="form-control form-control-sm" rows="2" maxlength="8000" aria-label="New comment" placeholder="Add a comment (Markdown)" @bind="_comment" @bind:event="oninput"></textarea>
+                        @if (_attachments.Count > 0)
+                        {
+                            <ul class="tide-comment-files mt-1">
+                                @foreach (var f in _attachments)
+                                {
+                                    <li>
+                                        <span class="bi @(f.IsImage ? "bi-image" : "bi-paperclip")" aria-hidden="true"></span> @f.Upload.FileName
+                                        <span class="tide-muted">@Ui.Size(f.Upload.Bytes.Length)</span>
+                                        <button type="button" class="btn btn-link btn-sm p-0" aria-label="Don't attach @f.Upload.FileName" @onclick="() => _attachments.Remove(f)"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                        <div class="d-flex gap-2 align-items-center mt-2 flex-wrap">
+                            <button class="btn btn-outline-secondary btn-sm" disabled="@(_busy || (string.IsNullOrWhiteSpace(_comment) && _attachments.Count == 0))" @onclick="Comment">Comment</button>
+                            @if (_detail.CanWork)
+                            {
+                                <label for="comment-files" class="btn btn-link btn-sm p-0"><span class="bi bi-paperclip" aria-hidden="true"></span> Attach screenshots or evidence</label>
+                                <span class="small tide-muted">or paste a screenshot, or drop files here.@(_reading ? " Reading…" : "")</span>
+                                <InputFile id="comment-files" class="d-none" multiple OnChange="OnAttach" />
+                            }
+                            else
+                            {
+                                <span class="small tide-muted">Owned by @a.Team?.Name</span>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="tide-card">
+                <h2>About</h2>
+                <dl class="tide-meta-grid">
+                    @if (a.RaisedOn is { } raised)
+                    {
+                        <dt>Raised for</dt><dd>@Ui.Day(raised)'s brief <span class="small tide-muted">(recorded @Ui.When(Clock, a.CreatedAtUtc))</span></dd>
+                    }
+                    @if (a.ClosedDate is { } closed) { <dt>Closed</dt><dd>@Ui.Day(closed)</dd> }
+                    @if (a.Article is not null) { <dt>Article</dt><dd><a href="articles/@a.Article.Id">@a.Article.Title</a></dd> }
+                    @if (_detail.Parent is { } p) { <dt>Part of</dt><dd><a href="@Ui.ActionUrl(p.Number)">@Ui.ActionLabel(p.Number)</a> @p.Title</dd> }
+                    <dt>Created</dt><dd>@Ui.When(Clock, a.CreatedAtUtc)</dd>
+                </dl>
+            </div>
+
+            @if (a.ParentId is null && _detail.Children.Count == 0 && _detail.CanEditAll)
+            {
+                <a class="tide-add-section" href="@($"actions/new?parent={a.Id}")"><span class="bi bi-plus-lg" aria-hidden="true"></span> Split off a part</a>
+            }
+            else if (a.ParentId is null && _detail.Children.Count > 0)
+            {
+                <div class="tide-card">
+                    <h2>Parts <span class="tide-count tide-muted fw-normal">(@_detail.Children.Count)</span></h2>
+                    @foreach (var c in _detail.Children)
+                    {
+                        <div class="d-flex gap-2 align-items-center py-1 border-bottom small">
+                            <a class="tide-action-num" href="@Ui.ActionUrl(c.Number)">@Ui.ActionLabel(c.Number)</a>
+                            <span class="flex-grow-1">@c.Title <span class="tide-muted">&middot; @c.TeamName</span></span>
+                            <ActionStatusBadge Status="c.Status" />
+                        </div>
+                    }
+                    @if (_detail.CanEditAll)
+                    {
+                        <a class="btn btn-outline-secondary btn-sm mt-2" href="@($"actions/new?parent={a.Id}")"><span class="bi bi-diagram-3" aria-hidden="true"></span> Split off a part for a team</a>
+                    }
+                </div>
+            }
+
+            <div class="tide-card">
+                <h2>History</h2>
+                <ul class="tide-timeline">
+                    @foreach (var e in a.Events)
+                    {
+                        <li><span class="tide-muted">@Ui.When(Clock, e.AtUtc) &middot; @e.ByName</span><div>@e.Text</div></li>
+                    }
+                </ul>
+            </div>
+        </div>
+    </div>
+}
+
+<ConfirmDialog @ref="_confirm" />
+<ScreenshotDialog Set="_shotSet" @bind-Open="_shot" />
+
+@code {
+    private ConfirmDialog _confirm = default!;
+    [Parameter] public int? Number { get; set; }
+    [SupplyParameterFromQuery(Name = "article")] public Guid? ArticleParam { get; set; }
+    [SupplyParameterFromQuery(Name = "parent")] public Guid? ParentParam { get; set; }
+
+    private bool _loaded, _busy;
+    private ActionDetail? _detail;
+    private IReadOnlyList<Team> _teams = [];
+    private IReadOnlyList<AppUser>? _people;
+    private ActionForm _form = new();
+    private ActionForm? _editing;
+    private ActionRow? _parent;
+    private string? _articleTitle, _comment;
+    private ActionStatusControl? _statusControl;
+    private bool _prompting, _addingChecklist;
+    private int? _shownNumber;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loaded = false;
+        _teams = await TeamSvc.ListAsync(includeRetired: true);
+        if (CurrentUser.Has(Permission.WriteArticles)) _people = await Users.ListAsync();
+        if (Number is null) await PrepareNew();
+        else
+        {
+            // Another action: its empty checklist starts closed, and an edit form, comment draft or outcome prompt left open
+            // on the last one goes, so it can't be saved, posted or confirmed on this one. The status control, checklist and
+            // hunt panel are keyed by the action, so they start afresh too (a half-written step or query included).
+            if (_shownNumber != Number)
+            {
+                _addingChecklist = false;
+                (_editing, _editingComment, _commentEdit, _comment, _prompting, _shot) = (null, null, null, null, false, null);
+                _attachments.Clear();
+            }
+            _shownNumber = Number;
+            await Reload();
+        }
+        _loaded = true;
+    }
+
+    private async Task PrepareNew()
+    {
+        _shownNumber = null;
+        (_parent, _articleTitle) = (null, null);   // a new action from elsewhere isn't a part of the last one's parent
+        _created = false;
+        _form = new ActionForm { TeamId = _teams.FirstOrDefault(t => !t.IsRetired)?.Id ?? Guid.Empty };
+        if (ParentParam is { } parentId)
+        {
+            _parent = await ActionSvc.RowAsync(parentId);
+            if (_parent is not null)
+            {
+                _form.ParentId = _parent.Id;
+                _form.ArticleId = _parent.ArticleId;
+                _form.Kind = _parent.Kind;
+                _form.Priority = _parent.Priority;
+            }
+        }
+        if (ArticleParam is { } articleId && await ArticleSvc.GetAsync(articleId) is { } article)
+        {
+            _form.ArticleId = article.Id;
+            _articleTitle = article.Title;
+            _form.Title = article.Indicators.Count > 0 ? $"Sweep for the indicators in \"{article.Title}\"" : "";
+            _form.Kind = article.Indicators.Count > 0 ? ActionKind.IocSweep : ActionKind.Other;
+            _form.Priority = article.Priority ?? Priority.P3;
+            _form.Description = article.RecommendedActions;
+        }
+    }
+
+    /// <summary>The presence place for an action, shared by its page and its row on the list.</summary>
+    public static string ActionPlace(int number) => $"action:{number}";
+
+    // A colleague's save to this action: re-read it in place. An open edit form, comment drafts and an outcome being
+    // written stay as they are; if the action itself moved under either, ChangedElsewhere says so.
+    private LiveChanges? _live;
+    private volatile string _topic = "";
+    private string? _changedBy;
+
+    protected override void OnInitialized() =>
+        _live = new LiveChanges(Feed, Origin, c => c.Topic == _topic, InvokeAsync, OnChangedElsewhere);
+
+    private bool Editing => _editing is not null || _editingComment is not null || _prompting;
+
+    private async Task OnChangedElsewhere(IReadOnlyList<Change> changes)
+    {
+        if (_busy || _detail is null) return;   // this page's own action reloads when it's done, and reads theirs with it
+        var who = LiveChanges.Who(changes);
+        var status = _detail.Action.Status;
+        await Reload();
+        if (_detail is not null && ((_editing is not null && _detail.Action.EditVersion != _editing.EditVersion) || (_prompting && _detail.Action.Status != status)))
+            _changedBy = who;
+        else Toasts.Show($"{who} updated this action.");
+        StateHasChanged();
+    }
+
+    private async Task ReloadTheirs()
+    {
+        _editing = null;
+        if (_statusControl is not null) await _statusControl.Revert();
+        await Reload();
+        Toasts.Show("Reloaded. Your unsaved changes were dropped.");
+    }
+
+    public void Dispose() => _live?.Dispose();
+
+    private async Task Reload()
+    {
+        _changedBy = null;
+        _detail = await ActionSvc.GetAsync(Number!.Value);
+        _topic = _detail is null ? "" : ChangeFeed.Action(_detail.Action.Id);
+    }
+
+    private void OnPrompting(bool open) => _prompting = open;
+
+    // The outcome prompt's move was refused: the action moved since it opened. The prompt stays, as an edit form does.
+    private void OnStatusStale() => _changedBy ??= "Someone else";
+
+    internal void StartEdit() => _editing = ActionForm.From(_detail!.Action);
+
+    // Set once the action exists: a second click (a double-click) can still arrive before the page moves on.
+    private bool _created;
+
+    private Task Create() => Run(async () =>
+    {
+        if (_created) return;
+        var number = await ActionSvc.CreateAsync(_form);
+        _created = true;
+        var nobody = await ActionSvc.TeamHasNoMembersAsync(_form.TeamId)
+            ? " Its team has no members in TIDE, so it's on nobody's list until someone is added." : "";
+        Toasts.Show($"{Ui.ActionLabel(number)} created.{nobody}");
+        Nav.NavigateTo(Ui.ActionUrl(number));
+    });
+
+    private Task SaveEdit() => Run(async () =>
+    {
+        await ActionSvc.SaveAsync(_editing!);
+        _editing = null;
+        await Reload();
+        Toasts.Show("Saved.");
+    });
+
+    private Guid? _editingComment;
+    private string? _commentEdit;
+
+    private void EditComment(ActionComment c)
+    {
+        _editingComment = c.Id;
+        _commentEdit = c.Text;
+    }
+
+    private Task SaveComment(ActionComment c) => Run(async () =>
+    {
+        await ActionSvc.EditCommentAsync(c.Id, _commentEdit ?? "");
+        _editingComment = null;
+        await Reload();
+    });
+
+    private async Task DeleteComment(ActionComment c)
+    {
+        if (!await _confirm.Ask("Delete this comment?", "The action's history will say a comment was deleted.", "Delete comment")) return;
+        await Run(async () =>
+        {
+            await ActionSvc.DeleteCommentAsync(c.Id);
+            await Reload();
+        });
+    }
+
+    // Taking an action a colleague holds asks first, and says so after: it's their work that moves.
+    private async Task Take()
+    {
+        var holder = _detail!.Action.AssigneeName;
+        if (holder is not null && !await _confirm.Ask($"Take this action from {holder}?", $"{holder} has this action. It moves to you, and they're no longer its assignee.", "Take it", danger: false)) return;
+        await Run(async () =>
+        {
+            await ActionSvc.TakeAsync(_detail!.Action.Id);
+            await Reload();
+            Toasts.Show(holder is null ? "It's yours now." : $"It's yours now; {holder} no longer has it.");
+        });
+    }
+
+    private Task Comment() => Run(async () =>
+    {
+        await ActionSvc.AddCommentAsync(_detail!.Action.Id, _comment ?? "", _attachments.Select(f => f.Upload).ToList());
+        _comment = null;
+        _attachments.Clear();
+        await Reload();
+    });
+
+    // Files waiting to go with the next comment: chosen, dropped or pasted (paste-drop.js hands them to the InputFile).
+    private sealed record PendingFile(ScreenshotUpload Upload, bool IsImage);
+    // The screenshot open in the dialog, and the comment's others it steps through.
+    private ScreenshotDialog.Shot? _shot;
+    private IReadOnlyList<ScreenshotDialog.Shot> _shotSet = [];
+
+    private void OpenShot(IEnumerable<ActionCommentFile> shots, ActionCommentFile f)
+    {
+        _shotSet = shots.Select(s => new ScreenshotDialog.Shot(s.FileId, s.FileName)).ToList();
+        _shot = _shotSet.First(s => s.FileId == f.FileId);
+    }
+    private readonly List<PendingFile> _attachments = [];
+    private bool _reading, _pasteRegistered;
+
+    private async Task OnAttach(InputFileChangeEventArgs e)
+    {
+        _reading = true;
+        try
+        {
+            var room = ActionCommentFile.MaxPerComment - _attachments.Count;
+            var files = e.GetMultipleFiles(ActionCommentFile.MaxPerComment);
+            if (files.Count > room) throw new ArgumentException($"A comment can have at most {ActionCommentFile.MaxPerComment} files.");
+            foreach (var f in files)
+            {
+                if (f.Size > Shots.MaxAttachmentBytes) throw new ArgumentException($"'{f.Name}' is over the {Shots.MaxAttachmentBytes / 1024 / 1024} MB limit.");
+                await using var stream = f.OpenReadStream(Shots.MaxAttachmentBytes);
+                using var ms = new MemoryStream();
+                await stream.CopyToAsync(ms);
+                var bytes = ms.ToArray();
+                _attachments.Add(new PendingFile(new ScreenshotUpload(f.Name, bytes), ImageSniffer.RasterContentType(bytes) is not null));
+            }
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _reading = false; }
+    }
+
+    // Paste a screenshot (or a copied file) anywhere on the page, or drop files on the comment box.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_pasteRegistered || _detail is not { CanWork: true }) return;
+        _pasteRegistered = true;
+        try { await JS.InvokeVoidAsync("tidePasteDrop.register", "comment-zone", "comment-files", "comment-files", true); }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task Run(Func<Task> action)
+    {
+        if (_busy) return;   // a double-click: the button's disabled state arrives one render too late
+        _busy = true;
+        try { await action(); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+}

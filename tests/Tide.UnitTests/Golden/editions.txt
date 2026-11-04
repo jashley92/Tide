@@ -1,0 +1,40 @@
+mixed Team TLP:CLEAR: left out
+mixed Team TLP:GREEN: shown, marked TLP:GREEN | bullets left at clear (TLP:GREEN), green (TLP:GREEN) | screenshots open shot (TLP:GREEN), (no caption) (TLP:GREEN) | why none | withheld 4 | indicators IpAddress 203.0.113.7, Domain evil.example C2 | actions #7 Open, #9 InProgress
+mixed Team TLP:AMBER: shown, marked TLP:AMBER | bullets left at clear (TLP:GREEN), green (TLP:GREEN), amber (TLP:AMBER) | screenshots open shot (TLP:GREEN), (no caption) (TLP:GREEN) | why The VPN appliance flaw is being exploited. | withheld 2 | indicators IpAddress 203.0.113.7, Domain evil.example C2 | actions #7 Open, #9 InProgress
+mixed Team TLP:AMBER+STRICT: shown, marked TLP:AMBER+STRICT | bullets left at clear (TLP:GREEN), green (TLP:GREEN), amber (TLP:AMBER) | screenshots open shot (TLP:GREEN), strict shot (TLP:AMBER+STRICT), (no caption) (TLP:GREEN) | why The VPN appliance flaw is being exploited. | withheld 1 | indicators IpAddress 203.0.113.7, Domain evil.example C2 | actions #7 Open, #9 InProgress
+mixed Team TLP:RED: shown, marked TLP:RED | bullets left at clear (TLP:GREEN), green (TLP:GREEN), amber (TLP:AMBER), red (TLP:RED) | screenshots open shot (TLP:GREEN), strict shot (TLP:AMBER+STRICT), (no caption) (TLP:GREEN) | why The VPN appliance flaw is being exploited. | withheld 0 | indicators IpAddress 203.0.113.7, Domain evil.example C2 | actions #7 Open, #9 InProgress
+mixed Public TLP:CLEAR: left out
+mixed Public TLP:GREEN: shown, marked TLP:GREEN | bullets left at clear (TLP:GREEN), green (TLP:GREEN) | screenshots open shot (TLP:GREEN), (no caption) (TLP:GREEN) | why none | withheld 4 | indicators none | actions none
+mixed Public TLP:AMBER: shown, marked TLP:AMBER | bullets left at clear (TLP:GREEN), green (TLP:GREEN), amber (TLP:AMBER) | screenshots open shot (TLP:GREEN), (no caption) (TLP:GREEN) | why The VPN appliance flaw is being exploited. | withheld 2 | indicators none | actions none
+mixed Public TLP:AMBER+STRICT: shown, marked TLP:AMBER+STRICT | bullets left at clear (TLP:GREEN), green (TLP:GREEN), amber (TLP:AMBER) | screenshots open shot (TLP:GREEN), strict shot (TLP:AMBER+STRICT), (no caption) (TLP:GREEN) | why The VPN appliance flaw is being exploited. | withheld 1 | indicators none | actions none
+mixed Public TLP:RED: shown, marked TLP:RED | bullets left at clear (TLP:GREEN), green (TLP:GREEN), amber (TLP:AMBER), red (TLP:RED) | screenshots open shot (TLP:GREEN), strict shot (TLP:AMBER+STRICT), (no caption) (TLP:GREEN) | why The VPN appliance flaw is being exploited. | withheld 0 | indicators none | actions none
+no-why Team TLP:CLEAR: shown, marked TLP:CLEAR | bullets one (TLP:CLEAR) | screenshots none | why none | withheld 1 | indicators IpAddress 203.0.113.7, Domain evil.example C2 | actions #7 Open, #9 InProgress
+no-why Team TLP:GREEN: shown, marked TLP:GREEN | bullets one (TLP:CLEAR), two (TLP:GREEN) | screenshots none | why none | withheld 0 | indicators IpAddress 203.0.113.7, Domain evil.example C2 | actions #7 Open, #9 InProgress
+no-why Team TLP:AMBER: shown, marked TLP:GREEN | bullets one (TLP:CLEAR), two (TLP:GREEN) | screenshots none | why none | withheld 0 | indicators IpAddress 203.0.113.7, Domain evil.example C2 | actions #7 Open, #9 InProgress
+no-why Team TLP:AMBER+STRICT: shown, marked TLP:GREEN | bullets one (TLP:CLEAR), two (TLP:GREEN) | screenshots none | why none | withheld 0 | indicators IpAddress 203.0.113.7, Domain evil.example C2 | actions #7 Open, #9 InProgress
+no-why Team TLP:RED: shown, marked TLP:GREEN | bullets one (TLP:CLEAR), two (TLP:GREEN) | screenshots none | why none | withheld 0 | indicators IpAddress 203.0.113.7, Domain evil.example C2 | actions #7 Open, #9 InProgress
+no-why Public TLP:CLEAR: shown, marked TLP:CLEAR | bullets one (TLP:CLEAR) | screenshots none | why none | withheld 1 | indicators none | actions none
+no-why Public TLP:GREEN: shown, marked TLP:GREEN | bullets one (TLP:CLEAR), two (TLP:GREEN) | screenshots none | why none | withheld 0 | indicators none | actions none
+no-why Public TLP:AMBER: shown, marked TLP:GREEN | bullets one (TLP:CLEAR), two (TLP:GREEN) | screenshots none | why none | withheld 0 | indicators none | actions none
+no-why Public TLP:AMBER+STRICT: shown, marked TLP:GREEN | bullets one (TLP:CLEAR), two (TLP:GREEN) | screenshots none | why none | withheld 0 | indicators none | actions none
+no-why Public TLP:RED: shown, marked TLP:GREEN | bullets one (TLP:CLEAR), two (TLP:GREEN) | screenshots none | why none | withheld 0 | indicators none | actions none
+amber Team TLP:CLEAR: left out
+amber Team TLP:GREEN: left out
+amber Team TLP:AMBER: shown, marked TLP:AMBER | bullets none | screenshots partner shot (TLP:AMBER) | why Our vendor runs this. | withheld 1 | indicators IpAddress 203.0.113.7, Domain evil.example C2 | actions #7 Open, #9 InProgress
+amber Team TLP:AMBER+STRICT: shown, marked TLP:AMBER+STRICT | bullets isac (TLP:AMBER+STRICT) | screenshots partner shot (TLP:AMBER) | why Our vendor runs this. | withheld 0 | indicators IpAddress 203.0.113.7, Domain evil.example C2 | actions #7 Open, #9 InProgress
+amber Team TLP:RED: shown, marked TLP:AMBER+STRICT | bullets isac (TLP:AMBER+STRICT) | screenshots partner shot (TLP:AMBER) | why Our vendor runs this. | withheld 0 | indicators IpAddress 203.0.113.7, Domain evil.example C2 | actions #7 Open, #9 InProgress
+amber Public TLP:CLEAR: left out
+amber Public TLP:GREEN: left out
+amber Public TLP:AMBER: shown, marked TLP:AMBER | bullets none | screenshots partner shot (TLP:AMBER) | why Our vendor runs this. | withheld 1 | indicators none | actions none
+amber Public TLP:AMBER+STRICT: shown, marked TLP:AMBER+STRICT | bullets isac (TLP:AMBER+STRICT) | screenshots partner shot (TLP:AMBER) | why Our vendor runs this. | withheld 0 | indicators none | actions none
+amber Public TLP:RED: shown, marked TLP:AMBER+STRICT | bullets isac (TLP:AMBER+STRICT) | screenshots partner shot (TLP:AMBER) | why Our vendor runs this. | withheld 0 | indicators none | actions none
+red Team TLP:CLEAR: left out
+red Team TLP:GREEN: left out
+red Team TLP:AMBER: left out
+red Team TLP:AMBER+STRICT: left out
+red Team TLP:RED: shown, marked TLP:RED | bullets red (TLP:RED) | screenshots none | why Named people only. | withheld 0 | indicators IpAddress 203.0.113.7, Domain evil.example C2 | actions #7 Open, #9 InProgress
+red Public TLP:CLEAR: left out
+red Public TLP:GREEN: left out
+red Public TLP:AMBER: left out
+red Public TLP:AMBER+STRICT: left out
+red Public TLP:RED: shown, marked TLP:RED | bullets red (TLP:RED) | screenshots none | why Named people only. | withheld 0 | indicators none | actions none

@@ -1,0 +1,152 @@
+@* The article's adversary profiles (EP-73), in the editor's Related tab beside "We run": each tagged profile with how
+   much else has been written about it; the profiles the article names (title, actors, bottom line) but isn't tagged
+   with, offered as a one-click tag; and, for analysts, a picker that finds a profile by any of its names, or adds one.
+   Tagging is optional and saved straight away. *@
+@using Tide.Application.Adversaries
+@inject AdversaryService Adversaries
+@inject ToastService Toasts
+@inject ChangeFeed Feed
+@inject ChangeOrigin Origin
+@implements IDisposable
+
+<div class="tide-card tide-stack-card">
+    <h2>Adversaries <a class="ms-auto small fw-normal" href="adversaries">All profiles</a></h2>
+    @if (_mine is null)
+    {
+        <LoadingBlock Rows="1" />
+    }
+    else
+    {
+        @if (_mine.Tagged.Count == 0)
+        {
+            <p class="small tide-muted mb-2">No adversary tagged.</p>
+        }
+        @foreach (var a in _mine.Tagged)
+        {
+            var d = _details.GetValueOrDefault(a.Id);
+            <div class="tide-stack-tag" @key="a.Id">
+                <div class="d-flex gap-2 align-items-baseline flex-wrap">
+                    <a class="fw-semibold" href="@($"adversaries/{a.Id}")">@a.Name</a>
+                    @if (a.Aliases is { } al) { <span class="small tide-muted">also @(al.Length > 80 ? al[..80] + "…" : al)</span> }
+                    @if (CanWrite)
+                    {
+                        <button type="button" class="btn btn-link btn-sm p-0 ms-auto" disabled="@_busy" aria-label="@($"Untag {a.Name}")" @onclick="() => Untag(a.Id)">Untag</button>
+                    }
+                </div>
+                @if (d is not null)
+                {
+                    var others = d.Articles.Count(x => x.Id != ArticleId);
+                    <div class="small"><a href="@($"adversaries/{a.Id}")">Seen before: @others other article@(others == 1 ? "" : "s")@(d.BriefedThisQuarter > 0 ? $" · {d.BriefedThisQuarter} brief{(d.BriefedThisQuarter == 1 ? "" : "s")} this quarter" : "")</a></div>
+                    @foreach (var x in d.Articles.Where(x => x.Id != ArticleId).Take(3))
+                    {
+                        <div class="small tide-muted">@Ui.ShortDay(x.On) · <a href="@($"articles/{x.Id}")">@x.Title</a></div>
+                    }
+                }
+            </div>
+        }
+        @if (CanWrite && _mine.Suggested.Count > 0)
+        {
+            <div class="small mt-2">Names @(string.Join(", ", _mine.Suggested.Select(s => s.Name))):
+                @foreach (var s in _mine.Suggested)
+                {
+                    <button type="button" class="btn btn-outline-secondary btn-sm ms-1" disabled="@_busy" @onclick="() => Tag(s.Id)">Tag @s.Name</button>
+                }
+            </div>
+        }
+        @if (CanWrite)
+        {
+            <div class="d-flex gap-1 mt-2 flex-wrap">
+                <label class="visually-hidden" for="adv-pick-@ArticleId">Tag an adversary</label>
+                <input id="adv-pick-@ArticleId" class="form-control form-control-sm w-auto flex-grow-1" list="adv-list-@ArticleId" maxlength="100"
+                       placeholder="Tag an adversary by any name, or add one" @bind="_pick" @bind:event="oninput" />
+                <datalist id="adv-list-@ArticleId">
+                    @foreach (var (name, profile) in _names) { <option value="@name">@(name == profile ? "" : profile)</option> }
+                </datalist>
+                <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_pick))" @onclick="TagPicked">Tag</button>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Guid ArticleId { get; set; }
+    [Parameter] public bool CanWrite { get; set; }
+
+    private ArticleAdversaries? _mine;
+    private List<(string Name, string Profile)> _names = [];
+    private readonly Dictionary<Guid, AdversaryDetail?> _details = new();
+    private string? _pick;
+    private bool _busy;
+
+    // A colleague's tag or untag on this article (or any save of it) reloads the card; one heard during this card's own
+    // change is read once that change is done.
+    private LiveChanges? _live;
+    private volatile string _topic = "", _tagsTopic = "";
+    private bool _heardWhileBusy;
+
+    protected override void OnInitialized() =>
+        _live = new LiveChanges(Feed, Origin, c => c.Topic == _topic || c.Topic == _tagsTopic, InvokeAsync, async _ =>
+        {
+            if (_busy) { _heardWhileBusy = true; return; }
+            await Load();
+            StateHasChanged();
+        });
+
+    public void Dispose() => _live?.Dispose();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _topic = ChangeFeed.Article(ArticleId);
+        _tagsTopic = ChangeFeed.ArticleTags(ArticleId);
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        try
+        {
+            _mine = await Adversaries.ForArticleAsync(ArticleId);
+            // Every name a live profile goes by, so "Octo Tempest" finds Scattered Spider.
+            if (CanWrite)
+                _names = (await Adversaries.ProfilesAsync()).SelectMany(p => AdversaryService.Entry(p).Terms.Select(t => (t, p.Name)))
+                    .DistinctBy(x => x.t, StringComparer.OrdinalIgnoreCase).OrderBy(x => x.t).ToList();
+            _details.Clear();
+            foreach (var a in _mine.Tagged) _details[a.Id] = await Adversaries.GetAsync(a.Id);
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    // One tag added or removed, not the list as this card last read it, which would drop a colleague's tags since.
+    private async Task Change(Func<Task> change, string done)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await change();
+            Toasts.Show(done);
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally
+        {
+            // Read again if a colleague's change was heard while this one was reading.
+            do { _heardWhileBusy = false; await Load(); } while (_heardWhileBusy);
+            _busy = false;
+        }
+    }
+
+    internal Task Tag(Guid id) => Change(() => Adversaries.TagArticleAsync(ArticleId, id), "Tagged.");
+
+    internal Task Untag(Guid id) => Change(() => Adversaries.UntagArticleAsync(ArticleId, id), "Untagged.");
+
+    // The name typed: any name of a profile (its alias resolves to it), or a new profile added by name.
+    internal async Task TagPicked()
+    {
+        if (_busy || string.IsNullOrWhiteSpace(_pick)) return;
+        Guid id;
+        try { id = await Adversaries.AddByNameAsync(_pick); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); return; }
+        _pick = null;
+        await Tag(id);
+    }
+}

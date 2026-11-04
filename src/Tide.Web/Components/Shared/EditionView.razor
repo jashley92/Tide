@@ -1,0 +1,67 @@
+@* A brief as one edition shows it: the team copy, or the company-wide (public) one. What the email and the SharePoint
+   copy will carry is built from the same edition, so this preview is what readers get. Given the day's Metrics, the
+   team edition opens with them (EditionNumbers), as its email does. Each article is drawn by EditionArticleView, as the
+   editor's reader preview draws it. *@
+@inject OrgClock Clock
+
+<div class="tide-edition">
+    <div class="tide-edition-banner">
+        <div>
+            <div class="fw-semibold">@Clock.TeamName daily brief</div>
+            <div class="tide-muted small">@Ui.Day(Edition.Brief.BriefDate) &middot; presented by @Edition.Brief.AnalystName</div>
+        </div>
+        <div class="text-end">
+            <TlpBadge Level="Edition.Marking" />
+            <div class="tide-muted small mt-1">@(Edition.Edition == Tide.Domain.Enums.Edition.Public ? "Company-wide edition" : "Security team edition")</div>
+        </div>
+    </div>
+
+    @if (Edition.Edition == Tide.Domain.Enums.Edition.Team && Metrics is { Any: true } day)
+    {
+        <EditionNumbers Day="day" />
+    }
+    @* The overdue actions the team email lists after the numbers: team edition only. *@
+    @if (Edition.Edition == Tide.Domain.Enums.Edition.Team && Open is { Any: true } open)
+    {
+        <section class="tide-ed-open" aria-label="Still open from earlier briefs">
+            <h3 class="tide-ed-open-h">Still open from earlier briefs</h3>
+            <ul class="list-unstyled mb-1">
+                @foreach (var o in open.Rows)
+                {
+                    <li><PriorityBadge Priority="o.Row.Priority" /> <a href="@Ui.ActionUrl(o.Row.Number)">@Ui.ActionLabel(o.Row.Number)</a> @o.Row.Title
+                        <span class="tide-muted">&middot; @o.Row.TeamName &middot; @(o.NoOneToOwn ? "no one: the team has no members" : o.Row.AssigneeName ?? "unassigned")</span>
+                        <span class="tide-slide-late">@o.DaysLate day@(o.DaysLate == 1 ? "" : "s") late</span></li>
+                }
+            </ul>
+            @if (open.Overdue > open.Rows.Count) { <div class="small tide-muted">@open.Overdue overdue in all; the rest are under Actions &gt; Overdue.</div> }
+        </section>
+    }
+
+    @if (Edition.ShowIntro)
+    {
+        <Md Text="@Edition.Brief.Intro" />
+    }
+
+    @if (Edition.Articles.Count == 0)
+    {
+        <EmptyState Icon="bi-newspaper" Title="@($"Nothing in this edition{(Edition.WithheldArticles > 0 ? $": every article is above {Tlp.Label(Edition.Ceiling)}" : "")}")" />
+    }
+    @foreach (var (ea, i) in Edition.Articles.Select((a, i) => (a, i)))
+    {
+        <EditionArticleView Article="ea" Number="i + 1" />
+    }
+    @if (Edition.WithheldArticles > 0 && Edition.Articles.Count > 0)
+    {
+        <p class="tide-withheld mt-2">@Edition.WithheldArticles restricted @(Edition.WithheldArticles == 1 ? "item was" : "items were") briefed to the security team and left out of this edition.</p>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public BriefEdition Edition { get; set; } = default!;
+
+    /// <summary>The day's numbers, which the team edition carries at the top; null where they aren't shown.</summary>
+    [Parameter] public Tide.Application.Metrics.MetricDay? Metrics { get; set; }
+
+    /// <summary>The overdue actions the team email lists after the numbers (the team edition shows them).</summary>
+    [Parameter] public Tide.Application.Actions.OpenActionsReview? Open { get; set; }
+}

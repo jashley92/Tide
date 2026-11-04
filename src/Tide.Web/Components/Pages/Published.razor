@@ -1,0 +1,207 @@
+@page "/published"
+@page "/published/{Day}"
+@attribute [Authorize(Policy = Policies.ReadPublished)]
+@using Tide.Application.Distribution
+@inject DistributionService Distribution
+@inject OrgClock Clock
+@inject NavigationManager Nav
+@inject ICurrentUser CurrentUser
+@inject ToastService Toasts
+
+<PageTitle>Published briefs · TIDE</PageTitle>
+
+@if (Day is null)
+{
+    <div class="tide-page-head">
+        <div>
+            <h1>Published briefs</h1>
+            <div class="tide-sub">The company-wide edition of each daily brief, as it was sent.</div>
+        </div>
+    </div>
+    @* Headlines and the filter come from each frozen send, as it went out: never the articles as they are now. *@
+    <div class="tide-card">
+        <form class="d-flex gap-2 flex-wrap" role="search" @onsubmit="Go" @onsubmit:preventDefault="true">
+            <input class="tide-maxw-2xl form-control" type="search" maxlength="200" aria-label="Filter the published briefs"
+                   placeholder="A word or a name from a headline or a story" @bind="_text" />
+            <button class="btn btn-primary" type="submit"><span class="bi bi-search" aria-hidden="true"></span> Filter</button>
+            @if (!string.IsNullOrWhiteSpace(Q))
+            {
+                <a class="btn btn-link" href="published">Clear</a>
+            }
+        </form>
+        <div class="form-text">Matches briefs containing every word.</div>
+    </div>
+    <div class="tide-card">
+        @if (_list is null)
+        {
+            <LoadingBlock />
+        }
+        else if (_list.Count == 0 && !string.IsNullOrWhiteSpace(Q))
+        {
+            <EmptyState Icon="bi-search" Title="No matching briefs" />
+        }
+        else if (_list.Count == 0)
+        {
+            <EmptyState Icon="bi-megaphone" Title="Nothing published yet" />
+        }
+        else
+        {
+            @if (!string.IsNullOrWhiteSpace(Q))
+            {
+                <p class="small tide-muted" role="status">@(_more ? "More than " : "")@Shown.Count published brief@(Shown.Count == 1 && !_more ? "" : "s") match@(Shown.Count == 1 && !_more ? "es" : "")@(_more ? "; the newest are shown" : "").</p>
+            }
+            <ul class="tide-published-list">
+                @foreach (var p in Shown)
+                {
+                    var s = p.Send;
+                    <li>
+                        <div class="tide-published-day">
+                            <a href="@PublishedUrl(s.BriefDate)">@Ui.Day(s.BriefDate)</a>
+                            @if (!p.Withdrawn) { <TlpBadge Level="s.Marking" /> }
+                            <span class="tide-muted small">Sent @Ui.When(Clock, s.SentAtUtc)</span>
+                            @if (p.Corrections.FirstOrDefault(c => !c.IsTlpSlip) is { } fix)
+                            {
+                                <Badge Tone="BadgeTone.Warn" Icon="bi-pencil-square">Corrected @Ui.ShortDay(DateOnly.FromDateTime(Clock.ToLocal(fix.SentAtUtc).DateTime))</Badge>
+                            }
+                        </div>
+                        @if (p.Withdrawn)
+                        {
+                            <div class="small tide-muted">Withdrawn: something in it went above its audience's marking.</div>
+                        }
+                        else if (p.Headlines.Count > 0)
+                        {
+                            <ol class="tide-published-heads">
+                                @foreach (var h in p.Headlines)
+                                {
+                                    <li>@h</li>
+                                }
+                            </ol>
+                        }
+                        else
+                        {
+                            <div class="small tide-muted">Nothing in this edition.</div>
+                        }
+                    </li>
+                }
+            </ul>
+            @if (_more)
+            {
+                @* Every published brief is kept and searched; the list shows a page of them at a time. *@
+                <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_loadingMore" @onclick="Older">Show older briefs</button>
+            }
+        }
+    </div>
+}
+else
+{
+    <div class="tide-page-head">
+        <div>
+            <Breadcrumbs Items="@([new("Published briefs", "published"), new(_valid ? Ui.ShortDay(_date) : "Published brief")])" />
+            <h1>@(_valid ? Ui.Day(_date) : "Published brief")</h1>
+            @if (_send is not null) { <div class="tide-sub">Sent @Ui.When(Clock, _send.SentAtUtc) &middot; <TlpBadge Level="_send.Marking" /></div> }
+        </div>
+    </div>
+    @if (!_loaded)
+    {
+        <LoadingBlock />
+    }
+    else
+    {
+        @* Corrections sent of the day's sends, newest first, each its frozen web copy; a TLP slip's is its notice only. *@
+        @foreach (var c in _corrections)
+        {
+            var id = $"correction-{c.Id:N}";
+            <section class="tide-published tide-published-correction @(c.IsTlpSlip ? "tide-published-slip" : "")" aria-labelledby="@id">
+                <h2 id="@id"><span class="bi @(c.IsTlpSlip ? "bi-exclamation-octagon" : "bi-pencil-square")" aria-hidden="true"></span>
+                    @(c.IsTlpSlip ? "Withdrawn" : "Correction"), @Ui.When(Clock, c.SentAtUtc)</h2>
+                @((MarkupString)c.WebHtml)
+                @if (!c.IsTlpSlip && _send is not null && _send.Id == c.CorrectsSendId)
+                {
+                    <p class="small mb-0"><a href="@($"{PublishedUrl(_date)}#edition")">The edition it corrects</a></p>
+                }
+                else if (c.IsTlpSlip && CurrentUser.Has(Permission.ReadTeamEdition))
+                {
+                    @* Hidden from Readers only: the team keeps the frozen send for its record. *@
+                    <p class="small mb-0">Readers no longer see it, nor any send of the day made before this notice. <a href="@($"sends/{c.CorrectsSendId}/email")" target="_blank" rel="noopener">The withdrawn send, as it went</a> (the team's only). Send the edition again to publish the corrected version.</p>
+                }
+            </section>
+        }
+        @if (_send?.WebHtml is null)
+        {
+            @if (_corrections.Count == 0)
+            {
+                <div class="tide-card"><EmptyState Icon="bi-newspaper" Title="No company-wide edition was published for this day." /></div>
+            }
+        }
+        else
+        {
+            @* The frozen copy made when it was sent, its images the frozen copies too: never a fresh rendering. *@
+            <div class="tide-published" id="edition">@((MarkupString)DistributionService.WithImageUrls(_send.WebHtml, _send.Images, id => Ui.ImageUrl(id)))</div>
+        }
+    }
+}
+
+@code {
+    [Parameter] public string? Day { get; set; }
+
+    /// <summary>The filter: every word must appear in the frozen edition.</summary>
+    [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
+
+    /// <summary>How many days the list shows at a time; "Show older briefs" adds as many again.</summary>
+    public const int PageSize = 120;
+
+    private IReadOnlyList<PublishedBrief>? _list;   // one more than _take when there are older ones (_more)
+    private int _take = PageSize;
+    private bool _more, _loadingMore;
+    private IReadOnlyList<PublishedBrief> Shown => _list is null ? [] : _list.Take(_take).ToList();
+    private string _text = "";
+    private BriefSend? _send;
+    private IReadOnlyList<BriefCorrection> _corrections = [];
+    private DateOnly _date;
+    private bool _valid, _loaded;
+
+    private static string PublishedUrl(DateOnly d) => "published/" + Ui.IsoDay(d);
+
+    private void Go() => Nav.NavigateTo(string.IsNullOrWhiteSpace(_text) ? "published" : "published?q=" + Uri.EscapeDataString(_text.Trim()));
+
+    // The list and each day share this page: a read that lands after the address moved on (another day, the list, or
+    // another search) is dropped, so a day never shows another day's brief.
+    protected override async Task OnParametersSetAsync()
+    {
+        var (day, q) = (Day, Q);
+        _loaded = false;
+        if (day is null)
+        {
+            _text = q ?? "";
+            _take = PageSize;
+            var list = await Distribution.PublishedBriefsAsync(q, _take + 1);
+            if (Day != day || Q != q) return;
+            (_list, _more) = (list, list.Count > _take);
+        }
+        else
+        {
+            _valid = Ui.TryParseDay(day, out var date);
+            var send = _valid ? await Distribution.GetPublishedAsync(date) : null;
+            IReadOnlyList<BriefCorrection> corrections = _valid ? await Distribution.PublishedCorrectionsAsync(date) : [];
+            if (Day != day) return;
+            (_date, _send, _corrections) = (date, send, corrections);
+        }
+        _loaded = true;
+    }
+
+    // The next page of older briefs, under the same filter. A read that fails says so, and leaves the list as it was.
+    internal async Task Older()
+    {
+        var q = Q;
+        _loadingMore = true;
+        try
+        {
+            var take = _take + PageSize;
+            var list = await Distribution.PublishedBriefsAsync(q, take + 1);
+            if (Day is not null || Q != q) return;
+            (_list, _take, _more) = (list, take, list.Count > take);
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _loadingMore = false; }
+    }
+}

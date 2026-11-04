@@ -1,0 +1,44 @@
+# Dependabot keeps the SHA-pinned GitHub Actions current. Because each `uses:` is pinned to a full
+# commit SHA with the release in a trailing comment (e.g. `@11d5960… # v4.4.0`), Dependabot bumps both
+# the SHA and the comment together — so pinning stays immutable without going stale on security patches.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+    # One grouped PR per run instead of one per action, to keep the noise down.
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  # NuGet packages across the solution. Complements the CI vulnerable-package gate: that fails a
+  # build when something is already vulnerable; this proactively PRs upgrades before it comes to that.
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps"
+    open-pull-requests-limit: 10
+    # Low-risk minor/patch bumps arrive as one grouped PR; majors come individually so their
+    # potential breaking changes get reviewed on their own.
+    groups:
+      nuget-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    # App targets net10.0. The runtime/EF/tooling packages are versioned in lockstep with the .NET
+    # major, so keep them on the matching 10.x line — a jump to the next major (e.g. 11.x) is a
+    # deliberate target-framework migration, not an automated bump. Retarget these ignores when the
+    # project moves to a newer TFM.
+    ignore:
+      - dependency-name: "Microsoft.EntityFrameworkCore*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.Extensions.*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "dotnet-ef"
+        update-types: ["version-update:semver-major"]
