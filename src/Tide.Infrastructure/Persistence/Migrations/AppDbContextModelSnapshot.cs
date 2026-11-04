@@ -1807,6 +1807,9 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("Chart")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long>("CreatedAtUtc")
                         .HasColumnType("INTEGER");
 

@@ -178,7 +178,11 @@ Administrators define `MetricGroup`s and `MetricDefinition`s (direction, format,
 enter one `MetricValue` per metric per brief date. `MetricMath` holds the rules: a value is compared with the most
 recent earlier business day that has one; a zero change is grey whatever the direction; thresholds apply in the
 metric's direction (at or above for lower-is-better and neutral, at or below for higher-is-better). Metrics show on
-a slide after the title slide and at the top of the team email, never in the company-wide edition. Retiring or
+slides after the title slide and at the top of the team email, never in the company-wide edition. Present mode gives
+each group its own slide (`MetricSlides`): its numbers as tiles, with the day's note if there is one, over the chart
+the group's `Chart` setting picks (a 30-day trend, a donut of the current values, bars, or none). `MetricCharts` works
+out the charts' geometry; missing days are gaps, not zeros. A group whose values are all 0 has no slide: the first metrics
+slide lists it in one line. Slides are keyed `metrics:{group key}`, so a follower lands on the same group. Retiring or
 renaming a metric keeps its values; the history page and its CSV export cover retired metrics too. Once a day's brief is
 Sent its values are fixed for everyone but administrators (`MetricsService.IsLockedAsync`), so the page agrees with
 what went out.

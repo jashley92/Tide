@@ -150,6 +150,17 @@ public static class MetricMath
     }
 
     /// <summary>
+    /// The working days among the <paramref name="calendarDays"/> calendar days ending at <paramref name="day"/>
+    /// (inclusive), oldest first: the dates a group slide's trend chart plots. Weekends and holidays aren't days a value
+    /// is expected, so they're left out rather than drawn as gaps.
+    /// </summary>
+    public static IReadOnlyList<DateOnly> WorkingDaysWithin(DateOnly day, int calendarDays, WorkingDays? workingDays = null)
+    {
+        var w = workingDays ?? WorkingDays.Weekdays;
+        return Enumerable.Range(0, Math.Max(0, calendarDays)).Select(i => day.AddDays(i - calendarDays + 1)).Where(w.IsWorkingDay).ToList();
+    }
+
+    /// <summary>
     /// A sparkline as SVG polyline points in a <paramref name="width"/> by <paramref name="height"/> box, one x step per
     /// day, gaps (days without a value) skipped. Empty when fewer than two values.
     /// </summary>

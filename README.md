@@ -354,7 +354,9 @@ generic example set can be imported.
 - **Imports.** Values can also come from CSV, as an upload or from a drop folder.
 
 **Where they appear:**
-- **The meeting.** An opening slide.
+- **The meeting.** A slide per group: its numbers as large tiles over the chart an administrator picks for it (a
+  30-day trend, share of the whole, side by side, or none). A group whose numbers are all 0 is a one-line note on the
+  first metrics slide instead of a slide of its own.
 - **The team email.** A block at the top: each value with its change from the previous business day, and a
   four-week sparkline.
 - **History.** A history page with a chart and a CSV export.
