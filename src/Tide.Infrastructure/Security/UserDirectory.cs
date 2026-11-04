@@ -29,7 +29,8 @@ public sealed class UserDirectory(IServiceScopeFactory scopes, TimeProvider time
         if (row is null) db.Users.Add(row = new AppUser { Sid = userId });
         row.DisplayName = Cut(displayName);
         row.UserPrincipalName = Cut(upn ?? "");
-        row.Email = email is null ? null : Cut(email);
+        // No address this time (AD didn't answer in time, or has none) keeps the one recorded: it's never blanked.
+        if (!string.IsNullOrWhiteSpace(email)) row.Email = Cut(email.Trim());
         row.RolesCsv = rolesCsv.Length > 500 ? rolesCsv[..500] : rolesCsv;
         row.LastSeenUtc = now;
         try { await db.SaveChangesAsync(ct); }

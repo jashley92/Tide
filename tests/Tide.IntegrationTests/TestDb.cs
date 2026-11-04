@@ -521,7 +521,7 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
     /// <summary>The distribution options the service reads (RequireSharePoint), changed by a test as an administrator would.</summary>
     public DistributionOptions DistributionOptions { get; } = new();
 
-    public DistributionService Distribution(IEmailSender? sender = null) => new(this, User, Store, sender ?? Email, Settings(), Metrics(),
+    public DistributionService Distribution(IEmailSender? sender = null, ICurrentUser? user = null) => new(this, user ?? User, Store, sender ?? Email, Settings(), Metrics(),
         new BriefRenderer(new MarkdownService()), Clock, Options.Create(new AppOptions { BaseUrl = "https://tide.example.org" }), Published,
         new StaticOptionsMonitor<DistributionOptions>(DistributionOptions));
 

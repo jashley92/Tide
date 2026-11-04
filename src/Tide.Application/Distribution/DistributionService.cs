@@ -162,7 +162,7 @@ public sealed class DistributionService(
     {
         RequireSend();
         if (string.IsNullOrWhiteSpace(user.Email))
-            throw new InvalidOperationException("Your account has no email address in the directory, so a test copy can't be sent to you.");
+            throw new InvalidOperationException("Your directory account has no email address (the mail attribute), so a test copy can't be sent to you.");
         if (!email.Enabled) throw new InvalidOperationException(SendOutcome.EmailOff);
         var cut = await EditionAsync(date, edition, ct);
         var (rendered, files) = await RenderForEmailAsync(cut, ct);
