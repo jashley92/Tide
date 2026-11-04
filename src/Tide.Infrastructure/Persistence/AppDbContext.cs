@@ -330,6 +330,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasIndex(x => x.BriefDate).IsUnique();
             Person(e, x => x.AnalystId, x => x.AnalystName);
             e.Property(x => x.Intro).HasMaxLength(2000);
+            e.Property(x => x.TeamNote).HasMaxLength(Tide.Application.Briefs.BriefService.TeamNoteMax);
             Person(e, x => x.DistributedById, x => x.DistributedByName);
             Person(e, x => x.SharePointPostedById, x => x.SharePointPostedByName);
             e.Property(x => x.EditVersion).IsConcurrencyToken();

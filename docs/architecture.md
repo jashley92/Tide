@@ -67,7 +67,9 @@
 ## TLP and editions
 
 Every article, bullet, screenshot and "why it matters to us" has a `TlpLevel`, and so does the brief's opening note
-(`Brief.IntroTlp`, left out of an edition whose ceiling is below it). A part counts at its own marking or its
+(`Brief.IntroTlp`, left out of an edition whose ceiling is below it). The team's opening note (`Brief.TeamNote`,
+Markdown) has no marking: it belongs to the security team edition alone (`BriefEdition.ShowTeamNote`), whatever the
+company-wide ceiling, and every rendering asks the edition for it. A part counts at its own marking or its
 article's, whichever is higher (`Article.Effective`; `Article.HighestTlp` is the highest of them all).
 A threat's "why it matters" starts at AMBER, or the article's TLP when higher (`Article.DefaultWhyItMattersTlp`): when
 it's promoted as a threat, and when an article turns from informational to threat while it's still empty
@@ -186,6 +188,17 @@ slide lists it in one line. Slides are keyed `metrics:{group key}`, so a followe
 renaming a metric keeps its values; the history page and its CSV export cover retired metrics too. Once a day's brief is
 Sent its values are fixed for everyone but administrators (`MetricsService.IsLockedAsync`), so the page agrees with
 what went out.
+
+## The team's opening note
+
+A brief carries one opening note for the team (`Brief.TeamNote`): what's coming up and the week's phishing trends,
+written in Markdown on the brief page by analysts and administrators (`BriefService.SetTeamNoteAsync`) until the
+brief is sent. A brief starts with the latest earlier brief's note (`GetOrStartAsync`, and the next brief a carry
+starts), so standing items roll forward; a note cleared stays cleared. On the team edition it has its own slide in
+present mode, straight after the title and before the numbers, when it isn't blank; it's keyed `note`, so a follower
+lands on it, and a page without it (the company-wide edition, or the note cleared since) shows the title instead. The
+team email has it as a short section before the numbers, frozen with the send like the rest (ADR 0007). The
+company-wide edition, its email, the SharePoint copy, the archive and the API never carry it.
 
 Values can also come from CSV (`MetricImportService`, ADR 0014): an administrator's upload, or files left in the drop
 folder (`Infrastructure/Storage/MetricDropFolder`, read by `MetricImportHostedService` when

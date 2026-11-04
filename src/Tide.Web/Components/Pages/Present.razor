@@ -162,7 +162,16 @@ else
                         }
                     </div>
                 }
-                else if (OpenSlides == 1 && _slide == MetricsSlides + 1)
+                else if (NoteSlides == 1 && _slide == 1 && edition.TeamNote is { } note)
+                {
+                    @* The team's opening note, read before the numbers: team edition only, and only when it isn't blank. *@
+                    <div class="tide-slide-note">
+                        <div class="tide-slide-kicker"><span>Opening note</span><span>&middot; team edition only</span></div>
+                        <h2>Before we start</h2>
+                        <Md Text="@note" />
+                    </div>
+                }
+                else if (OpenSlides == 1 && _slide == NoteSlides + MetricsSlides + 1)
                 {
                     @* The overdue actions, looked at again in the room: team edition only (ADR 0005), at most 8, worst first. *@
                     <div>
@@ -185,15 +194,15 @@ else
                         <div class="tide-present-help mt-2">@_open.Rows.Count of @_open.Overdue overdue shown. <a href="actions?view=overdue">The rest are under Actions &gt; Overdue.</a></div>
                     </div>
                 }
-                else if (_slide >= 1 && _slide <= MetricsSlides)
+                else if (_slide > NoteSlides && _slide <= NoteSlides + MetricsSlides)
                 {
-                    var ms = MetricPlan[_slide - 1];
+                    var ms = MetricPlan[_slide - 1 - NoteSlides];
                     var tiles = ms.Group?.Tiles ?? [];
                     var compared = tiles.Any(t => t.Previous is not null);
                     <div class="tide-slide-mgroup">
                         <div class="tide-slide-kicker">
                             <span>@(_past ? "Numbers for " + Ui.ShortDay(_date) : "Today's numbers")</span>
-                            @if (MetricsSlides > 1) { <span>&middot; @_slide of @MetricsSlides</span> }
+                            @if (MetricsSlides > 1) { <span>&middot; @(_slide - NoteSlides) of @MetricsSlides</span> }
                             @if (compared) { <span>&middot; each compared with its last earlier value</span> }
                             else if (tiles.Any(t => t.Value is not null)) { <span>&middot; no earlier values to compare with</span> }
                         </div>
@@ -798,7 +807,8 @@ else
     }
 
     private string SlideTitle(BriefEdition e, int n) =>
-        n == 0 ? "Title" : n <= MetricsSlides ? "Numbers: " + (MetricPlan[n - 1].Group?.Group.Name ?? "all 0") : n <= LeadSlides ? "Still open from earlier briefs"
+        n == 0 ? "Title" : n <= NoteSlides ? "Opening note"
+        : n <= NoteSlides + MetricsSlides ? "Numbers: " + (MetricPlan[n - 1 - NoteSlides].Group?.Group.Name ?? "all 0") : n <= LeadSlides ? "Still open from earlier briefs"
         : ArticleAt(e, n) is { } x ? $"{n - LeadSlides}. {x.Article.Title}" : "Wrap-up";
 
     // The article on slide n of the edition, if slide n is an article's.
@@ -840,8 +850,16 @@ else
     private OpenActionsReview _open = OpenActionsReview.None;
     private int OpenSlides => TeamEdition && _open.Any ? 1 : 0;
 
-    /// <summary>The slides before the first article: the numbers, then the open actions.</summary>
-    private int LeadSlides => MetricsSlides + OpenSlides;
+    // The team's opening note has a slide of its own straight after the title, before the numbers: on the team edition,
+    // when the note isn't blank (the edition carries it only then). Switching editions, or a colleague clearing the note,
+    // takes it away; the slide shown stays on screen by its key.
+    private int NoteSlides => _brief is { } b && Cut(b).ShowTeamNote ? 1 : 0;
+
+    /// <summary>The opening note's slide key.</summary>
+    internal const string NoteKey = "note";
+
+    /// <summary>The slides before the first article: the opening note, the numbers, then the open actions.</summary>
+    private int LeadSlides => NoteSlides + MetricsSlides + OpenSlides;
 
     private int LastSlide => _brief is null ? 0 : Cut(_brief).Articles.Count + LeadSlides + 1;
 
@@ -873,9 +891,12 @@ else
 
     internal void SetEdition(ChangeEventArgs e)
     {
+        // The slide shown stays on screen by its key: the other edition has no note, numbers or open actions slides, so
+        // the article being shown is at another number there (and the note's slide gives way to the title).
+        var shown = SlideKey(_slide);
         if (Enum.TryParse<Edition>(e.Value?.ToString(), out var ed)) _edition = ed;
         if (!TeamEdition) (_showNotes, _actionDetail) = (false, null);   // the meeting notes are the team's, like its actions
-        _slide = Math.Min(_slide, LastSlide);
+        _slide = SlideNamed(shown) ?? Math.Min(_slide, LastSlide);
     }
 
     private async Task ToggleFullscreen()
@@ -996,10 +1017,11 @@ else
     // The article on the slide being shown, if it's an article's slide, so a reload keeps it on screen.
     private Guid? ShownArticle() => ArticleAt(Cut(_brief!), _slide)?.Article.Id;
 
-    // What slide n is, as every page names it alike ("metrics:{group key}", "article:{id}", "wrap"), however many lead slides each has loaded.
+    // What slide n is, as every page names it alike ("note", "metrics:{group key}", "article:{id}", "wrap"), however many lead slides each has loaded.
     private string SlideKey(int n) =>
         _brief is null ? ""
-        : n == 0 ? "title" : n <= MetricsSlides ? MetricPlan[n - 1].Key : n <= LeadSlides ? "open"
+        : n == 0 ? "title" : n <= NoteSlides ? NoteKey
+        : n <= NoteSlides + MetricsSlides ? MetricPlan[n - 1 - NoteSlides].Key : n <= LeadSlides ? "open"
         : ArticleAt(Cut(_brief), n) is { } x ? "article:" + x.Article.Id : "wrap";
 
     // This page's number for the slide the meeting is on: by its name, else by its number.
@@ -1009,8 +1031,10 @@ else
     private int? SlideNamed(string? key) => (key ?? "") switch
     {
         "title" => 0,
-        var k when MetricsSlides > 0 && Tide.Application.Metrics.MetricSlides.IndexOf(MetricPlan, k) is { } at => at + 1,
-        "open" when OpenSlides > 0 => MetricsSlides + 1,
+        // The note's slide, or the title when this page has none (the note was cleared, or this is the company-wide edition).
+        NoteKey => NoteSlides,
+        var k when MetricsSlides > 0 && Tide.Application.Metrics.MetricSlides.IndexOf(MetricPlan, k) is { } at => at + 1 + NoteSlides,
+        "open" when OpenSlides > 0 => NoteSlides + MetricsSlides + 1,
         "wrap" => LastSlide,
         var k when k.StartsWith("article:", StringComparison.Ordinal) && Guid.TryParse(k[8..], out var id) => SlideOf(id),
         _ => null,

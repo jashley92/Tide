@@ -1118,6 +1118,10 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
+                    b.Property<string>("TeamNote")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("BriefDate")

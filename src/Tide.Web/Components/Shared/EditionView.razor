@@ -16,6 +16,14 @@
         </div>
     </div>
 
+    @* The team's opening note, before the numbers as its email has it: the edition carries it on the team edition only. *@
+    @if (Edition.TeamNote is { } note)
+    {
+        <section class="tide-ed-teamnote" aria-label="Opening note">
+            <h3 class="tide-ed-numbers-head">Opening note</h3>
+            <Md Text="@note" />
+        </section>
+    }
     @if (Edition.Edition == Tide.Domain.Enums.Edition.Team && Metrics is { Any: true } day)
     {
         <EditionNumbers Day="day" />

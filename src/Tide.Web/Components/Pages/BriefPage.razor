@@ -49,12 +49,13 @@ else
                 }
             </div>
             <ChangedElsewhere By="@_changedBy" What="brief's presenter or opening note" Consequence="Saving now would replace theirs." OnReload="ReloadTheirs" />
+            <ChangedElsewhere By="@_noteChangedBy" What="team's opening note" Consequence="Saving now would replace theirs." OnReload="ReloadTheirs" />
             <h1>@(AsToday ? "Today, " : "Brief for ")@Ui.Day(_date)</h1>
             @if (AsToday && Clock.Days.HolidayOn(Clock.Today) is { } holiday)
             {
                 <div class="alert alert-info small py-2 mb-2" role="status"><span class="bi bi-calendar-x me-1" aria-hidden="true"></span>@holiday: no brief today. This is the next one.</div>
             }
-            <PresenceNote Place="@($"brief:{Ui.IsoDay(_date)}")" Editing="DetailsDirty" />
+            <PresenceNote Place="@($"brief:{Ui.IsoDay(_date)}")" Editing="@(DetailsDirty || NoteDirty)" />
             <div class="tide-sub d-flex gap-2 align-items-center flex-wrap">
                 @if (_brief is not null)
                 {
@@ -280,6 +281,8 @@ else
     private IReadOnlyList<AppUser> _people = [];
     private string _analystId = "";
     private string? _intro;
+    private string? _teamNote;   // the team's opening note as typed
+    private string? _noteChangedBy;   // a colleague who saved the note while this page had unsaved changes to it
     private TlpLevel _introTlp;
     private int _tab;
     private Edition _shown = Edition.Team;   // the edition the preview shows on a narrow screen
@@ -461,6 +464,8 @@ else
         StateHasChanged();
     }
 
+    private bool NoteDirty => _brief is not null && (_teamNote ?? "").Trim() != (_brief.TeamNote ?? "").Trim();
+
     private bool DetailsDirty => _brief is not null && (_analystId != _brief.AnalystId
         || (_intro ?? "").Trim() != (_brief.Intro ?? "").Trim() || _introTlp != _brief.IntroTlp);
 
@@ -487,13 +492,21 @@ else
         var who = LiveChanges.Who(changes);
         var mine = DetailsDirty ? (_analystId, _intro, _introTlp) : ((string, string?, TlpLevel)?)null;
         var theirsBefore = (_brief?.AnalystId, _brief?.Intro, _brief?.IntroTlp);
+        // The team note as typed stays too, and if the colleague changed it as well, ChangedElsewhere says so.
+        var myNote = NoteDirty ? _teamNote : null;
+        var noteBefore = _brief?.TeamNote;
         await Load();
         if (mine is { } m && _brief is not null)
         {
             (_analystId, _intro, _introTlp) = m;
             if ((_brief.AnalystId, _brief.Intro, _brief.IntroTlp) != theirsBefore) _changedBy = who;
         }
-        if (_changedBy is null) Toasts.Show($"{who} updated this brief.");
+        if (myNote is not null && _brief is not null)
+        {
+            _teamNote = myNote;
+            if (_brief.TeamNote != noteBefore) _noteChangedBy = who;
+        }
+        if (_changedBy is null && _noteChangedBy is null) Toasts.Show($"{who} updated this brief.");
         StateHasChanged();
     }
 
@@ -547,7 +560,7 @@ else
     private async Task Load()
     {
         _loading = true;
-        _changedBy = null;
+        (_changedBy, _noteChangedBy) = (null, null);
         _brief = await BriefSvc.GetAsync(_date);
         _follow = Followed();
         _rotaDay = (await Rotation.CalendarAsync(_date, _date)).FirstOrDefault();
@@ -558,6 +571,7 @@ else
             _analystId = _brief.AnalystId;
             _intro = _brief.Intro;
             _introTlp = _brief.IntroTlp;
+            _teamNote = _brief.TeamNote;
             if (_canWrite)
             {
                 _candidates = await BriefSvc.CandidatesAsync(_brief.Id);
@@ -662,6 +676,9 @@ else
         return Run(() => BriefSvc.SetDetailsAsync(_brief!.Id, _analystId, name, _intro, _introTlp), "Saved.");
     }
 
+    private Task SaveTeamNote() => Run(() => BriefSvc.SetTeamNoteAsync(_brief!.Id, _teamNote),
+        string.IsNullOrWhiteSpace(_teamNote) ? "Opening note cleared." : "Opening note saved.");
+
     private async Task Run(Func<Task> action, string? done, Action? then = null)
     {
         _busy = true;
@@ -693,6 +710,7 @@ else
                 }
                 <div class="tide-today-grid">
                     <div>
+                        @TeamNoteCard()
                         <section class="tide-card" aria-labelledby="running-order-h">
                             <h2 id="running-order-h">Running order
                                 <span class="ms-auto small fw-normal tide-muted">@Ordered().Count() article@(_brief.Items.Count == 1 ? "" : "s") &middot; @Count(Classification.Threat) threat@(Count(Classification.Threat) == 1 ? "" : "s") &middot; @Count(Classification.Informational) informational</span></h2>
@@ -755,6 +773,30 @@ else
             <h2 class="tide-both-head" id="@headingId">@Tide.Application.Distribution.BriefRenderer.EditionName(cut.Edition) <TlpBadge Level="cut.Marking" /></h2>
             <p class="tide-both-for">@audience</p>
             <EditionView Edition="cut" Metrics="_metrics" Open="_open" />
+        </section>
+    };
+
+    // The team's opening note (team edition only): written by analysts until the brief is sent, read by everyone else.
+    // Markdown, as an article's longer fields are, so bullets and sub-bullets show on the slide and in the email.
+    private RenderFragment TeamNoteCard() => __builder =>
+    {
+        var editable = _canWrite && _brief!.Status != BriefStatus.Sent;
+        if (!editable && string.IsNullOrWhiteSpace(_brief!.TeamNote)) return;
+        <section class="tide-card" aria-labelledby="team-note-h">
+            <h2 id="team-note-h">Opening note <span class="ms-auto small fw-normal tide-muted">team edition only</span></h2>
+            @if (editable)
+            {
+                <label class="visually-hidden" for="team-note">Opening note</label>
+                <textarea id="team-note" class="form-control tide-autogrow tide-grow-3" rows="3" maxlength="@BriefService.TeamNoteMax" aria-describedby="team-note-help"
+                          placeholder="Key items coming up, recent phishing trends: read at the start of the meeting." @bind="_teamNote" @bind:event="oninput"></textarea>
+                <div class="form-text" id="team-note-help">Markdown works: - bullets, indented two spaces for a sub-bullet, **bold**, _italic_, [text](https://link).
+                    It's on its own slide before the numbers and near the top of the team email, never in the company-wide edition. The next brief starts with it.</div>
+                <button class="btn btn-outline-secondary btn-sm mt-2" disabled="@(_busy || !NoteDirty)" @onclick="SaveTeamNote">Save note</button>
+            }
+            else
+            {
+                <Md Text="@_brief!.TeamNote" />
+            }
         </section>
     };
 
@@ -838,6 +880,7 @@ else
         <div class="tide-today-grid">
             <div>
                 @Queue()
+                @TeamNoteCard()
                 <section class="tide-card" aria-labelledby="todays-brief-h">
                     <h2 id="todays-brief-h">Today's brief <StatusBadge Status="@StatusLabel" />
                         <a class="ms-auto small fw-normal" href="@($"{Ui.BriefUrl(_date)}?tab=preview")">Read it</a></h2>

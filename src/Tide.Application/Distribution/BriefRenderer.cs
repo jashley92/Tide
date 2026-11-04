@@ -131,6 +131,8 @@ public sealed class BriefRenderer(IMarkdownService markdown)
             <tr><td style="padding:10px 24px;background:{Palette.Surface2};font-size:13px;line-height:1.5;color:{Palette.Muted};">This email is {TlpLabel(edition.Marking, 11)} {Esc(Tlp.Meaning(edition.Marking))}</td></tr>
             """);
 
+        // The team's opening note, before the numbers: the team edition only (the edition carries it nowhere else).
+        if (edition.TeamNote is { } note) sb.Append(TeamNoteBlock(note));
         if (edition.Edition == Edition.Team && ctx.Metrics is { Any: true } metrics) sb.Append(MetricsBlock(metrics));
         // Overdue actions, after the numbers: the team edition only, never the company-wide one (ADR 0005).
         if (edition.Edition == Edition.Team && ctx.Open is { Any: true } open) sb.Append(OpenActionsBlock(open, ctx.AppUrl));
@@ -168,6 +170,13 @@ public sealed class BriefRenderer(IMarkdownService markdown)
 
     /// <summary>How the edition's count of articles left out ends, for reading a frozen copy back by article.</summary>
     internal const string WithheldEnd = " briefed to the security team and left out of this edition.";
+
+    /// <summary>The heading of the team's opening note, in the email and the plain copy.</summary>
+    public const string TeamNoteHeading = "Opening note";
+
+    private string TeamNoteBlock(string note) =>
+        $"<tr><td style=\"padding:16px 24px 6px;\"><div style=\"font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:{Palette.Muted};margin-bottom:6px;\">{TeamNoteHeading}</div>" +
+        $"{InlineStyles(markdown.ToHtml(note))}</td></tr>";
 
     private static string MetricsBlock(MetricDay day)
     {
@@ -355,6 +364,8 @@ public sealed class BriefRenderer(IMarkdownService markdown)
         var sb = new StringBuilder();
         sb.Append(Invariant, $"<h1>{Esc(ctx.TeamName)} daily brief: {Esc(DayText(brief.BriefDate))}</h1>\n");
         sb.Append(Invariant, $"<p><strong>{Esc(Tlp.Label(edition.Marking))}</strong> {Esc(Tlp.Meaning(edition.Marking))} Presented by {Esc(brief.AnalystName)}.</p>\n");
+        // An h3, not an h2: an h2 starts an article's section when a correction reads the frozen copy back (SentSections).
+        if (edition.TeamNote is { } note) sb.Append(Invariant, $"<h3>{TeamNoteHeading}</h3>\n").Append(Plain(markdown.ToHtml(note)));
         if (edition.ShowIntro) sb.Append(Plain(markdown.ToHtml(brief.Intro)));
         if (edition.Articles.Count == 0) sb.Append("<p>Nothing in this edition today.</p>\n");
         for (var i = 0; i < edition.Articles.Count; i++)

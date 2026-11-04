@@ -32,6 +32,9 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
     /// <summary>How far back an article is offered for a brief.</summary>
     public const int CandidateDays = 14;
 
+    /// <summary>The longest the team's opening note can be.</summary>
+    public const int TeamNoteMax = 4000;
+
     /// <summary>The newest <paramref name="take"/> briefs, or every one (the archive: a row a day stays small).</summary>
     public async Task<IReadOnlyList<BriefSummary>> ListAsync(int? take = 60, CancellationToken ct = default)
     {
@@ -82,7 +85,11 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         await using (var db = await dbs.CreateAsync(ct))
         {
             var presenter = presenters is null || IsPast(date) ? null : await presenters.PresenterAsync(date, ct);
-            db.Briefs.Add(new Brief { BriefDate = date, AnalystId = presenter?.Id ?? user.UserId, AnalystName = presenter?.Name ?? user.DisplayName });
+            db.Briefs.Add(new Brief
+            {
+                BriefDate = date, AnalystId = presenter?.Id ?? user.UserId, AnalystName = presenter?.Name ?? user.DisplayName,
+                TeamNote = await PreviousTeamNoteAsync(db, date, ct),
+            });
             // Two analysts opening today's brief at once: the date is unique, so the second save fails and reads the first.
             try { await db.SaveChangesAsync(ct); }
             catch (DbUpdateException) { /* read below: someone else's, or the error again if there's none */ }
@@ -204,6 +211,29 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Saves the team's opening note (Markdown; blank clears it). Refused once the brief is sent, as its other content
+    /// is: the note went out in the team email as it was then.
+    /// </summary>
+    public async Task SetTeamNoteAsync(Guid briefId, string? note, CancellationToken ct = default)
+    {
+        RequireWrite();
+        await using var db = await dbs.CreateAsync(ct);
+        var brief = await db.Briefs.FirstOrDefaultAsync(b => b.Id == briefId, ct) ?? throw new KeyNotFoundException("That brief no longer exists.");
+        if (brief.Status == BriefStatus.Sent) throw new InvalidOperationException("This brief has been sent; its opening note is fixed.");
+        var text = ArticleService.CleanOrNull(note, TeamNoteMax, multiline: true);
+        if (text == brief.TeamNote) return;
+        brief.TeamNote = text;
+        Touch(brief);
+        await db.SaveChangesAsync(ct);
+    }
+
+    // The team note a brief for date starts with: the latest earlier brief's, so standing items roll forward. A note
+    // cleared on that brief stays cleared, rather than an older one coming back.
+    private static Task<string?> PreviousTeamNoteAsync(IAppDbContext db, DateOnly date, CancellationToken ct) =>
+        db.Briefs.AsNoTracking().Where(b => b.BriefDate < date).OrderByDescending(b => b.BriefDate)
+            .Select(b => b.TeamNote).FirstOrDefaultAsync(ct);
+
     /// <summary>Marks the brief Ready for the meeting (refused while an article on it isn't ready).</summary>
     public async Task MarkReadyAsync(Guid briefId, bool ready, CancellationToken ct = default)
     {
@@ -291,7 +321,11 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         if (later is null)
         {
             var presenter = presenters is null || IsPast(next) ? null : await presenters.PresenterAsync(next, ct);
-            later = new Brief { BriefDate = next, AnalystId = presenter?.Id ?? user.UserId, AnalystName = presenter?.Name ?? user.DisplayName };
+            later = new Brief
+            {
+                BriefDate = next, AnalystId = presenter?.Id ?? user.UserId, AnalystName = presenter?.Name ?? user.DisplayName,
+                TeamNote = await PreviousTeamNoteAsync(db, next, ct),
+            };
             db.Briefs.Add(later);
         }
         var ordered = later.Items.OrderBy(i => i.SortOrder).ToList();
