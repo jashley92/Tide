@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Articles;
 using Tide.Application.Briefs;
 using Tide.Application.Distribution;
+using Tide.Application.Mitre;
 using Tide.Application.Org;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
@@ -16,7 +17,7 @@ using static Tide.IntegrationTests.ComponentHarness;
 namespace Tide.IntegrationTests;
 
 /// <summary>
-/// The tag row on an article's slide: its ATT&amp;CK tactics in kill-chain order and its scorecard tags by category, each
+/// The "Tags and ATT&amp;CK" section of an article's slide: its scorecard tags by category and its ATT&amp;CK techniques by tactic in kill-chain order, each
 /// edition showing only what that edition's email and web copy show.
 /// </summary>
 public class PresentSlideTagsTests(TideApp app) : IClassFixture<TideApp>
@@ -89,37 +90,44 @@ public class PresentSlideTagsTests(TideApp app) : IClassFixture<TideApp>
         (await r.Html()).Should().Contain($"<h2>{title}</h2>");
     }
 
-    // The slide's tag row, from its start to the bottom line under it.
-    private static string Row(string html)
+    /// <summary>The slide's "Tags and ATT&amp;CK" section, or null when it has none.</summary>
+    internal static string? Section(string html)
     {
-        var at = html.IndexOf("<div class=\"tide-slide-tags\">", StringComparison.Ordinal);
-        at.Should().BePositive("the slide has a tag row");
-        return html[at..html.IndexOf("tide-slide-bluf", at, StringComparison.Ordinal)];
+        var at = html.IndexOf("<section class=\"tide-slide-tagsec\"", StringComparison.Ordinal);
+        return at < 0 ? null : html[at..(html.IndexOf("</section>", at, StringComparison.Ordinal) + 10)];
     }
 
     [Fact]
-    public async Task TheTeamEdition_ShowsTacticsInKillChainOrder_AndScorecardTagsByCategory()
+    public async Task TheTeamEdition_ShowsScorecardTagsByCategory_ThenATTCKByTactic_AtTheBottom_AndNothingUnderTheTitle()
     {
         var s = await Brief(91);
         await using var r = await Open(s.Day);
         await ToArticle(r, s.Tagged);
-        var row = Row(await r.Html());
+        var html = await r.Html();
+        var section = Section(html)!;
+        section.Should().NotBeNull();
+        html.IndexOf("tide-slide-tagsec", StringComparison.Ordinal).Should().BeGreaterThan(html.IndexOf("tide-slide-bluf", StringComparison.Ordinal), "below the bottom line, not under the title");
+        html.Should().NotContain("tide-slide-tags\"").And.NotContain("ATT&amp;CK and CVEs");
+        section.Should().Contain("<span>Tags and ATT&amp;CK</span>");
 
-        Regex.Matches(row, "class=\"tide-slide-tag-name\">([^<]+)<").Select(m => m.Groups[1].Value)
+        // The scorecard tags first: one line, by category in the scorecard's order.
+        var line = section[section.IndexOf("tide-slide-scorecard", StringComparison.Ordinal)..section.IndexOf("</p>", StringComparison.Ordinal)];
+        line.Should().Contain($"<span class=\"tide-slide-scorecard-cat\">Threat types 91:</span> {s.TagNames[0]}, {s.TagNames[1]}")
+            .And.Contain($"<span class=\"tide-slide-scorecard-cat\">Third-party risk 91:</span> {s.TagNames[2]}").And.NotContain("tide-chip", "plain text, no chips");
+        line.IndexOf("Threat types", StringComparison.Ordinal).Should().BeLessThan(line.IndexOf("Third-party", StringComparison.Ordinal));
+        section.IndexOf("tide-slide-scorecard", StringComparison.Ordinal).Should().BeLessThan(section.IndexOf("tide-slide-attack", StringComparison.Ordinal));
+
+        // Then a row per tactic in the matrix's order, its techniques as text after its chip: each technique once.
+        Regex.Matches(section, "class=\"tide-slide-tag-name\">([^<]+)<").Select(m => m.Groups[1].Value)
             .Should().Equal(["Initial Access", "Execution", "Impact"], "tactics in the matrix's order");
-        row.Should().Contain($"style=\"--tac:{Ui.TacticColor(MitreTactic.InitialAccess)}\"").And.Contain(Ui.TacticGlyph(MitreTactic.Impact));
-        row.Should().Contain("title=\"T1190 Exploit Public-Facing Application; T1566.001 Spearphishing Attachment\"", "each tactic's techniques are in its title")
-            .And.Contain("<span class=\"visually-hidden\">: T1190 Exploit Public-Facing Application; T1566.001 Spearphishing Attachment</span>", "and read out")
-            .And.Contain("<span class=\"tide-slide-tag-n\" aria-hidden=\"true\">2</span>", "a tactic with two techniques counts them");
-
-        row.Should().Contain("class=\"tide-slide-tag-cat\" aria-hidden=\"true\">Threat types 91<")
-            .And.Contain("aria-label=\"Scorecard: Third-party risk 91\"", "two categories: grouped by name");
-        foreach (var name in s.TagNames) row.Should().Contain($">{name}</li>");
-        row.IndexOf(s.TagNames[0], StringComparison.Ordinal).Should().BeLessThan(row.IndexOf(s.TagNames[2], StringComparison.Ordinal), "the scorecard's order");
+        section.Should().Contain($"style=\"--tac:{Ui.TacticColor(MitreTactic.InitialAccess)}\"").And.Contain(Ui.TacticGlyph(MitreTactic.Impact));
+        section.Should().Contain("<span class=\"tide-slide-tech\"><span class=\"tide-slide-tech-id\">T1190</span> Exploit Public-Facing Application</span><span class=\"tide-slide-tech-sep\" aria-hidden=\"true\"> · </span><span class=\"tide-slide-tech\"><span class=\"tide-slide-tech-id\">T1566.001</span> Spearphishing Attachment</span>");
+        Regex.Count(html, "T1566\\.001").Should().Be(1, "a technique appears once on the slide");
+        section.Should().NotContain("tide-chip-technique", "the old flat chip list is gone");
     }
 
     [Fact]
-    public async Task TheCompanyWideEdition_ShowsTheTacticsItsCopyLists_AndNoScorecardTags_AsItsEmailAndWebCopyDo()
+    public async Task TheCompanyWideEdition_ShowsTheATTCKItsCopyLists_AndNoScorecardTags_AsItsEmailAndWebCopyDo()
     {
         var s = await Brief(92);
 
@@ -147,33 +155,34 @@ public class PresentSlideTagsTests(TideApp app) : IClassFixture<TideApp>
         await Do(r, p => p.SetEdition(new ChangeEventArgs { Value = nameof(Edition.Public) }));
         await ToArticle(r, s.Tagged);
         var html = await r.Html();
-        var row = Row(html);
-        row.Should().Contain("aria-label=\"ATT&amp;CK tactics\"").And.Contain("Initial Access");
-        row.Should().NotContain("Scorecard").And.NotContain("tide-slide-tag-cat");
+        var section = Section(html)!;
+        section.Should().Contain("<span>ATT&amp;CK</span>", "no scorecard tags: the heading is ATT&CK alone")
+            .And.Contain("aria-label=\"ATT&amp;CK by tactic\"").And.Contain("T1566.001</span> Spearphishing Attachment");
+        section.Should().NotContain("tide-slide-scorecard").And.NotContain("tide-slide-tags-edit", "no editing on the company-wide edition");
         foreach (var name in s.TagNames) html.Should().NotContain(name, "the company-wide slide never widens its edition");
     }
 
     [Fact]
-    public async Task AnArticleWithNoTags_HasNoEmptyRow()
+    public async Task AnArticleWithNoTags_HasNoEmptySection()
     {
         var s = await Brief(93);
         await using var r = await Open(s.Day);
         await ToArticle(r, s.Plain);
-        // An analyst's team edition slide keeps only the button to add some (PresentTagEditTests): no chips, no empty lists.
-        var row = Row(await r.Html());
-        row.Should().NotContain("tide-slide-tactic").And.NotContain("tide-slide-tag-group").And.NotContain("<ul").And.Contain("> Add tags</button>");
+        // An analyst's team edition slide keeps only the heading with the button to add some (PresentTagEditTests).
+        var section = Section(await r.Html())!;
+        section.Should().NotContain("tide-slide-tactic").And.NotContain("tide-slide-scorecard").And.NotContain("<ul").And.Contain("> Add tags</button>");
         await Do(r, p => p.SetEdition(new ChangeEventArgs { Value = nameof(Edition.Public) }));
         await ToArticle(r, s.Plain);
-        (await r.Html()).Should().NotContain("tide-slide-tags");
+        Section(await r.Html()).Should().BeNull("nothing to show, nothing to edit");
     }
 
     [Fact]
-    public void ManyTags_AreCappedToTheRow_TheRestCountedInAMoreChip()
+    public void ATacticsRow_ListsSixTechniques_AndNamesTheRest()
     {
-        var groups = new List<SlideTagGroup> { new("A", ["a1", "a2", "a3", "a4"]), new("B", ["b1", "b2", "b3", "b4"]) };
-        var (shown, left) = SlideTags.Cap(groups);
-        shown.SelectMany(g => g.Tags).Should().Equal("a1", "a2", "a3", "a4", "b1");
-        left.Should().Equal("b2", "b3", "b4");
-        SlideTags.Cap([new("A", ["a1"])]).Left.Should().BeEmpty();
+        var many = AttackCatalog.All.Where(t => t.PrimaryTactic == MitreTactic.InitialAccess).Take(8).ToList();
+        var row = new SlideTactic(MitreTactic.InitialAccess, many);
+        row.Shown.Should().Equal(many.Take(SlideTags.MaxTechniques));
+        row.Left.Should().Equal(many.Skip(SlideTags.MaxTechniques));
+        new SlideTactic(MitreTactic.Impact, many.Take(1).ToList()).Left.Should().BeEmpty();
     }
 }

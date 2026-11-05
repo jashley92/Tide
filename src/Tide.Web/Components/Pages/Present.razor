@@ -273,58 +273,6 @@ else
                             }
                         </div>
                         <h2>@a.Title</h2>
-                        @* Its ATT&CK tactics and scorecard tags, in a row that wraps to two lines at most. Each edition shows what its
-                           email and web copy show (SlideTags): the tactics on both, the scorecard tags on the team edition's only. *@
-                        @{
-                            var tactics = SlideTags.Tactics(a);
-                            var scorecard = SlideTags.ShowsScorecard(_edition) ? SlideTags.Scorecard(a) : [];
-                            var (tagGroups, moreTags) = SlideTags.Cap(scorecard);
-                            var byCategory = scorecard.Count > 1;
-                        }
-                        @if (tactics.Count > 0 || tagGroups.Count > 0 || CanEditTags)
-                        {
-                            <div class="tide-slide-tags">
-                                <div class="tide-slide-tags-chips">
-                                @if (tactics.Count > 0)
-                                {
-                                    <ul class="tide-slide-tactics" aria-label="ATT&CK tactics">
-                                        @foreach (var t in tactics.Take(SlideTags.MaxChips))
-                                        {
-                                            <li @key="t.Tactic" class="tide-chip tide-slide-tactic" style="--tac:@Ui.TacticColor(t.Tactic)" title="@t.Detail">
-                                                <span class="bi @Ui.TacticGlyph(t.Tactic)" aria-hidden="true"></span><span class="tide-slide-tag-name">@t.Name</span>@if (t.Techniques.Count > 1) { <span class="tide-slide-tag-n" aria-hidden="true">@t.Techniques.Count</span> }<span class="visually-hidden">: @t.Detail</span>
-                                            </li>
-                                        }
-                                    </ul>
-                                }
-                                @foreach (var g in tagGroups)
-                                {
-                                    var label = byCategory ? "Scorecard: " + g.Category : "Scorecard tags";
-                                    <div class="tide-slide-tag-group">
-                                        @if (byCategory) { <span class="tide-slide-tag-cat" aria-hidden="true">@g.Category</span> }
-                                        <ul aria-label="@label">
-                                            @foreach (var name in g.Tags) { <li class="tide-chip tide-slide-tag" title="@g.Category">@name</li> }
-                                        </ul>
-                                    </div>
-                                }
-                                </div>
-                                <div class="tide-slide-tags-end">
-                                @if (tactics.Count > SlideTags.MaxChips)
-                                {
-                                    var rest = tactics.Skip(SlideTags.MaxChips).ToList();
-                                    <span class="tide-chip tide-slide-tag-more" title="@string.Join("; ", rest.Select(r => $"{r.Name}: {r.Detail}"))">+@rest.Count more<span class="visually-hidden">: @string.Join("; ", rest.Select(r => $"{r.Name}: {r.Detail}"))</span></span>
-                                }
-                                @if (moreTags.Count > 0)
-                                {
-                                    <span class="tide-chip tide-slide-tag-more" title="@string.Join(", ", moreTags)">+@moreTags.Count more<span class="visually-hidden"> scorecard tags: @string.Join(", ", moreTags)</span></span>
-                                }
-                                @if (CanEditTags)
-                                {
-                                    <button type="button" class="btn btn-sm btn-outline-secondary tide-slide-tags-edit" @ref="_editTagsButton" aria-label="@((tactics.Count + scorecard.Count == 0 ? "Add tags to " : "Edit the tags on ") + a.Title)"
-                                            aria-expanded="@Ui.Aria(_tagEdit == a.Id)" @onclick="() => EditTags(a.Id)"><span class="bi bi-tags" aria-hidden="true"></span> @(tactics.Count + scorecard.Count == 0 ? "Add tags" : "Edit tags")</button>
-                                }
-                                </div>
-                            </div>
-                        }
                         @* What we run that the article is about: the team's (product notes are internal), never the company-wide edition's. *@
                         @if (TeamEdition && _stackOf.GetValueOrDefault(a.Id) is { Count: > 0 } runs)
                         {
@@ -405,17 +353,64 @@ else
                                         <Md Text="@a.RecommendedActions" />
                                     }
                                 }
-                                @if (a.Techniques.Count > 0 || a.Cves.Count > 0)
+                                @* Its scorecard tags, ATT&CK by tactic and CVEs, in one section. Each edition shows what its email and web copy
+                                   show (SlideTags): ATT&CK and CVEs on both, the scorecard tags on the team edition's only. A writer edits
+                                   the tags from the heading, over the slide (PresentTagEditor). *@
+                                @{
+                                    var tactics = SlideTags.Tactics(a);
+                                    var scorecard = SlideTags.ShowsScorecard(_edition) ? SlideTags.Scorecard(a) : [];
+                                }
+                                @if (tactics.Count > 0 || scorecard.Count > 0 || a.Cves.Count > 0 || CanEditTags)
                                 {
-                                    <div class="tide-slide-section">ATT&amp;CK and CVEs</div>
-                                    @foreach (var t in a.Techniques.Select(t => AttackCatalog.Find(t.TechniqueId)).OfType<AttackTechnique>().OrderBy(t => AttackMatrix.TacticRank(t.PrimaryTactic)))
-                                    {
-                                        <span class="tide-chip tide-chip-technique" title="@AttackMatrix.TacticName(t.PrimaryTactic)">@t.Id @t.Name</span>
-                                    }
-                                    @foreach (var c in a.Cves.OrderBy(c => c.CveId))
-                                    {
-                                        <CveChip CveId="@c.CveId" Record="@_cves.GetValueOrDefault(c.CveId)" />
-                                    }
+                                    var heading = scorecard.Count > 0 ? "Tags and ATT&CK" : tactics.Count == 0 && a.Cves.Count > 0 ? "CVEs" : "ATT&CK";
+                                    <section class="tide-slide-tagsec" aria-label="@heading">
+                                        <div class="tide-slide-section tide-slide-tagshead">
+                                            <span>@heading</span>
+                                            @if (CanEditTags)
+                                            {
+                                                var none = tactics.Count + scorecard.Count == 0;
+                                                <button type="button" class="btn btn-sm btn-outline-secondary tide-slide-tags-edit" @ref="_editTagsButton" aria-label="@((none ? "Add tags to " : "Edit the tags on ") + a.Title)"
+                                                        aria-expanded="@Ui.Aria(_tagEdit == a.Id)" @onclick="() => EditTags(a.Id)"><span class="bi bi-tags" aria-hidden="true"></span> @(none ? "Add tags" : "Edit tags")</button>
+                                            }
+                                        </div>
+                                        @if (scorecard.Count > 0)
+                                        {
+                                            <p class="tide-slide-scorecard"><span class="visually-hidden">Scorecard tags: </span>@for (var i = 0; i < scorecard.Count; i++)
+                                            {
+                                                var g = scorecard[i];
+                                                @if (i > 0) { <span class="tide-slide-scorecard-sep" aria-hidden="true"> · </span> }<span class="tide-slide-scorecard-group"><span class="tide-slide-scorecard-cat">@g.Category:</span> @string.Join(", ", g.Tags)</span>
+                                            }</p>
+                                        }
+                                        @if (tactics.Count > 0)
+                                        {
+                                            <ul class="tide-slide-attack" aria-label="ATT&CK by tactic">
+                                                @foreach (var t in tactics)
+                                                {
+                                                    <li @key="t.Tactic">
+                                                        <span class="tide-chip tide-slide-tactic" style="--tac:@Ui.TacticColor(t.Tactic)"><span class="bi @Ui.TacticGlyph(t.Tactic)" aria-hidden="true"></span><span class="tide-slide-tag-name">@t.Name</span><span class="visually-hidden">:</span></span>
+                                                        <span class="tide-slide-techniques">@for (var i = 0; i < t.Shown.Count; i++)
+                                                        {
+                                                            var x = t.Shown[i];
+                                                            @if (i > 0) { <span class="tide-slide-tech-sep" aria-hidden="true"> · </span> }<span class="tide-slide-tech"><span class="tide-slide-tech-id">@x.Id</span> @x.Name</span>
+                                                        }@if (t.Left.Count > 0)
+                                                        {
+                                                            var rest = string.Join("; ", t.Left.Select(x => $"{x.Id} {x.Name}"));
+                                                            <span class="tide-slide-tech-sep" aria-hidden="true"> · </span><span class="tide-slide-tech-more" title="@rest">+@t.Left.Count more<span class="visually-hidden">: @rest</span></span>
+                                                        }</span>
+                                                    </li>
+                                                }
+                                            </ul>
+                                        }
+                                        @if (a.Cves.Count > 0)
+                                        {
+                                            <div class="tide-slide-cves">
+                                                @foreach (var c in a.Cves.OrderBy(c => c.CveId))
+                                                {
+                                                    <CveChip CveId="@c.CveId" Record="@_cves.GetValueOrDefault(c.CveId)" />
+                                                }
+                                            </div>
+                                        }
+                                    </section>
                                 }
                                 @if (ea.Indicators.Count > 0)
                                 {

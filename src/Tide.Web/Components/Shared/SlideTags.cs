@@ -10,27 +10,26 @@ public sealed record SlideTactic(MitreTactic Tactic, IReadOnlyList<AttackTechniq
 {
     public string Name => AttackMatrix.TacticName(Tactic);
 
-    /// <summary>"T1566.001 Spearphishing Attachment; T1190 Exploit Public-Facing Application": the chip's title.</summary>
-    public string Detail => string.Join("; ", Techniques.Select(t => $"{t.Id} {t.Name}"));
+    /// <summary>The techniques its row lists, <see cref="SlideTags.MaxTechniques"/> at most.</summary>
+    public IReadOnlyList<AttackTechnique> Shown => Techniques.Take(SlideTags.MaxTechniques).ToList();
+
+    /// <summary>The rest, named in a "+N more" after them.</summary>
+    public IReadOnlyList<AttackTechnique> Left => Techniques.Skip(SlideTags.MaxTechniques).ToList();
 }
 
 /// <summary>A scorecard category's tags on an article's slide.</summary>
 public sealed record SlideTagGroup(string Category, IReadOnlyList<string> Tags);
 
 /// <summary>
-/// The tag row on an article's slide in present mode: its ATT&amp;CK tactics in kill-chain order, and its board-scorecard
-/// tags by category. What each edition shows follows the brief's own copies (BriefRenderer, EditionArticleView): both
+/// The "Tags and ATT&amp;CK" section of an article's slide in present mode: its board-scorecard tags by category, and its
+/// ATT&amp;CK techniques by tactic in kill-chain order. What each edition shows follows the brief's own copies (BriefRenderer, EditionArticleView): both
 /// editions list the ATT&amp;CK techniques, so both slides show the tactics; neither copy carries scorecard tags, which
 /// are the team's own bookkeeping, so only the team edition's slide shows them (see <see cref="ShowsScorecard"/>).
 /// </summary>
 public static class SlideTags
 {
-    /// <summary>The most tactic chips the row draws; the rest are counted in a "+N more" chip.</summary>
-    public const int MaxChips = 6;
-
-    /// <summary>The most scorecard tags the row draws (their category names take room too); the rest are counted in a
-    /// "+N more" chip. With <see cref="MaxChips"/>, the row keeps to two lines on a slide.</summary>
-    public const int MaxTags = 5;
+    /// <summary>The most techniques a tactic's row lists on a slide; the rest are named in a "+N more".</summary>
+    public const int MaxTechniques = 6;
 
     /// <summary>Whether an edition's slide shows scorecard tags: the team edition's only.</summary>
     public static bool ShowsScorecard(Edition edition) => edition == Edition.Team;
@@ -53,25 +52,6 @@ public static class SlideTags
         .Select(g => new SlideTagGroup(g.First().Category?.Name ?? "Scorecard",
             g.OrderBy(t => t.SortOrder).ThenBy(t => t.Name, StringComparer.OrdinalIgnoreCase).Select(t => t.Name).ToList()))
         .ToList();
-
-    /// <summary>
-    /// The groups cut to <paramref name="max"/> tags in all, so the row stays within its two lines; the names left out
-    /// come back as <c>Left</c>, for a "+N more" chip.
-    /// </summary>
-    public static (IReadOnlyList<SlideTagGroup> Shown, IReadOnlyList<string> Left) Cap(IReadOnlyList<SlideTagGroup> groups, int max = MaxTags)
-    {
-        var shown = new List<SlideTagGroup>();
-        var rest = new List<string>();
-        var left = max;
-        foreach (var g in groups)
-        {
-            var take = Math.Min(left, g.Tags.Count);
-            if (take > 0) shown.Add(g with { Tags = g.Tags.Take(take).ToList() });
-            rest.AddRange(g.Tags.Skip(take));
-            left -= take;
-        }
-        return (shown, rest);
-    }
 
     /// <summary>
     /// Whether <paramref name="changes"/> (heard on the change feed) only changed articles' ATT&amp;CK techniques or

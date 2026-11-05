@@ -766,36 +766,6 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
     .tide-follow .tide-follow-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 }
 
-/* An article slide's ATT&CK tactics (in their matrix colour and icon) and scorecard tags: two lines on a slide, so a
-   long article's bullets keep their place; past six tactics or five tags, a "+N more" chip names the rest in its title. */
-.tide-slide-tags { display: flex; align-items: flex-start; gap: .35em .9em; margin: -.2em 0 .9em; font-size: .95em; line-height: 1.25; }
-/* The chips (capped in number, SlideTags) wrap; the "+N more" chips and Edit tags sit after them. */
-.tide-slide-tags-chips { flex: 0 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .35em .9em; }
-.tide-slide-tags-end { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: .35em; }
-.tide-slide-tags-end:empty { display: none; }
-.tide-slide-tags ul { display: flex; flex-wrap: wrap; gap: .35em; list-style: none; padding: 0; margin: 0; }
-.tide-slide-tag-group { display: flex; flex-wrap: wrap; align-items: center; gap: .35em; min-width: 0; }
-.tide-slide-tag-cat { color: var(--tide-slide-muted); text-transform: uppercase; letter-spacing: .08em; font-size: .72em; font-weight: var(--tide-weight-semibold); }
-.tide-slide .tide-slide-tags .tide-chip { margin: 0; font-size: 1em; padding: .22em .7em; max-width: 20em; white-space: nowrap; }
-.tide-slide-tag-name, .tide-slide .tide-slide-tag { overflow: hidden; text-overflow: ellipsis; }
-.tide-slide .tide-slide-tactic { --tac: var(--tide-slide-muted); background: color-mix(in srgb, var(--tac) 22%, var(--tide-slide-surface)); border: 1px solid color-mix(in srgb, var(--tac) 65%, transparent); gap: .4em; }
-.tide-slide-tactic .bi { color: var(--tac); }
-.tide-slide-tag-n { min-width: 1.4em; padding: 0 .35em; border-radius: var(--tide-radius-pill); background: var(--tide-slide-bg); color: var(--tide-slide-text); font-size: .78em; text-align: center; font-variant-numeric: tabular-nums; }
-.tide-slide .tide-slide-tag { border: 1px solid var(--tide-slide-line-strong); }
-.tide-slide .tide-slide-tag-more { background: transparent; border: 1px dashed var(--tide-slide-line-strong); color: var(--tide-slide-muted); }
-@media (forced-colors: active) { .tide-slide .tide-slide-tactic, .tide-slide .tide-slide-tag { border-color: CanvasText; } }
-.tide-present .tide-slide-tags-edit { font-size: .8em; padding: .15em .7em; border-radius: var(--tide-radius-pill); white-space: nowrap; }
-/* The tag panel over an article's slide (PresentTagEditor): the action panel's frame, in large type, the article
-   editor's tag toggles and technique chips. */
-.tide-present-tagedit .tide-present-action-body { font-size: 1.05em; }
-.tide-present-tagedit-row { display: flex; flex-wrap: wrap; align-items: center; gap: .45em; margin-bottom: .4em; }
-.tide-present-tagedit-row .tide-chip { margin: 0; font-size: .95em; padding: .3em .8em; }
-.tide-present-tagedit-row .tide-chip button { background: none; border: 0; color: inherit; padding: 0 0 0 .2em; }
-.tide-present-tagedit .tide-chip-pick { cursor: pointer; border: 1px solid var(--tide-slide-line-strong); background: transparent; color: var(--tide-slide-text); }
-.tide-present-tagedit .tide-chip-pick.selected { background: var(--tide-slide-accent); border-color: var(--tide-slide-accent); color: var(--tide-slide-on-accent); }
-.tide-present-tagedit-cat { color: var(--tide-slide-muted); font-size: .85em; font-weight: var(--tide-weight-semibold); margin: .6em 0 .3em; }
-.tide-present-tagedit-problem { border: 1px solid var(--tide-slide-warn); border-radius: var(--tide-radius-lg); padding: .6em .9em; margin-bottom: .8em; color: var(--tide-slide-text); }
-.tide-present-tagedit-problem > .bi { color: var(--tide-slide-warn); }
 .tide-hand { display: inline-flex; align-items: center; gap: .3em; color: var(--tide-slide-warn); font-size: .85em; }
 .tide-progress button.hand { box-shadow: 0 -3px 0 var(--tide-slide-warn); }
 .tide-presence-dot.is-away { opacity: .6; }
@@ -1949,3 +1919,32 @@ button.tide-slide-werun-chip:focus-visible { outline: 3px solid var(--tide-slide
 .tide-files-side .tide-file-actions { margin-top: 0; }
 .tide-files-side .tide-file-remove { margin-top: 0; padding: .4rem; background: var(--tide-surface); border: 1px solid var(--tide-border); }
 .tide-files-side .tide-files-removed .tide-file-sub code { font-size: .76rem; }
+
+/* An article slide's "Tags and ATT&CK" section (Present, SlideTags), where "ATT&CK and CVEs" was: the scorecard tags as
+   one quiet line by category, then one row per tactic in kill-chain order (its chip, in the matrix colour and icon, then
+   its techniques as text, wrapping under themselves), then the CVEs. Edit tags sits at the heading's right. */
+.tide-slide-tagshead { display: flex; align-items: center; gap: .8em; }
+.tide-present .tide-slide-tags-edit { margin-left: auto; font-size: 1.15em; letter-spacing: normal; text-transform: none; font-weight: var(--tide-weight-regular); padding: .1em .7em; border-radius: var(--tide-radius-pill); white-space: nowrap; }
+.tide-slide-scorecard { margin: 0 0 .5em; color: var(--tide-slide-muted); font-size: .9em; line-height: 1.45; }
+.tide-slide-scorecard-cat { color: var(--tide-slide-text); font-weight: var(--tide-weight-semibold); }
+.tide-slide-attack { list-style: none; padding: 0; margin: 0 0 .5em; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .4em .7em; align-items: baseline; }
+.tide-slide-attack > li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: baseline; }
+.tide-slide .tide-slide-tactic { --tac: var(--tide-slide-muted); margin: 0; gap: .4em; font-size: .9em; padding: .18em .7em; white-space: nowrap; background: color-mix(in srgb, var(--tac) 22%, var(--tide-slide-surface)); border: 1px solid color-mix(in srgb, var(--tac) 65%, transparent); }
+.tide-slide-tactic .bi { color: var(--tac); }
+.tide-slide-techniques { line-height: 1.45; }
+.tide-slide-tech-id { font-family: var(--tide-font-data); font-size: .92em; color: var(--tide-slide-strong); }
+.tide-slide-tech-sep, .tide-slide-tech-more { color: var(--tide-slide-muted); }
+.tide-slide-cves { margin-top: .2em; }
+@media (max-width: 640px) { .tide-slide-attack { grid-template-columns: minmax(0, 1fr); } .tide-slide-attack > li { grid-template-columns: minmax(0, 1fr); } .tide-slide-tactic { justify-self: start; } }
+@media (forced-colors: active) { .tide-slide .tide-slide-tactic { border-color: CanvasText; } }
+/* The tag panel over an article's slide (PresentTagEditor): the action panel's frame, in large type, the article
+   editor's tag toggles and technique chips. */
+.tide-present-tagedit .tide-present-action-body { font-size: 1.05em; }
+.tide-present-tagedit-row { display: flex; flex-wrap: wrap; align-items: center; gap: .45em; margin-bottom: .4em; }
+.tide-present-tagedit-row .tide-chip { margin: 0; font-size: .95em; padding: .3em .8em; }
+.tide-present-tagedit-row .tide-chip button { background: none; border: 0; color: inherit; padding: 0 0 0 .2em; }
+.tide-present-tagedit .tide-chip-pick { cursor: pointer; border: 1px solid var(--tide-slide-line-strong); background: transparent; color: var(--tide-slide-text); }
+.tide-present-tagedit .tide-chip-pick.selected { background: var(--tide-slide-accent); border-color: var(--tide-slide-accent); color: var(--tide-slide-on-accent); }
+.tide-present-tagedit-cat { color: var(--tide-slide-muted); font-size: .85em; font-weight: var(--tide-weight-semibold); margin: .6em 0 .3em; }
+.tide-present-tagedit-problem { border: 1px solid var(--tide-slide-warn); border-radius: var(--tide-radius-lg); padding: .6em .9em; margin-bottom: .8em; color: var(--tide-slide-text); }
+.tide-present-tagedit-problem > .bi { color: var(--tide-slide-warn); }
