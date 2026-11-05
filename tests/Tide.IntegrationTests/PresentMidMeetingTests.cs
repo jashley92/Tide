@@ -110,7 +110,8 @@ public class PresentMidMeetingTests(MeetingClockApp app) : IClassFixture<Meeting
         await Do(pat, p => p.HandOff(new ChangeEventArgs { Value = Robin.UserId }));
         Meetings.Get(s.Day)!.Should().Match<LiveMeetingView>(v => v.PresenterId == Robin.UserId && v.Product == null && v.Locked);
         (await pat.Html()).Should().NotContain("present-product-title", "the room's card closed with the hand-off, and a lock wouldn't let them close it")
-            .And.Contain("locked by the presenter");
+            .And.Contain("is-held");
+        PresentFollowPillTests.Heard(await pat.Html()).Should().Be("Following Robin Analyst · locked by the presenter");
         await Do(robin, p => p.Follow());
         (await robin.Html()).Should().NotContain("present-product-title");
         EndMeeting(s.Day);

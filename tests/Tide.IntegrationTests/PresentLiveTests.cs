@@ -89,7 +89,8 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
 
         await Do(owner, p => p.JoinIfLive());
         var html = await owner.Html();
-        html.Should().Contain("Following Tester").And.Contain("Raise hand").And.NotContain("End the meeting").And.NotContain("Mark discussed");
+        PresentFollowPillTests.Shown(html).Should().Be("Following Tester");
+        html.Should().Contain("Raise hand").And.NotContain("End the meeting").And.NotContain("Mark discussed");
         Meetings.Get(day)!.People.Select(p => p.Name).Should().Contain(["Tester", "Olive Owner"]);
 
         await FirstArticle(pat);
@@ -100,7 +101,7 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
 
         // Wandering off (to the second article) stops following; the presenter sees where they are and can bring them back.
         await owner.Click(p => p.OnPresentKey("next"));
-        (await owner.Html()).Should().Contain("Back to Tester");
+        PresentFollowPillTests.Shown(await owner.Html()).Should().Be($"Tester is on slide {slide + 1} · Back to Tester");
         await Do(pat, p => p.Follow());
         (await pat.Html()).Should().Contain("Bring everyone here").And.Contain($"Olive Owner (on slide {slide + 2})");
 
@@ -139,7 +140,8 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
         await Do(pat, p => p.ToggleLock());
         (await pat.Html()).Should().Contain("Unlock").And.Contain("aria-pressed=\"true\"");
         await Do(owner, p => p.Follow());
-        (await owner.Html()).Should().Contain("locked by the presenter").And.Contain("disabled aria-label=\"Next slide\"", "the slide buttons are off");
+        PresentFollowPillTests.Heard(await owner.Html()).Should().Be("Following Tester · locked by the presenter");
+        (await owner.Html()).Should().Contain("disabled aria-label=\"Next slide\"", "the slide buttons are off");
 
         await owner.Click(p => p.OnPresentKey("next"));
         Meetings.Get(day)!.People.Single(p => p.Name == "Olive Owner").Slide.Should().Be(0, "held on the presenter's slide");
@@ -152,7 +154,8 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
         await Do(pat, p => p.ToggleLock());
         await Do(owner, p => p.Follow());
         await owner.Click(p => p.OnPresentKey("next"));
-        (await owner.Html()).Should().Contain("aria-label=\"Slide 3 of", "unlocked: free to move").And.Contain("Back to Tester");
+        (await owner.Html()).Should().Contain("aria-label=\"Slide 3 of", "unlocked: free to move").And.Contain("Back to Tester</button>");
+        PresentFollowPillTests.Shown(await owner.Html()).Should().Be("Tester is on slide 2 · Back to Tester");
 
         EndMeeting(day);
     }

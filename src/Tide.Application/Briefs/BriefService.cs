@@ -77,7 +77,7 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
     internal static IQueryable<Brief> Load(IQueryable<Brief> q) => q
         .Include(b => b.Items).ThenInclude(i => i.Article).ThenInclude(a => a!.Bullets)
         .Include(b => b.Items).ThenInclude(i => i.Article).ThenInclude(a => a!.Screenshots).ThenInclude(s => s.File)
-        .Include(b => b.Items).ThenInclude(i => i.Article).ThenInclude(a => a!.Tags).ThenInclude(t => t.Tag)
+        .Include(b => b.Items).ThenInclude(i => i.Article).ThenInclude(a => a!.Tags).ThenInclude(t => t.Tag).ThenInclude(t => t!.Category)
         .Include(b => b.Items).ThenInclude(i => i.Article).ThenInclude(a => a!.Techniques)
         .Include(b => b.Items).ThenInclude(i => i.Article).ThenInclude(a => a!.Indicators)
         .Include(b => b.Items).ThenInclude(i => i.Article).ThenInclude(a => a!.Cves)

@@ -1,0 +1,187 @@
+@* An article's ATT&CK techniques and scorecard tags, edited over its slide in present mode by an analyst, for them alone:
+   the article editor's own controls (the ATT&CK matrix picker, the scorecard tag toggles) and its own save
+   (ArticleService.SaveTagsAsync), so the article page's rules hold. A region like the action opened over a slide:
+   present.js keeps the keys, so Esc cancels and the slide behind doesn't move. *@
+@inject ArticleService ArticleSvc
+@inject Tide.Application.Scorecard.ScorecardService Scorecard
+
+<section class="tide-present-action tide-present-tagedit" aria-labelledby="present-tagedit-title">
+    <div class="tide-present-action-head">
+        <h2 id="present-tagedit-title" tabindex="-1" @ref="_title"><span class="tide-present-product-kicker">Edit tags</span> @Title</h2>
+        <span class="tide-present-help">Only you see this</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" disabled="@_busy" @onclick="Cancel">Cancel</button>
+        <button type="button" class="btn btn-sm btn-primary" disabled="@(_busy || _version is null)" @onclick="Save"><span class="bi bi-check2" aria-hidden="true"></span> Save</button>
+    </div>
+    <div class="tide-present-action-body">
+        @if (_problem is not null)
+        {
+            <div class="tide-present-tagedit-problem" role="alert">
+                <span class="bi bi-exclamation-triangle" aria-hidden="true"></span> @_problem
+                @if (_saved is { } now)
+                {
+                    <div class="tide-present-help mt-1">Saved now: @Describe(now.Tags, now.Techniques). Your choice is kept below: Save again to put it in place of that.</div>
+                }
+            </div>
+        }
+        @if (_version is null && _problem is null)
+        {
+            <div class="tide-present-help">Loading…</div>
+        }
+        else
+        {
+            <div class="tide-slide-section">ATT&amp;CK techniques</div>
+            <div class="tide-present-tagedit-row">
+                @foreach (var id in InMatrixOrder())
+                {
+                    var t = AttackCatalog.Find(id);
+                    <span @key="id" class="tide-chip tide-chip-technique" title="@(t is null ? "Not in the ATT&CK catalog" : string.Join(", ", t.Tactics.Select(AttackMatrix.TacticName)))">
+                        @if (t is not null) { <span class="bi @Ui.TacticGlyph(t.PrimaryTactic)" aria-hidden="true"></span> }@id @t?.Name
+                        <button type="button" aria-label="Remove @id" @onclick="() => _techniques.RemoveAll(x => string.Equals(x, id, StringComparison.OrdinalIgnoreCase))"><span class="bi bi-x" aria-hidden="true"></span></button>
+                    </span>
+                }
+                @if (_techniques.Count == 0) { <span class="tide-present-help">None tagged.</span> }
+                <button type="button" class="btn btn-sm btn-outline-secondary" @ref="_choose" @onclick="() => _picking = true">
+                    <span class="bi bi-diagram-3" aria-hidden="true"></span> @(_techniques.Count == 0 ? "Choose techniques" : "Edit techniques")
+                </button>
+            </div>
+
+            <div class="tide-slide-section">Scorecard tags</div>
+            @foreach (var cat in _categories)
+            {
+                <div class="tide-present-tagedit-cat">@cat.Name</div>
+                <div class="tide-present-tagedit-row" role="group" aria-label="@cat.Name">
+                    @foreach (var tag in cat.Tags)
+                    {
+                        var on = _tags.Contains(tag.Id);
+                        <button type="button" @key="tag.Id" class="tide-chip tide-chip-pick @(on ? "selected" : "")" aria-pressed="@Ui.Aria(on)"
+                                title="@tag.Description" @onclick="() => Toggle(tag.Id)">
+                            @if (on) { <span class="bi bi-check2" aria-hidden="true"></span> }@tag.Name
+                        </button>
+                    }
+                </div>
+            }
+            @foreach (var gone in _tags.Where(id => !_categories.SelectMany(c => c.Tags).Any(t => t.Id == id)))
+            {
+                <span class="tide-chip" title="Retired tag">@(_retired.GetValueOrDefault(gone) ?? "Retired tag") (retired)</span>
+            }
+            @if (_categories.Count == 0) { <div class="tide-present-help">No scorecard categories yet.</div> }
+        }
+    </div>
+</section>
+@if (_picking)
+{
+    <AttackMatrixPicker Current="_techniques" OnApply="Apply" OnCancel="() => _picking = false" />
+}
+
+@code {
+    /// <summary>The article whose tags are edited.</summary>
+    [Parameter, EditorRequired] public Guid ArticleId { get; set; }
+
+    /// <summary>Its title, for the heading.</summary>
+    [Parameter] public string? Title { get; set; }
+
+    /// <summary>Closed: true after a save, false on Cancel.</summary>
+    [Parameter] public EventCallback<bool> OnClose { get; set; }
+
+    private ElementReference _title, _choose;
+    private IReadOnlyList<ScorecardCategory> _categories = [];
+    private Dictionary<Guid, string> _retired = [];
+    private HashSet<Guid> _tags = [];
+    private List<string> _techniques = [];
+    private Guid? _version;
+    private string? _problem;
+    private (IReadOnlyList<string> Tags, IReadOnlyList<string> Techniques)? _saved;
+    private bool _busy, _picking, _focused;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _categories = await Scorecard.ListAsync();
+            var a = await ArticleSvc.GetAsync(ArticleId) ?? throw new KeyNotFoundException("That article no longer exists.");
+            Take(a);
+            _tags = a.Tags.Select(t => t.TagId).ToHashSet();
+            _techniques = a.Techniques.Select(t => t.TechniqueId).ToList();
+        }
+        catch (Exception ex) { _problem = UserFacingError.For(ex); }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focused || _version is null) return;
+        _focused = true;
+        try { await _title.FocusAsync(); }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) { }   // prerendered or a test render: there's no browser to focus in
+    }
+
+    // The article as saved: its version (what a save is checked against) and the names of its retired tags.
+    private void Take(Article a)
+    {
+        _version = a.EditVersion;
+        foreach (var t in a.Tags.Where(t => t.Tag is not null)) _retired[t.TagId] = t.Tag!.Name;
+    }
+
+    private void Toggle(Guid id)
+    {
+        if (!_tags.Remove(id)) _tags.Add(id);
+    }
+
+    private void Apply(IReadOnlyList<string> ids)
+    {
+        _picking = false;
+        _techniques = ids.ToList();
+    }
+
+    private IEnumerable<string> InMatrixOrder() => _techniques
+        .OrderBy(id => AttackCatalog.Find(id) is { } t ? AttackMatrix.TacticRank(t.PrimaryTactic) : int.MaxValue)
+        .ThenBy(id => id, StringComparer.Ordinal);
+
+    private static string Describe(IReadOnlyList<string> tags, IReadOnlyList<string> techniques)
+    {
+        var parts = new List<string>();
+        parts.Add(techniques.Count == 0 ? "no techniques" : string.Join(", ", techniques));
+        parts.Add(tags.Count == 0 ? "no scorecard tags" : string.Join(", ", tags));
+        return string.Join("; ", parts);
+    }
+
+    /// <summary>Saves, through the article editor's save. A save from a copy someone has since changed is refused as on
+    /// the article page: the article's tags as saved now are shown, the choice made here stays, and Save again replaces them.</summary>
+    internal async Task Save()
+    {
+        if (_busy || _version is not { } version) return;
+        _busy = true;
+        try
+        {
+            await ArticleSvc.SaveTagsAsync(ArticleId, version, _tags, _techniques);
+            await OnClose.InvokeAsync(true);
+        }
+        catch (StaleEditException ex)
+        {
+            _problem = ex.Message;
+            if (await ArticleSvc.GetAsync(ArticleId) is { } now)
+            {
+                Take(now);
+                _saved = (now.Tags.Select(t => t.Tag?.Name ?? "Retired tag").ToList(), now.Techniques.Select(t => t.TechniqueId).Order(StringComparer.Ordinal).ToList());
+            }
+        }
+        catch (Exception ex) { _problem = UserFacingError.For(ex); }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+
+    internal Task Cancel() => OnClose.InvokeAsync(false);
+
+    /// <summary>Esc, from present.js: closes the picker if it's open (it takes its own Esc), else cancels.</summary>
+    internal Task Escape() => _picking ? Task.CompletedTask : Cancel();
+
+    /// <summary>For tests: the selection as it stands.</summary>
+    internal void Choose(IEnumerable<Guid> tags, IEnumerable<string> techniques)
+    {
+        (_tags, _techniques) = (tags.ToHashSet(), techniques.ToList());
+        StateHasChanged();
+    }
+}
