@@ -308,8 +308,8 @@ logs parameter values, passwords, email addresses or subjects. Recycle the app p
 
 ## 6. Back up
 
-Back up the database and the data root together. Screenshots are files under `files`, so a database backup alone
-loses them, and `dp-keys` keeps sign-ins and open forms valid after a restore. The database is in the FULL recovery
+Back up the database and the data root together. Screenshots and the files on actions and their comments are files
+under `files`, so a database backup alone loses them, and `dp-keys` keeps sign-ins and open forms valid after a restore. The database is in the FULL recovery
 model, so its transaction log is cleared only by log backups: without them it grows until the disk is full.
 
 **If your organization's backup product backs up SQL Server and file shares**, use it: the database (with log backups)

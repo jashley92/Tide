@@ -99,6 +99,9 @@ public class ActionItem : AuditableEntity
     public List<ActionEvent> Events { get; set; } = [];
     public List<HuntQuery> Hunts { get; set; } = [];
 
+    /// <summary>Files added to the action itself (removed ones included); its comments' files are on the comments.</summary>
+    public List<ActionFile> Files { get; set; } = [];
+
     public bool IsOpen => Status is ActionStatus.Open or ActionStatus.InProgress or ActionStatus.Blocked;
 
     public static bool IsClosedStatus(ActionStatus s) => s is ActionStatus.Done or ActionStatus.Cancelled or ActionStatus.NotApplicable;
@@ -140,6 +143,69 @@ public class ActionCommentFile : Entity
     public long SizeBytes { get; set; }
     public bool IsImage { get; set; }
     public int SortOrder { get; set; }
+
+    /// <summary>What the file is, as whoever works the action describes it (up to <see cref="ActionFile.MaxDescription"/>).</summary>
+    public string? Description { get; set; }
+
+    /// <summary>Why the file can run, or carry something that runs, when opened (judged at upload by its name, the type
+    /// the browser declared and its first bytes); null when it can't, or for a file added before this was recorded (its
+    /// name is judged then).</summary>
+    public string? RiskReason { get; set; }
+}
+
+/// <summary>
+/// A file added to an action itself (not to one of its comments): a log extract, a report, a screenshot, a sample. Its
+/// bytes are a <see cref="StoredFile"/>; its name, size, hash and what was found about its type are copied here to list
+/// it. Removing it hides it from the action but keeps the bytes, the hash and this record, with who removed it, when
+/// and why; an administrator can restore it.
+/// </summary>
+public class ActionFile : Entity
+{
+    public const int MaxDescription = 500;
+    public const int MaxReason = 500;
+
+    /// <summary>The most files an action holds (not counting removed ones, or those on its comments).</summary>
+    public const int MaxPerAction = 100;
+
+    /// <summary>The most added at once.</summary>
+    public const int MaxPerUpload = 10;
+
+    public Guid ActionId { get; set; }
+    public Guid FileId { get; set; }
+    public string FileName { get; set; } = string.Empty;
+    public long SizeBytes { get; set; }
+
+    /// <summary>Lower-case hex SHA-256 of the bytes, as they were received.</summary>
+    public string Sha256 { get; set; } = string.Empty;
+
+    /// <summary>The type the uploader's browser declared, as it was sent (never trusted, only recorded and judged).</summary>
+    public string? DeclaredType { get; set; }
+
+    /// <summary>Whether the bytes are a raster image (PNG, JPEG, GIF or WebP), whatever the name or declared type said.</summary>
+    public bool IsImage { get; set; }
+
+    /// <summary>When the name or declared type said one thing and the bytes another ("Named as a PNG image, but it isn't
+    /// one."); null when they agree.</summary>
+    public string? TypeNote { get; set; }
+
+    /// <summary>Why it can run, or carry something that runs, when opened; null when it can't.</summary>
+    public string? RiskReason { get; set; }
+
+    public string? Description { get; set; }
+
+    public string AddedById { get; set; } = string.Empty;
+    public string AddedByName { get; set; } = string.Empty;
+    public DateTimeOffset AddedAtUtc { get; set; }
+
+    public DateTimeOffset? RemovedAtUtc { get; set; }
+    public string? RemovedById { get; set; }
+    public string? RemovedByName { get; set; }
+    public string? RemovedReason { get; set; }
+
+    public bool IsRemoved => RemovedAtUtc is not null;
+
+    /// <summary>Whether it's shown inline: a real raster image that nothing about suggests it can run.</summary>
+    public bool ShowsInline => IsImage && RiskReason is null && TypeNote is null;
 }
 
 /// <summary>One thing to do on an action's checklist: copied from a playbook's step, or added by hand.</summary>

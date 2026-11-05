@@ -262,6 +262,12 @@ public static class Ui
 
     public static string DownloadUrl(Guid fileId) => $"files/{fileId}/download";
 
+    /// <summary>The file inside a zip with the password "infected".</summary>
+    public static string ZipUrl(Guid fileId) => $"files/{fileId}/zip";
+
+    /// <summary>A SHA-256 as the page shows it at a glance: its first 12 characters and an ellipsis.</summary>
+    public static string ShortHash(string sha256) => sha256.Length <= 12 ? sha256 : sha256[..12] + "…";
+
     /// <summary>A file's size as people read it ("840 KB", "3.2 MB").</summary>
     public static string Size(long bytes) => bytes switch
     {

@@ -1,5 +1,6 @@
 using System.Globalization;
 using Tide.Application.Actions;
+using Tide.Application.Files;
 using Tide.Application.Intake;
 using Tide.Application.Metrics;
 using Tide.Application.Operations;
@@ -54,6 +55,10 @@ public static class OperationalSettings
     /// not every team posts one.</summary>
     public const string RequireSharePoint = "Distribution:RequireSharePoint";
 
+    /// <summary>When an action's file downloads inside a password-protected zip by default (<see cref="Files.ZipDownloads"/>):
+    /// RiskyOnly (the default), Always or Never.</summary>
+    public const string ZipDownloads = "Files:ZipDownloads";
+
     /// <summary>The most addresses told when a brief isn't ready (a larger audience is a distribution list).</summary>
     public const int MaxNudgeRecipients = 50;
 
@@ -94,6 +99,7 @@ public static class OperationalSettings
         [DropFolderPollMinutes] = Number("The drop folder's interval", 1, 60),
         [UpdateIntervalHours] = Number("The update check's interval", 6, 168),
         [RequireSharePoint] = Switch,
+        [ZipDownloads] = ZipMode,
     };
 
     public static IReadOnlyCollection<string> Keys => Rules.Keys;
@@ -191,6 +197,9 @@ public static class OperationalSettings
     internal static void Apply(SavedSettings s, DistributionOptions o) =>
         s.Use(RequireSharePoint, v => o.RequireSharePoint = bool.Parse(v));
 
+    internal static void Apply(SavedSettings s, FileStoreOptions o) =>
+        s.Use(ZipDownloads, v => o.ZipDownloads = Enum.Parse<Files.ZipDownloads>(v));
+
     internal static void Apply(SavedSettings s, UpdateOptions o) =>
         s.Use(UpdateIntervalHours, v => o.CheckIntervalHours = int.Parse(v, Invariant));
 
@@ -218,6 +227,11 @@ public static class OperationalSettings
         !int.TryParse(v, out _) && Enum.TryParse<DayOfWeek>(v, ignoreCase: true, out var d) && Enum.IsDefined(d)
             ? d.ToString()
             : throw new ArgumentException("The digest day is a day of the week, such as Monday.");
+
+    private static string ZipMode(string v) =>
+        !int.TryParse(v, out _) && Enum.TryParse<Files.ZipDownloads>(v, ignoreCase: true, out var mode) && Enum.IsDefined(mode)
+            ? mode.ToString()
+            : throw new ArgumentException("Zipped downloads are RiskyOnly, Always or Never.");
 
     private static string Name(string v) => v.Length is > 0 and <= MaxTeamName
         ? v

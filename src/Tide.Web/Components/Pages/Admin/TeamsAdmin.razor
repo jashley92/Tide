@@ -9,6 +9,7 @@
 @inject OrgClock Clock
 @inject ToastService Toasts
 @inject IJSRuntime JS
+@inject ActionFileService FileSvc
 @using Tide.Application.Settings
 
 <PageTitle>Teams &amp; SLA · TIDE</PageTitle>
@@ -169,6 +170,26 @@
             </div>
             <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveReminders">Save reminders</button>
         </section>
+
+        <section class="tide-card" aria-labelledby="files-title">
+            <h2 id="files-title">Action files</h2>
+            <p class="small tide-muted">Which files on actions and their comments download in a zip with the password <span class="tide-data">infected</span>
+                by default, so a double-click can't run one and antivirus doesn't remove it on arrival. The file as it is stays a second link.
+                A file can run when its name, its declared type or its first bytes say so: programs, scripts, installers, shortcuts, Office files with macros and the like.
+                @FileSvc.LimitsText These limits are set on the server (<span class="tide-data">Files:MaxEvidenceMB</span>, <span class="tide-data">Files:MaxImageMB</span>).</p>
+            <fieldset>
+                <legend class="tide-field-label">Download in a password-protected zip</legend>
+                @foreach (var (mode, text) in ZipChoices)
+                {
+                    var id = "zip-" + mode;
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="zip-mode" id="@id" checked="@(_zip == mode)" @onchange="() => _zip = mode" />
+                        <label class="form-check-label" for="@id">@text</label>
+                    </div>
+                }
+            </fieldset>
+            <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveZip">Save</button>
+        </section>
     </div>
 </div>
 
@@ -185,6 +206,29 @@
     private readonly Dictionary<Priority, int?> _byPriority = [];
     private readonly Dictionary<ActionKind, int?> _byKind = [];
     private ReminderForm _rem = new();
+    private ZipDownloads _zip;
+
+    internal static readonly IReadOnlyList<(ZipDownloads Mode, string Text)> ZipChoices =
+    [
+        (ZipDownloads.RiskyOnly, "Files that can run (the default)"),
+        (ZipDownloads.Always, "Every file"),
+        (ZipDownloads.Never, "Never: every file downloads as it is"),
+    ];
+
+    internal ZipDownloads Zip { get => _zip; set => _zip = value; }
+
+    internal async Task SaveZip()
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await Settings.SaveAsync(new Dictionary<string, string?> { [OperationalSettings.ZipDownloads] = _zip.ToString() });
+            Toasts.Show("Saved.");
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
 
     private static readonly DayOfWeek[] Week =
         [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday];
@@ -220,6 +264,7 @@
         // Before the first await: the page renders as soon as one yields (on SQL Server they do), and the reminder
         // switches read this form.
         _rem = ReminderForm.From(Reminders);
+        _zip = FileSvc.ZipMode;
         _people = await Users.ListAsync();
         var targets = await Sla.GetAsync();
         foreach (var p in Enum.GetValues<Priority>()) _byPriority[p] = targets.ByPriority.TryGetValue(p, out var v) ? v : null;

@@ -170,6 +170,10 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("CommentId")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid>("FileId")
                         .HasColumnType("TEXT");
 
@@ -180,6 +184,10 @@ namespace Tide.Infrastructure.Persistence.Migrations
 
                     b.Property<bool>("IsImage")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("RiskReason")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
 
                     b.Property<long>("SizeBytes")
                         .HasColumnType("INTEGER");
@@ -222,6 +230,87 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.HasIndex("ActionId", "AtUtc");
 
                     b.ToTable("ActionEvents");
+                });
+
+            modelBuilder.Entity("Tide.Domain.Entities.ActionFile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ActionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("AddedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("AddedById")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AddedByName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeclaredType")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("FileId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsImage")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("RemovedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RemovedById")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RemovedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RemovedReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RiskReason")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("TypeNote")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActionId");
+
+                    b.HasIndex("FileId")
+                        .IsUnique();
+
+                    b.ToTable("ActionFiles");
                 });
 
             modelBuilder.Entity("Tide.Domain.Entities.ActionItem", b =>
@@ -2874,6 +2963,21 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Tide.Domain.Entities.ActionFile", b =>
+                {
+                    b.HasOne("Tide.Domain.Entities.ActionItem", null)
+                        .WithMany("Files")
+                        .HasForeignKey("ActionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Tide.Domain.Entities.StoredFile", null)
+                        .WithMany()
+                        .HasForeignKey("FileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Tide.Domain.Entities.ActionItem", b =>
                 {
                     b.HasOne("Tide.Domain.Entities.Article", "Article")
@@ -3261,6 +3365,8 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Navigation("Comments");
 
                     b.Navigation("Events");
+
+                    b.Navigation("Files");
 
                     b.Navigation("Hunts");
                 });

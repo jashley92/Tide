@@ -22,7 +22,7 @@ public static class OpenApi
           "info": {
             "title": "TIDE API",
             "version": "1",
-            "description": "Read briefs, actions, Our stack and metrics; close actions, enter metric values and propose triage items, and push detection rules for Coverage. Sign in with an API token (Authorization: Bearer tide_pat_...) or Windows. A token is held to its scopes and TLP ceiling. Every write is audited under the caller's name (a detection push as one entry with its counts)."
+            "description": "Read briefs, actions (with their files), Our stack and metrics; close actions, enter metric values and propose triage items, and push detection rules for Coverage. Sign in with an API token (Authorization: Bearer tide_pat_...) or Windows. A token is held to its scopes and TLP ceiling. Every write is audited under the caller's name (a detection push as one entry with its counts)."
           },
           "servers": [ { "url": "/api/v1" } ],
           "security": [ { "token": [] }, { "windows": [] } ],
@@ -52,7 +52,27 @@ public static class OpenApi
                   "number": { "type": "integer" }, "title": { "type": "string" }, "kind": { "type": "string" }, "priority": { "type": "string" },
                   "status": { "type": "string" }, "outcome": { "type": ["string", "null"] }, "team": { "type": "string" },
                   "assignee": { "type": ["string", "null"] }, "dueDate": { "type": ["string", "null"], "format": "date" },
-                  "closedDate": { "type": ["string", "null"], "format": "date" }, "articleId": { "type": ["string", "null"], "format": "uuid" }
+                  "closedDate": { "type": ["string", "null"], "format": "date" }, "articleId": { "type": ["string", "null"], "format": "uuid" },
+                  "files": {
+                    "type": ["array", "null"], "items": { "$ref": "#/components/schemas/ActionFile" },
+                    "description": "The action's live files (added to it, and attached to its comments), newest first. Only on /actions/{number}; null in a list."
+                  }
+                }
+              },
+              "ActionFile": {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "string", "format": "uuid" }, "name": { "type": "string" }, "size": { "type": "integer", "description": "Bytes" },
+                  "sha256": { "type": ["string", "null"], "description": "Lower-case hex SHA-256 of the bytes, recorded as they arrived" },
+                  "contentType": { "type": "string", "description": "What its bytes are: an image's type (image/png, image/jpeg, image/gif, image/webp), else application/octet-stream" },
+                  "declaredType": { "type": ["string", "null"], "description": "The type the uploader's browser declared, when recorded (never trusted)" },
+                  "addedBy": { "type": "string" }, "addedAt": { "type": "string", "format": "date-time" },
+                  "description": { "type": ["string", "null"], "maxLength": 500 },
+                  "source": { "type": "string", "enum": ["action", "comment"], "description": "Added to the action, or attached to one of its comments" },
+                  "commentId": { "type": ["string", "null"], "format": "uuid" },
+                  "risky": { "type": "boolean", "description": "It can run, or carry something that runs, by its name, declared type or first bytes" },
+                  "riskReason": { "type": ["string", "null"] },
+                  "downloadUrl": { "type": "string", "description": "Under the API: /actions/{number}/files/{fileId}, with the same scope and ceiling" }
                 }
               },
               "ActionUpdate": {
@@ -90,7 +110,7 @@ public static class OpenApi
             },
             "/actions/{number}": {
               "get": {
-                "summary": "One action, by its number (A-21 is 21); 404 for a token when its article is above the ceiling, as in the list. Scope: actions:read.",
+                "summary": "One action, by its number (A-21 is 21), with its live files; 404 for a token when its article is above the ceiling, as in the list. Scope: actions:read.",
                 "parameters": [ { "name": "number", "in": "path", "required": true, "schema": { "type": "integer" } } ],
                 "responses": { "200": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Action" } } }, "description": "The action" }, "404": { "description": "No such action" } }
               },
@@ -99,6 +119,20 @@ public static class OpenApi
                 "parameters": [ { "name": "number", "in": "path", "required": true, "schema": { "type": "integer" } } ],
                 "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ActionUpdate" } } } },
                 "responses": { "200": { "description": "The action, changed" }, "400": { "description": "A bad status or outcome" }, "404": { "description": "No such action" } }
+              }
+            },
+            "/actions/{number}/files/{fileId}": {
+              "get": {
+                "summary": "Download a live file on the action or one of its comments (fileId is a file's id from the action's files): as it was added, an attachment of type application/octet-stream, or with zip=true inside an AES-256 zip with the password infected. Held to the same scope and ceiling as the action. Scope: actions:read.",
+                "parameters": [
+                  { "name": "number", "in": "path", "required": true, "schema": { "type": "integer" } },
+                  { "name": "fileId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+                  { "name": "zip", "in": "query", "schema": { "type": "boolean" }, "description": "true: in a zip with the password infected" }
+                ],
+                "responses": {
+                  "200": { "description": "The file", "content": { "application/octet-stream": {}, "application/zip": {} } },
+                  "404": { "description": "No such action for the caller, or no such live file on it" }
+                }
               }
             },
             "/stack": {

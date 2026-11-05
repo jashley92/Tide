@@ -2,7 +2,7 @@
 
 <#
 .SYNOPSIS
-    Backs up TIDE as one set: the database, the screenshots (Files:RootPath), the Data Protection key ring and the site's
+    Backs up TIDE as one set: the database, the screenshots and action files (Files:RootPath), the Data Protection key ring and the site's
     appsettings.Production.json.
 
 .DESCRIPTION

@@ -1062,6 +1062,29 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-comment-files { list-style: none; padding: 0; margin: .35rem 0 0; font-size: .86rem; display: flex; flex-direction: column; gap: .2rem; }
 .tide-comment-compose { border-radius: var(--tide-radius-lg); transition: background .1s; }
 .tide-comment-compose.tide-dropping { background: var(--tide-drop); outline: 2px dashed var(--tide-accent); outline-offset: 4px; }
+/* An action's Files: the add box, the list (newest first), each file's notes, hash and downloads, and the removed ones. */
+.tide-file-pick { padding: .5rem; border: 1px dashed var(--tide-border-strong); }
+.tide-file-pick:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
+.tide-file-pending { list-style: none; padding: 0; margin: 0 0 .5rem; display: grid; gap: .5rem; font-size: .86rem; }
+.tide-file-list { list-style: none; padding: 0; margin: .5rem 0 0; }
+.tide-file { padding: .55rem 0; border-bottom: 1px solid var(--tide-border); }
+.tide-file:last-child { border-bottom: 0; }
+.tide-file-head { display: flex; gap: .6rem; align-items: flex-start; }
+.tide-file-main { flex: 1 1 auto; min-width: 0; display: grid; gap: .2rem; }
+.tide-file-icon { font-size: 1.5rem; color: var(--tide-text-muted); line-height: 1; width: 3rem; text-align: center; }
+.tide-file-thumb { width: 3rem; height: 3rem; object-fit: cover; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-md); background: var(--tide-surface-2); }
+.tide-file-name { font-weight: var(--tide-weight-semibold); overflow-wrap: anywhere; }
+.tide-file-desc { font-size: .88rem; white-space: pre-line; overflow-wrap: anywhere; }
+.tide-file-note { color: var(--tide-threat); }
+.tide-file-hash { font-size: .8rem; color: var(--tide-text-muted); }
+.tide-file-hash summary { cursor: pointer; width: fit-content; }
+.tide-file-hash code, .tide-files-removed code { font-family: var(--tide-font-data); color: var(--tide-text); }
+.tide-file-hash-full { display: block; overflow-wrap: anywhere; user-select: all; margin-top: .15rem; }
+.tide-file-actions { display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; margin-top: .15rem; }
+.tide-file-remove { margin-top: .35rem; padding: .5rem; border-radius: var(--tide-radius-lg); background: var(--tide-surface-2); }
+.tide-files-removed { margin-top: .75rem; border-top: 1px solid var(--tide-border); padding-top: .5rem; }
+.tide-files-removed summary { cursor: pointer; font-weight: var(--tide-weight-semibold); font-size: .9rem; }
+.tide-file-count { display: inline-flex; align-items: center; gap: .1rem; font-size: .78rem; color: var(--tide-text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 /* Card rules: a rule's colour as a card's left edge, a label, and a filter chip. */
 .tide-rule-red { --rule: var(--tide-threat); --rule-soft: var(--tide-threat-soft); }
 .tide-rule-amber { --rule: var(--tide-warn); --rule-soft: var(--tide-warn-soft); }
@@ -1081,7 +1104,7 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-meta-grid dt { color: var(--tide-text-muted); font-weight: var(--tide-weight-medium); }
 .tide-meta-grid dd { margin: 0; }
 .tide-timeline { list-style: none; padding: 0; margin: 0; font-size: .86rem; }
-.tide-timeline li { padding: .35rem 0; border-bottom: 1px solid var(--tide-border); }
+.tide-timeline li { padding: .35rem 0; border-bottom: 1px solid var(--tide-border); overflow-wrap: anywhere; }   /* a file's SHA-256 is one long word */
 .tide-timeline li:last-child { border-bottom: 0; }
 .tide-history-changes { list-style: none; padding: 0; margin: var(--tide-space-1) 0 0; }
 .tide-history-changes li { padding: 0; border: 0; overflow-wrap: anywhere; }

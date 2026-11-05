@@ -64,6 +64,11 @@
   `StoredFile`. An upload is accepted only if its bytes are PNG, JPEG, GIF or WebP. The inline endpoint sniffs them
   again before serving. The team gets any screenshot; a Reader gets only an image frozen in a sent company-wide
   edition (ADR 0007).
+- **Files on actions.** The same store holds the files on actions and their comments (see Actions). Every one's
+  SHA-256 is recorded as it arrives (`StoredFile.Sha256`). The download endpoints (`/files/{id}/download`, and
+  `/files/{id}/zip` for the AES-encrypted zip with the password `infected`, in `Security/FileDownloads`) send it as an
+  attachment of type `application/octet-stream`, never cached, with `nosniff` and a sandboxed CSP with nothing allowed.
+  The services check permission per file.
 
 ## TLP and editions
 
@@ -256,6 +261,30 @@ A comment has its own `EditVersion` and `EditedByName`: a save from an edit open
 names who changed it, and the page shows their text over the box while keeping what was typed, so it can be redone on
 top. Opening another comment's edit asks before dropping unsaved changes, and focus returns to the comment's Edit
 button when its edit is saved or cancelled.
+**Files.** Files can be added to an action itself (`ActionFile`, through `ActionFileService`), by pick, drop or paste on
+its page or on the raise form, as well as to its comments (`ActionCommentFile`). The page's Files section lists both
+kinds, newest first, each with where it is (on the action, or on a comment, linking to it), who added it, when, its
+description and its SHA-256. Each upload is judged by `Files/FileRisk` from its name, the type the browser declared
+and its first bytes:
+- *Not shown inline.* An image is shown inline only when its bytes are a raster image and its name and declared type
+  say the same image type. When they disagree, the file's `TypeNote` says how, and it's a download only.
+- *Risky.* A file that can run, or carry something that runs (programs, scripts, installers, shortcuts, disk images,
+  macro-enabled Office files, pages), has a `RiskReason`. It downloads by default inside a zip with the password
+  `infected`, with the plain file as a secondary "Download as is". `Files:ZipDownloads` (`RiskyOnly`, the default;
+  `Always`; `Never`) changes that. It's an operational setting, set under Administration › Teams & SLA, and it travels
+  in the configuration bundle. A comment's file added before this was recorded is judged by its name.
+
+Size limits are the comments' own: `Files:MaxImageMB` for an image and `Files:MaxEvidenceMB` for any other file. Whoever
+can work the action (`ActionService.CanWork`) adds files and edits any file's description (500 characters). The person
+who added a file, an analyst or an administrator removes it, with a required reason. Removing hides the file but keeps
+its bytes, hash and row, with who removed it, when and why. An administrator sees removed files and can restore them. A
+comment's files go only with their comment, as before. Anyone who reads actions downloads a live file. Every change is
+an `ActionEvent` (the history names the hash) and an audit row (the `ActionFile` row holds the hash). The lists, the
+board and the brief's action rows show a paperclip with the live files counted, from one grouped query
+(`ActionFileService.CountsAsync`). An `ActionFile` row publishes the action's topic and `ChangeFeed.Actions`, so an open
+page and the lists update. The API's `/actions/{number}` lists the live files, and each downloads from
+`/actions/{number}/files/{fileId}` with the same scope (`actions:read`) and ceiling.
+
 Each change also writes an `ActionEvent`, the readable history on the action. One raised for a past day's brief
 records that day (`RaisedOn`), which reports count it on; its SLA runs from when it was recorded. A new action's due date comes from
 `SlaSettings` (business days per priority, per-kind overrides), and `ActionSla` reads where an action stands. An action
@@ -431,7 +460,8 @@ Bootstrap 5.3 (self-hosted) is retinted through `--tide-*` tokens defined for li
 - `theme.js`: the theme, sidebar and letter-shortcut state (single-letter shortcuts can be turned off, WCAG 2.1.4;
   the state is on `<html>`, set before paint by `theme-init.js`). The theme and shortcut switches are in the account
   menu (`ProfileMenu`), which calls `tideTheme` and `tideShortcuts`.
-- `paste-drop.js`: hands pasted or dropped images to a hidden `InputFile`.
+- `paste-drop.js`: hands pasted or dropped images and files to a hidden `InputFile`. A paste goes to the zone holding
+  the focus (an action's Files box), otherwise to the page's main zone.
 - `present.js`: keyboard navigation and full screen.
 - `clipboard.js`: copies the SharePoint view as rich HTML.
 - `triage.js`: the triage inbox's keyboard actions.

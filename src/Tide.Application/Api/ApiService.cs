@@ -27,8 +27,18 @@ public sealed record ApiArticle(Guid Id, string Title, string Tlp, string Markin
 public sealed record ApiBrief(DateOnly Day, string Status, string Ceiling, string Marking, string? Intro, IReadOnlyList<ApiArticle> Articles, int WithheldArticles,
     string? FinishedAs = null);
 
+/// <summary>An action as the API gives it. <see cref="Files"/> lists its live files (on it and on its comments) when one
+/// action is asked for; null in a list.</summary>
 public sealed record ApiAction(int Number, string Title, string Kind, string Priority, string Status, string? Outcome, string Team, string? Assignee,
-    DateOnly? DueDate, DateOnly? ClosedDate, Guid? ArticleId);
+    DateOnly? DueDate, DateOnly? ClosedDate, Guid? ArticleId, IReadOnlyList<ApiFile>? Files = null);
+
+/// <summary>A file on an action, as the API lists it. <see cref="Source"/> is "action" (added to the action) or "comment"
+/// (attached to one of its comments, <see cref="CommentId"/>). <see cref="ContentType"/> is what its bytes are (an image's
+/// type, else application/octet-stream); <see cref="DeclaredType"/> what the uploader's browser said, when recorded.
+/// <see cref="Risky"/> says it can run, or carry something that runs (<see cref="RiskReason"/> why). <see cref="DownloadUrl"/>
+/// is under the API, held to the same scope and ceiling.</summary>
+public sealed record ApiFile(Guid Id, string Name, long Size, string? Sha256, string ContentType, string? DeclaredType, string AddedBy,
+    DateTimeOffset AddedAt, string? Description, string Source, Guid? CommentId, bool Risky, string? RiskReason, string DownloadUrl);
 
 public sealed record ApiProduct(Guid Id, string Name, string? OtherNames, string? Versions, string? Notes, string? Team, int Articles, int OpenActions);
 
@@ -57,7 +67,7 @@ public sealed record ApiDetectionRule(string? Id, string? Name, IReadOnlyList<st
 /// article out with its actions. A person (no token ceiling) sees the actions the Actions page shows them.
 /// </summary>
 public sealed class ApiService(IAppDbContextFactory dbs, ICurrentUser user, DistributionSettings editions, ActionService actions, StackService stack,
-    MetricsService metrics, IntakeService intake)
+    MetricsService metrics, IntakeService intake, ActionFileService files)
 {
     public async Task<ApiBrief?> BriefAsync(DateOnly day, TlpLevel? callerCeiling, CancellationToken ct = default)
     {
@@ -90,12 +100,28 @@ public sealed class ApiService(IAppDbContextFactory dbs, ICurrentUser user, Dist
         return rows.Where(r => r.ArticleId is not { } a || !withheld.Contains(a)).Select(Action).ToList();
     }
 
-    /// <summary>The action, or null when there's none or it was raised from an article above the caller's ceiling.</summary>
-    public async Task<ApiAction?> ActionAsync(int number, TlpLevel? callerCeiling, CancellationToken ct = default) =>
-        await VisibleAsync(number, callerCeiling, ct) is { } d ? Action(d.Action) : null;
+    /// <summary>The action with its live files, or null when there's none or it was raised from an article above the
+    /// caller's ceiling. Each file's download address is under <paramref name="apiBase"/> (the API's own address, with the
+    /// app's path base).</summary>
+    public async Task<ApiAction?> ActionAsync(int number, TlpLevel? callerCeiling, string apiBase = "/api/v1", CancellationToken ct = default) =>
+        await VisibleAsync(number, callerCeiling, ct) is { } d
+            ? Action(d.Action) with { Files = d.Files.Live.Select(f => File(d.Action.Number, f, apiBase)).ToList() }
+            : null;
+
+    private static ApiFile File(int number, ActionFileRow f, string apiBase) => new(f.FileId, f.FileName, f.SizeBytes, f.Sha256,
+        f.ContentType ?? "application/octet-stream", f.DeclaredType, f.AddedByName, f.AddedAtUtc, f.Description, f.Source, f.CommentId,
+        f.RiskReason is not null, f.RiskReason, $"{apiBase.TrimEnd('/')}/actions/{number}/files/{f.FileId}");
+
+    /// <summary>A live file on the action, opened to download; null when the action isn't there for the caller (as
+    /// <see cref="ActionAsync"/>) or the file isn't on it.</summary>
+    public async Task<FileDownload?> OpenFileAsync(int number, Guid fileId, TlpLevel? callerCeiling, CancellationToken ct = default) =>
+        await VisibleAsync(number, callerCeiling, ct) is { } d && d.Files.Live.Any(f => f.FileId == fileId)
+            ? await files.OpenAsync(fileId, d.Action.Id, ct)
+            : null;
 
     /// <summary>Changes an action's status (an outcome is needed to close it Done), noting why. Nothing else about it changes.</summary>
-    public async Task<ApiAction?> UpdateActionAsync(int number, ApiActionUpdate update, TlpLevel? callerCeiling, CancellationToken ct = default)
+    public async Task<ApiAction?> UpdateActionAsync(int number, ApiActionUpdate update, TlpLevel? callerCeiling, string apiBase = "/api/v1",
+        CancellationToken ct = default)
     {
         if (await VisibleAsync(number, callerCeiling, ct) is not { } d) return null;
         if (!EnumNames.TryParse<ActionStatus>(update.Status, out var status, ignoreCase: true))
@@ -106,7 +132,7 @@ public sealed class ApiService(IAppDbContextFactory dbs, ICurrentUser user, Dist
         var note = string.IsNullOrWhiteSpace(update.Note) ? null : update.Note.Trim();
         if (note is { Length: > 2000 }) throw new ArgumentException("A note is at most 2,000 characters.");
         await actions.SetStatusAsync(d.Action.Id, status, outcome, note, ct);
-        return await ActionAsync(number, callerCeiling, ct);
+        return await ActionAsync(number, callerCeiling, apiBase, ct);
     }
 
     private async Task<ActionDetail?> VisibleAsync(int number, TlpLevel? callerCeiling, CancellationToken ct)

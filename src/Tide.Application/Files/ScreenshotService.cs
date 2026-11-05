@@ -19,10 +19,15 @@ public sealed class FileStoreOptions
 
     /// <summary>The largest evidence file (any kind, attached to an action's comment) accepted, in megabytes.</summary>
     public int MaxEvidenceMB { get; set; } = 25;
+
+    /// <summary>When an action's file downloads inside a zip with the password "infected" by default; set in the app
+    /// (Administration › Teams &amp; SLA), saved over this.</summary>
+    public ZipDownloads ZipDownloads { get; set; } = ZipDownloads.RiskyOnly;
 }
 
-/// <summary>A screenshot as it arrives from the browser (pasted, dropped or picked).</summary>
-public sealed record ScreenshotUpload(string FileName, byte[] Bytes);
+/// <summary>A screenshot or file as it arrives from the browser (pasted, dropped or picked), with the type the browser
+/// declared for it when known (only recorded and judged, never trusted).</summary>
+public sealed record ScreenshotUpload(string FileName, byte[] Bytes, string? DeclaredType = null);
 
 /// <summary>Screenshots on articles: stored as files on disk, checked to be real raster images, shown inline.</summary>
 public sealed class ScreenshotService(IAppDbContextFactory dbs, ICurrentUser user, IFileStore store, IOptions<FileStoreOptions> options)
@@ -194,6 +199,7 @@ public sealed class ScreenshotService(IAppDbContextFactory dbs, ICurrentUser use
         if (!user.Has(Permission.WorkActions) && !user.Has(Permission.WriteArticles)) throw new ForbiddenException("You can't add evidence to actions.");
         await using var db = await dbs.CreateAsync(ct);
         if (await db.HuntQueries.AnyAsync(h => h.EvidenceFileId == fileId, ct) || await db.ActionCommentFiles.AnyAsync(f => f.FileId == fileId, ct)
+            || await db.ActionFiles.AnyAsync(f => f.FileId == fileId, ct)
             || await db.ArticleScreenshots.AnyAsync(s => s.FileId == fileId, ct)
             || await db.BriefSendImages.AnyAsync(i => i.FileId == fileId || i.SourceFileId == fileId, ct))
             return;
@@ -295,6 +301,9 @@ public sealed class ScreenshotService(IAppDbContextFactory dbs, ICurrentUser use
         {
             if (await db.HuntQueries.AnyAsync(h => h.EvidenceFileId == fileId, ct)) return true;
             if (await db.ActionCommentFiles.AnyAsync(f => f.FileId == fileId && f.IsImage, ct)) return true;
+            // An action's own file, only while it's on the action and is a real image, named and sent as one, that can't run.
+            if (await db.ActionFiles.AnyAsync(f => f.FileId == fileId && f.RemovedAtUtc == null && f.IsImage && f.TypeNote == null && f.RiskReason == null, ct))
+                return true;
             if (!team) return false;
             return await db.ArticleScreenshots.AnyAsync(s => s.FileId == fileId, ct)
                    || await db.BriefSendImages.AnyAsync(i => i.FileId == fileId, ct);
@@ -319,7 +328,7 @@ public sealed class ScreenshotService(IAppDbContextFactory dbs, ICurrentUser use
     // server's own, so on Linux "C:\Windows\evil.exe" would keep its folders.
     private static string LastSegment(string? name) => name is null ? "" : name[(name.LastIndexOfAny(['/', '\\']) + 1)..];
 
-    private static string EvidenceName(string? name)
+    internal static string EvidenceName(string? name)
     {
         var file = LastSegment(name);
         var clean = new string(file.Where(c => char.IsLetterOrDigit(c) || c is '-' or '_' or ' ' or '.').ToArray()).Trim(' ', '.');

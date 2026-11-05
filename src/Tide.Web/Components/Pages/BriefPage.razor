@@ -1005,7 +1005,7 @@ else
                     <div class="tide-queue-row @_actionMarks?.Css(r.Id)" @key="r.Id">
                         <a class="tide-action-num" href="@Ui.ActionUrl(r.Number)">@Ui.ActionLabel(r.Number)</a>
                         <span class="tide-queue-title">
-                            @r.Title
+                            @r.Title <FileCount Count="r.Files" />
                             <span class="tide-queue-meta">
                                 @ActionService.KindName(r.Kind) &middot; @r.TeamName &middot; @(r.AssigneeId is null ? "Unassigned" : "Yours")
                                 @if (ActionSla.LateText(r.DueDate, ActionSvc.Today) is { } late)
@@ -1047,7 +1047,7 @@ else
                 {
                     <div class="d-flex gap-2 align-items-start py-1 border-bottom small @_actionMarks?.Css(r.Id)" @key="r.Id">
                         <a class="tide-action-num" href="@Ui.ActionUrl(r.Number)">@Ui.ActionLabel(r.Number)</a>
-                        <span class="flex-grow-1">@r.Title</span>
+                        <span class="flex-grow-1">@r.Title <FileCount Count="r.Files" /></span>
                         <SlaBadge State="r.Sla(ActionSvc.Today, Clock.Days)" Due="r.DueDate" Today="ActionSvc.Today" />
                     </div>
                 }
@@ -1076,7 +1076,7 @@ else
                     {
                         <div class="d-flex gap-2 align-items-start py-1 border-bottom small @_actionMarks?.Css(r.Id)" @key="r.Id">
                             <a class="tide-action-num" href="@Ui.ActionUrl(r.Number)">@Ui.ActionLabel(r.Number)</a>
-                            <span class="flex-grow-1">@r.Title</span>
+                            <span class="flex-grow-1">@r.Title <FileCount Count="r.Files" /></span>
                             <SlaBadge State="r.Sla(ActionSvc.Today, Clock.Days)" Due="r.DueDate" Today="ActionSvc.Today" />
                         </div>
                     }
@@ -1088,7 +1088,7 @@ else
                     {
                         <div class="tide-queue-row @_actionMarks?.Css(r.Id)" @key="r.Id">
                             <a class="tide-action-num" href="@Ui.ActionUrl(r.Number)">@Ui.ActionLabel(r.Number)</a>
-                            <span class="tide-queue-title">@r.Title
+                            <span class="tide-queue-title">@r.Title <FileCount Count="r.Files" />
                                 <span class="tide-queue-meta">@ActionService.KindName(r.Kind) &middot; @r.TeamName
                                     @if (ActionSla.LateText(r.DueDate, ActionSvc.Today) is { } late) { <span>&middot; <span class="tide-queue-late">@late</span></span> }
                                 </span>

@@ -50,6 +50,7 @@ public interface IAppDbContext : IAsyncDisposable, IDisposable
     DbSet<ActionComment> ActionComments { get; }
     DbSet<ActionEvent> ActionEvents { get; }
     DbSet<ActionCommentFile> ActionCommentFiles { get; }
+    DbSet<ActionFile> ActionFiles { get; }
     DbSet<ActionChecklistItem> ActionChecklistItems { get; }
     DbSet<Playbook> Playbooks { get; }
     DbSet<PlaybookStep> PlaybookSteps { get; }

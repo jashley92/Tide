@@ -5,12 +5,20 @@
 // Registration is idempotent and supports several zones (paste goes to the one that's visible).
 window.tidePasteDrop = (function () {
     let attached = false;
-    const zones = []; // { zoneId, pasteInputId, dropInputId|null, anyFile }
+    const zones = []; // { zoneId, pasteInputId, dropInputId|null, anyFile, focusOnly }
 
     // A zone takes part only while its wrapper element is in the DOM and visible, so paste goes to the editor on
-    // screen and the listeners stay registered harmlessly across pages. Visible is "has a box".
-    function visibleZone() {
+    // screen and the listeners stay registered harmlessly across pages. Visible is "has a box". A paste goes first to
+    // the zone holding the focus (an action's Files box, say); otherwise to the first visible zone that takes a paste
+    // from anywhere on the page (a focus-only zone takes one only while it has the focus).
+    function visibleZone(target) {
+        const focused = document.activeElement;
         for (const z of zones) {
+            const el = document.getElementById(z.zoneId);
+            if (el && el.getClientRects().length > 0 && ((focused && el.contains(focused)) || (target && el.contains(target)))) return { z, el };
+        }
+        for (const z of zones) {
+            if (z.focusOnly) continue;
             const el = document.getElementById(z.zoneId);
             if (el && el.getClientRects().length > 0) return { z, el };
         }
@@ -86,7 +94,7 @@ window.tidePasteDrop = (function () {
     }
 
     function onPaste(e) {
-        const v = visibleZone();
+        const v = visibleZone(e.target);
         if (!v) return;
         if (isTextField(e.target) && carriesText(e.clipboardData)) return;
         const items = e.clipboardData && e.clipboardData.items;
@@ -128,10 +136,14 @@ window.tidePasteDrop = (function () {
     return {
         // pasteInputId: hidden InputFile that receives a pasted image. dropInputId: hidden InputFile that
         // receives dropped files (pass null to disable drop for this zone). anyFile: a pasted file that
-        // isn't an image is taken too.
-        register: function (zoneId, pasteInputId, dropInputId, anyFile) {
-            if (!zones.some(z => z.zoneId === zoneId)) {
-                zones.push({ zoneId, pasteInputId, dropInputId: dropInputId || null, anyFile: !!anyFile });
+        // isn't an image is taken too. focusOnly: the zone takes a paste only while it, or something in it, has the focus.
+        register: function (zoneId, pasteInputId, dropInputId, anyFile, focusOnly) {
+            const existing = zones.find(z => z.zoneId === zoneId);
+            if (existing) {
+                // The same zone drawn again (another action's page): its inputs are the same, and so is how it takes a paste.
+                existing.focusOnly = !!focusOnly;
+            } else {
+                zones.push({ zoneId, pasteInputId, dropInputId: dropInputId || null, anyFile: !!anyFile, focusOnly: !!focusOnly });
             }
             if (!attached) {
                 document.addEventListener('paste', onPaste, true);

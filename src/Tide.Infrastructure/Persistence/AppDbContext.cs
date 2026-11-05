@@ -57,6 +57,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<ActionComment> ActionComments => Set<ActionComment>();
     public DbSet<ActionEvent> ActionEvents => Set<ActionEvent>();
     public DbSet<ActionCommentFile> ActionCommentFiles => Set<ActionCommentFile>();
+    public DbSet<ActionFile> ActionFiles => Set<ActionFile>();
     public DbSet<ActionChecklistItem> ActionChecklistItems => Set<ActionChecklistItem>();
     public DbSet<Playbook> Playbooks => Set<Playbook>();
     public DbSet<PlaybookStep> PlaybookSteps => Set<PlaybookStep>();
@@ -473,6 +474,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasMany(x => x.Events).WithOne().HasForeignKey(x => x.ActionId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Hunts).WithOne().HasForeignKey(x => x.ActionId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Checklist).WithOne().HasForeignKey(x => x.ActionId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.Files).WithOne().HasForeignKey(x => x.ActionId).OnDelete(DeleteBehavior.Cascade);
             e.Property(x => x.PlaybookName).HasMaxLength(100);
             e.HasOne<Playbook>().WithMany().HasForeignKey(x => x.PlaybookId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => new { x.Status, x.DueDate });
@@ -496,9 +498,27 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         b.Entity<ActionCommentFile>(e =>
         {
             e.Property(x => x.FileName).HasMaxLength(200);
+            e.Property(x => x.Description).HasMaxLength(ActionFile.MaxDescription);
+            e.Property(x => x.RiskReason).HasMaxLength(200);
             e.HasOne<StoredFile>().WithMany().HasForeignKey(x => x.FileId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => x.CommentId);
             e.HasIndex(x => x.FileId);
+        });
+
+        b.Entity<ActionFile>(e =>
+        {
+            e.Property(x => x.FileName).HasMaxLength(200);
+            e.Property(x => x.Sha256).HasMaxLength(64);
+            e.Property(x => x.DeclaredType).HasMaxLength(100);
+            e.Property(x => x.TypeNote).HasMaxLength(200);
+            e.Property(x => x.RiskReason).HasMaxLength(200);
+            e.Property(x => x.Description).HasMaxLength(ActionFile.MaxDescription);
+            Person(e, x => x.AddedById, x => x.AddedByName);
+            Person(e, x => x.RemovedById, x => x.RemovedByName);
+            e.Property(x => x.RemovedReason).HasMaxLength(ActionFile.MaxReason);
+            e.HasOne<StoredFile>().WithMany().HasForeignKey(x => x.FileId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.ActionId);
+            e.HasIndex(x => x.FileId).IsUnique();
         });
 
         b.Entity<ActionChecklistItem>(e =>

@@ -495,7 +495,11 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public Tide.Application.Adversaries.AdversaryService Adversaries() => new(this, User, Clock, Http);
 
-    public Tide.Application.Api.ApiService Api() => new(this, User, Settings(), Actions(), Stack(), Metrics(), Intake());
+    public Tide.Application.Api.ApiService Api() => new(this, User, Settings(), Actions(), Stack(), Metrics(), Intake(), ActionFiles());
+
+    /// <summary>The files on actions, with the limits the comments use (1 MB for an image, 25 MB for any file) and the zip setting given.</summary>
+    public ActionFileService ActionFiles(ZipDownloads zip = ZipDownloads.RiskyOnly) =>
+        new(this, User, Store, new StaticOptionsMonitor<FileStoreOptions>(new FileStoreOptions { MaxImageMB = 1, MaxEvidenceMB = 2, ZipDownloads = zip }));
 
     public ReadingService Reading(IntakeOptions? options = null, TimeProvider? time = null) =>
         new(this, User, Http, new StaticOptionsMonitor<IntakeOptions>(options ?? new IntakeOptions()), time ?? TimeProvider.System);
