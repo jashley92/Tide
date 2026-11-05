@@ -143,6 +143,8 @@ public static class HistoryFormatter
         [nameof(Brief.MeetingNotes)] = "Meeting notes",
         [nameof(Brief.MeetingHeldAtUtc)] = "Meeting held",
         [nameof(Brief.PresentedAtUtc)] = "Meeting ended",
+        [nameof(Brief.NotSentByName)] = "Finished as not sent by",
+        [nameof(Brief.NotSentReason)] = "Why it wasn't sent",
     };
 
     // The order fields are listed in: the editor's, then any other by name.

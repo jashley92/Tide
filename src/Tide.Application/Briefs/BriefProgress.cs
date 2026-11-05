@@ -69,14 +69,15 @@ public static class BriefSteps
     /// (Attention) or is still with the relay; one left "sending" past the in-flight time may have gone. An edition in
     /// <paramref name="nothingToSend"/> (every article above its ceiling) can't go, so it isn't waited for. Before any
     /// real send, "Test sent" once a test copy went, else "2 editions". A brief marked distributed without email is
-    /// "Distributed". Where <paramref name="sharePointRequired"/>, a sent brief whose SharePoint copy isn't confirmed
+    /// "Distributed", and one finished without sending while email was on "Not sent". Where <paramref name="sharePointRequired"/>, a sent brief whose SharePoint copy isn't confirmed
     /// posted is still to do ("Sent · SharePoint to post").
     /// </summary>
     public static BriefStep Send(Brief brief, IReadOnlyList<BriefSend>? sends, IReadOnlyCollection<Edition>? nothingToSend = null,
         bool sharePointRequired = false)
     {
-        // Marked distributed without email, then emailed after all once email came back on: that's sent.
-        var done = brief.DistributedAtUtc is not null && sends?.Any(s => !s.IsTest && s.Status == SendStatus.Sent) != true ? "Distributed" : "Sent";
+        // Marked distributed without email, or finished as not sent, then emailed after all: that's sent.
+        var emailed = sends?.Any(s => !s.IsTest && s.Status == SendStatus.Sent) == true;
+        var done = emailed ? "Sent" : brief.NotSentAtUtc is not null ? "Not sent" : brief.DistributedAtUtc is not null ? "Distributed" : "Sent";
         if (sends is null)
             return brief.Status == BriefStatus.Sent
                 ? Finished(brief, done, sharePointRequired)
@@ -110,11 +111,13 @@ public static class BriefSteps
     public static bool SharePointDue(Brief brief, bool sharePointRequired) =>
         sharePointRequired && brief.SharePointRequired && brief.Status == BriefStatus.Sent && brief.SharePointPostedAtUtc is null;
 
-    /// <summary>A brief's status as people read it: "Distributed" for one finished without email, and "SharePoint to
-    /// post" for one gone out whose SharePoint copy is required (now, and when it went out) and not confirmed yet.</summary>
-    public static string StatusLabel(BriefStatus status, bool distributed, bool sharePointPosted, bool sharePointRequired) => status switch
+    /// <summary>A brief's status as people read it: "Distributed" for one finished without email, "Not sent" for one
+    /// finished without sending while email was on (and not emailed since), and "SharePoint to post" for one gone out
+    /// whose SharePoint copy is required (now, and when it went out) and not confirmed yet.</summary>
+    public static string StatusLabel(BriefStatus status, bool distributed, bool sharePointPosted, bool sharePointRequired, bool notSent = false) => status switch
     {
         BriefStatus.Sent when sharePointRequired && !sharePointPosted => "SharePoint to post",
+        BriefStatus.Sent when notSent => "Not sent",
         BriefStatus.Sent when distributed => "Distributed",
         _ => status.ToString(),
     };

@@ -1098,6 +1098,21 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<DateTimeOffset?>("NotSentAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("NotSentById")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("NotSentByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("NotSentReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<DateTimeOffset?>("PresentedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -1228,15 +1243,23 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<Guid>("BriefId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("CarriedFromBriefId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<bool>("Discussed")
                         .HasColumnType("bit");
 
                     b.Property<int>("SortOrder")
                         .HasColumnType("int");
 
+                    b.Property<int?>("StatusBeforeMeeting")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ArticleId");
+
+                    b.HasIndex("CarriedFromBriefId");
 
                     b.HasIndex("BriefId", "ArticleId")
                         .IsUnique();

@@ -147,7 +147,11 @@ confirms (`SendPlan`: marking, subject, recipients, and a fingerprint of the ren
 of that changed since. A real send freezes a `BriefSend` (email HTML, a semantic web copy, and copies of its images as
 `BriefSendImage`s) before the relay is asked, then records the outcome; only a send the relay took marks the brief Sent. One real send of an edition
 runs at a time, and the confirmation says if the edition already went. Test sends go to the
-sender only and are logged without a copy. The Reader archive (`/published`) shows frozen company-wide sends, and
+sender only and are logged without a copy. A brief can be finished without email on the same terms as a send: marked
+distributed when email is off (`MarkDistributedAsync`), or finished as "Not sent" with a required reason when email is
+on and it won't go (`FinishNotSentAsync`). Either makes it Sent, so its numbers lock and its articles finish; who and
+when (and the reason) are kept on the brief, nothing is frozen or published, and a later real send makes it an ordinary
+sent brief. The Reader archive (`/published`) shows frozen company-wide sends, and
 lists each with its headlines and filters on its words; both are parsed from the send's frozen semantic HTML
 (`PublishedContent`, cached per send in `PublishedContentCache`), never read from the articles or the search index, so
 nothing the company wasn't sent can show or match. The SharePoint view renders the same semantic HTML with a zip of its images. The email preview and frozen emails are
@@ -209,6 +213,16 @@ a `MetricImport` (counts, problems), and each imported value records `Source = I
 Ending the meeting (`BriefService.MarkPresentedAsync`) keeps two times: `MeetingHeldAtUtc`, when it was held (now, or
 for a past day's brief that day's meeting time unless the presenter picks another), and `PresentedAtUtc`, when it was
 recorded. A meeting can't be held before its day or in the future.
+
+A meeting ended by mistake or too soon can be reopened (`BriefService.ReopenAsync`, "Back to ready" on the brief page,
+`PresentBriefs`) while the brief is Presented, never once it's Sent or finished as not sent. The brief goes back to
+Ready and both times are cleared (the audit trail keeps them). Ending the meeting records, on each `BriefItem`, the
+status its article had before (`StatusBeforeMeeting`), and each carried item records the brief it came from
+(`CarriedFromBriefId`); reopening puts those articles back, leaves one presented earlier on another brief alone, and
+takes the carried items off the next brief (refused, naming the day, once that brief has been presented or sent). What a
+colleague put on the next brief by hand stays, as do that brief and its opening note. The attendees, notes and
+discussed ticks are kept for when the meeting resumes; present mode and the brief page hear the change and offer
+"Start the meeting" again.
 
 A meeting is live while the presenter runs it in present mode (`LiveMeetings`, in memory like `Presence`, one per brief
 day): who presents, their slide (the others follow it), who's on which slide, and raised hands. It's dropped when it

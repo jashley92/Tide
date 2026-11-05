@@ -54,6 +54,38 @@ public class MigrationFillTests
         }
     }
 
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task BriefReopenAndNotSent_RecordsWhatAPresentedBriefsMeetingMarked(string provider)
+    {
+        using var database = new MigratedDatabase(provider);
+        Article Made(string title, ArticleStatus status) => new() { Title = title, AuthorId = "x", AuthorName = "X", Status = status };
+        var (earlier, fresh, carried, sentOnly) = (Made("Presented on Friday", ArticleStatus.Presented), Made("Presented on Monday", ArticleStatus.Presented),
+            Made("Carried on", ArticleStatus.Ready), Made("On a sent brief", ArticleStatus.Presented));
+        var friday = new Brief { BriefDate = new DateOnly(2026, 10, 23), AnalystName = "Robin", Status = BriefStatus.Sent };
+        var monday = new Brief { BriefDate = new DateOnly(2026, 10, 26), AnalystName = "Robin", Status = BriefStatus.Presented };
+        await using (var ctx = database.Context())
+        {
+            ctx.AddRange(earlier, fresh, carried, sentOnly, friday, monday);
+            ctx.BriefItems.AddRange(
+                new BriefItem { BriefId = friday.Id, ArticleId = earlier.Id }, new BriefItem { BriefId = friday.Id, ArticleId = sentOnly.Id },
+                new BriefItem { BriefId = monday.Id, ArticleId = earlier.Id, SortOrder = 0 }, new BriefItem { BriefId = monday.Id, ArticleId = fresh.Id, SortOrder = 1 },
+                new BriefItem { BriefId = monday.Id, ArticleId = carried.Id, SortOrder = 2 });
+            await ctx.SaveChangesAsync();
+        }
+
+        database.UpgradeAgainFrom("BriefReopenAndNotSent");
+
+        await using (var ctx = database.Context())
+        {
+            var items = await ctx.BriefItems.AsNoTracking().ToListAsync();
+            items.Single(i => i.BriefId == monday.Id && i.ArticleId == fresh.Id).StatusBeforeMeeting.Should().Be(ArticleStatus.Ready, "Monday's meeting presented it");
+            items.Single(i => i.BriefId == monday.Id && i.ArticleId == earlier.Id).StatusBeforeMeeting.Should().BeNull("Friday's brief presented it first");
+            items.Single(i => i.BriefId == monday.Id && i.ArticleId == carried.Id).StatusBeforeMeeting.Should().BeNull("it wasn't marked presented");
+            items.Where(i => i.BriefId == friday.Id).Should().OnlyContain(i => i.StatusBeforeMeeting == null, "a sent brief can't be reopened");
+        }
+    }
+
     private static AuditLogEntry Audit(string type, string action, Guid key, DateTimeOffset at, string changes) => new()
     {
         AtUtc = at, UserId = "x", UserName = "X", Action = action, EntityType = type, EntityKey = key.ToString(), ChangesJson = changes,
