@@ -30,7 +30,7 @@
   can't write.
 - **Roles.** Analyst, Action owner, Reader and Admin, and two that only read. A **Viewer** holds `ReadTeamEdition`,
   `ReadActions`, `MeetingNotes` and `JoinMeetings` and neither `WorkActions` nor `WriteArticles`: every write the team
-  edition opens up also asks for one of those two (`PermissionChecks.Contributes`, as `ActionService.CanComment` does),
+  edition opens up also asks for one of those two (as `ActionService.CanComment` does for a comment on an action),
   so a Viewer reads every page and action and writes nothing but their own meeting notes. A **Visitor** holds
   `ReadPublished` and `JoinMeetings` only. `Capabilities` lists every activity and what it needs; the Role mappings page
   and docs/INSTALL.md show it as a table.

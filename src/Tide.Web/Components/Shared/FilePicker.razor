@@ -79,10 +79,8 @@
             foreach (var f in files)
             {
                 if (f.Size > FileSvc.MaxReadBytes) throw new ArgumentException($"'{f.Name}' is over the {FileSvc.MaxFileMB} MB limit.");
-                await using var stream = f.OpenReadStream(FileSvc.MaxReadBytes);
-                using var ms = new MemoryStream();
-                await stream.CopyToAsync(ms);
-                Files.Add(PendingFile.From(f.Name, ms.ToArray(), string.IsNullOrWhiteSpace(f.ContentType) ? null : f.ContentType));
+                var (bytes, declared) = await BrowserFiles.ReadAsync(f, FileSvc.MaxReadBytes);
+                Files.Add(PendingFile.From(f.Name, bytes, declared));
             }
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }

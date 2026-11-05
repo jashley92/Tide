@@ -323,7 +323,7 @@ public class ActionFileServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ThePaperclip_CountsLiveFilesOnTheActionAndItsComments_InOneGroupedQuery()
+    public async Task ThePaperclip_CountsLiveFilesOnTheActionAndItsComments_InTheRowsQuery()
     {
         var a = await NewAction("With files");
         var b = await NewAction("Without files");
@@ -336,11 +336,6 @@ public class ActionFileServiceTests : IDisposable
         rows.Single(r => r.Id == a.Id).Files.Should().Be(2, "two.txt and the comment's file; the removed one isn't counted");
         rows.Single(r => r.Id == b.Id).Files.Should().Be(0);
         (await _db.Actions().BoardAsync(new ActionFilter())).Cards.Single(r => r.Id == a.Id).Files.Should().Be(2);
-
-        await using var ctx = _db.Context();
-        var counts = await ActionFileService.CountsAsync(ctx, [a.Id, b.Id], default);
-        counts.Should().BeEquivalentTo(new Dictionary<Guid, int> { [a.Id] = 2 });
-        (await ActionFileService.CountsAsync(ctx, [], default)).Should().BeEmpty();
     }
 
     [Fact]

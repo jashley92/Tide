@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Tide.Application.Abstractions;
@@ -37,11 +38,14 @@ public sealed record ActionFileRow(Guid FileId, string FileName, long SizeBytes,
     public string? RemovedByName { get; init; }
     public string? RemovedReason { get; init; }
 
-    /// <summary>For a file kept from a deleted comment: that comment's author and time.</summary>
+    /// <summary>For a file kept from a deleted comment: that comment's author. It's listed as added by them, at the
+    /// comment's time.</summary>
     public string? FromCommentBy { get; init; }
-    public DateTimeOffset? FromCommentAtUtc { get; init; }
 
     public bool OnComment => CommentId is not null;
+
+    /// <summary>Whether it is, or was, on a comment: one still there, or kept from a deleted one.</summary>
+    public bool FromComment => OnComment || FromCommentBy is not null;
 
     /// <summary>Where it is, as the API names it: "action" or "comment".</summary>
     public string Source => OnComment ? "comment" : "action";
@@ -81,8 +85,8 @@ public sealed class ActionFileService(IAppDbContextFactory dbs, ICurrentUser use
 
     public int MaxImageMB => Math.Max(1, O.MaxImageMB);
     public int MaxFileMB => Math.Max(1, O.MaxEvidenceMB);
-    private long MaxImageBytes => MaxImageMB * 1024L * 1024L;
-    private long MaxFileBytes => MaxFileMB * 1024L * 1024L;
+    private long MaxImageBytes => O.MaxImageBytes;
+    private long MaxFileBytes => O.MaxEvidenceBytes;
 
     /// <summary>The most bytes read from the browser for one file: the larger of the two limits.</summary>
     public long MaxReadBytes => Math.Max(MaxImageBytes, MaxFileBytes);
@@ -105,55 +109,69 @@ public sealed class ActionFileService(IAppDbContextFactory dbs, ICurrentUser use
     /// description within <see cref="ActionFile.MaxDescription"/>, and no more than <see cref="ActionFile.MaxPerUpload"/>
     /// at once. Throws <see cref="ArgumentException"/> saying what's wrong; the raise form calls it before the action is created.
     /// </summary>
-    public void Check(IReadOnlyList<ActionFileUpload> uploads)
+    public void Check(IReadOnlyList<ActionFileUpload> uploads) => Checked(uploads);
+
+    // The files' checks, as Check makes them, and what was found about each, in order.
+    private List<(ActionFileUpload Upload, FileInspection Seen, string? Description)> Checked(IReadOnlyList<ActionFileUpload> uploads)
     {
         if (uploads.Count > ActionFile.MaxPerUpload) throw new ArgumentException($"Add at most {ActionFile.MaxPerUpload} files at once.");
-        foreach (var u in uploads) Inspect(u);
+        return uploads.Select(u =>
+        {
+            var (seen, description) = Inspect(u);
+            return (u, seen, description);
+        }).ToList();
     }
 
     /// <summary>
     /// Adds files to an action, all or none: every file is checked before the first is stored. Each one's SHA-256 and
     /// size are recorded, and the history names it with its hash. Returns the files added.
     /// </summary>
-    public async Task<IReadOnlyList<ActionFile>> AddAsync(Guid actionId, IReadOnlyList<ActionFileUpload> uploads, CancellationToken ct = default)
+    public Task<IReadOnlyList<ActionFile>> AddAsync(Guid actionId, IReadOnlyList<ActionFileUpload> uploads, CancellationToken ct = default) =>
+        AddAsync(x => x.Id == actionId, uploads, ct);
+
+    /// <summary>As <see cref="AddAsync(Guid, IReadOnlyList{ActionFileUpload}, CancellationToken)"/>, to the action with
+    /// this number (one just created, say).</summary>
+    public Task<IReadOnlyList<ActionFile>> AddAsync(int actionNumber, IReadOnlyList<ActionFileUpload> uploads, CancellationToken ct = default) =>
+        AddAsync(x => x.Number == actionNumber, uploads, ct);
+
+    private async Task<IReadOnlyList<ActionFile>> AddAsync(Expression<Func<ActionItem, bool>> which, IReadOnlyList<ActionFileUpload> uploads,
+        CancellationToken ct)
     {
         if (uploads.Count == 0) return [];
-        Check(uploads);
+        var files = Checked(uploads);
         await using var db = await dbs.CreateAsync(ct);
-        var a = await db.Actions.FirstOrDefaultAsync(x => x.Id == actionId, ct) ?? throw new KeyNotFoundException("That action no longer exists.");
+        var a = await db.Actions.FirstOrDefaultAsync(which, ct) ?? throw new KeyNotFoundException("That action no longer exists.");
         await RequireWorkAsync(db, a, ct);
-        var live = await db.ActionFiles.CountAsync(f => f.ActionId == actionId && f.RemovedAtUtc == null, ct);
+        var live = await db.ActionFiles.CountAsync(f => f.ActionId == a.Id && f.RemovedAtUtc == null, ct);
         if (live + uploads.Count > ActionFile.MaxPerAction)
             throw new ArgumentException($"An action holds at most {ActionFile.MaxPerAction} files; this one has {live}.");
 
         var now = DateTimeOffset.UtcNow;
+        var named = files.Select(f => (f.Upload, f.Seen, f.Description, Name: ScreenshotService.EvidenceName(f.Upload.FileName))).ToList();
+        var written = await ScreenshotService.WriteAllAsync(store,
+            named.Select(f => (f.Name, f.Seen.ImageType ?? "application/octet-stream", f.Upload.Bytes)), ct);
         var added = new List<ActionFile>();
-        var written = new List<Guid>();
         try
         {
-            foreach (var u in uploads)
+            foreach (var (f, stored) in named.Zip(written))
             {
-                var (seen, description) = Inspect(u);
-                var name = ScreenshotService.EvidenceName(u.FileName);
-                var stored = await ScreenshotService.WriteAsync(store, name, seen.ImageType ?? "application/octet-stream", u.Bytes, ct);
-                written.Add(stored.Id);
                 db.Files.Add(stored);
                 var file = new ActionFile
                 {
-                    ActionId = a.Id, FileId = stored.Id, FileName = name, SizeBytes = stored.SizeBytes, Sha256 = stored.Sha256,
-                    DeclaredType = DeclaredOrNull(u.DeclaredType), IsImage = seen.IsImage, TypeNote = seen.TypeNote, RiskReason = seen.RiskReason,
-                    Description = description, AddedById = user.UserId, AddedByName = user.DisplayName, AddedAtUtc = now,
+                    ActionId = a.Id, FileId = stored.Id, FileName = f.Name, SizeBytes = stored.SizeBytes, Sha256 = stored.Sha256,
+                    DeclaredType = DeclaredOrNull(f.Upload.DeclaredType), IsImage = f.Seen.IsImage, TypeNote = f.Seen.TypeNote,
+                    RiskReason = f.Seen.RiskReason, Description = f.Description, AddedById = user.UserId, AddedByName = user.DisplayName, AddedAtUtc = now,
                 };
                 db.ActionFiles.Add(file);
                 added.Add(file);
             }
             db.ActionEvents.Add(Event(a.Id, (added.Count == 1 ? "Added the file " : $"Added {added.Count} files: ")
-                + string.Join("; ", added.Select(f => $"{f.FileName} ({Ui(f.SizeBytes)}, SHA-256 {f.Sha256})")) + "."));
+                + string.Join("; ", added.Select(f => $"{f.FileName} ({FileSizes.Text(f.SizeBytes)}, SHA-256 {f.Sha256})")) + "."));
             await db.SaveChangesAsync(ct);
         }
         catch
         {
-            foreach (var id in written) store.Delete(id);
+            foreach (var f in written) store.Delete(f.Id);
             throw;
         }
         return added;
@@ -193,24 +211,12 @@ public sealed class ActionFileService(IAppDbContextFactory dbs, ICurrentUser use
     {
         var clean = CleanDescription(description);
         await using var db = await dbs.CreateAsync(ct);
-        if (await db.ActionFiles.FirstOrDefaultAsync(f => f.FileId == fileId && f.RemovedAtUtc == null, ct) is { } file)
-        {
-            var a = await ActionOf(db, file.ActionId, ct);
-            await RequireWorkAsync(db, a, ct);
-            if (file.Description == clean) return;
-            file.Description = clean;
-            db.ActionEvents.Add(Event(a.Id, Described(file.FileName, clean)));
-        }
-        else if (await db.ActionCommentFiles.FirstOrDefaultAsync(f => f.FileId == fileId && f.RemovedAtUtc == null, ct) is { } onComment)
-        {
-            var actionId = await db.ActionComments.Where(c => c.Id == onComment.CommentId).Select(c => c.ActionId).FirstAsync(ct);
-            var a = await ActionOf(db, actionId, ct);
-            await RequireWorkAsync(db, a, ct);
-            if (onComment.Description == clean) return;
-            onComment.Description = clean;
-            db.ActionEvents.Add(Event(a.Id, Described(onComment.FileName, clean)));
-        }
-        else throw new KeyNotFoundException("That file is no longer on the action.");
+        if (await FindFileAsync(db, fileId, ct) is not { File.IsRemoved: false } found) throw Gone();
+        var a = await ActionService.FindAsync(db, found.ActionId, ct);
+        await RequireWorkAsync(db, a, ct);
+        if (found.File.Description == clean) return;
+        found.File.Description = clean;
+        db.ActionEvents.Add(Event(a.Id, Described(found.File.FileName, clean)));
         await db.SaveChangesAsync(ct);
     }
 
@@ -228,37 +234,31 @@ public sealed class ActionFileService(IAppDbContextFactory dbs, ICurrentUser use
                   ?? throw new ArgumentException("Say why the file is being removed.");
         if (why.Length > ActionFile.MaxReason) throw new ArgumentException($"Keep the reason to {ActionFile.MaxReason} characters or fewer.");
         await using var db = await dbs.CreateAsync(ct);
-        var now = DateTimeOffset.UtcNow;
-        if (await db.ActionFiles.FirstOrDefaultAsync(f => f.FileId == fileId, ct) is { } file)
-        {
-            if (file.IsRemoved) return;
-            if (!CanRemove(file.AddedById)) throw NotTheirs();
-            (file.RemovedAtUtc, file.RemovedById, file.RemovedByName, file.RemovedReason) = (now, user.UserId, user.DisplayName, why);
-            db.ActionEvents.Add(Event(file.ActionId, $"Removed the file {file.FileName} (SHA-256 {file.Sha256}): {why}"));
-        }
-        else if (await CommentFileAsync(db, fileId, ct) is { } c)
-        {
-            if (c.File.IsRemoved) return;
-            if (!CanRemove(c.AuthorId)) throw NotTheirs();
-            (c.File.RemovedAtUtc, c.File.RemovedById, c.File.RemovedByName, c.File.RemovedReason) = (now, user.UserId, user.DisplayName, why);
-            db.ActionEvents.Add(Event(c.ActionId, $"Removed the file {c.File.FileName} (SHA-256 {c.Sha256}) from a comment by {c.AuthorName}: {why}"));
-        }
-        else throw new KeyNotFoundException("That file is no longer on the action.");
+        var found = await FindFileAsync(db, fileId, ct) ?? throw Gone();
+        var file = found.File;
+        if (file.IsRemoved) return;
+        if (!CanRemove(user, found.AddedById)) throw new ForbiddenException("Only the person who added a file, an analyst or an administrator can remove it.");
+        (file.RemovedAtUtc, file.RemovedById, file.RemovedByName, file.RemovedReason) = (DateTimeOffset.UtcNow, user.UserId, user.DisplayName, why);
+        db.ActionEvents.Add(Event(found.ActionId, $"Removed the file {file.FileName} (SHA-256 {found.Sha256})"
+            + (found.CommentBy is { } by ? $" from a comment by {by}" : "") + $": {why}"));
         await db.SaveChangesAsync(ct);
     }
 
-    private static ForbiddenException NotTheirs() => new("Only the person who added a file, an analyst or an administrator can remove it.");
+    private static KeyNotFoundException Gone() => new("That file is no longer on the action.");
 
-    // A comment's file (tracked), with the comment's action and author and the file's hash.
-    private sealed record CommentFile(ActionCommentFile File, Guid ActionId, string AuthorId, string AuthorName, string Sha256);
+    // A file (tracked) on an action or on one of its comments, by its stored file's id: its action, who added it (a
+    // comment's file: the comment's author), the comment's author's name (null for a file on the action itself) and its hash.
+    private sealed record FoundFile(IRemovableFile File, Guid ActionId, string AddedById, string? CommentBy, string Sha256);
 
-    private static async Task<CommentFile?> CommentFileAsync(IAppDbContext db, Guid fileId, CancellationToken ct)
+    private static async Task<FoundFile?> FindFileAsync(IAppDbContext db, Guid fileId, CancellationToken ct)
     {
+        if (await db.ActionFiles.FirstOrDefaultAsync(f => f.FileId == fileId, ct) is { } own)
+            return new FoundFile(own, own.ActionId, own.AddedById, null, own.Sha256);
         var file = await db.ActionCommentFiles.FirstOrDefaultAsync(f => f.FileId == fileId, ct);
         if (file is null) return null;
         var c = await db.ActionComments.AsNoTracking().Where(x => x.Id == file.CommentId).Select(x => new { x.ActionId, x.AuthorId, x.AuthorName }).FirstAsync(ct);
         var sha = await db.Files.AsNoTracking().Where(f => f.Id == fileId).Select(f => f.Sha256).FirstOrDefaultAsync(ct) ?? "";
-        return new CommentFile(file, c.ActionId, c.AuthorId, c.AuthorName, sha);
+        return new FoundFile(file, c.ActionId, c.AuthorId, c.AuthorName, sha);
     }
 
     /// <summary>Puts a removed file back where it was (on the action, or on its comment): administrators only. A file kept
@@ -267,27 +267,19 @@ public sealed class ActionFileService(IAppDbContextFactory dbs, ICurrentUser use
     {
         if (!user.Has(Permission.Administer)) throw new ForbiddenException("Only an administrator can restore a removed file.");
         await using var db = await dbs.CreateAsync(ct);
-        if (await db.ActionFiles.FirstOrDefaultAsync(f => f.FileId == fileId, ct) is { } file)
-        {
-            if (!file.IsRemoved) return;
-            var live = await db.ActionFiles.CountAsync(f => f.ActionId == file.ActionId && f.RemovedAtUtc == null, ct);
-            if (live >= ActionFile.MaxPerAction) throw new ArgumentException($"An action holds at most {ActionFile.MaxPerAction} files; remove one first.");
-            var removed = RemovedWhen(file.RemovedByName, file.RemovedAtUtc!.Value);
-            (file.RemovedAtUtc, file.RemovedById, file.RemovedByName, file.RemovedReason) = (null, null, null, null);
-            db.ActionEvents.Add(Event(file.ActionId, $"Restored the file {file.FileName} ({removed})."));
-        }
-        else if (await CommentFileAsync(db, fileId, ct) is { } c)
-        {
-            if (!c.File.IsRemoved) return;
-            var removed = RemovedWhen(c.File.RemovedByName, c.File.RemovedAtUtc!.Value);
-            (c.File.RemovedAtUtc, c.File.RemovedById, c.File.RemovedByName, c.File.RemovedReason) = (null, null, null, null);
-            db.ActionEvents.Add(Event(c.ActionId, $"Restored the file {c.File.FileName} to a comment by {c.AuthorName} ({removed})."));
-        }
-        else throw new KeyNotFoundException("That file is no longer on the action.");
+        var found = await FindFileAsync(db, fileId, ct) ?? throw Gone();
+        var file = found.File;
+        if (!file.IsRemoved) return;
+        // A comment's files don't count towards the action's limit.
+        if (found.CommentBy is null
+            && await db.ActionFiles.CountAsync(f => f.ActionId == found.ActionId && f.RemovedAtUtc == null, ct) >= ActionFile.MaxPerAction)
+            throw new ArgumentException($"An action holds at most {ActionFile.MaxPerAction} files; remove one first.");
+        var removed = $"removed by {file.RemovedByName} on {file.RemovedAtUtc!.Value.ToString("MMM d", CultureInfo.InvariantCulture)}";
+        (file.RemovedAtUtc, file.RemovedById, file.RemovedByName, file.RemovedReason) = (null, null, null, null);
+        db.ActionEvents.Add(Event(found.ActionId, $"Restored the file {file.FileName}"
+            + (found.CommentBy is { } by ? $" to a comment by {by}" : "") + $" ({removed})."));
         await db.SaveChangesAsync(ct);
     }
-
-    private static string RemovedWhen(string? by, DateTimeOffset at) => $"removed by {by} on {at.ToString("MMM d", CultureInfo.InvariantCulture)}";
 
     /// <summary>
     /// The files of a comment being deleted, kept on its action as removed files (reason
@@ -315,52 +307,58 @@ public sealed class ActionFileService(IAppDbContextFactory dbs, ICurrentUser use
             });
     }
 
-    private bool CanRemove(string addedById) => user.Has(Permission.WriteArticles) || (addedById.Length > 0 && addedById == user.UserId);
+    /// <summary>Whether <paramref name="who"/> may remove a file added by <paramref name="addedById"/> (a comment's file:
+    /// the comment's author): that person, an analyst or an administrator.</summary>
+    internal static bool CanRemove(ICurrentUser who, string addedById) =>
+        who.Has(Permission.WriteArticles) || (addedById.Length > 0 && addedById == who.UserId);
 
     // --- listing and opening ----------------------------------------------------------------------------------------
 
     /// <summary>An action's files, for its page and the API (whoever reads actions).</summary>
     public async Task<ActionFileList> ListAsync(Guid actionId, CancellationToken ct = default)
     {
-        RequireRead();
+        ActionService.RequireRead(user);
         await using var db = await dbs.CreateAsync(ct);
         return await ListAsync(db, user, actionId, ct);
     }
 
-    /// <summary>The files on an action and its comments, on a context the caller holds: one query for each kind, and one
-    /// for the comments' files' hashes and types.</summary>
-    internal static async Task<ActionFileList> ListAsync(IAppDbContext db, ICurrentUser user, Guid actionId, CancellationToken ct)
+    /// <summary>The files on an action and its comments, on a context the caller holds: one query for the action's own,
+    /// and one for the comments' files' hashes and types. The comments (with their files) are read too, unless the caller
+    /// has them loaded already (<paramref name="comments"/>).</summary>
+    internal static async Task<ActionFileList> ListAsync(IAppDbContext db, ICurrentUser user, Guid actionId, CancellationToken ct,
+        IReadOnlyList<ActionComment>? comments = null)
     {
         var own = await (from f in db.ActionFiles.AsNoTracking()
                          join s in db.Files.AsNoTracking() on f.FileId equals s.Id
                          where f.ActionId == actionId
                          select new { f, s.ContentType }).ToListAsync(ct);
-        var onComments = await (from f in db.ActionCommentFiles.AsNoTracking()
-                                join c in db.ActionComments.AsNoTracking() on f.CommentId equals c.Id
-                                join s in db.Files.AsNoTracking() on f.FileId equals s.Id
-                                where c.ActionId == actionId
-                                select new { f, c.AuthorId, c.AuthorName, c.AtUtc, s.Sha256, s.ContentType }).ToListAsync(ct);
-        bool MayRemove(string addedById) => user.Has(Permission.WriteArticles) || (addedById.Length > 0 && addedById == user.UserId);
+        comments ??= await db.ActionComments.AsNoTracking().Include(c => c.Files).Where(c => c.ActionId == actionId).ToListAsync(ct);
+        var ids = comments.SelectMany(c => c.Files).Select(f => f.FileId).ToList();
+        var stored = ids.Count == 0
+            ? []
+            : await db.Files.AsNoTracking().Where(s => ids.Contains(s.Id)).Select(s => new { s.Id, s.Sha256, s.ContentType }).ToDictionaryAsync(s => s.Id, ct);
         var rows = own.Select(x => new ActionFileRow(x.f.FileId, x.f.FileName, x.f.SizeBytes, NullIfEmpty(x.f.Sha256), x.ContentType, x.f.AddedByName,
                 x.f.AddedAtUtc, x.f.Description, x.f.ShowsInline, x.f.RiskReason, x.f.TypeNote)
             {
-                DeclaredType = x.f.DeclaredType, AddedById = x.f.AddedById, CanRemove = MayRemove(x.f.AddedById),
+                DeclaredType = x.f.DeclaredType, AddedById = x.f.AddedById, CanRemove = CanRemove(user, x.f.AddedById),
                 RemovedAtUtc = x.f.RemovedAtUtc, RemovedByName = x.f.RemovedByName, RemovedReason = x.f.RemovedReason,
-                FromCommentBy = x.f.FromCommentBy, FromCommentAtUtc = x.f.FromCommentAtUtc,
+                FromCommentBy = x.f.FromCommentBy,
             })
             .ToList();
         // A comment's file added before its risk was recorded is judged by its name (its bytes were checked to be an image
-        // or not when it arrived).
-        rows.AddRange(onComments.Select(x =>
-        {
-            var risk = x.f.RiskReason ?? FileRisk.Reason(x.f.FileName, null);
-            return new ActionFileRow(x.f.FileId, x.f.FileName, x.f.SizeBytes, NullIfEmpty(x.Sha256), x.ContentType, x.AuthorName, x.AtUtc,
-                x.f.Description, x.f.IsImage && risk is null, risk, null)
+        // or not when it arrived). One whose stored file's row is gone isn't listed.
+        foreach (var c in comments)
+            foreach (var f in c.Files)
             {
-                CommentId = x.f.CommentId, AddedById = x.AuthorId, CanRemove = MayRemove(x.AuthorId),
-                RemovedAtUtc = x.f.RemovedAtUtc, RemovedByName = x.f.RemovedByName, RemovedReason = x.f.RemovedReason,
-            };
-        }));
+                if (!stored.TryGetValue(f.FileId, out var s)) continue;
+                var risk = f.RiskReason ?? FileRisk.Reason(f.FileName, null);
+                rows.Add(new ActionFileRow(f.FileId, f.FileName, f.SizeBytes, NullIfEmpty(s.Sha256), s.ContentType, c.AuthorName, c.AtUtc,
+                    f.Description, ActionFile.ShowsInlineFor(f.IsImage, null, risk), risk, null)
+                {
+                    CommentId = f.CommentId, AddedById = c.AuthorId, CanRemove = CanRemove(user, c.AuthorId),
+                    RemovedAtUtc = f.RemovedAtUtc, RemovedByName = f.RemovedByName, RemovedReason = f.RemovedReason,
+                });
+            }
         var live = rows.Where(r => r.RemovedAtUtc is null).OrderByDescending(r => r.AddedAtUtc).ThenBy(r => r.FileName, StringComparer.Ordinal).ToList();
         var removed = user.Has(Permission.Administer)
             ? rows.Where(r => r.RemovedAtUtc is not null).OrderByDescending(r => r.RemovedAtUtc).ToList()
@@ -375,10 +373,15 @@ public sealed class ActionFileService(IAppDbContextFactory dbs, ICurrentUser use
     /// (or was removed, unless the reader is an administrator), or its bytes are gone. With <paramref name="actionId"/>,
     /// only a file on that action (the API's address names the action).
     /// </summary>
-    public async Task<FileDownload?> OpenAsync(Guid fileId, Guid? actionId = null, CancellationToken ct = default)
+    public Task<FileDownload?> OpenAsync(Guid fileId, Guid? actionId = null, CancellationToken ct = default) =>
+        OpenAsync(fileId, actionId, liveOnly: false, ct);
+
+    /// <summary>As <see cref="OpenAsync(Guid, Guid?, CancellationToken)"/>; with <paramref name="liveOnly"/>, a removed file
+    /// is null for an administrator too.</summary>
+    internal async Task<FileDownload?> OpenAsync(Guid fileId, Guid? actionId, bool liveOnly, CancellationToken ct)
     {
-        if (!MayRead) return null;
-        var admin = user.Has(Permission.Administer);
+        if (!ActionService.MayRead(user)) return null;
+        var admin = user.Has(Permission.Administer) && !liveOnly;
         await using var db = await dbs.CreateAsync(ct);
         var own = await db.ActionFiles.AsNoTracking()
             .Where(f => f.FileId == fileId && (f.RemovedAtUtc == null || admin) && (actionId == null || f.ActionId == actionId))
@@ -393,49 +396,8 @@ public sealed class ActionFileService(IAppDbContextFactory dbs, ICurrentUser use
         return onComment is null ? null : Open(onComment.FileName, onComment.SizeBytes, onComment.AtUtc, onComment.RiskReason ?? FileRisk.Reason(onComment.FileName, null));
     }
 
-    /// <summary>
-    /// How many live files each action has, on it and on its comments: one grouped query for the lot, for the paperclip on
-    /// lists, the board and the brief.
-    /// </summary>
-    internal static async Task<Dictionary<Guid, int>> CountsAsync(IAppDbContext db, IReadOnlyCollection<Guid> actionIds, CancellationToken ct)
-    {
-        if (actionIds.Count == 0) return [];
-        var ids = actionIds.Distinct().ToList();
-        var own = db.ActionFiles.Where(f => f.RemovedAtUtc == null && ids.Contains(f.ActionId)).Select(f => f.ActionId);
-        var onComments = from f in db.ActionCommentFiles
-                         join c in db.ActionComments on f.CommentId equals c.Id
-                         where f.RemovedAtUtc == null && ids.Contains(c.ActionId)
-                         select c.ActionId;
-        return await own.Concat(onComments).GroupBy(id => id).Select(g => new { g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.Key, x => x.Count, ct);
-    }
+    private Task RequireWorkAsync(IAppDbContext db, ActionItem a, CancellationToken ct) =>
+        ActionService.RequireWork(db, user, a, ct, "Only analysts and members of the owning team can add or describe this action's files.");
 
-    private bool MayRead => user.Has(Permission.ReadTeamEdition) || user.Has(Permission.WorkActions);
-
-    private void RequireRead()
-    {
-        if (!MayRead) throw new ForbiddenException("You don't have access to actions.");
-    }
-
-    private async Task RequireWorkAsync(IAppDbContext db, ActionItem a, CancellationToken ct)
-    {
-        if (!await ActionService.CanWork(db, user, a.TeamId, ct))
-            throw new ForbiddenException("Only analysts and members of the owning team can add or describe this action's files.");
-    }
-
-    private static async Task<ActionItem> ActionOf(IAppDbContext db, Guid id, CancellationToken ct) =>
-        await db.Actions.FirstOrDefaultAsync(x => x.Id == id, ct) ?? throw new KeyNotFoundException("That action no longer exists.");
-
-    private ActionEvent Event(Guid actionId, string text) => new()
-    {
-        ActionId = actionId, AtUtc = DateTimeOffset.UtcNow, ByName = user.DisplayName,
-        Text = ActionService.ClipEvent(text),
-    };
-
-    private static string Ui(long bytes) => bytes switch
-    {
-        < 1024 => string.Create(CultureInfo.InvariantCulture, $"{bytes} B"),
-        < 1024 * 1024 => string.Create(CultureInfo.InvariantCulture, $"{bytes / 1024.0:0} KB"),
-        _ => string.Create(CultureInfo.InvariantCulture, $"{bytes / 1024.0 / 1024.0:0.0} MB"),
-    };
+    private ActionEvent Event(Guid actionId, string text) => ActionService.Event(user, actionId, text);
 }

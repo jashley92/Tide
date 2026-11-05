@@ -114,10 +114,12 @@ public sealed class ApiService(IAppDbContextFactory dbs, ICurrentUser user, Dist
 
     /// <summary>A live file on the action, opened to download; null when the action isn't there for the caller (as
     /// <see cref="ActionAsync"/>) or the file isn't on it.</summary>
-    public async Task<FileDownload?> OpenFileAsync(int number, Guid fileId, TlpLevel? callerCeiling, CancellationToken ct = default) =>
-        await VisibleAsync(number, callerCeiling, ct) is { } d && d.Files.Live.Any(f => f.FileId == fileId)
-            ? await files.OpenAsync(fileId, d.Action.Id, ct)
-            : null;
+    public async Task<FileDownload?> OpenFileAsync(int number, Guid fileId, TlpLevel? callerCeiling, CancellationToken ct = default)
+    {
+        if (await actions.FindReadableAsync(number, ct) is not { } a) return null;
+        if (a.ArticleId is { } article && (await WithheldArticlesAsync([article], callerCeiling, ct)).Contains(article)) return null;
+        return await files.OpenAsync(fileId, a.Id, liveOnly: true, ct);
+    }
 
     /// <summary>Changes an action's status (an outcome is needed to close it Done), noting why. Nothing else about it changes.</summary>
     public async Task<ApiAction?> UpdateActionAsync(int number, ApiActionUpdate update, TlpLevel? callerCeiling, string apiBase = "/api/v1",

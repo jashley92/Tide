@@ -60,16 +60,16 @@
                         {
                             <a class="tide-file-source" href="@($"{Ui.ActionUrl(Number)}#comment-{commentId}")">On a comment by @f.AddedByName</a>
                         }
-                        else if (f.FromCommentBy is not null)
+                        else if (f.FromComment)
                         {
-                            <span class="tide-file-source">From a deleted comment by @f.FromCommentBy</span>
+                            <span class="tide-file-source">From a deleted comment by @f.AddedByName</span>
                         }
                         else
                         {
                             <span class="tide-file-source">Added by @f.AddedByName</span>
                         }
-                        <span class="tide-file-when">&middot; @Ui.When(Clock, f.FromCommentBy is not null && f.CommentId is null ? f.FromCommentAtUtc ?? f.AddedAtUtc : f.AddedAtUtc)</span>
-                        <button type="button" class="btn btn-link btn-sm tide-file-more-btn" aria-expanded="@(open ? "true" : "false")" aria-controls="file-more-@f.FileId"
+                        <span class="tide-file-when">&middot; @Ui.When(Clock, f.AddedAtUtc)</span>
+                        <button type="button" class="btn btn-link btn-sm tide-file-more-btn" aria-expanded="@Ui.Aria(open)" aria-controls="file-more-@f.FileId"
                                 aria-label="More about @f.FileName" @ref="_toggles[f.FileId]" @onclick="() => Toggle(f)">More<span class="bi @(open ? "bi-chevron-up" : "bi-chevron-down")" aria-hidden="true"></span></button>
                     </div>
                     <div class="tide-file-more" id="file-more-@f.FileId" hidden="@(!open)">
@@ -228,9 +228,7 @@
 
     // Where a removed file was, for the Removed files list.
     private string RemovedSource(ActionFileRow f) =>
-        f.OnComment ? $"Was on a comment by {f.AddedByName}, {Ui.When(Clock, f.AddedAtUtc)}"
-        : f.FromCommentBy is not null ? $"Was on a comment by {f.FromCommentBy}, {Ui.When(Clock, f.FromCommentAtUtc ?? f.AddedAtUtc)}"
-        : $"Added to the action by {f.AddedByName}, {Ui.When(Clock, f.AddedAtUtc)}";
+        $"{(f.FromComment ? "Was on a comment by" : "Added to the action by")} {f.AddedByName}, {Ui.When(Clock, f.AddedAtUtc)}";
 
     internal static string AsIsTitle(ActionFileRow f) => f.RiskReason is not null
         ? $"Warning: {FileRisk.Sentence(f.RiskReason)} Download it as is only to open it somewhere safe."

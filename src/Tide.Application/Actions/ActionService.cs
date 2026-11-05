@@ -176,7 +176,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
 
     public async Task<IReadOnlyList<ActionRow>> ListAsync(ActionFilter filter, CancellationToken ct = default)
     {
-        RequireRead();
+        RequireRead(user);
         await using var db = await dbs.CreateAsync(ct);
         var q = Narrow(db, db.Actions.AsNoTracking(), filter);
         if (filter.View == ActionView.Closed)
@@ -185,7 +185,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             q = q.Where(a => a.ClosedAtUtc != null && a.ClosedAtUtc >= since);
         }
         else q = q.WhereOpen();
-        var rows = await RowsAsync(db, q, ct);
+        var rows = await Rows(db, q).ToListAsync(ct);
         return filter.View == ActionView.Closed
             ? rows.OrderByDescending(r => r.ClosedDate).ThenByDescending(r => r.Number).ToList()
             : rows.OrderBy(r => r.DueDate ?? DateOnly.MaxValue).ThenBy(r => r.Priority).ThenBy(r => r.Number).ToList();
@@ -201,14 +201,14 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// </summary>
     public async Task<ActionBoard> BoardAsync(ActionFilter filter, CancellationToken ct = default)
     {
-        RequireRead();
+        RequireRead(user);
         if (filter.View is ActionView.Overdue or ActionView.Closed) filter = filter with { View = ActionView.Open };
         await using var db = await dbs.CreateAsync(ct);
         var since = DateTimeOffset.UtcNow.AddDays(-BoardClosedDays);
         var q = Narrow(db, db.Actions.AsNoTracking(), filter)
             .Where(a => a.Status == ActionStatus.Open || a.Status == ActionStatus.InProgress || a.Status == ActionStatus.Blocked
                         || (a.ClosedAtUtc != null && a.ClosedAtUtc >= since));
-        var rows = await RowsAsync(db, q, ct);
+        var rows = await Rows(db, q).ToListAsync(ct);
         // Open columns by due date then priority; closed ones most recently closed first.
         var cards = rows.Where(r => r.IsOpen).OrderBy(r => r.DueDate ?? DateOnly.MaxValue).ThenBy(r => r.Priority).ThenBy(r => r.Number)
             .Concat(rows.Where(r => !r.IsOpen).OrderByDescending(r => r.ClosedDate).ThenByDescending(r => r.Number)).ToList();
@@ -247,7 +247,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// <summary>How many open actions assigned to me are past due: one count, for the sidebar (no rows loaded).</summary>
     public async Task<int> MyOverdueCountAsync(CancellationToken ct = default)
     {
-        RequireRead();
+        RequireRead(user);
         var today = clock.Today;
         await using var db = await dbs.CreateAsync(ct);
         return await db.Actions.AsNoTracking().WhereOpen().CountAsync(a => a.AssigneeId == user.UserId && a.DueDate != null && a.DueDate < today, ct);
@@ -266,7 +266,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     public async Task<OpenActionsReview> OutstandingAsync(DateOnly asOf, TlpLevel ceiling, CancellationToken ct = default)
     {
         // A Visitor, from a seat in that day's live meeting: its open actions slide (MeetingAccess).
-        if (!Briefs.MeetingAccess.SeatedOn(user, meetings, asOf)) RequireRead();
+        if (!Briefs.MeetingAccess.SeatedOn(user, meetings, asOf)) RequireRead(user);
         await using var db = await dbs.CreateAsync(ct);
         return await Outstanding(db, asOf, ceiling, ct);
     }
@@ -275,7 +275,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     internal static async Task<OpenActionsReview> Outstanding(IAppDbContext db, DateOnly asOf, TlpLevel ceiling, CancellationToken ct)
     {
         var q = db.Actions.AsNoTracking().WhereOpen().Where(a => a.DueDate != null && a.DueDate < asOf);
-        var rows = await RowsAsync(db, q, ct);
+        var rows = await Rows(db, q).ToListAsync(ct);
         if (rows.Count == 0) return OpenActionsReview.None;
         var articleIds = rows.Select(r => r.ArticleId).OfType<Guid>().Distinct().ToList();
         var tlps = await db.Articles.AsNoTracking().Where(a => articleIds.Contains(a.Id)).Select(a => new { a.Id, a.Tlp })
@@ -303,19 +303,19 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// <summary>Today's queue (<see cref="TeamQueue"/>): the current user's teams' open actions that are theirs or nobody's.</summary>
     public async Task<TeamQueue> TeamQueueAsync(CancellationToken ct = default)
     {
-        RequireRead();
+        RequireRead(user);
         await using var db = await dbs.CreateAsync(ct);
         var onATeam = await db.TeamMembers.AsNoTracking().AnyAsync(m => m.UserId == user.UserId, ct);
         if (!onATeam) return new([], 0, 0, false);
         var q = Narrow(db, db.Actions.AsNoTracking(), new ActionFilter(ActionView.MyTeams)).WhereOpen()
             .Where(a => a.AssigneeId == null || a.AssigneeId == user.UserId);
-        return TeamQueue.From(await RowsAsync(db, q, ct), user.UserId, true, TeamQueueSize);
+        return TeamQueue.From(await Rows(db, q).ToListAsync(ct), user.UserId, true, TeamQueueSize);
     }
 
     /// <summary>One action's list row, or null.</summary>
     public async Task<ActionRow?> RowAsync(Guid id, CancellationToken ct = default)
     {
-        RequireRead();
+        RequireRead(user);
         await using var db = await dbs.CreateAsync(ct);
         return await Rows(db, db.Actions.AsNoTracking().Where(a => a.Id == id)).FirstOrDefaultAsync(ct);
     }
@@ -323,9 +323,9 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// <summary>The actions raised from an article, open first.</summary>
     public async Task<IReadOnlyList<ActionRow>> ForArticleAsync(Guid articleId, CancellationToken ct = default)
     {
-        RequireRead();
+        RequireRead(user);
         await using var db = await dbs.CreateAsync(ct);
-        var rows = await RowsAsync(db, db.Actions.AsNoTracking().Where(a => a.ArticleId == articleId), ct);
+        var rows = await Rows(db, db.Actions.AsNoTracking().Where(a => a.ArticleId == articleId)).ToListAsync(ct);
         return rows.OrderBy(r => r.IsOpen ? 0 : 1).ThenBy(r => r.Number).ToList();
     }
 
@@ -335,7 +335,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// </summary>
     public async Task<IReadOnlyList<ActionRow>> LikelyDuplicatesAsync(Guid articleId, ActionKind kind, Guid teamId, CancellationToken ct = default)
     {
-        RequireRead();
+        RequireRead(user);
         await using var db = await dbs.CreateAsync(ct);
         var storyId = await db.Articles.AsNoTracking().Where(a => a.Id == articleId).Select(a => a.StoryId).FirstOrDefaultAsync(ct);
         var articleIds = storyId is { } sid
@@ -349,41 +349,35 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// <summary>The actions raised from any of these articles (a brief's), by article.</summary>
     public async Task<ILookup<Guid, ActionRow>> ForArticlesAsync(IReadOnlyCollection<Guid> articleIds, CancellationToken ct = default)
     {
-        RequireRead();
+        RequireRead(user);
         await using var db = await dbs.CreateAsync(ct);
-        var rows = await RowsAsync(db, db.Actions.AsNoTracking().Where(a => a.ArticleId != null && articleIds.Contains(a.ArticleId.Value)), ct);
+        var rows = await Rows(db, db.Actions.AsNoTracking().Where(a => a.ArticleId != null && articleIds.Contains(a.ArticleId.Value))).ToListAsync(ct);
         return rows.OrderBy(r => r.Number).ToLookup(r => r.ArticleId!.Value);
     }
 
     /// <summary>These actions (a trend line's), newest first.</summary>
     public async Task<IReadOnlyList<ActionRow>> ListByIdAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default)
     {
-        RequireRead();
+        RequireRead(user);
         if (ids.Count == 0) return [];
         await using var db = await dbs.CreateAsync(ct);
         var list = ids.ToList();
-        var rows = await RowsAsync(db, db.Actions.AsNoTracking().Where(a => list.Contains(a.Id)), ct);
+        var rows = await Rows(db, db.Actions.AsNoTracking().Where(a => list.Contains(a.Id))).ToListAsync(ct);
         return rows.OrderByDescending(r => r.Number).ToList();
     }
 
-    // The rows, each with its live files counted (on it and its comments): one grouped count for the lot.
-    private static async Task<List<ActionRow>> RowsAsync(IAppDbContext db, IQueryable<ActionItem> q, CancellationToken ct)
-    {
-        var rows = await Rows(db, q).ToListAsync(ct);
-        var counts = await ActionFileService.CountsAsync(db, rows.Select(r => r.Id).ToList(), ct);
-        return counts.Count == 0 ? rows : rows.Select(r => counts.TryGetValue(r.Id, out var n) ? r with { Files = n } : r).ToList();
-    }
-
+    // The rows, each with its live files counted (on it and its comments), for the paperclip on lists, the board and the brief.
     private static IQueryable<ActionRow> Rows(IAppDbContext db, IQueryable<ActionItem> q) => q.Select(a => new ActionRow(
         a.Id, a.Number, a.Title, a.Kind, a.Priority, a.TeamId, a.Team!.Name, a.AssigneeId, a.AssigneeName, a.DueDate, a.Status, a.Outcome,
         a.ClosedDate, a.ArticleId, a.Article == null ? null : a.Article.Title, a.ParentId, db.Actions.Count(c => c.ParentId == a.Id), a.CreatedAtUtc,
         db.Actions.Where(p => p.Id == a.ParentId).Select(p => (int?)p.Number).FirstOrDefault(), a.PlaybookName,
-        a.Checklist.Count(i => i.IsDone), a.Checklist.Count, a.RaisedOn));
+        a.Checklist.Count(i => i.IsDone), a.Checklist.Count, a.RaisedOn,
+        a.Files.Count(f => f.RemovedAtUtc == null) + a.Comments.SelectMany(c => c.Files).Count(f => f.RemovedAtUtc == null)));
 
     public async Task<ActionDetail?> GetAsync(int number, CancellationToken ct = default)
     {
         // A Visitor sees only the action the presenter has open for the room, while they're in the meeting (MeetingAccess).
-        if (!Briefs.MeetingAccess.Seats(user, meetings).Any(s => s.Action == number)) RequireRead();
+        if (!Briefs.MeetingAccess.Seats(user, meetings).Any(s => s.Action == number)) RequireRead(user);
         await using var db = await dbs.CreateAsync(ct);
         var a = await db.Actions.AsNoTracking()
             .Include(x => x.Team).Include(x => x.Article).ThenInclude(x => x!.Indicators)
@@ -394,16 +388,26 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         a.Events = a.Events.OrderByDescending(e => e.AtUtc).ToList();
         a.Hunts = a.Hunts.OrderByDescending(h => h.CreatedAtUtc).ToList();
         var parent = a.ParentId is { } pid ? await Rows(db, db.Actions.AsNoTracking().Where(x => x.Id == pid)).FirstOrDefaultAsync(ct) : null;
-        var children = await RowsAsync(db, db.Actions.AsNoTracking().Where(x => x.ParentId == a.Id), ct);
-        var canWork = await CanWorkAsync(db, a.TeamId, ct);
+        var children = await Rows(db, db.Actions.AsNoTracking().Where(x => x.ParentId == a.Id)).ToListAsync(ct);
+        var canWork = await CanWork(db, user, a.TeamId, ct);
         return new ActionDetail(a, parent, children.OrderBy(c => c.Number).ToList(), canWork, user.Has(Permission.WriteArticles),
-            canWork || CanComment) { Files = await ActionFileService.ListAsync(db, user, a.Id, ct) };
+            canWork || CanComment) { Files = await ActionFileService.ListAsync(db, user, a.Id, ct, a.Comments) };
+    }
+
+    /// <summary>The id and article of the action with this number, for whoever may read it as <see cref="GetAsync"/>
+    /// allows; null when there's none. For a check that needs no more of the action (the API's file download).</summary>
+    internal async Task<(Guid Id, Guid? ArticleId)?> FindReadableAsync(int number, CancellationToken ct = default)
+    {
+        if (!Briefs.MeetingAccess.Seats(user, meetings).Any(s => s.Action == number)) RequireRead(user);
+        await using var db = await dbs.CreateAsync(ct);
+        var a = await db.Actions.AsNoTracking().Where(x => x.Number == number).Select(x => new { x.Id, x.ArticleId }).FirstOrDefaultAsync(ct);
+        return a is null ? null : (a.Id, a.ArticleId);
     }
 
     /// <summary>Per team: what's open, overdue and due soon, last week's closures, and who holds what.</summary>
     public async Task<IReadOnlyList<TeamLoad>> WorkloadAsync(CancellationToken ct = default)
     {
-        RequireRead();
+        RequireRead(user);
         await using var db = await dbs.CreateAsync(ct);
         var today = clock.Today;
         var weekAgo = ActionQueries.LastSevenDaysFrom(today);
@@ -456,7 +460,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             var playbook = form.PlaybookId is { } pid ? await PlaybookFor(db, pid, a.Kind, ct) : null;
             db.Actions.Add(a);
             if (playbook is not null) db.ActionChecklistItems.AddRange(AddSteps(a, playbook));
-            db.ActionEvents.Add(Event(a.Id, $"Created for {await TeamName(db, a.TeamId, ct)}{(a.DueDate is { } d ? $", due {Day(d)}" : "")}"
+            db.ActionEvents.Add(Event(user, a.Id, $"Created for {await TeamName(db, a.TeamId, ct)}{(a.DueDate is { } d ? $", due {Day(d)}" : "")}"
                 + (a.RaisedOn is { } r ? $"; raised for {Day(r)}'s brief" : "")
                 + (playbook is not null ? $", with the {playbook.Name} playbook's checklist." : ".")));
             try
@@ -507,7 +511,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// </summary>
     public async Task<IReadOnlyDictionary<ActionKind, Guid>> TeamsByKindAsync(CancellationToken ct = default)
     {
-        RequireRead();
+        RequireRead(user);
         await using var db = await dbs.CreateAsync(ct);
         var live = db.Actions.AsNoTracking().Where(a => !a.Team!.IsRetired);
         var latest = await live.GroupBy(a => a.Kind).Select(g => g.Max(a => a.Number)).ToListAsync(ct);
@@ -539,7 +543,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (before.DueDate != a.DueDate) changes.Add($"due: {(before.DueDate is { } b ? Day(b) : "none")} → {(a.DueDate is { } d ? Day(d) : "none")}");
         if (before.TicketRef != a.TicketRef) changes.Add($"ticket: {a.TicketRef ?? "none"}");
         a.EditVersion = Guid.NewGuid();
-        if (changes.Count > 0) db.ActionEvents.Add(Event(a.Id, "Changed " + string.Join("; ", changes) + "."));
+        if (changes.Count > 0) db.ActionEvents.Add(Event(user, a.Id, "Changed " + string.Join("; ", changes) + "."));
         await SaveEditAsync(db, ct);
     }
 
@@ -564,7 +568,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var started = a.Status == ActionStatus.Open;
         if (started) a.Status = ActionStatus.InProgress;
         a.EditVersion = Guid.NewGuid();
-        db.ActionEvents.Add(Event(a.Id, started ? "Took it on and started it." : "Took it on."));
+        db.ActionEvents.Add(Event(user, a.Id, started ? "Took it on and started it." : "Took it on."));
         await SaveEditAsync(db, ct);
     }
 
@@ -601,7 +605,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (changes.Count == 0) return;
         (a.AssigneeId, a.AssigneeName, a.DueDate) = (assigneeId, name, due ?? a.DueDate);
         a.EditVersion = Guid.NewGuid();
-        db.ActionEvents.Add(Event(a.Id, "Changed " + string.Join("; ", changes) + " at the meeting."));
+        db.ActionEvents.Add(Event(user, a.Id, "Changed " + string.Join("; ", changes) + " at the meeting."));
         await SaveEditAsync(db, ct);
     }
 
@@ -715,7 +719,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var text = (lead is null ? "" : lead + " ") + $"Status: {StatusName(was)} → {StatusName(status)}";
         if (a.Outcome != ActionOutcome.None) text += $" ({OutcomeName(a.Outcome)})";
         text += a.OutcomeNote is null ? "." : $": {a.OutcomeNote}";
-        db.ActionEvents.Add(Event(a.Id, text));
+        db.ActionEvents.Add(Event(user, a.Id, text));
     }
 
     /// <summary>
@@ -731,7 +735,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (clean.Length == 0 && attachments.Count == 0) throw new ArgumentException("Write something or attach a file first.");
         await using var db = await dbs.CreateAsync(ct);
         var a = await FindAsync(db, id, ct);
-        if (attachments.Count > 0) await RequireWork(db, a, ct);
+        if (attachments.Count > 0) await RequireWork(db, user, a, ct);
         else await RequireComment(db, a, ct);
         var written = await files.WriteAttachmentsAsync(attachments, ct);
         var comment = new ActionComment { ActionId = id, Text = clean, AuthorId = user.UserId, AuthorName = user.DisplayName, AtUtc = DateTimeOffset.UtcNow };
@@ -750,7 +754,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         {
             var shots = written.Count(w => w.IsImage);
             var evidence = written.Count - shots;
-            db.ActionEvents.Add(Event(a.Id, "Attached " + string.Join(" and ", new[]
+            db.ActionEvents.Add(Event(user, a.Id, "Attached " + string.Join(" and ", new[]
             {
                 shots > 0 ? $"{shots} screenshot{(shots == 1 ? "" : "s")}" : null,
                 evidence > 0 ? $"{evidence} evidence file{(evidence == 1 ? "" : "s")}" : null,
@@ -782,7 +786,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         comment.EditedAtUtc = DateTimeOffset.UtcNow;
         comment.EditedByName = user.DisplayName;
         comment.EditVersion = Guid.NewGuid();
-        db.ActionEvents.Add(Event(a.Id, $"{user.DisplayName} edited a comment from {comment.AtUtc.ToString("MMM d", System.Globalization.CultureInfo.InvariantCulture)}."));
+        db.ActionEvents.Add(Event(user, a.Id, $"{user.DisplayName} edited a comment from {comment.AtUtc.ToString("MMM d", System.Globalization.CultureInfo.InvariantCulture)}."));
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateConcurrencyException)
         {
@@ -802,7 +806,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         await ActionFileService.KeepFilesOfDeletedCommentAsync(db, user, comment, attached, ct);
         db.ActionCommentFiles.RemoveRange(attached);
         db.ActionComments.Remove(comment);
-        db.ActionEvents.Add(Event(a.Id, $"{user.DisplayName} deleted a comment by {comment.AuthorName}"
+        db.ActionEvents.Add(Event(user, a.Id, $"{user.DisplayName} deleted a comment by {comment.AuthorName}"
             + (attached.Count > 0 ? $"; its {attached.Count} file{(attached.Count == 1 ? " is" : "s are")} kept as removed." : ".")));
         await db.SaveChangesAsync(ct);
     }
@@ -812,7 +816,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// <summary>An action's checklist, in order (for a board card, opened).</summary>
     public async Task<IReadOnlyList<ActionChecklistItem>> ChecklistAsync(Guid actionId, CancellationToken ct = default)
     {
-        RequireRead();
+        RequireRead(user);
         await using var db = await dbs.CreateAsync(ct);
         return await db.ActionChecklistItems.AsNoTracking().Where(i => i.ActionId == actionId).OrderBy(i => i.SortOrder).ToListAsync(ct);
     }
@@ -823,12 +827,12 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         await using var db = await dbs.CreateAsync(ct);
         var item = await db.ActionChecklistItems.FirstOrDefaultAsync(i => i.Id == itemId, ct) ?? throw new KeyNotFoundException("That checklist item no longer exists.");
         var a = await db.Actions.FirstAsync(x => x.Id == item.ActionId, ct);
-        await RequireWork(db, a, ct);
+        await RequireWork(db, user, a, ct);
         if (item.IsDone == done) return;
         item.IsDone = done;
         item.DoneByName = done ? user.DisplayName : null;
         item.DoneAtUtc = done ? DateTimeOffset.UtcNow : null;
-        db.ActionEvents.Add(Event(a.Id, $"{(done ? "Ticked" : "Unticked")} \"{item.Text}\"."));
+        db.ActionEvents.Add(Event(user, a.Id, $"{(done ? "Ticked" : "Unticked")} \"{item.Text}\"."));
         await db.SaveChangesAsync(ct);
     }
 
@@ -839,10 +843,10 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (clean.Length == 0) throw new ArgumentException("Say what needs doing.");
         await using var db = await dbs.CreateAsync(ct);
         var a = await db.Actions.Include(x => x.Checklist).FirstOrDefaultAsync(x => x.Id == actionId, ct) ?? throw new KeyNotFoundException("That action no longer exists.");
-        await RequireWork(db, a, ct);
+        await RequireWork(db, user, a, ct);
         if (a.Checklist.Count >= ActionChecklistItem.MaxPerAction) throw new ArgumentException($"A checklist can have at most {ActionChecklistItem.MaxPerAction} items.");
         db.ActionChecklistItems.Add(new ActionChecklistItem { ActionId = a.Id, Text = clean, SortOrder = NextOrder(a) });
-        db.ActionEvents.Add(Event(a.Id, $"Added \"{clean}\" to the checklist."));
+        db.ActionEvents.Add(Event(user, a.Id, $"Added \"{clean}\" to the checklist."));
         await db.SaveChangesAsync(ct);
     }
 
@@ -853,9 +857,9 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var item = await db.ActionChecklistItems.FirstOrDefaultAsync(i => i.Id == itemId, ct);
         if (item is null) return;
         var a = await db.Actions.FirstAsync(x => x.Id == item.ActionId, ct);
-        await RequireWork(db, a, ct);
+        await RequireWork(db, user, a, ct);
         db.ActionChecklistItems.Remove(item);
-        db.ActionEvents.Add(Event(a.Id, $"Took \"{item.Text}\" off the checklist."));
+        db.ActionEvents.Add(Event(user, a.Id, $"Took \"{item.Text}\" off the checklist."));
         await db.SaveChangesAsync(ct);
     }
 
@@ -867,11 +871,11 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     {
         await using var db = await dbs.CreateAsync(ct);
         var a = await db.Actions.Include(x => x.Checklist).FirstOrDefaultAsync(x => x.Id == actionId, ct) ?? throw new KeyNotFoundException("That action no longer exists.");
-        await RequireWork(db, a, ct);
+        await RequireWork(db, user, a, ct);
         var playbook = await PlaybookFor(db, playbookId, a.Kind, ct);
         var added = AddSteps(a, playbook);
         db.ActionChecklistItems.AddRange(added);
-        db.ActionEvents.Add(Event(a.Id, added.Count == 0
+        db.ActionEvents.Add(Event(user, a.Id, added.Count == 0
             ? $"Applied the {playbook.Name} playbook: its steps were all on the checklist already."
             : $"Applied the {playbook.Name} playbook: {added.Count} step{(added.Count == 1 ? "" : "s")} added to the checklist."));
         await db.SaveChangesAsync(ct);
@@ -925,7 +929,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// </summary>
     public async Task<HuntSources> HuntSourcesAsync(Guid actionId, CancellationToken ct = default)
     {
-        RequireRead();
+        RequireRead(user);
         await using var db = await dbs.CreateAsync(ct);
         var a = await db.Actions.AsNoTracking().Include(x => x.Article).ThenInclude(x => x!.Indicators).FirstOrDefaultAsync(x => x.Id == actionId, ct)
                 ?? throw new KeyNotFoundException("That action no longer exists.");
@@ -942,7 +946,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         await using var db = await dbs.CreateAsync(ct);
         var a = await db.Actions.Include(x => x.Article).ThenInclude(x => x!.Indicators).FirstOrDefaultAsync(x => x.Id == actionId, ct)
                 ?? throw new KeyNotFoundException("That action no longer exists.");
-        await RequireWork(db, a, ct);
+        await RequireWork(db, user, a, ct);
         var sources = fromStory ? await StoryArticlesAsync(db, a, ct) : a.Article is { } own ? [own] : [];
         var indicators = DistinctIndicators(sources);
         if (indicators.Count == 0)
@@ -955,7 +959,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             ActionId = a.Id, Dialect = dialect, GeneratedText = text, Text = text, CreatedAtUtc = DateTimeOffset.UtcNow, CreatedByName = user.DisplayName,
         };
         db.HuntQueries.Add(hunt);
-        db.ActionEvents.Add(Event(a.Id, $"Generated a {HuntQueryBuilder.DialectName(dialect)} hunt query{(fromStory ? $" from the story's {sources.Count} articles" : "")}."));
+        db.ActionEvents.Add(Event(user, a.Id, $"Generated a {HuntQueryBuilder.DialectName(dialect)} hunt query{(fromStory ? $" from the story's {sources.Count} articles" : "")}."));
         await db.SaveChangesAsync(ct);
         return hunt;
     }
@@ -975,7 +979,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             ActionId = a.Id, Dialect = d.Key, GeneratedText = "", Text = clean, CreatedAtUtc = DateTimeOffset.UtcNow, CreatedByName = user.DisplayName,
         };
         db.HuntQueries.Add(hunt);
-        db.ActionEvents.Add(Event(a.Id, $"Added a hand-written {d.Name} hunt query."));
+        db.ActionEvents.Add(Event(user, a.Id, $"Added a hand-written {d.Name} hunt query."));
         await db.SaveChangesAsync(ct);
         return hunt;
     }
@@ -1013,7 +1017,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (hunt.Result != HuntResult.NotRun)
         {
             hunt.EditedAfterResultAtUtc = DateTimeOffset.UtcNow;
-            db.ActionEvents.Add(Event(a.Id, $"Edited the {HuntQueryBuilder.DialectName(hunt.Dialect)} hunt query after its result was recorded."));
+            db.ActionEvents.Add(Event(user, a.Id, $"Edited the {HuntQueryBuilder.DialectName(hunt.Dialect)} hunt query after its result was recorded."));
         }
         await db.SaveChangesAsync(ct);
     }
@@ -1036,13 +1040,10 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         {
             // Only a file stored as evidence and not yet used anywhere: never an article's screenshot, a frozen send's image or
             // a comment's file (deleting that comment would delete the bytes from under this hunt).
-            var used = await db.ArticleScreenshots.AnyAsync(x => x.FileId == fileId, ct) || await db.BriefSendImages.AnyAsync(x => x.FileId == fileId, ct)
-                       || await db.ActionCommentFiles.AnyAsync(x => x.FileId == fileId, ct) || await db.ActionFiles.AnyAsync(x => x.FileId == fileId, ct)
-                       || await db.HuntQueries.AnyAsync(x => x.EvidenceFileId == fileId && x.Id != hunt.Id, ct);
-            if (used || !await db.Files.AnyAsync(f => f.Id == fileId, ct)) throw new ArgumentException("That evidence file can't be used.");
+            if (await ScreenshotService.InUseAsync(db, fileId, hunt.Id, ct) || !await db.Files.AnyAsync(f => f.Id == fileId, ct)) throw new ArgumentException("That evidence file can't be used.");
             hunt.EvidenceFileId = fileId;
         }
-        db.ActionEvents.Add(Event(a.Id, $"Ran the {HuntQueryBuilder.DialectName(hunt.Dialect)} hunt: {(result == HuntResult.NoHits ? "no hits" : $"hits{(count is { } c ? $" ({c})" : "")}")}."));
+        db.ActionEvents.Add(Event(user, a.Id, $"Ran the {HuntQueryBuilder.DialectName(hunt.Dialect)} hunt: {(result == HuntResult.NoHits ? "no hits" : $"hits{(count is { } c ? $" ({c})" : "")}")}."));
         // The action's version moves with it, so of two recordings of this query at once (or one and a "No hits, close"),
         // the second is refused as stale rather than overwriting the first: the check above alone can't see a save
         // that hasn't landed yet.
@@ -1107,7 +1108,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     {
         var hunt = await db.HuntQueries.FirstOrDefaultAsync(h => h.Id == huntId, ct) ?? throw new KeyNotFoundException("That hunt query no longer exists.");
         var a = await db.Actions.FirstAsync(x => x.Id == hunt.ActionId, ct);
-        await RequireWork(db, a, ct);
+        await RequireWork(db, user, a, ct);
         return (hunt, a);
     }
 
@@ -1115,7 +1116,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     public async Task<bool> CanWorkAsync(Guid teamId, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
-        return await CanWorkAsync(db, teamId, ct);
+        return await CanWork(db, user, teamId, ct);
     }
 
     // --- helpers ------------------------------------------------------------------------------------------------
@@ -1154,27 +1155,26 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         a.ParentId = form.ParentId;
     }
 
-    private Task<bool> CanWorkAsync(IAppDbContext db, Guid teamId, CancellationToken ct) => CanWork(db, user, teamId, ct);
-
     /// <summary>Whether <paramref name="who"/> may work actions of <paramref name="teamId"/>: an analyst or administrator, or a
     /// member of the team with WorkActions.</summary>
     internal static async Task<bool> CanWork(IAppDbContext db, ICurrentUser who, Guid teamId, CancellationToken ct) =>
         who.Has(Permission.WriteArticles)
         || (who.Has(Permission.WorkActions) && await db.TeamMembers.AnyAsync(m => m.TeamId == teamId && m.UserId == who.UserId, ct));
 
-    private async Task RequireWork(IAppDbContext db, ActionItem a, CancellationToken ct)
+    internal static async Task RequireWork(IAppDbContext db, ICurrentUser who, ActionItem a, CancellationToken ct,
+        string refusal = "Only analysts and members of the owning team can work this action.")
     {
-        if (!await CanWorkAsync(db, a.TeamId, ct)) throw new ForbiddenException("Only analysts and members of the owning team can work this action.");
+        if (!await CanWork(db, who, a.TeamId, ct)) throw new ForbiddenException(refusal);
     }
 
-    private static async Task<ActionItem> FindAsync(IAppDbContext db, Guid id, CancellationToken ct) =>
+    internal static async Task<ActionItem> FindAsync(IAppDbContext db, Guid id, CancellationToken ct) =>
         await db.Actions.FirstOrDefaultAsync(x => x.Id == id, ct) ?? throw new KeyNotFoundException("That action no longer exists.");
 
     // The action (tracked), for someone who may work it.
     private async Task<ActionItem> WorkableAsync(IAppDbContext db, Guid id, CancellationToken ct)
     {
         var a = await FindAsync(db, id, ct);
-        await RequireWork(db, a, ct);
+        await RequireWork(db, user, a, ct);
         return a;
     }
 
@@ -1182,24 +1182,27 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     // may too. A Viewer reads the team edition and does neither, so can't.
     private async Task RequireComment(IAppDbContext db, ActionItem a, CancellationToken ct)
     {
-        if (!CanComment && !await CanWorkAsync(db, a.TeamId, ct)) throw new ForbiddenException("You don't have access to comment on actions.");
+        if (!CanComment && !await CanWork(db, user, a.TeamId, ct)) throw new ForbiddenException("You don't have access to comment on actions.");
     }
 
     /// <summary>Whether the current user may comment, with text, on any action they can see (ADR 0008, amended): on the
     /// team edition, and working actions or writing articles (not a Viewer, who only reads).</summary>
-    private bool CanComment => user.Has(Permission.ReadTeamEdition) && user.Contributes();
+    private bool CanComment => user.Has(Permission.ReadTeamEdition) && (user.Has(Permission.WorkActions) || user.Has(Permission.WriteArticles));
 
-    private void RequireRead()
+    /// <summary>Whether <paramref name="who"/> reads actions: with the team edition, or working them.</summary>
+    internal static bool MayRead(ICurrentUser who) => who.Has(Permission.ReadTeamEdition) || who.Has(Permission.WorkActions);
+
+    internal static void RequireRead(ICurrentUser who)
     {
-        if (!user.Has(Permission.ReadTeamEdition) && !user.Has(Permission.WorkActions)) throw new ForbiddenException("You don't have access to actions.");
+        if (!MayRead(who)) throw new ForbiddenException("You don't have access to actions.");
     }
 
     /// <summary>The longest a history line is (its column). A longer one, such as a status change with a pasted outcome
     /// note of up to 2,000 characters, is clipped with an ellipsis; the full note stays on the action.</summary>
     public const int EventTextMax = 1000;
 
-    private ActionEvent Event(Guid actionId, string text) =>
-        new() { ActionId = actionId, AtUtc = DateTimeOffset.UtcNow, ByName = user.DisplayName, Text = ClipEvent(text) };
+    internal static ActionEvent Event(ICurrentUser who, Guid actionId, string text) =>
+        new() { ActionId = actionId, AtUtc = DateTimeOffset.UtcNow, ByName = who.DisplayName, Text = ClipEvent(text) };
 
     // Not cutting a surrogate pair in two.
     internal static string ClipEvent(string text)

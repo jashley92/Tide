@@ -162,6 +162,7 @@ else
                 <h2>Comments <span class="tide-count tide-muted fw-normal">(@a.Comments.Count)</span></h2>
                 @foreach (var c in a.Comments)
                 {
+                    var liveFiles = LiveFiles(c);
                     <div class="tide-comment" id="comment-@c.Id" @key="c.Id">
                         <div class="small tide-muted d-flex gap-2 align-items-center">
                             <span><strong>@c.AuthorName</strong> &middot; @Ui.When(Clock, c.AtUtc)@(c.EditedAtUtc is not null ? " (edited)" : "")</span>
@@ -183,7 +184,7 @@ else
                             <MarkdownToolbar For="comment-edit" Label="Edit the comment" Class="mt-1" />
                             <textarea id="comment-edit" class="form-control form-control-sm" rows="3" maxlength="8000" aria-label="Edit the comment" @ref="_commentBox" @bind="_commentEdit" @bind:event="oninput"></textarea>
                             <div class="d-flex gap-2 mt-1">
-                                <button class="btn btn-primary btn-sm" disabled="@(_busy || (string.IsNullOrWhiteSpace(_commentEdit) && !c.Files.Any(f => !f.IsRemoved)))" @onclick="() => SaveComment(c)">Save</button>
+                                <button class="btn btn-primary btn-sm" disabled="@(_busy || (string.IsNullOrWhiteSpace(_commentEdit) && liveFiles.Count == 0))" @onclick="() => SaveComment(c)">Save</button>
                                 <button class="btn btn-outline-secondary btn-sm" @onclick="() => CancelComment(c)">Cancel</button>
                             </div>
                         }
@@ -191,10 +192,10 @@ else
                         {
                             <Md Text="@c.Text" />
                         }
-                        @if (c.Files.Any(f => !f.IsRemoved))
+                        @if (liveFiles.Count > 0)
                         {
-                            var shots = c.Files.Where(f => f.IsImage && !f.IsRemoved).OrderBy(f => f.SortOrder).ToList();
-                            var evidence = c.Files.Where(f => !f.IsImage && !f.IsRemoved).OrderBy(f => f.SortOrder).ToList();
+                            var shots = liveFiles.Where(f => f.IsImage).ToList();
+                            var evidence = liveFiles.Where(f => !f.IsImage).ToList();
                             @if (shots.Count > 0)
                             {
                                 <div class="tide-comment-shots">
@@ -468,7 +469,7 @@ else
         {
             try
             {
-                await FileSvc.AddAsync((await ActionSvc.GetAsync(number))!.Action.Id, uploads);
+                await FileSvc.AddAsync(number, uploads);
                 _newFiles.Clear();
             }
             catch (Exception ex) when (ex is ArgumentException or IOException or ForbiddenException)
@@ -568,9 +569,12 @@ else
             (_editingComment, _commentEdit, _commentEditBase, _commentTheirs, _commentTheirsBy) = (null, null, null, null, null);
     }
 
+    // A comment's files still on it, in their order.
+    private static List<ActionCommentFile> LiveFiles(ActionComment c) => c.Files.Where(f => !f.IsRemoved).OrderBy(f => f.SortOrder).ToList();
+
     private async Task DeleteComment(ActionComment c)
     {
-        var kept = c.Files.Count(f => !f.IsRemoved) > 0 ? " Its files are kept as removed files, which an administrator can restore." : "";
+        var kept = LiveFiles(c).Count > 0 ? " Its files are kept as removed files, which an administrator can restore." : "";
         if (!await _confirm.Ask("Delete this comment?", "The action's history will say a comment was deleted." + kept, "Delete comment")) return;
         await Run(async () =>
         {
@@ -642,12 +646,8 @@ else
             foreach (var f in files)
             {
                 if (f.Size > Shots.MaxAttachmentBytes) throw new ArgumentException($"'{f.Name}' is over the {Shots.MaxAttachmentBytes / 1024 / 1024} MB limit.");
-                await using var stream = f.OpenReadStream(Shots.MaxAttachmentBytes);
-                using var ms = new MemoryStream();
-                await stream.CopyToAsync(ms);
-                var bytes = ms.ToArray();
-                _attachments.Add(new PendingFile(new ScreenshotUpload(f.Name, bytes, string.IsNullOrWhiteSpace(f.ContentType) ? null : f.ContentType),
-                    ImageSniffer.RasterContentType(bytes) is not null));
+                var (bytes, declared) = await BrowserFiles.ReadAsync(f, Shots.MaxAttachmentBytes);
+                _attachments.Add(new PendingFile(new ScreenshotUpload(f.Name, bytes, declared), ImageSniffer.RasterContentType(bytes) is not null));
             }
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
