@@ -1,7 +1,9 @@
 @page "/present/{Day}"
 @layout BlankLayout
-@* Anyone on the team edition can open it to join a live meeting; starting, running and ending one are the analysts'. *@
-@attribute [Authorize(Policy = Policies.ReadTeamEdition)]
+@* Anyone who may join meetings can open it to join a live meeting; starting, running and ending one are the analysts'.
+   A Visitor (not on the team edition) sees it only from a seat in the day's live meeting: the seat is taken before
+   anything is read, and the services let their reads through only while it's held (MeetingAccess). *@
+@attribute [Authorize(Policy = Policies.JoinMeetings)]
 @inject BriefService BriefSvc
 @inject Tide.Application.Settings.DistributionSettings Distribution
 @inject NavigationManager Nav
@@ -41,6 +43,11 @@
                 <h2>The brief couldn't be loaded</h2>
                 <a href="@Nav.Uri" data-enhance-nav="false">Reload the page to try again</a>
             }
+            else if (_loaded && _visitor)
+            {
+                <h2>There's no meeting on now</h2>
+                <a href="published">Go to the published briefs</a>
+            }
             else if (_loaded && !_canPresent)
             {
                 <h2>No meeting going on</h2>
@@ -78,7 +85,7 @@ else
                     <option value="@Edition.Team">Team edition</option>
                     <option value="@Edition.Public">Company-wide edition</option>
                 </select>
-                @if (TeamEdition)
+                @if (TeamEdition && !_visitor)
                 {
                     var unseen = Unseen;
                     <button class="btn btn-sm btn-outline-secondary tide-notes-btn" title="Meeting notes" aria-label="@(unseen > 0 ? $"Meeting notes, {unseen} new" : "Meeting notes")" @onclick="ToggleNotes">
@@ -99,7 +106,7 @@ else
                     <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="EndFromTop"><span class="bi bi-flag" aria-hidden="true"></span> End the meeting</button>
                 }
                 <button class="btn btn-sm btn-outline-secondary" title="Full screen (F)" aria-label="Full screen (F)" @onclick="ToggleFullscreen"><span class="bi @(_fullscreen ? "bi-fullscreen-exit" : "bi-arrows-fullscreen")"></span></button>
-                <a class="btn btn-sm btn-outline-secondary" href="@Ui.BriefUrl(_date)" title="Leave present mode" aria-label="Leave present mode"><span class="bi bi-x-lg" aria-hidden="true"></span></a>
+                <a class="btn btn-sm btn-outline-secondary" href="@(_visitor ? "published" : Ui.BriefUrl(_date))" title="Leave present mode" aria-label="Leave present mode"><span class="bi bi-x-lg" aria-hidden="true"></span></a>
             </div>
         </header>
 
@@ -192,7 +199,7 @@ else
                                 }
                             </tbody>
                         </table>
-                        <div class="tide-present-help mt-2">@_open.Rows.Count of @_open.Overdue overdue shown. <a href="actions?view=overdue">The rest are under Actions &gt; Overdue.</a></div>
+                        <div class="tide-present-help mt-2">@_open.Rows.Count of @_open.Overdue overdue shown.@if (!_visitor) { <text> </text><a href="actions?view=overdue">The rest are under Actions &gt; Overdue.</a> }</div>
                     </div>
                 }
                 else if (_slide > NoteSlides && _slide <= NoteSlides + MetricsSlides)
@@ -694,12 +701,12 @@ else
         @if (TeamEdition && _actionDetail is { } shownAction)
         {
             <PresentAction Detail="shownAction" Version="_actionVersion" Kicker="@Kicker(_ownAction)" CanClose="!Held" Autofocus="_focusAction"
-                           OnClose="CloseAction" Changed="OnActionChanged" />
+                           OnClose="CloseAction" Changed="OnActionChanged" Links="!_visitor" />
         }
 
         @if (TeamEdition && _product is { } shownProduct)
         {
-            <PresentProduct Card="shownProduct" Kicker="@Kicker(_popup.Own)" CanClose="!Held" Autofocus="_focusProduct" OnClose="CloseProduct" />
+            <PresentProduct Card="shownProduct" Kicker="@Kicker(_popup.Own)" CanClose="!Held" Autofocus="_focusProduct" OnClose="CloseProduct" Links="!_visitor" />
         }
 
         @* Inside the slides' root, so it shows in full screen too; present.js leaves the keys to it while it's open. *@
@@ -740,7 +747,9 @@ else
     private string? _day;
     private bool _valid, _failed;
 
-    protected override async Task OnParametersSetAsync()
+    protected override Task OnParametersSetAsync() => LoadDay();
+
+    private async Task LoadDay()
     {
         var day = Day;
         if (day != _day)
@@ -759,6 +768,12 @@ else
         _valid = Ui.TryParseDay(day, out var date);
         if (!_valid) { _loaded = true; return; }
         _date = date;
+        if (_visitor && !TakeVisitorSeat())
+        {
+            // Nothing of the team's is theirs without a seat: loading until the page is live, then "no meeting on now".
+            _loaded = _interactive;
+            return;
+        }
         try
         {
             // Read in full before anything is shown, and dropped if the address moved on meanwhile.
@@ -770,7 +785,7 @@ else
             var canPresent = CurrentUser.Has(Permission.PresentBriefs);
             (_canWork, _canNote) = (CurrentUser.Has(Permission.WorkActions), MeetingSvc.CanNote);
             var record = brief is null ? MeetingRecord.None : await MeetingSvc.GetAsync(brief.Id);
-            var teams = (await TeamSvc.ListAsync()).ToList();
+            var teams = _visitor ? [] : (await TeamSvc.ListAsync()).ToList();
             var teamsByKind = canCreate ? await ActionSvc.TeamsByKindAsync() : new Dictionary<ActionKind, Guid>();
             var actions = brief is null ? null : await BriefSvc.EditionActionsAsync(brief);
             var cves = brief is null ? new Dictionary<string, CveRecord>() : await CvesOf(brief);
@@ -818,9 +833,17 @@ else
         try { await JS.InvokeVoidAsync("tidePresent.start", _ref); }
         catch (JSDisconnectedException) { }
         // Joined once the page is live, not while it's prerendered: a prerendered page would sit in the meeting unseen.
-        _interactive = true;
-        await JoinIfLive();
+        await GoLive();
         StateHasChanged();
+    }
+
+    /// <summary>The page is live, not prerendered: it joins the day's meeting if one's on. A Visitor takes a seat in it
+    /// only now, and then reads the slides.</summary>
+    internal async Task GoLive()
+    {
+        _interactive = true;
+        if (_visitor) await LoadDay();
+        else await JoinIfLive();
     }
 
     private string Elapsed => $"{(int)(DateTimeOffset.UtcNow - (_view?.StartedAtUtc ?? _startedAt)).TotalMinutes} min";
@@ -1004,6 +1027,7 @@ else
     {
         _live = new LiveChanges(Feed, Origin, c => _follow.Contains(c.Topic), InvokeAsync, OnChangedElsewhere);
         (_me, _meName) = (CurrentUser.UserId, CurrentUser.DisplayName);
+        _visitor = MeetingAccess.MeetingOnly(CurrentUser);
         Meetings.Changed += OnMeetingChanged;
     }
 
@@ -1315,6 +1339,10 @@ else
 
     private bool _canPresent, _canWork, _canNote, _interactive, _attended, _disposed, _following = true;
 
+    // A Visitor: in the meeting from a seat only (MeetingAccess), and not to open the team's pages from it; and their seat,
+    // taken ahead of the brief's read, not yet settled into the meeting (JoinIfLive).
+    private bool _visitor, _seatTaken;
+
     // The notes this person has seen: the ones there as the page opened, and every one while the notes are open. Others'
     // notes beyond those are the Notes button's count.
     private readonly HashSet<Guid> _seen = [];
@@ -1358,7 +1386,7 @@ else
 
     internal Task StartMeeting() => Run(async () =>
     {
-        if (_disposed) return;
+        if (_disposed || !_canPresent) return;
         try { _seat = Meetings.Start(_date, _brief!.Id, _me, _meName, Circuit.CircuitId, Origin.Id, _slide); }
         catch (InvalidOperationException)
         {
@@ -1379,8 +1407,10 @@ else
     internal async Task JoinIfLive()
     {
         Refresh();
-        if (_disposed || _seat is not null || _brief is null || _view is not { } live || live.BriefId != _brief.Id) return;
-        _seat = Meetings.Join(_date, _me, _meName, _canPresent, Circuit.CircuitId, Origin.Id, live.Slide);
+        if (_disposed || _seat is not null && !_seatTaken || _brief is null || _view is not { } live || live.BriefId != _brief.Id) return;
+        // A Visitor's seat was taken before the brief was read (TakeVisitorSeat): it's settled into here.
+        _seatTaken = false;
+        _seat ??= Meetings.Join(_date, _me, _meName, _canPresent, Circuit.CircuitId, Origin.Id, live.Slide);
         if (_seat is null) return;
         _edition = Edition.Team;   // first, so the slide is found among the team edition's
         _slide = SlideFor(live);
@@ -1394,6 +1424,31 @@ else
             else await SyncAction();
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    /// <summary>
+    /// A Visitor's seat in the day's live meeting, taken before anything of the team's is read: their reads go through only
+    /// from it. None before the page is live (a prerendered page would sit in the meeting unseen), or with no meeting on.
+    /// </summary>
+    private bool TakeVisitorSeat()
+    {
+        if (_seat is not null) return true;
+        if (!_interactive || _disposed || Meetings.Get(_date) is not { } live) return false;
+        _seat = Meetings.Join(_date, _me, _meName, canPresent: false, Circuit.CircuitId, Origin.Id, live.Slide);
+        _seatTaken = _seat is not null;
+        return _seatTaken;
+    }
+
+    // The meeting a Visitor was in ended: what it showed goes with it. Their reads are refused now anyway; the page says
+    // there's no meeting on, and joins the next one that starts.
+    private void ForgetMeeting()
+    {
+        (_brief, _metrics, _actions, _open, _record, _zoom, _attended) = (null, null, null, OpenActionsReview.None, MeetingRecord.None, null, false);
+        (_cves, _stackOf, _cut) = (new Dictionary<string, CveRecord>(), new Dictionary<Guid, IReadOnlyList<StackProduct>>(), null);
+        _seat?.Dispose();
+        (_seat, _seatTaken, _slide) = (null, false, 0);
+        DropAction();
+        DropProduct(forget: true);
     }
 
     // In the meeting, started or joined: on the team edition, following, and recorded as there.
@@ -1446,6 +1501,12 @@ else
         if (_view is null)
         {
             if (_seat is null) return;
+            if (_visitor)
+            {
+                ForgetMeeting();
+                Toasts.Show("The meeting has ended.");
+                return;
+            }
             // It ended under us: to the wrap-up. The brief, now presented, and the record follow as ChangeFeed changes.
             _seat = null;
             _slide = LastSlide;
@@ -1456,7 +1517,8 @@ else
         }
         if (_seat is null)
         {
-            if (_interactive) await JoinIfLive();
+            if (_visitor && _interactive) await LoadDay();   // a meeting started: a Visitor takes a seat, then reads
+            else if (_interactive) await JoinIfLive();
             return;
         }
         // Handed on, to me or from me: what was open goes (the meeting closed it for everyone).
@@ -1579,7 +1641,7 @@ else
     private int? _sharedSeen;
 
     /// <summary>Whether this page can open an action: on the team edition, and not held by the presenter's lock.</summary>
-    private bool CanOpenAction => TeamEdition && !Held;
+    private bool CanOpenAction => TeamEdition && !Held && !_visitor;
 
     private RenderFragment ActionNum(int number) =>
         @<text>@if (CanOpenAction)
@@ -1643,7 +1705,13 @@ else
 
     private async Task LoadAction(int number, bool focus = false)
     {
-        var detail = await ActionSvc.GetAsync(number);
+        ActionDetail? detail;
+        try { detail = await ActionSvc.GetAsync(number); }
+        catch (ForbiddenException) when (_visitor)
+        {
+            DropAction();   // the presenter closed it a moment ago: a Visitor sees only the one open for the room
+            return;
+        }
         if (detail is null)
         {
             Toasts.Error($"{Ui.ActionLabel(number)} wasn't found.");
@@ -1698,7 +1766,7 @@ else
     private bool _focusProduct;
 
     /// <summary>Whether this page can open a product's card: on the team edition, and not held by the presenter's lock.</summary>
-    private bool CanOpenProduct => TeamEdition && !Held;
+    private bool CanOpenProduct => TeamEdition && !Held && !_visitor;
 
     private static bool IsTags(Change c) => c.Topic == ChangeFeed.Stack || c.Topic.StartsWith("article-tags:", StringComparison.Ordinal);
 

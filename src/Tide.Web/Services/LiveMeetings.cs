@@ -86,6 +86,17 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
         lock (_gate) return _meetings.Values.Any(m => m.BriefId == briefId);
     }
 
+    /// <summary>
+    /// The meetings <paramref name="userId"/> is in now: a seat of theirs whose connection is up. A seat whose page left, or
+    /// whose meeting ended, is gone at once, so a Visitor's reads through it stop with it (MeetingAccess).
+    /// </summary>
+    public IReadOnlyList<Tide.Application.Briefs.SeatedMeeting> SeatedIn(string userId)
+    {
+        lock (_gate)
+            return _meetings.Values.Where(m => Here(m).Any(s => s.UserId == userId))
+                .Select(m => new Tide.Application.Briefs.SeatedMeeting(m.Day, m.BriefId, m.Action, m.Product)).ToList();
+    }
+
     /// <summary>Every meeting going on, oldest first.</summary>
     public IReadOnlyList<LiveMeetingView> Live()
     {

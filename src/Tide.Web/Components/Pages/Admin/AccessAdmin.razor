@@ -94,8 +94,9 @@
             @foreach (var role in Enum.GetValues<AppRole>())
             {
                 <tr>
-                    <td class="fw-semibold">@role</td>
-                    <td class="tide-maxw-lg small tide-muted">@string.Join("; ", RoleDefinitions.SystemRoles[role].Select(Policies.Describe))</td>
+                    <td class="fw-semibold">@RoleDefinitions.Label(role)</td>
+                    <td class="tide-maxw-lg small">@RoleDefinitions.Describe(role)
+                        <div class="tide-muted">@string.Join("; ", RoleDefinitions.SystemRoles[role].Select(Policies.Describe))</div></td>
                     <td>
                         @foreach (var m in _rows.Where(r => r.RoleName == role.ToString()))
                         {
@@ -113,13 +114,49 @@
         <select class="tide-maxw-xs form-select form-select-sm" aria-label="Role" @bind="_role">
             @foreach (var role in Enum.GetValues<AppRole>())
             {
-                <option value="@role">@role</option>
+                <option value="@role">@RoleDefinitions.Label(role)</option>
             }
         </select>
         <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="Add">Grant</button>
     </div>
     <p class="form-text mb-0">A bare group name matches a group in this server's own domain; name a trusted domain's group as DOMAIN\Group.
         Changes reach open sessions within a couple of minutes.</p>
+</div>
+
+<div class="tide-card">
+    <h2 id="role-abilities">What each role can do</h2>
+    <p class="tide-muted small">Read from the permissions each role grants, so it can't drift from what TIDE enforces.</p>
+    <div class="table-responsive">
+        <table class="tide-table tide-role-table" aria-labelledby="role-abilities">
+            <thead>
+                <tr>
+                    <th scope="col">Activity</th>
+                    @foreach (var role in Capabilities.Columns) { <th scope="col">@RoleDefinitions.Label(role)</th> }
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var group in Capabilities.All.GroupBy(c => c.Group))
+                {
+                    <tr><th scope="rowgroup" colspan="@(Capabilities.Columns.Count + 1)">@group.Key</th></tr>
+                    @foreach (var c in group)
+                    {
+                        <tr>
+                            <th scope="row" class="fw-normal">@c.Activity</th>
+                            @foreach (var role in Capabilities.Columns)
+                            {
+                                var cell = c.For(role);
+                                <td class="small">
+                                    @if (cell is null) { <span class="bi bi-x-lg tide-muted" aria-hidden="true"></span><span class="visually-hidden">No</span> }
+                                    else if (cell.Length == 0) { <span class="bi bi-check-lg" aria-hidden="true"></span><span class="visually-hidden">Yes</span> }
+                                    else { <span>@cell</span> }
+                                </td>
+                            }
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
 </div>
 
 @code {

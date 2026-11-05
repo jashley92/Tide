@@ -26,6 +26,12 @@ an existing site, such as `https://intranet.contoso.com/tide` (see [Under anothe
   | Action owner | Other security teams (Vulnerability Management, Cyber Defense) | Read the team edition and work their actions. In the app they see articles at every TLP; the edition ceilings limit what's sent, the API and webhooks |
   | Reader | Everyone else | Read the published (company-wide) archive |
   | Admin | TIDE's administrators | Everything, including role mappings, scorecard tags and edition ceilings |
+  | Viewer | Managers, auditors, anyone who should see the team's work without changing it | Read everything the team edition shows, every action included, and change nothing. Join meetings, raise a hand and add notes |
+  | Visitor | Colleagues from elsewhere who sit in on the meeting | Read the published archive. In a live meeting, see what the room sees, team edition included, only while they're in it |
+
+  The installer's answers file names groups for the first four; map Viewer and Visitor groups on the Role mappings
+  page (Administration > Access & distribution), or in a configuration bundle. See
+  [what each role can do](#what-each-role-can-do).
 
 - **What TIDE reads from AD.** For each person who signs in, TIDE looks up their display name and email address
   (the `mail` attribute) in their own domain, as the app-pool account, and keeps them in its user list. Test copies,
@@ -36,6 +42,59 @@ an existing site, such as `https://intranet.contoso.com/tide` (see [Under anothe
   earlier visit.
 - **DNS and TLS.** A host name such as `tide.contoso.com` pointing at the server, and a TLS certificate for it in
   `LocalMachine\My`.
+
+### What each role can do
+
+The same table is on the Role mappings page (Administration > Access & distribution). "Only in a live meeting" and
+the like mean the role gets it only there; a Visitor's team-edition access lasts only while they're seated in that
+brief's live meeting.
+
+<!-- capabilities:start (generated from Capabilities.Markdown(); CapabilitiesTests checks it) -->
+| Activity | Administrator | Analyst | Action owner | Viewer | Visitor | Reader |
+| --- | --- | --- | --- | --- | --- | --- |
+| **Briefs and meetings** | | | | | | |
+| Read the company-wide archive (published briefs) | Yes | Yes | Yes | Yes | Yes | Yes |
+| Read the team edition: briefs, the brief archive, Today | Yes | Yes | Yes | Yes | only its live meeting, while in it | No |
+| Join and follow a live meeting | Yes | Yes | Yes | Yes | Yes | No |
+| Raise a hand in a meeting | Yes | Yes | Yes | Yes | Yes | No |
+| Add meeting notes | Yes | Yes | Yes | Yes | No | No |
+| Present, start and end a meeting | Yes | Yes | No | No | No | No |
+| Build a brief (its articles, order, team note) | Yes | Yes | No | No | No | No |
+| Reopen a brief | Yes | Yes | No | No | No | No |
+| Send a brief, finish one not sent, mark it posted | Yes | Yes | No | No | No | No |
+| Read the brief rotation | Yes | Yes | Yes | Yes | No | No |
+| Ask for a rotation swap or cover | Yes | Yes | No | No | No | No |
+| **Articles and intake** | | | | | | |
+| Read articles, stories and search | Yes | Yes | Yes | Yes | No | No |
+| Triage the inbox | Yes | Yes | No | No | No | No |
+| Write and edit articles and stories | Yes | Yes | No | No | No | No |
+| Review articles | Yes | Yes | No | No | No | No |
+| **Actions** | | | | | | |
+| Read actions: their pages, the board, Workload | Yes | Yes | Yes | Yes | the one shown, in a live meeting | No |
+| Comment on actions | Yes | Yes | Yes | No | No | No |
+| Raise actions and edit every field | Yes | Yes | No | No | No | No |
+| Work actions: status, outcome, assignee, checklist, hunts | Yes | Yes | own team's | No | No | No |
+| Add and describe files | Yes | Yes | own team's | No | No | No |
+| Remove files | Yes | Yes | own files | No | No | No |
+| Restore removed files | Yes | No | No | No | No | No |
+| **Numbers** | | | | | | |
+| Enter the day's numbers | Yes | Yes | No | No | No | No |
+| Read the metrics history | Yes | Yes | Yes | Yes | No | No |
+| **Our stack and adversaries** | | | | | | |
+| Read Our stack and adversaries | Yes | Yes | Yes | Yes | the card shown, in a live meeting | No |
+| Edit Our stack and adversaries | Yes | Yes | No | No | No | No |
+| **Reports** | | | | | | |
+| Reports, trends and exports | Yes | Yes | Yes | Yes | No | No |
+| Coverage of detection rules | Yes | Yes | No | No | No | No |
+| **Administration** | | | | | | |
+| Organization, holidays, teams and SLAs, rotation | Yes | No | No | No | No | No |
+| Playbooks, card rules, query templates | Yes | No | No | No | No | No |
+| Sources, source health, scorecard tags, detection rules | Yes | No | No | No | No | No |
+| Opening metrics and metric imports | Yes | No | No | No | No | No |
+| Role mappings, edition ceilings, recipients, email templates | Yes | No | No | No | No | No |
+| API tokens and webhooks | Yes | No | No | No | No | No |
+| Diagnostics, configuration, audit log, updates | Yes | No | No | No | No | No |
+<!-- capabilities:end -->
 
 ## 2. The answers file
 

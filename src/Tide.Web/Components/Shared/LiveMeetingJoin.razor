@@ -1,4 +1,4 @@
-@* A brief meeting going on now, for those on the team edition: as a banner across every page ("Brief meeting is live ·
+@* A brief meeting going on now, for those who may join one (a Visitor too): as a banner across every page ("Brief meeting is live ·
    Join", with the presenter and how many are in it), or, given a Day, a Join button in place of what's normally shown
    there (the brief's Present button). Keeps up as meetings start and end. *@
 @inject LiveMeetings Meetings
@@ -33,7 +33,7 @@ else
     /// <summary>What's shown when no meeting is going on (the brief's own Present button).</summary>
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
-    private LiveMeetingView? Shown => !CurrentUser.Has(Permission.ReadTeamEdition) ? null
+    private LiveMeetingView? Shown => !CurrentUser.Has(Permission.JoinMeetings) ? null
         : Day is { } day ? Meetings.Get(day)
         : Meetings.Live().LastOrDefault();
 

@@ -190,7 +190,7 @@ else if (_results is { Terms.Count: > 0 } r)
 
     protected override async Task OnParametersSetAsync()
     {
-        _canOpenActions = CurrentUser.Has(Permission.WorkActions);
+        _canOpenActions = CurrentUser.Has(Permission.ReadActions);
         if (Q == _searched && _results is not null) return;
         _searched = Q;
         _text = Q;

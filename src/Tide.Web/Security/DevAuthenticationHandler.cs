@@ -43,6 +43,36 @@ public sealed class DevAuthenticationHandler : AuthenticationHandler<Authenticat
         _dev = dev.Value;
     }
 
+    /// <summary>
+    /// Dev-only: <c>?roles=Viewer</c> (or a comma list) on a page load signs this browser in with those roles instead of
+    /// <c>DevAuth:Roles</c>, kept in a cookie like <c>?as=</c>, so one dev server can show an Analyst presenting in one
+    /// browser and a Visitor following in another. Only TIDE's role names are taken; <c>?roles=default</c> goes back.
+    /// </summary>
+    private string[]? RolesAsked()
+    {
+        const string cookieName = "dev_roles";
+        var asked = Context.Request.Query["roles"].ToString();
+        if (asked.Length > 0)
+        {
+            var named = ParseRoles(asked);
+            var cookie = new CookieOptions
+            {
+                HttpOnly = true, Secure = true, SameSite = SameSiteMode.Lax, IsEssential = true,
+                Path = Context.Request.PathBase.HasValue ? Context.Request.PathBase.Value : "/",
+            };
+            if (named.Length == 0) Context.Response.Cookies.Delete(cookieName, cookie);
+            else Context.Response.Cookies.Append(cookieName, string.Join(',', named), cookie);
+            return named.Length == 0 ? null : named;
+        }
+        var kept = ParseRoles(Context.Request.Cookies[cookieName]);
+        return kept.Length == 0 ? null : kept;
+    }
+
+    /// <summary>The role names in a comma list that are TIDE's, by their own names; anything else is dropped.</summary>
+    internal static string[] ParseRoles(string? list) =>
+        (list ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(n => RoleDefinitions.TryParseRole(n, out var r) ? r.ToString() : null).OfType<string>().Distinct().ToArray();
+
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         // Dev-only convenience: `?as=<name>` on the initial page load signs in as a distinct throwaway identity (same
@@ -87,9 +117,10 @@ public sealed class DevAuthenticationHandler : AuthenticationHandler<Authenticat
             new(ClaimTypes.Upn, upn),
             new(ClaimTypes.Email, email),
         };
-        claims.AddRange(_dev.Roles.Select(r => new Claim(ClaimTypes.Role, r)));
+        var roles = RolesAsked() ?? _dev.Roles;
+        claims.AddRange(roles.Select(r => new Claim(ClaimTypes.Role, r)));
 
-        foreach (var perm in RoleDefinitions.PermissionsForRoleNames(_dev.Roles))
+        foreach (var perm in RoleDefinitions.PermissionsForRoleNames(roles))
             claims.Add(new Claim(AppClaimTypes.Permission, perm.ToString()));
 
         var identity = new ClaimsIdentity(claims, SchemeName, ClaimTypes.Name, ClaimTypes.Role);

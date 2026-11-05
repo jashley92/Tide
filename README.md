@@ -451,7 +451,8 @@ dotnet run --project src/Tide.Web --launch-profile http
 
 Then browse to <http://localhost:5110>. On first run the SQLite database is created, migrated, and seeded with sample
 articles and today's brief. Local development signs you in as a "Dev Analyst" holding the Analyst and Admin roles;
-add `?as=Someone` to the address to try a second person. Email is written as `.eml` files under
+add `?as=Someone` to the address to try a second person, and `?roles=Viewer` (or `Visitor`, or a comma list; `?roles=default`
+to go back) to try other roles in that browser. Email is written as `.eml` files under
 `src/Tide.Web/App_Data/mail` instead of being sent. See [docs/development.md](docs/development.md).
 
 ## Test
@@ -512,9 +513,12 @@ Each version tag on `main` publishes a **release bundle** (the published app and
 | `ActionOwner` | Works their teams' actions and reads the team edition |
 | `Reader` | Reads the published company-wide editions |
 | `Admin` | Administers TIDE |
+| `Viewer` | Reads everything the team does, every action included, and changes nothing; joins meetings, raises a hand and adds notes |
+| `Visitor` | A colleague from elsewhere: reads the published archive, and sees a live meeting only while they're in it |
 
 Each role is granted by AD groups and is a bundle of code-defined permissions. The permissions are enforced on the
-page and again in the service layer.
+page and again in the service layer. [What each role can do](docs/INSTALL.md#what-each-role-can-do) lists every
+activity, role by role; the Role mappings page (Administration > Access & distribution) shows the same table.
 
 ## Roadmap
 

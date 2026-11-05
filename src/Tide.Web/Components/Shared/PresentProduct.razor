@@ -10,7 +10,10 @@
         <h2 id="present-product-title"><span class="tide-present-product-kicker">We run</span> @p.Name
             @if (p.IsRetired) { <Badge Tone="BadgeTone.Neutral">Retired</Badge> }</h2>
         @if (Kicker is not null) { <span class="tide-present-help">@Kicker</span> }
-        <a class="btn btn-sm btn-outline-secondary ms-auto" href="@($"stack/{p.Id}")" target="_blank" rel="noopener">Open on Our stack</a>
+        @if (Links)
+        {
+            <a class="btn btn-sm btn-outline-secondary ms-auto" href="@($"stack/{p.Id}")" target="_blank" rel="noopener">Open on Our stack</a>
+        }
         @if (CanClose)
         {
             <button type="button" class="btn btn-sm btn-outline-secondary" aria-label="Close @p.Name" title="Close (Esc)" @ref="_close" @onclick="Close"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
@@ -61,6 +64,9 @@
     [Parameter] public bool Autofocus { get; set; }
 
     [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>Whether it links to Our stack: not for a Visitor, who sees the card only in the meeting.</summary>
+    [Parameter] public bool Links { get; set; } = true;
 
     private ElementReference _close;
     private Guid? _focused;

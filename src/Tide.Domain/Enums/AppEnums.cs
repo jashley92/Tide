@@ -15,6 +15,14 @@ public enum AppRole
 
     /// <summary>Administers sources, taxonomy, role mappings and settings. Holds every permission.</summary>
     Admin = 3,
+
+    /// <summary>Reads everything the team edition shows, every action included, and changes nothing; takes part in a
+    /// live meeting (follows it, raises a hand, adds notes).</summary>
+    Viewer = 4,
+
+    /// <summary>A colleague from elsewhere: reads the published archive, and joins a live meeting to see what the room sees
+    /// while they're in it. Nothing of the team's outside the meeting.</summary>
+    Visitor = 5,
 }
 
 /// <summary>The permission atoms authorization runs on. Roles bundle them; policies require one each.</summary>
@@ -27,6 +35,16 @@ public enum Permission
     WorkActions = 4,
     Administer = 5,
     EnterMetrics = 6,
+
+    /// <summary>Read every action (its page, the board, Workload, the lists), without working any.</summary>
+    ReadActions = 7,
+
+    /// <summary>Add notes to a meeting, and change or delete one's own.</summary>
+    MeetingNotes = 8,
+
+    /// <summary>Join and follow a live meeting in present mode, and raise a hand. Without the team edition (a Visitor),
+    /// the meeting's brief is readable only from a seat in it, while it runs.</summary>
+    JoinMeetings = 9,
 }
 
 /// <summary>Whether an article asks something of the organization.</summary>

@@ -29,7 +29,8 @@ public sealed class DistributionOptions
 
 /// <summary>The edition ceilings and recipient lists in force: the administered value when one is saved, else the
 /// configured default.</summary>
-public sealed class DistributionSettings(IAppDbContextFactory dbs, ICurrentUser user, IOptions<DistributionOptions> defaults)
+public sealed class DistributionSettings(IAppDbContextFactory dbs, ICurrentUser user, IOptions<DistributionOptions> defaults,
+    Briefs.IMeetingsInProgress? meetings = null)
 {
     public const string PublicMaxTlpKey = "Distribution:PublicMaxTlp";
     public const string TeamMaxTlpKey = "Distribution:TeamMaxTlp";
@@ -42,10 +43,10 @@ public sealed class DistributionSettings(IAppDbContextFactory dbs, ICurrentUser 
     internal static readonly char[] Separators = [';', ',', ' ', '\t', '\r', '\n'];
 
     /// <summary>The ceilings in force. Read wherever a brief is cut (the brief page, present mode, the editor's preview,
-    /// the sends): the team edition's readers.</summary>
+    /// the sends): the team edition's readers, and a Visitor in a live meeting (its slides are cut by them).</summary>
     public async Task<(TlpLevel Public, TlpLevel Team)> GetAsync(CancellationToken ct = default)
     {
-        if (!user.Has(Permission.ReadTeamEdition)) throw new ForbiddenException("You don't have access to the edition settings.");
+        if (!user.Has(Permission.ReadTeamEdition) && !Briefs.MeetingAccess.SeatedAnywhere(user, meetings)) throw new ForbiddenException("You don't have access to the edition settings.");
         return await ReadAsync(ct);
     }
 

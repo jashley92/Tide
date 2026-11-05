@@ -331,6 +331,9 @@ mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); p
 .tide-table { width: 100%; border-collapse: collapse; font-size: .92rem; }
 .tide-table th { font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; color: var(--tide-text-muted); font-weight: var(--tide-weight-semibold); padding: .5rem .6rem; border-bottom: 1px solid var(--tide-border); text-align: left; white-space: nowrap; }
 .tide-table td { padding: .6rem; border-bottom: 1px solid var(--tide-border); vertical-align: top; }
+/* What each role can do (Role mappings): the activities read as text, not as column headings. */
+.tide-role-table tbody th[scope="row"] { font-size: inherit; text-transform: none; letter-spacing: normal; color: var(--tide-text); font-weight: var(--tide-weight-regular); white-space: normal; min-width: 16rem; }
+.tide-role-table td { min-width: 6rem; }
 .tide-table tr:last-child td { border-bottom: 0; }
 .tide-table a { text-decoration: none; font-weight: var(--tide-weight-medium); }
 .tide-table a:hover { text-decoration: underline; }
