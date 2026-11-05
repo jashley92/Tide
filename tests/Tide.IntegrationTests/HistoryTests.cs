@@ -84,8 +84,8 @@ public class HistoryServiceTests : IDisposable
         var page = await History().BriefAsync(brief.Id);
 
         page.Entries[0].What.Should().Be("Changed");
-        page.Entries[0].Changes.Should().Contain(new HistoryChange("Opening note", null, "Partner briefing at 2pm."))
-            .And.Contain(new HistoryChange("Opening note marking", "TLP:CLEAR", "TLP:AMBER"));
+        page.Entries[0].Changes.Should().Contain(new HistoryChange("Title slide line", null, "Partner briefing at 2pm."))
+            .And.Contain(new HistoryChange("Title slide line marking", "TLP:CLEAR", "TLP:AMBER"));
         page.Entries[^1].What.Should().Be("Created");
     }
 

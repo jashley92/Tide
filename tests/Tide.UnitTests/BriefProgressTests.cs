@@ -130,13 +130,13 @@ public class BriefProgressTests
 
         var team = EditionChecks.Rows(brief, Edition.Team, TlpLevel.AmberStrict, hasNumbers: true, missingNumbers: 1);
         team.Select(r => (r.Title, r.Fit)).Should().Equal(
-            ("Opening note", EditionFit.Included), ("Today's numbers", EditionFit.Part),
+            ("Title slide line", EditionFit.Included), ("Today's numbers", EditionFit.Part),
             ("open", EditionFit.Included), ("mixed", EditionFit.Included), ("amber", EditionFit.Included));
         team[1].Why.Should().Be("1 number not entered");
 
         var company = EditionChecks.Rows(brief, Edition.Public, TlpLevel.Green, hasNumbers: true);
         company.Select(r => (r.Title, r.Fit, r.Why)).Should().Equal(
-            ("Opening note", EditionFit.LeftOut, "The note is TLP:AMBER"),
+            ("Title slide line", EditionFit.LeftOut, "The line is TLP:AMBER"),
             ("Today's numbers", EditionFit.LeftOut, "Never in this edition"),
             ("open", EditionFit.Included, null),
             ("mixed", EditionFit.Part, "1 part above TLP:GREEN left out"),

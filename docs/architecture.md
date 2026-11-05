@@ -66,7 +66,7 @@
 
 ## TLP and editions
 
-Every article, bullet, screenshot and "why it matters to us" has a `TlpLevel`, and so does the brief's opening note
+Every article, bullet, screenshot and "why it matters to us" has a `TlpLevel`, and so does the brief's title slide line
 (`Brief.IntroTlp`, left out of an edition whose ceiling is below it). The team's opening note (`Brief.TeamNote`,
 Markdown) has no marking: it belongs to the security team edition alone (`BriefEdition.ShowTeamNote`), whatever the
 company-wide ceiling, and every rendering asks the edition for it. A part counts at its own marking or its

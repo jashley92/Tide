@@ -36,7 +36,7 @@ public class TodayTests(TideApp app) : IClassFixture<TideApp>
             .And.Contain("data-move=\"up\"").And.Contain("data-move=\"down\"").And.Contain("off this brief")
             .And.Contain("Add article").And.Contain("New article");
         html.Should().Contain("id=\"edition-check-h\"").And.Contain("id=\"meeting-h\"").And.Contain("Presenting analyst")
-            .And.Contain("Opening note (optional)").And.Contain("meets at");
+            .And.Contain("Title slide line (optional)").And.Contain("meets at");
         html.Should().Contain("id=\"my-actions-h\"").And.Contain("id=\"coming-up-h\"").And.Contain("id=\"recent-h\"");
         html.Should().NotContain("id=\"team-queue-h\"", "an analyst on no team has no team queue");
         // The preview of both editions stays on the brief's own address, linked from here; no tabs on Today.
