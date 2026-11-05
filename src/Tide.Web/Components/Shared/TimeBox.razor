@@ -1,0 +1,44 @@
+@* A clock box (<input type="time">) bound to a TimeOnly, which a person can actually type into. @bind on a time input
+   couldn't be typed into in Chromium browsers: the browser reports a change at every keystroke, and a half-typed time
+   (the hour typed, the minutes not yet) as an empty value. @bind can't read "" as a TimeOnly, so it wrote the old time
+   back into the box, which put the cursor back on the hours: the minutes could never be reached. Here a value that
+   isn't a whole time is ignored, and the box is only written to when the time changes from outside (a reload, a save
+   read back), never as an echo of what's being typed, which would also put the cursor back. *@
+
+<input @key="_generation" id="@Id" type="time" class="@Class" value="@_shown" disabled="@Disabled" aria-describedby="@DescribedBy" @onchange="OnChange" />
+
+@code {
+    [Parameter] public string? Id { get; set; }
+    [Parameter] public string Class { get; set; } = "form-control form-control-sm";
+    [Parameter] public string? DescribedBy { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public TimeOnly Value { get; set; }
+    [Parameter] public EventCallback<TimeOnly> ValueChanged { get; set; }
+
+    private string _shown = "";     // the value the render writes
+    private string? _inBox;         // what the box holds: the last value written, or the last whole time typed
+    private int _generation;        // a new box, for the rare outside change back to what the render last wrote
+
+    protected override void OnParametersSet()
+    {
+        var want = Format(Value);
+        if (want == _inBox) return;            // the box already shows it (typically: just typed)
+        if (want == _shown) _generation++;     // the render already says it, so only a new box puts it there
+        _shown = want;
+        _inBox = want;
+    }
+
+    internal static string Format(TimeOnly t) => t.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>A whole time from the box ("09:30", or "09:30:00" from a browser that sends seconds), else null.</summary>
+    internal static TimeOnly? Read(string? raw) =>
+        TimeOnly.TryParseExact(raw, ["HH:mm", "HH:mm:ss"], System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out var t) ? t : null;
+
+    internal async Task OnChange(ChangeEventArgs e)
+    {
+        if (Read(e.Value?.ToString()) is not { } t) return;   // half-typed: keep typing, change nothing
+        _inBox = Format(t);
+        await ValueChanged.InvokeAsync(t);
+    }
+}

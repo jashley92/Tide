@@ -37,7 +37,7 @@
         </div>
         <div class="col-md-6">
             <label class="tide-field-label" for="org-meeting">The brief meets at</label>
-            <input id="org-meeting" type="time" class="tide-maxw-xs form-control form-control-sm" @bind="_meeting" @bind:format="HH:mm" aria-describedby="org-meeting-help" />
+            <TimeBox Id="org-meeting" Class="tide-maxw-xs form-control form-control-sm" @bind-Value="_meeting" DescribedBy="org-meeting-help" />
             <div class="form-text" id="org-meeting-help">The brief-not-ready nudge stops at this time.</div>
         </div>
     </div>

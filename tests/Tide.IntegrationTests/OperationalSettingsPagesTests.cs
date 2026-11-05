@@ -84,6 +84,31 @@ public class OperationalSettingsPagesTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task TeamsAndSla_AChangedReminderTime_IsSaved_AndStaysOnTheForm()
+    {
+        await using var r = await ComponentHarness.RenderAsync<TeamsAdmin>(app, "/admin/teams");
+        var form = typeof(TeamsAdmin).GetField("_rem", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        object Rem() => form.GetValue(r.Component)!;
+        void Set(string name, object value) => Rem().GetType().GetProperty(name)!.SetValue(Rem(), value);
+        TimeOnly Get(string name) => (TimeOnly)Rem().GetType().GetProperty(name)!.GetValue(Rem())!;
+
+        await r.Renderer.Dispatcher.InvokeAsync(() =>
+        {
+            Set("ReminderTime", new TimeOnly(9, 30));
+            Set("DigestTime", new TimeOnly(14, 15));
+            Set("BriefNotReadyTime", new TimeOnly(9, 45));
+        });
+        await r.Click(c => c.SaveReminders());
+
+        (await Saved(OperationalSettings.ReminderTime)).Should().Be("09:30");
+        (await Saved(OperationalSettings.DigestTime)).Should().Be("14:15");
+        (await Saved(OperationalSettings.BriefNotReadyTime)).Should().Be("09:45");
+        Get("ReminderTime").Should().Be(new TimeOnly(9, 30), "the form shows what was just saved, not the value before it");
+        Get("DigestTime").Should().Be(new TimeOnly(14, 15));
+        Get("BriefNotReadyTime").Should().Be(new TimeOnly(9, 45));
+    }
+
+    [Fact]
     public async Task Sources_EditsPollingAndCveEnrichment()
     {
         await using var r = await ComponentHarness.RenderAsync<SourcesAdmin>(app, "/admin/sources");
