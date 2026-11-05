@@ -57,8 +57,8 @@
                 {
                     <label class="tide-field-label mb-0 align-self-center" for="chart-@g.Id">Chart on its slide</label>
                     <select id="chart-@g.Id" class="form-select form-select-sm w-auto" value="@g.Chart" disabled="@_busy" title="What the group's present-mode slide draws under its numbers"
-                            @onchange="e => SetChart(g, e.Value as string)">
-                        @foreach (var c in Enum.GetValues<MetricChart>()) { <option value="@c">@ChartName(c)</option> }
+                            aria-describedby="chart-help-@g.Id" @onchange="e => SetChart(g, e.Value as string)">
+                        @foreach (var c in Enum.GetValues<MetricChart>()) { <option value="@c" title="@ChartHelp(c)">@ChartName(c)</option> }
                     </select>
                 }
                 <button class="tide-icon-btn" title="Move up" aria-label="Move @g.Name up" disabled="@(gi == 0)" @onclick="() => Run(() => MetricsSvc.MoveGroupAsync(g.Id, -1))"><span class="bi bi-arrow-up" aria-hidden="true"></span></button>
@@ -68,6 +68,10 @@
                         aria-label="@(g.IsRetired ? "Bring back" : "Retire") @g.Name" @onclick="() => Retire(g.Name, g.IsRetired, () => MetricsSvc.SetGroupRetiredAsync(g.Id, !g.IsRetired))">@(g.IsRetired ? "Bring back" : "Retire")</button>
             }
         </div>
+        @if (!g.IsRetired && _renaming != g.Id)
+        {
+            <p class="tide-muted small text-end mb-2" id="chart-help-@g.Id">@ChartName(g.Chart): @ChartHelp(g.Chart)</p>
+        }
         <table class="tide-table">
             <thead><tr><th>Metric</th><th>Format</th><th>Good when</th><th>Warn / critical</th><th>Flag missing</th><th></th></tr></thead>
             <tbody>
@@ -181,7 +185,22 @@
         MetricChart.Share => "Share of the whole",
         MetricChart.Bars => "Side by side",
         MetricChart.None => "None",
+        MetricChart.SmallMultiples => "One trend per metric",
+        MetricChart.Stacked => "Mix over time",
+        MetricChart.Bullet => "Against threshold",
         _ => "Trend (30 days)",
+    };
+
+    /// <summary>When a chart suits a group, as the set-up page says under its choice.</summary>
+    internal static string ChartHelp(MetricChart c) => c switch
+    {
+        MetricChart.Share => "Suits metrics that are parts of one whole: today's donut, the total in the middle.",
+        MetricChart.Bars => "Suits comparing today's values side by side.",
+        MetricChart.None => "The numbers alone, with no chart under them.",
+        MetricChart.SmallMultiples => "Suits metrics of very different sizes: a small trend each, on its own scale, so a big one doesn't flatten the rest.",
+        MetricChart.Stacked => "Suits parts of one whole over time: a column a day, so both the total and the mix show.",
+        MetricChart.Bullet => "Suits metrics with warning and critical thresholds: today's value over its bands.",
+        _ => "Suits metrics of a similar size: a line each over the last 30 days, on one scale.",
     };
 
     private Task SetChart(MetricGroup g, string? value) => Enum.TryParse<MetricChart>(value, out var chart) && chart != g.Chart

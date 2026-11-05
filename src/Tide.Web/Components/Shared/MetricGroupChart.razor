@@ -1,5 +1,6 @@
 @* The chart under a group's numbers on its present-mode slide, the one an administrator chose for the group: a trend
-   over the last 30 days, a donut of the current values, or bars of them. Server-rendered SVG (the CSP allows no chart
+   over the last 30 days, a donut of the current values, bars of them, a small trend per metric on its own scale, the
+   mix over the 30 days in stacked columns, or a bullet bar per metric against its thresholds. Server-rendered SVG (the CSP allows no chart
    script), its geometry worked out by MetricCharts. Each metric keeps its colour from the key to the chart, and the key
    says its name and value, so the colour is never the only cue. *@
 @using Tide.Application.Metrics
@@ -87,6 +88,130 @@
             }
         </ul>
         break;
+    case MetricChart.SmallMultiples:
+        var multiples = MetricCharts.SmallMultiples(Days, Group.Tiles);
+        @if (multiples is null)
+        {
+            <div class="tide-mchart-empty">No history yet</div>
+        }
+        else
+        {
+            <figure class="tide-mchart tide-mchart-multiples">
+                <figcaption class="tide-mchart-key">
+                    <span>@multiples.FirstDate to @multiples.LastDate, each on its own scale</span>
+                    @if (multiples.Panels.Any(p => p.Line.Breaches.Count > 0))
+                    {
+                        <span class="tide-mchart-breach-key"><i class="tide-mchart-ring" aria-hidden="true"></i>past a threshold</span>
+                    }
+                </figcaption>
+                <div class="tide-mchart-panels tide-mchart-cols-@multiples.Columns">
+                    @foreach (var p in multiples.Panels)
+                    {
+                        <div class="tide-mchart-panel">
+                            <div class="tide-mchart-panel-head">
+                                <span><i class="tide-mchart-swatch @LineChart.Series(p.Line.Series)" aria-hidden="true"></i>@p.Line.Name</span>
+                                <strong class="@LevelClass(p.Level)">@p.Line.Current<LevelMark Level="p.Level" /></strong>
+                            </div>
+                            <svg viewBox="0 0 @Num(MetricCharts.PanelWidth) @Num(MetricCharts.PanelHeight)" role="img"
+                                 aria-label="@($"{p.Line.Name} from {multiples.FirstDate} to {multiples.LastDate}, between {p.Min.Label} and {p.Max.Label}")">
+                                @foreach (var t in new[] { p.Max, p.Min })
+                                {
+                                    <line class="tide-mchart-grid" x1="@Num(MetricCharts.PanelLeft)" y1="@Num(t.Y)" x2="@Num(MetricCharts.PanelRight)" y2="@Num(t.Y)" />
+                                    @Text("tide-mchart-label", MetricCharts.PanelLeft - 14, t.Y, "end", t.Label, middle: true)
+                                }
+                                <g class="@LineChart.Series(p.Line.Series)">
+                                    @foreach (var a in p.Areas) { <polygon class="tide-mchart-area" points="@a" /> }
+                                    @foreach (var points in p.Line.Lines) { <polyline points="@points" /> }
+                                    @foreach (var d in p.Line.Dots) { <circle class="tide-mchart-dot" cx="@Num(d.X)" cy="@Num(d.Y)" r="5" /> }
+                                    @foreach (var b in p.Line.Breaches) { <circle class="tide-mchart-ring tide-level-@b.Level.ToString().ToLowerInvariant()" cx="@Num(b.X)" cy="@Num(b.Y)" r="10" /> }
+                                    @if (p.Latest is { } last) { <circle class="tide-mchart-latest" cx="@Num(last.X)" cy="@Num(last.Y)" r="8" /> }
+                                </g>
+                            </svg>
+                        </div>
+                    }
+                </div>
+            </figure>
+        }
+        break;
+    case MetricChart.Stacked:
+        var stacked = MetricCharts.Stacked(Days, Group.Tiles);
+        @if (stacked.Empty)
+        {
+            <div class="tide-mchart-empty">Nothing to share out: no value is above 0</div>
+        }
+        else if (stacked.NoHistory)
+        {
+            <div class="tide-mchart-empty">No history yet</div>
+        }
+        else
+        {
+            <figure class="tide-mchart tide-mchart-stacked">
+                <svg viewBox="0 0 @Num(MetricCharts.TrendWidth) @Num(MetricCharts.TrendHeight)" role="img"
+                     aria-label="@($"{Group.Group.Name}: the total and its mix each day, {stacked.FirstDate} to {stacked.LastDate}")">
+                    @foreach (var t in stacked.Ticks)
+                    {
+                        <line class="tide-mchart-grid" x1="@Num(MetricCharts.PlotLeft)" y1="@Num(t.Y)" x2="@Num(MetricCharts.PlotRight)" y2="@Num(t.Y)" />
+                        @Text("tide-mchart-label", MetricCharts.PlotLeft - 16, t.Y, "end", t.Label, middle: true)
+                    }
+                    @foreach (var c in stacked.Columns)
+                    {
+                        @foreach (var s in c.Segments)
+                        {
+                            <rect class="@LineChart.Series(s.Series)" x="@Num(c.X)" y="@Num(s.Y)" width="@Num(c.Width)" height="@Num(s.Height)" />
+                        }
+                    }
+                    <line class="tide-mchart-axis" x1="@Num(MetricCharts.PlotLeft)" y1="@Num(MetricCharts.PlotBottom)" x2="@Num(MetricCharts.PlotRight)" y2="@Num(MetricCharts.PlotBottom)" />
+                    @Text("tide-mchart-label", MetricCharts.PlotLeft, MetricCharts.TrendHeight - 12, "start", stacked.FirstDate)
+                    @Text("tide-mchart-label", MetricCharts.PlotRight, MetricCharts.TrendHeight - 12, "end", stacked.LastDate)
+                </svg>
+                <figcaption>
+                    <ul class="tide-mchart-legend" aria-label="Today">
+                        @foreach (var s in stacked.Key)
+                        {
+                            <li><i class="tide-mchart-swatch @LineChart.Series(s.Series)" aria-hidden="true"></i><span>@s.Name</span><strong>@s.Value</strong><span class="tide-mchart-pct">@(s.Percent ?? "")</span></li>
+                        }
+                    </ul>
+                </figcaption>
+            </figure>
+        }
+        break;
+    case MetricChart.Bullet:
+        <ul class="tide-mchart tide-mchart-bullets" aria-label="@($"{Group.Group.Name} against its thresholds")">
+            @foreach (var b in MetricCharts.Bullets(Group.Tiles))
+            {
+                <li>
+                    <span class="tide-mchart-bar-name"><i class="tide-mchart-swatch @LineChart.Series(b.Series)" aria-hidden="true"></i>@b.Name</span>
+                    <span class="tide-mchart-bullet">
+                        <span class="tide-mchart-bullet-track">
+                            @foreach (var band in b.Bands)
+                            {
+                                <span class="tide-mchart-band tide-mchart-band-@band.Level.ToString().ToLowerInvariant()" style="left: @Pct(band.From); width: @Pct(band.To - band.From)"></span>
+                            }
+                            <span class="tide-mchart-bullet-bar @LineChart.Series(b.Series)" style="width: @Pct(b.Fraction)"></span>
+                            @foreach (var e in b.Edges)
+                            {
+                                <span class="tide-mchart-edge tide-mchart-edge-@e.Level.ToString().ToLowerInvariant()" style="left: @Pct(e.At)"></span>
+                            }
+                        </span>
+                        <span class="tide-mchart-bullet-notes">
+                            @if (b.HasThresholds)
+                            {
+                                @foreach (var e in b.Edges)
+                                {
+                                    <span class="tide-mchart-edge-label tide-mchart-edge-label-@e.Level.ToString().ToLowerInvariant() @(e.LabelBefore ? "tide-mchart-edge-label-before" : "")" style="left: @Pct(e.At)">@e.Label</span>
+                                }
+                            }
+                            else
+                            {
+                                <span class="tide-mchart-bullet-none">no threshold set</span>
+                            }
+                        </span>
+                    </span>
+                    <strong class="@LevelClass(b.Level)">@b.Value<LevelMark Level="b.Level" /></strong>
+                </li>
+            }
+        </ul>
+        break;
 }
 
 @code {
@@ -100,6 +225,8 @@
     // An SVG text element: written out, since Razor reads a <text> tag as its own.
     private static MarkupString Text(string css, double x, double y, string anchor, string content, bool middle = false) => new(
         $"<text class=\"{css}\" x=\"{Num(x)}\" y=\"{Num(y)}\" text-anchor=\"{anchor}\"{(middle ? " dominant-baseline=\"middle\"" : "")}>{System.Net.WebUtility.HtmlEncode(content)}</text>");
+
+    private static string LevelClass(MetricLevel level) => level == MetricLevel.Normal ? "" : "tide-level-" + level.ToString().ToLowerInvariant();
 
     private static string Pct(double f) => (f * 100).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "%";
 }

@@ -898,7 +898,51 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-mchart-bar-track { height: 1.4em; border-radius: var(--tide-radius-sm); background: var(--tide-slide-track); overflow: hidden; }
 .tide-mchart-bar { display: block; height: 100%; background: currentColor; border-radius: var(--tide-radius-sm); }
 .tide-mchart-bars strong { font-variant-numeric: tabular-nums; text-align: right; }
-@media (max-width: 1000px) { .tide-mchart-share { grid-template-columns: 1fr; } }
+/* One trend per metric: a grid of small trends, each on its own scale; two, three or four across by the metric count. */
+.tide-mchart-panels { display: grid; gap: 1em 1.6em; }
+.tide-mchart-cols-1 { grid-template-columns: minmax(0, 1fr); }
+.tide-mchart-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tide-mchart-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.tide-mchart-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.tide-mchart-panel { min-width: 0; }
+.tide-mchart-panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: .6em; font-size: 1.05em; color: var(--tide-slide-text); }
+.tide-mchart-panel-head > span { display: inline-flex; align-items: center; gap: .45em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tide-mchart-panel-head strong { font-size: 1.3em; color: var(--tide-slide-strong); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tide-mchart-panel-head strong .bi { font-size: .7em; vertical-align: .2em; }
+.tide-mchart .tide-level-warn { color: var(--tide-slide-warn); }
+.tide-mchart .tide-level-critical { color: var(--tide-slide-threat); }
+.tide-mchart-multiples svg { max-height: none; }
+.tide-mchart-multiples polyline { stroke-width: 2px; vector-effect: non-scaling-stroke; }
+.tide-mchart-area { fill: currentColor; fill-opacity: .14; stroke: none; }
+.tide-mchart-latest { fill: currentColor; stroke: var(--tide-slide-surface); stroke-width: 3; }
+.tide-mchart-multiples .tide-mchart-label { font-size: 24px; }
+.tide-mchart-cols-3 .tide-mchart-label { font-size: 30px; }
+.tide-mchart-cols-4 .tide-mchart-label { font-size: 36px; }
+.tide-mchart-cols-3 .tide-mchart-panel-head, .tide-mchart-cols-4 .tide-mchart-panel-head { font-size: .95em; }
+/* Mix over time: a stacked column per day, 2px of the slide between its parts; today's values and shares in the key. */
+.tide-mchart-stacked { display: grid; grid-template-columns: minmax(0, 1fr) minmax(14em, 22em); gap: 2em; align-items: center; }
+.tide-mchart-stacked rect { fill: currentColor; stroke: var(--tide-slide-surface); stroke-width: 2px; vector-effect: non-scaling-stroke; }
+/* Against threshold: a bullet bar per metric over grey bands, darker toward critical, so colour is left to the value's mark. */
+.tide-mchart-bullets { list-style: none; padding: 0; display: grid; gap: .5em; font-size: 1.1em; }
+.tide-mchart-bullets li { display: grid; grid-template-columns: minmax(6em, 14em) minmax(0, 1fr) 6em; gap: .8em; align-items: start; }
+.tide-mchart-bullets .tide-mchart-bar-name, .tide-mchart-bullets li > strong { line-height: 1.6em; }
+.tide-mchart-bullets .tide-mchart-bar-name { display: inline-flex; align-items: center; gap: .45em; }
+.tide-mchart-bullets li > strong { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.tide-mchart-bullets li > strong .bi { font-size: .8em; }
+.tide-mchart-bullet-track { position: relative; display: block; height: 1.6em; background: var(--tide-slide-line); border-radius: var(--tide-radius-xs); }
+.tide-mchart-band { position: absolute; top: 0; bottom: 0; }
+.tide-mchart-band-normal { background: rgba(255, 255, 255, .06); }
+.tide-mchart-band-warn { background: rgba(255, 255, 255, .2); }
+.tide-mchart-band-critical { background: rgba(255, 255, 255, .38); }
+.tide-mchart-bullet-bar { position: absolute; left: 0; top: .5em; height: .6em; background: currentColor; border-radius: 0 var(--tide-radius-xs) var(--tide-radius-xs) 0; }
+.tide-mchart-edge { position: absolute; top: -.2em; bottom: -.2em; width: 0; border-left: 3px dashed var(--tide-slide-strong); margin-left: -1.5px; }
+.tide-mchart-edge-critical { border-left-style: solid; }
+.tide-mchart-bullet-notes { position: relative; display: block; height: 1.4em; font-size: .8em; color: var(--tide-slide-muted); }
+.tide-mchart-edge-label { position: absolute; top: .15em; padding-left: .35em; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tide-mchart-edge-label-before { transform: translateX(-100%); padding: 0 .35em 0 0; }
+.tide-mchart-edge-label-critical { color: var(--tide-slide-text); font-weight: var(--tide-weight-bold); }
+.tide-mchart-bullet-none { font-style: italic; }
+@media (max-width: 1000px) { .tide-mchart-share, .tide-mchart-stacked { grid-template-columns: 1fr; } .tide-mchart-cols-3, .tide-mchart-cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .tide-ed-open { margin: .6rem 0 1rem; }
 .tide-ed-open-h { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: var(--tide-text-muted); margin: 0 0 .3rem; }
 .tide-ed-open li { padding: .2rem 0; font-size: .875rem; }

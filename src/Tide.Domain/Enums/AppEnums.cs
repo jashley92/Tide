@@ -156,6 +156,15 @@ public enum MetricChart
 
     /// <summary>No chart: the numbers alone.</summary>
     None = 3,
+
+    /// <summary>A small trend per metric over the last 30 days, each on its own scale.</summary>
+    SmallMultiples = 4,
+
+    /// <summary>A column per day over the last 30 days, split into each metric's part: the total and the mix.</summary>
+    Stacked = 5,
+
+    /// <summary>A bar per metric of today's value over its normal, warning and critical bands.</summary>
+    Bullet = 6,
 }
 
 /// <summary>Where a metric's value came from. Stored; append, never renumber.</summary>
