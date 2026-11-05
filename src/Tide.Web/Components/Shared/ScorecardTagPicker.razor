@@ -12,8 +12,7 @@
     }
     else
     {
-        var groups = ScorecardTagSearch.Chosen(Categories, Chosen);
-        var gone = ScorecardTagSearch.Gone(Categories, Chosen);
+        var (groups, gone) = ChosenGroups();
         var grouped = groups.Count + (gone.Count > 0 ? 1 : 0) > 1;
         @foreach (var g in groups)
         {
@@ -117,13 +116,21 @@
 
     private string Typed => (_text ?? "").Trim();
 
-    private string AllSummary
+    private string AllSummary => $"{Ui.Plural(Categories.Sum(c => c.Tags.Count), "tag")} in {Ui.Plural(Categories.Count, "category", "categories")}";
+
+    // The chosen tags by category, and the retired ones, worked out again only when the categories or the choice change
+    // (not on each of the editor's keystrokes). The host changes its set in place, so it's compared by what's in it.
+    private IReadOnlyList<ScorecardCategory>? _groupedFrom;
+    private readonly HashSet<Guid> _groupedChosen = [];
+    private (IReadOnlyList<ScorecardTagSearch.Group> Groups, IReadOnlyList<Guid> Gone) _grouped = ([], []);
+
+    private (IReadOnlyList<ScorecardTagSearch.Group> Groups, IReadOnlyList<Guid> Gone) ChosenGroups()
     {
-        get
-        {
-            var tags = Categories.Sum(c => c.Tags.Count);
-            return $"{tags} tag{(tags == 1 ? "" : "s")} in {Categories.Count} categor{(Categories.Count == 1 ? "y" : "ies")}";
-        }
+        if (ReferenceEquals(_groupedFrom, Categories) && _groupedChosen.SetEquals(Chosen)) return _grouped;
+        _groupedFrom = Categories;
+        _groupedChosen.Clear();
+        _groupedChosen.UnionWith(Chosen);
+        return _grouped = (ScorecardTagSearch.Chosen(Categories, Chosen), ScorecardTagSearch.Gone(Categories, Chosen));
     }
 
     private string? Status => Typed.Length == 0 ? null : _found.Count == 1 ? "1 tag found" : $"{_found.Count} tags found";

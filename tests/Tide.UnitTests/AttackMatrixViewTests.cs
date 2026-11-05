@@ -63,7 +63,7 @@ public class AttackMatrixViewTests
     {
         Visible(AttackMatrixView.For(Small, "t1059")).Should().Equal("Execution");
         Visible(AttackMatrixView.For(Small, "DUMPING")).Should().Equal("Credential Access");
-        AttackMatrixView.Matches(T("T1", "x"), "").Should().BeTrue();
+        AttackCatalog.Matches(T("T1", "x"), "").Should().BeTrue();
     }
 
     [Fact]

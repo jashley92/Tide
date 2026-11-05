@@ -1657,10 +1657,7 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-add-link-source { flex: 1 1 var(--tide-width-xs); min-width: 0; }
 .tide-field-error { flex-basis: 100%; font-size: var(--tide-text-sm); color: var(--tide-threat); }
 
-/* The reader preview's Related tab (RelatedPanel), and the story picker under it (StoryPicker). */
-.tide-seg-count { display: inline-block; margin-left: var(--tide-space-1); padding: 0 var(--tide-space-1); border-radius: var(--tide-radius-pill);
-    background: var(--tide-chip-bg); color: var(--tide-chip-text); font-size: var(--tide-text-xs); font-weight: var(--tide-weight-semibold); }
-.tide-related { margin-top: var(--tide-space-3); }
+/* The reader preview's similar articles (RelatedPanel), and the story picker above them (StoryPicker). */
 .tide-related-list { list-style: none; margin: 0; padding: 0; }
 .tide-related-item { padding: var(--tide-space-2) 0; border-top: 1px solid var(--tide-border); }
 .tide-related-item:first-child { border-top: 0; padding-top: 0; }
@@ -1674,7 +1671,6 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-reader-similar { border-top: 1px solid var(--tide-border); padding-top: var(--tide-space-2); margin-top: var(--tide-space-3); }
 .tide-reader-fold-h { font-size: var(--tide-text-sm); font-weight: var(--tide-weight-semibold); margin: 0; }
 .tide-reader-similar > .tide-disclosure-body { margin-top: var(--tide-space-2); }
-.tide-reader-similar .tide-related { margin-top: 0; }
 .tide-story-hint { display: flex; flex-wrap: wrap; gap: var(--tide-space-2); align-items: center; font-size: var(--tide-text-sm); margin-top: var(--tide-space-2); }
 /* The story search's results: a short list of buttons under the box, each a story's name over its count and date. */
 .tide-story-results { list-style: none; margin: var(--tide-space-1) 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }

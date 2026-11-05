@@ -1,3 +1,4 @@
+using Tide.Application.Content;
 using Tide.Domain.Enums;
 
 namespace Tide.Application.Mitre;
@@ -62,22 +63,21 @@ public sealed class AttackMatrixView
 
     /// <summary>"Showing 3 of 15 tactics with matches · 12 techniques" while filtering with matches; null otherwise.</summary>
     public string? Summary => IsFiltering && !NoMatches
-        ? $"Showing {VisibleTactics} of {Plural(Columns.Count, "tactic")} with matches · {Plural(MatchingTechniques, "technique")}"
+        ? $"Showing {VisibleTactics} of {Words.Plural(Columns.Count, "tactic")} with matches · {Words.Plural(MatchingTechniques, "technique")}"
         : null;
 
     /// <summary>"No techniques match 'xyz'" when filtering finds nothing; null otherwise.</summary>
     public string? NoMatchText => NoMatches ? $"No techniques match '{Filter}'" : null;
 
-    private static string Plural(int n, string noun) => n == 1 ? $"1 {noun}" : $"{n} {noun}s";
+    private static readonly Lazy<AttackMatrixView> Everything = new(() => For(Matrix, ""));
 
-    /// <summary>Whether a technique matches the filter: on its id or name, ignoring case. Everything matches an empty one.</summary>
-    public static bool Matches(AttackTechnique t, string filter) =>
-        filter.Length == 0
-        || t.Id.Contains(filter, StringComparison.OrdinalIgnoreCase)
-        || t.Name.Contains(filter, StringComparison.OrdinalIgnoreCase);
+    /// <summary>The catalogue's matrix with nothing typed, built once: every tactic, none hidden.</summary>
+    public static AttackMatrixView Unfiltered => Everything.Value;
 
-    /// <summary>The catalogue's matrix for <paramref name="filter"/>.</summary>
-    public static AttackMatrixView For(string? filter, AttackMatrixView? previous = null) => For(Matrix, filter, previous);
+    /// <summary>The catalogue's matrix for <paramref name="filter"/>. With nothing typed it's <see cref="Unfiltered"/>,
+    /// whatever came before: no column is hidden, so none keeps rows from <paramref name="previous"/>.</summary>
+    public static AttackMatrixView For(string? filter, AttackMatrixView? previous = null) =>
+        string.IsNullOrWhiteSpace(filter) ? Unfiltered : For(Matrix, filter, previous);
 
     /// <summary>
     /// <paramref name="matrix"/> for <paramref name="filter"/>. Given the <paramref name="previous"/> view, a column that has
@@ -112,8 +112,8 @@ public sealed class AttackMatrixView
     private static AttackMatrixShownRow? Shown(AttackMatrixRow row, string f, HashSet<string> matched)
     {
         if (f.Length == 0) return new AttackMatrixShownRow(row, false, row.Subs);
-        var parentMatches = Matches(row.Parent, f);
-        var subs = row.Subs.Where(s => Matches(s, f)).ToList();
+        var parentMatches = AttackCatalog.Matches(row.Parent, f);
+        var subs = row.Subs.Where(s => AttackCatalog.Matches(s, f)).ToList();
         if (!parentMatches && subs.Count == 0) return null;
         if (parentMatches) matched.Add(row.Parent.Id);
         foreach (var s in subs) matched.Add(s.Id);
