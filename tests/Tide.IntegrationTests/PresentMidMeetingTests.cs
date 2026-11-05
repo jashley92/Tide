@@ -213,9 +213,15 @@ public class PresentMidMeetingTests(MeetingClockApp app) : IClassFixture<Meeting
         await pat.Click(p => p.OnPresentKey("last"));
         await Do(pat, p => p.OnChangedElsewhere([Heard(ChangeFeed.Brief(s.Brief))]));
 
-        // Put back to ready on the brief page; present mode hasn't heard yet.
+        // Put back to ready on the brief page; present mode hasn't heard yet. Back to ready is refused while the meeting
+        // runs (BriefService.MeetingLive), so this is one that slipped in as the meeting started: a service that doesn't
+        // see it yet.
         await using (var scope = SignedIn(app, Robin))
-            await scope.ServiceProvider.GetRequiredService<BriefService>().ReopenAsync(s.Brief);
+        {
+            var refused = () => scope.ServiceProvider.GetRequiredService<BriefService>().ReopenAsync(s.Brief);
+            await refused.Should().ThrowAsync<InvalidOperationException>().WithMessage(BriefService.MeetingLive);
+            await ActivatorUtilities.CreateInstance<BriefService>(scope.ServiceProvider, NoMeetingsInProgress.Instance).ReopenAsync(s.Brief);
+        }
         await Do(pat, p => p.EndMeeting());
         Meetings.Get(s.Day).Should().NotBeNull("it isn't ended as if the brief were still presented");
         pat.Scope.ServiceProvider.GetRequiredService<ToastService>().Toasts.Should().Contain(t => t.IsError && t.Message.Contains("put back to ready"));

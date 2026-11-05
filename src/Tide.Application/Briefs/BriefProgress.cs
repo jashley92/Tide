@@ -122,6 +122,18 @@ public static class BriefSteps
         _ => status.ToString(),
     };
 
+    /// <summary>
+    /// How a Sent brief was finished, as the API names it: "emailed" when a real send went (<paramref name="emailed"/>),
+    /// "notSent" when it was finished as not sent, "distributed" when it was marked distributed with email off. One
+    /// finished either way and emailed after reads "emailed", as <see cref="Send"/> has it. Null while it isn't finished.
+    /// </summary>
+    public static string? FinishedAs(Brief brief, bool emailed) =>
+        brief.Status != BriefStatus.Sent ? null
+        : emailed ? "emailed"
+        : brief.NotSentAtUtc is not null ? "notSent"
+        : brief.DistributedAtUtc is not null ? "distributed"
+        : "emailed";
+
     /// <summary>"1 number" or "3 numbers".</summary>
     public static string Numbers(int count) => count == 1 ? "1 number" : $"{count} numbers";
 

@@ -143,6 +143,7 @@ public static class HistoryFormatter
         [nameof(Brief.MeetingNotes)] = "Meeting notes",
         [nameof(Brief.MeetingHeldAtUtc)] = "Meeting held",
         [nameof(Brief.PresentedAtUtc)] = "Meeting ended",
+        [nameof(Brief.DistributedByName)] = "Distributed by",
         [nameof(Brief.NotSentByName)] = "Finished as not sent by",
         [nameof(Brief.NotSentReason)] = "Why it wasn't sent",
     };
@@ -237,7 +238,7 @@ public static class HistoryFormatter
         try { raw = JsonSerializer.Deserialize<Dictionary<string, string?[]>>(json); }
         catch (JsonException) { return []; }
         if (raw is null) return [];
-        return raw.Where(kv => !noise.Contains(kv.Key) && kv.Value is { Length: 2 })
+        return raw.Where(kv => !noise.Contains(kv.Key) && !IsUserId(kv.Key) && kv.Value is { Length: 2 })
             .OrderBy(kv => Order.TryGetValue(kv.Key, out var i) ? i : int.MaxValue).ThenBy(kv => kv.Key, StringComparer.Ordinal)
             .Select(kv =>
             {
@@ -247,6 +248,13 @@ public static class HistoryFormatter
             .Where(c => c.Before != c.After)
             .ToList();
     }
+
+    /// <summary>
+    /// Whether <paramref name="field"/> is a user's id kept beside their name (<c>NotSentById</c> beside
+    /// <c>NotSentByName</c>, <c>DistributedById</c>, <c>SentById</c>, …): left out of every entity's history, where the
+    /// name says who, and an id would only show as "set".
+    /// </summary>
+    public static bool IsUserId(string field) => field.Length > 4 && field.EndsWith("ById", StringComparison.Ordinal);
 
     /// <summary>A field's name for people: the known ones by hand, any other split at its capitals ("FooBar" → "Foo bar"),
     /// without a time's "Utc" (its value says UTC).</summary>

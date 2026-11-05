@@ -16,6 +16,7 @@
 @inject MeetingService MeetingSvc
 @inject ChangeFeed Feed
 @inject ChangeOrigin Origin
+@inject LiveMeetings Meetings
 @implements IDisposable
 
 @* A day's brief. Today's is the start page (Home renders this with AsToday): the step strip, the running order, the
@@ -106,8 +107,15 @@ else
                 </LiveMeetingJoin>
                 @if (canPresent && _brief.Status == BriefStatus.Presented)
                 {
-                    @* The meeting ended by mistake, or too soon: back to Ready, so it can be presented again. *@
-                    <button type="button" class="btn btn-outline-secondary" disabled="@_busy" @onclick="AskReopen"><span class="bi bi-arrow-counterclockwise" aria-hidden="true"></span> Back to ready</button>
+                    @* The meeting ended by mistake, or too soon: back to Ready, so it can be presented again. Not while it runs
+                       in present mode (BriefService.MeetingLive); MeetingStartedOrEnded redraws it as it starts and ends. *@
+                    var live = Meetings.IsLive(_brief.Id);
+                    <button type="button" class="btn btn-outline-secondary" disabled="@(_busy || live)" title="@(live ? BriefService.MeetingLive : null)"
+                            aria-describedby="@(live ? "reopen-why" : null)" @onclick="AskReopen"><span class="bi bi-arrow-counterclockwise" aria-hidden="true"></span> Back to ready</button>
+                    @if (live)
+                    {
+                        <span id="reopen-why" class="small tide-muted align-self-center">@BriefService.MeetingLive</span>
+                    }
                 }
                 @if (canPresent && next == BriefNext.Send)
                 {
@@ -426,6 +434,20 @@ else
         _around = new LiveChanges(Feed, Origin, c => (c.Topic == ChangeFeed.Rotation && AsToday) || c.Topic == ChangeFeed.Articles,
             InvokeAsync, OnAroundChanged);
         _meetingLive = new LiveChanges(Feed, Origin, c => _brief is { } b && c.Topic == ChangeFeed.Meeting(b.Id), InvokeAsync, OnMeetingChanged);
+        Meetings.Changed += MeetingStartedOrEnded;
+    }
+
+    // Present mode starting or ending this day's meeting: Back to ready is held while it runs. A slide moving changes
+    // nothing here, so only a start or an end redraws.
+    private bool? _liveSeen;
+
+    private void MeetingStartedOrEnded(MeetingChange change)
+    {
+        if (change.Day != _date || _brief is not { } b) return;
+        var live = Meetings.IsLive(b.Id);
+        if (live == _liveSeen) return;
+        _liveSeen = live;
+        _ = InvokeAsync(StateHasChanged);
     }
 
     // Around the brief rather than on it: Today's "Coming up for you" and "Recently written", and the articles the Add
@@ -566,6 +588,7 @@ else
         _actionMarks?.Dispose();
         _around?.Dispose();
         _meetingLive?.Dispose();
+        Meetings.Changed -= MeetingStartedOrEnded;
     }
 
     private async Task Load()

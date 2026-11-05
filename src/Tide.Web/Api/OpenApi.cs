@@ -33,6 +33,19 @@ public static class OpenApi
             },
             "schemas": {
               "Problem": { "type": "object", "properties": { "status": { "type": "integer" }, "detail": { "type": "string" } } },
+              "Brief": {
+                "type": "object",
+                "properties": {
+                  "day": { "type": "string", "format": "date" },
+                  "status": { "type": "string", "enum": ["Draft", "Ready", "Presented", "Sent"] },
+                  "finishedAs": {
+                    "type": ["string", "null"], "enum": ["emailed", "distributed", "notSent", null],
+                    "description": "How a Sent brief was finished: emailed, marked distributed (email off), or finished as not sent. One emailed after either reads emailed. Null until it's Sent."
+                  },
+                  "ceiling": { "type": "string" }, "marking": { "type": "string" }, "intro": { "type": ["string", "null"] },
+                  "articles": { "type": "array", "items": { "type": "object" } }, "withheldArticles": { "type": "integer" }
+                }
+              },
               "Action": {
                 "type": "object",
                 "properties": {
@@ -65,7 +78,7 @@ public static class OpenApi
               "get": {
                 "summary": "A brief as the team edition shows it, cut at the lower of the team edition's ceiling and the token's. Scope: briefs:read.",
                 "parameters": [ { "name": "day", "in": "path", "required": true, "schema": { "type": "string" }, "description": "yyyy-MM-dd, or today" } ],
-                "responses": { "200": { "description": "The brief" }, "404": { "description": "No brief that day" } }
+                "responses": { "200": { "description": "The brief", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Brief" } } } }, "404": { "description": "No brief that day" } }
               }
             },
             "/actions": {

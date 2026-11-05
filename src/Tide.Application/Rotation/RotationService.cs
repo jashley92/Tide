@@ -517,13 +517,15 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
     // A brief already started for a day the rota moves (carry-over starts the next day's brief early, say) follows it,
     // until its meeting: one whose presenter is still who held the day takes whoever holds it now, so its emails and the
     // "not ready" reminder name the right analyst. A presenter set by hand to someone else is kept; a past day is left be.
+    // So is a brief whose meeting was held (HeldAsync): Back to ready clears its times, and its presenter stays who held it.
     private async Task FollowAsync(IAppDbContext db, IEnumerable<(DateOnly Date, string From, string ToId, string ToName)> moves, CancellationToken ct)
     {
         var byDay = moves.Where(m => m.Date >= clock.Today && m.From != m.ToId).GroupBy(m => m.Date).ToDictionary(g => g.Key, g => g.Last());
         if (byDay.Count == 0) return;
         var days = byDay.Keys.ToList();
         var briefs = await db.Briefs.Where(b => days.Contains(b.BriefDate) && (b.Status == BriefStatus.Draft || b.Status == BriefStatus.Ready)).ToListAsync(ct);
-        foreach (var b in briefs)
+        var held = await HeldAsync(db, briefs, ct);
+        foreach (var b in briefs.Where(b => !held.Contains(b.Id)))
         {
             var m = byDay[b.BriefDate];
             if (b.AnalystId != m.From) continue;
@@ -531,6 +533,28 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
             b.AnalystName = m.ToName;
             b.EditVersion = Guid.NewGuid();
         }
+    }
+
+    // The briefs among these whose meeting was held, though Back to ready (BriefService.ReopenAsync) took them back to
+    // Ready and cleared MeetingHeldAtUtc and PresentedAtUtc. What a reopen keeps says so: anyone recorded as attending, a
+    // meeting note (or the notes kept on the brief before they were per person), and, for a meeting ended with neither,
+    // the times in the brief's audit trail. A discussed tick isn't a sign: it can be set before the meeting.
+    private static async Task<HashSet<Guid>> HeldAsync(IAppDbContext db, IReadOnlyCollection<Brief> briefs, CancellationToken ct)
+    {
+        var held = briefs.Where(b => b.MeetingHeldAtUtc is not null || b.PresentedAtUtc is not null || !string.IsNullOrWhiteSpace(b.MeetingNotes))
+            .Select(b => b.Id).ToHashSet();
+        var ids = briefs.Select(b => b.Id).Where(id => !held.Contains(id)).ToList();
+        if (ids.Count == 0) return held;
+        held.UnionWith(await db.MeetingAttendees.Where(a => ids.Contains(a.BriefId)).Select(a => a.BriefId).Distinct().ToListAsync(ct));
+        held.UnionWith(await db.MeetingNotes.Where(n => ids.Contains(n.BriefId)).Select(n => n.BriefId).Distinct().ToListAsync(ct));
+        // The audit interceptor writes a Guid key in the "D" format.
+        var keys = ids.Where(id => !held.Contains(id)).ToDictionary(id => id.ToString("D"));
+        if (keys.Count == 0) return held;
+        const string ended = "\"" + nameof(Brief.PresentedAtUtc) + "\"";
+        var list = keys.Keys.ToList();
+        held.UnionWith((await db.AuditLog.Where(e => e.EntityType == nameof(Brief) && list.Contains(e.EntityKey) && e.ChangesJson!.Contains(ended))
+            .Select(e => e.EntityKey).Distinct().ToListAsync(ct)).Select(k => keys[k]));
+        return held;
     }
 
     // Who an approved change puts on a day, or null when it doesn't touch it.

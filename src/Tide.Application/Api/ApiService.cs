@@ -22,7 +22,10 @@ public sealed record ApiArticle(Guid Id, string Title, string Tlp, string Markin
     IReadOnlyList<ApiBullet> Bullets, string? WhyItMatters, string? RecommendedActions, IReadOnlyList<string> Cves,
     IReadOnlyList<ApiIndicator> Indicators, IReadOnlyList<ApiEditionAction> Actions, string? SourceUrl, int WithheldParts);
 
-public sealed record ApiBrief(DateOnly Day, string Status, string Ceiling, string Marking, string? Intro, IReadOnlyList<ApiArticle> Articles, int WithheldArticles);
+/// <summary>A brief as the API gives it. <see cref="FinishedAs"/> says how a Sent one was finished ("emailed",
+/// "distributed" or "notSent", <see cref="BriefSteps.FinishedAs"/>); null while it isn't.</summary>
+public sealed record ApiBrief(DateOnly Day, string Status, string Ceiling, string Marking, string? Intro, IReadOnlyList<ApiArticle> Articles, int WithheldArticles,
+    string? FinishedAs = null);
 
 public sealed record ApiAction(int Number, string Title, string Kind, string Priority, string Status, string? Outcome, string Team, string? Assignee,
     DateOnly? DueDate, DateOnly? ClosedDate, Guid? ArticleId);
@@ -65,8 +68,10 @@ public sealed class ApiService(IAppDbContextFactory dbs, ICurrentUser user, Dist
         var (_, teamMax) = await editions.GetAsync(ct);
         var ceiling = callerCeiling is { } c && c < teamMax ? c : teamMax;
         var cut = BriefEditions.Build(brief, Edition.Team, ceiling, await BriefEditions.ActionsAsync(db, brief, ct));
+        var emailed = brief.Status == BriefStatus.Sent
+                      && await db.BriefSends.AnyAsync(s => s.BriefId == brief.Id && !s.IsTest && s.Status == SendStatus.Sent, ct);
         return new ApiBrief(day, brief.Status.ToString(), Tlp.Label(ceiling), Tlp.Label(cut.Marking), cut.ShowIntro ? brief.Intro : null,
-            cut.Articles.Select(Article).ToList(), cut.WithheldArticles);
+            cut.Articles.Select(Article).ToList(), cut.WithheldArticles, BriefSteps.FinishedAs(brief, emailed));
     }
 
     private static ApiArticle Article(EditionArticle e)

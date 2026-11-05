@@ -53,7 +53,7 @@ public interface IMeetingSeat : IDisposable
 /// attended, the notes) is the database's. A tab that closes without leaving is cleared with its circuit; one whose
 /// connection drops is away (not shown, not presenting) until it's back.
 /// </summary>
-public sealed class LiveMeetings : IDisposable
+public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeetingsInProgress
 {
     /// <summary>How long the presenter may be gone (a dropped connection, a reload) before someone else can take over.</summary>
     public static readonly TimeSpan Grace = TimeSpan.FromSeconds(30);
@@ -78,6 +78,12 @@ public sealed class LiveMeetings : IDisposable
     public LiveMeetingView? Get(DateOnly day)
     {
         lock (_gate) return _meetings.TryGetValue(day, out var m) ? View(m) : null;
+    }
+
+    /// <summary>Whether the brief <paramref name="briefId"/>'s meeting is going on (Back to ready waits for it to end).</summary>
+    public bool IsLive(Guid briefId)
+    {
+        lock (_gate) return _meetings.Values.Any(m => m.BriefId == briefId);
     }
 
     /// <summary>Every meeting going on, oldest first.</summary>
