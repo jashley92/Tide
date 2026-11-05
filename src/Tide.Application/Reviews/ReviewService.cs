@@ -180,8 +180,7 @@ public sealed class ReviewService(IAppDbContextFactory dbs, ICurrentUser user, R
     private static readonly string[] Writers = RoleDefinitions.SystemRoles
         .Where(r => r.Value.Contains(Permission.WriteArticles)).Select(r => r.Key.ToString()).ToArray();
 
-    internal static bool CanWrite(string rolesCsv) =>
-        RoleDefinitions.PermissionsForRoleNames(rolesCsv.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)).Contains(Permission.WriteArticles);
+    internal static bool CanWrite(string rolesCsv) => StoredRoles.Has(rolesCsv, Permission.WriteArticles);
 
     /// <summary>
     /// Asks <paramref name="reviewerId"/> to review the article; an earlier request still open is withdrawn. Refused while

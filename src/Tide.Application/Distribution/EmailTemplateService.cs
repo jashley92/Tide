@@ -165,7 +165,7 @@ public sealed class EmailTemplateService(IAppDbContextFactory dbs, ICurrentUser 
     };
 
     private DateOnly SampleDay => clock.Days.Next(clock.Today);
-    private DateOnly SampleMonday => clock.Today.AddDays(-(((int)clock.Today.DayOfWeek + 6) % 7));
+    private DateOnly SampleMonday => Rotation.RotationService.WeekStart(clock.Today);
 
     // Values that look like the real thing, for the preview and a test send.
     private Dictionary<string, string> Samples(EmailTemplate t)

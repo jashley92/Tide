@@ -1,12 +1,11 @@
 @* A paperclip with how many live files an action has (on it and on its comments); nothing when it has none. *@
 @if (Count > 0)
 {
-    <span class="tide-file-count @Class" title="@Label"><span class="bi bi-paperclip" aria-hidden="true"></span>@Count<span class="visually-hidden"> @(Count == 1 ? "file" : "files")</span></span>
+    <span class="tide-file-count" title="@Label"><span class="bi bi-paperclip" aria-hidden="true"></span>@Count<span class="visually-hidden"> @(Count == 1 ? "file" : "files")</span></span>
 }
 
 @code {
     [Parameter, EditorRequired] public int Count { get; set; }
-    [Parameter] public string? Class { get; set; }
 
     private string Label => Count == 1 ? "1 file" : $"{Count} files";
 }

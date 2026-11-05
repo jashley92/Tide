@@ -44,18 +44,11 @@ public static class UserPreferences
         public string Default => Values[0];
     }
 
-    private static readonly Dictionary<string, Definition> Known = new(StringComparer.Ordinal)
-    {
-        [ActionsLayout] = new(ActionsLayout, [Board, List], Permission.ReadActions),
-        // The action emails reach whoever is given an action or sits on a team without a mailbox, Viewers included.
-        [NotifyDueSoon] = new(NotifyDueSoon, [On, Off], Permission.ReadActions),
-        [NotifyOverdue] = new(NotifyOverdue, [On, Off], Permission.ReadActions),
-        [NotifyTeamDigest] = new(NotifyTeamDigest, [On, Off], Permission.ReadActions),
-        [NotifyDigest] = new(NotifyDigest, [Off, Daily, Weekly], Permission.ReadActions),
-        // The rotation's are for analysts in it.
-        [NotifyRotationReminders] = new(NotifyRotationReminders, [On, Off], Permission.WriteArticles),
-        [NotifyRotationRequests] = new(NotifyRotationRequests, [On, Off], Permission.WriteArticles),
-    };
+    // The notification kinds' values and permissions are theirs (NotificationKinds).
+    private static readonly Dictionary<string, Definition> Known =
+        new Definition[] { new(ActionsLayout, [Board, List], Permission.ReadActions) }
+            .Concat(NotificationKinds.All.Select(k => new Definition(k.Name, k.Values, k.Needs)))
+            .ToDictionary(d => d.Name, StringComparer.Ordinal);
 
     /// <summary>The preference named <paramref name="name"/>; throws <see cref="ArgumentException"/> for any other.</summary>
     public static Definition For(string name) =>
@@ -78,6 +71,20 @@ public sealed class UserPreferenceService(IAppDbContextFactory dbs, ICurrentUser
         var stored = await db.UserPreferences.AsNoTracking()
             .Where(p => p.UserId == user.UserId && p.Name == d.Name).Select(p => p.Value).FirstOrDefaultAsync(ct);
         return stored is not null && d.Values.Contains(stored) ? stored : d.Default;
+    }
+
+    /// <summary>The person's values for each of <paramref name="names"/> (as <see cref="GetAsync(string, CancellationToken)"/>
+    /// has them), read in one query.</summary>
+    public async Task<IReadOnlyDictionary<string, string>> GetAsync(IEnumerable<string> names, CancellationToken ct = default)
+    {
+        var defs = names.Distinct().Select(Require).ToList();
+        var wanted = defs.Select(d => d.Name).ToList();
+        await using var db = await dbs.CreateAsync(ct);
+        var rows = await db.UserPreferences.AsNoTracking()
+            .Where(p => p.UserId == user.UserId && wanted.Contains(p.Name)).Select(p => new { p.Name, p.Value }).ToListAsync(ct);
+        var stored = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var r in rows) stored.TryAdd(r.Name, r.Value);
+        return defs.ToDictionary(d => d.Name, d => stored.TryGetValue(d.Name, out var v) && d.Values.Contains(v) ? v : d.Default, StringComparer.Ordinal);
     }
 
     /// <summary>Keeps <paramref name="value"/> as the person's <paramref name="name"/>. Throws

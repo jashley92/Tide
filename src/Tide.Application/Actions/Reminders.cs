@@ -32,6 +32,17 @@ public sealed class ReminderOptions
     /// at the digest's day and time). On by default.</summary>
     public Toggle PersonalDigest { get; set; } = new() { Enabled = true };
 
+    /// <summary>Whether an administrator has the scan on.</summary>
+    public bool IsEnabled(ReminderKind kind) => kind switch
+    {
+        ReminderKind.DueSoon => DueSoon.Enabled,
+        ReminderKind.Overdue => Overdue.Enabled,
+        ReminderKind.Digest => Digest.Enabled,
+        ReminderKind.Presenting => Presenting.Enabled,
+        ReminderKind.PersonalDigest => PersonalDigest.Enabled,
+        _ => BriefNotReady.Enabled,
+    };
+
     public sealed class Toggle
     {
         public bool Enabled { get; set; }
@@ -101,15 +112,7 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
 
     public ReminderOptions Options => options.CurrentValue;
 
-    public bool IsEnabled(ReminderKind kind) => kind switch
-    {
-        ReminderKind.DueSoon => Options.DueSoon.Enabled,
-        ReminderKind.Overdue => Options.Overdue.Enabled,
-        ReminderKind.Digest => Options.Digest.Enabled,
-        ReminderKind.Presenting => Options.Presenting.Enabled,
-        ReminderKind.PersonalDigest => Options.PersonalDigest.Enabled,
-        _ => Options.BriefNotReady.Enabled,
-    };
+    public bool IsEnabled(ReminderKind kind) => Options.IsEnabled(kind);
 
     /// <summary>
     /// Runs every enabled scan that's due now (its time of day has come). Each scan's failure is its own: it's logged
@@ -193,11 +196,10 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
 
     private bool IsTime(ReminderKind kind)
     {
-        var now = clock.Now;
-        var time = TimeOnly.FromDateTime(now.DateTime);
+        var time = TimeOnly.FromDateTime(clock.Now.DateTime);
         return kind switch
         {
-            ReminderKind.Digest => now.DayOfWeek == Options.Digest.Day && time >= Parse(Options.Digest.Time, 8),
+            ReminderKind.Digest => IsWeeklyTime(),
             ReminderKind.BriefNotReady => clock.Days.IsWorkingDay(clock.Today) && time >= Parse(Options.BriefNotReady.Time, 10) && time < clock.MeetingTime,
             ReminderKind.PersonalDigest => IsDailyTime() || IsWeeklyTime(),
             _ => IsDailyTime(),
@@ -230,14 +232,12 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
         if (pending.Count == 0) return 0;
 
         var people = pending.Select(a => a.AssigneeId).OfType<string>().Concat(pending.SelectMany(a => a.Team!.Members.Select(m => m.UserId))).ToList();
-        var emails = await AddressesAsync(db, people, ct);
-        var optedOut = await NotificationPreferenceService.OptedOutAsync(db,
-            overdue ? UserPreferences.NotifyOverdue : UserPreferences.NotifyDueSoon, people, ct);
+        var reach = await RecipientResolver.ResolveAsync(db, NotificationKinds.For(overdue ? ReminderKind.Overdue : ReminderKind.DueSoon), people, ct);
         var byRecipient = new Dictionary<string, List<ActionItem>>(StringComparer.OrdinalIgnoreCase);
         var leftOut = new HashSet<string>();
         foreach (var a in pending)
         {
-            var (recipients, skipped) = RecipientsOf(a, emails, optedOut);
+            var (recipients, skipped) = RecipientsOf(a, reach);
             leftOut.UnionWith(skipped);
             foreach (var to in recipients.Where(to => !marks.Contains(RecipientKey(a, to))))
                 (byRecipient.TryGetValue(to, out var list) ? list : byRecipient[to] = []).Add(a);
@@ -275,28 +275,19 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
 
     // Who's emailed about an action, and who would have been but opted out. An assignee who opted out isn't swapped for
     // the team: the action is theirs. A team mailbox is an address, not a person, so it always gets it.
-    private static (IReadOnlyList<string> To, IReadOnlyList<string> OptedOut) RecipientsOf(ActionItem a, IReadOnlyDictionary<string, string> emails,
-        IReadOnlySet<string> optedOut)
+    private static (IReadOnlyList<string> To, IReadOnlyList<string> OptedOut) RecipientsOf(ActionItem a, Recipients people)
     {
-        if (a.AssigneeId is { } id && emails.TryGetValue(id, out var mine)) return optedOut.Contains(id) ? ([], [id]) : ([mine], []);
+        if (a.AssigneeId is { } id && people.Addresses.TryGetValue(id, out var mine)) return people.OptedOut.Contains(id) ? ([], [id]) : ([mine], []);
         if (!string.IsNullOrWhiteSpace(a.Team?.Email)) return ([a.Team.Email], []);
-        return Members(a.Team, emails, optedOut);
+        return Members(a.Team, people);
     }
 
     // A team's members' addresses, but for those who opted out (listed apart).
-    private static (IReadOnlyList<string> To, IReadOnlyList<string> OptedOut) Members(Team? team, IReadOnlyDictionary<string, string> emails,
-        IReadOnlySet<string> optedOut)
+    private static (IReadOnlyList<string> To, IReadOnlyList<string> OptedOut) Members(Team? team, Recipients people)
     {
-        var members = team?.Members.Where(m => emails.ContainsKey(m.UserId)).Select(m => m.UserId).Distinct().ToList() ?? [];
-        return ([.. members.Where(m => !optedOut.Contains(m)).Select(m => emails[m]).Distinct(StringComparer.OrdinalIgnoreCase)],
-            [.. members.Where(optedOut.Contains)]);
-    }
-
-    private static async Task<Dictionary<string, string>> AddressesAsync(IAppDbContext db, IEnumerable<string> userIds, CancellationToken ct)
-    {
-        var ids = userIds.Distinct().ToList();
-        return await db.Users.AsNoTracking().Where(u => ids.Contains(u.Sid) && u.Email != null && u.Email != "")
-            .ToDictionaryAsync(u => u.Sid, u => u.Email!, ct);
+        var members = team?.Members.Where(m => people.Addresses.ContainsKey(m.UserId)).Select(m => m.UserId).Distinct().ToList() ?? [];
+        return ([.. members.Where(m => !people.OptedOut.Contains(m)).Select(m => people.Addresses[m]).Distinct(StringComparer.OrdinalIgnoreCase)],
+            [.. members.Where(people.OptedOut.Contains)]);
     }
 
     // --- weekly digest ------------------------------------------------------------------------------------------
@@ -304,14 +295,13 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
     private async Task<Scan> DigestAsync(CancellationToken ct)
     {
         var today = clock.Today;
-        var weekStart = today.AddDays(-(((int)today.DayOfWeek + 6) % 7));
+        var weekStart = Rotation.RotationService.WeekStart(today);
         var weekAgo = ActionQueries.LastSevenDaysFrom(today);
         await using var db = await dbs.CreateAsync(ct);
         var teams = await db.Teams.AsNoTracking().Include(t => t.Members).Where(t => !t.IsRetired).ToListAsync(ct);
         var marks = (await db.NotificationMarks.AsNoTracking().Where(m => m.Kind == "digest").Select(m => m.Key).ToListAsync(ct)).ToHashSet();
-        var members = teams.SelectMany(t => t.Members.Select(m => m.UserId)).ToList();
-        var emails = await AddressesAsync(db, members, ct);
-        var optedOut = await NotificationPreferenceService.OptedOutAsync(db, UserPreferences.NotifyTeamDigest, members, ct);
+        var members = await RecipientResolver.ResolveAsync(db, NotificationKinds.For(ReminderKind.Digest),
+            teams.SelectMany(t => t.Members.Select(m => m.UserId)), ct);
         var sent = 0;
         var leftOut = new HashSet<string>();
         foreach (var team in teams)
@@ -321,7 +311,7 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
             IReadOnlyList<string> to = [team.Email!];
             if (string.IsNullOrWhiteSpace(team.Email))
             {
-                (to, var skipped) = Members(team, emails, optedOut);
+                (to, var skipped) = Members(team, members);
                 leftOut.UnionWith(skipped);
             }
             if (to.Count == 0) continue;
@@ -365,10 +355,10 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
         // The brief's analyst, or (no brief yet) whoever the rotation says presents today. An analyst who opted out of
         // rotation reminders isn't nudged, but the fallback recipients (a team lead, a mailbox: not a person's choice) are.
         var analystId = brief?.AnalystId ?? (presenters is null ? null : (await presenters.PresenterAsync(today, ct))?.Id);
-        var optedOut = analystId is not null
-                       && (await NotificationPreferenceService.OptedOutAsync(db, UserPreferences.NotifyRotationReminders, [analystId], ct)).Count > 0;
-        if (analystId is not null && !optedOut && await db.Users.AsNoTracking().Where(u => u.Sid == analystId).Select(u => u.Email).FirstOrDefaultAsync(ct) is { Length: > 0 } analyst)
-            to.Add(analyst);
+        var analyst = analystId is null ? null : await RecipientResolver.ResolveAsync(db, NotificationKinds.For(ReminderKind.BriefNotReady), [analystId], ct);
+        var optedOut = analyst?.OptedOut.Count > 0;
+        if (analyst is not null && !optedOut && analyst.Addresses.TryGetValue(analystId!, out var address))
+            to.Add(address);
         else to.AddRange(Options.BriefNotReady.Recipients.Where(r => System.Net.Mail.MailAddress.TryCreate(r, out _)));
         if (to.Count == 0) return new Scan(0, optedOut ? 1 : 0);
 
@@ -400,9 +390,9 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
         var key = $"{who.Id}:{next:yyyy-MM-dd}";
         await using var db = await dbs.CreateAsync(ct);
         if (await db.NotificationMarks.AnyAsync(m => m.Kind == "presenting" && m.Key == key, ct)) return 0;
-        if ((await NotificationPreferenceService.OptedOutAsync(db, UserPreferences.NotifyRotationReminders, [who.Id], ct)).Count > 0) return new Scan(0, 1);
-        var address = await db.Users.AsNoTracking().Where(u => u.Sid == who.Id).Select(u => u.Email).FirstOrDefaultAsync(ct);
-        if (string.IsNullOrWhiteSpace(address)) return 0;
+        var presenter = await RecipientResolver.ResolveAsync(db, NotificationKinds.For(ReminderKind.Presenting), [who.Id], ct);
+        if (presenter.OptedOut.Contains(who.Id)) return new Scan(0, 1);
+        if (!presenter.Addresses.TryGetValue(who.Id, out var address) || string.IsNullOrWhiteSpace(address)) return 0;
         var day = next.ToString("dddd, MMMM d", CultureInfo.InvariantCulture);
         var link = string.IsNullOrWhiteSpace(app.Value.BaseUrl) ? "" :
             $" <a style=\"color:{Palette.Link};\" href=\"{Esc(app.Value.BaseUrl.TrimEnd('/') + "/rotation")}\">See the rotation</a>.";
@@ -430,7 +420,7 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
     {
         var today = clock.Today;
         var soon = clock.Days.Next(today);
-        var weekStart = today.AddDays(-(((int)today.DayOfWeek + 6) % 7));
+        var weekStart = Rotation.RotationService.WeekStart(today);
         bool daily = !scheduled || IsDailyTime(), weekly = !scheduled || IsWeeklyTime();
         await using var db = await dbs.CreateAsync(ct);
         var choices = await db.UserPreferences.AsNoTracking()
@@ -439,24 +429,47 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
         if (choices.Count == 0) return 0;
         var ids = choices.Select(c => c.UserId).ToList();
         var people = await db.Users.AsNoTracking().Where(u => ids.Contains(u.Sid)).ToDictionaryAsync(u => u.Sid, ct);
-        var open = await db.Actions.AsNoTracking().Include(a => a.Article).Include(a => a.Team).ThenInclude(t => t!.Members).WhereOpen().ToListAsync(ct);
+        // Someone who has since lost sight of actions (or has no address) isn't sent their titles.
+        choices = [.. choices.Where(c => people.TryGetValue(c.UserId, out var p) && !string.IsNullOrWhiteSpace(p.Email)
+                                         && Security.StoredRoles.Has(p.RolesCsv, Permission.ReadActions))];
+        if (choices.Count == 0) return 0;
+        var readers = choices.Select(c => c.UserId).ToList();
+
+        // The period's marks already sent, and the actions each reader has seen in an earlier digest, each in one query.
+        string KeyOf(UserPreference c) => c.Value == UserPreferences.Daily ? $"{Hash(c.UserId)}:{today:yyyy-MM-dd}" : $"{Hash(c.UserId)}:w{weekStart:yyyy-MM-dd}";
+        var keys = choices.Select(KeyOf).ToList();
+        var done = (await db.NotificationMarks.AsNoTracking().Where(m => m.Kind == "personal-digest" && keys.Contains(m.Key))
+            .Select(m => m.Key).ToListAsync(ct)).ToHashSet();
+        var whos = readers.Select(Hash).Distinct().ToList();
+        var seenBy = (await db.NotificationMarks.AsNoTracking().Where(m => m.Kind == "digest-seen" && whos.Contains(m.Key.Substring(0, HashLength)))
+                .Select(m => m.Key).ToListAsync(ct))
+            .Where(k => k.Length > HashLength && k[HashLength] == ':')
+            .GroupBy(k => k[..HashLength]).ToDictionary(g => g.Key, g => g.ToHashSet());
+
+        // Each reader's open actions, from one load of only theirs.
+        var open = await db.Actions.AsNoTracking().Include(a => a.Article).Include(a => a.Team).ThenInclude(t => t!.Members).WhereOpen()
+            .Where(a => (a.AssigneeId != null && readers.Contains(a.AssigneeId)) || (a.AssigneeId == null && a.Team!.Members.Any(m => readers.Contains(m.UserId))))
+            .AsSplitQuery().ToListAsync(ct);
+        var theirs = new Dictionary<string, List<ActionItem>>();
+        void Add(string id, ActionItem a) => (theirs.TryGetValue(id, out var list) ? list : theirs[id] = []).Add(a);
+        foreach (var a in open)
+        {
+            if (a.AssigneeId is { } assignee) Add(assignee, a);
+            else if (string.IsNullOrWhiteSpace(a.Team?.Email))
+                foreach (var member in a.Team!.Members.Select(m => m.UserId).Distinct()) Add(member, a);
+        }
+
         var sent = 0;
         foreach (var choice in choices)
         {
-            // Someone who has since lost sight of actions (or has no address) isn't sent their titles.
-            if (!people.TryGetValue(choice.UserId, out var person) || string.IsNullOrWhiteSpace(person.Email)
-                || !Security.RoleDefinitions.PermissionsForRoleNames(person.RolesCsv.Split(',', StringSplitOptions.TrimEntries)).Contains(Permission.ReadActions))
-                continue;
+            var person = people[choice.UserId];
             var who = Hash(choice.UserId);
             var isDaily = choice.Value == UserPreferences.Daily;
-            var key = isDaily ? $"{who}:{today:yyyy-MM-dd}" : $"{who}:w{weekStart:yyyy-MM-dd}";
-            if (await db.NotificationMarks.AnyAsync(m => m.Kind == "personal-digest" && m.Key == key, ct)) continue;
-            var seen = (await db.NotificationMarks.AsNoTracking().Where(m => m.Kind == "digest-seen" && m.Key.StartsWith(who + ":"))
-                .Select(m => m.Key).ToListAsync(ct)).ToHashSet();
+            var key = KeyOf(choice);
+            if (done.Contains(key)) continue;
+            var seen = seenBy.TryGetValue(who, out var s) ? s : seenBy[who] = [];
 
-            var mine = open.Where(a => a.AssigneeId == choice.UserId
-                                       || (a.AssigneeId is null && string.IsNullOrWhiteSpace(a.Team?.Email) && a.Team!.Members.Any(m => m.UserId == choice.UserId)))
-                .ToList();
+            var mine = theirs.GetValueOrDefault(choice.UserId) ?? [];
             var overdue = mine.Where(a => a.DueDate < today).OrderBy(a => a.DueDate).ThenBy(a => a.Number).ToList();
             var dueSoon = mine.Where(a => a.DueDate >= today && a.DueDate <= soon).OrderBy(a => a.DueDate).ThenBy(a => a.Number).ToList();
             var fresh = mine.Except(overdue).Except(dueSoon).Where(a => !seen.Contains(SeenKey(who, a))).OrderBy(a => a.Number).ToList();
@@ -465,6 +478,7 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
             {
                 // Nothing to tell them this time: the period is done all the same.
                 await MarkAsync(db, "personal-digest", [key]);
+                done.Add(key);
                 continue;
             }
 
@@ -487,7 +501,10 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
             if (result.Status != EmailSendStatus.Sent) continue;
             sent++;
             await MarkAsync(db, "personal-digest", [key]);
-            await MarkAsync(db, "digest-seen", listed.Select(a => SeenKey(who, a)).Where(k => !seen.Contains(k)).ToList());
+            done.Add(key);
+            var newlySeen = listed.Select(a => SeenKey(who, a)).Where(k => !seen.Contains(k)).ToList();
+            await MarkAsync(db, "digest-seen", newlySeen);
+            seen.UnionWith(newlySeen);
         }
         return sent;
     }
@@ -495,8 +512,10 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
     private static string SeenKey(string who, ActionItem a) => $"{who}:{a.Id:N}";
 
     // A short, fixed-length stand-in for an address or a user id in a mark's key.
+    private const int HashLength = 16;
+
     private static string Hash(string text) => Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
-        Encoding.UTF8.GetBytes(text.Trim().ToLowerInvariant())))[..16];
+        Encoding.UTF8.GetBytes(text.Trim().ToLowerInvariant())))[..HashLength];
 
     // --- shared -------------------------------------------------------------------------------------------------
 
