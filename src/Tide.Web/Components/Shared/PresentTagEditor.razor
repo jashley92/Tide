@@ -1,7 +1,8 @@
 @* An article's ATT&CK techniques and scorecard tags, edited over its slide in present mode by an analyst, for them alone:
-   the article editor's own controls (the ATT&CK matrix picker, the scorecard tag toggles) and its own save
+   the article editor's own controls (the ATT&CK matrix picker, the scorecard tag picker) and its own save
    (ArticleService.SaveTagsAsync), so the article page's rules hold. A region like the action opened over a slide:
    present.js keeps the keys, so Esc cancels and the slide behind doesn't move. *@
+@using Tide.Application.Scorecard
 @inject ArticleService ArticleSvc
 @inject Tide.Application.Scorecard.ScorecardService Scorecard
 
@@ -45,22 +46,8 @@
                 </button>
             </div>
 
-            <div class="tide-slide-section">Scorecard tags</div>
-            @foreach (var cat in _categories)
-            {
-                <div class="tide-present-tagedit-cat">@cat.Name</div>
-                <div class="tide-present-tagedit-row" role="group" aria-label="@cat.Name">
-                    @foreach (var tag in cat.Tags)
-                    {
-                        <ScorecardTagToggle @key="tag.Id" Tag="tag" On="_tags.Contains(tag.Id)" OnToggle="() => Toggle(tag.Id)" />
-                    }
-                </div>
-            }
-            @foreach (var gone in _tags.Where(id => !_categories.SelectMany(c => c.Tags).Any(t => t.Id == id)))
-            {
-                <span class="tide-chip" title="Retired tag">@(_retired.GetValueOrDefault(gone) ?? "Retired tag") (retired)</span>
-            }
-            @if (_categories.Count == 0) { <div class="tide-present-help">No scorecard categories yet.</div> }
+            <div class="tide-slide-section">Scorecard tags <span class="tide-tagpick-count">@ScorecardTagSearch.Summary(_tags.Count)</span></div>
+            <ScorecardTagPicker @ref="_picker" Id="present-tags" Categories="_categories" Chosen="_tags" OnToggle="Toggle" RetiredName="id => _retired.GetValueOrDefault(id)" />
         }
     </div>
 </section>
@@ -172,6 +159,11 @@
 
     /// <summary>Esc, from present.js: closes the picker if it's open (it takes its own Esc), else cancels.</summary>
     internal Task Escape() => _picking ? Task.CompletedTask : Cancel();
+
+    private ScorecardTagPicker? _picker;
+
+    /// <summary>For tests: the scorecard tag picker, as drawn.</summary>
+    internal ScorecardTagPicker? TagPicker => _picker;
 
     /// <summary>For tests: the selection as it stands.</summary>
     internal void Choose(IEnumerable<Guid> tags, IEnumerable<string> techniques)

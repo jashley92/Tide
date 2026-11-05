@@ -1,0 +1,173 @@
+@* An article's scorecard tags, in the article editor and in present mode's tag panel alike: the tags chosen first, as
+   chips that remove them (grouped by category only when they span more than one); then "Add a tag", a search
+   (SearchCombobox, as the story and adversary pickers') matching tag and category names in memory
+   (ScorecardTagSearch); then "Browse all tags", folded, the full list by category as toggle chips for those who'd
+   rather click. Read-only, it's the chosen chips alone. The parent owns the choice: OnToggle adds or removes a tag. *@
+@using Tide.Application.Scorecard
+
+<div class="tide-tagpick">
+    @if (Chosen.Count == 0)
+    {
+        <p class="tide-tagpick-none">None chosen.</p>
+    }
+    else
+    {
+        var groups = ScorecardTagSearch.Chosen(Categories, Chosen);
+        var gone = ScorecardTagSearch.Gone(Categories, Chosen);
+        var grouped = groups.Count + (gone.Count > 0 ? 1 : 0) > 1;
+        @foreach (var g in groups)
+        {
+            @if (grouped) { <div class="tide-tagpick-cat">@g.Category.Name</div> }
+            <div class="tide-tagpick-row" role="group" aria-label="@(grouped ? $"Chosen: {g.Category.Name}" : "Chosen tags")">
+                @foreach (var tag in g.Tags)
+                {
+                    @if (ReadOnly)
+                    {
+                        <span @key="tag.Id" class="tide-chip tide-chip-chosen" title="@tag.Description">@tag.Name</span>
+                    }
+                    else
+                    {
+                        <button @key="tag.Id" type="button" class="tide-chip tide-chip-chosen" aria-label="Remove @tag.Name" title="@tag.Description"
+                                @onclick="() => Toggle(tag.Id)">@tag.Name<span class="bi bi-x" aria-hidden="true"></span></button>
+                    }
+                }
+            </div>
+        }
+        @if (gone.Count > 0)
+        {
+            @if (grouped) { <div class="tide-tagpick-cat">Retired</div> }
+            <div class="tide-tagpick-row" role="group" aria-label="Retired tags">
+                @foreach (var id in gone)
+                {
+                    <span @key="id" class="tide-chip" title="Retired tag">@(RetiredName?.Invoke(id) ?? "Retired tag") (retired)</span>
+                }
+            </div>
+        }
+    }
+
+    @if (!ReadOnly)
+    {
+        @if (Categories.Count == 0)
+        {
+            <p class="tide-tagpick-none">No scorecard categories yet.</p>
+        }
+        else
+        {
+            <label class="tide-tagpick-label" for="@(Id)-search">Add a tag</label>
+            <SearchCombobox @ref="_combo" TItem="ScorecardTagSearch.Hit" Id="@($"{Id}-search")" Type="search" MaxLength="100"
+                            Placeholder="Type a tag or category name" ListLabel="Scorecard tags"
+                            Help="Matching tags are listed by category as you type. Use the up and down arrows to choose, Enter to add it."
+                            @bind-Text="_text" @bind-Text:after="Find" Items="_found" Key="h => h.Tag.Id" OnPick="Add"
+                            Empty="@(Typed.Length > 0 ? NoMatch : null)" Status="@Status">
+                <ItemTemplate Context="h">
+                    @if (h.First) { <span class="tide-tagpick-group" aria-hidden="true">@h.Category.Name</span> }
+                    <span class="tide-story-result-name">@h.Tag.Name<span class="visually-hidden">, @h.Category.Name</span></span>
+                </ItemTemplate>
+                <Footer>
+                    <span aria-hidden="true">@(Typed.Length == 0 ? "Type part of a tag or category name" : "↑ ↓ to choose, Enter adds, Esc closes")</span>
+                </Footer>
+            </SearchCombobox>
+
+            <button type="button" class="tide-disclosure tide-tagpick-browse" aria-expanded="@Ui.Aria(_browsing)" aria-controls="@(Id)-browse"
+                    @onclick="() => _browsing = !_browsing">
+                <span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span>
+                Browse all tags
+                <span class="tide-disclosure-sum">@AllSummary</span>
+            </button>
+            <div id="@(Id)-browse" class="tide-disclosure-body tide-tagpick-all" hidden="@(!_browsing)">
+                @foreach (var cat in Categories)
+                {
+                    <div class="tide-tagpick-cat">@cat.Name</div>
+                    <div class="tide-tagpick-row" role="group" aria-label="@cat.Name">
+                        @foreach (var tag in cat.Tags)
+                        {
+                            <ScorecardTagToggle @key="tag.Id" Tag="tag" On="Chosen.Contains(tag.Id)" OnToggle="() => Toggle(tag.Id)" />
+                        }
+                    </div>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    /// <summary>Starts the ids of the search box, its list and the browse list ("tags", "present-tags").</summary>
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+
+    /// <summary>The live categories and their live tags, in order (ScorecardService.ListAsync).</summary>
+    [Parameter] public IReadOnlyList<ScorecardCategory> Categories { get; set; } = [];
+
+    /// <summary>The tags on the article, retired ones included.</summary>
+    [Parameter] public IReadOnlySet<Guid> Chosen { get; set; } = new HashSet<Guid>();
+
+    /// <summary>The name of a retired tag still on the article, if known.</summary>
+    [Parameter] public Func<Guid, string?>? RetiredName { get; set; }
+
+    /// <summary>The chosen chips alone, with no search and no browsing.</summary>
+    [Parameter] public bool ReadOnly { get; set; }
+
+    /// <summary>Adds the tag, or removes it if it's chosen.</summary>
+    [Parameter] public EventCallback<Guid> OnToggle { get; set; }
+
+    internal SearchCombobox<ScorecardTagSearch.Hit>? _combo;
+    // What's typed and what it found, and whether the full list is open (internal for the tests).
+    internal string? _text;
+    internal IReadOnlyList<ScorecardTagSearch.Hit> _found = [];
+    internal bool _browsing;
+
+    private string Typed => (_text ?? "").Trim();
+
+    private string AllSummary
+    {
+        get
+        {
+            var tags = Categories.Sum(c => c.Tags.Count);
+            return $"{tags} tag{(tags == 1 ? "" : "s")} in {Categories.Count} categor{(Categories.Count == 1 ? "y" : "ies")}";
+        }
+    }
+
+    private string? Status => Typed.Length == 0 ? null : _found.Count == 1 ? "1 tag found" : $"{_found.Count} tags found";
+
+    private RenderFragment NoMatch => @<text>No tags match “@Typed”.</text>;
+
+    // A tag chosen elsewhere meanwhile (the browse list, a colleague's save read again) leaves the results.
+    protected override void OnParametersSet()
+    {
+        if (_found.Any(h => Chosen.Contains(h.Tag.Id))) Find();
+    }
+
+    /// <summary>The tags matching what's typed, leaving out those chosen.</summary>
+    internal void Find() => _found = ScorecardTagSearch.Find(Categories, _text, Chosen);
+
+    /// <summary>For tests: types <paramref name="text"/> in the box.</summary>
+    internal void Search(string? text)
+    {
+        _text = text;
+        Find();
+        StateHasChanged();
+    }
+
+    /// <summary>For tests: opens or folds "Browse all tags".</summary>
+    internal void Browse(bool open)
+    {
+        _browsing = open;
+        StateHasChanged();
+    }
+
+    /// <summary>Adds a tag from the search: the box clears and keeps focus, for the next.</summary>
+    internal async Task Add(ScorecardTagSearch.Hit hit)
+    {
+        if (!Chosen.Contains(hit.Tag.Id)) await OnToggle.InvokeAsync(hit.Tag.Id);
+        _text = null;
+        Find();
+        StateHasChanged();
+        if (_combo is not null) await _combo.FocusAsync();
+    }
+
+    internal async Task Toggle(Guid id)
+    {
+        await OnToggle.InvokeAsync(id);
+        if (Typed.Length > 0) Find();
+        StateHasChanged();
+    }
+}

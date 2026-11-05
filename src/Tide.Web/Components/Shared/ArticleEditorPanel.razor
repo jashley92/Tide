@@ -418,21 +418,9 @@ else
                     </button>
                 </h2>
                 <div id="sec-tags-body" class="tide-disclosure-body" hidden="@(!_tagsOpen)">
-                    <h3 class="tide-subhead">Scorecard tags</h3>
-                    @foreach (var cat in _categories)
-                    {
-                        <div class="small fw-semibold tide-muted mt-1 mb-1">@cat.Name</div>
-                        <div>
-                            @foreach (var tag in cat.Tags)
-                            {
-                                <ScorecardTagToggle Tag="tag" On="_form.TagIds.Contains(tag.Id)" Disabled="!_canWrite" OnToggle="() => ToggleTag(tag.Id)" />
-                            }
-                        </div>
-                    }
-                    @foreach (var gone in _form.TagIds.Where(id => !_categories.SelectMany(c => c.Tags).Any(t => t.Id == id)))
-                    {
-                        <span class="tide-chip" title="Retired tag">@(_article.Tags.FirstOrDefault(t => t.TagId == gone)?.Tag?.Name ?? "Retired tag") (retired)</span>
-                    }
+                    <h3 class="tide-subhead">Scorecard tags <span class="tide-tagpick-count">@Tide.Application.Scorecard.ScorecardTagSearch.Summary(_form.TagIds.Count)</span></h3>
+                    <ScorecardTagPicker @ref="_tagPicker" Id="tags" Categories="_categories" Chosen="_form.TagIds" ReadOnly="!_canWrite" OnToggle="ToggleTag"
+                                        RetiredName="RetiredTagName" />
 
                     <h3 class="tide-subhead">ATT&amp;CK techniques</h3>
                     @foreach (var id in TechniquesInMatrixOrder())
@@ -996,6 +984,14 @@ else
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
     }
+
+    private ScorecardTagPicker? _tagPicker;
+
+    /// <summary>For tests: the scorecard tag picker, as drawn.</summary>
+    internal ScorecardTagPicker? TagPicker => _tagPicker;
+
+    // A retired tag still on the article, by the name it had when the article was read.
+    private string? RetiredTagName(Guid id) => _article?.Tags.FirstOrDefault(t => t.TagId == id)?.Tag?.Name;
 
     private Task ToggleTag(Guid id)
     {

@@ -1955,9 +1955,43 @@ button.tide-slide-werun-chip:focus-visible { outline: 3px solid var(--tide-slide
 .tide-present-tagedit-row .tide-chip button { background: none; border: 0; color: inherit; padding: 0 0 0 .2em; }
 .tide-present-tagedit .tide-chip-pick { cursor: pointer; border: 1px solid var(--tide-slide-line-strong); background: transparent; color: var(--tide-slide-text); }
 .tide-present-tagedit .tide-chip-pick.selected { background: var(--tide-slide-accent); border-color: var(--tide-slide-accent); color: var(--tide-slide-on-accent); }
-.tide-present-tagedit-cat { color: var(--tide-slide-muted); font-size: .85em; font-weight: var(--tide-weight-semibold); margin: .6em 0 .3em; }
 .tide-present-tagedit-problem { border: 1px solid var(--tide-slide-warn); border-radius: var(--tide-radius-lg); padding: .6em .9em; margin-bottom: .8em; color: var(--tide-slide-text); }
 .tide-present-tagedit-problem > .bi { color: var(--tide-slide-warn); }
+
+/* The scorecard tag picker (ScorecardTagPicker), in the article editor and the tag panel above: the chosen tags as chips
+   that remove them, an "Add a tag" search whose results come under their category's name, and the full list folded
+   under "Browse all tags". In the tag panel it takes the slide's colours, in large type. */
+.tide-tagpick-count { color: var(--tide-text-muted); font-weight: var(--tide-weight-regular); margin-left: var(--tide-space-1); }
+.tide-tagpick-none { color: var(--tide-text-muted); font-size: var(--tide-text-sm); margin: 0 0 var(--tide-space-2); }
+.tide-tagpick-cat { font-size: var(--tide-text-xs); font-weight: var(--tide-weight-semibold); color: var(--tide-text-muted); margin: var(--tide-space-2) 0 var(--tide-space-1); }
+.tide-tagpick-row { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin-bottom: var(--tide-space-1); }
+.tide-tagpick-row .tide-chip { margin: 0; }
+button.tide-chip-chosen { font-family: inherit; line-height: inherit; cursor: pointer; background: var(--tide-accent-soft); border-color: var(--tide-accent); color: var(--tide-text); }
+button.tide-chip-chosen .bi { opacity: .65; }
+button.tide-chip-chosen:hover .bi, button.tide-chip-chosen:focus-visible .bi { opacity: 1; }
+button.tide-chip-chosen:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
+.tide-tagpick-label { display: block; font-size: var(--tide-text-sm); font-weight: var(--tide-weight-semibold); margin: var(--tide-space-3) 0 var(--tide-space-1); }
+.tide-tagpick .tide-combo { max-width: 28rem; }
+.tide-tagpick-group { display: block; font-size: var(--tide-text-xs); font-weight: var(--tide-weight-semibold); text-transform: uppercase; letter-spacing: .04em; color: var(--tide-text-muted); }
+.tide-tagpick-browse { width: auto; margin-top: var(--tide-space-3); font-size: var(--tide-text-sm); font-weight: var(--tide-weight-semibold); }
+.tide-tagpick .tide-disclosure-body.tide-tagpick-all { margin-top: var(--tide-space-1); }
+.tide-present-tagedit .tide-tagpick-count, .tide-present-tagedit .tide-tagpick-none, .tide-present-tagedit .tide-tagpick-cat,
+.tide-present-tagedit .tide-tagpick-group, .tide-present-tagedit .tide-combo-foot, .tide-present-tagedit .tide-disclosure-sum,
+.tide-present-tagedit .tide-combo-list .tide-muted { color: var(--tide-slide-muted); }
+.tide-present-tagedit .tide-tagpick-none, .tide-present-tagedit .tide-tagpick-cat { font-size: .85em; }
+.tide-present-tagedit .tide-tagpick-cat { margin: .6em 0 .3em; }
+.tide-present-tagedit .tide-tagpick-row { gap: .45em; margin-bottom: .4em; }
+.tide-present-tagedit .tide-tagpick-row .tide-chip { font-size: .95em; padding: .3em .8em; }
+.tide-present-tagedit button.tide-chip-chosen { background: var(--tide-slide-accent); border-color: var(--tide-slide-accent); color: var(--tide-slide-on-accent); }
+.tide-present-tagedit .tide-tagpick-label, .tide-present-tagedit .tide-tagpick-browse { font-size: .95em; color: var(--tide-slide-text); }
+.tide-present-tagedit .tide-tagpick .tide-combo { max-width: 36em; }
+.tide-present-tagedit .tide-combo .form-control { font-size: 1em; padding: .45em .75em; background: var(--tide-slide-bg); color: var(--tide-slide-text); border-color: var(--tide-slide-line-strong); }
+.tide-present-tagedit .tide-combo .form-control::placeholder { color: var(--tide-slide-muted); }
+.tide-present-tagedit .tide-combo-pop { background: var(--tide-slide-surface); border-color: var(--tide-slide-line-strong); }
+.tide-present-tagedit .tide-story-result { color: var(--tide-slide-text); padding: .35em .7em; }
+.tide-present-tagedit .tide-story-result:hover { background: var(--tide-slide-line); border-color: var(--tide-slide-line-strong); }
+.tide-present-tagedit .tide-combo-opt.is-active { background: var(--tide-slide-done); box-shadow: inset 3px 0 0 var(--tide-slide-accent); }
+.tide-present-tagedit .tide-tagpick-group, .tide-present-tagedit .tide-combo-foot, .tide-present-tagedit .tide-disclosure-sum { font-size: .75em; }
 
 /* My notifications: one column of cards, each switch with its line of what it covers. */
 .tide-notify { max-width: var(--tide-width-form); }
