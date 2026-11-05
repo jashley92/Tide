@@ -29,7 +29,7 @@ public static class SentSections
     public static IReadOnlyList<SentSection> Parse(string? html)
     {
         if (string.IsNullOrEmpty(html)) return [];
-        var heads = Headings(html).ToList();
+        var heads = ArticleHeadings(html);
         var list = new List<SentSection>(heads.Count);
         for (var i = 0; i < heads.Count; i++)
         {
@@ -42,6 +42,19 @@ public static class SentSections
             list.Add(new SentSection(number ?? i + 1, headline, ArticleOf(attrs), body));
         }
         return list;
+    }
+
+    /// <summary>
+    /// The headings that start an article's section. In a send whose headings name their article, only those: an
+    /// analyst's Markdown heading ("## Agenda" in the opening note, the intro, or an article's why it matters) is an
+    /// <c>&lt;h2&gt;</c> too, and isn't an article. An older send's headings named none, and carried no such text, so
+    /// all of its headings are.
+    /// </summary>
+    internal static List<(int Start, string Attributes, string Inner)> ArticleHeadings(string html)
+    {
+        var heads = Headings(html).ToList();
+        var named = heads.Where(h => ArticleOf(h.Attributes) is not null).ToList();
+        return named.Count > 0 ? named : heads;
     }
 
     /// <summary>The <c>&lt;h2&gt;</c> headings of <paramref name="html"/>: where each starts, its attributes and its inner markup.</summary>

@@ -200,15 +200,20 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
 
     /// <summary>
     /// A product's card for present mode: its facts and the other articles about it (tagged or naming it), newest first,
-    /// leaving out <paramref name="exceptArticleId"/> (the one on the slide). Null when it's gone.
+    /// leaving out <paramref name="exceptArticleId"/> (the one on the slide) and any above <paramref name="ceiling"/> (the
+    /// team edition's): the card is on the meeting's screen, where the slides leave such an article out, so its title is
+    /// too. Null when it's gone.
     /// </summary>
-    public async Task<StackCard?> CardAsync(Guid id, Guid? exceptArticleId = null, CancellationToken ct = default)
+    public async Task<StackCard?> CardAsync(Guid id, TlpLevel ceiling, Guid? exceptArticleId = null, CancellationToken ct = default)
     {
         RequireRead();
         await using var db = await dbs.CreateAsync(ct);
         var p = await db.StackProducts.AsNoTracking().Include(x => x.Team).FirstOrDefaultAsync(x => x.Id == id, ct);
         if (p is null) return null;
-        var others = (await HistoryAsync(db, p, ct)).Where(a => a.Id != exceptArticleId).Take(CardArticles).ToList();
+        var history = (await HistoryAsync(db, p, ct)).Where(a => a.Id != exceptArticleId).ToList();
+        var ids = history.Select(a => a.Id).ToList();
+        var above = (await db.Articles.AsNoTracking().Where(a => ids.Contains(a.Id) && a.Tlp > ceiling).Select(a => a.Id).ToListAsync(ct)).ToHashSet();
+        var others = history.Where(a => !above.Contains(a.Id)).Take(CardArticles).ToList();
         return new StackCard(p, p.Team?.Name, others);
     }
 

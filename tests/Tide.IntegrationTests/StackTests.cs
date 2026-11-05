@@ -110,12 +110,12 @@ public class StackServiceTests : IDisposable
         of[shown].Select(p => p.Name).Should().Equal(["Alpha Proxy", "Contoso VPN Gateway", "Aardvark Mail"], "those in use by name, then the retired");
         (await stack.ForArticlesAsync([])).Should().BeEmpty();
 
-        var card = (await stack.CardAsync(vpn, shown))!;
+        var card = (await stack.CardAsync(vpn, TlpLevel.AmberStrict, shown))!;
         (card.Product.Name, card.TeamName, card.Product.CheckedOn).Should().Be(("Contoso VPN Gateway", "Network", new DateOnly(2026, 10, 1)));
         card.Others.Should().HaveCount(StackService.CardArticles).And.NotContain(a => a.Id == shown, "not the article on the slide");
-        (await stack.CardAsync(proxy, shown))!.Others.Should().BeEmpty();
-        (await stack.CardAsync(proxy))!.Others.Should().ContainSingle(a => a.Id == shown && a.Tagged);
-        (await stack.CardAsync(Guid.NewGuid())).Should().BeNull();
+        (await stack.CardAsync(proxy, TlpLevel.AmberStrict, shown))!.Others.Should().BeEmpty();
+        (await stack.CardAsync(proxy, TlpLevel.AmberStrict))!.Others.Should().ContainSingle(a => a.Id == shown && a.Tagged);
+        (await stack.CardAsync(Guid.NewGuid(), TlpLevel.AmberStrict)).Should().BeNull();
 
         StackService.ChipVersions(" 9.1R18 ").Should().Be("9.1R18");
         StackService.ChipVersions("  ").Should().BeNull();
@@ -124,7 +124,23 @@ public class StackServiceTests : IDisposable
 
         _db.User.Roles = new HashSet<AppRole> { AppRole.Reader };
         await FluentActions.Invoking(() => stack.ForArticlesAsync([shown])).Should().ThrowAsync<ForbiddenException>();
-        await FluentActions.Invoking(() => stack.CardAsync(vpn)).Should().ThrowAsync<ForbiddenException>();
+        await FluentActions.Invoking(() => stack.CardAsync(vpn, TlpLevel.AmberStrict)).Should().ThrowAsync<ForbiddenException>();
+    }
+
+    [Fact]
+    public async Task APresentModeCard_LeavesOutArticlesAboveTheTeamEditionsCeiling()
+    {
+        // The card is on the meeting's screen, where the slides leave out an article above the team edition's ceiling:
+        // its title was listed among the product's other articles all the same.
+        var stack = _db.Stack();
+        var vpn = await stack.SaveAsync(new StackForm { Name = "Contoso VPN Gateway" });
+        var articles = _db.Articles();
+        var open = await articles.CreateAsync("Contoso VPN Gateway patch out", "Vendor", null, TlpLevel.Clear);
+        var red = await articles.CreateAsync("Contoso VPN Gateway breach at a partner", "Vendor", null, TlpLevel.Red);
+        await stack.TagArticleAsync(red, vpn);
+
+        (await stack.CardAsync(vpn, TlpLevel.AmberStrict))!.Others.Select(a => a.Id).Should().Equal(open);
+        (await stack.CardAsync(vpn, TlpLevel.Red))!.Others.Select(a => a.Id).Should().BeEquivalentTo([open, red]);
     }
 
     [Fact]

@@ -1700,7 +1700,7 @@ else
         Tide.Application.Stack.StackCard? card = null;
         if (TeamEdition && _popup.Shown is { } id)
         {
-            try { card = await StackSvc.CardAsync(id, ShownArticle()); }
+            try { card = await StackSvc.CardAsync(id, _teamMax, ShownArticle()); }
             catch (ForbiddenException) { /* not theirs to read: closed quietly */ }
         }
         if (card is null)
