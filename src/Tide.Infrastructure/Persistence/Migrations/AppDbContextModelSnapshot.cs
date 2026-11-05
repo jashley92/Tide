@@ -2876,6 +2876,29 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.ToTable("TeamMembers");
                 });
 
+            modelBuilder.Entity("Tide.Domain.Entities.UserPreference", b =>
+                {
+                    b.Property<string>("UserId")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("UpdatedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("UserId", "Name");
+
+                    b.ToTable("UserPreferences");
+                });
+
             modelBuilder.Entity("Tide.Domain.Entities.Webhook", b =>
                 {
                     b.Property<Guid>("Id")

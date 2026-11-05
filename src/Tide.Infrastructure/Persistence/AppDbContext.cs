@@ -15,6 +15,7 @@ namespace Tide.Infrastructure.Persistence;
 public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options), IAppDbContext
 {
     public DbSet<AppUser> Users => Set<AppUser>();
+    public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
     public DbSet<AdGroupRoleMapping> RoleMappings => Set<AdGroupRoleMapping>();
     public DbSet<AuditLogEntry> AuditLog => Set<AuditLogEntry>();
     public DbSet<AppSetting> Settings => Set<AppSetting>();
@@ -86,6 +87,14 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.DisplayName).HasMaxLength(256);
             e.Property(x => x.Email).HasMaxLength(256);
             e.Property(x => x.RolesCsv).HasMaxLength(500);
+        });
+
+        b.Entity<UserPreference>(e =>
+        {
+            e.HasKey(x => new { x.UserId, x.Name });
+            e.Property(x => x.UserId).HasMaxLength(256);
+            e.Property(x => x.Name).HasMaxLength(64);
+            e.Property(x => x.Value).HasMaxLength(200);
         });
 
         b.Entity<AdGroupRoleMapping>(e =>
