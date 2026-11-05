@@ -369,6 +369,37 @@ public class DistributionTests : IDisposable
         _db.Email.Sent.Should().BeEmpty();
     }
 
+    // AD couldn't be reached this session, so there's no email claim: the address the mirror saved on an earlier visit.
+    [Fact]
+    public async Task SendTest_WithNoEmailClaim_GoesToTheAddressSavedFromAd()
+    {
+        await Brief();
+        await using (var ctx = _db.Context())
+        {
+            ctx.Users.Add(new Tide.Domain.Entities.AppUser { Sid = _db.User.UserId, DisplayName = "Test Analyst", Email = " saved@example.com " });
+            await ctx.SaveChangesAsync();
+        }
+        _db.User.Email = null;
+        var svc = _db.Distribution();
+
+        (await svc.TestAddressAsync()).Should().Be("saved@example.com");
+        (await svc.SendTestAsync(Day, Edition.Team)).Status.Should().Be(EmailSendStatus.Sent);
+        _db.Email.Sent.Single().To.Should().Equal("saved@example.com");
+    }
+
+    [Fact]
+    public async Task SendTest_WithNoEmailClaim_AndNoneSaved_NeverFallsBackToTheUpn()
+    {
+        await Brief();
+        _db.User.Email = null;
+        var svc = _db.Distribution();
+
+        (await svc.TestAddressAsync()).Should().BeNull("the UPN isn't an address");
+        await FluentActions.Invoking(() => svc.SendTestAsync(Day, Edition.Team))
+            .Should().ThrowAsync<InvalidOperationException>().WithMessage("*no email address (the mail attribute)*");
+        _db.Email.Sent.Should().BeEmpty();
+    }
+
     [Theory]
     [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
     public async Task Readers_SeeOnlySentPublicEditions_AndOnlyTheirImages(string provider)

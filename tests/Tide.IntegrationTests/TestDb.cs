@@ -26,7 +26,7 @@ public sealed class FakeUser(params AppRole[] roles) : ICurrentUser
     public string UserId { get; set; } = "S-1-5-21-TEST-1";
     public string DisplayName { get; set; } = "Test Analyst";
     public string? UserPrincipalName => "test@example.com";
-    public string? Email => "test@example.com";
+    public string? Email { get; set; } = "test@example.com";
     public IReadOnlySet<AppRole> Roles { get; set; } = roles.ToHashSet();
     public IReadOnlySet<Permission> Permissions => Application.Security.RoleDefinitions.PermissionsFor(Roles);
     public bool Has(Permission permission) => Permissions.Contains(permission);

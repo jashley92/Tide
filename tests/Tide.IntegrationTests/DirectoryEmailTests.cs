@@ -122,6 +122,68 @@ public class DirectoryEmailTests
         email.Should().Be("jdoe@contoso.com", "the answer that lands later is kept");
     }
 
+    // A person found is asked about again after RecheckFound; until the new answer lands, and while AD fails, the old one is used.
+    [Fact]
+    public async Task APersonFound_IsLookedUpAgainAfter24Hours_KeepingTheOldValueWhileAdFails()
+    {
+        var clock = new Tide.TestSupport.TestClock(new DateTimeOffset(2026, 11, 5, 9, 0, 0, TimeSpan.Zero));
+        var calls = 0;
+        DirectoryPerson? answer = new("Jordan Rivera", "jordan.rivera@contoso.com");
+        Exception? down = null;
+        var names = new WindowsNames(_ =>
+        {
+            Interlocked.Increment(ref calls);
+            return down is null ? answer : throw down;
+        }, TimeSpan.FromSeconds(5), clock);
+
+        names.Resolve(Account).Should().Be("Jordan Rivera");
+        clock.Now += WindowsNames.RecheckFound - TimeSpan.FromMinutes(1);
+        names.Resolve(Account).Should().Be("Jordan Rivera");
+        calls.Should().Be(1, "within 24 hours the name found is kept");
+
+        // Past the interval, with AD down: asked again, and the old name and address are still used.
+        down = new InvalidOperationException("the DC is down");
+        clock.Now += TimeSpan.FromMinutes(2);
+        names.Resolve(Account).Should().Be("Jordan Rivera");
+        (await names.EmailAsync(Account)).Should().Be("jordan.rivera@contoso.com");
+        (await names.ResolveForMirrorAsync(Account)).Should().Be(("Jordan Rivera", false), "the old name isn't a stand-in");
+        calls.Should().Be(2, "a failed re-check isn't asked again on every request");
+
+        // AD back after RetryUnresolved, with a new name and address: they replace the old ones.
+        down = null;
+        answer = new DirectoryPerson("Jordan Rivera-Lee", "jordan.lee@contoso.com");
+        clock.Now += WindowsNames.RetryUnresolved;
+        names.Resolve(Account).Should().Be("Jordan Rivera-Lee");
+        (await names.EmailAsync(Account)).Should().Be("jordan.lee@contoso.com");
+        calls.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task ARecheckThatTimesOut_KeepsTheOldValue_AndTheLateAnswerReplacesIt()
+    {
+        var clock = new Tide.TestSupport.TestClock(new DateTimeOffset(2026, 11, 5, 9, 0, 0, TimeSpan.Zero));
+        using var release = new ManualResetEventSlim(initialState: true);
+        var answer = new DirectoryPerson("Jordan Rivera", "jordan.rivera@contoso.com");
+        var names = new WindowsNames(_ => { release.Wait(TimeSpan.FromSeconds(10)); return answer; }, TimeSpan.FromMilliseconds(50), clock);
+        names.Resolve(Account).Should().Be("Jordan Rivera");
+
+        release.Reset();
+        answer = new DirectoryPerson("Jordan Rivera-Lee", "jordan.lee@contoso.com");
+        clock.Now += WindowsNames.RecheckFound;
+        names.Resolve(Account).Should().Be("Jordan Rivera", "the re-check didn't answer in time");
+        (await names.EmailAsync(Account)).Should().Be("jordan.rivera@contoso.com");
+
+        release.Set();
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        string? name = null;
+        while (name != "Jordan Rivera-Lee" && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(20);
+            name = await names.ResolveAsync(Account);
+        }
+        name.Should().Be("Jordan Rivera-Lee", "the answer that lands later is kept");
+    }
+
     // --- the principal --------------------------------------------------------------------------------------------
 
     [Fact]

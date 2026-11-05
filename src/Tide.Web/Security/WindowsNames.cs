@@ -14,10 +14,11 @@ public sealed record DirectoryPerson(string? DisplayName, string? Email);
 /// Turns a Windows account name (<c>DOMAIN\sam</c>) into the person's real display name and email address. Windows
 /// authentication only gives us <c>DOMAIN\sam</c>; this looks up the AD display name (e.g. "Jordan
 /// Rivera") so the UI never shows the domain or the bare logon name, and their <c>mail</c> in the same call, as a Windows
-/// sign-in carries no email claim. A person found is cached for the process lifetime;
-/// every failure path degrades gracefully to the bare username (never the domain), and is tried again after
-/// <see cref="RetryUnresolved"/>, so one domain-controller blip doesn't fix "jdoe" as someone's name until the
-/// app pool recycles (written into the user mirror and into hashed records such as assignments).
+/// sign-in carries no email claim. A person found is kept for <see cref="RecheckFound"/>, then looked up again when next
+/// seen, so a change of name or address in AD reaches TIDE; while that re-check is running or failing, what was found
+/// before is still used, so nobody drops to the bare username or loses their address. Every failure path degrades
+/// gracefully to the bare username (never the domain), and is tried again after <see cref="RetryUnresolved"/>, so one
+/// domain-controller blip doesn't fix "jdoe" as someone's name until the app pool recycles (written into the user mirror and into hashed records such as assignments).
 /// <para>
 /// It runs on every authenticated request, so the lookup is bounded (<see cref="BoundedDirectoryCalls{T}"/>): one
 /// per name at a time, waited on for <see cref="Timeout"/>, after which the bare username is used (not kept, so it's
@@ -28,6 +29,9 @@ public sealed record DirectoryPerson(string? DisplayName, string? Email);
 public sealed class WindowsNames
 {
     public static readonly TimeSpan RetryUnresolved = TimeSpan.FromMinutes(5);
+
+    /// <summary>How long a person found is kept before AD is asked about them again.</summary>
+    public static readonly TimeSpan RecheckFound = TimeSpan.FromHours(24);
 
     /// <summary>How long a request waits for a display name (and email) before showing the bare username. Short: only a
     /// name and an address are at stake, and they're put right once the lookup lands.</summary>
@@ -118,7 +122,7 @@ public sealed class WindowsNames
         return identityName is not null && _cache.TryGetValue(identityName, out var cached) ? cached.Person?.Email : null;
     }
 
-    // The answer without asking AD: for a name that isn't DOMAIN\sam, one kept, or one that failed a moment ago.
+    // The answer without asking AD: for a name that isn't DOMAIN\sam, or one kept and not yet due to be asked again.
     private bool Known(string? identityName, out string? name)
     {
         name = identityName;
@@ -127,7 +131,7 @@ public sealed class WindowsNames
         if (slash < 0) return true;                         // not DOMAIN\sam (dev auth, UPN, plain name)
         name = identityName[(slash + 1)..];
         if (name.Length == 0) return true;                  // no sam to look up
-        if (_cache.TryGetValue(identityName, out var cached) && (cached.Person is not null || _time.GetUtcNow() < cached.RetryAfterUtc))
+        if (_cache.TryGetValue(identityName, out var cached) && _time.GetUtcNow() < cached.RetryAfterUtc)
         {
             name = cached.Person?.DisplayName ?? name;
             return true;
@@ -135,18 +139,21 @@ public sealed class WindowsNames
         return false;
     }
 
-    // What's kept once the wait ends; the bare username when the lookup hasn't landed (or found nothing).
+    // What's kept once the wait ends (what was found before, during a re-check); the bare username when nothing was found.
     private string Kept(string identityName) =>
         _cache.TryGetValue(identityName, out var cached) && cached.Person?.DisplayName is { } name
             ? name
             : identityName[(identityName.IndexOf('\\') + 1)..];
 
-    // A person with a name or an address is kept; one with neither (or no answer) is tried again after RetryUnresolved.
+    // A person with a name or an address is kept until RecheckFound; one with neither (or no answer) is tried again after
+    // RetryUnresolved, keeping the person found before, if any.
     private void Landed(IReadOnlyList<string> names, IReadOnlyDictionary<string, DirectoryPerson?> found)
     {
-        var retry = _time.GetUtcNow() + RetryUnresolved;
+        var now = _time.GetUtcNow();
         foreach (var n in names)
-            _cache[n] = found.GetValueOrDefault(n) is { } person ? (person, DateTimeOffset.MaxValue) : (null, retry);
+            _cache[n] = found.GetValueOrDefault(n) is { } person
+                ? (person, now + RecheckFound)
+                : (_cache.TryGetValue(n, out var before) ? before.Person : null, now + RetryUnresolved);
     }
 
     private static string DomainOf(string domainAndSam) => domainAndSam[..domainAndSam.IndexOf('\\')];
