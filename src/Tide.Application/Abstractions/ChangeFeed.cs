@@ -34,6 +34,9 @@ public sealed class ChangeFeed
     /// <summary>The metrics kept (an administrator added, renamed, moved or retired a metric or a group): every day's numbers.</summary>
     public const string Metrics = "metrics";
 
+    /// <summary>Our stack's products: one added, edited or retired (present mode's "We run" chips and product cards).</summary>
+    public const string Stack = "stack";
+
     public static string Article(Guid id) => $"article:{id}";
 
     /// <summary>An article's adversary and product tags, which only the Related tab's cards show. Apart from the article's

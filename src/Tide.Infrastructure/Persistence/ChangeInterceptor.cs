@@ -99,6 +99,7 @@ public sealed class ChangeInterceptor(ChangeFeed feed, ICurrentUser user, Change
         // A comment's files are added and removed only with the comment itself, whose save is heard.
         MetricValue x => [ChangeFeed.MetricsDay(x.BriefDate)],
         MetricDefinition or MetricGroup => [ChangeFeed.Metrics],
+        StackProduct => [ChangeFeed.Stack],
         _ => [],
     };
 
