@@ -55,6 +55,38 @@ public class TeamNoteRenderTests
     }
 
     [Fact]
+    public void AHeadingTypedInTheNote_OrInAnArticle_DoesNotStartAnArticlesSection()
+    {
+        // "## Agenda" in the note, the intro or an article's why it matters renders as an <h2>, as an article's heading
+        // does: read back for a correction, it was taken for article 1, and it cut the article it was in in two.
+        var brief = Brief("## Agenda\n\nPatch window on Thursday");
+        brief.Intro = "## Heads up\n\nA quiet day.";
+        var first = brief.Items[0].Article!;
+        first.WhyItMatters = "We run it.\n\n## Detail\n\nThe edge boxes are exposed.";
+        var second = new Article { Title = "Second article", Tlp = TlpLevel.Clear, Bluf = "Also for everyone." };
+        brief.Items.Add(new BriefItem { Article = second, ArticleId = second.Id, SortOrder = 1 });
+
+        var team = _renderer.Render(BriefEditions.Build(brief, Edition.Team, TlpLevel.AmberStrict), Context()).WebHtml;
+        team.Should().Contain("<h2>Agenda</h2>").And.Contain("<h2>Detail</h2>");
+        var sections = SentSections.Parse(team);
+        sections.Select(s => (s.Number, s.Headline, s.ArticleId)).Should().Equal((1, "Open article", first.Id), (2, "Second article", second.Id));
+        sections[0].Html.Should().Contain("The edge boxes are exposed.", "the article's own heading stays in its section");
+        sections[0].Html.Should().NotContain("Patch window");
+
+        var company = _renderer.Render(BriefEditions.Build(brief, Edition.Public, TlpLevel.Green), Context()).WebHtml;
+        company.Should().Contain("<h2>Heads up</h2>");
+        PublishedContent.Parse(company).Headlines.Should().Equal("Open article", "Second article");
+    }
+
+    [Fact]
+    public void AnOlderSend_WhoseHeadingsNameNoArticle_StillReadsEachHeading()
+    {
+        const string html = "<h1>CTI daily brief</h1>\n<h2>1. First</h2>\n<p>One.</p>\n<h2>2. Second</h2>\n<p>Two.</p>\n";
+        SentSections.Parse(html).Select(s => (s.Number, s.Headline)).Should().Equal((1, "First"), (2, "Second"));
+        PublishedContent.Parse(html).Headlines.Should().Equal("First", "Second");
+    }
+
+    [Fact]
     public void ThePublicEdition_NeverCarriesTheNote()
     {
         var edition = BriefEditions.Build(Brief(), Edition.Public, TlpLevel.Red);

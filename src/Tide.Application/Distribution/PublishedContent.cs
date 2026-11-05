@@ -22,7 +22,7 @@ public sealed record PublishedContent(IReadOnlyList<string> Headlines, string Te
     public static PublishedContent Parse(string? html)
     {
         if (string.IsNullOrEmpty(html)) return Empty;
-        var headlines = SentSections.Headings(html).Select(h => SentSections.Numbered(TextOf(h.Inner)).Headline)
+        var headlines = SentSections.ArticleHeadings(html).Select(h => SentSections.Numbered(TextOf(h.Inner)).Headline)
             .Where(t => t.Length > 0).ToList();
         return new(headlines, TextOf(html));
     }
