@@ -34,8 +34,9 @@ public sealed class UserMirrorMiddleware
             if (!string.IsNullOrWhiteSpace(userId) && !RoleClaimsTransformer.GroupsIncomplete(principal))
             {
                 // Store the real display name (AD lookup for DOMAIN\sam), not the domain-qualified logon.
-                // Bounded, and awaited so a slow domain controller doesn't hold the request's thread.
-                var display = await WindowsNames.FriendlyAsync(principal.Identity.Name) ?? userId;
+                // Bounded, and awaited so a slow domain controller doesn't hold the request's thread. The bare username
+                // it falls back to is a stand-in: it doesn't replace a name already recorded, as a missing email doesn't.
+                var (name, standIn) = await WindowsNames.Shared.ResolveForMirrorAsync(principal.Identity.Name);
                 var upn = principal.FindFirstValue(ClaimTypes.Upn);
                 var email = principal.FindFirstValue(ClaimTypes.Email);
 
@@ -48,7 +49,7 @@ public sealed class UserMirrorMiddleware
 
                 // S8949: flow the request's cancellation token — the mirror is a best-effort, throttled
                 // convenience write, so abandon it if the client disconnects rather than doing dead work.
-                await directory.TouchAsync(userId, display, upn, email, roles, context.RequestAborted);
+                await directory.TouchAsync(userId, name ?? userId, upn, email, roles, standIn, context.RequestAborted);
             }
         }
 

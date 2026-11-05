@@ -857,9 +857,23 @@ else
     // The edition shown: what its ceiling allows, and (team edition only) the indicators and actions. Slides render only
     // what this carries, so the company-wide edition can't show the team's actions or indicators (ADR 0005). The team
     // edition's marking counts the overdue actions its slide shows.
-    private BriefEdition Cut(Brief brief) => _edition == Edition.Public
-        ? BriefEditions.Build(brief, _edition, _publicMax)
-        : BriefEditions.Build(brief, _edition, _teamMax, _actions) with { Open = _open };
+    // Cut again only when what it's cut from changes: a render asks for it once per slide count and slide key. Each input
+    // is replaced, not changed in place, when it's read again (a discussed tick, changed in place, isn't in the cut).
+    private BriefEdition Cut(Brief brief)
+    {
+        if (_cut is not { } c || !ReferenceEquals(c.Brief, brief) || c.Edition != _edition || c.PublicMax != _publicMax
+            || c.TeamMax != _teamMax || !ReferenceEquals(c.Actions, _actions) || !ReferenceEquals(c.Open, _open))
+        {
+            var edition = _edition == Edition.Public
+                ? BriefEditions.Build(brief, _edition, _publicMax)
+                : BriefEditions.Build(brief, _edition, _teamMax, _actions) with { Open = _open };
+            _cut = c = new CutOf(brief, _edition, _publicMax, _teamMax, _actions, _open, edition);
+        }
+        return c.Result;
+    }
+    private sealed record CutOf(Brief Brief, Edition Edition, TlpLevel PublicMax, TlpLevel TeamMax,
+        ILookup<Guid, EditionAction>? Actions, OpenActionsReview Open, BriefEdition Result);
+    private CutOf? _cut;
 
     // The metric slides follow the title slide on the team edition when any metric is defined, one per group (all-0
     // groups folded into a line on the first: MetricSlides); never on the public one.
