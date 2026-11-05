@@ -14,6 +14,26 @@ an existing site, such as `https://intranet.contoso.com/tide` (see [Under anothe
   Install-WindowsFeature Web-Server, Web-Windows-Auth -IncludeManagementTools
   ```
 
+- **WebSockets.** IIS's **WebSocket Protocol** feature. Every open TIDE page keeps one connection to the server; without
+  this feature it silently falls back to long polling, where each click and keystroke is a request of its own, so
+  typing lags and the server does far more work:
+
+  ```powershell
+  Install-WindowsFeature Web-WebSockets
+  # On Windows 10/11 (a test machine): Enable-WindowsOptionalFeature -Online -FeatureName IIS-WebSockets -All
+  ```
+
+  `Install-Tide.ps1` checks for it. Run interactively, it offers to install it; with `-InstallWebSockets` (or
+  `InstallWebSockets = $true` in the answers file) it installs it without asking; run from an answers file or a
+  non-interactive session without that, it warns, gives the command, and carries on (TIDE then uses long polling
+  until the feature is installed). It also turns WebSockets on for TIDE's site if
+  `applicationHost.config` or `web.config` has them off (`system.webServer/webSocket`). Windows rarely needs a restart
+  for it; the installer says when it does.
+
+  **A reverse proxy or load balancer** in front of IIS must pass WebSockets through too: the `Upgrade` and `Connection`
+  headers, and long-lived connections (an idle timeout of a few minutes at least). One that strips them gives long
+  polling just as a missing feature does.
+
 - **.NET.** The **.NET 10 Hosting Bundle**, and the .NET 10 SDK if you publish on the server.
 - **SQL Server.** 2019 or later. TIDE uses a database of its own on your existing instance.
 - **Service account.** One account for the app pool. A gMSA (`CONTOSO\svc-tide$`) is best, because it has no
@@ -234,6 +254,16 @@ What sharing a host name means:
 .\deploy\Verify-Install.ps1 -Url https://tide.contoso.com/
 ```
 
+Besides the pool, the site, the health endpoints and the sign-in, it checks WebSockets: the IIS WebSocket Protocol
+feature is installed, `system.webServer/webSocket` isn't off for the site, and a real WebSocket to the app (signed in
+as you, through any proxy on the way) gets its Upgrade. To check WebSockets another way:
+
+- **Administration > System > Diagnostics** shows the connection your own page is using right now (WebSockets,
+  Server-Sent Events or Long polling; anything but WebSockets is flagged), and how many connections since the app
+  started used each, so you can see whether other people are falling back.
+- **The browser's Network tab** (F12, then reload a TIDE page): one `websocket` row for `_blazor` with status
+  **101** is good. Many `xhr` rows for `_blazor?id=...`, a new one on every keystroke, mean long polling.
+
 Then sign in as a member of the Admin group:
 
 1. Under **Administration > Access & distribution**, confirm the role mappings, set the edition ceilings, and set
@@ -429,4 +459,5 @@ To restore for real: restore the `.bak` (and the log backups after it) over the 
 | **401** for everyone | Windows Authentication isn't on for the site, or the browser isn't sending credentials. Add the host to the Local Intranet zone. |
 | **"You don't have access"** | Signed in, but the account is in no mapped group. Map a group in Administration, or in `RoleMapping` before the first start. |
 | **"The mail relay couldn't be reached"** | `Email:SmtpHost` or `SmtpPort` is wrong, or a firewall blocks the server from the relay. After three failures in two minutes TIDE waits a minute (then longer) before trying again. |
+| **Typing lags; the Network tab shows many `xhr` rows for `_blazor?id=`** | Long polling: WebSockets aren't getting through. Install the IIS WebSocket Protocol feature (`Install-WindowsFeature Web-WebSockets`, or re-run `Install-Tide.ps1 -InstallWebSockets`) and check any reverse proxy or load balancer passes the `Upgrade` and `Connection` headers. `Verify-Install.ps1` and Administration > System > Diagnostics say which it is. |
 | **"The mail relay refused the sign-in"** | Check `Email:SmtpUsername` and `Email__SmtpPassword`, or that the relay accepts the app-pool account. |

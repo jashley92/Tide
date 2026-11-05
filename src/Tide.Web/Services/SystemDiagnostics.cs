@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Tide.Application.Abstractions;
@@ -27,9 +28,28 @@ public sealed record EmailInfo(bool Enabled, string Delivery, string SignIn, str
 
 public sealed record SourceHealth(int Enabled, int Failing, IReadOnlyList<string> FailingNames);
 
+/// <summary>How pages talk to the server: the asking admin's own circuit (null outside one) and every circuit since the app started.</summary>
+public sealed record ConnectionInfo(HttpTransportType? Current, IReadOnlyList<TransportCount> Counts)
+{
+    public string CurrentName => ConnectionTransport.Name(Current);
+    public long SinceStart => Counts.Sum(c => c.SinceStart);
+    public long FellBack => Counts.Where(c => c.Transport != HttpTransportType.WebSockets).Sum(c => c.SinceStart);
+
+    /// <summary>The admin's own connection: Ok on WebSockets, Attention on a fallback, Info when it isn't known.</summary>
+    public CheckLevel Level => Current switch
+    {
+        null => CheckLevel.Info,
+        HttpTransportType.WebSockets => CheckLevel.Ok,
+        _ => CheckLevel.Attention,
+    };
+
+    /// <summary>Whether the fix is worth showing: this page, or anyone's since the app started, fell back.</summary>
+    public bool NeedsFix => Level == CheckLevel.Attention || FellBack > 0;
+}
+
 public sealed record DiagnosticsReport(
     DateTimeOffset CheckedAtUtc, BuildInfo Build, DatabaseInfo Database, IReadOnlyList<JobState> Jobs, EmailInfo Email,
-    IReadOnlyList<StorageInfo> Storage, SourceHealth Sources, CveRun? LastCveRun, IReadOnlyList<HealthItem> Checks);
+    IReadOnlyList<StorageInfo> Storage, SourceHealth Sources, CveRun? LastCveRun, IReadOnlyList<HealthItem> Checks, ConnectionInfo Connection);
 
 /// <summary>
 /// Whether TIDE is healthy, for Administration › System › Diagnostics: the build and how long it's been
@@ -42,7 +62,7 @@ public sealed record DiagnosticsReport(
 public sealed class SystemDiagnostics(
     IConfiguration config, IWebHostEnvironment env, IDbContextFactory<AppDbContext> contexts, IAppDbContextFactory dbs, JobMonitor jobs,
     IOptionsMonitor<EmailOptions> email, OutboundCircuit circuit, CveRunLog cveLog, IRoleDirectory roles, UpdateCheckService updates,
-    TimeProvider time, ICurrentUser user)
+    TimeProvider time, ICurrentUser user, CircuitTransport circuitTransport, TransportCounts transportCounts)
 {
     public static readonly TimeSpan DatabaseTimeLimit = TimeSpan.FromSeconds(5);
 
@@ -56,8 +76,10 @@ public sealed class SystemDiagnostics(
         var storage = Storage();
         var sources = database.Reachable ? await SourcesAsync(ct) : new SourceHealth(0, 0, []);
         var states = jobs.States;
-        return new DiagnosticsReport(time.GetUtcNow(), build, database, states, mail, storage, sources, cveLog.Last,
-            Checks(database, states, mail, storage, sources));
+        var connection = new ConnectionInfo(circuitTransport.Current, transportCounts.Snapshot());
+        var checks = Checks(database, states, mail, storage, sources);
+        checks.InsertRange(1, ConnectionChecks(connection));
+        return new DiagnosticsReport(time.GetUtcNow(), build, database, states, mail, storage, sources, cveLog.Last, checks, connection);
     }
 
     private BuildInfo Build()
@@ -159,6 +181,31 @@ public sealed class SystemDiagnostics(
             return new SourceHealth(live.Count, failing.Count, [.. failing.Take(5)]);
         }
         catch (Exception ex) when (ex is not OperationCanceledException) { return new SourceHealth(0, 0, []); }
+    }
+
+    /// <summary>
+    /// The admin's own connection (Attention unless it's WebSockets) and everyone's since the app started (Attention when
+    /// any fell back), each with the fix.
+    /// </summary>
+    internal static IEnumerable<HealthItem> ConnectionChecks(ConnectionInfo connection)
+    {
+        yield return connection.Level switch
+        {
+            CheckLevel.Ok => new("Your connection", CheckLevel.Ok, "WebSockets."),
+            CheckLevel.Info => new("Your connection", CheckLevel.Info, "Not known yet: this page isn't on a live connection. Check again once it is."),
+            _ => new("Your connection", CheckLevel.Attention,
+                $"{connection.CurrentName}, not WebSockets: every click and keystroke is a request of its own, so pages lag. {ConnectionTransport.Fix}"),
+        };
+        if (connection.SinceStart == 0) yield break;
+        if (connection.FellBack == 0)
+        {
+            yield return new("Everyone's connections", CheckLevel.Ok, $"All {connection.SinceStart} since the app started used WebSockets.");
+            yield break;
+        }
+        var which = string.Join(", ", connection.Counts.Where(c => c.Transport != HttpTransportType.WebSockets && c.SinceStart > 0)
+            .Select(c => $"{c.SinceStart} {c.Name.ToLowerInvariant()}"));
+        yield return new("Everyone's connections", CheckLevel.Attention,
+            $"{connection.FellBack} of {connection.SinceStart} since the app started didn't use WebSockets ({which}). {ConnectionTransport.Fix}");
     }
 
     private List<HealthItem> Checks(DatabaseInfo db, IReadOnlyList<JobState> states, EmailInfo mail, IReadOnlyList<StorageInfo> storage, SourceHealth sources)
