@@ -25,7 +25,8 @@ public static class RoleDefinitions
         // Administrators hold every permission, including ones added to the enum later.
         [AppRole.Admin] = Enum.GetValues<Permission>(),
         // Reads what the team reads, every action too, and changes nothing but their own meeting notes. Neither
-        // WorkActions nor WriteArticles: every write the team edition allows asks for one of them (Contributes).
+        // WorkActions nor WriteArticles: every write the team edition allows asks for one of them (commenting on an
+        // action, say: ActionService.CanComment).
         [AppRole.Viewer] =
         [
             Permission.ReadPublished, Permission.ReadTeamEdition, Permission.ReadActions, Permission.MeetingNotes, Permission.JoinMeetings,
@@ -119,18 +120,6 @@ public static class Policies
         Permission.JoinMeetings => "join the brief meeting",
         _ => p.ToString(),
     };
-}
-
-/// <summary>Checks that are more than one permission.</summary>
-public static class PermissionChecks
-{
-    /// <summary>
-    /// Whether <paramref name="user"/> takes part in the team's work rather than only reading it: works actions or
-    /// writes articles. Every write the team edition opens up (a comment on an action, say) asks for this as well as the
-    /// team edition, so a Viewer, who reads the team edition and does neither, can't make it.
-    /// </summary>
-    public static bool Contributes(this Abstractions.ICurrentUser user) =>
-        user.Has(Permission.WorkActions) || user.Has(Permission.WriteArticles);
 }
 
 /// <summary>Thrown when a service is asked for something the current user's permissions don't allow.</summary>

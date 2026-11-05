@@ -130,10 +130,26 @@ public class ActionComment : Entity
 }
 
 /// <summary>
+/// What a file on an action and a file on one of its comments share: a name, a description, what makes it risky, and
+/// whether (and by whom, when and why) it was removed. Removing hides it and keeps its bytes, hash and record.
+/// </summary>
+public interface IRemovableFile
+{
+    string FileName { get; }
+    string? Description { get; set; }
+    string? RiskReason { get; }
+    DateTimeOffset? RemovedAtUtc { get; set; }
+    string? RemovedById { get; set; }
+    string? RemovedByName { get; set; }
+    string? RemovedReason { get; set; }
+    bool IsRemoved { get; }
+}
+
+/// <summary>
 /// A file on an action's comment: a screenshot (a checked raster image, shown inline) or an evidence file of any kind
 /// (a log extract, a pcap, an email), only ever downloaded. Its name and size are copied here to list it.
 /// </summary>
-public class ActionCommentFile : Entity
+public class ActionCommentFile : Entity, IRemovableFile
 {
     public const int MaxPerComment = 10;
 
@@ -168,7 +184,7 @@ public class ActionCommentFile : Entity
 /// it. Removing it hides it from the action but keeps the bytes, the hash and this record, with who removed it, when
 /// and why; an administrator can restore it.
 /// </summary>
-public class ActionFile : Entity
+public class ActionFile : Entity, IRemovableFile
 {
     public const int MaxDescription = 500;
     public const int MaxReason = 500;
@@ -222,7 +238,12 @@ public class ActionFile : Entity
     public DateTimeOffset? FromCommentAtUtc { get; set; }
 
     /// <summary>Whether it's shown inline: a real raster image that nothing about suggests it can run.</summary>
-    public bool ShowsInline => IsImage && RiskReason is null && TypeNote is null;
+    public bool ShowsInline => ShowsInlineFor(IsImage, TypeNote, RiskReason);
+
+    /// <summary>The rule for showing any uploaded file inline: a real raster image, named and sent as what it is (no
+    /// <paramref name="typeNote"/>), that can't run (no <paramref name="riskReason"/>). The inline image endpoint's query
+    /// (ScreenshotService) says the same in SQL.</summary>
+    public static bool ShowsInlineFor(bool isImage, string? typeNote, string? riskReason) => isImage && typeNote is null && riskReason is null;
 }
 
 /// <summary>One thing to do on an action's checklist: copied from a playbook's step, or added by hand.</summary>

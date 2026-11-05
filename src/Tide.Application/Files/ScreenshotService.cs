@@ -23,6 +23,12 @@ public sealed class FileStoreOptions
     /// <summary>When an action's file downloads inside a zip with the password "infected" by default; set in the app
     /// (Administration › Teams &amp; SLA), saved over this.</summary>
     public ZipDownloads ZipDownloads { get; set; } = ZipDownloads.RiskyOnly;
+
+    /// <summary>The image limit in bytes (at least 1 MB, whatever is configured).</summary>
+    public long MaxImageBytes => Math.Max(1, MaxImageMB) * 1024L * 1024L;
+
+    /// <summary>The limit for any other file, in bytes (at least 1 MB).</summary>
+    public long MaxEvidenceBytes => Math.Max(1, MaxEvidenceMB) * 1024L * 1024L;
 }
 
 /// <summary>A screenshot or file as it arrives from the browser (pasted, dropped or picked), with the type the browser
@@ -33,9 +39,9 @@ public sealed record ScreenshotUpload(string FileName, byte[] Bytes, string? Dec
 public sealed class ScreenshotService(IAppDbContextFactory dbs, ICurrentUser user, IFileStore store, IOptions<FileStoreOptions> options,
     Briefs.IMeetingsInProgress? meetings = null)
 {
-    public long MaxBytes => Math.Max(1, options.Value.MaxImageMB) * 1024L * 1024L;
+    public long MaxBytes => options.Value.MaxImageBytes;
 
-    private long MaxEvidenceBytes => Math.Max(1, options.Value.MaxEvidenceMB) * 1024L * 1024L;
+    private long MaxEvidenceBytes => options.Value.MaxEvidenceBytes;
 
     /// <summary>The largest file a comment takes: an evidence file's limit, or a screenshot's if that's larger.</summary>
     public long MaxAttachmentBytes => Math.Max(MaxBytes, MaxEvidenceBytes);
@@ -199,16 +205,22 @@ public sealed class ScreenshotService(IAppDbContextFactory dbs, ICurrentUser use
     {
         if (!user.Has(Permission.WorkActions) && !user.Has(Permission.WriteArticles)) throw new ForbiddenException("You can't add evidence to actions.");
         await using var db = await dbs.CreateAsync(ct);
-        if (await db.HuntQueries.AnyAsync(h => h.EvidenceFileId == fileId, ct) || await db.ActionCommentFiles.AnyAsync(f => f.FileId == fileId, ct)
-            || await db.ActionFiles.AnyAsync(f => f.FileId == fileId, ct)
-            || await db.ArticleScreenshots.AnyAsync(s => s.FileId == fileId, ct)
-            || await db.BriefSendImages.AnyAsync(i => i.FileId == fileId || i.SourceFileId == fileId, ct))
+        if (await InUseAsync(db, fileId, null, ct) || await db.BriefSendImages.AnyAsync(i => i.SourceFileId == fileId, ct))
             return;
         if (await db.Files.FirstOrDefaultAsync(f => f.Id == fileId, ct) is not { } file) return;
         db.Files.Remove(file);
         await db.SaveChangesAsync(ct);
         store.Delete(fileId);
     }
+
+    /// <summary>Whether anything holds the stored file: a hunt (other than <paramref name="exceptHuntId"/>), a comment, an
+    /// action, an article's screenshot or a frozen send's image.</summary>
+    internal static async Task<bool> InUseAsync(IAppDbContext db, Guid fileId, Guid? exceptHuntId, CancellationToken ct) =>
+        await db.HuntQueries.AnyAsync(h => h.EvidenceFileId == fileId && h.Id != exceptHuntId, ct)
+        || await db.ActionCommentFiles.AnyAsync(f => f.FileId == fileId, ct)
+        || await db.ActionFiles.AnyAsync(f => f.FileId == fileId, ct)
+        || await db.ArticleScreenshots.AnyAsync(s => s.FileId == fileId, ct)
+        || await db.BriefSendImages.AnyAsync(i => i.FileId == fileId, ct);
 
     /// <summary>
     /// Checks and writes a comment's files, before the comment is saved: each one a screenshot (its bytes a raster image,
@@ -230,19 +242,27 @@ public sealed class ScreenshotService(IAppDbContextFactory dbs, ICurrentUser use
             return (Upload: u, Image: image);
         }).ToList();
 
-        var written = new List<(StoredFile, bool)>();
+        var written = await WriteAllAsync(store, checkedFiles.Select(c =>
+            (c.Image is not null ? SafeName(c.Upload.FileName, c.Image) : EvidenceName(c.Upload.FileName), c.Image ?? "application/octet-stream", c.Upload.Bytes)), ct);
+        return written.Select((file, i) => (file, checkedFiles[i].Image is not null)).ToList();
+    }
+
+    /// <summary>
+    /// Writes each file to the store, in order, and returns their rows for the caller to add to the database in one save
+    /// (deleting them from the store if that save fails). All or none: if one can't be written, those written before it
+    /// are deleted.
+    /// </summary>
+    internal static async Task<IReadOnlyList<StoredFile>> WriteAllAsync(IFileStore store,
+        IEnumerable<(string FileName, string ContentType, byte[] Bytes)> files, CancellationToken ct)
+    {
+        var written = new List<StoredFile>();
         try
         {
-            foreach (var (u, image) in checkedFiles)
-            {
-                var file = await WriteAsync(store, image is not null ? SafeName(u.FileName, image) : EvidenceName(u.FileName),
-                    image ?? "application/octet-stream", u.Bytes, ct);
-                written.Add((file, image is not null));
-            }
+            foreach (var (name, type, bytes) in files) written.Add(await WriteAsync(store, name, type, bytes, ct));
         }
         catch
         {
-            Discard(written.Select(w => w.Item1.Id));
+            foreach (var f in written) store.Delete(f.Id);
             throw;
         }
         return written;
@@ -317,7 +337,7 @@ public sealed class ScreenshotService(IAppDbContextFactory dbs, ICurrentUser use
         {
             if (await db.HuntQueries.AnyAsync(h => h.EvidenceFileId == fileId, ct)) return true;
             if (await db.ActionCommentFiles.AnyAsync(f => f.FileId == fileId && f.IsImage && f.RemovedAtUtc == null, ct)) return true;
-            // An action's own file, only while it's on the action and is a real image, named and sent as one, that can't run.
+            // An action's own file, only while it's on the action and shown inline (ActionFile.ShowsInlineFor, as SQL).
             if (await db.ActionFiles.AnyAsync(f => f.FileId == fileId && f.RemovedAtUtc == null && f.IsImage && f.TypeNote == null && f.RiskReason == null, ct))
                 return true;
             if (!team) return false;

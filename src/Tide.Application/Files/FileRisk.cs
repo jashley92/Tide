@@ -22,7 +22,7 @@ public sealed record FileInspection(string? ImageType, string? TypeNote, string?
     public bool IsImage => ImageType is not null;
 
     /// <summary>Whether it may be shown inline: a real raster image, named and sent as what it is, that can't run.</summary>
-    public bool ShowsInline => IsImage && TypeNote is null && RiskReason is null;
+    public bool ShowsInline => Domain.Entities.ActionFile.ShowsInlineFor(IsImage, TypeNote, RiskReason);
 }
 
 /// <summary>

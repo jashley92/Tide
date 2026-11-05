@@ -39,7 +39,8 @@ public static class FileDownloads
         await using var source = content;
         using var zip = new ZipOutputStream(output) { IsStreamOwner = false, Password = FileRisk.ZipPassword };
         zip.UseZip64 = size >= uint.MaxValue - 1024 ? UseZip64.On : UseZip64.Off;
-        zip.SetLevel(5);
+        // Not compressed: the zip only wraps the file so it can't run, and a sample, a pcap or an image barely shrinks anyway.
+        zip.SetLevel(0);
         // Classic PKWARE encryption (ZipCrypto), not AES, so Windows File Explorer opens it with the password as well as any
         // zip tool. It's deliberately weak: its job is to stop a double-click running the file and antivirus deleting it on
         // arrival, not to keep it secret (the password is the field's public convention).

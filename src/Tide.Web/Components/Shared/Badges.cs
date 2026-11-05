@@ -269,12 +269,7 @@ public static class Ui
     public static string ShortHash(string sha256) => sha256.Length <= 12 ? sha256 : sha256[..12] + "…";
 
     /// <summary>A file's size as people read it ("840 KB", "3.2 MB").</summary>
-    public static string Size(long bytes) => bytes switch
-    {
-        < 1024 => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{bytes} B"),
-        < 1024 * 1024 => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{bytes / 1024.0:0} KB"),
-        _ => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{bytes / 1024.0 / 1024.0:0.0} MB"),
-    };
+    public static string Size(long bytes) => Application.Files.FileSizes.Text(bytes);
 
     /// <summary>A card rule's colour as a CSS class suffix (tide-rule-red).</summary>
     public static string RuleClass(CardColour c) => "tide-rule-" + c.ToString().ToLowerInvariant();
