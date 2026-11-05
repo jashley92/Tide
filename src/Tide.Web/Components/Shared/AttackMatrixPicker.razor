@@ -3,6 +3,8 @@
    pairs, so a technique ticked in one column shows ticked in each of its columns. Add and remove freely; Apply hands back
    the new set, Cancel or Escape drops it. Ids that left the catalogue (retired since the article was tagged) are kept
    in their own strip, with the technique that replaced them, until they're removed.
+   While filtering, only the tactics with a match show, side by side from the left, with a line saying how many
+   (AttackMatrixView); the others fold away with a short transition.
    Usage: @if (open) { <AttackMatrixPicker Current="ids" OnApply="…" OnCancel="…" /> } *@
 @implements IAsyncDisposable
 @inject IJSRuntime JS
@@ -16,8 +18,8 @@
         <div class="tide-atkm-search">
             <span class="bi bi-search" aria-hidden="true"></span>
             <input @ref="_filterBox" class="form-control form-control-sm" placeholder="Filter by id or name: T1566, phishing"
-                   value="@_filter" @oninput="OnFilter" aria-label="Filter techniques" />
-            @if (_filter.Length > 0)
+                   value="@_text" @oninput="OnFilter" @onkeydown="OnFilterKey" aria-label="Filter techniques" />
+            @if (_text.Length > 0)
             {
                 <button type="button" class="btn btn-sm btn-link p-0" @onclick="ClearFilter">Clear</button>
             }
@@ -36,22 +38,35 @@
         </div>
     }
 
-    <div class="tide-atkm-grid">
-        @foreach (var col in Matrix)
+    @if (_view.Summary is { } summary)
+    {
+        <div class="tide-atkm-filterline small tide-muted" role="status">@summary</div>
+    }
+
+    @* Every tactic stays in the grid: one with no match collapses (CSS) rather than leaving, so the rest slide into place.
+       A collapsed column is inert, out of the tab order and the accessibility tree. *@
+    <div class="tide-atkm-grid" @ref="_grid">
+        @if (_view.NoMatchText is { } none)
         {
-            var rows = VisibleRows(col);
-            var selN = rows.Count(r => _selected.Contains(r.Parent.Id) || r.Subs.Any(s => _selected.Contains(s.Id)));
-            <div class="tide-atkm-col" style="--tac:@Ui.TacticColor(col.Tactic)">
+            <div class="tide-atkm-nomatch" role="status">@none</div>
+        }
+        @foreach (var col in _view.Columns)
+        {
+            var rows = col.Rows;
+            var selN = col.Hidden ? 0 : rows.Count(r => _selected.Contains(r.Row.Parent.Id) || r.Row.Subs.Any(s => _selected.Contains(s.Id)));
+            <div @key="col.Tactic" class="tide-atkm-col @(col.Hidden ? "tide-atkm-col-hidden" : "")" style="--tac:@Ui.TacticColor(col.Tactic)"
+                 aria-hidden="@(col.Hidden ? "true" : null)" inert="@col.Hidden">
                 <div class="tide-atkm-colhead" title="@($"{AttackMatrix.TacticId(col.Tactic)}: {AttackMatrix.TacticDescription(col.Tactic)}")">
                     <span class="bi @Ui.TacticGlyph(col.Tactic)" aria-hidden="true"></span>
                     <span class="tide-atkm-colname">@AttackMatrix.TacticName(col.Tactic)</span>
                     @if (selN > 0) { <span class="tide-atkm-colcount" aria-label="@selN selected">@selN</span> }
                 </div>
                 <div class="tide-atkm-cells">
-                    @foreach (var row in rows)
+                    @foreach (var shown in rows)
                     {
+                        var row = shown.Row;
                         var pid = row.Parent.Id;
-                        var expanded = _expanded.Contains(pid) || (_filter.Length > 0 && row.Subs.Any(Matches));
+                        var expanded = _expanded.Contains(pid) || shown.OpenForMatch;
                         <div class="tide-atkm-cell @CellClass(pid, row.ParentInTactic)"
                              role="button" tabindex="0" aria-pressed="@(row.ParentInTactic ? (_selected.Contains(pid) ? "true" : "false") : null)"
                              aria-expanded="@(row.ParentInTactic || row.Subs.Count == 0 ? null : (expanded ? "true" : "false"))"
@@ -75,7 +90,7 @@
                         </div>
                         @if (expanded)
                         {
-                            @foreach (var sub in ShownSubs(row))
+                            @foreach (var sub in shown.ShownSubs)
                             {
                                 <div class="tide-atkm-cell tide-atkm-subcell @CellClass(sub.Id, true)"
                                      role="button" tabindex="0" aria-pressed="@(_selected.Contains(sub.Id) ? "true" : "false")"
@@ -88,7 +103,6 @@
                             }
                         }
                     }
-                    @if (rows.Count == 0) { <div class="tide-atkm-empty">None match</div> }
                 </div>
             </div>
         }
@@ -132,9 +146,15 @@
     private readonly string _titleId = "atkm-" + Guid.NewGuid().ToString("N")[..8];
     private readonly HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _expanded = new(StringComparer.OrdinalIgnoreCase);
-    private string _filter = "";
+    private string _text = "";   // what's in the box, every keystroke
+    private string _filter = ""; // what the matrix is filtered by: the text once typing pauses
+    private readonly TypingPause _pause = new(ArticleAdversaryCard.TypingPauseMs);
+    private bool _quiet;
+    private AttackMatrixView _view = AttackMatrixView.For("");
+    private bool _moved;
     private bool _initialized;
     private ElementReference _filterBox;
+    private ElementReference _grid;
 
     // Enter or Space activates a cell (role="button"), like a native button; a held key acts once.
     private static bool IsActivate(KeyboardEventArgs e) => e is { Repeat: false, Key: "Enter" or " " };
@@ -152,57 +172,48 @@
         }
     }
 
-    // --- the matrix, built once from the catalogue ---
-    private sealed record Row(AttackTechnique Parent, bool ParentInTactic, IReadOnlyList<AttackTechnique> Subs);
-    private sealed record Col(MitreTactic Tactic, IReadOnlyList<Row> Rows);
-    private static IReadOnlyList<Col>? _matrix;
-    private static IReadOnlyList<Col> Matrix => _matrix ??= Build();
-
-    private static List<Col> Build()
+    // --- filtering: the columns are worked out once per change of the filter (AttackMatrixView), not on every render ---
+    // The box shows each keystroke; the filter, the counts line and the columns' fold wait for typing to pause (as the
+    // adversary picker's search does), so a word typed is one change, not one a letter. A later keystroke supersedes it.
+    private async Task OnFilter(ChangeEventArgs e)
     {
-        var all = AttackCatalog.All;
-        var parents = all.Where(t => !t.IsSubtechnique).ToDictionary(t => t.Id, StringComparer.OrdinalIgnoreCase);
-        var subsByParent = all.Where(t => t.IsSubtechnique)
-            .GroupBy(t => t.ParentId, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.OrderBy(x => x.Id, StringComparer.Ordinal).ToList(), StringComparer.OrdinalIgnoreCase);
-
-        var cols = new List<Col>();
-        foreach (var tac in AttackMatrix.Tactics)
-        {
-            // A parent is listed under a tactic when it, or any of its sub-techniques, belongs to it. One that's there only
-            // for its subs is a heading: clicking it opens them rather than tagging it.
-            var ids = parents.Values.Where(p => p.Tactics.Contains(tac)).Select(p => p.Id)
-                .Concat(subsByParent.Where(kv => kv.Value.Exists(s => s.Tactics.Contains(tac))).Select(kv => kv.Key))
-                .Where(parents.ContainsKey)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Order(StringComparer.Ordinal);
-
-            var rows = ids.Select(pid =>
-            {
-                var parent = parents[pid];
-                var subs = subsByParent.TryGetValue(pid, out var sl) ? sl.Where(s => s.Tactics.Contains(tac)).ToList() : [];
-                return new Row(parent, parent.Tactics.Contains(tac), subs);
-            }).ToList();
-            cols.Add(new Col(tac, rows));
-        }
-        return cols;
+        _text = e.Value?.ToString() ?? "";
+        if (await _pause.Settled()) SetFilter(_text);
+        else _quiet = true; // superseded: nothing new to draw
     }
 
-    // --- filtering ---
-    private bool Matches(AttackTechnique t) =>
-        _filter.Length == 0
-        || t.Id.Contains(_filter, StringComparison.OrdinalIgnoreCase)
-        || t.Name.Contains(_filter, StringComparison.OrdinalIgnoreCase);
+    // Enter applies what's typed at once.
+    private void OnFilterKey(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter") return;
+        _pause.Now();
+        SetFilter(_text);
+    }
 
-    private List<Row> VisibleRows(Col col) =>
-        _filter.Length == 0 ? col.Rows.ToList() : col.Rows.Where(r => Matches(r.Parent) || r.Subs.Any(Matches)).ToList();
+    // A keystroke superseded while it paused changes nothing on screen, so it doesn't re-render the matrix.
+    protected override bool ShouldRender()
+    {
+        if (!_quiet) return true;
+        _quiet = false;
+        return false;
+    }
 
-    // While filtering, a parent opened for its matching sub-techniques shows only those; all of them when it matches itself.
-    private IEnumerable<AttackTechnique> ShownSubs(Row row) =>
-        _filter.Length == 0 || Matches(row.Parent) ? row.Subs : row.Subs.Where(Matches);
+    private async Task ClearFilter()
+    {
+        _pause.Now();
+        _text = "";
+        SetFilter("");
+        // The Clear button goes with the filter: focus goes back to the box rather than dropping to the page.
+        await _filterBox.FocusAsync();
+    }
 
-    private void OnFilter(ChangeEventArgs e) => _filter = (e.Value?.ToString() ?? "").Trim();
-    private void ClearFilter() => _filter = "";
+    private void SetFilter(string? value)
+    {
+        var next = AttackMatrixView.For(value, _view);
+        _moved |= next.Layout != _view.Layout;
+        _view = next;
+        _filter = next.Filter;
+    }
 
     // --- selection ---
     private string CellClass(string id, bool selectable)
@@ -211,7 +222,7 @@
         return _selected.Contains(id) ? "tide-atkm-on" : "";
     }
 
-    private void ToggleParent(Row row)
+    private void ToggleParent(AttackMatrixRow row)
     {
         if (row.ParentInTactic) Toggle(row.Parent.Id);
         else ToggleExpand(row.Parent.Id);
@@ -255,19 +266,30 @@
     // Escape closes without applying, like Tide's other dialogs.
     private async Task OnPanelKey(KeyboardEventArgs e)
     {
-        if (e.Key == "Escape") await Cancel();
+        if (e.Key != "Escape") return;
+        _pause.Now(); // a pending filter doesn't land after the picker closes
+        await Cancel();
     }
 
     // Focus starts in the filter box, Tab stays in the panel (dialog.js), and focus goes back to the opener on close.
+    // When a filter change moves the columns, the grid goes back to its left edge (smoothly, unless motion is reduced).
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
-        try { await JS.InvokeVoidAsync("tideDialog.open", _filterBox); }
+        try
+        {
+            if (firstRender) await JS.InvokeVoidAsync("tideDialog.open", _filterBox);
+            else if (_moved)
+            {
+                _moved = false;
+                await JS.InvokeVoidAsync("tideDialog.toStart", _grid, _filterBox);
+            }
+        }
         catch (JSDisconnectedException) { }
     }
 
     public async ValueTask DisposeAsync()
     {
+        _pause.Now();
         try { await JS.InvokeVoidAsync("tideDialog.close"); }
         catch (JSDisconnectedException) { }
     }

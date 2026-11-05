@@ -551,14 +551,21 @@ li > .tide-tlp, .tide-md + .tide-tlp { margin-left: .4rem; }
 .tide-atkm-title { font-size: 1rem; font-weight: var(--tide-weight-semibold); margin: 0; }
 .tide-atkm-search { display: flex; align-items: center; gap: .4rem; margin-left: auto; color: var(--tide-text-muted); flex: 0 1 22rem; min-width: 0; }
 .tide-atkm-note { padding: .4rem 1rem; background: var(--tide-info-soft); border-bottom: 1px solid var(--tide-border); }
-.tide-atkm-grid { flex: 1 1 auto; display: flex; gap: .5rem; overflow: auto; padding: .75rem; align-items: flex-start; background: var(--tide-bg); }
-.tide-atkm-col { flex: 0 0 14rem; display: flex; flex-direction: column; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-lg); overflow: hidden; background: var(--tide-surface); }
+.tide-atkm-filterline { padding: .35rem 1rem; border-bottom: 1px solid var(--tide-border); }
+/* Columns are spaced by margin, not gap, so a collapsed one takes no space at all. */
+.tide-atkm-grid { flex: 1 1 auto; display: flex; overflow: auto; padding: .75rem .25rem .75rem .75rem; align-items: flex-start; background: var(--tide-bg); scroll-behavior: smooth; }
+.tide-atkm-col { flex: 0 0 14rem; margin-right: .5rem; display: flex; flex-direction: column; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-lg); overflow: hidden; background: var(--tide-surface);
+    transition: flex-basis 180ms ease-out, margin-right 180ms ease-out, border-width 180ms ease-out, opacity 180ms ease-out; }
+/* A tactic with no match while filtering: fades and folds its width to nothing; its content keeps its own width meanwhile, clipped rather than squeezed. */
+.tide-atkm-col-hidden { flex-basis: 0; margin-right: 0; border-width: 0; opacity: 0; pointer-events: none; }
+.tide-atkm-col > .tide-atkm-colhead, .tide-atkm-col > .tide-atkm-cells { min-width: calc(14rem - 2px); }
+.tide-atkm-nomatch { flex: 1 0 100%; margin-right: .5rem; padding: 2rem 1rem; text-align: center; color: var(--tide-text-muted); }
+@media (prefers-reduced-motion: reduce) { .tide-atkm-col { transition: none; } .tide-atkm-grid { scroll-behavior: auto; } }
 .tide-atkm-colhead { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: .4rem; padding: .4rem .5rem;
     font-size: .78rem; font-weight: var(--tide-weight-semibold); background: color-mix(in srgb, var(--tac) 16%, var(--tide-surface)); border-bottom: 2px solid var(--tac); }
 .tide-atkm-colname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tide-atkm-colcount { margin-left: auto; font-size: .72rem; border: 1px solid var(--tac); background: var(--tide-surface); border-radius: var(--tide-radius-pill); padding: 0 .4rem; }
 .tide-atkm-cells { display: flex; flex-direction: column; padding: .25rem; gap: .15rem; }
-.tide-atkm-empty { color: var(--tide-text-muted); text-align: center; padding: .5rem; font-size: .78rem; font-style: italic; }
 .tide-atkm-cell { display: flex; align-items: center; gap: .3rem; padding: .2rem .3rem; border-radius: var(--tide-radius-md); cursor: pointer;
     font-size: .78rem; line-height: 1.25; border: 1px solid transparent; }
 .tide-atkm-cell:hover { background: var(--tide-surface-2); }
