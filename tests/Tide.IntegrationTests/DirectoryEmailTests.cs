@@ -179,6 +179,41 @@ public class DirectoryEmailTests
         UserOf(refreshed).Email.Should().Be("jordan.rivera@contoso.com");
     }
 
+    [Fact]
+    public async Task ASessionThatStartedWithoutTheEmail_GetsIt_OnTheReCheck_OnceAdAnswers()
+    {
+        // AD down when the circuit connected: no address on the session, and the roles are right.
+        var directory = new OneGroupRoles(AnalystSid, AppRole.Analyst);
+        var down = new WindowsNames(_ => throw new InvalidOperationException("the DC is down"), TimeSpan.FromMilliseconds(200));
+        var session = await new RoleClaimsTransformer(directory, sids: NoSidNames(), names: down).TransformAsync(WindowsSignIn(groupSids: AnalystSid));
+        session.FindFirstValue(ClaimTypes.Email).Should().BeNull();
+
+        // Still down at the re-check: nothing changes.
+        (await new SessionPermissionRefresher(() => directory, windowsMode: true, NoSidNames(), down).RefreshAsync(session)).Should().BeNull();
+
+        // AD has answered: the session gets the address, with its roles as they were.
+        var refreshed = await new SessionPermissionRefresher(() => directory, windowsMode: true, NoSidNames(), Ad("Jordan Rivera", "jordan.rivera@contoso.com"))
+            .RefreshAsync(session);
+        refreshed.Should().NotBeNull();
+        UserOf(refreshed!).Email.Should().Be("jordan.rivera@contoso.com");
+        refreshed.HasClaim(AppClaimTypes.Permission, nameof(Permission.PresentBriefs)).Should().BeTrue();
+
+        // And the next re-check has nothing to add.
+        (await new SessionPermissionRefresher(() => directory, windowsMode: true, NoSidNames(), Ad("Jordan Rivera", "other@contoso.com"))
+            .RefreshAsync(refreshed)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task TheReCheck_NeverAddsAnEmail_ToADevSession()
+    {
+        var names = new WindowsNames(_ => throw new InvalidOperationException("not asked"), TimeSpan.FromSeconds(5));
+        var dev = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "CONTOSO\\dev"), new Claim(ClaimTypes.Role, nameof(AppRole.Analyst)),
+            new Claim(AppClaimTypes.Permission, nameof(Permission.PresentBriefs))], "Dev"));
+        var refreshed = await new SessionPermissionRefresher(() => new OneGroupRoles(AnalystSid, AppRole.Analyst), windowsMode: false, names: names)
+            .RefreshAsync(dev);
+        (refreshed ?? dev).FindFirstValue(ClaimTypes.Email).Should().BeNull();
+    }
+
     // --- the user mirror ------------------------------------------------------------------------------------------
 
     private static UserDirectory Mirror(TestDb db)

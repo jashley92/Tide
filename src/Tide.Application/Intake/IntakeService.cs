@@ -320,9 +320,20 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
             due = sources.Where(s => s.LastPolledAtUtc is null || now - s.LastPolledAtUtc >= Interval(s)).Select(s => s.Id).ToList();
         }
         var added = 0;
-        // One being pulled by hand at this moment is left to that pull.
-        foreach (var id in due) added += (await ExclusiveAsync(id, () => PollAsync(id, ct)))?.New ?? 0;
+        // One being pulled by hand at this moment is left to that pull. The pass takes the sources one at a time, so each is
+        // read again once it's ours: one pulled (or paused) since the list was read isn't polled again straight after.
+        foreach (var id in due)
+            added += (await ExclusiveAsync(id, async () => await StillDueAsync(id, ct) ? await PollAsync(id, ct) : NotPolled))?.New ?? 0;
         return added;
+    }
+
+    private static readonly PollResult NotPolled = new(0, 0, null);
+
+    private async Task<bool> StillDueAsync(Guid id, CancellationToken ct)
+    {
+        await using var db = await dbs.CreateAsync(ct);
+        var source = await Polled(db.Sources.AsNoTracking()).FirstOrDefaultAsync(s => s.Id == id, ct);
+        return source is not null && (source.LastPolledAtUtc is null || time.GetUtcNow() - source.LastPolledAtUtc >= Interval(source));
     }
 
     /// <summary>A source's interval, doubled for each failure in a row (up to 16 times), so a dead feed is asked less.</summary>

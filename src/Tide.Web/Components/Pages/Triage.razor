@@ -947,7 +947,6 @@ else
 
     internal async Task SetStatus(FeedItemStatus status)
     {
-        var fromSources = _sourcesTab;
         _sourcesTab = false;
         _status = status;
         _older = false;
@@ -956,7 +955,8 @@ else
         _promotingGroup = null;
         _attaching = false;
         _marks.Clear();
-        if (fromSources) await RememberTab();
+        // Every tab switch, not only one from Sources: a reload (or a link copied) after New → Shortlisted opened New.
+        await RememberTab();
         await Load();
     }
 
