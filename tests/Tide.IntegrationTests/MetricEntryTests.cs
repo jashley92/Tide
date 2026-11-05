@@ -78,7 +78,7 @@ public class MetricEntryTests(TideApp app) : IClassFixture<TideApp>
         await Value(usual, Mon, 43);
         var group = (await Tile(usual, Mon)).Metric.GroupId;
         await using var typed = await ComponentHarness.RenderAsync<MetricEntry>(app, "/", new() { ["Date"] = Mon });
-        await typed.Click(c => { c.Jump(group); return Task.CompletedTask; });   // its one number is in: it opened folded
+        await typed.Click(c => c.Jump(group));   // its one number is in: it opened folded
         Row(await typed.Html(), usual).Should().Contain("tide-metric-ref-date\">Fri</span><span class=\"tide-metric-ref-value\">40</span>").And.Contain("tide-trend-neutral", "the change shows once there's a value");
     }
 

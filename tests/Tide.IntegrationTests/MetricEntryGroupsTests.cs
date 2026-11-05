@@ -158,7 +158,7 @@ public class MetricEntryGroupsTests(TideApp app) : IClassFixture<TideApp>
         await using var r = await ComponentHarness.RenderAsync<MetricEntry>(app, "/", new() { ["Date"] = day });
         Panel(await r.Html(), g.Group).Should().Contain("tide-mentry-folded");
 
-        await r.Click(c => { c.Jump(g.Group); return Task.CompletedTask; });
+        await r.Click(c => c.Jump(g.Group));
         var html = await r.Html();
         Panel(html, g.Group).Should().Contain("tide-metric-row").And.Contain("value=\"8\"");
         Chip(html, "Cloud").Should().Contain("aria-current=\"true\"");
