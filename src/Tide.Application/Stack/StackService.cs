@@ -4,6 +4,7 @@ using Tide.Application.Abstractions;
 using Tide.Application.Actions;
 using Tide.Application.Articles;
 using Tide.Application.Content;
+using Tide.Application.Search;
 using Tide.Application.Security;
 using Tide.Application.Settings;
 using Tide.Domain.Entities;
@@ -59,6 +60,34 @@ public sealed record StackCard(StackProduct Product, string? TeamName, IReadOnly
 
 /// <summary>An article's products: those it's tagged with, and those it names but isn't tagged with (a suggestion).</summary>
 public sealed record ArticleStack(IReadOnlyList<StackProduct> Tagged, IReadOnlyList<StackProduct> Suggested);
+
+/// <summary>Why the article editor's "We run" picker lists a product.</summary>
+public enum ProductPickReason
+{
+    /// <summary>The article's text names it (with nothing typed).</summary>
+    Named,
+    /// <summary>It was tagged on an article lately (with nothing typed).</summary>
+    Recent,
+    /// <summary>Its name or one of its other names holds what was typed.</summary>
+    Match,
+}
+
+/// <summary>
+/// A product the "We run" picker lists: <see cref="OtherName"/> is the other name that matched what was typed, when its
+/// own name didn't ("Ivanti Connect Secure (also Pulse Secure)"); a retired one is listed last and asked about before
+/// it's tagged.
+/// </summary>
+public sealed record ProductPick(Guid Id, string Name, string? Versions, bool IsRetired, string? OtherName, ProductPickReason Reason);
+
+/// <summary>
+/// What the "We run" picker lists for the words typed. <see cref="Exact"/>: a product in use has exactly that name or
+/// other name, so there's no "Add it to Our stack"; <see cref="AlreadyTagged"/> names the one the article already has,
+/// when that's the product.
+/// </summary>
+public sealed record ProductPicks(IReadOnlyList<ProductPick> Found, bool Exact, string? AlreadyTagged)
+{
+    public static readonly ProductPicks None = new([], false, null);
+}
 
 /// <summary>
 /// Our stack (EP-25): what the organization runs, kept by analysts. Each product has the names it's reported under,
@@ -261,6 +290,97 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         var suggested = products.Where(p => named.Contains(p.Id) && tagged.All(t => t.Id != p.Id)).OrderByName(p => p.Name).ToList();
         return new ArticleStack(tagged, suggested);
     }
+
+    /// <summary>The most products the article editor's "We run" picker lists at once.</summary>
+    public const int PickLimit = 8;
+
+    // How many products a typed search reads from the database before ordering them: the best matches by the database's
+    // own reckoning (exact, then a name starting with it), so however long the list is, only these are read.
+    private const int PickCandidates = 50;
+
+    /// <summary>
+    /// The article editor's "We run" card in one go: <see cref="ForArticleAsync"/>, and (when <paramref name="offer"/>,
+    /// for an analyst's picker) <see cref="OfferedAsync"/>.
+    /// </summary>
+    public async Task<(ArticleStack Mine, IReadOnlyList<ProductPick> Offered)> ForArticleCardAsync(Guid articleId, bool offer, CancellationToken ct = default)
+    {
+        var mine = await ForArticleAsync(articleId, ct);
+        if (!offer) return (mine, []);
+        await using var db = await dbs.CreateAsync(ct);
+        if (!await db.Articles.AnyAsync(a => a.Id == articleId, ct)) return (mine, []);
+        return (mine, await OfferAsync(db, mine, ct));
+    }
+
+    /// <summary>
+    /// What the "We run" picker offers before anything is typed, at most <see cref="PickLimit"/>: the products the
+    /// article's text names (its "matches in the text"), then those tagged on any article most recently (by the audit
+    /// trail); never one the article already has, nor a retired one.
+    /// </summary>
+    public async Task<IReadOnlyList<ProductPick>> OfferedAsync(Guid articleId, CancellationToken ct = default) =>
+        (await ForArticleCardAsync(articleId, offer: true, ct)).Offered;
+
+    private static async Task<IReadOnlyList<ProductPick>> OfferAsync(IAppDbContext db, ArticleStack mine, CancellationToken ct)
+    {
+        var tagged = mine.Tagged.Select(p => p.Id).ToHashSet();
+        var picks = new List<ProductPick>();
+        void Offer(IEnumerable<StackProduct> products, ProductPickReason why)
+        {
+            foreach (var p in products)
+                if (picks.Count < PickLimit && !tagged.Contains(p.Id) && picks.TrueForAll(x => x.Id != p.Id))
+                    picks.Add(new ProductPick(p.Id, p.Name, p.Versions, false, null, why));
+        }
+        Offer(mine.Suggested, ProductPickReason.Named);
+        if (picks.Count < PickLimit)
+        {
+            // An article's tag is keyed "article/product" in the trail; the newest few, each product once.
+            var keys = await db.AuditLog.AsNoTracking()
+                .Where(e => e.EntityType == nameof(ArticleProduct) && e.Action == nameof(EntityState.Added))
+                .OrderByDescending(e => e.AtUtc).ThenBy(e => e.Id).Select(e => e.EntityKey).Take(PickCandidates).ToListAsync(ct);
+            var ids = keys.Select(k => Guid.TryParse(k[(k.IndexOf('/') + 1)..], out var id) ? id : Guid.Empty).Where(id => id != Guid.Empty).Distinct().ToList();
+            var byId = (await db.StackProducts.AsNoTracking().Where(p => ids.Contains(p.Id) && !p.IsRetired).ToListAsync(ct)).ToDictionary(p => p.Id);
+            Offer(ids.Where(byId.ContainsKey).Select(id => byId[id]), ProductPickReason.Recent);
+        }
+        return picks;
+    }
+
+    /// <summary>
+    /// The products the "We run" picker lists for what's typed, at most <see cref="PickLimit"/>: any whose name or other
+    /// names hold it, ignoring case; exact matches first, then those starting with it, then the rest, retired ones last.
+    /// The search runs in the database and reads a bounded few, never the whole list. Those the article is already
+    /// tagged with aren't listed.
+    /// </summary>
+    public async Task<ProductPicks> FindForArticleAsync(Guid articleId, string? words, CancellationToken ct = default)
+    {
+        RequireRead();
+        var text = (words ?? "").Trim();
+        if (text.Length > StackProduct.MaxName) text = text[..StackProduct.MaxName];
+        if (text.Length == 0) return ProductPicks.None;
+        await using var db = await dbs.CreateAsync(ct);
+        var taggedProducts = await db.ArticleProducts.AsNoTracking().Where(t => t.ArticleId == articleId).Select(t => t.Product!).ToListAsync(ct);
+        var tagged = taggedProducts.Select(p => p.Id).ToList();
+        var m = NameRank.Patterns.For(text);
+        var candidates = await db.StackProducts.AsNoTracking()
+            .Where(p => !tagged.Contains(p.Id))
+            .Where(p => EF.Functions.Like(p.Name, m.Any, SearchText.Escape) || EF.Functions.Like(p.OtherNames!, m.Any, SearchText.Escape))
+            .OrderBy(p => p.IsRetired)
+            .ThenBy(p => EF.Functions.Like(p.Name, m.Exact, SearchText.Escape) || EF.Functions.Like(p.OtherNames!, m.Exact, SearchText.Escape)
+                || EF.Functions.Like(p.OtherNames!, m.OtherFirst, SearchText.Escape) || EF.Functions.Like(p.OtherNames!, m.OtherLast, SearchText.Escape)
+                || EF.Functions.Like(p.OtherNames!, m.OtherMiddle, SearchText.Escape) ? 0
+                : EF.Functions.Like(p.Name, m.Starts, SearchText.Escape) || EF.Functions.Like(p.OtherNames!, m.Starts, SearchText.Escape)
+                    || EF.Functions.Like(p.OtherNames!, m.OtherStarts, SearchText.Escape) ? 1 : 2)
+            .ThenBy(p => p.Name)
+            .Take(PickCandidates).ToListAsync(ct);
+        var matched = candidates.Select(p => (Product: p, Match: Matching(p, text))).Where(x => x.Match.Rank < NameRank.None).ToList();
+        var found = matched.OrderBy(x => x.Product.IsRetired).ThenBy(x => x.Match.Rank).ThenByName(x => x.Product.Name).Take(PickLimit)
+            .Select(x => new ProductPick(x.Product.Id, x.Product.Name, x.Product.Versions, x.Product.IsRetired, x.Match.Other, ProductPickReason.Match))
+            .ToList();
+        var already = taggedProducts.Find(p => !p.IsRetired && Matching(p, text).Rank == NameRank.Exact)?.Name;
+        var isExact = already is not null || matched.Exists(x => !x.Product.IsRetired && x.Match.Rank == NameRank.Exact);
+        return new ProductPicks(found, isExact, already);
+    }
+
+    // How well a product matches what was typed, and the other name that did when its own name matched less well.
+    internal static (int Rank, string? Other) Matching(StackProduct p, string text) => NameRank.Best(text, p.Name, SplitNames(p.OtherNames));
 
     // When each article counts in a product's history: its first brief, else the day it was written (the organization's day).
     private sealed record ArticleFact(Guid Id, string Title, string Words, DateOnly On, ArticleStatus Status, TlpLevel Tlp);

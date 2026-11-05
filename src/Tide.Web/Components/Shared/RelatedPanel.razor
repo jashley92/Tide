@@ -1,4 +1,4 @@
-@* The editor's Related tab (in ReaderPreview): what's already been written about the same thing (RelatedService), the
+@* Similar articles, folded under the threat story in the editor's rail (ReaderPreview): what's already been written about the same thing (RelatedService), the
    newest few, each linked, with why it's related, when it was briefed and by whom, and the actions raised from it that
    are still open. For a writer, "Mention" puts an action's number in why it matters ("A-13 (open)", never how late,
    which would go stale in a sent brief), but only while that part is TLP:AMBER or higher, since it's internal status;
@@ -6,8 +6,7 @@
    and action owners only: the editor is never shown to Readers. *@
 @inject OrgClock Clock
 
-<section class="tide-related" aria-labelledby="related-h">
-    <h3 id="related-h" class="tide-subhead mt-0">Related work</h3>
+<div class="tide-related">
     @if (Work is null)
     {
         <p class="tide-muted small mb-0">Looking for related work…</p>
@@ -74,7 +73,7 @@
     {
         <p class="tide-muted small mb-0 mt-2">@Work.Total related in all; the newest @Work.Articles.Count are shown.</p>
     }
-</section>
+</div>
 
 @code {
     /// <summary>What RelatedService found; null while it's looking.</summary>

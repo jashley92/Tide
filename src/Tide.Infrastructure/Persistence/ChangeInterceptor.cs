@@ -81,7 +81,7 @@ public sealed class ChangeInterceptor(ChangeFeed feed, ICurrentUser user, Change
         ArticleIndicator x => [ChangeFeed.Article(x.ArticleId)],
         ArticleLink x => [ChangeFeed.Article(x.ArticleId)],
         ArticleCve x => [ChangeFeed.Article(x.ArticleId)],
-        ArticleAdversary x => [ChangeFeed.ArticleTags(x.ArticleId)],     // only the Related tab's cards: not the editor's
+        ArticleAdversary x => [ChangeFeed.ArticleTags(x.ArticleId)],     // only the We run and Threat actors pickers: not the editor's form
         ArticleProduct x => [ChangeFeed.ArticleTags(x.ArticleId)],
         Brief b => [ChangeFeed.Brief(b.Id), ChangeFeed.BriefDay(b.BriefDate)],
         BriefItem x => [ChangeFeed.Brief(x.BriefId)],

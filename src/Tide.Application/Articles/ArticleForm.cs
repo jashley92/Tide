@@ -26,7 +26,6 @@ public sealed class ArticleForm
     public string? WhyItMatters { get; set; }
     public TlpLevel WhyItMattersTlp { get; set; } = TlpLevel.Clear;
     public string? RecommendedActions { get; set; }
-    public string? Actors { get; set; }
     public string? Sectors { get; set; }
 
     public List<BulletForm> Bullets { get; set; } = [];
@@ -107,7 +106,6 @@ public sealed class ArticleForm
             WhyItMatters = ArticleService.TidyOrNull(WhyItMatters, multiline: true),
             WhyItMattersTlp = Domain.Enums.Tlp.Checked(WhyItMattersTlp),
             RecommendedActions = ArticleService.TidyOrNull(RecommendedActions, multiline: true),
-            Actors = ArticleService.TidyOrNull(Actors),
             Sectors = ArticleService.TidyOrNull(Sectors),
         };
         a.Bullets = ArticleService.KeptBullets(Bullets)
@@ -155,7 +153,6 @@ public sealed class ArticleForm
         WhyItMatters = a.WhyItMatters,
         WhyItMattersTlp = a.WhyItMattersTlp,
         RecommendedActions = a.RecommendedActions,
-        Actors = a.Actors,
         Sectors = a.Sectors,
         Bullets = a.Bullets.OrderBy(b => b.SortOrder).Select(b => new BulletForm { Text = b.Text, Tlp = b.Tlp }).ToList(),
         Screenshots = a.Screenshots.OrderBy(s => s.SortOrder)

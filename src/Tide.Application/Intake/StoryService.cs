@@ -75,10 +75,13 @@ public sealed class StoryService(IAppDbContextFactory dbs, ICurrentUser user)
         articles = articles.OrderBy(a => a.PublishedAtUtc ?? a.CreatedAtUtc).ToList();
         var ids = articles.Select(a => a.Id).ToList();
         var briefed = await ArticleDates.FirstBriefedAsync(db, ct, ids);
+        // The actors: each article's adversary tags, by name, and what its earlier free text names that no tag stands for.
+        var tags = (await db.ArticleAdversaries.AsNoTracking().Where(t => ids.Contains(t.ArticleId)).Include(t => t.Adversary).ToListAsync(ct))
+            .ToLookup(t => t.ArticleId, t => t.Adversary!);
         return new StoryDetail(story, articles,
             articles.SelectMany(a => a.Cves.Select(c => c.CveId)).Distinct().Order().ToList(),
-            articles.SelectMany(a => (a.Actors ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                .Distinct(StringComparer.OrdinalIgnoreCase).Order().ToList(),
+            articles.SelectMany(a => Adversaries.AdversaryService.ShownNames(tags[a.Id].ToList(), a.Actors))
+                .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList(),
             articles.SelectMany(a => a.Techniques.Select(t => t.TechniqueId)).Distinct().Order().ToList(),
             briefed);
     }

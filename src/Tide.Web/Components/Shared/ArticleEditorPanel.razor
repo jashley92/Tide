@@ -309,6 +309,8 @@ else
                 <MarkdownToolbar For="f-why" Label="Why it matters to us" Disabled="!_canWrite" />
                 <textarea id="f-why" class="form-control tide-autogrow tide-grow-3" rows="3" maxlength="8000" readonly="@(!_canWrite)" aria-label="Why it matters to us"
                           placeholder="Do we run it? Are we in the targeted sector? What's our exposure?" @bind="_form.WhyItMatters" @bind:event="oninput" @bind:after="Touch"></textarea>
+                @* What we run, always open under the text it informs: tagging saves straight away; Mention adds to the text above. *@
+                <ArticleStackCard ArticleId="_article.Id" CanWrite="_canWrite" OnMention="MentionAsync" />
                 <h2 id="sec-rec" class="mt-3" tabindex="-1" @ref="_heads[ArticlePart.Recommended]">Recommended actions</h2>
                 <MarkdownToolbar For="f-rec" Label="Recommended actions" Disabled="!_canWrite" />
                 <textarea id="f-rec" class="form-control tide-autogrow tide-grow-3" rows="3" maxlength="8000" readonly="@(!_canWrite)" aria-label="Recommended actions"
@@ -455,9 +457,9 @@ else
                     }
 
                     <h3 class="tide-subhead">Context</h3>
-                    <label class="tide-field-label" for="actors">Threat actors</label>
-                    <input id="actors" class="form-control form-control-sm mb-2" maxlength="500" readonly="@(!_canWrite)" placeholder="Scattered Spider, UNC3944" @bind="_form.Actors" @bind:event="oninput" @bind:after="Touch" />
-                    <label class="tide-field-label" for="sectors">Sectors</label>
+                    @* The adversary picker is the article's one place to tag threat actors; it saves as it tags, apart from the form. *@
+                    <ArticleAdversaryCard ArticleId="_article.Id" CanWrite="_canWrite" />
+                    <label class="tide-field-label mt-3" for="sectors">Sectors</label>
                     <input id="sectors" class="form-control form-control-sm" maxlength="500" readonly="@(!_canWrite)" placeholder="Financial services, healthcare" @bind="_form.Sectors" @bind:event="oninput" @bind:after="Touch" />
                 </div>
             </section>
@@ -678,8 +680,8 @@ else
     }
 
     /// <summary>
-    /// Adds <paramref name="text"/> to why it matters, on a line of its own (the Related tab's "Mention"), and takes you
-    /// there. Unsaved, like any edit.
+    /// Adds <paramref name="text"/> to why it matters, on a line of its own ("Mention", from We run under it or from
+    /// Similar articles in the rail), and takes you there. Unsaved, like any edit.
     /// </summary>
     public Task MentionAsync(string text)
     {

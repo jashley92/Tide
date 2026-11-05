@@ -44,7 +44,11 @@ public class Article : AuditableEntity
     /// <summary>What the analyst recommends be done (Markdown). Becomes action items once those ship.</summary>
     public string? RecommendedActions { get; set; }
 
-    /// <summary>Threat actors, comma-separated as typed ("Scattered Spider, UNC3944").</summary>
+    /// <summary>
+    /// The earlier free-text "Threat actors", comma-separated as typed ("Scattered Spider, UNC3944"). Retired in 1.4.0 for
+    /// the adversary picker (ArticleAdversary tags): kept, never written from the editor again. Its names a profile goes
+    /// by are offered as tags; the rest show as the "Earlier note" until cleared (AdversaryService).
+    /// </summary>
     public string? Actors { get; set; }
 
     /// <summary>Sectors affected, comma-separated as typed.</summary>

@@ -3,7 +3,7 @@
    finds any story by name, closed ones too, and offers to start one by that name. It lists a few at a time
    (StoryService.PickLimit), so it stays short however many stories there are. While the article is in none, the story a
    related article is in comes first as a one-click suggestion. The story lives with ReaderPreview (StoryId,
-   StoryChanged), so the Related tab's "Same story" and this picker agree. *@
+   StoryChanged), so Similar articles' "Same story" and this picker agree. *@
 @inject StoryService Stories
 @inject ICurrentUser CurrentUser
 @inject OrgClock Clock
@@ -158,7 +158,7 @@
         finally { _busy = false; }
     }
 
-    /// <summary>Reads the stories again: one was started elsewhere on the page (the Related tab's "Same story").</summary>
+    /// <summary>Reads the stories again: one was started elsewhere on the page (Similar articles' "Same story").</summary>
     public async Task RefreshAsync()
     {
         _current = StoryId is { } id ? await Stories.RowAsync(id) : null;

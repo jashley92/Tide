@@ -108,6 +108,8 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
     private static async Task<HitList<ArticleHit>> ArticlesAsync(IAppDbContext db, IReadOnlyList<string> terms, int skip, int take, CancellationToken ct)
     {
         IQueryable<Article> q = db.Articles.AsNoTracking();
+        // The adversary profiles an article is tagged with, by any of their names: the threat actors it's about.
+        var adversaryTags = db.ArticleAdversaries;
         foreach (var term in terms)
         {
             // A term that names ATT&CK techniques ("phishing", "T1566") also finds the articles tagged with them.
@@ -118,6 +120,8 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
                 || EF.Functions.Like(a.WhyItMatters!, p, SearchText.Escape) || EF.Functions.Like(a.RecommendedActions!, p, SearchText.Escape)
                 || EF.Functions.Like(a.Actors!, p, SearchText.Escape) || EF.Functions.Like(a.Sectors!, p, SearchText.Escape)
                 || EF.Functions.Like(a.SourceName!, p, SearchText.Escape)
+                || adversaryTags.Any(t => t.ArticleId == a.Id
+                    && (EF.Functions.Like(t.Adversary!.Name, p, SearchText.Escape) || EF.Functions.Like(t.Adversary!.Aliases!, p, SearchText.Escape)))
                 || a.Bullets.Any(b => EF.Functions.Like(b.Text, p, SearchText.Escape))
                 || a.Indicators.Any(i => EF.Functions.Like(i.Value, p, SearchText.Escape) || EF.Functions.Like(i.Note!, p, SearchText.Escape))
                 || a.Cves.Any(c => EF.Functions.Like(c.CveId, p, SearchText.Escape))
@@ -137,6 +141,8 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
             .Include(a => a.Bullets).Include(a => a.Indicators).Include(a => a.Screenshots)
             .AsSplitQuery().ToListAsync(ct);
         var dates = await Lookups.BriefDatesAsync(db, picked, ct);
+        var tags = (await db.ArticleAdversaries.AsNoTracking().Where(t => picked.Contains(t.ArticleId)).Include(t => t.Adversary).ToListAsync(ct))
+            .ToLookup(t => t.ArticleId, t => t.Adversary!);
         var byId = rows.ToDictionary(a => a.Id);
         // An indicator goes in as pages show it (defanged), so a snippet never carries a live link.
         var hits = picked.Select(id => byId[id]).Select(a => new ArticleHit(a.Id, a.Title, a.SourceName, a.Tlp, a.Classification,
@@ -146,7 +152,7 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
                     .Concat(a.Bullets.OrderBy(b => b.SortOrder).Select(b => b.Text))
                     .Concat(a.Indicators.SelectMany(i => new[] { IndicatorLabels.Shown(i.Type, i.Value), i.Note }))
                     .Concat(a.Screenshots.Select(s => s.Caption))
-                    .Append(a.Actors).Append(a.Sectors),
+                    .Append(string.Join(", ", Adversaries.AdversaryService.ShownNames(tags[a.Id].ToList(), a.Actors))).Append(a.Sectors),
                 forms, a.Bluf))).ToList();
         return new HitList<ArticleHit>(hits, total);
     }
