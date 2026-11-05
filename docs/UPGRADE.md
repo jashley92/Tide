@@ -171,6 +171,38 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
+### v1.3.0
+
+Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds three migrations (`ActionFiles`, `CommentFileRemoval`,
+`UserPreferences`); none of the earlier ones change.
+
+**For administrators**
+- **Two new roles: Viewer and Visitor.** Map an AD group to each on Role mappings if you want them. A **Viewer** reads
+  everything (actions included) and can join a live meeting, raise a hand and add meeting notes, but changes nothing. A
+  **Visitor** sees the company-wide archive, and inside a live meeting sees what the room sees, for as long as they're
+  seated; they can raise a hand. Role mappings now shows **What each role can do**, the same table as in INSTALL.md.
+- **Commenting on actions** now needs to be able to work actions or write articles; reading the team edition alone no
+  longer allows it. No existing role loses anything.
+- **New settings:** `Files:ZipDownloads` (Teams & SLA, "Action files": which files download in a zip with the password
+  `infected`; default the ones that can run) and `Notifications:PersonalDigest:Enabled` (Teams & SLA; offer the
+  personal digest, default on).
+- **Downloads** of action and comment files are sent with a stricter header (`sandbox; default-src 'none'`), so nothing
+  in a file can run as a page in TIDE.
+- **People choose their own notifications** under My notifications in the account menu. Teams & SLA shows how many have
+  turned each email off, and who.
+- **Clock boxes** (reminder, digest and meeting times, the Send dialog's "held at") can be typed into again.
+
+**For everyone**
+- **Files on actions:** a Files section in the side column lists an action's files and its comments' files, with size,
+  SHA-256 and a check of each file's real type. Files are removed with a reason and kept; an administrator can restore
+  them. Lists show a paperclip count.
+- **Present mode:** article slides show ATT&CK by tactic and the scorecard tags, which analysts can edit from the slide;
+  "Following" is a small pill in the header instead of a bar.
+- **Actions** remembers List or Board for each person (Board by default).
+- **Adversaries** on an article are picked from a search by name, alias or MITRE id, with "Add" for a new one.
+- **The article's draft pane** folds away once every suggestion is decided.
+- **My notifications:** turn off reminders, digests and rotation emails you don't want, or take a personal digest.
+
 ### v1.2.0
 
 Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds one migration (`ActionCommentEditVersion`); none of the
