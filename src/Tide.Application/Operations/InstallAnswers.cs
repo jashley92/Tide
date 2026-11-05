@@ -129,6 +129,12 @@ public static class InstallAnswers
         Line(sb, "CertificateThumbprint", null, "the HTTPS certificate's thumbprint (not needed under another site)");
         Line(sb, "ParentSite", f.AppPath is null ? "" : null, f.AppPath is null ? null : "the site TIDE is an application under");
         Line(sb, "AppPath", f.AppPath ?? "");
+        // Not read from this server: whether the installer may install a Windows feature is the administrator's call, and
+        // a server whose pages already use WebSockets has the feature, so the value changes nothing there.
+        sb.AppendLine("    # $true to let Install-Tide.ps1 install the IIS WebSocket Protocol feature when it's missing (Web-WebSockets; TIDE's");
+        sb.AppendLine("    # pages fall back to long polling, a request per keystroke, without it). $false: a run from this file warns instead,");
+        sb.AppendLine("    # says how to install it, and carries on.");
+        sb.Append("    ").Append("InstallWebSockets".PadRight(21)).AppendLine(" = $false");
         sb.AppendLine();
         sb.AppendLine("    # --- Who can do what (one group per role; the others mapped here are listed after it) ---");
         Group(sb, "AdGroupAnalysts", f, AppRole.Analyst);

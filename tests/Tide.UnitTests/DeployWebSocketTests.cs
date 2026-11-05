@@ -11,7 +11,7 @@ namespace Tide.UnitTests;
 public partial class DeployScriptTests
 {
     [Fact]
-    public void The_installer_checks_the_WebSocket_feature_before_it_changes_anything_and_installs_it_only_when_asked()
+    public void The_installer_checks_the_WebSocket_feature_first_installs_it_only_when_asked_and_otherwise_warns()
     {
         var install = Read("deploy", "Install-Tide.ps1");
         install.Should().Contain(". (Join-Path $deployDir 'lib\\TideWebSockets.ps1')");
@@ -24,7 +24,10 @@ public partial class DeployScriptTests
         var block = install[check..install.IndexOf("# --- 1. Publish ---", StringComparison.Ordinal)];
         block.Should().Contain("$Host.UI.PromptForChoice", "an interactive run asks");
         block.Should().Contain("$unattended = [bool]$ConfigFile -or -not [Environment]::UserInteractive");
-        block.Should().Contain("Nothing has been changed").And.Contain("-InstallWebSockets", "an unattended run stops with the fix, as for the other prerequisites");
+        block.Should().Contain("WARNING: carrying on without it").And.Contain("Get-TideWebSocketFixText").And.Contain("-InstallWebSockets",
+            "an unattended run warns with the fix and carries on");
+        block.Should().NotContain("throw (\"The IIS WebSocket", "a missing feature never stops an unattended install");
+        block.Should().Contain("Get-TideWebSocketWhy", "the warning says why it's needed");
         block.Should().Contain("Install-TideWebSocketFeature -Feature $wsFeature");
         block.Should().Contain("RestartNeeded", "it says when Windows wants a restart");
         // After the site exists: on for TIDE's site, the server-wide value left alone.

@@ -24,8 +24,9 @@ an existing site, such as `https://intranet.contoso.com/tide` (see [Under anothe
   ```
 
   `Install-Tide.ps1` checks for it. Run interactively, it offers to install it; with `-InstallWebSockets` (or
-  `InstallWebSockets = $true` in the answers file) it installs it without asking; run from an answers file without
-  that, it stops before changing anything and gives the command. It also turns WebSockets on for TIDE's site if
+  `InstallWebSockets = $true` in the answers file) it installs it without asking; run from an answers file or a
+  non-interactive session without that, it warns, gives the command, and carries on (TIDE then uses long polling
+  until the feature is installed). It also turns WebSockets on for TIDE's site if
   `applicationHost.config` or `web.config` has them off (`system.webServer/webSocket`). Windows rarely needs a restart
   for it; the installer says when it does.
 

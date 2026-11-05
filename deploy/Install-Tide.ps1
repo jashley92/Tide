@@ -46,8 +46,8 @@
 .PARAMETER InstallWebSockets
     Install the IIS WebSocket Protocol feature without asking when it's missing (Install-WindowsFeature Web-WebSockets on
     Windows Server, Enable-WindowsOptionalFeature -Online -FeatureName IIS-WebSockets -All on Windows 10/11). Off by
-    default: run interactively, the installer asks; run from an answers file or a non-interactive session, it stops
-    before changing anything and says how to install it. Also read from the answers file (InstallWebSockets = $true).
+    default: run interactively, the installer asks; run from an answers file or a non-interactive session, it warns
+    (why it's needed, and how to install it) and carries on. Also read from the answers file (InstallWebSockets = $true).
 
 .PARAMETER ValidateServerCertificate
     Write a connection string that checks the SQL Server's TLS certificate (TrustServerCertificate=False): it must chain
@@ -202,9 +202,9 @@ foreach ($site in $(if ($underParent) { @() } else { Get-Website })) {
 }
 
 # --- Prerequisite: the IIS WebSocket Protocol feature ---
-# Like the other prerequisites, never installed behind your back: asked for interactively, installed unasked only with
-# -InstallWebSockets (or InstallWebSockets = $true in the answers file); an unattended run without it stops here, before
-# anything has changed, with the command to run.
+# Never installed behind your back: asked for interactively, installed unasked only with -InstallWebSockets (or
+# InstallWebSockets = $true in the answers file). An unattended run without either warns and carries on: TIDE still
+# works without it, over long polling.
 $wsFeature = Get-TideWebSocketFeature
 if ($wsFeature.Installed -ne $true) {
     $unattended = [bool]$ConfigFile -or -not [Environment]::UserInteractive -or
@@ -222,9 +222,9 @@ if ($wsFeature.Installed -ne $true) {
             Write-Host "    Carrying on without it: TIDE falls back to long polling until it's installed ($($wsFeature.InstallCommand))." -ForegroundColor Yellow
         }
     } elseif (-not $install) {
-        throw ("The IIS WebSocket Protocol feature ($($wsFeature.Name)) $state. Nothing has been changed. Install it " +
-               "($($wsFeature.InstallCommand)), or run again with -InstallWebSockets (InstallWebSockets = `$true in the " +
-               "answers file) to have the installer do it.")
+        Write-Host ("    WARNING: carrying on without it (an unattended run doesn't install it unasked): TIDE falls back to long " +
+                    "polling until it's installed. $(Get-TideWebSocketFixText) Or run again with -InstallWebSockets " +
+                    "(InstallWebSockets = `$true in the answers file) to have the installer do it.") -ForegroundColor Yellow
     }
     if ($install) {
         Write-Step "Installing the IIS WebSocket Protocol feature ($($wsFeature.InstallCommand))"
