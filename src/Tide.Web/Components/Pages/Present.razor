@@ -1045,8 +1045,7 @@ else
         _cves = await CvesOf(_brief);
         _stackOf = await StackOf(_brief);
         if (changes.Any(c => c.Topic == ChangeFeed.Meeting(_brief.Id))) await ReloadRecord();
-        _slide = SlideNamed(shown) ?? Math.Min(_slide, LastSlide);
-        if (Presenting) _seat!.At(_slide, key: SlideKey(_slide));   // the running order moved: the others go where this page went
+        Reslide(SlideNamed(shown) ?? Math.Min(_slide, LastSlide), shown);
         var numbers = changes.All(c => ChangeFeed.IsMetricsOf(c, _date));
         Toasts.Show($"{LiveChanges.Who(changes)} updated {(numbers ? "the numbers" : "this brief")}.");
         StateHasChanged();
@@ -1060,8 +1059,21 @@ else
         _open = await ActionSvc.OutstandingAsync(_date, _teamMax);
         await LoadActions();
         var at = SlideNamed(shown) ?? Math.Min(_slide, LastSlide);
-        if (at == _slide) return;
-        _slide = at;
+        if (at == _slide && SlideKey(at) == shown) return;
+        Reslide(at, shown);
+    }
+
+    // After a reload, to slide n, where the slide that was shown (called shown) now is, or what took its place. The
+    // running order moved: the others go where this page went. Something open over a slide that's gone goes with it.
+    private void Reslide(int n, string shown)
+    {
+        _slide = n;
+        if (SlideKey(_slide) != shown)
+        {
+            DropAction();
+            _sharedSeen = null;
+            DropProduct(forget: true);
+        }
         if (Presenting) _seat!.At(_slide, key: SlideKey(_slide));
     }
 
@@ -1086,6 +1098,10 @@ else
         NoteKey => NoteSlides,
         var k when MetricsSlides > 0 && Tide.Application.Metrics.MetricSlides.IndexOf(MetricPlan, k) is { } at => at + 1 + NoteSlides,
         "open" when OpenSlides > 0 => NoteSlides + MetricsSlides + 1,
+        // A numbers or open actions slide this page doesn't have (the company-wide edition, or none left): the slide
+        // in its place, rather than whichever article has its number.
+        var k when k == "open" || k == Tide.Application.Metrics.MetricSlides.Key || k.StartsWith(Tide.Application.Metrics.MetricSlides.KeyPrefix, StringComparison.Ordinal)
+            => Math.Min(k == "open" ? NoteSlides + MetricsSlides + 1 : NoteSlides + 1, LastSlide),
         "wrap" => LastSlide,
         var k when k.StartsWith("article:", StringComparison.Ordinal) && Guid.TryParse(k[8..], out var id) => SlideOf(id),
         _ => null,
@@ -1411,8 +1427,17 @@ else
         {
             _summons = _view.Summons;
             if (was is not null && !was.IsPresenter(_me)) Toasts.Show("You're presenting.");
-            // Another of my tabs moved, or took the meeting: this one (a projector window) goes where it is.
-            _slide = SlideFor(_view);
+            // Another of my tabs moved, or took the meeting: this one (a projector window) goes where it is, and shows
+            // what that one has open over the slide.
+            var at = SlideFor(_view);
+            if (at != _slide)
+            {
+                DropAction();
+                _sharedSeen = null;
+                DropProduct(forget: true);
+            }
+            _slide = at;
+            await MirrorPresenter(_view);
             return;
         }
         // Handed off (or taken over) from me, or brought back by the presenter: following again. The meeting moved this
@@ -1533,6 +1558,12 @@ else
         }
         _ownAction = _seat is not null && !Presenting;
         await LoadAction(number, focus: true);
+        // Not found: the room isn't left with one the presenter can't see (or close).
+        if (Presenting && _actionDetail?.Action.Number != number && _view?.Action == number)
+        {
+            Meetings.Open(_seat!, null);
+            Refresh();
+        }
     }
 
     /// <summary>Closes the action: the presenter's, for everyone following; anyone else's, for themselves.</summary>
@@ -1634,6 +1665,11 @@ else
         }
         _popup.Open(productId, Presenting, _seat is not null);
         await LoadProduct(focus: true);
+        if (Presenting && _product is null && _view?.Product == productId)
+        {
+            Meetings.Show(_seat!, null);
+            Refresh();
+        }
     }
 
     /// <summary>Closes the product's card: the presenter's, for everyone following; anyone else's, for themselves.</summary>
@@ -1674,6 +1710,27 @@ else
         }
         DropAction();   // one thing open over the slide at a time
         (_product, _focusProduct) = (card, focus);
+    }
+
+    // The presenter's other tab (a projector window) shows what the meeting has open: the presenter opened or closed it
+    // from another tab, which this one doesn't hear about through SyncAction (that goes along with someone else's).
+    private async Task MirrorPresenter(LiveMeetingView live)
+    {
+        if (!TeamEdition) return;
+        if (live.Action != _actionDetail?.Action.Number)
+        {
+            if (live.Action is { } n) await LoadAction(n);
+            else DropAction();
+        }
+        if (live.Product != _popup.Shown)
+        {
+            if (live.Product is { } id)
+            {
+                _popup.Open(id, presenting: true, inMeeting: true);
+                await LoadProduct();
+            }
+            else DropProduct();
+        }
     }
 
     // Goes along with the product card the presenter has open, as SyncAction does their action.

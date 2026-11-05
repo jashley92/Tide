@@ -207,6 +207,82 @@ public class PresentWeRunTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task ThePresentersCard_StaysWhenTheirSlideIsRenumbered_AndGoesWhenItsArticleLeavesTheBrief()
+    {
+        var s = await Brief(72);
+        await using var pat = await Open(s.Day);
+        await Do(pat, p => p.StartMeeting());
+        await FirstArticle(pat);
+        await Do(pat, p => p.ShowProduct(s.Product));
+        var slide = Meetings.Get(s.Day)!.Slide;
+
+        // A colleague adds the opening note: the article is a slide later, and still has its card open, for the room too.
+        Guid briefId, item;
+        await using (var scope = SignedIn(app, Robin))
+        {
+            var briefs = scope.ServiceProvider.GetRequiredService<BriefService>();
+            var brief = (await briefs.GetAsync(s.Day))!;
+            (briefId, item) = (brief.Id, brief.Items.Single(i => i.ArticleId == s.First).Id);
+            await briefs.SetTeamNoteAsync(briefId, "- Patch window on Thursday");
+        }
+        var heard = new Tide.Application.Abstractions.Change(Tide.Application.Abstractions.ChangeFeed.Brief(briefId), Robin.UserId, Robin.Name, Guid.NewGuid());
+        await Do(pat, p => p.OnChangedElsewhere([heard]));
+        Meetings.Get(s.Day)!.Should().Match<LiveMeetingView>(v => v.Slide == slide + 1 && v.Product == s.Product);
+        (await pat.Html()).Should().Contain("present-product-title").And.Contain($"<h2>{s.FirstTitle}</h2>");
+
+        // The article leaves the brief: the next one takes its slide, and the card that was over it goes.
+        await using (var scope = SignedIn(app, Robin))
+            await scope.ServiceProvider.GetRequiredService<BriefService>().RemoveItemAsync(briefId, item);
+        await Do(pat, p => p.OnChangedElsewhere([heard]));
+        Meetings.Get(s.Day)!.Product.Should().BeNull();
+        (await pat.Html()).Should().NotContain("present-product-title").And.Contain("<h2>We run second 72</h2>");
+        EndMeeting(s.Day);
+    }
+
+    [Fact]
+    public async Task ThePresentersOtherTab_ShowsAndClosesTheCardTheyOpenedInTheFirst()
+    {
+        var s = await Brief(73);
+        await using var pat = await Open(s.Day);
+        await Do(pat, p => p.StartMeeting());
+        await using var projector = await Open(s.Day);
+        await Do(projector, p => p.JoinIfLive());
+        await FirstArticle(pat);
+        await Do(projector, p => p.Follow());
+        (await projector.Html()).Should().Contain($"<h2>{s.FirstTitle}</h2>");
+
+        await Do(pat, p => p.ShowProduct(s.Product));
+        await Do(projector, p => p.Follow());
+        (await projector.Html()).Should().Contain("present-product-title").And.Contain("Shown to everyone following");
+
+        await Do(pat, p => p.CloseProduct());
+        await Do(projector, p => p.Follow());
+        (await projector.Html()).Should().NotContain("present-product-title");
+
+        // An action, likewise.
+        int number;
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+        {
+            var team = (await scope.ServiceProvider.GetRequiredService<TeamService>().ListAsync())[0].Id;
+            number = await scope.ServiceProvider.GetRequiredService<ActionService>()
+                .QuickAddAsync(s.First, "Check the gateway's logs", ActionKind.PatchRemediate, team, null, s.Day);
+        }
+        await Do(pat, p => p.ShowAction(number));
+        await Do(projector, p => p.Follow());
+        (await projector.Html()).Should().Contain("present-action-title");
+        await Do(pat, p => p.CloseAction());
+        await Do(projector, p => p.Follow());
+        (await projector.Html()).Should().NotContain("present-action-title");
+
+        // One that can't be read isn't left open for the room.
+        await Do(pat, p => p.ShowProduct(Guid.NewGuid()));
+        Meetings.Get(s.Day)!.Product.Should().BeNull();
+        await Do(pat, p => p.ShowAction(999_999));
+        Meetings.Get(s.Day)!.Action.Should().BeNull();
+        EndMeeting(s.Day);
+    }
+
+    [Fact]
     public async Task OpeningAnActionOverTheSlide_ClosesTheProductsCard_AndViceVersa()
     {
         var s = await Brief(71);

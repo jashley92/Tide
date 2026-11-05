@@ -324,7 +324,10 @@ public sealed class LiveMeetings : IDisposable
             (seat.Slide, seat.Key, seat.Following) = (following && !presenting && key is not null && key == m.SlideKey ? m.Slide : slide, key, following && !presenting);
             if (presenting)
             {
-                if (m.Slide != slide) (m.Action, m.Product) = (null, null);   // they were open over the last slide
+                // They were open over the last slide. Told by its key where both pages give one: the same slide renumbered
+                // (a colleague added the opening note) keeps them, and another slide come to the same number doesn't.
+                var moved = key is not null && m.SlideKey is not null ? key != m.SlideKey : m.Slide != slide;
+                if (moved) (m.Action, m.Product) = (null, null);
                 (m.Slide, m.SlideKey) = (slide, key);
                 // Everyone following, and the presenter's own other tabs (a projector window), move with the presenter.
                 foreach (var s in m.Seats.Values.Where(s => s.Following || s.UserId == m.PresenterId)) (s.Slide, s.Key) = (slide, key);

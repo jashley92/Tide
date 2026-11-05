@@ -112,13 +112,17 @@
                                 <span><i class="tide-mchart-swatch @LineChart.Series(p.Line.Series)" aria-hidden="true"></i>@p.Line.Name</span>
                                 <strong class="@LevelClass(p.Level)">@p.Line.Current<LevelMark Level="p.Level" /></strong>
                             </div>
+                            @* A metric with no value in the days (one added since, say) has no scale: its panel says so, rather than
+                               labelling an axis of 0 to 1 it never had. *@
+                            @{ var none = p.Latest is null; }
                             <svg viewBox="0 0 @Num(MetricCharts.PanelWidth) @Num(MetricCharts.PanelHeight)" role="img"
-                                 aria-label="@($"{p.Line.Name} from {multiples.FirstDate} to {multiples.LastDate}, between {p.Min.Label} and {p.Max.Label}")">
+                                 aria-label="@(none ? $"{p.Line.Name}: no values from {multiples.FirstDate} to {multiples.LastDate}" : $"{p.Line.Name} from {multiples.FirstDate} to {multiples.LastDate}, between {p.Min.Label} and {p.Max.Label}")">
                                 @foreach (var t in new[] { p.Max, p.Min })
                                 {
                                     <line class="tide-mchart-grid" x1="@Num(MetricCharts.PanelLeft)" y1="@Num(t.Y)" x2="@Num(MetricCharts.PanelRight)" y2="@Num(t.Y)" />
-                                    @Text("tide-mchart-label", MetricCharts.PanelLeft - 14, t.Y, "end", t.Label, middle: true)
+                                    @if (!none) { @Text("tide-mchart-label", MetricCharts.PanelLeft - 14, t.Y, "end", t.Label, middle: true) }
                                 }
+                                @if (none) { @Text("tide-mchart-label", (MetricCharts.PanelLeft + MetricCharts.PanelRight) / 2, MetricCharts.PanelHeight / 2, "middle", "No values yet", middle: true) }
                                 <g class="@LineChart.Series(p.Line.Series)">
                                     @foreach (var a in p.Areas) { <polygon class="tide-mchart-area" points="@a" /> }
                                     @foreach (var points in p.Line.Lines) { <polyline points="@points" /> }

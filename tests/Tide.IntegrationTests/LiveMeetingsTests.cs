@@ -296,6 +296,26 @@ public sealed class LiveMeetingsTests : IDisposable
     }
 
     [Fact]
+    public void WhatsOpen_StaysWhenTheSameSlideIsRenumbered_AndGoesWhenAnotherSlideTakesItsNumber()
+    {
+        var pat = Start();
+        var product = Guid.NewGuid();
+        pat.At(4, key: "article:a");
+        _meetings.Show(pat, product);
+
+        // A colleague added the opening note: the same article, one slide later.
+        pat.At(5, key: "article:a");
+        View.Product.Should().Be(product, "the presenter is still on the article it was opened over");
+        _meetings.Open(pat, 7);
+        pat.At(4, key: "article:a");
+        View.Action.Should().Be(7, "an action stays too");
+
+        // The article left the brief: the next one is now at its number.
+        pat.At(4, key: "article:b");
+        View.Should().Match<LiveMeetingView>(v => v.Action == null && v.Product == null, "it was the other article's");
+    }
+
+    [Fact]
     public void APopup_FollowsThePresentersUnlessClosedHere_AndALockHoldsIt()
     {
         var popup = new MeetingPopup();
