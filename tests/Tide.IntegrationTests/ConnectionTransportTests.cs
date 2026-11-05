@@ -41,20 +41,37 @@ public sealed class FakeHubCallerContext : HubCallerContext
 
 public sealed class TestHub : Hub
 {
+    /// <summary>Named as Blazor's hub method that starts a circuit.</summary>
+    public static void StartCircuit() { /* invoked only through the filter */ }
+
+    /// <summary>Any other hub method (a browser event, a JS interop call).</summary>
     public static void Ping() { /* invoked only through the filter */ }
 }
 
-/// <summary>The transport pieces on their own: names, the hub filter, the per-circuit handler and the counts.</summary>
+/// <summary>The transport pieces on their own: names, the hub filter, the circuit's transport and the counts.</summary>
 public class ConnectionTransportUnitTests
 {
+    private static readonly MethodInfo StartCircuit = typeof(TestHub).GetMethod(nameof(TestHub.StartCircuit))!;
     private static readonly MethodInfo Ping = typeof(TestHub).GetMethod(nameof(TestHub.Ping))!;
 
-    /// <summary>Runs <paramref name="inside"/> as Blazor does: within a hub method on a connection over <paramref name="transport"/>.</summary>
-    internal static async Task InHubMethod(HttpTransportType? transport, Func<Task> inside)
+    /// <summary>
+    /// Runs <paramref name="inside"/> as Blazor does: within the hub method that starts a circuit (or <paramref name="method"/>)
+    /// on a connection over <paramref name="transport"/>, through <paramref name="filter"/> (a new one by default).
+    /// </summary>
+    internal static async Task InHubMethod(HttpTransportType? transport, Func<Task> inside, TransportHubFilter? filter = null, MethodInfo? method = null)
     {
         using var services = new ServiceCollection().BuildServiceProvider();
-        var context = new HubInvocationContext(new FakeHubCallerContext(transport), services, new TestHub(), Ping, []);
-        await new TransportHubFilter().InvokeMethodAsync(context, async _ => { await inside(); return null; });
+        var context = new HubInvocationContext(new FakeHubCallerContext(transport), services, new TestHub(), method ?? StartCircuit, []);
+        await (filter ?? new TransportHubFilter(new TransportCounts())).InvokeMethodAsync(context, async _ => { await inside(); return null; });
+    }
+
+    /// <summary>A connection over <paramref name="transport"/> opening (and, unless <paramref name="close"/> is false, closing) through <paramref name="filter"/>.</summary>
+    internal static async Task Connection(TransportHubFilter filter, HttpTransportType? transport, bool close = true)
+    {
+        using var services = new ServiceCollection().BuildServiceProvider();
+        var lifetime = new HubLifetimeContext(new FakeHubCallerContext(transport), services, new TestHub());
+        await filter.OnConnectedAsync(lifetime, _ => Task.CompletedTask);
+        if (close) await filter.OnDisconnectedAsync(lifetime, null, (_, _) => Task.CompletedTask);
     }
 
     [Theory]
@@ -75,46 +92,66 @@ public class ConnectionTransportUnitTests
     }
 
     [Fact]
-    public async Task TheFilter_MakesTheTransportAmbient_OnlyWhileTheMethodRuns()
+    public async Task TheFilter_MakesTheTransportAmbient_OnlyWhileACircuitMethodRuns()
     {
         HttpTransportType? seen = null;
         await InHubMethod(HttpTransportType.ServerSentEvents, () => { seen = TransportHubFilter.Current; return Task.CompletedTask; });
         seen.Should().Be(HttpTransportType.ServerSentEvents);
         TransportHubFilter.Current.Should().BeNull("it's put back once the method returns");
 
-        using var services = new ServiceCollection().BuildServiceProvider();
-        var lifetime = new HubLifetimeContext(new FakeHubCallerContext(HttpTransportType.WebSockets), services, new TestHub());
-        await new TransportHubFilter().OnConnectedAsync(lifetime, _ => { seen = TransportHubFilter.Current; return Task.CompletedTask; });
-        seen.Should().Be(HttpTransportType.WebSockets);
-        TransportHubFilter.Current.Should().BeNull();
+        seen = HttpTransportType.LongPolling;
+        await InHubMethod(HttpTransportType.WebSockets, () => { seen = TransportHubFilter.Current; return Task.CompletedTask; }, method: Ping);
+        seen.Should().BeNull("any other hub method passes straight through");
     }
 
     [Fact]
-    public async Task ACircuit_IsCountedOnce_ByTheTransportItConnectedOver_AndLeavesTheOpenCountWhenItCloses()
+    public void TheCircuitMethods_AreBlazorsHubMethods()
+    {
+        var hub = typeof(CircuitHandler).Assembly.GetType("Microsoft.AspNetCore.Components.Server.ComponentHub", throwOnError: true)!;
+        var methods = hub.GetMethods(BindingFlags.Public | BindingFlags.Instance).Select(m => m.Name).ToHashSet();
+        TransportHubFilter.CircuitMethods.Should().BeSubsetOf(methods, "a rename in Blazor would leave circuits without their transport");
+        TransportHubFilter.CircuitMethods.Should().Contain(["StartCircuit", "ConnectCircuit"]);
+    }
+
+    [Fact]
+    public async Task EachConnection_IsCounted_ByItsTransport_AndLeavesTheOpenCountWhenItCloses()
     {
         var counts = new TransportCounts();
-        var circuit = new CircuitTransport(counts);
-        await InHubMethod(HttpTransportType.LongPolling, () => circuit.OnConnectionUpAsync(null!, CancellationToken.None));
-        circuit.Current.Should().Be(HttpTransportType.LongPolling);
+        var filter = new TransportHubFilter(counts);
+        await Connection(filter, HttpTransportType.LongPolling, close: false);
         Count(counts, HttpTransportType.LongPolling).Should().Be((1, 1));
 
-        // A reconnect over WebSockets: open on WebSockets now, still one circuit since the start.
-        await InHubMethod(HttpTransportType.WebSockets, () => circuit.OnConnectionUpAsync(null!, CancellationToken.None));
-        circuit.Current.Should().Be(HttpTransportType.WebSockets);
+        // The page reconnects over WebSockets: a new connection, the old one closed.
+        await Connection(filter, HttpTransportType.WebSockets, close: false);
+        using (var services = new ServiceCollection().BuildServiceProvider())
+        {
+            await filter.OnDisconnectedAsync(new HubLifetimeContext(new FakeHubCallerContext(HttpTransportType.LongPolling), services, new TestHub()),
+                null, (_, _) => Task.CompletedTask);
+        }
         Count(counts, HttpTransportType.LongPolling).Should().Be((1, 0));
-        Count(counts, HttpTransportType.WebSockets).Should().Be((0, 1));
+        Count(counts, HttpTransportType.WebSockets).Should().Be((1, 1));
 
-        // The same transport again changes nothing; an unknown one is ignored.
-        circuit.Connected(HttpTransportType.WebSockets);
-        circuit.Connected(null);
-        circuit.Current.Should().Be(HttpTransportType.WebSockets);
-        Count(counts, HttpTransportType.WebSockets).Should().Be((0, 1));
-
-        await circuit.OnCircuitClosedAsync(null!, CancellationToken.None);
-        Count(counts, HttpTransportType.WebSockets).Should().Be((0, 0));
-        circuit.Closed();   // twice: nothing below zero
+        // An unknown transport isn't counted, and nothing goes below zero.
+        await Connection(filter, null);
+        await Connection(filter, HttpTransportType.ServerSentEvents);
         counts.Closed(HttpTransportType.ServerSentEvents);
-        counts.Snapshot().Should().OnlyContain(c => c.OpenNow == 0);
+        Count(counts, HttpTransportType.ServerSentEvents).Should().Be((1, 0));
+        counts.Snapshot().Sum(c => c.SinceStart).Should().Be(3);
+    }
+
+    [Fact]
+    public async Task TheCircuit_KeepsTheTransport_ItLastConnectedOver()
+    {
+        var circuit = new PresenceCircuit(new Presence());
+        circuit.Transport.Should().BeNull("outside a circuit it isn't known");
+        await InHubMethod(HttpTransportType.LongPolling, () => circuit.OnConnectionUpAsync(null!, CancellationToken.None));
+        circuit.Transport.Should().Be(HttpTransportType.LongPolling);
+
+        await InHubMethod(HttpTransportType.WebSockets, () => circuit.OnConnectionUpAsync(null!, CancellationToken.None));
+        circuit.Transport.Should().Be(HttpTransportType.WebSockets, "a reconnect over another transport");
+
+        circuit.Connected(null);
+        circuit.Transport.Should().Be(HttpTransportType.WebSockets, "an unknown one is ignored");
     }
 
     [Fact]
@@ -176,19 +213,30 @@ public class ConnectionTransportUnitTests
 /// <summary>The same in the running app: wired into Blazor's hub and the circuit's services, and shown on Diagnostics.</summary>
 public class ConnectionTransportAppTests(TideApp app) : IClassFixture<TideApp>
 {
-    [Fact]
-    public void TheFilter_IsOnBlazorsHub_AndTheCircuitsHandlerIsItsTransport()
+    /// <summary>The <see cref="TransportHubFilter"/> on the app's Blazor hub.</summary>
+    private TransportHubFilter HubFilter()
     {
         var hub = typeof(CircuitHandler).Assembly.GetType("Microsoft.AspNetCore.Components.Server.ComponentHub", throwOnError: true)!;
         var optionsType = typeof(IOptions<>).MakeGenericType(typeof(HubOptions<>).MakeGenericType(hub));
         var options = (HubOptions)optionsType.GetProperty("Value")!.GetValue(app.Services.GetRequiredService(optionsType))!;
         var filters = (IEnumerable<IHubFilter>?)typeof(HubOptions).GetProperty("HubFilters", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(options);
-        filters.Should().NotBeNull().And.ContainSingle(f => f is TransportHubFilter);
+        filters.Should().NotBeNull();
+        return filters!.OfType<TransportHubFilter>().Single();
+    }
+
+    [Fact]
+    public async Task TheFilter_IsOnBlazorsHub_CountsInTheAppsCounts_AndTheCircuitsHandlerKeepsTheTransport()
+    {
+        var filter = HubFilter();
+        var counts = app.Services.GetRequiredService<TransportCounts>();
+        counts.Should().BeSameAs(app.Services.GetRequiredService<TransportCounts>());
+        var before = ConnectionTransportUnitTests.Count(counts, HttpTransportType.ServerSentEvents).SinceStart;
+        await ConnectionTransportUnitTests.Connection(filter, HttpTransportType.ServerSentEvents);
+        ConnectionTransportUnitTests.Count(counts, HttpTransportType.ServerSentEvents).SinceStart.Should().Be(before + 1, "the hub's filter counts in the app's counts");
 
         using var scope = app.Services.CreateScope();
-        var transport = scope.ServiceProvider.GetRequiredService<CircuitTransport>();
-        scope.ServiceProvider.GetServices<CircuitHandler>().Should().Contain(transport, "the page's circuit is the one counted");
-        app.Services.GetRequiredService<TransportCounts>().Should().BeSameAs(app.Services.GetRequiredService<TransportCounts>());
+        var circuit = scope.ServiceProvider.GetRequiredService<PresenceCircuit>();
+        scope.ServiceProvider.GetServices<CircuitHandler>().Should().Contain(circuit, "the page's circuit is the one whose transport is kept");
     }
 
     [Fact]
@@ -196,8 +244,10 @@ public class ConnectionTransportAppTests(TideApp app) : IClassFixture<TideApp>
     {
         using var scope = app.Services.CreateScope();
         Audit.ServiceScopes.SignIn(scope, Permission.Administer);
-        var circuit = scope.ServiceProvider.GetRequiredService<CircuitTransport>();
-        await ConnectionTransportUnitTests.InHubMethod(HttpTransportType.LongPolling, () => circuit.OnConnectionUpAsync(null!, CancellationToken.None));
+        var filter = HubFilter();
+        await ConnectionTransportUnitTests.Connection(filter, HttpTransportType.LongPolling, close: false);
+        var circuit = scope.ServiceProvider.GetRequiredService<PresenceCircuit>();
+        await ConnectionTransportUnitTests.InHubMethod(HttpTransportType.LongPolling, () => { circuit.Connected(TransportHubFilter.Current); return Task.CompletedTask; }, filter);
 
         var report = await scope.ServiceProvider.GetRequiredService<SystemDiagnostics>().RunAsync();
         report.Connection.Current.Should().Be(HttpTransportType.LongPolling);
@@ -225,8 +275,9 @@ public class ConnectionTransportAppTests(TideApp app) : IClassFixture<TideApp>
         html.Should().Contain("Connections").And.Contain("Server-Sent Events").And.Contain("since the app started");
 
         // The page's circuit connects over long polling; Check again shows it, with the fix.
+        var circuit = page.Scope.ServiceProvider.GetRequiredService<PresenceCircuit>();
         await ConnectionTransportUnitTests.InHubMethod(HttpTransportType.LongPolling,
-            () => page.Scope.ServiceProvider.GetRequiredService<CircuitTransport>().OnConnectionUpAsync(null!, CancellationToken.None));
+            () => { circuit.Connected(TransportHubFilter.Current); return Task.CompletedTask; }, HubFilter());
         var refresh = typeof(DiagnosticsAdmin).GetMethod("Refresh", BindingFlags.Instance | BindingFlags.NonPublic)!;
         await page.Click(c => (Task)refresh.Invoke(c, null)!);
         // As the button's own event would, render again once it's done.

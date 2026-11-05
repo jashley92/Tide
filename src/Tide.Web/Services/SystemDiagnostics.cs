@@ -28,7 +28,7 @@ public sealed record EmailInfo(bool Enabled, string Delivery, string SignIn, str
 
 public sealed record SourceHealth(int Enabled, int Failing, IReadOnlyList<string> FailingNames);
 
-/// <summary>How pages talk to the server: the asking admin's own circuit (null outside one) and every circuit since the app started.</summary>
+/// <summary>How pages talk to the server: the asking admin's own circuit (null outside one) and every connection since the app started.</summary>
 public sealed record ConnectionInfo(HttpTransportType? Current, IReadOnlyList<TransportCount> Counts)
 {
     public string CurrentName => ConnectionTransport.Name(Current);
@@ -62,7 +62,7 @@ public sealed record DiagnosticsReport(
 public sealed class SystemDiagnostics(
     IConfiguration config, IWebHostEnvironment env, IDbContextFactory<AppDbContext> contexts, IAppDbContextFactory dbs, JobMonitor jobs,
     IOptionsMonitor<EmailOptions> email, OutboundCircuit circuit, CveRunLog cveLog, IRoleDirectory roles, UpdateCheckService updates,
-    TimeProvider time, ICurrentUser user, CircuitTransport circuitTransport, TransportCounts transportCounts)
+    TimeProvider time, ICurrentUser user, PresenceCircuit presenceCircuit, TransportCounts transportCounts)
 {
     public static readonly TimeSpan DatabaseTimeLimit = TimeSpan.FromSeconds(5);
 
@@ -76,7 +76,7 @@ public sealed class SystemDiagnostics(
         var storage = Storage();
         var sources = database.Reachable ? await SourcesAsync(ct) : new SourceHealth(0, 0, []);
         var states = jobs.States;
-        var connection = new ConnectionInfo(circuitTransport.Current, transportCounts.Snapshot());
+        var connection = new ConnectionInfo(presenceCircuit.Transport, transportCounts.Snapshot());
         var checks = Checks(database, states, mail, storage, sources);
         checks.InsertRange(1, ConnectionChecks(connection));
         return new DiagnosticsReport(time.GetUtcNow(), build, database, states, mail, storage, sources, cveLog.Last, checks, connection);

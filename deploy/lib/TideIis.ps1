@@ -1,4 +1,4 @@
-# IIS helpers shared by Install-Tide.ps1 and Upgrade-Tide.ps1.
+# IIS helpers shared by Install-Tide.ps1 and Upgrade-Tide.ps1 (and, through lib\TideWebSockets.ps1, Verify-Install.ps1).
 #
 # Stop-WebAppPool only asks the pool to stop. Its worker (w3wp) finishes open requests, Blazor circuits
 # and background jobs first, and holds the app's DLLs until it exits, so copying files straight after (a fixed few
@@ -51,19 +51,42 @@ function Get-TideAnonymousPathPurpose([string] $Path) {
     return "the app's anonymous endpoint /$Path"
 }
 
+function ConvertTo-TideEnabledText($Value) {
+    # A config 'enabled' value as 'true', 'false', or $null when unset or unreadable.
+    if ($null -eq $Value) { return $null }
+    if ($Value.PSObject.Properties['Value']) { $Value = $Value.Value }   # a ConfigurationAttribute, or the bare value
+    $s = ([string]$Value).Trim().ToLowerInvariant()
+    if ($s -eq 'true' -or $s -eq 'false') { return $s }
+    return $null
+}
+
+function Get-TideLocationEnabled([string] $Filter, [string] $Location) {
+    # A section's 'enabled' in applicationHost.config as IIS applies it: server-wide with no -Location, else at that site
+    # or path (its <location> entry, or what it inherits). 'true', 'false', or $null when it can't be read. Reading is
+    # allowed although the section is locked. Needs WebAdministration loaded.
+    $read = @{ PSPath = 'MACHINE/WEBROOT/APPHOST'; Filter = $Filter; Name = 'enabled'; ErrorAction = 'Stop' }
+    if ($Location) { $read.Location = $Location }
+    try { $v = Get-WebConfigurationProperty @read } catch { return $null }
+    return ConvertTo-TideEnabledText $v
+}
+
+function Set-TideApphostEnabled([string] $Appcmd, [string] $Location, [string] $Section, [string] $Enabled) {
+    # Sets a section's 'enabled' at <location> with appcmd and /commit:apphost: allowed although the section is locked at
+    # server scope, where the WebAdministration cmdlets throw 0x8007000D writing it for a site. Returns ExitCode (0 when
+    # it worked) and Output (what appcmd said), for the caller's message. Throws when appcmd.exe isn't there.
+    if (-not (Test-Path $Appcmd)) { throw "appcmd.exe not found at $Appcmd - is the IIS 'Web-Server' role installed?" }
+    # appcmd reports a failure in its output and exit code; under a caller's 'Stop' a line on stderr would otherwise end
+    # the run with the bare text before the caller could say what to do.
+    $ErrorActionPreference = 'Continue'
+    $out = & $Appcmd set config "$Location" "/section:$Section" "/enabled:$Enabled" /commit:apphost 2>&1
+    return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = $out }
+}
+
 function Get-TideLocationAuth([string] $SiteName, [string] $Path, [string] $Section) {
     # The 'enabled' value IIS applies at <site>/<path>: its <location> entry's, or the one inherited from the site when
     # there is none. 'true', 'false', or $null when it can't be read. Reading is allowed although the section is locked.
     Import-Module WebAdministration -ErrorAction Stop
-    try {
-        $v = Get-WebConfigurationProperty -PSPath 'MACHINE/WEBROOT/APPHOST' -Location "$SiteName/$Path" `
-            -Filter "system.webServer/security/authentication/$Section" -Name 'enabled' -ErrorAction Stop
-    } catch { return $null }
-    if ($null -eq $v) { return $null }
-    if ($v.PSObject.Properties['Value']) { $v = $v.Value }   # a ConfigurationAttribute, or the bare value
-    $s = ([string]$v).Trim().ToLowerInvariant()
-    if ($s -eq 'true' -or $s -eq 'false') { return $s }
-    return $null
+    return Get-TideLocationEnabled -Filter "system.webServer/security/authentication/$Section" -Location "$SiteName/$Path"
 }
 
 function Sync-TideAnonymousCarveOuts {
@@ -84,9 +107,6 @@ function Sync-TideAnonymousCarveOuts {
     if (-not $DryRun -and -not (Test-Path $Appcmd)) {
         throw "appcmd.exe not found at $Appcmd - is the IIS 'Web-Server' role installed?"
     }
-    # appcmd reports a failure in its output and exit code; under a caller's 'Stop' a line on stderr would otherwise end
-    # the run with the bare text before the message below could say what to do.
-    $ErrorActionPreference = 'Continue'
     $results = @()
     $done = @()
     foreach ($p in (Get-TideAnonymousPaths)) {
@@ -100,12 +120,11 @@ function Sync-TideAnonymousCarveOuts {
             $wasText = if ($SetAlways) { 'set' } elseif ($null -eq $was) { 'unreadable' } else { $was }
             $changes += "$($s.Section): $wasText -> $($s.Enabled)"
             if ($DryRun) { continue }
-            $out = & $Appcmd set config "$SiteName/$p" `
-                "/section:system.webServer/security/authentication/$($s.Section)" `
-                "/enabled:$($s.Enabled)" /commit:apphost 2>&1
-            if ($LASTEXITCODE -ne 0) {
+            $set = Set-TideApphostEnabled -Appcmd $Appcmd -Location "$SiteName/$p" `
+                -Section "system.webServer/security/authentication/$($s.Section)" -Enabled $s.Enabled
+            if ($set.ExitCode -ne 0) {
                 $already = if ($done.Count -gt 0) { " Already changed: $($done -join '; ')." } else { '' }
-                throw ("Failed to set $($s.Section) on '$SiteName/$p' (appcmd exit $LASTEXITCODE): $out. This opens " +
+                throw ("Failed to set $($s.Section) on '$SiteName/$p' (appcmd exit $($set.ExitCode)): $($set.Output). This opens " +
                        "$(Get-TideAnonymousPathPurpose $p) without a Windows sign-in.$already Fix: run elevated, and " +
                        "make sure the IIS authentication role services are installed (anonymous authentication comes with " +
                        "the Web-Server role; Install-WindowsFeature Web-Server, Web-Windows-Auth -IncludeManagementTools), " +
