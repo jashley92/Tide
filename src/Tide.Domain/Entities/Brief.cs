@@ -18,7 +18,8 @@ public class Brief : AuditableEntity
 
     public BriefStatus Status { get; set; } = BriefStatus.Draft;
 
-    /// <summary>An optional opening note, shown on the title slide.</summary>
+    /// <summary>An optional one-line note shown on the title slide (the "title slide line"), with a TLP of its own. Not the
+    /// team's opening note (<see cref="TeamNote"/>).</summary>
     public string? Intro { get; set; }
 
     /// <summary>The TLP of <see cref="Intro"/>: an edition whose ceiling is below it leaves the note out, and one that

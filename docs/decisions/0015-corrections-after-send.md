@@ -111,7 +111,7 @@ new column.
 ### Tests required
 
 - Leak tests, alongside `BriefEditions`'s:
-  - a company-wide correction's email and web copy never hold a bullet, caption, "why it matters" or opening note
+  - a company-wide correction's email and web copy never hold a bullet, caption, "why it matters", title slide line or team opening note
     above the public ceiling, on either side of the diff, including a part that was CLEAR at send time and is AMBER now;
   - the "now" side uses the lower of the send's ceiling and the current one when an administrator has lowered it;
   - a slip correction's email and web copy hold none of the slipped text, in the note's default or in the headline

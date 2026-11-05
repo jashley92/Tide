@@ -208,7 +208,7 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         RequireWrite();
         await using var db = await dbs.CreateAsync(ct);
         var brief = await db.Briefs.FirstOrDefaultAsync(b => b.Id == briefId, ct) ?? throw new KeyNotFoundException("That brief no longer exists.");
-        // The presenter and opening note went out with the send, as the running order did; the page hides the form too.
+        // The presenter and title slide line went out with the send, as the running order did; the page hides the form too.
         if (brief.Status == BriefStatus.Sent) throw new InvalidOperationException("This brief has been sent; its details are fixed.");
         brief.AnalystId = analystId.Trim();
         brief.AnalystName = ArticleService.Clean(analystName, 200);
@@ -227,7 +227,7 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         RequireWrite();
         await using var db = await dbs.CreateAsync(ct);
         var brief = await db.Briefs.FirstOrDefaultAsync(b => b.Id == briefId, ct) ?? throw new KeyNotFoundException("That brief no longer exists.");
-        if (brief.Status == BriefStatus.Sent) throw new InvalidOperationException("This brief has been sent; its opening note is fixed.");
+        if (brief.Status == BriefStatus.Sent) throw new InvalidOperationException("This brief has been sent; its title slide line is fixed.");
         var text = ArticleService.CleanOrNull(note, TeamNoteMax, multiline: true);
         if (text == brief.TeamNote) return;
         brief.TeamNote = text;

@@ -36,7 +36,7 @@ public sealed record EditionArticle(
 
 /// <summary>
 /// A brief cut for one audience. <see cref="WithheldArticles"/> counts the articles left out entirely; <see cref="ShowIntro"/>
-/// is false when the opening note is above the ceiling (or empty).
+/// is false when the title slide line is above the ceiling (or empty).
 /// </summary>
 public sealed record BriefEdition(
     Edition Edition,

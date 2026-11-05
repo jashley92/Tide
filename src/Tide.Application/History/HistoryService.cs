@@ -61,7 +61,7 @@ public sealed class HistoryService(IAppDbContextFactory dbs, ICurrentUser user)
         return Build(rows, skip, await TagNamesAsync(db, rows, ct));
     }
 
-    /// <summary>A brief's history: its own fields (status, the opening note, meeting notes and times). Which articles
+    /// <summary>A brief's history: its own fields (status, the title slide line, the team opening note, meeting notes and times). Which articles
     /// are on it, and their order, are rows of their own and aren't included.</summary>
     public async Task<HistoryPage> BriefAsync(Guid id, int skip = 0, CancellationToken ct = default)
     {
@@ -137,8 +137,8 @@ public static class HistoryFormatter
         [nameof(Article.AuthorName)] = "Author",
         [nameof(Brief.BriefDate)] = "Date",
         [nameof(Brief.AnalystName)] = "Presenter",
-        [nameof(Brief.Intro)] = "Opening note",
-        [nameof(Brief.IntroTlp)] = "Opening note marking",
+        [nameof(Brief.Intro)] = "Title slide line",
+        [nameof(Brief.IntroTlp)] = "Title slide line marking",
         [nameof(Brief.TeamNote)] = "Team opening note",
         [nameof(Brief.MeetingNotes)] = "Meeting notes",
         [nameof(Brief.MeetingHeldAtUtc)] = "Meeting held",

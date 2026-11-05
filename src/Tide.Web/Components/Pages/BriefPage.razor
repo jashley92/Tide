@@ -48,7 +48,7 @@ else
                     <a class="small" href="">Today's</a>
                 }
             </div>
-            <ChangedElsewhere By="@_changedBy" What="brief's presenter or opening note" Consequence="Saving now would replace theirs." OnReload="ReloadTheirs" />
+            <ChangedElsewhere By="@_changedBy" What="brief's presenter or title slide line" Consequence="Saving now would replace theirs." OnReload="ReloadTheirs" />
             <ChangedElsewhere By="@_noteChangedBy" What="team's opening note" Consequence="Saving now would replace theirs." OnReload="ReloadTheirs" />
             <h1>@(AsToday ? "Today, " : "Brief for ")@Ui.Day(_date)</h1>
             @if (AsToday && Clock.Days.HolidayOn(Clock.Today) is { } holiday)
@@ -851,7 +851,7 @@ else
         </section>
     };
 
-    // The presenter, when it meets and the opening note: editable by analysts, read by everyone else.
+    // The presenter, when it meets and the title slide line: editable by analysts, read by everyone else.
     private RenderFragment Meeting() => __builder =>
     {
         <section class="tide-card" aria-labelledby="meeting-h">
@@ -874,8 +874,8 @@ else
                     }
                 </select>
                 <div class="d-flex gap-2 align-items-center justify-content-between">
-                    <label class="tide-field-label" for="intro">Opening note (optional)</label>
-                    <TlpSelect Value="_introTlp" ValueChanged="v => _introTlp = v" Label="The opening note's TLP" Class="w-auto mb-1" />
+                    <label class="tide-field-label" for="intro">Title slide line (optional)</label>
+                    <TlpSelect Value="_introTlp" ValueChanged="v => _introTlp = v" Label="The title slide line's TLP" Class="w-auto mb-1" />
                 </div>
                 <textarea id="intro" class="form-control form-control-sm" rows="2" maxlength="2000" @bind="_intro"
                           placeholder="Shown on the title slide: a quiet day, a theme, a reminder."></textarea>
@@ -886,7 +886,7 @@ else
             {
                 <dl class="tide-dl mb-0">
                     <dt>Presenter</dt><dd>@_brief!.AnalystName</dd>
-                    <dt>Opening note</dt>
+                    <dt>Title slide line</dt>
                     <dd>
                         @if (string.IsNullOrWhiteSpace(_brief.Intro))
                         {

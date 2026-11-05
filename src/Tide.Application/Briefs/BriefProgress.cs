@@ -146,7 +146,7 @@ public enum BriefNext { None, MarkReady, Present, Send, ViewAsSent, PostToShareP
 /// <summary>How much of something an edition carries.</summary>
 public enum EditionFit { Included, Part, LeftOut }
 
-/// <summary>One line of the edition check: an article (or the opening note, or the numbers), how much of it the edition
+/// <summary>One line of the edition check: an article (or the title slide line, or the numbers), how much of it the edition
 /// carries, and why when not all of it. <see cref="ArticleId"/> is null for the note and the numbers. <see cref="Warning"/>
 /// is a readiness warning about what the edition carries (<see cref="ArticleChecks.WhyReachesCompany"/>).</summary>
 public sealed record EditionCheckRow(Guid? ArticleId, string Title, EditionFit Fit, string? Why = null, string? Warning = null);
@@ -158,7 +158,7 @@ public sealed record EditionCheckRow(Guid? ArticleId, string Title, EditionFit F
 public static class EditionChecks
 {
     /// <summary>
-    /// The rows for <paramref name="edition"/> under <paramref name="ceiling"/>: the opening note (when there is one),
+    /// The rows for <paramref name="edition"/> under <paramref name="ceiling"/>: the title slide line (when there is one),
     /// the day's numbers (when any are kept; <paramref name="missingNumbers"/> of them not entered), then each article in
     /// the running order. On the company-wide edition, an article whose "Why it matters" it carries is warned about.
     /// </summary>
@@ -167,8 +167,8 @@ public static class EditionChecks
         var rows = new List<EditionCheckRow>();
         if (!string.IsNullOrWhiteSpace(brief.Intro))
             rows.Add(brief.IntroTlp <= ceiling
-                ? new(null, "Opening note", EditionFit.Included)
-                : new(null, "Opening note", EditionFit.LeftOut, $"The note is {Tlp.Label(brief.IntroTlp)}"));
+                ? new(null, "Title slide line", EditionFit.Included)
+                : new(null, "Title slide line", EditionFit.LeftOut, $"The line is {Tlp.Label(brief.IntroTlp)}"));
         if (hasNumbers)
             rows.Add((edition, missingNumbers) switch
             {
