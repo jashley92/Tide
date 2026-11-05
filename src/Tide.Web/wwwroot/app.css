@@ -1644,6 +1644,17 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-story-result-name { font-weight: var(--tide-weight-semibold); overflow-wrap: anywhere; }
 .tide-story-result-meta { font-size: var(--tide-text-sm); color: var(--tide-text-muted); }
 .tide-story-result-new { flex-direction: row; gap: var(--tide-space-1); color: var(--tide-accent); }
+/* SearchCombobox: the story and adversary pickers' box over a listbox. The highlighted option (the arrows move it) is
+   marked as triage's "Attach to" marks its own. A list that opens with focus opens in the flow, pushing what follows
+   down, rather than floating over it: the editor's side pane scrolls, and would cut a floating list off. */
+.tide-combo-opt { cursor: pointer; }
+.tide-combo-opt.is-active { background: var(--tide-accent-soft); border-color: transparent; box-shadow: inset 2px 0 0 var(--tide-accent); }
+.tide-combo-opt[aria-disabled="true"] { cursor: default; opacity: .6; }
+.tide-combo-pop { margin-top: 2px; padding: var(--tide-space-1);
+    border: 1px solid var(--tide-border-strong); border-radius: var(--tide-radius-lg); background: var(--tide-surface); box-shadow: 0 8px 24px var(--tide-shadow); }
+.tide-combo-pop .tide-story-results { margin: 0; }
+.tide-combo-foot { font-size: var(--tide-text-xs); color: var(--tide-text-muted); padding: var(--tide-space-1) var(--tide-space-2) 0; }
+.tide-combo-tag { font-size: var(--tide-text-xs); font-weight: var(--tide-weight-semibold); color: var(--tide-text-muted); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-sm); padding: 0 .3rem; margin-left: var(--tide-space-1); }
 
 /* Administration › Email templates: the list of emails beside the editor and its preview. */
 .tide-etpl { display: grid; grid-template-columns: minmax(12rem, 15rem) minmax(0, 1fr); gap: 1rem; align-items: start; }

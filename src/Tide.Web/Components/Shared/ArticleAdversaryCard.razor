@@ -1,7 +1,10 @@
 @* The article's adversary profiles (EP-73), in the editor's Related tab beside "We run": each tagged profile with how
    much else has been written about it; the profiles the article names (title, actors, bottom line) but isn't tagged
-   with, offered as a one-click tag; and, for analysts, a picker that finds a profile by any of its names, or adds one.
-   Tagging is optional and saved straight away. *@
+   with, offered as a one-click tag; and, for analysts, a search picker (SearchCombobox, as the story picker's). With
+   nothing typed it offers a few: those the article names, then watched ones, then those tagged lately. Typing finds a
+   profile by its name, any other name ("APT29 (also Cozy Bear)") or MITRE id, a few at a time
+   (AdversaryService.PickLimit), retired ones last and asked about first; and offers to add one by the words typed, with
+   a link to fill it in. After a pick the box clears and keeps focus, for the next. Tagging is saved straight away. *@
 @using Tide.Application.Adversaries
 @inject AdversaryService Adversaries
 @inject ToastService Toasts
@@ -55,15 +58,31 @@
         }
         @if (CanWrite)
         {
-            <div class="d-flex gap-1 mt-2 flex-wrap">
+            <div class="mt-2">
+                @if (_added is { } added)
+                {
+                    <div class="small mb-1">Added <a href="@($"adversaries/{added.Id}")">@added.Name</a> as a new profile. Fill it in when you can.</div>
+                }
                 <label class="visually-hidden" for="adv-pick-@ArticleId">Tag an adversary</label>
-                <input id="adv-pick-@ArticleId" class="form-control form-control-sm w-auto flex-grow-1" list="adv-list-@ArticleId" maxlength="100"
-                       placeholder="Tag an adversary by any name, or add one" @bind="_pick" @bind:event="oninput" />
-                <datalist id="adv-list-@ArticleId">
-                    @foreach (var (name, profile) in _names) { <option value="@name">@(name == profile ? "" : profile)</option> }
-                </datalist>
-                <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_pick))" @onclick="TagPicked">Tag</button>
+                <SearchCombobox @ref="_combo" TItem="AdversaryPick" Id="@($"adv-pick-{ArticleId}")" MaxLength="Tide.Domain.Entities.Adversary.MaxName"
+                                Placeholder="Tag an adversary by any name, or add one" ListLabel="Adversaries" Disabled="_busy"
+                                Help="Matching adversaries are listed as you type. Use the up and down arrows to choose, Enter to tag it."
+                                @bind-Text="_text" @bind-Text:after="Find" Items="Listed" Key="p => p.Id" OnPick="Pick"
+                                NewOption="@(CanAdd ? NewProfile : null)" OnNew="AddNew" Empty="@NothingListed" Status="@Status">
+                    <ItemTemplate Context="p">
+                        <span class="tide-story-result-name">@p.Name@if (p.Alias is { } alias) {<span class="fw-normal tide-muted"> (also @alias)</span>}@if (p.IsRetired) {<span class="tide-combo-tag">retired</span>}</span>
+                        @if (Meta(p) is { } meta) { <span class="tide-story-result-meta">@meta</span> }
+                    </ItemTemplate>
+                    <Footer>
+                        @if (Text.Length > 0 && _found.AlreadyTagged is { } tagged)
+                        {
+                            <div>@tagged is already tagged.</div>
+                        }
+                        <span aria-hidden="true">&uarr; &darr; to choose, Enter tags, Esc closes</span>
+                    </Footer>
+                </SearchCombobox>
             </div>
+            <ConfirmDialog @ref="_confirm" />
         }
     }
 </div>
@@ -73,9 +92,15 @@
     [Parameter] public bool CanWrite { get; set; }
 
     private ArticleAdversaries? _mine;
-    private List<(string Name, string Profile)> _names = [];
     private readonly Dictionary<Guid, AdversaryDetail?> _details = new();
-    private string? _pick;
+    private IReadOnlyList<AdversaryPick> _offered = [];
+    private AdversaryPicks _found = AdversaryPicks.None;
+    private (Guid Id, string Name)? _added;
+    internal SearchCombobox<AdversaryPick>? _combo;
+    internal ConfirmDialog? _confirm;
+    // What's typed in the picker (internal for the tests); a slower answer for what was typed before is dropped.
+    internal string? _text;
+    private int _finding;
     private bool _busy;
 
     // A colleague's tag or untag on this article (or any save of it) reloads the card; one heard during this card's own
@@ -106,10 +131,12 @@
         try
         {
             _mine = await Adversaries.ForArticleAsync(ArticleId);
-            // Every name a live profile goes by, so "Octo Tempest" finds Scattered Spider.
+            // With nothing typed the picker offers these; with words, it searches again, so a colleague's tag drops out.
             if (CanWrite)
-                _names = (await Adversaries.ProfilesAsync()).SelectMany(p => AdversaryService.Entry(p).Terms.Select(t => (t, p.Name)))
-                    .DistinctBy(x => x.t, StringComparer.OrdinalIgnoreCase).OrderBy(x => x.t).ToList();
+            {
+                _offered = await Adversaries.OfferedAsync(ArticleId);
+                if (Text.Length > 0) await Find();
+            }
             _details.Clear();
             foreach (var a in _mine.Tagged) _details[a.Id] = await Adversaries.GetAsync(a.Id);
         }
@@ -139,14 +166,90 @@
 
     internal Task Untag(Guid id) => Change(() => Adversaries.UntagArticleAsync(ArticleId, id), "Untagged.");
 
-    // The name typed: any name of a profile (its alias resolves to it), or a new profile added by name.
-    internal async Task TagPicked()
+    private string Text => (_text ?? "").Trim();
+
+    // Before anything's typed, the offered few; then the matches.
+    internal IReadOnlyList<AdversaryPick> Listed => Text.Length == 0 ? _offered : _found.Found;
+
+    // A new profile by the words typed, unless a live one already goes by exactly that name (or MITRE id).
+    internal bool CanAdd => Text.Length > 0 && !_found.Exact;
+
+    private RenderFragment NewProfile => @<text><span class="bi bi-plus-lg" aria-hidden="true"></span> Add “@Text” as a new adversary</text>;
+
+    private RenderFragment? NothingListed => Text.Length == 0 && _offered.Count == 0 ? NothingYet : null;
+
+    private static readonly RenderFragment NothingYet = @<text>Type any name an adversary goes by, or its MITRE id.</text>;
+
+    private string Status => Text.Length == 0 ? "" : Listed.Count == 1 ? "1 adversary" : $"{Listed.Count} adversaries";
+
+    private static string? Meta(AdversaryPick p)
     {
-        if (_busy || string.IsNullOrWhiteSpace(_pick)) return;
+        var why = p.Reason switch
+        {
+            AdversaryPickReason.Named => "Named in the article",
+            AdversaryPickReason.Watched => "Watched",
+            AdversaryPickReason.Recent => "Tagged lately",
+            _ => null,
+        };
+        return string.Join(" · ", new[] { p.MitreId, why }.Where(x => x is not null)) is { Length: > 0 } meta ? meta : null;
+    }
+
+    // The profiles for what's typed now.
+    internal async Task Find()
+    {
+        var mine = ++_finding;
+        AdversaryPicks found;
+        try { found = await Adversaries.FindForArticleAsync(ArticleId, _text); }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            return;
+        }
+        if (mine != _finding) return;
+        _found = found;
+        StateHasChanged();
+    }
+
+    // A profile picked from the list: a retired one only once the analyst says so. The box clears for the next.
+    internal async Task Pick(AdversaryPick p)
+    {
+        if (_busy) return;
+        if (p.IsRetired && _confirm is not null
+            && !await _confirm.Ask($"{p.Name} is retired", "Tag the article with it anyway?", "Tag it anyway", danger: false))
+            return;
+        Cleared();
+        await Tag(p.Id);
+        await Refocus();
+    }
+
+    // "Add 'X' as a new adversary": the profile by that name (made now, with the name alone), tagged; a link to fill it in.
+    internal async Task AddNew()
+    {
+        if (_busy || Text.Length == 0) return;
+        var name = Text;
         Guid id;
-        try { id = await Adversaries.AddByNameAsync(_pick); }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); return; }
-        _pick = null;
+        try { id = await Adversaries.AddByNameAsync(name); }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            return;
+        }
+        Cleared();
+        _added = (id, name);
         await Tag(id);
+        await Refocus();
+    }
+
+    // Drawn now (the list without the one just tagged), and the box keeps focus for the next.
+    private Task Refocus()
+    {
+        StateHasChanged();
+        return _combo?.FocusAsync() ?? Task.CompletedTask;
+    }
+
+    private void Cleared()
+    {
+        (_text, _found, _added) = (null, AdversaryPicks.None, null);
+        _finding++;
     }
 }
