@@ -1,0 +1,49 @@
+@* A formatting toolbar over a Markdown text box: bold, italic, bulleted and numbered lists, indent and outdent (for a
+   sub-bullet), and a link. It edits the box's text in place (wwwroot/js/markdown-toolbar.js, by the box's id), so the
+   box's own binding and autosave see each change. Put it just before the box. Nothing is drawn for a box that can't be
+   edited. *@
+@if (!Disabled)
+{
+    <div class="tide-md-toolbar @Class" role="toolbar" aria-label="@($"Formatting for {Label}")" aria-controls="@For" data-md-for="@For"
+         data-md-change="@(BindsOnChange ? "" : null)">
+        @foreach (var (b, i) in Buttons.Select((b, i) => (b, i)))
+        {
+            @if (b.GroupStart && i > 0)
+            {
+                <span class="tide-md-sep" aria-hidden="true"></span>
+            }
+            <button type="button" class="tide-md-btn" data-md="@b.Action" tabindex="@(i == 0 ? 0 : -1)" aria-label="@b.Name"
+                    title="@(b.Keys is null ? b.Name : $"{b.Name} ({b.Keys})")" aria-keyshortcuts="@b.AriaKeys"><span class="bi @b.Icon" aria-hidden="true"></span></button>
+        }
+    </div>
+}
+
+@code {
+    /// <summary>The id of the text box it formats.</summary>
+    [Parameter, EditorRequired] public string For { get; set; } = "";
+
+    /// <summary>The field's name, for the toolbar's label ("Formatting for Why it matters to us").</summary>
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+
+    /// <summary>The box is read-only or disabled: no toolbar.</summary>
+    [Parameter] public bool Disabled { get; set; }
+
+    /// <summary>More classes for the toolbar (a margin).</summary>
+    [Parameter] public string? Class { get; set; }
+
+    /// <summary>The box binds on change (a plain <c>@bind</c>), so each edit fires a change event as well as input.</summary>
+    [Parameter] public bool BindsOnChange { get; set; }
+
+    private sealed record Button(string Action, string Name, string Icon, string? Keys, string? AriaKeys, bool GroupStart = false);
+
+    private static readonly Button[] Buttons =
+    [
+        new("bold", "Bold", "bi-type-bold", "Ctrl+B", "Control+B Meta+B"),
+        new("italic", "Italic", "bi-type-italic", "Ctrl+I", "Control+I Meta+I"),
+        new("bullets", "Bulleted list", "bi-list-ul", null, null, GroupStart: true),
+        new("numbers", "Numbered list", "bi-list-ol", null, null),
+        new("outdent", "Outdent list item", "bi-text-indent-right", "Shift+Tab", "Shift+Tab"),
+        new("indent", "Indent list item", "bi-text-indent-left", "Tab", "Tab"),
+        new("link", "Link", "bi-link-45deg", null, null, GroupStart: true),
+    ];
+}

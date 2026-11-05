@@ -306,9 +306,11 @@ else
                 {
                     <div class="form-text mt-0 mb-1 text-end">Internal context starts at AMBER; lower it if it's safe to share.</div>
                 }
+                <MarkdownToolbar For="f-why" Label="Why it matters to us" Disabled="!_canWrite" />
                 <textarea id="f-why" class="form-control tide-autogrow tide-grow-3" rows="3" maxlength="8000" readonly="@(!_canWrite)" aria-label="Why it matters to us"
                           placeholder="Do we run it? Are we in the targeted sector? What's our exposure?" @bind="_form.WhyItMatters" @bind:event="oninput" @bind:after="Touch"></textarea>
                 <h2 id="sec-rec" class="mt-3" tabindex="-1" @ref="_heads[ArticlePart.Recommended]">Recommended actions</h2>
+                <MarkdownToolbar For="f-rec" Label="Recommended actions" Disabled="!_canWrite" />
                 <textarea id="f-rec" class="form-control tide-autogrow tide-grow-3" rows="3" maxlength="8000" readonly="@(!_canWrite)" aria-label="Recommended actions"
                           placeholder="e.g. - Hunt for the indicators in the SIEM (last 30 days)  - Patch the affected systems" @bind="_form.RecommendedActions" @bind:event="oninput" @bind:after="Touch"></textarea>
             </section>

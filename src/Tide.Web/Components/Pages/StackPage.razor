@@ -118,6 +118,7 @@ else
                         <div class="col-md-3"><label class="tide-field-label" for="f-checked">Checked on</label>
                             <input id="f-checked" type="date" class="form-control form-control-sm" @bind="f.CheckedOn" /></div>
                         <div class="col-12"><label class="tide-field-label" for="f-notes">Notes (Markdown)</label>
+                            <MarkdownToolbar For="f-notes" Label="Notes" BindsOnChange="true" />
                             <textarea id="f-notes" class="form-control form-control-sm tide-autogrow" rows="5" maxlength="4000"
                                       placeholder="Where it runs, who to ask, change windows, past decisions" @bind="f.Notes"></textarea></div>
                     </div>

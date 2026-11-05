@@ -177,6 +177,7 @@ else
                         <div class="col-md-6"><label class="tide-field-label" for="f-sectors">Sectors it targets</label>
                             <input id="f-sectors" class="form-control form-control-sm" maxlength="300" placeholder="Telecoms, retail" @bind="f.Sectors" /></div>
                         <div class="col-12"><label class="tide-field-label" for="f-notes">Our notes (Markdown, internal)</label>
+                            <MarkdownToolbar For="f-notes" Label="Our notes" BindsOnChange="true" />
                             <textarea id="f-notes" class="form-control form-control-sm tide-autogrow" rows="4" maxlength="4000"
                                       placeholder="What we've seen, what to watch for, what we've changed because of it" @bind="f.Notes"></textarea></div>
                     </div>
