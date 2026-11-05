@@ -682,15 +682,63 @@ public class ActionFilePageTests(TideApp app) : IClassFixture<TideApp>
         await using var page = await Open(number);
         var html = await page.Html();
         html.Should().Contain("Files <span class=\"tide-count tide-muted fw-normal\">(2)</span>");
-        html.Should().Contain("Added to the action by Tester").And.Contain("On a comment by Tester");
+        html.Should().Contain("Added by Tester</span>").And.Contain("On a comment by Tester</a>");
         html.Should().Contain($"actions/{number}#comment-").And.Contain("id=\"comment-");
-        html.Should().Contain("The dropper from the mailbox").And.Contain("<code>" + risky[0].Sha256[..12]).And.Contain(risky[0].Sha256);
-        html.Should().Contain($"files/{risky[0].FileId}/zip").And.Contain("Download (zip)").And.Contain("Download as is")
+        html.Should().Contain("The dropper from the mailbox").And.Contain(risky[0].Sha256 + "</code>");
+        html.Should().Contain($"files/{risky[0].FileId}/zip").And.Contain("aria-label=\"Download sample.exe in a zip\"").And.Contain("aria-label=\"Download sample.exe as is\"")
             .And.Contain("Warning: It&#x27;s a Windows program.");
         html.Should().Contain("Up to 25 MB a file (15 MB for an image).");
         html.Should().Contain("Remove gateway.log", "a comment's file is removed on its own too");
         html.Should().Contain("It opens with the password &quot;infected&quot;.").And.NotContain("7-Zip");
         html.Should().NotContain("Removed files");
+    }
+
+    [Fact]
+    public async Task TheFilesSection_IsInTheSideColumn_AfterAbout_WithEachFilesDetailsBehindMore()
+    {
+        var (number, id) = await NewAction("files-page: side column");
+        var added = await As(sp => sp.GetRequiredService<ActionFileService>().AddAsync(id,
+            [new ActionFileUpload("a-rather-long-capture-name-from-the-edge-firewall-on-the-second-floor.pcapng", Samples.Text("pcap"), null, "Edge capture, 10:00 to 10:15")]));
+        var f = added.Single();
+
+        await using var page = await Open(number);
+        var html = await page.Html();
+        int At(string text) => html.IndexOf(text, StringComparison.Ordinal);
+        var side = At("<div class=\"col-lg-4\">");
+        side.Should().BeGreaterThan(0);
+        At("id=\"files\"").Should().BeGreaterThan(side, "Files are in the side column")
+            .And.BeGreaterThan(At("<h2>About</h2>"), "under About")
+            .And.BeGreaterThan(At("<h2>Comments"), "so when the columns stack they come after Comments")
+            .And.BeLessThan(At("<h2>History</h2>"), "and before History");
+        html.Should().Contain($"title=\"{f.FileName}\"", "a long name is cut short with the full name in its title");
+
+        var more = html[At($"id=\"file-more-{f.FileId}\"")..];
+        more = more[..more.IndexOf("</li>", StringComparison.Ordinal)];
+        more.Should().Contain("hidden").And.Contain("Edge capture, 10:00 to 10:15").And.Contain(f.Sha256 + "</code>")
+            .And.Contain("Edit the description of").And.Contain("Remove " + f.FileName);
+        html.Should().Contain($"aria-controls=\"file-more-{f.FileId}\"").And.Contain("aria-expanded=\"false\"")
+            .And.Contain($"aria-label=\"More about {f.FileName}\"");
+    }
+
+    [Fact]
+    public void TheMoreButton_OpensAndCloses_AndAnIconSaysWhatTheFileIs()
+    {
+        var row = new ActionFileRow(Guid.NewGuid(), "a.txt", 1, null, null, "Tester", DateTimeOffset.UtcNow, null, false, null, null);
+        var panel = new ActionFilesPanel();
+        panel.IsOpen(row).Should().BeFalse();
+        panel.Toggle(row);
+        panel.IsOpen(row).Should().BeTrue();
+        panel.SetDraft(row.FileId, "Typing", null, null);
+        panel.Toggle(row);
+        panel.IsOpen(row).Should().BeFalse("closing it drops the description being typed");
+        panel.StartRemove(row);
+        panel.IsOpen(row).Should().BeTrue("removing opens it for the reason");
+        panel.StartDescribe(row);
+        panel.IsOpen(row).Should().BeTrue();
+
+        ActionFilesPanel.Icon(row).Should().Be("bi-paperclip");
+        ActionFilesPanel.Icon(row with { ShowsInline = true }).Should().Be("bi-image");
+        ActionFilesPanel.Icon(row with { RiskReason = "program" }).Should().Be("bi-exclamation-triangle");
     }
 
     [Fact]
@@ -713,7 +761,7 @@ public class ActionFilePageTests(TideApp app) : IClassFixture<TideApp>
             await using (var page = await Open(number))
             {
                 var html = await page.Html();
-                html.Should().NotContain("/zip\"").And.NotContain("Download as is");
+                html.Should().NotContain("/zip\"").And.NotContain(" as is\"");
                 html.Should().Contain($"files/{files[1].FileId}/download");
             }
         }
@@ -822,6 +870,6 @@ public class ActionFilePageTests(TideApp app) : IClassFixture<TideApp>
         await As(sp => sp.GetRequiredService<ActionFileService>().AddAsync(id, [new ActionFileUpload("colleague.txt", [1])]),
             new SignIn("dev:files-robin", "Robin", "Analyst"));
         await page.Click(p => p.OnChangedElsewhere([new Change(ChangeFeed.Action(id), "dev:files-robin", "Robin", Guid.NewGuid())]));
-        (await page.Html()).Should().Contain("colleague.txt").And.Contain("Added to the action by Robin");
+        (await page.Html()).Should().Contain("colleague.txt").And.Contain("Added by Robin");
     }
 }

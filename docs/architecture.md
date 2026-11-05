@@ -270,7 +270,7 @@ and its first bytes:
   say the same image type. When they disagree, the file's `TypeNote` says how, and it's a download only.
 - *Risky.* A file that can run, or carry something that runs (programs, scripts, installers, shortcuts, disk images,
   macro-enabled Office files, pages), has a `RiskReason`. It downloads by default inside a zip with the password
-  `infected`, with the plain file as a secondary "Download as is". `Files:ZipDownloads` (`RiskyOnly`, the default;
+  `infected`, with the plain file as a secondary "as is" download. `Files:ZipDownloads` (`RiskyOnly`, the default;
   `Always`; `Never`) changes that. It's an operational setting, set under Administration › Teams & SLA, and it travels
   in the configuration bundle. A comment's file added before this was recorded is judged by its name.
 

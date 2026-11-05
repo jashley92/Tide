@@ -255,10 +255,11 @@ that fits its kind.
 - **Splitting.** A long remediation splits into parts, one per team.
 - **Around it.** An action can have an external ticket link, comments (from any team) and a readable history.
 - **Files.** Files can be added to an action itself (picked, dropped or pasted, or while raising it) as well as to its
-  comments. Its Files section lists both, newest first, with who added each, when, its description and its SHA-256.
+  comments. Its Files section, in the side column under About, lists both, newest first: a compact row each, with its
+  description, SHA-256 and controls under its "More" button.
   A file is checked from its first bytes as well as its name and type, and an image whose bytes don't match isn't shown
   inline. A file that can run (a program, script, installer, shortcut, Office file with macros and the like) downloads
-  in a zip with the password `infected`, with "Download as is" beside it. Removing a file (on the action or a comment) needs a reason and keeps it
+  in a zip with the password `infected`, with an "as is" download beside it. Removing a file (on the action or a comment) needs a reason and keeps it
   for an administrator to restore; deleting a comment keeps its files the same way. Lists, the board and the brief show a paperclip with the count.
 - **How late.** An overdue action says how late it is.
 
