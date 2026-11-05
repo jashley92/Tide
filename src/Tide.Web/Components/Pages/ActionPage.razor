@@ -158,8 +158,6 @@ else
                 <HuntPanel @key="a.Id" Action="a" CanWork="_detail.CanWork" Changed="Reload" />
             }
 
-            <ActionFilesPanel @key="@($"files-{a.Id}")" Files="_detail.Files" ActionId="a.Id" Number="a.Number" CanWork="_detail.CanWork" Changed="Reload" />
-
             <div class="tide-card">
                 <h2>Comments <span class="tide-count tide-muted fw-normal">(@a.Comments.Count)</span></h2>
                 @foreach (var c in a.Comments)
@@ -274,6 +272,11 @@ else
                     <dt>Created</dt><dd>@Ui.When(Clock, a.CreatedAtUtc)</dd>
                 </dl>
             </div>
+
+            @* Files sit in the side column under About, before Parts and History: they are the action's working material, so
+               they come before its structure and its record. When the columns stack, this column follows the main one, so
+               Files come after Comments. *@
+            <ActionFilesPanel @key="@($"files-{a.Id}")" Files="_detail.Files" ActionId="a.Id" Number="a.Number" CanWork="_detail.CanWork" Changed="Reload" />
 
             @if (a.ParentId is null && _detail.Children.Count == 0 && _detail.CanEditAll)
             {

@@ -1854,3 +1854,36 @@ button.tide-slide-werun-chip:focus-visible { outline: 3px solid var(--tide-slide
 .tide-present-product .tide-facts dd { font-size: 1.05em; }
 .tide-present-product-articles { list-style: none; padding: 0; margin: 0; }
 .tide-present-product-articles li { padding: .35em 0; border-bottom: 1px solid var(--tide-slide-line); line-height: 1.35; }
+
+/* An action's Files in the page's side column (ActionFilesPanel): a compact list, each file one row (icon, name cut short
+   with the full name in its title, size, the "Can run" badge and its downloads) over a muted line (where it is, who, when)
+   with the More button, which opens the notes, description, SHA-256 and controls under it. The removed list matches. */
+.tide-files-side .tide-file-pick { padding: .4rem; }
+.tide-files-side .tide-file-pick .small { font-size: .78rem; }
+.tide-files-side .tide-file-pending { font-size: .82rem; gap: .35rem; grid-template-columns: minmax(0, 1fr); }
+.tide-files-side .tide-file-pending li > div { min-width: 0; }
+.tide-files-side .tide-file-pending .small { white-space: nowrap; }
+.tide-files-side .tide-file-list { margin-top: .35rem; }
+.tide-files-side .tide-file { padding: .35rem 0; font-size: .86rem; }
+.tide-file-row { display: flex; align-items: center; gap: .35rem; min-width: 0; }
+.tide-files-side .tide-file-icon { font-size: .95rem; width: 1rem; flex: 0 0 auto; text-align: center; }
+.tide-files-side .tide-file-icon.tide-file-risky { color: var(--tide-threat); }
+.tide-files-side .tide-file-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
+.tide-file-size { flex: 0 0 auto; font-size: .78rem; color: var(--tide-text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tide-file-row .tide-badge { flex: 0 0 auto; }
+.tide-file-dl { margin-left: auto; flex: 0 0 auto; display: inline-flex; gap: .5rem; align-items: center; white-space: nowrap; font-size: .8rem; }
+.tide-file-dl a { display: inline-flex; align-items: center; gap: .2rem; }
+.tide-file-dl .bi-download { font-size: .95rem; }
+.tide-file-restore { margin-left: auto; flex: 0 0 auto; padding: 0 .45rem; font-size: .78rem; }
+.tide-file-sub { display: flex; align-items: center; gap: .3rem; padding-left: 1.35rem; font-size: .78rem; color: var(--tide-text-muted); }
+.tide-file-sub-wrap { flex-wrap: wrap; gap: 0 .5rem; overflow-wrap: anywhere; }
+.tide-file-source { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tide-file-when { flex: 1 0 auto; white-space: nowrap; }
+.tide-file-more-btn { flex: 0 0 auto; padding: 0; font-size: .78rem; display: inline-flex; align-items: center; gap: .15rem; }
+.tide-file-more { display: grid; gap: .3rem; margin: .3rem 0 .1rem 1.35rem; padding: .4rem .5rem; border-radius: var(--tide-radius-md); background: var(--tide-surface-2); font-size: .82rem; }
+.tide-file-more[hidden] { display: none; }
+.tide-files-side .tide-file-hash { font-size: .76rem; }
+.tide-files-side .tide-file-hash-full { display: inline; margin: 0; }
+.tide-files-side .tide-file-actions { margin-top: 0; }
+.tide-files-side .tide-file-remove { margin-top: 0; padding: .4rem; background: var(--tide-surface); border: 1px solid var(--tide-border); }
+.tide-files-side .tide-files-removed .tide-file-sub code { font-size: .76rem; }
