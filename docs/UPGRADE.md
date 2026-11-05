@@ -171,6 +171,35 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
+### v1.2.0
+
+Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds one migration (`ActionCommentEditVersion`); none of the
+earlier ones change. No settings are new or renamed.
+
+- **Upgrade script fix.** `Upgrade-Tide.ps1` no longer stops with `DriveNotFoundException` right after the database
+  backup when the SQL Server's backup drive doesn't exist on the web server. If you hit that upgrading to v1.1.0, the
+  backup was taken and the site was unchanged.
+- **"Title slide line".** The brief's older one-line, TLP-marked note on the title slide is now called the title slide
+  line, so Today has one "Opening note" (the team's). Nothing about either changes.
+- **API:** a brief's response has a new `finishedAs` field (`emailed`, `distributed` or `notSent`; null until it's
+  finished). Its `status` is still `Sent` for all three.
+- **AD:** names and email addresses are looked up again every 24 hours, so a change in AD shows within a day instead of
+  at the next app-pool recycle. If AD can't be reached, a test copy goes to the address saved from AD on an earlier visit.
+- **Briefs:** Finish as Not sent waits while an edition is still being sent; Back to ready is refused while the brief's
+  meeting is running in present mode; a rota change no longer moves the presenter of a meeting that was held. History
+  no longer shows user-id rows.
+- **Our stack:** a product's page names only articles at or below the team edition's ceiling and counts the rest, and it
+  updates live.
+- **Comments on actions:** a save that would overwrite someone else's change to the same comment is refused, with their
+  text shown; editing a second comment asks before discarding unsaved changes to the first.
+- **Opening metrics:** trend charts include the brief's own day and any weekday holiday with values; the Metrics history
+  filter hides days with nothing in the groups shown.
+- **Formatting toolbar:** Enter on an empty sub-bullet moves it out a level; a new list after a paragraph gets a blank
+  line first.
+- About 40 fixes from four bug-fix rounds over the v1.1.0 features: present mode's live meetings (hand-off, reloads,
+  edition switches, followers), the numbers form under slow saves, the toolbar, the opening note, Back to ready and Not
+  sent, Pull now, and running on SQL Server (lists now sort the same, ignoring case, on both databases).
+
 ### v1.1.0
 
 Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). The upgrade adds new migrations; none of the earlier ones change.
