@@ -135,8 +135,14 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     {
         if (!user.Has(Permission.WriteArticles) && !user.Has(Permission.Administer)) throw new ForbiddenException("You don't have access to the sources.");
         await using var db = await dbs.CreateAsync(ct);
-        return await db.Sources.AsNoTracking().Where(s => includeRetired || !s.IsRetired).OrderBy(s => s.Name).ToListAsync(ct);
+        return await ByName(db.Sources.AsNoTracking().Where(s => includeRetired || !s.IsRetired)).ToListAsync(ct);
     }
+
+    // Sources by name ignoring case, as SQL Server's collation sorts them: SQLite's own order is case-sensitive, which put
+    // "alpha blog" after "Zeta wire". ToLower runs in the database (lower(), LOWER()), never in .NET, so no culture applies.
+#pragma warning disable CA1304, CA1311
+    private static IOrderedQueryable<Source> ByName(IQueryable<Source> sources) => sources.OrderBy(s => s.Name.ToLower()).ThenBy(s => s.Name);
+#pragma warning restore CA1304, CA1311
 
     public async Task<Guid> SaveSourceAsync(SourceForm form, CancellationToken ct = default)
     {
@@ -266,7 +272,7 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     {
         RequireTriage();
         await using var db = await dbs.CreateAsync(ct);
-        var sources = await Polled(db.Sources.AsNoTracking()).OrderBy(s => s.Name).ToListAsync(ct);
+        var sources = await ByName(Polled(db.Sources.AsNoTracking())).ToListAsync(ct);
         var window = PullWindow;
         return [.. sources.Select(s => new PolledSource(s.Id, s.Name, s.Kind, s.LastPolledAtUtc, s.LastPolledAtUtc + Interval(s),
             s.LastSuccessAtUtc is null ? null : s.LastNewItems, s.LastError, s.LastPolledAtUtc + window, _polls.IsRunning(s.Id)))];
