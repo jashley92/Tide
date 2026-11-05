@@ -473,6 +473,7 @@ public class ChangeInterceptorTests : IDisposable
         Of(new MetricValue { BriefDate = new DateOnly(2026, 10, 22) }).Should().Equal("metrics-day:2026-10-22");
         Of(new MetricDefinition()).Should().Equal(ChangeFeed.Metrics);
         Of(new MetricGroup()).Should().Equal(ChangeFeed.Metrics);
+        Of(new StackProduct()).Should().Equal(ChangeFeed.Stack);
         Of(new AuditLogEntry()).Should().BeEmpty();
     }
 }

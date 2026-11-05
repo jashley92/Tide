@@ -1003,6 +1003,8 @@ else
         if (_actionDetail is { } open) topics.Add(ChangeFeed.Action(open.Action.Id));
         // An article's products tagged or untagged: its chips.
         foreach (var item in _brief?.Items ?? []) topics.Add(ChangeFeed.ArticleTags(item.ArticleId));
+        // A product edited or retired on Our stack: its chips, and its card if it's open.
+        topics.Add(ChangeFeed.Stack);
         return topics;
     }
 
@@ -1012,10 +1014,12 @@ else
         // A change to the action open over the slide: it's re-read in place.
         var actionTopic = _actionDetail is { } open ? ChangeFeed.Action(open.Action.Id) : null;
         if (actionTopic is not null && changes.Any(c => c.Topic == actionTopic)) await ReloadAction();
-        // A product tagged or untagged on one of the articles: its chips, without a toast.
+        // A product tagged or untagged on one of the articles, or edited or retired on Our stack: its chips (and its
+        // card, if it's the one open), without a toast.
         if (changes.Any(IsTags))
         {
             _stackOf = await StackOf(_brief);
+            if (_product is not null && changes.Any(c => c.Topic == ChangeFeed.Stack)) await LoadProduct();
             changes = changes.Where(c => !IsTags(c)).ToList();
             if (changes.Count == 0)
             {
@@ -1046,6 +1050,7 @@ else
         _stackOf = await StackOf(_brief);
         if (changes.Any(c => c.Topic == ChangeFeed.Meeting(_brief.Id))) await ReloadRecord();
         Reslide(SlideNamed(shown) ?? Math.Min(_slide, LastSlide), shown);
+        await SyncAction();
         var numbers = changes.All(c => ChangeFeed.IsMetricsOf(c, _date));
         Toasts.Show($"{LiveChanges.Who(changes)} updated {(numbers ? "the numbers" : "this brief")}.");
         StateHasChanged();
@@ -1059,14 +1064,19 @@ else
         _open = await ActionSvc.OutstandingAsync(_date, _teamMax);
         await LoadActions();
         var at = SlideNamed(shown) ?? Math.Min(_slide, LastSlide);
-        if (at == _slide && SlideKey(at) == shown) return;
+        if (at == _slide && SlideKey(at) == shown && !Behind) return;
         Reslide(at, shown);
+        await SyncAction();
     }
 
     // After a reload, to slide n, where the slide that was shown (called shown) now is, or what took its place. The
     // running order moved: the others go where this page went. Something open over a slide that's gone goes with it.
+    // Someone following goes to the presenter's slide: one this page couldn't name before it read the brief again (an
+    // article just added, a group whose numbers just came in) had it land elsewhere, and it'd stay there, still
+    // "following". Its seat says where it is now, so the presenter's view of who's where isn't a renumbering behind.
     private void Reslide(int n, string shown)
     {
+        if (!Presenting && _seat is not null && _following && _view is { } live) n = SlideFor(live);
         _slide = n;
         if (SlideKey(_slide) != shown)
         {
@@ -1075,7 +1085,11 @@ else
             DropProduct(forget: true);
         }
         if (Presenting) _seat!.At(_slide, key: SlideKey(_slide));
+        else _seat?.At(_slide, _following, SlideKey(_slide));
     }
+
+    // Following the presenter, but not on their slide as this page now numbers it.
+    private bool Behind => !Presenting && _seat is not null && _following && _view is { } live && SlideFor(live) != _slide;
 
     // The article on the slide being shown, if it's an article's slide, so a reload keeps it on screen.
     private Guid? ShownArticle() => ArticleAt(Cut(_brief!), _slide)?.Article.Id;
@@ -1236,6 +1250,19 @@ else
         var seat = _seat;
         // Already presented or sent from the brief page while the meeting ran: only the live meeting is left to end.
         var already = Presented;
+        // What's saved decides, not this page's copy, which may not have heard yet that the brief was put back to ready
+        // (or marked presented) a moment ago: ending on it would leave a reopened brief unmarked, or carry articles from
+        // one already presented. The wrap-up is shown as it is now, to be ended from again.
+        if (await BriefSvc.GetAsync(_date) is { } saved && saved.Id == _brief!.Id && (saved.Status is BriefStatus.Presented or BriefStatus.Sent) != already)
+        {
+            var shown = SlideKey(_slide);
+            _brief = saved;
+            _follow = Followed();
+            Reslide(SlideNamed(shown) ?? Math.Min(_slide, LastSlide), shown);
+            Toasts.Error(already ? "The brief was put back to ready a moment ago. Check the wrap-up, then end the meeting."
+                : "The brief was marked presented a moment ago. Check the wrap-up, then end the meeting.");
+            return;
+        }
         DateOnly? carriedTo = null;
         try
         {
@@ -1348,7 +1375,9 @@ else
         try
         {
             await Seated();
-            await SyncAction();
+            // The presenter back (a reload, a second tab) sees what they have open for the room, and can close it.
+            if (Presenting) await MirrorPresenter(_view!);
+            else await SyncAction();
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
     }
@@ -1461,11 +1490,22 @@ else
         await Move(SlideFor(_view));
     }
 
-    private void TakeOver()
+    internal void TakeOver()
     {
         if (_seat is null || !Meetings.TakeOver(_seat)) return;
         Refresh();
+        CloseHandedOn();
         Toasts.Show("You're presenting.");
+    }
+
+    // The meeting changed hands, which closed what was open over the slide for the room: this page's goes too (this
+    // page doesn't hear its own change, which closes it on the others'), so a new presenter doesn't think the room sees
+    // it, and one who handed off isn't left with the last presenter's card, which a lock wouldn't let them close.
+    private void CloseHandedOn()
+    {
+        DropAction();
+        _sharedSeen = null;
+        DropProduct(forget: true);
     }
 
     internal void ToggleHand()
@@ -1491,12 +1531,13 @@ else
         if (_seat is not null && Meetings.Lock(_seat, _view?.Locked != true)) Refresh();
     }
 
-    private void HandOff(ChangeEventArgs e)
+    internal void HandOff(ChangeEventArgs e)
     {
         if (_seat is null || e.Value is not string to || to.Length == 0) return;
         var name = _view?.People.FirstOrDefault(p => p.UserId == to)?.Name;
         if (!Meetings.HandTo(_seat, to)) return;
         Refresh();
+        CloseHandedOn();
         // Following the new presenter now, from their slide (this page doesn't hear its own change).
         (_following, _summons) = (true, _view?.Summons ?? _summons);
         if (_view is not null) _slide = SlideFor(_view);
@@ -1645,7 +1686,7 @@ else
     /// <summary>Whether this page can open a product's card: on the team edition, and not held by the presenter's lock.</summary>
     private bool CanOpenProduct => TeamEdition && !Held;
 
-    private static bool IsTags(Change c) => c.Topic.StartsWith("article-tags:", StringComparison.Ordinal);
+    private static bool IsTags(Change c) => c.Topic == ChangeFeed.Stack || c.Topic.StartsWith("article-tags:", StringComparison.Ordinal);
 
     // The products each of the brief's articles is tagged with, for the slides' chips.
     private async Task<IReadOnlyDictionary<Guid, IReadOnlyList<StackProduct>>> StackOf(Brief? brief) =>
@@ -1731,6 +1772,11 @@ else
             }
             else DropProduct();
         }
+        // What this presenter's page can't read (gone since) isn't left open for the room, which they couldn't close.
+        if (_seat is null) return;
+        if (live.Action is not null && _actionDetail is null) Meetings.Open(_seat, null);
+        if (live.Product is not null && _product is null) Meetings.Show(_seat, null);
+        Refresh();
     }
 
     // Goes along with the product card the presenter has open, as SyncAction does their action.
