@@ -547,9 +547,16 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
 }
 
-/// <summary>A strategy that says it retries, as SQL Server's does, so user-initiated transactions are held to its rule.</summary>
+/// <summary>
+/// A strategy that retries, as SQL Server's does in production (EnableRetryOnFailure), so user-initiated transactions are
+/// held to its rule, and an error production retries is retried here too: on SQL Server a serializable path's deadlock
+/// victim (1205) is tried again, as there, rather than failing the test. Its delays are short, for a test's sake.
+/// </summary>
 internal sealed class RetryingStrategy(Microsoft.EntityFrameworkCore.Storage.ExecutionStrategyDependencies dependencies)
-    : Microsoft.EntityFrameworkCore.Storage.ExecutionStrategy(dependencies, 3, TimeSpan.FromMilliseconds(10))
+    : SqlServerRetryingExecutionStrategy(dependencies, 6, TimeSpan.FromMilliseconds(200), errorNumbersToAdd: null)
 {
-    protected override bool ShouldRetryOn(Exception exception) => false;
+    // SQL Server's transient errors, as production's strategy has them; on SQLite, whose production strategy retries
+    // nothing, none.
+    protected override bool ShouldRetryOn(Exception exception) =>
+        Dependencies.CurrentContext.Context.Database.IsSqlServer() && base.ShouldRetryOn(exception);
 }

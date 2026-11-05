@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Tide.Application.Abstractions;
 using Tide.Application.Articles;
+using Tide.Application.Content;
 using Tide.Application.Mitre;
 using Tide.Application.Security;
 using Tide.Application.Stack;
@@ -80,7 +81,7 @@ public sealed class AdversaryService(IAppDbContextFactory dbs, ICurrentUser user
 
     /// <summary>The live profiles that are watched, as entries to match triage items against (no permission check).</summary>
     internal static async Task<IReadOnlyList<StackEntry>> WatchedAsync(IAppDbContext db, CancellationToken ct) =>
-        (await db.Adversaries.AsNoTracking().Where(a => a.Watched && !a.IsRetired).OrderBy(a => a.Name).ToListAsync(ct)).Select(Entry).ToList();
+        (await db.Adversaries.AsNoTracking().Where(a => a.Watched && !a.IsRetired).OrderByName(a => a.Name).ToListAsync(ct)).Select(Entry).ToList();
 
     // --- reading ------------------------------------------------------------------------------------------------
 
@@ -104,7 +105,7 @@ public sealed class AdversaryService(IAppDbContextFactory dbs, ICurrentUser user
                 var mine = Of(p, articles, tags.Where(t => t.AdversaryId == p.Id).Select(t => t.ArticleId).ToHashSet()).ToList();
                 return new AdversaryRow(p, mine.Count, mine.Count == 0 ? null : mine.Max(a => a.On));
             })
-            .OrderBy(r => r.Adversary.IsRetired).ThenByDescending(r => r.Adversary.Watched).ThenByDescending(r => r.LastReported).ThenBy(r => r.Adversary.Name)
+            .OrderBy(r => r.Adversary.IsRetired).ThenByDescending(r => r.Adversary.Watched).ThenByDescending(r => r.LastReported).ThenByName(r => r.Adversary.Name)
             .ToList();
     }
 
@@ -142,10 +143,10 @@ public sealed class AdversaryService(IAppDbContextFactory dbs, ICurrentUser user
         await using var db = await dbs.CreateAsync(ct);
         var article = await db.Articles.AsNoTracking().Where(a => a.Id == articleId).Select(a => new { a.Title, a.Actors, a.Bluf }).FirstOrDefaultAsync(ct);
         if (article is null) return new ArticleAdversaries([], []);
-        var tagged = await db.ArticleAdversaries.AsNoTracking().Where(t => t.ArticleId == articleId).Select(t => t.Adversary!).OrderBy(a => a.Name).ToListAsync(ct);
+        var tagged = await db.ArticleAdversaries.AsNoTracking().Where(t => t.ArticleId == articleId).Select(t => t.Adversary!).OrderByName(a => a.Name).ToListAsync(ct);
         var live = await db.Adversaries.AsNoTracking().Where(a => !a.IsRetired).ToListAsync(ct);
         var words = StackService.Words(article.Title + " " + article.Actors, article.Bluf);
-        var suggested = live.Where(a => tagged.All(t => t.Id != a.Id) && StackService.Names(Entry(a), words)).OrderBy(a => a.Name).ToList();
+        var suggested = live.Where(a => tagged.All(t => t.Id != a.Id) && StackService.Names(Entry(a), words)).OrderByName(a => a.Name).ToList();
         return new ArticleAdversaries(tagged, suggested);
     }
 

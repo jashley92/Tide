@@ -14,12 +14,15 @@ public sealed class CurrentUser : ICurrentUser
 {
     private readonly IHttpContextAccessor _http;
     private readonly AuthenticationStateProvider _authState;
+    private readonly IUserDirectory? _users;
     private ClaimsPrincipal? _cached;
 
-    public CurrentUser(IHttpContextAccessor http, AuthenticationStateProvider authState)
+    /// <param name="users">The user mirror, for the real name of someone AD didn't name in time (null: none).</param>
+    public CurrentUser(IHttpContextAccessor http, AuthenticationStateProvider authState, IUserDirectory? users = null)
     {
         _http = http;
         _authState = authState;
+        _users = users;
         // The circuit's principal can be refreshed in place (roles/permissions re-derived); drop the cached one.
         _authState.AuthenticationStateChanged += _ => _cached = null;
     }
@@ -64,8 +67,21 @@ public sealed class CurrentUser : ICurrentUser
     // degrading to the bare username so the UI never shows the domain. Dev auth already sets a real name, and so does an
     // API token: its caller's name as issued, never looked up in AD (a "SOAR\Prod" token was named "Prod", or whoever
     // AD said, so its detection push and its revocation no longer matched, and each call waited on the lookup).
-    public string DisplayName =>
-        (ApiTokenAuthenticationHandler.IsToken(Principal) ? Principal.Identity?.Name : WindowsNames.Friendly(Principal.Identity?.Name)) ?? UserId;
+    // When AD didn't answer in time the bare username ("jdoe") is only a stand-in, and it was stored as the author of a
+    // comment, an assignee's name, and so on: the name the user mirror holds for them is used instead (no AD call; the
+    // mirror's names are kept in memory). Someone with none recorded yet still gets the username.
+    public string DisplayName
+    {
+        get
+        {
+            var principal = Principal;
+            if (ApiTokenAuthenticationHandler.IsToken(principal)) return principal.Identity?.Name ?? UserId;
+            var (name, standIn) = WindowsNames.FriendlyOrStandIn(principal.Identity?.Name);
+            if (standIn && _users is not null && principal.Identity?.IsAuthenticated == true && _users.RecordedName(UserId) is { } recorded)
+                return recorded;
+            return name ?? UserId;
+        }
+    }
 
     public string? UserPrincipalName => Principal.FindFirstValue(ClaimTypes.Upn);
 

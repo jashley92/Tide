@@ -1,6 +1,7 @@
 using System.Net.Mail;
 using Microsoft.EntityFrameworkCore;
 using Tide.Application.Abstractions;
+using Tide.Application.Content;
 using Tide.Application.Scorecard;
 using Tide.Application.Security;
 using Tide.Domain.Entities;
@@ -21,8 +22,8 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user)
         await using var db = await dbs.CreateAsync(ct);
         var teams = await db.Teams.AsNoTracking().Include(t => t.Members)
             .Where(t => includeRetired || !t.IsRetired).ToListAsync(ct);
-        foreach (var t in teams) t.Members = t.Members.OrderBy(m => m.DisplayName).ToList();
-        return teams.OrderBy(t => t.SortOrder).ThenBy(t => t.Name).ToList();
+        foreach (var t in teams) t.Members = t.Members.OrderByName(m => m.DisplayName).ToList();
+        return teams.OrderBy(t => t.SortOrder).ThenByName(t => t.Name).ToList();
     }
 
     /// <summary>The ids of the teams <paramref name="userId"/> is on.</summary>

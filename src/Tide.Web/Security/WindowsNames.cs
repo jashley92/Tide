@@ -89,9 +89,17 @@ public sealed class WindowsNames
     /// <c>DOMAIN\sam</c> AD gave no display name for (it didn't answer in time, failed, or has none). The user mirror
     /// doesn't put a stand-in over a name it already holds. A name that isn't a domain account is never one.
     /// </summary>
-    public async Task<(string? Name, bool StandIn)> ResolveForMirrorAsync(string? identityName)
+    public async Task<(string? Name, bool StandIn)> ResolveForMirrorAsync(string? identityName) =>
+        Named(identityName, await ResolveAsync(identityName));
+
+    /// <summary>As <see cref="ResolveForMirrorAsync"/>, for a caller that can't await (<see cref="CurrentUser"/>): the same
+    /// bounded wait as <see cref="Friendly"/>, and no further lookup.</summary>
+    public static (string? Name, bool StandIn) FriendlyOrStandIn(string? identityName) =>
+        Shared.Named(identityName, Shared.Resolve(identityName));
+
+    // The name found, and whether it's only the bare username standing in for a DOMAIN\sam AD gave no name for.
+    private (string? Name, bool StandIn) Named(string? identityName, string? name)
     {
-        var name = await ResolveAsync(identityName);
         var slash = identityName?.IndexOf('\\') ?? -1;
         if (slash < 0 || slash == identityName!.Length - 1) return (name, name is null);
         return _cache.TryGetValue(identityName, out var cached) && cached.Person?.DisplayName is { } found

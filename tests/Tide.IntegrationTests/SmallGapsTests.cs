@@ -9,15 +9,18 @@ namespace Tide.IntegrationTests;
 /// <summary>Races closed: a story deleted as an article is linked to it, and a CVE refresh by hand during the scheduled one.</summary>
 public class SmallGapsTests : IDisposable
 {
-    private readonly TestDb _db = new(connectionPerContext: true);   // each test runs two things at once
+    private TestDb _db = new(connectionPerContext: true);   // each test runs two things at once
 
     public void Dispose() => _db.Dispose();
 
     // The delete found no articles, a colleague linked one, and the delete went on: the foreign key set the article's
     // story to null, so the link they'd just made was gone, unsaid. Now the link waits for the delete, and is refused.
-    [Fact]
-    public async Task AnArticleLinkedAsItsStoryIsDeleted_IsRefused_NotSilentlyUnlinked()
+    // On SQL Server the two deadlock and one is retried by the execution strategy, as production's is.
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task AnArticleLinkedAsItsStoryIsDeleted_IsRefused_NotSilentlyUnlinked(string provider)
     {
+        _db = _db.On(provider);
         var stories = _db.Stories();
         var story = await stories.CreateAsync("Edge VPN campaign", null);
         var article = await _db.Articles().CreateAsync("Edge VPN exploited");
@@ -26,7 +29,9 @@ public class SmallGapsTests : IDisposable
         {
             if (!saving.ChangeTracker.Entries<Story>().Any(e => e.State == EntityState.Deleted)) return;
             _db.BeforeSave = null;
-            link = Task.Run(() => _db.Stories().LinkAsync(article, story));
+            // A colleague's own request: not flowing the delete's context, whose execution strategy would otherwise
+            // count the link as nested in it and leave it unretried.
+            using (ExecutionContext.SuppressFlow()) link = Task.Run(() => _db.Stories().LinkAsync(article, story));
             // Unchecked, the link was saved in this moment; now it waits for the delete to finish.
             ((IAsyncResult)link).AsyncWaitHandle.WaitOne(TimeSpan.FromMilliseconds(500));
         };

@@ -136,6 +136,11 @@ public interface IUserDirectory
 
     /// <summary>Everyone seen, by name: the analyst picker on a brief.</summary>
     Task<IReadOnlyList<AppUser>> ListAsync(CancellationToken ct = default);
+
+    /// <summary>The name recorded for <paramref name="userId"/>, or null when there's none: for a signed-in user whose
+    /// directory name is only a stand-in this time (the bare username), so records keep their real name. Cheap: kept in
+    /// memory once read.</summary>
+    string? RecordedName(string userId) => null;
 }
 
 /// <summary>Where uploaded files' bytes are kept (on disk, outside the web root).</summary>
