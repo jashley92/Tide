@@ -164,23 +164,46 @@
         return { text: t.slice(0, s) + mark + sel + mark + t.slice(e), start: s + n, end: e + n };
     }
 
-    // Over several lines, each line's text is wrapped (Markdown's emphasis doesn't cross lines well), after any marker.
+    // Whether a line's text is wrapped whole in the mark: "**a**" for bold; "*a*" (not "**a**") or "***a***" for italic.
+    // Not "**a** and **b**": that's two pieces, not one wrapped line.
+    function wrappedBy(body, mark) {
+        var n = mark.length;
+        if (body.length <= 2 * n) return false;
+        var inner = body.slice(n, -n);
+        if (n === 2) return body.slice(0, 2) === '**' && body.slice(-2) === '**' && inner.indexOf('**') < 0;
+        var opens = body.slice(0, 3) === '***' || (body[0] === '*' && body[1] !== '*');
+        var closes = body.slice(-3) === '***' || (body.slice(-1) === '*' && body.slice(-2, -1) !== '*');
+        return opens && closes && inner.replace(/\*\*/g, '').indexOf('*') < 0;
+    }
+
+    // Over several lines, each line's text is wrapped (Markdown's emphasis doesn't cross lines well), after any marker;
+    // when every one already is, they're all unwrapped, as one line's selection is.
     function wrapLines(state, mark) {
-        var sp = span(state.text, state.start, state.end), lines = sp.lines.slice(), fence = fenced(lines);
+        var sp = span(state.text, state.start, state.end), lines = sp.lines.slice(), fence = fenced(lines), rows = [];
         for (var i = sp.first; i <= sp.last; i++) {
             if (fence[i] || blank(lines[i])) continue;
             var p = parse(lines[i]);
             var head = p ? lines[i].length - p.content.length : indentOf(lines[i]);
             var body = lines[i].slice(head).replace(/\s+$/, '');
-            if (body) lines[i] = lines[i].slice(0, head) + mark + body + mark;
+            if (body) rows.push({ i: i, head: head, body: body });
         }
+        var all = rows.length > 0 && rows.every(function (r) { return wrappedBy(r.body, mark); });
+        rows.forEach(function (r) {
+            var line = lines[r.i].slice(0, r.head);
+            if (all) lines[r.i] = line + r.body.slice(mark.length, -mark.length);
+            else if (!wrappedBy(r.body, mark)) lines[r.i] = line + mark + r.body + mark;
+        });
         return result(lines, sp.first, sp.last);
     }
 
     // A link: the selection becomes its text, with the address to type selected (or, for a selected address, the text).
     function link(state) {
-        var t = state.text, s = state.start, e = state.end, sel = t.slice(s, e).trim();
+        var t = state.text, s = state.start, e = state.end, sel = t.slice(s, e);
         if (sel.indexOf('\n') >= 0) return null;
+        // A double-click takes the space after a word: it stays outside the link, as it does outside bold.
+        var lead = sel.length - sel.replace(/^\s+/, '').length, trail = sel.length - sel.replace(/\s+$/, '').length;
+        if (lead < sel.length) { s += lead; e -= trail; } else s = e;
+        sel = t.slice(s, e);
         if (/^(https?:\/\/|mailto:)\S+$/i.test(sel)) {
             var out = '[text](' + sel + ')';
             return { text: t.slice(0, s) + out + t.slice(e), start: s + 1, end: s + 5 };
@@ -396,6 +419,8 @@
         if (!bar || e.isComposing || e.altKey) return;
         var key = e.key, mod = e.ctrlKey || e.metaKey;
         if (key === 'Escape') { released = box; return; }
+        // Shift (for Shift+Tab) pressed on its own isn't the next key: after Escape, Shift+Tab still leaves.
+        if (key === 'Shift' || key === 'Control' || key === 'Meta' || key === 'Alt') return;
         var free = released === box;
         released = null;
         var state = function () { return { text: box.value, start: box.selectionStart, end: box.selectionEnd }; };
