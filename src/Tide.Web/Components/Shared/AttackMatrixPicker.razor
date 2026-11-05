@@ -18,8 +18,8 @@
         <div class="tide-atkm-search">
             <span class="bi bi-search" aria-hidden="true"></span>
             <input @ref="_filterBox" class="form-control form-control-sm" placeholder="Filter by id or name: T1566, phishing"
-                   value="@_filter" @oninput="OnFilter" aria-label="Filter techniques" />
-            @if (_filter.Length > 0)
+                   value="@_text" @oninput="OnFilter" @onkeydown="OnFilterKey" aria-label="Filter techniques" />
+            @if (_text.Length > 0)
             {
                 <button type="button" class="btn btn-sm btn-link p-0" @onclick="ClearFilter">Clear</button>
             }
@@ -146,7 +146,10 @@
     private readonly string _titleId = "atkm-" + Guid.NewGuid().ToString("N")[..8];
     private readonly HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _expanded = new(StringComparer.OrdinalIgnoreCase);
-    private string _filter = "";
+    private string _text = "";   // what's in the box, every keystroke
+    private string _filter = ""; // what the matrix is filtered by: the text once typing pauses
+    private readonly TypingPause _pause = new(ArticleAdversaryCard.TypingPauseMs);
+    private bool _quiet;
     private AttackMatrixView _view = AttackMatrixView.For("");
     private bool _moved;
     private bool _initialized;
@@ -170,10 +173,35 @@
     }
 
     // --- filtering: the columns are worked out once per change of the filter (AttackMatrixView), not on every render ---
-    private void OnFilter(ChangeEventArgs e) => SetFilter(e.Value?.ToString());
+    // The box shows each keystroke; the filter, the counts line and the columns' fold wait for typing to pause (as the
+    // adversary picker's search does), so a word typed is one change, not one a letter. A later keystroke supersedes it.
+    private async Task OnFilter(ChangeEventArgs e)
+    {
+        _text = e.Value?.ToString() ?? "";
+        if (await _pause.Settled()) SetFilter(_text);
+        else _quiet = true; // superseded: nothing new to draw
+    }
+
+    // Enter applies what's typed at once.
+    private void OnFilterKey(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter") return;
+        _pause.Now();
+        SetFilter(_text);
+    }
+
+    // A keystroke superseded while it paused changes nothing on screen, so it doesn't re-render the matrix.
+    protected override bool ShouldRender()
+    {
+        if (!_quiet) return true;
+        _quiet = false;
+        return false;
+    }
 
     private async Task ClearFilter()
     {
+        _pause.Now();
+        _text = "";
         SetFilter("");
         // The Clear button goes with the filter: focus goes back to the box rather than dropping to the page.
         await _filterBox.FocusAsync();
@@ -238,7 +266,9 @@
     // Escape closes without applying, like Tide's other dialogs.
     private async Task OnPanelKey(KeyboardEventArgs e)
     {
-        if (e.Key == "Escape") await Cancel();
+        if (e.Key != "Escape") return;
+        _pause.Now(); // a pending filter doesn't land after the picker closes
+        await Cancel();
     }
 
     // Focus starts in the filter box, Tab stays in the panel (dialog.js), and focus goes back to the opener on close.
@@ -259,6 +289,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        _pause.Now();
         try { await JS.InvokeVoidAsync("tideDialog.close"); }
         catch (JSDisconnectedException) { }
     }
