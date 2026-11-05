@@ -1706,7 +1706,7 @@ else
         }
         _popup.Open(productId, Presenting, _seat is not null);
         await LoadProduct(focus: true);
-        if (Presenting && _product is null && _view?.Product == productId)
+        if (Presenting && _product is null && Meetings.Get(_date)?.Product == productId)
         {
             Meetings.Show(_seat!, null);
             Refresh();
@@ -1743,6 +1743,8 @@ else
         {
             try { card = await StackSvc.CardAsync(id, _teamMax, ShownArticle()); }
             catch (ForbiddenException) { /* not theirs to read: closed quietly */ }
+            // Another was opened (or this one closed, or the edition changed) while it was read: that decides what shows.
+            if (_popup.Shown != id) return;
         }
         if (card is null)
         {
@@ -1773,9 +1775,11 @@ else
             else DropProduct();
         }
         // What this presenter's page can't read (gone since) isn't left open for the room, which they couldn't close.
+        // Only what's still open for the room: the presenter may have opened another while this was read.
         if (_seat is null) return;
-        if (live.Action is not null && _actionDetail is null) Meetings.Open(_seat, null);
-        if (live.Product is not null && _product is null) Meetings.Show(_seat, null);
+        var now = Meetings.Get(_date);
+        if (live.Action is not null && _actionDetail is null && now?.Action == live.Action) Meetings.Open(_seat, null);
+        if (live.Product is not null && _product is null && now?.Product == live.Product) Meetings.Show(_seat, null);
         Refresh();
     }
 
