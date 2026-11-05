@@ -42,6 +42,14 @@ window.tideDialog = (function () {
             var control = container && container.querySelector && container.querySelector('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])');
             this.open(control || fallback);
         },
+        // The ATT&CK picker's columns moved (its filter changed): back to the left edge, smoothly where the CSS allows
+        // (scroll-behavior), and focus back to the filter box if it was in a column that just collapsed (made inert).
+        toStart: function (grid, filterBox) {
+            if (!grid) return;
+            if (grid.scrollLeft > 0) grid.scrollTo({ left: 0 });
+            var active = document.activeElement;
+            if (filterBox && filterBox.focus && (!active || active === document.body || (active.closest && active.closest('[inert]')))) filterBox.focus();
+        },
         close: function () {
             if (opener && opener.isConnected && opener.focus) opener.focus();
             opener = null;
