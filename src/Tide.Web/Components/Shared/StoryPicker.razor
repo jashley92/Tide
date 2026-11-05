@@ -20,33 +20,15 @@
                 <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Link(hint.Id)">Use it</button>
             </div>
         }
-        <input id="story-pick" type="search" class="form-control form-control-sm" maxlength="200" autocomplete="off"
-               placeholder="Find a story, or name a new one" aria-describedby="story-pick-help"
-               @bind="_text" @bind:event="oninput" @bind:after="Find" />
-        <div id="story-pick-help" class="visually-hidden">Matching stories are listed below. Choose one to put the article in it.</div>
-        <ul class="tide-story-results" aria-label="Stories" aria-live="polite">
-            @foreach (var s in _found)
-            {
-                <li @key="s.Id">
-                    <button type="button" class="tide-story-result" disabled="@_busy" @onclick="() => Link(s.Id)">
-                        <span class="tide-story-result-name">@s.Name</span>
-                        <span class="tide-story-result-meta">@Meta(s)</span>
-                    </button>
-                </li>
-            }
-            @if (CanStart)
-            {
-                <li>
-                    <button type="button" class="tide-story-result tide-story-result-new" disabled="@_busy" @onclick="StartStory">
-                        <span class="bi bi-plus-lg" aria-hidden="true"></span> Start a story called “@Text”
-                    </button>
-                </li>
-            }
-            else if (_found.Count == 0)
-            {
-                <li class="small tide-muted px-1">No open stories yet. Type a name to start one.</li>
-            }
-        </ul>
+        <SearchCombobox TItem="StoryRow" Id="story-pick" Type="search" Open="true" Placeholder="Find a story, or name a new one" ListLabel="Stories"
+                        Help="Matching stories are listed below. Choose one to put the article in it." Disabled="_busy"
+                        @bind-Text="_text" @bind-Text:after="Find" Items="_found" Key="s => s.Id" OnPick="s => Link(s.Id)"
+                        NewOption="@(CanStart ? NewStory : null)" OnNew="StartStory" Empty="@(_found.Count == 0 && !CanStart ? NoStories : null)">
+            <ItemTemplate Context="s">
+                <span class="tide-story-result-name">@s.Name</span>
+                <span class="tide-story-result-meta">@Meta(s)</span>
+            </ItemTemplate>
+        </SearchCombobox>
         @if (_changing)
         {
             <button type="button" class="btn btn-link btn-sm px-0" @onclick="StopChanging">Keep it in @(_current?.Name ?? "its story")</button>
@@ -95,6 +77,10 @@
     private int _finding;
 
     private string Text => (_text ?? "").Trim();
+
+    private RenderFragment NewStory => @<text><span class="bi bi-plus-lg" aria-hidden="true"></span> Start a story called “@Text”</text>;
+
+    private static readonly RenderFragment NoStories = @<text>No open stories yet. Type a name to start one.</text>;
 
     // A new story by the words typed, unless a story listed is already called that.
     private bool CanStart => Text.Length > 0 && !_found.Any(s => string.Equals(s.Name, Text, StringComparison.OrdinalIgnoreCase));

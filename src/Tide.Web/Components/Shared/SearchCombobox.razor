@@ -1,0 +1,157 @@
+@* A search box over a short list of results, as the story and adversary pickers use it: an ARIA combobox (role, expanded,
+   aria-activedescendant naming the highlighted option) over a listbox. The box keeps focus; the arrows, Home and End move
+   the highlight, Enter picks it, Esc closes the list. Clicking an option leaves focus in the box (the option takes no
+   focus on mouse-down), so another search can follow straight away. The parent searches (TextChanged, with
+   @bind-Text:after) and hands over the results (Items); an optional last option (NewOption, OnNew) makes a new one from
+   the words typed. Open shows the list all the time, under the box (the story picker); otherwise it drops down while
+   the box has focus. *@
+@typeparam TItem
+
+<div class="tide-combo">
+    <input @ref="_input" id="@Id" type="@Type" class="form-control form-control-sm" role="combobox" autocomplete="off" spellcheck="false"
+           maxlength="@MaxLength" placeholder="@Placeholder" aria-label="@AriaLabel" aria-describedby="@(Id)-help"
+           aria-expanded="@(Expanded ? "true" : "false")" aria-controls="@(Id)-list" aria-autocomplete="list"
+           aria-activedescendant="@(Expanded && _active < Count ? OptionId(_active) : null)"
+           value="@Text" @oninput="Typed" @onkeydown="OnKey" @onfocus="Opened" @onblur="Closed" />
+    <div id="@(Id)-help" class="visually-hidden">@Help</div>
+    @if (Shown)
+    {
+        <div class="@(Open ? "tide-combo-list" : "tide-combo-list tide-combo-pop")">
+            <ul class="tide-story-results" id="@(Id)-list" role="listbox" aria-label="@ListLabel">
+                @for (var i = 0; i < Items.Count; i++)
+                {
+                    var item = Items[i];
+                    var at = i;
+                    <li class="@Option(at)" role="option" id="@OptionId(at)" aria-selected="@(at == _active ? "true" : "false")" @key="Key(item)"
+                        aria-disabled="@(Disabled ? "true" : null)" @onmousedown:preventDefault="true" @onclick="() => Pick(at)">
+                        @ItemTemplate(item)
+                    </li>
+                }
+                @if (NewOption is not null)
+                {
+                    var at = Items.Count;
+                    <li class="@(Option(at) + " tide-story-result-new")" role="option" id="@OptionId(at)" aria-selected="@(at == _active ? "true" : "false")"
+                        aria-disabled="@(Disabled ? "true" : null)" @onmousedown:preventDefault="true" @onclick="() => Pick(at)">
+                        @NewOption
+                    </li>
+                }
+            </ul>
+            @if (Count == 0 && Empty is not null)
+            {
+                <div class="small tide-muted px-1">@Empty</div>
+            }
+            @if (Footer is not null)
+            {
+                <div class="tide-combo-foot">@Footer</div>
+            }
+        </div>
+    }
+    <div class="visually-hidden" role="status">@Status</div>
+</div>
+
+@code {
+    /// <summary>The box's id (a label's for); the list's and options' ids follow from it.</summary>
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+
+    /// <summary>What's typed.</summary>
+    [Parameter] public string? Text { get; set; }
+
+    [Parameter] public EventCallback<string?> TextChanged { get; set; }
+
+    /// <summary>The results for what's typed (or offered with nothing typed).</summary>
+    [Parameter] public IReadOnlyList<TItem> Items { get; set; } = [];
+
+    [Parameter, EditorRequired] public RenderFragment<TItem> ItemTemplate { get; set; } = default!;
+
+    /// <summary>What tells two results apart (their id), for the list's keys.</summary>
+    [Parameter, EditorRequired] public Func<TItem, object> Key { get; set; } = default!;
+
+    [Parameter] public EventCallback<TItem> OnPick { get; set; }
+
+    /// <summary>A last option that makes a new one from what's typed; none when null.</summary>
+    [Parameter] public RenderFragment? NewOption { get; set; }
+
+    [Parameter] public EventCallback OnNew { get; set; }
+
+    /// <summary>Said in the list when there's nothing to choose.</summary>
+    [Parameter] public RenderFragment? Empty { get; set; }
+
+    /// <summary>Under the list: a note, or a link to what was just made.</summary>
+    [Parameter] public RenderFragment? Footer { get; set; }
+
+    /// <summary>Shown under the box all the time, rather than dropping down while it has focus.</summary>
+    [Parameter] public bool Open { get; set; }
+
+    /// <summary>Options don't pick while the parent is busy with the last one.</summary>
+    [Parameter] public bool Disabled { get; set; }
+
+    [Parameter] public string Type { get; set; } = "text";
+    [Parameter] public int MaxLength { get; set; } = 200;
+    [Parameter] public string? Placeholder { get; set; }
+    [Parameter] public string? AriaLabel { get; set; }
+    [Parameter] public string? ListLabel { get; set; }
+    [Parameter] public string Help { get; set; } = "Use the up and down arrows to choose, Enter to pick.";
+
+    /// <summary>Read out as the results change ("3 results").</summary>
+    [Parameter] public string? Status { get; set; }
+
+    private ElementReference _input;
+    private IReadOnlyList<TItem>? _seen;
+    internal bool _focused;
+    internal int _active;
+
+    private int Count => Items.Count + (NewOption is null ? 0 : 1);
+    internal bool Shown => Open || _focused;
+    private bool Expanded => Shown && Count > 0;
+
+    private string OptionId(int i) => $"{Id}-opt-{i}";
+    private string Option(int i) => i == _active && Expanded ? "tide-story-result tide-combo-opt is-active" : "tide-story-result tide-combo-opt";
+
+    // New results put the highlight back on the first.
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(_seen, Items)) return;
+        _seen = Items;
+        _active = 0;
+    }
+
+    private async Task Typed(ChangeEventArgs e)
+    {
+        _focused = true;
+        await TextChanged.InvokeAsync(e.Value?.ToString());
+    }
+
+    private void Opened() => _focused = true;
+
+    private void Closed() => _focused = false;
+
+    internal async Task OnKey(KeyboardEventArgs e)
+    {
+        var count = Count;
+        switch (e.Key)
+        {
+            case "ArrowDown" when !Shown: _focused = true; break;
+            case "ArrowDown": _active = count == 0 ? 0 : (_active + 1) % count; break;
+            case "ArrowUp": _active = count == 0 ? 0 : (_active - 1 + count) % count; break;
+            case "Home" when e.CtrlKey || string.IsNullOrEmpty(Text): _active = 0; break;
+            case "End" when e.CtrlKey || string.IsNullOrEmpty(Text): _active = Math.Max(0, count - 1); break;
+            case "Enter" when Shown && _active < count: await Pick(_active); break;
+            case "Escape": _focused = false; break;
+        }
+    }
+
+    internal async Task Pick(int at)
+    {
+        if (Disabled) return;
+        if (at < Items.Count) await OnPick.InvokeAsync(Items[at]);
+        else if (NewOption is not null) await OnNew.InvokeAsync();
+    }
+
+    /// <summary>Puts focus back in the box (after a step that took it, such as a confirmation).</summary>
+    public async Task FocusAsync()
+    {
+        try { await _input.FocusAsync(); }
+        catch (JSDisconnectedException) { /* the tab has gone */ }
+        catch (InvalidOperationException) { /* not rendered interactively (a prerender or a test) */ }
+    }
+}

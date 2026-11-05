@@ -4,6 +4,7 @@ using Tide.Application.Abstractions;
 using Tide.Application.Articles;
 using Tide.Application.Content;
 using Tide.Application.Mitre;
+using Tide.Application.Search;
 using Tide.Application.Security;
 using Tide.Application.Stack;
 using Tide.Domain.Entities;
@@ -53,6 +54,35 @@ public sealed record AdversaryDetail(Adversary Adversary, string? MergedIntoName
 
 /// <summary>An article's profiles: those it's tagged with, and those it names but isn't tagged with (a suggestion).</summary>
 public sealed record ArticleAdversaries(IReadOnlyList<Adversary> Tagged, IReadOnlyList<Adversary> Suggested);
+
+/// <summary>Why the article editor's adversary picker lists a profile.</summary>
+public enum AdversaryPickReason
+{
+    /// <summary>The article's text names it (with nothing typed).</summary>
+    Named,
+    /// <summary>It's watched (with nothing typed).</summary>
+    Watched,
+    /// <summary>It was tagged on an article lately (with nothing typed).</summary>
+    Recent,
+    /// <summary>One of its names, or its MITRE id, holds what was typed.</summary>
+    Match,
+}
+
+/// <summary>
+/// A profile the adversary picker lists: <see cref="Alias"/> is the other name that matched what was typed, when its own
+/// name didn't ("APT29 (also Cozy Bear)"); a retired one is listed last and asked about before it's tagged.
+/// </summary>
+public sealed record AdversaryPick(Guid Id, string Name, string? MitreId, bool IsRetired, string? Alias, AdversaryPickReason Reason);
+
+/// <summary>
+/// What the picker lists for the words typed. <see cref="Exact"/>: a live profile has exactly that name, alias or MITRE
+/// id, so there's no "Add it as a new adversary"; <see cref="AlreadyTagged"/> names the one the article already has, when
+/// that's the profile.
+/// </summary>
+public sealed record AdversaryPicks(IReadOnlyList<AdversaryPick> Found, bool Exact, string? AlreadyTagged)
+{
+    public static readonly AdversaryPicks None = new([], false, null);
+}
 
 /// <summary>What importing MITRE ATT&amp;CK's groups and campaigns did.</summary>
 public sealed record MitreImport(int Added, int Updated, int Skipped);
@@ -148,6 +178,106 @@ public sealed class AdversaryService(IAppDbContextFactory dbs, ICurrentUser user
         var words = StackService.Words(article.Title + " " + article.Actors, article.Bluf);
         var suggested = live.Where(a => tagged.All(t => t.Id != a.Id) && StackService.Names(Entry(a), words)).OrderByName(a => a.Name).ToList();
         return new ArticleAdversaries(tagged, suggested);
+    }
+
+    /// <summary>The most profiles the article editor's picker lists at once.</summary>
+    public const int PickLimit = 8;
+
+    // How many profiles a typed search reads from the database before ordering them: the best matches by the database's
+    // own reckoning (exact, then a name starting with it), so however many profiles there are, only these are read.
+    private const int PickCandidates = 50;
+
+    /// <summary>
+    /// What the adversary picker offers before anything is typed, at most <see cref="PickLimit"/>: the profiles the
+    /// article's text names, then the watched ones, then those tagged on any article most recently (by the audit trail);
+    /// never one the article already has, nor a retired one.
+    /// </summary>
+    public async Task<IReadOnlyList<AdversaryPick>> OfferedAsync(Guid articleId, CancellationToken ct = default)
+    {
+        RequireRead();
+        await using var db = await dbs.CreateAsync(ct);
+        var article = await db.Articles.AsNoTracking().Where(a => a.Id == articleId).Select(a => new { a.Title, a.Actors, a.Bluf }).FirstOrDefaultAsync(ct);
+        if (article is null) return [];
+        var tagged = (await db.ArticleAdversaries.AsNoTracking().Where(t => t.ArticleId == articleId).Select(t => t.AdversaryId).ToListAsync(ct)).ToHashSet();
+        var picks = new List<AdversaryPick>();
+        void Offer(IEnumerable<Adversary> profiles, AdversaryPickReason why)
+        {
+            foreach (var a in profiles)
+                if (picks.Count < PickLimit && !tagged.Contains(a.Id) && picks.TrueForAll(p => p.Id != a.Id))
+                    picks.Add(new AdversaryPick(a.Id, a.Name, a.MitreId, false, null, why));
+        }
+        var live = await db.Adversaries.AsNoTracking().Where(a => !a.IsRetired).ToListAsync(ct);
+        var words = StackService.Words(article.Title + " " + article.Actors, article.Bluf);
+        Offer(live.Where(a => StackService.Names(Entry(a), words)).OrderByName(a => a.Name), AdversaryPickReason.Named);
+        Offer(live.Where(a => a.Watched).OrderByName(a => a.Name), AdversaryPickReason.Watched);
+        if (picks.Count < PickLimit)
+        {
+            // An article's tag is keyed "article/profile" in the trail; the newest few, each profile once.
+            var keys = await db.AuditLog.AsNoTracking()
+                .Where(e => e.EntityType == nameof(ArticleAdversary) && e.Action == nameof(EntityState.Added))
+                .OrderByDescending(e => e.AtUtc).ThenBy(e => e.Id).Select(e => e.EntityKey).Take(PickCandidates).ToListAsync(ct);
+            var byId = live.ToDictionary(a => a.Id);
+            var recent = keys.Select(k => Guid.TryParse(k[(k.IndexOf('/') + 1)..], out var id) ? id : Guid.Empty)
+                .Where(byId.ContainsKey).Distinct().Select(id => byId[id]);
+            Offer(recent, AdversaryPickReason.Recent);
+        }
+        return picks;
+    }
+
+    /// <summary>
+    /// The profiles the adversary picker lists for what's typed, at most <see cref="PickLimit"/>: any whose name, other
+    /// names or MITRE id (G0016) holds it, ignoring case; exact matches first, then those starting with it, then the rest,
+    /// retired ones last. The search runs in the database and reads a bounded few, never every profile. Those the article
+    /// is already tagged with aren't listed.
+    /// </summary>
+    public async Task<AdversaryPicks> FindForArticleAsync(Guid articleId, string? words, CancellationToken ct = default)
+    {
+        RequireRead();
+        var text = (words ?? "").Trim();
+        if (text.Length > Adversary.MaxName) text = text[..Adversary.MaxName];
+        if (text.Length == 0) return AdversaryPicks.None;
+        await using var db = await dbs.CreateAsync(ct);
+        var taggedProfiles = await db.ArticleAdversaries.AsNoTracking().Where(t => t.ArticleId == articleId).Select(t => t.Adversary!).ToListAsync(ct);
+        var tagged = taggedProfiles.Select(a => a.Id).ToList();
+        var (any, exact) = (SearchText.Contains(text), SearchText.Literal(text));
+        var starts = exact + "%";
+        // Other names are kept "one; two; three", so an alias is the whole field, or sits between "; " and ";".
+        var (aliasFirst, aliasLast, aliasMiddle, aliasStarts) = (exact + ";%", "%; " + exact, "%; " + exact + ";%", "%; " + starts);
+        var candidates = await db.Adversaries.AsNoTracking()
+            .Where(a => !tagged.Contains(a.Id))
+            .Where(a => EF.Functions.Like(a.Name, any, SearchText.Escape) || EF.Functions.Like(a.Aliases!, any, SearchText.Escape)
+                || EF.Functions.Like(a.MitreId!, any, SearchText.Escape))
+            .OrderBy(a => a.IsRetired)
+            .ThenBy(a => EF.Functions.Like(a.Name, exact, SearchText.Escape) || EF.Functions.Like(a.MitreId!, exact, SearchText.Escape)
+                || EF.Functions.Like(a.Aliases!, exact, SearchText.Escape) || EF.Functions.Like(a.Aliases!, aliasFirst, SearchText.Escape)
+                || EF.Functions.Like(a.Aliases!, aliasLast, SearchText.Escape) || EF.Functions.Like(a.Aliases!, aliasMiddle, SearchText.Escape) ? 0
+                : EF.Functions.Like(a.Name, starts, SearchText.Escape) || EF.Functions.Like(a.Aliases!, starts, SearchText.Escape)
+                    || EF.Functions.Like(a.Aliases!, aliasStarts, SearchText.Escape) || EF.Functions.Like(a.MitreId!, starts, SearchText.Escape) ? 1 : 2)
+            .ThenBy(a => a.Name)
+            .Take(PickCandidates).ToListAsync(ct);
+        var matched = candidates.Select(a => (Profile: a, Match: Matching(a, text))).Where(x => x.Match.Rank < NoMatch).ToList();
+        var found = matched.OrderBy(x => x.Profile.IsRetired).ThenBy(x => x.Match.Rank).ThenByName(x => x.Profile.Name).Take(PickLimit)
+            .Select(x => new AdversaryPick(x.Profile.Id, x.Profile.Name, x.Profile.MitreId, x.Profile.IsRetired, x.Match.Alias, AdversaryPickReason.Match))
+            .ToList();
+        var already = taggedProfiles.Find(a => !a.IsRetired && Matching(a, text).Rank == ExactMatch)?.Name;
+        var isExact = already is not null || matched.Exists(x => !x.Profile.IsRetired && x.Match.Rank == ExactMatch);
+        return new AdversaryPicks(found, isExact, already);
+    }
+
+    private const int ExactMatch = 0, NoMatch = 3;
+
+    // How well a profile matches what was typed (exact, starts with it, holds it, or not at all), and the other name that
+    // did when its own name matched less well. The name wins a tie, then the MITRE id, then the first alias.
+    internal static (int Rank, string? Alias) Matching(Adversary a, string text)
+    {
+        int Rank(string term) => string.Equals(term, text, StringComparison.OrdinalIgnoreCase) ? ExactMatch
+            : term.StartsWith(text, StringComparison.OrdinalIgnoreCase) ? 1
+            : term.Contains(text, StringComparison.OrdinalIgnoreCase) ? 2 : NoMatch;
+        var best = (Rank: Rank(a.Name), Alias: (string?)null);
+        if (a.MitreId is { } mitre && Rank(mitre) < best.Rank) best = (Rank(mitre), null);
+        foreach (var alias in StackService.SplitNames(a.Aliases))
+            if (Rank(alias) < best.Rank) best = (Rank(alias), alias);
+        return best;
     }
 
     /// <summary>
