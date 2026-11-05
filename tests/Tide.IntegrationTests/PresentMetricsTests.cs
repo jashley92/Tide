@@ -167,8 +167,16 @@ public class PresentMetricsTests(TideApp app) : IClassFixture<TideApp>
         var bad = () => svc.SetGroupChartAsync(g, (MetricChart)42);
         await bad.Should().ThrowAsync<ArgumentException>();
 
+        foreach (var kind in new[] { MetricChart.SmallMultiples, MetricChart.Stacked, MetricChart.Bullet })
+        {
+            await svc.SetGroupChartAsync(g, kind);
+            (await svc.ListAsync()).Single(x => x.Id == g).Chart.Should().Be(kind);
+        }
+
         await using var page = await RenderAsync<MetricsAdmin>(app, "/admin/metrics");
-        (await page.Html()).Should().Contain($"id=\"chart-{g}\"").And.Contain("Share of the whole").And.Contain("Side by side");
+        (await page.Html()).Should().Contain($"id=\"chart-{g}\"").And.Contain("Share of the whole").And.Contain("Side by side")
+            .And.Contain("One trend per metric").And.Contain("Mix over time").And.Contain("Against threshold")
+            .And.Contain($"id=\"chart-help-{g}\">Against threshold: Suits metrics with warning and critical thresholds");
     }
 
     [Fact]
@@ -198,5 +206,43 @@ public class PresentMetricsTests(TideApp app) : IClassFixture<TideApp>
         (await Chart(MetricChart.Bars, Tile("Open", 4), Tile("Closed", 2))).Should().Contain("width: 100%").And.Contain("width: 50%");
         (await Chart(MetricChart.Bars, Tile("Open", 0), Tile("Closed", 0))).Should().Contain("width: 0%").And.Contain("<strong>0</strong>");
         (await Chart(MetricChart.None, Tile("Open", 4))).Trim().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task TheNewerChartKinds_Render_IncludingWithNoHistoryAllZerosAndNoThresholds()
+    {
+        MetricTile Tile(string name, decimal? v, decimal? warn, decimal? critical, MetricDirection direction, params decimal?[] trend)
+        {
+            var metric = new MetricDefinition { Name = name, Key = name, Direction = direction, WarnThreshold = warn, CriticalThreshold = critical };
+            return new(metric, v, null, null, MetricMath.LevelOf(metric, v), []) { Trend = trend };
+        }
+        MetricTile Plain(string name, decimal? v, params decimal?[] trend) => Tile(name, v, null, null, MetricDirection.Neutral, trend);
+        async Task<string> Chart(MetricChart kind, params MetricTile[] tiles)
+        {
+            var group = new MetricGroupDay(new MetricGroup { Name = "Cases", Key = "cases", Chart = kind }, tiles);
+            await using var r = await RenderAsync<MetricGroupChart>(app, "/present", new() { ["Group"] = group, ["Days"] = (IReadOnlyList<DateOnly>)MetricMath.WorkingDaysWithin(Today, 7) });
+            return await r.Html();
+        }
+
+        var multiples = await Chart(MetricChart.SmallMultiples, Plain("Alerts", 1200, 800, 1000, null, 1100, 1200), Tile("Escalated", 12, 10, null, MetricDirection.LowerIsBetter, 1, 2, 3, 11, 12));
+        multiples.Should().Contain("tide-mchart-cols-2").And.Contain("each on its own scale").And.Contain(">1,200</text>").And.Contain(">12</text>")
+            .And.Contain("<polygon class=\"tide-mchart-area\"").And.Contain("tide-mchart-latest").And.Contain("tide-mchart-ring tide-level-warn")
+            .And.Contain("past the warning threshold");
+        multiples.Split("<svg").Should().HaveCount(3, "a panel each");
+        (await Chart(MetricChart.SmallMultiples, Plain("Alerts", 2), Plain("Escalated", 1))).Should().Contain("No history yet").And.NotContain("<svg");
+
+        var stacked = await Chart(MetricChart.Stacked, Plain("Phishing", 30, 10, null, 20, 25, 30), Plain("Malware", 10, 10, null, 0, 5, 10));
+        stacked.Should().Contain("tide-mchart-stacked").And.Contain("<rect").And.Contain(">40</text>").And.Contain(">20</text>")
+            .And.Contain("75%").And.Contain("25%");
+        stacked.Split("<rect").Should().HaveCount(8, "seven parts over four days, the day with no values a gap and a 0 no part");
+        (await Chart(MetricChart.Stacked, Plain("Phishing", 0, 0, 0, 0, 0, 0), Plain("Malware", 0))).Should().Contain("no value is above 0").And.NotContain("<rect");
+        (await Chart(MetricChart.Stacked, Plain("Phishing", 3, null, null, null, null, 3))).Should().Contain("No history yet").And.NotContain("<rect");
+
+        var bullets = await Chart(MetricChart.Bullet, Tile("Waiting", 25, 10, 20, MetricDirection.LowerIsBetter),
+            Tile("Coverage", 97, 95, 90, MetricDirection.HigherIsBetter), Plain("Hunts", 4));
+        bullets.Should().Contain("tide-mchart-bullets").And.Contain("tide-mchart-band-normal").And.Contain("tide-mchart-band-warn").And.Contain("tide-mchart-band-critical")
+            .And.Contain("warning 10").And.Contain("critical 20").And.Contain("critical 90").And.Contain("no threshold set")
+            .And.Contain("past the critical threshold", "today's value carries its level mark");
+        bullets.Split("no threshold set").Should().HaveCount(2, "only Hunts has none");
     }
 }
