@@ -157,4 +157,20 @@ public class BriefReopenPageTests(TideApp app) : IClassFixture<TideApp>
         await panel.Click(d => { d.NotSentReason("No reason needed?"); return d.FinishNotSent(); });
         (await panel.Html()).Should().Contain("End the meeting first");
     }
+
+    // Distributed while email was off, and email on since: it's finished, so there's nothing to finish without sending, and
+    // no empty "Finish without sending" card is drawn.
+    [Fact]
+    public async Task NotSent_IsntOffered_ForABriefDistributedBeforeEmailWasOn()
+    {
+        var (day, _, _) = await Presented(93, carry: false);
+        Brief? read;
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            read = await scope.ServiceProvider.GetRequiredService<BriefService>().GetAsync(day);
+        read!.Status = BriefStatus.Sent;
+        read.DistributedAtUtc = DateTimeOffset.UtcNow;
+        read.DistributedByName = "Tester";
+        await using var panel = await RenderAsync<DistributePanel>(app, "/", new() { ["Date"] = day, ["Brief"] = read });
+        (await panel.Html()).Should().NotContain("Finish without sending");
+    }
 }

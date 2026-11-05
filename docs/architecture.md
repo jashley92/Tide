@@ -215,7 +215,8 @@ for a past day's brief that day's meeting time unless the presenter picks anothe
 recorded. A meeting can't be held before its day or in the future.
 
 A meeting ended by mistake or too soon can be reopened (`BriefService.ReopenAsync`, "Back to ready" on the brief page,
-`PresentBriefs`) while the brief is Presented, never once it's Sent or finished as not sent. The brief goes back to
+`PresentBriefs`) while the brief is Presented, never once it's Sent or finished as not sent, nor while a real send of it
+is with the relay or has an unknown outcome (that send would finish the brief when it lands or is settled). The brief goes back to
 Ready and both times are cleared (the audit trail keeps them). Ending the meeting records, on each `BriefItem`, the
 status its article had before (`StatusBeforeMeeting`), and each carried item records the brief it came from
 (`CarriedFromBriefId`); reopening puts those articles back, leaves one presented earlier on another brief alone, and
