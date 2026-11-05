@@ -91,16 +91,10 @@
 @code {
     private bool _open, _about, _dark, _shortcuts = true;
 
-    // Most privileged first, so the chip reads as access level.
-    private IReadOnlyList<AppRole> Roles => CurrentUser.Roles.OrderByDescending(r => r switch
-    {
-        AppRole.Admin => 5,
-        AppRole.Analyst => 4,
-        AppRole.ActionOwner => 3,
-        AppRole.Viewer => 2,
-        AppRole.Visitor => 1,
-        _ => 0,
-    }).ToList();
+    // Most privileged first (as the Capabilities columns run), so the chip reads as access level.
+    private IReadOnlyList<AppRole> Roles => CurrentUser.Roles.OrderBy(Rank.IndexOf).ToList();
+
+    private static readonly List<AppRole> Rank = [.. Capabilities.Columns];
 
     // "Administrator", "Action owner", "Viewer", "Visitor": as the Role mappings page names them.
     private static string RoleLabel(AppRole r) => RoleDefinitions.Label(r);

@@ -142,24 +142,21 @@
                                     <label class="form-check-label" for="@id">@KindText(kind)</label>
                                 </div>
                                 <div class="small tide-muted">@KindAbout(kind)@(last is null ? "" : $" · last run {Ui.When(Clock, last.AtUtc)}: {(last.Error ?? $"{last.Sent} sent")}{(last.Note is { } note ? $" ({note})" : "")}")</div>
-                                @if (PreferenceOf(kind) is { } pref)
-                                {
-                                    @Count(pref)
-                                }
+                                @Count(PreferenceOf(kind))
                             </td>
                             <td class="text-end"><button class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@_busy" aria-label="Run @KindText(kind) now" @onclick="() => RunNow(kind)">Run now</button></td>
                         </tr>
-                        @if (PreferenceOf(kind) is { } shown && _showing == shown)
+                        @if (_showing == PreferenceOf(kind))
                         {
-                            <tr><td colspan="2" class="pt-0">@List(shown, KindText(kind))</td></tr>
+                            <tr><td colspan="2" class="pt-0">@List(_showing, KindText(kind))</td></tr>
                         }
                     }
                     <tr>
                         <td colspan="2">
-                            <div>Rotation requests and notices</div>
+                            <div>@NotificationKinds.RotationRequests.Title</div>
                             <div class="small tide-muted">Swap and cover requests, and approved, recorded or declined notices: always sent. The managers' copies aren't anyone's to turn off.</div>
-                            @Count(UserPreferences.NotifyRotationRequests)
-                            @if (_showing == UserPreferences.NotifyRotationRequests) { @List(UserPreferences.NotifyRotationRequests, "Rotation requests and notices") }
+                            @Count(NotificationKinds.RotationRequests.Name)
+                            @if (_showing == NotificationKinds.RotationRequests.Name) { @List(_showing, NotificationKinds.RotationRequests.Title) }
                         </td>
                     </tr>
                 </tbody>
@@ -202,7 +199,7 @@
                 {
                     var id = "zip-" + mode;
                     <div class="form-check">
-                        <input class="form-check-input" type="radio" name="zip-mode" id="@id" checked="@(_zip == mode)" @onchange="() => _zip = mode" />
+                        <input class="form-check-input" type="radio" name="zip-mode" id="@id" checked="@(Zip == mode)" @onchange="() => Zip = mode" />
                         <label class="form-check-label" for="@id">@text</label>
                     </div>
                 }
@@ -225,7 +222,6 @@
     private readonly Dictionary<Priority, int?> _byPriority = [];
     private readonly Dictionary<ActionKind, int?> _byKind = [];
     private ReminderForm _rem = new();
-    private ZipDownloads _zip;
 
     internal static readonly IReadOnlyList<(ZipDownloads Mode, string Text)> ZipChoices =
     [
@@ -234,7 +230,7 @@
         (ZipDownloads.Never, "Never: every file downloads as it is"),
     ];
 
-    internal ZipDownloads Zip { get => _zip; set => _zip = value; }
+    internal ZipDownloads Zip { get; set; }
 
     internal async Task SaveZip()
     {
@@ -242,7 +238,7 @@
         _busy = true;
         try
         {
-            await Settings.SaveAsync(new Dictionary<string, string?> { [OperationalSettings.ZipDownloads] = _zip.ToString() });
+            await Settings.SaveAsync(new Dictionary<string, string?> { [OperationalSettings.ZipDownloads] = Zip.ToString() });
             Toasts.Show("Saved.");
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
@@ -283,7 +279,7 @@
         // Before the first await: the page renders as soon as one yields (on SQL Server they do), and the reminder
         // switches read this form.
         _rem = ReminderForm.From(Reminders);
-        _zip = FileSvc.ZipMode;
+        Zip = FileSvc.ZipMode;
         _counts = await NotifyPrefs.CountsAsync();
         _people = await Users.ListAsync();
         var targets = await Sla.GetAsync();
@@ -317,14 +313,7 @@
     };
 
     // The choice in My notifications that leaves people out of a kind (or, for the personal digest, takes it).
-    private static string? PreferenceOf(ReminderKind k) => k switch
-    {
-        ReminderKind.DueSoon => UserPreferences.NotifyDueSoon,
-        ReminderKind.Overdue => UserPreferences.NotifyOverdue,
-        ReminderKind.Digest => UserPreferences.NotifyTeamDigest,
-        ReminderKind.PersonalDigest => UserPreferences.NotifyDigest,
-        _ => UserPreferences.NotifyRotationReminders,
-    };
+    private static string PreferenceOf(ReminderKind k) => NotificationKinds.For(k).Name;
 
     private IReadOnlyDictionary<string, int> _counts = new Dictionary<string, int>();
     private string? _showing;

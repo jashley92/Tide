@@ -65,7 +65,7 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
     /// only from a seat in its live meeting (<see cref="MeetingAccess"/>).</summary>
     public async Task<Brief?> GetAsync(DateOnly date, CancellationToken ct = default)
     {
-        var visitor = !user.Has(Permission.ReadTeamEdition) && MeetingAccess.SeatedOn(user, _meetings, date);
+        var visitor = MeetingAccess.SeatedOn(user, _meetings, date);
         if (!visitor) RequireRead();
         await using var db = await dbs.CreateAsync(ct);
         var brief = await Load(db.Briefs.AsNoTracking()).FirstOrDefaultAsync(b => b.BriefDate == date, ct);

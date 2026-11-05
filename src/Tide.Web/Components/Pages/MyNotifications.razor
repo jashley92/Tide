@@ -102,7 +102,7 @@ else
 
     // The due-soon and overdue reminders list what a digest lists too.
     private bool InDigest(string name) => _mine is { DigestOffered: true } m && m.Digest != UserPreferences.Off
-        && name is UserPreferences.NotifyDueSoon or UserPreferences.NotifyOverdue;
+        && NotificationKinds.For(name).InDigest;
 
     internal Task Set(NotificationSwitch s, bool on) =>
         Save(s.Name, on ? UserPreferences.On : UserPreferences.Off, $"{s.Title} {(on ? "on" : "off")}.");
@@ -122,14 +122,22 @@ else
         {
             await Prefs.SetMineAsync(name, value);
             Toasts.Show(saved);
+            // Saved as chosen (a kind that's off for everyone is refused): show it without reading everything again.
+            if (_mine is { } m)
+                _mine = name == UserPreferences.NotifyDigest ? m with { Digest = value }
+                    : m with { Switches = [.. m.Switches.Select(s => s.Name == name ? s with { On = value == UserPreferences.On } : s)] };
         }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            _busy = false;
+            // What's saved, as this one wasn't.
+            try { _mine = await Prefs.GetMineAsync(); }
+            catch (Exception again) { Toasts.Error(UserFacingError.For(again)); }
+        }
         finally
         {
             _busy = false;
-            // What's saved, whether or not this one was.
-            try { _mine = await Prefs.GetMineAsync(); }
-            catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
             StateHasChanged();
         }
     }

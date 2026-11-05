@@ -27,7 +27,7 @@ public sealed record NotificationChooser(string UserId, string Name, string? Ema
 /// People's own choices about the notification emails, kept in the per-user preference store (<see cref="UserPreferences"/>):
 /// one on/off switch per kind (on by default) and the personal digest (off by default). An administrator still turns each
 /// kind on or off for everyone on Teams &amp; SLA; a person can only turn off what's on, and can't change anyone else's.
-/// The reminders and the rotation read the choices where they pick recipients (<see cref="OptedOutAsync"/>). The
+/// The reminders and the rotation read the choices where they pick recipients (<see cref="RecipientResolver"/>). The
 /// brief's distribution, the test copies people send themselves and corrections never read them.
 /// </summary>
 public sealed class NotificationPreferenceService(IAppDbContextFactory dbs, ICurrentUser user, UserPreferenceService preferences,
@@ -43,51 +43,31 @@ public sealed class NotificationPreferenceService(IAppDbContextFactory dbs, ICur
     public const string AlsoInDigest = "You also get these in your digest.";
 
     /// <summary>The on/off switches, in the page's order.</summary>
-    public static readonly IReadOnlyList<string> Switches =
-        [NotifyDueSoon, NotifyOverdue, NotifyTeamDigest, NotifyRotationReminders, NotifyRotationRequests];
+    public static readonly IReadOnlyList<string> Switches = [.. NotificationKinds.All.Where(k => k.IsSwitch).Select(k => k.Name)];
 
     /// <summary>What each switch is called, and what it covers.</summary>
-    public static (string Title, string About) Describe(string name) => name switch
+    public static (string Title, string About) Describe(string name)
     {
-        NotifyDueSoon => ("Due-soon reminders", "Actions due today or the next business day: yours, or your team's when it has no mailbox."),
-        NotifyOverdue => ("Overdue reminders", "Actions past their due date: yours, or your team's when it has no mailbox."),
-        NotifyTeamDigest => ("Weekly team digest", "Your team's week, when it comes to its members because the team has no mailbox. A team mailbox still gets it."),
-        NotifyRotationReminders => ("Rotation reminders", "\"You're presenting\" before your brief days, and the nudge when today's brief isn't ready."),
-        NotifyRotationRequests => ("Rotation requests and notices", "Swap or cover requests to you, and notices when one is approved, recorded or declined."),
-        NotifyDigest => ("Personal digest", "Your actions that are due soon or overdue, and those newly given to you."),
-        _ => throw new ArgumentException($"There's no notification named \"{name}\".", nameof(name)),
-    };
-
-    private ReminderOptions Options => reminders.CurrentValue;
+        var kind = NotificationKinds.For(name);
+        return (kind.Title, kind.About);
+    }
 
     /// <summary>Whether an administrator has the kind on for everyone (rotation requests have no switch: always on).</summary>
-    public bool IsOnForEveryone(string name) => name switch
-    {
-        NotifyDueSoon => Options.DueSoon.Enabled,
-        NotifyOverdue => Options.Overdue.Enabled,
-        NotifyTeamDigest => Options.Digest.Enabled,
-        NotifyRotationReminders => Options.Presenting.Enabled || Options.BriefNotReady.Enabled,
-        NotifyDigest => Options.PersonalDigest.Enabled,
-        _ => true,
-    };
-
-    /// <summary>Whether the signed-in person can keep notification choices (anyone who can be sent these emails).</summary>
-    public bool CanChoose => user.IsAuthenticated && user.Has(Permission.ReadActions);
+    public bool IsOnForEveryone(string name) => NotificationKinds.Find(name)?.IsOnForEveryone(reminders.CurrentValue) ?? true;
 
     /// <summary>The signed-in person's choices, with what an administrator has off and where their mail goes.</summary>
     public async Task<MyNotificationChoices> GetMineAsync(CancellationToken ct = default)
     {
         Require();
-        var list = new List<NotificationSwitch>();
-        foreach (var name in Switches.Where(n => user.Has(For(n).Needs)))
+        var kinds = NotificationKinds.All.Where(k => k.IsSwitch && user.Has(k.Needs)).ToList();
+        var mine = await preferences.GetAsync(kinds.Select(k => k.Name).Append(NotifyDigest), ct);
+        var list = kinds.Select(k =>
         {
-            var (title, about) = Describe(name);
-            var everyone = IsOnForEveryone(name);
-            var mine = await preferences.GetAsync(name, ct) == On;
-            list.Add(new NotificationSwitch(name, title, about, name == NotifyRotationReminders ? DutyNote : null, everyone && mine, !everyone));
-        }
+            var everyone = IsOnForEveryone(k.Name);
+            return new NotificationSwitch(k.Name, k.Title, k.About, k.Note, everyone && mine[k.Name] == On, !everyone);
+        }).ToList();
         var address = await OwnAddress.ForAsync(user, dbs, ct);
-        return new MyNotificationChoices(address, list, await preferences.GetAsync(NotifyDigest, ct), IsOnForEveryone(NotifyDigest));
+        return new MyNotificationChoices(address, list, mine[NotifyDigest], IsOnForEveryone(NotifyDigest));
     }
 
     /// <summary>
@@ -97,7 +77,7 @@ public sealed class NotificationPreferenceService(IAppDbContextFactory dbs, ICur
     public async Task SetMineAsync(string name, string value, CancellationToken ct = default)
     {
         Require();
-        if (name != NotifyDigest && !Switches.Contains(name)) throw new ArgumentException($"There's no notification named \"{name}\".", nameof(name));
+        NotificationKinds.For(name);
         if (!IsOnForEveryone(name)) throw new InvalidOperationException($"{Describe(name).Title}: {OffForEveryoneText}.");
         await preferences.SetAsync(name, value, ct);
     }
@@ -123,7 +103,7 @@ public sealed class NotificationPreferenceService(IAppDbContextFactory dbs, ICur
     public async Task<IReadOnlyList<NotificationChooser>> PeopleAsync(string name, CancellationToken ct = default)
     {
         RequireAdmin();
-        Describe(name);
+        NotificationKinds.For(name);
         await using var db = await dbs.CreateAsync(ct);
         var rows = await db.UserPreferences.AsNoTracking().Where(p => p.Name == name).ToListAsync(ct);
         rows = [.. rows.Where(r => Chose(name, r.Value))];
@@ -137,19 +117,6 @@ public sealed class NotificationPreferenceService(IAppDbContextFactory dbs, ICur
 
     // A row that counts: an opt-out of a switch, or a digest taken.
     private static bool Chose(string name, string value) => name == NotifyDigest ? value is Daily or Weekly : value == Off;
-
-    // --- for the senders ---------------------------------------------------------------------------------------
-
-    /// <summary>Which of <paramref name="userIds"/> turned <paramref name="name"/> off. The senders run as the system, so
-    /// this reads others' choices; it says only who not to email.</summary>
-    internal static async Task<HashSet<string>> OptedOutAsync(IAppDbContext db, string name, IEnumerable<string> userIds, CancellationToken ct)
-    {
-        var ids = userIds.Distinct().ToList();
-        if (ids.Count == 0) return [];
-        var off = await db.UserPreferences.AsNoTracking().Where(p => p.Name == name && p.Value == Off && ids.Contains(p.UserId))
-            .Select(p => p.UserId).ToListAsync(ct);
-        return [.. off];
-    }
 
     private void Require()
     {
