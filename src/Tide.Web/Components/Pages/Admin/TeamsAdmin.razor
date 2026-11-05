@@ -122,7 +122,7 @@
             <div class="row g-2 mb-2">
                 <div class="col-sm-6">
                     <label class="tide-field-label" for="rem-time">Due-soon and overdue reminders go at</label>
-                    <input id="rem-time" type="time" class="form-control form-control-sm" @bind="_rem.ReminderTime" @bind:format="HH:mm" aria-describedby="rem-time-help" />
+                    <TimeBox Id="rem-time" @bind-Value="_rem.ReminderTime" DescribedBy="rem-time-help" />
                     <div class="form-text" id="rem-time-help">On business days; the brief rotation reminder goes then too.</div>
                 </div>
             </div>
@@ -154,11 +154,11 @@
                 </div>
                 <div class="col-sm-6">
                     <label class="tide-field-label" for="rem-digest-time">Digest goes at</label>
-                    <input id="rem-digest-time" type="time" class="form-control form-control-sm" @bind="_rem.DigestTime" @bind:format="HH:mm" />
+                    <TimeBox Id="rem-digest-time" @bind-Value="_rem.DigestTime" />
                 </div>
                 <div class="col-sm-6">
                     <label class="tide-field-label" for="rem-bnr-time">Brief-not-ready nudge at</label>
-                    <input id="rem-bnr-time" type="time" class="form-control form-control-sm" @bind="_rem.BriefNotReadyTime" @bind:format="HH:mm" aria-describedby="rem-bnr-help" />
+                    <TimeBox Id="rem-bnr-time" @bind-Value="_rem.BriefNotReadyTime" DescribedBy="rem-bnr-help" />
                     <div class="form-text" id="rem-bnr-help">Before the meeting (@Clock.MeetingTime.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture)), or it isn't sent.</div>
                 </div>
                 <div class="col-12">
