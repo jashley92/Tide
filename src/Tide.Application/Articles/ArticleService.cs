@@ -326,7 +326,8 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
         a.WhyItMatters = CleanOrNull(form.WhyItMatters, MaxLongText, multiline: true);
         a.WhyItMattersTlp = Tlp.Checked(form.WhyItMattersTlp);
         a.RecommendedActions = CleanOrNull(form.RecommendedActions, MaxLongText, multiline: true);
-        a.Actors = CleanOrNull(form.Actors, 500);
+        // Not Actors: the free-text "Threat actors" box was retired for the adversary picker. What it held is kept as the
+        // earlier note (AdversaryService), never written from the form.
         a.Sectors = CleanOrNull(form.Sectors, 500);
 
         SaveBullets(db, a, form.Bullets);

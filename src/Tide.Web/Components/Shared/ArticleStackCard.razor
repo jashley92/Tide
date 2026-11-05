@@ -1,7 +1,12 @@
-@* The article's products from Our stack (EP-25), in the editor's Related tab: each tagged product with its versions,
-   the start of its notes, and how much else has been written about it; the products the article names but isn't tagged
-   with, offered as a one-click tag; and, for analysts, a picker to tag any product or add a new one. Tagging is optional
-   and saved straight away. *@
+@* The article's products from Our stack (EP-25), "We run": inside the editor's "Why it matters to us" section, under its
+   text, always open; for someone who can't edit (the editor's fields are hidden from them), a read-only card in the
+   rail (Boxed). Each tagged product shows its versions, the start of its notes and how much else has been written about
+   it, and for an analyst a "Mention" that adds it to why it matters; the products the article names but isn't tagged
+   with are offered as a one-click tag. Analysts tag with the same search picker as Threat actors (SearchCombobox): with
+   nothing typed it offers the products the text names, then those tagged lately; typing finds one by its name or other
+   names ("Ivanti Connect Secure (also Pulse Secure)"), a few at a time (StackService.PickLimit), retired ones last and
+   asked about first; and offers to add one to Our stack by the words typed, as triage's "Add to what we run…" does,
+   with a link to fill it in. After a pick the box clears and keeps focus. Tagging is optional and saved straight away. *@
 @using Tide.Application.Stack
 @inject StackService Stack
 @inject ToastService Toasts
@@ -9,19 +14,104 @@
 @inject ChangeOrigin Origin
 @implements IDisposable
 
-<div class="tide-card tide-stack-card">
-    <h2>We run <a class="ms-auto small fw-normal" href="stack">Our stack</a></h2>
-    @if (_stack is null)
+@if (Boxed)
+{
+    <div class="tide-card tide-stack-card">
+        <h2>We run <a class="ms-auto small fw-normal" href="stack">Our stack</a></h2>
+        @Body
+    </div>
+}
+else
+{
+    <div class="tide-tagfield tide-werun">
+        <div class="tide-tagfield-head">
+            <h3 id="werun-h-@ArticleId" class="tide-subhead my-0">We run</h3>
+            <a class="small" href="stack">Our stack</a>
+        </div>
+        @Body
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid ArticleId { get; set; }
+    [Parameter] public bool CanWrite { get; set; }
+
+    /// <summary>Drawn as a card of its own (the rail, for someone who can't edit), rather than inside why it matters.</summary>
+    [Parameter] public bool Boxed { get; set; }
+
+    /// <summary>Adds text to why it matters (ArticleEditorPanel.MentionAsync), for a product's "Mention".</summary>
+    [Parameter] public EventCallback<string> OnMention { get; set; }
+
+    private ArticleStack? _stack;
+    private readonly Dictionary<Guid, StackDetail?> _details = new();
+    private IReadOnlyList<ProductPick> _offered = [];
+    private ProductPicks _found = ProductPicks.None;
+    private (Guid Id, string Name)? _added;
+    internal SearchCombobox<ProductPick>? _combo;
+    internal ConfirmDialog? _confirm;
+    // What's typed in the picker (internal for the tests); a slower answer for what was typed before is dropped.
+    internal string? _text;
+    private readonly TypingPause _pause = new();
+    private bool _busy, _disposed;
+
+    private string PickId => $"stack-pick-{ArticleId}";
+
+    // A colleague's tag or untag on this article (or any save of it) reloads the card; one heard during this card's own
+    // change is read once that change is done.
+    private LiveChanges? _live;
+    private volatile string _topic = "", _tagsTopic = "";
+    private bool _heardWhileBusy;
+
+    protected override void OnInitialized() =>
+        _live = new LiveChanges(Feed, Origin, c => c.Topic == _topic || c.Topic == _tagsTopic, InvokeAsync, async _ =>
+        {
+            if (_busy) { _heardWhileBusy = true; return; }
+            await Load();
+            StateHasChanged();
+        });
+
+    public void Dispose()
     {
-        <LoadingBlock Rows="1" />
+        _disposed = true;
+        _live?.Dispose();
     }
-    else
+
+    protected override async Task OnParametersSetAsync()
     {
-        @if (_stack.Tagged.Count == 0)
+        _topic = ChangeFeed.Article(ArticleId);
+        _tagsTopic = ChangeFeed.ArticleTags(ArticleId);
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        try
+        {
+            // With nothing typed the picker offers these; with words, it searches again, so a colleague's tag drops out.
+            (_stack, var offered) = await Stack.ForArticleCardAsync(ArticleId, offer: CanWrite);
+            if (CanWrite)
+            {
+                _offered = offered;
+                if (Text.Length > 0) await Find();
+            }
+            _details.Clear();
+            foreach (var p in _stack.Tagged) _details[p.Id] = await Stack.GetAsync(p.Id);
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    private RenderFragment Body => __builder =>
+    {
+        if (_stack is null)
+        {
+            <LoadingBlock Rows="1" />
+            return;
+        }
+        if (_stack.Tagged.Count == 0)
         {
             <p class="small tide-muted mb-2">No product tagged.</p>
         }
-        @foreach (var p in _stack.Tagged)
+        foreach (var p in _stack.Tagged)
         {
             var d = _details.GetValueOrDefault(p.Id);
             @* A retired product stays tagged (its history is kept), muted and marked, as present mode's chips show it. *@
@@ -48,7 +138,7 @@
                 }
             </div>
         }
-        @if (CanWrite && _stack.Suggested.Count > 0)
+        if (CanWrite && _stack.Suggested.Count > 0)
         {
             <div class="small mt-2">Names @(string.Join(", ", _stack.Suggested.Select(s => s.Name))):
                 @foreach (var s in _stack.Suggested)
@@ -57,68 +147,35 @@
                 }
             </div>
         }
-        @if (CanWrite)
+        if (CanWrite)
         {
-            <div class="d-flex gap-1 mt-2 flex-wrap">
-                <label class="visually-hidden" for="stack-pick-@ArticleId">Tag a product</label>
-                <input id="stack-pick-@ArticleId" class="form-control form-control-sm w-auto flex-grow-1" list="stack-list-@ArticleId" maxlength="100"
-                       placeholder="Tag a product, or add one" @bind="_pick" @bind:event="oninput" />
-                <datalist id="stack-list-@ArticleId">
-                    @foreach (var p in _all) { <option value="@p.Name"></option> }
-                </datalist>
-                <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_pick))" @onclick="TagPicked">Tag</button>
+            <div class="mt-2">
+                @if (_added is { } added)
+                {
+                    <div class="small mb-1">Added <a href="@($"stack/{added.Id}")">@added.Name</a> to Our stack. Fill in its versions and notes when you can.</div>
+                }
+                <label class="visually-hidden" for="@PickId">Tag a product we run</label>
+                <SearchCombobox @ref="_combo" TItem="ProductPick" Id="@PickId" MaxLength="Tide.Domain.Entities.StackProduct.MaxName"
+                                Placeholder="Tag a product by any name, or add one" ListLabel="Products we run" Disabled="_busy"
+                                Help="Matching products are listed as you type. Use the up and down arrows to choose, Enter to tag it."
+                                @bind-Text="_text" @bind-Text:after="Typed" Items="Listed" Key="p => p.Id" OnPick="Pick"
+                                NewOption="@(CanAdd ? NewProduct : null)" OnNew="AddNew" Empty="@NothingListed" Status="@Status">
+                    <ItemTemplate Context="p">
+                        <span class="tide-story-result-name">@p.Name@if (p.OtherName is { } other) {<span class="fw-normal tide-muted"> (also @other)</span>}@if (p.IsRetired) {<span class="tide-combo-tag">retired</span>}</span>
+                        @if (Meta(p) is { } meta) { <span class="tide-story-result-meta">@meta</span> }
+                    </ItemTemplate>
+                    <Footer>
+                        @if (Text.Length > 0 && _found.AlreadyTagged is { } tagged)
+                        {
+                            <div>@tagged is already tagged.</div>
+                        }
+                        <span aria-hidden="true">&uarr; &darr; to choose, Enter tags, Esc closes</span>
+                    </Footer>
+                </SearchCombobox>
             </div>
+            <ConfirmDialog @ref="_confirm" />
         }
-    }
-</div>
-
-@code {
-    [Parameter, EditorRequired] public Guid ArticleId { get; set; }
-    [Parameter] public bool CanWrite { get; set; }
-
-    /// <summary>Adds text to why it matters, as the Related tab's "Mention" does.</summary>
-    [Parameter] public EventCallback<string> OnMention { get; set; }
-
-    private ArticleStack? _stack;
-    private IReadOnlyList<Tide.Domain.Entities.StackProduct> _all = [];
-    private readonly Dictionary<Guid, StackDetail?> _details = new();
-    private string? _pick;
-    private bool _busy;
-
-    // A colleague's tag or untag on this article (or any save of it) reloads the card; one heard during this card's own
-    // change is read once that change is done.
-    private LiveChanges? _live;
-    private volatile string _topic = "", _tagsTopic = "";
-    private bool _heardWhileBusy;
-
-    protected override void OnInitialized() =>
-        _live = new LiveChanges(Feed, Origin, c => c.Topic == _topic || c.Topic == _tagsTopic, InvokeAsync, async _ =>
-        {
-            if (_busy) { _heardWhileBusy = true; return; }
-            await Load();
-            StateHasChanged();
-        });
-
-    public void Dispose() => _live?.Dispose();
-
-    protected override async Task OnParametersSetAsync()
-    {
-        _topic = ChangeFeed.Article(ArticleId);
-        _tagsTopic = ChangeFeed.ArticleTags(ArticleId);
-        await Load();
-    }
-
-    private async Task Load()
-    {
-        try
-        {
-            _stack = await Stack.ForArticleAsync(ArticleId);
-            if (CanWrite) _all = await Stack.ProductsAsync();
-            _details.Clear();
-            foreach (var p in _stack.Tagged) _details[p.Id] = await Stack.GetAsync(p.Id);
-        }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
-    }
+    };
 
     // The start of the notes as plain text (no Markdown marks), for the card.
     private static string Short(string text)
@@ -128,7 +185,7 @@
         return plain.Length > 160 ? plain[..160].TrimEnd() + "…" : plain;
     }
 
-    private static string MentionText(Tide.Domain.Entities.StackProduct p) =>
+    internal static string MentionText(Tide.Domain.Entities.StackProduct p) =>
         $"We run {p.Name}{(p.Versions is { } v ? $" ({v})" : "")}.";
 
     // One tag added or removed, not the list as this card last read it, which would drop a colleague's tags since.
@@ -147,6 +204,7 @@
             // Read again if a colleague's change was heard while this one was reading.
             do { _heardWhileBusy = false; await Load(); } while (_heardWhileBusy);
             _busy = false;
+            StateHasChanged();
         }
     }
 
@@ -154,14 +212,97 @@
 
     internal Task Untag(Guid id) => Change(() => Stack.UntagArticleAsync(ArticleId, id), "Untagged.");
 
-    // The name typed: a product on the list, or a new one added by name (it can be filled in on Our stack).
-    internal async Task TagPicked()
+    private string Text => (_text ?? "").Trim();
+
+    // Before anything's typed, the offered few; then the matches.
+    internal IReadOnlyList<ProductPick> Listed => Text.Length == 0 ? _offered : _found.Found;
+
+    // A new product by the words typed, unless one in use already goes by exactly that name.
+    internal bool CanAdd => Text.Length > 0 && !_found.Exact;
+
+    private RenderFragment NewProduct => @<text><span class="bi bi-plus-lg" aria-hidden="true"></span> Add “@Text” to Our stack</text>;
+
+    private RenderFragment? NothingListed => Text.Length == 0 && _offered.Count == 0 ? NothingYet : null;
+
+    private static readonly RenderFragment NothingYet = @<text>Type any name a product we run goes by.</text>;
+
+    private string Status => Text.Length == 0 ? "" : Listed.Count == 1 ? "1 product" : $"{Listed.Count} products";
+
+    private static string? Meta(ProductPick p)
     {
-        if (_busy || string.IsNullOrWhiteSpace(_pick)) return;
+        var why = p.Reason switch
+        {
+            ProductPickReason.Named => "Named in the article",
+            ProductPickReason.Recent => "Tagged lately",
+            _ => null,
+        };
+        return string.Join(" · ", new[] { p.Versions, why }.Where(x => x is not null)) is { Length: > 0 } meta ? meta : null;
+    }
+
+    // Typed in the box: the search runs once typing pauses (TypingPause.SearchMs). A later keystroke, a pick or a clear in
+    // the meantime supersedes it.
+    private async Task Typed()
+    {
+        if (await _pause.Settled() && !_disposed) await Find();
+    }
+
+    // The products for what's typed now.
+    internal async Task Find()
+    {
+        var mine = _pause.Now();
+        ProductPicks found;
+        try { found = await Stack.FindForArticleAsync(ArticleId, _text); }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            return;
+        }
+        if (!_pause.IsLatest(mine)) return;
+        _found = found;
+        StateHasChanged();
+    }
+
+    // A product picked from the list: a retired one only once the analyst says so. The box clears for the next.
+    internal async Task Pick(ProductPick p)
+    {
+        if (_busy) return;
+        if (p.IsRetired && _confirm is not null
+            && !await _confirm.Ask($"{p.Name} is retired", "We no longer run it. Tag the article with it anyway?", "Tag it anyway", danger: false))
+            return;
+        Cleared();
+        await Tag(p.Id);
+        await Refocus();
+    }
+
+    // "Add 'X' to Our stack": triage's way in (StackService.AddByNameAsync, analysts only, refused on the server
+    // otherwise), tagged; a link to fill it in.
+    internal async Task AddNew()
+    {
+        if (_busy || Text.Length == 0) return;
+        var name = Text;
         Guid id;
-        try { id = _all.FirstOrDefault(p => string.Equals(p.Name, _pick.Trim(), StringComparison.OrdinalIgnoreCase))?.Id ?? await Stack.AddByNameAsync(_pick); }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); return; }
-        _pick = null;
+        try { id = await Stack.AddByNameAsync(name); }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            return;
+        }
+        Cleared();
+        _added = (id, name);
         await Tag(id);
+        await Refocus();
+    }
+
+    // Drawn now (the list without the one just tagged), and the box keeps focus for the next.
+    private Task Refocus()
+    {
+        StateHasChanged();
+        return _combo?.FocusAsync() ?? Task.CompletedTask;
+    }
+
+    private void Cleared()
+    {
+        (_text, _found, _added) = (null, ProductPicks.None, null);
+        _pause.Now();
     }
 }

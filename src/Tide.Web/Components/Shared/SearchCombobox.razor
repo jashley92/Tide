@@ -4,8 +4,10 @@
    focus on mouse-down), so another search can follow straight away. The parent searches (TextChanged, with
    @bind-Text:after) and hands over the results (Items); an optional last option (NewOption, OnNew) makes a new one from
    the words typed. Open shows the list all the time, under the box (the story picker); otherwise it drops down while
-   the box has focus. *@
+   the box has focus. As the arrows move the highlight, the highlighted option is scrolled into view (js/combo.js), so a
+   long list never highlights one out of sight. *@
 @typeparam TItem
+@inject IJSRuntime JS
 
 <div class="tide-combo">
     <input @ref="_input" id="@Id" type="@Type" class="form-control form-control-sm" role="combobox" autocomplete="off" spellcheck="false"
@@ -98,6 +100,8 @@
     private IReadOnlyList<TItem>? _seen;
     internal bool _focused;
     internal int _active;
+    // The highlight moved by a key: once drawn, its option is scrolled into view.
+    internal bool _reveal;
 
     private int Count => Items.Count + (NewOption is null ? 0 : 1);
     internal bool Shown => Open || _focused;
@@ -128,7 +132,7 @@
     {
         var count = Count;
         if (e.Key == "ArrowDown" && !Shown) _focused = true;
-        else if (ComboKeys.Move(e, _active, count, typed: !string.IsNullOrEmpty(Text)) is { } to) _active = to;
+        else if (ComboKeys.Move(e, _active, count, typed: !string.IsNullOrEmpty(Text)) is { } to) (_active, _reveal) = (to, true);
         else if (e.Key == "Enter" && Shown && _active < count) await Pick(_active);
         else if (e.Key == "Escape") _focused = false;
     }
@@ -138,6 +142,15 @@
         if (Disabled) return;
         if (at < Items.Count) await OnPick.InvokeAsync(Items[at]);
         else if (NewOption is not null) await OnNew.InvokeAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_reveal) return;
+        _reveal = false;
+        if (!Expanded || _active >= Count) return;
+        try { await JS.InvokeVoidAsync("tideCombo.reveal", OptionId(_active)); }
+        catch (JSDisconnectedException) { /* the tab has gone */ }
     }
 
     /// <summary>Puts focus back in the box (after a step that took it, such as a confirmation).</summary>

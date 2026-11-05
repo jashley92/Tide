@@ -418,6 +418,18 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public AppDbContext Context() => new(_options);
 
+    /// <summary>
+    /// Sets an article's earlier free-text "Threat actors" (Article.Actors), as an install from before the adversary
+    /// picker replaced the box has it: the editor no longer writes it.
+    /// </summary>
+    public async Task SetEarlierActorsAsync(Guid articleId, string? actors)
+    {
+        await using var db = Context();
+        var article = await db.Articles.FirstAsync(a => a.Id == articleId);
+        article.Actors = actors;
+        await db.SaveChangesAsync();
+    }
+
     public Task<IAppDbContext> CreateAsync(CancellationToken ct = default) => Task.FromResult<IAppDbContext>(Context());
 
     public OrgClock Clock { get; } = new(Options.Create(new OrgOptions()));

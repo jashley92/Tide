@@ -450,11 +450,31 @@ carrying it (an exact, case-insensitive match on the stored live value in its ty
 host (`SearchText.HostOf`: subdomains, and URLs and email addresses on the domain), the actions raised from those
 articles with how their hunts went, the `CveRecord` for a CVE, and a hunt query from `HuntQueryBuilder`.
 
-The editor's Related tab asks `RelatedService.ForArticleAsync`, which shares those action and brief queries
+The editor's Similar articles (folded under the threat story in the rail) asks `RelatedService.ForArticleAsync`, which shares those action and brief queries
 (`Search/Lookups`): the other articles that share a CVE, a link (source or another report, stored or canonical) or
 the story, newest first and at most five (with a search for the rest), each with its briefs and its open actions and
 how late they are. It's team edition and above, like Search; "Mention" puts only an action's number and "(open)" in
 why it matters, and only when that part is TLP:AMBER or higher, since action status is internal.
+
+An article's products ("We run", under why it matters) and threat actors (Tags & ATT&CK › Context) are tagged with the
+same picker, `SearchCombobox`: an ARIA combobox that keeps the highlighted option scrolled into view (`js/combo.js`,
+`scrollIntoView({block: "nearest"})`, smooth unless reduced motion is asked for). `StackService` and `AdversaryService`
+each answer it the same way: `OfferedAsync` with nothing typed (what the article's text names, then watched profiles,
+then what the audit trail says was tagged lately), `FindForArticleAsync` for words typed (a bounded `LIKE` query over
+name and other names, `NameRank.Patterns`, then ranked in memory by `NameRank.Best`: exact, starts with, holds; retired
+last), and `Matching` for one entry. The pickers wait `TypingPause.SearchMs` (200 ms) after a keystroke and drop a
+slower answer to an earlier search (`TypingPause.Now`/`IsLatest`), as the ATT&CK picker's filter does. A tag is its own
+row (`ArticleProduct`, `ArticleAdversary`), saved when picked and heard on `ChangeFeed.ArticleTags`, so it never makes
+an open editor's save stale.
+
+`Article.Actors`, the free text the Threat actors box held before the picker, is kept and no longer written by the
+editor (`ArticleForm` has no such field). `AdversaryService.ForArticleAsync` splits it on commas and semicolons: a name
+a live profile goes by (name or alias, ignoring case, the picker's exact match) is offered as a one-click tag
+(`FromNote`); a name of a profile the article is tagged with is covered by the tag; the rest is `Leftover`, shown as
+"Earlier note" until `ClearEarlierNoteAsync` drops it (the column alone changes, not the edit version, and the audit
+trail records it as "Threat actors (earlier note)"). Where the text used to be read, `AdversaryService.ShownNames`
+gives the tagged profiles' names and then the note's names no tag covers: a story's actors, and search (which also
+matches a tagged profile's names and aliases). No edition, email, slide, export or API field ever carried the text.
 
 ## Exports
 

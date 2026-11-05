@@ -36,7 +36,7 @@ public sealed record RelatedWork(IReadOnlyList<RelatedArticle> Articles, int Tot
 }
 
 /// <summary>
-/// What's already been written about the same thing as an article, for the editor's Related tab: other articles that share
+/// What's already been written about the same thing as an article, for the editor's Similar articles: other articles that share
 /// a CVE, a link (the source or another report, compared as stored and canonical) or the story, newest first, each with
 /// the briefs it was on and its open actions. The same queries as Search's CVE and indicator lookups (<see cref="Lookups"/>).
 /// Open to the team, as Search is: it shows every TLP, as the article pages do. Readers never get it.

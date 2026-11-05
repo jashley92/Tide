@@ -13,7 +13,7 @@ using Tide.Web.Components.Shared;
 namespace Tide.IntegrationTests;
 
 /// <summary>
-/// Related work, drawn: the editor's Related tab (with Mention and Same story), the story picker out of Details, "Add a
+/// Related work, drawn: the editor's Similar articles (with Mention and Same story), folded under the story picker, which is out of Details, "Add a
 /// report link", and Triage's "Attach to…" picker and follow-up line.
 /// </summary>
 public class RelatedRenderTests(TideApp app) : IClassFixture<TideApp>
@@ -50,14 +50,14 @@ public class RelatedRenderTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task TheEditor_HasARelatedTabWithACount_TheStoryPickerInView_AndAddAReportLink()
+    public async Task TheEditor_HasSimilarArticlesWithACount_UnderTheStoryPickerInView_AndAddAReportLink()
     {
         var (me, _, _) = await Seed("page");
         var html = await app.CreateClient().GetStringAsync($"/articles/{me}");
 
         html.Should().Contain("role=\"group\" aria-label=\"Show\"")
-            .And.Contain("title=\"Related articles and their open actions\">Related")
-            .And.Contain("<span class=\"tide-seg-count\">1</span>")
+            .And.NotContain("title=\"Related articles and their open actions\">Related")
+            .And.Contain("Similar articles (1)")
             .And.Contain("Add a report link");
         var picker = html.IndexOf("for=\"story-pick\">Threat story", StringComparison.Ordinal);
         picker.Should().BePositive();
@@ -65,25 +65,25 @@ public class RelatedRenderTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task TheRelatedTab_ListsTheArticle_ItsOpenAction_AndMentionAndSameStory()
+    public async Task SimilarArticles_ListsTheArticle_ItsOpenAction_AndMentionAndSameStory()
     {
         var (me, earlier, open) = await Seed("tab");
         await using var r = await ComponentHarness.RenderAsync<ReaderPreview>(app, $"/articles/{me}", new()
         {
             ["State"] = await StateOf(me),
         });
-        (await r.Html()).Should().NotContain("tide-related-list", "the team edition shows first");
+        (await r.Html()).Should().NotContain("tide-related-list", "Similar articles is folded at first");
 
         await r.Click(p => { p.ShowRelated(); return Task.CompletedTask; });
         var html = await r.Html();
 
-        html.Should().NotContain("aria-pressed=\"true\" aria-keyshortcuts", "neither edition is shown")
+        html.Should().Contain("aria-pressed=\"true\" aria-keyshortcuts", "the edition stays shown beside it")
             .And.Contain($"href=\"articles/{earlier}\">related-tab earlier article</a>")
             .And.Contain($"href=\"actions/{open}\"").And.Contain("related-tab patch")
             .And.Contain($"aria-label=\"Mention A-{open} in why it matters\"")
             .And.Contain("Start a story with this article and &#x201C;related-tab earlier article&#x201D;")
             .And.Contain("Not briefed yet")
-            .And.NotContain("Ready to brief", "the edition preview gives the tab its place");
+            .And.Contain("Similar articles (1)");
         html.Should().NotContain(RelatedPanel.MentionOff[..40]);
     }
 

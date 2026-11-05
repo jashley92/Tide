@@ -171,7 +171,10 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
-### Next release
+### v1.4.0
+
+Notes for the next release, gathered as changes land. Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). The
+changes below add no migration and no setting.
 
 **For administrators**
 - **WebSockets are checked.** TIDE's pages need IIS's WebSocket Protocol feature; without it (or behind a proxy that
@@ -181,6 +184,24 @@ any). What changed for administrators: new settings, steps the upgrade needs, an
   to do so unasked), `Verify-Install.ps1` fails without it and tries a real WebSocket handshake, and Administration >
   System > Diagnostics shows the connection type your page is using and how many connections used each since the app
   started. See [INSTALL.md](INSTALL.md#1-what-you-need).
+- **The article's free-text "Threat actors" box is gone.** Its column (`Articles.Actors`) is kept and nothing in it is
+  deleted or rewritten by the upgrade; the editor no longer writes it. Each article's earlier text shows under the
+  Threat actors picker as an **earlier note**: names a profile goes by (its name or an alias, ignoring case) are offered
+  as one-click "Tag X" buttons, and the rest stay in sight as "Earlier note: ..." until an analyst clears them (×).
+  Nothing is tagged automatically. Clearing is recorded in the article's history as "Threat actors (earlier note)".
+- **Where the text was read, the tags are now read first.** A story's actors list and search use the tagged profiles'
+  names, then whatever the earlier note names that no tag covers, so nothing that showed before disappears. No email,
+  edition, slide, SharePoint copy, export or API field carried the text, so sent briefs are unchanged. The API never
+  accepted it either, so no client needs changing.
+
+**For everyone**
+- **Threat actors** is the adversary picker, under Tags & ATT&CK › Context, where the text box was: the one place to tag.
+- **We run** sits inside "Why it matters to us", always open, and uses the same search picker as Threat actors: what the
+  text names first, then what was tagged lately, any other name ("(also Pulse Secure)"), retired products last, and
+  "Add 'X' to Our stack". Mention still adds a product to why it matters.
+- **The rail's Related tab is gone.** Similar articles is a folded section under the threat story, "Similar articles
+  (N)". Someone who can't edit sees the article's products and threat actors as read-only cards in the rail.
+- **Search pickers** keep the highlighted option in view as the arrow keys move.
 
 ### v1.3.0
 

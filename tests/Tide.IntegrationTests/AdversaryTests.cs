@@ -25,9 +25,9 @@ public class AdversaryServiceTests : IDisposable
     {
         var id = await _db.Articles().CreateAsync(title, "Vendor", "https://vendor.example.com/" + Guid.NewGuid().ToString("N"));
         var form = ArticleForm.From((await _db.Articles().GetAsync(id))!);
-        form.Actors = actors;
         form.TechniqueIds = techniques.ToList();
         await _db.Articles().SaveAsync(form);
+        await _db.SetEarlierActorsAsync(id, actors);
         return id;
     }
 
@@ -62,8 +62,12 @@ public class AdversaryServiceTests : IDisposable
     {
         var spider = await Spider();
         var article = await Article("Retailer breached", "Octo Tempest");
+        var titled = await Article("Octo Tempest breaches a retailer");
 
-        (await _db.Adversaries().ForArticleAsync(article)).Suggested.Select(a => a.Id).Should().Equal(spider);
+        // The earlier free-text note's name is offered from the note; a title's, as "Names X".
+        (await _db.Adversaries().ForArticleAsync(article)).FromNote.Select(a => a.Id).Should().Equal(spider);
+        (await _db.Adversaries().ForArticleAsync(article)).Suggested.Should().BeEmpty("a profile is offered once");
+        (await _db.Adversaries().ForArticleAsync(titled)).Suggested.Select(a => a.Id).Should().Equal(spider);
         (await _db.Adversaries().AddByNameAsync("octo tempest")).Should().Be(spider);
         var added = await _db.Adversaries().AddByNameAsync("Muddled Libra");
         added.Should().NotBe(spider);

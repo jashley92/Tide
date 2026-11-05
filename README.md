@@ -115,13 +115,14 @@ marked for the writer.
 An article carries:
 - a bottom line (BLUF);
 - Markdown bullets;
-- "why it matters to us";
+- "why it matters to us", with **We run** under it: the products from Our stack it's about;
 - recommended actions;
 - pasted screenshots (Ctrl+V anywhere, or drag and drop);
 - a **Threat** (P1 to P4) or **Informational** classification;
 - board-scorecard tags;
 - MITRE ATT&CK techniques from the embedded Enterprise catalog;
-- threat actors and sectors;
+- **threat actors**: the adversary profiles it's tagged with, picked by any name, alias or MITRE id;
+- sectors;
 - indicators (shown defanged, stored live) and CVEs.
 
 The **indicator finder** pulls URLs, addresses, hashes, email addresses, domains and CVE ids out of a pasted article
@@ -158,8 +159,13 @@ check rather than a blank form:
 
 Every draft is recorded with its provider, model, prompt version and a hash of what was sent.
 
-A **Related** tab lists other articles with the same CVE, link or story, when each was briefed, and its open actions.
-Each is one click from mentioning an action or joining the story.
+**We run** and **Threat actors** use the same search picker. With nothing typed it offers what the article's text names,
+then what was tagged lately; typing finds a product or profile by any of its names ("APT29 (also Cozy Bear)"), best
+match first and retired ones last (asked about before tagging); and "Add 'X'" makes a new one from the words typed, with
+a link to fill it in. Tags are saved as they're picked. A product's **Mention** adds it to "why it matters".
+
+Beside the editor, under the threat story, **Similar articles** (folded) lists other articles with the same CVE, link or
+story, when each was briefed, and its open actions. Each is one click from mentioning an action or joining the story.
 
 **TLP everywhere.** The article, each bullet, each screenshot and "why it matters to us" carry a TLP 2.0 marking,
 and a part never counts lower than its article. On a threat, "why it matters to us" starts at AMBER, since it usually
@@ -314,14 +320,17 @@ the story of a related article.
 ### Adversary profiles
 **Intelligence › Adversaries** keeps one profile per threat actor or campaign, under every name it goes by, so
 Scattered Spider, UNC3944 and Octo Tempest are one. A profile's page has:
-- a **timeline** of the articles tagged with it or naming it (in the title, the actors or the bottom line), and their
+- a **timeline** of the articles tagged with it or naming it (in the title, the earlier actors note or the bottom line), and their
   actions and indicators, with how many briefs it was in this quarter;
 - the **ATT&CK techniques** across those articles, darker where more articles show them, downloadable as an ATT&CK
   Navigator layer scored by count;
 - **our notes** (internal, AMBER), motivation and sectors.
 
 Articles that name a profile but aren't tagged are listed for an analyst to check and tag: nothing is linked
-automatically. The editor's Related tab tags an article with a profile by any of its names, or adds one. A **watched**
+automatically. The editor's **Threat actors** field (under Tags & ATT&CK › Context) tags an article with a profile by
+any of its names, or adds one. It replaced a free-text box: what an article's box held is kept as an **earlier note**,
+whose names a profile goes by are offered as one-click tags ("Tag APT29") and whose other names stay in sight under the
+picker until cleared. A **watched**
 profile marks triage items that name it ("Watching: Scattered Spider"). Two profiles that turn out to be one group can
 be merged. MITRE ATT&CK's groups and campaigns can be imported for their ids and aliases: fetched from MITRE's TAXII server, or uploaded from a saved copy where the server has no internet.
 

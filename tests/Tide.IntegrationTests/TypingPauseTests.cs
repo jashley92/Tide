@@ -4,13 +4,14 @@ using Tide.Web.Services;
 
 namespace Tide.IntegrationTests;
 
-/// <summary>The pause before a search acts on what's typed (the ATT&amp;CK picker's filter): once per pause, the last keystroke
-/// wins, and what applies at once drops the pending one.</summary>
+/// <summary>The pause before a search acts on what's typed (the ATT&amp;CK picker's filter, the adversary and We run
+/// pickers' searches): once per pause, the last keystroke wins, what applies at once drops the pending one, and a slower
+/// answer to an earlier search is dropped.</summary>
 public class TypingPauseTests
 {
     [Fact]
-    public void The_attack_picker_waits_as_long_as_the_adversary_picker() =>
-        new TypingPause(ArticleAdversaryCard.TypingPauseMs).DelayMs.Should().Be(200);
+    public void Every_picker_waits_200ms_by_default() =>
+        new TypingPause().DelayMs.Should().Be(TypingPause.SearchMs).And.Be(200);
 
     [Fact]
     public async Task A_pause_after_one_keystroke_applies_it_once()
@@ -41,5 +42,19 @@ public class TypingPauseTests
         (await pending).Should().BeFalse();
         // The next keystroke pauses again as usual.
         (await pause.Settled()).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_search_started_later_supersedes_an_earlier_ones_answer()
+    {
+        var pause = new TypingPause(50);
+        var earlier = pause.Now();
+        pause.IsLatest(earlier).Should().BeTrue();
+        var later = pause.Now();   // a second search, before the first answered
+        pause.IsLatest(earlier).Should().BeFalse("its answer is dropped");
+        pause.IsLatest(later).Should().BeTrue();
+        var typing = pause.Settled();   // a keystroke supersedes it too
+        pause.IsLatest(later).Should().BeFalse();
+        (await typing).Should().BeTrue();
     }
 }

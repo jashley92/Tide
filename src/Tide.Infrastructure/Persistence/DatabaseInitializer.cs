@@ -129,7 +129,6 @@ public sealed class DatabaseInitializer(
             Bluf = "An unauthenticated remote code execution flaw in a widely deployed VPN appliance is being exploited; we run the affected version.",
             WhyItMatters = "Our remote-access gateways run the affected firmware branch.",
             RecommendedActions = "- Apply the vendor hotfix to both gateways today.\n- Hunt for the listed indicators in firewall and VPN logs for the last 30 days.",
-            Actors = "Unattributed",
             Status = ArticleStatus.Ready,
             AuthorId = "system",
             AuthorName = "Sample data",

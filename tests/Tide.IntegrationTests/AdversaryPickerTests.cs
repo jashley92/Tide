@@ -26,9 +26,7 @@ public class AdversaryPickSearchTests : IDisposable
     {
         var id = await _db.Articles().CreateAsync(title, "Vendor", "https://vendor.example.com/" + Guid.NewGuid().ToString("N"));
         if (actors is null) return id;
-        var form = ArticleForm.From((await _db.Articles().GetAsync(id))!);
-        form.Actors = actors;
-        await _db.Articles().SaveAsync(form);
+        await _db.SetEarlierActorsAsync(id, actors);
         return id;
     }
 

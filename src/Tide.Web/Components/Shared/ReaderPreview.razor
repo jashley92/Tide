@@ -3,11 +3,13 @@
    (ArticlePreview, the one cut), so it follows unsaved edits, a moment after typing stops: no database round trip.
    Only the writer sees what this pane adds: where a part, or the whole article, is left out of the edition, the
    company-wide edition's missing indicators and actions, and a dashed button for each gap the readiness checks find,
-   which takes you to the field (and, for a check with a one-click fix, a button that makes it). A third tab, Related
-   (with a count), shows what's already been written about the same thing (RelatedPanel), where an action can be
-   mentioned in why it matters (OnMention) and the article put in a related one's story. Below, always shown: the
-   threat story (StoryPicker), suggesting a related article's. Then, folded away: both editions' verdicts, the briefs
-   it's on, its follow-up actions and CVE context. Keys 1 and 2 pick the edition (single characters, so the shortcut
+   which takes you to the field (and, for a check with a one-click fix, a button that makes it). Below, always shown:
+   the threat story (StoryPicker), suggesting a related article's; under it, folded until opened, "Similar articles
+   (N)": what's already been written about the same thing (RelatedPanel), where an action can be mentioned in why it
+   matters (OnMention) and the article put in a related one's story (ShowRelated opens it and scrolls to it). For
+   someone who can't edit, whose editor fields are hidden, the article's products and threat actors as read-only cards
+   (they're tagged in the editor: We run under Why it matters, Threat actors under Context). Then, folded away: both
+   editions' verdicts, the briefs it's on, its follow-up actions and CVE context. Keys 1 and 2 pick the edition (single characters, so the shortcut
    switch turns them off); the choice is kept in the address (?edition=company) so a link can open either, and told to
    the page (EditionChanged) so its own links, the brief stepper's, keep it. *@
 @inject Tide.Application.Settings.DistributionSettings Distribution
@@ -27,23 +29,9 @@
                     aria-keyshortcuts="1" title="Team edition (1)" @onclick="() => Show(Edition.Team)">Team</button>
             <button type="button" class="tide-seg-opt @(On(Edition.Public) ? "on" : "")" aria-pressed="@(On(Edition.Public) ? "true" : "false")"
                     aria-keyshortcuts="2" title="Company-wide edition (2)" @onclick="() => Show(Edition.Public)">Company-wide</button>
-            <button type="button" class="tide-seg-opt @(_related ? "on" : "")" aria-pressed="@(_related ? "true" : "false")"
-                    title="Related articles and their open actions" @onclick="ShowRelated">Related
-                @if (_work is { Total: > 0 } w)
-                {
-                    <span class="visually-hidden">,</span><span class="tide-seg-count">@w.Total</span>
-                }
-            </button>
         </div>
     </div>
-    @if (_related)
-    {
-        <ArticleStackCard ArticleId="State.Article.Id" CanWrite="_canWrite" OnMention="t => OnMention.InvokeAsync(t)" />
-        <ArticleAdversaryCard ArticleId="State.Article.Id" CanWrite="_canWrite" />
-        <RelatedPanel Work="_work" StoryId="_storyId" CanWrite="_canWrite" WhyTlp="State.Form.WhyItMattersTlp"
-                      OnMention="t => OnMention.InvokeAsync(t)" OnSameStory="SameStory" />
-    }
-    else if (Current is { } p)
+    @if (Current is { } p)
     {
         <p class="tide-reader-hint">@Tide.Application.Distribution.BriefRenderer.EditionName(p.Edition) &middot; up to <TlpBadge Level="p.Ceiling" /></p>
         <p class="tide-reader-sum">
@@ -94,6 +82,29 @@
     {
         <StoryPicker @ref="_storyPicker" ArticleId="State.Article.Id" StoryId="_storyId" Suggested="SuggestedStory" StoryChanged="StoryLinked" />
 
+        <section class="tide-reader-similar" id="similar-articles" aria-labelledby="similar-h">
+            <h3 id="similar-h" class="tide-reader-fold-h">
+                <button type="button" class="tide-disclosure" aria-expanded="@Ui.Aria(_similarOpen)" aria-controls="similar-body"
+                        @ref="_similarHead" @onclick="ToggleSimilar">
+                    <span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span>
+                    @SimilarTitle
+                </button>
+            </h3>
+            <div id="similar-body" class="tide-disclosure-body" hidden="@(!_similarOpen)">
+                @if (_similarOpen)
+                {
+                    <RelatedPanel Work="_work" StoryId="_storyId" CanWrite="_canWrite" WhyTlp="State.Form.WhyItMattersTlp"
+                                  OnMention="t => OnMention.InvokeAsync(t)" OnSameStory="SameStory" />
+                }
+            </div>
+        </section>
+
+        @if (!_canWrite)
+        {
+            <ArticleStackCard ArticleId="State.Article.Id" Boxed="true" />
+            <ArticleAdversaryCard ArticleId="State.Article.Id" Boxed="true" />
+        }
+
         <details class="tide-reader-details">
             <summary><span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span> Details</summary>
             <h3 class="tide-subhead">Both editions</h3>
@@ -133,7 +144,7 @@
     /// <summary>Makes a check's one-click fix (ArticleEditorPanel.FixAsync), offered to someone who can edit.</summary>
     [Parameter] public EventCallback<ArticleFix> OnFix { get; set; }
 
-    /// <summary>Adds text to why it matters (ArticleEditorPanel.MentionAsync), for the Related tab's "Mention".</summary>
+    /// <summary>Adds text to why it matters (ArticleEditorPanel.MentionAsync), for Similar articles' "Mention".</summary>
     [Parameter] public EventCallback<string> OnMention { get; set; }
 
     /// <summary>The words that mark something left out. They're drawn here only, never in what readers are sent.</summary>
@@ -160,14 +171,20 @@
 
     private ArticlePreview? Current => _both.FirstOrDefault(p => p.Edition == _edition);
 
-    // The Related tab: whether it's shown (in place of the edition), and what it found for the article (null until read).
-    private bool _related, _canWrite;
+    // Similar articles: whether its section is open (folded at first), and what it found for the article (null until read).
+    private bool _similarOpen, _revealSimilar, _canWrite;
+    private ElementReference _similarHead;
     private RelatedWork? _work;
     private Guid? _storyId;
     private ConfirmDialog _confirm = default!;
     private StoryPicker? _storyPicker;
 
-    private bool On(Edition e) => !_related && _edition == e;
+    private bool On(Edition e) => _edition == e;
+
+    /// <summary>Whether Similar articles is open (internal for the tests).</summary>
+    internal bool SimilarOpen => _similarOpen;
+
+    internal string SimilarTitle => _work is { } w ? $"Similar articles ({w.Total})" : "Similar articles";
 
     // A related article's story, while this one is in none.
     private (Guid Id, string Name)? SuggestedStory =>
@@ -240,11 +257,18 @@
         }
     }
 
+    /// <summary>
+    /// Shows what's related: once the Related tab, now Similar articles under the story, opened and scrolled to (its
+    /// heading takes focus), for anything that asks to see the related work.
+    /// </summary>
     internal void ShowRelated()
     {
-        _related = true;
+        _similarOpen = true;
+        _revealSimilar = true;
         StateHasChanged();
     }
+
+    private void ToggleSimilar() => _similarOpen = !_similarOpen;
 
     // The picker linked the article to a story (or took it off one): related work by story changes with it.
     private async Task StoryLinked(Guid? id)
@@ -278,7 +302,6 @@
 
     private async Task Show(Edition edition)
     {
-        _related = false;
         if (_edition == edition) return;
         _edition = edition;
         _keySeen = ArticlePreview.EditionKey(edition);
@@ -297,6 +320,12 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_revealSimilar)
+        {
+            _revealSimilar = false;
+            try { await JS.InvokeVoidAsync("tideEditor.jump", _similarHead, null); }
+            catch (JSDisconnectedException) { /* the tab has gone */ }
+        }
         if (!firstRender) return;
         _self = DotNetObjectReference.Create(this);
         try { await JS.InvokeVoidAsync("tideEditor.editionKeys", _self); }

@@ -131,7 +131,7 @@ public static class HistoryFormatter
         [nameof(Article.WhyItMatters)] = "Why it matters",
         [nameof(Article.WhyItMattersTlp)] = "Why it matters marking",
         [nameof(Article.RecommendedActions)] = "Recommended actions",
-        [nameof(Article.Actors)] = "Actors",
+        [nameof(Article.Actors)] = "Threat actors (earlier note)",
         [nameof(Article.Sectors)] = "Sectors",
         [nameof(Article.Status)] = "Status",
         [nameof(Article.StoryId)] = "Story",

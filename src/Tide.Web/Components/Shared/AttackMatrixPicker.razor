@@ -148,7 +148,7 @@
     private readonly HashSet<string> _expanded = new(StringComparer.OrdinalIgnoreCase);
     private string _text = "";   // what's in the box, every keystroke
     private string _filter = ""; // what the matrix is filtered by: the text once typing pauses
-    private readonly TypingPause _pause = new(ArticleAdversaryCard.TypingPauseMs);
+    private readonly TypingPause _pause = new();
     private bool _quiet;
     private AttackMatrixView _view = AttackMatrixView.For("");
     private bool _moved;

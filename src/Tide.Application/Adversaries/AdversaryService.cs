@@ -52,8 +52,18 @@ public sealed record AdversaryDetail(Adversary Adversary, string? MergedIntoName
     public IReadOnlyList<AdversaryArticle> Untagged => Articles.Where(a => !a.Tagged).ToList();
 }
 
-/// <summary>An article's profiles: those it's tagged with, and those it names but isn't tagged with (a suggestion).</summary>
-public sealed record ArticleAdversaries(IReadOnlyList<Adversary> Tagged, IReadOnlyList<Adversary> Suggested);
+/// <summary>
+/// An article's profiles: those it's tagged with, and those it names but isn't tagged with (a suggestion). From the
+/// retired free-text "Threat actors" box (<see cref="Article.Actors"/>, kept as the earlier note): <see cref="FromNote"/>,
+/// the live profiles a name in it is (by name or alias, ignoring case), not yet tagged, offered as one-click tags; and
+/// <see cref="Leftover"/>, its names that are no profile, shown as "Earlier note" until someone clears them. A name of a
+/// profile the article is tagged with is in neither: the tag stands for it.
+/// </summary>
+public sealed record ArticleAdversaries(IReadOnlyList<Adversary> Tagged, IReadOnlyList<Adversary> Suggested, IReadOnlyList<Adversary> FromNote,
+    IReadOnlyList<string> Leftover)
+{
+    public static readonly ArticleAdversaries None = new([], [], [], []);
+}
 
 /// <summary>Why the article editor's adversary picker lists a profile.</summary>
 public enum AdversaryPickReason
@@ -171,7 +181,59 @@ public sealed class AdversaryService(IAppDbContextFactory dbs, ICurrentUser user
     {
         RequireRead();
         await using var db = await dbs.CreateAsync(ct);
-        return await CardAsync(db, articleId, ct) is { } card ? Suggest(card) : new ArticleAdversaries([], []);
+        return await CardAsync(db, articleId, ct) is { } card ? Suggest(card) : ArticleAdversaries.None;
+    }
+
+    /// <summary>
+    /// The names in the earlier free-text "Threat actors" note, as typed: separated by commas or semicolons, blanks and
+    /// repeats (ignoring case) dropped.
+    /// </summary>
+    public static IReadOnlyList<string> EarlierNames(string? actors) =>
+        [.. (actors ?? "").Split([',', ';'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Distinct(StringComparer.OrdinalIgnoreCase)];
+
+    // Whether a profile goes by this name (its own or an alias, ignoring case): the picker's own exact match.
+    private static bool GoesBy(Adversary a, string name) => Matching(a, name).Rank == ExactMatch;
+
+    /// <summary>
+    /// The threat actors to show for an article wherever its free text used to show (a story's actors): the profiles
+    /// it's tagged with, by name, then the earlier note's names that none of them goes by, as typed. So once a name is
+    /// tagged, its profile's name stands in for it, and a name not yet tagged still shows as it did.
+    /// </summary>
+    public static IReadOnlyList<string> ShownNames(IReadOnlyList<Adversary> tagged, string? actors) =>
+        [.. tagged.Select(a => a.Name), .. EarlierNames(actors).Where(n => !tagged.Any(a => GoesBy(a, n)))];
+
+    // The earlier note against the profiles: the live ones its names are (untagged), and the names that are no profile.
+    private static (List<Adversary> FromNote, List<string> Leftover) Earlier(IReadOnlyList<Adversary> tagged, IReadOnlyList<Adversary> live, string? actors)
+    {
+        var (fromNote, leftover) = (new List<Adversary>(), new List<string>());
+        foreach (var name in EarlierNames(actors))
+        {
+            if (tagged.Any(a => GoesBy(a, name))) continue;
+            if (live.Where(a => GoesBy(a, name)).OrderByName(a => a.Name).FirstOrDefault() is { } match)
+            {
+                if (fromNote.TrueForAll(a => a.Id != match.Id)) fromNote.Add(match);
+            }
+            else leftover.Add(name);
+        }
+        return (fromNote, leftover);
+    }
+
+    /// <summary>
+    /// Clears the earlier note's leftover names (those no profile goes by), its × in the editor; the names a profile goes
+    /// by stay, offered as tags until they're tagged. Only that column changes: not the article's edit version, so an
+    /// editor open on it saves as before. Audited as any change to the article is.
+    /// </summary>
+    public async Task ClearEarlierNoteAsync(Guid articleId, CancellationToken ct = default)
+    {
+        RequireWrite();
+        await using var db = await dbs.CreateAsync(ct);
+        var article = await db.Articles.FirstOrDefaultAsync(a => a.Id == articleId, ct) ?? throw new KeyNotFoundException("That article no longer exists.");
+        if (article.Actors is null) return;
+        var tagged = await db.ArticleAdversaries.AsNoTracking().Where(t => t.ArticleId == articleId).Select(t => t.Adversary!).ToListAsync(ct);
+        var live = await db.Adversaries.AsNoTracking().Where(a => !a.IsRetired).ToListAsync(ct);
+        var kept = EarlierNames(article.Actors).Where(n => tagged.Exists(a => GoesBy(a, n)) || live.Exists(a => GoesBy(a, n))).ToList();
+        article.Actors = kept.Count == 0 ? null : string.Join(", ", kept);
+        await db.SaveChangesAsync(ct);
     }
 
     /// <summary>The most profiles the article editor's picker lists at once.</summary>
@@ -202,13 +264,13 @@ public sealed class AdversaryService(IAppDbContextFactory dbs, ICurrentUser user
     {
         RequireRead();
         await using var db = await dbs.CreateAsync(ct);
-        if (await CardAsync(db, articleId, ct) is not { } card) return (new ArticleAdversaries([], []), []);
+        if (await CardAsync(db, articleId, ct) is not { } card) return (ArticleAdversaries.None, []);
         return (Suggest(card), offer ? await OfferAsync(db, card, ct) : []);
     }
 
-    // What the card is drawn from: the profiles the article is tagged with (by name), the live ones, and the article's
-    // words (title, actors, bottom line) that name them. None when the article has gone.
-    private sealed record ArticleCard(List<Adversary> Tagged, List<Adversary> Live, string Words);
+    // What the card is drawn from: the profiles the article is tagged with (by name), the live ones, the article's words
+    // (title, earlier note, bottom line) that name them, and the earlier note itself. None when the article has gone.
+    private sealed record ArticleCard(List<Adversary> Tagged, List<Adversary> Live, string Words, string? Actors);
 
     private static async Task<ArticleCard?> CardAsync(IAppDbContext db, Guid articleId, CancellationToken ct)
     {
@@ -216,11 +278,17 @@ public sealed class AdversaryService(IAppDbContextFactory dbs, ICurrentUser user
         if (article is null) return null;
         var tagged = await db.ArticleAdversaries.AsNoTracking().Where(t => t.ArticleId == articleId).Select(t => t.Adversary!).OrderByName(a => a.Name).ToListAsync(ct);
         var live = await db.Adversaries.AsNoTracking().Where(a => !a.IsRetired).ToListAsync(ct);
-        return new ArticleCard(tagged, live, StackService.Words(article.Title + " " + article.Actors, article.Bluf));
+        return new ArticleCard(tagged, live, StackService.Words(article.Title + " " + article.Actors, article.Bluf), article.Actors);
     }
 
-    private static ArticleAdversaries Suggest(ArticleCard card) => new(card.Tagged,
-        card.Live.Where(a => card.Tagged.TrueForAll(t => t.Id != a.Id) && StackService.Names(Entry(a), card.Words)).OrderByName(a => a.Name).ToList());
+    // "Names X" leaves out what the earlier note offers already, so a profile is offered once.
+    private static ArticleAdversaries Suggest(ArticleCard card)
+    {
+        var (fromNote, leftover) = Earlier(card.Tagged, card.Live, card.Actors);
+        var named = card.Live.Where(a => card.Tagged.TrueForAll(t => t.Id != a.Id) && fromNote.TrueForAll(n => n.Id != a.Id) && StackService.Names(Entry(a), card.Words))
+            .OrderByName(a => a.Name).ToList();
+        return new ArticleAdversaries(card.Tagged, named, fromNote, leftover);
+    }
 
     private static async Task<IReadOnlyList<AdversaryPick>> OfferAsync(IAppDbContext db, ArticleCard card, CancellationToken ct)
     {
@@ -233,6 +301,7 @@ public sealed class AdversaryService(IAppDbContextFactory dbs, ICurrentUser user
                     picks.Add(new AdversaryPick(a.Id, a.Name, a.MitreId, false, null, why));
         }
         var live = card.Live;
+        Offer(Earlier(card.Tagged, live, card.Actors).FromNote, AdversaryPickReason.Named);
         Offer(live.Where(a => StackService.Names(Entry(a), card.Words)).OrderByName(a => a.Name), AdversaryPickReason.Named);
         Offer(live.Where(a => a.Watched).OrderByName(a => a.Name), AdversaryPickReason.Watched);
         if (picks.Count < PickLimit)
@@ -264,20 +333,17 @@ public sealed class AdversaryService(IAppDbContextFactory dbs, ICurrentUser user
         await using var db = await dbs.CreateAsync(ct);
         var taggedProfiles = await db.ArticleAdversaries.AsNoTracking().Where(t => t.ArticleId == articleId).Select(t => t.Adversary!).ToListAsync(ct);
         var tagged = taggedProfiles.Select(a => a.Id).ToList();
-        var (any, exact) = (SearchText.Contains(text), SearchText.Literal(text));
-        var starts = exact + "%";
-        // Other names are kept "one; two; three", so an alias is the whole field, or sits between "; " and ";".
-        var (aliasFirst, aliasLast, aliasMiddle, aliasStarts) = (exact + ";%", "%; " + exact, "%; " + exact + ";%", "%; " + starts);
+        var m = NameRank.Patterns.For(text);
         var candidates = await db.Adversaries.AsNoTracking()
             .Where(a => !tagged.Contains(a.Id))
-            .Where(a => EF.Functions.Like(a.Name, any, SearchText.Escape) || EF.Functions.Like(a.Aliases!, any, SearchText.Escape)
-                || EF.Functions.Like(a.MitreId!, any, SearchText.Escape))
+            .Where(a => EF.Functions.Like(a.Name, m.Any, SearchText.Escape) || EF.Functions.Like(a.Aliases!, m.Any, SearchText.Escape)
+                || EF.Functions.Like(a.MitreId!, m.Any, SearchText.Escape))
             .OrderBy(a => a.IsRetired)
-            .ThenBy(a => EF.Functions.Like(a.Name, exact, SearchText.Escape) || EF.Functions.Like(a.MitreId!, exact, SearchText.Escape)
-                || EF.Functions.Like(a.Aliases!, exact, SearchText.Escape) || EF.Functions.Like(a.Aliases!, aliasFirst, SearchText.Escape)
-                || EF.Functions.Like(a.Aliases!, aliasLast, SearchText.Escape) || EF.Functions.Like(a.Aliases!, aliasMiddle, SearchText.Escape) ? 0
-                : EF.Functions.Like(a.Name, starts, SearchText.Escape) || EF.Functions.Like(a.Aliases!, starts, SearchText.Escape)
-                    || EF.Functions.Like(a.Aliases!, aliasStarts, SearchText.Escape) || EF.Functions.Like(a.MitreId!, starts, SearchText.Escape) ? 1 : 2)
+            .ThenBy(a => EF.Functions.Like(a.Name, m.Exact, SearchText.Escape) || EF.Functions.Like(a.MitreId!, m.Exact, SearchText.Escape)
+                || EF.Functions.Like(a.Aliases!, m.Exact, SearchText.Escape) || EF.Functions.Like(a.Aliases!, m.OtherFirst, SearchText.Escape)
+                || EF.Functions.Like(a.Aliases!, m.OtherLast, SearchText.Escape) || EF.Functions.Like(a.Aliases!, m.OtherMiddle, SearchText.Escape) ? 0
+                : EF.Functions.Like(a.Name, m.Starts, SearchText.Escape) || EF.Functions.Like(a.Aliases!, m.Starts, SearchText.Escape)
+                    || EF.Functions.Like(a.Aliases!, m.OtherStarts, SearchText.Escape) || EF.Functions.Like(a.MitreId!, m.Starts, SearchText.Escape) ? 1 : 2)
             .ThenBy(a => a.Name)
             .Take(PickCandidates).ToListAsync(ct);
         var matched = candidates.Select(a => (Profile: a, Match: Matching(a, text))).Where(x => x.Match.Rank < NoMatch).ToList();
@@ -289,21 +355,11 @@ public sealed class AdversaryService(IAppDbContextFactory dbs, ICurrentUser user
         return new AdversaryPicks(found, isExact, already);
     }
 
-    private const int ExactMatch = 0, NoMatch = 3;
+    private const int ExactMatch = NameRank.Exact, NoMatch = NameRank.None;
 
     // How well a profile matches what was typed (exact, starts with it, holds it, or not at all), and the other name that
     // did when its own name matched less well. The name wins a tie, then the MITRE id, then the first alias.
-    internal static (int Rank, string? Alias) Matching(Adversary a, string text)
-    {
-        int Rank(string term) => string.Equals(term, text, StringComparison.OrdinalIgnoreCase) ? ExactMatch
-            : term.StartsWith(text, StringComparison.OrdinalIgnoreCase) ? 1
-            : term.Contains(text, StringComparison.OrdinalIgnoreCase) ? 2 : NoMatch;
-        var best = (Rank: Rank(a.Name), Alias: (string?)null);
-        if (a.MitreId is { } mitre && Rank(mitre) < best.Rank) best = (Rank(mitre), null);
-        foreach (var alias in StackService.SplitNames(a.Aliases))
-            if (Rank(alias) < best.Rank) best = (Rank(alias), alias);
-        return best;
-    }
+    internal static (int Rank, string? Alias) Matching(Adversary a, string text) => NameRank.Best(text, a.Name, StackService.SplitNames(a.Aliases), a.MitreId);
 
     /// <summary>
     /// The profile's techniques as an ATT&amp;CK Navigator layer (JSON), scored by how many of its articles show each, for
