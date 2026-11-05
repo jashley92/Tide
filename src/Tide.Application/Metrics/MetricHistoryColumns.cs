@@ -15,16 +15,20 @@ public static class MetricHistoryColumns
     /// <summary>The query parameter the filter is kept in.</summary>
     public const string Parameter = "groups";
 
-    /// <summary>The metrics as runs of columns, one per group, in the order given (the history's: by group, then metric).</summary>
+    /// <summary>
+    /// The metrics as runs of columns, one per group, in the order given (the history's: by group, then metric). A group's
+    /// metrics stay together even when the order interleaves two groups (two with the same place and name), so no group
+    /// gets two headings or two chips.
+    /// </summary>
     public static IReadOnlyList<MetricColumnGroup> Group(IEnumerable<MetricDefinition> metrics)
     {
         var runs = new List<MetricColumnGroup>();
-        List<MetricDefinition>? run = null;
+        var byGroup = new Dictionary<Guid, List<MetricDefinition>>();
         foreach (var m in metrics)
         {
-            if (run is null || runs[^1].GroupId != m.GroupId)
+            if (!byGroup.TryGetValue(m.GroupId, out var run))
             {
-                run = [];
+                byGroup[m.GroupId] = run = [];
                 runs.Add(new MetricColumnGroup(m.GroupId, m.Group?.Key ?? "", m.Group?.Name ?? "", run));
             }
             run.Add(m);

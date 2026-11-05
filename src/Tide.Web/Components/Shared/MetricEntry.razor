@@ -256,6 +256,15 @@
     protected override async Task OnParametersSetAsync()
     {
         _topic = ChangeFeed.MetricsDay(Date);
+        if (_progressFor is { } was && was != Date)
+        {
+            // Another day (the brief page's previous and next links keep this form): what was typed, kept or flagged
+            // for the last day's boxes isn't this day's, and whether it starts open is settled again.
+            _invalid.Clear();
+            _kept.Clear();
+            _elsewhere.Clear();
+            _open = null;
+        }
         _locked = await MetricsSvc.IsLockedAsync(Date);
         _canEdit = CurrentUser.Has(Permission.EnterMetrics) && !_locked;
         _day = await MetricsSvc.GetDayAsync(Date);
@@ -388,7 +397,12 @@
         }
         _invalid.Remove(t.Metric.Id);
         Settled(t.Metric.Id, false);
+        var group = _progress.GroupOf(t.Metric.Id);
+        var wasIn = _lastGroup;
         await Save(t, value, t.Note);
+        // Focus moved on to another group while this saved (a click there from the group's last box): leaving was heard
+        // before the group was finished, so it folds now that it is.
+        if (group is { } g && wasIn == g && _lastGroup is { } now && now != g) _progress.Left(g, now);
         StateHasChanged();
     }
 
