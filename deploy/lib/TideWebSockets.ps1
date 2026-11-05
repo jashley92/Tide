@@ -122,7 +122,7 @@ function Get-TideWebSocketConfig {
     param([Parameter(Mandatory = $true)] [string] $IisPath, [string] $SitePath)
     $server = Read-TideWebSocketSetting
     $site = Read-TideWebSocketSetting -Location $IisPath
-    $webConfig = if ($SitePath) { Get-TideWebConfigWebSocket (Join-Path $SitePath 'web.config') } else { $null }
+    $webConfig = if ($SitePath) { Get-TideWebConfigWebSocket ([IO.Path]::Combine($SitePath, 'web.config')) } else { $null }
     $effective = if ($webConfig) { $webConfig } elseif ($site) { $site } elseif ($server) { $server } else { 'true' }
     return [pscustomobject]@{ Server = $server; Site = $site; WebConfig = $webConfig; Effective = $effective }
 }
@@ -188,7 +188,7 @@ function Enable-TideWebSocketConfig {
     $changed = @()
     $config = Get-TideWebSocketConfig -IisPath $IisPath -SitePath $SitePath
     if ($config.WebConfig -eq 'false') {
-        $file = Join-Path $SitePath 'web.config'
+        $file = [IO.Path]::Combine($SitePath, 'web.config')
         [xml]$x = Get-Content -LiteralPath $file -Raw
         foreach ($node in @($x.SelectNodes('//system.webServer/webSocket[@enabled]'))) { $node.SetAttribute('enabled', 'true') }
         $x.Save($file)
