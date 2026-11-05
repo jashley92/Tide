@@ -45,6 +45,12 @@ public sealed record StackAction(int Number, string Title, Priority Priority, Ac
 /// <summary>A product with its history, newest first.</summary>
 public sealed record StackDetail(StackProduct Product, string? TeamName, IReadOnlyList<StackArticle> Articles, IReadOnlyList<StackAction> Actions);
 
+/// <summary>
+/// A product as present mode shows it over an article's slide (team edition only: its notes are internal): its facts, and
+/// the other articles about it, newest first, up to <see cref="StackService.CardArticles"/>.
+/// </summary>
+public sealed record StackCard(StackProduct Product, string? TeamName, IReadOnlyList<StackArticle> Others);
+
 /// <summary>An article's products: those it's tagged with, and those it names but isn't tagged with (a suggestion).</summary>
 public sealed record ArticleStack(IReadOnlyList<StackProduct> Tagged, IReadOnlyList<StackProduct> Suggested);
 
@@ -154,10 +160,7 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         var p = await db.StackProducts.AsNoTracking().Include(x => x.Team).FirstOrDefaultAsync(x => x.Id == id, ct);
         if (p is null) return null;
         var e = Entry(p);
-        var tagged = (await db.ArticleProducts.AsNoTracking().Where(t => t.ProductId == id).Select(t => t.ArticleId).ToListAsync(ct)).ToHashSet();
-        var articles = (await ArticlesAsync(db, ct)).Where(a => tagged.Contains(a.Id) || Names(e, a.Words))
-            .Select(a => new StackArticle(a.Id, a.Title, a.On, a.Status, tagged.Contains(a.Id)))
-            .OrderByDescending(a => a.On).ToList();
+        var articles = await HistoryAsync(db, p, ct);
         var ids = articles.Select(a => a.Id).ToList();
         // Only the columns shown: every action is read, to find those that name the product without an article.
         var actions = (await db.Actions.AsNoTracking()
@@ -167,6 +170,56 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
             .OrderBy(a => ActionItem.IsClosedStatus(a.Status)).ThenBy(a => a.DueDate ?? DateOnly.MaxValue).ThenBy(a => a.Number)
             .Select(a => new StackAction(a.Number, a.Title, a.Priority, a.Status, a.Team ?? "", a.AssigneeName, a.DueDate)).ToList();
         return new StackDetail(p, p.Team?.Name, articles, actions);
+    }
+
+    /// <summary>How many other articles a present-mode card lists.</summary>
+    public const int CardArticles = 5;
+
+    /// <summary>The longest versions text a present-mode chip carries; longer ones are on its card.</summary>
+    public const int ChipVersionsMax = 24;
+
+    /// <summary>The versions a chip shows beside the name: short ones only, the rest are on the card.</summary>
+    public static string? ChipVersions(string? versions) =>
+        versions?.Trim() is { Length: > 0 and <= ChipVersionsMax } v ? v : null;
+
+    /// <summary>
+    /// The products each article is tagged with, for present mode's chips: those in use by name, then retired ones (shown
+    /// muted, as the editor's card marks them). An article with none isn't in the result.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<Guid, IReadOnlyList<StackProduct>>> ForArticlesAsync(IEnumerable<Guid> articleIds, CancellationToken ct = default)
+    {
+        RequireRead();
+        var ids = articleIds.Distinct().ToList();
+        if (ids.Count == 0) return new Dictionary<Guid, IReadOnlyList<StackProduct>>();
+        await using var db = await dbs.CreateAsync(ct);
+        var tags = await db.ArticleProducts.AsNoTracking().Where(t => ids.Contains(t.ArticleId))
+            .Select(t => new { t.ArticleId, Product = t.Product! }).ToListAsync(ct);
+        return tags.GroupBy(t => t.ArticleId).ToDictionary(g => g.Key, g => (IReadOnlyList<StackProduct>)g.Select(t => t.Product)
+            .OrderBy(p => p.IsRetired).ThenBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase).ToList());
+    }
+
+    /// <summary>
+    /// A product's card for present mode: its facts and the other articles about it (tagged or naming it), newest first,
+    /// leaving out <paramref name="exceptArticleId"/> (the one on the slide). Null when it's gone.
+    /// </summary>
+    public async Task<StackCard?> CardAsync(Guid id, Guid? exceptArticleId = null, CancellationToken ct = default)
+    {
+        RequireRead();
+        await using var db = await dbs.CreateAsync(ct);
+        var p = await db.StackProducts.AsNoTracking().Include(x => x.Team).FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (p is null) return null;
+        var others = (await HistoryAsync(db, p, ct)).Where(a => a.Id != exceptArticleId).Take(CardArticles).ToList();
+        return new StackCard(p, p.Team?.Name, others);
+    }
+
+    // A product's articles, tagged with it or naming it, newest first.
+    private async Task<List<StackArticle>> HistoryAsync(IAppDbContext db, StackProduct p, CancellationToken ct)
+    {
+        var e = Entry(p);
+        var tagged = (await db.ArticleProducts.AsNoTracking().Where(t => t.ProductId == p.Id).Select(t => t.ArticleId).ToListAsync(ct)).ToHashSet();
+        return (await ArticlesAsync(db, ct)).Where(a => tagged.Contains(a.Id) || Names(e, a.Words))
+            .Select(a => new StackArticle(a.Id, a.Title, a.On, a.Status, tagged.Contains(a.Id)))
+            .OrderByDescending(a => a.On).ToList();
     }
 
     /// <summary>An article's products, and those it names but isn't tagged with.</summary>

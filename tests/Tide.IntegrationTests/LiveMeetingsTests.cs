@@ -262,6 +262,83 @@ public sealed class LiveMeetingsTests : IDisposable
     }
 
     [Fact]
+    public void ThePresenterShowsAProductsCard_ForTheMeeting_OneThingOpenAtATime_AndMovingOnOrHandingOffClosesIt()
+    {
+        var pat = Start();
+        var sam = Join("sam", "Sam");
+        Join("robin", "Robin", canPresent: true);
+        var product = Guid.NewGuid();
+
+        _meetings.Show(sam, product).Should().BeFalse("only the presenter shows one to the meeting");
+        _meetings.Show(pat, product).Should().BeTrue();
+        View.Product.Should().Be(product);
+        _meetings.Show(pat, product).Should().BeFalse("no news");
+
+        _meetings.Open(pat, 12).Should().BeTrue();
+        View.Should().Match<LiveMeetingView>(v => v.Action == 12 && v.Product == null, "an action replaces the card");
+        _meetings.Show(pat, product);
+        View.Should().Match<LiveMeetingView>(v => v.Action == null && v.Product == product, "and the card the action");
+        _meetings.Open(pat, null).Should().BeFalse("no action to close");
+        View.Product.Should().Be(product, "closing no action leaves the card");
+
+        pat.At(0);
+        View.Product.Should().Be(product, "still on the same slide");
+        pat.At(2);
+        View.Product.Should().BeNull("it was the last slide's");
+
+        _meetings.Show(pat, product);
+        _meetings.Show(pat, null).Should().BeTrue();
+        View.Product.Should().BeNull();
+
+        _meetings.Show(pat, product);
+        _meetings.HandTo(pat, "robin").Should().BeTrue();
+        View.Product.Should().BeNull("the new presenter starts with nothing open");
+    }
+
+    [Fact]
+    public void APopup_FollowsThePresentersUnlessClosedHere_AndALockHoldsIt()
+    {
+        var popup = new MeetingPopup();
+        Guid a = Guid.NewGuid(), b = Guid.NewGuid();
+
+        popup.Sync(a, following: true, held: false).Should().BeTrue();
+        (popup.Shown, popup.Own).Should().Be((a, false));
+        popup.Sync(a, following: true, held: false).Should().BeFalse("no news");
+
+        popup.Close();
+        popup.Sync(a, following: true, held: false).Should().BeFalse("closed here, it stays closed");
+        popup.Shown.Should().BeNull();
+        popup.Sync(b, following: true, held: false).Should().BeTrue("until the presenter opens another");
+        popup.Shown.Should().Be(b);
+
+        popup.Sync(null, following: false, held: false).Should().BeFalse("not following: what's open stays");
+        popup.Shown.Should().Be(b);
+        popup.Sync(null, following: true, held: false).Should().BeTrue("their closing closes it here");
+        popup.Shown.Should().BeNull();
+
+        popup.Open(a, presenting: false, inMeeting: true);
+        popup.Own.Should().BeTrue("a follower's own look");
+        popup.Sync(null, following: true, held: false).Should().BeFalse("the presenter's closing leaves it");
+        popup.Shown.Should().Be(a);
+        popup.Sync(b, following: true, held: false).Should().BeTrue("the presenter's opening replaces it");
+        (popup.Shown, popup.Own).Should().Be((b, false));
+
+        popup.Reset();
+        popup.Sync(b, following: true, held: false).Should().BeTrue("after a move, the presenter's shows again");
+        popup.Close();
+        popup.Sync(b, following: true, held: true).Should().BeTrue("held by the lock, it shows");
+        popup.Sync(b, following: true, held: true).Should().BeFalse();
+        popup.Sync(null, following: true, held: true).Should().BeTrue();
+        popup.Shown.Should().BeNull();
+
+        popup.Open(a, presenting: true, inMeeting: true);
+        (popup.Shown, popup.Own).Should().Be((a, false));
+        popup.Sync(a, following: true, held: false).Should().BeFalse("the presenter's own is the one seen");
+        popup.Open(b, presenting: false, inMeeting: false);
+        popup.Own.Should().BeFalse("with no meeting there's nobody else");
+    }
+
+    [Fact]
     public void WhenThePresenterDrops_SomeoneWhoCanPresent_CanTakeOverAfterTheGrace_UnlessTheyComeBack()
     {
         var pat = Start();

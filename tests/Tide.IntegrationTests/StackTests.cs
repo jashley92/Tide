@@ -90,6 +90,44 @@ public class StackServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task PresentMode_ReadsEachArticlesProducts_AndAProductsCard_WithItsOtherArticles()
+    {
+        _db.User.Roles = new HashSet<AppRole> { AppRole.Analyst, AppRole.Admin };
+        var stack = _db.Stack();
+        var team = await _db.Teams().AddAsync("Network", null, null);
+        var vpn = await stack.SaveAsync(new StackForm { Name = "Contoso VPN Gateway", Versions = "9.1R18", TeamId = team, CheckedOn = new DateOnly(2026, 10, 1) });
+        var proxy = await stack.SaveAsync(new StackForm { Name = "Alpha Proxy" });
+        var old = await stack.SaveAsync(new StackForm { Name = "Aardvark Mail" });
+        await stack.SetRetiredAsync(old, true);
+        var articles = _db.Articles();
+        var shown = await articles.CreateAsync("Gateway auth bypass", "Vendor", null, TlpLevel.Clear);
+        var bare = await articles.CreateAsync("Nothing we run", "Vendor", null, TlpLevel.Clear);
+        foreach (var p in new[] { vpn, proxy, old }) await stack.TagArticleAsync(shown, p);
+        for (var i = 0; i < StackService.CardArticles + 1; i++) await articles.CreateAsync($"Contoso VPN Gateway story {i}", "Vendor", null, TlpLevel.Clear);
+
+        var of = await stack.ForArticlesAsync([shown, bare, shown]);
+        of.Keys.Should().Equal(shown);
+        of[shown].Select(p => p.Name).Should().Equal(["Alpha Proxy", "Contoso VPN Gateway", "Aardvark Mail"], "those in use by name, then the retired");
+        (await stack.ForArticlesAsync([])).Should().BeEmpty();
+
+        var card = (await stack.CardAsync(vpn, shown))!;
+        (card.Product.Name, card.TeamName, card.Product.CheckedOn).Should().Be(("Contoso VPN Gateway", "Network", new DateOnly(2026, 10, 1)));
+        card.Others.Should().HaveCount(StackService.CardArticles).And.NotContain(a => a.Id == shown, "not the article on the slide");
+        (await stack.CardAsync(proxy, shown))!.Others.Should().BeEmpty();
+        (await stack.CardAsync(proxy))!.Others.Should().ContainSingle(a => a.Id == shown && a.Tagged);
+        (await stack.CardAsync(Guid.NewGuid())).Should().BeNull();
+
+        StackService.ChipVersions(" 9.1R18 ").Should().Be("9.1R18");
+        StackService.ChipVersions("  ").Should().BeNull();
+        StackService.ChipVersions(null).Should().BeNull();
+        StackService.ChipVersions(new string('1', StackService.ChipVersionsMax + 1)).Should().BeNull("long ones are on the card");
+
+        _db.User.Roles = new HashSet<AppRole> { AppRole.Reader };
+        await FluentActions.Invoking(() => stack.ForArticlesAsync([shown])).Should().ThrowAsync<ForbiddenException>();
+        await FluentActions.Invoking(() => stack.CardAsync(vpn)).Should().ThrowAsync<ForbiddenException>();
+    }
+
+    [Fact]
     public async Task AnArticle_IsTaggedWithAnyNumberOfProducts_AndOffersTheOnesItNames()
     {
         var stack = _db.Stack();

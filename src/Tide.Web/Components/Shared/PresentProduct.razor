@@ -1,0 +1,78 @@
+@* An Our stack product's card, opened over an article's slide in present mode from its "We run" chip: what we run and
+   where, who owns it, its notes (as the stack page renders them), when it was last checked, and the other articles
+   about it. Team edition only: the notes are internal (TLP:AMBER); Present draws it only there. *@
+@using Tide.Application.Stack
+
+@{ var p = Card.Product; }
+@* A region, not a dialog, like the action opened over a slide: present.js keeps the keys, so Esc closes it. *@
+<section class="tide-present-action tide-present-product" aria-labelledby="present-product-title">
+    <div class="tide-present-action-head">
+        <h2 id="present-product-title"><span class="tide-present-product-kicker">We run</span> @p.Name
+            @if (p.IsRetired) { <Badge Tone="BadgeTone.Neutral">Retired</Badge> }</h2>
+        @if (Kicker is not null) { <span class="tide-present-help">@Kicker</span> }
+        <a class="btn btn-sm btn-outline-secondary ms-auto" href="@($"stack/{p.Id}")" target="_blank" rel="noopener">Open on Our stack</a>
+        @if (CanClose)
+        {
+            <button type="button" class="btn btn-sm btn-outline-secondary" aria-label="Close @p.Name" title="Close (Esc)" @ref="_close" @onclick="Close"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+        }
+    </div>
+    <div class="tide-present-action-body">
+        <dl class="tide-facts">
+            @if (StackService.SplitNames(p.OtherNames) is { Count: > 0 } others)
+            {
+                <div class="tide-fact"><dt>Also called</dt><dd>@string.Join(", ", others)</dd></div>
+            }
+            <div class="tide-fact"><dt>Versions</dt><dd>@(p.Versions ?? "Not given")</dd></div>
+            <div class="tide-fact"><dt>Owning team</dt><dd>@(Card.TeamName ?? "No team")</dd></div>
+            <div class="tide-fact"><dt>Last checked</dt><dd>@(p.CheckedOn is { } c ? Ui.Day(c) : "Not checked yet")</dd></div>
+        </dl>
+        <div class="tide-present-action-cols">
+            <div>
+                <div class="tide-slide-section">Notes</div>
+                @if (p.Notes is { } notes) { <Md Text="@notes" /> } else { <div class="tide-present-help">No notes yet.</div> }
+            </div>
+            <div>
+                <div class="tide-slide-section">Other recent articles</div>
+                @if (Card.Others.Count == 0) { <div class="tide-present-help">None.</div> }
+                else
+                {
+                    <ul class="tide-present-product-articles">
+                        @foreach (var a in Card.Others)
+                        {
+                            <li @key="a.Id"><span class="tide-present-help">@Ui.ShortDay(a.On)</span> @a.Title</li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public StackCard Card { get; set; } = default!;
+
+    /// <summary>A word on whose it is: "Shown to everyone following", "Tester is showing this".</summary>
+    [Parameter] public string? Kicker { get; set; }
+
+    /// <summary>Whether this page may close it: not a follower held by the presenter's lock.</summary>
+    [Parameter] public bool CanClose { get; set; } = true;
+
+    /// <summary>Takes focus once drawn: this page opened it.</summary>
+    [Parameter] public bool Autofocus { get; set; }
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private ElementReference _close;
+    private Guid? _focused;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!Autofocus || !CanClose || _focused == Card.Product.Id) return;
+        _focused = Card.Product.Id;
+        try { await _close.FocusAsync(); }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+
+    private Task Close() => CanClose ? OnClose.InvokeAsync() : Task.CompletedTask;
+}
