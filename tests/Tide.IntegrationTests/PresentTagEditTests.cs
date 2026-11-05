@@ -287,13 +287,46 @@ public class PresentTagEditTests(TideApp app) : IClassFixture<TideApp>
         var html = await pat.Html();
         html.Should().Contain("present-tagedit-title", "the panel stays open").And.Contain("Someone else saved this article")
             .And.Contain("Saved now: T1486; no scorecard tags.")
-            .And.Contain("aria-pressed=\"true\"", "the tag chosen stays chosen").And.Contain("T1190");
+            .And.Contain($"aria-label=\"Remove {s.TagName}\"", "the tag chosen stays chosen").And.Contain("T1190");
         await using (var check = SignedIn(app, SignIn.Analyst))
             (await check.ServiceProvider.GetRequiredService<ArticleService>().GetAsync(s.First))!.Techniques.Select(t => t.TechniqueId).Should().Equal("T1486");
 
         // Saving again, having seen what's there, puts the choice in its place.
         await pat.Click(p => p.TagEditor!.Save());
         (await pat.Html()).Should().NotContain("present-tagedit-title").And.Contain(">Initial Access<").And.NotContain(">Impact<");
+    }
+
+    // The panel's scorecard tags are the article editor's picker: chosen chips, "Add a tag", and the rest folded.
+    [Fact]
+    public async Task ThePanelsTags_AreTheEditorsPicker_SearchAddsAndAChipRemoves_AndSaveKeepsThem()
+    {
+        var s = await Brief(124);
+        await using var pat = await Open(s.Day);
+        await FirstArticle(pat);
+        await Do(pat, p => p.EditTags(s.First));
+        var html = await pat.Html();
+        html.Should().Contain("Scorecard tags <span class=\"tide-tagpick-count\">0 chosen</span>").And.Contain("None chosen.")
+            .And.Contain("for=\"present-tags-search\">Add a tag</label>").And.Contain("role=\"combobox\"")
+            .And.Contain("aria-controls=\"present-tags-browse\"").And.Contain("<div id=\"present-tags-browse\" class=\"tide-disclosure-body tide-tagpick-all\" hidden>");
+
+        await pat.Click(p =>
+        {
+            var picker = p.TagEditor!.TagPicker!;
+            picker.Search(s.TagName.ToUpperInvariant());
+            return picker.Add(picker._found.Single(h => h.Tag.Id == s.Tag));
+        });
+        html = await pat.Html();
+        html.Should().Contain($"aria-label=\"Remove {s.TagName}\"").And.Contain("1 chosen");
+
+        // Removed, then added again from the browse list.
+        await pat.Click(p => p.TagEditor!.TagPicker!.Toggle(s.Tag));
+        (await pat.Html()).Should().NotContain($"aria-label=\"Remove {s.TagName}\"").And.Contain("0 chosen");
+        await pat.Click(p => p.TagEditor!.TagPicker!.Toggle(s.Tag));
+
+        await pat.Click(p => p.TagEditor!.Save());
+        (await pat.Html()).Should().NotContain("present-tagedit-title");
+        await using var check = SignedIn(app, SignIn.Analyst);
+        (await check.ServiceProvider.GetRequiredService<ArticleService>().GetAsync(s.First))!.Tags.Select(t => t.TagId).Should().Equal(s.Tag);
     }
 
     [Fact]
