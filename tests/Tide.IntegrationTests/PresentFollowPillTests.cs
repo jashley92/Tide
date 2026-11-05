@@ -156,4 +156,35 @@ public class PresentFollowPillTests(MeetingClockApp app) : IClassFixture<Meeting
         Shown(await owner.Html()).Should().Be("Following Robin Analyst");
         Meetings.End(Meetings.Join(day, Robin.UserId, Robin.Name, true, "", Guid.NewGuid(), 0)!);
     }
+
+    [Fact]
+    public async Task AViewerAndAVisitor_FollowWithThePill_AndAreNeverOfferedTheTakeOver()
+    {
+        var day = await Brief(104);
+        var pat = await Open(day);
+        await Do(pat, p => p.StartMeeting());
+        await using var viewer = await Open(day, new SignIn("dev:pill-viewer", "Val Viewer", "Viewer"));
+        await Do(viewer, p => p.JoinIfLive());
+        await using var visitor = await Open(day, new SignIn("dev:pill-visitor", "Vic Visitor", "Visitor"));
+        await Do(visitor, p => p.GoLive());
+        Meetings.Get(day)!.People.Select(p => p.Name).Should().Contain(["Val Viewer", "Vic Visitor"]);
+        foreach (var r in new[] { viewer, visitor })
+        {
+            Shown(await r.Html()).Should().Be("Following Tester");
+            await r.Click(p => p.OnPresentKey("next"));
+            Shown(await r.Html()).Should().Be("Tester is on slide 1 · Back to Tester");
+            await Do(r, p => p.BackToPresenter());
+        }
+
+        await pat.DisposeAsync();
+        app.Clock.Now += LiveMeetings.Grace + TimeSpan.FromSeconds(1);
+        foreach (var r in new[] { viewer, visitor })
+        {
+            await Do(r, p => p.Follow());
+            var html = await r.Html();
+            Shown(html).Should().Be("Tester dropped out");
+            html.Should().NotContain("Take over");
+        }
+        EndMeeting(day);
+    }
 }

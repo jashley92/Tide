@@ -295,4 +295,38 @@ public class PresentTagEditTests(TideApp app) : IClassFixture<TideApp>
         await pat.Click(p => p.TagEditor!.Save());
         (await pat.Html()).Should().NotContain("present-tagedit-title").And.Contain(">Initial Access<").And.NotContain(">Impact<");
     }
+
+    [Fact]
+    public async Task AViewerAndAVisitor_SeeTheRoomsTagRow_ScorecardTagsIncluded_ButNoEditButtonAndNoLinks()
+    {
+        var s = await Brief(123);
+        await using (var analyst = SignedIn(app, SignIn.Analyst))
+        {
+            var articles = analyst.ServiceProvider.GetRequiredService<ArticleService>();
+            await articles.SaveTagsAsync(s.First, (await articles.GetAsync(s.First))!.EditVersion, [s.Tag], ["T1190"]);
+        }
+        await using var pat = await Open(s.Day);
+        await Do(pat, p => p.StartMeeting());
+        await FirstArticle(pat);
+        await using var viewer = await Open(s.Day, new SignIn("dev:tagedit-val", "Val Viewer", "Viewer"));
+        await Do(viewer, p => p.JoinIfLive());
+        await using var visitor = await Open(s.Day, new SignIn("dev:tagedit-vic", "Vic Visitor", "Visitor"));
+        await Do(visitor, p => p.GoLive());
+
+        foreach (var r in new[] { viewer, visitor })
+        {
+            await Do(r, p => p.Follow());
+            var html = await r.Html();
+            html.Should().Contain($"<h2>{s.FirstTitle}</h2>");
+            var at = html.IndexOf("<div class=\"tide-slide-tags\">", StringComparison.Ordinal);
+            at.Should().BePositive("the room's tag row");
+            var row = html[at..html.IndexOf("tide-slide-bluf", at, StringComparison.Ordinal)];
+            row.Should().Contain(">Initial Access<").And.Contain($">{s.TagName}</li>", "the team edition's scorecard tags, as the room sees them")
+                .And.NotContain("<a ", "the chips link nowhere").And.NotContain("href").And.NotContain("tide-slide-tags-edit");
+
+            await Do(r, p => p.EditTags(s.First));
+            (await r.Html()).Should().NotContain("present-tagedit-title", "they can't open the panel either");
+        }
+        EndMeeting(s.Day);
+    }
 }

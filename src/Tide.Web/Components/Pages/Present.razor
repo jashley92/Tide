@@ -88,7 +88,7 @@ else
                         @if (live.CanTakeOver)
                         {
                             <span class="tide-follow-dot" aria-hidden="true"></span><span class="tide-follow-text" title="@live.PresenterName dropped out"><span class="tide-follow-name">@live.PresenterName</span> dropped out</span>
-                            @if (_canPresent) { <span class="tide-follow-sep" aria-hidden="true">&middot;</span><button class="btn btn-sm btn-primary tide-follow-btn" @onclick="TakeOver">Take over</button> }
+                            @if (_canPresent && !_visitor) { <span class="tide-follow-sep" aria-hidden="true">&middot;</span><button class="btn btn-sm btn-primary tide-follow-btn" @onclick="TakeOver">Take over</button> }
                         }
                         else if (!live.PresenterHere)
                         {
@@ -1463,8 +1463,8 @@ else
     private bool _focusEditTags;
 
     /// <summary>Whether this page can edit an article's tags from its slide: an analyst (who can write articles), on the
-    /// team edition, presenting or following. The save itself is the article editor's, which checks again.</summary>
-    private bool CanEditTags => TeamEdition && CurrentUser.Has(Permission.WriteArticles);
+    /// team edition, presenting or following (never a Viewer or Visitor, who can't write). The save itself is the article editor's, which checks again.</summary>
+    private bool CanEditTags => TeamEdition && !_visitor && CurrentUser.Has(Permission.WriteArticles);
 
     /// <summary>For tests: the tag panel open over the slide, if any.</summary>
     internal PresentTagEditor? TagEditor => _tagEditor;
