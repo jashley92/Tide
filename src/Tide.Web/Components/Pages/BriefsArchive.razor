@@ -22,7 +22,13 @@
             <td>@r.AnalystName</td>
             <td class="tide-table-num">@r.Articles</td>
             <td class="tide-table-num">@r.Threats</td>
-            <td><StatusBadge Status="@Label(r)" /></td>
+            <td>
+                <StatusBadge Status="@Label(r)" />
+                @if (NotSent(r))
+                {
+                    <div class="tide-not-sent-note">@r.NotSentByName, @Ui.When(Clock, r.NotSentAtUtc!.Value): @r.NotSentReason</div>
+                }
+            </td>
         </RowTemplate>
     </DataTable>
 </div>
@@ -39,14 +45,18 @@
         new("presenter", "Presented by") { SortBy = r => r.AnalystName, FilterBy = r => r.AnalystName },
         new("articles", "Articles") { SortBy = r => r.Articles, DescendingFirst = true, Class = "tide-table-num" },
         new("threats", "Threats") { SortBy = r => r.Threats, DescendingFirst = true, Class = "tide-table-num" },
-        new("status", "Status") { SortBy = r => r.Status, FilterBy = r => r.Status + " " + Label(r) },
+        new("status", "Status") { SortBy = r => r.Status, FilterBy = r => r.Status + " " + Label(r) + (NotSent(r) ? " " + r.NotSentReason : "") },
     ];
 
     private IReadOnlyList<TableColumn<BriefSummary>>? _columns;
 
-    // "Distributed" for a brief finished without email; "SharePoint to post" while its required SharePoint copy waits.
+    // "Distributed" for a brief finished without email; "Not sent" for one finished without sending while email was on
+    // (who, when and why under it); "SharePoint to post" while its required SharePoint copy waits.
     private string Label(BriefSummary r) => BriefSteps.StatusLabel(r.Status, r.DistributedAtUtc is not null && !r.Emailed, r.SharePointPostedAtUtc is not null,
-        DistributionOptions.CurrentValue.RequireSharePoint && r.SharePointRequired);
+        DistributionOptions.CurrentValue.RequireSharePoint && r.SharePointRequired, NotSent(r));
+
+    // Finished as not sent, and not emailed since.
+    private static bool NotSent(BriefSummary r) => r.Status == BriefStatus.Sent && r.NotSentAtUtc is not null && !r.Emailed;
 
     private IReadOnlyList<BriefSummary>? _rows;
 

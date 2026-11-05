@@ -145,6 +145,36 @@ else if (_canSend)
             }
         </section>
     }
+    @if (Distribution.EmailEnabled && Brief is not null && !Emailed)
+    {
+        @* Email on, but the brief won't go today: finished as a send would finish it, with the reason kept. It can still be
+           sent after. *@
+        <section class="tide-card tide-send-edition tide-not-sent" aria-labelledby="send-not-sent-h">
+            <h3 class="tide-card-title" id="send-not-sent-h">Finish without sending</h3>
+            @if (Brief.NotSentAtUtc is { } at)
+            {
+                <p class="small mb-0"><span class="bi bi-slash-circle" aria-hidden="true"></span> Finished as not sent by @Brief.NotSentByName, @Ui.When(Clock, at).</p>
+                <p class="small mb-0 tide-not-sent-why">Why: @Brief.NotSentReason</p>
+                <p class="small tide-muted mb-0">It can still be sent above.</p>
+            }
+            else if (Brief.Status != BriefStatus.Sent)
+            {
+                <p class="small mb-2">If the brief won't be emailed, finish it here: its numbers lock and it's finished, and the reason is kept. It can still be sent later.</p>
+                <label class="form-label small mb-1" for="send-not-sent-why">Why it isn't being sent</label>
+                <textarea id="send-not-sent-why" class="form-control form-control-sm" rows="2" maxlength="@DistributionService.NotSentReasonMax"
+                          disabled="@_busy" @bind="_notSentReason" @bind:event="oninput"></textarea>
+                <div class="form-check mt-2 mb-0">
+                    <input class="form-check-input" type="checkbox" id="send-wont-go" checked="@_wontGo" disabled="@_busy"
+                           @onchange="e => _wontGo = e.Value is true" />
+                    <label class="form-check-label small" for="send-wont-go">It won't be sent</label>
+                </div>
+                <button type="button" class="btn btn-outline-primary btn-sm mt-2"
+                        disabled="@(_busy || !_wontGo || string.IsNullOrWhiteSpace(_notSentReason) || !MaySend || _reviewGaps.Any(g => g.Required))"
+                        @onclick="FinishNotSent"><span class="bi bi-slash-circle" aria-hidden="true"></span> Finish as not sent</button>
+                <div class="small mt-1" aria-live="polite">@_notSentNote</div>
+            }
+        </section>
+    }
     @if (Brief is not null && (Distribution.SharePointRequired || Brief.SharePointPostedAtUtc is not null))
     {
         <SharePointPosted Date="Date" ForThisBrief="@(Brief.Status != BriefStatus.Sent || Brief.SharePointRequired)" PostedAtUtc="Brief.SharePointPostedAtUtc" PostedByName="@Brief.SharePointPostedByName" Changed="Sent" />
@@ -192,6 +222,41 @@ else if (_canSend)
         finally
         {
             _goneOut = false;
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+
+    private bool _wontGo;
+    private string? _notSentReason, _notSentNote;
+
+    // Whether an edition has gone by email: then the brief is sent, and there's nothing to finish without sending.
+    private bool Emailed => _sends.Any(s => !s.IsTest && s.Status == SendStatus.Sent);
+
+    /// <summary>The reason box, as typed (a test sets it directly).</summary>
+    internal void NotSentReason(string? reason, bool wontGo = true) => (_notSentReason, _wontGo) = (reason, wontGo);
+
+    // Email on, but it won't be sent (DistributionService.FinishNotSentAsync).
+    internal async Task FinishNotSent()
+    {
+        if (_busy) return;
+        _busy = true;
+        _notSentNote = null;
+        try
+        {
+            await Distribution.FinishNotSentAsync(Date, _notSentReason, _withoutMeeting);
+            Toasts.Show("Finished as not sent.");
+            _notSentReason = null;
+            await Sent.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or KeyNotFoundException)
+        {
+            _notSentNote = UserFacingError.For(ex);
+            Toasts.Error(_notSentNote);
+        }
+        finally
+        {
+            _wontGo = false;
             _busy = false;
             StateHasChanged();
         }

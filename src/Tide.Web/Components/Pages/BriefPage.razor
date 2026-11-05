@@ -104,6 +104,11 @@ else
                         <a class="btn @(next == BriefNext.Present ? "btn-primary" : "btn-outline-secondary")" href="@Ui.PresentUrl(_date)"><span class="bi bi-easel" aria-hidden="true"></span> Present</a>
                     }
                 </LiveMeetingJoin>
+                @if (canPresent && _brief.Status == BriefStatus.Presented)
+                {
+                    @* The meeting ended by mistake, or too soon: back to Ready, so it can be presented again. *@
+                    <button type="button" class="btn btn-outline-secondary" disabled="@_busy" @onclick="AskReopen"><span class="bi bi-arrow-counterclockwise" aria-hidden="true"></span> Back to ready</button>
+                }
                 @if (canPresent && next == BriefNext.Send)
                 {
                     <button type="button" class="btn btn-primary" @onclick="AskSend"><span class="bi bi-send" aria-hidden="true"></span> @(Sends.EmailEnabled ? "Send" : "Distribute")</button>
@@ -146,7 +151,13 @@ else
         <div class="tide-past-day mb-3" role="note">
             <span class="bi bi-send-check" aria-hidden="true"></span>
             <div>
-                @if (_brief.DistributedAtUtc is { } distributed && _asSent.Count == 0)
+                @if (_brief.NotSentAtUtc is { } notSent && _asSent.Count == 0)
+                {
+                    <strong>This brief was finished without being sent</strong>
+                    <span>(marked by @_brief.NotSentByName, @Ui.When(Clock, notSent)).</span>
+                    <div class="tide-not-sent-why">Why: @_brief.NotSentReason</div>
+                }
+                else if (_brief.DistributedAtUtc is { } distributed && _asSent.Count == 0)
                 {
                     <strong>This brief was distributed without email</strong>
                     <span>(marked by @_brief.DistributedByName, @Ui.When(Clock, distributed)).</span>
@@ -290,9 +301,9 @@ else
     private IReadOnlyList<BriefSend> _asSent = [];
     private IReadOnlyList<BriefSend>? _sends;
 
-    // The brief's status as the archive and the step strip say it: "Distributed", "SharePoint to post".
+    // The brief's status as the archive and the step strip say it: "Distributed", "Not sent", "SharePoint to post".
     private string StatusLabel => BriefSteps.StatusLabel(_brief!.Status, _brief.DistributedAtUtc is not null && _asSent.Count == 0,
-        _brief.SharePointPostedAtUtc is not null, Sends.SharePointRequired && _brief.SharePointRequired);
+        _brief.SharePointPostedAtUtc is not null, Sends.SharePointRequired && _brief.SharePointRequired, _brief.NotSentAtUtc is not null && _asSent.Count == 0);
     private IReadOnlyList<Edition> _nothingToSend = [];   // an edition every article is above the ceiling of can't go
 
     private bool IsToday => _date == Clock.CurrentBriefDate;
@@ -650,6 +661,45 @@ else
             && !await _confirm.Ask("Ready anyway?", warning, "Mark ready", danger: false)) return;
         await MarkReady(true);
     }
+
+    /// <summary>What the Back to ready confirmation says will happen.</summary>
+    public static string ReopenMessage(Reopening plan) =>
+        "The brief goes back to Ready and the meeting can be presented again. Its articles go back to how they were before it; "
+        + "the meeting's notes, attendees and discussed ticks are kept."
+        + (plan is { Carried: > 0, CarriedTo: { } day }
+            ? $" The {plan.Carried} article{(plan.Carried == 1 ? "" : "s")} it carried to {Ui.Day(day)} come{(plan.Carried == 1 ? "s" : "")} off that brief and back to this one."
+            : "");
+
+    internal async Task AskReopen()
+    {
+        try
+        {
+            var plan = await BriefSvc.ReopeningAsync(_brief!.Id);
+            if (plan.Blocked is { } why)
+            {
+                Toasts.Error(why);
+                return;
+            }
+            if (!await _confirm.Ask("Back to ready?", ReopenMessage(plan), "Back to ready", danger: false)) return;
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            return;
+        }
+        await Run(async () =>
+        {
+            var done = await BriefSvc.ReopenAsync(_brief!.Id);
+            _reopened = done is { Carried: > 0, CarriedTo: { } day }
+                ? $"Back to ready. {done.Carried} article{(done.Carried == 1 ? "" : "s")} came back from {Ui.Day(day)}."
+                : "Back to ready.";
+        }, null, () => Toasts.Show(_reopened ?? "Back to ready."));
+    }
+
+    private string? _reopened;
+
+    /// <summary>Presses the open confirmation's confirm button (Back to ready, Mark ready), as a test does.</summary>
+    internal Task ConfirmAsked() => _confirm.Confirm();
 
     internal Task AskSend()
     {

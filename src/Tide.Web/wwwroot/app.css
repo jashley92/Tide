@@ -1764,3 +1764,9 @@ button.tide-mentry-chip:focus-visible { outline: 2px solid var(--tide-focus-ring
 .tide-md-btn:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 0; color: var(--tide-text); }
 .tide-md-sep { width: 1px; align-self: stretch; margin: 3px 2px; background: var(--tide-border); }
 @media (forced-colors: active) { .tide-md-btn { border-color: ButtonText; } .tide-md-sep { background: CanvasText; } }
+/* A brief finished as not sent (DistributePanel, BriefPage, the archive): the reason kept as typed, and in the archive a
+   short muted line under the status, two lines at most. */
+.tide-not-sent-why { white-space: pre-line; overflow-wrap: anywhere; }
+.tide-not-sent-note { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-clamp: 2; overflow: hidden;
+    max-width: 22rem; margin-top: var(--tide-space-1); font-size: var(--tide-text-xs); color: var(--tide-text-muted); overflow-wrap: anywhere; }
+.tide-send-edition.tide-not-sent textarea { resize: vertical; }
