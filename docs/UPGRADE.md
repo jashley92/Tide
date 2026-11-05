@@ -171,6 +171,31 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
+### v1.1.0
+
+Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). The upgrade adds new migrations; none of the earlier ones change.
+
+- **Email addresses come from AD.** With Windows authentication, TIDE now reads each user's `mail` attribute along with
+  their display name, as the app-pool account. Test copies, reminders, digests and rotation emails reach people who had
+  no address before. Each user's address is filled in on their next visit. A UPN is never used in place of `mail`.
+- **New setting: Analyst pull-now window** (`Intake:PullNowMinutes`, default 15, 1 to 1440), on the Sources admin
+  page's Polling card. Analysts can pull a polled source from Triage's new Sources tab at most once per window per
+  source. Admin Poll now on the Sources page isn't limited.
+- **Opening metrics set-up** has a chart per group for present mode: Trend (the default for existing groups), One trend
+  per metric, Share of the whole, Mix over time, Side by side, Against threshold, or None. Present mode now shows one
+  slide per group, and a group whose values are all 0 is listed on the first metrics slide instead of getting its own.
+- **Team opening note** on each brief: team edition only (brief page, its own slide, the team email), carried forward
+  from the previous brief. It never appears in the company-wide edition, archive, SharePoint copy or API.
+- **Back to ready** reopens a presented brief's meeting, bringing back articles carried to the next brief. Briefs
+  presented before this upgrade can't tell carried articles from hand-added ones, so both stay on the next brief.
+- **Finish as Not sent**: with email on, a brief can be finished without sending, with a required reason shown in the
+  archive. It locks the day's numbers as a send does and can still be emailed later.
+- **Present mode** shows "We run" product chips on team-edition article slides, with a card the presenter can open for
+  everyone, and each metric's note on its tile.
+- **A formatting toolbar** (bullets, numbering, indent, bold, italic, link) on the Markdown text boxes.
+- **Today's numbers and Metrics history** handle many groups: a progress bar with a chip per group, finished groups
+  folded, a grouped history table with a fixed header and Day column, and a group filter.
+
 ### v1.0.0
 
 The first public release. A server on any `v0.1.0-alpha` release upgrades to it as usual (`Upgrade-Tide.ps1 -Version
