@@ -383,14 +383,23 @@ else
 
     private bool Editing => _editing is not null || _editingComment is not null || _prompting;
 
-    private async Task OnChangedElsewhere(IReadOnlyList<Change> changes)
+    internal async Task OnChangedElsewhere(IReadOnlyList<Change> changes)
     {
         if (_busy || _detail is null) return;   // this page's own action reloads when it's done, and reads theirs with it
         var who = LiveChanges.Who(changes);
         var status = _detail.Action.Status;
+        var editing = _editingComment;
         await Reload();
+        var edited = _detail?.Action.Comments.FirstOrDefault(c => c.Id == _editingComment);
         if (_detail is not null && ((_editing is not null && _detail.Action.EditVersion != _editing.EditVersion) || (_prompting && _detail.Action.Status != status)))
             _changedBy = who;
+        else if (editing is not null && _editingComment is null)
+            Toasts.Show($"{who} deleted the comment you were editing.");
+        else if (edited is not null && edited.Text != _commentEditBase)
+        {
+            _commentEditBase = edited.Text;
+            Toasts.Show($"{who} changed the comment you're editing. Saving puts your text in its place.");
+        }
         else Toasts.Show($"{who} updated this action.");
         StateHasChanged();
     }
@@ -410,6 +419,7 @@ else
         _changedBy = null;
         _detail = await ActionSvc.GetAsync(Number!.Value);
         _topic = _detail is null ? "" : ChangeFeed.Action(_detail.Action.Id);
+        CloseEditOfGoneComment();
     }
 
     private void OnPrompting(bool open) => _prompting = open;
@@ -444,18 +454,33 @@ else
     private Guid? _editingComment;
     private string? _commentEdit;
 
-    private void EditComment(ActionComment c)
+    // The comment's text when its edit opened (or a colleague's change to it was last told), to tell of a change under it.
+    private string? _commentEditBase;
+
+    internal void EditComment(ActionComment c)
     {
         _editingComment = c.Id;
-        _commentEdit = c.Text;
+        _commentEdit = _commentEditBase = c.Text;
     }
 
-    private Task SaveComment(ActionComment c) => Run(async () =>
+    internal Task SaveComment(ActionComment c) => Run(async () =>
     {
-        await ActionSvc.EditCommentAsync(c.Id, _commentEdit ?? "");
-        _editingComment = null;
+        var text = _commentEdit ?? "";
+        await ActionSvc.EditCommentAsync(c.Id, text);
+        // Closed only while it's still this comment's box holding what was saved: text typed on since stays in it, unsaved,
+        // and another comment's edit opened meanwhile stays open.
+        if (_editingComment == c.Id && (_commentEdit ?? "") == text) _editingComment = null;
+        else if (_editingComment == c.Id) _commentEditBase = text;
         await Reload();
     });
+
+    // The comment being edited, gone (a colleague deleted it, or the action): its edit closes, so the page doesn't go on
+    // saying it's being edited.
+    private void CloseEditOfGoneComment()
+    {
+        if (_editingComment is { } id && _detail?.Action.Comments.Any(c => c.Id == id) != true)
+            (_editingComment, _commentEdit, _commentEditBase) = (null, null, null);
+    }
 
     private async Task DeleteComment(ActionComment c)
     {
@@ -480,13 +505,30 @@ else
         });
     }
 
-    private Task Comment() => Run(async () =>
+    internal Task Comment() => Run(async () =>
     {
-        await ActionSvc.AddCommentAsync(_detail!.Action.Id, _comment ?? "", _attachments.Select(f => f.Upload).ToList());
-        _comment = null;
-        _attachments.Clear();
+        // The box stays open while it's sent: only what went is cleared, and anything typed or attached since stays.
+        var text = _comment ?? "";
+        var sent = _attachments.ToList();
+        await ActionSvc.AddCommentAsync(_detail!.Action.Id, text, sent.Select(f => f.Upload).ToList());
+        _comment = Unposted(_comment, text);
+        _attachments.RemoveAll(f => sent.Exists(s => ReferenceEquals(s, f)));
         await Reload();
     });
+
+    /// <summary>The new-comment box once <paramref name="posted"/> has gone: empty when it still holds just that, what was
+    /// typed after it when it starts with it, and all of it when it was changed some other way while it was sent.</summary>
+    internal static string? Unposted(string? box, string posted)
+    {
+        if (box is null || box == posted) return null;
+        if (posted.Length == 0 || !box.StartsWith(posted, StringComparison.Ordinal)) return box;
+        var rest = box[posted.Length..].TrimStart();
+        return rest.Length == 0 ? null : rest;
+    }
+
+    internal string? CommentDraft { get => _comment; set => _comment = value; }
+    internal string? CommentEditDraft { get => _commentEdit; set => _commentEdit = value; }
+    internal Guid? EditingComment => _editingComment;
 
     // Files waiting to go with the next comment: chosen, dropped or pasted (paste-drop.js hands them to the InputFile).
     private sealed record PendingFile(ScreenshotUpload Upload, bool IsImage);

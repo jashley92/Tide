@@ -85,6 +85,21 @@ public sealed class WindowsNames
     }
 
     /// <summary>
+    /// As <see cref="ResolveAsync"/>, saying too whether the name is only a stand-in: the bare username of a
+    /// <c>DOMAIN\sam</c> AD gave no display name for (it didn't answer in time, failed, or has none). The user mirror
+    /// doesn't put a stand-in over a name it already holds. A name that isn't a domain account is never one.
+    /// </summary>
+    public async Task<(string? Name, bool StandIn)> ResolveForMirrorAsync(string? identityName)
+    {
+        var name = await ResolveAsync(identityName);
+        var slash = identityName?.IndexOf('\\') ?? -1;
+        if (slash < 0 || slash == identityName!.Length - 1) return (name, name is null);
+        return _cache.TryGetValue(identityName, out var cached) && cached.Person?.DisplayName is { } found
+            ? (found, false)
+            : (identityName[(slash + 1)..], true);
+    }
+
+    /// <summary>
     /// The AD email address (<c>mail</c>) of a <c>DOMAIN\sam</c> account, from the same lookup and cache as its display
     /// name (one AD call gives both). Null when it isn't a domain account, AD has no <c>mail</c> for it, or AD didn't answer
     /// in time (then it's asked again, as for the name). Never throws.

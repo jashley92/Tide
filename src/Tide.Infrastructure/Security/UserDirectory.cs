@@ -17,7 +17,7 @@ public sealed class UserDirectory(IServiceScopeFactory scopes, TimeProvider time
 
     private readonly ConcurrentDictionary<string, (DateTimeOffset At, string Fingerprint)> _recent = new(StringComparer.OrdinalIgnoreCase);
 
-    public async Task TouchAsync(string userId, string displayName, string? upn, string? email, string rolesCsv, CancellationToken ct = default)
+    public async Task TouchAsync(string userId, string displayName, string? upn, string? email, string rolesCsv, bool nameIsStandIn = false, CancellationToken ct = default)
     {
         var now = time.GetUtcNow();
         var fingerprint = string.Join('\u001f', displayName, upn, email, rolesCsv);
@@ -27,7 +27,8 @@ public sealed class UserDirectory(IServiceScopeFactory scopes, TimeProvider time
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var row = await db.Users.FirstOrDefaultAsync(u => u.Sid == userId, ct);
         if (row is null) db.Users.Add(row = new AppUser { Sid = userId });
-        row.DisplayName = Cut(displayName);
+        // A stand-in name (the bare username: AD didn't answer in time) keeps the real one recorded, as for the address.
+        if (!nameIsStandIn || string.IsNullOrWhiteSpace(row.DisplayName)) row.DisplayName = Cut(displayName);
         row.UserPrincipalName = Cut(upn ?? "");
         // No address this time (AD didn't answer in time, or has none) keeps the one recorded: it's never blanked.
         if (!string.IsNullOrWhiteSpace(email)) row.Email = Cut(email.Trim());

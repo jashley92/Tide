@@ -33,7 +33,7 @@ public sealed class CountingRoleDirectory : IRoleDirectory
 public sealed class NoUsers : IUserDirectory
 {
     public List<AppUser> Users { get; } = [];
-    public Task TouchAsync(string userId, string displayName, string? upn, string? email, string rolesCsv, CancellationToken ct = default) => Task.CompletedTask;
+    public Task TouchAsync(string userId, string displayName, string? upn, string? email, string rolesCsv, bool nameIsStandIn = false, CancellationToken ct = default) => Task.CompletedTask;
     public Task<IReadOnlyList<AppUser>> ListAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<AppUser>>(Users);
 }
 

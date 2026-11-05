@@ -129,8 +129,10 @@ public interface IRoleDirectory
 /// <summary>Mirrors signed-in users into <see cref="AppUser"/> so ids resolve to names.</summary>
 public interface IUserDirectory
 {
-    /// <summary>Records a sign-in. Throttled: a user seen in the last while isn't written again.</summary>
-    Task TouchAsync(string userId, string displayName, string? upn, string? email, string rolesCsv, CancellationToken ct = default);
+    /// <summary>Records a sign-in. Throttled: a user seen in the last while isn't written again. A
+    /// <paramref name="nameIsStandIn"/> name (the bare username, when the directory didn't answer in time) keeps the one
+    /// recorded, and is written only for someone with none yet.</summary>
+    Task TouchAsync(string userId, string displayName, string? upn, string? email, string rolesCsv, bool nameIsStandIn = false, CancellationToken ct = default);
 
     /// <summary>Everyone seen, by name: the analyst picker on a brief.</summary>
     Task<IReadOnlyList<AppUser>> ListAsync(CancellationToken ct = default);
