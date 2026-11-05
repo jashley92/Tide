@@ -160,19 +160,23 @@ public sealed class DistributionService(
 
     // --- sending ------------------------------------------------------------------------------------------------
 
+    /// <summary>Where <see cref="SendTestAsync"/> sends: the current user's address (see <see cref="OwnAddress"/>), or null.</summary>
+    public Task<string?> TestAddressAsync(CancellationToken ct = default) => OwnAddress.ForAsync(user, dbs, ct);
+
     /// <summary>Emails a test copy of the edition to the current user only. Logged; not archived; the brief isn't marked.</summary>
     public async Task<EmailSendResult> SendTestAsync(DateOnly date, Edition edition, CancellationToken ct = default)
     {
         RequireSend();
-        if (string.IsNullOrWhiteSpace(user.Email))
-            throw new InvalidOperationException("Your directory account has no email address (the mail attribute), so a test copy can't be sent to you.");
+        // AD's address this session, or the one saved from it on an earlier visit when AD can't be reached.
+        var to = await OwnAddress.ForAsync(user, dbs, ct)
+            ?? throw new InvalidOperationException("Your directory account has no email address (the mail attribute), so a test copy can't be sent to you.");
         if (!email.Enabled) throw new InvalidOperationException(SendOutcome.EmailOff);
         var cut = await EditionAsync(date, edition, ct);
         var (rendered, files) = await RenderForEmailAsync(cut, ct);
-        var result = await email.SendAsync(new OutgoingEmail([user.Email!], "[TEST] " + rendered.Subject, rendered.EmailHtml, rendered.Text,
+        var result = await email.SendAsync(new OutgoingEmail([to], "[TEST] " + rendered.Subject, rendered.EmailHtml, rendered.Text,
             Inline(rendered, files)), ct);
         await using var db = await dbs.CreateAsync(ct);
-        db.BriefSends.Add(NewSend(cut, rendered.Subject, [user.Email!], isTest: true, result));
+        db.BriefSends.Add(NewSend(cut, rendered.Subject, [to], isTest: true, result));
         await db.SaveChangesAsync(ct);
         return result;
     }

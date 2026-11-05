@@ -94,6 +94,29 @@ public class EmailTemplateServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ATestSend_WithNoEmailClaim_GoesToTheAddressSavedFromAd_AndNeverTheUpn()
+    {
+        var svc = _db.EmailTemplateAdmin();
+        var t = EmailTemplateCatalog.Digest;
+        _db.User.Email = null;
+        (await svc.TestAddressAsync()).Should().BeNull("the UPN isn't an address");
+        await svc.Invoking(s => s.SendTestAsync(t.Id, t.DefaultSubject, t.DefaultHeading, t.DefaultBody))
+            .Should().ThrowAsync<InvalidOperationException>().WithMessage("*no email address (the mail attribute)*");
+
+        await using (var ctx = _db.Context())
+        {
+            ctx.Users.Add(new AppUser { Sid = _db.User.UserId, DisplayName = "Test Analyst", Email = "saved@example.com" });
+            await ctx.SaveChangesAsync();
+        }
+        (await svc.TestAddressAsync()).Should().Be("saved@example.com");
+        (await svc.SendTestAsync(t.Id, t.DefaultSubject, t.DefaultHeading, t.DefaultBody)).Status.Should().Be(EmailSendStatus.Sent);
+        _db.Email.Sent.Single().To.Should().Equal("saved@example.com");
+
+        _db.User.Roles = new HashSet<AppRole> { AppRole.Analyst };
+        await svc.Invoking(s => s.TestAddressAsync()).Should().ThrowAsync<ForbiddenException>();
+    }
+
+    [Fact]
     public async Task TheRotationEmails_UseTheirTemplates()
     {
         var svc = _db.EmailTemplateAdmin();

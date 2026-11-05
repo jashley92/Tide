@@ -478,7 +478,7 @@ else if (_canSend)
                 if (result.Status != EmailSendStatus.Sent) failed.Add($"{BriefRenderer.EditionName(e)}: {result.Error ?? "not sent"}.");
             }
             _testNote = failed.Count == 0
-                ? $"Test copies of both editions went to {CurrentUser.Email}."
+                ? $"Test copies of both editions went to {await Distribution.TestAddressAsync()}."
                 : "A test copy wasn't sent. " + string.Join(" ", failed);
             _sends = await Distribution.SendsAsync(Date);
         }

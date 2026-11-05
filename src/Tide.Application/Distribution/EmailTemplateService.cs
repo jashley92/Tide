@@ -107,6 +107,13 @@ public sealed class EmailTemplateService(IAppDbContextFactory dbs, ICurrentUser 
         return new EmailPreview(r.Subject, Shell(r.Heading, Subtitle(t), r.BodyHtml, footer));
     }
 
+    /// <summary>Where <see cref="SendTestAsync"/> sends: the administrator's address (see <see cref="OwnAddress"/>), or null.</summary>
+    public Task<string?> TestAddressAsync(CancellationToken ct = default)
+    {
+        RequireAdmin();
+        return OwnAddress.ForAsync(user, dbs, ct);
+    }
+
     /// <summary>Sends the draft on screen, with sample values, to the administrator's own address only. Nothing is saved.</summary>
     public async Task<EmailSendResult> SendTestAsync(string id, string? subject, string? heading, string? body, CancellationToken ct = default)
     {
@@ -114,9 +121,10 @@ public sealed class EmailTemplateService(IAppDbContextFactory dbs, ICurrentUser 
         var t = EmailTemplateCatalog.ById(id) ?? throw new KeyNotFoundException("There's no such email template.");
         foreach (var (part, text) in new[] { (EmailPart.Subject, subject), (EmailPart.Heading, heading), (EmailPart.Body, body) })
             if (EmailTemplateCatalog.Problem(t, part, text) is { } problem) throw new ArgumentException(problem);
-        if (string.IsNullOrWhiteSpace(user.Email)) throw new InvalidOperationException("Your directory account has no email address (the mail attribute), so a test can't be sent to you.");
+        var to = await OwnAddress.ForAsync(user, dbs, ct)
+            ?? throw new InvalidOperationException("Your directory account has no email address (the mail attribute), so a test can't be sent to you.");
         var preview = Preview(id, subject, heading, body);
-        return await email.SendAsync(new OutgoingEmail([user.Email], "[TEST] " + preview.Subject, preview.Html, ToText(preview.Html), []), ct);
+        return await email.SendAsync(new OutgoingEmail([to], "[TEST] " + preview.Subject, preview.Html, ToText(preview.Html), []), ct);
     }
 
     private static List<string> Keys(EmailTemplate t) => [.. Enum.GetValues<EmailPart>().Select(p => EmailTemplateCatalog.Key(t.Id, p))];

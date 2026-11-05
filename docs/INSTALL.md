@@ -30,7 +30,10 @@ an existing site, such as `https://intranet.contoso.com/tide` (see [Under anothe
 - **What TIDE reads from AD.** For each person who signs in, TIDE looks up their display name and email address
   (the `mail` attribute) in their own domain, as the app-pool account, and keeps them in its user list. Test copies,
   reminders, digests and rotation emails go to that address. A person whose account has no `mail` gets none of them; a
-  UPN that looks like an address isn't used in its place. Someone given an address later picks it up on their next visit.
+  UPN that looks like an address isn't used in its place. TIDE asks AD about each person again once every 24 hours (when
+  they're next seen), so a new name or address reaches it within a day; while AD can't be reached, the name and address
+  found before are still used. A test copy for someone signed in while AD is down goes to the address saved on an
+  earlier visit.
 - **DNS and TLS.** A host name such as `tide.contoso.com` pointing at the server, and a TLS certificate for it in
   `LocalMachine\My`.
 
