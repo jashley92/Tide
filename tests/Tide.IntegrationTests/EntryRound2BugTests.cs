@@ -214,6 +214,52 @@ public class EntryRound2BugTests(SlowDatabaseTideApp app) : IClassFixture<SlowDa
         (await s.Html()).Should().Contain("these are the numbers that went out").And.NotContain("without sending");
     }
 
+    [Fact]
+    public async Task ANumberSavedJustAfterTheBriefWentOut_IsNamedInAToast_WithWhatWasTyped()
+    {
+        var day = new DateOnly(2027, 6, 21);
+        var g = await Group("Proxy blocks", "Blocked", "Allowed");
+        var blocked = await Tile(g.Metrics[0], day);
+        var allowed = await Tile(g.Metrics[1], day);
+        await using var r = await ComponentHarness.RenderAsync<MetricEntry>(app, "/", new() { ["Date"] = day }, AnalystOnly);
+        await r.Click(c => c.SaveValue(allowed, "lots"));   // not a number: held in its box
+        var errorsBefore = Errors(r).Count;
+
+        await SetBrief(day, BriefStatus.Sent, null);
+        await r.Click(c => c.SaveValue(blocked, "12"));
+
+        Errors(r).Skip(errorsBefore).Select(t => t.Message).Should().BeEquivalentTo(
+            [MetricEntry.LostMessage("Blocked", "12", false), MetricEntry.LostMessage("Allowed", "lots", false)]);
+        Errors(r).Should().NotContain(t => t.Message.Contains("numbers are fixed"), "the refused save isn't reported twice");
+        (await r.Html()).Should().Contain("these are the numbers that went out");
+        (await Tile(g.Metrics[0], day)).Value.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ABoxHoldingWhatIsntANumber_WhenTheBriefIsFinishedAsNotSent_IsNamedOnce()
+    {
+        var day = new DateOnly(2027, 6, 22);
+        var g = await Group("Badge readers", "Denied");
+        var tile = await Tile(g.Metrics[0], day);
+        await using var r = await ComponentHarness.RenderAsync<MetricEntry>(app, "/", new() { ["Date"] = day }, AnalystOnly);
+        await r.Click(c => c.SaveValue(tile, "a few"));
+        var errorsBefore = Errors(r).Count;
+
+        var brief = await SetBrief(day, BriefStatus.Sent, null);
+        await using (var scope = app.Services.CreateAsyncScope())
+        await using (var db = await scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>().CreateAsync())
+        {
+            db.Briefs.Single(b => b.Id == brief).NotSentAtUtc = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync();
+        }
+        await r.Click(c => Rerender(c, day));
+        await r.Click(c => Rerender(c, day));
+
+        Errors(r).Skip(errorsBefore).Select(t => t.Message).Should().Equal(MetricEntry.LostMessage("Denied", "a few", true));
+        MetricEntry.LostMessage("Denied", "", true).Should().Be(
+            "Denied wasn't saved: the brief was finished as Not sent while you were typing it (you'd cleared it). An administrator can correct it.");
+    }
+
     private static Task Rerender(MetricEntry c, DateOnly day) =>
         c.SetParametersAsync(ParameterView.FromDictionary(new Dictionary<string, object?> { ["Date"] = day }));
 

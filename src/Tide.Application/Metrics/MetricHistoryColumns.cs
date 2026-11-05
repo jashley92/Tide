@@ -58,6 +58,17 @@ public static class MetricHistoryColumns
     }
 
     /// <summary>
+    /// The values the table shows and counts: those of the <paramref name="shown"/> groups' metrics, so a day whose only
+    /// values are in hidden groups has no row. Every value when all groups show.
+    /// </summary>
+    public static IReadOnlyList<MetricValue> ShownValues(IReadOnlyList<MetricValue> values, IReadOnlyList<MetricColumnGroup> all, IReadOnlyList<MetricColumnGroup> shown)
+    {
+        if (shown.Count == all.Count) return values;
+        var ids = shown.SelectMany(g => g.Metrics).Select(m => m.Id).ToHashSet();
+        return values.Where(v => ids.Contains(v.DefinitionId)).ToList();
+    }
+
+    /// <summary>
     /// The choice after a group's chip is pressed: with every group showing it picks that one alone; otherwise it adds or
     /// takes away that group, and taking away the last goes back to all.
     /// </summary>

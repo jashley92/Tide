@@ -78,8 +78,9 @@ else
 
     var columns = MetricHistoryColumns.Group(_history.Metrics);
     var shown = MetricHistoryColumns.Shown(columns, _chosen);
+    var shownValues = MetricHistoryColumns.ShownValues(_history.Values, columns, shown);
     <div class="tide-card">
-        <h2>Values <span class="tide-count tide-muted fw-normal">(@_history.Values.Count)</span></h2>
+        <h2>Values <span class="tide-count tide-muted fw-normal">(@shownValues.Count)</span></h2>
         @if (columns.Count > 1)
         {
             @* Which groups' columns show; kept in the address, so a reload or a shared link shows the same ones. *@
@@ -92,7 +93,7 @@ else
                 }
             </div>
         }
-        @{ var byDay = _history.Values.ToLookup(v => v.BriefDate); var dates = byDay.Select(g => g.Key).OrderDescending().ToList(); }
+        @{ var byDay = shownValues.ToLookup(v => v.BriefDate); var dates = byDay.Select(g => g.Key).OrderDescending().ToList(); }
         @if (dates.Count == 0)
         {
             <EmptyState Icon="bi-table" Title="No data in this range" Compact="true" />

@@ -88,6 +88,25 @@ public class MetricsServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetDay_TrendDays_KeepAHolidayWithAValueInTheGroup_AndDropOneWithout()
+    {
+        var id = await Metric();
+        var other = await _db.Metrics().AddGroupAsync("Cases");
+        var otherId = await _db.Metrics().SaveMetricAsync(new MetricForm { GroupId = other, Name = "Open", Direction = MetricDirection.Neutral });
+        _db.Clock.UseHolidays(new Dictionary<DateOnly, string> { [Thu] = "Founders' Day", [Fri] = "Founders' Day, observed" });
+        var svc = new MetricsService(_db, _db.User, _db.Clock);
+        await svc.SaveValueAsync(id, Thu, 4, "counted anyway");
+        await svc.SaveValueAsync(otherId, Mon, 1, null);
+
+        var day = await svc.GetDayAsync(Mon);
+
+        var queue = day.Groups.Single(g => g.Group.Name == "Alert queue");
+        queue.TrendDays.Should().Contain(Thu).And.NotContain(Fri).And.EndWith(Mon);
+        queue.Tiles.Single().Trend[queue.TrendDays.ToList().IndexOf(Thu)].Should().Be(4);
+        day.Groups.Single(g => g.Group.Name == "Cases").TrendDays.Should().NotContain(Thu, "the value is in another group");
+    }
+
+    [Fact]
     public async Task RenameAndRetire_KeepHistory_RetiredDropsOffTheDay()
     {
         var id = await Metric();

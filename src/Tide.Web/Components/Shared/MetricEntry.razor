@@ -1,7 +1,9 @@
 @* The day's numbers: the opening metrics as one fast form, grouped, tabbing through the boxes. Each box saves when
    it changes; the value it's compared with (the previous business day that has one, named by its date when that isn't
    the day before) is beside it before today's is typed, and the change once it is. A blank box clears the value (a
-   missing value is shown as a dash, never as 0); one that isn't a number is marked on the box, with why under it. Once the day's brief is sent the numbers are fixed (an administrator can still correct them).
+   missing value is shown as a dash, never as 0); one that isn't a number is marked on the box, with why under it.
+   Once the day's brief is sent the numbers are fixed (an administrator can still correct them), and a box whose typing
+   hadn't saved yet says so in a toast, with what was typed.
    Collapsible folds the boxes away behind the heading (open while numbers are missing); MissingChanged hears how many
    are missing whenever that changes, for the brief's step strip and its Mark ready confirmation.
    A colleague's save to the day's numbers re-reads them in place (LiveChanges, naming them in a toast), so the step
@@ -304,16 +306,18 @@
     // Reads the lock and the day again. On the same day, a box being typed in (other than the metric this form has just
     // saved, own) or holding what isn't a number keeps its text when what's saved for it changed, and its row says who
     // changed it: who, or (on a re-read of this form's own) whoever's change is heard next. Once the numbers are fixed
-    // the boxes are gone, and so is what they kept.
+    // the boxes are gone, and so is what they kept: a box whose typing hadn't saved says so (Lost).
     private async Task Reread(string? who, Guid? own = null)
     {
         var before = _progressFor == Date ? Tiles(_day) : null;
+        var wasEditable = _canEdit;
         _locked = await MetricsSvc.IsLockedAsync(Date);
         _notSent = _locked && await MetricsSvc.FinishedNotSentAsync(Date);
         _canEdit = CurrentUser.Has(Permission.EnterMetrics) && !_locked;
         _day = await MetricsSvc.GetDayAsync(Date);
         if (!_canEdit)
         {
+            if (wasEditable && _locked && before is not null) Lost(before);
             _focus = null;
             _kept.Clear();
             _elsewhere.Clear();
@@ -339,6 +343,30 @@
             else if (_unnamed.Remove(id) || changed) _elsewhere[id] = who;
         }
     }
+
+    // The form locked (the brief went out, or was finished as Not sent) while boxes held typing that wasn't saved: what
+    // isn't a number, and saves asked for and not yet written (_pending). Each such box is named once, with what was typed
+    // in it, and the saves still waiting their turn are dropped, as they'd only be refused.
+    private void Lost(Dictionary<Guid, MetricTile> before)
+    {
+        var now = Tiles(_day);
+        var lost = new Dictionary<Guid, string>(_invalid);
+        foreach (var (key, asked) in _pending.Where(p => p.Key.Day == Date).ToList())
+        {
+            _pending.Remove(key);
+            var saved = now.GetValueOrDefault(key.Metric);
+            if (asked.Value != saved?.Value) lost.TryAdd(key.Metric, Raw(asked.Value));
+            else if (asked.Note != saved?.Note) lost.TryAdd(key.Metric, asked.Note ?? "");
+        }
+        _invalid.Clear();
+        foreach (var (metric, typed) in lost)
+            Toasts.Error(LostMessage((now.GetValueOrDefault(metric) ?? before.GetValueOrDefault(metric))?.Metric.Name ?? "A number", typed, _notSent));
+    }
+
+    /// <summary>What a box whose typing the brief's sending (or finishing as Not sent) cut off says.</summary>
+    internal static string LostMessage(string metric, string typed, bool notSent) =>
+        $"{metric} wasn't saved: the brief {(notSent ? "was finished as Not sent" : "went out")} while you were typing it " +
+        $"({(typed.Length == 0 ? "you'd cleared it" : "you'd typed " + typed)}). An administrator can correct it.";
 
     private static bool Changed(MetricTile? was, MetricTile? now) => was?.Value != now?.Value || was?.Note != now?.Note;
 
@@ -511,7 +539,16 @@
                     await Report();
                 }
             }
-            catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+            catch (Exception ex)
+            {
+                // The brief went out (or was finished as Not sent) before this could be written: the form locks, naming it.
+                if (ex is InvalidOperationException && key.Date == Date && await MetricsSvc.IsLockedAsync(Date))
+                {
+                    await Reread(null);
+                    await Report();
+                }
+                else Toasts.Error(UserFacingError.For(ex));
+            }
             finally
             {
                 if (_pending.TryGetValue(key, out var now) && now == write) _pending.Remove(key);

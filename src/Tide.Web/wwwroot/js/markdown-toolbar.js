@@ -2,7 +2,9 @@
 // delegation, so Blazor needs no interop call. The toolbar names its box (data-md-for); its buttons, and these keys in
 // the box, edit the box's text in place:
 //   Ctrl+B and Ctrl+I: bold and italic. On a list line, Tab indents and Shift+Tab outdents (off one, Tab moves focus as
-//   usual; Escape then Tab always leaves). Enter on a list line starts the next item; Enter on an empty item ends the list.
+//   usual; Escape then Tab always leaves). Enter on a list line starts the next item; Enter on an empty nested item moves
+//   it out a level (to its parent's place and kind); Enter on an empty top-level item ends the list.
+// A list started straight under a paragraph gets a blank line above it, so Markdown doesn't read it as more of the paragraph.
 // Edits go through execCommand('insertText') where the browser has it, so Ctrl+Z undoes them, and each fires an input
 // event (and a change event, for a box bound on change) so Blazor's binding and the autosave see it.
 // The text transforms are small pure functions on { text, start, end } (window.tideMarkdown.transforms), testable apart.
@@ -215,6 +217,18 @@
             : { text: t.slice(0, s) + ins + t.slice(e), start: s + 1, end: s + 1 + label.length };
     }
 
+    // Whether a list started on line i needs a blank line above it: the line above is a paragraph's (not blank, not a
+    // list item, not in a code block), which Markdown would otherwise run the list into or read as a heading.
+    function needsGap(lines, fence, i) {
+        return i > 0 && !fence[i - 1] && !blank(lines[i - 1]) && !parse(lines[i - 1]);
+    }
+
+    // The result r with a blank line put in above line i (r's selection is on or after it).
+    function gapAbove(r, lines, i) {
+        var at = offsets(lines)[i];
+        return { text: r.text.slice(0, at) + '\n' + r.text.slice(at), start: r.start + 1, end: r.end + 1 };
+    }
+
     // A bulleted ("-") or numbered list on the selected lines; off again when they all already are one.
     function toggleList(state, ordered) {
         var sp = span(state.text, state.start, state.end), lines = sp.lines.slice(), fence = fenced(lines), touched = {};
@@ -223,14 +237,17 @@
         if (rows.length === 0) {
             // An empty line: start an item there.
             if (fence[sp.first]) return null;
+            var gap = needsGap(lines, fence, sp.first);
             var ind = indentOf(lines[sp.first]);
             lines[sp.first] = ' '.repeat(ind) + (ordered ? '1. ' : '- ');
             touched[sp.first] = true;
             renumber(lines, touched);
             var at = offsets(lines)[sp.first] + lines[sp.first].length;
-            return { text: lines.join('\n'), start: at, end: at };
+            var r = { text: lines.join('\n'), start: at, end: at };
+            return gap ? gapAbove(r, lines, sp.first) : r;
         }
         var all = rows.every(function (k) { var p = parse(lines[k]); return p && p.ordered === ordered; });
+        var gapped = !all && !parse(lines[rows[0]]) && needsGap(lines, fence, rows[0]);
         rows.forEach(function (k) {
             var p = parse(lines[k]);
             if (all) { remark(lines, k, p.indent, null); return; }
@@ -242,7 +259,8 @@
         });
         renumber(lines, touched);
         if (all) renumber(lines, neighbours(lines, sp.first, sp.last));
-        return kept(sp, lines, state);
+        var out = kept(sp, lines, state);
+        return gapped ? gapAbove(out, lines, rows[0]) : out;
     }
 
     // The list item just after a range: a list split by taking items out of it is numbered again.
@@ -320,8 +338,8 @@
         return 0;
     }
 
-    // Enter on a list line: the next item, with the same indent and marker (the next number); on an empty item, the
-    // list ends there. Null when Enter should just be Enter.
+    // Enter on a list line: the next item, with the same indent and marker (the next number); on an empty nested item,
+    // that item moves out a level; on an empty top-level item, the list ends there. Null when Enter should just be Enter.
     function enter(state) {
         if (state.start !== state.end) return null;
         var sp = span(state.text, state.start, state.end), lines = sp.lines.slice(), i = sp.first;
@@ -331,6 +349,7 @@
         var col = state.start - sp.starts[i], head = lines[i].length - p.content.length;
         if (col < head) return null;   // the cursor's in the indent or the marker
         var starts;
+        if (p.content.trim() === '' && p.indent > 0) return outOne(lines, i, p);
         if (p.content.trim() === '') {
             // A blank line, then the cursor: text typed straight under an item would be read as more of that item.
             var gapped = i > 0 && !blank(lines[i - 1]);
@@ -347,6 +366,25 @@
         renumber(lines, touched);
         starts = offsets(lines);
         var at = starts[i + 1] + (lines[i + 1].length - after.length);
+        return { text: lines.join('\n'), start: at, end: at };
+    }
+
+    // An empty nested item, out one level: to its parent's indent, as the parent's kind of item (the number after the
+    // parent's), the lists it joins and leaves numbered again. Its children (if any) come with it.
+    function outOne(lines, i, p) {
+        var fence = fenced(lines), parent = null;
+        for (var j = i - 1; j >= 0; j--) {
+            if (fence[j] || blank(lines[j])) continue;
+            var q = parse(lines[j]);
+            if (!q) { if (indentOf(lines[j]) === 0) break; continue; }
+            if (q.indent < p.indent) { parent = q; break; }
+        }
+        var marker = parent ? (parent.ordered ? (parent.num + 1) + parent.delim : parent.marker) : p.marker;
+        remark(lines, i, parent ? parent.indent : 0, marker);
+        var touched = neighbours(lines, i, i);
+        touched[i] = 'keep';
+        renumber(lines, touched);
+        var at = offsets(lines)[i] + lines[i].length;
         return { text: lines.join('\n'), start: at, end: at };
     }
 

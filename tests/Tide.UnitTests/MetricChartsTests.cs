@@ -85,6 +85,20 @@ public class MetricChartsTests
     }
 
     [Fact]
+    public void TrendDaysWithin_KeepsAHolidayWithAValue_AndTheBriefsOwnDate_ButNeverAWeekend()
+    {
+        var (entered, empty) = (new DateOnly(2026, 11, 3), new DateOnly(2026, 11, 2));
+        var holidays = new WorkingDays(new Dictionary<DateOnly, string> { [entered] = "A holiday", [empty] = "Another", [Day] = "The day itself" });
+        var saturday = new DateOnly(2026, 10, 31);
+
+        var days = MetricMath.TrendDaysWithin(Day, 7, [entered, saturday], holidays);
+
+        days.Should().Equal(new DateOnly(2026, 10, 29), new DateOnly(2026, 10, 30), entered, Day);
+        MetricMath.TrendDaysWithin(Day, 7, []).Should().Equal(MetricMath.WorkingDaysWithin(Day, 7), "with no holidays it's the working days");
+        MetricMath.TrendDaysWithin(Day, 0, [Day]).Should().BeEmpty();
+    }
+
+    [Fact]
     public void Trend_BreaksALineAtAMissingDay_RatherThanDrawingItTo0()
     {
         var days = MetricMath.WorkingDaysWithin(Day, 7);   // Oct 29 to Nov 4: five working days

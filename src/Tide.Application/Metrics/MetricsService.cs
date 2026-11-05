@@ -32,16 +32,18 @@ public sealed record MetricTile(MetricDefinition Metric, decimal? Value, string?
     public string Display => Value is { } v ? MetricMath.Format(Metric.Format, v) : "—";
 }
 
-public sealed record MetricGroupDay(MetricGroup Group, IReadOnlyList<MetricTile> Tiles);
+public sealed record MetricGroupDay(MetricGroup Group, IReadOnlyList<MetricTile> Tiles)
+{
+    /// <summary>The days in the <see cref="MetricsService.TrendDays"/> calendar days ending on the brief date that the
+    /// group's trend charts plot, oldest first (<see cref="MetricMath.TrendDaysWithin"/>): the dates each tile's
+    /// <see cref="MetricTile.Trend"/> has a value (or null) for.</summary>
+    public IReadOnlyList<DateOnly> TrendDays { get; init; } = [];
+}
 
 /// <summary>The opening metrics for one brief date, by group, in order (retired metrics and groups left out).</summary>
 public sealed record MetricDay(DateOnly Date, IReadOnlyList<MetricGroupDay> Groups)
 {
     public bool Any => Groups.Count > 0;
-
-    /// <summary>The business days in the <see cref="MetricsService.TrendDays"/> calendar days ending on <see cref="Date"/>,
-    /// oldest first: the dates each tile's <see cref="MetricTile.Trend"/> has a value (or null) for.</summary>
-    public IReadOnlyList<DateOnly> TrendDays { get; init; } = [];
 
     /// <summary>The metrics that flag a missing value and have none on this date.</summary>
     public IReadOnlyList<MetricDefinition> Missing => Groups.SelectMany(g => g.Tiles)
@@ -128,11 +130,16 @@ public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, 
                 .ToListAsync(ct))
             .ToLookup(v => v.DefinitionId);
         var sparkDays = MetricMath.BusinessDaysEnding(day, SparkDays, clock?.Days);
-        var trendDays = MetricMath.WorkingDaysWithin(day, TrendDays, clock?.Days);
 
-        return new MetricDay(day, groups.Select(g => new MetricGroupDay(g, g.Metrics.Select(m =>
+        return new MetricDay(day, groups.Select(g =>
         {
-            var mine = values[m.Id].ToList();
+            // A holiday counts as a trend day for the group once someone has entered one of its numbers on it.
+            var trendDays = MetricMath.TrendDaysWithin(day, TrendDays, g.Metrics.SelectMany(m => values[m.Id]).Select(v => v.BriefDate), clock?.Days);
+            return new MetricGroupDay(g, g.Metrics.Select(m => Tile(m, values[m.Id].ToList(), trendDays)).ToList()) { TrendDays = trendDays };
+        }).ToList());
+
+        MetricTile Tile(MetricDefinition m, List<MetricValue> mine, IReadOnlyList<DateOnly> trendDays)
+        {
             var today = mine.FirstOrDefault(v => v.BriefDate == day);
             var previous = MetricMath.PreviousWithValue(mine.Select(v => (v.BriefDate, v.Value)), day);
             var byDate = mine.ToDictionary(v => v.BriefDate, v => v.Value);
@@ -143,7 +150,7 @@ public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, 
                 Reference = previous,
                 Trend = trendDays.Select(d => byDate.TryGetValue(d, out var v) ? v : (decimal?)null).ToList(),
             };
-        }).ToList())).ToList()) { TrendDays = trendDays };
+        }
     }
 
     /// <summary>Every metric, retired ones too, and its values from <paramref name="from"/> to <paramref name="to"/>.</summary>
