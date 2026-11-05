@@ -151,6 +151,15 @@ public class ActionCommentFile : Entity
     /// the browser declared and its first bytes); null when it can't, or for a file added before this was recorded (its
     /// name is judged then).</summary>
     public string? RiskReason { get; set; }
+
+    /// <summary>When it was removed from its comment (hidden, its bytes, hash and record kept), by whom and why; null
+    /// while it's on the comment. An administrator can restore it.</summary>
+    public DateTimeOffset? RemovedAtUtc { get; set; }
+    public string? RemovedById { get; set; }
+    public string? RemovedByName { get; set; }
+    public string? RemovedReason { get; set; }
+
+    public bool IsRemoved => RemovedAtUtc is not null;
 }
 
 /// <summary>
@@ -163,6 +172,9 @@ public class ActionFile : Entity
 {
     public const int MaxDescription = 500;
     public const int MaxReason = 500;
+
+    /// <summary>The reason a file is kept as removed when its comment is deleted.</summary>
+    public const string CommentDeletedReason = "Its comment was deleted";
 
     /// <summary>The most files an action holds (not counting removed ones, or those on its comments).</summary>
     public const int MaxPerAction = 100;
@@ -203,6 +215,11 @@ public class ActionFile : Entity
     public string? RemovedReason { get; set; }
 
     public bool IsRemoved => RemovedAtUtc is not null;
+
+    /// <summary>For a file kept from a comment that was deleted: who wrote that comment and when (the file was attached to
+    /// it). Null for a file added to the action.</summary>
+    public string? FromCommentBy { get; set; }
+    public DateTimeOffset? FromCommentAtUtc { get; set; }
 
     /// <summary>Whether it's shown inline: a real raster image that nothing about suggests it can run.</summary>
     public bool ShowsInline => IsImage && RiskReason is null && TypeNote is null;

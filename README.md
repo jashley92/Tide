@@ -258,8 +258,8 @@ that fits its kind.
   comments. Its Files section lists both, newest first, with who added each, when, its description and its SHA-256.
   A file is checked from its first bytes as well as its name and type, and an image whose bytes don't match isn't shown
   inline. A file that can run (a program, script, installer, shortcut, Office file with macros and the like) downloads
-  in a zip with the password `infected`, with "Download as is" beside it. Removing a file needs a reason and keeps it
-  for an administrator to restore. Lists, the board and the brief show a paperclip with the count.
+  in a zip with the password `infected`, with "Download as is" beside it. Removing a file (on the action or a comment) needs a reason and keeps it
+  for an administrator to restore; deleting a comment keeps its files the same way. Lists, the board and the brief show a paperclip with the count.
 - **How late.** An overdue action says how late it is.
 
 **Hunt queries:**

@@ -175,14 +175,90 @@ public class ActionFileServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ACommentsFile_GoesOnlyWithItsComment()
+    public async Task ACommentsFile_IsRemovedOnItsOwn_WithAReason_AndOnlyAnAdministratorRestoresIt()
     {
         var a = await NewAction();
-        await _db.Actions().AddCommentAsync(a.Id, "Log", [new ScreenshotUpload("extract.log", Samples.Text("log"))]);
-        var onComment = (await Detail(a))!.Files.Live.Single();
-        onComment.CanRemove.Should().BeFalse("a comment's file goes with its comment");
-        await _db.ActionFiles().Invoking(x => x.RemoveAsync(onComment.FileId, "Not needed"))
-            .Should().ThrowAsync<ArgumentException>().WithMessage("A comment's file goes with its comment*");
+        await _db.Teams().AddMemberAsync(_team, "S-1-5-21-OWNER", "Olive Owner");
+        await _db.Teams().AddMemberAsync(_team, "S-1-5-21-OWNER2", "Oscar Owner");
+        As("S-1-5-21-OWNER", "Olive Owner", AppRole.ActionOwner);
+        await _db.Actions().AddCommentAsync(a.Id, "Log and shot", [new ScreenshotUpload("extract.log", Samples.Text("log")), new ScreenshotUpload("shot.png", Samples.Png)]);
+        var files = _db.ActionFiles();
+        var live = (await Detail(a))!.Files.Live;
+        var log = live.Single(f => f.FileName == "extract.log");
+        var shot = live.Single(f => f.FileName == "shot.png");
+        log.CanRemove.Should().BeTrue("its comment's author added it");
+
+        As("S-1-5-21-OWNER2", "Oscar Owner", AppRole.ActionOwner);
+        (await Detail(a))!.Files.Live.Single(f => f.FileId == log.FileId).CanRemove.Should().BeFalse();
+        await files.Invoking(x => x.RemoveAsync(log.FileId, "Not mine")).Should().ThrowAsync<ForbiddenException>();
+
+        As("S-1-5-21-OWNER", "Olive Owner", AppRole.ActionOwner);
+        await files.Invoking(x => x.RemoveAsync(log.FileId, " ")).Should().ThrowAsync<ArgumentException>().WithMessage("Say why*");
+        await files.RemoveAsync(log.FileId, "Wrong host's log");
+        As("S-1-5-21-TEST-2", "Robin Analyst", AppRole.Analyst);
+        await files.RemoveAsync(shot.FileId, "Shows a customer's name");
+
+        var d = (await Detail(a))!;
+        d.Files.Live.Should().BeEmpty();
+        d.Files.Removed.Should().BeEmpty("only an administrator sees removed files");
+        d.Action.Events.Should().Contain(e => e.Text.StartsWith("Removed the file extract.log (SHA-256 ") && e.Text.EndsWith("from a comment by Olive Owner: Wrong host's log"));
+        d.Action.Comments.Single().Files.Should().HaveCount(2).And.OnlyContain(f => f.IsRemoved, "the records stay");
+        _db.Store.Files.Should().ContainKeys(log.FileId, shot.FileId);
+        (await _db.Screenshots().OpenAsync(shot.FileId)).Should().BeNull("a removed comment screenshot isn't shown inline");
+        (await _db.Screenshots().OpenAttachmentAsync(log.FileId)).Should().BeNull();
+        (await files.OpenAsync(log.FileId)).Should().BeNull("an analyst doesn't download a removed file");
+        (await _db.Actions().ListAsync(new ActionFilter())).Single(r => r.Id == a.Id).Files.Should().Be(0, "the paperclip counts live files only");
+        (await _db.Api().ActionAsync(a.Number, null))!.Files.Should().BeEmpty("the API lists live files only");
+        await files.Invoking(x => x.RestoreAsync(log.FileId)).Should().ThrowAsync<ForbiddenException>();
+
+        AsAdmin();
+        var removed = (await Detail(a))!.Files.Removed;
+        removed.Should().HaveCount(2).And.OnlyContain(f => f.OnComment);
+        removed.Single(f => f.FileId == log.FileId).Should().Match<ActionFileRow>(f => f.RemovedByName == "Olive Owner" && f.RemovedReason == "Wrong host's log");
+        await using (var opened = await files.OpenAsync(log.FileId)) opened.Should().NotBeNull("an administrator can still read it");
+        await files.RestoreAsync(log.FileId);
+        await files.RestoreAsync(log.FileId);
+        var back = (await Detail(a))!;
+        back.Files.Live.Should().ContainSingle(f => f.FileId == log.FileId && f.OnComment);
+        back.Action.Events.Should().Contain(e => e.Text.StartsWith("Restored the file extract.log to a comment by Olive Owner (removed by Olive Owner on"));
+        await files.RemoveAsync(shot.FileId, "Again");
+        (await Detail(a))!.Files.Removed.Single().RemovedReason.Should().Be("Shows a customer's name", "removing it again changes nothing");
+    }
+
+    [Fact]
+    public async Task DeletingAComment_KeepsItsFilesAsRemoved_ForAnAdministratorToRestore()
+    {
+        var a = await NewAction();
+        await _db.Actions().AddCommentAsync(a.Id, "Evidence", [new ScreenshotUpload("mail.eml", Samples.Text("mail")), new ScreenshotUpload("old.txt", [1])]);
+        var before = (await Detail(a))!;
+        var comment = before.Action.Comments.Single();
+        var mail = before.Files.Live.Single(f => f.FileName == "mail.eml");
+        var old = before.Files.Live.Single(f => f.FileName == "old.txt");
+        await _db.ActionFiles().RemoveAsync(old.FileId, "Not needed");
+        await _db.ActionFiles().DescribeAsync(mail.FileId, "The original message");
+
+        await _db.Actions().DeleteCommentAsync(comment.Id);
+
+        var d = (await Detail(a))!;
+        d.Action.Comments.Should().BeEmpty();
+        d.Files.Live.Should().BeEmpty();
+        d.Action.Events.Should().Contain(e => e.Text == "Test Analyst deleted a comment by Test Analyst; its 2 files are kept as removed.");
+        var keptMail = d.Files.Removed.Single(f => f.FileId == mail.FileId);
+        (keptMail.RemovedReason, keptMail.FromCommentBy, keptMail.Sha256, keptMail.Description, keptMail.OnComment)
+            .Should().Be((ActionFile.CommentDeletedReason, "Test Analyst", mail.Sha256, "The original message", false));
+        d.Files.Removed.Single(f => f.FileId == old.FileId).RemovedReason.Should().Be("Not needed", "one removed already keeps why");
+        _db.Store.Files.Should().ContainKeys(mail.FileId, old.FileId);
+        await using (var ctx = _db.Context()) (await ctx.Files.CountAsync(f => f.Id == mail.FileId || f.Id == old.FileId)).Should().Be(2);
+
+        // The store's clean-up of unused evidence leaves them alone.
+        await _db.Screenshots().DiscardEvidenceAsync(mail.FileId);
+        _db.Store.Files.Should().ContainKey(mail.FileId);
+
+        (await _db.Actions().ListAsync(new ActionFilter())).Single(r => r.Id == a.Id).Files.Should().Be(0);
+        await _db.ActionFiles().RestoreAsync(mail.FileId);
+        var back = (await Detail(a))!.Files.Live.Single();
+        (back.FileId, back.OnComment, back.FromCommentBy).Should().Be((mail.FileId, false, "Test Analyst"));
+        (await _db.Actions().ListAsync(new ActionFilter())).Single(r => r.Id == a.Id).Files.Should().Be(1);
     }
 
     [Fact]
@@ -499,7 +575,7 @@ public class ActionFileHttpTests(TideApp app) : IClassFixture<TideApp>
 
         using var zip = new ZipFile(new MemoryStream(zipped)) { Password = FileRisk.ZipPassword };
         var entry = zip.Cast<ZipEntry>().Should().ContainSingle().Which;
-        (entry.Name, entry.IsCrypted, entry.AESKeySize).Should().Be(("not-really.exe", true, 256));
+        (entry.Name, entry.IsCrypted, entry.AESKeySize).Should().Be(("not-really.exe", true, 0), "classic ZipCrypto, which File Explorer opens");
         using var read = new MemoryStream();
         await using (var s = zip.GetInputStream(entry)) await s.CopyToAsync(read);
         read.ToArray().Should().Equal(bytes);
@@ -612,6 +688,8 @@ public class ActionFilePageTests(TideApp app) : IClassFixture<TideApp>
         html.Should().Contain($"files/{risky[0].FileId}/zip").And.Contain("Download (zip)").And.Contain("Download as is")
             .And.Contain("Warning: It&#x27;s a Windows program.");
         html.Should().Contain("Up to 25 MB a file (15 MB for an image).");
+        html.Should().Contain("Remove gateway.log", "a comment's file is removed on its own too");
+        html.Should().Contain("It opens with the password &quot;infected&quot;.").And.NotContain("7-Zip");
         html.Should().NotContain("Removed files");
     }
 

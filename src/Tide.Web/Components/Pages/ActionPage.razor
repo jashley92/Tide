@@ -185,7 +185,7 @@ else
                             <MarkdownToolbar For="comment-edit" Label="Edit the comment" Class="mt-1" />
                             <textarea id="comment-edit" class="form-control form-control-sm" rows="3" maxlength="8000" aria-label="Edit the comment" @ref="_commentBox" @bind="_commentEdit" @bind:event="oninput"></textarea>
                             <div class="d-flex gap-2 mt-1">
-                                <button class="btn btn-primary btn-sm" disabled="@(_busy || (string.IsNullOrWhiteSpace(_commentEdit) && c.Files.Count == 0))" @onclick="() => SaveComment(c)">Save</button>
+                                <button class="btn btn-primary btn-sm" disabled="@(_busy || (string.IsNullOrWhiteSpace(_commentEdit) && !c.Files.Any(f => !f.IsRemoved)))" @onclick="() => SaveComment(c)">Save</button>
                                 <button class="btn btn-outline-secondary btn-sm" @onclick="() => CancelComment(c)">Cancel</button>
                             </div>
                         }
@@ -193,10 +193,10 @@ else
                         {
                             <Md Text="@c.Text" />
                         }
-                        @if (c.Files.Count > 0)
+                        @if (c.Files.Any(f => !f.IsRemoved))
                         {
-                            var shots = c.Files.Where(f => f.IsImage).OrderBy(f => f.SortOrder).ToList();
-                            var evidence = c.Files.Where(f => !f.IsImage).OrderBy(f => f.SortOrder).ToList();
+                            var shots = c.Files.Where(f => f.IsImage && !f.IsRemoved).OrderBy(f => f.SortOrder).ToList();
+                            var evidence = c.Files.Where(f => !f.IsImage && !f.IsRemoved).OrderBy(f => f.SortOrder).ToList();
                             @if (shots.Count > 0)
                             {
                                 <div class="tide-comment-shots">
@@ -567,7 +567,8 @@ else
 
     private async Task DeleteComment(ActionComment c)
     {
-        if (!await _confirm.Ask("Delete this comment?", "The action's history will say a comment was deleted.", "Delete comment")) return;
+        var kept = c.Files.Count(f => !f.IsRemoved) > 0 ? " Its files are kept as removed files, which an administrator can restore." : "";
+        if (!await _confirm.Ask("Delete this comment?", "The action's history will say a comment was deleted." + kept, "Delete comment")) return;
         await Run(async () =>
         {
             await ActionSvc.DeleteCommentAsync(c.Id);

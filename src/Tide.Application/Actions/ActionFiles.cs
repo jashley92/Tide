@@ -29,13 +29,17 @@ public sealed record ActionFileRow(Guid FileId, string FileName, long SizeBytes,
 
     public string? AddedById { get; init; }
 
-    /// <summary>Whether the current user may remove it (the person who added it, an analyst or an administrator; a
-    /// comment's file goes only with its comment).</summary>
+    /// <summary>Whether the current user may remove it: the person who added it (a comment's file: the comment's author),
+    /// an analyst or an administrator.</summary>
     public bool CanRemove { get; init; }
 
     public DateTimeOffset? RemovedAtUtc { get; init; }
     public string? RemovedByName { get; init; }
     public string? RemovedReason { get; init; }
+
+    /// <summary>For a file kept from a deleted comment: that comment's author and time.</summary>
+    public string? FromCommentBy { get; init; }
+    public DateTimeOffset? FromCommentAtUtc { get; init; }
 
     public bool OnComment => CommentId is not null;
 
@@ -65,9 +69,10 @@ public sealed record FileDownload(Stream Content, string FileName, long SizeByte
 /// run downloads in a password-protected zip by default.
 /// <para>
 /// Who may do what: whoever can work the action (analysts, administrators, and members of its team with WorkActions)
-/// adds files and describes them; the person who added a file, an analyst or an administrator removes it; only an
-/// administrator restores one. Whoever reads actions downloads them. Removing hides a file and keeps its bytes, hash and
-/// record. Every change is in the action's history and the audit trail.
+/// adds files and describes them; the person who added a file (a comment's: its author), an analyst or an administrator
+/// removes it; only an administrator restores one. Whoever reads actions downloads them. Removing hides a file and keeps
+/// its bytes, hash and record, and so does deleting the comment it's on. Every change is in the action's history and the
+/// audit trail.
 /// </para>
 /// </summary>
 public sealed class ActionFileService(IAppDbContextFactory dbs, ICurrentUser user, IFileStore store, IOptionsMonitor<FileStoreOptions> options)
@@ -196,7 +201,7 @@ public sealed class ActionFileService(IAppDbContextFactory dbs, ICurrentUser use
             file.Description = clean;
             db.ActionEvents.Add(Event(a.Id, Described(file.FileName, clean)));
         }
-        else if (await db.ActionCommentFiles.FirstOrDefaultAsync(f => f.FileId == fileId, ct) is { } onComment)
+        else if (await db.ActionCommentFiles.FirstOrDefaultAsync(f => f.FileId == fileId && f.RemovedAtUtc == null, ct) is { } onComment)
         {
             var actionId = await db.ActionComments.Where(c => c.Id == onComment.CommentId).Select(c => c.ActionId).FirstAsync(ct);
             var a = await ActionOf(db, actionId, ct);
@@ -213,8 +218,9 @@ public sealed class ActionFileService(IAppDbContextFactory dbs, ICurrentUser use
         description is null ? $"Cleared the description of {name}." : $"Described {name}: “{description}”";
 
     /// <summary>
-    /// Removes a file from its action, saying why (required): it's hidden, and its bytes, hash and record are kept. Only
-    /// the person who added it, an analyst or an administrator may. A comment's files go only with their comment.
+    /// Removes a file from its action, or from the comment it's attached to, saying why (required): it's hidden, and its
+    /// bytes, hash and record are kept. Only the person who added it (a comment's file: the comment's author), an analyst
+    /// or an administrator may.
     /// </summary>
     public async Task RemoveAsync(Guid fileId, string reason, CancellationToken ct = default)
     {
@@ -222,36 +228,91 @@ public sealed class ActionFileService(IAppDbContextFactory dbs, ICurrentUser use
                   ?? throw new ArgumentException("Say why the file is being removed.");
         if (why.Length > ActionFile.MaxReason) throw new ArgumentException($"Keep the reason to {ActionFile.MaxReason} characters or fewer.");
         await using var db = await dbs.CreateAsync(ct);
-        var file = await db.ActionFiles.FirstOrDefaultAsync(f => f.FileId == fileId, ct);
-        if (file is null)
+        var now = DateTimeOffset.UtcNow;
+        if (await db.ActionFiles.FirstOrDefaultAsync(f => f.FileId == fileId, ct) is { } file)
         {
-            if (await db.ActionCommentFiles.AnyAsync(f => f.FileId == fileId, ct))
-                throw new ArgumentException("A comment's file goes with its comment: delete the comment to remove it.");
-            throw new KeyNotFoundException("That file is no longer on the action.");
+            if (file.IsRemoved) return;
+            if (!CanRemove(file.AddedById)) throw NotTheirs();
+            (file.RemovedAtUtc, file.RemovedById, file.RemovedByName, file.RemovedReason) = (now, user.UserId, user.DisplayName, why);
+            db.ActionEvents.Add(Event(file.ActionId, $"Removed the file {file.FileName} (SHA-256 {file.Sha256}): {why}"));
         }
-        if (file.IsRemoved) return;
-        if (!CanRemove(file.AddedById)) throw new ForbiddenException("Only the person who added a file, an analyst or an administrator can remove it.");
-        file.RemovedAtUtc = DateTimeOffset.UtcNow;
-        file.RemovedById = user.UserId;
-        file.RemovedByName = user.DisplayName;
-        file.RemovedReason = why;
-        db.ActionEvents.Add(Event(file.ActionId, $"Removed the file {file.FileName} (SHA-256 {file.Sha256}): {why}"));
+        else if (await CommentFileAsync(db, fileId, ct) is { } c)
+        {
+            if (c.File.IsRemoved) return;
+            if (!CanRemove(c.AuthorId)) throw NotTheirs();
+            (c.File.RemovedAtUtc, c.File.RemovedById, c.File.RemovedByName, c.File.RemovedReason) = (now, user.UserId, user.DisplayName, why);
+            db.ActionEvents.Add(Event(c.ActionId, $"Removed the file {c.File.FileName} (SHA-256 {c.Sha256}) from a comment by {c.AuthorName}: {why}"));
+        }
+        else throw new KeyNotFoundException("That file is no longer on the action.");
         await db.SaveChangesAsync(ct);
     }
 
-    /// <summary>Puts a removed file back on its action: administrators only.</summary>
+    private static ForbiddenException NotTheirs() => new("Only the person who added a file, an analyst or an administrator can remove it.");
+
+    // A comment's file (tracked), with the comment's action and author and the file's hash.
+    private sealed record CommentFile(ActionCommentFile File, Guid ActionId, string AuthorId, string AuthorName, string Sha256);
+
+    private static async Task<CommentFile?> CommentFileAsync(IAppDbContext db, Guid fileId, CancellationToken ct)
+    {
+        var file = await db.ActionCommentFiles.FirstOrDefaultAsync(f => f.FileId == fileId, ct);
+        if (file is null) return null;
+        var c = await db.ActionComments.AsNoTracking().Where(x => x.Id == file.CommentId).Select(x => new { x.ActionId, x.AuthorId, x.AuthorName }).FirstAsync(ct);
+        var sha = await db.Files.AsNoTracking().Where(f => f.Id == fileId).Select(f => f.Sha256).FirstOrDefaultAsync(ct) ?? "";
+        return new CommentFile(file, c.ActionId, c.AuthorId, c.AuthorName, sha);
+    }
+
+    /// <summary>Puts a removed file back where it was (on the action, or on its comment): administrators only. A file kept
+    /// from a deleted comment comes back on the action itself.</summary>
     public async Task RestoreAsync(Guid fileId, CancellationToken ct = default)
     {
         if (!user.Has(Permission.Administer)) throw new ForbiddenException("Only an administrator can restore a removed file.");
         await using var db = await dbs.CreateAsync(ct);
-        var file = await db.ActionFiles.FirstOrDefaultAsync(f => f.FileId == fileId, ct) ?? throw new KeyNotFoundException("That file is no longer on the action.");
-        if (!file.IsRemoved) return;
-        var live = await db.ActionFiles.CountAsync(f => f.ActionId == file.ActionId && f.RemovedAtUtc == null, ct);
-        if (live >= ActionFile.MaxPerAction) throw new ArgumentException($"An action holds at most {ActionFile.MaxPerAction} files; remove one first.");
-        var removed = $"removed by {file.RemovedByName} on {file.RemovedAtUtc!.Value.ToString("MMM d", CultureInfo.InvariantCulture)}";
-        (file.RemovedAtUtc, file.RemovedById, file.RemovedByName, file.RemovedReason) = (null, null, null, null);
-        db.ActionEvents.Add(Event(file.ActionId, $"Restored the file {file.FileName} ({removed})."));
+        if (await db.ActionFiles.FirstOrDefaultAsync(f => f.FileId == fileId, ct) is { } file)
+        {
+            if (!file.IsRemoved) return;
+            var live = await db.ActionFiles.CountAsync(f => f.ActionId == file.ActionId && f.RemovedAtUtc == null, ct);
+            if (live >= ActionFile.MaxPerAction) throw new ArgumentException($"An action holds at most {ActionFile.MaxPerAction} files; remove one first.");
+            var removed = RemovedWhen(file.RemovedByName, file.RemovedAtUtc!.Value);
+            (file.RemovedAtUtc, file.RemovedById, file.RemovedByName, file.RemovedReason) = (null, null, null, null);
+            db.ActionEvents.Add(Event(file.ActionId, $"Restored the file {file.FileName} ({removed})."));
+        }
+        else if (await CommentFileAsync(db, fileId, ct) is { } c)
+        {
+            if (!c.File.IsRemoved) return;
+            var removed = RemovedWhen(c.File.RemovedByName, c.File.RemovedAtUtc!.Value);
+            (c.File.RemovedAtUtc, c.File.RemovedById, c.File.RemovedByName, c.File.RemovedReason) = (null, null, null, null);
+            db.ActionEvents.Add(Event(c.ActionId, $"Restored the file {c.File.FileName} to a comment by {c.AuthorName} ({removed})."));
+        }
+        else throw new KeyNotFoundException("That file is no longer on the action.");
         await db.SaveChangesAsync(ct);
+    }
+
+    private static string RemovedWhen(string? by, DateTimeOffset at) => $"removed by {by} on {at.ToString("MMM d", CultureInfo.InvariantCulture)}";
+
+    /// <summary>
+    /// The files of a comment being deleted, kept on its action as removed files (reason
+    /// <see cref="ActionFile.CommentDeletedReason"/>): their bytes, hashes and records stay, and an administrator can restore
+    /// them onto the action. The caller removes the comment's own file rows and saves, in the same save. A file already
+    /// removed from the comment keeps who removed it, when and why.
+    /// </summary>
+    internal static async Task KeepFilesOfDeletedCommentAsync(IAppDbContext db, ICurrentUser user, ActionComment comment,
+        IReadOnlyList<ActionCommentFile> files, CancellationToken ct)
+    {
+        if (files.Count == 0) return;
+        var ids = files.Select(f => f.FileId).ToList();
+        var hashes = await db.Files.AsNoTracking().Where(f => ids.Contains(f.Id)).ToDictionaryAsync(f => f.Id, f => f.Sha256, ct);
+        var now = DateTimeOffset.UtcNow;
+        foreach (var f in files)
+            db.ActionFiles.Add(new ActionFile
+            {
+                ActionId = comment.ActionId, FileId = f.FileId, FileName = f.FileName, SizeBytes = f.SizeBytes, Sha256 = hashes.GetValueOrDefault(f.FileId) ?? "",
+                IsImage = f.IsImage, RiskReason = f.RiskReason ?? FileRisk.Reason(f.FileName, null), Description = f.Description,
+                AddedById = comment.AuthorId, AddedByName = comment.AuthorName, AddedAtUtc = comment.AtUtc,
+                FromCommentBy = comment.AuthorName, FromCommentAtUtc = comment.AtUtc,
+                RemovedAtUtc = f.RemovedAtUtc ?? now, RemovedById = f.RemovedAtUtc is null ? user.UserId : f.RemovedById,
+                RemovedByName = f.RemovedAtUtc is null ? user.DisplayName : f.RemovedByName,
+                RemovedReason = f.RemovedAtUtc is null ? ActionFile.CommentDeletedReason : f.RemovedReason,
+            });
     }
 
     private bool CanRemove(string addedById) => user.Has(Permission.WriteArticles) || (addedById.Length > 0 && addedById == user.UserId);
@@ -279,13 +340,13 @@ public sealed class ActionFileService(IAppDbContextFactory dbs, ICurrentUser use
                                 join s in db.Files.AsNoTracking() on f.FileId equals s.Id
                                 where c.ActionId == actionId
                                 select new { f, c.AuthorId, c.AuthorName, c.AtUtc, s.Sha256, s.ContentType }).ToListAsync(ct);
-        var mayRemoveAny = user.Has(Permission.WriteArticles);
+        bool MayRemove(string addedById) => user.Has(Permission.WriteArticles) || (addedById.Length > 0 && addedById == user.UserId);
         var rows = own.Select(x => new ActionFileRow(x.f.FileId, x.f.FileName, x.f.SizeBytes, NullIfEmpty(x.f.Sha256), x.ContentType, x.f.AddedByName,
                 x.f.AddedAtUtc, x.f.Description, x.f.ShowsInline, x.f.RiskReason, x.f.TypeNote)
             {
-                DeclaredType = x.f.DeclaredType, AddedById = x.f.AddedById,
-                CanRemove = mayRemoveAny || (x.f.AddedById.Length > 0 && x.f.AddedById == user.UserId),
+                DeclaredType = x.f.DeclaredType, AddedById = x.f.AddedById, CanRemove = MayRemove(x.f.AddedById),
                 RemovedAtUtc = x.f.RemovedAtUtc, RemovedByName = x.f.RemovedByName, RemovedReason = x.f.RemovedReason,
+                FromCommentBy = x.f.FromCommentBy, FromCommentAtUtc = x.f.FromCommentAtUtc,
             })
             .ToList();
         // A comment's file added before its risk was recorded is judged by its name (its bytes were checked to be an image
@@ -294,7 +355,11 @@ public sealed class ActionFileService(IAppDbContextFactory dbs, ICurrentUser use
         {
             var risk = x.f.RiskReason ?? FileRisk.Reason(x.f.FileName, null);
             return new ActionFileRow(x.f.FileId, x.f.FileName, x.f.SizeBytes, NullIfEmpty(x.Sha256), x.ContentType, x.AuthorName, x.AtUtc,
-                x.f.Description, x.f.IsImage && risk is null, risk, null) { CommentId = x.f.CommentId, AddedById = x.AuthorId };
+                x.f.Description, x.f.IsImage && risk is null, risk, null)
+            {
+                CommentId = x.f.CommentId, AddedById = x.AuthorId, CanRemove = MayRemove(x.AuthorId),
+                RemovedAtUtc = x.f.RemovedAtUtc, RemovedByName = x.f.RemovedByName, RemovedReason = x.f.RemovedReason,
+            };
         }));
         var live = rows.Where(r => r.RemovedAtUtc is null).OrderByDescending(r => r.AddedAtUtc).ThenBy(r => r.FileName, StringComparer.Ordinal).ToList();
         var removed = user.Has(Permission.Administer)
@@ -323,7 +388,7 @@ public sealed class ActionFileService(IAppDbContextFactory dbs, ICurrentUser use
         if (own is not null) return Open(own.FileName, own.SizeBytes, own.AddedAtUtc, own.RiskReason);
         var onComment = await (from f in db.ActionCommentFiles.AsNoTracking()
                                join c in db.ActionComments.AsNoTracking() on f.CommentId equals c.Id
-                               where f.FileId == fileId && (actionId == null || c.ActionId == actionId)
+                               where f.FileId == fileId && (f.RemovedAtUtc == null || admin) && (actionId == null || c.ActionId == actionId)
                                select new { f.FileName, f.SizeBytes, c.AtUtc, f.RiskReason }).FirstOrDefaultAsync(ct);
         return onComment is null ? null : Open(onComment.FileName, onComment.SizeBytes, onComment.AtUtc, onComment.RiskReason ?? FileRisk.Reason(onComment.FileName, null));
     }
@@ -339,7 +404,7 @@ public sealed class ActionFileService(IAppDbContextFactory dbs, ICurrentUser use
         var own = db.ActionFiles.Where(f => f.RemovedAtUtc == null && ids.Contains(f.ActionId)).Select(f => f.ActionId);
         var onComments = from f in db.ActionCommentFiles
                          join c in db.ActionComments on f.CommentId equals c.Id
-                         where ids.Contains(c.ActionId)
+                         where f.RemovedAtUtc == null && ids.Contains(c.ActionId)
                          select c.ActionId;
         return await own.Concat(onComments).GroupBy(id => id).Select(g => new { g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.Key, x => x.Count, ct);

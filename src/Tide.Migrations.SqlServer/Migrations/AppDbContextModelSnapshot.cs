@@ -190,6 +190,21 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<bool>("IsImage")
                         .HasColumnType("bit");
 
+                    b.Property<DateTimeOffset?>("RemovedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RemovedById")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("RemovedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("RemovedReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<string>("RiskReason")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
@@ -273,6 +288,13 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset?>("FromCommentAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("FromCommentBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
 
                     b.Property<bool>("IsImage")
                         .HasColumnType("bit");

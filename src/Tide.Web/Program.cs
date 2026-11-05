@@ -264,7 +264,7 @@ app.MapGet("/files/{id:guid}/download", async (Guid id, Tide.Application.Actions
     return FileDownloads.Plain(http, file.Content, file.FileName);
 }).RequireAuthorization().RequireRateLimiting("files");
 
-// The same file inside an AES-encrypted zip with the password "infected": the main download of a file that can run
+// The same file inside a zip with the password "infected" (classic ZipCrypto): the main download of a file that can run
 // (Files:ZipDownloads), offered for an action's or a comment's file only.
 app.MapGet("/files/{id:guid}/zip", async (Guid id, Tide.Application.Actions.ActionFileService files, HttpContext http, CancellationToken ct) =>
     await files.OpenAsync(id, ct: ct) is { } file ? FileDownloads.Zipped(http, file) : Results.NotFound())

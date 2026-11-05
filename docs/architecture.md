@@ -66,7 +66,7 @@
   edition (ADR 0007).
 - **Files on actions.** The same store holds the files on actions and their comments (see Actions). Every one's
   SHA-256 is recorded as it arrives (`StoredFile.Sha256`). The download endpoints (`/files/{id}/download`, and
-  `/files/{id}/zip` for the AES-encrypted zip with the password `infected`, in `Security/FileDownloads`) send it as an
+  `/files/{id}/zip` for the zip with the password `infected`, in classic ZipCrypto so File Explorer opens it; deliberately weak, as it only stops an accidental run, in `Security/FileDownloads`) send it as an
   attachment of type `application/octet-stream`, never cached, with `nosniff` and a sandboxed CSP with nothing allowed.
   The services check permission per file.
 
@@ -278,7 +278,9 @@ Size limits are the comments' own: `Files:MaxImageMB` for an image and `Files:Ma
 can work the action (`ActionService.CanWork`) adds files and edits any file's description (500 characters). The person
 who added a file, an analyst or an administrator removes it, with a required reason. Removing hides the file but keeps
 its bytes, hash and row, with who removed it, when and why. An administrator sees removed files and can restore them. A
-comment's files go only with their comment, as before. Anyone who reads actions downloads a live file. Every change is
+comment's file is removed the same way (by the comment's author, an analyst or an administrator), and deleting a comment
+keeps its files on the action as removed, with the reason "Its comment was deleted", rather than deleting their bytes;
+restored, such a file comes back on the action itself. Anyone who reads actions downloads a live file. Every change is
 an `ActionEvent` (the history names the hash) and an audit row (the `ActionFile` row holds the hash). The lists, the
 board and the brief's action rows show a paperclip with the live files counted, from one grouped query
 (`ActionFileService.CountsAsync`). An `ActionFile` row publishes the action's topic and `ChangeFeed.Actions`, so an open

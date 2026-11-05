@@ -6,8 +6,8 @@ using Tide.Application.Files;
 namespace Tide.Web.Security;
 
 /// <summary>
-/// The answers a file download sends: the file as it was added, or the file inside an AES-encrypted zip with the
-/// password <see cref="FileRisk.ZipPassword"/>. Either way it's an attachment of no particular type, never sniffed into
+/// The answers a file download sends: the file as it was added, or the file inside a password-protected zip (the
+/// password <see cref="FileRisk.ZipPassword"/>). Either way it's an attachment of no particular type, never sniffed into
 /// one, never cached, and sandboxed with nothing allowed, so whatever the browser makes of it can't run in TIDE's origin.
 /// Who may download which file is the services' call (<see cref="ActionFileService.OpenAsync"/>).
 /// </summary>
@@ -32,15 +32,18 @@ public static class FileDownloads
             "application/zip", entry + ".zip");
     }
 
-    /// <summary>Writes <paramref name="content"/> to <paramref name="output"/> as the one entry of an AES-256 zip with the
-    /// password "infected". Disposes <paramref name="content"/>; leaves <paramref name="output"/> open.</summary>
+    /// <summary>Writes <paramref name="content"/> to <paramref name="output"/> as the one entry of a zip with the password
+    /// "infected". Disposes <paramref name="content"/>; leaves <paramref name="output"/> open.</summary>
     public static async Task WriteZipAsync(Stream output, Stream content, string entryName, long size, DateTime modifiedUtc)
     {
         await using var source = content;
         using var zip = new ZipOutputStream(output) { IsStreamOwner = false, Password = FileRisk.ZipPassword };
         zip.UseZip64 = size >= uint.MaxValue - 1024 ? UseZip64.On : UseZip64.Off;
         zip.SetLevel(5);
-        zip.PutNextEntry(new ZipEntry(entryName) { DateTime = modifiedUtc, Size = size, AESKeySize = 256 });
+        // Classic PKWARE encryption (ZipCrypto), not AES, so Windows File Explorer opens it with the password as well as any
+        // zip tool. It's deliberately weak: its job is to stop a double-click running the file and antivirus deleting it on
+        // arrival, not to keep it secret (the password is the field's public convention).
+        zip.PutNextEntry(new ZipEntry(entryName) { DateTime = modifiedUtc, Size = size, AESKeySize = 0 });
         await source.CopyToAsync(zip, 1 << 16);
         zip.CloseEntry();
         zip.Finish();

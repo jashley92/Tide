@@ -285,7 +285,7 @@ public sealed class ScreenshotService(IAppDbContextFactory dbs, ICurrentUser use
         var team = user.Has(Permission.ReadTeamEdition);
         if (!team && !user.Has(Permission.WorkActions)) return null;
         await using var db = await dbs.CreateAsync(ct);
-        var name = await db.ActionCommentFiles.AsNoTracking().Where(f => f.FileId == fileId).Select(f => f.FileName).FirstOrDefaultAsync(ct);
+        var name = await db.ActionCommentFiles.AsNoTracking().Where(f => f.FileId == fileId && f.RemovedAtUtc == null).Select(f => f.FileName).FirstOrDefaultAsync(ct);
         if (name is null && (await db.HuntQueries.AnyAsync(h => h.EvidenceFileId == fileId, ct)
                              || (team && await db.ArticleScreenshots.AnyAsync(s => s.FileId == fileId, ct))))
             name = await db.Files.AsNoTracking().Where(f => f.Id == fileId).Select(f => f.FileName).FirstOrDefaultAsync(ct);
@@ -300,7 +300,7 @@ public sealed class ScreenshotService(IAppDbContextFactory dbs, ICurrentUser use
         if (team || user.Has(Permission.WorkActions))
         {
             if (await db.HuntQueries.AnyAsync(h => h.EvidenceFileId == fileId, ct)) return true;
-            if (await db.ActionCommentFiles.AnyAsync(f => f.FileId == fileId && f.IsImage, ct)) return true;
+            if (await db.ActionCommentFiles.AnyAsync(f => f.FileId == fileId && f.IsImage && f.RemovedAtUtc == null, ct)) return true;
             // An action's own file, only while it's on the action and is a real image, named and sent as one, that can't run.
             if (await db.ActionFiles.AnyAsync(f => f.FileId == fileId && f.RemovedAtUtc == null && f.IsImage && f.TypeNote == null && f.RiskReason == null, ct))
                 return true;

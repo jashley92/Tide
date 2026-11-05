@@ -185,6 +185,21 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsImage")
                         .HasColumnType("INTEGER");
 
+                    b.Property<long?>("RemovedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RemovedById")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RemovedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RemovedReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("RiskReason")
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
@@ -267,6 +282,13 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<string>("FileName")
                         .IsRequired()
                         .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("FromCommentAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("FromCommentBy")
+                        .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("IsImage")

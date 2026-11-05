@@ -123,7 +123,7 @@ public static class OpenApi
             },
             "/actions/{number}/files/{fileId}": {
               "get": {
-                "summary": "Download a live file on the action or one of its comments (fileId is a file's id from the action's files): as it was added, an attachment of type application/octet-stream, or with zip=true inside an AES-256 zip with the password infected. Held to the same scope and ceiling as the action. Scope: actions:read.",
+                "summary": "Download a live file on the action or one of its comments (fileId is a file's id from the action's files): as it was added, an attachment of type application/octet-stream, or with zip=true inside a zip with the password infected (classic ZipCrypto, which any zip tool opens). Held to the same scope and ceiling as the action. Scope: actions:read.",
                 "parameters": [
                   { "name": "number", "in": "path", "required": true, "schema": { "type": "integer" } },
                   { "name": "fileId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },

@@ -500,6 +500,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.FileName).HasMaxLength(200);
             e.Property(x => x.Description).HasMaxLength(ActionFile.MaxDescription);
             e.Property(x => x.RiskReason).HasMaxLength(200);
+            Person(e, x => x.RemovedById, x => x.RemovedByName);
+            e.Property(x => x.RemovedReason).HasMaxLength(ActionFile.MaxReason);
             e.HasOne<StoredFile>().WithMany().HasForeignKey(x => x.FileId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => x.CommentId);
             e.HasIndex(x => x.FileId);
@@ -516,6 +518,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             Person(e, x => x.AddedById, x => x.AddedByName);
             Person(e, x => x.RemovedById, x => x.RemovedByName);
             e.Property(x => x.RemovedReason).HasMaxLength(ActionFile.MaxReason);
+            e.Property(x => x.FromCommentBy).HasMaxLength(256);
             e.HasOne<StoredFile>().WithMany().HasForeignKey(x => x.FileId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => x.ActionId);
             e.HasIndex(x => x.FileId).IsUnique();

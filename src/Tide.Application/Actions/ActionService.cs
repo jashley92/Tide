@@ -773,7 +773,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var (comment, a) = await OwnCommentAsync(db, commentId, ct);
         if (editVersion is { } v && v != comment.EditVersion)
             throw new StaleEditException($"{comment.EditedByName ?? "Someone else"} changed this comment since you opened it.");
-        if (clean.Length == 0 && !await db.ActionCommentFiles.AnyAsync(f => f.CommentId == commentId, ct))
+        if (clean.Length == 0 && !await db.ActionCommentFiles.AnyAsync(f => f.CommentId == commentId && f.RemovedAtUtc == null, ct))
             throw new ArgumentException("A comment can't be empty; delete it instead.");
         if (comment.Text == clean) return comment.EditVersion;
         comment.Text = clean;
@@ -789,21 +789,20 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         return comment.EditVersion;
     }
 
-    /// <summary>Deletes a comment, and its files: only its author, on whichever team (or an administrator). The history says so; the audit
-    /// log keeps it.</summary>
+    /// <summary>Deletes a comment: only its author, on whichever team (or an administrator). Its files are kept on the
+    /// action as removed files ("Its comment was deleted"), with their bytes, hashes and records, for an administrator to
+    /// restore. The history says so; the audit log keeps it.</summary>
     public async Task DeleteCommentAsync(Guid commentId, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
         var (comment, a) = await OwnCommentAsync(db, commentId, ct);
         var attached = await db.ActionCommentFiles.Where(f => f.CommentId == commentId).ToListAsync(ct);
-        var fileIds = attached.Select(f => f.FileId).ToList();
+        await ActionFileService.KeepFilesOfDeletedCommentAsync(db, user, comment, attached, ct);
         db.ActionCommentFiles.RemoveRange(attached);
-        db.Files.RemoveRange(await db.Files.Where(f => fileIds.Contains(f.Id)).ToListAsync(ct));
         db.ActionComments.Remove(comment);
         db.ActionEvents.Add(Event(a.Id, $"{user.DisplayName} deleted a comment by {comment.AuthorName}"
-            + (attached.Count > 0 ? $", and its {attached.Count} file{(attached.Count == 1 ? "" : "s")}." : ".")));
+            + (attached.Count > 0 ? $"; its {attached.Count} file{(attached.Count == 1 ? " is" : "s are")} kept as removed." : ".")));
         await db.SaveChangesAsync(ct);
-        files.Discard(fileIds);
     }
 
     // --- checklist and playbooks --------------------------------------------------------------------------------

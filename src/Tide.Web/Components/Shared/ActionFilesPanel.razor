@@ -53,6 +53,10 @@
                                 {
                                     <a href="@($"{Ui.ActionUrl(Number)}#comment-{commentId}")">On a comment by @f.AddedByName, @Ui.When(Clock, f.AddedAtUtc)</a>
                                 }
+                                else if (f.FromCommentBy is not null)
+                                {
+                                    <span>From a deleted comment by @f.FromCommentBy, @Ui.When(Clock, f.FromCommentAtUtc ?? f.AddedAtUtc)</span>
+                                }
                                 else
                                 {
                                     <span>Added to the action by @f.AddedByName, @Ui.When(Clock, f.AddedAtUtc)</span>
@@ -104,7 +108,7 @@
                                     <button type="button" class="btn btn-link btn-sm p-0" aria-label="@(f.Description is null ? "Describe" : "Edit the description of") @f.FileName"
                                             @onclick="() => StartDescribe(f)">@(f.Description is null ? "Describe" : "Edit description")</button>
                                 }
-                                @if (f.CanRemove && !f.OnComment && _removing != f.FileId)
+                                @if (f.CanRemove && _removing != f.FileId)
                                 {
                                     <button type="button" class="btn btn-link btn-sm p-0" aria-label="Remove @f.FileName" @onclick="() => StartRemove(f)">Remove</button>
                                 }
@@ -141,7 +145,7 @@
                             <button class="btn btn-outline-secondary btn-sm ms-auto" disabled="@_busy" @onclick="() => Restore(f)" aria-label="Restore @f.FileName">Restore</button>
                         </div>
                         <div class="small tide-muted">Removed by @f.RemovedByName, @Ui.When(Clock, f.RemovedAtUtc!.Value): @f.RemovedReason</div>
-                        <div class="small tide-muted">Added by @f.AddedByName, @Ui.When(Clock, f.AddedAtUtc)</div>
+                        <div class="small tide-muted">@RemovedSource(f)</div>
                     </li>
                 }
             </ul>
@@ -161,7 +165,13 @@
     private string? _description, _reason;
     private bool _busy;
 
-    internal const string ZipTitle = "In a zip with the password \"infected\", so it can't run by accident. It's AES-encrypted: open it with 7-Zip or another tool that reads encrypted zips.";
+    internal const string ZipTitle = "In a zip, so it can't run by accident. It opens with the password \"infected\".";
+
+    // Where a removed file was, for the Removed files list.
+    private string RemovedSource(ActionFileRow f) =>
+        f.OnComment ? $"Was on a comment by {f.AddedByName}, {Ui.When(Clock, f.AddedAtUtc)}"
+        : f.FromCommentBy is not null ? $"Was on a comment by {f.FromCommentBy}, {Ui.When(Clock, f.FromCommentAtUtc ?? f.AddedAtUtc)}"
+        : $"Added to the action by {f.AddedByName}, {Ui.When(Clock, f.AddedAtUtc)}";
 
     internal static string AsIsTitle(ActionFileRow f) => f.RiskReason is not null
         ? $"Warning: {FileRisk.Sentence(f.RiskReason)} Download it as is only to open it somewhere safe."
