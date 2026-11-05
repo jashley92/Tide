@@ -173,8 +173,7 @@ any). What changed for administrators: new settings, steps the upgrade needs, an
 
 ### v1.4.0
 
-Notes for the next release, gathered as changes land. Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). The
-changes below add no migration and no setting.
+Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds no migration and no setting.
 
 **For administrators**
 - **WebSockets are checked.** TIDE's pages need IIS's WebSocket Protocol feature; without it (or behind a proxy that
@@ -183,7 +182,9 @@ changes below add no migration and no setting.
   `Install-WindowsFeature Web-WebSockets`. `Install-Tide.ps1` checks for it and offers to install it (`-InstallWebSockets`
   to do so unasked), `Verify-Install.ps1` fails without it and tries a real WebSocket handshake, and Administration >
   System > Diagnostics shows the connection type your page is using and how many connections used each since the app
-  started. See [INSTALL.md](INSTALL.md#1-what-you-need).
+  started (a page that reconnects counts again). An unattended install (answers file or a non-interactive session)
+  without `-InstallWebSockets` or `InstallWebSockets = $true` warns and carries on; the answers file downloaded from
+  Administration now carries the `InstallWebSockets` key. See [INSTALL.md](INSTALL.md#1-what-you-need).
 - **The article's free-text "Threat actors" box is gone.** Its column (`Articles.Actors`) is kept and nothing in it is
   deleted or rewritten by the upgrade; the editor no longer writes it. Each article's earlier text shows under the
   Threat actors picker as an **earlier note**: names a profile goes by (its name or an alias, ignoring case) are offered
@@ -201,7 +202,12 @@ changes below add no migration and no setting.
   "Add 'X' to Our stack". Mention still adds a product to why it matters.
 - **The rail's Related tab is gone.** Similar articles is a folded section under the threat story, "Similar articles
   (N)". Someone who can't edit sees the article's products and threat actors as read-only cards in the rail.
-- **Search pickers** keep the highlighted option in view as the arrow keys move.
+- **Scorecard tags** show the tags chosen, an "Add a tag" search by tag or category name, and the full list folded
+  under "Browse all tags", in the editor and in present mode's tag panel.
+- **The ATT&CK picker** hides tactics with no match while you search (smoothly, or at once with reduced motion), says
+  how many tactics and techniques match, and scrolls back to the start.
+- **Search pickers** wait for a short pause in typing before they search (the story picker too, now), and keep the
+  highlighted option in view as the arrow keys move.
 
 ### v1.3.0
 
