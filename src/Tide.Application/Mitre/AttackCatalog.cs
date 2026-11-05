@@ -79,9 +79,16 @@ public static class AttackCatalog
         if (id.StartsWith(ql, StringComparison.Ordinal)) return 1;
         if (name.StartsWith(ql, StringComparison.Ordinal)) return 2;
         if (name.Contains(ql, StringComparison.Ordinal)) return 3;
-        if (id.Contains(ql, StringComparison.Ordinal)) return 4;
-        return int.MaxValue;
+        // What's left of a match is the id containing it.
+        return Matches(t, ql) ? 4 : int.MaxValue;
     }
+
+    /// <summary>Whether a technique matches <paramref name="filter"/>: its id or name contains it, ignoring case.
+    /// Everything matches an empty one. <see cref="Search"/> ranks these; the matrix picker (AttackMatrixView) shows them.</summary>
+    public static bool Matches(AttackTechnique t, string filter) =>
+        filter.Length == 0
+        || t.Id.Contains(filter, StringComparison.OrdinalIgnoreCase)
+        || t.Name.Contains(filter, StringComparison.OrdinalIgnoreCase);
 
     private static ImmutableArray<AttackTechnique> Load()
     {

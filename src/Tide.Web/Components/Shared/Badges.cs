@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
+using Tide.Application.Content;
 using Tide.Domain.Enums;
 
 namespace Tide.Web.Components.Shared;
@@ -228,6 +229,9 @@ public sealed class HuntBadge : ComponentBase
 /// <summary>Display helpers shared by pages.</summary>
 public static class Ui
 {
+    /// <summary>"1 tag", "3 tags" (<see cref="Words.Plural"/>).</summary>
+    public static string Plural(int n, string one, string? many = null) => Words.Plural(n, one, many);
+
     /// <summary>How many avatar colours there are: the <c>--tide-avatar-1</c> to <c>-8</c> tokens in app.css.</summary>
     public const int AvatarSwatches = 8;
 

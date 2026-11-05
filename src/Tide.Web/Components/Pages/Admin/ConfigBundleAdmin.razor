@@ -53,11 +53,11 @@
     @if (_current is { } b)
     {
         <ul class="small mb-2">
-            <li>@Plural(b.Settings.Count, "setting") changed in the app (organization settings, reminders, polling, CVE enrichment, metric imports, edition ceilings and recipients, SLA targets, the update check)</li>
-            <li>@Plural(b.RoleMappings.Count, "AD group mapping")</li>
-            <li>@Plural(b.Sources.Count, "source")@if (b.Sources.Count(s => s.UrlHidden) is > 0 and var hidden) { <text>, @hidden with a key in its address that's left out</text> }</li>
-            <li>@Plural(b.Scorecard.Count, "scorecard category", "scorecard categories") and @Plural(b.Scorecard.Sum(c => c.Tags.Count), "tag")</li>
-            <li>@Plural(b.QueryTemplates.Count, "query template")</li>
+            <li>@Ui.Plural(b.Settings.Count, "setting") changed in the app (organization settings, reminders, polling, CVE enrichment, metric imports, edition ceilings and recipients, SLA targets, the update check)</li>
+            <li>@Ui.Plural(b.RoleMappings.Count, "AD group mapping")</li>
+            <li>@Ui.Plural(b.Sources.Count, "source")@if (b.Sources.Count(s => s.UrlHidden) is > 0 and var hidden) { <text>, @hidden with a key in its address that's left out</text> }</li>
+            <li>@Ui.Plural(b.Scorecard.Count, "scorecard category", "scorecard categories") and @Ui.Plural(b.Scorecard.Sum(c => c.Tags.Count), "tag")</li>
+            <li>@Ui.Plural(b.QueryTemplates.Count, "query template")</li>
         </ul>
     }
     <p class="small tide-muted mb-0">Never articles, briefs, actions, people or the audit trail, and never the server's own settings
@@ -199,8 +199,6 @@
         _preview = null;
         _chosen = null;
     }
-
-    private static string Plural(int n, string one, string? many = null) => $"{n} {(n == 1 ? one : many ?? one + "s")}";
 
     private static string ChangeName(BundleChangeKind k) => k switch
     {
