@@ -58,7 +58,7 @@ public class EarlierActorsTests : IDisposable
         mine.Leftover.Should().Equal("UNC9999");
         mine.Suggested.Should().BeEmpty("a profile is offered once, from the note, not again as \"Names X\"");
         (await _db.Adversaries().OfferedAsync(article)).Select(p => (p.Id, p.Reason)).Take(2)
-            .Should().Equal((spider, AdversaryPickReason.Named), (apt29, AdversaryPickReason.Named));
+            .Should().Equal((spider, PickReason.Named), (apt29, PickReason.Named));
 
         // Tagging one: it's no longer offered, and the leftover stays until it's cleared.
         await _db.Adversaries().TagArticleAsync(article, spider);

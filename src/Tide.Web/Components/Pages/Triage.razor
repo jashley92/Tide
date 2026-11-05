@@ -568,7 +568,10 @@ else
     private IReadOnlyList<MissedItem> _missed = [];
     private bool _missedHidden;
     private DateTimeOffset? _lastBriefAt;
-    private CancellationTokenSource? _typing;
+    private readonly TypingPause _typing = new(SearchPauseMs);
+
+    // How long typing in the search box pauses before the inbox is searched.
+    private const int SearchPauseMs = 300;
 
     private string ZoneLabel => Clock.Zone.IsDaylightSavingTime(Clock.Now) ? Clock.Zone.DaylightName : Clock.Zone.StandardName;
     private IReadOnlyList<Source> _sources = [];
@@ -1311,12 +1314,7 @@ else
     // Search as you type, once typing pauses.
     private async Task SearchChanged()
     {
-        if (_typing is not null) await _typing.CancelAsync();
-        _typing?.Dispose();
-        var typing = _typing = new CancellationTokenSource();
-        try { await Task.Delay(300, typing.Token); }
-        catch (TaskCanceledException) { return; }
-        await Load();
+        if (await _typing.Settled()) await Load();
     }
 
     /// <summary>
@@ -1395,6 +1393,5 @@ else
         catch (JSDisconnectedException) { }
         catch (InvalidOperationException) { }
         _ref?.Dispose();
-        _typing?.Dispose();
     }
 }

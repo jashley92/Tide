@@ -108,25 +108,28 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
     private static async Task<HitList<ArticleHit>> ArticlesAsync(IAppDbContext db, IReadOnlyList<string> terms, int skip, int take, CancellationToken ct)
     {
         IQueryable<Article> q = db.Articles.AsNoTracking();
-        // The adversary profiles an article is tagged with, by any of their names: the threat actors it's about.
         var adversaryTags = db.ArticleAdversaries;
         foreach (var term in terms)
         {
             // A term that names ATT&CK techniques ("phishing", "T1566") also finds the articles tagged with them.
             var techniques = term.Length >= 4 ? AttackCatalog.Search(term, 30).Select(t => t.Id).ToArray() : [];
             Expression<Func<Article, bool>>? tagged = techniques.Length == 0 ? null : a => a.Techniques.Any(t => techniques.Contains(t.TechniqueId));
+            // So do the adversary profiles it's tagged with, by any of their names (the threat actors it's about): the
+            // profiles are a short list, matched first, and an article then by its tags' ids.
+            var profiles = await db.Adversaries.AsNoTracking()
+                .Where(AnyForm<Adversary>((x, p) => EF.Functions.Like(x.Name, p, SearchText.Escape) || EF.Functions.Like(x.Aliases!, p, SearchText.Escape), term))
+                .Select(x => x.Id).ToListAsync(ct);
+            Expression<Func<Article, bool>>? profiled = profiles.Count == 0 ? null : a => adversaryTags.Any(t => t.ArticleId == a.Id && profiles.Contains(t.AdversaryId));
             q = q.Where(AnyForm<Article>((a, p) =>
                 EF.Functions.Like(a.Title, p, SearchText.Escape) || EF.Functions.Like(a.Bluf, p, SearchText.Escape)
                 || EF.Functions.Like(a.WhyItMatters!, p, SearchText.Escape) || EF.Functions.Like(a.RecommendedActions!, p, SearchText.Escape)
                 || EF.Functions.Like(a.Actors!, p, SearchText.Escape) || EF.Functions.Like(a.Sectors!, p, SearchText.Escape)
                 || EF.Functions.Like(a.SourceName!, p, SearchText.Escape)
-                || adversaryTags.Any(t => t.ArticleId == a.Id
-                    && (EF.Functions.Like(t.Adversary!.Name, p, SearchText.Escape) || EF.Functions.Like(t.Adversary!.Aliases!, p, SearchText.Escape)))
                 || a.Bullets.Any(b => EF.Functions.Like(b.Text, p, SearchText.Escape))
                 || a.Indicators.Any(i => EF.Functions.Like(i.Value, p, SearchText.Escape) || EF.Functions.Like(i.Note!, p, SearchText.Escape))
                 || a.Cves.Any(c => EF.Functions.Like(c.CveId, p, SearchText.Escape))
                 || a.Techniques.Any(t => EF.Functions.Like(t.TechniqueId, p, SearchText.Escape))
-                || a.Screenshots.Any(s => EF.Functions.Like(s.Caption!, p, SearchText.Escape)), term, tagged));
+                || a.Screenshots.Any(s => EF.Functions.Like(s.Caption!, p, SearchText.Escape)), term, tagged, profiled));
         }
         var total = await q.CountAsync(ct);
         // Title matches first, among the newest MaxTake matches: the same ones whichever page is asked for (and in the same order: ties by id), so a later
@@ -141,8 +144,7 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
             .Include(a => a.Bullets).Include(a => a.Indicators).Include(a => a.Screenshots)
             .AsSplitQuery().ToListAsync(ct);
         var dates = await Lookups.BriefDatesAsync(db, picked, ct);
-        var tags = (await db.ArticleAdversaries.AsNoTracking().Where(t => picked.Contains(t.ArticleId)).Include(t => t.Adversary).ToListAsync(ct))
-            .ToLookup(t => t.ArticleId, t => t.Adversary!);
+        var actors = await Adversaries.AdversaryService.ActorNamesAsync(db, rows.Select(a => (a.Id, a.Actors)).ToList(), ct);
         var byId = rows.ToDictionary(a => a.Id);
         // An indicator goes in as pages show it (defanged), so a snippet never carries a live link.
         var hits = picked.Select(id => byId[id]).Select(a => new ArticleHit(a.Id, a.Title, a.SourceName, a.Tlp, a.Classification,
@@ -152,7 +154,7 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
                     .Concat(a.Bullets.OrderBy(b => b.SortOrder).Select(b => b.Text))
                     .Concat(a.Indicators.SelectMany(i => new[] { IndicatorLabels.Shown(i.Type, i.Value), i.Note }))
                     .Concat(a.Screenshots.Select(s => s.Caption))
-                    .Append(string.Join(", ", Adversaries.AdversaryService.ShownNames(tags[a.Id].ToList(), a.Actors))).Append(a.Sectors),
+                    .Append(string.Join(", ", actors[a.Id])).Append(a.Sectors),
                 forms, a.Bluf))).ToList();
         return new HitList<ArticleHit>(hits, total);
     }
@@ -256,7 +258,7 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
     /// <paramref name="match"/> (an entity and a LIKE pattern) for any of <paramref name="term"/>'s forms, or
     /// <paramref name="extra"/>. Each pattern goes in as a query parameter.
     /// </summary>
-    private static Expression<Func<T, bool>> AnyForm<T>(Expression<Func<T, string, bool>> match, string term, Expression<Func<T, bool>>? extra = null)
+    private static Expression<Func<T, bool>> AnyForm<T>(Expression<Func<T, string, bool>> match, string term, params Expression<Func<T, bool>>?[] extras)
     {
         var entity = match.Parameters[0];
         Expression? body = null;
@@ -266,7 +268,8 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
             var one = new Swap(match.Parameters[1], pattern).Visit(match.Body);
             body = body is null ? one : Expression.OrElse(body, one);
         }
-        if (extra is not null) body = Expression.OrElse(body!, new Swap(extra.Parameters[0], entity).Visit(extra.Body));
+        foreach (var extra in extras.OfType<Expression<Func<T, bool>>>())
+            body = Expression.OrElse(body!, new Swap(extra.Parameters[0], entity).Visit(extra.Body));
         return Expression.Lambda<Func<T, bool>>(body!, entity);
     }
 

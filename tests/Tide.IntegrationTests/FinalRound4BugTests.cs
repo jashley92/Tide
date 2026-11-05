@@ -79,7 +79,6 @@ public class FinalRound4BugTests : IDisposable
 
         string[] expected = ["citrix NetScaler", "Fortinet FortiGate", "Ivanti", "Zscaler"];
         (await stack.ListAsync()).Select(r => r.Product.Name).Should().Equal(expected, "SQLite put the capitals first");
-        (await stack.ProductsAsync()).Select(p => p.Name).Should().Equal(expected, "the editor's picker");
         (await stack.ForArticleAsync(article)).Tagged.Select(p => p.Name).Should().Equal(expected, "the editor's card");
         (await stack.ForArticlesAsync([article]))[article].Select(p => p.Name).Should().Equal(expected, "present mode's chips");
     }

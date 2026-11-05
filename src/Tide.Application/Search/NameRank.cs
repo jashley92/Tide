@@ -12,8 +12,25 @@ public static class NameRank
     /// <summary>How one name matches <paramref name="text"/>.</summary>
     public static int Of(string term, string text) =>
         string.Equals(term, text, StringComparison.OrdinalIgnoreCase) ? Exact
-        : term.StartsWith(text, StringComparison.OrdinalIgnoreCase) ? Starts
-        : term.Contains(text, StringComparison.OrdinalIgnoreCase) ? Holds : None;
+        : Placed(term, text) switch { AtStart => Starts, null => None, _ => Holds };
+
+    /// <summary>Where <see cref="Placed"/> finds the words: at the name's start, at the start of a word in it, or inside one.</summary>
+    public const int AtStart = 0, AtWord = 1, Inside = 2;
+
+    /// <summary>
+    /// Where <paramref name="text"/> first sits in <paramref name="name"/>, ignoring case: <see cref="AtStart"/>,
+    /// <see cref="AtWord"/> (after a character that's no letter or digit), <see cref="Inside"/>, or null if it isn't
+    /// there. The scorecard tag search ranks by it as it is; <see cref="Of"/> tells only the start from the rest.
+    /// </summary>
+    public static int? Placed(string name, string text)
+    {
+        var at = name.IndexOf(text, StringComparison.OrdinalIgnoreCase);
+        if (at < 0) return null;
+        if (at == 0) return AtStart;
+        for (; at > 0; at = name.IndexOf(text, at + 1, StringComparison.OrdinalIgnoreCase))
+            if (!char.IsLetterOrDigit(name[at - 1])) return AtWord;
+        return Inside;
+    }
 
     /// <summary>The best match among the name, the code and the other names, and the other name that made it when the
     /// name and code matched less well (shown "Name (also Other)").</summary>

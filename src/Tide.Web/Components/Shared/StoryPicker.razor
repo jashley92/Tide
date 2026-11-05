@@ -22,7 +22,7 @@
         }
         <SearchCombobox TItem="StoryRow" Id="story-pick" Type="search" Open="true" Placeholder="Find a story, or name a new one" ListLabel="Stories"
                         Help="Matching stories are listed below. Choose one to put the article in it." Disabled="_busy"
-                        @bind-Text="_text" @bind-Text:after="Find" Items="_found" Key="s => s.Id" OnPick="s => Link(s.Id)"
+                        @bind-Text="_text" @bind-Text:after="Typed" Items="_found" Key="s => s.Id" OnPick="s => Link(s.Id)"
                         NewOption="@(CanStart ? NewStory : null)" OnNew="StartStory" Empty="@(_found.Count == 0 && !CanStart ? NoStories : null)">
             <ItemTemplate Context="s">
                 <span class="tide-story-result-name">@s.Name</span>
@@ -74,7 +74,7 @@
     private bool _canWrite, _busy, _loaded, _changing;
     // What's typed in the search: the words to find, and the name a new story would take (internal for the tests).
     internal string? _text;
-    private int _finding;
+    private readonly TypingPause _pause = new();
 
     private string Text => (_text ?? "").Trim();
 
@@ -99,12 +99,18 @@
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
     }
 
+    // Typed in the box: the search runs once typing pauses (TypingPause.SearchMs), as the other pickers' do.
+    private async Task Typed()
+    {
+        if (await _pause.Settled()) await Find();
+    }
+
     // The stories for what's typed now; a slower answer for what was typed before is dropped.
     internal async Task Find()
     {
-        var mine = ++_finding;
+        var mine = _pause.Now();
         var found = await Stories.FindAsync(_text);
-        if (mine != _finding) return;
+        if (!_pause.IsLatest(mine)) return;
         _found = found;
         StateHasChanged();
     }

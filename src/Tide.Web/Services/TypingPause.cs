@@ -5,7 +5,9 @@ namespace Tide.Web.Services;
 /// <see cref="Settled"/>; only the last one before typing stops for <see cref="DelayMs"/> gets true. <see cref="Now"/>
 /// drops a pending one, for what applies at once (Clear, Enter, closing, a search run straight away), and hands back a
 /// mark that <see cref="IsLatest"/> checks, so a slower answer to an earlier search is dropped when a later one started.
-/// Every picker that searches as you type uses one: the ATT&amp;CK picker, the adversary picker and "We run".
+/// Everything that searches as you type uses one: the ATT&amp;CK picker, the tag cards (Threat actors, We run) and the
+/// story picker at <see cref="SearchMs"/>; a table's filter and triage's search at their own longer pauses. (The command
+/// palette keeps its own: its pause also cancels the search it started.)
 /// </summary>
 public sealed class TypingPause(int delayMs = TypingPause.SearchMs)
 {

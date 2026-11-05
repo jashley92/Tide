@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Adversaries;
 using Tide.Application.Articles;
+using Tide.Application.Search;
 using Tide.Domain.Enums;
 using Tide.Infrastructure.Persistence;
 using Tide.Web.Components.Shared;
@@ -45,8 +46,8 @@ public class AdversaryPickSearchTests : IDisposable
         var picks = await _db.Adversaries().FindForArticleAsync(article, "  SPIDER ");
 
         picks.Found.Select(p => p.Id).Should().Equal(aliasExact, prefix, aliasContains, contains);
-        picks.Found.Select(p => p.Alias).Should().Equal("Spider", null, "Ember Spider", null);
-        picks.Found.Should().OnlyContain(p => p.Reason == AdversaryPickReason.Match && !p.IsRetired);
+        picks.Found.Select(p => p.Other).Should().Equal("Spider", null, "Ember Spider", null);
+        picks.Found.Should().OnlyContain(p => p.Reason == PickReason.Match && !p.IsRetired);
         picks.Exact.Should().BeTrue("Octo Group goes by Spider exactly");
         picks.AlreadyTagged.Should().BeNull();
 
@@ -54,7 +55,7 @@ public class AdversaryPickSearchTests : IDisposable
         partial.Found.Should().HaveCount(4);
         partial.Exact.Should().BeFalse("no profile is called Spid, so adding one is offered");
 
-        (await _db.Adversaries().FindForArticleAsync(article, "   ")).Should().Be(AdversaryPicks.None);
+        (await _db.Adversaries().FindForArticleAsync(article, "   ")).Should().Be(TagPicks.None);
         (await _db.Adversaries().FindForArticleAsync(article, "%")).Found.Should().BeEmpty("a wildcard is taken as text");
         (await _db.Adversaries().FindForArticleAsync(article, "Spider " + new string('x', 200))).Found.Should().BeEmpty("it's cut to a name's length, and nothing's called that");
     }
@@ -70,11 +71,11 @@ public class AdversaryPickSearchTests : IDisposable
 
         var exact = await _db.Adversaries().FindForArticleAsync(article, "g0016");
         exact.Found.Select(p => p.Id).Should().Equal(apt29);
-        exact.Found[0].Should().Be(new AdversaryPick(apt29, "APT29", "G0016", false, null, AdversaryPickReason.Match));
+        exact.Found[0].Should().Be(new TagPick(apt29, "APT29", "G0016", false, null, PickReason.Match));
         exact.Exact.Should().BeTrue("the MITRE id names the group exactly");
 
         (await _db.Adversaries().FindForArticleAsync(article, "G00")).Found.Select(p => p.Id).Should().Equal(apt28, apt29);
-        (await _db.Adversaries().FindForArticleAsync(article, "cozy")).Found.Single().Alias.Should().Be("Cozy Bear");
+        (await _db.Adversaries().FindForArticleAsync(article, "cozy")).Found.Single().Other.Should().Be("Cozy Bear");
     }
 
     [Theory]
@@ -137,13 +138,13 @@ public class AdversaryPickSearchTests : IDisposable
         var offered = await adversaries.OfferedAsync(article);
 
         offered.Select(p => (p.Id, p.Reason)).Should().Equal(
-            (named, AdversaryPickReason.Named), (watched, AdversaryPickReason.Watched),
-            (newer, AdversaryPickReason.Recent), (older, AdversaryPickReason.Recent));
+            (named, PickReason.Named), (watched, PickReason.Watched),
+            (newer, PickReason.Recent), (older, PickReason.Recent));
         (await adversaries.OfferedAsync(Guid.NewGuid())).Should().BeEmpty();
 
         // However many are watched, a few at a time.
         for (var i = 0; i < AdversaryService.PickLimit; i++) await Profile($"Watched {i}", watched: true);
-        (await adversaries.OfferedAsync(article)).Should().HaveCount(AdversaryService.PickLimit).And.NotContain(p => p.Reason == AdversaryPickReason.Recent);
+        (await adversaries.OfferedAsync(article)).Should().HaveCount(AdversaryService.PickLimit).And.NotContain(p => p.Reason == PickReason.Recent);
     }
 
     [Theory]
