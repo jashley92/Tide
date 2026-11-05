@@ -23,8 +23,9 @@ public sealed class AuditInterceptor(ICurrentUser user, TimeProvider time) : Sav
     // Detection rules and kept article text are bookkeeping, not people's changes: each push or import sets every rule's
     // LastSeenAtUtc (a row per rule each time), and each read or prune of a publisher's text would copy it into the log.
     // An administrator's removal of a pushed set is recorded by DetectionService as one entry.
+    // A person's own preferences (List or Board) change nothing anyone else sees.
     private static readonly HashSet<Type> NotAudited =
-        [typeof(AuditLogEntry), typeof(AppUser), typeof(NotificationMark), typeof(FeedItem), typeof(CveRecord), typeof(DetectionRule), typeof(FeedItemText)];
+        [typeof(AuditLogEntry), typeof(AppUser), typeof(UserPreference), typeof(NotificationMark), typeof(FeedItem), typeof(CveRecord), typeof(DetectionRule), typeof(FeedItemText)];
 
     // Changing on every save, so recording them is noise.
     private static readonly HashSet<string> SkippedProperties =

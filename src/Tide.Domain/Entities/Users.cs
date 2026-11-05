@@ -20,6 +20,22 @@ public class AppUser : Entity
 }
 
 /// <summary>
+/// One person's choice of how something is shown to them (the Actions page as a list or a board), kept on the server so
+/// it follows them to another computer. Keyed by the person's stable id and the preference's name; the names and the
+/// values each may hold are <c>UserPreferences</c>' in the application layer. Not shared data, so not audited.
+/// </summary>
+public class UserPreference
+{
+    /// <summary>The person's stable id (<see cref="AppUser.Sid"/>, the signed-in user's id).</summary>
+    public string UserId { get; set; } = string.Empty;
+
+    /// <summary>Which preference, e.g. "actions.layout".</summary>
+    public string Name { get; set; } = string.Empty;
+    public string Value { get; set; } = string.Empty;
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+/// <summary>
 /// Grants a built-in role to everyone in an AD security group. A group may grant several roles and a role may come
 /// from several groups. Seeded from the <c>RoleMapping</c> configuration section on first run, then administered in
 /// the app.

@@ -2881,6 +2881,29 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.ToTable("TeamMembers");
                 });
 
+            modelBuilder.Entity("Tide.Domain.Entities.UserPreference", b =>
+                {
+                    b.Property<string>("UserId")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("UserId", "Name");
+
+                    b.ToTable("UserPreferences");
+                });
+
             modelBuilder.Entity("Tide.Domain.Entities.Webhook", b =>
                 {
                     b.Property<Guid>("Id")

@@ -219,7 +219,7 @@ public partial class ListPagesTests(ListsApp app) : IClassFixture<ListsApp>
     public async Task TheActionsList_CountsSortsAndGroups_AndTheBoardKeepsItsCount()
     {
         var open = Count(db => db.Actions.Where(a => a.Status == ActionStatus.Open || a.Status == ActionStatus.InProgress || a.Status == ActionStatus.Blocked));
-        var html = await Page("/actions?view=open");
+        var html = await Page("/actions?view=open&layout=list");
         html.Should().Contain(open == 1 ? "1 action" : $"{open} actions");
         Heading(html, "Due").Should().Contain("aria-sort=\"ascending\"");
         html.Should().Contain("All open actions, sorted by due, ascending");
@@ -227,7 +227,7 @@ public partial class ListPagesTests(ListsApp app) : IClassFixture<ListsApp>
         var grouped = await Page("/actions?view=open&group=kind");
         grouped.Should().Contain("scope=\"rowgroup\"").And.Contain("IOC sweep");
 
-        (await Page("/actions?view=open&q=zzqx")).Should().Contain("No actions match ‘zzqx’");
+        (await Page("/actions?view=open&layout=list&q=zzqx")).Should().Contain("No actions match ‘zzqx’");
         (await Page("/actions?view=closed")).Should().NotContain("aria-sort=", "the closed view comes most recently closed first");
         (await Page("/actions?view=open&layout=board")).Should().Contain($"{open} action").And.NotContain("Filter actions");
     }
@@ -263,7 +263,7 @@ public partial class ListPagesTests(ListsApp app) : IClassFixture<ListsApp>
         var expected = Enum.GetValues<ActionUrgency>()
             .Select(u => (Name: ActionSla.UrgencyName(u), Count: mine.Count(m => ActionSla.UrgencyOf(m.Status, m.Due, today) == u)))
             .Where(g => g.Count > 0).ToList();
-        var html = await Page("/actions?view=mine&q=Urgency%20probe");
+        var html = await Page("/actions?view=mine&layout=list&q=Urgency%20probe");
         Groups(html).Should().Equal(expected);
         Groups(html).Select(g => g.Name).Should().Contain(["Overdue", "Due today", "Later", "Blocked"]);
         html.Should().Contain("Mine actions, grouped by when they're due, sorted by due, ascending");
@@ -272,12 +272,12 @@ public partial class ListPagesTests(ListsApp app) : IClassFixture<ListsApp>
         html.IndexOf("Urgency probe late", StringComparison.Ordinal).Should()
             .BeLessThan(html.IndexOf("Urgency probe stuck", StringComparison.Ordinal), "blocked comes last, though it's overdue");
 
-        Groups(await Page("/actions?view=mine&q=Urgency%20probe%20late")).Should().Equal([("Overdue", 1)]);
+        Groups(await Page("/actions?view=mine&layout=list&q=Urgency%20probe%20late")).Should().Equal([("Overdue", 1)]);
 
         // Grouped by kind when asked, and the other views aren't grouped.
         var byKind = await Page("/actions?view=mine&group=kind&q=Urgency%20probe");
         Groups(byKind).Select(g => g.Name).Should().NotContain("Overdue").And.Contain(ActionService.KindName(ActionKind.Other));
-        (await Page("/actions?view=open&q=Urgency%20probe")).Should().NotContain("scope=\"rowgroup\"");
+        (await Page("/actions?view=open&layout=list&q=Urgency%20probe")).Should().NotContain("scope=\"rowgroup\"");
         (await Page("/actions?view=mine&layout=board")).Should().NotContain("scope=\"rowgroup\"");
     }
 

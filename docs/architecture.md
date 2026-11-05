@@ -82,6 +82,15 @@
   `/files/{id}/zip` for the zip with the password `infected`, in classic ZipCrypto so File Explorer opens it; deliberately weak, as it only stops an accidental run, in `Security/FileDownloads`) send it as an
   attachment of type `application/octet-stream`, never cached, with `nosniff` and a sandboxed CSP with nothing allowed.
   The services check permission per file.
+- **Preferences.** A person's own choices of how a page is shown to them are `UserPreference` rows, keyed by their user
+  id and the preference's name, so they follow them to another computer. `UserPreferences` lists the names, the values
+  each may hold (the first is the default) and the permission that opens its page; `UserPreferenceService` reads and
+  saves only the signed-in person's. They aren't shared data, so a Viewer keeps one too and they aren't audited. The
+  one today is the Actions page's Board or List (`actions.layout`, the board by default): the tab saves it, an address
+  without `layout` opens it (read once as the page opens, kept across the prerender), and a link's own `layout` wins
+  for that visit without changing it. The page's address always says `layout=board` or `layout=list`, so a reload or
+  a copy opens what's shown. A link to a view only the list has (Overdue, Recently closed, grouped by kind) opens the
+  list.
 
 ## TLP and editions
 
