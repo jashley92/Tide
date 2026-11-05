@@ -186,7 +186,7 @@
     private int _matching;
     private IReadOnlyList<TItem> _view = [];
     private IReadOnlyList<TItem> _rows = [];   // every matching row, in order: _view is the first of them
-    private CancellationTokenSource? _debounce;
+    private readonly TypingPause _pause = new(DebounceMs);
 
     protected override void OnParametersSet()
     {
@@ -207,7 +207,7 @@
             if ((Filter ?? "").Trim() is var given && given != _given)
             {
                 _given = given;
-                if (given != _filter) { CancelPending(); _typed = _filter = given; _page = 1; }
+                if (given != _filter) { _pause.Now(); _typed = _filter = given; _page = 1; }
             }
         }
         if (PageInAddress) _page = AddressPage();
@@ -269,22 +269,18 @@
     private async Task Typed(ChangeEventArgs e)
     {
         _typed = e.Value?.ToString() ?? "";
-        CancelPending();
-        var pending = _debounce = new CancellationTokenSource();
-        try { await Task.Delay(DebounceMs, pending.Token); }
-        catch (TaskCanceledException) { return; }
-        await Apply(_typed);
+        if (await _pause.Settled()) await Apply(_typed);
     }
 
     private async Task FilterKey(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter") { CancelPending(); await Apply(_typed); }
+        if (e.Key == "Enter") { _pause.Now(); await Apply(_typed); }
         else if (e.Key == "Escape" && _typed.Length > 0) await ClearFilter();
     }
 
     private async Task ClearFilter()
     {
-        CancelPending();
+        _pause.Now();
         _typed = "";
         await Apply("");
     }
@@ -326,16 +322,9 @@
         Refresh();
     }
 
-    private void CancelPending()
-    {
-        _debounce?.Cancel();
-        _debounce?.Dispose();
-        _debounce = null;
-    }
-
     public void Dispose()
     {
-        CancelPending();
+        _pause.Now();   // a filter typed just before is dropped
         if (PageInAddress) Nav.LocationChanged -= AddressChanged;
     }
 }

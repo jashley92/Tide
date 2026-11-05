@@ -1,3 +1,4 @@
+using Tide.Application.Search;
 using Tide.Domain.Entities;
 
 namespace Tide.Application.Scorecard;
@@ -18,18 +19,9 @@ public static class ScorecardTagSearch
     public sealed record Group(ScorecardCategory Category, IReadOnlyList<ScorecardTag> Tags);
 
     /// <summary>How well <paramref name="text"/> matches <paramref name="name"/>: 0 at its start, 1 at a word's start,
-    /// 2 anywhere, or null if not at all.</summary>
-    public static int? Rank(string name, string text)
-    {
-        if (string.IsNullOrWhiteSpace(text)) return null;
-        text = text.Trim();
-        var at = name.IndexOf(text, StringComparison.OrdinalIgnoreCase);
-        if (at < 0) return null;
-        if (at == 0) return 0;
-        for (; at > 0; at = name.IndexOf(text, at + 1, StringComparison.OrdinalIgnoreCase))
-            if (!char.IsLetterOrDigit(name[at - 1])) return 1;
-        return 2;
-    }
+    /// 2 anywhere, or null if not at all (<see cref="NameRank.Placed"/>, the words trimmed).</summary>
+    public static int? Rank(string name, string text) =>
+        string.IsNullOrWhiteSpace(text) ? null : NameRank.Placed(name, text.Trim());
 
     /// <summary>The tags matching <paramref name="text"/>, grouped by category: the groups with the best match first,
     /// then in the categories' own order; in a group, the best matches first, then in the tags' own order.
@@ -37,16 +29,17 @@ public static class ScorecardTagSearch
     public static IReadOnlyList<Hit> Find(IEnumerable<ScorecardCategory> categories, string? text, IReadOnlySet<Guid>? chosen = null)
     {
         if (string.IsNullOrWhiteSpace(text)) return [];
+        text = text.Trim();
         var groups = new List<(int Best, int Order, ScorecardCategory Category, List<ScorecardTag> Tags)>();
         var order = 0;
         foreach (var cat in categories)
         {
             order++;
             if (cat.IsRetired) continue;
-            var byCategory = Rank(cat.Name, text);
+            var byCategory = NameRank.Placed(cat.Name, text);
             var tags = cat.Tags
                 .Where(t => !t.IsRetired && chosen?.Contains(t.Id) != true)
-                .Select((t, i) => (Tag: t, Index: i, Rank: Best(Rank(t.Name, text), byCategory)))
+                .Select((t, i) => (Tag: t, Index: i, Rank: Best(NameRank.Placed(t.Name, text), byCategory)))
                 .Where(t => t.Rank is not null)
                 .OrderBy(t => t.Rank).ThenBy(t => t.Index)
                 .ToList();

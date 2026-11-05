@@ -2,178 +2,79 @@
    text, always open; for someone who can't edit (the editor's fields are hidden from them), a read-only card in the
    rail (Boxed). Each tagged product shows its versions, the start of its notes and how much else has been written about
    it, and for an analyst a "Mention" that adds it to why it matters; the products the article names but isn't tagged
-   with are offered as a one-click tag. Analysts tag with the same search picker as Threat actors (SearchCombobox): with
+   with are offered as a one-click tag. Analysts tag with the same search picker as Threat actors (TagCard): with
    nothing typed it offers the products the text names, then those tagged lately; typing finds one by its name or other
    names ("Ivanti Connect Secure (also Pulse Secure)"), a few at a time (StackService.PickLimit), retired ones last and
    asked about first; and offers to add one to Our stack by the words typed, as triage's "Add to what we run…" does,
-   with a link to fill it in. After a pick the box clears and keeps focus. Tagging is optional and saved straight away. *@
+   with a link to fill it in. Tagging is optional and saved straight away. *@
 @using Tide.Application.Stack
+@inherits TagCard<StackProduct>
 @inject StackService Stack
-@inject ToastService Toasts
-@inject ChangeFeed Feed
-@inject ChangeOrigin Origin
-@implements IDisposable
-
-@if (Boxed)
-{
-    <div class="tide-card tide-stack-card">
-        <h2>We run <a class="ms-auto small fw-normal" href="stack">Our stack</a></h2>
-        @Body
-    </div>
-}
-else
-{
-    <div class="tide-tagfield tide-werun">
-        <div class="tide-tagfield-head">
-            <h3 id="werun-h-@ArticleId" class="tide-subhead my-0">We run</h3>
-            <a class="small" href="stack">Our stack</a>
-        </div>
-        @Body
-    </div>
-}
+@{ base.BuildRenderTree(__builder); }
 
 @code {
-    [Parameter, EditorRequired] public Guid ArticleId { get; set; }
-    [Parameter] public bool CanWrite { get; set; }
-
-    /// <summary>Drawn as a card of its own (the rail, for someone who can't edit), rather than inside why it matters.</summary>
-    [Parameter] public bool Boxed { get; set; }
-
     /// <summary>Adds text to why it matters (ArticleEditorPanel.MentionAsync), for a product's "Mention".</summary>
     [Parameter] public EventCallback<string> OnMention { get; set; }
 
     private ArticleStack? _stack;
-    private readonly Dictionary<Guid, StackDetail?> _details = new();
-    private IReadOnlyList<ProductPick> _offered = [];
-    private ProductPicks _found = ProductPicks.None;
-    private (Guid Id, string Name)? _added;
-    internal SearchCombobox<ProductPick>? _combo;
-    internal ConfirmDialog? _confirm;
-    // What's typed in the picker (internal for the tests); a slower answer for what was typed before is dropped.
-    internal string? _text;
-    private readonly TypingPause _pause = new();
-    private bool _busy, _disposed;
+    private IReadOnlyDictionary<Guid, StackDetail> _details = new Dictionary<Guid, StackDetail>();
 
-    private string PickId => $"stack-pick-{ArticleId}";
+    private static readonly TagCardWords Said = new(Title: "We run", ListHref: "stack", ListName: "Our stack", FieldClass: "tide-tagfield tide-werun",
+        PickPrefix: "stack-pick", MaxLength: StackProduct.MaxName, Placeholder: "Tag a product by any name, or add one", ListLabel: "Products we run",
+        Help: "Matching products are listed as you type. Use the up and down arrows to choose, Enter to tag it.", ComboLabel: "Tag a product we run",
+        NoneTagged: "No product tagged.", AddAs: "to Our stack", AddedTail: "to Our stack. Fill in its versions and notes when you can.",
+        NothingYet: "Type any name a product we run goes by.", One: "product", Many: "products",
+        RetiredAsk: "We no longer run it. Tag the article with it anyway?");
 
-    // A colleague's tag or untag on this article (or any save of it) reloads the card; one heard during this card's own
-    // change is read once that change is done.
-    private LiveChanges? _live;
-    private volatile string _topic = "", _tagsTopic = "";
-    private bool _heardWhileBusy;
+    protected override TagCardWords Words => Said;
 
-    protected override void OnInitialized() =>
-        _live = new LiveChanges(Feed, Origin, c => c.Topic == _topic || c.Topic == _tagsTopic, InvokeAsync, async _ =>
-        {
-            if (_busy) { _heardWhileBusy = true; return; }
-            await Load();
-            StateHasChanged();
-        });
+    protected override IArticleTagSource Source => Stack;
 
-    public void Dispose()
+    protected override async Task<IReadOnlyList<TagPick>> ReadAsync(bool offer)
     {
-        _disposed = true;
-        _live?.Dispose();
+        (_stack, var offered) = await Stack.ForArticleCardAsync(ArticleId, offer);
+        return offered;
     }
 
-    protected override async Task OnParametersSetAsync()
-    {
-        _topic = ChangeFeed.Article(ArticleId);
-        _tagsTopic = ChangeFeed.ArticleTags(ArticleId);
-        await Load();
-    }
+    protected override async Task ReadDetailsAsync() =>
+        _details = await Stack.DetailsAsync(_stack!.Tagged.Select(p => p.Id).ToList());
 
-    private async Task Load()
-    {
-        try
-        {
-            // With nothing typed the picker offers these; with words, it searches again, so a colleague's tag drops out.
-            (_stack, var offered) = await Stack.ForArticleCardAsync(ArticleId, offer: CanWrite);
-            if (CanWrite)
-            {
-                _offered = offered;
-                if (Text.Length > 0) await Find();
-            }
-            _details.Clear();
-            foreach (var p in _stack.Tagged) _details[p.Id] = await Stack.GetAsync(p.Id);
-        }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
-    }
+    protected override IReadOnlyList<StackProduct>? Tagged => _stack?.Tagged;
 
-    private RenderFragment Body => __builder =>
+    protected override IReadOnlyList<StackProduct> Suggested => _stack?.Suggested ?? [];
+
+    protected override Guid IdOf(StackProduct tag) => tag.Id;
+
+    protected override string NameOf(StackProduct tag) => tag.Name;
+
+    // A retired product stays tagged (its history is kept), muted and marked, as present mode's chips show it.
+    protected override string RowClass(StackProduct tag) => tag.IsRetired ? " tide-muted" : " ";
+
+    protected override RenderFragment FieldHead => __builder =>
     {
-        if (_stack is null)
+        <h3 id="werun-h-@ArticleId" class="tide-subhead my-0">We run</h3>
+        <a class="small" href="stack">Our stack</a>
+    };
+
+    protected override RenderFragment<StackProduct> TaggedRow => p => __builder =>
+    {
+        var d = _details.GetValueOrDefault(p.Id);
+        <div class="d-flex gap-2 align-items-baseline flex-wrap">
+            <a class="fw-semibold" href="@($"stack/{p.Id}")">@p.Name</a>
+            @if (p.IsRetired) { <Badge Tone="BadgeTone.Neutral">Retired</Badge> }
+            @if (p.Versions is { } v) { <span class="small">@v</span> }
+            @UntagButton(p.Id, p.Name)
+        </div>
+        @if (p.Notes is { } notes) { <div class="small tide-muted">@Short(notes)</div> }
+        @if (d is not null)
         {
-            <LoadingBlock Rows="1" />
-            return;
+            var others = d.Articles.Count(a => a.Id != ArticleId);
+            var open = d.Actions.Count(a => !Tide.Domain.Entities.ActionItem.IsClosedStatus(a.Status));
+            <div class="small"><a href="@($"stack/{p.Id}")">@others other article@(others == 1 ? "" : "s") &middot; @open open action@(open == 1 ? "" : "s")</a></div>
         }
-        if (_stack.Tagged.Count == 0)
+        @if (CanWrite && OnMention.HasDelegate)
         {
-            <p class="small tide-muted mb-2">No product tagged.</p>
-        }
-        foreach (var p in _stack.Tagged)
-        {
-            var d = _details.GetValueOrDefault(p.Id);
-            @* A retired product stays tagged (its history is kept), muted and marked, as present mode's chips show it. *@
-            <div class="tide-stack-tag @(p.IsRetired ? "tide-muted" : "")" @key="p.Id">
-                <div class="d-flex gap-2 align-items-baseline flex-wrap">
-                    <a class="fw-semibold" href="@($"stack/{p.Id}")">@p.Name</a>
-                    @if (p.IsRetired) { <Badge Tone="BadgeTone.Neutral">Retired</Badge> }
-                    @if (p.Versions is { } v) { <span class="small">@v</span> }
-                    @if (CanWrite)
-                    {
-                        <button type="button" class="btn btn-link btn-sm p-0 ms-auto" disabled="@_busy" aria-label="@($"Untag {p.Name}")" @onclick="() => Untag(p.Id)">Untag</button>
-                    }
-                </div>
-                @if (p.Notes is { } notes) { <div class="small tide-muted">@Short(notes)</div> }
-                @if (d is not null)
-                {
-                    var others = d.Articles.Count(a => a.Id != ArticleId);
-                    var open = d.Actions.Count(a => !Tide.Domain.Entities.ActionItem.IsClosedStatus(a.Status));
-                    <div class="small"><a href="@($"stack/{p.Id}")">@others other article@(others == 1 ? "" : "s") &middot; @open open action@(open == 1 ? "" : "s")</a></div>
-                }
-                @if (CanWrite && OnMention.HasDelegate)
-                {
-                    <button type="button" class="btn btn-outline-secondary btn-sm mt-1" @onclick="() => OnMention.InvokeAsync(MentionText(p))">Mention in Why it matters</button>
-                }
-            </div>
-        }
-        if (CanWrite && _stack.Suggested.Count > 0)
-        {
-            <div class="small mt-2">Names @(string.Join(", ", _stack.Suggested.Select(s => s.Name))):
-                @foreach (var s in _stack.Suggested)
-                {
-                    <button type="button" class="btn btn-outline-secondary btn-sm ms-1" disabled="@_busy" @onclick="() => Tag(s.Id)">Tag @s.Name</button>
-                }
-            </div>
-        }
-        if (CanWrite)
-        {
-            <div class="mt-2">
-                @if (_added is { } added)
-                {
-                    <div class="small mb-1">Added <a href="@($"stack/{added.Id}")">@added.Name</a> to Our stack. Fill in its versions and notes when you can.</div>
-                }
-                <label class="visually-hidden" for="@PickId">Tag a product we run</label>
-                <SearchCombobox @ref="_combo" TItem="ProductPick" Id="@PickId" MaxLength="Tide.Domain.Entities.StackProduct.MaxName"
-                                Placeholder="Tag a product by any name, or add one" ListLabel="Products we run" Disabled="_busy"
-                                Help="Matching products are listed as you type. Use the up and down arrows to choose, Enter to tag it."
-                                @bind-Text="_text" @bind-Text:after="Typed" Items="Listed" Key="p => p.Id" OnPick="Pick"
-                                NewOption="@(CanAdd ? NewProduct : null)" OnNew="AddNew" Empty="@NothingListed" Status="@Status">
-                    <ItemTemplate Context="p">
-                        <span class="tide-story-result-name">@p.Name@if (p.OtherName is { } other) {<span class="fw-normal tide-muted"> (also @other)</span>}@if (p.IsRetired) {<span class="tide-combo-tag">retired</span>}</span>
-                        @if (Meta(p) is { } meta) { <span class="tide-story-result-meta">@meta</span> }
-                    </ItemTemplate>
-                    <Footer>
-                        @if (Text.Length > 0 && _found.AlreadyTagged is { } tagged)
-                        {
-                            <div>@tagged is already tagged.</div>
-                        }
-                        <span aria-hidden="true">&uarr; &darr; to choose, Enter tags, Esc closes</span>
-                    </Footer>
-                </SearchCombobox>
-            </div>
-            <ConfirmDialog @ref="_confirm" />
+            <button type="button" class="btn btn-outline-secondary btn-sm mt-1" @onclick="() => OnMention.InvokeAsync(MentionText(p))">Mention in Why it matters</button>
         }
     };
 
@@ -187,122 +88,4 @@ else
 
     internal static string MentionText(Tide.Domain.Entities.StackProduct p) =>
         $"We run {p.Name}{(p.Versions is { } v ? $" ({v})" : "")}.";
-
-    // One tag added or removed, not the list as this card last read it, which would drop a colleague's tags since.
-    private async Task Change(Func<Task> change, string done)
-    {
-        if (_busy) return;
-        _busy = true;
-        try
-        {
-            await change();
-            Toasts.Show(done);
-        }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
-        finally
-        {
-            // Read again if a colleague's change was heard while this one was reading.
-            do { _heardWhileBusy = false; await Load(); } while (_heardWhileBusy);
-            _busy = false;
-            StateHasChanged();
-        }
-    }
-
-    internal Task Tag(Guid id) => Change(() => Stack.TagArticleAsync(ArticleId, id), "Tagged.");
-
-    internal Task Untag(Guid id) => Change(() => Stack.UntagArticleAsync(ArticleId, id), "Untagged.");
-
-    private string Text => (_text ?? "").Trim();
-
-    // Before anything's typed, the offered few; then the matches.
-    internal IReadOnlyList<ProductPick> Listed => Text.Length == 0 ? _offered : _found.Found;
-
-    // A new product by the words typed, unless one in use already goes by exactly that name.
-    internal bool CanAdd => Text.Length > 0 && !_found.Exact;
-
-    private RenderFragment NewProduct => @<text><span class="bi bi-plus-lg" aria-hidden="true"></span> Add “@Text” to Our stack</text>;
-
-    private RenderFragment? NothingListed => Text.Length == 0 && _offered.Count == 0 ? NothingYet : null;
-
-    private static readonly RenderFragment NothingYet = @<text>Type any name a product we run goes by.</text>;
-
-    private string Status => Text.Length == 0 ? "" : Listed.Count == 1 ? "1 product" : $"{Listed.Count} products";
-
-    private static string? Meta(ProductPick p)
-    {
-        var why = p.Reason switch
-        {
-            ProductPickReason.Named => "Named in the article",
-            ProductPickReason.Recent => "Tagged lately",
-            _ => null,
-        };
-        return string.Join(" · ", new[] { p.Versions, why }.Where(x => x is not null)) is { Length: > 0 } meta ? meta : null;
-    }
-
-    // Typed in the box: the search runs once typing pauses (TypingPause.SearchMs). A later keystroke, a pick or a clear in
-    // the meantime supersedes it.
-    private async Task Typed()
-    {
-        if (await _pause.Settled() && !_disposed) await Find();
-    }
-
-    // The products for what's typed now.
-    internal async Task Find()
-    {
-        var mine = _pause.Now();
-        ProductPicks found;
-        try { found = await Stack.FindForArticleAsync(ArticleId, _text); }
-        catch (Exception ex)
-        {
-            Toasts.Error(UserFacingError.For(ex));
-            return;
-        }
-        if (!_pause.IsLatest(mine)) return;
-        _found = found;
-        StateHasChanged();
-    }
-
-    // A product picked from the list: a retired one only once the analyst says so. The box clears for the next.
-    internal async Task Pick(ProductPick p)
-    {
-        if (_busy) return;
-        if (p.IsRetired && _confirm is not null
-            && !await _confirm.Ask($"{p.Name} is retired", "We no longer run it. Tag the article with it anyway?", "Tag it anyway", danger: false))
-            return;
-        Cleared();
-        await Tag(p.Id);
-        await Refocus();
-    }
-
-    // "Add 'X' to Our stack": triage's way in (StackService.AddByNameAsync, analysts only, refused on the server
-    // otherwise), tagged; a link to fill it in.
-    internal async Task AddNew()
-    {
-        if (_busy || Text.Length == 0) return;
-        var name = Text;
-        Guid id;
-        try { id = await Stack.AddByNameAsync(name); }
-        catch (Exception ex)
-        {
-            Toasts.Error(UserFacingError.For(ex));
-            return;
-        }
-        Cleared();
-        _added = (id, name);
-        await Tag(id);
-        await Refocus();
-    }
-
-    // Drawn now (the list without the one just tagged), and the box keeps focus for the next.
-    private Task Refocus()
-    {
-        StateHasChanged();
-        return _combo?.FocusAsync() ?? Task.CompletedTask;
-    }
-
-    private void Cleared()
-    {
-        (_text, _found, _added) = (null, ProductPicks.None, null);
-        _pause.Now();
-    }
 }

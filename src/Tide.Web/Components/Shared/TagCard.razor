@@ -1,0 +1,305 @@
+@* The editor's two tag cards, Threat actors (ArticleAdversaryCard) and We run (ArticleStackCard), drawn alike: the
+   article's tags, each with a card's own row (TaggedRow) and an Untag for analysts; the ones its text names offered as
+   one-click tags ("Names X"); and, for analysts, a search picker (SearchCombobox) through the card's IArticleTagSource.
+   With nothing typed it offers the card's few; typing finds by any name, a few at a time (NamedSearch.PickLimit),
+   retired ones last and asked about first, and offers to add one by the words typed, with a link to fill it in. After a
+   pick the box clears and keeps focus, for the next. Tagging is saved straight away, and a colleague's tag or untag is
+   heard (LiveChanges). Boxed, it's a read-only card of its own in the rail (for someone who can't edit); otherwise a
+   field in the editor. Each card says only what's its own: its words (TagCardWords), its head and its rows. *@
+@typeparam TTag
+@inject ToastService Toasts
+@inject ChangeFeed Feed
+@inject ChangeOrigin Origin
+@implements IDisposable
+
+@if (Boxed)
+{
+    <div class="tide-card tide-stack-card">
+        <h2>@Words.Title <a class="ms-auto small fw-normal" href="@Words.ListHref">@Words.ListName</a></h2>
+        @Body
+    </div>
+}
+else
+{
+    <div class="@Words.FieldClass">
+        <div class="tide-tagfield-head">@FieldHead</div>
+        @Body
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid ArticleId { get; set; }
+    [Parameter] public bool CanWrite { get; set; }
+
+    /// <summary>Drawn as a card of its own (the rail, for someone who can't edit), rather than a field in the editor.</summary>
+    [Parameter] public bool Boxed { get; set; }
+
+    private IReadOnlyList<TagPick> _offered = [];
+    private TagPicks _found = TagPicks.None;
+    private (Guid Id, string Name)? _added;
+    internal SearchCombobox<TagPick>? _combo;
+    internal ConfirmDialog? _confirm;
+    // What's typed in the picker (internal for the tests); a slower answer for what was typed before is dropped.
+    internal string? _text;
+    private readonly TypingPause _pause = new();
+    private bool _busy, _disposed, _superseded;
+
+    /// <summary>Whether a change is being saved: the card's buttons wait.</summary>
+    protected bool Busy => _busy;
+
+    protected string PickId => $"{Words.PickPrefix}-{ArticleId}";
+
+    // A colleague's tag or untag on this article (or any save of it) reloads the card; one heard during this card's own
+    // change is read once that change is done.
+    private LiveChanges? _live;
+    private volatile string _topic = "", _tagsTopic = "";
+    private bool _heardWhileBusy;
+
+    protected override void OnInitialized() =>
+        _live = new LiveChanges(Feed, Origin, c => c.Topic == _topic || c.Topic == _tagsTopic, InvokeAsync, async _ =>
+        {
+            if (_busy) { _heardWhileBusy = true; return; }
+            await Load();
+            StateHasChanged();
+        });
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _live?.Dispose();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _topic = ChangeFeed.Article(ArticleId);
+        _tagsTopic = ChangeFeed.ArticleTags(ArticleId);
+        await Load();
+    }
+
+    // A keystroke whose search a later one superseded draws nothing: the later one will.
+    protected override bool ShouldRender()
+    {
+        if (!_superseded) return true;
+        _superseded = false;
+        return false;
+    }
+
+    private async Task Load()
+    {
+        try
+        {
+            // With nothing typed the picker offers these; with words, it searches again, so a colleague's tag drops out.
+            var offered = await ReadAsync(offer: CanWrite);
+            if (CanWrite)
+            {
+                _offered = offered;
+                if (Text.Length > 0) await Find();
+            }
+            await ReadDetailsAsync();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    private RenderFragment Body => __builder =>
+    {
+        if (Tagged is not { } tagged)
+        {
+            <LoadingBlock Rows="1" />
+            return;
+        }
+        if (tagged.Count == 0)
+        {
+            <p class="small tide-muted mb-2">@Words.NoneTagged</p>
+        }
+        foreach (var t in tagged)
+        {
+            <div class="tide-stack-tag@(RowClass(t))" @key="IdOf(t)">
+                @TaggedRow(t)
+            </div>
+        }
+        if (CanWrite && Suggested.Count > 0)
+        {
+            Offer("Names", Suggested)(__builder);
+        }
+        AfterSuggested?.Invoke(__builder);
+        if (CanWrite)
+        {
+            <div class="mt-2">
+                @if (_added is { } added)
+                {
+                    <div class="small mb-1">Added <a href="@($"{Words.ListHref}/{added.Id}")">@added.Name</a> @Words.AddedTail</div>
+                }
+                @if (Words.ComboLabel is { } label)
+                {
+                    <label class="visually-hidden" for="@PickId">@label</label>
+                }
+                <SearchCombobox @ref="_combo" TItem="TagPick" Id="@PickId" MaxLength="Words.MaxLength"
+                                Placeholder="@Words.Placeholder" ListLabel="@Words.ListLabel" Disabled="_busy"
+                                Help="@Words.Help"
+                                @bind-Text="_text" @bind-Text:after="Typed" Items="Listed" Key="p => p.Id" OnPick="Pick"
+                                NewOption="@(CanAdd ? NewOption : null)" OnNew="AddNew" Empty="@NothingListed" Status="@Status">
+                    <ItemTemplate Context="p">
+                        <span class="tide-story-result-name">@p.Name@if (p.Other is { } other) {<span class="fw-normal tide-muted"> (also @other)</span>}@if (p.IsRetired) {<span class="tide-combo-tag">retired</span>}</span>
+                        @if (Meta(p) is { } meta) { <span class="tide-story-result-meta">@meta</span> }
+                    </ItemTemplate>
+                    <Footer>
+                        @if (Text.Length > 0 && _found.AlreadyTagged is { } alreadyTagged)
+                        {
+                            <div>@alreadyTagged is already tagged.</div>
+                        }
+                        <span aria-hidden="true">&uarr; &darr; to choose, Enter tags, Esc closes</span>
+                    </Footer>
+                </SearchCombobox>
+            </div>
+        }
+        AfterPicker?.Invoke(__builder);
+        if (CanWrite)
+        {
+            <ConfirmDialog @ref="_confirm" />
+        }
+    };
+
+    /// <summary>"Names X, Y:" and a one-click "Tag X" for each, as an analyst sees them.</summary>
+    protected RenderFragment Offer(string lead, IReadOnlyList<TTag> items) => __builder =>
+    {
+        <div class="small mt-2">@lead @(string.Join(", ", items.Select(NameOf))):
+            @foreach (var s in items)
+            {
+                <button type="button" class="btn btn-outline-secondary btn-sm ms-1" disabled="@_busy" @onclick="() => Tag(IdOf(s))">Tag @NameOf(s)</button>
+            }
+        </div>
+    };
+
+    /// <summary>A tag's Untag, for an analyst.</summary>
+    protected RenderFragment UntagButton(Guid id, string name) => __builder =>
+    {
+        if (CanWrite)
+        {
+            <button type="button" class="btn btn-link btn-sm p-0 ms-auto" disabled="@_busy" aria-label="@($"Untag {name}")" @onclick="() => Untag(id)">Untag</button>
+        }
+    };
+
+    // One tag added or removed, not the list as this card last read it, which would drop a colleague's tags since.
+    protected async Task Change(Func<Task> change, string done)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await change();
+            Toasts.Show(done);
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally
+        {
+            // Read again if a colleague's change was heard while this one was reading.
+            do { _heardWhileBusy = false; await Load(); } while (_heardWhileBusy);
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+
+    internal Task Tag(Guid id) => Change(() => Source.TagArticleAsync(ArticleId, id), "Tagged.");
+
+    internal Task Untag(Guid id) => Change(() => Source.UntagArticleAsync(ArticleId, id), "Untagged.");
+
+    private string Text => (_text ?? "").Trim();
+
+    // Before anything's typed, the offered few; then the matches.
+    internal IReadOnlyList<TagPick> Listed => Text.Length == 0 ? _offered : _found.Found;
+
+    // A new one by the words typed, unless one in use already goes by exactly that name (or MITRE id).
+    internal bool CanAdd => Text.Length > 0 && !_found.Exact;
+
+    private RenderFragment NewOption => @<text><span class="bi bi-plus-lg" aria-hidden="true"></span> Add “@Text” @Words.AddAs</text>;
+
+    private RenderFragment? NothingListed => Text.Length == 0 && _offered.Count == 0 ? NothingYet : null;
+
+    private RenderFragment NothingYet => @<text>@Words.NothingYet</text>;
+
+    private string Status => Text.Length == 0 ? "" : Listed.Count == 1 ? $"1 {Words.One}" : $"{Listed.Count} {Words.Many}";
+
+    private static string? Meta(TagPick p)
+    {
+        var why = p.Reason switch
+        {
+            PickReason.Named => "Named in the article",
+            PickReason.Watched => "Watched",
+            PickReason.Recent => "Tagged lately",
+            _ => null,
+        };
+        return string.Join(" · ", new[] { p.Detail, why }.Where(x => x is not null)) is { Length: > 0 } meta ? meta : null;
+    }
+
+    // Typed in the box: the search runs once typing pauses (TypingPause.SearchMs). A later keystroke, a pick or a clear in
+    // the meantime supersedes it.
+    private async Task Typed()
+    {
+        if (!await _pause.Settled())
+        {
+            _superseded = true;
+            return;
+        }
+        if (!_disposed) await Find();
+    }
+
+    // What's listed for what's typed now.
+    internal async Task Find()
+    {
+        var mine = _pause.Now();
+        TagPicks found;
+        try { found = await Source.FindForArticleAsync(ArticleId, _text); }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            return;
+        }
+        if (!_pause.IsLatest(mine)) return;
+        _found = found;
+        StateHasChanged();
+    }
+
+    // One picked from the list: a retired one only once the analyst says so. The box clears for the next.
+    internal async Task Pick(TagPick p)
+    {
+        if (_busy) return;
+        if (p.IsRetired && _confirm is not null
+            && !await _confirm.Ask($"{p.Name} is retired", Words.RetiredAsk, "Tag it anyway", danger: false))
+            return;
+        Cleared();
+        await Tag(p.Id);
+        await Refocus();
+    }
+
+    // "Add 'X'": the one by that name (made now, with the name alone; refused on the server for anyone but an analyst),
+    // tagged; a link to fill it in.
+    internal async Task AddNew()
+    {
+        if (_busy || Text.Length == 0) return;
+        var name = Text;
+        Guid id;
+        try { id = await Source.AddByNameAsync(name); }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            return;
+        }
+        Cleared();
+        _added = (id, name);
+        await Tag(id);
+        await Refocus();
+    }
+
+    // Drawn now (the list without the one just tagged), and the box keeps focus for the next.
+    private Task Refocus()
+    {
+        StateHasChanged();
+        return _combo?.FocusAsync() ?? Task.CompletedTask;
+    }
+
+    private void Cleared()
+    {
+        (_text, _found, _added) = (null, TagPicks.None, null);
+        _pause.Now();
+    }
+}

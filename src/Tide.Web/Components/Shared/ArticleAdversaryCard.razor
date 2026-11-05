@@ -2,326 +2,100 @@
    "Threat actors" field under the editor's Tags & ATT&CK › Context, where a free-text box used to be; for someone who
    can't edit (the editor's fields are hidden from them), a read-only card in the rail (Boxed). Each tagged profile shows
    how much else has been written about it; the profiles the article names (title, bottom line) but isn't tagged with
-   are offered as a one-click tag; and, for analysts, a search picker (SearchCombobox, as the story picker's). With
-   nothing typed it offers a few: those the article names, then watched ones, then those tagged lately. Typing finds a
-   profile by its name, any other name ("APT29 (also Cozy Bear)") or MITRE id, a few at a time
-   (AdversaryService.PickLimit), retired ones last and asked about first; and offers to add one by the words typed, with
-   a link to fill it in. After a pick the box clears and keeps focus, for the next. Tagging is saved straight away.
-   What the old box held (Article.Actors) isn't lost: its names a profile goes by are offered as "Tag X", and the rest
-   show under the picker as "Earlier note", with a × to clear them. *@
+   are offered as a one-click tag; and, for analysts, a search picker (TagCard, as We run's). With nothing typed it
+   offers a few: those the article names, then watched ones, then those tagged lately. Typing finds a profile by its
+   name, any other name ("APT29 (also Cozy Bear)") or MITRE id, a few at a time (AdversaryService.PickLimit), retired
+   ones last and asked about first; and offers to add one by the words typed, with a link to fill it in. Tagging is
+   saved straight away. What the old box held (Article.Actors) isn't lost: its names a profile goes by are offered as
+   "Tag X", and the rest show under the picker as "Earlier note", with a × to clear them. *@
 @using Tide.Application.Adversaries
+@inherits TagCard<Adversary>
 @inject AdversaryService Adversaries
-@inject ToastService Toasts
-@inject ChangeFeed Feed
-@inject ChangeOrigin Origin
-@implements IDisposable
-
-@if (Boxed)
-{
-    <div class="tide-card tide-stack-card">
-        <h2>Threat actors <a class="ms-auto small fw-normal" href="adversaries">All profiles</a></h2>
-        @Body
-    </div>
-}
-else
-{
-    <div class="tide-tagfield">
-        <div class="tide-tagfield-head">
-            @if (CanWrite)
-            {
-                <label class="tide-field-label mb-0" for="@PickId">Threat actors</label>
-            }
-            else
-            {
-                <span class="tide-field-label mb-0">Threat actors</span>
-            }
-            <a class="small" href="adversaries">All profiles</a>
-        </div>
-        @Body
-    </div>
-}
+@{ base.BuildRenderTree(__builder); }
 
 @code {
-    [Parameter, EditorRequired] public Guid ArticleId { get; set; }
-    [Parameter] public bool CanWrite { get; set; }
-
-    /// <summary>Drawn as a card of its own (the rail, for someone who can't edit), rather than a field in Context.</summary>
-    [Parameter] public bool Boxed { get; set; }
-
     private ArticleAdversaries? _mine;
-    private readonly Dictionary<Guid, AdversaryDetail?> _details = new();
-    private IReadOnlyList<AdversaryPick> _offered = [];
-    private AdversaryPicks _found = AdversaryPicks.None;
-    private (Guid Id, string Name)? _added;
-    internal SearchCombobox<AdversaryPick>? _combo;
-    internal ConfirmDialog? _confirm;
-    // What's typed in the picker (internal for the tests); a slower answer for what was typed before is dropped.
-    internal string? _text;
-    private readonly TypingPause _pause = new();
-    private bool _busy, _disposed;
+    private IReadOnlyDictionary<Guid, AdversaryDetail> _details = new Dictionary<Guid, AdversaryDetail>();
 
     /// <summary>What the card was read as last (internal for the tests).</summary>
     internal ArticleAdversaries? Mine => _mine;
 
-    private string PickId => $"adv-pick-{ArticleId}";
+    private static readonly TagCardWords Said = new(Title: "Threat actors", ListHref: "adversaries", ListName: "All profiles", FieldClass: "tide-tagfield",
+        PickPrefix: "adv-pick", MaxLength: Adversary.MaxName, Placeholder: "Tag an adversary by any name, or add one", ListLabel: "Adversaries",
+        Help: "Matching adversaries are listed as you type. Use the up and down arrows to choose, Enter to tag it.", ComboLabel: null,
+        NoneTagged: "No adversary tagged.", AddAs: "as a new adversary", AddedTail: "as a new profile. Fill it in when you can.",
+        NothingYet: "Type any name an adversary goes by, or its MITRE id.", One: "adversary", Many: "adversaries",
+        RetiredAsk: "Tag the article with it anyway?");
 
-    // A colleague's tag or untag on this article (or any save of it) reloads the card; one heard during this card's own
-    // change is read once that change is done.
-    private LiveChanges? _live;
-    private volatile string _topic = "", _tagsTopic = "";
-    private bool _heardWhileBusy;
+    protected override TagCardWords Words => Said;
 
-    protected override void OnInitialized() =>
-        _live = new LiveChanges(Feed, Origin, c => c.Topic == _topic || c.Topic == _tagsTopic, InvokeAsync, async _ =>
-        {
-            if (_busy) { _heardWhileBusy = true; return; }
-            await Load();
-            StateHasChanged();
-        });
+    protected override IArticleTagSource Source => Adversaries;
 
-    public void Dispose()
+    protected override async Task<IReadOnlyList<TagPick>> ReadAsync(bool offer)
     {
-        _disposed = true;
-        _live?.Dispose();
+        (_mine, var offered) = await Adversaries.ForArticleCardAsync(ArticleId, offer);
+        return offered;
     }
 
-    protected override async Task OnParametersSetAsync()
-    {
-        _topic = ChangeFeed.Article(ArticleId);
-        _tagsTopic = ChangeFeed.ArticleTags(ArticleId);
-        await Load();
-    }
+    protected override async Task ReadDetailsAsync() =>
+        _details = await Adversaries.DetailsAsync(_mine!.Tagged.Select(a => a.Id).ToList());
 
-    private async Task Load()
+    protected override IReadOnlyList<Adversary>? Tagged => _mine?.Tagged;
+
+    protected override IReadOnlyList<Adversary> Suggested => _mine?.Suggested ?? [];
+
+    protected override Guid IdOf(Adversary tag) => tag.Id;
+
+    protected override string NameOf(Adversary tag) => tag.Name;
+
+    protected override RenderFragment FieldHead => __builder =>
     {
-        try
+        if (CanWrite)
         {
-            // With nothing typed the picker offers these; with words, it searches again, so a colleague's tag drops out.
-            (_mine, var offered) = await Adversaries.ForArticleCardAsync(ArticleId, offer: CanWrite);
-            if (CanWrite)
+            <label class="tide-field-label mb-0" for="@PickId">Threat actors</label>
+        }
+        else
+        {
+            <span class="tide-field-label mb-0">Threat actors</span>
+        }
+        <a class="small" href="adversaries">All profiles</a>
+    };
+
+    protected override RenderFragment<Adversary> TaggedRow => a => __builder =>
+    {
+        var d = _details.GetValueOrDefault(a.Id);
+        <div class="d-flex gap-2 align-items-baseline flex-wrap">
+            <a class="fw-semibold" href="@($"adversaries/{a.Id}")">@a.Name</a>
+            @if (a.Aliases is { } al) { <span class="small tide-muted">also @(al.Length > 80 ? al[..80] + "…" : al)</span> }
+            @UntagButton(a.Id, a.Name)
+        </div>
+        @if (d is not null)
+        {
+            var others = d.Articles.Count(x => x.Id != ArticleId);
+            <div class="small"><a href="@($"adversaries/{a.Id}")">Seen before: @others other article@(others == 1 ? "" : "s")@(d.BriefedThisQuarter > 0 ? $" · {d.BriefedThisQuarter} brief{(d.BriefedThisQuarter == 1 ? "" : "s")} this quarter" : "")</a></div>
+            @foreach (var x in d.Articles.Where(x => x.Id != ArticleId).Take(3))
             {
-                _offered = offered;
-                if (Text.Length > 0) await Find();
+                <div class="small tide-muted">@Ui.ShortDay(x.On) · <a href="@($"articles/{x.Id}")">@x.Title</a></div>
             }
-            _details.Clear();
-            foreach (var a in _mine.Tagged) _details[a.Id] = await Adversaries.GetAsync(a.Id);
-        }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
-    }
-
-    private RenderFragment Body => __builder =>
-    {
-        if (_mine is null)
-        {
-            <LoadingBlock Rows="1" />
-            return;
-        }
-        if (_mine.Tagged.Count == 0)
-        {
-            <p class="small tide-muted mb-2">No adversary tagged.</p>
-        }
-        foreach (var a in _mine.Tagged)
-        {
-            var d = _details.GetValueOrDefault(a.Id);
-            <div class="tide-stack-tag" @key="a.Id">
-                <div class="d-flex gap-2 align-items-baseline flex-wrap">
-                    <a class="fw-semibold" href="@($"adversaries/{a.Id}")">@a.Name</a>
-                    @if (a.Aliases is { } al) { <span class="small tide-muted">also @(al.Length > 80 ? al[..80] + "…" : al)</span> }
-                    @if (CanWrite)
-                    {
-                        <button type="button" class="btn btn-link btn-sm p-0 ms-auto" disabled="@_busy" aria-label="@($"Untag {a.Name}")" @onclick="() => Untag(a.Id)">Untag</button>
-                    }
-                </div>
-                @if (d is not null)
-                {
-                    var others = d.Articles.Count(x => x.Id != ArticleId);
-                    <div class="small"><a href="@($"adversaries/{a.Id}")">Seen before: @others other article@(others == 1 ? "" : "s")@(d.BriefedThisQuarter > 0 ? $" · {d.BriefedThisQuarter} brief{(d.BriefedThisQuarter == 1 ? "" : "s")} this quarter" : "")</a></div>
-                    @foreach (var x in d.Articles.Where(x => x.Id != ArticleId).Take(3))
-                    {
-                        <div class="small tide-muted">@Ui.ShortDay(x.On) · <a href="@($"articles/{x.Id}")">@x.Title</a></div>
-                    }
-                }
-            </div>
-        }
-        if (CanWrite && _mine.Suggested.Count > 0)
-        {
-            <div class="small mt-2">Names @(string.Join(", ", _mine.Suggested.Select(s => s.Name))):
-                @foreach (var s in _mine.Suggested)
-                {
-                    <button type="button" class="btn btn-outline-secondary btn-sm ms-1" disabled="@_busy" @onclick="() => Tag(s.Id)">Tag @s.Name</button>
-                }
-            </div>
-        }
-        if (CanWrite && _mine.FromNote.Count > 0)
-        {
-            <div class="small mt-2">Earlier note names @(string.Join(", ", _mine.FromNote.Select(s => s.Name))):
-                @foreach (var s in _mine.FromNote)
-                {
-                    <button type="button" class="btn btn-outline-secondary btn-sm ms-1" disabled="@_busy" @onclick="() => Tag(s.Id)">Tag @s.Name</button>
-                }
-            </div>
-        }
-        if (CanWrite)
-        {
-            <div class="mt-2">
-                @if (_added is { } added)
-                {
-                    <div class="small mb-1">Added <a href="@($"adversaries/{added.Id}")">@added.Name</a> as a new profile. Fill it in when you can.</div>
-                }
-                <SearchCombobox @ref="_combo" TItem="AdversaryPick" Id="@PickId" MaxLength="Tide.Domain.Entities.Adversary.MaxName"
-                                Placeholder="Tag an adversary by any name, or add one" ListLabel="Adversaries" Disabled="_busy"
-                                Help="Matching adversaries are listed as you type. Use the up and down arrows to choose, Enter to tag it."
-                                @bind-Text="_text" @bind-Text:after="Typed" Items="Listed" Key="p => p.Id" OnPick="Pick"
-                                NewOption="@(CanAdd ? NewProfile : null)" OnNew="AddNew" Empty="@NothingListed" Status="@Status">
-                    <ItemTemplate Context="p">
-                        <span class="tide-story-result-name">@p.Name@if (p.Alias is { } alias) {<span class="fw-normal tide-muted"> (also @alias)</span>}@if (p.IsRetired) {<span class="tide-combo-tag">retired</span>}</span>
-                        @if (Meta(p) is { } meta) { <span class="tide-story-result-meta">@meta</span> }
-                    </ItemTemplate>
-                    <Footer>
-                        @if (Text.Length > 0 && _found.AlreadyTagged is { } tagged)
-                        {
-                            <div>@tagged is already tagged.</div>
-                        }
-                        <span aria-hidden="true">&uarr; &darr; to choose, Enter tags, Esc closes</span>
-                    </Footer>
-                </SearchCombobox>
-            </div>
-        }
-        if (_mine.Leftover.Count > 0)
-        {
-            <div class="tide-earlier-note small mt-2">
-                <span>Earlier note: “@string.Join(", ", _mine.Leftover)”</span>
-                @if (CanWrite)
-                {
-                    <button type="button" class="btn btn-link btn-sm p-0 tide-earlier-clear" disabled="@_busy" aria-label="Clear the earlier note"
-                            title="Clear the earlier note" @onclick="ClearNote"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
-                }
-            </div>
-        }
-        if (CanWrite)
-        {
-            <ConfirmDialog @ref="_confirm" />
         }
     };
 
-    // One tag added or removed, not the list as this card last read it, which would drop a colleague's tags since.
-    private async Task Change(Func<Task> change, string done)
+    // What the earlier note names that a profile goes by, offered as tags.
+    protected override RenderFragment? AfterSuggested => CanWrite && _mine is { FromNote.Count: > 0 } mine ? Offer("Earlier note names", mine.FromNote) : null;
+
+    // The earlier note's names that are no profile, until cleared.
+    protected override RenderFragment? AfterPicker => _mine is { Leftover.Count: > 0 } mine ? __builder =>
     {
-        if (_busy) return;
-        _busy = true;
-        try
-        {
-            await change();
-            Toasts.Show(done);
-        }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
-        finally
-        {
-            // Read again if a colleague's change was heard while this one was reading.
-            do { _heardWhileBusy = false; await Load(); } while (_heardWhileBusy);
-            _busy = false;
-            StateHasChanged();
-        }
-    }
-
-    internal Task Tag(Guid id) => Change(() => Adversaries.TagArticleAsync(ArticleId, id), "Tagged.");
-
-    internal Task Untag(Guid id) => Change(() => Adversaries.UntagArticleAsync(ArticleId, id), "Untagged.");
+        <div class="tide-earlier-note small mt-2">
+            <span>Earlier note: “@string.Join(", ", mine.Leftover)”</span>
+            @if (CanWrite)
+            {
+                <button type="button" class="btn btn-link btn-sm p-0 tide-earlier-clear" disabled="@Busy" aria-label="Clear the earlier note"
+                        title="Clear the earlier note" @onclick="ClearNote"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+            }
+        </div>
+    } : null;
 
     // The ×: the earlier note's names that are no profile go; those a profile goes by stay offered as tags.
     internal Task ClearNote() => Change(() => Adversaries.ClearEarlierNoteAsync(ArticleId), "Earlier note cleared.");
-
-    private string Text => (_text ?? "").Trim();
-
-    // Before anything's typed, the offered few; then the matches.
-    internal IReadOnlyList<AdversaryPick> Listed => Text.Length == 0 ? _offered : _found.Found;
-
-    // A new profile by the words typed, unless a live one already goes by exactly that name (or MITRE id).
-    internal bool CanAdd => Text.Length > 0 && !_found.Exact;
-
-    private RenderFragment NewProfile => @<text><span class="bi bi-plus-lg" aria-hidden="true"></span> Add “@Text” as a new adversary</text>;
-
-    private RenderFragment? NothingListed => Text.Length == 0 && _offered.Count == 0 ? NothingYet : null;
-
-    private static readonly RenderFragment NothingYet = @<text>Type any name an adversary goes by, or its MITRE id.</text>;
-
-    private string Status => Text.Length == 0 ? "" : Listed.Count == 1 ? "1 adversary" : $"{Listed.Count} adversaries";
-
-    private static string? Meta(AdversaryPick p)
-    {
-        var why = p.Reason switch
-        {
-            AdversaryPickReason.Named => "Named in the article",
-            AdversaryPickReason.Watched => "Watched",
-            AdversaryPickReason.Recent => "Tagged lately",
-            _ => null,
-        };
-        return string.Join(" · ", new[] { p.MitreId, why }.Where(x => x is not null)) is { Length: > 0 } meta ? meta : null;
-    }
-
-    // Typed in the box: the search runs once typing pauses (TypingPause.SearchMs). A later keystroke, a pick or a clear in
-    // the meantime supersedes it.
-    private async Task Typed()
-    {
-        if (await _pause.Settled() && !_disposed) await Find();
-    }
-
-    // The profiles for what's typed now.
-    internal async Task Find()
-    {
-        var mine = _pause.Now();
-        AdversaryPicks found;
-        try { found = await Adversaries.FindForArticleAsync(ArticleId, _text); }
-        catch (Exception ex)
-        {
-            Toasts.Error(UserFacingError.For(ex));
-            return;
-        }
-        if (!_pause.IsLatest(mine)) return;
-        _found = found;
-        StateHasChanged();
-    }
-
-    // A profile picked from the list: a retired one only once the analyst says so. The box clears for the next.
-    internal async Task Pick(AdversaryPick p)
-    {
-        if (_busy) return;
-        if (p.IsRetired && _confirm is not null
-            && !await _confirm.Ask($"{p.Name} is retired", "Tag the article with it anyway?", "Tag it anyway", danger: false))
-            return;
-        Cleared();
-        await Tag(p.Id);
-        await Refocus();
-    }
-
-    // "Add 'X' as a new adversary": the profile by that name (made now, with the name alone), tagged; a link to fill it in.
-    internal async Task AddNew()
-    {
-        if (_busy || Text.Length == 0) return;
-        var name = Text;
-        Guid id;
-        try { id = await Adversaries.AddByNameAsync(name); }
-        catch (Exception ex)
-        {
-            Toasts.Error(UserFacingError.For(ex));
-            return;
-        }
-        Cleared();
-        _added = (id, name);
-        await Tag(id);
-        await Refocus();
-    }
-
-    // Drawn now (the list without the one just tagged), and the box keeps focus for the next.
-    private Task Refocus()
-    {
-        StateHasChanged();
-        return _combo?.FocusAsync() ?? Task.CompletedTask;
-    }
-
-    private void Cleared()
-    {
-        (_text, _found, _added) = (null, AdversaryPicks.None, null);
-        _pause.Now();
-    }
 }

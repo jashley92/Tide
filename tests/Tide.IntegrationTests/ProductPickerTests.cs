@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Components.Web;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Articles;
+using Tide.Application.Search;
 using Tide.Application.Stack;
 using Tide.Domain.Enums;
 using Tide.Infrastructure.Persistence;
@@ -40,9 +41,9 @@ public class ProductPickSearchTests : IDisposable
         var picks = await _db.Stack().FindForArticleAsync(article, "  GATEWAY ");
 
         picks.Found.Select(p => p.Id).Should().Equal(otherExact, prefix, contains, otherContains);
-        picks.Found.Select(p => p.OtherName).Should().Equal("Gateway", null, null, "Pulse Gateway Edge");
-        picks.Found[0].Versions.Should().Be("7.4.3");
-        picks.Found.Should().OnlyContain(p => p.Reason == ProductPickReason.Match && !p.IsRetired);
+        picks.Found.Select(p => p.Other).Should().Equal("Gateway", null, null, "Pulse Gateway Edge");
+        picks.Found[0].Detail.Should().Be("7.4.3");
+        picks.Found.Should().OnlyContain(p => p.Reason == PickReason.Match && !p.IsRetired);
         picks.Exact.Should().BeTrue("FortiGate goes by Gateway exactly");
         picks.AlreadyTagged.Should().BeNull();
 
@@ -50,9 +51,9 @@ public class ProductPickSearchTests : IDisposable
         partial.Found.Should().HaveCount(4);
         partial.Exact.Should().BeFalse("nothing is called Gatew, so adding it is offered");
 
-        (await _db.Stack().FindForArticleAsync(article, "   ")).Should().Be(ProductPicks.None);
+        (await _db.Stack().FindForArticleAsync(article, "   ")).Should().Be(TagPicks.None);
         (await _db.Stack().FindForArticleAsync(article, "%")).Found.Should().BeEmpty("a wildcard is taken as text");
-        (await _db.Stack().FindForArticleAsync(article, "fortios")).Found.Single().OtherName.Should().Be("FortiOS");
+        (await _db.Stack().FindForArticleAsync(article, "fortios")).Found.Single().Other.Should().Be("FortiOS");
     }
 
     [Theory]
@@ -109,15 +110,15 @@ public class ProductPickSearchTests : IDisposable
         await stack.TagArticleAsync(elsewhere, retired);
         await stack.SetRetiredAsync(retired, true);
 
-        var offered = await stack.OfferedAsync(article);
+        var offered = (await stack.ForArticleCardAsync(article, offer: true)).Offered;
 
         offered.Select(p => (p.Id, p.Reason)).Should().Equal(
-            (named, ProductPickReason.Named), (newer, ProductPickReason.Recent), (older, ProductPickReason.Recent));
-        (await stack.OfferedAsync(Guid.NewGuid())).Should().BeEmpty();
+            (named, PickReason.Named), (newer, PickReason.Recent), (older, PickReason.Recent));
+        (await stack.ForArticleCardAsync(Guid.NewGuid(), offer: true)).Offered.Should().BeEmpty();
 
         // However many were tagged lately, a few at a time.
         for (var i = 0; i < StackService.PickLimit; i++) await stack.TagArticleAsync(elsewhere, await Product($"Recent {i}"));
-        (await stack.OfferedAsync(article)).Should().HaveCount(StackService.PickLimit);
+        (await stack.ForArticleCardAsync(article, offer: true)).Offered.Should().HaveCount(StackService.PickLimit);
         (await stack.ForArticleCardAsync(article, offer: false)).Offered.Should().BeEmpty("a reader's card doesn't ask");
     }
 
@@ -144,7 +145,7 @@ public class ProductPickSearchTests : IDisposable
     {
         _db.User.Roles = new HashSet<AppRole> { AppRole.Reader };
         await FluentActions.Awaiting(() => _db.Stack().FindForArticleAsync(Guid.NewGuid(), "x")).Should().ThrowAsync<Application.Security.ForbiddenException>();
-        await FluentActions.Awaiting(() => _db.Stack().OfferedAsync(Guid.NewGuid())).Should().ThrowAsync<Application.Security.ForbiddenException>();
+        await FluentActions.Awaiting(() => _db.Stack().ForArticleCardAsync(Guid.NewGuid(), offer: true)).Should().ThrowAsync<Application.Security.ForbiddenException>();
     }
 
     [Fact]
@@ -274,7 +275,7 @@ public class ProductPickerRenderTests(TideApp app) : IClassFixture<TideApp>
         var (article, ids) = await Setup("werun-r5 Gateway flaw exploited", ("werun-r5 Gateway", null, false));
         await using var r = await Card(article);
 
-        r.Component.Listed.Select(p => (p.Name, p.Reason)).Should().Contain(("werun-r5 Gateway", ProductPickReason.Named));
+        r.Component.Listed.Select(p => (p.Name, p.Reason)).Should().Contain(("werun-r5 Gateway", PickReason.Named));
         (await r.Html()).Should().Contain("Names werun-r5 Gateway:").And.Contain("Tag werun-r5 Gateway</button>");
 
         await r.Click(c => c.Tag(ids["werun-r5 Gateway"]));

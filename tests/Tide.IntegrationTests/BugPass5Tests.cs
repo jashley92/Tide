@@ -30,8 +30,9 @@ public class BugPass5Tests : IDisposable
         await _db.Stack().SaveAsync(new StackForm { Name = "Ivanti Connect Secure", OtherNames = "Pulse Secure" });
 
         (await _db.Adversaries().ProfilesAsync()).Select(p => p.Name).Should().Equal("Scattered Spider");
-        (await _db.Stack().ProductsAsync()).Select(p => p.Name).Should().Equal("Ivanti Connect Secure");
-        StackService.Names(StackService.Entry((await _db.Stack().ProductsAsync())[0]), StackService.Words("Pulse-Secure flaw exploited", null))
+        var products = (await _db.Stack().ListAsync()).Select(r => r.Product).ToList();
+        products.Select(p => p.Name).Should().Equal("Ivanti Connect Secure");
+        StackService.Names(StackService.Entry(products[0]), StackService.Words("Pulse-Secure flaw exploited", null))
             .Should().BeTrue("each name's match words are worked out once and still match");
     }
 
