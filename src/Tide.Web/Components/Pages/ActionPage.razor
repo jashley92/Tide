@@ -168,7 +168,8 @@ else
                         </div>
                         @if (_editingComment == c.Id)
                         {
-                            <textarea class="form-control form-control-sm mt-1" rows="3" maxlength="8000" aria-label="Edit the comment" @bind="_commentEdit" @bind:event="oninput"></textarea>
+                            <MarkdownToolbar For="comment-edit" Label="Edit the comment" Class="mt-1" />
+                            <textarea id="comment-edit" class="form-control form-control-sm" rows="3" maxlength="8000" aria-label="Edit the comment" @bind="_commentEdit" @bind:event="oninput"></textarea>
                             <div class="d-flex gap-2 mt-1">
                                 <button class="btn btn-primary btn-sm" disabled="@(_busy || (string.IsNullOrWhiteSpace(_commentEdit) && c.Files.Count == 0))" @onclick="() => SaveComment(c)">Save</button>
                                 <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editingComment = null">Cancel</button>
@@ -212,7 +213,8 @@ else
                 @if (_detail.CanComment)
                 {
                     <div id="comment-zone" class="tide-comment-compose mt-2">
-                        <textarea class="form-control form-control-sm" rows="2" maxlength="8000" aria-label="New comment" placeholder="Add a comment (Markdown)" @bind="_comment" @bind:event="oninput"></textarea>
+                        <MarkdownToolbar For="comment-new" Label="New comment" />
+                        <textarea id="comment-new" class="form-control form-control-sm" rows="2" maxlength="8000" aria-label="New comment" placeholder="Add a comment (Markdown)" @bind="_comment" @bind:event="oninput"></textarea>
                         @if (_attachments.Count > 0)
                         {
                             <ul class="tide-comment-files mt-1">

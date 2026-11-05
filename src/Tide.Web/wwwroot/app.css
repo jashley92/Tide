@@ -1751,3 +1751,16 @@ button.tide-mentry-chip:focus-visible { outline: 2px solid var(--tide-focus-ring
 .tide-pull-table .tide-pull-error { color: var(--tide-warn); max-width: 26rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tide-pull-table .tide-pull-wait { font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
 .tide-pull-table abbr[title] { text-decoration: none; cursor: help; }
+
+/* The formatting toolbar over a Markdown text box (MarkdownToolbar): a strip of small icon buttons joined to the top of
+   the box below it, in the theme's colours. One Tab stop; the arrow keys move between its buttons. */
+.tide-md-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--tide-border);
+    border-bottom: 0; border-radius: var(--tide-radius-md) var(--tide-radius-md) 0 0; background: var(--tide-surface-2); }
+.tide-md-toolbar + textarea { border-top-left-radius: 0; border-top-right-radius: 0; }
+.tide-md-btn { width: 1.75rem; height: 1.75rem; display: inline-grid; place-items: center; padding: 0; border: 1px solid transparent;
+    border-radius: var(--tide-radius-sm); background: transparent; color: var(--tide-text-muted); font-size: 1.05rem; line-height: 1; }
+.tide-md-btn:hover { background: var(--tide-surface); border-color: var(--tide-border); color: var(--tide-text); }
+.tide-md-btn:active { background: var(--tide-bg); }
+.tide-md-btn:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 0; color: var(--tide-text); }
+.tide-md-sep { width: 1px; align-self: stretch; margin: 3px 2px; background: var(--tide-border); }
+@media (forced-colors: active) { .tide-md-btn { border-color: ButtonText; } .tide-md-sep { background: CanvasText; } }
