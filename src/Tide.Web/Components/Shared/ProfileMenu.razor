@@ -1,5 +1,6 @@
 @* The account menu in the top right: the initials avatar opens a panel with who you are and your role,
-   your own settings (theme, letter shortcuts) as segmented toggles, your brief days as a calendar file, and About.
+   your own settings (theme, letter shortcuts) as segmented toggles, My notifications, your brief days as a calendar
+   file, and About.
    Settings are per browser, applied by theme.js. *@
 @inject ICurrentUser CurrentUser
 @inject IJSRuntime JS
@@ -52,9 +53,19 @@
             </div>
             <div class="tide-profile-seg-hint">Single-key shortcuts in triage, present mode and the editor. Arrows always work. Saved in this browser.</div>
 
-            @if (CurrentUser.Has(Permission.ReadTeamEdition))
+            @if (CurrentUser.Has(Permission.ReadActions) || CurrentUser.Has(Permission.ReadTeamEdition))
             {
                 <div class="tide-profile-sep"></div>
+            }
+            @if (CurrentUser.Has(Permission.ReadActions))
+            {
+                <a class="tide-profile-item" role="menuitem" href="notifications" @onclick="Close">
+                    <span class="bi bi-bell" aria-hidden="true"></span>
+                    <span>My notifications</span>
+                </a>
+            }
+            @if (CurrentUser.Has(Permission.ReadTeamEdition))
+            {
                 <a class="tide-profile-item" role="menuitem" href="rotation/my.ics" download @onclick="Close">
                     <span class="bi bi-calendar-event" aria-hidden="true"></span>
                     <span>My brief days (calendar file)</span>

@@ -1948,3 +1948,15 @@ button.tide-slide-werun-chip:focus-visible { outline: 3px solid var(--tide-slide
 .tide-present-tagedit-cat { color: var(--tide-slide-muted); font-size: .85em; font-weight: var(--tide-weight-semibold); margin: .6em 0 .3em; }
 .tide-present-tagedit-problem { border: 1px solid var(--tide-slide-warn); border-radius: var(--tide-radius-lg); padding: .6em .9em; margin-bottom: .8em; color: var(--tide-slide-text); }
 .tide-present-tagedit-problem > .bi { color: var(--tide-slide-warn); }
+
+/* My notifications: one column of cards, each switch with its line of what it covers. */
+.tide-notify { max-width: var(--tide-width-form); }
+.tide-notify-switch { margin-bottom: .9rem; }
+.tide-notify-switch:last-child { margin-bottom: 0; }
+.tide-notify-off { color: var(--tide-warn); font-weight: var(--tide-weight-semibold); }
+
+/* Teams & SLA: how many people opted out of a kind, and the list behind the count. */
+.tide-optcount { padding: 0; border: 0; background: none; color: var(--tide-accent-text); text-decoration: underline; font-size: inherit; }
+.tide-optlist { margin: .4rem 0 0; font-size: var(--tide-text-sm); }
+.tide-optlist td, .tide-optlist th { padding: .3rem .4rem; }
+.tide-optlist td.tide-data { overflow-wrap: anywhere; }

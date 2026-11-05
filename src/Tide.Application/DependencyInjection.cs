@@ -73,6 +73,7 @@ public static class DependencyInjection
         services.AddScoped<AssistService>();
         services.AddScoped<HolidayService>();
         services.AddScoped<Preferences.UserPreferenceService>();
+        services.AddScoped<Preferences.NotificationPreferenceService>();
         services.AddScoped<Api.ApiTokenService>();
         services.AddScoped<Api.WebhookService>();
         services.AddScoped<Api.ApiService>();
