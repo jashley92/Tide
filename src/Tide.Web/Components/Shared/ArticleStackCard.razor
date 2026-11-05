@@ -24,9 +24,11 @@
         @foreach (var p in _stack.Tagged)
         {
             var d = _details.GetValueOrDefault(p.Id);
-            <div class="tide-stack-tag" @key="p.Id">
+            @* A retired product stays tagged (its history is kept), muted and marked, as present mode's chips show it. *@
+            <div class="tide-stack-tag @(p.IsRetired ? "tide-muted" : "")" @key="p.Id">
                 <div class="d-flex gap-2 align-items-baseline flex-wrap">
                     <a class="fw-semibold" href="@($"stack/{p.Id}")">@p.Name</a>
+                    @if (p.IsRetired) { <Badge Tone="BadgeTone.Neutral">Retired</Badge> }
                     @if (p.Versions is { } v) { <span class="small">@v</span> }
                     @if (CanWrite)
                     {

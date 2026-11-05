@@ -12,11 +12,12 @@ public sealed record RaisedHand(string UserId, string Name, Guid? ArticleId, Dat
 /// <see cref="Locked"/>: the presenter has everyone following, with no browsing off. <see cref="SlideKey"/> says what
 /// the presenter's slide is ("article:{id}", "wrap", …), so a page whose slides number differently (an open-actions slide
 /// it hasn't loaded yet) still goes to the same one. <see cref="Action"/>: the action the presenter has open over their
-/// slide (its number), which those following see with them.
+/// slide (its number), which those following see with them; <see cref="Product"/>, likewise, the Our stack product whose
+/// card the presenter has open over an article's slide (team edition only). One of the two at most is open.
 /// </summary>
 public sealed record LiveMeetingView(DateOnly Day, Guid BriefId, string PresenterId, string PresenterName, int Slide, int Summons,
     bool PresenterHere, bool CanTakeOver, IReadOnlyList<MeetingPerson> People, IReadOnlyList<RaisedHand> Hands, DateTimeOffset StartedAtUtc,
-    bool Locked = false, string? SlideKey = null, int? Action = null)
+    bool Locked = false, string? SlideKey = null, int? Action = null, Guid? Product = null)
 {
     public bool IsPresenter(string userId) => PresenterId == userId;
 
@@ -152,12 +153,25 @@ public sealed class LiveMeetings : IDisposable
 
     /// <summary>
     /// The presenter opens an action over their slide (its number), or closes it (null), for those following too. Moving
-    /// to another slide closes it, and so does handing the meeting on.
+    /// to another slide closes it, and so does handing the meeting on. Opening one closes a product's card.
     /// </summary>
     public bool Open(IMeetingSeat seat, int? action) => Change(seat, presenter: true, (m, _) =>
     {
         if (m.Action == action) return false;
         m.Action = action;
+        if (action is not null) m.Product = null;
+        return true;
+    });
+
+    /// <summary>
+    /// The presenter opens an Our stack product's card over their slide, or closes it (null), for those following too, as
+    /// <see cref="Open"/> does an action: moving on or handing the meeting over closes it, and opening it closes an action.
+    /// </summary>
+    public bool Show(IMeetingSeat seat, Guid? product) => Change(seat, presenter: true, (m, _) =>
+    {
+        if (m.Product == product) return false;
+        m.Product = product;
+        if (product is not null) m.Action = null;
         return true;
     });
 
@@ -279,7 +293,7 @@ public sealed class LiveMeetings : IDisposable
     private static bool MakePresenter(Meeting m, Seat to)
     {
         foreach (var s in m.Seats.Values.Where(s => s.UserId == m.PresenterId)) s.Following = true;
-        (m.PresenterId, m.PresenterName, m.PresenterGoneAtUtc, m.TakeOverSaid, m.Slide, m.SlideKey, m.Action) = (to.UserId, to.Name, null, false, to.Slide, to.Key, null);
+        (m.PresenterId, m.PresenterName, m.PresenterGoneAtUtc, m.TakeOverSaid, m.Slide, m.SlideKey, m.Action, m.Product) = (to.UserId, to.Name, null, false, to.Slide, to.Key, null, null);
         to.Following = false;
         foreach (var s in m.Seats.Values.Where(s => s.Following)) (s.Slide, s.Key) = (to.Slide, to.Key);
         if (m.Locked) BringBack(m);   // a lock carried over holds everyone on the new presenter's slide
@@ -310,7 +324,7 @@ public sealed class LiveMeetings : IDisposable
             (seat.Slide, seat.Key, seat.Following) = (following && !presenting && key is not null && key == m.SlideKey ? m.Slide : slide, key, following && !presenting);
             if (presenting)
             {
-                if (m.Slide != slide) m.Action = null;   // it was open over the last slide
+                if (m.Slide != slide) (m.Action, m.Product) = (null, null);   // they were open over the last slide
                 (m.Slide, m.SlideKey) = (slide, key);
                 // Everyone following, and the presenter's own other tabs (a projector window), move with the presenter.
                 foreach (var s in m.Seats.Values.Where(s => s.Following || s.UserId == m.PresenterId)) (s.Slide, s.Key) = (slide, key);
@@ -374,7 +388,7 @@ public sealed class LiveMeetings : IDisposable
             .ToList();
         return new LiveMeetingView(m.Day, m.BriefId, m.PresenterId, m.PresenterName, m.Slide, m.Summons,
             people.Any(p => p.UserId == m.PresenterId), CanTakeOver(m), people, m.Hands.Values.OrderBy(h => h.AtUtc).ToList(), m.StartedAtUtc,
-            m.Locked, m.SlideKey, m.Action);
+            m.Locked, m.SlideKey, m.Action, m.Product);
     }
 
     private void Notify(DateOnly day, Guid origin) => Together.Notify(Changed, new MeetingChange(day, origin));
@@ -393,6 +407,7 @@ public sealed class LiveMeetings : IDisposable
         public int Summons { get; set; }
         public bool Locked { get; set; }
         public int? Action { get; set; }
+        public Guid? Product { get; set; }
         public DateTimeOffset? PresenterGoneAtUtc { get; set; }
         public bool TakeOverSaid { get; set; }
         public DateTimeOffset? EmptySinceUtc { get; set; }

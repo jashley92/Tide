@@ -1770,3 +1770,20 @@ button.tide-mentry-chip:focus-visible { outline: 2px solid var(--tide-focus-ring
 .tide-not-sent-note { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-clamp: 2; overflow: hidden;
     max-width: 22rem; margin-top: var(--tide-space-1); font-size: var(--tide-text-xs); color: var(--tide-text-muted); overflow-wrap: anywhere; }
 .tide-send-edition.tide-not-sent textarea { resize: vertical; }
+
+/* Present mode's "We run" chips on an article's slide (team edition only), and the product's card they open over the
+   slide: large type for a shared screen. A retired product is muted, as the editor's card shows it. */
+.tide-slide-werun { display: flex; flex-wrap: wrap; align-items: center; gap: .4em; margin: -.2em 0 .9em; }
+.tide-slide-werun-label { color: var(--tide-slide-muted); text-transform: uppercase; letter-spacing: .08em; font-size: .72em; font-weight: var(--tide-weight-semibold); margin-right: .2em; }
+.tide-slide .tide-slide-werun-chip { margin: 0; font-size: .95em; padding: .22em .75em; background: rgba(111, 211, 154, .16); color: var(--tide-slide-text); border: 1px solid rgba(111, 211, 154, .45); }
+button.tide-slide-werun-chip { font-family: inherit; cursor: pointer; }
+button.tide-slide-werun-chip:hover { border-color: var(--tide-slide-ok); }
+button.tide-slide-werun-chip:focus-visible { outline: 3px solid var(--tide-slide-accent); outline-offset: 2px; }
+.tide-slide-werun-ver { color: var(--tide-slide-muted); font-size: .85em; margin-left: .45em; }
+.tide-slide .tide-slide-werun-retired { background: transparent; border-style: dashed; border-color: var(--tide-slide-line-strong); color: var(--tide-slide-muted); }
+.tide-present-product { font-size: 1.15em; bottom: auto; max-height: calc(100vh - 8em); }
+.tide-present-product .tide-present-action-head h2 { font-size: 1.5em; display: flex; align-items: baseline; gap: .5em; flex-wrap: wrap; }
+.tide-present-product-kicker { color: var(--tide-slide-ok); text-transform: uppercase; letter-spacing: .08em; font-size: .5em; font-weight: var(--tide-weight-semibold); }
+.tide-present-product .tide-facts dd { font-size: 1.05em; }
+.tide-present-product-articles { list-style: none; padding: 0; margin: 0; }
+.tide-present-product-articles li { padding: .35em 0; border-bottom: 1px solid var(--tide-slide-line); line-height: 1.35; }
