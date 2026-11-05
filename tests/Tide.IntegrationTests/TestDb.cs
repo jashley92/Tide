@@ -429,13 +429,16 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
     public static DateOnly SendDayFor(OrgClock clock) =>
         clock.Days.IsWorkingDay(clock.Today) ? clock.Today : clock.Days.Previous(clock.Today);
 
-    public ScreenshotService Screenshots() => new(this, User, Store, Options.Create(new FileStoreOptions { MaxImageMB = 1 }));
+    /// <summary>The meetings going on, as the services see them (a Visitor's reads go through only from a seat in one).</summary>
+    public IMeetingsInProgress? Live { get; set; }
+
+    public ScreenshotService Screenshots() => new(this, User, Store, Options.Create(new FileStoreOptions { MaxImageMB = 1 }), Live);
 
     public ArticleService Articles() => new(this, User, Screenshots(), Clock);
 
-    public BriefService Briefs() => new(this, User, Clock, Rotation());
+    public BriefService Briefs() => new(this, User, Clock, Rotation(), Live);
 
-    public MeetingService Meetings(TimeProvider? time = null) => new(this, User, time ?? TimeProvider.System);
+    public MeetingService Meetings(TimeProvider? time = null) => new(this, User, time ?? TimeProvider.System, Live);
 
     public RotationService Rotation(OrgClock? clock = null) =>
         new(this, User, clock ?? Clock, Email, Options.Create(new AppOptions { BaseUrl = "https://tide.example.org" }), EmailTemplates);
@@ -448,13 +451,13 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public ScorecardService Scorecard() => new(this, User);
 
-    public MetricsService Metrics() => new(this, User);
+    public MetricsService Metrics() => new(this, User, meetings: Live);
 
-    public Tide.Application.Stack.StackService Stack() => new(this, User, Clock, Settings());
+    public Tide.Application.Stack.StackService Stack() => new(this, User, Clock, Settings(), Live);
 
     public MetricImportService MetricImports(OrgClock? clock = null) => new(this, User, clock ?? Clock, TimeProvider.System);
 
-    public DistributionSettings Settings() => new(this, User, Options.Create(new DistributionOptions()));
+    public DistributionSettings Settings() => new(this, User, Options.Create(new DistributionOptions()), Live);
 
     public FakeEmailSender Email { get; } = new();
 
@@ -464,7 +467,7 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public HuntQueryBuilder Queries() => new(this, User);
 
-    public ActionService Actions() => new(this, User, Sla(), Clock, Queries(), Screenshots());
+    public ActionService Actions() => new(this, User, Sla(), Clock, Queries(), Screenshots(), Live);
 
     public PlaybookService Playbooks() => new(this, User);
 
@@ -506,7 +509,7 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public CveService Cves(CveOptions? options = null, TimeProvider? time = null) =>
         new(this, User, Http, new StaticOptionsMonitor<CveOptions>(options ?? new CveOptions { Enabled = true, NvdDelayMs = 0 }),
-            time ?? TimeProvider.System, CveLog);
+            time ?? TimeProvider.System, CveLog, Live);
 
     /// <summary>The CVE runs, shared by every <see cref="Cves"/> as the app's singleton is.</summary>
     public CveRunLog CveLog { get; } = new();

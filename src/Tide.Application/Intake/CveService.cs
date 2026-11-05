@@ -58,7 +58,7 @@ public sealed class CveRunLog
 /// refreshes the CVEs on articles and on recent feed items; pages read what's stored and never wait on these services.
 /// </summary>
 public sealed class CveService(IAppDbContextFactory dbs, ICurrentUser user, IOutboundHttp http, IOptionsMonitor<CveOptions> options, TimeProvider time,
-    CveRunLog log)
+    CveRunLog log, Briefs.IMeetingsInProgress? meetings = null)
 {
     public const string LastRunKey = "Cve:LastRun";
 
@@ -69,10 +69,11 @@ public sealed class CveService(IAppDbContextFactory dbs, ICurrentUser user, IOut
 
     public CveOptions Options => options.CurrentValue;
 
-    /// <summary>What's stored about these CVEs, by id (ids with nothing stored are left out).</summary>
+    /// <summary>What's stored about these CVEs, by id (ids with nothing stored are left out). A Visitor gets them only from
+    /// a seat in a live meeting, for its slides' CVE chips (public NVD, KEV and EPSS data).</summary>
     public async Task<IReadOnlyDictionary<string, CveRecord>> GetAsync(IEnumerable<string> ids, CancellationToken ct = default)
     {
-        if (!user.Has(Permission.ReadTeamEdition)) throw new ForbiddenException("You don't have access to CVE details.");
+        if (!user.Has(Permission.ReadTeamEdition) && !Briefs.MeetingAccess.SeatedAnywhere(user, meetings)) throw new ForbiddenException("You don't have access to CVE details.");
         var list = ids.Select(i => i.ToUpperInvariant()).Distinct().ToList();
         if (list.Count == 0) return new Dictionary<string, CveRecord>();
         await using var db = await dbs.CreateAsync(ct);

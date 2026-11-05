@@ -37,7 +37,7 @@ public static class NavPages
         new("today", "Today", "bi-sunrise", "", Daily, [Permission.ReadTeamEdition], NavLinkMatch.All, "home dashboard brief running order"),
         new(Triage, "Triage", "bi-inbox", "triage", Daily, [Permission.ReadTeamEdition, Permission.WriteArticles], Keywords: "inbox feeds intake"),
         new("articles", "Articles", "bi-newspaper", "articles", Daily, [Permission.ReadTeamEdition]),
-        new(Actions, "Actions", "bi-list-check", "actions", Daily, [Permission.WorkActions], Keywords: "board tasks"),
+        new(Actions, "Actions", "bi-list-check", "actions", Daily, [Permission.ReadActions], Keywords: "board tasks"),
         new("search", "Search", "bi-search", "search", Daily, [Permission.ReadTeamEdition], Keywords: "indicator lookup cve ioc"),
         new("stories", "Stories", "bi-bezier2", "stories", Intelligence, [Permission.ReadTeamEdition]),
         new("archive", "Brief archive", "bi-archive", "briefs", Intelligence, [Permission.ReadTeamEdition], NavLinkMatch.All, "past briefs"),
@@ -48,7 +48,7 @@ public static class NavPages
         new("coverage", "Coverage", "bi-shield-check", "coverage", Intelligence, [Permission.WriteArticles], Keywords: "detection rules gaps sigma sentinel attack"),
         new("metrics", "Metrics", "bi-graph-up", "metrics", Intelligence, [Permission.ReadTeamEdition, Permission.WriteArticles]),   // listed for those who make the brief; the page stays open to action owners
         new("rotation", "Brief rotation", "bi-calendar3", "rotation", Team, [Permission.ReadTeamEdition, Permission.WriteArticles], Keywords: "rota schedule"),
-        new("workload", "Workload", "bi-people", "workload", Team, [Permission.WorkActions]),
+        new("workload", "Workload", "bi-people", "workload", Team, [Permission.ReadActions]),
         new("published", "Published briefs", "bi-megaphone", "published", CompanyWide, [Permission.ReadPublished], Keywords: "archive company"),
         // One entry; the Administration page's tabs reach every admin page (AdminLayout).
         new("admin", "Administration", "bi-sliders", "admin", Administration, [Permission.Administer], Keywords: "settings admin"),

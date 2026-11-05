@@ -61,12 +61,17 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
             .ToListAsync(ct);
     }
 
-    /// <summary>The brief for <paramref name="date"/> with its articles and everything on them, or null.</summary>
+    /// <summary>The brief for <paramref name="date"/> with its articles and everything on them, or null. A Visitor gets it
+    /// only from a seat in its live meeting (<see cref="MeetingAccess"/>).</summary>
     public async Task<Brief?> GetAsync(DateOnly date, CancellationToken ct = default)
     {
-        RequireRead();
+        var visitor = !user.Has(Permission.ReadTeamEdition) && MeetingAccess.SeatedOn(user, _meetings, date);
+        if (!visitor) RequireRead();
         await using var db = await dbs.CreateAsync(ct);
-        return await Load(db.Briefs.AsNoTracking()).FirstOrDefaultAsync(b => b.BriefDate == date, ct);
+        var brief = await Load(db.Briefs.AsNoTracking()).FirstOrDefaultAsync(b => b.BriefDate == date, ct);
+        // The day's brief is the meeting's: one put in its place since isn't the Visitor's to read.
+        return visitor && brief is not null && !MeetingAccess.SeatedFor(user, _meetings, brief.Id)
+            ? throw new ForbiddenException("You don't have access to briefs.") : brief;
     }
 
     internal static IQueryable<Brief> Load(IQueryable<Brief> q) => q
@@ -487,7 +492,7 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
     /// <summary>The actions raised from the brief's articles, as the team edition lists them.</summary>
     public async Task<ILookup<Guid, EditionAction>> EditionActionsAsync(Brief brief, CancellationToken ct = default)
     {
-        RequireRead();
+        if (!MeetingAccess.SeatedFor(user, _meetings, brief.Id)) RequireRead();
         await using var db = await dbs.CreateAsync(ct);
         return await BriefEditions.ActionsAsync(db, brief, ct);
     }

@@ -66,7 +66,8 @@ public sealed record ArticleStack(IReadOnlyList<StackProduct> Tagged, IReadOnlyL
 /// an article can be tagged with any number of them (optional), and each product's page lists the articles and actions
 /// about it, tagged or found by name. A name matches as whole words, ignoring case, in a title or the start of a summary.
 /// </summary>
-public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser user, Org.OrgClock clock, DistributionSettings editions)
+public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser user, Org.OrgClock clock, DistributionSettings editions,
+    Briefs.IMeetingsInProgress? meetings = null)
 {
     /// <summary>How much of a summary (an item's excerpt, an article's bottom line) is read for a name.</summary>
     public const int SummaryStart = 400;
@@ -200,10 +201,19 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
     /// </summary>
     public async Task<IReadOnlyDictionary<Guid, IReadOnlyList<StackProduct>>> ForArticlesAsync(IEnumerable<Guid> articleIds, CancellationToken ct = default)
     {
-        RequireRead();
+        var seats = Briefs.MeetingAccess.Seats(user, meetings);
+        if (seats.Count == 0) RequireRead();
         var ids = articleIds.Distinct().ToList();
         if (ids.Count == 0) return new Dictionary<Guid, IReadOnlyList<StackProduct>>();
         await using var db = await dbs.CreateAsync(ct);
+        // A Visitor, from a seat in a live meeting: the We run chips of that brief's articles only (MeetingAccess).
+        if (seats.Count > 0)
+        {
+            var briefs = seats.Select(x => x.BriefId).ToList();
+            var onBrief = await db.BriefItems.AsNoTracking().Where(i => briefs.Contains(i.BriefId) && ids.Contains(i.ArticleId))
+                .Select(i => i.ArticleId).Distinct().CountAsync(ct);
+            if (onBrief != ids.Count) throw new ForbiddenException("You don't have access to Our stack.");
+        }
         var tags = await db.ArticleProducts.AsNoTracking().Where(t => ids.Contains(t.ArticleId))
             .Select(t => new { t.ArticleId, Product = t.Product! }).ToListAsync(ct);
         return tags.GroupBy(t => t.ArticleId).ToDictionary(g => g.Key, g => (IReadOnlyList<StackProduct>)g.Select(t => t.Product)
@@ -218,7 +228,8 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
     /// </summary>
     public async Task<StackCard?> CardAsync(Guid id, TlpLevel ceiling, Guid? exceptArticleId = null, CancellationToken ct = default)
     {
-        RequireRead();
+        // A Visitor sees only the card the presenter has open for the room, while they're in the meeting (MeetingAccess).
+        if (!Briefs.MeetingAccess.Seats(user, meetings).Any(s => s.Product == id)) RequireRead();
         await using var db = await dbs.CreateAsync(ct);
         var p = await db.StackProducts.AsNoTracking().Include(x => x.Team).FirstOrDefaultAsync(x => x.Id == id, ct);
         if (p is null) return null;

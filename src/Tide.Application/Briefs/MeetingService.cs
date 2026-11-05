@@ -17,26 +17,31 @@ public sealed record MeetingRecord(IReadOnlyList<MeetingAttendee> Attendees, IRe
 /// The record of a brief's meeting: attendance, as people join it in present mode or the presenter adds them, and the
 /// notes each person takes. What's live (who's on which slide, raised hands) is the web app's and isn't kept.
 /// </summary>
-public sealed class MeetingService(IAppDbContextFactory dbs, ICurrentUser user, TimeProvider time)
+public sealed class MeetingService(IAppDbContextFactory dbs, ICurrentUser user, TimeProvider time, IMeetingsInProgress? meetings = null)
 {
     /// <summary>The longest note.</summary>
     public const int MaxNote = 2000;
 
+    /// <summary>The record: a Visitor, from a seat in the brief's live meeting, gets who's attended (the wrap-up slide shows
+    /// it) and none of the notes, which are the team's.</summary>
     public async Task<MeetingRecord> GetAsync(Guid briefId, CancellationToken ct = default)
     {
-        RequireRead();
+        var visitor = MeetingAccess.SeatedFor(user, meetings, briefId);
+        if (!visitor) RequireRead();
         await using var db = await dbs.CreateAsync(ct);
         var attendees = await db.MeetingAttendees.AsNoTracking().Where(a => a.BriefId == briefId).ToListAsync(ct);
-        var notes = await db.MeetingNotes.AsNoTracking().Where(n => n.BriefId == briefId).ToListAsync(ct);
+        var notes = visitor ? [] : await db.MeetingNotes.AsNoTracking().Where(n => n.BriefId == briefId).ToListAsync(ct);
         return new MeetingRecord(
             attendees.OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase).ToList(),
             notes.OrderBy(n => n.AtUtc).ThenBy(n => n.Id).ToList());
     }
 
-    /// <summary>Records that I joined the meeting: the first time, when; again after leaving, that I'm back.</summary>
+    /// <summary>Records that I joined the meeting: the first time, when; again after leaving, that I'm back. Anyone who may
+    /// join meetings: a Visitor only from a seat in that brief's live meeting, recorded as attending as everyone else is.</summary>
     public async Task JoinedAsync(Guid briefId, CancellationToken ct = default)
     {
-        RequireRead();
+        if (!user.Has(Permission.JoinMeetings)) throw new ForbiddenException("You can't join the brief meeting.");
+        if (!MeetingAccess.SeatedFor(user, meetings, briefId)) RequireRead();
         await using var db = await dbs.CreateAsync(ct);
         var name = ArticleService.Clean(user.DisplayName, 256);
         var me = await db.MeetingAttendees.FirstOrDefaultAsync(a => a.BriefId == briefId && a.UserId == user.UserId, ct);
@@ -166,8 +171,9 @@ public sealed class MeetingService(IAppDbContextFactory dbs, ICurrentUser user, 
         return clean.Length > 0 ? clean : throw new ArgumentException("Write the note first.");
     }
 
-    /// <summary>Whether I can take notes at the meeting: anyone on the team edition who works actions or writes articles.</summary>
-    public bool CanNote => user.Has(Permission.ReadTeamEdition) && (user.Has(Permission.WorkActions) || user.Has(Permission.WriteArticles));
+    /// <summary>Whether I can take notes at the meeting: on the team edition, with MeetingNotes (the team's roles and a
+    /// Viewer; never a Visitor, who isn't on the team edition).</summary>
+    public bool CanNote => user.Has(Permission.ReadTeamEdition) && user.Has(Permission.MeetingNotes);
 
     private void RequireRead()
     {

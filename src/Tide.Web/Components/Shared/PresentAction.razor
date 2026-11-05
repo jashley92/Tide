@@ -10,7 +10,10 @@
     <div class="tide-present-action-head">
         <h2 id="present-action-title"><span class="tide-action-num">@Ui.ActionLabel(a.Number)</span> @a.Title</h2>
         @if (Kicker is not null) { <span class="tide-present-help">@Kicker</span> }
-        <a class="btn btn-sm btn-outline-secondary ms-auto" href="@Ui.ActionUrl(a.Number)" target="_blank" rel="noopener">Open the page</a>
+        @if (Links)
+        {
+            <a class="btn btn-sm btn-outline-secondary ms-auto" href="@Ui.ActionUrl(a.Number)" target="_blank" rel="noopener">Open the page</a>
+        }
         @if (CanClose)
         {
             <button type="button" class="btn btn-sm btn-outline-secondary" aria-label="Close @Ui.ActionLabel(a.Number)" title="Close (Esc)" @ref="_close" @onclick="Close"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
@@ -47,7 +50,20 @@
                 @if (a.Checklist.Count > 0)
                 {
                     <div class="tide-slide-section">Checklist <span class="tide-present-help">@a.Checklist.Count(i => i.IsDone) of @a.Checklist.Count done</span></div>
-                    <ActionChecklist @key="(a.Id, Version)" ActionId="a.Id" Kind="a.Kind" CanWork="Detail.CanWork" Compact="true" OnChanged="OnChanged" />
+                    @if (Links)
+                    {
+                        <ActionChecklist @key="(a.Id, Version)" ActionId="a.Id" Kind="a.Kind" CanWork="Detail.CanWork" Compact="true" OnChanged="OnChanged" />
+                    }
+                    else
+                    {
+                        @* As the room sees it, from the action as read: nothing more is asked of the server. *@
+                        <ul class="list-unstyled mb-0">
+                            @foreach (var i in a.Checklist.OrderBy(i => i.SortOrder))
+                            {
+                                <li @key="i.Id"><span class="bi @(i.IsDone ? "bi-check2-square" : "bi-square")" aria-hidden="true"></span> @i.Text<span class="visually-hidden">@(i.IsDone ? " (done)" : " (not done)")</span></li>
+                            }
+                        </ul>
+                    }
                 }
                 <div class="tide-slide-section">Comments (@a.Comments.Count)</div>
                 @if (a.Comments.Count == 0) { <div class="tide-present-help">None yet.</div> }
@@ -56,7 +72,7 @@
                     <div class="tide-comment" @key="c.Id">
                         <div class="tide-present-help"><strong>@c.AuthorName</strong> &middot; @Ui.When(Clock, c.AtUtc)@(c.EditedAtUtc is not null ? " (edited)" : "")</div>
                         @if (c.Text.Length > 0) { <Md Text="@c.Text" /> }
-                        @{ var shots = c.Files.Where(f => f.IsImage).OrderBy(f => f.SortOrder).ToList(); }
+                        @{ var shots = Links ? c.Files.Where(f => f.IsImage).OrderBy(f => f.SortOrder).ToList() : []; }
                         @if (shots.Count > 0)
                         {
                             <div class="tide-comment-shots">
@@ -68,7 +84,7 @@
                                 }
                             </div>
                         }
-                        @foreach (var f in c.Files.Where(f => !f.IsImage).OrderBy(f => f.SortOrder))
+                        @foreach (var f in c.Files.Where(f => Links && !f.IsImage).OrderBy(f => f.SortOrder))
                         {
                             <div class="tide-present-help"><span class="bi bi-paperclip" aria-hidden="true"></span> @f.FileName</div>
                         }
@@ -105,6 +121,10 @@
     [Parameter] public bool Autofocus { get; set; }
 
     [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>Whether it links out (the action's page) and shows its files: not for a Visitor, who sees the card only in
+    /// the meeting and has neither the page nor the files.</summary>
+    [Parameter] public bool Links { get; set; } = true;
 
     /// <summary>After a status move or a tick here: the page re-reads the action.</summary>
     [Parameter] public EventCallback Changed { get; set; }

@@ -165,7 +165,7 @@ public sealed record HuntSources(int ArticleIndicators, int StoryIndicators, int
 /// </para>
 /// </summary>
 public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, SlaSettings sla, OrgClock clock, HuntQueryBuilder queries,
-    ScreenshotService files)
+    ScreenshotService files, Briefs.IMeetingsInProgress? meetings = null)
 {
     public DateOnly Today => clock.Today;
 
@@ -265,7 +265,8 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// </summary>
     public async Task<OpenActionsReview> OutstandingAsync(DateOnly asOf, TlpLevel ceiling, CancellationToken ct = default)
     {
-        RequireRead();
+        // A Visitor, from a seat in that day's live meeting: its open actions slide (MeetingAccess).
+        if (!Briefs.MeetingAccess.SeatedOn(user, meetings, asOf)) RequireRead();
         await using var db = await dbs.CreateAsync(ct);
         return await Outstanding(db, asOf, ceiling, ct);
     }
@@ -381,7 +382,8 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
 
     public async Task<ActionDetail?> GetAsync(int number, CancellationToken ct = default)
     {
-        RequireRead();
+        // A Visitor sees only the action the presenter has open for the room, while they're in the meeting (MeetingAccess).
+        if (!Briefs.MeetingAccess.Seats(user, meetings).Any(s => s.Action == number)) RequireRead();
         await using var db = await dbs.CreateAsync(ct);
         var a = await db.Actions.AsNoTracking()
             .Include(x => x.Team).Include(x => x.Article).ThenInclude(x => x!.Indicators)
@@ -1176,14 +1178,16 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         return a;
     }
 
-    // Whoever reads the team edition may comment on any action, and whoever works it may too.
+    // Whoever reads the team edition and takes part in the team's work may comment on any action, and whoever works it
+    // may too. A Viewer reads the team edition and does neither, so can't.
     private async Task RequireComment(IAppDbContext db, ActionItem a, CancellationToken ct)
     {
         if (!CanComment && !await CanWorkAsync(db, a.TeamId, ct)) throw new ForbiddenException("You don't have access to comment on actions.");
     }
 
-    /// <summary>Whether the current user may comment, with text, on any action they can see (ADR 0008, amended).</summary>
-    private bool CanComment => user.Has(Permission.ReadTeamEdition);
+    /// <summary>Whether the current user may comment, with text, on any action they can see (ADR 0008, amended): on the
+    /// team edition, and working actions or writing articles (not a Viewer, who only reads).</summary>
+    private bool CanComment => user.Has(Permission.ReadTeamEdition) && user.Contributes();
 
     private void RequireRead()
     {

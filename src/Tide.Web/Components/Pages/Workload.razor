@@ -1,5 +1,5 @@
 @page "/workload"
-@attribute [Authorize(Policy = Policies.WorkActions)]
+@attribute [Authorize(Policy = Policies.ReadActions)]
 @inject ActionService ActionSvc
 @inject ToastService Toasts
 @inject ChangeFeed Feed

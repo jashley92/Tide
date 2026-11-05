@@ -1,6 +1,6 @@
 @page "/actions/new"
 @page "/actions/{Number:int}"
-@attribute [Authorize(Policy = Policies.WorkActions)]
+@attribute [Authorize(Policy = Policies.ReadActions)]
 @inject ActionService ActionSvc
 @inject TeamService TeamSvc
 @inject ArticleService ArticleSvc

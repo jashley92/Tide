@@ -30,7 +30,8 @@ public sealed class FileStoreOptions
 public sealed record ScreenshotUpload(string FileName, byte[] Bytes, string? DeclaredType = null);
 
 /// <summary>Screenshots on articles: stored as files on disk, checked to be real raster images, shown inline.</summary>
-public sealed class ScreenshotService(IAppDbContextFactory dbs, ICurrentUser user, IFileStore store, IOptions<FileStoreOptions> options)
+public sealed class ScreenshotService(IAppDbContextFactory dbs, ICurrentUser user, IFileStore store, IOptions<FileStoreOptions> options,
+    Briefs.IMeetingsInProgress? meetings = null)
 {
     public long MaxBytes => Math.Max(1, options.Value.MaxImageMB) * 1024L * 1024L;
 
@@ -293,8 +294,23 @@ public sealed class ScreenshotService(IAppDbContextFactory dbs, ICurrentUser use
         return (stream, name);
     }
 
+    /// <summary>Whether what this user is served inline mustn't be kept by the browser: a Visitor's slide images are theirs
+    /// only while they're in the meeting, so the next look asks again (and is refused once it's over).</summary>
+    public bool NoStore => Briefs.MeetingAccess.MeetingOnly(user);
+
     private async Task<bool> MaySeeAsync(IAppDbContext db, Guid fileId, CancellationToken ct)
     {
+        // A Visitor, from a seat in a live meeting: a screenshot on an article of that meeting's brief (MeetingAccess). Not
+        // an action's or a comment's file, nor another brief's. Then whatever a Reader may see.
+        if (Briefs.MeetingAccess.Seats(user, meetings) is { Count: > 0 } seats)
+        {
+            var briefs = seats.Select(x => x.BriefId).ToList();
+            if (await (from s in db.ArticleScreenshots
+                       join i in db.BriefItems on s.ArticleId equals i.ArticleId
+                       where s.FileId == fileId && briefs.Contains(i.BriefId)
+                       select s.Id).AnyAsync(ct))
+                return true;
+        }
         var team = user.Has(Permission.ReadTeamEdition);
         if (!team && !user.Has(Permission.ReadPublished) && !user.Has(Permission.WorkActions)) return false;
         if (team || user.Has(Permission.WorkActions))

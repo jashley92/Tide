@@ -1,5 +1,5 @@
 @page "/actions"
-@attribute [Authorize(Policy = Policies.WorkActions)]
+@attribute [Authorize(Policy = Policies.ReadActions)]
 @using Tide.Domain.Common
 @inject ActionService ActionSvc
 @inject TeamService Teams

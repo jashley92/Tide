@@ -77,7 +77,7 @@ public sealed record MetricHistory(DateOnly From, DateOnly To, IReadOnlyList<Met
 /// with the team edition sees them compared with the previous business day. Nothing is built in; an optional generic
 /// example set can be imported, never seeded.
 /// </summary>
-public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, OrgClock? clock = null)
+public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, OrgClock? clock = null, Briefs.IMeetingsInProgress? meetings = null)
 {
     /// <summary>Business days a sparkline covers (about four weeks).</summary>
     public const int SparkDays = 20;
@@ -108,6 +108,11 @@ public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, 
     public async Task<IReadOnlyList<MetricGroup>> ListAsync(bool includeRetired = false, CancellationToken ct = default)
     {
         RequireRead();
+        return await GroupsAsync(includeRetired, ct);
+    }
+
+    private async Task<List<MetricGroup>> GroupsAsync(bool includeRetired, CancellationToken ct)
+    {
         await using var db = await dbs.CreateAsync(ct);
         var groups = await db.MetricGroups.AsNoTracking().Include(g => g.Metrics)
             .Where(g => includeRetired || !g.IsRetired)
@@ -117,10 +122,12 @@ public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, 
         return groups;
     }
 
-    /// <summary>The metrics for <paramref name="day"/>: each value, its comparison, threshold level and sparkline.</summary>
+    /// <summary>The metrics for <paramref name="day"/>: each value, its comparison, threshold level and sparkline. A Visitor
+    /// gets only the day of the live meeting they're in (its numbers slides), never the history.</summary>
     public async Task<MetricDay> GetDayAsync(DateOnly day, CancellationToken ct = default)
     {
-        var groups = (await ListAsync(false, ct)).Where(g => g.Metrics.Count > 0).ToList();
+        if (!Briefs.MeetingAccess.SeatedOn(user, meetings, day)) RequireRead();
+        var groups = (await GroupsAsync(false, ct)).Where(g => g.Metrics.Count > 0).ToList();
         if (groups.Count == 0) return new MetricDay(day, []);
         var ids = groups.SelectMany(g => g.Metrics).Select(m => m.Id).ToList();
         var from = day.AddDays(-LookBackDays);

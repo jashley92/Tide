@@ -246,7 +246,8 @@ app.MapGet("/files/{id:guid}/inline", async (Guid id, ScreenshotService shots, H
     if (await shots.OpenAsync(id, http.Request.Headers.IfNoneMatch.ToString(), ct) is not { } file) return Results.NotFound();
     // The browser keeps a copy for a few minutes, then asks again with the entity tag (the file's hash): a 304 while the
     // bytes match and the viewer may still see it, a 404 once either has changed. Revocation reaches a browser in minutes.
-    http.Response.Headers.CacheControl = "private, max-age=300, must-revalidate";
+    // A Visitor's slide image is theirs only while they're in the meeting: never kept, so each look asks again.
+    http.Response.Headers.CacheControl = shots.NoStore ? "no-store" : "private, max-age=300, must-revalidate";
     http.Response.Headers.XContentTypeOptions = "nosniff";
     http.Response.Headers.ETag = file.ETag;
     if (file.NotModified) return Results.StatusCode(StatusCodes.Status304NotModified);

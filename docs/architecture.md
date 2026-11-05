@@ -28,6 +28,19 @@
 - **Authorization.** It runs on permission claims. `Policies.Required` holds one policy per permission, and roles are
   bundles of permissions (`RoleDefinitions`). Services check the permission again themselves, so a page that forgets
   can't write.
+- **Roles.** Analyst, Action owner, Reader and Admin, and two that only read. A **Viewer** holds `ReadTeamEdition`,
+  `ReadActions`, `MeetingNotes` and `JoinMeetings` and neither `WorkActions` nor `WriteArticles`: every write the team
+  edition opens up also asks for one of those two (`PermissionChecks.Contributes`, as `ActionService.CanComment` does),
+  so a Viewer reads every page and action and writes nothing but their own meeting notes. A **Visitor** holds
+  `ReadPublished` and `JoinMeetings` only. `Capabilities` lists every activity and what it needs; the Role mappings page
+  and docs/INSTALL.md show it as a table.
+- **A Visitor's access window.** A Visitor reads team-edition content only from a seat in a live meeting, and only that
+  meeting's brief. Present mode takes their seat (`LiveMeetings.Join`) before it reads anything; the services then ask
+  `MeetingAccess` on every read (`IMeetingsInProgress.SeatedIn`): the brief and its edition actions, the day's numbers and
+  open actions, the meeting record (without its notes), the CVE chips, the We run chips of that brief's articles, the
+  action or product card the presenter has open for the room, and its articles' screenshots on the inline image
+  endpoint (served `no-store`). Everything else, and all of it once the meeting ends or they leave it, is refused.
+  The slides draw no links out for them, and their joins are recorded as attendance like anyone's.
 
 ## Data
 
