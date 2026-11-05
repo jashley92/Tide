@@ -210,6 +210,34 @@ public class SourcePullTests : IDisposable
     }
 
     [Fact]
+    public async Task TheScheduledPass_DoesntPollAgain_ASourcePulledOrPausedAfterItsListWasRead()
+    {
+        Guid[] ids =
+        [
+            await Source("First news", "https://first.example.com/feed"),
+            await Source("Second news", "https://second.example.com/feed"),
+            await Source("Third news", "https://third.example.com/feed"),
+        ];
+        _db.Http.Set("https://first.example.com/feed", Rss("One"));
+        _db.Http.Set("https://second.example.com/feed", Rss("Two"));
+        _db.Http.Set("https://third.example.com/feed", Rss("Three"));
+        _db.Http.During = async () =>
+        {
+            // The pass is fetching its first source (whichever it took): an analyst pulls another, and an administrator
+            // pauses the last.
+            var others = ids.Where(id => !_db.Polls.IsRunning(id)).ToList();
+            others.Should().HaveCount(2);
+            As(AppRole.Analyst);
+            await Intake().PullNowAsync(others[0]);
+            await using var ctx = _db.Context();
+            await ctx.Sources.Where(s => s.Id == others[1]).ExecuteUpdateAsync(u => u.SetProperty(s => s.Enabled, false));
+        };
+
+        (await Intake().PollDueAsync()).Should().Be(1, "only the first source is the pass's own; the pulled one's item came with the pull");
+        _db.Http.Requests.Should().HaveCount(2, "the pull's fetch and the pass's first; the pulled and the paused aren't fetched again");
+    }
+
+    [Fact]
     public async Task PollNow_WhileAPullIsUnderWay_IsRefused_AndTheGuardIsLetGoOnAFault()
     {
         var id = await Source();

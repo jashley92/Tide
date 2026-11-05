@@ -18,6 +18,7 @@ public sealed class SessionPermissionRefresher
     private readonly Func<IRoleDirectory> _directoryFactory;
     private readonly bool _windowsMode;
     private readonly SidNames? _sids;
+    private readonly WindowsNames _names;
 
     public SessionPermissionRefresher(IRoleDirectory directory, bool windowsMode)
         : this(() => directory, windowsMode) { }
@@ -27,11 +28,13 @@ public sealed class SessionPermissionRefresher
     /// user, whose auth-state provider needs this — taking it eagerly deadlocks the container at startup.
     /// </param>
     /// <param name="sids">The group-name lookup (tests stand in for the directory here); the sign-in's by default.</param>
-    public SessionPermissionRefresher(Func<IRoleDirectory> directory, bool windowsMode, SidNames? sids = null)
+    /// <param name="names">The display-name and email lookup (tests stand in for AD here); the sign-in's by default.</param>
+    public SessionPermissionRefresher(Func<IRoleDirectory> directory, bool windowsMode, SidNames? sids = null, WindowsNames? names = null)
     {
         _directoryFactory = directory;
         _windowsMode = windowsMode;
         _sids = sids;
+        _names = names ?? WindowsNames.Shared;
     }
 
     private IRoleDirectory Directory => _directoryFactory();
@@ -44,12 +47,21 @@ public sealed class SessionPermissionRefresher
         principal.Identity?.IsAuthenticated != true ? null
             : Apply(principal, _windowsMode ? RoleClaimsTransformer.GroupCandidates(principal, _sids) : null);
 
-    /// <summary>As <see cref="Refresh"/>, without holding the caller's thread while group names are looked up.</summary>
-    public async Task<ClaimsPrincipal?> RefreshAsync(ClaimsPrincipal principal) =>
-        principal.Identity?.IsAuthenticated != true ? null
-            : Apply(principal, _windowsMode ? await RoleClaimsTransformer.GroupCandidatesAsync(principal, _sids) : null);
+    /// <summary>As <see cref="Refresh"/>, without holding the caller's thread while group names are looked up. A Windows
+    /// session that started with no email (AD slow or down when the circuit connected) also gets its AD address once AD
+    /// has answered, so Send a test copy works without a reload.</summary>
+    public async Task<ClaimsPrincipal?> RefreshAsync(ClaimsPrincipal principal)
+    {
+        if (principal.Identity?.IsAuthenticated != true) return null;
+        if (!_windowsMode) return Apply(principal, null);
+        var groups = await RoleClaimsTransformer.GroupCandidatesAsync(principal, _sids);
+        var lateEmail = principal.HasClaim(c => c.Type == ClaimTypes.Email) || ApiTokenAuthenticationHandler.IsToken(principal)
+            ? null : await _names.EmailAsync(principal.Identity.Name);
+        return Apply(principal, groups, lateEmail);
+    }
 
-    private ClaimsPrincipal? Apply(ClaimsPrincipal principal, RoleClaimsTransformer.GroupNames? groups)
+    // lateEmail: an AD address the session didn't have, added to it.
+    private ClaimsPrincipal? Apply(ClaimsPrincipal principal, RoleClaimsTransformer.GroupNames? groups, string? lateEmail = null)
     {
         var heldRoles = AppRoleClaims(principal).Select(c => c.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var heldPerms = principal.FindAll(AppClaimTypes.Permission).Select(c => c.Value).ToHashSet(StringComparer.Ordinal);
@@ -63,7 +75,7 @@ public sealed class SessionPermissionRefresher
         var perms = Directory.PermissionsForRoles(roles);
         var permNames = perms.Select(p => p.ToString()).ToHashSet(StringComparer.Ordinal);
 
-        if (heldRoles.SetEquals(roles) && heldPerms.SetEquals(permNames)) return null;
+        if (heldRoles.SetEquals(roles) && heldPerms.SetEquals(permNames) && lateEmail is null) return null;
 
         // Keep each authenticated identity minus the app-role and permission claims, then add the current ones.
         var identities = principal.Identities
@@ -77,6 +89,7 @@ public sealed class SessionPermissionRefresher
         foreach (var e in principal.Identities.Where(i => !i.IsAuthenticated && i.Label == RoleClaimsTransformer.GrantsLabel)
                      .SelectMany(i => i.FindAll(ClaimTypes.Email)))
             granted.AddClaim(e.Clone());
+        if (lateEmail is not null) granted.AddClaim(new Claim(ClaimTypes.Email, lateEmail));
         foreach (var r in roles) granted.AddClaim(new Claim(ClaimTypes.Role, r));
         foreach (var p in permNames) granted.AddClaim(new Claim(AppClaimTypes.Permission, p));
         identities.Add(granted);
