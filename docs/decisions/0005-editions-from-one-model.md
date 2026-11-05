@@ -21,6 +21,8 @@ Keeping two hand-edited copies invites a restricted bullet leaking into the publ
   follow-up actions raised from it. The company-wide edition never carries either.
 - The brief's opening note has a TLP of its own (added October 2026; CLEAR for briefs written before). An edition
   whose ceiling is below it leaves the note out, and one that carries it is marked at least that high.
+- The team's opening note (added November 2026) is the team edition's alone: the cut carries it there when it isn't
+  blank (`BriefEdition.ShowTeamNote`) and never on the company-wide edition, whatever its ceiling.
 - The ceilings are administered in the app. The public one defaults to GREEN and the team one to AMBER+STRICT.
 
 ## Consequences

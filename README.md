@@ -169,7 +169,8 @@ when.
 ![Article editor](docs/screenshots/article-editor.png)
 
 ### Present mode
-A full-screen, keyboard-driven slide deck: a title slide with the agenda, the opening numbers, one slide per article,
+A full-screen, keyboard-driven slide deck: a title slide with the agenda, the team's opening note (what's coming up,
+the week's phishing trends; team edition only, carried from the previous brief), the opening numbers, one slide per article,
 and a wrap-up with every recommended action not yet raised. Screenshots zoom, and articles are ticked off as
 discussed, and the editions can be switched on screen.
 

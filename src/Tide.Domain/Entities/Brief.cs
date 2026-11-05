@@ -25,6 +25,11 @@ public class Brief : AuditableEntity
     /// carries it is marked at least this high.</summary>
     public TlpLevel IntroTlp { get; set; } = TlpLevel.Clear;
 
+    /// <summary>The team's opening note, in Markdown: what's coming up and the week's phishing trends, read at the start
+    /// of the meeting. The security team edition only (its own slide, a section of its email); never the company-wide
+    /// edition. A new brief starts with the previous brief's, so standing items roll forward.</summary>
+    public string? TeamNote { get; set; }
+
     /// <summary>The meeting's notes from before they were kept per person (<see cref="MeetingNote"/>). The upgrade moves
     /// them into one note each and empties this; nothing writes it now.</summary>
     public string? MeetingNotes { get; set; }

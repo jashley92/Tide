@@ -1113,6 +1113,10 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("TeamNote")
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("BriefDate")

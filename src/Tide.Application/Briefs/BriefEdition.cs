@@ -50,6 +50,14 @@ public sealed record BriefEdition(
     /// each at its article's TLP, so they count in <see cref="Marking"/>.</summary>
     public Actions.OpenActionsReview? Open { get; init; }
 
+    /// <summary>Whether this edition carries the team's opening note (<see cref="Brief.TeamNote"/>): the team edition,
+    /// when the note isn't blank. The company-wide edition never does, whatever its ceiling. Everything that shows the
+    /// note (the slide, the email, the preview) asks this, so nothing reads the note past an edition that leaves it out.</summary>
+    public bool ShowTeamNote => Edition == Edition.Team && !string.IsNullOrWhiteSpace(Brief.TeamNote);
+
+    /// <summary>The team's opening note when this edition carries it, otherwise null.</summary>
+    public string? TeamNote => ShowTeamNote ? Brief.TeamNote : null;
+
     /// <summary>The highest marking anything in this edition carries: what the edition is marked as.</summary>
     public TlpLevel Marking => Articles.Select(a => a.Marking).Append(ShowIntro ? Brief.IntroTlp : TlpLevel.Clear)
         .Append(Open?.Marking ?? TlpLevel.Clear).Max();

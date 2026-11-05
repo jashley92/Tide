@@ -139,6 +139,7 @@ public static class HistoryFormatter
         [nameof(Brief.AnalystName)] = "Presenter",
         [nameof(Brief.Intro)] = "Opening note",
         [nameof(Brief.IntroTlp)] = "Opening note marking",
+        [nameof(Brief.TeamNote)] = "Team opening note",
         [nameof(Brief.MeetingNotes)] = "Meeting notes",
         [nameof(Brief.MeetingHeldAtUtc)] = "Meeting held",
         [nameof(Brief.PresentedAtUtc)] = "Meeting ended",
