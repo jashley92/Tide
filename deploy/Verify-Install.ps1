@@ -60,15 +60,13 @@ if (Get-Module -ListAvailable WebAdministration) {
 
     # WebSockets: the feature, then whether IIS has them on where TIDE answers (the site, or the application under it
     # that the URL's path names).
-    $feature = Get-TideWebSocketFeature
-    $featureState = if ($feature.Installed) { 'installed' } elseif ($null -eq $feature.Installed) { "unreadable: $($feature.Detail)" } else { 'not installed' }
-    Report ($feature.Installed -eq $true) "The IIS WebSocket Protocol feature ($($feature.Name)) is installed (it's $featureState)" "$($feature.InstallCommand); $wsFix"
-    $appPath = ([Uri]$Url).AbsolutePath.Trim('/')
-    $iisPath = if ($appPath) { "$SiteName/$appPath" } else { $SiteName }
+    $iisPath = Resolve-TideIisPath $SiteName ([Uri]$Url).AbsolutePath
     $physical = try { [Environment]::ExpandEnvironmentVariables((Get-ItemProperty "IIS:\Sites\$($iisPath.Replace('/', '\'))" -Name physicalPath)) } catch { $null }
-    $wsConfig = Get-TideWebSocketConfig -IisPath $iisPath -SitePath $physical
-    $wsVerdict = Get-TideWebSocketVerdict -Config $wsConfig
-    Report $wsVerdict.Ok "WebSockets are on for '$iisPath' (system.webServer/webSocket: $($wsConfig.Effective))" "$($wsVerdict.Problems -join ' ') $wsFix"
+    $ws = Test-TideWebSockets -IisPath $iisPath -SitePath $physical
+    $feature = $ws.Feature
+    $featureState = if ($feature.Installed) { 'installed' } elseif ($null -eq $feature.Installed) { "unreadable: $($feature.Detail)" } else { 'not installed' }
+    Report $ws.FeatureOk "The IIS WebSocket Protocol feature ($($feature.Name)) is installed (it's $featureState)" "$($feature.InstallCommand); $wsFix"
+    Report $ws.ConfigOk "WebSockets are on for '$iisPath' (system.webServer/webSocket: $($ws.Config.Effective))" "$($ws.ConfigProblems -join ' ') $wsFix"
 }
 
 Report ((Get-Status "$base/health/live") -eq 200) "The app answers (/health/live)" "500.30/500.37: read the Application event log and stdout logs"

@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.Http.Connections.Features;
 using Microsoft.AspNetCore.SignalR;
@@ -13,9 +12,13 @@ namespace Tide.Web.Services;
 /// </summary>
 public static class ConnectionTransport
 {
-    /// <summary>What to do when a circuit isn't on WebSockets: the deploy scripts and docs/INSTALL.md say the same.</summary>
-    public const string Fix = "Install the IIS WebSocket Protocol feature (Install-WindowsFeature Web-WebSockets) and check any reverse "
-        + "proxy or load balancer passes the Upgrade and Connection headers.";
+    /// <summary>
+    /// What to do when a connection isn't on WebSockets: word for word what Get-TideWebSocketFixText in
+    /// deploy\lib\TideWebSockets.ps1 returns (a test holds the two equal), which the deploy scripts and docs say too.
+    /// </summary>
+    public const string Fix = "Install the IIS WebSocket Protocol feature (Install-WindowsFeature Web-WebSockets; on Windows 10/11 "
+        + "Enable-WindowsOptionalFeature -Online -FeatureName IIS-WebSockets -All), and check any reverse proxy or load "
+        + "balancer passes the Upgrade and Connection headers.";
 
     /// <summary>The transports in the order they're shown: the one wanted first.</summary>
     public static readonly IReadOnlyList<HttpTransportType> Shown =
@@ -35,17 +38,27 @@ public static class ConnectionTransport
 }
 
 /// <summary>
-/// A hub filter on Blazor's hub: while one of its methods runs (starting or reconnecting a circuit among them), the
-/// connection's transport is ambient, so <see cref="CircuitTransport"/>, which Blazor calls from inside them, can read it.
+/// A hub filter on Blazor's hub. It counts each connection in <see cref="TransportCounts"/> by its transport while it's
+/// open, and while a hub method that starts or reconnects a circuit runs, it makes the connection's transport ambient, so
+/// <see cref="PresenceCircuit"/>, whose <c>OnConnectionUpAsync</c> Blazor calls from inside that method, can keep it.
 /// </summary>
-public sealed class TransportHubFilter : IHubFilter
+public sealed class TransportHubFilter(TransportCounts counts) : IHubFilter
 {
+    /// <summary>Blazor's hub methods that start, reconnect or resume a circuit. Every other call passes straight through.</summary>
+    internal static readonly IReadOnlySet<string> CircuitMethods = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "StartCircuit", "ConnectCircuit", "ResumeCircuit",
+    };
+
     private static readonly AsyncLocal<HttpTransportType?> Ambient = new();
 
-    /// <summary>The transport of the hub connection whose method is running here, or null outside one.</summary>
+    /// <summary>The transport of the hub connection whose circuit method is running here, or null outside one.</summary>
     public static HttpTransportType? Current => Ambient.Value;
 
-    public async ValueTask<object?> InvokeMethodAsync(HubInvocationContext invocationContext, Func<HubInvocationContext, ValueTask<object?>> next)
+    public ValueTask<object?> InvokeMethodAsync(HubInvocationContext invocationContext, Func<HubInvocationContext, ValueTask<object?>> next) =>
+        CircuitMethods.Contains(invocationContext.HubMethodName) ? WithTransportAsync(invocationContext, next) : next(invocationContext);
+
+    private static async ValueTask<object?> WithTransportAsync(HubInvocationContext invocationContext, Func<HubInvocationContext, ValueTask<object?>> next)
     {
         var before = Ambient.Value;
         Ambient.Value = ConnectionTransport.Of(invocationContext.Context);
@@ -53,25 +66,36 @@ public sealed class TransportHubFilter : IHubFilter
         finally { Ambient.Value = before; }
     }
 
+    // SignalR calls OnDisconnectedAsync only for a connection whose OnConnectedAsync succeeded, so the two pair up.
     public async Task OnConnectedAsync(HubLifetimeContext context, Func<HubLifetimeContext, Task> next)
     {
-        var before = Ambient.Value;
-        Ambient.Value = ConnectionTransport.Of(context.Context);
-        try { await next(context); }
-        finally { Ambient.Value = before; }
+        await next(context);
+        if (ConnectionTransport.Of(context.Context) is { } t) counts.Opened(t);
+    }
+
+    public async Task OnDisconnectedAsync(HubLifetimeContext context, Exception? exception, Func<HubLifetimeContext, Exception?, Task> next)
+    {
+        try { await next(context, exception); }
+        finally
+        {
+            if (ConnectionTransport.Of(context.Context) is { } t) counts.Closed(t);
+        }
     }
 }
 
-/// <summary>One transport's circuits: how many have connected over it since the app started, and how many are open on it now.</summary>
+/// <summary>One transport's connections: how many have opened over it since the app started, and how many are open on it now.</summary>
 public sealed record TransportCount(HttpTransportType Transport, string Name, long SinceStart, long OpenNow);
 
-/// <summary>Counts circuits by transport since the app started, for Diagnostics: whether other people are falling back.</summary>
+/// <summary>
+/// Counts Blazor's connections by transport since the app started, for Diagnostics: whether other people are falling
+/// back. Each connection counts once; a page that reconnects opens a new one, which counts again.
+/// </summary>
 public sealed class TransportCounts
 {
     private readonly Lock _gate = new();
     private readonly Dictionary<HttpTransportType, (long SinceStart, long OpenNow)> _counts = [];
 
-    /// <summary>A circuit connected for the first time over <paramref name="transport"/>.</summary>
+    /// <summary>A connection opened over <paramref name="transport"/>.</summary>
     public void Opened(HttpTransportType transport)
     {
         lock (_gate)
@@ -81,31 +105,17 @@ public sealed class TransportCounts
         }
     }
 
-    /// <summary>An open circuit reconnected over another transport: it's open on the new one now (and still counted once).</summary>
-    public void Moved(HttpTransportType from, HttpTransportType to)
+    /// <summary>A connection on <paramref name="transport"/> closed.</summary>
+    public void Closed(HttpTransportType transport)
     {
-        if (from == to) return;
         lock (_gate)
         {
-            Close(from);
-            var (since, open) = _counts.GetValueOrDefault(to);
-            _counts[to] = (since, open + 1);
+            var (since, open) = _counts.GetValueOrDefault(transport);
+            _counts[transport] = (since, Math.Max(0, open - 1));
         }
     }
 
-    /// <summary>A circuit on <paramref name="transport"/> closed.</summary>
-    public void Closed(HttpTransportType transport)
-    {
-        lock (_gate) Close(transport);
-    }
-
-    private void Close(HttpTransportType transport)
-    {
-        var (since, open) = _counts.GetValueOrDefault(transport);
-        _counts[transport] = (since, Math.Max(0, open - 1));
-    }
-
-    /// <summary>Every transport, in <see cref="ConnectionTransport.Shown"/> order, with zeros for one no circuit used.</summary>
+    /// <summary>Every transport, in <see cref="ConnectionTransport.Shown"/> order, with zeros for one no connection used.</summary>
     public IReadOnlyList<TransportCount> Snapshot()
     {
         lock (_gate)
@@ -114,47 +124,5 @@ public sealed class TransportCounts
                 var (since, open) = _counts.GetValueOrDefault(t);
                 return new TransportCount(t, ConnectionTransport.Name(t), since, open);
             })];
-    }
-}
-
-/// <summary>
-/// The transport this circuit is on, for the page that asks (scoped: one per circuit, as the pages' services are), and
-/// its count in <see cref="TransportCounts"/>. Blazor calls <see cref="OnConnectionUpAsync"/> from inside the hub method
-/// that started or reconnected the circuit, where <see cref="TransportHubFilter"/> has made the transport ambient.
-/// </summary>
-public sealed class CircuitTransport(TransportCounts counts) : CircuitHandler
-{
-    private HttpTransportType? _counted;
-
-    /// <summary>The transport this circuit connected over last, or null outside a circuit (a prerender, a test's scope).</summary>
-    public HttpTransportType? Current { get; private set; }
-
-    public override Task OnConnectionUpAsync(Circuit circuit, CancellationToken cancellationToken)
-    {
-        Connected(TransportHubFilter.Current);
-        return Task.CompletedTask;
-    }
-
-    public override Task OnCircuitClosedAsync(Circuit circuit, CancellationToken cancellationToken)
-    {
-        Closed();
-        return Task.CompletedTask;
-    }
-
-    /// <summary>The circuit (re)connected over <paramref name="transport"/>; nothing when it isn't known.</summary>
-    public void Connected(HttpTransportType? transport)
-    {
-        if (transport is not { } t) return;
-        Current = t;
-        if (_counted is { } before) counts.Moved(before, t);
-        else counts.Opened(t);
-        _counted = t;
-    }
-
-    /// <summary>The circuit closed: it no longer counts as open.</summary>
-    public void Closed()
-    {
-        if (_counted is { } t) counts.Closed(t);
-        _counted = null;
     }
 }

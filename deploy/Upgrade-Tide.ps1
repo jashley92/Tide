@@ -511,10 +511,9 @@ Write-Info "ASP.NET Core Module and the .NET $runtime runtime are present."
 # 3a'. WEBSOCKETS, a warning only: without them TIDE still works, over long polling (a request per keystroke), so they
 # never stop an upgrade. Install-Tide.ps1 installs the feature and turns them on for the site.
 try {
-    $wsFeature = Get-TideWebSocketFeature
-    $wsVerdict = Get-TideWebSocketVerdict -Feature $wsFeature -Config (Get-TideWebSocketConfig -IisPath $iisPath -SitePath $SitePath)
-    if ($wsVerdict.Ok) { Write-Info "WebSockets: the IIS WebSocket Protocol feature is installed and on for '$iisPath'." }
-    else { Write-Warn2 ("WARNING: WebSockets won't work, so TIDE falls back to long polling. $($wsVerdict.Problems -join ' ') " + (Get-TideWebSocketFixText)) }
+    $ws = Test-TideWebSockets -IisPath $iisPath -SitePath $SitePath
+    if ($ws.Ok) { Write-Info "WebSockets: the IIS WebSocket Protocol feature is installed and on for '$iisPath'." }
+    else { Write-Warn2 ("WARNING: WebSockets won't work, so TIDE falls back to long polling. $($ws.Problems -join ' ') " + (Get-TideWebSocketFixText)) }
 } catch {
     Write-Warn2 "WARNING: couldn't check WebSockets ($($_.Exception.Message)). $(Get-TideWebSocketFixText)"
 }

@@ -205,12 +205,16 @@ foreach ($site in $(if ($underParent) { @() } else { Get-Website })) {
 # Never installed behind your back: asked for interactively, installed unasked only with -InstallWebSockets (or
 # InstallWebSockets = $true in the answers file). An unattended run without either warns and carries on: TIDE still
 # works without it, over long polling.
-$wsFeature = Get-TideWebSocketFeature
-if ($wsFeature.Installed -ne $true) {
+$ws = Test-TideWebSockets
+$wsFeature = $ws.Feature
+if (-not $ws.FeatureOk) {
     $unattended = [bool]$ConfigFile -or -not [Environment]::UserInteractive -or
         @([Environment]::GetCommandLineArgs() | Where-Object { $_ -match '^-NonI' }).Count -gt 0
     $state = if ($null -eq $wsFeature.Installed) { "couldn't be read ($($wsFeature.Detail))" } else { "isn't installed" }
-    Write-Host "    The IIS WebSocket Protocol feature ($($wsFeature.Name)) $state. $(Get-TideWebSocketWhy)" -ForegroundColor Yellow
+    $why = ("TIDE keeps each open page connected to the server over a WebSocket. Without IIS's WebSocket Protocol " +
+            "feature it falls back to long polling: it still works, but every keystroke becomes its own request, so " +
+            "typing lags and the server does far more work.")
+    Write-Host "    The IIS WebSocket Protocol feature ($($wsFeature.Name)) $state. $why" -ForegroundColor Yellow
     $install = [bool]$InstallWebSockets
     if (-not $install -and -not $unattended) {
         try {
@@ -399,7 +403,7 @@ Write-Host "    Anonymous under: $(($carved | ForEach-Object { $(if ($underParen
 # WebSockets on for TIDE (system.webServer/webSocket): its own <location> entry, or web.config, if either had them off.
 # Server-wide, other sites keep what they have; the site's entry wins over it.
 foreach ($c in @(Enable-TideWebSocketConfig -IisPath $iisPath -SitePath $SitePath -Appcmd $appcmd)) { Write-Host "    WebSockets: $c" -ForegroundColor Gray }
-$wsConfig = Get-TideWebSocketConfig -IisPath $iisPath -SitePath $SitePath
+$wsConfig = (Test-TideWebSockets -IisPath $iisPath -SitePath $SitePath -SkipFeature).Config
 if ($wsConfig.Server -eq 'false' -and $wsConfig.Site -ne 'false') {
     Write-Host "    WebSockets are off server-wide but on for '$iisPath' (its own entry wins)." -ForegroundColor Gray
 }

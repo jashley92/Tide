@@ -147,7 +147,8 @@ else
                     }
                 </tbody>
             </table>
-            <p class="small tide-muted mt-2 mb-0">Each open page keeps one connection to the server. Anything but WebSockets
+            <p class="small tide-muted mt-2 mb-0">Each open page keeps one connection to the server, and opens a new one when it
+                reconnects: each counts here. Anything but WebSockets
                 makes every click and keystroke a request of its own.@if (report.Connection.NeedsFix) { <text> @ConnectionTransport.Fix</text> }</p>
         </section>
     </div>

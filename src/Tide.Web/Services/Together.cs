@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Components.Server.Circuits;
+using Microsoft.AspNetCore.Http.Connections;
 using Tide.Application.Abstractions;
 
 namespace Tide.Web.Services;
@@ -101,11 +102,19 @@ public sealed class Presence
 /// <summary>
 /// The circuit a page belongs to, so its presence can be cleared when the tab closes or drops without the page being
 /// disposed, along with a card it was dragging on the board and its seat in a live meeting. One per circuit (scoped), and the circuit's handler.
+/// It also keeps the transport the circuit's connection is on, for Diagnostics' "Your connection".
 /// </summary>
 public sealed class PresenceCircuit(Presence presence, BoardDrags? drags = null, LiveMeetings? meetings = null) : CircuitHandler
 {
     /// <summary>This circuit's id once it has opened; empty while prerendering.</summary>
     public string CircuitId { get; private set; } = "";
+
+    /// <summary>
+    /// The transport this circuit last (re)connected over, or null outside a circuit (a prerender, a test's scope). Blazor
+    /// calls <see cref="OnConnectionUpAsync"/> from inside the hub method that started or reconnected the circuit, where
+    /// <see cref="TransportHubFilter"/> has made the transport ambient.
+    /// </summary>
+    public HttpTransportType? Transport { get; private set; }
 
     public override Task OnCircuitOpenedAsync(Circuit circuit, CancellationToken cancellationToken)
     {
@@ -129,11 +138,18 @@ public sealed class PresenceCircuit(Presence presence, BoardDrags? drags = null,
 
     public override Task OnConnectionUpAsync(Circuit circuit, CancellationToken cancellationToken)
     {
+        Connected(TransportHubFilter.Current);
         meetings?.SetConnected(circuit.Id, true);
         return Task.CompletedTask;
     }
 
     public void Opened(string circuitId) => CircuitId = circuitId;
+
+    /// <summary>The circuit (re)connected over <paramref name="transport"/>; nothing when it isn't known.</summary>
+    public void Connected(HttpTransportType? transport)
+    {
+        if (transport is { } t) Transport = t;
+    }
 
     public void Closed(string circuitId)
     {

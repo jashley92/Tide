@@ -46,6 +46,11 @@ builder.Logging.AddFilter("Microsoft.Extensions.Diagnostics.HealthChecks", LogLe
 builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
 
 // --- Blazor Server ---
+// Blazor's connections by transport (WebSockets, or long polling where IIS or a proxy can't carry them) since the app
+// started, for Diagnostics: counted by TransportHubFilter, which also hands each circuit its own (PresenceCircuit.Transport).
+var transportCounts = new TransportCounts();
+builder.Services.AddSingleton(transportCounts);
+
 // A session whose connection drops (a laptop asleep, a network blip) is kept for 20 minutes rather than the default 3,
 // so coming back to an article being edited picks up where it was, unsaved changes and all.
 builder.Services.AddRazorComponents()
@@ -55,8 +60,8 @@ builder.Services.AddRazorComponents()
     .AddHubOptions(o =>
     {
         o.MaximumReceiveMessageSize = 256 * 1024;
-        // Which transport (WebSockets, or a fallback) each circuit is on, for Diagnostics: see CircuitTransport.
-        o.AddFilter(new TransportHubFilter());
+        // Which transport (WebSockets, or a fallback) each connection and circuit is on, for Diagnostics.
+        o.AddFilter(new TransportHubFilter(transportCounts));
     });
 
 // --- Data Protection ---
@@ -126,16 +131,12 @@ builder.Services.AddSingleton<Presence>();
 builder.Services.AddSingleton<BoardDrags>();
 builder.Services.AddSingleton<LiveMeetings>();
 builder.Services.AddSingleton<Tide.Application.Briefs.IMeetingsInProgress>(sp => sp.GetRequiredService<LiveMeetings>());
-// Clears a closed tab's presence: the circuit's handler, and the circuit id presence notes join with.
+// Clears a closed tab's presence: the circuit's handler, and the circuit id presence notes join with. It also keeps the
+// transport the circuit is on, for Diagnostics.
 builder.Services.AddScoped<PresenceCircuit>();
 builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler>(sp => sp.GetRequiredService<PresenceCircuit>());
 // The circuit's user is ambient during each of its activities, so a refusal can be logged with who asked.
 builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler, AmbientUserCircuitHandler>();
-// The transport each circuit connected over (WebSockets, or long polling where IIS or a proxy can't carry them), and the
-// counts since the app started, for Diagnostics.
-builder.Services.AddSingleton<TransportCounts>();
-builder.Services.AddScoped<CircuitTransport>();
-builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler>(sp => sp.GetRequiredService<CircuitTransport>());
 builder.Services.AddHostedService<ReminderHostedService>();
 builder.Services.AddHostedService<IntakeHostedService>();
 builder.Services.AddHostedService<MetricImportHostedService>();
