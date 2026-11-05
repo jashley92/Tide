@@ -114,17 +114,18 @@ else
     [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
 
     /// <summary>
-    /// The layout this person last chose with the List / Board tab, kept on the server so it follows them. Read once
-    /// when the page opens (and carried from the prerender to the interactive render, so not read twice); it's what an
-    /// address without <c>layout</c> shows. A link's own <c>layout</c> wins for that visit without changing it.
+    /// The layout this person last chose with the List / Board tab (the board until they choose), kept on the server so
+    /// it follows them. Read once when the page opens (and carried from the prerender to the interactive render, so not
+    /// read twice); it's what an address without <c>layout</c> shows. A link's own <c>layout</c> wins for that visit
+    /// without changing it.
     /// </summary>
     [PersistentState]
     public string? SavedLayout { get; set; }
 
     private bool SavedBoard => SavedLayout == UserPreferences.Board;
 
-    // The saved board was shown for an address that didn't say so: once drawn, the address is made to say it.
-    private bool _sayBoard;
+    // The address didn't say which layout: once drawn, it's made to say the one shown.
+    private bool _sayLayout;
 
     private static readonly (ActionView, string)[] Views =
     [
@@ -219,7 +220,7 @@ else
         // closed) or to the list grouped by kind asks for the list, so it opens as the list.
         _asBoard = LayoutParam is not null ? string.Equals(LayoutParam, "board", StringComparison.OrdinalIgnoreCase)
             : SavedBoard && OnBoard(_view) && !_groupByKind;
-        _sayBoard = LayoutParam is null && _asBoard;
+        _sayLayout = LayoutParam is null;
         if (_asBoard && !OnBoard(_view)) _view = ActionView.Open;
         _ruleId = _rules.Any(r => r.Id == RuleParam && r.ShowAsFilter) ? RuleParam : null;
         _teamId = TeamParam;
@@ -250,11 +251,12 @@ else
 
     protected override void OnAfterRender(bool firstRender)
     {
-        if (!_sayBoard) return;
-        _sayBoard = false;
+        if (!_sayLayout) return;
+        _sayLayout = false;
         // Only the layout is added (the team, holder and the rest stay as they were), and recorded first so it isn't re-read.
-        _applied = (ViewParam, TeamParam, AssigneeParam, UserPreferences.Board, RuleParam, GroupParam);
-        Nav.NavigateTo(Nav.GetUriWithQueryParameter("layout", UserPreferences.Board), replace: true);
+        var layout = _asBoard ? UserPreferences.Board : UserPreferences.List;
+        _applied = (ViewParam, TeamParam, AssigneeParam, layout, RuleParam, GroupParam);
+        Nav.NavigateTo(Nav.GetUriWithQueryParameter("layout", layout), replace: true);
     }
 
     // The tab is the one place the preference changes; a link's layout only applies to its visit.
@@ -269,15 +271,12 @@ else
         await Load();
     }
 
-    // The list is written as no layout, as it always was, unless this person's own is the board: then the address
-    // says list, so a reload or a copy of it still opens the list.
-    private string? LayoutInAddress => _asBoard ? UserPreferences.Board : SavedBoard ? UserPreferences.List : null;
-
     private void Remember()
     {
-        var layout = LayoutInAddress;
+        // The address always says which layout it is, so a reload or a copy of it opens what's shown.
+        var layout = _asBoard ? UserPreferences.Board : UserPreferences.List;
         _applied = (_view.ToString().ToLowerInvariant(), null, null, layout, _ruleId, !_asBoard && _groupByKind ? "kind" : null);
-        Nav.NavigateTo($"actions?view={_view.ToString().ToLowerInvariant()}{(layout is null ? "" : $"&layout={layout}")}{(!_asBoard && _groupByKind ? "&group=kind" : "")}{(_ruleId is { } r ? $"&rule={r}" : "")}", replace: true);
+        Nav.NavigateTo($"actions?view={_view.ToString().ToLowerInvariant()}&layout={layout}{(!_asBoard && _groupByKind ? "&group=kind" : "")}{(_ruleId is { } r ? $"&rule={r}" : "")}", replace: true);
     }
 
     private void SetRule(Guid? id)

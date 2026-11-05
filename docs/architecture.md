@@ -86,10 +86,11 @@
   id and the preference's name, so they follow them to another computer. `UserPreferences` lists the names, the values
   each may hold (the first is the default) and the permission that opens its page; `UserPreferenceService` reads and
   saves only the signed-in person's. They aren't shared data, so a Viewer keeps one too and they aren't audited. The
-  one today is the Actions page's List or Board (`actions.layout`): the tab saves it, an address without `layout`
-  opens it (read once as the page opens, kept across the prerender) and is then given `layout=board` when that's what
-  shows, and a link's own `layout` wins for that visit without changing it. A link to a view only the list has
-  (Overdue, Recently closed, grouped by kind) opens the list.
+  one today is the Actions page's Board or List (`actions.layout`, the board by default): the tab saves it, an address
+  without `layout` opens it (read once as the page opens, kept across the prerender), and a link's own `layout` wins
+  for that visit without changing it. The page's address always says `layout=board` or `layout=list`, so a reload or
+  a copy opens what's shown. A link to a view only the list has (Overdue, Recently closed, grouped by kind) opens the
+  list.
 
 ## TLP and editions
 

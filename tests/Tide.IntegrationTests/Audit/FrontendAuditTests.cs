@@ -332,10 +332,10 @@ public class FrontendAuditTests(TideApp app) : IClassFixture<TideApp>
     [Fact]
     public async Task TheActionsPage_ALinkThatChangesOnlyTheView_ShowsThatView()
     {
-        await using var r = await RenderAsync<ActionsBoard>(app, "/actions?view=closed");
+        await using var r = await RenderAsync<ActionsBoard>(app, "/actions?view=closed&layout=list");
         (await r.Html()).Should().Contain("Nothing closed in the last 90 days.");
 
-        // The sidebar's Actions (no view: Mine), then a link to the overdue view: the page stays open, the address changes
+        // The list's Mine (no view), then a link to the overdue view: the page stays open, the address changes
         // (as the router would hand it the new query value, then draw it).
         async Task Query(string? view) => await r.Renderer.Dispatcher.InvokeAsync(async () =>
         {

@@ -43,41 +43,39 @@ public class ActionsLayoutPreferenceTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task Layout_NeverChosen_IsTheList()
+    public async Task Layout_NeverChosen_IsTheBoard()
     {
         var who = Person();
-        (await Saved(who)).Should().Be(UserPreferences.List);
+        (await Saved(who)).Should().Be(UserPreferences.Board);
         await using var r = await RenderAsync<ActionsBoard>(app, "/actions", @as: who);
-        AsBoard(r).Should().BeFalse();
+        AsBoard(r).Should().BeTrue();
     }
 
     [Fact]
-    public async Task ChoosingBoard_SavesIt_AndTheNextVisitOpensTheBoard()
+    public async Task ChoosingList_SavesIt_AndTheNextVisitOpensTheList()
     {
         var who = Person();
         await using (var r = await RenderAsync<ActionsBoard>(app, "/actions", @as: who))
         {
-            await Choose(r, "board");
-            AsBoard(r).Should().BeTrue();
+            await Choose(r, "list");
+            AsBoard(r).Should().BeFalse();
         }
-        (await Saved(who)).Should().Be(UserPreferences.Board);
+        (await Saved(who)).Should().Be(UserPreferences.List);
 
         await using var next = await RenderAsync<ActionsBoard>(app, "/actions", @as: who);
-        AsBoard(next).Should().BeTrue("an address without a layout opens the one they chose");
+        AsBoard(next).Should().BeFalse("an address without a layout opens the one they chose");
 
-        await Choose(next, "list");
-        (await Saved(who)).Should().Be(UserPreferences.List, "the tab is how it changes back");
+        await Choose(next, "board");
+        (await Saved(who)).Should().Be(UserPreferences.Board, "the tab is how it changes back");
     }
 
     [Fact]
     public async Task AListLink_OpensTheList_WithoutChangingWhatsSaved()
     {
         var who = Person();
-        await Save(who, UserPreferences.Board);
-
         await using (var r = await RenderAsync<ActionsBoard>(app, "/actions?view=open&layout=list", @as: who))
             AsBoard(r).Should().BeFalse("a shared link opens as it was sent");
-        (await Saved(who)).Should().Be(UserPreferences.Board);
+        (await Saved(who)).Should().Be(UserPreferences.Board, "only the tab saves it");
 
         await using var again = await RenderAsync<ActionsBoard>(app, "/actions", @as: who);
         AsBoard(again).Should().BeTrue();
@@ -87,6 +85,7 @@ public class ActionsLayoutPreferenceTests(TideApp app) : IClassFixture<TideApp>
     public async Task ABoardLink_OpensTheBoard_ForSomeoneWhoKeepsTheList()
     {
         var who = Person();
+        await Save(who, UserPreferences.List);
         await using (var r = await RenderAsync<ActionsBoard>(app, "/actions?view=open&layout=board", @as: who))
             AsBoard(r).Should().BeTrue();
         (await Saved(who)).Should().Be(UserPreferences.List, "only the tab saves it");
@@ -96,10 +95,9 @@ public class ActionsLayoutPreferenceTests(TideApp app) : IClassFixture<TideApp>
     [InlineData("/actions?view=overdue")]
     [InlineData("/actions?view=closed")]
     [InlineData("/actions?view=mine&group=kind")]
-    public async Task ALinkToWhatOnlyTheListShows_OpensTheList_EvenWhenTheBoardIsSaved(string path)
+    public async Task ALinkToWhatOnlyTheListShows_OpensTheList_EvenWhenTheBoardIsTheirs(string path)
     {
         var who = Person();
-        await Save(who, UserPreferences.Board);
         await using var r = await RenderAsync<ActionsBoard>(app, path, @as: who);
         AsBoard(r).Should().BeFalse("Workload's Overdue and Present's link to the rest keep their view");
     }
@@ -108,14 +106,14 @@ public class ActionsLayoutPreferenceTests(TideApp app) : IClassFixture<TideApp>
     public async Task Layout_IsEachPersonsOwn()
     {
         SignIn one = Person(), other = Person();
-        await Save(one, UserPreferences.Board);
+        await Save(one, UserPreferences.List);
 
-        (await Saved(other)).Should().Be(UserPreferences.List);
+        (await Saved(other)).Should().Be(UserPreferences.Board);
         await using (var r = await RenderAsync<ActionsBoard>(app, "/actions", @as: other))
-            AsBoard(r).Should().BeFalse();
+            AsBoard(r).Should().BeTrue();
 
-        await Save(other, UserPreferences.List);
-        (await Saved(one)).Should().Be(UserPreferences.Board, "saving one person's leaves the other's alone");
+        await Save(other, UserPreferences.Board);
+        (await Saved(one)).Should().Be(UserPreferences.List, "saving one person's leaves the other's alone");
     }
 
     [Fact]
@@ -124,10 +122,10 @@ public class ActionsLayoutPreferenceTests(TideApp app) : IClassFixture<TideApp>
         var viewer = Person(nameof(AppRole.Viewer));
         await using (var r = await RenderAsync<ActionsBoard>(app, "/actions", @as: viewer))
         {
-            await Choose(r, "board");
+            await Choose(r, "list");
             r.Scope.ServiceProvider.GetRequiredService<Tide.Web.Services.ToastService>().Toasts.Should().NotContain(t => t.IsError);
         }
-        (await Saved(viewer)).Should().Be(UserPreferences.Board);
+        (await Saved(viewer)).Should().Be(UserPreferences.List);
     }
 
     [Fact]

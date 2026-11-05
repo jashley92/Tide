@@ -12,7 +12,7 @@ namespace Tide.Application.Preferences;
 /// </summary>
 public static class UserPreferences
 {
-    /// <summary>The Actions page as a list or a board.</summary>
+    /// <summary>The Actions page as a board (the default) or a list.</summary>
     public const string ActionsLayout = "actions.layout";
 
     public const string List = "list", Board = "board";
@@ -24,7 +24,7 @@ public static class UserPreferences
 
     private static readonly Dictionary<string, Definition> Known = new(StringComparer.Ordinal)
     {
-        [ActionsLayout] = new(ActionsLayout, [List, Board], Permission.ReadActions),
+        [ActionsLayout] = new(ActionsLayout, [Board, List], Permission.ReadActions),
     };
 
     /// <summary>The preference named <paramref name="name"/>; throws <see cref="ArgumentException"/> for any other.</summary>

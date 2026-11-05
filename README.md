@@ -251,6 +251,8 @@ filter matches the words each edition went out with. A corrected day shows its c
 Follow-up work from the brief: IOC sweep, hunt, block, patch, config change, awareness or vendor inquiry. Each action
 is owned by a team and optionally assigned. It's due by a date the SLA targets suggest, and closed with an outcome
 that fits its kind.
+- **Board or list.** The Actions page opens as a board until someone picks the list, and then remembers their
+  choice on any computer. A link that names a layout opens that one.
 - **Raising.** Raise one from an article, from the board, or in the meeting without leaving the slide.
 - **Splitting.** A long remediation splits into parts, one per team.
 - **Around it.** An action can have an external ticket link, comments (from any team) and a readable history.
