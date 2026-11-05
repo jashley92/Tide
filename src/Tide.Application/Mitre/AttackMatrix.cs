@@ -19,6 +19,12 @@ public static class AttackMatrix
     /// <summary>A tactic's column in the matrix (Unspecified last).</summary>
     public static int TacticRank(MitreTactic t) => Array.IndexOf(MatrixOrder, t) is var i and >= 0 ? i : MatrixOrder.Length;
 
+    /// <summary>Technique ids as the matrix lays them out: by their primary tactic's column, then by id; ids no longer in
+    /// the catalogue go last.</summary>
+    public static IEnumerable<string> InMatrixOrder(IEnumerable<string> techniqueIds) => techniqueIds
+        .OrderBy(id => AttackCatalog.Find(id) is { } t ? TacticRank(t.PrimaryTactic) : int.MaxValue)
+        .ThenBy(id => id, StringComparer.Ordinal);
+
     /// <summary>The official tactic id (TA00xx).</summary>
     public static string TacticId(MitreTactic t) => t switch
     {

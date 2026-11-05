@@ -248,10 +248,7 @@
     }
 
     // Matrix order (by the technique's first tactic), then id; ids that left the catalogue go last.
-    private async Task Apply() => await OnApply.InvokeAsync(_selected
-        .OrderBy(id => AttackCatalog.Find(id) is { } t ? AttackMatrix.TacticRank(t.PrimaryTactic) : int.MaxValue)
-        .ThenBy(id => id, StringComparer.Ordinal)
-        .ToList());
+    private async Task Apply() => await OnApply.InvokeAsync(AttackMatrix.InMatrixOrder(_selected).ToList());
 
     private async Task Cancel() => await OnCancel.InvokeAsync();
 

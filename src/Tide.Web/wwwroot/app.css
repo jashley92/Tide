@@ -680,12 +680,11 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 .tide-present a { color: var(--tide-slide-accent); }
 .tide-present-top { display: flex; justify-content: space-between; align-items: center; padding: .7em 1.6em; border-bottom: 1px solid var(--tide-slide-line); gap: 1em; }
 .tide-present-top .tide-brand-mark { width: 1.8em; height: 1.8em; font-size: .9em; }
-.tide-present-title { display: flex; align-items: center; gap: .7em; font-weight: var(--tide-weight-semibold); }
+.tide-present-title { display: flex; align-items: center; gap: .7em; font-weight: var(--tide-weight-semibold); flex: 1 10 auto; min-width: 0; }
 .tide-present-title small { color: var(--tide-slide-muted); font-weight: var(--tide-weight-regular); }
 .tide-present-tools { display: flex; gap: .5em; align-items: center; flex: 0 1 auto; min-width: 0; }
 /* The tools keep their words on one line: the title gives way first (it ellipsizes), then the follow pill. */
 .tide-present-tools > .btn { white-space: nowrap; flex: none; }
-.tide-present-title { flex: 1 10 auto; min-width: 0; }
 .tide-present-title > span:not(.tide-brand-mark) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tide-present .btn-primary { --bs-btn-color: var(--tide-slide-on-accent); --bs-btn-bg: var(--tide-slide-accent); --bs-btn-border-color: var(--tide-slide-accent); --bs-btn-hover-color: var(--tide-slide-on-accent); --bs-btn-hover-bg: var(--tide-slide-accent-hover); --bs-btn-hover-border-color: var(--tide-slide-accent-hover); }
 .tide-present .btn-outline-secondary { --bs-btn-color: var(--tide-slide-text); --bs-btn-border-color: var(--tide-slide-line-strong); --bs-btn-hover-bg: var(--tide-slide-line); --bs-btn-hover-color: var(--tide-slide-strong); --bs-btn-hover-border-color: var(--tide-slide-line-strong); --bs-btn-active-bg: var(--tide-slide-done); --bs-btn-active-color: var(--tide-slide-strong); font-size: .8em; }

@@ -52,11 +52,7 @@
                 <div class="tide-present-tagedit-row" role="group" aria-label="@cat.Name">
                     @foreach (var tag in cat.Tags)
                     {
-                        var on = _tags.Contains(tag.Id);
-                        <button type="button" @key="tag.Id" class="tide-chip tide-chip-pick @(on ? "selected" : "")" aria-pressed="@Ui.Aria(on)"
-                                title="@tag.Description" @onclick="() => Toggle(tag.Id)">
-                            @if (on) { <span class="bi bi-check2" aria-hidden="true"></span> }@tag.Name
-                        </button>
+                        <ScorecardTagToggle @key="tag.Id" Tag="tag" On="_tags.Contains(tag.Id)" OnToggle="() => Toggle(tag.Id)" />
                     }
                 </div>
             }
@@ -95,10 +91,13 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // The two reads are independent: both are under way at once.
+        var categories = Scorecard.ListAsync();
+        var article = ArticleSvc.GetAsync(ArticleId);
         try
         {
-            _categories = await Scorecard.ListAsync();
-            var a = await ArticleSvc.GetAsync(ArticleId) ?? throw new KeyNotFoundException("That article no longer exists.");
+            _categories = await categories;
+            var a = await article ?? throw new KeyNotFoundException("That article no longer exists.");
             Take(a);
             _tags = a.Tags.Select(t => t.TagId).ToHashSet();
             _techniques = a.Techniques.Select(t => t.TechniqueId).ToList();
@@ -110,9 +109,7 @@
     {
         if (_focused || _version is null) return;
         _focused = true;
-        try { await _title.FocusAsync(); }
-        catch (JSDisconnectedException) { }
-        catch (InvalidOperationException) { }   // prerendered or a test render: there's no browser to focus in
+        await _title.TryFocusAsync();   // prerendered or a test render: there's no browser to focus in
     }
 
     // The article as saved: its version (what a save is checked against) and the names of its retired tags.
@@ -133,9 +130,7 @@
         _techniques = ids.ToList();
     }
 
-    private IEnumerable<string> InMatrixOrder() => _techniques
-        .OrderBy(id => AttackCatalog.Find(id) is { } t ? AttackMatrix.TacticRank(t.PrimaryTactic) : int.MaxValue)
-        .ThenBy(id => id, StringComparer.Ordinal);
+    private IEnumerable<string> InMatrixOrder() => AttackMatrix.InMatrixOrder(_techniques);
 
     private static string Describe(IReadOnlyList<string> tags, IReadOnlyList<string> techniques)
     {

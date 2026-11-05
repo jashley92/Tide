@@ -11,10 +11,10 @@ public sealed record SlideTactic(MitreTactic Tactic, IReadOnlyList<AttackTechniq
     public string Name => AttackMatrix.TacticName(Tactic);
 
     /// <summary>The techniques its row lists, <see cref="SlideTags.MaxTechniques"/> at most.</summary>
-    public IReadOnlyList<AttackTechnique> Shown => Techniques.Take(SlideTags.MaxTechniques).ToList();
+    public IReadOnlyList<AttackTechnique> Shown { get; } = Techniques.Take(SlideTags.MaxTechniques).ToList();
 
     /// <summary>The rest, named in a "+N more" after them.</summary>
-    public IReadOnlyList<AttackTechnique> Left => Techniques.Skip(SlideTags.MaxTechniques).ToList();
+    public IReadOnlyList<AttackTechnique> Left { get; } = Techniques.Skip(SlideTags.MaxTechniques).ToList();
 }
 
 /// <summary>A scorecard category's tags on an article's slide.</summary>
@@ -64,9 +64,10 @@ public static class SlideTags
         if (Shape(before) != Shape(after)) return false;
         foreach (var c in changes)
         {
-            if (!c.Topic.StartsWith("article:", StringComparison.Ordinal) || !Guid.TryParse(c.Topic["article:".Length..], out var id)) return false;
-            var was = before.Items.FirstOrDefault(i => i.ArticleId == id)?.Article;
-            var now = after.Items.FirstOrDefault(i => i.ArticleId == id)?.Article;
+            // Each change is to one of the brief's articles: its topic is that article's.
+            if (before.Items.FirstOrDefault(i => c.Topic == ChangeFeed.Article(i.ArticleId)) is not { } item) return false;
+            var was = item.Article;
+            var now = after.Items.FirstOrDefault(i => i.ArticleId == item.ArticleId)?.Article;
             if (was is null || now is null || Content(was) != Content(now)) return false;
         }
         return true;

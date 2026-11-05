@@ -9,7 +9,7 @@
 @inject ToastService Toasts
 
 <div class="tide-attach" @onclick:stopPropagation="true">
-    <button type="button" class="btn btn-outline-secondary btn-sm" aria-expanded="@(_open ? "true" : "false")" aria-controls="@(_id)-panel"
+    <button type="button" class="btn btn-outline-secondary btn-sm" aria-expanded="@Ui.Aria(_open)" aria-controls="@(_id)-panel"
             disabled="@Disabled" @ref="_button" @onclick="Toggle">
         <span class="bi bi-link-45deg" aria-hidden="true"></span> Attach to&hellip;
     </button>
@@ -18,7 +18,7 @@
         var shown = Shown;
         <div class="tide-attach-panel" id="@(_id)-panel">
             <input @ref="_input" type="text" class="form-control form-control-sm" role="combobox" autocomplete="off" spellcheck="false" maxlength="200"
-                   aria-expanded="@(shown.Count > 0 ? "true" : "false")" aria-controls="@(_id)-list" aria-autocomplete="list"
+                   aria-expanded="@Ui.Aria(shown.Count > 0)" aria-controls="@(_id)-list" aria-autocomplete="list"
                    aria-activedescendant="@(shown.Count > 0 ? OptionId(_active) : null)"
                    aria-label="Attach it to which article? Type to filter" placeholder="Filter recent articles"
                    @bind="_filter" @bind:event="oninput" @bind:after="Filtered" @onkeydown="OnKey" />
@@ -27,7 +27,7 @@
                 {
                     var t = shown[i];
                     <li class="@(i == _active ? "tide-attach-opt is-active" : "tide-attach-opt")" role="option" id="@OptionId(i)" @key="t.Id"
-                        aria-selected="@(i == _active ? "true" : "false")" @onclick="() => Pick(t)">
+                        aria-selected="@Ui.Aria(i == _active)" @onclick="() => Pick(t)">
                         <span class="tide-attach-title">@t.Title</span>
                         <span class="tide-attach-meta">@(t.OnBrief ? "On today's brief" : t.Status.ToString()) &middot; @t.AuthorName &middot; @Ui.When(Clock, t.CreatedAtUtc)</span>
                     </li>
@@ -107,17 +107,9 @@
     internal async Task OnKey(KeyboardEventArgs e)
     {
         var shown = Shown;
-        switch (e.Key)
-        {
-            case "ArrowDown": _active = shown.Count == 0 ? 0 : (_active + 1) % shown.Count; break;
-            case "ArrowUp": _active = shown.Count == 0 ? 0 : (_active - 1 + shown.Count) % shown.Count; break;
-            case "Home" when e.CtrlKey || _filter.Length == 0: _active = 0; break;
-            case "End" when e.CtrlKey || _filter.Length == 0: _active = Math.Max(0, shown.Count - 1); break;
-            case "Enter":
-                if (_active < shown.Count) await Pick(shown[_active]);
-                break;
-            case "Escape": await Close(); break;
-        }
+        if (ComboKeys.Move(e, _active, shown.Count, typed: _filter.Length > 0) is { } to) _active = to;
+        else if (e.Key == "Enter" && _active < shown.Count) await Pick(shown[_active]);
+        else if (e.Key == "Escape") await Close();
         StateHasChanged();
     }
 
@@ -130,20 +122,15 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        try
+        if (_focusInput && _open)
         {
-            if (_focusInput && _open)
-            {
-                _focusInput = false;
-                await _input.FocusAsync();
-            }
-            if (_focusButton)
-            {
-                _focusButton = false;
-                await _button.FocusAsync();
-            }
+            _focusInput = false;
+            await _input.TryFocusAsync();
         }
-        catch (JSDisconnectedException) { /* the tab has gone */ }
-        catch (InvalidOperationException) { /* not rendered interactively (a prerender or a test) */ }
+        if (_focusButton)
+        {
+            _focusButton = false;
+            await _button.TryFocusAsync();
+        }
     }
 }

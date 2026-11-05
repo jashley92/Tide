@@ -425,11 +425,7 @@ else
                         <div>
                             @foreach (var tag in cat.Tags)
                             {
-                                var on = _form.TagIds.Contains(tag.Id);
-                                <button type="button" class="tide-chip tide-chip-pick @(on ? "selected" : "")" aria-pressed="@Ui.Aria(on)" disabled="@(!_canWrite)"
-                                        title="@tag.Description" @onclick="() => ToggleTag(tag.Id)">
-                                    @if (on) { <span class="bi bi-check2" aria-hidden="true"></span> }@tag.Name
-                                </button>
+                                <ScorecardTagToggle Tag="tag" On="_form.TagIds.Contains(tag.Id)" Disabled="!_canWrite" OnToggle="() => ToggleTag(tag.Id)" />
                             }
                         </div>
                     }
@@ -857,9 +853,7 @@ else
         _rules = _canWrite && _form is { TechniqueIds.Count: > 0 } f ? await Detections.ForTechniquesAsync(f.TechniqueIds) : null;
 
     // The tagged techniques by tactic in matrix order, as the picker lays them out; ids no longer in the catalog go last.
-    private IEnumerable<string> TechniquesInMatrixOrder() => _form!.TechniqueIds
-        .OrderBy(id => AttackCatalog.Find(id) is { } t ? AttackMatrix.TacticRank(t.PrimaryTactic) : int.MaxValue)
-        .ThenBy(id => id, StringComparer.Ordinal);
+    private IEnumerable<string> TechniquesInMatrixOrder() => AttackMatrix.InMatrixOrder(_form!.TechniqueIds);
 
     private Task RemoveTechnique(string id)
     {

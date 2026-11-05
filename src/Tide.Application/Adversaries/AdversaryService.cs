@@ -171,13 +171,7 @@ public sealed class AdversaryService(IAppDbContextFactory dbs, ICurrentUser user
     {
         RequireRead();
         await using var db = await dbs.CreateAsync(ct);
-        var article = await db.Articles.AsNoTracking().Where(a => a.Id == articleId).Select(a => new { a.Title, a.Actors, a.Bluf }).FirstOrDefaultAsync(ct);
-        if (article is null) return new ArticleAdversaries([], []);
-        var tagged = await db.ArticleAdversaries.AsNoTracking().Where(t => t.ArticleId == articleId).Select(t => t.Adversary!).OrderByName(a => a.Name).ToListAsync(ct);
-        var live = await db.Adversaries.AsNoTracking().Where(a => !a.IsRetired).ToListAsync(ct);
-        var words = StackService.Words(article.Title + " " + article.Actors, article.Bluf);
-        var suggested = live.Where(a => tagged.All(t => t.Id != a.Id) && StackService.Names(Entry(a), words)).OrderByName(a => a.Name).ToList();
-        return new ArticleAdversaries(tagged, suggested);
+        return await CardAsync(db, articleId, ct) is { } card ? Suggest(card) : new ArticleAdversaries([], []);
     }
 
     /// <summary>The most profiles the article editor's picker lists at once.</summary>
@@ -196,9 +190,41 @@ public sealed class AdversaryService(IAppDbContextFactory dbs, ICurrentUser user
     {
         RequireRead();
         await using var db = await dbs.CreateAsync(ct);
+        return await CardAsync(db, articleId, ct) is { } card ? await OfferAsync(db, card, ct) : [];
+    }
+
+    /// <summary>
+    /// The article editor's Adversaries card in one read: <see cref="ForArticleAsync"/>, and (when <paramref name="offer"/>,
+    /// for an analyst's picker) <see cref="OfferedAsync"/>, from the one load of the article, its tags and the live profiles.
+    /// </summary>
+    public async Task<(ArticleAdversaries Mine, IReadOnlyList<AdversaryPick> Offered)> ForArticleCardAsync(Guid articleId, bool offer,
+        CancellationToken ct = default)
+    {
+        RequireRead();
+        await using var db = await dbs.CreateAsync(ct);
+        if (await CardAsync(db, articleId, ct) is not { } card) return (new ArticleAdversaries([], []), []);
+        return (Suggest(card), offer ? await OfferAsync(db, card, ct) : []);
+    }
+
+    // What the card is drawn from: the profiles the article is tagged with (by name), the live ones, and the article's
+    // words (title, actors, bottom line) that name them. None when the article has gone.
+    private sealed record ArticleCard(List<Adversary> Tagged, List<Adversary> Live, string Words);
+
+    private static async Task<ArticleCard?> CardAsync(IAppDbContext db, Guid articleId, CancellationToken ct)
+    {
         var article = await db.Articles.AsNoTracking().Where(a => a.Id == articleId).Select(a => new { a.Title, a.Actors, a.Bluf }).FirstOrDefaultAsync(ct);
-        if (article is null) return [];
-        var tagged = (await db.ArticleAdversaries.AsNoTracking().Where(t => t.ArticleId == articleId).Select(t => t.AdversaryId).ToListAsync(ct)).ToHashSet();
+        if (article is null) return null;
+        var tagged = await db.ArticleAdversaries.AsNoTracking().Where(t => t.ArticleId == articleId).Select(t => t.Adversary!).OrderByName(a => a.Name).ToListAsync(ct);
+        var live = await db.Adversaries.AsNoTracking().Where(a => !a.IsRetired).ToListAsync(ct);
+        return new ArticleCard(tagged, live, StackService.Words(article.Title + " " + article.Actors, article.Bluf));
+    }
+
+    private static ArticleAdversaries Suggest(ArticleCard card) => new(card.Tagged,
+        card.Live.Where(a => card.Tagged.TrueForAll(t => t.Id != a.Id) && StackService.Names(Entry(a), card.Words)).OrderByName(a => a.Name).ToList());
+
+    private static async Task<IReadOnlyList<AdversaryPick>> OfferAsync(IAppDbContext db, ArticleCard card, CancellationToken ct)
+    {
+        var tagged = card.Tagged.Select(a => a.Id).ToHashSet();
         var picks = new List<AdversaryPick>();
         void Offer(IEnumerable<Adversary> profiles, AdversaryPickReason why)
         {
@@ -206,9 +232,8 @@ public sealed class AdversaryService(IAppDbContextFactory dbs, ICurrentUser user
                 if (picks.Count < PickLimit && !tagged.Contains(a.Id) && picks.TrueForAll(p => p.Id != a.Id))
                     picks.Add(new AdversaryPick(a.Id, a.Name, a.MitreId, false, null, why));
         }
-        var live = await db.Adversaries.AsNoTracking().Where(a => !a.IsRetired).ToListAsync(ct);
-        var words = StackService.Words(article.Title + " " + article.Actors, article.Bluf);
-        Offer(live.Where(a => StackService.Names(Entry(a), words)).OrderByName(a => a.Name), AdversaryPickReason.Named);
+        var live = card.Live;
+        Offer(live.Where(a => StackService.Names(Entry(a), card.Words)).OrderByName(a => a.Name), AdversaryPickReason.Named);
         Offer(live.Where(a => a.Watched).OrderByName(a => a.Name), AdversaryPickReason.Watched);
         if (picks.Count < PickLimit)
         {
