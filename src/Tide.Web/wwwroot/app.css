@@ -676,13 +676,17 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 .tide-zoom { display: block; width: 100%; padding: 0; border: 0; background: none; cursor: zoom-in; }
 
 /* ---- Present mode: one article per slide, dark, sized for a shared screen ---- */
-.tide-present { position: fixed; inset: 0; background: var(--tide-slide-bg); color: var(--tide-slide-text); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; font-size: clamp(16px, 1.15vw, 22px); }
+.tide-present { position: fixed; inset: 0; background: var(--tide-slide-bg); color: var(--tide-slide-text); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); font-size: clamp(16px, 1.15vw, 22px); }
 .tide-present a { color: var(--tide-slide-accent); }
 .tide-present-top { display: flex; justify-content: space-between; align-items: center; padding: .7em 1.6em; border-bottom: 1px solid var(--tide-slide-line); gap: 1em; }
 .tide-present-top .tide-brand-mark { width: 1.8em; height: 1.8em; font-size: .9em; }
 .tide-present-title { display: flex; align-items: center; gap: .7em; font-weight: var(--tide-weight-semibold); }
 .tide-present-title small { color: var(--tide-slide-muted); font-weight: var(--tide-weight-regular); }
-.tide-present-tools { display: flex; gap: .5em; align-items: center; }
+.tide-present-tools { display: flex; gap: .5em; align-items: center; flex: 0 1 auto; min-width: 0; }
+/* The tools keep their words on one line: the title gives way first (it ellipsizes), then the follow pill. */
+.tide-present-tools > .btn { white-space: nowrap; flex: none; }
+.tide-present-title { flex: 1 10 auto; min-width: 0; }
+.tide-present-title > span:not(.tide-brand-mark) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tide-present .btn-primary { --bs-btn-color: var(--tide-slide-on-accent); --bs-btn-bg: var(--tide-slide-accent); --bs-btn-border-color: var(--tide-slide-accent); --bs-btn-hover-color: var(--tide-slide-on-accent); --bs-btn-hover-bg: var(--tide-slide-accent-hover); --bs-btn-hover-border-color: var(--tide-slide-accent-hover); }
 .tide-present .btn-outline-secondary { --bs-btn-color: var(--tide-slide-text); --bs-btn-border-color: var(--tide-slide-line-strong); --bs-btn-hover-bg: var(--tide-slide-line); --bs-btn-hover-color: var(--tide-slide-strong); --bs-btn-hover-border-color: var(--tide-slide-line-strong); --bs-btn-active-bg: var(--tide-slide-done); --bs-btn-active-color: var(--tide-slide-strong); font-size: .8em; }
 .tide-present-tools .form-select { background-color: var(--tide-slide-surface); color: var(--tide-slide-text); border-color: var(--tide-slide-line-strong); font-size: .8em; width: auto; }
@@ -736,7 +740,62 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 .tide-present-action .tide-comment { padding: .5em 0; border-bottom: 1px solid var(--tide-slide-line); }
 
 /* A live meeting (LiveMeetings): who's following, raised hands, the note list, who attended. */
-.tide-meeting-bar { display: flex; align-items: center; justify-content: center; gap: .8em; padding: .35em 1.6em; font-size: .85em; color: var(--tide-slide-muted); border-bottom: 1px solid var(--tide-slide-line); }
+/* Whom a page follows: a pill among the header's tools (no height of its own), a dot and "Following Robin"; a lock when
+   held; one button when there's something to do. On a narrow screen it keeps the name (the rest stays for screen readers). */
+.tide-follow { display: inline-flex; align-items: center; gap: .45em; min-width: 0; max-width: 34em; padding: .2em .75em; border: 1px solid var(--tide-slide-line-strong); border-radius: var(--tide-radius-pill); background: var(--tide-slide-surface); color: var(--tide-slide-text); font-size: .8em; line-height: 1.3; white-space: nowrap; }
+.tide-follow:has(.tide-follow-btn) { padding-right: .2em; }
+.tide-follow-dot { flex: none; width: .55em; height: .55em; border-radius: var(--tide-radius-pill); background: var(--tide-slide-ok); }
+.tide-follow-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tide-follow-name { font-weight: var(--tide-weight-semibold); }
+.tide-follow-sep { color: var(--tide-slide-muted); }
+.tide-follow-lock { color: var(--tide-slide-warn); }
+.tide-present .tide-follow .tide-follow-btn { font-size: 1em; padding: .1em .65em; line-height: 1.3; border-radius: var(--tide-radius-pill); white-space: nowrap; }
+.tide-follow.is-held .tide-follow-dot { background: var(--tide-slide-warn); }
+.tide-follow.is-away { border-color: var(--tide-slide-accent); }
+.tide-follow.is-away .tide-follow-dot { background: var(--tide-slide-accent); }
+.tide-follow.is-reconnecting { color: var(--tide-slide-muted); }
+.tide-follow.is-reconnecting .tide-follow-dot { background: var(--tide-slide-warn); animation: tide-presence-pulse 2s ease-in-out infinite; }
+.tide-follow.is-dropped { border-color: var(--tide-slide-threat); }
+.tide-follow.is-dropped .tide-follow-dot { background: var(--tide-slide-threat); }
+@media (prefers-reduced-motion: reduce) { .tide-follow.is-reconnecting .tide-follow-dot { animation: none; } }
+@media (forced-colors: active) { .tide-follow-dot { background: CanvasText; } }
+@media (max-width: 900px) {
+    .tide-present-top { flex-wrap: wrap; }
+    .tide-present-tools { flex-wrap: wrap; justify-content: flex-end; }
+    .tide-follow { max-width: 16em; }
+    .tide-follow .tide-follow-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+}
+
+/* An article slide's ATT&CK tactics (in their matrix colour and icon) and scorecard tags: two lines on a slide, so a
+   long article's bullets keep their place; past six tactics or five tags, a "+N more" chip names the rest in its title. */
+.tide-slide-tags { display: flex; align-items: flex-start; gap: .35em .9em; margin: -.2em 0 .9em; font-size: .95em; line-height: 1.25; }
+/* The chips (capped in number, SlideTags) wrap; the "+N more" chips and Edit tags sit after them. */
+.tide-slide-tags-chips { flex: 0 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .35em .9em; }
+.tide-slide-tags-end { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: .35em; }
+.tide-slide-tags-end:empty { display: none; }
+.tide-slide-tags ul { display: flex; flex-wrap: wrap; gap: .35em; list-style: none; padding: 0; margin: 0; }
+.tide-slide-tag-group { display: flex; flex-wrap: wrap; align-items: center; gap: .35em; min-width: 0; }
+.tide-slide-tag-cat { color: var(--tide-slide-muted); text-transform: uppercase; letter-spacing: .08em; font-size: .72em; font-weight: var(--tide-weight-semibold); }
+.tide-slide .tide-slide-tags .tide-chip { margin: 0; font-size: 1em; padding: .22em .7em; max-width: 20em; white-space: nowrap; }
+.tide-slide-tag-name, .tide-slide .tide-slide-tag { overflow: hidden; text-overflow: ellipsis; }
+.tide-slide .tide-slide-tactic { --tac: var(--tide-slide-muted); background: color-mix(in srgb, var(--tac) 22%, var(--tide-slide-surface)); border: 1px solid color-mix(in srgb, var(--tac) 65%, transparent); gap: .4em; }
+.tide-slide-tactic .bi { color: var(--tac); }
+.tide-slide-tag-n { min-width: 1.4em; padding: 0 .35em; border-radius: var(--tide-radius-pill); background: var(--tide-slide-bg); color: var(--tide-slide-text); font-size: .78em; text-align: center; font-variant-numeric: tabular-nums; }
+.tide-slide .tide-slide-tag { border: 1px solid var(--tide-slide-line-strong); }
+.tide-slide .tide-slide-tag-more { background: transparent; border: 1px dashed var(--tide-slide-line-strong); color: var(--tide-slide-muted); }
+@media (forced-colors: active) { .tide-slide .tide-slide-tactic, .tide-slide .tide-slide-tag { border-color: CanvasText; } }
+.tide-present .tide-slide-tags-edit { font-size: .8em; padding: .15em .7em; border-radius: var(--tide-radius-pill); white-space: nowrap; }
+/* The tag panel over an article's slide (PresentTagEditor): the action panel's frame, in large type, the article
+   editor's tag toggles and technique chips. */
+.tide-present-tagedit .tide-present-action-body { font-size: 1.05em; }
+.tide-present-tagedit-row { display: flex; flex-wrap: wrap; align-items: center; gap: .45em; margin-bottom: .4em; }
+.tide-present-tagedit-row .tide-chip { margin: 0; font-size: .95em; padding: .3em .8em; }
+.tide-present-tagedit-row .tide-chip button { background: none; border: 0; color: inherit; padding: 0 0 0 .2em; }
+.tide-present-tagedit .tide-chip-pick { cursor: pointer; border: 1px solid var(--tide-slide-line-strong); background: transparent; color: var(--tide-slide-text); }
+.tide-present-tagedit .tide-chip-pick.selected { background: var(--tide-slide-accent); border-color: var(--tide-slide-accent); color: var(--tide-slide-on-accent); }
+.tide-present-tagedit-cat { color: var(--tide-slide-muted); font-size: .85em; font-weight: var(--tide-weight-semibold); margin: .6em 0 .3em; }
+.tide-present-tagedit-problem { border: 1px solid var(--tide-slide-warn); border-radius: var(--tide-radius-lg); padding: .6em .9em; margin-bottom: .8em; color: var(--tide-slide-text); }
+.tide-present-tagedit-problem > .bi { color: var(--tide-slide-warn); }
 .tide-hand { display: inline-flex; align-items: center; gap: .3em; color: var(--tide-slide-warn); font-size: .85em; }
 .tide-progress button.hand { box-shadow: 0 -3px 0 var(--tide-slide-warn); }
 .tide-presence-dot.is-away { opacity: .6; }

@@ -348,6 +348,25 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
         return a.EditVersion;
     }
 
+    /// <summary>
+    /// Saves only an article's scorecard tags and ATT&amp;CK techniques (present mode's tag panel), through the editor's own
+    /// <see cref="SaveAsync"/>: the article as saved, with these two swapped in. So the same rules hold as on the article
+    /// page: analysts only, refused (<see cref="StaleEditException"/>) when the article changed since
+    /// <paramref name="editVersion"/>, a technique change puts an approval out of date as an editor's would, and the save
+    /// is audited and heard like any other. Returns the new edit version.
+    /// </summary>
+    public async Task<Guid> SaveTagsAsync(Guid id, Guid editVersion, IEnumerable<Guid> tagIds, IEnumerable<string> techniqueIds,
+        CancellationToken ct = default)
+    {
+        RequireWrite();
+        var a = await GetAsync(id, ct) ?? throw new KeyNotFoundException("That article no longer exists.");
+        var form = ArticleForm.From(a);
+        form.EditVersion = editVersion;
+        form.TagIds = tagIds.ToHashSet();
+        form.TechniqueIds = techniqueIds.ToList();
+        return await SaveAsync(form, ct);
+    }
+
     private const string SavedMeanwhile = "Someone else saved this article while you were editing. Reload it to see their changes.";
 
     /// <summary>

@@ -24,6 +24,7 @@ window.tidePresent = (function () {
         // A screenshot shown full size has the keys; the slide behind it doesn't move.
         if (document.querySelector('.tide-lightbox')) return;
         if (document.querySelector('.tide-modal')) return;   // the palette or the shortcuts list is open: its keys are its own
+        if (document.querySelector('.tide-atkm-panel')) return;   // the ATT&CK picker (the tag panel's): Esc closes it alone
         if (!window.tideShortcuts.on() && window.tideShortcuts.isLetter(e)) return;
         if ((e.key === 'Enter' || e.key === ' ') && pressable(e.target)) return;
         const action = keys[e.key];
