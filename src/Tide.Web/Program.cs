@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using Tide.Application;
@@ -51,7 +52,12 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents(o => o.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(20))
     // A message from the browser over SignalR's 32 KB default drops the circuit; a long article field read back from the
     // Markdown editor can pass that. Screenshots don't count: InputFile streams them.
-    .AddHubOptions(o => o.MaximumReceiveMessageSize = 256 * 1024);
+    .AddHubOptions(o =>
+    {
+        o.MaximumReceiveMessageSize = 256 * 1024;
+        // Which transport (WebSockets, or a fallback) each circuit is on, for Diagnostics: see CircuitTransport.
+        o.AddFilter(new TransportHubFilter());
+    });
 
 // --- Data Protection ---
 // The key ring protects antiforgery tokens and circuit state. Under an IIS app pool it's ephemeral by default (no user
@@ -125,6 +131,11 @@ builder.Services.AddScoped<PresenceCircuit>();
 builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler>(sp => sp.GetRequiredService<PresenceCircuit>());
 // The circuit's user is ambient during each of its activities, so a refusal can be logged with who asked.
 builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler, AmbientUserCircuitHandler>();
+// The transport each circuit connected over (WebSockets, or long polling where IIS or a proxy can't carry them), and the
+// counts since the app started, for Diagnostics.
+builder.Services.AddSingleton<TransportCounts>();
+builder.Services.AddScoped<CircuitTransport>();
+builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler>(sp => sp.GetRequiredService<CircuitTransport>());
 builder.Services.AddHostedService<ReminderHostedService>();
 builder.Services.AddHostedService<IntakeHostedService>();
 builder.Services.AddHostedService<MetricImportHostedService>();

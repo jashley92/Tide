@@ -126,6 +126,30 @@ else
                 </tbody>
             </table>
         </section>
+
+        <section class="tide-card mb-0" aria-labelledby="diag-connections">
+            <h2 id="diag-connections"><span class="bi bi-plug" aria-hidden="true"></span> Connections</h2>
+            <table class="tide-kv">
+                <tbody>
+                    <tr>
+                        <th scope="row">This page</th>
+                        <td>
+                            <CheckBadge Level="report.Connection.Level" />
+                            <span class="tide-data">@report.Connection.CurrentName</span>
+                        </td>
+                    </tr>
+                    @foreach (var t in report.Connection.Counts)
+                    {
+                        <tr>
+                            <th scope="row">@t.Name</th>
+                            <td>@t.SinceStart since the app started <span class="tide-muted">(@t.OpenNow open now)</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <p class="small tide-muted mt-2 mb-0">Each open page keeps one connection to the server. Anything but WebSockets
+                makes every click and keystroke a request of its own.@if (report.Connection.NeedsFix) { <text> @ConnectionTransport.Fix</text> }</p>
+        </section>
     </div>
 
     <section class="tide-card" aria-labelledby="diag-jobs">

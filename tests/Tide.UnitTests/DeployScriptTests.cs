@@ -232,7 +232,7 @@ public partial class DeployScriptTests
 /// Runs PowerShell (pwsh, else Windows PowerShell) over the deploy scripts: every one parses, the parameters, and the
 /// helpers in deploy\lib the upgrade decides with. Nothing here touches IIS, SQL Server or the network.
 /// </summary>
-public class DeployScriptPowerShellTests
+public partial class DeployScriptPowerShellTests
 {
     private static readonly string Lib = Path.Combine(DeployScriptTests.Deploy, "lib");
 

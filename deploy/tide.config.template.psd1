@@ -36,6 +36,10 @@
     # the usual site of its own. See docs/INSTALL.md, "Under another site".
     ParentSite  = ''
     AppPath     = ''
+    # $true to let Install-Tide.ps1 install the IIS WebSocket Protocol feature when it's missing (Web-WebSockets; TIDE's
+    # pages fall back to long polling, a request per keystroke, without it). $false: a run from this file stops instead,
+    # before changing anything, and says how to install it.
+    InstallWebSockets = $false
 
     # --- Who can do what: AD groups for each TIDE role (DOMAIN\Group). Leave one blank to map it later in the app. ---
     AdGroupAnalysts     = 'CONTOSO\CTI-Analysts'

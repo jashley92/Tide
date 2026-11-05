@@ -14,7 +14,8 @@
     Stages:
       1. Resolve the live deployment from IIS and the deployed appsettings.Production.json (site folder, app pool, SQL
          instance and database, schema mode, health URL).
-      2. Preflight: the ASP.NET Core Module and the .NET 10 runtime are present, SQL is reachable, and the migration
+      2. Preflight: the ASP.NET Core Module and the .NET 10 runtime are present (and, as a warning only, the IIS
+         WebSocket Protocol feature is installed and on for the site), SQL is reachable, and the migration
          check: the database's __EFMigrationsHistory against the release's migrations-sqlserver.txt. It stops on a
          lineage mismatch (the state that makes the app fail at startup with "There is already an object named ..."),
          and on a DbaApplies install it stops unless the database already has every migration in the manifest: the
@@ -149,6 +150,7 @@ $repoRoot  = Split-Path -Parent $deployDir
 . (Join-Path $deployDir 'lib\TideSql.ps1')
 . (Join-Path $deployDir 'lib\TideSettings.ps1')
 . (Join-Path $deployDir 'lib\TideUpgrade.ps1')
+. (Join-Path $deployDir 'lib\TideWebSockets.ps1')
 # Without a trailing backslash, which breaks the quoting of robocopy's arguments (lib\TidePath.ps1).
 $AppSource = Get-TideCleanPath $AppSource; $SitePath = Get-TideCleanPath $SitePath
 $BackupRoot = Get-TideCleanPath $BackupRoot; $DataRoot = Get-TideCleanPath $DataRoot
@@ -505,6 +507,17 @@ if (-not $runtime) {
            "'iisreset', then run the upgrade again; otherwise the app fails to start (500.30).")
 }
 Write-Info "ASP.NET Core Module and the .NET $runtime runtime are present."
+
+# 3a'. WEBSOCKETS, a warning only: without them TIDE still works, over long polling (a request per keystroke), so they
+# never stop an upgrade. Install-Tide.ps1 installs the feature and turns them on for the site.
+try {
+    $wsFeature = Get-TideWebSocketFeature
+    $wsVerdict = Get-TideWebSocketVerdict -Feature $wsFeature -Config (Get-TideWebSocketConfig -IisPath $iisPath -SitePath $SitePath)
+    if ($wsVerdict.Ok) { Write-Info "WebSockets: the IIS WebSocket Protocol feature is installed and on for '$iisPath'." }
+    else { Write-Warn2 ("WARNING: WebSockets won't work, so TIDE falls back to long polling. $($wsVerdict.Problems -join ' ') " + (Get-TideWebSocketFixText)) }
+} catch {
+    Write-Warn2 "WARNING: couldn't check WebSockets ($($_.Exception.Message)). $(Get-TideWebSocketFixText)"
+}
 
 # 3b. SQL reachable.
 try { [void](Invoke-DbScalar 'SELECT 1') } catch { throw "Can't reach the database $DbName on $SqlInstance ($($_.Exception.Message))." }

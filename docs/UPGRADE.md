@@ -171,6 +171,17 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
+### Next release
+
+**For administrators**
+- **WebSockets are checked.** TIDE's pages need IIS's WebSocket Protocol feature; without it (or behind a proxy that
+  strips the `Upgrade` header) they silently fall back to long polling, one request per keystroke. `Upgrade-Tide.ps1`
+  now warns when the feature is missing or turned off for the site (it never stops the upgrade); install it with
+  `Install-WindowsFeature Web-WebSockets`. `Install-Tide.ps1` checks for it and offers to install it (`-InstallWebSockets`
+  to do so unasked), `Verify-Install.ps1` fails without it and tries a real WebSocket handshake, and Administration >
+  System > Diagnostics shows the connection type your page is using and how many connections used each since the app
+  started. See [INSTALL.md](INSTALL.md#1-what-you-need).
+
 ### v1.3.0
 
 Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds three migrations (`ActionFiles`, `CommentFileRemoval`,

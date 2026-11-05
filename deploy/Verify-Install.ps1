@@ -2,8 +2,13 @@
 
 <#
 .SYNOPSIS
-    Checks a TIDE install: the pool and site are running, the app answers, its database is reachable, and the rest of
-    the site still asks for a Windows sign-in.
+    Checks a TIDE install: the pool and site are running, the app answers, its database is reachable, the rest of
+    the site still asks for a Windows sign-in, and WebSockets work: the IIS WebSocket Protocol feature is installed and on
+    for the site, and a real WebSocket to the app (signed in as you) gets its Upgrade. Without WebSockets TIDE falls back
+    to long polling, one request per keystroke.
+
+.PARAMETER SkipWebSocketHandshake
+    Leave out the real WebSocket handshake (the feature and configuration checks still run).
 
 .EXAMPLE
     .\Verify-Install.ps1 -Url https://tide.contoso.com/ -AppPoolName TIDE -SiteName TIDE
@@ -16,7 +21,8 @@
 param(
     [Parameter(Mandatory = $true)] [string] $Url,
     [string] $AppPoolName = 'TIDE',
-    [string] $SiteName = 'TIDE'
+    [string] $SiteName = 'TIDE',
+    [switch] $SkipWebSocketHandshake
 )
 
 $ErrorActionPreference = 'Stop'
@@ -39,6 +45,8 @@ function Get-Status([string] $u, [switch] $UseDefaultCredentials) {
     }
 }
 
+. (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'lib\TideWebSockets.ps1')
+$wsFix = Get-TideWebSocketFixText
 $base = $Url.TrimEnd('/')
 Write-Host "Checking TIDE at $base" -ForegroundColor Cyan
 
@@ -49,6 +57,18 @@ if (Get-Module -ListAvailable WebAdministration) {
     $siteState = try { (Get-WebsiteState -Name $SiteName).Value } catch { 'missing' }
     Report ($poolState -eq 'Started') "App pool '$AppPoolName' is started (it's $poolState)" "Start it in IIS Manager and check the Application event log"
     Report ($siteState -eq 'Started') "Site '$SiteName' is started (it's $siteState)" "Another site may hold the same binding"
+
+    # WebSockets: the feature, then whether IIS has them on where TIDE answers (the site, or the application under it
+    # that the URL's path names).
+    $feature = Get-TideWebSocketFeature
+    $featureState = if ($feature.Installed) { 'installed' } elseif ($null -eq $feature.Installed) { "unreadable: $($feature.Detail)" } else { 'not installed' }
+    Report ($feature.Installed -eq $true) "The IIS WebSocket Protocol feature ($($feature.Name)) is installed (it's $featureState)" "$($feature.InstallCommand); $wsFix"
+    $appPath = ([Uri]$Url).AbsolutePath.Trim('/')
+    $iisPath = if ($appPath) { "$SiteName/$appPath" } else { $SiteName }
+    $physical = try { [Environment]::ExpandEnvironmentVariables((Get-ItemProperty "IIS:\Sites\$($iisPath.Replace('/', '\'))" -Name physicalPath)) } catch { $null }
+    $wsConfig = Get-TideWebSocketConfig -IisPath $iisPath -SitePath $physical
+    $wsVerdict = Get-TideWebSocketVerdict -Config $wsConfig
+    Report $wsVerdict.Ok "WebSockets are on for '$iisPath' (system.webServer/webSocket: $($wsConfig.Effective))" "$($wsVerdict.Problems -join ' ') $wsFix"
 }
 
 Report ((Get-Status "$base/health/live") -eq 200) "The app answers (/health/live)" "500.30/500.37: read the Application event log and stdout logs"
@@ -57,6 +77,13 @@ $anon = Get-Status "$base/"
 Report ($anon -eq 401) "The site asks for a Windows sign-in (anonymous gets 401, got $anon)" "Windows Authentication must be on and Anonymous off for the site"
 $signedIn = Get-Status "$base/" -UseDefaultCredentials
 Report ($signedIn -in 200, 302) "A signed-in request is served (got $signedIn)" "403 means your account has no TIDE role yet; map a group to Admin"
+
+# A real WebSocket, as a browser opens one: signed in as you, through whatever proxy or load balancer is in the way.
+if (-not $SkipWebSocketHandshake) {
+    $hs = Test-TideWebSocketHandshake -BaseUrl $base
+    $hsFix = if ($hs.Status -eq 'unreachable') { "Sign in as a TIDE user (a 403 means your account has no TIDE role); $wsFix" } else { $wsFix }
+    Report $hs.Ok "A WebSocket to the app gets its Upgrade ($($hs.Detail))" $hsFix
+}
 
 if ($failed -gt 0) { Write-Host "$failed check(s) failed." -ForegroundColor Red; exit 1 }
 Write-Host "All checks passed." -ForegroundColor Green
