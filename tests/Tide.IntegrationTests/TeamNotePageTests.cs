@@ -146,6 +146,19 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task SwitchingToTheCompanyWideEdition_OnTheNumbers_ShowsTheSlideInTheirPlace_NotTheOneWithTheirNumber()
+    {
+        var (day, _) = await Brief(65, Note);
+        await using var r = await Open(day);
+        await r.Click(p => p.OnPresentKey("next"));
+        await r.Click(p => p.OnPresentKey("next"));
+        (await r.Html()).Should().Contain("<h2>Note test numbers</h2>");
+
+        await Edition(r, Domain.Enums.Edition.Public);
+        (await r.Html()).Should().Contain("Slide 2 of 3").And.Contain("<h2>Note test article 65</h2>", "the first article, where the numbers were, not the wrap-up at slide 3");
+    }
+
+    [Fact]
     public async Task AFollower_LandsOnTheNote_ByItsKey()
     {
         var (day, _) = await Brief(66, Note);

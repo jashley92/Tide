@@ -230,6 +230,9 @@ public class PresentMetricsTests(TideApp app) : IClassFixture<TideApp>
             .And.Contain("past the warning threshold");
         multiples.Split("<svg").Should().HaveCount(3, "a panel each");
         (await Chart(MetricChart.SmallMultiples, Plain("Alerts", 2), Plain("Escalated", 1))).Should().Contain("No history yet").And.NotContain("<svg");
+        var unscaled = await Chart(MetricChart.SmallMultiples, Plain("Alerts", 1200, 800, 1000, null, 1100, 1200), Plain("Added since", null));
+        unscaled.Should().Contain("aria-label=\"Added since: no values from").And.Contain("No values yet")
+            .And.NotContain(">1</text>", "a metric with no values has no 0 to 1 axis");
 
         var stacked = await Chart(MetricChart.Stacked, Plain("Phishing", 30, 10, null, 20, 25, 30), Plain("Malware", 10, 10, null, 0, 5, 10));
         stacked.Should().Contain("tide-mchart-stacked").And.Contain("<rect").And.Contain(">40</text>").And.Contain(">20</text>")
