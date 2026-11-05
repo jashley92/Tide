@@ -47,6 +47,15 @@ public class Brief : AuditableEntity
     public string? DistributedById { get; set; }
     public string? DistributedByName { get; set; }
 
+    /// <summary>When someone finished the brief without sending it while email was on ("Not sent"), who, and why. It's
+    /// Sent as a distributed one is, so its numbers lock and its articles finish; nothing went, so nothing is published.
+    /// It can still be emailed afterwards: a real send then makes it an ordinary sent brief, and these are kept as
+    /// history. Null for a brief that wasn't finished that way.</summary>
+    public DateTimeOffset? NotSentAtUtc { get; set; }
+    public string? NotSentById { get; set; }
+    public string? NotSentByName { get; set; }
+    public string? NotSentReason { get; set; }
+
     /// <summary>When someone confirmed the company-wide copy was posted to SharePoint, and who. An administrator can
     /// require it before the brief counts as finished (<c>Distribution:RequireSharePoint</c>).</summary>
     public DateTimeOffset? SharePointPostedAtUtc { get; set; }
@@ -72,6 +81,14 @@ public class BriefItem : Entity
 
     /// <summary>Ticked off during the meeting.</summary>
     public bool Discussed { get; set; }
+
+    /// <summary>The brief whose meeting carried the article here (it wasn't discussed there), or null for an article
+    /// put on this brief by hand. Reopening that meeting takes back only these.</summary>
+    public Guid? CarriedFromBriefId { get; set; }
+
+    /// <summary>The article's status before this brief's meeting marked it presented, or null when the meeting didn't
+    /// change it (it was presented already, on an earlier brief, or carried on). Reopening the meeting puts it back.</summary>
+    public ArticleStatus? StatusBeforeMeeting { get; set; }
 }
 
 /// <summary>

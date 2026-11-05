@@ -11,7 +11,13 @@ namespace Tide.Application.Briefs;
 /// <summary>A row on the brief list.</summary>
 public sealed record BriefSummary(Guid Id, DateOnly BriefDate, string AnalystName, BriefStatus Status, int Articles,
     int Threats, DateTimeOffset? PresentedAtUtc, DateTimeOffset? DistributedAtUtc = null, DateTimeOffset? SharePointPostedAtUtc = null,
-    bool SharePointRequired = false, bool Emailed = false);
+    bool SharePointRequired = false, bool Emailed = false, DateTimeOffset? NotSentAtUtc = null, string? NotSentByName = null,
+    string? NotSentReason = null);
+
+/// <summary>What reopening a brief's meeting (<see cref="BriefService.ReopenAsync"/>) does: <see cref="Carried"/>
+/// articles the meeting carried come back from the brief for <see cref="CarriedTo"/>. <see cref="Blocked"/> is why it
+/// can't be reopened, or null when it can.</summary>
+public sealed record Reopening(int Carried, DateOnly? CarriedTo, string? Blocked = null);
 
 /// <summary>An article that could go on a brief: recent, and not on it yet. <see cref="LastBriefed"/> is the latest
 /// other brief it's on, if any (on a past day that can be a later one).</summary>
@@ -44,7 +50,8 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         return await (take is { } n ? q.Take(n) : q)
             .Select(b => new BriefSummary(b.Id, b.BriefDate, b.AnalystName, b.Status, b.Items.Count,
                 b.Items.Count(i => i.Article!.Classification == Classification.Threat), b.PresentedAtUtc, b.DistributedAtUtc, b.SharePointPostedAtUtc, b.SharePointRequired,
-                db.BriefSends.Any(s => s.BriefId == b.Id && !s.IsTest && s.Status == SendStatus.Sent)))
+                db.BriefSends.Any(s => s.BriefId == b.Id && !s.IsTest && s.Status == SendStatus.Sent),
+                b.NotSentAtUtc, b.NotSentByName, b.NotSentReason))
             .ToListAsync(ct);
     }
 
@@ -305,18 +312,23 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         HashSet<Guid> onLater = brief.PresentedAtUtc is null ? [] : await LaterBriefedAsync(db, brief, ct);
         brief.MeetingHeldAtUtc ??= held;
         brief.PresentedAtUtc ??= now;
-        // An article carried to the next brief wasn't presented; it keeps its status for that meeting.
-        foreach (var a in brief.Items.Where(i => !carried.Contains(i.ArticleId) && !onLater.Contains(i.ArticleId)).Select(i => i.Article!))
-            a.Status = ArticleStatus.Presented;
+        // An article carried to the next brief wasn't presented; it keeps its status for that meeting. What each article
+        // was before this meeting marked it is kept on its item, so reopening the meeting can put it back.
+        foreach (var item in brief.Items.Where(i => !carried.Contains(i.ArticleId) && !onLater.Contains(i.ArticleId)))
+        {
+            if (item.Article!.Status == ArticleStatus.Presented) continue;
+            item.StatusBeforeMeeting ??= item.Article.Status;
+            item.Article.Status = ArticleStatus.Presented;
+        }
         Touch(brief);
-        if (carried.Count > 0) await CarryAsync(db, later, next, carried, ct);
+        if (carried.Count > 0) await CarryAsync(db, brief.Id, later, next, carried, ct);
         await db.SaveChangesAsync(ct);
         return carried.Count == 0 ? null : next;
     }
 
     // Puts the carried articles at the end of the next brief's running order, starting that brief if there's none yet, as
     // GetOrStartAsync would; saved with the meeting's end.
-    private async Task CarryAsync(IAppDbContext db, Brief? later, DateOnly next, IReadOnlyList<Guid> carried, CancellationToken ct)
+    private async Task CarryAsync(IAppDbContext db, Guid from, Brief? later, DateOnly next, IReadOnlyList<Guid> carried, CancellationToken ct)
     {
         if (later is null)
         {
@@ -331,12 +343,108 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         var ordered = later.Items.OrderBy(i => i.SortOrder).ToList();
         foreach (var id in carried.Where(id => later.Items.All(i => i.ArticleId != id)))
         {
-            var item = new BriefItem { BriefId = later.Id, ArticleId = id };
+            var item = new BriefItem { BriefId = later.Id, ArticleId = id, CarriedFromBriefId = from };
             ordered.Add(item);
             later.Items.Add(item);
         }
         Number(ordered);
         Touch(later);
+    }
+
+    /// <summary>
+    /// What reopening the brief's meeting would do (<see cref="ReopenAsync"/>), or why it can't be: the confirmation
+    /// says how many articles come back, and from which day.
+    /// </summary>
+    public async Task<Reopening> ReopeningAsync(Guid briefId, CancellationToken ct = default)
+    {
+        RequirePresent();
+        await using var db = await dbs.CreateAsync(ct);
+        var brief = await db.Briefs.AsNoTracking().FirstOrDefaultAsync(b => b.Id == briefId, ct) ?? throw new KeyNotFoundException("That brief no longer exists.");
+        return Plan(brief, await CarriedOnAsync(db, briefId, ct));
+    }
+
+    /// <summary>
+    /// Reopens the brief's meeting: a Presented brief goes back to Ready, so it can be presented again. The meeting's
+    /// times are cleared (the audit trail keeps them); each article the meeting marked presented goes back to what it
+    /// was (one presented before, on an earlier brief, is left alone); and the articles it carried come off the next
+    /// brief and are this one's again. Something a colleague put on that brief by hand stays, as do that brief and its
+    /// note. Refused once the brief is sent or finished as not sent, and once the brief the articles were carried to
+    /// has been presented or sent. The meeting's attendees, notes and discussed ticks are kept for when it resumes.
+    /// </summary>
+    public async Task<Reopening> ReopenAsync(Guid briefId, CancellationToken ct = default)
+    {
+        RequirePresent();
+        // One save, as the meeting's end is: a colleague editing the next brief at the same moment fails it whole, and
+        // it's tried again on what's there now.
+        for (var attempt = 1; ; attempt++)
+        {
+            try { return await ReopenOnceAsync(briefId, ct); }
+            catch (DbUpdateConcurrencyException) when (attempt < 3) { /* read again and redo */ }
+        }
+    }
+
+    private async Task<Reopening> ReopenOnceAsync(Guid briefId, CancellationToken ct)
+    {
+        await using var db = await dbs.CreateAsync(ct);
+        var brief = await db.Briefs.Include(b => b.Items).ThenInclude(i => i.Article).FirstOrDefaultAsync(b => b.Id == briefId, ct)
+                    ?? throw new KeyNotFoundException("That brief no longer exists.");
+        var later = await CarriedOnAsync(db, briefId, ct);
+        var plan = Plan(brief, later);
+        if (plan.Blocked is { } why) throw new InvalidOperationException(why);
+        if (plan.Carried > 0) RequireWrite();
+
+        // An article presented on a later brief since (put on that one by hand) stays presented.
+        var ids = brief.Items.Select(i => i.ArticleId).ToList();
+        var elsewhere = (await db.BriefItems.AsNoTracking()
+            .Where(i => ids.Contains(i.ArticleId) && i.BriefId != briefId)
+            .Join(db.Briefs, i => i.BriefId, b => b.Id, (i, b) => new { i.ArticleId, b.BriefDate, b.Status })
+            .Where(x => x.BriefDate > brief.BriefDate && (x.Status == BriefStatus.Presented || x.Status == BriefStatus.Sent))
+            .Select(x => x.ArticleId).ToListAsync(ct)).ToHashSet();
+        foreach (var item in brief.Items.Where(i => i.StatusBeforeMeeting is not null))
+        {
+            if (item.Article is { Status: ArticleStatus.Presented } a && !elsewhere.Contains(a.Id)) a.Status = item.StatusBeforeMeeting!.Value;
+            item.StatusBeforeMeeting = null;
+        }
+        foreach (var next in later)
+        {
+            foreach (var item in next.Items.Where(i => i.CarriedFromBriefId == briefId).ToList())
+            {
+                next.Items.Remove(item);
+                db.BriefItems.Remove(item);
+            }
+            Number(next.Items.OrderBy(i => i.SortOrder));
+            Touch(next);
+        }
+        brief.Status = BriefStatus.Ready;
+        brief.MeetingHeldAtUtc = null;
+        brief.PresentedAtUtc = null;
+        Touch(brief);
+        await db.SaveChangesAsync(ct);
+        return plan;
+    }
+
+    // The briefs holding articles this brief's meeting carried to them, earliest first, with their items.
+    private static Task<List<Brief>> CarriedOnAsync(IAppDbContext db, Guid briefId, CancellationToken ct) =>
+        db.Briefs.Include(b => b.Items).Where(b => b.Items.Any(i => i.CarriedFromBriefId == briefId))
+            .OrderBy(b => b.BriefDate).ToListAsync(ct);
+
+    // What reopening would bring back, or why it can't be done.
+    private static Reopening Plan(Brief brief, IReadOnlyList<Brief> later)
+    {
+        var carried = later.Sum(b => b.Items.Count(i => i.CarriedFromBriefId == brief.Id));
+        var to = later.Select(b => (DateOnly?)b.BriefDate).FirstOrDefault();
+        var moved = later.FirstOrDefault(b => b.Status is BriefStatus.Presented or BriefStatus.Sent);
+        var blocked = brief.Status switch
+        {
+            BriefStatus.Sent when brief.NotSentAtUtc is not null => "This brief was finished as not sent, so its meeting can't be reopened.",
+            BriefStatus.Sent => "This brief has been sent, so its meeting can't be reopened.",
+            not BriefStatus.Presented => "The meeting hasn't been ended, so there's nothing to reopen.",
+            _ when moved is not null =>
+                $"The brief for {moved.BriefDate.ToString("ddd MMM d", System.Globalization.CultureInfo.InvariantCulture)} has been "
+                + $"{(moved.Status == BriefStatus.Sent ? "sent" : "presented")}, so the articles carried to it can't come back and the meeting can't be reopened.",
+            _ => null,
+        };
+        return new Reopening(carried, to, blocked);
     }
 
     // The brief's articles that are also on a later brief not yet sent.

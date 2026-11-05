@@ -1093,6 +1093,21 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("NotSentAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("NotSentById")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NotSentByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NotSentReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
                     b.Property<long?>("PresentedAtUtc")
                         .HasColumnType("INTEGER");
 
@@ -1223,15 +1238,23 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("BriefId")
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("CarriedFromBriefId")
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("Discussed")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("SortOrder")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int?>("StatusBeforeMeeting")
+                        .HasColumnType("INTEGER");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ArticleId");
+
+                    b.HasIndex("CarriedFromBriefId");
 
                     b.HasIndex("BriefId", "ArticleId")
                         .IsUnique();

@@ -56,6 +56,9 @@ public sealed class DistributionService(
     PublishedContentCache published,
     IOptionsMonitor<DistributionOptions> options)
 {
+    /// <summary>The longest reason a brief finished as not sent can give.</summary>
+    public const int NotSentReasonMax = 500;
+
     /// <summary>Whether email is on (<c>Email:Enabled</c>). Off, a brief is marked distributed instead of sent.</summary>
     public bool EmailEnabled => email.Enabled;
 
@@ -304,6 +307,42 @@ public sealed class DistributionService(
     }
 
     /// <summary>
+    /// Finishes the brief for <paramref name="date"/> without sending it, on a server with email on: a day it won't go
+    /// out (a holiday, an outage). <see cref="MarkDistributedAsync"/>'s sibling: the same terms as a send (from its own
+    /// day, once the meeting was ended or <paramref name="withoutMeeting"/>, and reviewed where review is required), and
+    /// it becomes Sent as a send makes it, so its numbers lock and its articles are finished. Who, when and
+    /// <paramref name="reason"/> (required, at most <see cref="NotSentReasonMax"/> characters) are kept on the brief.
+    /// Nothing is frozen or published, and no SharePoint copy is waited for. It can still be emailed after: a real send
+    /// then makes it an ordinary sent brief.
+    /// </summary>
+    public async Task FinishNotSentAsync(DateOnly date, string? reason, bool withoutMeeting = false, CancellationToken ct = default)
+    {
+        RequireSend();
+        if (!email.Enabled) throw new InvalidOperationException("Email is off: mark the brief distributed instead.");
+        var why = Articles.ArticleService.CleanOrNull(reason, NotSentReasonMax)
+                  ?? throw new ArgumentException("Say why the brief isn't being sent.");
+        await using var db = await dbs.CreateAsync(ct);
+        var brief = await WithArticles(db).FirstOrDefaultAsync(b => b.BriefDate == date, ct)
+                    ?? throw new KeyNotFoundException("There's no brief for that day.");
+        if (brief.Status == BriefStatus.Sent) throw new InvalidOperationException("This brief is already finished.");
+        if (brief.Items.Count == 0) throw new InvalidOperationException("There's nothing on this brief to finish.");
+        if (SendBlocked(date, brief, withoutMeeting) is { } blocked) throw new InvalidOperationException(blocked);
+        await Reviews.ReviewService.RequireApprovedAsync(db, date, brief.Items.Select(i => i.ArticleId).ToHashSet(), "the brief is finished as not sent", ct);
+        await FinishAsync(db, brief, ct);
+        brief.SharePointRequired = false;   // nothing went, so there's no copy to post
+        brief.NotSentAtUtc = DateTimeOffset.UtcNow;
+        brief.NotSentById = user.UserId;
+        brief.NotSentByName = user.DisplayName;
+        brief.NotSentReason = why;
+        brief.EditVersion = Guid.NewGuid();
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new InvalidOperationException("Someone else changed the brief just now. Check it again.");
+        }
+    }
+
+    /// <summary>
     /// Records that the company-wide copy of the brief for <paramref name="date"/> was posted to SharePoint, by whom and
     /// when (<paramref name="posted"/>), or takes that back. Where an administrator requires it, the brief isn't finished
     /// until it's recorded. It isn't content, so it doesn't move the brief's edit version.
@@ -353,9 +392,10 @@ public sealed class DistributionService(
     // it would have (nothing is carried over, and no meeting is recorded), or they'd be offered on every later brief.
     // After a meeting, so is an article added since it ended: it went out with the brief, but no meeting marked it. One
     // the meeting carried to a later brief not yet sent is that brief's to present, and keeps its status.
+    // A brief finished as not sent and then emailed after all waits for its SharePoint copy as a sent one does.
     private async Task FinishAsync(IAppDbContext db, Brief brief, CancellationToken ct)
     {
-        if (brief.Status != BriefStatus.Sent) brief.SharePointRequired = options.CurrentValue.RequireSharePoint;
+        if (brief.Status != BriefStatus.Sent || brief.NotSentAtUtc is not null) brief.SharePointRequired = options.CurrentValue.RequireSharePoint;
         var open = brief.Items.Select(i => i.Article).OfType<Article>().Where(a => a.Status is ArticleStatus.Draft or ArticleStatus.Ready).ToList();
         if (open.Count > 0 && (brief.MeetingHeldAtUtc is not null || brief.PresentedAtUtc is not null))
         {

@@ -332,6 +332,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Intro).HasMaxLength(2000);
             e.Property(x => x.TeamNote).HasMaxLength(Tide.Application.Briefs.BriefService.TeamNoteMax);
             Person(e, x => x.DistributedById, x => x.DistributedByName);
+            Person(e, x => x.NotSentById, x => x.NotSentByName);
+            e.Property(x => x.NotSentReason).HasMaxLength(Tide.Application.Distribution.DistributionService.NotSentReasonMax);
             Person(e, x => x.SharePointPostedById, x => x.SharePointPostedByName);
             e.Property(x => x.EditVersion).IsConcurrencyToken();
             e.HasMany(x => x.Items).WithOne().HasForeignKey(x => x.BriefId).OnDelete(DeleteBehavior.Cascade);
@@ -343,6 +345,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasOne(x => x.Article).WithMany().HasForeignKey(x => x.ArticleId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => new { x.BriefId, x.ArticleId }).IsUnique();
             e.HasIndex(x => x.ArticleId);
+            e.HasIndex(x => x.CarriedFromBriefId);
         });
 
         b.Entity<MeetingAttendee>(e =>
