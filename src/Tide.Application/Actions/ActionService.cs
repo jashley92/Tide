@@ -745,19 +745,30 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     }
 
     /// <summary>Changes a comment: only its author, on whichever team (or an administrator). The action's history says so, and the audit
-    /// log keeps the text before and after.</summary>
-    public async Task EditCommentAsync(Guid commentId, string text, CancellationToken ct = default)
+    /// log keeps the text before and after. <paramref name="editVersion"/> is the comment's
+    /// <see cref="ActionComment.EditVersion"/> when its edit opened: if someone changed it since, the save is refused and
+    /// says who (null skips the check). Returns the comment's version after the save.</summary>
+    public async Task<Guid> EditCommentAsync(Guid commentId, string text, Guid? editVersion = null, CancellationToken ct = default)
     {
         var clean = ArticleService.Clean(text, 8000, multiline: true);
         await using var db = await dbs.CreateAsync(ct);
         var (comment, a) = await OwnCommentAsync(db, commentId, ct);
+        if (editVersion is { } v && v != comment.EditVersion)
+            throw new StaleEditException($"{comment.EditedByName ?? "Someone else"} changed this comment since you opened it.");
         if (clean.Length == 0 && !await db.ActionCommentFiles.AnyAsync(f => f.CommentId == commentId, ct))
             throw new ArgumentException("A comment can't be empty; delete it instead.");
-        if (comment.Text == clean) return;
+        if (comment.Text == clean) return comment.EditVersion;
         comment.Text = clean;
         comment.EditedAtUtc = DateTimeOffset.UtcNow;
+        comment.EditedByName = user.DisplayName;
+        comment.EditVersion = Guid.NewGuid();
         db.ActionEvents.Add(Event(a.Id, $"{user.DisplayName} edited a comment from {comment.AtUtc.ToString("MMM d", System.Globalization.CultureInfo.InvariantCulture)}."));
-        await db.SaveChangesAsync(ct);
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new StaleEditException("Someone else changed this comment at the same moment.");
+        }
+        return comment.EditVersion;
     }
 
     /// <summary>Deletes a comment, and its files: only its author, on whichever team (or an administrator). The history says so; the audit

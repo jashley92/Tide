@@ -115,6 +115,7 @@ public static class HistoryFormatter
         nameof(Article.EditVersion), nameof(AuditableEntity.ModifiedAtUtc), nameof(AuditableEntity.ModifiedBy),
         nameof(AuditableEntity.CreatedAtUtc), nameof(AuditableEntity.CreatedBy), nameof(Article.AuthorId), nameof(Brief.AnalystId),
         nameof(ArticleTag.ArticleId), nameof(ArticleTag.TagId), nameof(ArticleTechnique.TechniqueId), nameof(ArticleCve.CveId),
+        nameof(ActionComment.EditedByName),
     };
 
     private static readonly Dictionary<string, string> Labels = new(StringComparer.Ordinal)

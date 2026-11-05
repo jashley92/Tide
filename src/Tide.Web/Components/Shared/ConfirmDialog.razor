@@ -26,7 +26,7 @@
                 <div class="tide-modal-content" id="@_contentId" @ref="_content">@ChildContent</div>
             }
             <div class="tide-modal-actions">
-                <button type="button" class="btn btn-outline-secondary btn-sm" @ref="_cancel" disabled="@_busy" @onclick="Cancel">@(CloseOnly ? "Close" : "Cancel")</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" @ref="_cancel" disabled="@_busy" @onclick="Cancel">@(CloseOnly ? "Close" : _cancelLabel)</button>
                 @if (!CloseOnly)
                 {
                     <button type="button" class="btn @(_danger ? "btn-danger" : "btn-primary") btn-sm" disabled="@(_busy || ConfirmDisabled)" @onclick="Confirm">
@@ -80,9 +80,11 @@
     private string _bodyId => _titleId + "-body";
     private string _contentId => _titleId + "-content";
     private bool _open, _shown, _danger, _busy;
-    private string _title = "", _message = "", _confirmLabel = "";
+    private string _title = "", _message = "", _confirmLabel = "", _cancelLabel = "Cancel";
     private TaskCompletionSource<bool>? _answer;
     private ElementReference _cancel, _content;
+    private ElementReference? _focusOnCancel;
+    private bool _confirmed;
 
     // An alert is described by what it says; a form's fields describe themselves.
     private string? DescribedBy => !string.IsNullOrEmpty(_message) ? _bodyId : ChildContent is not null && !Form && !CloseOnly ? _contentId : null;
@@ -90,13 +92,17 @@
     /// <summary>
     /// Asks, and answers true when the person chose <paramref name="confirmLabel"/>. <paramref name="danger"/> colours that
     /// button as destructive (the default); pass false for a choice that isn't (taking over an action, ending a meeting).
-    /// The message may be empty when the child content says it all.
+    /// The message may be empty when the child content says it all. <paramref name="cancelLabel"/> names the button that
+    /// doesn't go ahead ("Keep editing"), and <paramref name="focusOnCancel"/> is where focus goes when it's chosen, in
+    /// place of the button that asked.
     /// </summary>
-    public Task<bool> Ask(string title, string? message, string confirmLabel, bool danger = true)
+    public Task<bool> Ask(string title, string? message, string confirmLabel, bool danger = true, string? cancelLabel = null,
+        ElementReference? focusOnCancel = null)
     {
         _answer?.TrySetResult(false);
         _answer = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         (_title, _message, _confirmLabel, _danger, _busy, _open) = (title, message ?? "", confirmLabel, danger, false, true);
+        (_cancelLabel, _focusOnCancel) = (cancelLabel ?? "Cancel", focusOnCancel);
         StateHasChanged();
         return _answer.Task;
     }
@@ -125,6 +131,7 @@
     private void Close(bool answer)
     {
         _open = false;
+        _confirmed = answer;
         _answer?.TrySetResult(answer);
         _answer = null;
     }
@@ -145,9 +152,21 @@
             if (_open && CloseOnly && ChildContent is not null) await JS.InvokeVoidAsync("tideDialog.openFirstControl", _content, _cancel);
             else if (_open && Form && ChildContent is not null) await JS.InvokeVoidAsync("tideDialog.openFirst", _content, _cancel);
             else if (_open) await JS.InvokeVoidAsync("tideDialog.open", _cancel);
-            else await JS.InvokeVoidAsync("tideDialog.close");
+            else
+            {
+                await JS.InvokeVoidAsync("tideDialog.close");
+                if (!_confirmed && _focusOnCancel is { } back) await FocusBack(back);
+                _focusOnCancel = null;
+            }
         }
         catch (JSDisconnectedException) { }
+    }
+
+    // After tideDialog.close has put focus back on the opener, so this wins.
+    private static async Task FocusBack(ElementReference back)
+    {
+        try { await back.FocusAsync(); }
+        catch (JSException) { }   // it went while the dialog was open
     }
 
     public void Dispose() => _answer?.TrySetResult(false);

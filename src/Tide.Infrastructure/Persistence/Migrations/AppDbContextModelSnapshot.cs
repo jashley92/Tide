@@ -139,8 +139,16 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("EditVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("TEXT");
+
                     b.Property<long?>("EditedAtUtc")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("EditedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Text")
                         .IsRequired()

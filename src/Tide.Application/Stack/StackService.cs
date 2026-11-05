@@ -5,6 +5,7 @@ using Tide.Application.Actions;
 using Tide.Application.Articles;
 using Tide.Application.Content;
 using Tide.Application.Security;
+using Tide.Application.Settings;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 
@@ -43,8 +44,12 @@ public sealed record StackArticle(Guid Id, string Title, DateOnly On, ArticleSta
 /// <summary>An action in a product's history: raised from one of its articles, or naming it.</summary>
 public sealed record StackAction(int Number, string Title, Priority Priority, ActionStatus Status, string TeamName, string? AssigneeName, DateOnly? DueDate);
 
-/// <summary>A product with its history, newest first.</summary>
-public sealed record StackDetail(StackProduct Product, string? TeamName, IReadOnlyList<StackArticle> Articles, IReadOnlyList<StackAction> Actions);
+/// <summary>
+/// A product with its history, newest first, held to the team edition's <paramref name="Ceiling"/>: articles above it, and
+/// actions raised from them, are counted (<paramref name="ArticlesAbove"/>, <paramref name="ActionsAbove"/>) but not named.
+/// </summary>
+public sealed record StackDetail(StackProduct Product, string? TeamName, IReadOnlyList<StackArticle> Articles, IReadOnlyList<StackAction> Actions,
+    TlpLevel Ceiling, int ArticlesAbove = 0, int ActionsAbove = 0);
 
 /// <summary>
 /// A product as present mode shows it over an article's slide (team edition only: its notes are internal): its facts, and
@@ -61,7 +66,7 @@ public sealed record ArticleStack(IReadOnlyList<StackProduct> Tagged, IReadOnlyL
 /// an article can be tagged with any number of them (optional), and each product's page lists the articles and actions
 /// about it, tagged or found by name. A name matches as whole words, ignoring case, in a title or the start of a summary.
 /// </summary>
-public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser user, Org.OrgClock clock)
+public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser user, Org.OrgClock clock, DistributionSettings editions)
 {
     /// <summary>How much of a summary (an item's excerpt, an article's bottom line) is read for a name.</summary>
     public const int SummaryStart = 400;
@@ -160,17 +165,23 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         await using var db = await dbs.CreateAsync(ct);
         var p = await db.StackProducts.AsNoTracking().Include(x => x.Team).FirstOrDefaultAsync(x => x.Id == id, ct);
         if (p is null) return null;
+        // The page is the team edition's readers': an article above its ceiling isn't named, as the brief leaves it out.
+        var ceiling = (await editions.GetAsync(ct)).Team;
         var e = Entry(p);
-        var articles = await HistoryAsync(db, p, ct);
-        var ids = articles.Select(a => a.Id).ToList();
+        var history = await HistoryAsync(db, p, ct);
+        var ids = history.Select(h => h.Article.Id).ToList();
+        var aboveIds = (await db.Articles.AsNoTracking().Where(a => a.Tlp > ceiling).Select(a => a.Id).ToListAsync(ct)).ToHashSet();
         // Only the columns shown: every action is read, to find those that name the product without an article.
         var actions = (await db.Actions.AsNoTracking()
                 .Select(a => new { a.ArticleId, a.Number, a.Title, a.Priority, a.Status, Team = a.Team!.Name, a.AssigneeName, a.DueDate })
                 .ToListAsync(ct))
             .Where(a => (a.ArticleId is { } aid && ids.Contains(aid)) || Names(e, Words(a.Title, null)))
+            .ToList();
+        var shownActions = actions.Where(a => a.ArticleId is not { } aid || !aboveIds.Contains(aid))
             .OrderBy(a => ActionItem.IsClosedStatus(a.Status)).ThenBy(a => a.DueDate ?? DateOnly.MaxValue).ThenBy(a => a.Number)
             .Select(a => new StackAction(a.Number, a.Title, a.Priority, a.Status, a.Team ?? "", a.AssigneeName, a.DueDate)).ToList();
-        return new StackDetail(p, p.Team?.Name, articles, actions);
+        var articles = history.Where(h => h.Tlp <= ceiling).Select(h => h.Article).ToList();
+        return new StackDetail(p, p.Team?.Name, articles, shownActions, ceiling, history.Count - articles.Count, actions.Count - shownActions.Count);
     }
 
     /// <summary>How many other articles a present-mode card lists.</summary>
@@ -211,21 +222,19 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         await using var db = await dbs.CreateAsync(ct);
         var p = await db.StackProducts.AsNoTracking().Include(x => x.Team).FirstOrDefaultAsync(x => x.Id == id, ct);
         if (p is null) return null;
-        var history = (await HistoryAsync(db, p, ct)).Where(a => a.Id != exceptArticleId).ToList();
-        var ids = history.Select(a => a.Id).ToList();
-        var above = (await db.Articles.AsNoTracking().Where(a => ids.Contains(a.Id) && a.Tlp > ceiling).Select(a => a.Id).ToListAsync(ct)).ToHashSet();
-        var others = history.Where(a => !above.Contains(a.Id)).Take(CardArticles).ToList();
+        var others = (await HistoryAsync(db, p, ct)).Where(h => h.Article.Id != exceptArticleId && h.Tlp <= ceiling)
+            .Select(h => h.Article).Take(CardArticles).ToList();
         return new StackCard(p, p.Team?.Name, others);
     }
 
-    // A product's articles, tagged with it or naming it, newest first.
-    private async Task<List<StackArticle>> HistoryAsync(IAppDbContext db, StackProduct p, CancellationToken ct)
+    // A product's articles, tagged with it or naming it, newest first, each with its TLP (for the ceiling the reader holds).
+    private async Task<List<(StackArticle Article, TlpLevel Tlp)>> HistoryAsync(IAppDbContext db, StackProduct p, CancellationToken ct)
     {
         var e = Entry(p);
         var tagged = (await db.ArticleProducts.AsNoTracking().Where(t => t.ProductId == p.Id).Select(t => t.ArticleId).ToListAsync(ct)).ToHashSet();
         return (await ArticlesAsync(db, ct)).Where(a => tagged.Contains(a.Id) || Names(e, a.Words))
-            .Select(a => new StackArticle(a.Id, a.Title, a.On, a.Status, tagged.Contains(a.Id)))
-            .OrderByDescending(a => a.On).ToList();
+            .Select(a => (Article: new StackArticle(a.Id, a.Title, a.On, a.Status, tagged.Contains(a.Id)), a.Tlp))
+            .OrderByDescending(h => h.Article.On).ToList();
     }
 
     /// <summary>An article's products, and those it names but isn't tagged with.</summary>
@@ -243,14 +252,14 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
     }
 
     // When each article counts in a product's history: its first brief, else the day it was written (the organization's day).
-    private sealed record ArticleFact(Guid Id, string Title, string Words, DateOnly On, ArticleStatus Status);
+    private sealed record ArticleFact(Guid Id, string Title, string Words, DateOnly On, ArticleStatus Status, TlpLevel Tlp);
 
     private async Task<List<ArticleFact>> ArticlesAsync(IAppDbContext db, CancellationToken ct)
     {
         var briefed = await ArticleDates.FirstBriefedAsync(db, ct);
-        var rows = await db.Articles.AsNoTracking().Select(a => new { a.Id, a.Title, a.Bluf, a.CreatedAtUtc, a.Status }).ToListAsync(ct);
+        var rows = await db.Articles.AsNoTracking().Select(a => new { a.Id, a.Title, a.Bluf, a.CreatedAtUtc, a.Status, a.Tlp }).ToListAsync(ct);
         return rows.Select(a => new ArticleFact(a.Id, a.Title, Words(a.Title, a.Bluf),
-            briefed.TryGetValue(a.Id, out var d) ? d : DateOnly.FromDateTime(clock.ToLocal(a.CreatedAtUtc).DateTime), a.Status)).ToList();
+            briefed.TryGetValue(a.Id, out var d) ? d : DateOnly.FromDateTime(clock.ToLocal(a.CreatedAtUtc).DateTime), a.Status, a.Tlp)).ToList();
     }
 
     // --- changing -----------------------------------------------------------------------------------------------
