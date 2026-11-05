@@ -47,6 +47,7 @@ public class CapabilitiesTests : IDisposable
         ["Work actions: status, outcome, assignee, checklist, hunts"] = (db, s) => db.Actions().TakeAsync(s.ActionId),
         ["Add and describe files"] = (db, s) => db.ActionFiles().AddAsync(s.ActionId, [new ActionFileUpload("a.log", Samples.Text("log"), "text/plain")]),
         ["Restore removed files"] = (db, s) => db.ActionFiles().RestoreAsync(s.RemovedFile),
+        ["Choose my own notifications (reminders, digests, rotation emails)"] = (db, _) => db.NotificationPrefs().GetMineAsync(),
         ["Enter the day's numbers"] = (db, s) => db.Metrics().SaveValueAsync(s.Metric, Day, 3, null),
         ["Read the metrics history"] = (db, _) => db.Metrics().HistoryAsync(Day, Day),
         ["Read Our stack and adversaries"] = (db, _) => db.Stack().ListAsync(),
@@ -69,6 +70,7 @@ public class CapabilitiesTests : IDisposable
         ["Reports, trends and exports"] = [typeof(Reports), typeof(Trends)],
         ["Coverage of detection rules"] = [typeof(CoveragePage)],
         ["Read the brief rotation"] = [typeof(RotationPage)],
+        ["Choose my own notifications (reminders, digests, rotation emails)"] = [typeof(MyNotifications)],
         ["Read the company-wide archive (published briefs)"] = [typeof(Published)],
     };
 

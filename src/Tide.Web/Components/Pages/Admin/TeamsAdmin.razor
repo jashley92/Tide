@@ -10,7 +10,9 @@
 @inject ToastService Toasts
 @inject IJSRuntime JS
 @inject ActionFileService FileSvc
+@inject Tide.Application.Preferences.NotificationPreferenceService NotifyPrefs
 @using Tide.Application.Settings
+@using Tide.Application.Preferences
 
 <PageTitle>Teams &amp; SLA · TIDE</PageTitle>
 
@@ -118,7 +120,7 @@
 
         <section class="tide-card" aria-labelledby="rem-title">
             <h2 id="rem-title">Reminders and digests</h2>
-            <p class="small tide-muted">All off by default; each is sent once. Times in @Clock.Zone.Id
+            <p class="small tide-muted">All off by default but the personal digest's offer; each is sent once. Times in @Clock.Zone.Id
                 (<a href="admin/organization">Organization settings</a>). Until saved here, the server's <span class="tide-data">Notifications</span> values apply.</p>
             <div class="row g-2 mb-2">
                 <div class="col-sm-6">
@@ -139,13 +141,30 @@
                                     <input class="form-check-input" type="checkbox" role="switch" id="@id" checked="@_rem.On.GetValueOrDefault(kind)" @onchange="e => _rem.On[kind] = e.Value is true" />
                                     <label class="form-check-label" for="@id">@KindText(kind)</label>
                                 </div>
-                                <div class="small tide-muted">@KindAbout(kind)@(last is null ? "" : $" · last run {Ui.When(Clock, last.AtUtc)}: {(last.Error ?? $"{last.Sent} sent")}")</div>
+                                <div class="small tide-muted">@KindAbout(kind)@(last is null ? "" : $" · last run {Ui.When(Clock, last.AtUtc)}: {(last.Error ?? $"{last.Sent} sent")}{(last.Note is { } note ? $" ({note})" : "")}")</div>
+                                @if (PreferenceOf(kind) is { } pref)
+                                {
+                                    @Count(pref)
+                                }
                             </td>
                             <td class="text-end"><button class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@_busy" aria-label="Run @KindText(kind) now" @onclick="() => RunNow(kind)">Run now</button></td>
                         </tr>
+                        @if (PreferenceOf(kind) is { } shown && _showing == shown)
+                        {
+                            <tr><td colspan="2" class="pt-0">@List(shown, KindText(kind))</td></tr>
+                        }
                     }
+                    <tr>
+                        <td colspan="2">
+                            <div>Rotation requests and notices</div>
+                            <div class="small tide-muted">Swap and cover requests, and approved, recorded or declined notices: always sent. The managers' copies aren't anyone's to turn off.</div>
+                            @Count(UserPreferences.NotifyRotationRequests)
+                            @if (_showing == UserPreferences.NotifyRotationRequests) { @List(UserPreferences.NotifyRotationRequests, "Rotation requests and notices") }
+                        </td>
+                    </tr>
                 </tbody>
             </table>
+            <p class="small tide-muted">People choose for themselves in My notifications (the account menu): they can turn off what's on here, and take a personal digest. These counts are read-only.</p>
             <div class="row g-2">
                 <div class="col-sm-6">
                     <label class="tide-field-label" for="rem-digest-day">Digest goes on</label>
@@ -265,6 +284,7 @@
         // switches read this form.
         _rem = ReminderForm.From(Reminders);
         _zip = FileSvc.ZipMode;
+        _counts = await NotifyPrefs.CountsAsync();
         _people = await Users.ListAsync();
         var targets = await Sla.GetAsync();
         foreach (var p in Enum.GetValues<Priority>()) _byPriority[p] = targets.ByPriority.TryGetValue(p, out var v) ? v : null;
@@ -282,6 +302,7 @@
         ReminderKind.Overdue => "Overdue reminders",
         ReminderKind.Digest => "Weekly team digest",
         ReminderKind.Presenting => "Brief rotation reminder",
+        ReminderKind.PersonalDigest => "Personal digest",
         _ => "Brief-not-ready nudge",
     };
 
@@ -291,8 +312,90 @@
         ReminderKind.Overdue => "Actions past due, to their owners",
         ReminderKind.Digest => "Each team's week, to its mailbox or members",
         ReminderKind.Presenting => "To whoever presents the next business day",
+        ReminderKind.PersonalDigest => "Offered in My notifications: each person's own actions, daily at the reminder time or weekly on the digest day",
         _ => "To the presenting analyst, if today's brief isn't ready",
     };
+
+    // The choice in My notifications that leaves people out of a kind (or, for the personal digest, takes it).
+    private static string? PreferenceOf(ReminderKind k) => k switch
+    {
+        ReminderKind.DueSoon => UserPreferences.NotifyDueSoon,
+        ReminderKind.Overdue => UserPreferences.NotifyOverdue,
+        ReminderKind.Digest => UserPreferences.NotifyTeamDigest,
+        ReminderKind.PersonalDigest => UserPreferences.NotifyDigest,
+        _ => UserPreferences.NotifyRotationReminders,
+    };
+
+    private IReadOnlyDictionary<string, int> _counts = new Dictionary<string, int>();
+    private string? _showing;
+    private IReadOnlyList<NotificationChooser> _choosers = [];
+
+    /// <summary>"3 people opted out" or "5 people get a personal digest".</summary>
+    internal static string CountText(string pref, int n)
+    {
+        var people = n == 1 ? "1 person" : $"{n} people";
+        return pref == UserPreferences.NotifyDigest
+            ? n == 0 ? "No one gets a personal digest" : $"{people} get{(n == 1 ? "s" : "")} a personal digest"
+            : n == 0 ? "No one opted out" : $"{people} opted out";
+    }
+
+    private static string ListId(string pref) => "optlist-" + pref.Replace('.', '-');
+
+    // The count under a kind, a button that opens the list of those people (read-only) below it.
+    private RenderFragment Count(string pref) => __builder =>
+    {
+        var n = _counts.GetValueOrDefault(pref);
+        var listId = ListId(pref);
+        <div class="small">
+            @if (n == 0)
+            {
+                <span class="tide-muted">@CountText(pref, n)</span>
+            }
+            else
+            {
+                <button type="button" class="tide-optcount" aria-expanded="@(_showing == pref ? "true" : "false")" aria-controls="@listId"
+                        @onclick="() => ShowChoosers(pref)">@CountText(pref, n)</button>
+            }
+        </div>
+    };
+
+    // Who opted out of a kind (or takes a personal digest), and since when.
+    private RenderFragment List(string pref, string what) => __builder =>
+    {
+        var digest = pref == UserPreferences.NotifyDigest;
+        <table class="tide-table tide-optlist" id="@ListId(pref)" aria-label="@what: @CountText(pref, _counts.GetValueOrDefault(pref))">
+            <thead><tr><th>Name</th><th>Email</th>@if (digest) { <th>How often</th> }<th>Since</th></tr></thead>
+            <tbody>
+                @foreach (var c in _choosers)
+                {
+                    <tr>
+                        <td>@c.Name</td>
+                        <td class="tide-data">@(c.Email ?? "no address")</td>
+                        @if (digest) { <td>@c.Value</td> }
+                        <td class="text-nowrap">@Ui.When(Clock, c.Since)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    };
+
+    internal async Task ShowChoosers(string pref)
+    {
+        if (_showing == pref)
+        {
+            _showing = null;
+        }
+        else
+        {
+            try
+            {
+                _choosers = await NotifyPrefs.PeopleAsync(pref);
+                _showing = pref;
+            }
+            catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        }
+        StateHasChanged();
+    }
 
     private static string Hm(TimeOnly t) => t.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
 
@@ -316,6 +419,7 @@
                 [OperationalSettings.BriefNotReady] = Switch(_rem.On[ReminderKind.BriefNotReady]),
                 [OperationalSettings.BriefNotReadyTime] = Hm(_rem.BriefNotReadyTime),
                 [OperationalSettings.BriefNotReadyRecipients] = _rem.Recipients,
+                [OperationalSettings.PersonalDigest] = Switch(_rem.On[ReminderKind.PersonalDigest]),
             });
             _rem = ReminderForm.From(Reminders);
             Toasts.Show("Saved. Applies within five minutes.");

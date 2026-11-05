@@ -106,6 +106,7 @@ public static class SettingsCatalog
         new("Reminders", "Brief not ready", OperationalSettings.BriefNotReady, EditedIn: TeamsPage),
         new("Reminders", "Brief-not-ready time", OperationalSettings.BriefNotReadyTime, EditedIn: TeamsPage),
         new("Reminders", "Told when there's no brief", OperationalSettings.BriefNotReadyRecipients, EditedIn: TeamsPage),
+        new("Reminders", "Personal digest offered", OperationalSettings.PersonalDigest, EditedIn: TeamsPage),
 
         new("Intake", "Polling", OperationalSettings.IntakeEnabled, EditedIn: SourcesPage),
         new("Intake", "Feed items kept (days)", OperationalSettings.RetentionDays, EditedIn: SourcesPage),

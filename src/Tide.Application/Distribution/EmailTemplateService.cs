@@ -157,6 +157,7 @@ public sealed class EmailTemplateService(IAppDbContextFactory dbs, ICurrentUser 
     private string Subtitle(EmailTemplate t) => t.Id switch
     {
         "digest" => $"{clock.TeamName} · week of {SampleMonday:MMMM d}",
+        "personal-digest" => $"{clock.TeamName} · {clock.Today.ToString("dddd, MMMM d", CultureInfo.InvariantCulture)}",
         "brief-not-ready" => $"{clock.TeamName} · the meeting is at {clock.MeetingTime.ToString("h:mm tt", CultureInfo.InvariantCulture)}",
         "presenting" => $"{clock.TeamName} · from {SampleDay:dddd, MMMM d}",
         _ when t.Id.StartsWith("rotation-", StringComparison.Ordinal) => clock.TeamName + " brief rotation",
@@ -201,6 +202,14 @@ public sealed class EmailTemplateService(IAppDbContextFactory dbs, ICurrentUser 
             ["Note"] = "<p style=\"margin:0 0 12px;\">“I'm out at a conference that day.”</p>",
             ["DecisionNote"] = t == EmailTemplateCatalog.RotationDeclined ? " “I'm on leave that week.”" : ": “Happy to.”",
             ["RecordedBy"] = "Robin",
+            ["Name"] = "Robin",
+            ["Period"] = today.ToString("dddd, MMMM d", CultureInfo.InvariantCulture),
+            ["Cadence"] = "daily",
+            ["DueSoonCount"] = "1",
+            ["NewCount"] = "1",
+            ["OverdueList"] = ReminderService.ListHeading("Overdue", top: 8) + ReminderService.ActionTable(sample.Skip(1), today, baseUrl, clock.Days),
+            ["DueSoonList"] = ReminderService.ListHeading("Due today or the next business day", top: 14) + ReminderService.ActionTable(sample.Take(1), today, baseUrl, clock.Days),
+            ["NewList"] = ReminderService.ListHeading("New to you since your last digest", top: 14) + ReminderService.ActionTable(SampleNew(today), today, baseUrl, clock.Days),
         };
         return values;
     }
@@ -209,6 +218,11 @@ public sealed class EmailTemplateService(IAppDbContextFactory dbs, ICurrentUser 
     [
         new() { Number = 41, Title = "Block the phishing domains from today's brief at the mail gateway", Kind = ActionKind.Block, Priority = Priority.P2, AssigneeName = "Robin", DueDate = today, Status = ActionStatus.Open },
         new() { Number = 42, Title = "Hunt for the loader's scheduled task across endpoints", Kind = ActionKind.ThreatHunt, Priority = Priority.P1, AssigneeName = "Sam", DueDate = today.AddDays(-2), Status = ActionStatus.InProgress },
+    ];
+
+    private static List<ActionItem> SampleNew(DateOnly today) =>
+    [
+        new() { Number = 43, Title = "Review the new detection rule's false positives", Kind = ActionKind.Other, Priority = Priority.P3, AssigneeName = "Robin", DueDate = today.AddDays(9), Status = ActionStatus.Open },
     ];
 
     private static List<ActionItem> SampleClosed(DateOnly today) =>

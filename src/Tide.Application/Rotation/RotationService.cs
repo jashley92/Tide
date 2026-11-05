@@ -7,6 +7,7 @@ using Tide.Application.Abstractions;
 using Tide.Application.Articles;
 using Tide.Application.Distribution;
 using Tide.Application.Org;
+using Tide.Application.Preferences;
 using Tide.Application.Security;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
@@ -311,7 +312,7 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
         };
         db.RotationChanges.Add(change);
         await db.SaveChangesAsync(ct);
-        await NotifyAsync(db, [partner.UserId], Render(EmailTemplateCatalog.RotationRequest, change, new()
+        await NotifyAsync(db, [partner.UserId], UserPreferences.NotifyRotationRequests, Render(EmailTemplateCatalog.RotationRequest, change, new()
         {
             ["Ask"] = change.Kind == RotationChangeKind.Swap ? "swap brief days" : "cover their brief days",
             ["Note"] = change.Note is null ? "" : $"<p style=\"margin:0 0 12px;\">\u201C{Esc(change.Note)}\u201D</p>",
@@ -373,7 +374,7 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
         {
             ["DecisionNote"] = change.DecisionNote is null ? "" : $": \u201C{change.DecisionNote}\u201D",
         });
-        await NotifyAsync(db, [change.RequesterId, change.CreatedById], approved, ct);
+        await NotifyAsync(db, [change.RequesterId, change.CreatedById], UserPreferences.NotifyRotationRequests, approved, ct);
         await NotifyManagersAsync(approved, ct);
     }
 
@@ -416,12 +417,13 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
         finally { Deciding.Release(); }
 
         var recorded = Render(EmailTemplateCatalog.RotationRecorded, change, new() { ["RecordedBy"] = user.DisplayName });
-        await NotifyAsync(db, new[] { change.RequesterId, change.PartnerId }.Where(id => id != user.UserId), recorded, ct);
+        await NotifyAsync(db, new[] { change.RequesterId, change.PartnerId }.Where(id => id != user.UserId), UserPreferences.NotifyRotationRequests, recorded, ct);
         await NotifyManagersAsync(recorded, ct);
         return change;
     }
 
-    // The managers' copy: the same subject and body, headed as for their information.
+    // The managers' copy: the same subject and body, headed as for their information. Their addresses are the
+    // rotation's settings, not people's own choices, so no one's opt-out removes them.
     private async Task NotifyManagersAsync(RenderedTemplate t, CancellationToken ct)
     {
         var managers = await ManagerEmailsAsync(ct);
@@ -445,7 +447,7 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
             await db.SaveChangesAsync(ct);
         }
         finally { Deciding.Release(); }
-        await NotifyAsync(db, [change.RequesterId, change.CreatedById], Render(EmailTemplateCatalog.RotationDeclined, change, new()
+        await NotifyAsync(db, [change.RequesterId, change.CreatedById], UserPreferences.NotifyRotationRequests, Render(EmailTemplateCatalog.RotationDeclined, change, new()
         {
             ["DecisionNote"] = change.DecisionNote is null ? "" : $" \u201C{change.DecisionNote}\u201D",
         }), ct);
@@ -662,10 +664,13 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
         return (templates ?? EmailTemplateStore.Defaults).Render(t, values);
     }
 
-    // Emails the people (by user id) who have an address; a send that fails doesn't undo the change.
-    private async Task NotifyAsync(IAppDbContext db, IEnumerable<string> userIds, RenderedTemplate t, CancellationToken ct)
+    // Emails the people (by user id) who have an address and haven't turned this kind off in My notifications
+    // (<paramref name="preference"/>); a send that fails doesn't undo the change.
+    private async Task NotifyAsync(IAppDbContext db, IEnumerable<string> userIds, string preference, RenderedTemplate t, CancellationToken ct)
     {
         var ids = userIds.Distinct().ToList();
+        var optedOut = await NotificationPreferenceService.OptedOutAsync(db, preference, ids, ct);
+        ids.RemoveAll(optedOut.Contains);
         var to = await db.Users.AsNoTracking().Where(u => ids.Contains(u.Sid) && u.Email != null && u.Email != "").Select(u => u.Email!).ToListAsync(ct);
         if (to.Count == 0) return;
         var html = Html(t.Heading, t.BodyHtml);

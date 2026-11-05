@@ -77,6 +77,7 @@ brief's live meeting.
 | Add and describe files | Yes | Yes | own team's | No | No | No |
 | Remove files | Yes | Yes | own files | No | No | No |
 | Restore removed files | Yes | No | No | No | No | No |
+| Choose my own notifications (reminders, digests, rotation emails) | Yes | Yes | Yes | Yes | No | No |
 | **Numbers** | | | | | | |
 | Enter the day's numbers | Yes | Yes | No | No | No | No |
 | Read the metrics history | Yes | Yes | Yes | Yes | No | No |
@@ -277,8 +278,15 @@ until then (times are in the organization's time zone, set on **Organization set
 | `Digest:Enabled`, `Day`, `Time` | Each team's week: open, overdue and closed actions, to its mailbox or members. |
 | `BriefNotReady:Enabled`, `Time`, `Recipients` | If today's brief isn't marked ready by `Time`, a nudge to its analyst (or, with no brief yet, whoever the brief rotation names), else to `Recipients`. |
 | `Presenting:Enabled` | At `ReminderTime`, a reminder to whoever presents the brief the next business day (once per stretch). |
+| `PersonalDigest:Enabled` | On by default: people may choose, on **My notifications**, a digest of their own actions, daily at `ReminderTime` on business days or weekly on `Digest:Day` at `Digest:Time`. Nothing goes until someone does. |
 
 Each thing is sent once. **Administration > Teams & SLA** shows each scan's last run and can run one now.
+
+People turn off the kinds they don't want on **My notifications** (the account menu): due-soon and overdue
+reminders, the team digest when it comes to members, rotation reminders, and rotation requests and notices. They
+can only turn off what an administrator has on. A team mailbox, the brief-not-ready fallback recipients and the
+rotation's managers are addresses, not people, so they always get theirs; so does everyone the brief is sent to.
+Teams & SLA shows how many people opted out of each kind, and who.
 
 ## Intake and CVE data
 

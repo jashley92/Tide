@@ -524,6 +524,14 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public Tide.Application.Search.RelatedService Related(OrgClock? clock = null) => new(this, User, clock ?? Clock);
 
+    /// <summary>The reminder settings an administrator saved, as the notification choices read them.</summary>
+    public ReminderOptions ReminderOptions { get; } = new();
+
+    public Tide.Application.Preferences.UserPreferenceService Preferences() => new(this, User, TimeProvider.System);
+
+    public Tide.Application.Preferences.NotificationPreferenceService NotificationPrefs(ReminderOptions? options = null) =>
+        new(this, User, Preferences(), new StaticOptionsMonitor<ReminderOptions>(options ?? ReminderOptions));
+
     public ReminderService Reminders(ReminderOptions? options = null, OrgClock? clock = null, ReminderLog? log = null) =>
         new(this, Email, clock ?? Clock, new StaticOptionsMonitor<ReminderOptions>(options ?? new ReminderOptions()),
             Options.Create(new AppOptions { BaseUrl = "https://tide.example.org" }), log ?? new ReminderLog(), User, Rotation(clock), EmailTemplates);

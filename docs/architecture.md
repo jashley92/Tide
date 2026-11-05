@@ -90,7 +90,7 @@
   without `layout` opens it (read once as the page opens, kept across the prerender), and a link's own `layout` wins
   for that visit without changing it. The page's address always says `layout=board` or `layout=list`, so a reload or
   a copy opens what's shown. A link to a view only the list has (Overdue, Recently closed, grouped by kind) opens the
-  list.
+  list. The notification choices are preferences too (see Notifications below).
 
 ## TLP and editions
 
@@ -150,7 +150,7 @@ entered; only a weekend's are refused. A group's trend charts (`MetricMath.Trend
 brief's own date, and any holiday on which one of the group's numbers was entered.
 
 **Email templates** (Administration › Email templates) are the wording of the notification
-emails: the four reminder scans (due soon, overdue, the weekly digest, brief not ready), presenting next, and the
+emails: the reminder scans (due soon, overdue, the weekly digest, the personal digest, brief not ready), presenting next, and the
 rotation's request, approved, recorded and declined emails. `Distribution/EmailTemplateCatalog` lists each with its
 default subject, heading and Markdown body and the `{{Name}}` values it fills in. A changed part is a `Settings` row
 `EmailTemplate:{id}:{Subject|Heading|Body}`; one saved as its default has no row, so a reset removes them.
@@ -334,11 +334,53 @@ many days it looks back, and each kind it couldn't query says how many values it
 (No hits) in one save and one history line, naming the days searched; it needs left-out values acknowledged, and is
 refused while another query on the action has hits or hasn't been run.
 
-`ReminderService` holds the scans (due soon, overdue, weekly digest, brief not ready). `ReminderHostedService` polls
-every five minutes; each scan is off until enabled, waits for its time of day, batches one email per recipient, and
-marks each email with the TLP of the articles its actions were raised from, and writes a `NotificationMark` as each
-email goes, so it's sent once even when a scan stops partway. Scans run one at a
+`ReminderService` holds the scans (due soon, overdue, weekly digest, personal digest, brief not ready, presenting).
+`ReminderHostedService` polls every five minutes; each scan is off until enabled, waits for its time of day, batches
+one email per recipient, and marks each email with the TLP of the articles its actions were raised from, and writes a
+`NotificationMark` as each email goes, so it's sent once even when a scan stops partway. Scans run one at a
 time, and one that fails is logged without stopping the others.
+
+### Notifications: people's own choices
+
+An administrator turns each kind on or off for everyone (Teams & SLA, `ReminderOptions`). Each person then chooses
+for themselves on **My notifications** (`/notifications`, from the account menu; anyone who can read actions, so
+anyone who can be sent one). The choices are rows in the per-user preference store (`UserPreference`), one per name,
+listed in `UserPreferences` like any preference: `notify.dueSoon`, `notify.overdue`, `notify.teamDigest`,
+`notify.rotationReminders` and `notify.rotationRequests` (`on` by default, or `off`; the rotation's need
+`WriteArticles`), and `notify.digest` (`off` by default, `daily` or `weekly`). No new table was needed: each choice is
+one value, and "since when" is the row's `UpdatedAtUtc`. Like the Actions page's layout they're personal, so the
+audit interceptor leaves `UserPreference` out (its `NotAudited` set); the administrator's settings stay audited.
+
+`NotificationPreferenceService` reads and saves only the signed-in person's (through `UserPreferenceService`), and
+refuses a change to a kind an administrator has off ("Off for everyone (set by an administrator)", which the page
+shows disabled). The senders apply the choices where they pick recipients, with
+`NotificationPreferenceService.OptedOutAsync`:
+
+- `ReminderService`: due-soon and overdue leave out an assignee who opted out (the action isn't handed to the team
+  instead) and members who did, when the team has no mailbox; the weekly team digest leaves out members who opted
+  out; presenting leaves out an analyst who opted out of rotation reminders; brief-not-ready then goes to the
+  fallback recipients (a team lead or mailbox, not a person's choice). A team mailbox is never left out.
+- `RotationService.NotifyAsync`: the request, approved, recorded and declined emails leave out whoever opted out of
+  rotation requests. The managers' copy (`NotifyManagersAsync`) goes to the rotation's manager addresses, a setting,
+  so no one's opt-out removes it.
+- Never affected: the brief's distribution, the test copies people send themselves, and corrections.
+
+When everyone a scan would have emailed opted out, nothing is sent and the run's `ReminderRun.Note` says "all
+recipients opted out" (or "2 opted out" when some went); Teams & SLA shows it with the last run.
+
+The **personal digest** is the `PersonalDigest` scan (`ReminderKind.PersonalDigest`), offered unless an administrator
+turns it off (`Notifications:PersonalDigest:Enabled`, on by default). Daily ones go at the reminder time on business
+days, weekly ones on the digest's day and time; a mark per person and period (`personal-digest`) stops repeats. Each
+lists the person's open actions (assigned to them, or unassigned on a team of theirs without a mailbox) that are
+overdue or due soon, and the others not in an earlier digest of theirs (`digest-seen` marks, one per person and
+action). It's an email template like the others (`personal-digest`), and isn't sent to someone the user mirror says no
+longer reads actions. My notifications hints "You also get these in your digest." beside the due-soon and overdue
+switches while both are on.
+
+Administrators see, beside each kind on Teams & SLA, how many opted out ("3 people opted out") or take a digest
+("5 people get a personal digest"), and the list behind each count (name, email, since when), from
+`NotificationPreferenceService.CountsAsync` and `PeopleAsync`. Those need `Administer` and only read: the one place
+that reads others' choices for a person, which `UserPreferenceService` never does.
 
 ## Intake
 

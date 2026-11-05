@@ -31,6 +31,9 @@ public static class OperationalSettings
     public const string BriefNotReadyTime = "Notifications:BriefNotReady:Time";
     public const string BriefNotReadyRecipients = "Notifications:BriefNotReady:Recipients";
 
+    /// <summary>Whether people may choose a personal digest in My notifications. On by default.</summary>
+    public const string PersonalDigest = "Notifications:PersonalDigest:Enabled";
+
     public const string IntakeEnabled = "Intake:Enabled";
     public const string RetentionDays = "Intake:RetentionDays";
     public const string MinPollMinutes = "Intake:MinPollMinutes";
@@ -82,6 +85,7 @@ public static class OperationalSettings
         [BriefNotReady] = Switch,
         [BriefNotReadyTime] = Time("The brief-not-ready time"),
         [BriefNotReadyRecipients] = Addresses,
+        [PersonalDigest] = Switch,
         [IntakeEnabled] = Switch,
         [RetentionDays] = Number("Days feed items are kept", 7, 3650),
         [MinPollMinutes] = Number("The shortest poll", 5, 24 * 60),
@@ -165,6 +169,7 @@ public static class OperationalSettings
         s.Use(BriefNotReady, v => o.BriefNotReady.Enabled = bool.Parse(v));
         s.Use(BriefNotReadyTime, v => o.BriefNotReady.Time = v);
         s.Use(BriefNotReadyRecipients, v => o.BriefNotReady.Recipients = SplitAddresses(v));
+        s.Use(PersonalDigest, v => o.PersonalDigest.Enabled = bool.Parse(v));
     }
 
     internal static void Apply(SavedSettings s, IntakeOptions o)

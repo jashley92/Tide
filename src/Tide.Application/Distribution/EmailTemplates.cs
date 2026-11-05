@@ -90,6 +90,23 @@ public static partial class EmailTemplateCatalog
             new("ClosedList", "\"Closed in the last week\" and those actions. Blank when there are none.", Html: true),
         ]);
 
+    public static readonly EmailTemplate PersonalDigest = new(
+        "personal-digest", "Personal digest",
+        "Sent to each person who chose a digest in My notifications: daily at the reminder time on business days, or weekly on the digest day. Their actions that are overdue or due soon, and those new to them since the last one. Needs the personal digest offered (Teams & SLA).",
+        "TIDE: your actions, {{Period}}", "Your actions",
+        "{{OverdueCount}} overdue, **{{DueSoonCount}}** due soon, **{{NewCount}}** new to you.\n\n{{OverdueList}}\n\n{{DueSoonList}}\n\n{{NewList}}\n\nYou get this {{Cadence}} digest because you chose it in My notifications.",
+        [
+            new("Name", "The person's name."),
+            new("Period", "The day (Thursday, November 5) or the week (the week of November 2)."),
+            new("Cadence", "\"daily\" or \"weekly\"."),
+            new("OverdueCount", "How many of their actions are overdue, in bold (red when there are any).", Html: true),
+            new("DueSoonCount", "How many are due today or the next business day."),
+            new("NewCount", "How many others are new to them since their last digest."),
+            new("OverdueList", "\"Overdue\" and those actions. Blank when there are none.", Html: true),
+            new("DueSoonList", "\"Due today or the next business day\" and those actions. Blank when there are none.", Html: true),
+            new("NewList", "\"New to you since your last digest\" and those actions. Blank when there are none.", Html: true),
+        ]);
+
     public static readonly EmailTemplate BriefNotReady = new(
         "brief-not-ready", "Brief not ready",
         "Sent on a business day, at the brief-not-ready time, to the presenting analyst (or the listed recipients) when today's brief isn't marked ready. Needs it on (Teams & SLA).",
@@ -152,7 +169,7 @@ public static partial class EmailTemplateCatalog
         [Requester, Partner, Change, new("DecisionNote", "\" “the note”\" when they wrote one, else blank.")]);
 
     public static readonly IReadOnlyList<EmailTemplate> All =
-        [DueSoon, Overdue, Digest, BriefNotReady, Presenting, RotationRequest, RotationApproved, RotationRecorded, RotationDeclined];
+        [DueSoon, Overdue, Digest, PersonalDigest, BriefNotReady, Presenting, RotationRequest, RotationApproved, RotationRecorded, RotationDeclined];
 
     public static EmailTemplate? ById(string? id) => All.FirstOrDefault(t => string.Equals(t.Id, id, StringComparison.OrdinalIgnoreCase));
 

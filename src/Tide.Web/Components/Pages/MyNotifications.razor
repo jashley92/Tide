@@ -1,0 +1,136 @@
+@page "/notifications"
+@attribute [Authorize(Policy = Policies.ReadActions)]
+@using Tide.Application.Preferences
+@inject NotificationPreferenceService Prefs
+@inject ToastService Toasts
+
+@* My notifications (the account menu): the person's own choices about TIDE's emails. Each switch saves as it's changed.
+   An administrator still turns each kind on or off for everyone (Teams & SLA); one that's off shows so, disabled. *@
+
+<PageTitle>My notifications · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <h1>My notifications</h1>
+        <div class="tide-sub">Which of TIDE's emails you get. These are yours alone: no one else can change them.</div>
+    </div>
+</div>
+
+@if (_mine is null)
+{
+    <LoadingBlock />
+}
+else
+{
+    <div class="tide-notify">
+        <section class="tide-card" aria-labelledby="notify-address">
+            <h2 id="notify-address">Where they go</h2>
+            @if (_mine.Address is { } address)
+            {
+                <p class="mb-0">To <span class="tide-data">@address</span>, your address in the directory.</p>
+            }
+            else
+            {
+                <p class="mb-0">The directory has no email address for you, so TIDE can't email you. Ask your directory team to add one.</p>
+            }
+        </section>
+
+        <section class="tide-card" aria-labelledby="notify-each">
+            <h2 id="notify-each">Emails</h2>
+            <p class="small tide-muted">All on unless you turn them off. The brief itself, test copies you send yourself and corrections always reach you.</p>
+            @foreach (var s in _mine.Switches)
+            {
+                var id = "notify-" + s.Name.Replace('.', '-');
+                <div class="form-check form-switch tide-notify-switch">
+                    <input class="form-check-input" type="checkbox" role="switch" id="@id" checked="@s.On" disabled="@(s.OffForEveryone || _busy)"
+                           aria-describedby="@(id + "-about")" @onchange="e => Set(s, e.Value is true)" />
+                    <label class="form-check-label" for="@id">@s.Title</label>
+                    <div class="small tide-muted" id="@(id + "-about")">
+                        @s.About
+                        @if (s.OffForEveryone)
+                        {
+                            <span class="d-block tide-notify-off">@NotificationPreferenceService.OffForEveryoneText</span>
+                        }
+                        else
+                        {
+                            @if (s.Note is { } note) { <span class="d-block">@note</span> }
+                            @if (s.On && InDigest(s.Name)) { <span class="d-block"><span class="bi bi-info-circle me-1" aria-hidden="true"></span>@NotificationPreferenceService.AlsoInDigest</span> }
+                        }
+                    </div>
+                </div>
+            }
+        </section>
+
+        <section class="tide-card" aria-labelledby="notify-digest">
+            <h2 id="notify-digest">Personal digest</h2>
+            <p class="small tide-muted">One email with your actions that are due soon or overdue, and those given to you since the last one.</p>
+            <fieldset disabled="@(!_mine.DigestOffered || _busy)" aria-describedby="@(!_mine.DigestOffered ? "notify-digest-off" : null)">
+                <legend class="visually-hidden">How often</legend>
+                @foreach (var (value, label, hint) in Cadences)
+                {
+                    var id = "notify-digest-" + value;
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="notify-digest" id="@id" checked="@(_mine.Digest == value)" @onchange="() => SetDigest(value)" />
+                        <label class="form-check-label" for="@id">@label <span class="small tide-muted">@hint</span></label>
+                    </div>
+                }
+            </fieldset>
+            @if (!_mine.DigestOffered)
+            {
+                <div class="small tide-notify-off mt-1" id="notify-digest-off">@NotificationPreferenceService.OffForEveryoneText</div>
+            }
+        </section>
+    </div>
+}
+
+@code {
+    private MyNotificationChoices? _mine;
+    private bool _busy;
+
+    private static readonly (string Value, string Label, string Hint)[] Cadences =
+    [
+        (UserPreferences.Off, "Off", "(the default)"),
+        (UserPreferences.Daily, "Daily", "at the reminder time on business days"),
+        (UserPreferences.Weekly, "Weekly", "on the team digest's day and time"),
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _mine = await Prefs.GetMineAsync(); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    // The due-soon and overdue reminders list what a digest lists too.
+    private bool InDigest(string name) => _mine is { DigestOffered: true } m && m.Digest != UserPreferences.Off
+        && name is UserPreferences.NotifyDueSoon or UserPreferences.NotifyOverdue;
+
+    internal Task Set(NotificationSwitch s, bool on) =>
+        Save(s.Name, on ? UserPreferences.On : UserPreferences.Off, $"{s.Title} {(on ? "on" : "off")}.");
+
+    internal Task SetDigest(string value) => Save(UserPreferences.NotifyDigest, value, value switch
+    {
+        UserPreferences.Daily => "You'll get a daily digest.",
+        UserPreferences.Weekly => "You'll get a weekly digest.",
+        _ => "Personal digest off.",
+    });
+
+    private async Task Save(string name, string value, string saved)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await Prefs.SetMineAsync(name, value);
+            Toasts.Show(saved);
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally
+        {
+            _busy = false;
+            // What's saved, whether or not this one was.
+            try { _mine = await Prefs.GetMineAsync(); }
+            catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+            StateHasChanged();
+        }
+    }
+}

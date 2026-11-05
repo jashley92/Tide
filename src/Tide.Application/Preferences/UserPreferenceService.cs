@@ -17,6 +17,28 @@ public static class UserPreferences
 
     public const string List = "list", Board = "board";
 
+    // --- My notifications (NotificationPreferenceService) ----------------------------------------------------------
+
+    /// <summary>Due-soon reminders about the person's actions (or their team's, when it has no mailbox): on or off.</summary>
+    public const string NotifyDueSoon = "notify.dueSoon";
+
+    /// <summary>Overdue reminders, likewise.</summary>
+    public const string NotifyOverdue = "notify.overdue";
+
+    /// <summary>The weekly team digest, when it goes to the team's members because the team has no mailbox.</summary>
+    public const string NotifyTeamDigest = "notify.teamDigest";
+
+    /// <summary>"You're presenting" and the brief-not-ready nudge.</summary>
+    public const string NotifyRotationReminders = "notify.rotationReminders";
+
+    /// <summary>Swap or cover requests to the person, and approved, recorded or declined notices.</summary>
+    public const string NotifyRotationRequests = "notify.rotationRequests";
+
+    /// <summary>The personal digest: off (the default), daily or weekly.</summary>
+    public const string NotifyDigest = "notify.digest";
+
+    public const string On = "on", Off = "off", Daily = "daily", Weekly = "weekly";
+
     public sealed record Definition(string Name, IReadOnlyList<string> Values, Permission Needs)
     {
         public string Default => Values[0];
@@ -25,6 +47,14 @@ public static class UserPreferences
     private static readonly Dictionary<string, Definition> Known = new(StringComparer.Ordinal)
     {
         [ActionsLayout] = new(ActionsLayout, [Board, List], Permission.ReadActions),
+        // The action emails reach whoever is given an action or sits on a team without a mailbox, Viewers included.
+        [NotifyDueSoon] = new(NotifyDueSoon, [On, Off], Permission.ReadActions),
+        [NotifyOverdue] = new(NotifyOverdue, [On, Off], Permission.ReadActions),
+        [NotifyTeamDigest] = new(NotifyTeamDigest, [On, Off], Permission.ReadActions),
+        [NotifyDigest] = new(NotifyDigest, [Off, Daily, Weekly], Permission.ReadActions),
+        // The rotation's are for analysts in it.
+        [NotifyRotationReminders] = new(NotifyRotationReminders, [On, Off], Permission.WriteArticles),
+        [NotifyRotationRequests] = new(NotifyRotationRequests, [On, Off], Permission.WriteArticles),
     };
 
     /// <summary>The preference named <paramref name="name"/>; throws <see cref="ArgumentException"/> for any other.</summary>

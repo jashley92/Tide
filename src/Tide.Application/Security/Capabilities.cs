@@ -77,6 +77,8 @@ public static class Capabilities
         new(Actions, "Add and describe files", "ActionFileService.RequireWorkAsync", [G(Permission.WriteArticles), Q("own team's", Permission.WorkActions)]),
         new(Actions, "Remove files", "ActionFileService.CanRemove", [G(Permission.WriteArticles), Q("own files", Permission.WorkActions)]),
         new(Actions, "Restore removed files", "ActionFileService.RestoreAsync", [G(Permission.Administer)]),
+        new(Actions, "Choose my own notifications (reminders, digests, rotation emails)", "NotificationPreferenceService.Require (My notifications)",
+            [G(Permission.ReadActions)]),
 
         new(Numbers, "Enter the day's numbers", "MetricsService.SaveValueAsync", [G(Permission.EnterMetrics)]),
         new(Numbers, "Read the metrics history", "MetricsService.RequireRead", [G(Permission.ReadTeamEdition)]),

@@ -278,6 +278,10 @@ that fits its kind.
 **Keeping track:**
 - **Lists.** Views by me, my teams, all open, overdue and recently closed.
 - **Reminders.** Reminder emails for due soon and overdue, and a weekly team digest. Each is off until enabled.
+- **My notifications.** Each person turns off the reminder, digest and rotation emails they don't want (from the
+  account menu), and can take a personal digest of their own actions, daily or weekly, instead. An administrator still
+  turns each kind on or off for everyone, and sees how many people opted out, and who; nobody changes another's
+  choices. The brief itself, test copies and corrections always go.
 
 ![Action with a hunt query](docs/screenshots/action-hunt.png)
 
