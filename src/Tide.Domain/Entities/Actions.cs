@@ -116,6 +116,12 @@ public class ActionComment : Entity
     /// <summary>When its author last changed it; null if never.</summary>
     public DateTimeOffset? EditedAtUtc { get; set; }
 
+    /// <summary>Who last changed it (its author or an administrator); null if never.</summary>
+    public string? EditedByName { get; set; }
+
+    /// <summary>Moves on every edit, so an edit begun on an older copy is refused, as an action's is.</summary>
+    public Guid EditVersion { get; set; } = Guid.NewGuid();
+
     /// <summary>Screenshots and evidence files attached to it, in the order they were added.</summary>
     public List<ActionCommentFile> Files { get; set; } = [];
 }

@@ -162,17 +162,24 @@ else
                             <span><strong>@c.AuthorName</strong> &middot; @Ui.When(Clock, c.AtUtc)@(c.EditedAtUtc is not null ? " (edited)" : "")</span>
                             @if (_detail.CanComment && (c.AuthorId == CurrentUser.UserId || CurrentUser.Has(Permission.Administer)) && _editingComment != c.Id)
                             {
-                                <button class="btn btn-link btn-sm p-0 ms-auto" aria-label="Edit your comment from @Ui.When(Clock, c.AtUtc)" @onclick="() => EditComment(c)">Edit</button>
+                                <button class="btn btn-link btn-sm p-0 ms-auto" aria-label="Edit your comment from @Ui.When(Clock, c.AtUtc)" @ref="_editButtons[c.Id]" @onclick="() => EditComment(c)">Edit</button>
                                 <button class="btn btn-link btn-sm p-0" aria-label="Delete the comment from @Ui.When(Clock, c.AtUtc)" disabled="@_busy" @onclick="() => DeleteComment(c)">Delete</button>
                             }
                         </div>
                         @if (_editingComment == c.Id)
                         {
+                            @if (_commentTheirs is { } theirs)
+                            {
+                                <div class="tide-source-excerpt small mt-1" role="status">
+                                    <div>@(_commentTheirsBy ?? "Someone else") changed it to this. Your text is still in the box; saving puts it in place.</div>
+                                    <Md Text="@theirs" />
+                                </div>
+                            }
                             <MarkdownToolbar For="comment-edit" Label="Edit the comment" Class="mt-1" />
-                            <textarea id="comment-edit" class="form-control form-control-sm" rows="3" maxlength="8000" aria-label="Edit the comment" @bind="_commentEdit" @bind:event="oninput"></textarea>
+                            <textarea id="comment-edit" class="form-control form-control-sm" rows="3" maxlength="8000" aria-label="Edit the comment" @ref="_commentBox" @bind="_commentEdit" @bind:event="oninput"></textarea>
                             <div class="d-flex gap-2 mt-1">
                                 <button class="btn btn-primary btn-sm" disabled="@(_busy || (string.IsNullOrWhiteSpace(_commentEdit) && c.Files.Count == 0))" @onclick="() => SaveComment(c)">Save</button>
-                                <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editingComment = null">Cancel</button>
+                                <button class="btn btn-outline-secondary btn-sm" @onclick="() => CancelComment(c)">Cancel</button>
                             </div>
                         }
                         else if (c.Text.Length > 0)
@@ -333,6 +340,7 @@ else
             {
                 _addingChecklist = false;
                 (_editing, _editingComment, _commentEdit, _comment, _prompting, _shot) = (null, null, null, null, false, null);
+                (_commentTheirs, _commentTheirsBy, _focusEditOf) = (null, null, null);
                 _attachments.Clear();
             }
             _shownNumber = Number;
@@ -395,10 +403,10 @@ else
             _changedBy = who;
         else if (editing is not null && _editingComment is null)
             Toasts.Show($"{who} deleted the comment you were editing.");
-        else if (edited is not null && edited.Text != _commentEditBase)
+        else if (edited is not null && edited.EditVersion != _commentEditVersion)
         {
-            _commentEditBase = edited.Text;
-            Toasts.Show($"{who} changed the comment you're editing. Saving puts your text in its place.");
+            ShowTheirs(edited);
+            Toasts.Show($"{who} changed the comment you're editing. Their text is shown above yours.");
         }
         else Toasts.Show($"{who} updated this action.");
         StateHasChanged();
@@ -454,32 +462,79 @@ else
     private Guid? _editingComment;
     private string? _commentEdit;
 
-    // The comment's text when its edit opened (or a colleague's change to it was last told), to tell of a change under it.
+    // The comment's text when its edit opened (or a colleague's change to it was last shown), to tell unsaved changes.
     private string? _commentEditBase;
 
-    internal void EditComment(ActionComment c)
+    // The comment's version the edit is on: a save from an older one is refused (someone changed it since).
+    private Guid _commentEditVersion;
+
+    // A colleague's text for the comment being edited, shown over the box once their change refused a save (or was heard),
+    // and who wrote it.
+    private string? _commentTheirs, _commentTheirsBy;
+
+    private ElementReference _commentBox;
+    private readonly Dictionary<Guid, ElementReference> _editButtons = [];
+
+    // The comment whose Edit button takes focus once its edit closes (saved or cancelled).
+    private Guid? _focusEditOf;
+
+    /// <summary>Whether the open comment edit holds text that isn't saved.</summary>
+    internal bool CommentEditUnsaved => _editingComment is not null && (_commentEdit ?? "") != (_commentEditBase ?? "");
+
+    internal async Task EditComment(ActionComment c)
     {
+        // Only one comment is edited at a time: unsaved changes to another aren't dropped without asking.
+        if (_editingComment is { } other && other != c.Id && CommentEditUnsaved
+            && !await _confirm.Ask("Discard your changes to the other comment?", null, "Discard", cancelLabel: "Keep editing", focusOnCancel: _commentBox))
+            return;
         _editingComment = c.Id;
         _commentEdit = _commentEditBase = c.Text;
+        _commentEditVersion = c.EditVersion;
+        (_commentTheirs, _commentTheirsBy) = (null, null);
+    }
+
+    internal void CancelComment(ActionComment c)
+    {
+        (_editingComment, _commentEdit, _commentEditBase, _commentTheirs, _commentTheirsBy) = (null, null, null, null, null);
+        _focusEditOf = c.Id;
     }
 
     internal Task SaveComment(ActionComment c) => Run(async () =>
     {
         var text = _commentEdit ?? "";
-        await ActionSvc.EditCommentAsync(c.Id, text);
+        Guid version;
+        try { version = await ActionSvc.EditCommentAsync(c.Id, text, _commentEditVersion); }
+        catch (StaleEditException ex)
+        {
+            // Someone changed it since: theirs is shown, and what was typed stays in the box to redo on top of it.
+            await Reload();
+            if (_editingComment == c.Id && _detail?.Action.Comments.FirstOrDefault(x => x.Id == c.Id) is { } now) ShowTheirs(now);
+            Toasts.Error(ex.Message);
+            return;
+        }
         // Closed only while it's still this comment's box holding what was saved: text typed on since stays in it, unsaved,
         // and another comment's edit opened meanwhile stays open.
-        if (_editingComment == c.Id && (_commentEdit ?? "") == text) _editingComment = null;
-        else if (_editingComment == c.Id) _commentEditBase = text;
+        if (_editingComment == c.Id && (_commentEdit ?? "") == text) CancelComment(c);
+        else if (_editingComment == c.Id) (_commentEditBase, _commentEditVersion, _commentTheirs, _commentTheirsBy) = (text, version, null, null);
         await Reload();
     });
+
+    // A colleague's change to the comment being edited: theirs is shown over the box, and the edit is now on top of it.
+    private void ShowTheirs(ActionComment now)
+    {
+        (_commentTheirs, _commentTheirsBy) = (now.Text, now.EditedByName);
+        (_commentEditBase, _commentEditVersion) = (now.Text, now.EditVersion);
+    }
+
+    internal Guid? FocusEditOf => _focusEditOf;
+    internal string? CommentTheirs => _commentTheirs;
 
     // The comment being edited, gone (a colleague deleted it, or the action): its edit closes, so the page doesn't go on
     // saying it's being edited.
     private void CloseEditOfGoneComment()
     {
         if (_editingComment is { } id && _detail?.Action.Comments.Any(c => c.Id == id) != true)
-            (_editingComment, _commentEdit, _commentEditBase) = (null, null, null);
+            (_editingComment, _commentEdit, _commentEditBase, _commentTheirs, _commentTheirsBy) = (null, null, null, null, null);
     }
 
     private async Task DeleteComment(ActionComment c)
@@ -569,6 +624,14 @@ else
     // Paste a screenshot (or a copied file) anywhere on the page, or drop files on the comment box.
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // A comment's edit closed: focus goes back to its Edit button, drawn again by now.
+        if (_focusEditOf is { } shown && _editingComment != shown)
+        {
+            _focusEditOf = null;
+            try { if (_editButtons.TryGetValue(shown, out var edit)) await edit.FocusAsync(); }
+            catch (JSDisconnectedException) { }
+            catch (JSException) { }   // the comment went meanwhile
+        }
         if (_pasteRegistered || _detail is not { CanWork: true }) return;
         _pasteRegistered = true;
         try { await JS.InvokeVoidAsync("tidePasteDrop.register", "comment-zone", "comment-files", "comment-files", true); }

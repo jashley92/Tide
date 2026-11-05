@@ -86,6 +86,9 @@ articles, and the actions raised from them, at every marking, as an analyst does
 the edition as it's sent and previewed, to API tokens (each has its own) and to webhooks (`WebhookService`), which post
 what the team edition would carry. That's deliberate, decided on 2026-11-03, and tests pin it: anyone mapped to the
 Action owner role is trusted with RED inside TIDE, so map only the teams that should be.
+Our stack is the exception: a product's page (`StackService.GetAsync`), like present mode's product card, names only
+the articles at or below the team edition's ceiling, and the actions raised from them, and counts the rest ("2
+articles above TLP:AMBER"). The list's counts name no titles, so they count every article.
 
 ## Settings changed in the app
 
@@ -249,6 +252,10 @@ the article it came from and, for a remediation split across teams, a parent (on
 may do what (ADR 0008): analysts create and edit any action; someone with `WorkActions` works only their teams'.
 Comments are wider (ADR 0008, amended): anyone with `ReadTeamEdition` may comment with text on any action, and edit or
 delete their own; files on a comment stay with whoever works the action (`ActionDetail.CanComment` beside `CanWork`).
+A comment has its own `EditVersion` and `EditedByName`: a save from an edit opened on an older version is refused and
+names who changed it, and the page shows their text over the box while keeping what was typed, so it can be redone on
+top. Opening another comment's edit asks before dropping unsaved changes, and focus returns to the comment's Edit
+button when its edit is saved or cancelled.
 Each change also writes an `ActionEvent`, the readable history on the action. One raised for a past day's brief
 records that day (`RaisedOn`), which reports count it on; its SLA runs from when it was recorded. A new action's due date comes from
 `SlaSettings` (business days per priority, per-kind overrides), and `ActionSla` reads where an action stands. An action
@@ -387,7 +394,7 @@ for the whole page in one query.
 Two in-memory singletons keep analysts aware of each other (TIDE runs as one process, ADR 0001).
 
 - `ChangeFeed` (Application) tells open pages that something they show changed. `ChangeInterceptor` publishes a topic
-  (`article:{id}`, `articles`, `brief:{id}`, `action:{id}`, `actions`, `metrics-day:{date}`, `metrics`, `rotation`, `stories`) after every committed save, with who made it and the circuit
+  (`article:{id}`, `articles`, `brief:{id}`, `action:{id}`, `actions`, `metrics-day:{date}`, `metrics`, `rotation`, `stories`, `stack`) after every committed save, with who made it and the circuit
   it came from, so every save path is heard. A page listens through `LiveChanges`, which skips its own circuit's saves
   and waits for a burst to settle (600 ms) before one reload. A page with nothing unsaved re-reads in place and names
   the colleague in a toast; one with unsaved edits keeps them and says so (`ChangedElsewhere`), with a Reload button.
@@ -399,6 +406,8 @@ Two in-memory singletons keep analysts aware of each other (TIDE runs as one pro
   shows, with its filters, on any article save; so do the brief's "Add article (N available)" count and an open Add
   articles picker, which keeps what's ticked. The rotation page and Today's "Coming up for you" re-read on any rotation
   save, saying when a request is now waiting for you or yours was answered; the stories list follows its stories.
+  Our stack's list and a product's page follow `stack`: a product's edit form keeps what's typed in it, and one not
+  touched takes the colleague's change.
 - `LiveMarks` (Web) shows what a live reload did to a list, from `LiveDiff` (the rows that arrived, left or changed,
   by key): arrivals slide in under a fading highlight (`tide-live-arrived`) and keep a "New" marker until selected,
   changes get the highlight alone (`tide-live-changed`), and a row that left is a ghost line saying what happened to

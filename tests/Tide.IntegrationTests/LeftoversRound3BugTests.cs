@@ -76,7 +76,7 @@ public class LeftoversRound3BugTests(TideApp app) : IClassFixture<TideApp>
         var comment = (await Reread(a)).Comments.Single();
         await using var r = await RenderAsync<ActionPage>(app, "/actions/" + a.Number, new() { ["Number"] = (int?)a.Number });
 
-        await r.Click(p => { p.EditComment(comment); p.CommentEditDraft = "Second go"; return p.SaveComment(comment); });
+        await r.Click(async p => { await p.EditComment(comment); p.CommentEditDraft = "Second go"; await p.SaveComment(comment); });
 
         r.Component.EditingComment.Should().BeNull();
         (await Reread(a)).Comments.Single().Text.Should().Be("Second go");
@@ -89,7 +89,7 @@ public class LeftoversRound3BugTests(TideApp app) : IClassFixture<TideApp>
         await As((actions, _) => actions.AddCommentAsync(a.Id, "To be deleted"));
         var comment = (await Reread(a)).Comments.Single();
         await using var r = await RenderAsync<ActionPage>(app, "/actions/" + a.Number, new() { ["Number"] = (int?)a.Number });
-        await r.Click(p => { p.EditComment(comment); p.CommentEditDraft = "An edit in progress"; return Task.CompletedTask; });
+        await r.Click(async p => { await p.EditComment(comment); p.CommentEditDraft = "An edit in progress"; });
 
         await As((actions, _) => actions.DeleteCommentAsync(comment.Id), Colleague);
         await r.Click(p => p.OnChangedElsewhere(ByRobin(a)));
@@ -106,14 +106,14 @@ public class LeftoversRound3BugTests(TideApp app) : IClassFixture<TideApp>
         await As((actions, _) => actions.AddCommentAsync(a.Id, "Their first version"));
         var comment = (await Reread(a)).Comments.Single();
         await using var r = await RenderAsync<ActionPage>(app, "/actions/" + a.Number, new() { ["Number"] = (int?)a.Number });
-        await r.Click(p => { p.EditComment(comment); p.CommentEditDraft = "My edit"; return Task.CompletedTask; });
+        await r.Click(async p => { await p.EditComment(comment); p.CommentEditDraft = "My edit"; });
 
         await As((actions, _) => actions.EditCommentAsync(comment.Id, "An administrator's fix"), Colleague);
         await r.Click(p => p.OnChangedElsewhere(ByRobin(a)));
 
         r.Component.EditingComment.Should().Be(comment.Id);
         r.Component.CommentEditDraft.Should().Be("My edit", "what's being typed stays");
-        Toasts(r).Select(t => t.Message).Should().Contain("Robin changed the comment you're editing. Saving puts your text in its place.");
+        Toasts(r).Select(t => t.Message).Should().Contain("Robin changed the comment you're editing. Their text is shown above yours.");
 
         // Another change to the action, not the comment: the usual note.
         await As((actions, _) => actions.AddCommentAsync(a.Id, "Something else"), Colleague);

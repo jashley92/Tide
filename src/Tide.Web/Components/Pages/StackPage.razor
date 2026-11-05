@@ -8,11 +8,16 @@
 @inject NavigationManager Nav
 @inject ToastService Toasts
 @inject OrgClock Clock
+@inject ChangeFeed Feed
+@inject ChangeOrigin Origin
+@implements IDisposable
 
 @* Our stack (EP-25): the products the organization runs, kept by analysts. The list shows each product's versions, team
    and how much has been written about it; a product's page has its other names, versions and notes, and its history:
    the articles tagged with it or naming it, and their actions. Triage lifts items that name a product, and an article
-   can be tagged with any number of them from the editor. *@
+   can be tagged with any number of them from the editor. A product's history is held to the team edition's TLP ceiling:
+   articles above it, and actions raised from them, are counted but not named. A colleague's change to a product
+   re-reads the page in place; the edit form keeps what's typed in it. *@
 
 <PageTitle>@(_detail?.Product.Name ?? "Our stack") · TIDE</PageTitle>
 
@@ -136,8 +141,8 @@ else
         </div>
         <div>
             <section class="tide-card" aria-labelledby="stack-articles-h">
-                <h2 id="stack-articles-h">Articles <span class="tide-count">(@_detail.Articles.Count)</span></h2>
-                @if (_detail.Articles.Count == 0) { <div class="small tide-muted">No articles yet.</div> }
+                <h2 id="stack-articles-h">Articles <span class="tide-count">(@(_detail.Articles.Count + _detail.ArticlesAbove))</span></h2>
+                @if (_detail.Articles.Count == 0 && _detail.ArticlesAbove == 0) { <div class="small tide-muted">No articles yet.</div> }
                 <ul class="list-unstyled mb-0">
                     @foreach (var a in _detail.Articles)
                     {
@@ -145,10 +150,11 @@ else
                             <span class="small tide-muted">@Ui.ShortDay(a.On) &middot; @(a.Tagged ? "tagged" : "names it")</span></li>
                     }
                 </ul>
+                @if (_detail.ArticlesAbove > 0) { <div class="small tide-muted mt-1">@AboveLine(_detail.ArticlesAbove, "article", _detail.Ceiling)</div> }
             </section>
             <section class="tide-card" aria-labelledby="stack-actions-h">
-                <h2 id="stack-actions-h">Actions <span class="tide-count">(@_detail.Actions.Count)</span></h2>
-                @if (_detail.Actions.Count == 0) { <div class="small tide-muted">No actions yet.</div> }
+                <h2 id="stack-actions-h">Actions <span class="tide-count">(@(_detail.Actions.Count + _detail.ActionsAbove))</span></h2>
+                @if (_detail.Actions.Count == 0 && _detail.ActionsAbove == 0) { <div class="small tide-muted">No actions yet.</div> }
                 <ul class="list-unstyled mb-0">
                     @foreach (var a in _detail.Actions)
                     {
@@ -157,6 +163,7 @@ else
                             <ActionStatusBadge Status="a.Status" /></li>
                     }
                 </ul>
+                @if (_detail.ActionsAbove > 0) { <div class="small tide-muted mt-1">@AboveLine(_detail.ActionsAbove, "action", _detail.Ceiling, "from articles ")</div> }
             </section>
         </div>
     </div>
@@ -183,6 +190,57 @@ else
         _canWrite = CurrentUser.Has(Permission.WriteArticles);
         await Load();
     }
+
+    /// <summary>"2 articles above TLP:AMBER": what the page counts but doesn't name.</summary>
+    internal static string AboveLine(int count, string noun, TlpLevel ceiling, string via = "") =>
+        $"{count} {noun}{(count == 1 ? "" : "s")} {via}above {Tlp.Label(ceiling)}";
+
+    // A colleague added, edited or retired a product: re-read in place. The edit form keeps what's typed in it; one not
+    // touched takes their change.
+    private LiveChanges? _live;
+
+    protected override void OnInitialized() =>
+        _live = new LiveChanges(Feed, Origin, c => c.Topic == ChangeFeed.Stack, InvokeAsync, OnChangedElsewhere);
+
+    public void Dispose() => _live?.Dispose();
+
+    internal async Task OnChangedElsewhere(IReadOnlyList<Change> heard)
+    {
+        if (_busy || !_loaded) return;   // a step is under way, and it reads theirs when it's done
+        var who = LiveChanges.Who(heard);
+        try
+        {
+            if (Id is { } id)
+            {
+                var before = _detail?.Product;
+                _detail = await Stack.GetAsync(id);
+                var now = _detail?.Product;
+                if (now is null) _form = null;
+                else if (_form is null || before is null || Untouched(_form, before)) _form = StackForm.From(now);
+                // The topic is every product's: only a change to this one is told.
+                if (before is not null && (now is null || now.ModifiedAtUtc != before.ModifiedAtUtc || now.IsRetired != before.IsRetired))
+                    Toasts.Show($"{who} updated this product.");
+            }
+            else
+            {
+                _list = await Stack.ListAsync(_showRetired);
+                Toasts.Show($"{who} updated Our stack.");
+            }
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        StateHasChanged();
+    }
+
+    /// <summary>Whether the edit form still holds the product as it was read (nothing typed in it).</summary>
+    internal static bool Untouched(StackForm f, Tide.Domain.Entities.StackProduct p) =>
+        Same(f.Name, p.Name) && Same(f.OtherNames, p.OtherNames) && Same(f.Versions, p.Versions) && Same(f.Notes, p.Notes)
+        && f.TeamId == p.TeamId && f.CheckedOn == p.CheckedOn;
+
+    private static bool Same(string? a, string? b) => string.Equals(a ?? "", b ?? "", StringComparison.Ordinal);
+
+    internal StackForm? Form => _form;
+    internal StackDetail? Detail => _detail;
+    internal IReadOnlyList<StackRow>? List => _list;
 
     private async Task Load()
     {

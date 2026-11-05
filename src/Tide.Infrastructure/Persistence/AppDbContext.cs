@@ -487,6 +487,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         {
             e.Property(x => x.Text).HasMaxLength(8000);
             Person(e, x => x.AuthorId, x => x.AuthorName);
+            e.Property(x => x.EditedByName).HasMaxLength(256);
+            e.Property(x => x.EditVersion).IsConcurrencyToken();
             e.HasIndex(x => new { x.ActionId, x.AtUtc });
             e.HasMany(x => x.Files).WithOne().HasForeignKey(x => x.CommentId).OnDelete(DeleteBehavior.Cascade);
         });
