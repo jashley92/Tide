@@ -166,6 +166,7 @@ public partial class DeployScriptTests
         new[] { dbBackup, snapshot, settings, carveOut, stop, copy, stale, warm }.Should().BeInAscendingOrder();
         script.Should().Contain("/XF appsettings.Production.json VERSION.txt /XD logs App_Data", "the deploy keeps the settings, logs and App_Data");
         script.Should().Contain("COPY_ONLY", "the pre-upgrade backup doesn't reset the scheduled backups' chain");
+        script.Should().NotContain("Join-Path $bakDir", "the backup folder is on the SQL Server, whose drive the web server may not have");
     }
 
     [Fact]
