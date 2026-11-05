@@ -227,6 +227,15 @@ public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, 
         return await IsLockedAsync(db, day, ct);
     }
 
+    /// <summary>Whether <paramref name="day"/>'s brief was finished without sending ("Not sent": no real send has gone
+    /// since), so its fixed numbers never went out.</summary>
+    public async Task<bool> FinishedNotSentAsync(DateOnly day, CancellationToken ct = default)
+    {
+        await using var db = await dbs.CreateAsync(ct);
+        return await db.Briefs.AnyAsync(b => b.BriefDate == day && b.Status == BriefStatus.Sent && b.NotSentAtUtc != null
+            && !db.BriefSends.Any(s => s.BriefId == b.Id && !s.IsTest && s.Status == SendStatus.Sent), ct);
+    }
+
     private static Task<bool> IsLockedAsync(IAppDbContext db, DateOnly day, CancellationToken ct) =>
         db.Briefs.AnyAsync(b => b.BriefDate == day && b.Status == BriefStatus.Sent, ct);
 

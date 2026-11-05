@@ -443,6 +443,11 @@
         }
     }, true);
 
+    // Escape, then leaving the box some other way (a click elsewhere): back in it later, Tab on a list line nests again.
+    document.addEventListener('focusout', function (e) {
+        if (e.target === released) released = null;
+    });
+
     // A button: mousedown keeps the selection in the box; click (or Enter or Space on it) runs it.
     document.addEventListener('mousedown', function (e) {
         if (e.target.closest && e.target.closest('.tide-md-toolbar button')) e.preventDefault();

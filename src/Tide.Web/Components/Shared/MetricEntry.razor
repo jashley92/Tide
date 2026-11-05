@@ -44,7 +44,8 @@
         <div id="@(_id + "-body")" hidden="@(!Open)">
         @if (_locked)
         {
-            <p class="tide-muted small mb-2"><span class="bi bi-lock" aria-hidden="true"></span> The brief for this day has been sent, so these are the numbers that went out.
+            <p class="tide-muted small mb-2"><span class="bi bi-lock" aria-hidden="true"></span>
+                @(_notSent ? "This day's brief was finished without sending, so its numbers are fixed." : "The brief for this day has been sent, so these are the numbers that went out.")
                 An administrator can correct them.</p>
         }
         @if (_day.Missing.Count > 0)
@@ -198,7 +199,7 @@
 
     private readonly string _id = "numbers-" + Guid.NewGuid().ToString("N")[..8];
     private MetricDay? _day;
-    private bool _canEdit, _locked;
+    private bool _canEdit, _locked, _notSent;
     private bool? _open;
     private int? _reported;
 
@@ -214,6 +215,19 @@
 
     // Who changed a metric's value or note while it was being edited here, by metric.
     private readonly Dictionary<Guid, string> _elsewhere = [];
+
+    // Metrics a colleague changed while being edited here, pulled in by a re-read of this form's own (after its save, or
+    // the page around it re-rendering) before their change was heard: the box kept its text, and the row names them
+    // once their change arrives.
+    private readonly HashSet<Guid> _unnamed = [];
+
+    // What this form has asked to be saved for a metric on a day and not yet heard back from: its value and note together,
+    // so a note typed while the value is still saving (or a value while its note is) keeps the other.
+    private readonly Dictionary<(DateOnly Day, Guid Metric), (decimal? Value, string? Note)> _pending = [];
+
+    // One save or re-read at a time, in the order they came (InTurn): on a slower database a re-read that started before
+    // a save could otherwise land after it, and two saves of one metric could land out of order.
+    private Task _turn = Task.CompletedTask;
 
     // The counts for the bar and the panels, and which finished groups are folded (for the date they were read for).
     private MetricEntryProgress _progress = new();
@@ -253,7 +267,7 @@
 
     public void Dispose() => _live?.Dispose();
 
-    protected override async Task OnParametersSetAsync()
+    protected override Task OnParametersSetAsync() => InTurn(async () =>
     {
         _topic = ChangeFeed.MetricsDay(Date);
         if (_progressFor is { } was && was != Date)
@@ -263,16 +277,70 @@
             _invalid.Clear();
             _kept.Clear();
             _elsewhere.Clear();
+            _unnamed.Clear();
             _open = null;
         }
-        _locked = await MetricsSvc.IsLockedAsync(Date);
-        _canEdit = CurrentUser.Has(Permission.EnterMetrics) && !_locked;
-        _day = await MetricsSvc.GetDayAsync(Date);
-        _open ??= _day.Missing.Count > 0;
+        await Reread(null);
+        _open ??= _day!.Missing.Count > 0;
         if (_progressFor != Date) (_progress, _progressFor, _lastGroup) = (new MetricEntryProgress(), Date, null);
         Recount();
         await Report();
+    });
+
+    // Runs work once every save and re-read already asked for has finished (each runs in its own turn).
+    private async Task InTurn(Func<Task> work)
+    {
+        var before = _turn;
+        var mine = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _turn = mine.Task;
+        try
+        {
+            await before;
+            await work();
+        }
+        finally { mine.SetResult(); }
     }
+
+    // Reads the lock and the day again. On the same day, a box being typed in (other than the metric this form has just
+    // saved, own) or holding what isn't a number keeps its text when what's saved for it changed, and its row says who
+    // changed it: who, or (on a re-read of this form's own) whoever's change is heard next. Once the numbers are fixed
+    // the boxes are gone, and so is what they kept.
+    private async Task Reread(string? who, Guid? own = null)
+    {
+        var before = _progressFor == Date ? Tiles(_day) : null;
+        _locked = await MetricsSvc.IsLockedAsync(Date);
+        _notSent = _locked && await MetricsSvc.FinishedNotSentAsync(Date);
+        _canEdit = CurrentUser.Has(Permission.EnterMetrics) && !_locked;
+        _day = await MetricsSvc.GetDayAsync(Date);
+        if (!_canEdit)
+        {
+            _focus = null;
+            _kept.Clear();
+            _elsewhere.Clear();
+            _unnamed.Clear();
+            return;
+        }
+        if (before is null) return;
+        var after = Tiles(_day);
+        HashSet<Guid> held = [.. _invalid.Keys];
+        if (_focus is { } f && f.Metric != own)
+        {
+            held.Add(f.Metric);
+            if (!_kept.ContainsKey(f) && before.TryGetValue(f.Metric, out var shown) && Changed(shown, after.GetValueOrDefault(f.Metric)))
+                _kept[f] = f.Note ? shown.Note : Raw(shown.Value);
+        }
+        foreach (var id in held.Where(id => id != own))
+        {
+            var changed = Changed(before.GetValueOrDefault(id), after.GetValueOrDefault(id));
+            if (who is null)
+            {
+                if (changed) _unnamed.Add(id);
+            }
+            else if (_unnamed.Remove(id) || changed) _elsewhere[id] = who;
+        }
+    }
+
+    private static bool Changed(MetricTile? was, MetricTile? now) => was?.Value != now?.Value || was?.Note != now?.Note;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -297,14 +365,19 @@
         _lastGroup = group;
     }
 
-    /// <summary>A group's chip: opens it if it's folded and focuses its first empty box (its first box when none is).</summary>
-    internal void Jump(Guid group)
+    /// <summary>A group's chip: opens it if it's folded and focuses its first empty box (its first box when none is).
+    /// A value still saving counts: its box isn't the empty one.</summary>
+    internal async Task Jump(Guid group)
     {
         MovedTo(group);
         _progress.Unfold(group);
+        await InTurn(() => Task.CompletedTask);
         _focusNext = _progress.JumpTarget(group);
         StateHasChanged();
     }
+
+    /// <summary>The box the form focuses once it has rendered (a chip's jump, or a group unfolded).</summary>
+    internal Guid? FocusNext => _focusNext;
 
     /// <summary>A finished group's heading: unfolds it (focusing its first box), or folds it again.</summary>
     internal void Toggle(Guid group)
@@ -337,39 +410,22 @@
         if (_focus == (metric, note)) _focus = null;
         // Left without saving: the box shows what's saved now. One still holding what isn't a number keeps it, and the note.
         if (!_kept.Remove((metric, note))) return;
-        if (!_invalid.ContainsKey(metric) && !_kept.Keys.Any(k => k.Metric == metric)) _elsewhere.Remove(metric);
+        if (!_invalid.ContainsKey(metric) && !_kept.Keys.Any(k => k.Metric == metric)) Unflag(metric);
         Recount();
         StateHasChanged();
     }
 
     // A colleague's save to this day's numbers (or to the metrics kept): re-read in place. A box being typed in, or holding
     // what isn't a number, keeps its text; if they changed that metric, its row says so.
-    internal async Task OnChangedElsewhere(IReadOnlyList<Change> changes)
+    internal Task OnChangedElsewhere(IReadOnlyList<Change> changes) => InTurn(async () =>
     {
         var who = LiveChanges.Who(changes);
-        var before = Tiles(_day);
-        _locked = await MetricsSvc.IsLockedAsync(Date);
-        _canEdit = CurrentUser.Has(Permission.EnterMetrics) && !_locked;
-        _day = await MetricsSvc.GetDayAsync(Date);
-        var after = Tiles(_day);
-        HashSet<Guid> held = [.. _invalid.Keys];
-        if (_focus is { } f)
-        {
-            held.Add(f.Metric);
-            if (!_kept.ContainsKey(f) && before.TryGetValue(f.Metric, out var was))
-                _kept[f] = f.Note ? was.Note : Raw(was.Value);
-        }
-        foreach (var id in held)
-        {
-            var was = before.GetValueOrDefault(id);
-            var now = after.GetValueOrDefault(id);
-            if (was?.Value != now?.Value || was?.Note != now?.Note) _elsewhere[id] = who;
-        }
+        await Reread(who);
         Recount();
         await Report();
         Toasts.Show($"{who} updated the numbers.");
         StateHasChanged();
-    }
+    });
 
     private static Dictionary<Guid, MetricTile> Tiles(MetricDay? day) =>
         day?.Groups.SelectMany(g => g.Tiles).ToDictionary(t => t.Metric.Id) ?? [];
@@ -399,40 +455,68 @@
         Settled(t.Metric.Id, false);
         var group = _progress.GroupOf(t.Metric.Id);
         var wasIn = _lastGroup;
-        await Save(t, value, t.Note);
+        await Save(t.Metric.Id, value, Wanted(t.Metric.Id).Note);
         // Focus moved on to another group while this saved (a click there from the group's last box): leaving was heard
         // before the group was finished, so it folds now that it is.
         if (group is { } g && wasIn == g && _lastGroup is { } now && now != g) _progress.Left(g, now);
         StateHasChanged();
     }
 
-    private Task SaveNote(MetricTile t, string? note)
+    internal Task SaveNote(MetricTile t, string? note)
     {
-        // Read the tile as it is now: the value may have been saved a moment ago, on the way into this box.
-        var current = _day?.Groups.SelectMany(g => g.Tiles).FirstOrDefault(x => x.Metric.Id == t.Metric.Id);
+        // The value as it is now: it may have been saved a moment ago on the way into this box, or still be saving.
         Settled(t.Metric.Id, true);
-        if (current?.Value is { } v) return Save(current, v, note);
+        if (Wanted(t.Metric.Id).Value is { } v) return Save(t.Metric.Id, v, note);
         if (!string.IsNullOrWhiteSpace(note)) Toasts.Error($"Enter a value for {t.Metric.Name} before its note.");
         Recount();
         return Task.CompletedTask;
+    }
+
+    // A metric's value and note as this form last asked for them: still saving, or as read.
+    private (decimal? Value, string? Note) Wanted(Guid metric)
+    {
+        if (_pending.TryGetValue((Date, metric), out var asked)) return asked;
+        var t = Tiles(_day).GetValueOrDefault(metric);
+        return (t?.Value, t?.Note);
     }
 
     // A box's own text was saved (or found wanting): what it kept through a colleague's save, and the note, go.
     private void Settled(Guid metric, bool note)
     {
         _kept.Remove((metric, note));
-        if (!_kept.Keys.Any(k => k.Metric == metric)) _elsewhere.Remove(metric);
+        if (!_kept.Keys.Any(k => k.Metric == metric)) Unflag(metric);
     }
 
-    private async Task Save(MetricTile t, decimal? value, string? note)
+    private void Unflag(Guid metric)
     {
-        try
+        _elsewhere.Remove(metric);
+        _unnamed.Remove(metric);
+    }
+
+    // Saves in turn, for the day it was asked on. What's written is the latest asked for the metric by then, so a save
+    // waiting behind one that already wrote the same has nothing left to do.
+    private Task Save(Guid metric, decimal? value, string? note)
+    {
+        var key = (Date, metric);
+        _pending[key] = (value, note);
+        return InTurn(async () =>
         {
-            await MetricsSvc.SaveValueAsync(t.Metric.Id, Date, value, note);
-            _day = await MetricsSvc.GetDayAsync(Date);
-            await Report();
-        }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
-        finally { Recount(); }
+            if (!_pending.TryGetValue(key, out var write)) return;
+            try
+            {
+                await MetricsSvc.SaveValueAsync(metric, key.Date, write.Value, write.Note);
+                if (key.Date == Date)
+                {
+                    await Reread(null, metric);
+                    await Report();
+                }
+            }
+            catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+            finally
+            {
+                if (_pending.TryGetValue(key, out var now) && now == write) _pending.Remove(key);
+                Recount();
+            }
+        });
     }
 }
