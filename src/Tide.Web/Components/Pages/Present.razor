@@ -236,7 +236,7 @@ else
                             </div>
                             @if (g.Group.Chart != MetricChart.None)
                             {
-                                <div class="tide-slide-mchart"><MetricGroupChart Group="g" Days="_metrics!.TrendDays" /></div>
+                                <div class="tide-slide-mchart"><MetricGroupChart Group="g" Days="g.TrendDays" /></div>
                             }
                         }
                     </div>

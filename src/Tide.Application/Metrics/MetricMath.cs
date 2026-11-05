@@ -161,6 +161,20 @@ public static class MetricMath
     }
 
     /// <summary>
+    /// The days a group's trend chart plots: the working days among the <paramref name="calendarDays"/> calendar days
+    /// ending at <paramref name="day"/>, plus <paramref name="day"/> itself and any holiday in the window that has a value
+    /// in <paramref name="valueDays"/> (a holiday's numbers are kept if someone enters them). Weekends stay out, and so
+    /// does a holiday with no values. Oldest first.
+    /// </summary>
+    public static IReadOnlyList<DateOnly> TrendDaysWithin(DateOnly day, int calendarDays, IEnumerable<DateOnly> valueDays, WorkingDays? workingDays = null)
+    {
+        var w = workingDays ?? WorkingDays.Weekdays;
+        var entered = valueDays.ToHashSet();
+        return Enumerable.Range(0, Math.Max(0, calendarDays)).Select(i => day.AddDays(i - calendarDays + 1))
+            .Where(d => d == day || w.IsWorkingDay(d) || (!WorkingDays.IsWeekend(d) && entered.Contains(d))).ToList();
+    }
+
+    /// <summary>
     /// A sparkline as SVG polyline points in a <paramref name="width"/> by <paramref name="height"/> box, one x step per
     /// day, gaps (days without a value) skipped. Empty when fewer than two values.
     /// </summary>

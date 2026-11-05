@@ -115,7 +115,8 @@ Friday less them, and `OrgClock.Days` holds the current one: `HolidayService` lo
 that counts days takes it: `ActionSla` (due dates, due soon, end of the working week, days until), the reminders, brief
 days and carry-over, the rota's days and runs, and the metrics' sparklines and missed days. The pure helpers take it
 as a parameter (left out, it's Monday to Friday, as their unit tests use). Metric values on a holiday are kept if
-entered; only a weekend's are refused.
+entered; only a weekend's are refused. A group's trend charts (`MetricMath.TrendDaysWithin`) plot its working days, the
+brief's own date, and any holiday on which one of the group's numbers was entered.
 
 **Email templates** (Administration › Email templates) are the wording of the notification
 emails: the four reminder scans (due soon, overdue, the weekly digest, brief not ready), presenting next, and the
@@ -191,7 +192,9 @@ out the charts' geometry; missing days are gaps, not zeros. A group whose values
 slide lists it in one line. Slides are keyed `metrics:{group key}`, so a follower lands on the same group. Retiring or
 renaming a metric keeps its values; the history page and its CSV export cover retired metrics too. Once a day's brief is
 Sent its values are fixed for everyone but administrators (`MetricsService.IsLockedAsync`), so the page agrees with
-what went out.
+what went out; a box on Today's numbers whose typing hadn't saved when the form locked is named in a toast, with what
+was typed. The history table's group filter (`MetricHistoryColumns`) also hides the days, and leaves out of the count
+the values, that only the hidden groups have.
 
 ## The team's opening note
 

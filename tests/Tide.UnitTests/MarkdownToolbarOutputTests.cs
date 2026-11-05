@@ -56,6 +56,26 @@ public partial class MarkdownToolbarOutputTests
         _md.ToHtml("***both***").Should().Contain("<em><strong>both</strong></em>");
     }
 
+    [Fact]
+    public void EnterOnAnEmptySubItem_MovesItOutALevel_AsTheNextOfItsParentsKind()
+    {
+        // Numbered list, "Hunt", Enter, Tab, Bulleted, "SIEM", Enter, Enter (out to "2."), "Patch".
+        var html = Squash(_md.ToHtml("1. Hunt\n   - SIEM\n2. Patch"));
+        html.Should().Be("<ol><li>Hunt<ul><li>SIEM</li></ul></li><li>Patch</li></ol>");
+        // Three deep, Enter on the empty third-level bullet: back to the second level, still under the first item.
+        Squash(_md.ToHtml("- Hunt\n  - SIEM\n    - Last 30 days\n  - EDR"))
+            .Should().Be("<ul><li>Hunt<ul><li>SIEM<ul><li>Last30days</li></ul></li><li>EDR</li></ul></li></ul>");
+    }
+
+    [Fact]
+    public void AListStartedUnderAParagraph_GetsABlankLine_SoItIsAListNotMoreOfTheParagraph()
+    {
+        // The toolbar puts a blank line between "Today:" and the list it starts under it.
+        Squash(_md.ToHtml("Today:\n\n- Patch\n- Hunt")).Should().Be("<p>Today:</p><ul><li>Patch</li><li>Hunt</li></ul>");
+        // Without it, an empty "-" item straight under text reads as the underline of a heading, not a list.
+        Squash(_md.ToHtml("Today:\n-")).Should().NotContain("<ul>");
+    }
+
     [GeneratedRegex(@"\s+")]
     private static partial Regex Spaces();
 }

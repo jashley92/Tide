@@ -200,4 +200,19 @@ public class MetricEntryProgressTests
         MetricHistoryColumns.Toggle(all, one, "email-triage").Should().BeEmpty("both picked is all of them");
         MetricHistoryColumns.Toggle(all, one, "cases").Should().BeEmpty("taking away the last goes back to all");
     }
+
+    [Fact]
+    public void HistoryFilter_ShowsAndCountsOnlyTheShownGroupsValues_SoADayWithOnlyHiddenOnesHasNoRow()
+    {
+        var f = new Form();
+        var all = MetricHistoryColumns.Group([.. f.EmailMetrics, .. f.CaseMetrics]);
+        static MetricValue Value(MetricDefinition m, DateOnly d) => new() { DefinitionId = m.Id, BriefDate = d, Value = 1 };
+        var earlier = Day.AddDays(-1);
+        IReadOnlyList<MetricValue> values = [Value(f.EmailMetrics[0], Day), Value(f.CaseMetrics[0], Day), Value(f.EmailMetrics[1], earlier)];
+
+        var cases = MetricHistoryColumns.ShownValues(values, all, MetricHistoryColumns.Shown(all, new HashSet<string> { "cases" }));
+        cases.Should().ContainSingle().Which.DefinitionId.Should().Be(f.CaseMetrics[0].Id);
+        cases.Select(v => v.BriefDate).Distinct().Should().Equal([Day], "the earlier day had only email values");
+        MetricHistoryColumns.ShownValues(values, all, all).Should().BeSameAs(values, "with all groups nothing changes");
+    }
 }
