@@ -679,8 +679,9 @@ if (-not $SkipDbBackup) {
         try { [void](Invoke-DbScalar $backupSql @{ '@bak' = $bakName } 0) }
         catch { throw "The database backup failed ($($_.Exception.Message)). Fix it, or run again with -SkipDbBackup if your backup product's is current." }
     }
+    # The folder is on the SQL Server, so it's joined as text: Join-Path fails when its drive doesn't exist here.
     $bakDir = "$(Invoke-DbScalar "SELECT CAST(SERVERPROPERTY('InstanceDefaultBackupPath') AS nvarchar(4000))")"
-    Write-Info "Database backup: $(if ($bakDir) { Join-Path $bakDir $bakName } else { $bakName })"
+    Write-Info "Database backup: $(if ($bakDir) { $bakDir.TrimEnd('\') + '\' + $bakName } else { $bakName }) (on the SQL Server)"
 } else { Write-Warn2 "Skipping the database backup (-SkipDbBackup)." }
 
 Write-Step "Backing up the settings and the current files (the rollback point)"
