@@ -360,7 +360,7 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         RequirePresent();
         await using var db = await dbs.CreateAsync(ct);
         var brief = await db.Briefs.AsNoTracking().FirstOrDefaultAsync(b => b.Id == briefId, ct) ?? throw new KeyNotFoundException("That brief no longer exists.");
-        return Plan(brief, await CarriedOnAsync(db, briefId, ct));
+        return Plan(brief, await CarriedOnAsync(db, briefId, ct), await SendPendingAsync(db, briefId, ct));
     }
 
     /// <summary>
@@ -389,7 +389,7 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         var brief = await db.Briefs.Include(b => b.Items).ThenInclude(i => i.Article).FirstOrDefaultAsync(b => b.Id == briefId, ct)
                     ?? throw new KeyNotFoundException("That brief no longer exists.");
         var later = await CarriedOnAsync(db, briefId, ct);
-        var plan = Plan(brief, later);
+        var plan = Plan(brief, later, await SendPendingAsync(db, briefId, ct));
         if (plan.Blocked is { } why) throw new InvalidOperationException(why);
         if (plan.Carried > 0) RequireWrite();
 
@@ -428,8 +428,14 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         db.Briefs.Include(b => b.Items).Where(b => b.Items.Any(i => i.CarriedFromBriefId == briefId))
             .OrderBy(b => b.BriefDate).ToListAsync(ct);
 
+    // Whether a real send of the brief is with the relay, or went without its outcome being known: when it lands (or is
+    // settled as gone) it finishes the brief, so a meeting reopened meanwhile would be finished as if none was held. A
+    // send freezing after this read moves the brief's edit version, so the reopen's save fails and reads it again.
+    private static Task<bool> SendPendingAsync(IAppDbContext db, Guid briefId, CancellationToken ct) =>
+        db.BriefSends.AnyAsync(s => s.BriefId == briefId && !s.IsTest && (s.Status == SendStatus.Sending || s.Status == SendStatus.Unknown), ct);
+
     // What reopening would bring back, or why it can't be done.
-    private static Reopening Plan(Brief brief, IReadOnlyList<Brief> later)
+    private static Reopening Plan(Brief brief, IReadOnlyList<Brief> later, bool sendPending)
     {
         var carried = later.Sum(b => b.Items.Count(i => i.CarriedFromBriefId == brief.Id));
         var to = later.Select(b => (DateOnly?)b.BriefDate).FirstOrDefault();
@@ -439,6 +445,8 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
             BriefStatus.Sent when brief.NotSentAtUtc is not null => "This brief was finished as not sent, so its meeting can't be reopened.",
             BriefStatus.Sent => "This brief has been sent, so its meeting can't be reopened.",
             not BriefStatus.Presented => "The meeting hasn't been ended, so there's nothing to reopen.",
+            _ when sendPending =>
+                "An edition of this brief is being sent, or whether it went isn't known yet, so the meeting can't be reopened. Check the send log first.",
             _ when moved is not null =>
                 $"The brief for {moved.BriefDate.ToString("ddd MMM d", System.Globalization.CultureInfo.InvariantCulture)} has been "
                 + $"{(moved.Status == BriefStatus.Sent ? "sent" : "presented")}, so the articles carried to it can't come back and the meeting can't be reopened.",
