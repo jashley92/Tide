@@ -67,7 +67,7 @@
                 <SearchCombobox @ref="_combo" TItem="AdversaryPick" Id="@($"adv-pick-{ArticleId}")" MaxLength="Tide.Domain.Entities.Adversary.MaxName"
                                 Placeholder="Tag an adversary by any name, or add one" ListLabel="Adversaries" Disabled="_busy"
                                 Help="Matching adversaries are listed as you type. Use the up and down arrows to choose, Enter to tag it."
-                                @bind-Text="_text" @bind-Text:after="Find" Items="Listed" Key="p => p.Id" OnPick="Pick"
+                                @bind-Text="_text" @bind-Text:after="Typed" Items="Listed" Key="p => p.Id" OnPick="Pick"
                                 NewOption="@(CanAdd ? NewProfile : null)" OnNew="AddNew" Empty="@NothingListed" Status="@Status">
                     <ItemTemplate Context="p">
                         <span class="tide-story-result-name">@p.Name@if (p.Alias is { } alias) {<span class="fw-normal tide-muted"> (also @alias)</span>}@if (p.IsRetired) {<span class="tide-combo-tag">retired</span>}</span>
@@ -101,7 +101,7 @@
     // What's typed in the picker (internal for the tests); a slower answer for what was typed before is dropped.
     internal string? _text;
     private int _finding;
-    private bool _busy;
+    private bool _busy, _disposed;
 
     // A colleague's tag or untag on this article (or any save of it) reloads the card; one heard during this card's own
     // change is read once that change is done.
@@ -117,7 +117,11 @@
             StateHasChanged();
         });
 
-    public void Dispose() => _live?.Dispose();
+    public void Dispose()
+    {
+        _disposed = true;
+        _live?.Dispose();
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -130,11 +134,11 @@
     {
         try
         {
-            _mine = await Adversaries.ForArticleAsync(ArticleId);
             // With nothing typed the picker offers these; with words, it searches again, so a colleague's tag drops out.
+            (_mine, var offered) = await Adversaries.ForArticleCardAsync(ArticleId, offer: CanWrite);
             if (CanWrite)
             {
-                _offered = await Adversaries.OfferedAsync(ArticleId);
+                _offered = offered;
                 if (Text.Length > 0) await Find();
             }
             _details.Clear();
@@ -192,6 +196,17 @@
             _ => null,
         };
         return string.Join(" · ", new[] { p.MitreId, why }.Where(x => x is not null)) is { Length: > 0 } meta ? meta : null;
+    }
+
+    /// <summary>How long the picker waits after a keystroke before it searches: a word typed is one search, not one a letter.</summary>
+    internal const int TypingPauseMs = 200;
+
+    // Typed in the box: the search runs once typing pauses. A later keystroke, a pick or a clear in the meantime supersedes it.
+    private async Task Typed()
+    {
+        var mine = ++_finding;
+        await Task.Delay(TypingPauseMs);
+        if (mine == _finding && !_disposed) await Find();
     }
 
     // The profiles for what's typed now.

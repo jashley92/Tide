@@ -1,0 +1,16 @@
+@* A scorecard tag as a toggle chip, pressed when the article has it: the article editor's and present mode's tag panel alike. *@
+<button type="button" class="tide-chip tide-chip-pick @(On ? "selected" : "")" aria-pressed="@Ui.Aria(On)" disabled="@Disabled"
+        title="@Tag.Description" @onclick="OnToggle">
+    @if (On) { <span class="bi bi-check2" aria-hidden="true"></span> }@Tag.Name
+</button>
+
+@code {
+    [Parameter, EditorRequired] public ScorecardTag Tag { get; set; } = default!;
+
+    /// <summary>Whether the article has it.</summary>
+    [Parameter] public bool On { get; set; }
+
+    [Parameter] public bool Disabled { get; set; }
+
+    [Parameter] public EventCallback OnToggle { get; set; }
+}

@@ -9,8 +9,8 @@
 
 <div class="tide-combo">
     <input @ref="_input" id="@Id" type="@Type" class="form-control form-control-sm" role="combobox" autocomplete="off" spellcheck="false"
-           maxlength="@MaxLength" placeholder="@Placeholder" aria-label="@AriaLabel" aria-describedby="@(Id)-help"
-           aria-expanded="@(Expanded ? "true" : "false")" aria-controls="@(Id)-list" aria-autocomplete="list"
+           maxlength="@MaxLength" placeholder="@Placeholder" aria-describedby="@(Id)-help"
+           aria-expanded="@Ui.Aria(Expanded)" aria-controls="@(Id)-list" aria-autocomplete="list"
            aria-activedescendant="@(Expanded && _active < Count ? OptionId(_active) : null)"
            value="@Text" @oninput="Typed" @onkeydown="OnKey" @onfocus="Opened" @onblur="Closed" />
     <div id="@(Id)-help" class="visually-hidden">@Help</div>
@@ -22,7 +22,7 @@
                 {
                     var item = Items[i];
                     var at = i;
-                    <li class="@Option(at)" role="option" id="@OptionId(at)" aria-selected="@(at == _active ? "true" : "false")" @key="Key(item)"
+                    <li class="@Option(at)" role="option" id="@OptionId(at)" aria-selected="@Ui.Aria(at == _active)" @key="Key(item)"
                         aria-disabled="@(Disabled ? "true" : null)" @onmousedown:preventDefault="true" @onclick="() => Pick(at)">
                         @ItemTemplate(item)
                     </li>
@@ -30,7 +30,7 @@
                 @if (NewOption is not null)
                 {
                     var at = Items.Count;
-                    <li class="@(Option(at) + " tide-story-result-new")" role="option" id="@OptionId(at)" aria-selected="@(at == _active ? "true" : "false")"
+                    <li class="@(Option(at) + " tide-story-result-new")" role="option" id="@OptionId(at)" aria-selected="@Ui.Aria(at == _active)"
                         aria-disabled="@(Disabled ? "true" : null)" @onmousedown:preventDefault="true" @onclick="() => Pick(at)">
                         @NewOption
                     </li>
@@ -88,7 +88,6 @@
     [Parameter] public string Type { get; set; } = "text";
     [Parameter] public int MaxLength { get; set; } = 200;
     [Parameter] public string? Placeholder { get; set; }
-    [Parameter] public string? AriaLabel { get; set; }
     [Parameter] public string? ListLabel { get; set; }
     [Parameter] public string Help { get; set; } = "Use the up and down arrows to choose, Enter to pick.";
 
@@ -128,16 +127,10 @@
     internal async Task OnKey(KeyboardEventArgs e)
     {
         var count = Count;
-        switch (e.Key)
-        {
-            case "ArrowDown" when !Shown: _focused = true; break;
-            case "ArrowDown": _active = count == 0 ? 0 : (_active + 1) % count; break;
-            case "ArrowUp": _active = count == 0 ? 0 : (_active - 1 + count) % count; break;
-            case "Home" when e.CtrlKey || string.IsNullOrEmpty(Text): _active = 0; break;
-            case "End" when e.CtrlKey || string.IsNullOrEmpty(Text): _active = Math.Max(0, count - 1); break;
-            case "Enter" when Shown && _active < count: await Pick(_active); break;
-            case "Escape": _focused = false; break;
-        }
+        if (e.Key == "ArrowDown" && !Shown) _focused = true;
+        else if (ComboKeys.Move(e, _active, count, typed: !string.IsNullOrEmpty(Text)) is { } to) _active = to;
+        else if (e.Key == "Enter" && Shown && _active < count) await Pick(_active);
+        else if (e.Key == "Escape") _focused = false;
     }
 
     internal async Task Pick(int at)
@@ -148,10 +141,5 @@
     }
 
     /// <summary>Puts focus back in the box (after a step that took it, such as a confirmation).</summary>
-    public async Task FocusAsync()
-    {
-        try { await _input.FocusAsync(); }
-        catch (JSDisconnectedException) { /* the tab has gone */ }
-        catch (InvalidOperationException) { /* not rendered interactively (a prerender or a test) */ }
-    }
+    public Task FocusAsync() => _input.TryFocusAsync();
 }

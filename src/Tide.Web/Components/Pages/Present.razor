@@ -84,30 +84,9 @@ else
                    do (back to the presenter, take over) it holds that one button; it's a live region, so a change is read out. *@
                 @if (_view is { } live && !Presenting)
                 {
-                    <div class="tide-follow @FollowClass(live)" role="status">
-                        @if (live.CanTakeOver)
-                        {
-                            <span class="tide-follow-dot" aria-hidden="true"></span><span class="tide-follow-text" title="@live.PresenterName dropped out"><span class="tide-follow-name">@live.PresenterName</span> dropped out</span>
-                            @if (_canPresent && !_visitor) { <span class="tide-follow-sep" aria-hidden="true">&middot;</span><button class="btn btn-sm btn-primary tide-follow-btn" @onclick="TakeOver">Take over</button> }
-                        }
-                        else if (!live.PresenterHere)
-                        {
-                            <span class="tide-follow-dot" aria-hidden="true"></span><span class="tide-follow-text" title="@live.PresenterName is reconnecting…"><span class="tide-follow-name">@live.PresenterName</span> is reconnecting…</span>
-                        }
-                        else if (Held)
-                        {
-                            <span class="tide-follow-dot" aria-hidden="true"></span><span class="tide-follow-text" title="Following @live.PresenterName, locked by the presenter"><span class="tide-follow-label">Following </span><span class="tide-follow-name">@live.PresenterName</span></span><span class="tide-follow-sep" aria-hidden="true">&middot;</span><span class="tide-follow-lock"><span class="bi bi-lock-fill" aria-hidden="true"></span> locked<span class="visually-hidden"> by the presenter</span></span>
-                        }
-                        else if (_following)
-                        {
-                            <span class="tide-follow-dot" aria-hidden="true"></span><span class="tide-follow-text" title="Following @live.PresenterName"><span class="tide-follow-label">Following </span><span class="tide-follow-name">@live.PresenterName</span></span>
-                        }
-                        else
-                        {
-                            var where = $"{live.PresenterName} is on slide {live.Slide + 1}" + (live.Action is { } shown ? $" · showing {Ui.ActionLabel(shown)}" : "");
-                            <span class="tide-follow-dot" aria-hidden="true"></span><span class="tide-follow-text" title="@where"><span class="tide-follow-name">@live.PresenterName</span><span class="tide-follow-label"> is on slide @(live.Slide + 1)@(live.Action is { } act ? $" · showing {Ui.ActionLabel(act)}" : "")</span></span>
-                            <span class="tide-follow-sep" aria-hidden="true">&middot;</span><button class="btn btn-sm btn-primary tide-follow-btn" @onclick="BackToPresenter">Back to @live.PresenterName</button>
-                        }
+                    var pill = FollowPill(live);
+                    <div class="tide-follow @pill.Class" role="status">
+                        <span class="tide-follow-dot" aria-hidden="true"></span><span class="tide-follow-text" title="@pill.Title">@pill.Text</span>@pill.After
                     </div>
                 }
                 <TlpBadge Level="edition.Marking" />
@@ -115,7 +94,7 @@ else
                     <option value="@Edition.Team">Team edition</option>
                     <option value="@Edition.Public">Company-wide edition</option>
                 </select>
-                @if (TeamEdition && !_visitor)
+                @if (TeamEdition && _readsTeam)
                 {
                     var unseen = Unseen;
                     <button class="btn btn-sm btn-outline-secondary tide-notes-btn" title="Meeting notes" aria-label="@(unseen > 0 ? $"Meeting notes, {unseen} new" : "Meeting notes")" @onclick="ToggleNotes">
@@ -136,7 +115,7 @@ else
                     <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="EndFromTop"><span class="bi bi-flag" aria-hidden="true"></span> End the meeting</button>
                 }
                 <button class="btn btn-sm btn-outline-secondary" title="Full screen (F)" aria-label="Full screen (F)" @onclick="ToggleFullscreen"><span class="bi @(_fullscreen ? "bi-fullscreen-exit" : "bi-arrows-fullscreen")"></span></button>
-                <a class="btn btn-sm btn-outline-secondary" href="@(_visitor ? "published" : Ui.BriefUrl(_date))" title="Leave present mode" aria-label="Leave present mode"><span class="bi bi-x-lg" aria-hidden="true"></span></a>
+                <a class="btn btn-sm btn-outline-secondary" href="@(_readsTeam ? Ui.BriefUrl(_date) : "published")" title="Leave present mode" aria-label="Leave present mode"><span class="bi bi-x-lg" aria-hidden="true"></span></a>
             </div>
         </header>
 
@@ -201,7 +180,7 @@ else
                                 }
                             </tbody>
                         </table>
-                        <div class="tide-present-help mt-2">@_open.Rows.Count of @_open.Overdue overdue shown.@if (!_visitor) { <text> </text><a href="actions?view=overdue">The rest are under Actions &gt; Overdue.</a> }</div>
+                        <div class="tide-present-help mt-2">@_open.Rows.Count of @_open.Overdue overdue shown.@if (_readsTeam) { <text> </text><a href="actions?view=overdue">The rest are under Actions &gt; Overdue.</a> }</div>
                     </div>
                 }
                 else if (_slide > NoteSlides && _slide <= NoteSlides + MetricsSlides)
@@ -357,8 +336,8 @@ else
                                    show (SlideTags): ATT&CK and CVEs on both, the scorecard tags on the team edition's only. A writer edits
                                    the tags from the heading, over the slide (PresentTagEditor). *@
                                 @{
-                                    var tactics = SlideTags.Tactics(a);
-                                    var scorecard = SlideTags.ShowsScorecard(_edition) ? SlideTags.Scorecard(a) : [];
+                                    var (tactics, allTags) = TagsOf(a);
+                                    var scorecard = SlideTags.ShowsScorecard(_edition) ? allTags : [];
                                 }
                                 @if (tactics.Count > 0 || scorecard.Count > 0 || a.Cves.Count > 0 || CanEditTags)
                                 {
@@ -750,7 +729,7 @@ else
         @if (TeamEdition && _actionDetail is { } shownAction)
         {
             <PresentAction Detail="shownAction" Version="_actionVersion" Kicker="@Kicker(_ownAction)" CanClose="!Held" Autofocus="_focusAction"
-                           OnClose="CloseAction" Changed="OnActionChanged" Links="!_visitor" />
+                           OnClose="CloseAction" Changed="OnActionChanged" Links="_readsTeam" />
         }
 
         @if (CanEditTags && _tagEdit is { } editing)
@@ -759,7 +738,7 @@ else
         }
         @if (TeamEdition && _product is { } shownProduct)
         {
-            <PresentProduct Card="shownProduct" Kicker="@Kicker(_popup.Own)" CanClose="!Held" Autofocus="_focusProduct" OnClose="CloseProduct" Links="!_visitor" />
+            <PresentProduct Card="shownProduct" Kicker="@Kicker(_popup.Own)" CanClose="!Held" Autofocus="_focusProduct" OnClose="CloseProduct" Links="_readsTeam" />
         }
 
         @* Inside the slides' root, so it shows in full screen too; present.js leaves the keys to it while it's open. *@
@@ -838,7 +817,7 @@ else
             var canPresent = CurrentUser.Has(Permission.PresentBriefs);
             (_canWork, _canNote) = (CurrentUser.Has(Permission.WorkActions), MeetingSvc.CanNote);
             var record = brief is null ? MeetingRecord.None : await MeetingSvc.GetAsync(brief.Id);
-            var teams = _visitor ? [] : (await TeamSvc.ListAsync()).ToList();
+            var teams = _readsTeam ? (await TeamSvc.ListAsync()).ToList() : [];
             var teamsByKind = canCreate ? await ActionSvc.TeamsByKindAsync() : new Dictionary<ActionKind, Guid>();
             var actions = brief is null ? null : await BriefSvc.EditionActionsAsync(brief);
             var cves = brief is null ? new Dictionary<string, CveRecord>() : await CvesOf(brief);
@@ -873,19 +852,13 @@ else
         {
             // The tag panel closed: focus goes back to the button that opened it.
             _focusEditTags = false;
-            try { await _editTagsButton.FocusAsync(); }
-            catch (JSException) { }
-            catch (JSDisconnectedException) { }
-            catch (InvalidOperationException) { }
+            await _editTagsButton.TryFocusAsync(orGone: true);
         }
         if (_focusEnd)
         {
             // The top bar's End brought the wrap-up slide forward: its End the meeting button is the next step.
             _focusEnd = false;
-            try { await _endButton.FocusAsync(); }
-            catch (JSException) { }
-            catch (JSDisconnectedException) { }
-            catch (InvalidOperationException) { /* not drawn after all */ }
+            await _endButton.TryFocusAsync(orGone: true);
         }
         if (!firstRender) return;
         // The elapsed time in the footer ticks once a minute. Started before the await below, so a page closed during it
@@ -996,7 +969,7 @@ else
     private void Go(int n)
     {
         if (Held) return;   // the presenter has everyone on their slide
-        if (_tagEdit is not null) return;   // editing the tags on this slide: it stays under the panel
+        if (Pinned) return;   // it stays under the panel open over it
         var to = Math.Clamp(n, 0, LastSlide);
         if (to != _slide)
         {
@@ -1045,7 +1018,7 @@ else
     public async Task OnPresentKey(string action)
     {
         // The tag panel open over the slide: Esc cancels it, and the slide behind it stays put.
-        if (_tagEdit is not null && action != "render")
+        if (Pinned && action != "render")
         {
             if (action == "close" && _tagEditor is not null) await _tagEditor.Escape();
             StateHasChanged();
@@ -1098,6 +1071,7 @@ else
         _live = new LiveChanges(Feed, Origin, c => _follow.Contains(c.Topic), InvokeAsync, OnChangedElsewhere);
         (_me, _meName) = (CurrentUser.UserId, CurrentUser.DisplayName);
         _visitor = MeetingAccess.MeetingOnly(CurrentUser);
+        _readsTeam = CurrentUser.Has(Permission.ReadTeamEdition);
         Meetings.Changed += OnMeetingChanged;
     }
 
@@ -1149,25 +1123,28 @@ else
         var shown = SlideKey(_slide);
         var brief = await BriefSvc.GetAsync(_date);
         if (brief is null) return;
-        var before = _brief;
+        // Only an article's ATT&CK techniques or scorecard tags changed (present mode's tag panel, or the editor): the
+        // chips update quietly, as a product tag's do, and nothing else the slides show is read again.
+        var tagsOnly = SlideTags.OnlyTagsChanged(_brief, brief, changes);
         _brief = brief;
         _follow = Followed();
-        _metrics = await MetricsSvc.GetDayAsync(_date);
-        _open = await ActionSvc.OutstandingAsync(_date, _teamMax);
-        await LoadActions();
-        _cves = await CvesOf(_brief);
-        _stackOf = await StackOf(_brief);
-        if (changes.Any(c => c.Topic == ChangeFeed.Meeting(_brief.Id))) await ReloadRecord();
+        if (!tagsOnly)
+        {
+            _metrics = await MetricsSvc.GetDayAsync(_date);
+            _open = await ActionSvc.OutstandingAsync(_date, _teamMax);
+            await LoadActions();
+            _cves = await CvesOf(_brief);
+            _stackOf = await StackOf(_brief);
+            if (changes.Any(c => c.Topic == ChangeFeed.Meeting(_brief.Id))) await ReloadRecord();
+        }
         Reslide(SlideNamed(shown) ?? Math.Min(_slide, LastSlide), shown);
         await SyncAction();
-        var numbers = changes.All(c => ChangeFeed.IsMetricsOf(c, _date));
-        // Only an article's ATT&CK techniques or scorecard tags changed (present mode's tag panel, or the editor): the
-        // chips update quietly, as a product tag's do.
-        if (SlideTags.OnlyTagsChanged(before, brief, changes))
+        if (tagsOnly)
         {
             StateHasChanged();
             return;
         }
+        var numbers = changes.All(c => ChangeFeed.IsMetricsOf(c, _date));
         Toasts.Show($"{LiveChanges.Who(changes)} updated {(numbers ? "the numbers" : "this brief")}.");
         StateHasChanged();
     }
@@ -1192,7 +1169,7 @@ else
     // "following". Its seat says where it is now, so the presenter's view of who's where isn't a renumbering behind.
     private void Reslide(int n, string shown)
     {
-        if (!Presenting && _seat is not null && _following && _tagEdit is null && _view is { } live) n = SlideFor(live);
+        if (!Presenting && _seat is not null && _following && !Pinned && _view is { } live) n = SlideFor(live);
         _slide = n;
         if (SlideKey(_slide) != shown)
         {
@@ -1215,7 +1192,10 @@ else
         _brief is null ? ""
         : n == 0 ? "title" : n <= NoteSlides ? NoteKey
         : n <= NoteSlides + MetricsSlides ? MetricPlan[n - 1 - NoteSlides].Key : n <= LeadSlides ? "open"
-        : ArticleAt(Cut(_brief), n) is { } x ? "article:" + x.Article.Id : "wrap";
+        : ArticleAt(Cut(_brief), n) is { } x ? ArticleKey(x.Article.Id) : "wrap";
+
+    // An article's slide key.
+    private static string ArticleKey(Guid articleId) => "article:" + articleId;
 
     // This page's number for the slide the meeting is on: by its name, else by its number.
     private int SlideFor(LiveMeetingView live) => Math.Clamp(SlideNamed(live.SlideKey) ?? live.Slide, 0, LastSlide);
@@ -1233,15 +1213,16 @@ else
         var k when k == "open" || k == Tide.Application.Metrics.MetricSlides.Key || k.StartsWith(Tide.Application.Metrics.MetricSlides.KeyPrefix, StringComparison.Ordinal)
             => Math.Min(k == "open" ? NoteSlides + MetricsSlides + 1 : NoteSlides + 1, LastSlide),
         "wrap" => LastSlide,
-        var k when k.StartsWith("article:", StringComparison.Ordinal) && Guid.TryParse(k[8..], out var id) => SlideOf(id),
+        var k when k.StartsWith("article:", StringComparison.Ordinal) => SlideOf(k),
         _ => null,
     };
 
-    private int? SlideOf(Guid articleId)
+    // The article slide called key, if this edition shows that article.
+    private int? SlideOf(string key)
     {
         var edition = Cut(_brief!);
         for (var i = 0; i < edition.Articles.Count; i++)
-            if (edition.Articles[i].Article.Id == articleId) return i + 1 + LeadSlides;
+            if (ArticleKey(edition.Articles[i].Article.Id) == key) return i + 1 + LeadSlides;
         return null;
     }
 
@@ -1417,9 +1398,13 @@ else
 
     private bool _canPresent, _canWork, _canNote, _interactive, _attended, _disposed, _following = true;
 
-    // A Visitor: in the meeting from a seat only (MeetingAccess), and not to open the team's pages from it; and their seat,
-    // taken ahead of the brief's read, not yet settled into the meeting (JoinIfLive).
+    // A Visitor: in the meeting from a seat only (MeetingAccess); and their seat, taken ahead of the brief's read, not yet
+    // settled into the meeting (JoinIfLive).
     private bool _visitor, _seatTaken;
+
+    // Whether this person reads the team's own pages (the team edition): the links to them, its teams, its actions and
+    // products opened over a slide, and the meeting notes. On this page (JoinMeetings), everyone but a Visitor.
+    private bool _readsTeam;
 
     // The notes this person has seen: the ones there as the page opened, and every one while the notes are open. Others'
     // notes beyond those are the Notes button's count.
@@ -1453,13 +1438,17 @@ else
 
     // The article whose tags this page is editing over its slide (PresentTagEditor), for this person alone.
     private Guid? _tagEdit;
+
+    // The slide is pinned under a panel open over it (the tag panel): this page's moves, following the presenter and a
+    // reload's reslide all leave it where it is until the panel closes.
+    private bool Pinned => _tagEdit is not null;
     private PresentTagEditor? _tagEditor;
     private ElementReference _editTagsButton;
     private bool _focusEditTags;
 
     /// <summary>Whether this page can edit an article's tags from its slide: an analyst (who can write articles), on the
     /// team edition, presenting or following (never a Viewer or Visitor, who can't write). The save itself is the article editor's, which checks again.</summary>
-    private bool CanEditTags => TeamEdition && !_visitor && CurrentUser.Has(Permission.WriteArticles);
+    private bool CanEditTags => TeamEdition && CurrentUser.Has(Permission.WriteArticles);
 
     /// <summary>For tests: the tag panel open over the slide, if any.</summary>
     internal PresentTagEditor? TagEditor => _tagEditor;
@@ -1489,9 +1478,27 @@ else
         StateHasChanged();
     }
 
-    // The follow pill's state, for its look: following, held (locked), away (browsed off), dropped (gone for good), back (reconnecting).
-    private string FollowClass(LiveMeetingView live) =>
-        live.CanTakeOver ? "is-dropped" : !live.PresenterHere ? "is-reconnecting" : Held ? "is-held" : _following ? "is-following" : "is-away";
+    /// <summary>The follow pill as drawn: its look, its words and their tooltip, and what follows them (the lock, or the one button).</summary>
+    private sealed record FollowState(string Class, string Title, RenderFragment Text, RenderFragment? After = null);
+
+    // The follow pill's state: dropped (gone for good), back (reconnecting), held (locked), following, or away (browsed off).
+    private FollowState FollowPill(LiveMeetingView live)
+    {
+        var name = live.PresenterName;
+        RenderFragment who = @<span class="tide-follow-name">@name</span>;
+        RenderFragment following = @<text><span class="tide-follow-label">Following </span>@who</text>;
+        if (live.CanTakeOver)
+            return new("is-dropped", $"{name} dropped out", @<text>@who dropped out</text>,
+                _canPresent ? @<text><span class="tide-follow-sep" aria-hidden="true">&middot;</span><button class="btn btn-sm btn-primary tide-follow-btn" @onclick="TakeOver">Take over</button></text> : null);
+        if (!live.PresenterHere) return new("is-reconnecting", $"{name} is reconnecting…", @<text>@who is reconnecting…</text>);
+        if (Held)
+            return new("is-held", $"Following {name}, locked by the presenter", following,
+                @<text><span class="tide-follow-sep" aria-hidden="true">&middot;</span><span class="tide-follow-lock"><span class="bi bi-lock-fill" aria-hidden="true"></span> locked<span class="visually-hidden"> by the presenter</span></span></text>);
+        if (_following) return new("is-following", $"Following {name}", following);
+        var at = $" is on slide {live.Slide + 1}" + (live.Action is { } shown ? $" · showing {Ui.ActionLabel(shown)}" : "");
+        return new("is-away", name + at, @<text>@who<span class="tide-follow-label">@at</span></text>,
+            @<text><span class="tide-follow-sep" aria-hidden="true">&middot;</span><button class="btn btn-sm btn-primary tide-follow-btn" @onclick="BackToPresenter">Back to @name</button></text>);
+    }
 
     /// <summary>Whether this page is the one presenting.</summary>
     private bool Presenting => _seat is not null && _view is { } v && v.IsPresenter(_me);
@@ -1669,7 +1676,7 @@ else
         // page's seat along with the presenter already; the page catches up.
         if (was?.IsPresenter(_me) == true || _view.Summons > _summons || Held) _following = true;
         _summons = _view.Summons;
-        if (_following && _tagEdit is null && _slide != SlideFor(_view))
+        if (_following && !Pinned && _slide != SlideFor(_view))
         {
             _slide = SlideFor(_view);
             _dueTyped.Clear();   // a date typed on the slide that moved away isn't saved later, unseen
@@ -1761,7 +1768,7 @@ else
     private int? _sharedSeen;
 
     /// <summary>Whether this page can open an action: on the team edition, and not held by the presenter's lock.</summary>
-    private bool CanOpenAction => TeamEdition && !Held && !_visitor;
+    private bool CanOpenAction => TeamEdition && !Held && _readsTeam;
 
     private RenderFragment ActionNum(int number) =>
         @<text>@if (CanOpenAction)
@@ -1886,7 +1893,23 @@ else
     private bool _focusProduct;
 
     /// <summary>Whether this page can open a product's card: on the team edition, and not held by the presenter's lock.</summary>
-    private bool CanOpenProduct => TeamEdition && !Held && !_visitor;
+    private bool CanOpenProduct => TeamEdition && !Held && _readsTeam;
+
+    // Each article's tactics and scorecard tags as its slide draws them, worked out once per read of the brief rather than
+    // on every render. A brief read again is a new object, with new articles: the cache starts afresh for it.
+    private readonly Dictionary<Article, (IReadOnlyList<SlideTactic> Tactics, IReadOnlyList<SlideTagGroup> Scorecard)> _tagsOf = new(ReferenceEqualityComparer.Instance);
+    private Brief? _tagsOfBrief;
+
+    private (IReadOnlyList<SlideTactic> Tactics, IReadOnlyList<SlideTagGroup> Scorecard) TagsOf(Article a)
+    {
+        if (!ReferenceEquals(_tagsOfBrief, _brief))
+        {
+            _tagsOf.Clear();
+            _tagsOfBrief = _brief;
+        }
+        if (!_tagsOf.TryGetValue(a, out var tags)) _tagsOf[a] = tags = (SlideTags.Tactics(a), SlideTags.Scorecard(a));
+        return tags;
+    }
 
     private static bool IsTags(Change c) => c.Topic == ChangeFeed.Stack || c.Topic.StartsWith("article-tags:", StringComparison.Ordinal);
 
