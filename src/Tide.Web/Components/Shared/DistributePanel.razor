@@ -169,8 +169,13 @@ else if (_canSend)
                     <label class="form-check-label small" for="send-wont-go">It won't be sent</label>
                 </div>
                 <button type="button" class="btn btn-outline-primary btn-sm mt-2"
-                        disabled="@(_busy || !_wontGo || string.IsNullOrWhiteSpace(_notSentReason) || !MaySend || _reviewGaps.Any(g => g.Required))"
+                        disabled="@(_busy || !_wontGo || string.IsNullOrWhiteSpace(_notSentReason) || !MaySend || _reviewGaps.Any(g => g.Required) || SendPending)"
+                        aria-describedby="@(SendPending ? "send-not-sent-pending" : null)"
                         @onclick="FinishNotSent"><span class="bi bi-slash-circle" aria-hidden="true"></span> Finish as not sent</button>
+                @if (SendPending)
+                {
+                    <div id="send-not-sent-pending" class="small tide-muted mt-1">@DistributionService.NotSentWhileSending</div>
+                }
                 <div class="small mt-1" aria-live="polite">@_notSentNote</div>
             }
         </section>
@@ -232,6 +237,10 @@ else if (_canSend)
 
     // Whether an edition has gone by email: then the brief is sent, and there's nothing to finish without sending.
     private bool Emailed => _sends.Any(s => !s.IsTest && s.Status == SendStatus.Sent);
+
+    // Whether a real send is with the relay, or went without its outcome known: until the log says, it can't be finished
+    // as not sent (DistributionService.NotSentWhileSending).
+    private bool SendPending => _sends.Any(s => !s.IsTest && s.Status is SendStatus.Sending or SendStatus.Unknown);
 
     /// <summary>The reason box, as typed (a test sets it directly).</summary>
     internal void NotSentReason(string? reason, bool wontGo = true) => (_notSentReason, _wontGo) = (reason, wontGo);

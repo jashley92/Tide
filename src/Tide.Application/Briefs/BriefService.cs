@@ -33,8 +33,14 @@ public sealed record BriefCandidate(Guid Id, string Title, Classification Classi
 public sealed record BriefStop(Guid ArticleId, string Title);
 
 /// <summary>Building the daily brief: which articles, in what order, who presents it, and the meeting itself.</summary>
-public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, OrgClock clock, Rotation.IPresenterLookup? presenters = null)
+public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, OrgClock clock, Rotation.IPresenterLookup? presenters = null,
+    IMeetingsInProgress? meetings = null)
 {
+    /// <summary>Why Back to ready is refused while the brief's meeting runs in present mode.</summary>
+    public const string MeetingLive = "This brief's meeting is running in present mode. End the meeting first.";
+
+    private readonly IMeetingsInProgress _meetings = meetings ?? NoMeetingsInProgress.Instance;
+
     /// <summary>How far back an article is offered for a brief.</summary>
     public const int CandidateDays = 14;
 
@@ -360,7 +366,7 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         RequirePresent();
         await using var db = await dbs.CreateAsync(ct);
         var brief = await db.Briefs.AsNoTracking().FirstOrDefaultAsync(b => b.Id == briefId, ct) ?? throw new KeyNotFoundException("That brief no longer exists.");
-        return Plan(brief, await CarriedOnAsync(db, briefId, ct), await SendPendingAsync(db, briefId, ct));
+        return Plan(brief, await CarriedOnAsync(db, briefId, ct), await SendPendingAsync(db, briefId, ct), _meetings.IsLive(briefId));
     }
 
     /// <summary>
@@ -389,7 +395,7 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         var brief = await db.Briefs.Include(b => b.Items).ThenInclude(i => i.Article).FirstOrDefaultAsync(b => b.Id == briefId, ct)
                     ?? throw new KeyNotFoundException("That brief no longer exists.");
         var later = await CarriedOnAsync(db, briefId, ct);
-        var plan = Plan(brief, later, await SendPendingAsync(db, briefId, ct));
+        var plan = Plan(brief, later, await SendPendingAsync(db, briefId, ct), _meetings.IsLive(briefId));
         if (plan.Blocked is { } why) throw new InvalidOperationException(why);
         if (plan.Carried > 0) RequireWrite();
 
@@ -429,13 +435,14 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
             .OrderBy(b => b.BriefDate).ToListAsync(ct);
 
     // Whether a real send of the brief is with the relay, or went without its outcome being known: when it lands (or is
-    // settled as gone) it finishes the brief, so a meeting reopened meanwhile would be finished as if none was held. A
-    // send freezing after this read moves the brief's edit version, so the reopen's save fails and reads it again.
-    private static Task<bool> SendPendingAsync(IAppDbContext db, Guid briefId, CancellationToken ct) =>
+    // settled as gone) it finishes the brief, so a meeting reopened meanwhile would be finished as if none was held (and
+    // one finished as not sent meanwhile, as if it never went). A send freezing after this read moves the brief's edit
+    // version, so the reopen's (or the finish's) save fails and reads it again.
+    internal static Task<bool> SendPendingAsync(IAppDbContext db, Guid briefId, CancellationToken ct) =>
         db.BriefSends.AnyAsync(s => s.BriefId == briefId && !s.IsTest && (s.Status == SendStatus.Sending || s.Status == SendStatus.Unknown), ct);
 
     // What reopening would bring back, or why it can't be done.
-    private static Reopening Plan(Brief brief, IReadOnlyList<Brief> later, bool sendPending)
+    private static Reopening Plan(Brief brief, IReadOnlyList<Brief> later, bool sendPending, bool live)
     {
         var carried = later.Sum(b => b.Items.Count(i => i.CarriedFromBriefId == brief.Id));
         var to = later.Select(b => (DateOnly?)b.BriefDate).FirstOrDefault();
@@ -445,6 +452,7 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
             BriefStatus.Sent when brief.NotSentAtUtc is not null => "This brief was finished as not sent, so its meeting can't be reopened.",
             BriefStatus.Sent => "This brief has been sent, so its meeting can't be reopened.",
             not BriefStatus.Presented => "The meeting hasn't been ended, so there's nothing to reopen.",
+            _ when live => MeetingLive,
             _ when sendPending =>
                 "An edition of this brief is being sent, or whether it went isn't known yet, so the meeting can't be reopened. Check the send log first.",
             _ when moved is not null =>

@@ -59,6 +59,11 @@ public sealed class DistributionService(
     /// <summary>The longest reason a brief finished as not sent can give.</summary>
     public const int NotSentReasonMax = 500;
 
+    /// <summary>Why a brief can't be finished as not sent while a real send of it is with the relay or its outcome isn't
+    /// known: when it lands (or is settled as gone) it sends the brief.</summary>
+    public const string NotSentWhileSending =
+        "An edition of this brief is being sent, or whether it went isn't known yet, so it can't be finished as not sent. Check the send log first.";
+
     /// <summary>Whether email is on (<c>Email:Enabled</c>). Off, a brief is marked distributed instead of sent.</summary>
     public bool EmailEnabled => email.Enabled;
 
@@ -313,7 +318,8 @@ public sealed class DistributionService(
     /// it becomes Sent as a send makes it, so its numbers lock and its articles are finished. Who, when and
     /// <paramref name="reason"/> (required, at most <see cref="NotSentReasonMax"/> characters) are kept on the brief.
     /// Nothing is frozen or published, and no SharePoint copy is waited for. It can still be emailed after: a real send
-    /// then makes it an ordinary sent brief.
+    /// then makes it an ordinary sent brief. Refused while a real send of it is with the relay or its outcome isn't known
+    /// (<see cref="NotSentWhileSending"/>).
     /// </summary>
     public async Task FinishNotSentAsync(DateOnly date, string? reason, bool withoutMeeting = false, CancellationToken ct = default)
     {
@@ -326,6 +332,8 @@ public sealed class DistributionService(
                     ?? throw new KeyNotFoundException("There's no brief for that day.");
         if (brief.Status == BriefStatus.Sent) throw new InvalidOperationException("This brief is already finished.");
         if (brief.Items.Count == 0) throw new InvalidOperationException("There's nothing on this brief to finish.");
+        // As Back to ready waits: a send freezing after this read moves the edit version, so the save below fails.
+        if (await BriefService.SendPendingAsync(db, brief.Id, ct)) throw new InvalidOperationException(NotSentWhileSending);
         if (SendBlocked(date, brief, withoutMeeting) is { } blocked) throw new InvalidOperationException(blocked);
         await Reviews.ReviewService.RequireApprovedAsync(db, date, brief.Items.Select(i => i.ArticleId).ToHashSet(), "the brief is finished as not sent", ct);
         await FinishAsync(db, brief, ct);
@@ -338,6 +346,9 @@ public sealed class DistributionService(
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateConcurrencyException)
         {
+            // A send that started in between says so, as one already going does.
+            await using var now = await dbs.CreateAsync(ct);
+            if (await BriefService.SendPendingAsync(now, brief.Id, ct)) throw new InvalidOperationException(NotSentWhileSending);
             throw new InvalidOperationException("Someone else changed the brief just now. Check it again.");
         }
     }

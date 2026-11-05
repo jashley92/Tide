@@ -36,7 +36,8 @@
 - **Audit.** `AuditInterceptor` stamps created and modified fields, and writes an `AuditLogEntry` (who, what, before
   and after) in the same save. `HistoryService` reads it back for the History disclosure on an article (its own row,
   and its tag, technique and CVE link rows by key prefix) and a brief, 50 rows at a time by the `(EntityType,
-  EntityKey)` index; `HistoryFormatter` turns the JSON into field lines and drops noise (edit version, stamps). It's
+  EntityKey)` index; `HistoryFormatter` turns the JSON into field lines and drops noise (edit version, stamps, and every
+  `*ById` user id, whose name row says who). It's
   `WriteArticles` only, since the log holds every field at every marking. Bullets, screenshots, indicators and brief
   items have their own keys and aren't in it.
 - **Audit log.** Administration › System › Audit log (`/admin/system/audit`) reads the whole log through
@@ -149,7 +150,8 @@ of that changed since. A real send freezes a `BriefSend` (email HTML, a semantic
 runs at a time, and the confirmation says if the edition already went. Test sends go to the
 sender only and are logged without a copy. A brief can be finished without email on the same terms as a send: marked
 distributed when email is off (`MarkDistributedAsync`), or finished as "Not sent" with a required reason when email is
-on and it won't go (`FinishNotSentAsync`). Either makes it Sent, so its numbers lock and its articles finish; who and
+on and it won't go (`FinishNotSentAsync`; refused, as reopening is, while a real send is with the relay or its outcome
+is unknown, and the Send dialog holds its button with the reason). Either makes it Sent, so its numbers lock and its articles finish; who and
 when (and the reason) are kept on the brief, nothing is frozen or published, and a later real send makes it an ordinary
 sent brief. The Reader archive (`/published`) shows frozen company-wide sends, and
 lists each with its headlines and filters on its words; both are parsed from the send's frozen semantic HTML
@@ -216,7 +218,9 @@ recorded. A meeting can't be held before its day or in the future.
 
 A meeting ended by mistake or too soon can be reopened (`BriefService.ReopenAsync`, "Back to ready" on the brief page,
 `PresentBriefs`) while the brief is Presented, never once it's Sent or finished as not sent, nor while a real send of it
-is with the relay or has an unknown outcome (that send would finish the brief when it lands or is settled). The brief goes back to
+is with the relay or has an unknown outcome (that send would finish the brief when it lands or is settled), nor while
+its meeting runs in present mode (`IMeetingsInProgress`, which `LiveMeetings` implements; the button is held with the
+reason, and redrawn as the meeting starts and ends). The brief goes back to
 Ready and both times are cleared (the audit trail keeps them). Ending the meeting records, on each `BriefItem`, the
 status its article had before (`StatusBeforeMeeting`), and each carried item records the brief it came from
 (`CarriedFromBriefId`); reopening puts those articles back, leaves one presented earlier on another brief alone, and
@@ -324,7 +328,9 @@ and the reminders (the brief-not-ready nudge, and the reminder the business day 
 is a cover (the requester's days to a colleague) or a swap (both ways); only the colleague approves it, every approved
 change emails the managers configured on the admin page, and an administrator can undo one. `/rotation/my.ics` is
 the signed-in person's brief days as an iCalendar file. A past day's brief is presented by whoever starts it, and
-`RecordPastCoverAsync` records that presenter as an already-approved cover when the rota named someone else. It's the brief rotation, not an on-call schedule.
+`RecordPastCoverAsync` records that presenter as an already-approved cover when the rota named someone else. A Draft or
+Ready brief already started for a day the rota moves takes the new presenter, unless its meeting was held: Back to ready
+clears the meeting's times, so held means attendees, a meeting note, or the times in the brief's audit trail. It's the brief rotation, not an on-call schedule.
 
 ## Search
 

@@ -385,7 +385,7 @@ on-call schedule.)
 ### The API, for the SOC's other tools
 A versioned API under `/api/v1`, described at `/api/v1/openapi.json`, lets a SOAR playbook close the action it
 finished (with a note, under its own name in the history), Power BI read the metrics, and a SIEM rule propose an item
-for triage, and a detection pipeline push its rules for Coverage. Briefs come cut exactly as the team edition is, at the caller's TLP ceiling. A caller signs in with an API
+for triage, and a detection pipeline push its rules for Coverage. Briefs come cut exactly as the team edition is, at the caller's TLP ceiling; a Sent one says how it was finished (`finishedAs`: emailed, distributed or notSent). A caller signs in with an API
 token issued under Administration > API access (scoped, expiring, shown once, stored as a hash) or as a server's gMSA
 with Windows. Webhooks post, signed with HMAC-SHA256, when an action is raised or becomes overdue and when a brief is
 sent (checked every minute; a raise or a send is posted once it's at least 30 seconds old). See [ADR 0016](docs/decisions/0016-api-tokens-scopes-and-signed-webhooks.md).

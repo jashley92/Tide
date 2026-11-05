@@ -119,6 +119,7 @@ builder.Services.AddScoped<ToastService>();
 builder.Services.AddSingleton<Presence>();
 builder.Services.AddSingleton<BoardDrags>();
 builder.Services.AddSingleton<LiveMeetings>();
+builder.Services.AddSingleton<Tide.Application.Briefs.IMeetingsInProgress>(sp => sp.GetRequiredService<LiveMeetings>());
 // Clears a closed tab's presence: the circuit's handler, and the circuit id presence notes join with.
 builder.Services.AddScoped<PresenceCircuit>();
 builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler>(sp => sp.GetRequiredService<PresenceCircuit>());
