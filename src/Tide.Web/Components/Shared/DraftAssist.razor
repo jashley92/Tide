@@ -11,7 +11,7 @@
 
 <section class="tide-card tide-section tide-draft-assist" aria-labelledby="sec-draft">
     <h2 id="sec-draft" class="mb-0">
-        <button type="button" class="tide-disclosure" aria-expanded="@(_open ? "true" : "false")" aria-controls="sec-draft-body" @onclick="() => _open = !_open">
+        <button type="button" class="tide-disclosure" @ref="_toggle" aria-expanded="@(_open ? "true" : "false")" aria-controls="sec-draft-body" @onclick="() => _open = !_open">
             <span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span>
             <span class="bi bi-stars" aria-hidden="true"></span> Draft from the sources
             <span class="tide-disclosure-sum">@Summary()</span>
@@ -213,6 +213,8 @@
     private readonly HashSet<string> _done = [];
     private readonly HashSet<string> _pickIndicators = [];
     private int _accepted, _rejected;
+    private ElementReference _toggle;
+    private bool _focusToggle;   // just folded: focus goes to the heading, not lost with the button that was pressed
     private Guid? _loadedFor;
     private List<Other> _others = [];
     private string? _newLink, _passage;
@@ -317,7 +319,26 @@
         }
     }
 
-    private string Summary() => _result is null ? "a first draft for you to check" : $"{_accepted} accepted · {Pending()} to decide";
+    private string Summary() => _result is null ? "a first draft for you to check"
+        : Pending() == 0 ? $"done · {_accepted} accepted · {_rejected} rejected"
+        : $"{_accepted} accepted · {Pending()} to decide";
+
+    // Once every suggestion is decided and at least one went into the form, the draft has done its job: the pane folds
+    // away so the article is in view, and says so. Opening it again shows what was decided.
+    internal void FoldIfDone()
+    {
+        if (_result is null || !_open || Pending() > 0 || _accepted == 0) return;
+        _open = false;
+        _focusToggle = true;
+        Toasts.Show($"Draft done: {_accepted} accepted{(_rejected > 0 ? $", {_rejected} rejected" : "")}. It's folded away; open it to see it again.");
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusToggle) return;
+        _focusToggle = false;
+        try { await _toggle.FocusAsync(); } catch (JSException) { /* the page is going away */ }
+    }
 
     private void TextEdited() => _origin = string.IsNullOrWhiteSpace(_sourceText) ? null : _origin;
 
@@ -447,6 +468,7 @@
         _accepted++;
         await OnEdited.InvokeAsync();
         await Record(true, 1);
+        FoldIfDone();
     }
 
     internal async Task Reject(string key)
@@ -454,6 +476,7 @@
         _done.Add(key);
         _rejected++;
         await Record(false, 1);
+        FoldIfDone();
     }
 
     private async Task Record(bool accepted, int count)
@@ -507,6 +530,7 @@
         _accepted += picked.Count;
         await OnEdited.InvokeAsync();
         await Record(true, picked.Count);
+        FoldIfDone();
     }
 
     internal async Task RejectIndicators()
@@ -516,6 +540,7 @@
         _pickIndicators.Clear();
         _rejected += rest.Count;
         await Record(false, rest.Count);
+        FoldIfDone();
     }
 
     // Every suggestion has one key, so what's left is the count less those decided.
