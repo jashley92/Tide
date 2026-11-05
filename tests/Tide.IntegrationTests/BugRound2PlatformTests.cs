@@ -13,7 +13,7 @@ namespace Tide.IntegrationTests;
 /// <summary>Bug round 2, platform: recipient lists, the last Admin mapping, bundle setting keys.</summary>
 public class BugRound2PlatformTests : IDisposable
 {
-    private readonly TestDb _db = new(connectionPerContext: true);   // one test races two removals
+    private TestDb _db = new(connectionPerContext: true);   // one test races two removals
 
     public BugRound2PlatformTests() => _db.User.Roles = new HashSet<AppRole> { AppRole.Admin };
 
@@ -33,10 +33,13 @@ public class BugRound2PlatformTests : IDisposable
         (await _db.Settings().GetRecipientsAsync(Edition.Public)).Should().Equal("all@contoso.com");
     }
 
-    // Two administrators removing the last two Admin mappings at once each counted two, and both went.
-    [Fact]
-    public async Task TwoAdminsRemovingTheLastTwoAdminMappingsAtOnce_LeaveOne()
+    // Two administrators removing the last two Admin mappings at once each counted two, and both went. On SQL Server one
+    // of the two is chosen as a deadlock victim and retried by the execution strategy, as production's is.
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task TwoAdminsRemovingTheLastTwoAdminMappingsAtOnce_LeaveOne(string provider)
     {
+        _db = _db.On(provider);
         var roles = new RoleMappingService(_db, _db.User, new CountingRoleDirectory());
         await roles.AddAsync("CONTOSO\\CTI-Admins", AppRole.Admin);
         await roles.AddAsync("CONTOSO\\SOC-Admins", AppRole.Admin);

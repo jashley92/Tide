@@ -631,7 +631,7 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         var days = LearningDays;
         var since = now.AddDays(-days);
         var quiet = now.AddDays(-PauseAfterDays);
-        var sources = await db.Sources.AsNoTracking().Where(s => !s.IsRetired).OrderBy(s => s.Name).ToListAsync(ct);
+        var sources = await ByName(db.Sources.AsNoTracking().Where(s => !s.IsRetired)).ToListAsync(ct);
         var items = await db.FeedItems.AsNoTracking().Where(i => i.FetchedAtUtc >= since)
             .Select(i => new { i.SourceId, i.Status, i.FetchedAtUtc, i.StatusAtUtc }).ToListAsync(ct);
         var lastPromoted = (await db.FeedItems.AsNoTracking().Where(i => i.Status == FeedItemStatus.Promoted)

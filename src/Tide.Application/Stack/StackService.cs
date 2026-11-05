@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Tide.Application.Abstractions;
 using Tide.Application.Actions;
 using Tide.Application.Articles;
+using Tide.Application.Content;
 using Tide.Application.Security;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
@@ -77,7 +78,7 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         (await InUseAsync(db, ct)).Select(Entry).ToList();
 
     private static Task<List<StackProduct>> InUseAsync(IAppDbContext db, CancellationToken ct) =>
-        db.StackProducts.AsNoTracking().Where(p => !p.IsRetired).OrderBy(p => p.Name).ToListAsync(ct);
+        db.StackProducts.AsNoTracking().Where(p => !p.IsRetired).OrderByName(p => p.Name).ToListAsync(ct);
 
     public static StackEntry Entry(StackProduct p) => new(p.Id, p.Name, [p.Name, .. SplitNames(p.OtherNames)]);
 
@@ -139,7 +140,7 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         RequireRead();
         await using var db = await dbs.CreateAsync(ct);
         var products = await db.StackProducts.AsNoTracking().Include(p => p.Team).Where(p => includeRetired || !p.IsRetired)
-            .OrderBy(p => p.IsRetired).ThenBy(p => p.Name).ToListAsync(ct);
+            .OrderBy(p => p.IsRetired).ThenByName(p => p.Name).ToListAsync(ct);
         var articles = await ArticlesAsync(db, ct);
         var tags = await db.ArticleProducts.AsNoTracking().Select(t => new { t.ArticleId, t.ProductId }).ToListAsync(ct);
         var open = await db.Actions.AsNoTracking().WhereOpen().Where(a => a.ArticleId != null)
@@ -195,7 +196,7 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         var tags = await db.ArticleProducts.AsNoTracking().Where(t => ids.Contains(t.ArticleId))
             .Select(t => new { t.ArticleId, Product = t.Product! }).ToListAsync(ct);
         return tags.GroupBy(t => t.ArticleId).ToDictionary(g => g.Key, g => (IReadOnlyList<StackProduct>)g.Select(t => t.Product)
-            .OrderBy(p => p.IsRetired).ThenBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase).ToList());
+            .OrderBy(p => p.IsRetired).ThenByName(p => p.Name).ToList());
     }
 
     /// <summary>
@@ -234,10 +235,10 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         await using var db = await dbs.CreateAsync(ct);
         var article = await db.Articles.AsNoTracking().Where(a => a.Id == articleId).Select(a => new { a.Title, a.Bluf }).FirstOrDefaultAsync(ct);
         if (article is null) return new ArticleStack([], []);
-        var tagged = await db.ArticleProducts.AsNoTracking().Where(t => t.ArticleId == articleId).Select(t => t.Product!).OrderBy(p => p.Name).ToListAsync(ct);
+        var tagged = await db.ArticleProducts.AsNoTracking().Where(t => t.ArticleId == articleId).Select(t => t.Product!).OrderBy(p => p.IsRetired).ThenByName(p => p.Name).ToListAsync(ct);
         var products = await db.StackProducts.AsNoTracking().Where(p => !p.IsRetired).ToListAsync(ct);
         var named = MatchAll(products.Select(Entry).ToList(), article.Title, article.Bluf).Select(m => m.Id).ToHashSet();
-        var suggested = products.Where(p => named.Contains(p.Id) && tagged.All(t => t.Id != p.Id)).OrderBy(p => p.Name).ToList();
+        var suggested = products.Where(p => named.Contains(p.Id) && tagged.All(t => t.Id != p.Id)).OrderByName(p => p.Name).ToList();
         return new ArticleStack(tagged, suggested);
     }
 

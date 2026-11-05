@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
+using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Abstractions;
+using Tide.Application.Content;
 using Tide.Domain.Entities;
 using Tide.Infrastructure.Persistence;
 
@@ -16,6 +18,10 @@ public sealed class UserDirectory(IServiceScopeFactory scopes, TimeProvider time
     public static readonly TimeSpan TouchEvery = TimeSpan.FromMinutes(30);
 
     private readonly ConcurrentDictionary<string, (DateTimeOffset At, string Fingerprint)> _recent = new(StringComparer.OrdinalIgnoreCase);
+
+    // The name each user's row holds, as last written or read: RecordedName answers from here, so a stand-in name asks the
+    // database at most once per user (once per TouchEvery for someone with no row yet).
+    private readonly ConcurrentDictionary<string, (string? Name, DateTimeOffset At)> _names = new(StringComparer.OrdinalIgnoreCase);
 
     public async Task TouchAsync(string userId, string displayName, string? upn, string? email, string rolesCsv, bool nameIsStandIn = false, CancellationToken ct = default)
     {
@@ -37,13 +43,34 @@ public sealed class UserDirectory(IServiceScopeFactory scopes, TimeProvider time
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateException) { return; }   // a first sign-in racing itself on two requests: the other one wrote it
         _recent[userId] = (now, fingerprint);
+        _names[userId] = (Named(row.DisplayName), now);
     }
+
+    public string? RecordedName(string userId)
+    {
+        var now = time.GetUtcNow();
+        if (_names.TryGetValue(userId, out var known) && (known.Name is not null || now - known.At < TouchEvery)) return known.Name;
+        try
+        {
+            using var scope = scopes.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var name = Named(db.Users.AsNoTracking().Where(u => u.Sid == userId).Select(u => u.DisplayName).FirstOrDefault());
+            _names[userId] = (name, now);
+            return name;
+        }
+        catch (Exception ex) when (ex is DbException or InvalidOperationException)
+        {
+            return null;   // the stand-in is shown, as before; asked again next time
+        }
+    }
+
+    private static string? Named(string? name) => string.IsNullOrWhiteSpace(name) ? null : name;
 
     public async Task<IReadOnlyList<AppUser>> ListAsync(CancellationToken ct = default)
     {
         using var scope = scopes.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        return await db.Users.AsNoTracking().OrderBy(u => u.DisplayName).ToListAsync(ct);
+        return await db.Users.AsNoTracking().OrderByName(u => u.DisplayName).ToListAsync(ct);
     }
 
     private static string Cut(string s) => s.Length > 256 ? s[..256] : s;

@@ -2,6 +2,7 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Tide.Application.Abstractions;
 using Tide.Application.Actions;
+using Tide.Application.Content;
 using Tide.Application.Org;
 using Tide.Application.Security;
 using Tide.Domain.Entities;
@@ -209,7 +210,7 @@ public sealed class DetectionService(IAppDbContextFactory dbs, ICurrentUser user
     {
         RequireRead();
         await using var db = await dbs.CreateAsync(ct);
-        var all = await db.DetectionRules.AsNoTracking().OrderBy(r => r.Name).ToListAsync(ct);
+        var all = await db.DetectionRules.AsNoTracking().OrderByName(r => r.Name).ToListAsync(ct);
         var latest = await LatestAsync(db, all, time.GetUtcNow(), ct);
         var q = search?.Trim();
         var rows = all.Where(r => string.IsNullOrEmpty(q) || r.Name.Contains(q, StringComparison.OrdinalIgnoreCase) || r.Techniques.Contains(q, StringComparison.OrdinalIgnoreCase))

@@ -191,6 +191,25 @@ public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, 
         if (WorkingDays.IsWeekend(day)) throw new ArgumentException("Metrics are kept for business days.");
         if (value is { } v && Math.Abs(v) >= MetricMath.MaxValue) throw new ArgumentException("That number is too large.");
         var cleanNote = Articles.ArticleService.CleanOrNull(note, 300);
+        // Two people saving the day's first value at the same moment both found no row and both added one; the second
+        // add hit the unique (metric, day) index. Read again on a fresh context and save once more: it then updates the
+        // row the first made, recorded as a change of it (the failed add and its audit entry were never saved).
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                await SaveValueOnceAsync(metricId, day, value, cleanNote, ct);
+                return;
+            }
+            catch (DbUpdateException ex) when (attempt == 0 && ex is not DbUpdateConcurrencyException && ex.Entries.Any(e => e.State == EntityState.Added))
+            {
+                /* added by a colleague meanwhile: read it and save again */
+            }
+        }
+    }
+
+    private async Task SaveValueOnceAsync(Guid metricId, DateOnly day, decimal? value, string? cleanNote, CancellationToken ct)
+    {
         await using var db = await dbs.CreateAsync(ct);
         if (!user.Has(Permission.Administer) && await IsLockedAsync(db, day, ct))
             throw new InvalidOperationException("The brief for this day has been sent, so its numbers are fixed. An administrator can correct them.");
