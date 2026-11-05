@@ -63,6 +63,7 @@ public static class DependencyInjection
         Overlay<MetricImportOptions>(services, OperationalSettings.Apply);
         Overlay<UpdateOptions>(services, OperationalSettings.Apply);
         Overlay<DistributionOptions>(services, OperationalSettings.Apply);
+        Overlay<FileStoreOptions>(services, OperationalSettings.Apply);
         services.AddSingleton(sp => new OrgClock(sp.GetRequiredService<IOptionsMonitor<OrgOptions>>(), sp.GetRequiredService<TimeProvider>()));
         services.AddSingleton<IMarkdownService, MarkdownService>();
         services.AddSingleton<BriefRenderer>();
@@ -78,6 +79,7 @@ public static class DependencyInjection
         services.AddScoped<Detections.DetectionService>();
         services.AddScoped<Reviews.ReviewService>();
         services.AddScoped<ScreenshotService>();
+        services.AddScoped<ActionFileService>();
         services.AddScoped<BriefService>();
         services.AddScoped<MeetingService>();
         services.AddScoped<ScorecardService>();

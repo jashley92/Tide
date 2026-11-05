@@ -9,6 +9,7 @@
 @inject NavigationManager Nav
 @inject ToastService Toasts
 @inject ScreenshotService Shots
+@inject ActionFileService FileSvc
 @inject OrgClock Clock
 @inject IJSRuntime JS
 @inject ChangeFeed Feed
@@ -40,6 +41,10 @@
     {
         <div class="tide-card-form tide-card">
             <ActionEditor @key="_form" Form="_form" Teams="_teams" People="_people" IsNew="true" />
+            <div class="mt-3">
+                <span class="tide-field-label">Files <span class="fw-normal">(optional)</span></span>
+                <FilePicker Files="_newFiles" ZoneId="new-files-zone" InputId="new-files-input" Label="Files for the new action" PickLabel="Attach files" Changed="StateHasChanged" />
+            </div>
             <div class="d-flex gap-2 mt-3">
                 <button class="btn btn-primary" disabled="@_busy" @onclick="Create">Create action</button>
                 <a class="btn btn-outline-secondary" href="@(_form.ArticleId is { } a ? $"articles/{a}" : "actions")">Cancel</a>
@@ -153,11 +158,13 @@ else
                 <HuntPanel @key="a.Id" Action="a" CanWork="_detail.CanWork" Changed="Reload" />
             }
 
+            <ActionFilesPanel @key="@($"files-{a.Id}")" Files="_detail.Files" ActionId="a.Id" Number="a.Number" CanWork="_detail.CanWork" Changed="Reload" />
+
             <div class="tide-card">
                 <h2>Comments <span class="tide-count tide-muted fw-normal">(@a.Comments.Count)</span></h2>
                 @foreach (var c in a.Comments)
                 {
-                    <div class="tide-comment" @key="c.Id">
+                    <div class="tide-comment" id="comment-@c.Id" @key="c.Id">
                         <div class="small tide-muted d-flex gap-2 align-items-center">
                             <span><strong>@c.AuthorName</strong> &middot; @Ui.When(Clock, c.AtUtc)@(c.EditedAtUtc is not null ? " (edited)" : "")</span>
                             @if (_detail.CanComment && (c.AuthorId == CurrentUser.UserId || CurrentUser.Has(Permission.Administer)) && _editingComment != c.Id)
@@ -178,7 +185,7 @@ else
                             <MarkdownToolbar For="comment-edit" Label="Edit the comment" Class="mt-1" />
                             <textarea id="comment-edit" class="form-control form-control-sm" rows="3" maxlength="8000" aria-label="Edit the comment" @ref="_commentBox" @bind="_commentEdit" @bind:event="oninput"></textarea>
                             <div class="d-flex gap-2 mt-1">
-                                <button class="btn btn-primary btn-sm" disabled="@(_busy || (string.IsNullOrWhiteSpace(_commentEdit) && c.Files.Count == 0))" @onclick="() => SaveComment(c)">Save</button>
+                                <button class="btn btn-primary btn-sm" disabled="@(_busy || (string.IsNullOrWhiteSpace(_commentEdit) && !c.Files.Any(f => !f.IsRemoved)))" @onclick="() => SaveComment(c)">Save</button>
                                 <button class="btn btn-outline-secondary btn-sm" @onclick="() => CancelComment(c)">Cancel</button>
                             </div>
                         }
@@ -186,10 +193,10 @@ else
                         {
                             <Md Text="@c.Text" />
                         }
-                        @if (c.Files.Count > 0)
+                        @if (c.Files.Any(f => !f.IsRemoved))
                         {
-                            var shots = c.Files.Where(f => f.IsImage).OrderBy(f => f.SortOrder).ToList();
-                            var evidence = c.Files.Where(f => !f.IsImage).OrderBy(f => f.SortOrder).ToList();
+                            var shots = c.Files.Where(f => f.IsImage && !f.IsRemoved).OrderBy(f => f.SortOrder).ToList();
+                            var evidence = c.Files.Where(f => !f.IsImage && !f.IsRemoved).OrderBy(f => f.SortOrder).ToList();
                             @if (shots.Count > 0)
                             {
                                 <div class="tide-comment-shots">
@@ -240,7 +247,7 @@ else
                             @if (_detail.CanWork)
                             {
                                 <label for="comment-files" class="btn btn-link btn-sm p-0"><span class="bi bi-paperclip" aria-hidden="true"></span> Attach screenshots or evidence</label>
-                                <span class="small tide-muted">or paste a screenshot, or drop files here.@(_reading ? " Reading…" : "")</span>
+                                <span class="small tide-muted">or paste a screenshot, or drop files here. @FileSvc.LimitsText@(_reading ? " Reading…" : "")</span>
                                 <InputFile id="comment-files" class="d-none" multiple OnChange="OnAttach" />
                             }
                             else
@@ -354,6 +361,7 @@ else
         _shownNumber = null;
         (_parent, _articleTitle) = (null, null);   // a new action from elsewhere isn't a part of the last one's parent
         _created = false;
+        _newFiles.Clear();
         _form = new ActionForm { TeamId = _teams.FirstOrDefault(t => !t.IsRetired)?.Id ?? Guid.Empty };
         if (ParentParam is { } parentId)
         {
@@ -440,14 +448,34 @@ else
     // Set once the action exists: a second click (a double-click) can still arrive before the page moves on.
     private bool _created;
 
-    private Task Create() => Run(async () =>
+    // Files picked for the new action, added once it's created (checked first, so a file over its limit stops the create).
+    private readonly List<FilePicker.PendingFile> _newFiles = [];
+
+    internal List<FilePicker.PendingFile> NewFiles => _newFiles;
+
+    internal Task Create() => Run(async () =>
     {
         if (_created) return;
+        var uploads = _newFiles.Select(f => f.ToUpload()).ToList();
+        FileSvc.Check(uploads);
         var number = await ActionSvc.CreateAsync(_form);
         _created = true;
+        var filesNote = "";
+        if (uploads.Count > 0)
+        {
+            try
+            {
+                await FileSvc.AddAsync((await ActionSvc.GetAsync(number))!.Action.Id, uploads);
+                _newFiles.Clear();
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException or ForbiddenException)
+            {
+                filesNote = $" Its files weren't added ({UserFacingError.For(ex)}); add them on its page.";
+            }
+        }
         var nobody = await ActionSvc.TeamHasNoMembersAsync(_form.TeamId)
             ? " Its team has no members in TIDE, so it's on nobody's list until someone is added." : "";
-        Toasts.Show($"{Ui.ActionLabel(number)} created.{nobody}");
+        Toasts.Show($"{Ui.ActionLabel(number)} created.{filesNote}{nobody}");
         Nav.NavigateTo(Ui.ActionUrl(number));
     });
 
@@ -539,7 +567,8 @@ else
 
     private async Task DeleteComment(ActionComment c)
     {
-        if (!await _confirm.Ask("Delete this comment?", "The action's history will say a comment was deleted.", "Delete comment")) return;
+        var kept = c.Files.Count(f => !f.IsRemoved) > 0 ? " Its files are kept as removed files, which an administrator can restore." : "";
+        if (!await _confirm.Ask("Delete this comment?", "The action's history will say a comment was deleted." + kept, "Delete comment")) return;
         await Run(async () =>
         {
             await ActionSvc.DeleteCommentAsync(c.Id);
@@ -614,7 +643,8 @@ else
                 using var ms = new MemoryStream();
                 await stream.CopyToAsync(ms);
                 var bytes = ms.ToArray();
-                _attachments.Add(new PendingFile(new ScreenshotUpload(f.Name, bytes), ImageSniffer.RasterContentType(bytes) is not null));
+                _attachments.Add(new PendingFile(new ScreenshotUpload(f.Name, bytes, string.IsNullOrWhiteSpace(f.ContentType) ? null : f.ContentType),
+                    ImageSniffer.RasterContentType(bytes) is not null));
             }
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }

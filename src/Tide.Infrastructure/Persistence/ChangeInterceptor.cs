@@ -96,7 +96,9 @@ public sealed class ChangeInterceptor(ChangeFeed feed, ICurrentUser user, Change
         Story => [ChangeFeed.Stories],
         ActionChecklistItem x => [ChangeFeed.Action(x.ActionId)],
         ActionEvent x => [ChangeFeed.Action(x.ActionId)],
-        // A comment's files are added and removed only with the comment itself, whose save is heard.
+        // A comment's files are added and removed only with the comment itself, whose save is heard; a description set on
+        // one comes with a line in the action's history, which is. An action's own file changes its list rows' paperclip.
+        ActionFile x => [ChangeFeed.Action(x.ActionId), ChangeFeed.Actions],
         MetricValue x => [ChangeFeed.MetricsDay(x.BriefDate)],
         MetricDefinition or MetricGroup => [ChangeFeed.Metrics],
         StackProduct => [ChangeFeed.Stack],

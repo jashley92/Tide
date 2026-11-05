@@ -254,6 +254,12 @@ that fits its kind.
 - **Raising.** Raise one from an article, from the board, or in the meeting without leaving the slide.
 - **Splitting.** A long remediation splits into parts, one per team.
 - **Around it.** An action can have an external ticket link, comments (from any team) and a readable history.
+- **Files.** Files can be added to an action itself (picked, dropped or pasted, or while raising it) as well as to its
+  comments. Its Files section lists both, newest first, with who added each, when, its description and its SHA-256.
+  A file is checked from its first bytes as well as its name and type, and an image whose bytes don't match isn't shown
+  inline. A file that can run (a program, script, installer, shortcut, Office file with macros and the like) downloads
+  in a zip with the password `infected`, with "Download as is" beside it. Removing a file (on the action or a comment) needs a reason and keeps it
+  for an administrator to restore; deleting a comment keeps its files the same way. Lists, the board and the brief show a paperclip with the count.
 - **How late.** An overdue action says how late it is.
 
 **Hunt queries:**
@@ -385,7 +391,7 @@ on-call schedule.)
 ### The API, for the SOC's other tools
 A versioned API under `/api/v1`, described at `/api/v1/openapi.json`, lets a SOAR playbook close the action it
 finished (with a note, under its own name in the history), Power BI read the metrics, and a SIEM rule propose an item
-for triage, and a detection pipeline push its rules for Coverage. Briefs come cut exactly as the team edition is, at the caller's TLP ceiling; a Sent one says how it was finished (`finishedAs`: emailed, distributed or notSent). A caller signs in with an API
+for triage, and a detection pipeline push its rules for Coverage. Briefs come cut exactly as the team edition is, at the caller's TLP ceiling; a Sent one says how it was finished (`finishedAs`: emailed, distributed or notSent). One action (`/actions/{number}`) lists its live files: id, name, size, SHA-256, content type, who added it, when, description and source (the action or a comment). Each downloads from `/actions/{number}/files/{fileId}` (add `?zip=true` for the zip with the password `infected`), with the same `actions:read` scope and ceiling. A caller signs in with an API
 token issued under Administration > API access (scoped, expiring, shown once, stored as a hash) or as a server's gMSA
 with Windows. Webhooks post, signed with HMAC-SHA256, when an action is raised or becomes overdue and when a brief is
 sent (checked every minute; a raise or a send is posted once it's at least 30 seconds old). See [ADR 0016](docs/decisions/0016-api-tokens-scopes-and-signed-webhooks.md).
@@ -461,15 +467,17 @@ dotnet test
 | `Database:Provider` | `Sqlite` (dev) or `SqlServer` (prod); `ApplyMigrations=false` when a DBA applies the schema |
 | `ConnectionStrings:Default` | The database connection string |
 | `RoleMapping:Groups` | AD groups → roles, seeded on first run, then edited in Administration |
-| `Files:RootPath` | Screenshots on disk (kept **outside** the web root) |
+| `Files:RootPath` | Screenshots and the files on actions, on disk (kept **outside** the web root) |
+| `Files:MaxImageMB` / `Files:MaxEvidenceMB` | The largest image, and the largest other file, on an article, an action or a comment |
 | `Distribution` | Default TLP ceilings for the editions |
 | `Email` | The SMTP relay (`Enabled=false` sends nothing) |
 | `Intake` / `Cve` | The proxy, limits and addresses for feed polling and CVE enrichment |
 | `Ai` | Optional AI drafting help: `Provider` (`AzureOpenAI`), `Endpoint`, `Deployment`, the highest TLP sent (`MaxTlp`), and `WebGrounding`. The key goes in the `Ai__ApiKey` environment variable |
 
 The operational settings are defaults here and changed in the app, where each change is audited: the organization's
-time zone, meeting time and team name, the reminders, polling and CVE enrichment, the metrics drop folder, and the
-update check. Sign-in, hosting, the database, files, email and the outbound limits stay on the server
+time zone, meeting time and team name, the reminders, polling and CVE enrichment, the metrics drop folder, the
+update check, and which action files download in a password-protected zip (`Files:ZipDownloads`: `RiskyOnly`, the
+default, `Always` or `Never`, under Administration › Teams & SLA). Sign-in, hosting, the database, files, email and the outbound limits stay on the server
 (**Administration › System › Server configuration**).
 
 Every key in `appsettings.json` has a `"//"` line saying what it does.

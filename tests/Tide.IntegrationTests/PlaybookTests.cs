@@ -313,7 +313,7 @@ public class PlaybookTests : IDisposable
         _db.Store.Files.Should().HaveCount(2, "a refused comment leaves no file behind");
 
         await svc.DeleteCommentAsync(comment.Id);
-        _db.Store.Files.Should().BeEmpty();
-        (await shots.OpenAttachmentAsync(evidence.FileId)).Should().BeNull();
+        _db.Store.Files.Should().HaveCount(2, "a deleted comment's files are kept, as removed files on the action");
+        (await shots.OpenAttachmentAsync(evidence.FileId)).Should().BeNull("a removed file isn't served as a comment's");
     }
 }

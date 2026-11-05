@@ -41,11 +41,18 @@ public static class ApiEndpoints
             .Scope(ApiScopes.ActionsRead);
 
         api.MapGet("/actions/{number:int}", async (int number, ApiService s, HttpContext http, CancellationToken ct) =>
-                await s.ActionAsync(number, ApiTokenAuthenticationHandler.Ceiling(http.User), ct) is { } a ? Results.Ok(a) : NotFound($"There's no action A-{number}."))
+                await s.ActionAsync(number, ApiTokenAuthenticationHandler.Ceiling(http.User), ApiBase(http), ct) is { } a ? Results.Ok(a) : NotFound($"There's no action A-{number}."))
+            .Scope(ApiScopes.ActionsRead);
+
+        // A file on the action (or one of its comments), as it was added, or in a zip with the password "infected" (?zip=true).
+        api.MapGet("/actions/{number:int}/files/{fileId:guid}", async (int number, Guid fileId, bool? zip, ApiService s, HttpContext http, CancellationToken ct) =>
+                await s.OpenFileAsync(number, fileId, ApiTokenAuthenticationHandler.Ceiling(http.User), ct) is { } file
+                    ? zip == true ? FileDownloads.Zipped(http, file) : FileDownloads.Plain(http, file.Content, file.FileName)
+                    : NotFound($"There's no such file on A-{number}."))
             .Scope(ApiScopes.ActionsRead);
 
         api.MapPatch("/actions/{number:int}", async (int number, ApiActionUpdate update, ApiService s, HttpContext http, CancellationToken ct) =>
-                await s.UpdateActionAsync(number, update, ApiTokenAuthenticationHandler.Ceiling(http.User), ct) is { } a ? Results.Ok(a) : NotFound($"There's no action A-{number}."))
+                await s.UpdateActionAsync(number, update, ApiTokenAuthenticationHandler.Ceiling(http.User), ApiBase(http), ct) is { } a ? Results.Ok(a) : NotFound($"There's no action A-{number}."))
             .Scope(ApiScopes.ActionsWrite);
 
         api.MapGet("/stack", async (ApiService s, HttpContext http, CancellationToken ct) =>
@@ -98,6 +105,9 @@ public static class ApiEndpoints
         catch (ArgumentException ex) { return Results.Problem(statusCode: 400, detail: ex.Message); }
         catch (InvalidOperationException ex) { return Results.Problem(statusCode: 400, detail: ex.Message); }
     }
+
+    // The API's own address under the app's path base (/tide/api/v1 under an IIS sub-path), for the links it gives.
+    private static string ApiBase(HttpContext http) => http.Request.PathBase.Add("/api/v1").Value!;
 
     private static IResult NotFound(string detail) => Results.Problem(statusCode: 404, detail: detail);
 

@@ -47,7 +47,8 @@ public sealed class ActionForm
 public sealed record ActionRow(Guid Id, int Number, string Title, ActionKind Kind, Priority Priority, Guid TeamId, string TeamName,
     string? AssigneeId, string? AssigneeName, DateOnly? DueDate, ActionStatus Status, ActionOutcome Outcome, DateOnly? ClosedDate,
     Guid? ArticleId, string? ArticleTitle, Guid? ParentId, int Children, DateTimeOffset CreatedAtUtc,
-    int? ParentNumber = null, string? PlaybookName = null, int ChecklistDone = 0, int ChecklistTotal = 0, DateOnly? RaisedOn = null)
+    int? ParentNumber = null, string? PlaybookName = null, int ChecklistDone = 0, int ChecklistTotal = 0, DateOnly? RaisedOn = null,
+    int Files = 0)
 {
     public SlaState Sla(DateOnly today, WorkingDays? workingDays = null) => ActionSla.StateOf(Status, DueDate, ClosedDate, today, workingDays);
     public ActionUrgency Urgency(DateOnly today, WorkingDays? workingDays = null) => ActionSla.UrgencyOf(Status, DueDate, today, workingDays);
@@ -137,7 +138,11 @@ public sealed record TeamQueue(IReadOnlyList<ActionRow> Rows, int Mine, int Unas
 /// reads the team edition may comment on any action, with text; files on a comment stay with whoever works it.
 /// </summary>
 public sealed record ActionDetail(ActionItem Action, ActionRow? Parent, IReadOnlyList<ActionRow> Children, bool CanWork, bool CanEditAll,
-    bool CanComment = false);
+    bool CanComment = false)
+{
+    /// <summary>The files on the action and its comments, newest first, and (for an administrator) the removed ones.</summary>
+    public ActionFileList Files { get; init; } = ActionFileList.None;
+}
 
 /// <summary>One team's load: open, overdue, due soon, P1, closed in the last week, and open by assignee.</summary>
 public sealed record TeamLoad(Team Team, int Open, int Overdue, int DueSoon, int Blocked, int ClosedLastWeek, int MetLastWeek,
@@ -180,7 +185,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             q = q.Where(a => a.ClosedAtUtc != null && a.ClosedAtUtc >= since);
         }
         else q = q.WhereOpen();
-        var rows = await Rows(db, q).ToListAsync(ct);
+        var rows = await RowsAsync(db, q, ct);
         return filter.View == ActionView.Closed
             ? rows.OrderByDescending(r => r.ClosedDate).ThenByDescending(r => r.Number).ToList()
             : rows.OrderBy(r => r.DueDate ?? DateOnly.MaxValue).ThenBy(r => r.Priority).ThenBy(r => r.Number).ToList();
@@ -203,7 +208,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var q = Narrow(db, db.Actions.AsNoTracking(), filter)
             .Where(a => a.Status == ActionStatus.Open || a.Status == ActionStatus.InProgress || a.Status == ActionStatus.Blocked
                         || (a.ClosedAtUtc != null && a.ClosedAtUtc >= since));
-        var rows = await Rows(db, q).ToListAsync(ct);
+        var rows = await RowsAsync(db, q, ct);
         // Open columns by due date then priority; closed ones most recently closed first.
         var cards = rows.Where(r => r.IsOpen).OrderBy(r => r.DueDate ?? DateOnly.MaxValue).ThenBy(r => r.Priority).ThenBy(r => r.Number)
             .Concat(rows.Where(r => !r.IsOpen).OrderByDescending(r => r.ClosedDate).ThenByDescending(r => r.Number)).ToList();
@@ -269,7 +274,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     internal static async Task<OpenActionsReview> Outstanding(IAppDbContext db, DateOnly asOf, TlpLevel ceiling, CancellationToken ct)
     {
         var q = db.Actions.AsNoTracking().WhereOpen().Where(a => a.DueDate != null && a.DueDate < asOf);
-        var rows = await Rows(db, q).ToListAsync(ct);
+        var rows = await RowsAsync(db, q, ct);
         if (rows.Count == 0) return OpenActionsReview.None;
         var articleIds = rows.Select(r => r.ArticleId).OfType<Guid>().Distinct().ToList();
         var tlps = await db.Articles.AsNoTracking().Where(a => articleIds.Contains(a.Id)).Select(a => new { a.Id, a.Tlp })
@@ -303,7 +308,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (!onATeam) return new([], 0, 0, false);
         var q = Narrow(db, db.Actions.AsNoTracking(), new ActionFilter(ActionView.MyTeams)).WhereOpen()
             .Where(a => a.AssigneeId == null || a.AssigneeId == user.UserId);
-        return TeamQueue.From(await Rows(db, q).ToListAsync(ct), user.UserId, true, TeamQueueSize);
+        return TeamQueue.From(await RowsAsync(db, q, ct), user.UserId, true, TeamQueueSize);
     }
 
     /// <summary>One action's list row, or null.</summary>
@@ -319,7 +324,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     {
         RequireRead();
         await using var db = await dbs.CreateAsync(ct);
-        var rows = await Rows(db, db.Actions.AsNoTracking().Where(a => a.ArticleId == articleId)).ToListAsync(ct);
+        var rows = await RowsAsync(db, db.Actions.AsNoTracking().Where(a => a.ArticleId == articleId), ct);
         return rows.OrderBy(r => r.IsOpen ? 0 : 1).ThenBy(r => r.Number).ToList();
     }
 
@@ -345,7 +350,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     {
         RequireRead();
         await using var db = await dbs.CreateAsync(ct);
-        var rows = await Rows(db, db.Actions.AsNoTracking().Where(a => a.ArticleId != null && articleIds.Contains(a.ArticleId.Value))).ToListAsync(ct);
+        var rows = await RowsAsync(db, db.Actions.AsNoTracking().Where(a => a.ArticleId != null && articleIds.Contains(a.ArticleId.Value)), ct);
         return rows.OrderBy(r => r.Number).ToLookup(r => r.ArticleId!.Value);
     }
 
@@ -356,8 +361,16 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (ids.Count == 0) return [];
         await using var db = await dbs.CreateAsync(ct);
         var list = ids.ToList();
-        var rows = await Rows(db, db.Actions.AsNoTracking().Where(a => list.Contains(a.Id))).ToListAsync(ct);
+        var rows = await RowsAsync(db, db.Actions.AsNoTracking().Where(a => list.Contains(a.Id)), ct);
         return rows.OrderByDescending(r => r.Number).ToList();
+    }
+
+    // The rows, each with its live files counted (on it and its comments): one grouped count for the lot.
+    private static async Task<List<ActionRow>> RowsAsync(IAppDbContext db, IQueryable<ActionItem> q, CancellationToken ct)
+    {
+        var rows = await Rows(db, q).ToListAsync(ct);
+        var counts = await ActionFileService.CountsAsync(db, rows.Select(r => r.Id).ToList(), ct);
+        return counts.Count == 0 ? rows : rows.Select(r => counts.TryGetValue(r.Id, out var n) ? r with { Files = n } : r).ToList();
     }
 
     private static IQueryable<ActionRow> Rows(IAppDbContext db, IQueryable<ActionItem> q) => q.Select(a => new ActionRow(
@@ -379,10 +392,10 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         a.Events = a.Events.OrderByDescending(e => e.AtUtc).ToList();
         a.Hunts = a.Hunts.OrderByDescending(h => h.CreatedAtUtc).ToList();
         var parent = a.ParentId is { } pid ? await Rows(db, db.Actions.AsNoTracking().Where(x => x.Id == pid)).FirstOrDefaultAsync(ct) : null;
-        var children = await Rows(db, db.Actions.AsNoTracking().Where(x => x.ParentId == a.Id)).ToListAsync(ct);
+        var children = await RowsAsync(db, db.Actions.AsNoTracking().Where(x => x.ParentId == a.Id), ct);
         var canWork = await CanWorkAsync(db, a.TeamId, ct);
         return new ActionDetail(a, parent, children.OrderBy(c => c.Number).ToList(), canWork, user.Has(Permission.WriteArticles),
-            canWork || CanComment);
+            canWork || CanComment) { Files = await ActionFileService.ListAsync(db, user, a.Id, ct) };
     }
 
     /// <summary>Per team: what's open, overdue and due soon, last week's closures, and who holds what.</summary>
@@ -723,7 +736,12 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         foreach (var ((file, isImage), i) in written.Select((w, i) => (w, i)))
         {
             db.Files.Add(file);
-            comment.Files.Add(new ActionCommentFile { FileId = file.Id, FileName = file.FileName, SizeBytes = file.SizeBytes, IsImage = isImage, SortOrder = i });
+            var u = attachments[i];
+            comment.Files.Add(new ActionCommentFile
+            {
+                FileId = file.Id, FileName = file.FileName, SizeBytes = file.SizeBytes, IsImage = isImage, SortOrder = i,
+                RiskReason = FileRisk.Inspect(u.FileName, u.DeclaredType, u.Bytes).RiskReason,
+            });
         }
         db.ActionComments.Add(comment);
         if (written.Count > 0)
@@ -755,7 +773,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var (comment, a) = await OwnCommentAsync(db, commentId, ct);
         if (editVersion is { } v && v != comment.EditVersion)
             throw new StaleEditException($"{comment.EditedByName ?? "Someone else"} changed this comment since you opened it.");
-        if (clean.Length == 0 && !await db.ActionCommentFiles.AnyAsync(f => f.CommentId == commentId, ct))
+        if (clean.Length == 0 && !await db.ActionCommentFiles.AnyAsync(f => f.CommentId == commentId && f.RemovedAtUtc == null, ct))
             throw new ArgumentException("A comment can't be empty; delete it instead.");
         if (comment.Text == clean) return comment.EditVersion;
         comment.Text = clean;
@@ -771,21 +789,20 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         return comment.EditVersion;
     }
 
-    /// <summary>Deletes a comment, and its files: only its author, on whichever team (or an administrator). The history says so; the audit
-    /// log keeps it.</summary>
+    /// <summary>Deletes a comment: only its author, on whichever team (or an administrator). Its files are kept on the
+    /// action as removed files ("Its comment was deleted"), with their bytes, hashes and records, for an administrator to
+    /// restore. The history says so; the audit log keeps it.</summary>
     public async Task DeleteCommentAsync(Guid commentId, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
         var (comment, a) = await OwnCommentAsync(db, commentId, ct);
         var attached = await db.ActionCommentFiles.Where(f => f.CommentId == commentId).ToListAsync(ct);
-        var fileIds = attached.Select(f => f.FileId).ToList();
+        await ActionFileService.KeepFilesOfDeletedCommentAsync(db, user, comment, attached, ct);
         db.ActionCommentFiles.RemoveRange(attached);
-        db.Files.RemoveRange(await db.Files.Where(f => fileIds.Contains(f.Id)).ToListAsync(ct));
         db.ActionComments.Remove(comment);
         db.ActionEvents.Add(Event(a.Id, $"{user.DisplayName} deleted a comment by {comment.AuthorName}"
-            + (attached.Count > 0 ? $", and its {attached.Count} file{(attached.Count == 1 ? "" : "s")}." : ".")));
+            + (attached.Count > 0 ? $"; its {attached.Count} file{(attached.Count == 1 ? " is" : "s are")} kept as removed." : ".")));
         await db.SaveChangesAsync(ct);
-        files.Discard(fileIds);
     }
 
     // --- checklist and playbooks --------------------------------------------------------------------------------
@@ -1018,7 +1035,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             // Only a file stored as evidence and not yet used anywhere: never an article's screenshot, a frozen send's image or
             // a comment's file (deleting that comment would delete the bytes from under this hunt).
             var used = await db.ArticleScreenshots.AnyAsync(x => x.FileId == fileId, ct) || await db.BriefSendImages.AnyAsync(x => x.FileId == fileId, ct)
-                       || await db.ActionCommentFiles.AnyAsync(x => x.FileId == fileId, ct)
+                       || await db.ActionCommentFiles.AnyAsync(x => x.FileId == fileId, ct) || await db.ActionFiles.AnyAsync(x => x.FileId == fileId, ct)
                        || await db.HuntQueries.AnyAsync(x => x.EvidenceFileId == fileId && x.Id != hunt.Id, ct);
             if (used || !await db.Files.AnyAsync(f => f.Id == fileId, ct)) throw new ArgumentException("That evidence file can't be used.");
             hunt.EvidenceFileId = fileId;
@@ -1135,9 +1152,13 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         a.ParentId = form.ParentId;
     }
 
-    private async Task<bool> CanWorkAsync(IAppDbContext db, Guid teamId, CancellationToken ct) =>
-        user.Has(Permission.WriteArticles)
-        || (user.Has(Permission.WorkActions) && await db.TeamMembers.AnyAsync(m => m.TeamId == teamId && m.UserId == user.UserId, ct));
+    private Task<bool> CanWorkAsync(IAppDbContext db, Guid teamId, CancellationToken ct) => CanWork(db, user, teamId, ct);
+
+    /// <summary>Whether <paramref name="who"/> may work actions of <paramref name="teamId"/>: an analyst or administrator, or a
+    /// member of the team with WorkActions.</summary>
+    internal static async Task<bool> CanWork(IAppDbContext db, ICurrentUser who, Guid teamId, CancellationToken ct) =>
+        who.Has(Permission.WriteArticles)
+        || (who.Has(Permission.WorkActions) && await db.TeamMembers.AnyAsync(m => m.TeamId == teamId && m.UserId == who.UserId, ct));
 
     private async Task RequireWork(IAppDbContext db, ActionItem a, CancellationToken ct)
     {
@@ -1177,7 +1198,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         new() { ActionId = actionId, AtUtc = DateTimeOffset.UtcNow, ByName = user.DisplayName, Text = ClipEvent(text) };
 
     // Not cutting a surrogate pair in two.
-    private static string ClipEvent(string text)
+    internal static string ClipEvent(string text)
     {
         if (text.Length <= EventTextMax) return text;
         var cut = EventTextMax - 1;

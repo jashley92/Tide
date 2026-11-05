@@ -14,6 +14,7 @@
                 <a class="tide-kcard-parent small d-block" href="@Ui.ActionUrl(parent)"><span class="bi bi-arrow-return-right" aria-hidden="true"></span> Part of @Ui.ActionLabel(parent)</a>
             }
             <a href="@Ui.ActionUrl(r.Number)">@r.Title</a>
+            <FileCount Count="r.Files" />
             <PresenceNote Place="@Tide.Web.Components.Pages.ActionPage.ActionPlace(r.Number)" Join="false" Compact="true" />
             @if (ActionRules.For(Rules, r, Today, Clock.Days) is { Count: > 0 } matched)
             {

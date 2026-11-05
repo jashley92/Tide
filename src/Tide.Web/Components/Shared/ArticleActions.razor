@@ -12,7 +12,7 @@
     {
         <div class="d-flex gap-2 align-items-start py-1 border-bottom small" @key="r.Id">
             <a class="tide-action-num" href="@Ui.ActionUrl(r.Number)">@Ui.ActionLabel(r.Number)</a>
-            <span class="flex-grow-1">@r.Title<span class="tide-muted"> &middot; @r.TeamName</span></span>
+            <span class="flex-grow-1">@r.Title<span class="tide-muted"> &middot; @r.TeamName</span> <FileCount Count="r.Files" /></span>
             @if (r.IsOpen) { <SlaBadge State="r.Sla(ActionSvc.Today, ActionSvc.Days)" Due="r.DueDate" Today="ActionSvc.Today" /> } else { <ActionStatusBadge Status="r.Status" /> }
         </div>
     }

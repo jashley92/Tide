@@ -253,15 +253,22 @@ app.MapGet("/files/{id:guid}/inline", async (Guid id, ScreenshotService shots, H
     return Results.Stream(file.Content!, file.ContentType);
 }).RequireAuthorization().RequireRateLimiting("files");
 
-// Files on actions' comments, as downloads under the name they were added with: any kind of evidence (a log, a pcap, an
-// email), so never shown inline and never sniffed into a type. ScreenshotService.OpenAttachmentAsync decides who may.
-app.MapGet("/files/{id:guid}/download", async (Guid id, ScreenshotService shots, HttpContext http, CancellationToken ct) =>
+// Files on actions and their comments (and a hunt's evidence, an article's screenshot), as downloads under the name they
+// were added with: any kind of file (a log, a pcap, an email, a sample), so never shown inline and never sniffed into a
+// type. ActionFileService.OpenAsync decides who may have an action's or a comment's file, per file; ScreenshotService the rest.
+app.MapGet("/files/{id:guid}/download", async (Guid id, Tide.Application.Actions.ActionFileService files, ScreenshotService shots, HttpContext http,
+    CancellationToken ct) =>
 {
+    if (await files.OpenAsync(id, ct: ct) is { } onAction) return FileDownloads.Plain(http, onAction.Content, onAction.FileName);
     if (await shots.OpenAttachmentAsync(id, ct) is not { } file) return Results.NotFound();
-    http.Response.Headers.CacheControl = "private, no-store";
-    http.Response.Headers.XContentTypeOptions = "nosniff";
-    return Results.File(file.Content, "application/octet-stream", file.FileName);
+    return FileDownloads.Plain(http, file.Content, file.FileName);
 }).RequireAuthorization().RequireRateLimiting("files");
+
+// The same file inside a zip with the password "infected" (classic ZipCrypto): the main download of a file that can run
+// (Files:ZipDownloads), offered for an action's or a comment's file only.
+app.MapGet("/files/{id:guid}/zip", async (Guid id, Tide.Application.Actions.ActionFileService files, HttpContext http, CancellationToken ct) =>
+    await files.OpenAsync(id, ct: ct) is { } file ? FileDownloads.Zipped(http, file) : Results.NotFound())
+    .RequireAuthorization().RequireRateLimiting("files");
 
 // The email exactly as it would be sent now (its images from the inline endpoint), for the preview frame on the brief
 // page. Its own CSP: no script at all, sandboxed, and framable by this app only.

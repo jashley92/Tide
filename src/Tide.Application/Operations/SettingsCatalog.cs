@@ -36,6 +36,7 @@ public static class SettingsCatalog
         new("Hosting", "Data Protection key folder", "DataProtection:KeyPath"),
         new("Hosting", "Screenshot folder", "Files:RootPath"),
         new("Hosting", "Largest screenshot (MB)", "Files:MaxImageMB"),
+        new("Hosting", "Largest other file on an action (MB)", "Files:MaxEvidenceMB"),
 
         new("Database", "Provider", "Database:Provider"),
         new("Database", "Applies its own schema", "Database:ApplyMigrations"),
@@ -123,6 +124,8 @@ public static class SettingsCatalog
 
         new("Metric imports", "Drop folder", OperationalSettings.DropFolderEnabled, EditedIn: MetricImportsPage),
         new("Metric imports", "Drop folder read every (minutes)", OperationalSettings.DropFolderPollMinutes, EditedIn: MetricImportsPage),
+
+        new("Files", "Downloads in a password-protected zip", OperationalSettings.ZipDownloads, EditedIn: TeamsPage),
     ];
 
     private static readonly HashSet<string> InAppKeys = InApp.Select(s => s.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);

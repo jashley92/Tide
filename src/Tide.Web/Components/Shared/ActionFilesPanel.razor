@@ -1,0 +1,228 @@
+@* An action's Files: those added to it and those attached to its comments, newest first, each with where it is, who
+   added it and when, its description, its SHA-256 and its downloads. Whoever works the action adds files and describes
+   them; the person who added one, an analyst or an administrator removes it, saying why; an administrator restores it. *@
+@inject ActionFileService FileSvc
+@inject ICurrentUser CurrentUser
+@inject OrgClock Clock
+@inject ToastService Toasts
+
+<section class="tide-card" id="files" aria-labelledby="files-h">
+    <h2 id="files-h">Files <span class="tide-count tide-muted fw-normal">(@Files.Live.Count)</span></h2>
+    @if (CanWork)
+    {
+        <FilePicker Files="_pending" Changed="StateHasChanged" Label="Add files to this action">
+            @if (_pending.Count > 0)
+            {
+                <div class="d-flex gap-2 mt-2">
+                    <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="Add">Add @(_pending.Count == 1 ? "the file" : $"{_pending.Count} files")</button>
+                    <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => _pending.Clear()">Cancel</button>
+                </div>
+            }
+        </FilePicker>
+    }
+    @if (Files.Live.Count == 0)
+    {
+        <p class="small tide-muted mb-0 mt-2">No files yet.@(CanWork ? "" : " Files on its comments are listed here too.")</p>
+    }
+    else
+    {
+        <ul class="tide-file-list">
+            @foreach (var f in Files.Live)
+            {
+                <li class="tide-file" @key="f.FileId">
+                    <div class="tide-file-head">
+                        @if (f.ShowsInline)
+                        {
+                            <img class="tide-file-thumb" src="@Ui.ImageUrl(f.FileId)" alt="" loading="lazy" />
+                        }
+                        else
+                        {
+                            <span class="bi @(f.RiskReason is not null ? "bi-file-earmark-x" : "bi-file-earmark") tide-file-icon" aria-hidden="true"></span>
+                        }
+                        <div class="tide-file-main">
+                            <div class="d-flex gap-2 align-items-center flex-wrap">
+                                <span class="tide-file-name">@f.FileName</span>
+                                <span class="small tide-muted">@Ui.Size(f.SizeBytes)</span>
+                                @if (f.RiskReason is not null)
+                                {
+                                    <Badge Tone="BadgeTone.Danger" Icon="bi-exclamation-triangle" Title="@FileRisk.Sentence(f.RiskReason)">Can run</Badge>
+                                }
+                            </div>
+                            <div class="small tide-muted">
+                                @if (f.CommentId is { } commentId)
+                                {
+                                    <a href="@($"{Ui.ActionUrl(Number)}#comment-{commentId}")">On a comment by @f.AddedByName, @Ui.When(Clock, f.AddedAtUtc)</a>
+                                }
+                                else if (f.FromCommentBy is not null)
+                                {
+                                    <span>From a deleted comment by @f.FromCommentBy, @Ui.When(Clock, f.FromCommentAtUtc ?? f.AddedAtUtc)</span>
+                                }
+                                else
+                                {
+                                    <span>Added to the action by @f.AddedByName, @Ui.When(Clock, f.AddedAtUtc)</span>
+                                }
+                            </div>
+                            @if (f.RiskReason is not null)
+                            {
+                                <div class="small tide-file-note"><span class="bi bi-shield-exclamation" aria-hidden="true"></span> @FileRisk.Sentence(f.RiskReason)</div>
+                            }
+                            @if (f.TypeNote is not null)
+                            {
+                                <div class="small tide-file-note"><span class="bi bi-question-diamond" aria-hidden="true"></span> @f.TypeNote It isn't shown as an image.</div>
+                            }
+                            @if (_describing == f.FileId)
+                            {
+                                <textarea class="form-control form-control-sm mt-1" rows="2" maxlength="@ActionFile.MaxDescription" aria-label="Description of @f.FileName"
+                                          @bind="_description" @bind:event="oninput"></textarea>
+                                <div class="d-flex gap-2 mt-1 align-items-center">
+                                    <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="() => SaveDescription(f)">Save</button>
+                                    <button class="btn btn-outline-secondary btn-sm" @onclick="() => _describing = null">Cancel</button>
+                                    <span class="small tide-muted">@((_description ?? "").Length) of @ActionFile.MaxDescription</span>
+                                </div>
+                            }
+                            else if (f.Description is not null)
+                            {
+                                <div class="tide-file-desc">@f.Description</div>
+                            }
+                            @if (f.Sha256 is { } hash)
+                            {
+                                <details class="tide-file-hash">
+                                    <summary>SHA-256 <code>@Ui.ShortHash(hash)</code></summary>
+                                    <code class="tide-file-hash-full" aria-label="SHA-256 of @f.FileName">@hash</code>
+                                </details>
+                            }
+                            <div class="tide-file-actions">
+                                @if (FileSvc.ZipFirst(f))
+                                {
+                                    <a class="btn btn-outline-secondary btn-sm" href="@Ui.ZipUrl(f.FileId)" download="@(FileRisk.EntryName(f.FileName) + ".zip")"
+                                       title="@ZipTitle"><span class="bi bi-file-earmark-zip" aria-hidden="true"></span> Download (zip)</a>
+                                    <a class="small" href="@Ui.DownloadUrl(f.FileId)" download="@f.FileName" title="@AsIsTitle(f)">Download as is</a>
+                                }
+                                else
+                                {
+                                    <a class="btn btn-outline-secondary btn-sm" href="@Ui.DownloadUrl(f.FileId)" download="@f.FileName"
+                                       title="@(f.RiskReason is not null ? AsIsTitle(f) : null)"><span class="bi bi-download" aria-hidden="true"></span> Download</a>
+                                }
+                                @if (CanWork && _describing != f.FileId)
+                                {
+                                    <button type="button" class="btn btn-link btn-sm p-0" aria-label="@(f.Description is null ? "Describe" : "Edit the description of") @f.FileName"
+                                            @onclick="() => StartDescribe(f)">@(f.Description is null ? "Describe" : "Edit description")</button>
+                                }
+                                @if (f.CanRemove && _removing != f.FileId)
+                                {
+                                    <button type="button" class="btn btn-link btn-sm p-0" aria-label="Remove @f.FileName" @onclick="() => StartRemove(f)">Remove</button>
+                                }
+                            </div>
+                            @if (_removing == f.FileId)
+                            {
+                                <div class="tide-file-remove">
+                                    <label class="form-label small mb-1" for="remove-reason">Why remove @f.FileName? The history keeps who removed it and why, and an administrator can restore it.</label>
+                                    <textarea id="remove-reason" class="form-control form-control-sm" rows="2" maxlength="@ActionFile.MaxReason" @bind="_reason" @bind:event="oninput"></textarea>
+                                    <div class="d-flex gap-2 mt-1">
+                                        <button class="btn btn-danger btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_reason))" @onclick="() => Remove(f)">Remove file</button>
+                                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => _removing = null">Cancel</button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </li>
+            }
+        </ul>
+    }
+    @if (Files.Removed.Count > 0)
+    {
+        <details class="tide-files-removed">
+            <summary>Removed files (@Files.Removed.Count)</summary>
+            <ul class="tide-file-list">
+                @foreach (var f in Files.Removed)
+                {
+                    <li class="tide-file" @key="f.FileId">
+                        <div class="d-flex gap-2 align-items-center flex-wrap">
+                            <span class="tide-file-name">@f.FileName</span>
+                            <span class="small tide-muted">@Ui.Size(f.SizeBytes)</span>
+                            @if (f.Sha256 is { } hash) { <code class="small" title="SHA-256 @hash">@Ui.ShortHash(hash)</code> }
+                            <button class="btn btn-outline-secondary btn-sm ms-auto" disabled="@_busy" @onclick="() => Restore(f)" aria-label="Restore @f.FileName">Restore</button>
+                        </div>
+                        <div class="small tide-muted">Removed by @f.RemovedByName, @Ui.When(Clock, f.RemovedAtUtc!.Value): @f.RemovedReason</div>
+                        <div class="small tide-muted">@RemovedSource(f)</div>
+                    </li>
+                }
+            </ul>
+        </details>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ActionFileList Files { get; set; } = ActionFileList.None;
+    [Parameter, EditorRequired] public Guid ActionId { get; set; }
+    [Parameter, EditorRequired] public int Number { get; set; }
+    [Parameter] public bool CanWork { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private readonly List<FilePicker.PendingFile> _pending = [];
+    private Guid? _describing, _removing;
+    private string? _description, _reason;
+    private bool _busy;
+
+    internal const string ZipTitle = "In a zip, so it can't run by accident. It opens with the password \"infected\".";
+
+    // Where a removed file was, for the Removed files list.
+    private string RemovedSource(ActionFileRow f) =>
+        f.OnComment ? $"Was on a comment by {f.AddedByName}, {Ui.When(Clock, f.AddedAtUtc)}"
+        : f.FromCommentBy is not null ? $"Was on a comment by {f.FromCommentBy}, {Ui.When(Clock, f.FromCommentAtUtc ?? f.AddedAtUtc)}"
+        : $"Added to the action by {f.AddedByName}, {Ui.When(Clock, f.AddedAtUtc)}";
+
+    internal static string AsIsTitle(ActionFileRow f) => f.RiskReason is not null
+        ? $"Warning: {FileRisk.Sentence(f.RiskReason)} Download it as is only to open it somewhere safe."
+        : "The file itself, not zipped.";
+
+    internal IReadOnlyList<FilePicker.PendingFile> Pending => _pending;
+
+    internal Task Add() => Run(async () =>
+    {
+        var sent = _pending.ToList();
+        await FileSvc.AddAsync(ActionId, sent.Select(p => p.ToUpload()).ToList());
+        _pending.RemoveAll(p => sent.Contains(p));
+        Toasts.Show(sent.Count == 1 ? $"Added {sent[0].FileName}." : $"Added {sent.Count} files.");
+    });
+
+    private void StartDescribe(ActionFileRow f) => (_describing, _description) = (f.FileId, f.Description);
+
+    internal Task SaveDescription(ActionFileRow f) => Run(async () =>
+    {
+        await FileSvc.DescribeAsync(f.FileId, _description);
+        _describing = null;
+    });
+
+    private void StartRemove(ActionFileRow f) => (_removing, _reason) = (f.FileId, null);
+
+    internal Task Remove(ActionFileRow f) => Run(async () =>
+    {
+        await FileSvc.RemoveAsync(f.FileId, _reason ?? "");
+        _removing = null;
+        Toasts.Show(CurrentUser.Has(Permission.Administer) ? $"Removed {f.FileName}. It's under Removed files." : $"Removed {f.FileName}.");
+    });
+
+    internal Task Restore(ActionFileRow f) => Run(async () =>
+    {
+        await FileSvc.RestoreAsync(f.FileId);
+        Toasts.Show($"Restored {f.FileName}.");
+    });
+
+    internal void SetDraft(Guid? describing, string? description, Guid? removing, string? reason) =>
+        (_describing, _description, _removing, _reason) = (describing, description, removing, reason);
+
+    private async Task Run(Func<Task> action)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await action();
+            await Changed.InvokeAsync();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+}

@@ -1,0 +1,107 @@
+@* Files waiting to be added to an action: picked, dropped on the zone, or pasted while the zone has focus (paste-drop.js
+   hands them to the hidden InputFile). Each can have a description before it's added. The page adds them. *@
+@inject ActionFileService FileSvc
+@inject ToastService Toasts
+@inject IJSRuntime JS
+
+<div id="@ZoneId" class="tide-file-pick tide-comment-compose" tabindex="0" role="group" aria-label="@Label">
+    @if (Files.Count > 0)
+    {
+        <ul class="tide-file-pending">
+            @foreach (var f in Files)
+            {
+                <li @key="f">
+                    <div class="d-flex gap-2 align-items-center">
+                        <span class="bi @(f.IsImage ? "bi-file-earmark-image" : "bi-file-earmark") tide-muted" aria-hidden="true"></span>
+                        <span class="tide-file-name">@f.FileName</span>
+                        <span class="small tide-muted">@Ui.Size(f.Bytes.Length)</span>
+                        @if (f.RiskSentence is { } risk)
+                        {
+                            <Badge Tone="BadgeTone.Danger" Icon="bi-exclamation-triangle" Title="@risk">Can run</Badge>
+                        }
+                        <button type="button" class="btn btn-link btn-sm p-0 ms-auto" aria-label="Don't add @f.FileName" @onclick="() => Drop(f)"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+                    </div>
+                    <input class="form-control form-control-sm mt-1" maxlength="@ActionFile.MaxDescription" placeholder="Description (optional)"
+                           aria-label="Description of @f.FileName" @bind="f.Description" @bind:event="oninput" />
+                </li>
+            }
+        </ul>
+    }
+    <div class="d-flex gap-2 align-items-center flex-wrap">
+        <label for="@InputId" class="btn btn-outline-secondary btn-sm"><span class="bi bi-paperclip" aria-hidden="true"></span> @PickLabel</label>
+        <span class="small tide-muted">or drop them here, or paste while this box has focus. @FileSvc.LimitsText@(_reading ? " Reading…" : "")</span>
+        <InputFile id="@InputId" class="d-none" multiple OnChange="OnPick" />
+    </div>
+    @ChildContent
+</div>
+
+@code {
+    /// <summary>A file read from the browser, waiting to be added.</summary>
+    public sealed class PendingFile
+    {
+        public required string FileName { get; init; }
+        public required byte[] Bytes { get; init; }
+        public string? DeclaredType { get; init; }
+        public string? Description { get; set; }
+        public bool IsImage { get; init; }
+        public string? RiskSentence { get; init; }
+
+        public ActionFileUpload ToUpload() => new(FileName, Bytes, DeclaredType, Description);
+
+        public static PendingFile From(string name, byte[] bytes, string? declaredType)
+        {
+            var seen = FileRisk.Inspect(name, declaredType, bytes);
+            return new PendingFile
+            {
+                FileName = name, Bytes = bytes, DeclaredType = declaredType, IsImage = seen.IsImage, RiskSentence = FileRisk.Sentence(seen.RiskReason),
+            };
+        }
+    }
+
+    [Parameter, EditorRequired] public List<PendingFile> Files { get; set; } = [];
+    [Parameter] public string ZoneId { get; set; } = "files-zone";
+    [Parameter] public string InputId { get; set; } = "files-input";
+    [Parameter] public string Label { get; set; } = "Add files";
+    [Parameter] public string PickLabel { get; set; } = "Add files";
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool _reading, _registered;
+
+    internal async Task OnPick(InputFileChangeEventArgs e)
+    {
+        _reading = true;
+        try
+        {
+            var room = ActionFile.MaxPerUpload - Files.Count;
+            var files = e.GetMultipleFiles(ActionFile.MaxPerUpload);
+            if (files.Count > room) throw new ArgumentException($"Add at most {ActionFile.MaxPerUpload} files at once.");
+            foreach (var f in files)
+            {
+                if (f.Size > FileSvc.MaxReadBytes) throw new ArgumentException($"'{f.Name}' is over the {FileSvc.MaxFileMB} MB limit.");
+                await using var stream = f.OpenReadStream(FileSvc.MaxReadBytes);
+                using var ms = new MemoryStream();
+                await stream.CopyToAsync(ms);
+                Files.Add(PendingFile.From(f.Name, ms.ToArray(), string.IsNullOrWhiteSpace(f.ContentType) ? null : f.ContentType));
+            }
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _reading = false; }
+        await Changed.InvokeAsync();
+    }
+
+    private async Task Drop(PendingFile f)
+    {
+        Files.Remove(f);
+        await Changed.InvokeAsync();
+    }
+
+    // Drop files on the zone, or paste one while it (or something in it) has focus.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_registered) return;
+        _registered = true;
+        try { await JS.InvokeVoidAsync("tidePasteDrop.register", ZoneId, InputId, InputId, true, true); }
+        catch (JSDisconnectedException) { }
+    }
+}
