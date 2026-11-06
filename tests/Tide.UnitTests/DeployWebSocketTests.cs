@@ -55,7 +55,9 @@ public partial class DeployScriptTests
     {
         var verify = Read("deploy", "Verify-Install.ps1");
         verify.Should().Contain("[switch] $SkipWebSocketHandshake");
-        verify.Should().Contain("Report $ws.FeatureOk \"The IIS WebSocket Protocol feature");
+        verify.Should().Contain("Report-Checked $ws.FeatureOk $ws.FeatureChecked $ws.FeatureWarning \"The IIS WebSocket Protocol feature");
+        verify.Should().Contain("Report-Checked $ws.ConfigOk $ws.ConfigChecked $ws.ConfigWarning");
+        verify.Should().Contain("$physical = Get-TideIisPhysicalPath $iisPath");
         verify.Should().Contain("Test-TideWebSockets -IisPath $iisPath -SitePath $physical");
         verify.Should().Contain("Test-TideWebSocketHandshake -BaseUrl $base");
         verify.Should().Contain("$wsFix = Get-TideWebSocketFixText");
@@ -189,14 +191,15 @@ public partial class DeployScriptPowerShellTests
                 Set-Content -Path $f -Value '<configuration><system.webServer><webSocket enabled="true" /></system.webServer></configuration>'
                 $out.on = Get-TideWebConfigWebSocket $f
             } finally { Remove-Item -Recurse -Force $dir }
-            # What IIS uses: web.config over the site's entry, over the server's; 'true' when nothing sets it.
+            # What IIS uses: web.config over the site's entry, over the server's (IIS answers with the default when nothing sets it).
             function Read-TideWebSocketSetting([string] $Location) { if ($Location) { $script:site } else { $script:server } }
             function Get-TideWebConfigWebSocket([string] $Path) { $script:webConfig }
             function Effective($server, $site, $webConfig) {
                 $script:server = $server; $script:site = $site; $script:webConfig = $webConfig
                 (Get-TideWebSocketConfig -IisPath 'TIDE' -SitePath 'C:\site').Effective
             }
-            $out.effectiveDefault = Effective $null $null $null
+            $out.effectiveUnreadable = Effective $null $null $null
+            $out.effectiveDefault = Effective 'true' 'true' $null
             $out.effectiveServerOff = Effective 'false' $null $null
             $out.effectiveSiteWins = Effective 'false' 'true' $null
             $out.effectiveWebConfigWins = Effective 'true' 'true' 'false'
@@ -220,6 +223,7 @@ public partial class DeployScriptPowerShellTests
         r.GetProperty("offInLocation").GetString().Should().Be("false");
         r.GetProperty("offElsewhere").ValueKind.Should().Be(JsonValueKind.Null, "a <location> for another path isn't the site's");
         r.GetProperty("on").GetString().Should().Be("true");
+        r.GetProperty("effectiveUnreadable").ValueKind.Should().Be(JsonValueKind.Null, "applicationHost.config unread, nothing is known");
         r.GetProperty("effectiveDefault").GetString().Should().Be("true");
         r.GetProperty("effectiveServerOff").GetString().Should().Be("false");
         r.GetProperty("effectiveSiteWins").GetString().Should().Be("true");
@@ -373,5 +377,74 @@ public partial class DeployScriptPowerShellTests
         r.GetProperty("Ok").GetBoolean().Should().BeFalse();
         r.GetProperty("Status").GetString().Should().Be("unreachable");
         r.GetProperty("Detail").GetString().Should().StartWith("the negotiate request failed");
+    }
+
+    [Fact]
+    public void The_physical_path_is_read_as_text_whichever_way_IIS_answers()
+    {
+        var r = Run(WebSocketsLib + """
+            $script:answer = $null; $script:fails = $false; $script:asked = @()
+            function Get-ItemProperty { [CmdletBinding()] param($Path, $Name) $script:asked += "$Path|$Name"; if ($script:fails) { throw 'no IIS drive' }; $script:answer }
+            $env:TIDE_WS_TEST_ROOT = 'D:\Web Sites'
+            $out = [ordered]@{}
+            $script:answer = '%TIDE_WS_TEST_ROOT%\tide'; $out.text = Get-TideIisPhysicalPath 'Intranet/tide'
+            $script:answer = [pscustomobject]@{ Value = '%TIDE_WS_TEST_ROOT%\tide' }; $out.attribute = Get-TideIisPhysicalPath 'Intranet/tide'
+            $script:answer = [pscustomobject]@{ physicalPath = '%TIDE_WS_TEST_ROOT%\tide' }; $out.bag = Get-TideIisPhysicalPath 'TIDE'
+            $script:answer = [pscustomobject]@{ physicalPath = [pscustomobject]@{ Value = 'C:\inetpub\tide' } }; $out.bagOfAttribute = Get-TideIisPhysicalPath 'TIDE'
+            $script:answer = ''; $out.empty = Get-TideIisPhysicalPath 'TIDE'
+            $script:fails = $true; $out.missing = Get-TideIisPhysicalPath 'TIDE'
+            $out.asked = $script:asked
+            ConvertTo-Json -Depth 4 -Compress -InputObject $out
+            """);
+        r.GetProperty("text").GetString().Should().Be(@"D:\Web Sites\tide");
+        r.GetProperty("attribute").GetString().Should().Be(@"D:\Web Sites\tide", "an attribute object's .Value, not '@{Value=...}'");
+        r.GetProperty("bag").GetString().Should().Be(@"D:\Web Sites\tide");
+        r.GetProperty("bagOfAttribute").GetString().Should().Be(@"C:\inetpub\tide");
+        r.GetProperty("empty").ValueKind.Should().Be(JsonValueKind.Null);
+        r.GetProperty("missing").ValueKind.Should().Be(JsonValueKind.Null);
+        r.GetProperty("asked")[0].GetString().Should().Be(@"IIS:\Sites\Intranet\tide|physicalPath");
+        var verify = File.ReadAllText(Path.Combine(DeployScriptTests.RepoRoot(), "deploy", "Verify-Install.ps1"));
+        verify.Should().Contain("if (-not $physical) { Warn \"Couldn't read the folder IIS serves", "a skipped web.config check is said");
+    }
+
+    [Fact]
+    public void What_couldnt_be_read_is_a_warning_not_an_OK()
+    {
+        var r = Run(WebSocketsLib + """
+            $script:server = $null; $script:site = $null; $script:byFile = $false
+            function Read-TideWebSocketSetting([string] $Location) { if ($Location) { $script:site } else { $script:server } }
+            function Get-TideWebSocketFeature { [pscustomobject]@{ Name = 'Web-WebSockets'; Installed = $true; CheckCommand = 'Get-WindowsFeature Web-WebSockets'; JudgedByFile = $script:byFile } }
+            $out = [ordered]@{}
+            $out.unreadable = Test-TideWebSockets -IisPath 'TIDE'
+            $script:server = 'true'; $script:site = 'true'; $script:byFile = $true
+            $out.byFile = Test-TideWebSockets -IisPath 'TIDE'
+            $script:byFile = $false
+            $out.checked = Test-TideWebSockets -IisPath 'TIDE'
+            $out.elevated = Test-TideElevated
+            ConvertTo-Json -Depth 5 -Compress -InputObject $out
+            """);
+        string[] List(JsonElement e) => e.ValueKind == JsonValueKind.Array ? [.. e.EnumerateArray().Select(x => x.GetString()!)]
+            : e.ValueKind == JsonValueKind.String ? [e.GetString()!] : [];
+        var unreadable = r.GetProperty("unreadable");
+        unreadable.GetProperty("ConfigOk").GetBoolean().Should().BeTrue("nothing wrong was seen");
+        unreadable.GetProperty("ConfigChecked").GetBoolean().Should().BeFalse("applicationHost.config couldn't be read");
+        unreadable.GetProperty("Config").GetProperty("Effective").ValueKind.Should().Be(JsonValueKind.Null, "not assumed on");
+        List(unreadable.GetProperty("Warnings")).Should().ContainSingle().Which.Should().Contain("Couldn't check whether WebSockets are on for 'TIDE'").And.Contain("run elevated");
+        unreadable.GetProperty("FeatureChecked").GetBoolean().Should().BeTrue();
+
+        var byFile = r.GetProperty("byFile");
+        byFile.GetProperty("FeatureChecked").GetBoolean().Should().BeFalse();
+        byFile.GetProperty("ConfigChecked").GetBoolean().Should().BeTrue();
+        List(byFile.GetProperty("Warnings")).Should().ContainSingle().Which.Should().Contain("Get-WindowsFeature Web-WebSockets").And.Contain("run elevated");
+
+        List(r.GetProperty("checked").GetProperty("Warnings")).Should().BeEmpty();
+        r.GetProperty("elevated").ValueKind.Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
+
+        var verify = File.ReadAllText(Path.Combine(DeployScriptTests.RepoRoot(), "deploy", "Verify-Install.ps1"));
+        verify.Should().Contain("$elevated = Test-TideElevated");
+        verify.Should().Contain("elseif ($elevated) { Report $false", "elevated, a check that couldn't read is a failure");
+        verify.Should().Contain("else { Warn $warning }", "unelevated, a warning");
+        var upgrade = File.ReadAllText(Path.Combine(DeployScriptTests.RepoRoot(), "deploy", "Upgrade-Tide.ps1"));
+        upgrade.Should().Contain("if ($ws.Ok -and $ws.Warnings.Count -gt 0) { Write-Warn2", "the upgrade warns and carries on");
     }
 }
