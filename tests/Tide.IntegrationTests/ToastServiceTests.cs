@@ -1,4 +1,7 @@
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
+using Tide.IntegrationTests.Audit;
+using Tide.Web.Security;
 using Tide.Web.Services;
 
 namespace Tide.IntegrationTests;
@@ -72,5 +75,63 @@ public class UserFacingErrorTests
 
         message.Should().Contain("Someone else changed this").And.NotContain("row(s)");
         UserFacingError.For(new TimeoutException("internal detail")).Should().NotContain("internal detail");
+    }
+
+    [Fact]
+    public void For_AnUnexpectedError_IsLoggedWithItsException_UnderTheReferenceThePersonIsGiven()
+    {
+        var errors = new RecordingLogger();
+        var boom = new TimeoutException("the relay hung");
+        string message;
+        using (AmbientUser.Begin(null, accessLog: null, errorLog: errors)) message = UserFacingError.For(boom, operation: "the send button");
+
+        var reference = System.Text.RegularExpressions.Regex.Match(message, @"\(reference ([0-9A-F]{8})\)").Groups[1].Value;
+        reference.Should().NotBeEmpty("the person is given a reference to quote");
+        message.Should().StartWith("Something went wrong.").And.NotContain("relay");
+        errors.Entries.Should().ContainSingle().Which.Should().Match<(LogLevel Level, Exception? Exception, string Message)>(e =>
+            e.Level == LogLevel.Error && e.Exception == boom && e.Message.Contains(reference) && e.Message.Contains("the send button"));
+
+        // Errors raised on purpose tell the person what happened, so they aren't logged as failures.
+        using (AmbientUser.Begin(null, accessLog: null, errorLog: errors))
+        {
+            UserFacingError.For(new ArgumentException("Give the action a title.")).Should().Be("Give the action a title.");
+            UserFacingError.For(new Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException("x"));
+        }
+        errors.Entries.Should().HaveCount(1);
+
+        // Outside a request or circuit activity there's no log, and a log that throws doesn't reach the person.
+        UserFacingError.For(boom).Should().StartWith("Something went wrong.");
+        using (AmbientUser.Begin(null, accessLog: null, errorLog: new RecordingLogger { Throws = true }))
+            FluentActions.Invoking(() => UserFacingError.For(boom)).Should().NotThrow();
+    }
+
+    [Fact]
+    public async Task ACircuitActivity_LogsUnexpectedErrorsToTheHostsErrorCategory()
+    {
+        var log = new CapturingLogger();
+        using var loggers = LoggerFactory.Create(b => b.AddProvider(log));
+        var handler = new AmbientUserCircuitHandler(new FakeUser { UserId = "S-1-5-21-ANALYST" }, loggers);
+        await handler.CreateInboundActivityHandler(_ =>
+        {
+            UserFacingError.For(new IOException("disk full"), operation: "a click");
+            return Task.CompletedTask;
+        })(null!);
+        log.Lines.Should().ContainSingle(l => l.Category == AmbientUser.ErrorLogCategory && l.Level == LogLevel.Error
+            && l.Message.Contains("S-1-5-21-ANALYST") && l.Message.Contains("a click"));
+        AmbientUser.ErrorLog.Should().BeNull("the activity's scope ended");
+    }
+
+    private sealed class RecordingLogger : ILogger
+    {
+        public List<(LogLevel Level, Exception? Exception, string Message)> Entries { get; } = [];
+        public bool Throws { get; init; }
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (Throws) throw new InvalidOperationException("The log is gone with its host.");
+            Entries.Add((logLevel, exception, formatter(state, exception)));
+        }
     }
 }

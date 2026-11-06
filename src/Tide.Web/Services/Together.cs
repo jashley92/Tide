@@ -265,7 +265,7 @@ internal static class Together
         {
             try
             {
-                using (Security.AmbientUser.Begin(null, null)) h(topic);
+                using (Security.AmbientUser.Begin(null)) h(topic);
             }
             catch (Exception) { /* that subscriber is gone or broken; the rest still hear */ }
         }
