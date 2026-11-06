@@ -82,10 +82,14 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
-        // The action page's first interactive draw has the prerendered items, not "Loading" over them; they're read again.
-        if (Handoff.Take<ActionChecklist>(RendererInfo, PrerenderedState) is { } prerendered && prerendered.ActionId == ActionId
+        // The action page's first interactive draw has the prerendered items, not "Loading" over them; they're read again
+        // if something was saved since.
+        if (Handoff.Take<ActionChecklist>(RendererInfo, PrerenderedState, out var current) is { } prerendered && prerendered.ActionId == ActionId
             && prerendered.CanWork == CanWork && !Compact)
+        {
             (_items, _playbooks) = (prerendered._items, prerendered._playbooks);
+            if (current) return;
+        }
         await Load();
         if (!Compact && CanWork) _playbooks = await PlaybookSvc.ForKindAsync(Kind);
         if (!Compact) PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);

@@ -373,13 +373,26 @@ else
         _canWrite = CurrentUser.Has(Permission.WriteArticles);
         _past = BriefSvc.IsPast(_date);
         // The first interactive draw starts from what the prerender read, so a reload doesn't flash "Loading" over the
-        // page; it's then read again below, quietly, for anything changed in between.
+        // page. It's read again below, quietly, only if something was saved in between: otherwise it's what a read gives.
         var adopted = false;
-        if (Handoff.Take<BriefPage>(RendererInfo, PrerenderedState) is { } prerendered && prerendered._date == _date)
+        if (Handoff.Take<BriefPage>(RendererInfo, PrerenderedState, out var current) is { } prerendered && prerendered._date == _date)
         {
             Adopt(prerendered);
             adopted = true;
         }
+        if (!adopted || !current) await Read(adopted);
+        PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
+        if (tab.Send && _brief is not null)
+        {
+            // The old Distribute tab's link: the Send dialog, once it's drawn (the first render, which yielding lets happen).
+            if (_send is null) await Task.Yield();
+            if (_send is not null) _ = AskSend();
+        }
+    }
+
+    // Everything the page draws from. Adopted, the prerendered page stays drawn while it's read.
+    private async Task Read(bool adopted)
+    {
         (_publicMax, _teamMax) = await Distribution.GetAsync();
         if (_canWrite) _people = await Users.ListAsync();
         if (AsToday)
@@ -389,13 +402,6 @@ else
         }
         if (!adopted) _brief = null;   // another day: "Loading" until it's read (a reload after an action keeps the page, and focus, in place)
         await Load();
-        PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
-        if (tab.Send && _brief is not null)
-        {
-            // The old Distribute tab's link: the Send dialog, once it's drawn (the first render, which yielding lets happen).
-            if (_send is null) await Task.Yield();
-            if (_send is not null) _ = AskSend();
-        }
     }
 
     // Today's address with a tab, once the running order is picked, goes back to the start page.

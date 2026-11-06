@@ -194,10 +194,17 @@
     protected override async Task OnInitializedAsync()
     {
         // The first interactive draw is the prerendered preview again, not an empty card; the actions and related work
-        // are then read again (OnParametersSetAsync), quietly.
-        if (Handoff.Take<ReaderPreview>(RendererInfo, PrerenderedState) is { } prerendered
+        // are read again (OnParametersSetAsync), quietly, if something was saved since.
+        if (Handoff.Take<ReaderPreview>(RendererInfo, PrerenderedState, out var current) is { } prerendered
             && prerendered._actionsFor == State.Article.Id && prerendered.EditionKey == EditionKey)
+        {
             Adopt(prerendered);
+            if (current)
+            {
+                _actionsFor = prerendered._actionsFor;
+                return;
+            }
+        }
         (_publicMax, _teamMax) = await Distribution.GetAsync();
     }
 

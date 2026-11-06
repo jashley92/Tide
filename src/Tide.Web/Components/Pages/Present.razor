@@ -843,26 +843,18 @@ else
             return;
         }
         // The first interactive draw starts from the slides the prerender read, so a reload doesn't flash "Loading" over
-        // them; they're read again below, quietly, and the meeting is joined once the page is live, as ever.
-        if (Handoff.Take<Present>(RendererInfo, PrerenderedState) is { } prerendered && prerendered._day == day) Adopt(prerendered);
+        // them; they're read again below, quietly, only if something was saved in between, and the meeting is joined
+        // once the page is live, as ever.
+        var fresh = false;
+        if (Handoff.Take<Present>(RendererInfo, PrerenderedState, out var current) is { } prerendered && prerendered._day == day)
+        {
+            Adopt(prerendered);
+            fresh = current;
+        }
         try
         {
-            // Read in full before anything is shown, and dropped if the address moved on meanwhile.
-            var (publicMax, teamMax) = await Distribution.GetAsync();
-            var brief = await BriefSvc.GetAsync(date);
-            var metrics = brief is null ? null : await MetricsSvc.GetDayAsync(date);
-            var open = brief is null ? OpenActionsReview.None : await ActionSvc.OutstandingAsync(date, teamMax);
-            var canCreate = CurrentUser.Has(Permission.WriteArticles);
-            var canPresent = CurrentUser.Has(Permission.PresentBriefs);
-            var (canWork, canNote) = (CurrentUser.Has(Permission.WorkActions), MeetingSvc.CanNote);
-            var record = brief is null ? MeetingRecord.None : await MeetingSvc.GetAsync(brief.Id);
-            var teams = _readsTeam ? (await TeamSvc.ListAsync()).ToList() : [];
-            var teamsByKind = canCreate ? await ActionSvc.TeamsByKindAsync() : new Dictionary<ActionKind, Guid>();
-            var actions = brief is null ? null : await BriefSvc.EditionActionsAsync(brief);
-            var cves = brief is null ? new Dictionary<string, CveRecord>() : await CvesOf(brief);
-            var stack = await StackOf(brief);
+            if (!fresh) await ReadDay(day, date);
             if (Day != day) return;
-            DayRead = (publicMax, teamMax, brief, metrics, open, canCreate, teams, teamsByKind, actions, cves, canPresent, record, stack, canWork, canNote);
             Seen();   // the notes there already aren't news
             _qaTeam = _teams.FirstOrDefault()?.Id ?? Guid.Empty;
             _follow = Followed();
@@ -882,6 +874,26 @@ else
             Toasts.Error(UserFacingError.For(ex));
         }
         _loaded = true;
+    }
+
+    // Reads the day in full before anything is shown: dropped if the address moved on meanwhile.
+    private async Task ReadDay(string? day, DateOnly date)
+    {
+        var (publicMax, teamMax) = await Distribution.GetAsync();
+        var brief = await BriefSvc.GetAsync(date);
+        var metrics = brief is null ? null : await MetricsSvc.GetDayAsync(date);
+        var open = brief is null ? OpenActionsReview.None : await ActionSvc.OutstandingAsync(date, teamMax);
+        var canCreate = CurrentUser.Has(Permission.WriteArticles);
+        var canPresent = CurrentUser.Has(Permission.PresentBriefs);
+        var (canWork, canNote) = (CurrentUser.Has(Permission.WorkActions), MeetingSvc.CanNote);
+        var record = brief is null ? MeetingRecord.None : await MeetingSvc.GetAsync(brief.Id);
+        var teams = _readsTeam ? (await TeamSvc.ListAsync()).ToList() : [];
+        var teamsByKind = canCreate ? await ActionSvc.TeamsByKindAsync() : new Dictionary<ActionKind, Guid>();
+        var actions = brief is null ? null : await BriefSvc.EditionActionsAsync(brief);
+        var cves = brief is null ? new Dictionary<string, CveRecord>() : await CvesOf(brief);
+        var stack = await StackOf(brief);
+        if (Day != day) return;
+        DayRead = (publicMax, teamMax, brief, metrics, open, canCreate, teams, teamsByKind, actions, cves, canPresent, record, stack, canWork, canNote);
     }
 
     // What a read of the day sets, as one: the read and Adopt both go through it, so neither can miss a part.

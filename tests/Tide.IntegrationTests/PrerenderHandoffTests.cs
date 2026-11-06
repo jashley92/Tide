@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
+using Tide.Application.Abstractions;
 using Tide.Application.Actions;
 using Tide.Application.Org;
 using Tide.Domain.Entities;
@@ -72,7 +73,7 @@ public class PrerenderHandoffTests
     public void TheHandoff_KeepsOncePerPrerender_AndTakesOnlyOnceInteractive()
     {
         var store = new PrerenderStore(new Clock());
-        var handoff = new PrerenderHandoff(store, new FakeUser(AppRole.Analyst) { UserId = "S-1-5-21-A" });
+        var handoff = new PrerenderHandoff(store, new FakeUser(AppRole.Analyst) { UserId = "S-1-5-21-A" }, new ChangeFeed());
         RendererInfo prerendering = new("Static", isInteractive: false), interactive = new("Server", isInteractive: true);
         var state = new object();
 
@@ -83,6 +84,38 @@ public class PrerenderHandoffTests
         handoff.Keep(interactive, state, key).Should().BeNull("there's nothing to hand on once interactive");
         handoff.Take<object>(interactive, key).Should().BeSameAs(state);
         store.Count.Should().Be(0);
+    }
+
+    [Fact]
+    public void TheHandoff_SaysWhetherAnythingWasSaved_SinceThePrerenderBeganReading()
+    {
+        var store = new PrerenderStore(new Clock());
+        var feed = new ChangeFeed();
+        var user = new FakeUser(AppRole.Analyst) { UserId = "S-1-5-21-A" };
+        RendererInfo prerendering = new("Static", isInteractive: false), interactive = new("Server", isInteractive: true);
+
+        // Nothing saved between the prerender and its circuit: what it read is current, so the circuit needn't read again.
+        var quiet = new PrerenderHandoff(store, user, feed);
+        var key = quiet.Keep(prerendering, "read", null);
+        new PrerenderHandoff(store, user, feed).Take<string>(interactive, key, out var current).Should().Be("read");
+        current.Should().BeTrue();
+
+        // A save while the prerender was still reading (after its scope began): read again, though the state is still handed on.
+        var busy = new PrerenderHandoff(store, user, feed);
+        feed.Publish(ChangeFeed.Articles);
+        key = busy.Keep(prerendering, "read", null);
+        new PrerenderHandoff(store, user, feed).Take<string>(interactive, key, out current).Should().Be("read");
+        current.Should().BeFalse("something changed after the prerender began reading");
+
+        // A save after the prerender, before its circuit came: read again too.
+        key = new PrerenderHandoff(store, user, feed).Keep(prerendering, "read", null);
+        feed.Publish(ChangeFeed.Triage);
+        new PrerenderHandoff(store, user, feed).Take<string>(interactive, key, out current).Should().Be("read");
+        current.Should().BeFalse();
+
+        // Nothing to take: not current, whatever the feed says.
+        new PrerenderHandoff(store, user, feed).Take<string>(interactive, key, out current).Should().BeNull();
+        current.Should().BeFalse();
     }
 
     [Fact]

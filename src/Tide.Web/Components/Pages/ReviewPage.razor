@@ -151,9 +151,13 @@ else
     protected override async Task OnParametersSetAsync()
     {
         // The first interactive draw starts from what the prerender read, so a reload doesn't flash "Loading" over the
-        // review. It's then read again as after a comment: words changed in between are offered, not swapped in.
-        if (Handoff.Take<ReviewPage>(RendererInfo, PrerenderedState) is { } prerendered && prerendered._loadedFor == Id)
+        // review. If something was saved since, it's read again as after a comment: words changed in between are offered,
+        // not swapped in.
+        if (Handoff.Take<ReviewPage>(RendererInfo, PrerenderedState, out var current) is { } prerendered && prerendered._loadedFor == Id)
+        {
             Adopt(prerendered);
+            if (current) return;
+        }
         // Another article's review (Back, Forward): nothing of the last one's is carried over, ticks above all.
         if (_loadedFor != Id)
         {

@@ -74,12 +74,13 @@ else
     {
         _topic = ChangeFeed.Article(ArticleId);
         _tagsTopic = ChangeFeed.ArticleTags(ArticleId);
-        // A reload draws the prerendered tags at once, not a loading row; they're read again below.
-        if (Handoff.Take<TagCard<TTag>>(RendererInfo, PrerenderedState) is { } prerendered && prerendered.GetType() == GetType()
+        // A reload draws the prerendered tags at once, not a loading row; they're read again below if something was saved since.
+        if (Handoff.Take<TagCard<TTag>>(RendererInfo, PrerenderedState, out var current) is { } prerendered && prerendered.GetType() == GetType()
             && prerendered.ArticleId == ArticleId)
         {
             _offered = prerendered._offered;
             Adopt(prerendered);
+            if (current) return;
         }
         await Load();
         if (Tagged is not null) PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);

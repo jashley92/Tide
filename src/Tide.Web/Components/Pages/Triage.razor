@@ -861,15 +861,19 @@ else
         _marks = new LiveMarks<Guid>(InvokeAsync, StateHasChanged);
         _tabMarks = new LiveMarks<FeedItemStatus>(InvokeAsync, StateHasChanged);
         // The first interactive draw starts from what the prerender read, for the same address, so a reload doesn't
-        // flash "Loading" over the list; it's then read again below, quietly, for anything changed in between.
+        // flash "Loading" over the list; it's read again below, quietly, only if something was saved in between.
         var adopted = false;
-        if (Handoff.Take<Triage>(RendererInfo, PrerenderedState) is { } prerendered && prerendered.SameAddress(this))
+        if (Handoff.Take<Triage>(RendererInfo, PrerenderedState, out var current) is { } prerendered && prerendered.SameAddress(this))
         {
             Adopt(prerendered);
             adopted = true;
         }
-        _sources = await Intake.SourcesAsync(includeRetired: true);
-        _lastBriefAt = await Intake.LastBriefAtAsync();
+        var read = !adopted || !current;
+        if (read)
+        {
+            _sources = await Intake.SourcesAsync(includeRetired: true);
+            _lastBriefAt = await Intake.LastBriefAtAsync();
+        }
         if (string.Equals(TabParam, SourcesKey, StringComparison.OrdinalIgnoreCase)) _sourcesTab = true;
         else if (Enum.TryParse<FeedItemStatus>(TabParam, ignoreCase: true, out var tab) && Enum.IsDefined(tab)) _status = tab;
         _ticking = Time.CreateTimer(_ => { if (_sourcesTab && !_disposed) _ = InvokeAsync(StateHasChanged); }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
@@ -877,7 +881,7 @@ else
         _search = string.IsNullOrWhiteSpace(SearchParam) ? null : SearchParam.Trim();
         _sinceLast = SinceParam == true && _lastBriefAt is not null;
         if (!adopted) _selected = Math.Max(0, RowParam ?? 0);   // adopted, the row Arrive selected stays while it's read again
-        await Load();
+        if (read) await Load();
         Arrive();
         if (!_failed) PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
     }
