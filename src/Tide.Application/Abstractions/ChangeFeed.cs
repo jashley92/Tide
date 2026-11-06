@@ -80,8 +80,15 @@ public sealed class ChangeFeed
     /// user, for the access log), so a subscriber's continuation doesn't run as the publisher.</summary>
     public static Func<IDisposable?>? AroundHandler { get; set; }
 
+    private long _version;
+
+    /// <summary>How many changes have been published since the app started: unchanged between two reads, nothing that any
+    /// page follows was saved in between (a prerendered page's state is then still current, <c>PrerenderHandoff</c>).</summary>
+    public long Version => Interlocked.Read(ref _version);
+
     public void Publish(Change change)
     {
+        Interlocked.Increment(ref _version);
         var handlers = Changed;
         if (handlers is null) return;
         // Each subscriber in turn, on the publisher's thread (another circuit, or the poller): one that throws (a page

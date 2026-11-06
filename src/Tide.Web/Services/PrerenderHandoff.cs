@@ -69,18 +69,35 @@ public sealed class PrerenderStore(TimeProvider time)
 /// Hands what a page read while it was prerendered to the same page's interactive render, which otherwise starts empty:
 /// it would draw its loading state over the prerendered page and then the page again, a flicker on every reload. The
 /// prerender keeps its state (<see cref="Keep"/>) and persists the key it's given (<c>[PersistentState]</c>); the
-/// interactive render takes it (<see cref="Take{T}"/>) before its first draw. For the signed-in user of this scope only.
+/// interactive render takes it (<see cref="Take{T}(RendererInfo, string?, out bool)"/>) before its first draw, and reads
+/// again only when something was saved since the prerender began reading. For the signed-in user of this scope only.
 /// </summary>
-public sealed class PrerenderHandoff(PrerenderStore store, ICurrentUser user)
+public sealed class PrerenderHandoff(PrerenderStore store, ICurrentUser user, ChangeFeed feed)
 {
+    // The feed's count when this scope began, before its prerender read anything: kept with each state, so a save that
+    // landed while the prerender was reading counts as a change since.
+    private readonly long _since = feed.Version;
+
+    private sealed record Kept(object State, long Version);
+
     /// <summary>What the prerender kept under <paramref name="key"/>, once the render is interactive; null before, or
     /// when there's none.</summary>
-    public T? Take<T>(RendererInfo renderer, string? key) where T : class =>
-        renderer.IsInteractive ? store.Take<T>(key, user.UserId) : null;
+    public T? Take<T>(RendererInfo renderer, string? key) where T : class => Take<T>(renderer, key, out _);
+
+    /// <summary>As <see cref="Take{T}(RendererInfo, string?)"/>; <paramref name="current"/> says nothing has been saved
+    /// since the prerender began reading, so reading again would give what it read. A page follows the feed from its
+    /// first draw, so anything saved after this is heard as ever.</summary>
+    public T? Take<T>(RendererInfo renderer, string? key, out bool current) where T : class
+    {
+        current = false;
+        if (!renderer.IsInteractive || store.Take<Kept>(key, user.UserId) is not { State: T state } kept) return null;
+        current = kept.Version == feed.Version;
+        return state;
+    }
 
     /// <summary>The key to persist for <paramref name="state"/> while prerendering: <paramref name="key"/> when it's
     /// kept already (a prerender sets a component's parameters again when the page around it draws again), so it's kept
     /// once. Null once interactive: there's nothing to hand on.</summary>
     public string? Keep(RendererInfo renderer, object state, string? key) =>
-        renderer.IsInteractive ? null : key ?? store.Keep(user.UserId, state);
+        renderer.IsInteractive ? null : key ?? store.Keep(user.UserId, new Kept(state, _since));
 }

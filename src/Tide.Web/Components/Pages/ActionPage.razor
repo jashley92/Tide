@@ -345,15 +345,16 @@ else
     protected override async Task OnParametersSetAsync()
     {
         // The first interactive draw starts from what the prerender read, so a reload doesn't flash "Loading" over the
-        // page; it's then read again below, quietly.
+        // page; it's read again below, quietly, only if something was saved in between.
         var adopted = false;
-        if (Handoff.Take<ActionPage>(RendererInfo, PrerenderedState) is { } prerendered && prerendered.Number == Number
+        if (Handoff.Take<ActionPage>(RendererInfo, PrerenderedState, out var current) is { } prerendered && prerendered.Number == Number
             && prerendered.ArticleParam == ArticleParam && prerendered.ParentParam == ParentParam)
         {
             Adopt(prerendered);
             adopted = true;
         }
         else _loaded = false;
+        if (adopted && current) return;
         _teams = await TeamSvc.ListAsync(includeRetired: true);
         if (CurrentUser.Has(Permission.WriteArticles)) _people = await Users.ListAsync();
         // A new action's form is kept as the prerender left it: built again, the editor would start over in front of them.

@@ -350,8 +350,12 @@
     protected override async Task OnParametersSetAsync()
     {
         // The first interactive draw has the prerendered panel's buttons, not "no indicators" until they're read again.
-        if (Handoff.Take<HuntPanel>(RendererInfo, PrerenderedState) is { } prerendered && prerendered.Action.Id == Action.Id)
+        // Nothing saved since the prerender read them: they're still what a read gives.
+        if (Handoff.Take<HuntPanel>(RendererInfo, PrerenderedState, out var current) is { } prerendered && prerendered.Action.Id == Action.Id)
+        {
             _sources = prerendered._sources;
+            if (current) (_sourcesFor, _have) = (Action, HaveIndicators(Action));
+        }
         if (ReferenceEquals(Action, _sourcesFor)) return;
         _sourcesFor = Action;
         _have = HaveIndicators(Action);

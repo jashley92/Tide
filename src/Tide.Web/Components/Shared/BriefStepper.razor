@@ -31,10 +31,13 @@
     protected override async Task OnParametersSetAsync()
     {
         if (_readFor == ArticleId) return;
-        // A reload draws the prerender's steps at once, not nothing until they're read; they're read again below.
-        if (Handoff.Take<BriefStepper>(RendererInfo, PrerenderedState) is { } prerendered && prerendered._readFor == ArticleId)
-            (_order, _at) = (prerendered._order, prerendered._at);
+        // A reload draws the prerender's steps at once, not nothing until they're read; they're read again below if
+        // something was saved since.
+        var fresh = false;
+        if (Handoff.Take<BriefStepper>(RendererInfo, PrerenderedState, out var current) is { } prerendered && prerendered._readFor == ArticleId)
+            (_order, _at, fresh) = (prerendered._order, prerendered._at, current);
         _readFor = ArticleId;
+        if (fresh) return;
         _order = await Briefs.RunningOrderAsync(Briefs.CurrentDate);
         _at = _order.Select(s => s.ArticleId).ToList().IndexOf(ArticleId);
         PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);

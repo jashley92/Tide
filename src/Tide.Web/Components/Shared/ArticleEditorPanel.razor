@@ -701,11 +701,15 @@ else
         _topic = ChangeFeed.Article(Id);
         _canWrite = CurrentUser.Has(Permission.WriteArticles);
         // The first interactive draw starts from what the prerender read, so a reload doesn't flash "Loading" over the
-        // article; it's then read again below, quietly, keeping anything typed in between.
-        var adopted = Handoff.Take<ArticleEditorPanel>(RendererInfo, PrerenderedState) is { } prerendered && prerendered.Id == Id
-            && Adopt(prerendered);
-        _categories = await Scorecard.ListAsync();
-        await Reload(keepEdits: adopted);
+        // article. It's read again below, quietly, keeping anything typed in between, only if something was saved since.
+        var adopted = Handoff.Take<ArticleEditorPanel>(RendererInfo, PrerenderedState, out var current) is { } prerendered
+            && prerendered.Id == Id && Adopt(prerendered);
+        if (adopted && current) await OnFormChanged.InvokeAsync(_form);
+        else
+        {
+            _categories = await Scorecard.ListAsync();
+            await Reload(keepEdits: adopted);
+        }
         if (_article is not null) PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
     }
 

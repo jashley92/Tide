@@ -90,12 +90,14 @@
     protected override async Task OnParametersSetAsync()
     {
         if (_loaded && _shown == StoryId) return;
-        // A reload draws the prerendered story, or the search, at once; they're read again below.
-        if (Handoff.Take<StoryPicker>(RendererInfo, PrerenderedState) is { } prerendered && prerendered._shown == StoryId && prerendered.ArticleId == ArticleId)
-            (_current, _found, _foundFor) = (prerendered._current, prerendered._found, prerendered._foundFor);
+        // A reload draws the prerendered story, or the search, at once; they're read again below if something was saved since.
+        var fresh = false;
+        if (Handoff.Take<StoryPicker>(RendererInfo, PrerenderedState, out var current) is { } prerendered && prerendered._shown == StoryId && prerendered.ArticleId == ArticleId)
+            (_current, _found, _foundFor, fresh) = (prerendered._current, prerendered._found, prerendered._foundFor, current);
         _loaded = true;
         _shown = StoryId;
         _canWrite = CurrentUser.Has(Permission.WriteArticles);
+        if (fresh) return;
         try
         {
             _current = StoryId is { } id ? await Stories.RowAsync(id) : null;
