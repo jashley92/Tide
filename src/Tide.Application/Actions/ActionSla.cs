@@ -177,7 +177,7 @@ public sealed class SlaSettings(IAppDbContextFactory dbs, ICurrentUser user, IOp
         var byKind = new Dictionary<ActionKind, int>();
         foreach (var k in Enum.GetValues<ActionKind>())
         {
-            var v = saved.TryGetValue(KindPrefix + k, out var s) ? Parse(s) : defaults.Value.Kind.GetValueOrDefault(k.ToString());
+            var v = saved.TryGetValue(KindPrefix + k, out var s) ? Parse(s) : DefaultFor(k);
             if (v > 0) byKind[k] = Math.Min(v, ActionSla.MaxDays);
         }
         return new SlaTargets(byPriority, byKind);
@@ -193,6 +193,14 @@ public sealed class SlaSettings(IAppDbContextFactory dbs, ICurrentUser user, IOp
         foreach (var (p, v) in byPriority) await Upsert(db, PriorityPrefix + p, (v ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture), ct);
         foreach (var (k, v) in byKind) await Upsert(db, KindPrefix + k, (v ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture), ct);
         await db.SaveChangesAsync(ct);
+    }
+
+    // The server's value for a kind, by its name; Outreach's also under its name before the rename, so an appsettings file that
+    // still says "VendorInquiry" keeps its target.
+    private int DefaultFor(ActionKind k)
+    {
+        var kinds = defaults.Value.Kind;
+        return kinds.TryGetValue(k.ToString(), out var days) ? days : kinds.FirstOrDefault(kv => ActionService.KindNamed(kv.Key) == k).Value;
     }
 
     private static int Parse(string s) => int.TryParse(s, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 0;

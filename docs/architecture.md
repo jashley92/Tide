@@ -5,7 +5,7 @@
 | Project | Holds |
 |---|---|
 | `Tide.Domain` | Entities and enums. No dependencies. Also the indicator normalizer (`Observables/IocObservable`: refang, defang, detect a type). |
-| `Tide.Application` | The services pages call (`ArticleService`, `ScreenshotService`, `BriefService`, `DistributionService`, `MetricsService`, `ActionService`, `TeamService`, `ScorecardService`, `RoleMappingService`), the SLA rules (`Actions/ActionSla`), the hunt query dialects (`Actions/HuntQueries`), the reminder scans (`Actions/ReminderService`), intake (`Intake/IntakeService`, `FeedParser`, `UrlCanonicalizer`, `CveService`, `StoryService`), the brief rotation (`Rotation/RotationService`), the permission model (`Security/`), the TLP edition cut (`Briefs/BriefEditions`), the email and SharePoint rendering (`Distribution/BriefRenderer`, `EmailComposer`), the metric rules and CSV import (`Metrics/MetricMath`, `MetricCsv`, `MetricImportService`), the indicator finder (`Indicators/IocExtractor`), search and indicator lookup (`Search/SearchService`, `SearchText`), the indicator exports (`Exports/ExportService`, `Stix`, `IndicatorCsv`), threat trends (`Trends/TrendsService`, `Period`), the ATT&CK catalog (`Mitre/`), and the organization clock (`Org/OrgClock`). |
+| `Tide.Application` | The services pages call (`ArticleService`, `ScreenshotService`, `BriefService`, `DistributionService`, `MetricsService`, `ActionService`, `TeamService`, `ScorecardService`, `RoleMappingService`), the SLA rules (`Actions/ActionSla`), the hunt query dialects (`Actions/HuntQueries`), the outreach emails (`Actions/OutreachFill`, `OutreachService`, `OutreachTemplateService`), the reminder scans (`Actions/ReminderService`), intake (`Intake/IntakeService`, `FeedParser`, `UrlCanonicalizer`, `CveService`, `StoryService`), the brief rotation (`Rotation/RotationService`), the permission model (`Security/`), the TLP edition cut (`Briefs/BriefEditions`), the email and SharePoint rendering (`Distribution/BriefRenderer`, `EmailComposer`), the metric rules and CSV import (`Metrics/MetricMath`, `MetricCsv`, `MetricImportService`), the indicator finder (`Indicators/IocExtractor`), search and indicator lookup (`Search/SearchService`, `SearchText`), the indicator exports (`Exports/ExportService`, `Stix`, `IndicatorCsv`), threat trends (`Trends/TrendsService`, `Period`), the ATT&CK catalog (`Mitre/`), and the organization clock (`Org/OrgClock`). |
 | `Tide.Infrastructure` | `AppDbContext`, the audit interceptor, the SQLite migrations, the role and user directories, the on-disk file store, email (`Notifications/EmailSender`, `SmtpClientFactory`, `OutboundCircuit`), and the one outbound HTTP client (`Notifications/OutboundHttp`). |
 | `Tide.Migrations.SqlServer` | The SQL Server migrations, in their own assembly (one model, one migrations set per assembly). |
 | `Tide.Web` | The Blazor Server host: authentication, pages, the screenshot endpoint, health checks, and the background pollers (`Services/ReminderHostedService`, `Services/IntakeHostedService`). |
@@ -113,6 +113,8 @@ articles, and the actions raised from them, at every marking, as an analyst does
 the edition as it's sent and previewed, to API tokens (each has its own) and to webhooks (`WebhookService`), which post
 what the team edition would carry. That's deliberate, decided on 2026-11-03, and tests pin it: anyone mapped to the
 Action owner role is trusted with RED inside TIDE, so map only the teams that should be.
+An outreach email leaves the app too, in the analyst's own mail, so it's filled only up to its template's ceiling
+(ADR 0019, under Actions).
 Our stack is the exception: a product's page (`StackService.GetAsync`), like present mode's product card, names only
 the articles at or below the team edition's ceiling, and the actions raised from them, and counts the rest ("2
 articles above TLP:AMBER"). The list's counts name no titles, so they count every article.
@@ -312,7 +314,7 @@ page and the lists update. The API's `/actions/{number}` lists the live files, a
 Each change also writes an `ActionEvent`, the readable history on the action. One raised for a past day's brief
 records that day (`RaisedOn`), which reports count it on; its SLA runs from when it was recorded. A new action's due date comes from
 `SlaSettings` (business days per priority, per-kind overrides), and `ActionSla` reads where an action stands. An action
-raised in the meeting (`QuickAddAsync`) takes its article's priority, except that Awareness, Vendor inquiry and Other
+raised in the meeting (`QuickAddAsync`) takes its article's priority, except that Awareness, Outreach and Other
 are never above P2 (`QuickPriority`); an article with no priority leaves it to the kind. Present mode splits the
 article's recommended actions into lines (`RecommendedActions.Lines`), guesses each line's kind from its wording
 (`GuessKind`), and counts a line raised once an action on the article has its title. Changing a saved action's priority
@@ -359,7 +361,39 @@ generated query repeats a kind's block. "Save for the team" on a hunt added from
 that query's own text (`SavedQueryService.DraftTextAsync`), so a tuned copy keeps its placeholders. The config bundle doesn't carry saved queries: like playbooks and card rules, they're the
 team's working content, not installation settings.
 
-`ReminderService` holds the scans (due soon, overdue, weekly digest, personal digest, brief not ready, presenting).
+An **Outreach** action (ADR 0019; "Vendor inquiry" before, the same stored kind) asks someone for information by
+email, which TIDE writes and never sends. The team keeps a library of templates (`OutreachTemplate`,
+`OutreachTemplateService`, the Outreach templates page at `/outreach/templates`), kept exactly as the saved queries are:
+`WorkActions` adds, edits, retires and restores; whoever saved one, or an administrator, deletes it; `ReadActions`
+reads; an edit carries the template's `EditVersion`; writes are audited and published on `ChangeFeed.OutreachTemplates`.
+A template has a name, an optional description, a subject and a body with `{{name}}` placeholders (`OutreachFill.All`:
+the article's title, bottom line, why it matters, key points, link, CVEs with KEV and EPSS, and TLP; `{{indicators}}`
+or `{{indicators:domain}}`, by `HuntValueKind` name; the Our stack product's name, versions, team and contact; the
+action's number, link (`App:BaseUrl`) and due date, the sender's name and team, today, and `{{tlp}}`), an optional fixed
+To address and a TLP ceiling. `OutreachFill.Check` refuses an unknown placeholder or kind on save.
+
+The action's Outreach card (`OutreachPanel`) writes the email with `OutreachService.WriteAsync`: the article cut to the
+ceiling by `BriefEditions.BuildArticle` (`OutreachFill.Cut`: an article above it left out whole, its indicators with
+it; a key point or "why it matters" above it alone; the action's own, unmarked, indicators counted as AMBER), the
+indicators a hunt on the action would search (`ActionService.HuntInputsAsync`, given only what the cut kept), defanged,
+the product the action is about (tagged on its article, else named in its or its article's text: `StackService.MatchAll`),
+and the sender. `OutreachFill.Fill` returns the subject and body, the marking (the highest TLP of what it filled in,
+written as the body's first line unless the template places `{{tlp}}`), what the ceiling left out, and the placeholders
+with nothing to fill, which stay in the text as `[[name: nothing to fill]]` markers that `MarkSentAsync` refuses. The
+analyst edits both boxes and copies them (`clipboard.js` copies a box's value), and marks the email sent to one or more
+checked addresses: the To line offers the template's address, then each product's contact (`StackProduct.ContactName`,
+`ContactEmail`, edited on the product's page). An `OutreachMessage` keeps what was marked sent, by whom and when; the
+action shows "Waiting for reply since" from the oldest unanswered one, and the day the follow-up reminder goes.
+"Record the reply" keeps the notes, and the reply as a file added to the action's files, and closes the action Done
+with an outcome in the same save through `ActionService.ApplyStatus` (or leaves it open, when another email still
+waits); "Not sent after all" takes back one marked by mistake. Each step is a line in the action's history, and an
+`OutreachMessage` publishes the action's topic.
+
+`ReminderService` holds the scans (due soon, overdue, weekly digest, personal digest, brief not ready, presenting,
+outreach follow-up). The outreach follow-up (`ReminderKind.OutreachFollowUp`, `Notifications:OutreachFollowUp:Enabled`
+and `:Days`, 1 to 30 business days, 5 by default, both set on Teams & SLA) emails whoever marked an email sent, at the
+reminder time, once it has waited that long with the action still open: one email per sender, an `outreach-follow-up`
+mark per email, and it's an email template like the others.
 `ReminderHostedService` polls every five minutes; each scan is off until enabled, waits for its time of day, batches
 one email per recipient, and marks each email with the TLP of the articles its actions were raised from, and writes a
 `NotificationMark` as each email goes, so it's sent once even when a scan stops partway. Scans run one at a
@@ -371,8 +405,8 @@ An administrator turns each kind on or off for everyone (Teams & SLA, `ReminderO
 for themselves on **My notifications** (`/notifications`, from the account menu; anyone who can read actions, so
 anyone who can be sent one). The choices are rows in the per-user preference store (`UserPreference`), one per name,
 listed in `UserPreferences` like any preference: `notify.dueSoon`, `notify.overdue`, `notify.teamDigest`,
-`notify.rotationReminders` and `notify.rotationRequests` (`on` by default, or `off`; the rotation's need
-`WriteArticles`), and `notify.digest` (`off` by default, `daily` or `weekly`). No new table was needed: each choice is
+`notify.outreachFollowUp` (needs `WorkActions`), `notify.rotationReminders` and `notify.rotationRequests` (`on` by
+default, or `off`; the rotation's need `WriteArticles`), and `notify.digest` (`off` by default, `daily` or `weekly`). No new table was needed: each choice is
 one value, and "since when" is the row's `UpdatedAtUtc`. Like the Actions page's layout they're personal, so the
 audit interceptor leaves `UserPreference` out (its `NotAudited` set); the administrator's settings stay audited.
 
@@ -384,7 +418,8 @@ shows disabled). The senders apply the choices where they pick recipients, with
 - `ReminderService`: due-soon and overdue leave out an assignee who opted out (the action isn't handed to the team
   instead) and members who did, when the team has no mailbox; the weekly team digest leaves out members who opted
   out; presenting leaves out an analyst who opted out of rotation reminders; brief-not-ready then goes to the
-  fallback recipients (a team lead or mailbox, not a person's choice). A team mailbox is never left out.
+  fallback recipients (a team lead or mailbox, not a person's choice); the outreach follow-up leaves out a sender who
+  opted out, without marking their emails, so turning it back on brings it. A team mailbox is never left out.
 - `RotationService.NotifyAsync`: the request, approved, recorded and declined emails leave out whoever opted out of
   rotation requests. The managers' copy (`NotifyManagersAsync`) goes to the rotation's manager addresses, a setting,
   so no one's opt-out removes it.
@@ -534,7 +569,7 @@ for the whole page in one query.
 Two in-memory singletons keep analysts aware of each other (TIDE runs as one process, ADR 0001).
 
 - `ChangeFeed` (Application) tells open pages that something they show changed. `ChangeInterceptor` publishes a topic
-  (`article:{id}`, `articles`, `brief:{id}`, `action:{id}`, `actions`, `metrics-day:{date}`, `metrics`, `rotation`, `stories`, `stack`) after every committed save, with who made it and the circuit
+  (`article:{id}`, `articles`, `brief:{id}`, `action:{id}`, `actions`, `metrics-day:{date}`, `metrics`, `rotation`, `stories`, `stack`, `saved-queries`, `outreach-templates`) after every committed save, with who made it and the circuit
   it came from, so every save path is heard. A page listens through `LiveChanges`, which skips its own circuit's saves
   and waits for a burst to settle (600 ms) before one reload. A page with nothing unsaved re-reads in place and names
   the colleague in a toast; one with unsaved edits keeps them and says so (`ChangedElsewhere`), with a Reload button.
@@ -574,7 +609,7 @@ Bootstrap 5.3 (self-hosted) is retinted through `--tide-*` tokens defined for li
 - `paste-drop.js`: hands pasted or dropped images and files to a hidden `InputFile`. A paste goes to the zone holding
   the focus (an action's Files box), otherwise to the page's main zone.
 - `present.js`: keyboard navigation and full screen.
-- `clipboard.js`: copies the SharePoint view as rich HTML.
+- `clipboard.js`: copies the SharePoint view as rich HTML, and a text box's value (an outreach email) as plain text.
 - `triage.js`: the triage inbox's keyboard actions.
 - `dialog.js`: gives focus back to whatever opened a dialog (the screenshot lightbox) when it closes.
 

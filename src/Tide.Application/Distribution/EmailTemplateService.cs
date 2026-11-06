@@ -173,7 +173,7 @@ public sealed class EmailTemplateService(IAppDbContextFactory dbs, ICurrentUser 
         var today = clock.Today;
         var baseUrl = string.IsNullOrWhiteSpace(app.Value.BaseUrl) ? "https://tide.example" : app.Value.BaseUrl.TrimEnd('/');
         string Link(string text, string path) => $"<a style=\"color:{Palette.Link};\" href=\"{Esc(baseUrl + "/" + path)}\">{Esc(text)}</a>";
-        var sample = SampleActions(today);
+        var sample = t == EmailTemplateCatalog.OutreachFollowUp ? SampleOutreach(today) : SampleActions(today);
         var day = SampleDay;
         var change = "Robin covers Sam's brief days " + day.ToString("ddd MMM d", CultureInfo.InvariantCulture) + ".";
         var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -210,6 +210,8 @@ public sealed class EmailTemplateService(IAppDbContextFactory dbs, ICurrentUser 
             ["OverdueList"] = ReminderService.ListHeading("Overdue", top: 8) + ReminderService.ActionTable(sample.Skip(1), today, baseUrl, clock.Days),
             ["DueSoonList"] = ReminderService.ListHeading("Due today or the next business day", top: 14) + ReminderService.ActionTable(sample.Take(1), today, baseUrl, clock.Days),
             ["NewList"] = ReminderService.ListHeading("New to you since your last digest", top: 14) + ReminderService.ActionTable(SampleNew(today), today, baseUrl, clock.Days),
+            ["Days"] = "5 business days",
+            ["WaitingList"] = ReminderService.WaitingList([(44, "psirt@vendor.example", today.AddDays(-7))]),
         };
         return values;
     }
@@ -218,6 +220,11 @@ public sealed class EmailTemplateService(IAppDbContextFactory dbs, ICurrentUser 
     [
         new() { Number = 41, Title = "Block the phishing domains from today's brief at the mail gateway", Kind = ActionKind.Block, Priority = Priority.P2, AssigneeName = "Robin", DueDate = today, Status = ActionStatus.Open },
         new() { Number = 42, Title = "Hunt for the loader's scheduled task across endpoints", Kind = ActionKind.ThreatHunt, Priority = Priority.P1, AssigneeName = "Sam", DueDate = today.AddDays(-2), Status = ActionStatus.InProgress },
+    ];
+
+    private static List<ActionItem> SampleOutreach(DateOnly today) =>
+    [
+        new() { Number = 44, Title = "Ask the VPN vendor whether our version is affected", Kind = ActionKind.Outreach, Priority = Priority.P2, AssigneeName = "Robin", DueDate = today.AddDays(2), Status = ActionStatus.InProgress },
     ];
 
     private static List<ActionItem> SampleNew(DateOnly today) =>

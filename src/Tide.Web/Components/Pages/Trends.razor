@@ -379,6 +379,7 @@ else
         _drillArticles = null;
         _drillActions = null;
         _drillRow = _report?.Find(_line);
+        _line = _drillRow?.Key ?? _line;   // an older link's name for a line, as the table marks it now
         var index = _at is { } at ? _report!.Periods.ToList().IndexOf(at) : -1;
         if (_drillRow is null || index < 0)
         {

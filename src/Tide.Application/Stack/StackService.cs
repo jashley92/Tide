@@ -30,9 +30,14 @@ public sealed class StackForm
     public Guid? TeamId { get; set; }
     public DateOnly? CheckedOn { get; set; }
 
+    /// <summary>The vendor or support contact an Outreach email about it is offered to.</summary>
+    public string? ContactName { get; set; }
+    public string? ContactEmail { get; set; }
+
     public static StackForm From(StackProduct p) => new()
     {
         Id = p.Id, Name = p.Name, OtherNames = p.OtherNames, Versions = p.Versions, Notes = p.Notes, TeamId = p.TeamId, CheckedOn = p.CheckedOn,
+        ContactName = p.ContactName, ContactEmail = p.ContactEmail,
     };
 }
 
@@ -372,6 +377,9 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         if (others.FirstOrDefault(n => !n.Any(char.IsLetterOrDigit)) is { } bare) throw new ArgumentException($"'{bare}' needs a letter or digit.");
         var otherText = others.Count == 0 ? null : string.Join("; ", others);
         if (otherText?.Length > StackProduct.MaxOtherNames) throw new ArgumentException("The other names are too long.");
+        var contactEmail = ArticleService.Tidy(form.ContactEmail) is { Length: > 0 } typed ? typed : null;
+        if (contactEmail is not null && (contactEmail.Length > StackProduct.MaxContactEmail || !DistributionSettings.IsAddress(contactEmail)))
+            throw new ArgumentException($"The contact's address isn't an email address: {contactEmail}");
 
         await using var db = await dbs.CreateAsync(ct);
         // One product per name, case aside: compared here (the list is short), the same on both providers.
@@ -394,6 +402,8 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         p.Notes = ArticleService.CleanOrNull(form.Notes, StackProduct.MaxNotes, multiline: true);
         p.TeamId = form.TeamId;
         p.CheckedOn = form.CheckedOn;
+        p.ContactName = ArticleService.CleanOrNull(form.ContactName, StackProduct.MaxContactName);
+        p.ContactEmail = contactEmail;
         await db.SaveChangesAsync(ct);
         return p.Id;
     }

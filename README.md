@@ -254,7 +254,7 @@ filter matches the words each edition went out with. A corrected day shows its c
 ![Published archive](docs/screenshots/published-archive.png)
 
 ### Actions and hunting
-Follow-up work from the brief: IOC sweep, hunt, block, patch, config change, awareness or vendor inquiry. Each action
+Follow-up work from the brief: IOC sweep, hunt, block, patch, config change, awareness or outreach. Each action
 is owned by a team and optionally assigned. It's due by a date the SLA targets suggest, and closed with an outcome
 that fits its kind.
 - **Board or list.** The Actions page opens as a board until someone picks the list, and then remembers their
@@ -287,9 +287,26 @@ that fits its kind.
 - **Closing a clean sweep.** A sweep whose query came back clean closes in one step, *No hits, close*, once the query
   was copied. The days it searched and any values it left out go on record.
 
+**Outreach (asking someone):**
+- **The kind.** An Outreach action asks a vendor, a partner, an ISAC, an internal team or a site's owner for
+  information. It was "Vendor inquiry"; actions raised as one are Outreach actions now.
+- **Templates.** The Outreach templates page (beside Saved queries) keeps the team's emails: a name, a subject and a
+  body with placeholders, an optional fixed To address, and a TLP ceiling. `{{article.title}}`, `{{article.cves}}`
+  (with KEV and EPSS), `{{indicators}}` (defanged; `{{indicators:domain}}` and the like take one kind),
+  `{{product.versions}}`, `{{action.link}}`, `{{sender.name}}` and the rest are filled from the action. Whoever works
+  actions keeps them, as they keep the saved queries.
+- **Write the email.** On the action, pick a template: TIDE fills it, held to its TLP ceiling, says what it left out,
+  marks anything it had nothing for, and writes the email's TLP line. Edit the subject and body, copy them into your
+  own mail, and send it from there. TIDE never sends it.
+- **Who to.** The To line offers the template's address, or the vendor contact kept on the product on Our stack.
+- **Waiting for the reply.** Mark it sent, and the action shows how long it has waited. An optional reminder (off
+  until enabled) says to follow up after a set number of business days. *Record the reply*, with the reply itself as
+  a file if wanted, closes the action with an outcome. Each send and reply is in the action's history.
+
 **Keeping track:**
 - **Lists.** Views by me, my teams, all open, overdue and recently closed.
-- **Reminders.** Reminder emails for due soon and overdue, and a weekly team digest. Each is off until enabled.
+- **Reminders.** Reminder emails for due soon and overdue, a weekly team digest, and an outreach follow-up. Each is off
+  until enabled.
 - **My notifications.** Each person turns off the reminder, digest and rotation emails they don't want (from the
   account menu), and can take a personal digest of their own actions, daily or weekly, instead. An administrator still
   turns each kind on or off for everyone, and sees how many people opted out, and who; nobody changes another's

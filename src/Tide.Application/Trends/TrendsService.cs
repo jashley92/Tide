@@ -59,7 +59,13 @@ public sealed record TrendReport(
     /// <summary>The techniques seen under one tactic (its <c>tactic:</c> line's key), most counted first.</summary>
     public IEnumerable<TrendRow> TechniquesOf(string tacticKey) => TacticTechniques.Where(r => r.Key.StartsWith(tacticKey + ":", StringComparison.Ordinal));
 
-    public TrendRow? Find(string? key) => AllRows.FirstOrDefault(r => r.Key == key);
+    public TrendRow? Find(string? key)
+    {
+        // A link to Outreach's line from before the rename named the kind "VendorInquiry".
+        if (key?.EndsWith("raised-kind:" + ActionService.FormerOutreachName, StringComparison.Ordinal) == true)
+            key = key[..^ActionService.FormerOutreachName.Length] + ActionKind.Outreach;
+        return AllRows.FirstOrDefault(r => r.Key == key);
+    }
 
     /// <summary>Whether a line counts actions (its ids open as actions) rather than articles.</summary>
     public bool IsActionRow(TrendRow row) => Actions.Contains(row);

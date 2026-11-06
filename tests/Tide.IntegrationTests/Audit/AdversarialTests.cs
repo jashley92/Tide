@@ -188,6 +188,7 @@ public class ReaderOverHttpTests(ReaderApp app) : IClassFixture<ReaderApp>
     [InlineData("/actions/1")]
     [InlineData("/workload")]
     [InlineData("/hunts/saved")]
+    [InlineData("/outreach/templates")]
     [InlineData("/admin")]
     [InlineData("/admin/access")]
     [InlineData("/admin/scorecard")]
@@ -869,6 +870,11 @@ public sealed class ServiceWorld : IDisposable
             ("SavedQueries.SaveFromHunt", () => db.SavedQueries().SaveFromHuntAsync(Hunt, "x", null, "x")),
             ("SavedQueries.SetRetired", () => db.SavedQueries().SetRetiredAsync(Guid.NewGuid(), true)),
             ("SavedQueries.Delete", () => db.SavedQueries().DeleteAsync(Guid.NewGuid())),
+            ("OutreachTemplates.Save", () => db.OutreachTemplates().SaveAsync(new OutreachTemplateForm { Name = "x", Subject = "x", Body = "x" })),
+            ("OutreachTemplates.SetRetired", () => db.OutreachTemplates().SetRetiredAsync(Guid.NewGuid(), true)),
+            ("OutreachTemplates.Delete", () => db.OutreachTemplates().DeleteAsync(Guid.NewGuid())),
+            ("Outreach.Write", () => db.Outreach().WriteAsync(Action, Guid.NewGuid())),
+            ("Outreach.MarkSent", () => db.Outreach().MarkSentAsync(Action, new OutreachSend { To = "psirt@vendor.example", Subject = "x", Body = "x" })),
             ("Teams.Add", () => db.Teams().AddAsync("x", null, null)),
             ("Teams.Update", () => db.Teams().UpdateAsync(TeamA, "x", null, null)),
             ("Teams.SetRetired", () => db.Teams().SetRetiredAsync(TeamA, true)),
@@ -980,6 +986,8 @@ public sealed class ServiceWorld : IDisposable
             ("CardRules.List", () => db.CardRules().ListAsync()),
             ("Queries.Templates", () => db.Queries().TemplatesAsync()),
             ("SavedQueries.List", () => db.SavedQueries().ListAsync()),
+            ("OutreachTemplates.List", () => db.OutreachTemplates().ListAsync()),
+            ("Outreach.ForAction", () => db.Outreach().ForActionAsync(Action)),
         ];
     }
 }
@@ -1103,6 +1111,8 @@ public class ActionOwnerAgainstTheServicesTests : IAsyncLifetime
             "Actions.Assign",
             // The team's saved hunt queries are kept by whoever works actions.
             "Actions.AddSavedHunt", "Actions.AddIndicators", "SavedQueries.Save", "SavedQueries.SaveFromHunt", "SavedQueries.SetRetired", "SavedQueries.Delete",
+            // So are the outreach templates, and an Outreach action's emails are its team's.
+            "OutreachTemplates.Save", "OutreachTemplates.SetRetired", "OutreachTemplates.Delete", "Outreach.Write", "Outreach.MarkSent",
             // At the meeting they join it and take notes like anyone on the team edition (their own notes only).
             "Meetings.Joined", "Meetings.AddNote", "Meetings.EditNote", "Meetings.DeleteNote",
         };

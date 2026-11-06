@@ -97,6 +97,8 @@ public static class DependencyInjection
         services.AddScoped<ActionService>();
         services.AddScoped<PlaybookService>();
         services.AddScoped<SavedQueryService>();
+        services.AddScoped<OutreachTemplateService>();
+        services.AddScoped<OutreachService>();
         services.AddScoped<CardRuleService>();
         services.AddScoped<ReminderService>();
         services.AddScoped<IntakeService>();

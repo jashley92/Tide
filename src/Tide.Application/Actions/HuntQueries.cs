@@ -367,7 +367,7 @@ public sealed partial class HuntQueryBuilder(IAppDbContextFactory dbs, ICurrentU
                 $"{{{{values:{m.Groups[1].Value}}}}} isn't a kind of indicator TIDE knows. Use {QueryDialects.Placeholder}, or one of: {string.Join(", ", Enum.GetValues<HuntValueKind>().Select(ValuesPlaceholder))}.")
             : (HuntValueKind?)null).ToList();
 
-    private static HuntValueKind? KindNamed(string name) =>
+    internal static HuntValueKind? KindNamed(string name) =>
         Domain.Common.EnumNames.TryParseExact(name, out HuntValueKind k, ignoreCase: true) ? k : null;
 
     [System.Text.RegularExpressions.GeneratedRegex(@"\{\{values(?::([A-Za-z0-9]+))?\}\}", System.Text.RegularExpressions.RegexOptions.None, matchTimeoutMilliseconds: 1000)]

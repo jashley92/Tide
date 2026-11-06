@@ -29,6 +29,7 @@ public class NotificationPreferenceTests : IDisposable
         DueSoon = { Enabled = true }, Overdue = { Enabled = true }, Presenting = { Enabled = true },
         Digest = { Enabled = true, Day = DayOfWeek.Monday, Time = "08:00" },
         BriefNotReady = { Enabled = true, Time = "09:30", Recipients = ["lead@example.org"] },
+        OutreachFollowUp = { Enabled = true },
         ReminderTime = "08:00",
     };
 
@@ -311,7 +312,7 @@ public class NotificationPreferenceTests : IDisposable
     {
         As(Kim, AppRole.ActionOwner);
         (await _db.NotificationPrefs(AllOn()).GetMineAsync()).Switches.Select(s => s.Name)
-            .Should().Equal(NotifyDueSoon, NotifyOverdue, NotifyTeamDigest);
+            .Should().Equal(NotifyDueSoon, NotifyOverdue, NotifyTeamDigest, NotifyOutreachFollowUp);
         var rotation = () => _db.NotificationPrefs(AllOn()).SetMineAsync(NotifyRotationRequests, Off);
         await rotation.Should().ThrowAsync<ForbiddenException>();
 

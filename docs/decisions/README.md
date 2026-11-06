@@ -23,3 +23,4 @@ contributor; supersede one rather than editing it once it's accepted.
 | [0016](0016-api-tokens-scopes-and-signed-webhooks.md) | The API: scoped, expiring tokens through the pages' own services, and signed webhooks |
 | [0017](0017-detection-rules-are-referenced-and-tagged.md) | Detection rules are referenced, never run, and "covered" means tagged |
 | [0018](0018-holidays-are-days-off-like-weekends.md) | Holidays are dated days off, kept by an administrator, and count as a weekend does |
+| [0019](0019-outreach-emails-are-written-never-sent.md) | Outreach emails are written by TIDE and sent by the analyst, held to the template's TLP |

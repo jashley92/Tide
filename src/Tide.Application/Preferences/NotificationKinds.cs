@@ -44,6 +44,11 @@ public static class NotificationKinds
         "Your team's week, when it comes to its members because the team has no mailbox. A team mailbox still gets it.",
         [On, Off], Permission.ReadActions, [ReminderKind.Digest]);
 
+    // Whoever works actions marks an Outreach action's email sent, so is the one reminded to follow it up.
+    public static readonly NotificationKind OutreachFollowUp = new(NotifyOutreachFollowUp, "Outreach follow-ups",
+        "A reminder when an email you marked sent on an Outreach action has had no reply recorded for a few business days.",
+        [On, Off], Permission.WorkActions, [ReminderKind.OutreachFollowUp]);
+
     // The rotation's are for analysts in it.
     public static readonly NotificationKind RotationReminders = new(NotifyRotationReminders, "Rotation reminders",
         "\"You're presenting\" before your brief days, and the nudge when today's brief isn't ready.",
@@ -58,7 +63,7 @@ public static class NotificationKinds
         [Off, Daily, Weekly], Permission.ReadActions, [ReminderKind.PersonalDigest]);
 
     /// <summary>All of them: the switches in the page's order, then the personal digest.</summary>
-    public static readonly IReadOnlyList<NotificationKind> All = [DueSoon, Overdue, TeamDigest, RotationReminders, RotationRequests, Digest];
+    public static readonly IReadOnlyList<NotificationKind> All = [DueSoon, Overdue, TeamDigest, OutreachFollowUp, RotationReminders, RotationRequests, Digest];
 
     /// <summary>The kind named <paramref name="name"/>, or null.</summary>
     public static NotificationKind? Find(string name) => All.FirstOrDefault(k => k.Name == name);

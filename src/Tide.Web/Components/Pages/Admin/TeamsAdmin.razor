@@ -183,6 +183,12 @@
                     <textarea id="rem-bnr-to" class="form-control form-control-sm tide-data" rows="2" @bind="_rem.Recipients" placeholder="cti-lead@example.org" aria-describedby="rem-bnr-to-help"></textarea>
                     <div class="form-text" id="rem-bnr-to-help">The team lead or a team mailbox, when the day has no brief or its analyst has no address. Separate addresses with commas or lines.</div>
                 </div>
+                <div class="col-sm-6">
+                    <label class="tide-field-label" for="rem-followup-days">Outreach follow-up after (business days)</label>
+                    <input id="rem-followup-days" type="number" class="form-control form-control-sm tide-w-count" min="@ReminderOptions.FollowUpOptions.MinDays" max="@ReminderOptions.FollowUpOptions.MaxDays"
+                           aria-describedby="rem-followup-help" @bind="_rem.FollowUpDays" />
+                    <div class="form-text" id="rem-followup-help">How long an Outreach action's email waits for its reply before whoever sent it is reminded, at the reminder time.</div>
+                </div>
             </div>
             <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveReminders">Save reminders</button>
         </section>
@@ -257,6 +263,7 @@
         public TimeOnly DigestTime { get; set; }
         public TimeOnly BriefNotReadyTime { get; set; }
         public string? Recipients { get; set; }
+        public int FollowUpDays { get; set; }
 
         public static ReminderForm From(ReminderService r)
         {
@@ -265,6 +272,7 @@
             {
                 ReminderTime = Time(o.ReminderTime, 8), DigestDay = o.Digest.Day, DigestTime = Time(o.Digest.Time, 8),
                 BriefNotReadyTime = Time(o.BriefNotReady.Time, 10), Recipients = string.Join(Environment.NewLine, o.BriefNotReady.Recipients ?? []),
+                FollowUpDays = ReminderOptions.FollowUpOptions.Clamp(o.OutreachFollowUp.Days),
             };
             foreach (var kind in Enum.GetValues<ReminderKind>()) form.On[kind] = r.IsEnabled(kind);
             return form;
@@ -299,6 +307,7 @@
         ReminderKind.Digest => "Weekly team digest",
         ReminderKind.Presenting => "Brief rotation reminder",
         ReminderKind.PersonalDigest => "Personal digest",
+        ReminderKind.OutreachFollowUp => "Outreach follow-up",
         _ => "Brief-not-ready nudge",
     };
 
@@ -309,6 +318,7 @@
         ReminderKind.Digest => "Each team's week, to its mailbox or members",
         ReminderKind.Presenting => "To whoever presents the next business day",
         ReminderKind.PersonalDigest => "Offered in My notifications: each person's own actions, daily at the reminder time or weekly on the digest day",
+        ReminderKind.OutreachFollowUp => "To whoever marked an Outreach action's email sent, when no reply is recorded after the days set below",
         _ => "To the presenting analyst, if today's brief isn't ready",
     };
 
@@ -411,6 +421,8 @@
                 [OperationalSettings.BriefNotReadyTime] = Hm(_rem.BriefNotReadyTime),
                 [OperationalSettings.BriefNotReadyRecipients] = _rem.Recipients,
                 [OperationalSettings.PersonalDigest] = Switch(_rem.On[ReminderKind.PersonalDigest]),
+                [OperationalSettings.OutreachFollowUp] = Switch(_rem.On[ReminderKind.OutreachFollowUp]),
+                [OperationalSettings.OutreachFollowUpDays] = _rem.FollowUpDays.ToString(System.Globalization.CultureInfo.InvariantCulture),
             });
             _rem = ReminderForm.From(Reminders);
             Toasts.Show("Saved. Applies within five minutes.");

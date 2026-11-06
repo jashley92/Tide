@@ -55,6 +55,13 @@ public class CapabilitiesTests : IDisposable
             Name = "Probe " + Guid.NewGuid().ToString("N")[..6], Dialect = "kql", Text = "DeviceProcessEvents",
         }),
         ["Delete saved hunt queries"] = (db, _) => db.SavedQueries().DeleteAsync(Guid.NewGuid()),
+        ["Write an Outreach action's email, mark it sent and record the reply"] = (db, s) => db.Outreach().WriteAsync(s.ActionId, Guid.NewGuid()),
+        ["Read the outreach templates"] = (db, _) => db.OutreachTemplates().ListAsync(),
+        ["Save, edit, retire and restore outreach templates"] = (db, _) => db.OutreachTemplates().SaveAsync(new OutreachTemplateForm
+        {
+            Name = "Probe " + Guid.NewGuid().ToString("N")[..6], Subject = "{{product.name}}", Body = "Are we affected?",
+        }),
+        ["Delete outreach templates"] = (db, _) => db.OutreachTemplates().DeleteAsync(Guid.NewGuid()),
         ["Choose my own notifications (reminders, digests, rotation emails)"] = (db, _) => db.NotificationPrefs().GetMineAsync(),
         ["Enter the day's numbers"] = (db, s) => db.Metrics().SaveValueAsync(s.Metric, Day, 3, null),
         ["Read the metrics history"] = (db, _) => db.Metrics().HistoryAsync(Day, Day),
@@ -70,6 +77,7 @@ public class CapabilitiesTests : IDisposable
         ["Raise a hand in a meeting"] = [typeof(Present)],
         ["Read actions: their pages, the board, Workload"] = [typeof(ActionPage), typeof(ActionsBoard), typeof(Workload)],
         ["Read the saved hunt queries"] = [typeof(SavedQueriesPage)],
+        ["Read the outreach templates"] = [typeof(OutreachTemplatesPage)],
         ["Triage the inbox"] = [typeof(Triage)],
         ["Review articles"] = [typeof(ReviewPage)],
         ["Read the team edition: briefs, the brief archive, Today"] = [typeof(BriefPage), typeof(BriefsArchive)],
@@ -166,6 +174,10 @@ public class CapabilitiesTests : IDisposable
         Cell("Work actions: status, outcome, assignee, checklist, hunts", AppRole.ActionOwner).Should().Be("own team's");
         Cell("Work actions: status, outcome, assignee, checklist, hunts", AppRole.Viewer).Should().BeNull();
         Cell("Remove files", AppRole.ActionOwner).Should().Be("own files");
+        Cell("Write an Outreach action's email, mark it sent and record the reply", AppRole.ActionOwner).Should().Be("own team's");
+        Cell("Save, edit, retire and restore outreach templates", AppRole.Viewer).Should().BeNull();
+        Cell("Read the outreach templates", AppRole.Viewer).Should().Be("");
+        Cell("Delete outreach templates", AppRole.Analyst).Should().Be("own ones");
         Cell("Read the team edition: briefs, the brief archive, Today", AppRole.Visitor).Should().Contain("live meeting");
         Cell("Read actions: their pages, the board, Workload", AppRole.Viewer).Should().Be("");
         Cell("Raise a hand in a meeting", AppRole.Visitor).Should().Be("");

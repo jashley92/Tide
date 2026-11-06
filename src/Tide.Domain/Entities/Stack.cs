@@ -13,6 +13,8 @@ public class StackProduct : AuditableEntity
     public const int MaxOtherNames = 500;
     public const int MaxVersions = 200;
     public const int MaxNotes = 4000;
+    public const int MaxContactName = 100;
+    public const int MaxContactEmail = 254;
 
     public string Name { get; set; } = string.Empty;
 
@@ -27,6 +29,11 @@ public class StackProduct : AuditableEntity
 
     public Guid? TeamId { get; set; }
     public Team? Team { get; set; }
+
+    /// <summary>Who to ask about it at the vendor or its support (a name and an address): an Outreach action's email
+    /// about the product is offered to them.</summary>
+    public string? ContactName { get; set; }
+    public string? ContactEmail { get; set; }
 
     /// <summary>When the versions and notes were last confirmed.</summary>
     public DateOnly? CheckedOn { get; set; }

@@ -1,0 +1,23 @@
+@* What an outreach template's placeholders become, under the box it's written in (Outreach templates). *@
+<div class="form-text" id="@Id">
+    Placeholders are filled from the action when the email is written, held to the template's TLP ceiling: a part above
+    it is left out and named. A placeholder TIDE doesn't know is refused when you save.
+</div>
+<details class="tide-outreach-help small mt-1">
+    <summary>Placeholders</summary>
+    @foreach (var group in OutreachFill.All.GroupBy(p => p.Group))
+    {
+        <div class="tide-field-label mt-2 mb-1">@group.Key</div>
+        <dl class="tide-outreach-placeholders">
+            @foreach (var p in group)
+            {
+                <dt class="tide-data">@p.Written</dt>
+                <dd>@p.Description</dd>
+            }
+        </dl>
+    }
+</details>
+
+@code {
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+}

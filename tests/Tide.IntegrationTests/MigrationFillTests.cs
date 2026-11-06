@@ -86,6 +86,32 @@ public class MigrationFillTests
         }
     }
 
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task OutreachEmailsAndStackContacts_MovesVendorInquirysSlaTarget_AndItsActionsAreOutreachActions(string provider)
+    {
+        using var database = new MigratedDatabase(provider);
+        var team = new Team { Key = "network", Name = "Network" };
+        var asked = new ActionItem { Number = 1, Title = "Ask the vendor", Kind = (ActionKind)6, Team = team };
+        await using (var ctx = database.Context())
+        {
+            ctx.AddRange(team, asked);
+            ctx.Settings.AddRange(
+                new AppSetting { Key = "Actions:Sla:Kind:VendorInquiry", Value = "4", UpdatedAtUtc = Decided, UpdatedBy = "x" },
+                new AppSetting { Key = "Actions:Sla:Kind:Block", Value = "1", UpdatedAtUtc = Decided, UpdatedBy = "x" });
+            await ctx.SaveChangesAsync();
+        }
+
+        database.UpgradeAgainFrom("OutreachEmailsAndStackContacts");
+
+        await using (var ctx = database.Context())
+        {
+            (await ctx.Settings.AsNoTracking().OrderBy(s => s.Key).Select(s => s.Key + "=" + s.Value).ToListAsync())
+                .Should().Equal("Actions:Sla:Kind:Block=1", "Actions:Sla:Kind:Outreach=4");
+            (await ctx.Actions.AsNoTracking().SingleAsync()).Kind.Should().Be(ActionKind.Outreach, "the kind is stored as its number");
+        }
+    }
+
     private static AuditLogEntry Audit(string type, string action, Guid key, DateTimeOffset at, string changes) => new()
     {
         AtUtc = at, UserId = "x", UserName = "X", Action = action, EntityType = type, EntityKey = key.ToString(), ChangesJson = changes,

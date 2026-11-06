@@ -2186,6 +2186,147 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.ToTable("NotificationMarks");
                 });
 
+            modelBuilder.Entity("Tide.Domain.Entities.OutreachMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ActionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(40000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("RepliedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("ReplyFileId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReplyNotes")
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReplyRecordedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("SentAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SentById")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SentByName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("TemplateId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TemplateName")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Tlp")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("To")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActionId");
+
+                    b.HasIndex("RepliedAtUtc");
+
+                    b.HasIndex("TemplateId");
+
+                    b.ToTable("OutreachMessages");
+                });
+
+            modelBuilder.Entity("Tide.Domain.Entities.OutreachTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(8000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Ceiling")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("CreatedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedByName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("EditVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsRetired")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("ModifiedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ModifiedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("To")
+                        .HasMaxLength(254)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("OutreachTemplates");
+                });
+
             modelBuilder.Entity("Tide.Domain.Entities.Playbook", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2775,6 +2916,14 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<DateOnly?>("CheckedOn")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ContactEmail")
+                        .HasMaxLength(254)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ContactName")
+                        .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
                     b.Property<long>("CreatedAtUtc")
@@ -3462,6 +3611,20 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 
+            modelBuilder.Entity("Tide.Domain.Entities.OutreachMessage", b =>
+                {
+                    b.HasOne("Tide.Domain.Entities.ActionItem", null)
+                        .WithMany("Outreach")
+                        .HasForeignKey("ActionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Tide.Domain.Entities.OutreachTemplate", null)
+                        .WithMany()
+                        .HasForeignKey("TemplateId")
+                        .OnDelete(DeleteBehavior.SetNull);
+                });
+
             modelBuilder.Entity("Tide.Domain.Entities.PlaybookStep", b =>
                 {
                     b.HasOne("Tide.Domain.Entities.Playbook", null)
@@ -3537,6 +3700,8 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Navigation("Hunts");
 
                     b.Navigation("Indicators");
+
+                    b.Navigation("Outreach");
                 });
 
             modelBuilder.Entity("Tide.Domain.Entities.Article", b =>

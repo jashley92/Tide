@@ -483,6 +483,12 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public PlaybookService Playbooks() => new(this, User);
     public SavedQueryService SavedQueries() => new(this, User);
+    public OutreachTemplateService OutreachTemplates() => new(this, User);
+
+    /// <summary>Outreach emails on actions, with the reminder settings given (or <see cref="ReminderOptions"/>) and links to tide.example.org.</summary>
+    public OutreachService Outreach(ReminderOptions? options = null, OrgClock? clock = null) =>
+        new(this, User, clock ?? Clock, Actions(), Options.Create(new AppOptions { BaseUrl = "https://tide.example.org" }),
+            new StaticOptionsMonitor<ReminderOptions>(options ?? ReminderOptions));
 
     public CardRuleService CardRules() => new(this, User);
 

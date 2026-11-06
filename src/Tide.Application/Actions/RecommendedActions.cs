@@ -37,7 +37,7 @@ public static class RecommendedActions
         (["block"], ActionKind.Block),
         (["config", "disable", "enforce"], ActionKind.ConfigChange),
         (["notif", "awareness", "user"], ActionKind.Awareness),
-        (["vendor", "ask"], ActionKind.VendorInquiry),
+        (["vendor", "ask", "isac", "partner", "reach out"], ActionKind.Outreach),
     ];
 
     /// <summary>

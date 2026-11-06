@@ -40,6 +40,9 @@ public sealed class ChangeFeed
     /// <summary>The team's saved hunt queries: one saved, edited, retired, restored or deleted.</summary>
     public const string SavedQueries = "saved-queries";
 
+    /// <summary>The team's outreach email templates: one saved, edited, retired, restored or deleted.</summary>
+    public const string OutreachTemplates = "outreach-templates";
+
     public static string Article(Guid id) => $"article:{id}";
 
     /// <summary>An article's adversary and product tags, which the editor's We run and Threat actors pickers show. Apart from the article's

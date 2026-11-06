@@ -28,6 +28,9 @@ public static class UserPreferences
     /// <summary>The weekly team digest, when it goes to the team's members because the team has no mailbox.</summary>
     public const string NotifyTeamDigest = "notify.teamDigest";
 
+    /// <summary>The reminder to follow up an Outreach action's email that has had no reply.</summary>
+    public const string NotifyOutreachFollowUp = "notify.outreachFollowUp";
+
     /// <summary>"You're presenting" and the brief-not-ready nudge.</summary>
     public const string NotifyRotationReminders = "notify.rotationReminders";
 

@@ -226,8 +226,12 @@ public enum ActionKind
     /// <summary>Tell people: a user notice, a help-desk heads-up.</summary>
     Awareness = 5,
 
-    /// <summary>Ask a vendor or partner a question.</summary>
-    VendorInquiry = 6,
+    /// <summary>
+    /// Ask someone for information: a vendor, a partner, an ISAC, an internal team, a site's owner. Stored as its number,
+    /// so actions raised as "Vendor inquiry" (its name before ADR 0019) are this kind; the one place its old name is stored, an
+    /// SLA setting's key, is moved by the OutreachTemplates migration.
+    /// </summary>
+    Outreach = 6,
 
     Other = 7,
 }
