@@ -92,10 +92,12 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
             if (IocExtractor.NormalizeCve(terms[0]) is { } cveId) cve = await CveAsync(db, cveId, ct);
             else indicator = await IndicatorAsync(db, terms[0], ct);
         }
+        // A lone digit is an action's number; as text it would match nearly everything, so only actions are looked in.
+        var numberOnly = terms is [{ Length: 1 }];
         return new SearchResults(q, terms, indicator, cve,
-            await ArticlesAsync(db, terms, Skip(pages.Articles, pages.Size), Size(pages.Size), ct),
+            numberOnly ? HitList<ArticleHit>.None : await ArticlesAsync(db, terms, Skip(pages.Articles, pages.Size), Size(pages.Size), ct),
             await ActionsAsync(db, terms, Skip(pages.Actions, pages.Size), Size(pages.Size), ct),
-            await StoriesAsync(db, terms, Skip(pages.Stories, pages.Size), Size(pages.Size), ct));
+            numberOnly ? HitList<StoryHit>.None : await StoriesAsync(db, terms, Skip(pages.Stories, pages.Size), Size(pages.Size), ct));
     }
 
     private static int Size(int size) => Math.Clamp(size, 1, MaxHits);
@@ -164,6 +166,13 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
         IQueryable<ActionItem> q = db.Actions.AsNoTracking();
         foreach (var term in terms)
         {
+            if (term.Length == 1)
+            {
+                // A lone digit: that action alone, not every action with the digit somewhere in its words.
+                var only = SearchText.ActionNumber(term);
+                q = q.Where(a => a.Number == only);
+                continue;
+            }
             Expression<Func<ActionItem, bool>>? numbered = SearchText.ActionNumber(term) is { } n ? a => a.Number == n : null;
             q = q.Where(AnyForm<ActionItem>((a, p) =>
                 EF.Functions.Like(a.Title, p, SearchText.Escape) || EF.Functions.Like(a.Description!, p, SearchText.Escape)

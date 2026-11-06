@@ -19,7 +19,7 @@ public static partial class SearchText
 
     /// <summary>
     /// The terms of <paramref name="query"/>: words, or "quoted phrases", each at least two characters, without
-    /// repeats. Every term must match somewhere for a hit.
+    /// repeats. Every term must match somewhere for a hit. A lone digit is kept too, as the number of one of the first nine actions.
     /// </summary>
     public static IReadOnlyList<string> Terms(string? query)
     {
@@ -27,7 +27,7 @@ public static partial class SearchText
         foreach (Match m in TermRx().Matches(query ?? ""))
         {
             var t = (m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value).Trim();
-            if (t.Length < 2) continue;
+            if (t.Length < 2 && ActionNumber(t) is null) continue;
             if (t.Length > MaxTermLength) t = t[..MaxTermLength];
             if (terms.Contains(t, StringComparer.OrdinalIgnoreCase)) continue;
             terms.Add(t);

@@ -68,6 +68,13 @@ public class SearchTextTests
         SearchText.SameOrUnder("1.203.0.113.45", "203.0.113.45").Should().BeFalse();
     }
 
+    [Fact]
+    public void Terms_KeepALoneDigit_AsAnActionNumber_ButNotOtherSingleCharacters()
+    {
+        SearchText.Terms("7").Should().Equal("7");
+        SearchText.Terms("a _").Should().BeEmpty();
+    }
+
     [Theory]
     [InlineData("A-12", 12)]
     [InlineData("a-7", 7)]

@@ -108,10 +108,12 @@ public sealed class ReportService(TrendsService trends, MetricsService metrics, 
         _ => v.ToString() ?? "",
     };
 
-    // A field as CSV: quoted when it holds a comma, a quote or a line break, and never read as a formula by a spreadsheet.
+    // A field as CSV: quoted when it holds a comma, a quote or a line break, and never read as a formula by a spreadsheet
+    // (a number, which a leading minus or plus is fine on, is left as it is).
     private static string Csv(string value)
     {
-        var v = value.Length > 0 && "=+-@".Contains(value[0]) && !double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out _) ? "'" + value : value;
+        var v = value.Length > 0 && (value[0] is '=' or '+' or '-' or '@' or '\t' or '\r')
+            && !double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out _) ? "'" + value : value;
         return v.IndexOfAny([',', '"', '\n', '\r']) >= 0 ? "\"" + v.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"" : v;
     }
 }

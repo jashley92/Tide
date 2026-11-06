@@ -435,6 +435,17 @@ public class TrendsServiceTests : IDisposable
     }
 
     [Fact]
+    public void TheReportCsv_NeutralisesNamesAFormulaCouldStartWith_ButNotNumbers()
+    {
+        var topics = new[] { new ReportTop("\t=1+1", 2, 1, "t:a"), new ReportTop("=cmd", 3, -1, "t:b") };
+        var report = new PeriodReport(Sep, false, [], [], [], topics, [], []);
+
+        var csv = ReportService.ToCsv(report);
+
+        csv.Should().Contain("Topics,'\t=1+1,2,1\n").And.Contain("Topics,'=cmd,3,4\n");
+    }
+
+    [Fact]
     public async Task TheReport_OfAPeriodNotStartedYet_HasNoMetricValues_NotTodays()
     {
         // A week that starts after today: its metrics were read from today up to its start, so it showed today's numbers.
