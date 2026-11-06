@@ -2,7 +2,10 @@
    (board.js), or moved with its Move menu from the keyboard; either way ActionService.MoveAsync checks and makes the move.
    A move to a closed column asks for the outcome first, as the action's page does.
    It's shared live: a card someone else is dragging says who has it and lights the column it's over (BoardDrags), and a
-   card someone else moved slides in from its old column and says who moved it. *@
+   card someone else moved slides in from its old column and says who moved it.
+   A column shows its first 20 cards, then "Show N more" adds 20 at a time; a card moved here (by this person or someone
+   else) stays shown whatever its place. The closed columns reach back a week; "Show older", under Done, takes them to
+   30 days. Both are for this visit only. *@
 @implements IAsyncDisposable
 @inject ActionService ActionSvc
 @inject ToastService Toasts
@@ -18,6 +21,7 @@
     @foreach (var status in Enum.GetValues<ActionStatus>())
     {
         var cards = Board.In(status);
+        var shown = Shown(status, cards);
         var incoming = drags.Where(d => d.Over == status).ToList();
         <section class="tide-kcol @(ActionItem.IsClosedStatus(status) ? "tide-kcol-closed" : "") @(incoming.Count > 0 ? "tide-kcol-incoming" : "")" data-status="@status" aria-labelledby="kcol-@status">
             <h2 class="tide-kcol-head" id="kcol-@status">
@@ -29,10 +33,10 @@
             </h2>
             @if (ActionItem.IsClosedStatus(status))
             {
-                <div class="tide-kcol-sub">Last @ActionService.BoardClosedDays days</div>
+                <div class="tide-kcol-sub">Last @Board.ClosedDays days</div>
             }
             <div class="tide-kcol-cards">
-                @foreach (var r in cards)
+                @foreach (var r in shown)
                 {
                     var canMove = Board.CanMove(r);
                     var matched = ActionRules.For(Rules, r, Today, ActionSvc.Days);
@@ -128,6 +132,16 @@
                 {
                     <div class="tide-kcol-empty">Nothing here.</div>
                 }
+                @if (cards.Count > shown.Count)
+                {
+                    var more = Math.Min(MoreCards, cards.Count - shown.Count);
+                    <button type="button" class="btn btn-outline-secondary btn-sm tide-kcol-more" aria-label="@($"Show {more} more in {ActionService.StatusName(status)}")"
+                            @onclick="() => ShowMore(status)">Show @more more</button>
+                }
+                @if (status == ActionStatus.Done && Board.ClosedDays < ActionService.BoardOlderDays)
+                {
+                    <button type="button" class="btn btn-link btn-sm tide-kcol-more" @onclick="ShowOlder">Show older: the last @ActionService.BoardOlderDays days</button>
+                }
             </div>
         </section>
     }
@@ -153,6 +167,9 @@
     /// <summary>After a move (or a refused one): the page reloads the board.</summary>
     [Parameter] public EventCallback OnChanged { get; set; }
 
+    /// <summary>"Show older" under Done: the page reads the board again with its closed columns reaching further back.</summary>
+    [Parameter] public EventCallback OnShowOlder { get; set; }
+
     /// <summary>Who last changed each card, from the changes a live reload heard: a card that changed column says so.</summary>
     [Parameter] public IReadOnlyDictionary<Guid, string> MovedBy { get; set; } = new Dictionary<Guid, string>();
 
@@ -160,6 +177,28 @@
     private static readonly TimeSpan ArrivedFor = TimeSpan.FromSeconds(6);
 
     private sealed record PendingClose(ActionRow Card, ActionStatus To);
+
+    /// <summary>The cards a column shows at first, and how many more each "Show more" adds.</summary>
+    internal const int FirstCards = 20, MoreCards = 20;
+
+    // How many cards each column shows (FirstCards until "Show more"), and the cards moved into a column this visit, which
+    // stay shown past that: a card dropped at the 25th place would otherwise vanish as it lands.
+    private readonly Dictionary<ActionStatus, int> _cap = [];
+    private readonly HashSet<Guid> _pinned = [];
+
+    private List<ActionRow> Shown(ActionStatus status, IReadOnlyList<ActionRow> cards)
+    {
+        var cap = _cap.GetValueOrDefault(status, FirstCards);
+        return cards.Where((c, i) => i < cap || _pinned.Contains(c.Id)).ToList();
+    }
+
+    internal void ShowMore(ActionStatus status)
+    {
+        _cap[status] = _cap.GetValueOrDefault(status, FirstCards) + MoreCards;
+        StateHasChanged();
+    }
+
+    private Task ShowOlder() => OnShowOlder.InvokeAsync();
 
     private ElementReference _root;
     private ConfirmDialog _closeDialog = default!;
@@ -198,6 +237,7 @@
         var said = new List<string>();
         foreach (var c in moved)
         {
+            _pinned.Add(c.Id);
             var name = MovedBy.TryGetValue(c.Id, out var n) && !string.IsNullOrWhiteSpace(n) ? n : "Someone";
             _arrived[c.Id] = (name, ticket, true);
             _toPlay.Add(new { id = c.Id, from = was[c.Id].ToString() });
@@ -205,6 +245,7 @@
         }
         foreach (var c in added)
         {
+            _pinned.Add(c.Id);
             var name = string.IsNullOrWhiteSpace(MovedBy[c.Id]) ? "Someone" : MovedBy[c.Id];
             _arrived[c.Id] = (name, ticket, false);
             said.Add($"{name} added {Ui.ActionLabel(c.Number)} to {ActionService.StatusName(c.Status)}.");
@@ -323,6 +364,7 @@
         try
         {
             _mine.Add(card.Id);
+            _pinned.Add(card.Id);
             await ActionSvc.MoveAsync(card.Id, card.Status, to, outcome, note);
             Toasts.Show($"{Ui.ActionLabel(card.Number)} moved to {ActionService.StatusName(to)}.");
             await OnChanged.InvokeAsync();

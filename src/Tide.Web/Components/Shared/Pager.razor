@@ -1,11 +1,20 @@
 @* Numbered pages under a list that holds more than one page: Previous, the page numbers (a gap marked … in a long
    run), Next. One page's rows are drawn at a time, so a long list never grows the page. The current page is marked
-   for screen readers (aria-current), and nothing is drawn when everything fits on one page. *@
+   for screen readers (aria-current), and nothing is drawn when everything fits on one page.
+   With Href the pages are links to their addresses (the address is the page's, so a reload, Back or a copied link
+   keeps it, and a middle-click opens one in a new tab); without it they're buttons that call OnPage. *@
 @if (Pages > 1)
 {
     <nav class="tide-pager" aria-label="@($"Pages of {Many}")">
-        <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(Busy || Page <= 1)" @onclick="() => Go(Page - 1)">
-            <span class="bi bi-chevron-left" aria-hidden="true"></span> Previous</button>
+        @if (Href is null)
+        {
+            <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(Busy || Page <= 1)" @onclick="() => Go(Page - 1)">
+                <span class="bi bi-chevron-left" aria-hidden="true"></span> Previous</button>
+        }
+        else
+        {
+            @Step(Page - 1, "Previous", "prev")
+        }
         <ul class="tide-pager-pages">
             @foreach (var n in TableView.PageNumbers(Page, Pages))
             {
@@ -15,16 +24,34 @@
                 }
                 else if (number == Page)
                 {
-                    <li><button type="button" class="btn btn-primary btn-sm" aria-current="page" aria-label="@($"Page {number}, this page")" disabled="@Busy">@number</button></li>
+                    @if (Href is null)
+                    {
+                        <li><button type="button" class="btn btn-primary btn-sm" aria-current="page" aria-label="@($"Page {number}, this page")" disabled="@Busy">@number</button></li>
+                    }
+                    else
+                    {
+                        <li><a class="btn btn-primary btn-sm" href="@Href(number)" aria-current="page" aria-label="@($"Page {number}, this page")">@number</a></li>
+                    }
                 }
-                else
+                else if (Href is null)
                 {
                     <li><button type="button" class="btn btn-outline-secondary btn-sm" aria-label="@($"Page {number}")" disabled="@Busy" @onclick="() => Go(number)">@number</button></li>
                 }
+                else
+                {
+                    <li><a class="btn btn-outline-secondary btn-sm" href="@Href(number)" aria-label="@($"Page {number}")">@number</a></li>
+                }
             }
         </ul>
-        <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(Busy || Page >= Pages)" @onclick="() => Go(Page + 1)">
-            Next <span class="bi bi-chevron-right" aria-hidden="true"></span></button>
+        @if (Href is null)
+        {
+            <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(Busy || Page >= Pages)" @onclick="() => Go(Page + 1)">
+                Next <span class="bi bi-chevron-right" aria-hidden="true"></span></button>
+        }
+        else
+        {
+            @Step(Page + 1, "Next", "next")
+        }
     </nav>
 }
 
@@ -36,9 +63,29 @@
     /// <summary>What the pages are of, for the pager's name ("Pages of articles").</summary>
     [Parameter, EditorRequired] public string Many { get; set; } = "";
 
-    /// <summary>A page is being read: the buttons wait.</summary>
+    /// <summary>A page is being read: the buttons wait (links can't; the page reads the address it lands on).</summary>
     [Parameter] public bool Busy { get; set; }
     [Parameter] public EventCallback<int> OnPage { get; set; }
 
+    /// <summary>A page's address, which makes the pages links. Built as the page builds its other links (NavigationManager,
+    /// or a relative address under the base), so it holds under a path base such as /tide.</summary>
+    [Parameter] public Func<int, string>? Href { get; set; }
+
     private Task Go(int page) => page < 1 || page > Pages || page == Page ? Task.CompletedTask : OnPage.InvokeAsync(page);
+
+    // Previous or Next as a link; at either end a link that goes nowhere, said to be unavailable.
+    private RenderFragment Step(int page, string text, string rel) => __builder =>
+    {
+        var icon = rel == "prev" ? "bi-chevron-left" : "bi-chevron-right";
+        if (page < 1 || page > Pages)
+        {
+            <a class="btn btn-outline-secondary btn-sm disabled" role="link" aria-disabled="true">
+                @if (rel == "prev") { <span class="bi @icon" aria-hidden="true"></span> } @text @if (rel == "next") { <span class="bi @icon" aria-hidden="true"></span> }</a>
+        }
+        else
+        {
+            <a class="btn btn-outline-secondary btn-sm" href="@Href!(page)" rel="@rel">
+                @if (rel == "prev") { <span class="bi @icon" aria-hidden="true"></span> } @text @if (rel == "next") { <span class="bi @icon" aria-hidden="true"></span> }</a>
+        }
+    };
 }

@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using Tide.Application.Abstractions;
 using Tide.Application.Articles;
@@ -96,14 +97,69 @@ public sealed record ActionFilter(ActionView View = ActionView.Open, Guid? TeamI
     string? AssigneeId = null)
 {
     public const string Unassigned = "none";
+
+    /// <summary>Words in the title or the article's title, or an action's number ("A-12", "12").</summary>
+    public string? Search { get; init; }
+
+    public Priority? Priority { get; init; }
+    public ActionDue? Due { get; init; }
+
+    /// <summary>One status (the Actions page offers the open ones: Open, In progress, Blocked).</summary>
+    public ActionStatus? Status { get; init; }
+
+    /// <summary>An administrator's card rule shown as a filter: the actions it matches (the list's; the board matches
+    /// its cards itself, to count each rule's).</summary>
+    public Guid? RuleId { get; init; }
 }
 
+/// <summary>When an action is due, as a filter.</summary>
+public enum ActionDue
+{
+    /// <summary>Open and past due.</summary>
+    Overdue = 0,
+
+    /// <summary>Due from today to the end of the business week (the organization's working days, with its holidays).</summary>
+    ThisWeek = 1,
+
+    /// <summary>No due date.</summary>
+    None = 2,
+}
+
+/// <summary>What the actions list is sorted by. <see cref="Closed"/> is most recently closed first, the closed view's own.</summary>
+public enum ActionSort
+{
+    Due = 0,
+    Number = 1,
+    Title = 2,
+    Kind = 3,
+    Team = 4,
+    Status = 5,
+    Closed = 6,
+}
+
+/// <summary>What the actions list is grouped under, so each group's rows come together across its pages.</summary>
+public enum ActionGrouping
+{
+    None = 0,
+    Kind = 1,
+
+    /// <summary>When it's due (<see cref="ActionUrgency"/>).</summary>
+    Urgency = 2,
+}
+
+/// <summary>A page of the actions list: its rows, how many match in all, which page it is (the last, when the one asked
+/// for is past the end), and how many matching actions each group holds (named as its heading is) when grouped.</summary>
+public sealed record ActionListPage(IReadOnlyList<ActionRow> Rows, int Total, int Page, IReadOnlyDictionary<string, int> Groups);
+
 /// <summary>
-/// The actions board: open actions and those closed in the last <see cref="ActionService.BoardClosedDays"/> days, a
-/// column per status, and which of them the current user may move (the teams they work, or all for an analyst).
+/// The actions board: open actions and those closed in the last <see cref="ClosedDays"/> days, a column per status, and
+/// which of them the current user may move (the teams they work, or all for an analyst).
 /// </summary>
 public sealed record ActionBoard(IReadOnlyList<ActionRow> Cards, bool CanWorkAll, IReadOnlySet<Guid> WorkTeams)
 {
+    /// <summary>How far back the closed columns reach.</summary>
+    public int ClosedDays { get; init; } = ActionService.BoardClosedDays;
+
     public bool CanMove(ActionRow card) => CanWorkAll || WorkTeams.Contains(card.TeamId);
 
     public IReadOnlyList<ActionRow> In(ActionStatus status) => Cards.Where(c => c.Status == status).ToList();
@@ -197,20 +253,150 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             : rows.OrderBy(r => r.DueDate ?? DateOnly.MaxValue).ThenBy(r => r.Priority).ThenBy(r => r.Number).ToList();
     }
 
-    /// <summary>How far back the board's closed columns reach.</summary>
-    public const int BoardClosedDays = 14;
+    /// <summary>Rows on a page of the actions list.</summary>
+    public const int ListPageSize = 50;
 
     /// <summary>
-    /// The board for <paramref name="filter"/>'s holder, team, kind and assignee: open actions, and those closed in the
-    /// last <see cref="BoardClosedDays"/> days. Its views are whose actions (mine, my teams', all); Overdue and Closed
-    /// are list views, and show all.
+    /// A page of the list for <paramref name="filter"/> (open actions, or those closed in the last 90 days), sorted and
+    /// grouped in the database, with how many match in all and in each group. A page past the end is the last page.
     /// </summary>
-    public async Task<ActionBoard> BoardAsync(ActionFilter filter, CancellationToken ct = default)
+    public async Task<ActionListPage> PageAsync(ActionFilter filter, ActionSort sort = ActionSort.Due, bool descending = false,
+        ActionGrouping group = ActionGrouping.None, int page = 1, int size = ListPageSize, CancellationToken ct = default)
+    {
+        RequireRead(user);
+        await using var db = await dbs.CreateAsync(ct);
+        var q = await ListQuery(db, filter, ct);
+        var total = await q.CountAsync(ct);
+        size = Math.Clamp(size, 1, 500);
+        page = Math.Clamp(page, 1, Math.Max(1, (total + size - 1) / size));
+        var today = clock.Today;
+        var urgency = UrgencyOf(today, ActionSla.EndOfBusinessWeek(today, clock.Days));
+        IReadOnlyDictionary<string, int> groups = group switch
+        {
+            ActionGrouping.Kind => (await q.GroupBy(a => a.Kind).Select(g => new { g.Key, N = g.Count() }).ToListAsync(ct))
+                .ToDictionary(g => KindName(g.Key), g => g.N),
+            ActionGrouping.Urgency => (await q.Select(urgency).GroupBy(u => u).Select(g => new { g.Key, N = g.Count() }).ToListAsync(ct))
+                .ToDictionary(g => ActionSla.UrgencyName((ActionUrgency)g.Key), g => g.N),
+            _ => new Dictionary<string, int>(),
+        };
+        var rows = await Rows(db, Ordered(q, sort, descending, group, urgency).Skip((page - 1) * size).Take(size)).ToListAsync(ct);
+        return new ActionListPage(rows, total, page, groups);
+    }
+
+    /// <summary>How many of the list's actions for <paramref name="filter"/> each rule matches (its own rule left out): the
+    /// counts on the rule chips.</summary>
+    public async Task<IReadOnlyDictionary<Guid, int>> RuleCountsAsync(ActionFilter filter, IEnumerable<ActionCardRule> rules, CancellationToken ct = default)
+    {
+        RequireRead(user);
+        await using var db = await dbs.CreateAsync(ct);
+        var q = await ListQuery(db, filter with { RuleId = null }, ct);
+        var counts = new Dictionary<Guid, int>();
+        foreach (var rule in rules) counts[rule.Id] = await WhereRule(q, rule).CountAsync(ct);
+        return counts;
+    }
+
+    // The list's actions: the filter's, open (or for Closed, closed in the last 90 days), and its rule's.
+    private async Task<IQueryable<ActionItem>> ListQuery(IAppDbContext db, ActionFilter filter, CancellationToken ct)
+    {
+        var q = Narrow(db, db.Actions.AsNoTracking(), filter);
+        if (filter.View == ActionView.Closed)
+        {
+            var since = DateTimeOffset.UtcNow.AddDays(-90);
+            q = q.Where(a => a.ClosedAtUtc != null && a.ClosedAtUtc >= since);
+        }
+        else q = q.WhereOpen();
+        if (filter.RuleId is { } ruleId)
+        {
+            // A rule taken away meanwhile filters nothing out, as it no longer shows as a filter.
+            var rule = await db.ActionCardRules.AsNoTracking().FirstOrDefaultAsync(r => r.Id == ruleId, ct);
+            if (rule is not null) q = WhereRule(q, rule);
+        }
+        return q;
+    }
+
+    // Which urgency group an action is under (ActionSla.UrgencyOf), as the database works it out to group and sort by.
+    private static Expression<Func<ActionItem, int>> UrgencyOf(DateOnly today, DateOnly weekEnd) => a =>
+        a.Status == ActionStatus.Blocked ? (int)ActionUrgency.Blocked
+        : a.DueDate == null || a.DueDate > weekEnd ? (int)ActionUrgency.Later
+        : a.DueDate < today ? (int)ActionUrgency.Overdue
+        : a.DueDate == today ? (int)ActionUrgency.DueToday
+        : (int)ActionUrgency.ThisWeek;
+
+    // The list's order: its group first, so a group's rows come together across pages, then the sort, then the number, so
+    // the order is stable and an action is on one page only. Blanks (no due date) go last either way, as the table's own
+    // sort puts them.
+    private static IQueryable<ActionItem> Ordered(IQueryable<ActionItem> q, ActionSort sort, bool descending, ActionGrouping group,
+        Expression<Func<ActionItem, int>> urgency)
+    {
+        IOrderedQueryable<ActionItem>? o = null;
+        void By<TKey>(Expression<Func<ActionItem, TKey>> key, bool desc = false) =>
+            o = o is null ? (desc ? q.OrderByDescending(key) : q.OrderBy(key)) : (desc ? o.ThenByDescending(key) : o.ThenBy(key));
+        if (group == ActionGrouping.Kind) By(a => a.Kind);
+        else if (group == ActionGrouping.Urgency) By(urgency);
+        switch (sort)
+        {
+            case ActionSort.Closed:
+                By(a => a.ClosedDate, desc: true);
+                By(a => a.Number, desc: true);
+                return o!;
+            case ActionSort.Number: By(a => a.Number, descending); break;
+            // Letters in any case together, as the table sorts them: ToLower runs in the database (lower(), LOWER()), never
+            // in .NET, so no culture applies.
+#pragma warning disable CA1304, CA1311
+            case ActionSort.Title: By(a => a.Title.ToLower(), descending); break;
+            case ActionSort.Kind: By(a => a.Kind, descending); break;
+            case ActionSort.Team: By(a => a.Team!.Name.ToLower(), descending); break;
+#pragma warning restore CA1304, CA1311
+            case ActionSort.Status: By(a => a.Status, descending); break;
+            default:
+                By(a => a.DueDate == null);
+                By(a => a.DueDate, descending);
+                By(a => a.Priority);
+                break;
+        }
+        By(a => a.Number);
+        return o!;
+    }
+
+    // The actions an administrator's card rule matches (ActionRules.Matches), in the database.
+    private IQueryable<ActionItem> WhereRule(IQueryable<ActionItem> q, ActionCardRule rule)
+    {
+        var today = clock.Today;
+        var soon = clock.Days.Next(today);   // due by the next working day is due soon (ActionSla.StateOf)
+        if (rule.Kind is { } kind) q = q.Where(a => a.Kind == kind);
+        if (rule.PriorityAtLeast is { } p) q = q.Where(a => a.Priority <= p);
+        if (rule.TeamId is { } team) q = q.Where(a => a.TeamId == team);
+        if (rule.Status is { } status) q = q.Where(a => a.Status == status);
+        if (rule.Unassigned) q = q.Where(a => a.AssigneeId == null);
+        if (rule.HasChecklist) q = q.Where(a => a.Checklist.Any());
+        if (rule.IsPart) q = q.Where(a => a.ParentId != null);
+        return rule.Sla switch
+        {
+            CardRuleSla.Overdue => q.WhereOpen().Where(a => a.DueDate != null && a.DueDate < today),
+            CardRuleSla.DueSoon => q.WhereOpen().Where(a => a.DueDate != null && a.DueDate >= today && a.DueDate <= soon),
+            CardRuleSla.OverdueOrDueSoon => q.WhereOpen().Where(a => a.DueDate != null && a.DueDate <= soon),
+            _ => q,
+        };
+    }
+
+    /// <summary>How far back the board's closed columns reach at first.</summary>
+    public const int BoardClosedDays = 7;
+
+    /// <summary>How far back they reach once "Show older" is chosen.</summary>
+    public const int BoardOlderDays = 30;
+
+    /// <summary>
+    /// The board for <paramref name="filter"/>'s holder, team, kind, assignee and the rest: open actions, and those closed
+    /// in the last <paramref name="closedDays"/> days (<see cref="BoardClosedDays"/>, or up to <see cref="BoardOlderDays"/>).
+    /// Its views are whose actions (mine, my teams', all); Overdue and Closed are list views, and show all.
+    /// </summary>
+    public async Task<ActionBoard> BoardAsync(ActionFilter filter, int closedDays = BoardClosedDays, CancellationToken ct = default)
     {
         RequireRead(user);
         if (filter.View is ActionView.Overdue or ActionView.Closed) filter = filter with { View = ActionView.Open };
+        closedDays = Math.Clamp(closedDays, 1, BoardOlderDays);
         await using var db = await dbs.CreateAsync(ct);
-        var since = DateTimeOffset.UtcNow.AddDays(-BoardClosedDays);
+        var since = DateTimeOffset.UtcNow.AddDays(-closedDays);
         var q = Narrow(db, db.Actions.AsNoTracking(), filter)
             .Where(a => a.Status == ActionStatus.Open || a.Status == ActionStatus.InProgress || a.Status == ActionStatus.Blocked
                         || (a.ClosedAtUtc != null && a.ClosedAtUtc >= since));
@@ -222,10 +408,11 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var teams = all || !user.Has(Permission.WorkActions)
             ? []
             : (await db.TeamMembers.AsNoTracking().Where(m => m.UserId == user.UserId).Select(m => m.TeamId).ToListAsync(ct)).ToHashSet();
-        return new ActionBoard(cards, all, teams);
+        return new ActionBoard(cards, all, teams) { ClosedDays = closedDays };
     }
 
-    // The holder, team, kind, article and assignee parts of a filter; the caller says which statuses.
+    // The holder, team, kind, article, assignee, words, priority, due date and status parts of a filter; the caller says
+    // which statuses (open, or recently closed) and applies the rule.
     private IQueryable<ActionItem> Narrow(IAppDbContext db, IQueryable<ActionItem> q, ActionFilter filter)
     {
         var today = clock.Today;
@@ -247,6 +434,31 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (filter.ArticleId is { } article) q = q.Where(a => a.ArticleId == article);
         if (filter.AssigneeId == ActionFilter.Unassigned) q = q.Where(a => a.AssigneeId == null);
         else if (!string.IsNullOrEmpty(filter.AssigneeId)) q = q.Where(a => a.AssigneeId == filter.AssigneeId);
+        if (!string.IsNullOrWhiteSpace(filter.Search))
+        {
+            // The words anywhere in the title or the article's (LIKE: the same match on SQLite and SQL Server, wildcards
+            // literal), or a whole number as the action's.
+            var words = filter.Search.Trim();
+            var like = Search.SearchText.Contains(words);
+            var number = Search.SearchText.ActionNumber(words) ?? -1;
+            q = q.Where(a => a.Number == number || EF.Functions.Like(a.Title, like, Search.SearchText.Escape)
+                             || (a.Article != null && EF.Functions.Like(a.Article.Title, like, Search.SearchText.Escape)));
+        }
+        if (filter.Priority is { } priority) q = q.Where(a => a.Priority == priority);
+        if (filter.Status is { } status) q = q.Where(a => a.Status == status);
+        switch (filter.Due)
+        {
+            case ActionDue.Overdue:
+                q = q.WhereOpen().Where(a => a.DueDate != null && a.DueDate < today);
+                break;
+            case ActionDue.ThisWeek:
+                var weekEnd = ActionSla.EndOfBusinessWeek(today, clock.Days);
+                q = q.Where(a => a.DueDate != null && a.DueDate >= today && a.DueDate <= weekEnd);
+                break;
+            case ActionDue.None:
+                q = q.Where(a => a.DueDate == null);
+                break;
+        }
         return q;
     }
 

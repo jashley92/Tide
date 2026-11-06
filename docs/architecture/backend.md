@@ -82,7 +82,7 @@ unless marked singleton. "Checks" lists the permissions the service itself tests
 
 | Service | File | Owns | Main methods | Checks |
 |---|---|---|---|---|
-| `IntakeService` | `Intake/IntakeService.cs` | Sources and the triage inbox: polling, dedupe, shortlist, dismiss, promote, split, prune, API proposals | `PollDueAsync`, `PollNowAsync`, `PullNowAsync`, `InboxAsync`, `ShortlistAsync`, `DismissAsync`, `MarkDuplicateAsync`, `PromoteAsync`, `PromoteManyAsync`, `SplitAsync`, `ProposeAsync`, `PruneAsync`, `SourcesAsync`, `SaveSourceAsync`, `SourceHealthAsync` | WriteArticles to triage; Administer for sources |
+| `IntakeService` | `Intake/IntakeService.cs` | Sources and the triage inbox: polling, dedupe, shortlist, dismiss, promote, split, prune, API proposals | `PollDueAsync`, `PollNowAsync`, `PullNowAsync`, `InboxPageAsync`, `InboxAsync`, `ShortlistAsync`, `DismissAsync`, `MarkDuplicateAsync`, `PromoteAsync`, `PromoteManyAsync`, `SplitAsync`, `ProposeAsync`, `PruneAsync`, `SourcesAsync`, `SaveSourceAsync`, `SourceHealthAsync` | WriteArticles to triage; Administer for sources |
 | `ReadingService` | `Intake/ReadingService.cs` | Fetching one item's article text for the reader, kept `Intake:ReadingDays` | `ReadAsync`, `KeptAsync`, `PruneAsync` | WriteArticles |
 | `CveService` | `Intake/CveService.cs` | CVE context from CISA KEV, FIRST EPSS and NVD | `GetAsync`, `EnrichDueAsync`, `EnrichNowAsync` | ReadTeamEdition (or a seat in a live meeting) to read; Administer to refresh now |
 | `StoryService` | `Intake/StoryService.cs` | Threat stories that follow a campaign across days | `ListAsync`, `GetAsync`, `CreateAsync`, `UpdateAsync`, `LinkAsync`, `DeleteAsync`, `FindAsync` | ReadTeamEdition; WriteArticles to change |
@@ -95,7 +95,7 @@ unless marked singleton. "Checks" lists the permissions the service itself tests
 
 | Service | File | Owns | Main methods | Checks |
 |---|---|---|---|---|
-| `ActionService` | `Actions/ActionService.cs` | Follow-up actions: create, assign, status, comments, checklist, hunts, board and workload | `CreateAsync`, `QuickAddAsync`, `SaveAsync`, `SetStatusAsync`, `MoveAsync`, `ChangeOutcomeAsync`, `AssignAsync`, `TakeAsync`, `SetDueAsync`, `AddCommentAsync`, `GenerateHuntAsync`, `RecordHuntResultAsync`, `CloseWithNoHitsAsync`, `ListAsync`, `BoardAsync`, `GetAsync`, `WorkloadAsync`, `OutstandingAsync` | ReadTeamEdition or WorkActions to read; WriteArticles to create; to work one, WriteArticles, or WorkActions and membership of its team |
+| `ActionService` | `Actions/ActionService.cs` | Follow-up actions: create, assign, status, comments, checklist, hunts, board and workload | `CreateAsync`, `QuickAddAsync`, `SaveAsync`, `SetStatusAsync`, `MoveAsync`, `ChangeOutcomeAsync`, `AssignAsync`, `TakeAsync`, `SetDueAsync`, `AddCommentAsync`, `GenerateHuntAsync`, `RecordHuntResultAsync`, `CloseWithNoHitsAsync`, `PageAsync`, `RuleCountsAsync`, `ListAsync`, `BoardAsync`, `GetAsync`, `WorkloadAsync`, `OutstandingAsync` | ReadTeamEdition or WorkActions to read; WriteArticles to create; to work one, WriteArticles, or WorkActions and membership of its team |
 | `ActionFileService` | `Actions/ActionFiles.cs` | Files on actions and their comments: hashes, risk, remove and restore | `AddAsync`, `DescribeAsync`, `RemoveAsync`, `RestoreAsync`, `ListAsync`, `OpenAsync` | Working the action to add; the adder, an analyst or an administrator to remove; Administer to restore; reading actions to download |
 | `HuntQueryBuilder` | `Actions/HuntQueries.cs` | Turning indicators into SIEM queries from per-dialect templates (ADR [0006](../decisions/0006-query-dialects-are-templates.md)) | building; template settings | Administer to change templates |
 | `SavedQueryService` | `Actions/SavedQueries.cs` | The team's saved hunt queries | `ListAsync`, `GetAsync`, `SaveAsync`, `SaveFromHuntAsync`, `SetRetiredAsync`, `DeleteAsync`, `OfferedAsync` | ReadActions; WorkActions to change; Administer to delete any |
@@ -106,6 +106,13 @@ unless marked singleton. "Checks" lists the permissions the service itself tests
 | `TeamService` | `Actions/TeamService.cs` | Teams that own actions, and their members | `ListAsync`, `AddAsync`, `UpdateAsync`, `AddMemberAsync`, `RemoveMemberAsync`, `SetRetiredAsync`, `TeamsOfAsync` | ReadTeamEdition or WorkActions to read; Administer to change |
 | `SlaSettings` | `Actions/ActionSla.cs` | SLA targets per priority and kind | `GetAsync`, `SaveAsync` | Administer to save |
 | `ReminderService` | `Actions/Reminders.cs` | Reminder and digest emails, and the brief-not-ready nudge | `RunDueAsync`, `RunAsync`, `RunNowAsync` | none for the scans; Administer for Run now |
+
+Long lists are read a page at a time, with the count of every match. The triage inbox (`IntakeService.InboxPageAsync`,
+50 rows) counts and cuts the page in the database wherever it can; New, *Likely used*, *Names what we run* and the KEV
+filter depend on what only the app knows (ageing into Older, the Our stack matcher, the CVE records' KEV flag, the learned
+counts), so those read every matching item light and page that. Its suggested groups are worked out over the page shown.
+The actions list (`ActionService.PageAsync`, 50 rows) sorts, groups and pages in SQL; the board loads every open card and
+caps each column on screen. Saved queries and outreach templates, libraries of tens, page in memory (20 cards).
 
 ### Rotation, metrics, trends and search
 
