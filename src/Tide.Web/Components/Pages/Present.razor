@@ -2332,9 +2332,7 @@ else
         LeaveMeeting();
         _live?.Dispose();
         if (_clock is not null) await _clock.DisposeAsync();
-        try { await JS.InvokeVoidAsync("tidePresent.stop"); }
-        catch (JSDisconnectedException) { }
-        catch (InvalidOperationException) { }
+        await JS.StopAsync("tidePresent.stop");
         _ref?.Dispose();
     }
 }

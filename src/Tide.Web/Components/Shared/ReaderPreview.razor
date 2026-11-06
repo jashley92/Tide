@@ -337,8 +337,7 @@
         if (_wait is not null) await _wait.CancelAsync();
         _wait?.Dispose();
         if (_self is null) return;
-        try { await JS.InvokeVoidAsync("tideEditor.editionKeys", null); }
-        catch (JSDisconnectedException) { /* the tab has gone */ }
+        await JS.StopAsync("tideEditor.editionKeys", [null]);
         _self.Dispose();
     }
 

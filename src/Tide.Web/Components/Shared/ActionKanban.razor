@@ -383,8 +383,7 @@
         // Only a board that started (interactively, after its first render) has anything to stop: a prerendered one
         // can't call JavaScript at all, and trying fails its page.
         if (_self is null) return;
-        try { await JS.InvokeVoidAsync("tideBoard.stop"); }
-        catch (JSDisconnectedException) { }
+        await JS.StopAsync("tideBoard.stop");
         _self.Dispose();
     }
 }
