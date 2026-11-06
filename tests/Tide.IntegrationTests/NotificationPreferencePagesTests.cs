@@ -94,11 +94,26 @@ public class NotificationPreferencePagesTests(TideApp app) : IClassFixture<TideA
         html.Should().Contain(TeamsAdmin.CountText(UserPreferences.NotifyRotationRequests, counts[UserPreferences.NotifyRotationRequests]))
             .And.Contain(TeamsAdmin.CountText(UserPreferences.NotifyDigest, counts[UserPreferences.NotifyDigest])).And.Contain("No one opted out");
 
-        await r.Click(c => c.ShowChoosers(UserPreferences.NotifyDigest));
+        await r.Click(c => c.ShowChoosers(UserPreferences.NotifyDigest, "PersonalDigest"));
         html = await r.Html();
         html.Should().Contain(who.UserId, "not yet in the user mirror, so listed by id").And.Contain("weekly").And.Contain("tide-optlist");
-        await r.Click(c => c.ShowChoosers(UserPreferences.NotifyDigest));
+        await r.Click(c => c.ShowChoosers(UserPreferences.NotifyDigest, "PersonalDigest"));
         (await r.Html()).Should().NotContain("tide-optlist\"", "a second click closes it");
+    }
+
+    [Fact]
+    public async Task TeamsAndSla_ASharedChoice_OpensOneListUnderTheRowClicked()
+    {
+        // The brief rotation reminder and the brief-not-ready nudge are both the "Rotation reminders" choice.
+        await using (var scope = SignedIn(app, Person()))
+            await scope.ServiceProvider.GetRequiredService<NotificationPreferenceService>().SetMineAsync(UserPreferences.NotifyRotationReminders, UserPreferences.Off);
+
+        await using var r = await RenderAsync<TeamsAdmin>(app, "/admin/teams");
+        await r.Click(c => c.ShowChoosers(UserPreferences.NotifyRotationReminders, "Presenting"));
+        var html = await r.Html();
+
+        System.Text.RegularExpressions.Regex.Matches(html, "<table[^>]*tide-optlist").Should().HaveCount(1, "the other row with the same choice stays closed");
+        html.Should().Contain("id=\"optlist-notify-rotationReminders-Presenting\"");
     }
 
     [Theory]
