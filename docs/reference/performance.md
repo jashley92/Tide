@@ -49,13 +49,15 @@ at these volumes; running the same calls against a populated SQL Server database
 | History on an article or brief | 50 rows a page | `HistoryService.PageSize` |
 | Article list page | 50 (page), at most 1,000 a read | `Articles.razor` `PageSize`; `ArticleService.MaxPage` |
 | Articles `ListAsync` default | 200 | `ArticleService.ListAsync` |
-| Triage inbox | 200 rows | `InboxFilter.Take` |
+| Triage inbox | 50 rows a page, every match counted; at most 500 a read. New, *Likely used*, *Names what we run* and the KEV filter read every matching item light and page in memory | `InboxFilter.PageSize`, `IntakeService.InboxPageAsync` |
 | Search | 50 hits a kind a page, among the newest 1,000 matches; 200 sightings of an indicator; 8 terms | `SearchService.MaxHits`, `MaxTake`, `MaxSightings`; `SearchText.MaxTerms` |
 | Command palette | 5 hits a kind, after 250 ms | `PaletteEntries.HitsPerKind`, `CommandPalette.Debounce` |
 | Brief archive | 60 briefs | `BriefService.ListAsync` |
 | Brief candidates (Add articles) | Articles from the last 14 days | `BriefService.CandidateDays` |
 | Published archive | 120 a page | `Published.razor` `PageSize` |
-| Actions board | Open, and closed in the last 14 days | `ActionService.BoardClosedDays` |
+| Actions list | 50 a page, sorted, grouped and paged in the database | `ActionService.ListPageSize`, `PageAsync` |
+| Actions board | Every open card, 20 shown a column until *Show N more*; closed in the last 7 days, or 30 with *Show older* | `ActionService.BoardClosedDays`, `BoardOlderDays`; `ActionKanban.razor` |
+| Saved queries, outreach templates | 20 cards a page, paged in memory | `SavedQueriesPage.razor`, `OutreachTemplatesPage.razor` `PageSize` |
 | Closed actions view, API `view=closed` | Closed in the last 90 days | `ActionService` |
 | Today's outstanding actions, a team's queue | 8 each | `ActionService.OutstandingSize`, `TeamQueueSize` |
 | Related articles | 5 | `RelatedService.MaxArticles` |

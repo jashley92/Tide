@@ -118,15 +118,13 @@ sidebar requires. The services check permissions again, so a page that forgets c
 | `/` | `Home` | `ReadPublished` | Today: renders `BriefPage` for the current brief day with `AsToday`. Someone without `ReadTeamEdition` is sent to `/published`. |
 | `/briefs/{Day}` | `BriefPage` | `ReadTeamEdition` | A day's brief: step strip, running order, numbers, edition check, meeting record, send log. Today's address redirects to `/`. `?tab=preview` shows both editions; `?tab=team` and `?tab=company` pick one; `?tab=distribute` opens the Send dialog. |
 | `/briefs` | `BriefsArchive` | `ReadTeamEdition` | Brief archive: every day's brief and its status. `?q=` filters, `?page=` pages. |
-| `/triage` | `Triage` | `WriteArticles` | The triage inbox, keyboard-driven. Keeps its place in the address (`?tab=`, `?at=`). Sidebar also needs `ReadTeamEdition`. |
+| `/triage` | `Triage` | `WriteArticles` | The triage inbox, keyboard-driven, 50 items a page. Keeps its place in the address: `tab`, `source`, `q`, `since`, `cve` (`any` or `kev`), `named`, `older`, `page`, `at`. Sidebar also needs `ReadTeamEdition`. |
 | `/articles` | `Articles` | `ReadTeamEdition` | The article list and New article. Filters in the address: `q`, `status`, `from`, `to`, `assess`, `tag`, `category`, `tactic`, `technique`, `withsubs`, `page`; `new` opens the form. |
 | `/articles/{Id:guid}` | `ArticleEdit` | `ReadTeamEdition` | The article editor (`ArticleEditorPanel`) and its reader preview (`ReaderPreview`). Read-only for someone without `WriteArticles`. `?edition=company` opens the preview on the company-wide edition. |
 | `/articles/{Id:guid}/review` | `ReviewPage` | `WriteArticles` | Reviewing an article: the editions, comments on parts, the checklist, Approve or Ask for changes. |
-| `/actions` | `ActionsBoard` | `ReadActions` | The Actions board or list. `?layout=board|list` (the person's saved choice otherwise), `?view=`, `?team=`. |
+| `/actions` | `ActionsBoard` | `ReadActions` | The Actions board or list (the list 50 a page). `?layout=board|list` (the person's saved choice otherwise). Filters in the address: `view`, `q`, `team`, `kind`, `priority`, `due` (`overdue`, `week`, `none`), `status`, `assignee`, `rule`, `group`, `page`. |
 | `/actions/new` | `ActionPage` | `ReadActions` | Raising a new action. Without `WriteArticles` the page says "Only analysts create actions." `?article=` and `?parent=` pre-fill it. |
 | `/actions/{Number:int}` | `ActionPage` | `ReadActions` | One action: status, facts, hunt queries, outreach, files, comments, history. |
-| `/hunts/saved` | `SavedQueriesPage` | `ReadActions` | The team's saved hunt queries. |
-| `/outreach/templates` | `OutreachTemplatesPage` | `ReadActions` | The team's outreach email templates. |
 | `/search` | `Search` | `ReadTeamEdition` | Search and indicator or CVE lookup. `?q=`. |
 | `/present/{Day}` | `Present` | `JoinMeetings` | Present mode (`BlankLayout`). Starting, running and ending a meeting need `PresentBriefs`; a Visitor sees it only from a seat in the live meeting. |
 
@@ -143,6 +141,8 @@ sidebar requires. The services check permissions again, so a page that forgets c
 | `/metrics` | `MetricsHistory` | `ReadTeamEdition` | Metric history: chart and table. Sidebar also needs `WriteArticles` (listed for those who make the brief). |
 | `/rotation` | `RotationPage` | `ReadTeamEdition` | The brief rotation calendar, swaps and cover. Sidebar also needs `WriteArticles`. |
 | `/workload` | `Workload` | `ReadActions` | Each team's open, late and held actions. |
+| `/hunts/saved` | `SavedQueriesPage` | `ReadActions` | The team's saved hunt queries, 20 a page (`?page=`). |
+| `/outreach/templates` | `OutreachTemplatesPage` | `ReadActions` | The team's outreach email templates, 20 a page (`?page=`). |
 | `/notifications` | `MyNotifications` | `ReadActions` | The person's own email choices (from the account menu). |
 | `/published`, `/published/{Day}` | `Published` | `ReadPublished` | The Reader archive of sent company-wide editions. `?q=`. |
 | `/briefs/{Day}/sharepoint` | `SharePointPage` | `ReadTeamEdition` | The company-wide edition as clean HTML to copy, and its images as a zip. |
@@ -200,7 +200,7 @@ In `src/Tide.Web/Components/Shared`. Use these rather than drawing a new version
 | `EmptyState` | Nothing to show: an icon, what's not here, why or what to do next, and the way forward. Says which kind of empty it is ("nothing matches these filters" against "nothing yet"). `Compact` for a panel inside a card. |
 | `LoadingBlock` | The one loading state: a `role="status"` line for screen readers and placeholder rows that shimmer unless reduced motion is asked for. |
 | `DataTable` | The one list table: a filter that narrows as you type, a count ("Showing 8 of 12 articles"), sortable headings (real buttons with `aria-sort`), optional group headings, an empty state that names the filter, and numbered pages (`Pager`) rather than a silent cut-off. `PageInAddress` keeps `?page=`; `ServerSide` reads one page at a time. Logic in `TableView`. |
-| `Pager` | Previous, numbered pages (with … gaps) and Next, `aria-current` on the current page. `pager.js` brings the list's top back into view. |
+| `Pager` | Previous, numbered pages (with … gaps) and Next, `aria-current` on the current page. Given `Href`, the pages are links to their own addresses (`?page=`), so a reload, Back, a copied link or a middle-click keeps the page; without it they're buttons that call `OnPage`. Used by `DataTable` (with `Href` when `PageInAddress`), Triage, Saved queries and Outreach templates. `pager.js` brings the list's top back into view. |
 | `SearchCombobox` | The search picker for adversaries, We run, stories and scorecard tags: an ARIA combobox over a listbox with `aria-activedescendant`. Focus stays in the box; arrows, Home, End, Enter and Esc work; an optional last option makes a new entry from the words typed. `combo.js` keeps the highlighted option in view. |
 | `PresenceNote` | Who else has this brief, article, action or triage item open: initials in each person's own hue, "viewing", or "editing" with a pencil (so it isn't told by colour alone). With `Join` off it only watches, for a list row. |
 | `ChangedElsewhere` | Someone else saved what this page is editing. The unsaved changes stay on screen; Reload shows the other version. Announced through a status region. |
@@ -331,7 +331,7 @@ that the letter-shortcut switch turns off.
 |---|---|
 | Everywhere | `Ctrl K` or `⌘ K`: Go to a page, article or action. `?` (letter): this list. `Esc`: close a dialog or menu. |
 | The Go to box | `↓` `↑`: next and previous result. `Enter`: open it. `Esc`: close, back where you were. |
-| Triage | `↓` `↑`, or `J` `K`: next and previous item. `S` shortlist, `X` dismiss, `D` mark a duplicate of the similar article, `P` promote, `O` open the source in a new tab, `V` read it here, `R` put back in New (all letters). `Esc`: close the promote form or reading pane. On a group, `Enter` or `→` opens it and `←` closes it. |
+| Triage | `↓` `↑`, or `J` `K`: next and previous item; `J` on a page's last row goes on to the next page, and `K` on its first back to the previous page's last row. `S` shortlist, `X` dismiss, `D` mark a duplicate of the similar article, `P` promote, `O` open the source in a new tab, `V` read it here, `R` put back in New (all letters). `Esc`: close the promote form or reading pane. On a group, `Enter` or `→` opens it and `←` closes it. |
 | Present mode | `→` or `Enter`: next slide. `←` or `Backspace`: previous. `Space` / `Page Down` and `Shift Space` / `Page Up`: scroll a long slide, then change slide at its end. `Home` `End`: first and last slide. `D` (letter): mark discussed. `F` (letter): full screen. `Esc`: leave full screen, then close a zoomed screenshot. |
 | An article | `1` and `2` (letters): preview the Team or Company-wide edition. `J` and `K` (letters): next and previous article on today's brief. `Enter` in the new-indicator box adds it. `Esc` closes the ATT&CK picker. |
 | Actions board | `Tab` to a card's Move button, `Enter` to open its columns, `Enter` on one to move it. `Esc` closes the menu. |

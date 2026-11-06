@@ -101,6 +101,7 @@ Detail in [actions-and-hunting.md](../workflows/actions-and-hunting.md).
 | A7 | **TIDE never sends an outreach email**; marking one sent is refused while a `[[…]]` marker is left. | It's written for the analyst to send from their own mail. ADR 0019 | `OutreachService.MarkSentAsync` | `Tide.IntegrationTests/OutreachTests.cs` `MarkingItSent_IsRefused_WithoutAValidAddress_OrWithAMarkerLeft` |
 | A8 | **A reminder email goes once**: each is marked (`NotificationMark`) as it goes. | A scan stopped partway must not email twice. | `ReminderService` | `Tide.UnitTests/ActionTests.cs` `DueSoon_AScanStoppedPartway_KeepsTheMarksOfWhatWent_AndDoesntEmailThoseAgain` |
 | A9 | **The API changes an action's status and note only**, never deletes or reassigns. | A playbook's token must not do what a person would be asked about. ADR [0016](../decisions/0016-api-tokens-scopes-and-signed-webhooks.md) | `ApiService.UpdateActionAsync` | `Tide.IntegrationTests/ApiTests.cs` `AToken_ReadsAndChangesActions_AsItsScopesAllow` |
+| A10 | **The starter saved queries, outreach templates and playbooks are each added once, and only to an empty library**, saved by "TIDE"; the `Data:StarterSavedQueries`, `Data:StarterOutreachTemplates` and `Data:StarterPlaybooks` settings mark each set as offered, and a library that already has entries is only marked. | Starters the team deletes or retires must not come back, and a team's own library isn't padded. | `DatabaseInitializer.SeedStarterLibrariesAsync` | `Tide.IntegrationTests/StarterLibrariesSeedTests.cs` `ANewInstall_GetsEachStarterSet_SavedByTide_AndAnotherStartAddsNothing`, `ALibraryTheTeamEmptied_StaysEmpty`, `ALibraryTheTeamAlreadyKeeps_GetsNoStarters_ButIsMarkedDone` |
 
 ## Intake
 
@@ -115,6 +116,7 @@ Detail in [intake-and-triage.md](../workflows/intake-and-triage.md).
 | I5 | **Every outbound fetch goes through `IOutboundHttp` and `AddressPolicy`.** | A feed or its redirect mustn't reach the server's own network. | `OutboundHttp`, `AddressPolicy` | `Tide.IntegrationTests/OutboundHttpTests.cs` `Get_ARedirectToARefusedAddress_IsNotFollowed` |
 | I6 | **An item proposed through the API lands in New**; an analyst still decides it. | Automation proposes, people decide. | `ApiService.ProposeAsync` | `ApiTests.cs` `AProposedItem_LandsInNew_UnderASourceNamedForTheCaller` |
 | I7 | **A promoted item starts at its source's TLP.** | The publisher's marking travels with its content. | `IntakeService.PromoteManyAsync` (`Source.DefaultTlp`) | `IntakeTests.cs` `Promote_MakesADraftArticle_WithTheSourcesTlpAndTheItemsCves_Once` |
+| I8 | **The inbox is paged, never cut**: 50 items a page with the count of every match, whatever the filters. | An item past a silent cap would never be triaged. | `IntakeService.InboxPageAsync` (`InboxFilter.PageSize`) | `Tide.IntegrationTests/PagingAndFiltersTests.cs` `TheInbox_PagesInTheDatabase_SayingHowManyInAll_NeverCutSilently`, `NewAndOlder_PageToo_TheirCountsStayTotals` |
 
 ## Rotation
 

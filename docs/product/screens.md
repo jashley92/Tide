@@ -14,7 +14,6 @@ Every route, its component and the permission it needs are in the [route table](
 - [The frame around every page](#the-frame-around-every-page)
 - Daily: [Today](#today) · [Triage](#triage) · [Articles](#articles) · [The article editor](#the-article-editor) ·
   [Review before send](#review-before-send) · [Actions and hunting](#actions-and-hunting) ·
-  [Saved queries](#saved-queries) · [Outreach templates](#outreach-templates) ·
   [Search and indicator lookup](#search-and-indicator-lookup)
 - The meeting and distribution: [Present mode](#present-mode) · [The two editions](#the-two-editions) ·
   [Corrections after a send](#corrections-after-a-send) · [Copy for SharePoint](#copy-for-sharepoint) ·
@@ -23,7 +22,8 @@ Every route, its component and the permission it needs are in the [route table](
   [Adversary profiles](#adversary-profiles) · [Detection coverage](#detection-coverage) ·
   [Indicator exports](#indicator-exports) · [Threat trends and the board scorecard](#threat-trends-and-the-board-scorecard) ·
   [Reports](#reports) · [Opening metrics](#opening-metrics)
-- Team: [Brief rotation](#brief-rotation) · [Workload](#workload) · [My notifications](#my-notifications)
+- Team: [Brief rotation](#brief-rotation) · [Workload](#workload) · [Saved queries](#saved-queries) ·
+  [Outreach templates](#outreach-templates) · [My notifications](#my-notifications)
 - [The API, for the SOC's other tools](#the-api-for-the-socs-other-tools)
 - [Administration](#administration)
 - [When something's wrong](#when-somethings-wrong)
@@ -77,6 +77,12 @@ Reader or Visitor who opens `/` goes to Published briefs instead.
 A keyboard-driven inbox of new items from the sources: RSS and Atom feeds and the CISA KEV catalog. Each source has a
 default TLP, an Admiralty reliability grade, a polling interval and a handling note. From the inbox, an item can be
 shortlisted, dismissed with a reason, marked a duplicate or promoted to a draft article.
+
+Each tab shows 50 items a page, with numbered pages and a count ("1–50 of 213"); the page is in the address, so a
+reload or a copied link opens the same one. Nothing is cut off: every matching item is on some page. Besides the
+source, words and *Since the last brief*, two filters pick out what to act on first: **CVEs** (items naming any CVE,
+or only a KEV-listed one) and **Names what we run** (items naming a product on Our stack). They combine, and they're
+kept in the address too.
 
 A feed can be filtered by its own tags and by title words. Sponsored items are skipped too, on by default: a list of
 marker phrases ("Sponsored by", "Partner content", "Advertorial") is looked for as whole words in each item's author,
@@ -281,6 +287,11 @@ that fits its kind.
 - **Board or list.** The Actions page opens as a board until someone picks the list, and then remembers their
   choice on any computer. A link that names a layout opens that one. On the board, a card is dragged to another
   column, or moved from its Move menu by keyboard.
+- **Filters.** One bar serves the list and the board: search (title, A-number or the article's title), team, kind,
+  priority, due date (overdue, due this week, no due date) and status. They combine and stay in the address.
+- **Long lists.** The list shows 50 actions a page, with numbered pages and the page in the address; group headings
+  count every action in the group, not only this page's. Each board column shows its first 20 cards, then *Show N
+  more*. The closed columns show the last 7 days; *Show older*, under Done, takes them back 30 days.
 - **Raising.** Raise one from an article, from the board, or in the meeting without leaving the slide.
 - **Splitting.** A long remediation splits into parts, one per team.
 - **Around it.** An action can have an external ticket link, comments (from any team) and a readable history.
@@ -331,26 +342,6 @@ that fits its kind.
 - **Reminders.** Reminder emails for due soon and overdue, a weekly team digest, and an outreach follow-up. Each is
   off until enabled.
 - **Personal choices.** Each person turns off the emails they don't want on [My notifications](#my-notifications).
-
-## Saved queries
-
-**Route:** `/hunts/saved` · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md)
-
-The team's library of hunt queries: a tuned sweep or a behavioural hunt kept for a colleague to add to their own
-action. The page lists them by language, with how many actions used each. Whoever works actions saves, edits, retires
-and restores them; whoever saved one, or an administrator, deletes it. Everyone else who reads actions reads them. A
-colleague's change re-reads the list in place; an edit under way keeps what's typed, and its save is refused if the
-query changed since it began.
-
-## Outreach templates
-
-**Route:** `/outreach/templates` · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md)
-
-The team's outreach emails, kept beside Saved queries and in the same way: a name, a subject and a body with
-placeholders, an optional fixed To address, and a TLP ceiling. `{{article.title}}`, `{{article.cves}}` (with KEV and
-EPSS), `{{indicators}}` (defanged; `{{indicators:domain}}` and the like take one kind), `{{product.versions}}`,
-`{{action.link}}`, `{{sender.name}}` and the rest are filled from the action. Whoever works actions keeps them. Each
-shows how many emails were written from it.
 
 ## Search and indicator lookup
 
@@ -636,6 +627,35 @@ open actions on the Actions list. The numbers update live as actions change.
 
 ![Workload](../screenshots/workload.png)
 
+## Saved queries
+
+**Route:** `/hunts/saved` (under Team in the sidebar) · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md)
+
+The team's library of hunt queries: a tuned sweep or a behavioural hunt kept for a colleague to add to their own
+action. The page lists them by language, with how many actions used each, 20 to a page with the page in the address.
+A language that runs on to the next page is headed there too ("continued"). Whoever works actions saves, edits,
+retires and restores them; whoever saved one, or an administrator, deletes it. Everyone else who reads actions reads
+them. A colleague's change re-reads the list in place; an edit under way keeps what's typed, and its save is refused
+if the query changed since it began.
+
+A new install, or an upgrade whose library is still empty, starts with 13 starter sweeps saved by "TIDE": IP,
+domain, file hash, URL and every-indicator sweeps in KQL and XQL, and IP, domain and file hash sweeps for Falcon.
+They're added once. The team edits, retires or deletes them like any other, and deleted ones don't come back.
+
+## Outreach templates
+
+**Route:** `/outreach/templates` (under Team in the sidebar) · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md)
+
+The team's outreach emails, kept beside Saved queries and in the same way, 20 to a page: a name, a subject and a body
+with placeholders, an optional fixed To address, and a TLP ceiling. `{{article.title}}`, `{{article.cves}}` (with KEV
+and EPSS), `{{indicators}}` (defanged; `{{indicators:domain}}` and the like take one kind), `{{product.versions}}`,
+`{{action.link}}`, `{{sender.name}}` and the rest are filled from the action. Whoever works actions keeps them. Each
+shows how many emails were written from it.
+
+A new install, or an upgrade whose library is still empty, starts with 5 starter templates saved by "TIDE", added
+once: *Vendor: are we affected?*, *Internal: action required*, *ISAC / partner: share and ask*, *Follow-up / chase*
+and *Internal inquiry: are we impacted?*.
+
 ## My notifications
 
 **Route:** `/notifications` (from the account menu) · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md)
@@ -695,7 +715,7 @@ Every page, by tab (from `AdminLayout.Groups`):
 | Organization | Organization settings | `/admin/organization` | The team's name, its time zone, when the brief meets, and its holidays. |
 | Organization | Teams & SLA | `/admin/teams` | The teams that own actions, their members, SLA targets, and when reminder emails go. |
 | Organization | Brief rotation | `/admin/rotation` | Who presents the brief, the weekly rota, and who's told about swaps and cover. |
-| Actions | Playbooks | `/admin/playbooks` | Checklists for each kind of action, offered when one is created or worked. |
+| Actions | Playbooks | `/admin/playbooks` | Checklists for each kind of action, offered when one is created or worked. Starts with one for each kind but Other. |
 | Actions | Card rules | `/admin/card-rules` | Which actions are coloured and labelled on the board and list, and the filter chips. |
 | Intelligence | Sources | `/admin/sources` | The feeds and catalogs triage takes items from, and CVE enrichment. |
 | Intelligence | Source health | `/admin/source-health` | How much each source sends and how much of it the team uses, with feeds worth pausing. |
