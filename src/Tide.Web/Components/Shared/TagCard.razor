@@ -247,6 +247,7 @@ else
     internal async Task Find()
     {
         var mine = _pause.Now();
+        var text = Text;
         TagPicks found;
         try { found = await Source.FindForArticleAsync(ArticleId, _text); }
         catch (Exception ex)
@@ -255,14 +256,30 @@ else
             return;
         }
         if (!_pause.IsLatest(mine)) return;
-        _found = found;
+        (_found, _foundFor) = (found, text);
         StateHasChanged();
+    }
+
+    // What _found was found for: until the search for what's typed now has run (it waits out the typing pause), the list
+    // and the "Add" option still answer the words typed before.
+    private string _foundFor = "";
+
+    private bool Stale => Text.Length > 0 && Text != _foundFor;
+
+    // Enter (or a click) before the search for what's typed has run: it runs now, and the pick stands only if it's still
+    // listed (so Enter right after typing never tags what the earlier words found, nor adds a name a profile goes by).
+    private async Task<bool> Current(Func<bool> stillGood)
+    {
+        if (!Stale) return true;
+        await Find();
+        return !Stale && stillGood();
     }
 
     // One picked from the list: a retired one only once the analyst says so. The box clears for the next.
     internal async Task Pick(TagPick p)
     {
         if (_busy) return;
+        if (!await Current(() => _found.Found.Any(f => f.Id == p.Id))) return;
         if (p.IsRetired && _confirm is not null
             && !await _confirm.Ask($"{p.Name} is retired", Words.RetiredAsk, "Tag it anyway", danger: false))
             return;
@@ -276,6 +293,7 @@ else
     internal async Task AddNew()
     {
         if (_busy || Text.Length == 0) return;
+        if (!await Current(() => CanAdd)) return;
         var name = Text;
         Guid id;
         try { id = await Source.AddByNameAsync(name); }
@@ -299,7 +317,7 @@ else
 
     private void Cleared()
     {
-        (_text, _found, _added) = (null, TagPicks.None, null);
+        (_text, _found, _foundFor, _added) = (null, TagPicks.None, "", null);
         _pause.Now();
     }
 }
