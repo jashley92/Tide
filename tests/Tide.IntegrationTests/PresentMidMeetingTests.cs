@@ -13,6 +13,7 @@ using Tide.Web.Components.Pages;
 using Tide.Web.Components.Shared;
 using Tide.Web.Services;
 using static Tide.IntegrationTests.ComponentHarness;
+using static Tide.IntegrationTests.PresentHarness;
 
 namespace Tide.IntegrationTests;
 
@@ -63,9 +64,6 @@ public class PresentMidMeetingTests(MeetingClockApp app) : IClassFixture<Meeting
         return new Setup(day, brief.Id, first, product, name);
     }
 
-    private Task<Rendered<Present>> Open(DateOnly day, SignIn? who = null) =>
-        RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" }, who);
-
     private static async Task FirstArticle(Rendered<Present> r)
     {
         await r.Click(p => p.OnPresentKey("last"));
@@ -73,33 +71,15 @@ public class PresentMidMeetingTests(MeetingClockApp app) : IClassFixture<Meeting
         await r.Click(p => p.OnPresentKey("prev"));
     }
 
-    private static Task Do(Rendered<Present> r, Func<Present, Task> what) =>
-        r.Click(async p =>
-        {
-            await what(p);
-            await p.OnPresentKey("render");
-        });
-
-    private static Task Do(Rendered<Present> r, Action<Present> what) => Do(r, p =>
-    {
-        what(p);
-        return Task.CompletedTask;
-    });
-
     private static Change Heard(string topic) => new(topic, Robin.UserId, Robin.Name, Guid.NewGuid());
-
-    private void EndMeeting(DateOnly day)
-    {
-        if (Meetings.Get(day) is { } live) Meetings.End(Meetings.Join(day, live.PresenterId, "Someone", true, "", Guid.NewGuid(), 0)!);
-    }
 
     [Fact]
     public async Task HandingOff_WithACardOpenUnderALock_ClosesItOnTheOldPresentersPage()
     {
         var s = await Brief(81);
-        await using var pat = await Open(s.Day);
+        await using var pat = await Open(app, s.Day);
         await Do(pat, p => p.StartMeeting());
-        await using var robin = await Open(s.Day, Robin);
+        await using var robin = await Open(app, s.Day, Robin);
         await Do(robin, p => p.JoinIfLive());
         await FirstArticle(pat);
         await Do(pat, p => p.ToggleLock());
@@ -114,16 +94,16 @@ public class PresentMidMeetingTests(MeetingClockApp app) : IClassFixture<Meeting
         PresentFollowPillTests.Heard(await pat.Html()).Should().Be("Following Robin Analyst · locked by the presenter");
         await Do(robin, p => p.Follow());
         (await robin.Html()).Should().NotContain("present-product-title");
-        EndMeeting(s.Day);
+        EndMeeting(app, s.Day);
     }
 
     [Fact]
     public async Task TakingOver_ClosesTheCardTheTakerHadOpen_SoTheyDontThinkTheRoomSeesIt()
     {
         var s = await Brief(82);
-        var pat = await Open(s.Day);
+        var pat = await Open(app, s.Day);
         await Do(pat, p => p.StartMeeting());
-        await using var robin = await Open(s.Day, Robin);
+        await using var robin = await Open(app, s.Day, Robin);
         await Do(robin, p => p.JoinIfLive());
         await FirstArticle(pat);
         await Do(pat, p => p.ShowProduct(s.Product));
@@ -136,20 +116,20 @@ public class PresentMidMeetingTests(MeetingClockApp app) : IClassFixture<Meeting
         await Do(robin, p => p.TakeOver());
         Meetings.Get(s.Day)!.Should().Match<LiveMeetingView>(v => v.PresenterId == Robin.UserId && v.Product == null);
         (await robin.Html()).Should().NotContain("present-product-title").And.NotContain("Shown to everyone following");
-        EndMeeting(s.Day);
+        EndMeeting(app, s.Day);
     }
 
     [Fact]
     public async Task ThePresentersReload_ShowsTheCardTheRoomSees_AndOneGoneSinceIsClosedForTheRoom()
     {
         var s = await Brief(83);
-        var pat = await Open(s.Day);
+        var pat = await Open(app, s.Day);
         await Do(pat, p => p.StartMeeting());
         await FirstArticle(pat);
         await Do(pat, p => p.ShowProduct(s.Product));
         await pat.DisposeAsync();   // reloaded: the old page goes, the new one comes
 
-        await using var again = await Open(s.Day);
+        await using var again = await Open(app, s.Day);
         await Do(again, p => p.JoinIfLive());
         Meetings.Get(s.Day)!.Should().Match<LiveMeetingView>(v => v.PresenterId == "dev:tester" && v.Product == s.Product);
         (await again.Html()).Should().Contain("present-product-title").And.Contain("Shown to everyone following");
@@ -163,16 +143,16 @@ public class PresentMidMeetingTests(MeetingClockApp app) : IClassFixture<Meeting
             await Do(again, p => p.Follow());
             Meetings.Get(s.Day)!.Product.Should().BeNull();
         }
-        EndMeeting(s.Day);
+        EndMeeting(app, s.Day);
     }
 
     [Fact]
     public async Task AFollowerWhosePageCouldntNameThePresentersSlide_GoesToItOnceItReadsTheBrief()
     {
         var s = await Brief(84);
-        await using var pat = await Open(s.Day);
+        await using var pat = await Open(app, s.Day);
         await Do(pat, p => p.StartMeeting());
-        await using var owner = await Open(s.Day, Owner);
+        await using var owner = await Open(app, s.Day, Owner);
         await Do(owner, p => p.JoinIfLive());
 
         // A colleague adds a third article; the presenter's page reads it first, and they go to it at once.
@@ -200,14 +180,14 @@ public class PresentMidMeetingTests(MeetingClockApp app) : IClassFixture<Meeting
         await Do(owner, p => p.OnChangedElsewhere([Heard(ChangeFeed.Brief(s.Brief))]));
         (await owner.Html()).Should().Contain("<h2>Mid-meeting second 84</h2>").And.Contain($"aria-label=\"Slide {off + 2} of");
         Meetings.Get(s.Day)!.People.Single(p => p.UserId == Owner.UserId).Slide.Should().Be(off + 1, "the same article, a slide later");
-        EndMeeting(s.Day);
+        EndMeeting(app, s.Day);
     }
 
     [Fact]
     public async Task EndingTheMeeting_AsTheBriefIsPutBackToReady_EndsNothingUntilTheWrapUpIsSeenAgain()
     {
         var s = await Brief(85);
-        await using var pat = await Open(s.Day);
+        await using var pat = await Open(app, s.Day);
         await Do(pat, p => p.StartMeeting());
         await using (var scope = SignedIn(app, SignIn.Analyst))
             await scope.ServiceProvider.GetRequiredService<BriefService>().MarkPresentedAsync(s.Brief);
@@ -238,7 +218,7 @@ public class PresentMidMeetingTests(MeetingClockApp app) : IClassFixture<Meeting
     public async Task AProductEditedOrRetiredOnOurStack_ShowsOnItsOpenCardAndChip_Quietly()
     {
         var s = await Brief(86);
-        await using var pat = await Open(s.Day);
+        await using var pat = await Open(app, s.Day);
         await Do(pat, p => p.StartMeeting());
         await FirstArticle(pat);
         await Do(pat, p => p.ShowProduct(s.Product));
@@ -255,6 +235,6 @@ public class PresentMidMeetingTests(MeetingClockApp app) : IClassFixture<Meeting
         html.Should().Contain("Replaced in the north office.").And.NotContain("Two in the branch offices.")
             .And.Contain(">Retired<").And.Contain($"We run {s.Name} 4.3 (retired)");
         pat.Scope.ServiceProvider.GetRequiredService<ToastService>().Toasts.Should().NotContain(t => t.Message.StartsWith("Robin"), "quietly");
-        EndMeeting(s.Day);
+        EndMeeting(app, s.Day);
     }
 }

@@ -8,6 +8,7 @@ using Tide.Domain.Enums;
 using Tide.Web.Components.Pages;
 using Tide.Web.Services;
 using static Tide.IntegrationTests.ComponentHarness;
+using static Tide.IntegrationTests.PresentHarness;
 
 namespace Tide.IntegrationTests;
 
@@ -71,16 +72,6 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
         await scope.ServiceProvider.GetRequiredService<BriefService>().SetTeamNoteAsync(brief, note);
     }
 
-    private Task<Rendered<Present>> Open(DateOnly day, SignIn? who = null) =>
-        RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" }, who);
-
-    private static Task Do(Rendered<Present> r, Func<Present, Task> what) =>
-        r.Click(async p =>
-        {
-            await what(p);
-            await p.OnPresentKey("render");
-        });
-
     private static Task Edition(Rendered<Present> r, Edition edition) => r.Click(p =>
     {
         p.SetEdition(new Microsoft.AspNetCore.Components.ChangeEventArgs { Value = edition.ToString() });
@@ -96,7 +87,7 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
     public async Task TheNote_IsTheSlideAfterTheTitle_BeforeTheNumbers_InLargeType_WithItsBulletsNested()
     {
         var (day, _) = await Brief(60, Note);
-        await using var r = await Open(day);
+        await using var r = await Open(app, day);
         var titles = Titles(await r.Html());
         titles.Take(3).Should().Equal("Title", "Opening note", "Numbers: Note test numbers");
         titles.Should().ContainSingle(t => t == "Opening note");
@@ -116,7 +107,7 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
     public async Task ABlankNote_HasNoSlide()
     {
         var (day, _) = await Brief(62, "  ");
-        await using var r = await Open(day);
+        await using var r = await Open(app, day);
         var html = await r.Html();
         Titles(html).Should().NotContain("Opening note").And.HaveElementAt(1, "Numbers: Note test numbers");
         html.Should().NotContain("tide-slide-note");
@@ -126,7 +117,7 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
     public async Task TheCompanyWideEdition_HasNoNoteSlide_AndSwitchingEditionsKeepsTheSlideShown()
     {
         var (day, _) = await Brief(64, Note);
-        await using var r = await Open(day);
+        await using var r = await Open(app, day);
         await r.Click(p => p.OnPresentKey("next"));   // the note's slide
 
         await Edition(r, Domain.Enums.Edition.Public);
@@ -149,7 +140,7 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
     public async Task SwitchingToTheCompanyWideEdition_OnTheNumbers_ShowsTheSlideInTheirPlace_NotTheOneWithTheirNumber()
     {
         var (day, _) = await Brief(65, Note);
-        await using var r = await Open(day);
+        await using var r = await Open(app, day);
         await r.Click(p => p.OnPresentKey("next"));
         await r.Click(p => p.OnPresentKey("next"));
         (await r.Html()).Should().Contain("<h2>Note test numbers</h2>");
@@ -162,14 +153,14 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
     public async Task AFollower_LandsOnTheNote_ByItsKey()
     {
         var (day, _) = await Brief(66, Note);
-        await using var pat = await Open(day);
+        await using var pat = await Open(app, day);
         await Do(pat, p => p.StartMeeting());
         try
         {
             await pat.Click(p => p.OnPresentKey("next"));
             Meetings.Get(day)!.Should().Match<LiveMeetingView>(v => v.Slide == 1 && v.SlideKey == Present.NoteKey);
 
-            await using var owner = await Open(day, Owner);
+            await using var owner = await Open(app, day, Owner);
             await Do(owner, p => p.JoinIfLive());
             (await owner.Html()).Should().Contain("<h2>Before we start</h2>").And.Contain("Invoice lures are up").And.Contain("Following Tester");
 
@@ -185,7 +176,7 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
     public async Task AColleaguesEdit_ShowsOnTheSlide_AndClearingTheNoteTakesTheSlideAway()
     {
         var (day, brief) = await Brief(68, Note);
-        await using var r = await Open(day);
+        await using var r = await Open(app, day);
         await r.Click(p => p.OnPresentKey("next"));
 
         await SaveAs(Robin, brief, "- Payroll lure wave\n  - Report it with the button");

@@ -1062,18 +1062,6 @@ else
         StateHasChanged();
     }
 
-    /// <summary>
-    /// Space or Page Down (forward), Shift+Space or Page Up (back), from present.js, which says whether the slide's body is
-    /// at its end that way: if not, it scrolls the body itself ("scroll"); if so, the slide changes.
-    /// </summary>
-    [JSInvokable]
-    public async Task<string> OnPageKey(bool forward, bool atEdge)
-    {
-        var step = SlidePaging.For(atEdge);
-        if (step == PageStep.Move) await OnPresentKey(forward ? "next" : "prev");
-        return SlidePaging.Reply(step);
-    }
-
     [JSInvokable]
     public void OnFullscreenChanged(bool on)
     {
@@ -1770,9 +1758,30 @@ else
         });
     }
 
+    // A presenter's scroll heard while this page's last tidePresent.follow is still on its way: only the latest is kept,
+    // and sent when that one returns, so the calls don't pile up on a slow connection.
+    private MeetingScroll? _scrollOwed;
+    private bool _scrollSending;
+
     /// <summary>The presenter scrolled: this page goes with them if it's following on the same slide and not paused (or
-    /// is the presenter's other tab).</summary>
+    /// is the presenter's other tab). At most one call to the browser at a time; one heard meanwhile waits for it.</summary>
     internal async Task HeardScroll(MeetingScroll scroll)
+    {
+        _scrollOwed = scroll;
+        if (_scrollSending) return;
+        _scrollSending = true;
+        try
+        {
+            while (_scrollOwed is { } next)
+            {
+                _scrollOwed = null;
+                await FollowScroll(next);
+            }
+        }
+        finally { _scrollSending = false; }
+    }
+
+    private async Task FollowScroll(MeetingScroll scroll)
     {
         if (_seat is null || _disposed || _brief is null) return;
         var key = SlideKey(_slide);
@@ -1809,6 +1818,7 @@ else
         var key = _brief is null ? null : SlideKey(_slide);
         if (key == _scrollCaughtUp) return;
         _scrollCaughtUp = key;
+        _scroll.Showing(key);   // a new slide: a pause on the last one is over
         if (CatchUpScroll() is { } f) await ScrollTo(f, instant: true);
     }
 

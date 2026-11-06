@@ -11,6 +11,7 @@ using Tide.Web.Components.Pages;
 using Tide.Web.Components.Shared;
 using Tide.Web.Services;
 using static Tide.IntegrationTests.ComponentHarness;
+using static Tide.IntegrationTests.PresentHarness;
 
 namespace Tide.IntegrationTests;
 
@@ -54,35 +55,14 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
         await r.Click(p => p.OnPresentKey("prev"));
     }
 
-    // Does what a button would and then renders, as a click does (the page doesn't hear its own meeting changes, which
-    // is what used to render it after them).
-    private static Task Do(Rendered<Present> r, Func<Present, Task> what) =>
-        r.Click(async p =>
-        {
-            await what(p);
-            await p.OnPresentKey("render");   // no key of its own: only renders
-        });
-
-    private static Task Do(Rendered<Present> r, Action<Present> what) => Do(r, p =>
-    {
-        what(p);
-        return Task.CompletedTask;
-    });
-
-    // Ends a test's meeting, as its presenter (Tester) rejoining would.
-    private void EndMeeting(DateOnly day) => Meetings.End(Meetings.Join(day, "dev:tester", "Tester", true, "", Guid.NewGuid(), 0)!);
-
-    private Task<Rendered<Present>> Open(DateOnly day, SignIn? who = null) =>
-        RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" }, who);
-
     [Fact]
     public async Task SomeoneWhoCantPresent_SeesNothingUntilTheMeetingStarts_ThenFollowsThePresenter()
     {
         var (day, brief, first) = await Brief(61);
-        await using var owner = await Open(day, Owner);
+        await using var owner = await Open(app, day, Owner);
         (await owner.Html()).Should().Contain("No meeting going on").And.NotContain("Start the meeting");
 
-        await using var pat = await Open(day);
+        await using var pat = await Open(app, day);
         (await pat.Html()).Should().Contain("Start the meeting");
         await Do(pat, p => p.StartMeeting());
         (await pat.Html()).Should().Contain("Copy link").And.NotContain("Start the meeting");
@@ -132,9 +112,9 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
     public async Task WhenThePresenterLocks_SomeoneFollowingCantMoveOff_UntilItsUnlocked()
     {
         var (day, _, _) = await Brief(65);
-        await using var pat = await Open(day);
+        await using var pat = await Open(app, day);
         await Do(pat, p => p.StartMeeting());
-        await using var owner = await Open(day, Owner);
+        await using var owner = await Open(app, day, Owner);
         await Do(owner, p => p.JoinIfLive());
 
         await Do(pat, p => p.ToggleLock());
@@ -157,7 +137,7 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
         (await owner.Html()).Should().Contain("aria-label=\"Slide 3 of", "unlocked: free to move").And.Contain("Back to Tester</button>");
         PresentFollowPillTests.Shown(await owner.Html()).Should().Be("Tester is on slide 2 · Back to Tester");
 
-        EndMeeting(day);
+        EndMeeting(app, day);
     }
 
     [Fact]
@@ -171,9 +151,9 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
             number = await scope.ServiceProvider.GetRequiredService<ActionService>().QuickAddAsync(first, "Sweep the proxy logs", ActionKind.IocSweep, team, null, day);
         }
         var label = Ui.ActionLabel(number);
-        await using var pat = await Open(day);
+        await using var pat = await Open(app, day);
         await Do(pat, p => p.StartMeeting());
-        await using var owner = await Open(day, Owner);
+        await using var owner = await Open(app, day, Owner);
         await Do(owner, p => p.JoinIfLive());
         await FirstArticle(pat);
         await Do(owner, p => p.Follow());
@@ -222,7 +202,7 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
         await Do(owner, p => p.Follow());
         (await owner.Html()).Should().NotContain("present-action-title");
 
-        EndMeeting(day);
+        EndMeeting(app, day);
     }
 
     [Fact]
@@ -235,7 +215,7 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
             var team = (await scope.ServiceProvider.GetRequiredService<TeamService>().ListAsync())[0].Id;
             number = await scope.ServiceProvider.GetRequiredService<ActionService>().QuickAddAsync(first, "Block the domain", ActionKind.Other, team, null, day);
         }
-        await using var pat = await Open(day);
+        await using var pat = await Open(app, day);
         await FirstArticle(pat);
         await Do(pat, p => p.ShowAction(number));
         (await pat.Html()).Should().Contain("present-action-title").And.Contain("Block the domain");
@@ -245,10 +225,10 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
         await Do(pat, p => p.ShowAction(number));
         await Do(pat, p => p.StartMeeting());
         Meetings.Get(day)!.Action.Should().Be(number, "what was open goes to the room");
-        EndMeeting(day);
+        EndMeeting(app, day);
 
         // The company-wide edition never shows the team's actions (ADR 0005).
-        await using var robin = await Open(day, Robin);
+        await using var robin = await Open(app, day, Robin);
         await Do(robin, p => typeof(Present).GetMethod("SetEdition", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
             .Invoke(p, [new Microsoft.AspNetCore.Components.ChangeEventArgs { Value = nameof(Edition.Public) }]));
         await Do(robin, p => p.ShowAction(number));
@@ -259,9 +239,9 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
     public async Task ANote_IsTakenOnTheArticleOnScreen_AndShowsForEveryone()
     {
         var (day, brief, first) = await Brief(62);
-        await using var pat = await Open(day);
+        await using var pat = await Open(app, day);
         await Do(pat, p => p.StartMeeting());
-        await using var owner = await Open(day, Owner);
+        await using var owner = await Open(app, day, Owner);
         await Do(owner, p => p.JoinIfLive());
         await FirstArticle(pat);
         await Do(owner, p => p.Follow());
@@ -278,16 +258,16 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
 
         await pat.Click(p => p.OnPresentKey("last"));
         (await pat.Html()).Should().Contain("Attended (2)").And.Contain("Someone in the room");
-        EndMeeting(day);
+        EndMeeting(app, day);
     }
 
     [Fact]
     public async Task ANoteSomeoneElseAdds_ShowsAsNewOnTheNotesButton_UntilTheNotesAreOpened()
     {
         var (day, brief, _) = await Brief(66);
-        await using var pat = await Open(day);
+        await using var pat = await Open(app, day);
         await Do(pat, p => p.StartMeeting());
-        await using var owner = await Open(day, Owner);
+        await using var owner = await Open(app, day, Owner);
         await Do(owner, p => p.JoinIfLive());
 
         await Do(owner, p =>
@@ -302,14 +282,14 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
 
         await Do(pat, p => p.ToggleNotes());
         (await pat.Html()).Should().NotContain("tide-notes-new").And.Contain("We&#x27;ll take it");
-        EndMeeting(day);
+        EndMeeting(app, day);
     }
 
     [Fact]
     public async Task AMeetingWhoseBriefWasMarkedPresentedElsewhere_CanStillBeEnded()
     {
         var (day, brief, _) = await Brief(67);
-        await using var pat = await Open(day);
+        await using var pat = await Open(app, day);
         await Do(pat, p => p.StartMeeting());
         await using (var scope = SignedIn(app, SignIn.Analyst))
             await scope.ServiceProvider.GetRequiredService<BriefService>().MarkPresentedAsync(brief);
@@ -325,7 +305,7 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
     public async Task AColleaguesActionSave_ShowsOnTheSlide_Quietly_AndADueDateBeingTypedStaysAsTyped()
     {
         var (day, brief, first) = await Brief(68);
-        await using var pat = await Open(day);
+        await using var pat = await Open(app, day);
         await FirstArticle(pat);
         var future = Today.AddDays(20);
         int number;
@@ -363,7 +343,7 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
     public async Task AReader_CantOpenPresentMode()
     {
         var (day, _, _) = await Brief(63);
-        var act = () => Open(day, Reader);
+        var act = () => Open(app, day, Reader);
         // The page needs the team edition; a reader's render is refused by the brief service as it loads.
         await using var r = await act();
         (await r.Html()).Should().NotContain("Start the meeting").And.NotContain("Raise hand");
@@ -373,9 +353,9 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
     public async Task AnotherAnalyst_JoinsAsSomeoneWhoCouldTakeOver_AndTheBriefPageOffersJoin()
     {
         var (day, _, _) = await Brief(64);
-        await using var pat = await Open(day);
+        await using var pat = await Open(app, day);
         await Do(pat, p => p.StartMeeting());
-        await using var robin = await Open(day, Robin);
+        await using var robin = await Open(app, day, Robin);
         await Do(robin, p => p.JoinIfLive());
 
         Meetings.Get(day)!.People.Single(p => p.Name == "Robin Analyst").CanPresent.Should().BeTrue();
@@ -385,6 +365,6 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
         var page = await app.CreateClient().GetStringAsync(Ui.BriefUrl(day));
         page.Should().Contain("Join meeting").And.Contain("Brief meeting is live");
 
-        EndMeeting(day);
+        EndMeeting(app, day);
     }
 }

@@ -13,6 +13,7 @@ using Tide.Infrastructure.Persistence;
 using Tide.Web.Components.Pages;
 using Tide.Web.Services;
 using static Tide.IntegrationTests.ComponentHarness;
+using static Tide.IntegrationTests.PresentHarness;
 
 namespace Tide.IntegrationTests;
 
@@ -71,19 +72,6 @@ public class PresentTagEditTests(TideApp app) : IClassFixture<TideApp>
         await r.Click(p => p.OnPresentKey("prev"));
     }
 
-    private static Task Do(Rendered<Present> r, Func<Present, Task> what) =>
-        r.Click(async p =>
-        {
-            await what(p);
-            await p.OnPresentKey("render");
-        });
-
-    private static Task Do(Rendered<Present> r, Action<Present> what) => Do(r, p =>
-    {
-        what(p);
-        return Task.CompletedTask;
-    });
-
     // Chooses in the open tag panel, then saves it.
     private static async Task SaveTags(Rendered<Present> r, Guid[] tags, string[] techniques)
     {
@@ -96,22 +84,17 @@ public class PresentTagEditTests(TideApp app) : IClassFixture<TideApp>
         await r.Click(p => p.TagEditor!.Save());
     }
 
-    private void EndMeeting(DateOnly day) => Meetings.End(Meetings.Join(day, "dev:tester", "Tester", true, "", Guid.NewGuid(), 0)!);
-
-    private Task<Rendered<Present>> Open(DateOnly day, SignIn? who = null) =>
-        RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" }, who);
-
     private static Change Heard(Guid article) => new(ChangeFeed.Article(article), "dev:tester", "Tester", Guid.NewGuid());
 
     [Fact]
     public async Task ThePresenter_SavesTagsFromTheSlide_AndAFollowersChipsUpdateQuietly()
     {
         var s = await Brief(111);
-        await using var pat = await Open(s.Day);
+        await using var pat = await Open(app, s.Day);
         await Do(pat, p => p.StartMeeting());
-        await using var robin = await Open(s.Day, Robin);
+        await using var robin = await Open(app, s.Day, Robin);
         await Do(robin, p => p.JoinIfLive());
-        await using var owner = await Open(s.Day, Owner);
+        await using var owner = await Open(app, s.Day, Owner);
         await Do(owner, p => p.JoinIfLive());
         await FirstArticle(pat);
         await Do(robin, p => p.Follow());
@@ -142,16 +125,16 @@ public class PresentTagEditTests(TideApp app) : IClassFixture<TideApp>
         await Do(robin, p => p.OnChangedElsewhere([Heard(s.First)]));
         (await robin.Html()).Should().Contain(">Initial Access<").And.Contain($":</span> {s.TagName}</span>");
         robin.Scope.ServiceProvider.GetRequiredService<ToastService>().Toasts.Should().NotContain(t => t.Message.StartsWith("Tester"), "a tag edit is quiet");
-        EndMeeting(s.Day);
+        EndMeeting(app, s.Day);
     }
 
     [Fact]
     public async Task AFollower_SavesTags_TheirSlideStayingPutUntilTheyClose()
     {
         var s = await Brief(112);
-        await using var pat = await Open(s.Day);
+        await using var pat = await Open(app, s.Day);
         await Do(pat, p => p.StartMeeting());
-        await using var robin = await Open(s.Day, Robin);
+        await using var robin = await Open(app, s.Day, Robin);
         await Do(robin, p => p.JoinIfLive());
         await FirstArticle(pat);
         await Do(robin, p => p.Follow());
@@ -175,7 +158,7 @@ public class PresentTagEditTests(TideApp app) : IClassFixture<TideApp>
         var saved = (await scope.ServiceProvider.GetRequiredService<ArticleService>().GetAsync(s.First))!;
         saved.Techniques.Select(t => t.TechniqueId).Should().BeEquivalentTo(["T1566.001", "T1486"]);
         saved.Tags.Select(t => t.TagId).Should().Equal(s.Tag);
-        EndMeeting(s.Day);
+        EndMeeting(app, s.Day);
     }
 
     [Theory]
@@ -272,7 +255,7 @@ public class PresentTagEditTests(TideApp app) : IClassFixture<TideApp>
     public async Task AStaleSave_IsRefused_ShowingTheTagsNowSaved_AndKeepingTheChoice()
     {
         var s = await Brief(122);
-        await using var pat = await Open(s.Day);
+        await using var pat = await Open(app, s.Day);
         await FirstArticle(pat);
         await Do(pat, p => p.EditTags(s.First));
 
@@ -301,7 +284,7 @@ public class PresentTagEditTests(TideApp app) : IClassFixture<TideApp>
     public async Task ThePanelsTags_AreTheEditorsPicker_SearchAddsAndAChipRemoves_AndSaveKeepsThem()
     {
         var s = await Brief(124);
-        await using var pat = await Open(s.Day);
+        await using var pat = await Open(app, s.Day);
         await FirstArticle(pat);
         await Do(pat, p => p.EditTags(s.First));
         var html = await pat.Html();
@@ -338,12 +321,12 @@ public class PresentTagEditTests(TideApp app) : IClassFixture<TideApp>
             var articles = analyst.ServiceProvider.GetRequiredService<ArticleService>();
             await articles.SaveTagsAsync(s.First, (await articles.GetAsync(s.First))!.EditVersion, [s.Tag], ["T1190"]);
         }
-        await using var pat = await Open(s.Day);
+        await using var pat = await Open(app, s.Day);
         await Do(pat, p => p.StartMeeting());
         await FirstArticle(pat);
-        await using var viewer = await Open(s.Day, new SignIn("dev:tagedit-val", "Val Viewer", "Viewer"));
+        await using var viewer = await Open(app, s.Day, new SignIn("dev:tagedit-val", "Val Viewer", "Viewer"));
         await Do(viewer, p => p.JoinIfLive());
-        await using var visitor = await Open(s.Day, new SignIn("dev:tagedit-vic", "Vic Visitor", "Visitor"));
+        await using var visitor = await Open(app, s.Day, new SignIn("dev:tagedit-vic", "Vic Visitor", "Visitor"));
         await Do(visitor, p => p.GoLive());
 
         foreach (var r in new[] { viewer, visitor })
@@ -359,6 +342,6 @@ public class PresentTagEditTests(TideApp app) : IClassFixture<TideApp>
             await Do(r, p => p.EditTags(s.First));
             (await r.Html()).Should().NotContain("present-tagedit-title", "they can't open the panel either");
         }
-        EndMeeting(s.Day);
+        EndMeeting(app, s.Day);
     }
 }
