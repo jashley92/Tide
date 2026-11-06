@@ -609,6 +609,44 @@ public sealed class TrailAuditTests : IDisposable
         current.Has(Permission.Administer).Should().BeFalse("the next service call is refused");
         (await provider.GetAuthenticationStateAsync()).User.FindAll(AppClaimTypes.Permission).Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task ACircuitsSignIn_IsCopiedOffItsConnection_SoAClosedTokenCantBreakItsChecks()
+    {
+        // A Windows sign-in's claims come from a logon token that IIS closes when the connection that brought it ends;
+        // a circuit outlives that connection. This identity stands in for one: reading it once closed throws as the
+        // WindowsIdentity did ("Cannot access a disposed object ... SafeAccessTokenHandle").
+        var directory = new FakeRoleDirectory();
+        var refresher = new SessionPermissionRefresher(() => directory, windowsMode: false);
+        using var provider = new PermissionRevalidatingAuthStateProvider(refresher, Microsoft.Extensions.Logging.Abstractions.NullLogger<PermissionRevalidatingAuthStateProvider>.Instance);
+        var signIn = new TokenIdentity([new Claim(ClaimTypes.Name, @"CORP\jdoe"), new Claim(ClaimTypes.NameIdentifier, "S-1-5-21-9")]);
+        var grants = new ClaimsIdentity([new Claim(ClaimTypes.Role, nameof(AppRole.Analyst)),
+            new Claim(AppClaimTypes.Permission, nameof(Permission.WriteArticles))]) { Label = RoleClaimsTransformer.GrantsLabel };
+        provider.SetAuthenticationState(Task.FromResult(new Microsoft.AspNetCore.Components.Authorization.AuthenticationState(new ClaimsPrincipal([signIn, grants]))));
+
+        var user = (await provider.GetAuthenticationStateAsync()).User;
+        user.Identities.Should().AllSatisfy(i => i.GetType().Should().Be(typeof(ClaimsIdentity)), "nothing is left to read from the token");
+        user.Identity!.IsAuthenticated.Should().BeTrue();
+        user.Identity.AuthenticationType.Should().Be("Negotiate");
+        user.Identities.Should().ContainSingle(i => i.Label == RoleClaimsTransformer.GrantsLabel && !i.IsAuthenticated, "the grants stay apart from the sign-in");
+
+        signIn.Close();
+        var current = new CurrentUser(new Microsoft.AspNetCore.Http.HttpContextAccessor(), provider);
+        current.UserId.Should().Be("S-1-5-21-9");
+        current.Has(Permission.WriteArticles).Should().BeTrue("the page's checks read the copy, not the closed token");
+        await provider.Invoking(p => p.RevalidateAsync()).Should().NotThrowAsync("the re-check reads the copy too");
+    }
+
+    // A sign-in whose claims can't be read once its token is closed, as a WindowsIdentity's can't.
+    private sealed class TokenIdentity(IEnumerable<Claim> claims) : ClaimsIdentity(claims, "Negotiate", ClaimTypes.Name, ClaimTypes.GroupSid)
+    {
+        private bool _closed;
+
+        public void Close() => _closed = true;
+
+        public override IEnumerable<Claim> Claims =>
+            _closed ? throw new ObjectDisposedException("Microsoft.Win32.SafeHandles.SafeAccessTokenHandle") : base.Claims;
+    }
 }
 
 /// <summary>A1-R1: two hosts in one process (as the test suite runs them). A refusal logged through the second host after the
