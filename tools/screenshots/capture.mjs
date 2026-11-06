@@ -9,6 +9,7 @@
 
 import { spawn, execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, createWriteStream } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
@@ -241,20 +242,38 @@ async function annotate(page, callouts) {
   return [];
 }
 
+/**
+ * The dotnet executable, by absolute path rather than a search of PATH: DOTNET_HOST_PATH (set when run from dotnet),
+ * DOTNET_ROOT, or the SDK's usual install folders.
+ */
+function dotnet() {
+  const exe = process.platform === 'win32' ? 'dotnet.exe' : 'dotnet';
+  const candidates = [
+    process.env.DOTNET_HOST_PATH,
+    process.env.DOTNET_ROOT && path.join(process.env.DOTNET_ROOT, exe),
+    process.platform === 'win32' && path.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'dotnet', exe),
+    '/usr/local/share/dotnet/dotnet', '/usr/share/dotnet/dotnet', '/usr/lib/dotnet/dotnet',
+    path.join(os.homedir(), '.dotnet', exe),
+  ].filter(Boolean);
+  const found = candidates.find(c => path.isAbsolute(c) && existsSync(c));
+  if (!found) throw new Error(`dotnet wasn't found in ${candidates.join(', ')}. Set DOTNET_ROOT to the folder that holds ${exe}.`);
+  return found;
+}
+
 // --- TIDE, seeded ------------------------------------------------------------------------------------------------------
 
 async function startTide() {
   if (!process.env.REUSE) rmSync(demoDir, { recursive: true, force: true });
   mkdirSync(demoDir, { recursive: true });
   console.log('Building TIDE...');
-  execFileSync('dotnet', ['build', path.join(web, 'Tide.Web.csproj'), '-c', 'Debug', '-v', 'q', '-nologo'], { stdio: 'inherit' });
+  execFileSync(dotnet(), ['build', path.join(web, 'Tide.Web.csproj'), '-c', 'Debug', '-v', 'q', '-nologo'], { stdio: 'inherit' });
   const binDir = path.join(web, 'bin', 'Debug');
   const tfm = readdirSync(binDir).find(d => existsSync(path.join(binDir, d, 'Tide.Web.dll')));
   if (!tfm) throw new Error('The build left no Tide.Web.dll under src/Tide.Web/bin/Debug.');
 
   console.log(`Starting TIDE on ${base} with the demo database (${process.env.REUSE ? 'reused' : 'fresh'})...`);
   const log = createWriteStream(path.join(demoDir, 'tide.log'));
-  const child = spawn('dotnet', [path.join(binDir, tfm, 'Tide.Web.dll'),
+  const child = spawn(dotnet(), [path.join(binDir, tfm, 'Tide.Web.dll'),
     '--urls', base,
     '--Demo:Seed=true', `--Demo:InfoFile=${path.join(demoDir, 'demo.json')}`,
     `--ConnectionStrings:Default=Data Source=${path.join(demoDir, 'tide.db')}`,
