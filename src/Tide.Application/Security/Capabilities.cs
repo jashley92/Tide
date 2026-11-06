@@ -82,6 +82,11 @@ public static class Capabilities
         new(Actions, "Read the saved hunt queries", "Policies.ReadActions; SavedQueryService.RequireRead", [G(Permission.ReadActions)]),
         new(Actions, "Save, edit, retire and restore saved hunt queries", "SavedQueryService.RequireWrite", [G(Permission.WorkActions)]),
         new(Actions, "Delete saved hunt queries", "SavedQueryService.CanDelete", [G(Permission.Administer), Q("own ones", Permission.WorkActions)]),
+        new(Actions, "Write an Outreach action's email, mark it sent and record the reply", "OutreachService (ActionService.RequireWork)",
+            [G(Permission.WriteArticles), Q("own team's", Permission.WorkActions)]),
+        new(Actions, "Read the outreach templates", "Policies.ReadActions; OutreachTemplateService.RequireRead", [G(Permission.ReadActions)]),
+        new(Actions, "Save, edit, retire and restore outreach templates", "OutreachTemplateService.RequireWrite", [G(Permission.WorkActions)]),
+        new(Actions, "Delete outreach templates", "OutreachTemplateService.CanDelete", [G(Permission.Administer), Q("own ones", Permission.WorkActions)]),
         new(Actions, "Choose my own notifications (reminders, digests, rotation emails)", "NotificationPreferenceService.Require (My notifications)",
             [G(Permission.ReadActions)]),
 

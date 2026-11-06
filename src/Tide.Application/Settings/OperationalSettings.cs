@@ -34,6 +34,10 @@ public static class OperationalSettings
     /// <summary>Whether people may choose a personal digest in My notifications. On by default.</summary>
     public const string PersonalDigest = "Notifications:PersonalDigest:Enabled";
 
+    /// <summary>The reminder to follow up an Outreach action's unanswered email, and after how many business days.</summary>
+    public const string OutreachFollowUp = "Notifications:OutreachFollowUp:Enabled";
+    public const string OutreachFollowUpDays = "Notifications:OutreachFollowUp:Days";
+
     public const string IntakeEnabled = "Intake:Enabled";
     public const string RetentionDays = "Intake:RetentionDays";
     public const string MinPollMinutes = "Intake:MinPollMinutes";
@@ -86,6 +90,8 @@ public static class OperationalSettings
         [BriefNotReadyTime] = Time("The brief-not-ready time"),
         [BriefNotReadyRecipients] = Addresses,
         [PersonalDigest] = Switch,
+        [OutreachFollowUp] = Switch,
+        [OutreachFollowUpDays] = Number("The follow-up wait", ReminderOptions.FollowUpOptions.MinDays, ReminderOptions.FollowUpOptions.MaxDays),
         [IntakeEnabled] = Switch,
         [RetentionDays] = Number("Days feed items are kept", 7, 3650),
         [MinPollMinutes] = Number("The shortest poll", 5, 24 * 60),
@@ -170,6 +176,8 @@ public static class OperationalSettings
         s.Use(BriefNotReadyTime, v => o.BriefNotReady.Time = v);
         s.Use(BriefNotReadyRecipients, v => o.BriefNotReady.Recipients = SplitAddresses(v));
         s.Use(PersonalDigest, v => o.PersonalDigest.Enabled = bool.Parse(v));
+        s.Use(OutreachFollowUp, v => o.OutreachFollowUp.Enabled = bool.Parse(v));
+        s.Use(OutreachFollowUpDays, v => o.OutreachFollowUp.Days = int.Parse(v, Invariant));
     }
 
     internal static void Apply(SavedSettings s, IntakeOptions o)

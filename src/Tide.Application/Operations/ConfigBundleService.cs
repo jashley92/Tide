@@ -140,6 +140,7 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
     {
         if (string.IsNullOrWhiteSpace(key)) return key ?? "";
         var k = key.Trim();
+        k = SettingsCatalog.Renamed(k) ?? k;
         if (Distribution.EmailTemplateCatalog.Parse(k) is { } template) return Distribution.EmailTemplateCatalog.Key(template.Template.Id, template.Part);
         return SettingsCatalog.IsInApp(k) && SettingsCatalog.Find(k) is { } info ? info.Key : k;
     }

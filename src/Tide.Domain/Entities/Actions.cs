@@ -102,6 +102,9 @@ public class ActionItem : AuditableEntity
     /// <summary>Indicators added on the action itself, for one with no article to carry them; its hunts use them.</summary>
     public List<ActionIndicator> Indicators { get; set; } = [];
 
+    /// <summary>The emails sent about it (an Outreach action), and their replies.</summary>
+    public List<OutreachMessage> Outreach { get; set; } = [];
+
     /// <summary>Files added to the action itself (removed ones included); its comments' files are on the comments.</summary>
     public List<ActionFile> Files { get; set; } = [];
 
@@ -408,6 +411,86 @@ public class SavedQuery : AuditableEntity
 
     /// <summary>Moves on every edit, so an edit begun on an older copy is refused, as an action's is.</summary>
     public Guid EditVersion { get; set; } = Guid.NewGuid();
+}
+
+/// <summary>
+/// An email the team keeps for asking someone for information on an Outreach action (a vendor, a partner, an ISAC, an
+/// internal team): its name, subject and body, with <c>{{article.title}}</c>, <c>{{indicators}}</c> and the like filled
+/// from the action when it's written, and an optional fixed To address. <see cref="Ceiling"/> is the highest TLP the
+/// filled email may carry: parts above it are left out. Anyone who works actions keeps the library, as they keep the
+/// saved hunt queries; TIDE never sends one.
+/// </summary>
+public class OutreachTemplate : AuditableEntity
+{
+    public const int MaxName = 100;
+    public const int MaxDescription = 300;
+    public const int MaxSubject = 300;
+    public const int MaxBody = 8000;
+
+    /// <summary>One address: an RFC 5321 path is at most 254 characters.</summary>
+    public const int MaxTo = 254;
+
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public string Subject { get; set; } = string.Empty;
+    public string Body { get; set; } = string.Empty;
+
+    /// <summary>Who it always goes to (an ISAC's address), or null to take the product's contact or one typed.</summary>
+    public string? To { get; set; }
+
+    /// <summary>The highest TLP the filled email may carry (an email to a vendor: CLEAR or GREEN).</summary>
+    public TlpLevel Ceiling { get; set; } = TlpLevel.Clear;
+
+    /// <summary>The names <see cref="AuditableEntity.CreatedBy"/> and <see cref="AuditableEntity.ModifiedBy"/> had then.</summary>
+    public string CreatedByName { get; set; } = string.Empty;
+    public string? ModifiedByName { get; set; }
+
+    public bool IsRetired { get; set; }
+
+    /// <summary>Moves on every edit, so an edit begun on an older copy is refused, as a saved query's is.</summary>
+    public Guid EditVersion { get; set; } = Guid.NewGuid();
+}
+
+/// <summary>
+/// An email an analyst sent from their own mail about an Outreach action, as they marked it sent: to whom, the subject
+/// and body as sent (after their edits), its TLP, and the reply once it's recorded. TIDE never sends it; the action
+/// waits for the reply while one is outstanding, and the follow-up reminder counts from <see cref="SentAtUtc"/>.
+/// </summary>
+public class OutreachMessage : Entity
+{
+    /// <summary>A few addresses, separated by semicolons.</summary>
+    public const int MaxTo = 1000;
+    public const int MaxSubject = 300;
+
+    /// <summary>Room for a template's 8,000 characters with an action's indicators filled in.</summary>
+    public const int MaxBody = 40000;
+    public const int MaxNotes = 4000;
+
+    public Guid ActionId { get; set; }
+
+    /// <summary>The template it was written from, and its name then: the name stays when the template is deleted.</summary>
+    public Guid? TemplateId { get; set; }
+    public string? TemplateName { get; set; }
+
+    public string To { get; set; } = string.Empty;
+    public string Subject { get; set; } = string.Empty;
+    public string Body { get; set; } = string.Empty;
+
+    /// <summary>The marking of what was filled in (the TLP line written for it).</summary>
+    public TlpLevel Tlp { get; set; } = TlpLevel.Clear;
+
+    public DateTimeOffset SentAtUtc { get; set; }
+    public string SentById { get; set; } = string.Empty;
+    public string SentByName { get; set; } = string.Empty;
+
+    /// <summary>When the reply was recorded, who recorded it, what it said, and the file kept with it (the stored file of an
+    /// <see cref="ActionFile"/> on the action), if any. Null until then: the action is waiting.</summary>
+    public DateTimeOffset? RepliedAtUtc { get; set; }
+    public string? ReplyRecordedByName { get; set; }
+    public string? ReplyNotes { get; set; }
+    public Guid? ReplyFileId { get; set; }
+
+    public bool IsWaiting => RepliedAtUtc is null;
 }
 
 /// <summary>

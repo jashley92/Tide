@@ -32,6 +32,10 @@ public sealed class ReminderOptions
     /// at the digest's day and time). On by default.</summary>
     public Toggle PersonalDigest { get; set; } = new() { Enabled = true };
 
+    /// <summary>At <see cref="ReminderTime"/>, remind whoever marked an Outreach action's email sent when no reply has
+    /// been recorded for <see cref="FollowUpOptions.Days"/> business days.</summary>
+    public FollowUpOptions OutreachFollowUp { get; set; } = new();
+
     /// <summary>Whether an administrator has the scan on.</summary>
     public bool IsEnabled(ReminderKind kind) => kind switch
     {
@@ -40,6 +44,7 @@ public sealed class ReminderOptions
         ReminderKind.Digest => Digest.Enabled,
         ReminderKind.Presenting => Presenting.Enabled,
         ReminderKind.PersonalDigest => PersonalDigest.Enabled,
+        ReminderKind.OutreachFollowUp => OutreachFollowUp.Enabled,
         _ => BriefNotReady.Enabled,
     };
 
@@ -55,6 +60,19 @@ public sealed class ReminderOptions
         /// <summary>The day and local time each team's weekly digest goes.</summary>
         public DayOfWeek Day { get; set; } = DayOfWeek.Monday;
         public string Time { get; set; } = "08:00";
+    }
+
+    public sealed class FollowUpOptions
+    {
+        public const int MinDays = 1, MaxDays = 30;
+
+        public bool Enabled { get; set; }
+
+        /// <summary>How many business days an email waits for its reply before the reminder.</summary>
+        public int Days { get; set; } = 5;
+
+        /// <summary>A configured wait held to what the settings page accepts.</summary>
+        public static int Clamp(int days) => Math.Clamp(days, MinDays, MaxDays);
     }
 
     public sealed class BriefNotReadyOptions
@@ -80,6 +98,9 @@ public enum ReminderKind
 
     /// <summary>Each person's own digest of their actions, for those who chose one (daily or weekly).</summary>
     PersonalDigest = 5,
+
+    /// <summary>A reminder to follow up an Outreach action's email that has had no reply (ADR 0019).</summary>
+    OutreachFollowUp = 6,
 }
 
 /// <summary>A scan's last run, for the administration page. <paramref name="Note"/> says who wasn't emailed because they
@@ -164,6 +185,7 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
                 ReminderKind.Digest => await DigestAsync(ct),
                 ReminderKind.Presenting => await PresentingAsync(ct),
                 ReminderKind.PersonalDigest => await PersonalDigestAsync(scheduled, ct),
+                ReminderKind.OutreachFollowUp => await FollowUpAsync(ct),
                 _ => await BriefNotReadyAsync(ct),
             };
             // The poll comes round every few minutes after the scan's time, and most find nothing new to send (or only
@@ -514,6 +536,64 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
     }
 
     private static string SeenKey(string who, ActionItem a) => $"{who}:{a.Id:N}";
+
+    // --- outreach follow-up -------------------------------------------------------------------------------------
+
+    // Whoever marked an Outreach action's email sent is reminded once, when it has waited the configured business days
+    // with no reply recorded and the action is still open: one email per sender, listing their waiting actions. A mark
+    // per email stops repeats; someone who opted out isn't sent it, and their emails aren't marked, so turning it back
+    // on brings the reminder.
+    private async Task<Scan> FollowUpAsync(CancellationToken ct)
+    {
+        var today = clock.Today;
+        var days = ReminderOptions.FollowUpOptions.Clamp(Options.OutreachFollowUp.Days);
+        await using var db = await dbs.CreateAsync(ct);
+        var waiting = await db.OutreachMessages.AsNoTracking().Where(m => m.RepliedAtUtc == null).ToListAsync(ct);
+        waiting = [.. waiting.Where(m => ActionSla.DueDate(DateOnly.FromDateTime(clock.ToLocal(m.SentAtUtc).DateTime), days, clock.Days) <= today)];
+        if (waiting.Count == 0) return 0;
+        var marks = (await db.NotificationMarks.AsNoTracking().Where(m => m.Kind == FollowUpMark).Select(m => m.Key).ToListAsync(ct)).ToHashSet();
+        waiting = [.. waiting.Where(m => !marks.Contains(m.Id.ToString("N")))];
+        var ids = waiting.Select(m => m.ActionId).Distinct().ToList();
+        var open = await db.Actions.AsNoTracking().Include(a => a.Article).WhereOpen().Where(a => ids.Contains(a.Id) && a.Kind == ActionKind.Outreach)
+            .ToDictionaryAsync(a => a.Id, ct);
+        waiting = [.. waiting.Where(m => open.ContainsKey(m.ActionId))];
+        if (waiting.Count == 0) return 0;
+
+        var senders = await RecipientResolver.ResolveAsync(db, NotificationKinds.For(ReminderKind.OutreachFollowUp), waiting.Select(m => m.SentById), ct);
+        var sent = 0;
+        var leftOut = new HashSet<string>();
+        foreach (var mine in waiting.GroupBy(m => m.SentById))
+        {
+            if (senders.OptedOut.Contains(mine.Key)) { leftOut.Add(mine.Key); continue; }
+            if (!senders.Addresses.TryGetValue(mine.Key, out var to)) continue;
+            var emails = mine.OrderBy(m => m.SentAtUtc).ToList();
+            var list = emails.Select(m => open[m.ActionId]).DistinctBy(a => a.Id).OrderBy(a => a.Number).ToList();
+            var t = _templates.Render(EmailTemplateCatalog.OutreachFollowUp, new Dictionary<string, string>
+            {
+                ["Actions"] = $"{list.Count} action{S(list.Count)}",
+                ["Days"] = $"{days} business day{S(days)}",
+                ["ActionList"] = Table(list, today),
+                ["WaitingList"] = WaitingList(emails.Select(m => (open[m.ActionId].Number, m.To, DateOnly.FromDateTime(clock.ToLocal(m.SentAtUtc).DateTime)))),
+            });
+            var html = Shell(t.Heading, clock.TeamName + " · " + DayText(today), MarkingLine(list) + t.BodyHtml, Footer);
+            var result = await email.SendAsync(new OutgoingEmail([to], Marked(t.Subject, list), html, ToText(html), []), ct);
+            if (result.Status != EmailSendStatus.Sent) continue;
+            sent++;
+            await MarkAsync(db, FollowUpMark, emails.Select(m => m.Id.ToString("N")).ToList());
+        }
+        return new Scan(sent, leftOut.Count);
+    }
+
+    private const string FollowUpMark = "outreach-follow-up";
+
+    /// <summary>The follow-up's lines saying where each email went and when ("A-12 to support@vendor.example, sent Mon Nov 2").</summary>
+    internal static string WaitingList(IEnumerable<(int Number, string To, DateOnly Sent)> emails)
+    {
+        var sb = new StringBuilder("<ul style=\"margin:0 0 12px;padding-left:20px;\">");
+        foreach (var (number, to, sentOn) in emails)
+            sb.Append(CultureInfo.InvariantCulture, $"<li>A-{number} to {Esc(to)}, sent {sentOn.ToString("ddd MMM d", CultureInfo.InvariantCulture)}</li>");
+        return sb.Append("</ul>").ToString();
+    }
 
     // A short, fixed-length stand-in for an address or a user id in a mark's key.
     private const int HashLength = 16;

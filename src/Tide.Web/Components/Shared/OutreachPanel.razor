@@ -1,0 +1,408 @@
+@* An Outreach action's emails (ADR 0019). TIDE never sends one. "Write the email" fills a team template from the action
+   (its article cut to the template's TLP ceiling, its indicators, the Our stack product it names, and the action and
+   sender), shows what was left out and what had nothing to fill, and gives the subject and body to edit and copy into the
+   analyst's own mail, the To line offering the template's address or the product's contact. "Mark sent" records it; the
+   action then waits for the reply, with the follow-up reminder's day, until "Record the reply" keeps what came back (and
+   a file, added to the action's files) and closes the action with an outcome, by the rule every close follows. *@
+@inject OutreachService OutreachSvc
+@inject OutreachTemplateService TemplateSvc
+@inject ActionFileService FileSvc
+@inject OrgClock Clock
+@inject ToastService Toasts
+
+<section class="tide-card" aria-labelledby="outreach-h">
+    <h2 id="outreach-h">Outreach <span class="tide-count tide-muted fw-normal">(@_state.Messages.Count)</span></h2>
+    @if (_state.Oldest is { } oldest)
+    {
+        <p class="tide-outreach-waiting mb-2" role="status">
+            <span class="bi bi-hourglass-split" aria-hidden="true"></span>
+            <strong>Waiting for reply since @Ui.ShortDay(SentOn(oldest))</strong> (@Waited(oldest)).
+            @FollowUpText(oldest)
+        </p>
+    }
+    else if (_state.Messages.Count == 0)
+    {
+        <p class="small tide-muted mb-2">Ask by email: write it from one of the team's <a href="outreach/templates">outreach templates</a>, send it from your own mail, and mark it sent here.</p>
+    }
+    @if (CanWork && Action.IsOpen)
+    {
+        <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
+            <button type="button" class="btn btn-outline-secondary btn-sm" aria-expanded="@(_writing ? "true" : "false")" aria-controls="outreach-writer" @onclick="ToggleWriter">
+                <span class="bi bi-envelope-paper" aria-hidden="true"></span> Write the email
+            </button>
+        </div>
+    }
+    @if (_writing)
+    {
+        <div class="tide-hunt-picker mb-3" id="outreach-writer">
+            @if (_templates is null)
+            {
+                <LoadingBlock Rows="2" />
+            }
+            else if (_templates.Count == 0)
+            {
+                <p class="small tide-muted mb-0">No outreach templates yet. Add one on <a href="outreach/templates">Outreach templates</a>.</p>
+            }
+            else
+            {
+                <div class="row g-2">
+                    <div class="col-md-6">
+                        <label class="tide-field-label" for="ow-template">Template</label>
+                        <select id="ow-template" class="form-select form-select-sm" @bind="TemplateValue" @bind:after="Fill">
+                            <option value="">Choose a template…</option>
+                            @foreach (var t in _templates) { <option value="@t.Id">@t.Name (up to @Tlp.Label(t.Ceiling))</option> }
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="tide-field-label" for="ow-product">Product</label>
+                        <select id="ow-product" class="form-select form-select-sm" aria-describedby="ow-product-help" @bind="ProductValue" @bind:after="Fill">
+                            <option value="">@(_products.Count == 0 ? "None named" : "None")</option>
+                            @foreach (var p in _products) { <option value="@p.Id">@p.Name</option> }
+                        </select>
+                        <div class="form-text" id="ow-product-help">From Our stack: those the article is tagged with, or the action names.</div>
+                    </div>
+                </div>
+                @if (_written is { } w)
+                {
+                    var d = w.Draft;
+                    <div class="small mt-2" role="status">
+                        Filled up to @Tlp.Label(d.Ceiling). This email is <TlpBadge Level="d.Marking" />; its body starts with that line unless the template places <span class="tide-data">{{tlp}}</span>.
+                    </div>
+                    @if (d.LeftOut.Count > 0)
+                    {
+                        <div class="small mt-1">
+                            <div class="tide-field-label mb-0">Left out by the template's ceiling</div>
+                            <ul class="mb-1">
+                                @foreach (var line in d.LeftOut) { <li>@line</li> }
+                            </ul>
+                        </div>
+                    }
+                    @if (d.Unfilled.Count > 0)
+                    {
+                        <div class="alert alert-warning small py-2 mt-2 mb-0" role="note">
+                            Nothing to fill for @string.Join(", ", d.Unfilled): each is marked <span class="tide-data">[[…]]</span> below. Fill it in or take it out before you send.
+                        </div>
+                    }
+                    <div class="row g-2 mt-1">
+                        <div class="col-12">
+                            <label class="tide-field-label" for="ow-to">To</label>
+                            <input id="ow-to" type="text" class="form-control form-control-sm" list="ow-to-list" maxlength="@OutreachMessage.MaxTo" autocomplete="off"
+                                   placeholder="psirt@vendor.example" aria-describedby="ow-to-help" @bind="_to" />
+                            <datalist id="ow-to-list">
+                                @foreach (var r in w.Recipients) { <option value="@r.Address">@r.Label</option> }
+                            </datalist>
+                            <div class="form-text" id="ow-to-help">@ToHelp(w)</div>
+                        </div>
+                        <div class="col-12">
+                            <div class="d-flex align-items-end gap-2">
+                                <label class="tide-field-label mb-1" for="ow-subject">Subject</label>
+                                <button type="button" class="btn btn-link btn-sm ms-auto p-0" data-copy-target="ow-subject" data-copy-status="ow-status" data-copy-done="Subject copied."><span class="bi bi-clipboard" aria-hidden="true"></span> Copy subject</button>
+                            </div>
+                            <input id="ow-subject" class="form-control form-control-sm" maxlength="@OutreachMessage.MaxSubject" @bind="_subject" />
+                        </div>
+                        <div class="col-12">
+                            <div class="d-flex align-items-end gap-2">
+                                <label class="tide-field-label mb-1" for="ow-body">Body</label>
+                                <button type="button" class="btn btn-link btn-sm ms-auto p-0" data-copy-target="ow-body" data-copy-status="ow-status" data-copy-done="Body copied."><span class="bi bi-clipboard" aria-hidden="true"></span> Copy body</button>
+                            </div>
+                            <textarea id="ow-body" class="form-control form-control-sm tide-email-body" maxlength="@OutreachMessage.MaxBody" @bind="_body"></textarea>
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2 align-items-center flex-wrap mt-2">
+                        <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" aria-describedby="ow-sent-help" @onclick="MarkSent"><span class="bi bi-send-check" aria-hidden="true"></span> Mark sent</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="ToggleWriter">Cancel</button>
+                        <span id="ow-status" class="small tide-muted" role="status" aria-live="polite"></span>
+                    </div>
+                    <div class="form-text" id="ow-sent-help">Once you've sent it from your own mail. TIDE keeps what you sent, to whom, and waits for the reply.</div>
+                }
+            }
+        </div>
+    }
+    @foreach (var m in _state.Messages)
+    {
+        var id = "om-" + m.Id.ToString("N");
+        <article class="tide-hunt" aria-labelledby="@(id + "-h")" @key="m.Id">
+            <div class="d-flex gap-2 align-items-center flex-wrap">
+                <h3 class="tide-subhead my-0" id="@(id + "-h")">To @m.To</h3>
+                <TlpBadge Level="m.Tlp" />
+                @if (m.TemplateName is { } from) { <Badge Icon="bi-envelope-paper">template: @from</Badge> }
+                <span class="ms-auto">
+                    @if (m.IsWaiting) { <Badge Tone="BadgeTone.Warn" Icon="bi-hourglass-split">Waiting for reply</Badge> }
+                    else { <Badge Tone="BadgeTone.Ok" Icon="bi-reply">Replied</Badge> }
+                </span>
+            </div>
+            <div class="small tide-muted">Sent by @m.SentByName, @Ui.When(Clock, m.SentAtUtc)</div>
+            <div class="tide-data my-1">@m.Subject</div>
+            <details>
+                <summary class="small">The email as sent</summary>
+                <pre class="tide-email-text mt-1">@m.Body</pre>
+            </details>
+            @if (m.IsWaiting)
+            {
+                <div class="small mt-2">Waiting since @Ui.ShortDay(SentOn(m)) (@Waited(m)). @FollowUpText(m)</div>
+                @if (CanWork)
+                {
+                    <div class="d-flex gap-2 mt-2">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => StartReply(m)"><span class="bi bi-reply" aria-hidden="true"></span> Record the reply</button>
+                        <button type="button" class="btn btn-link btn-sm" disabled="@_busy" aria-label="Not sent after all: the email to @m.To" @onclick="() => Withdraw(m)">Not sent after all</button>
+                    </div>
+                }
+            }
+            else
+            {
+                <div class="small mt-2">
+                    Reply recorded by @(m.ReplyRecordedByName ?? "someone")@(m.RepliedAtUtc is { } at ? $", {Ui.When(Clock, at)}" : "")@(m.ReplyNotes is null ? "." : ":")
+                    @if (ReplyFile(m) is { } file) { <text> The reply is kept as <strong>@file</strong> in Files.</text> }
+                </div>
+                @if (m.ReplyNotes is { } notes) { <p class="small mb-0 tide-outreach-reply">@notes</p> }
+            }
+        </article>
+    }
+</section>
+
+<ConfirmDialog @ref="_confirm" />
+
+@* Recording the reply: what it said, the reply itself as a file if wanted, and closing the action with an outcome. *@
+<ConfirmDialog @ref="_replyDialog" Form="true" ConfirmDisabled="@(_replyClose && _replyOutcome == ActionOutcome.None)" Confirming="RecordReply">
+    <div>
+        <label class="tide-field-label" for="or-notes">What they said</label>
+        <textarea id="or-notes" class="form-control form-control-sm" rows="3" maxlength="@OutreachMessage.MaxNotes" placeholder="Not affected: we run 17.11.3, fixed in 17.10." @bind="_replyNotes"></textarea>
+    </div>
+    <div class="mt-2">
+        <label class="tide-field-label" for="or-file">The reply as a file (optional)</label>
+        <InputFile id="or-file" class="form-control form-control-sm" aria-describedby="or-file-help" OnChange="PickReplyFile" />
+        <div class="form-text" id="or-file-help">An .eml or .msg saved from your mail, say. It's added to the action's files. @FileSvc.LimitsText</div>
+    </div>
+    @if (Action.IsOpen)
+    {
+        <div class="form-check mt-2">
+            <input class="form-check-input" type="checkbox" id="or-close" @bind="_replyClose" />
+            <label class="form-check-label" for="or-close">Close the action with this reply</label>
+        </div>
+        @if (_replyClose)
+        {
+            <label class="tide-field-label mt-2" for="or-outcome">Outcome</label>
+            <select id="or-outcome" class="form-select form-select-sm" @bind="_replyOutcome">
+                <option value="@ActionOutcome.None" disabled>Choose…</option>
+                @foreach (var o in ActionService.OutcomesFor(Action.Kind, ActionStatus.Done, Action.Outcome)) { <option value="@o">@ActionService.OutcomeName(o)</option> }
+            </select>
+        }
+    }
+</ConfirmDialog>
+
+@code {
+    [Parameter, EditorRequired] public ActionItem Action { get; set; } = default!;
+    [Parameter] public bool CanWork { get; set; }
+
+    /// <summary>The action's files, to name the one kept with a reply.</summary>
+    [Parameter] public ActionFileList Files { get; set; } = ActionFileList.None;
+
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private OutreachState _state = OutreachState.None;
+    private ActionItem? _stateFor;
+    private bool _busy, _writing;
+
+    internal OutreachState State => _state;
+    internal OutreachWritten? Written => _written;
+
+    // Read when the action is read (the page hands over a new one after each save), not on every redraw around it.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (ReferenceEquals(Action, _stateFor)) return;
+        _stateFor = Action;
+        try { _state = await OutreachSvc.ForActionAsync(Action.Id); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    private DateOnly SentOn(OutreachMessage m) => DateOnly.FromDateTime(Clock.ToLocal(m.SentAtUtc).DateTime);
+
+    private string Waited(OutreachMessage m)
+    {
+        var days = ActionSla.BusinessDaysUntil(SentOn(m), Clock.Today, Clock.Days);
+        return days <= 0 ? "today" : Ui.Plural(days, "business day") + " ago";
+    }
+
+    private string FollowUpText(OutreachMessage m) => OutreachSvc.FollowUpOn(m) is { } on
+        ? on <= Clock.Today ? "A follow-up reminder has gone, or goes today." : $"A follow-up reminder goes on {Ui.ShortDay(on)} if there's no reply."
+        : "Follow-up reminders are off.";
+
+    private string? ReplyFile(OutreachMessage m) => m.ReplyFileId is { } id ? Files.Live.Concat(Files.Removed).FirstOrDefault(f => f.FileId == id)?.FileName : null;
+
+    private static string ToHelp(OutreachWritten w) => w.Recipients.Count == 0
+        ? "Whoever you're asking. Add the vendor's contact on Our stack, or a fixed address on the template, to have it offered here."
+        : "Offered: " + string.Join("; ", w.Recipients.Select(r => $"{r.Address} ({r.Label})")) + ". Separate several with semicolons.";
+
+    // --- writing the email ------------------------------------------------------------------------------------------
+
+    private IReadOnlyList<OutreachTemplate>? _templates;
+    private IReadOnlyList<StackProduct> _products = [];
+    private Guid? _templateId, _productId;
+    private OutreachWritten? _written;
+    private string? _to, _subject, _body;
+
+    private string TemplateValue
+    {
+        get => _templateId?.ToString() ?? "";
+        set => _templateId = Guid.TryParse(value, out var g) ? g : null;
+    }
+
+    private string ProductValue
+    {
+        get => _productId?.ToString() ?? "";
+        set => _productId = Guid.TryParse(value, out var g) ? g : null;
+    }
+
+    // Read each time it opens, so a template a colleague saved since the page loaded is there.
+    internal async Task ToggleWriter()
+    {
+        _writing = !_writing;
+        if (!_writing)
+        {
+            _written = null;
+            return;
+        }
+        _templates = null;
+        try
+        {
+            _templates = await TemplateSvc.OfferedAsync();
+            _products = await OutreachSvc.ProductsAsync(Action.Id);
+            _productId = _products.Count > 0 ? _products[0].Id : null;
+            // One template: it's the one.
+            if (_templates.Count == 1)
+            {
+                _templateId = _templates[0].Id;
+                await Fill();
+            }
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            _writing = false;
+        }
+        StateHasChanged();
+    }
+
+    /// <summary>Chooses a template (and a product) and fills it, as the pickers do.</summary>
+    internal Task Choose(Guid templateId, Guid? productId = null)
+    {
+        _templateId = templateId;
+        if (productId is not null) _productId = productId;
+        return Fill();
+    }
+
+    // A template or product chosen: fill it again. What was typed in the boxes is replaced by the new fill.
+    private async Task Fill()
+    {
+        if (_templateId is not { } id)
+        {
+            _written = null;
+            return;
+        }
+        try
+        {
+            _written = await OutreachSvc.WriteAsync(Action.Id, id, _productId);
+            (_to, _subject, _body) = (_written.To, _written.Draft.Subject, _written.Draft.Body);
+            _productId = _written.Product?.Id;
+        }
+        catch (Exception ex)
+        {
+            _written = null;
+            Toasts.Error(UserFacingError.For(ex));
+        }
+    }
+
+    /// <summary>The boxes as the analyst edited them, for a test to set.</summary>
+    internal void Edit(string? to = null, string? subject = null, string? body = null)
+    {
+        _to = to ?? _to;
+        _subject = subject ?? _subject;
+        _body = body ?? _body;
+    }
+
+    internal Task MarkSent() => Run(async () =>
+    {
+        var w = _written ?? throw new InvalidOperationException("Choose a template first.");
+        await OutreachSvc.MarkSentAsync(Action.Id, new OutreachSend { TemplateId = w.Template.Id, To = _to ?? "", Subject = _subject ?? "", Body = _body ?? "", Tlp = w.Draft.Marking });
+        Toasts.Show($"Marked sent to {_to?.Trim()}. {Ui.ActionLabel(Action.Number)} is waiting for the reply.");
+        (_writing, _written) = (false, null);
+    });
+
+    // --- the reply -----------------------------------------------------------------------------------------------
+
+    private ConfirmDialog _confirm = default!;
+    private ConfirmDialog _replyDialog = default!;
+    private OutreachMessage? _replying;
+    private string? _replyNotes;
+    private bool _replyClose;
+    private ActionOutcome _replyOutcome;
+    private ActionFileUpload? _replyFile;
+
+    internal async Task StartReply(OutreachMessage m)
+    {
+        (_replying, _replyNotes, _replyFile, _replyOutcome) = (m, null, null, ActionOutcome.None);
+        _replyClose = Action.IsOpen;
+        await _replyDialog.Ask($"Record the reply from {m.To}", null, "Record the reply", danger: false);
+        _replying = null;
+    }
+
+    /// <summary>The dialog's answers, for a test to set.</summary>
+    internal void Answer(string? notes, bool close, ActionOutcome outcome, ActionFileUpload? file = null) =>
+        (_replyNotes, _replyClose, _replyOutcome, _replyFile) = (notes, close, outcome, file);
+
+    private async Task PickReplyFile(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            using var ms = new MemoryStream();
+            await using var stream = e.File.OpenReadStream(FileSvc.MaxReadBytes);
+            await stream.CopyToAsync(ms);
+            var upload = new ActionFileUpload(e.File.Name, ms.ToArray(), e.File.ContentType);
+            FileSvc.Check([upload]);
+            _replyFile = upload;
+        }
+        catch (IOException) { Toasts.Error("That file is too large."); }
+        catch (ArgumentException ex) { Toasts.Error(ex.Message); }
+    }
+
+    // The dialog's button: the file goes on the action first (the reply names it), then the reply is recorded.
+    internal Task<bool> RecordReply() => Run(async () =>
+    {
+        var m = _replying ?? throw new InvalidOperationException("That email is no longer on the action.");
+        Guid? fileId = null;
+        if (_replyFile is { } upload)
+        {
+            var added = await FileSvc.AddAsync(Action.Id, [upload with { Description = Ui.Clip($"Reply from {m.To}", ActionFile.MaxDescription) }]);
+            fileId = added[0].FileId;
+            _replyFile = null;   // added: a retry doesn't add it twice
+        }
+        var close = _replyClose && Action.IsOpen;
+        await OutreachSvc.RecordReplyAsync(m.Id, _replyNotes, close, close ? _replyOutcome : ActionOutcome.None, fileId);
+        Toasts.Show(close ? $"Reply recorded; {Ui.ActionLabel(Action.Number)} is done." : "Reply recorded.");
+    });
+
+    private async Task Withdraw(OutreachMessage m)
+    {
+        if (!await _confirm.Ask("Not sent after all?", $"The email to {m.To} comes off the action, and it stops waiting for that reply. Its history keeps that it was marked sent.", "Take it back")) return;
+        await Run(() => OutreachSvc.WithdrawAsync(m.Id));
+    }
+
+    // True when it worked; a failure is a toast.
+    private async Task<bool> Run(Func<Task> step)
+    {
+        if (_busy) return false;
+        _busy = true;
+        try
+        {
+            await step();
+            await Changed.InvokeAsync();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            return false;
+        }
+        finally { _busy = false; }
+    }
+}

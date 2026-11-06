@@ -60,6 +60,8 @@ public interface IAppDbContext : IAsyncDisposable, IDisposable
     DbSet<QueryTemplate> QueryTemplates { get; }
     DbSet<SavedQuery> SavedQueries { get; }
     DbSet<ActionIndicator> ActionIndicators { get; }
+    DbSet<OutreachTemplate> OutreachTemplates { get; }
+    DbSet<OutreachMessage> OutreachMessages { get; }
     DbSet<NotificationMark> NotificationMarks { get; }
     DbSet<Source> Sources { get; }
     DbSet<FeedItem> FeedItems { get; }

@@ -501,14 +501,14 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     }
 
     /// <summary>
-    /// A meeting action's priority: its article's, except that telling people, asking a vendor and anything else are
+    /// A meeting action's priority: its article's, except that telling people, asking someone and anything else are
     /// never above P2 (a P1 article's "tell the service desk" isn't a P1 action). An article with no priority (an
     /// informational one) leaves it to the kind: a sweep or a block P2, the rest P3.
     /// </summary>
     public static Priority QuickPriority(Priority? article, ActionKind kind) => article switch
     {
         null => kind is ActionKind.IocSweep or ActionKind.Block ? Priority.P2 : Priority.P3,
-        Priority.P1 when kind is ActionKind.Awareness or ActionKind.VendorInquiry or ActionKind.Other => Priority.P2,
+        Priority.P1 when kind is ActionKind.Awareness or ActionKind.Outreach or ActionKind.Other => Priority.P2,
         { } p => p,
     };
 
@@ -556,7 +556,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
 
     // A save that moves the edit version, so one that lost the race to another change (the version moved under it) is
     // refused as a stale edit, as an article's is, rather than as a database error.
-    private static async Task SaveEditAsync(IAppDbContext db, CancellationToken ct)
+    internal static async Task SaveEditAsync(IAppDbContext db, CancellationToken ct)
     {
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateConcurrencyException)
@@ -681,7 +681,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// <summary>
     /// What an action of <paramref name="kind"/> can come to, Other always last: a hunt or sweep says what it found; a
     /// patch, a change or a block, whether it was made or needed; a notice, whether it went out (Remediated) or wasn't
-    /// needed; a vendor question, its answer. An action of kind Other may close with any.
+    /// needed; a question put to someone (Outreach), its answer. An action of kind Other may close with any.
     /// </summary>
     public static IReadOnlyList<ActionOutcome> KindOutcomes(ActionKind kind) => kind switch
     {
@@ -690,18 +690,18 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             [ActionOutcome.Remediated, ActionOutcome.NotAffected, ActionOutcome.RiskAccepted, ActionOutcome.Other],
         ActionKind.Block => [ActionOutcome.Blocked, ActionOutcome.NotAffected, ActionOutcome.RiskAccepted, ActionOutcome.Other],
         ActionKind.Awareness => [ActionOutcome.Remediated, ActionOutcome.NotAffected, ActionOutcome.Other],
-        ActionKind.VendorInquiry => [ActionOutcome.Answered, ActionOutcome.NotAffected, ActionOutcome.Other],
+        ActionKind.Outreach => [ActionOutcome.Answered, ActionOutcome.NotAffected, ActionOutcome.Other],
         _ => Enum.GetValues<ActionOutcome>().Where(o => o != ActionOutcome.None).ToList(),
     };
 
     // A note on the history line (a hunt's result, closing it in the same step) goes before the status change.
-    private void ApplyStatus(IAppDbContext db, ActionItem a, ActionStatus status, ActionOutcome outcome, string? note, string? lead = null)
+    internal void ApplyStatus(IAppDbContext db, ActionItem a, ActionStatus status, ActionOutcome outcome, string? note, string? lead = null)
     {
         if (status == ActionStatus.Done && outcome == ActionOutcome.None) throw new ArgumentException("Say what came of it: choose an outcome.");
         if (ActionItem.IsClosedStatus(status) && !OutcomesFor(a.Kind, status, a.Outcome).Contains(outcome))
             throw new ArgumentException(a.Kind is ActionKind.IocSweep or ActionKind.ThreatHunt
                 ? "A hunt closes with what it found: no hits, or hits escalated."
-                : $"A {KindName(a.Kind)} action closes with one of: {string.Join(", ", KindOutcomes(a.Kind).Select(OutcomeName))}.");
+                : $"{(KindName(a.Kind)[0] is 'A' or 'E' or 'I' or 'O' or 'U' ? "An" : "A")} {KindName(a.Kind)} action closes with one of: {string.Join(", ", KindOutcomes(a.Kind).Select(OutcomeName))}.");
         var cleanNote = ArticleService.CleanOrNull(note, 2000, multiline: true);
         var was = a.Status;
         a.Status = status;
@@ -1074,7 +1074,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// The action with what its hunts are built from: its article's indicators and its own. The two collections are read
     /// as separate queries, so the rows don't multiply. <paramref name="tracked"/> when the article is written to.
     /// </summary>
-    private static async Task<ActionItem> HuntActionAsync(IAppDbContext db, Guid actionId, bool tracked, CancellationToken ct)
+    internal static async Task<ActionItem> HuntActionAsync(IAppDbContext db, Guid actionId, bool tracked, CancellationToken ct)
     {
         var query = db.Actions.Include(x => x.Article).ThenInclude(x => x!.Indicators).Include(x => x.Indicators).AsSplitQuery();
         return await (tracked ? query : query.AsNoTracking()).FirstOrDefaultAsync(x => x.Id == actionId, ct)
@@ -1087,7 +1087,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// earliest of those articles (<see cref="HuntQueryBuilder.WindowDays"/>). Generate and a saved query both use it, so
     /// they look back the same way.
     /// </summary>
-    private static async Task<HuntInputs> HuntInputsAsync(IAppDbContext db, ActionItem a, bool fromStory, CancellationToken ct)
+    internal static async Task<HuntInputs> HuntInputsAsync(IAppDbContext db, ActionItem a, bool fromStory, CancellationToken ct)
     {
         List<Article> sources = fromStory ? await StoryArticlesAsync(db, a, ct) : a.Article is { } own ? [own] : [];
         // The action's own as a hunt reads them (the builder works on an article's).
@@ -1097,7 +1097,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         return new HuntInputs(indicators, days, sources.Count);
     }
 
-    private sealed record HuntInputs(List<ArticleIndicator> Indicators, int Days, int Articles);
+    internal sealed record HuntInputs(List<ArticleIndicator> Indicators, int Days, int Articles);
 
     private static List<ArticleIndicator> Distinct(IEnumerable<ArticleIndicator> indicators) =>
         indicators.DistinctBy(i => (i.Type, i.Value.Trim().ToLowerInvariant())).ToList();
@@ -1345,9 +1345,20 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         ActionKind.ThreatHunt => "Threat hunt",
         ActionKind.PatchRemediate => "Patch / remediate",
         ActionKind.ConfigChange => "Config change",
-        ActionKind.VendorInquiry => "Vendor inquiry",
         _ => k.ToString(),
     };
+
+    /// <summary>
+    /// The kind a stored or typed name stands for (its code name, as an SLA setting's key or a trends line has it), ignoring
+    /// case, or null. "VendorInquiry", Outreach's name before the rename (ADR 0019), still reads as Outreach, so a bookmark, a server's
+    /// <c>Actions:Sla:Kind</c> value or a configuration bundle from before the rename keeps working.
+    /// </summary>
+    public static ActionKind? KindNamed(string? name) =>
+        string.Equals(name?.Trim(), FormerOutreachName, StringComparison.OrdinalIgnoreCase) ? ActionKind.Outreach
+        : Domain.Common.EnumNames.TryParseExact(name?.Trim() ?? "", out ActionKind k, ignoreCase: true) ? k : null;
+
+    /// <summary>What <see cref="ActionKind.Outreach"/> was called, and stored as in setting keys, before the rename (ADR 0019).</summary>
+    public const string FormerOutreachName = "VendorInquiry";
 
     public static string StatusName(ActionStatus s) => s switch
     {

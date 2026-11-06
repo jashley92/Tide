@@ -1246,6 +1246,13 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-hunt-picks { list-style: none; margin: 0; padding: 0; max-height: 22rem; overflow-y: auto; }
 .tide-hunt-picks li { display: flex; gap: var(--tide-space-2); align-items: flex-start; padding: var(--tide-space-2) 0; border-top: 1px solid var(--tide-border); }
 .tide-saved-query .tide-query { min-height: 0; max-height: 16rem; }
+/* Outreach emails: a template's body, an email being written (prose, so it wraps), and one marked sent. */
+.tide-email-text { font-family: var(--tide-font-data); font-size: .84rem; background: var(--tide-surface-2); color: var(--tide-text); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-lg); padding: .7rem .8rem; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 18rem; overflow-y: auto; margin-bottom: .5rem; }
+.tide-email-body { min-height: 16rem; white-space: pre-wrap; }
+.tide-outreach-waiting { display: flex; flex-wrap: wrap; gap: var(--tide-space-2); align-items: baseline; padding: .5rem .7rem; border-radius: var(--tide-radius-lg); background: var(--tide-surface-2); }
+.tide-outreach-reply { white-space: pre-wrap; }
+.tide-outreach-placeholders { display: grid; grid-template-columns: max-content 1fr; gap: .15rem .8rem; margin: 0; }
+.tide-outreach-placeholders dd { margin: 0; }
 .tide-load { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; }
 .tide-load-nums { display: grid; grid-template-columns: repeat(5, 1fr); gap: .4rem; text-align: center; margin: .4rem 0 .8rem; }
 .tide-load-nums div { background: var(--tide-surface-2); border-radius: var(--tide-radius-lg); padding: .4rem; }

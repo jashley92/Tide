@@ -107,6 +107,18 @@ public static partial class EmailTemplateCatalog
             new("NewList", "\"New to you since your last digest\" and those actions. Blank when there are none.", Html: true),
         ]);
 
+    public static readonly EmailTemplate OutreachFollowUp = new(
+        "outreach-follow-up", "Outreach follow-up",
+        "Sent at the reminder time to whoever marked an Outreach action's email sent, once it has waited the set business days with no reply recorded and the action is still open. Needs the outreach follow-up on (Teams & SLA).",
+        "TIDE: no reply yet on {{Actions}}", "No reply yet",
+        "You emailed about these actions {{Days}} ago or more, and no reply is recorded yet. Follow up, or record the reply on the action.\n\n{{WaitingList}}\n\n{{ActionList}}",
+        [
+            new("Actions", "How many, in words: \"2 actions\"."),
+            new("Days", "How long an email waits before this reminder: \"5 business days\"."),
+            new("WaitingList", "Each email: the action, who it went to and when it was sent. Written by TIDE.", Html: true),
+            ActionList,
+        ]);
+
     public static readonly EmailTemplate BriefNotReady = new(
         "brief-not-ready", "Brief not ready",
         "Sent on a business day, at the brief-not-ready time, to the presenting analyst (or the listed recipients) when today's brief isn't marked ready. Needs it on (Teams & SLA).",
@@ -169,7 +181,7 @@ public static partial class EmailTemplateCatalog
         [Requester, Partner, Change, new("DecisionNote", "\" “the note”\" when they wrote one, else blank.")]);
 
     public static readonly IReadOnlyList<EmailTemplate> All =
-        [DueSoon, Overdue, Digest, PersonalDigest, BriefNotReady, Presenting, RotationRequest, RotationApproved, RotationRecorded, RotationDeclined];
+        [DueSoon, Overdue, Digest, PersonalDigest, OutreachFollowUp, BriefNotReady, Presenting, RotationRequest, RotationApproved, RotationRecorded, RotationDeclined];
 
     public static EmailTemplate? ById(string? id) => All.FirstOrDefault(t => string.Equals(t.Id, id, StringComparison.OrdinalIgnoreCase));
 

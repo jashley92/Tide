@@ -107,6 +107,8 @@ public static class SettingsCatalog
         new("Reminders", "Brief-not-ready time", OperationalSettings.BriefNotReadyTime, EditedIn: TeamsPage),
         new("Reminders", "Told when there's no brief", OperationalSettings.BriefNotReadyRecipients, EditedIn: TeamsPage),
         new("Reminders", "Personal digest offered", OperationalSettings.PersonalDigest, EditedIn: TeamsPage),
+        new("Reminders", "Outreach follow-up", OperationalSettings.OutreachFollowUp, EditedIn: TeamsPage),
+        new("Reminders", "Outreach follow-up after (business days)", OperationalSettings.OutreachFollowUpDays, EditedIn: TeamsPage),
 
         new("Intake", "Polling", OperationalSettings.IntakeEnabled, EditedIn: SourcesPage),
         new("Intake", "Feed items kept (days)", OperationalSettings.RetentionDays, EditedIn: SourcesPage),
@@ -140,6 +142,17 @@ public static class SettingsCatalog
     /// <summary>Whether a setting's value is a secret, shown only as set: listed as one, or named like one
     /// (<see cref="SecretMask.LooksSecret"/>), as a guard against a secret listed as plain by mistake.</summary>
     public static bool IsSecret(string key) => Find(key)?.Kind == SettingKind.Secret || SecretMask.LooksSecret(key);
+
+    /// <summary>
+    /// A key an earlier release wrote, as this one writes it, or null: Outreach's SLA target was saved under its name
+    /// before the rename (ADR 0019: "Actions:Sla:Kind:VendorInquiry"). The upgrade's migration moves saved rows; this reads a bundle
+    /// exported before it.
+    /// </summary>
+    public static string? Renamed(string key) =>
+        string.Equals(key, FormerOutreachSla, StringComparison.OrdinalIgnoreCase) ? "Actions:Sla:Kind:" + ActionKind.Outreach : null;
+
+    /// <summary>Outreach's SLA setting key before the rename.</summary>
+    public const string FormerOutreachSla = "Actions:Sla:Kind:" + ActionService.FormerOutreachName;
 
     /// <summary>Whether a saved setting row is one an administrator sets (and so travels in a configuration bundle), as
     /// opposed to the app's own bookkeeping (when CVE data was last refreshed).</summary>

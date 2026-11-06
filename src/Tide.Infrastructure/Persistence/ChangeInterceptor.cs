@@ -93,6 +93,7 @@ public sealed class ChangeInterceptor(ChangeFeed feed, ICurrentUser user, Change
         ActionComment x => [ChangeFeed.Action(x.ActionId)],
         HuntQuery x => [ChangeFeed.Action(x.ActionId)],
         ActionIndicator x => [ChangeFeed.Action(x.ActionId)],
+        OutreachMessage x => [ChangeFeed.Action(x.ActionId)],
         RotationChange or RotationOverride or RotationWeek or RotationMember => [ChangeFeed.Rotation],
         Story => [ChangeFeed.Stories],
         ActionChecklistItem x => [ChangeFeed.Action(x.ActionId)],
@@ -104,6 +105,7 @@ public sealed class ChangeInterceptor(ChangeFeed feed, ICurrentUser user, Change
         MetricDefinition or MetricGroup => [ChangeFeed.Metrics],
         StackProduct => [ChangeFeed.Stack],
         SavedQuery => [ChangeFeed.SavedQueries],
+        OutreachTemplate => [ChangeFeed.OutreachTemplates],
         _ => [],
     };
 

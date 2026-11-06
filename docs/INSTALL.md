@@ -101,6 +101,10 @@ brief's live meeting.
 | Read the saved hunt queries | Yes | Yes | Yes | Yes | No | No |
 | Save, edit, retire and restore saved hunt queries | Yes | Yes | Yes | No | No | No |
 | Delete saved hunt queries | Yes | own ones | own ones | No | No | No |
+| Write an Outreach action's email, mark it sent and record the reply | Yes | Yes | own team's | No | No | No |
+| Read the outreach templates | Yes | Yes | Yes | Yes | No | No |
+| Save, edit, retire and restore outreach templates | Yes | Yes | Yes | No | No | No |
+| Delete outreach templates | Yes | own ones | own ones | No | No | No |
 | Choose my own notifications (reminders, digests, rotation emails) | Yes | Yes | Yes | Yes | No | No |
 | **Numbers** | | | | | | |
 | Enter the day's numbers | Yes | Yes | No | No | No | No |
@@ -313,12 +317,13 @@ until then (times are in the organization's time zone, set on **Organization set
 | `BriefNotReady:Enabled`, `Time`, `Recipients` | If today's brief isn't marked ready by `Time`, a nudge to its analyst (or, with no brief yet, whoever the brief rotation names), else to `Recipients`. |
 | `Presenting:Enabled` | At `ReminderTime`, a reminder to whoever presents the brief the next business day (once per stretch). |
 | `PersonalDigest:Enabled` | On by default: people may choose, on **My notifications**, a digest of their own actions, daily at `ReminderTime` on business days or weekly on `Digest:Day` at `Digest:Time`. Nothing goes until someone does. |
+| `OutreachFollowUp:Enabled`, `Days` | At `ReminderTime` on business days, a reminder to whoever marked an Outreach action's email sent, once it has had no reply recorded for `Days` business days (1 to 30; 5 by default) and the action is still open. Once per email. |
 
 Each thing is sent once. **Administration > Teams & SLA** shows each scan's last run and can run one now.
 
 People turn off the kinds they don't want on **My notifications** (the account menu): due-soon and overdue
-reminders, the team digest when it comes to members, rotation reminders, and rotation requests and notices. They
-can only turn off what an administrator has on. A team mailbox, the brief-not-ready fallback recipients and the
+reminders, the team digest when it comes to members, outreach follow-ups, rotation reminders, and rotation requests and
+notices. They can only turn off what an administrator has on. A team mailbox, the brief-not-ready fallback recipients and the
 rotation's managers are addresses, not people, so they always get theirs; so does everyone the brief is sent to.
 Teams & SLA shows how many people opted out of each kind, and who.
 

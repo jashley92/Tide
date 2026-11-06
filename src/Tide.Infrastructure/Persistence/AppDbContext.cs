@@ -67,6 +67,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<QueryTemplate> QueryTemplates => Set<QueryTemplate>();
     public DbSet<SavedQuery> SavedQueries => Set<SavedQuery>();
     public DbSet<ActionIndicator> ActionIndicators => Set<ActionIndicator>();
+    public DbSet<OutreachTemplate> OutreachTemplates => Set<OutreachTemplate>();
+    public DbSet<OutreachMessage> OutreachMessages => Set<OutreachMessage>();
     public DbSet<NotificationMark> NotificationMarks => Set<NotificationMark>();
     public DbSet<Source> Sources => Set<Source>();
     public DbSet<FeedItem> FeedItems => Set<FeedItem>();
@@ -204,6 +206,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.OtherNames).HasMaxLength(StackProduct.MaxOtherNames);
             e.Property(x => x.Versions).HasMaxLength(StackProduct.MaxVersions);
             e.Property(x => x.Notes).HasMaxLength(StackProduct.MaxNotes);
+            e.Property(x => x.ContactName).HasMaxLength(StackProduct.MaxContactName);
+            e.Property(x => x.ContactEmail).HasMaxLength(StackProduct.MaxContactEmail);
             e.HasOne(x => x.Team).WithMany().HasForeignKey(x => x.TeamId).OnDelete(DeleteBehavior.SetNull);
             Audited(e);
         });
@@ -486,6 +490,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasMany(x => x.Hunts).WithOne().HasForeignKey(x => x.ActionId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Checklist).WithOne().HasForeignKey(x => x.ActionId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Indicators).WithOne().HasForeignKey(x => x.ActionId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.Outreach).WithOne().HasForeignKey(x => x.ActionId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Files).WithOne().HasForeignKey(x => x.ActionId).OnDelete(DeleteBehavior.Cascade);
             e.Property(x => x.PlaybookName).HasMaxLength(100);
             e.HasOne<Playbook>().WithMany().HasForeignKey(x => x.PlaybookId).OnDelete(DeleteBehavior.Restrict);
@@ -607,6 +612,41 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.ModifiedByName).HasMaxLength(256);
             e.Property(x => x.EditVersion).IsConcurrencyToken();
             Audited(e);
+        });
+
+        b.Entity<OutreachTemplate>(e =>
+        {
+            e.Property(x => x.Name).HasMaxLength(OutreachTemplate.MaxName);
+            e.HasIndex(x => x.Name).IsUnique();
+            e.Property(x => x.Description).HasMaxLength(OutreachTemplate.MaxDescription);
+            e.Property(x => x.Subject).HasMaxLength(OutreachTemplate.MaxSubject);
+            e.Property(x => x.Body).HasMaxLength(OutreachTemplate.MaxBody);
+            e.Property(x => x.To).HasMaxLength(OutreachTemplate.MaxTo);
+            e.Property(x => x.CreatedByName).HasMaxLength(256);
+            e.Property(x => x.ModifiedByName).HasMaxLength(256);
+            e.Property(x => x.EditVersion).IsConcurrencyToken();
+            Audited(e);
+        });
+
+        b.Entity<OutreachMessage>(e =>
+        {
+            e.Property(x => x.TemplateName).HasMaxLength(OutreachTemplate.MaxName);
+            // A template can be deleted; the emails written from it keep its name.
+            e.HasOne<OutreachTemplate>().WithMany().HasForeignKey(x => x.TemplateId).OnDelete(DeleteBehavior.SetNull);
+            e.Property(x => x.To).HasMaxLength(OutreachMessage.MaxTo);
+            e.Property(x => x.Subject).HasMaxLength(OutreachMessage.MaxSubject);
+            e.Property(x => x.Body).HasMaxLength(OutreachMessage.MaxBody);
+            e.Property(x => x.SentById).HasMaxLength(256);
+            e.Property(x => x.SentByName).HasMaxLength(256);
+            e.Property(x => x.ReplyRecordedByName).HasMaxLength(256);
+            e.Property(x => x.ReplyNotes).HasMaxLength(OutreachMessage.MaxNotes);
+            // The reply's file is an ActionFile on the same action, and those are never deleted while the action stands
+            // (removing one keeps its row), so it's held by id alone: a second cascade path to the action would be
+            // refused by SQL Server.
+            e.HasIndex(x => x.ActionId);
+            e.HasIndex(x => x.TemplateId);
+            // The follow-up scan reads those still waiting.
+            e.HasIndex(x => x.RepliedAtUtc);
         });
 
         b.Entity<QueryTemplate>(e =>

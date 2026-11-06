@@ -159,6 +159,11 @@ else
                 <HuntPanel @key="a.Id" Action="a" CanWork="_detail.CanWork" Changed="Reload" />
             }
 
+            @if (a.Kind == ActionKind.Outreach)
+            {
+                <OutreachPanel @key="@($"outreach-{a.Id}")" Action="a" CanWork="_detail.CanWork" Files="_detail.Files" Changed="Reload" />
+            }
+
             <div class="tide-card">
                 <h2>Comments <span class="tide-count tide-muted fw-normal">(@a.Comments.Count)</span></h2>
                 @foreach (var c in a.Comments)

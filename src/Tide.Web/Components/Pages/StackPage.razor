@@ -122,6 +122,12 @@ else
                             </select></div>
                         <div class="col-md-3"><label class="tide-field-label" for="f-checked">Checked on</label>
                             <input id="f-checked" type="date" class="form-control form-control-sm" @bind="f.CheckedOn" /></div>
+                        <div class="col-md-6"><label class="tide-field-label" for="f-contact-name">Vendor or support contact</label>
+                            <input id="f-contact-name" class="form-control form-control-sm" maxlength="@Tide.Domain.Entities.StackProduct.MaxContactName" placeholder="Vendor PSIRT" @bind="f.ContactName" /></div>
+                        <div class="col-md-6"><label class="tide-field-label" for="f-contact-email">Contact's email</label>
+                            <input id="f-contact-email" type="email" class="form-control form-control-sm" maxlength="@Tide.Domain.Entities.StackProduct.MaxContactEmail" placeholder="psirt@vendor.example"
+                                   aria-describedby="f-contact-help" @bind="f.ContactEmail" />
+                            <div class="form-text" id="f-contact-help">Offered as the To line when an Outreach action's email is about this product.</div></div>
                         <div class="col-12"><label class="tide-field-label" for="f-notes">Notes (Markdown)</label>
                             <MarkdownToolbar For="f-notes" Label="Notes" BindsOnChange="true" />
                             <textarea id="f-notes" class="form-control form-control-sm tide-autogrow" rows="5" maxlength="4000"
@@ -134,6 +140,7 @@ else
                     <dl class="tide-stack-facts">
                         <dt>Other names</dt><dd>@(p.OtherNames ?? "—")</dd>
                         <dt>Versions</dt><dd>@(p.Versions ?? "—")</dd>
+                        <dt>Contact</dt><dd>@Contact(p)</dd>
                     </dl>
                     @if (p.Notes is { } notes) { <Md Text="@notes" /> } else { <p class="small tide-muted mb-0">No notes yet.</p> }
                 }
@@ -234,7 +241,11 @@ else
     /// <summary>Whether the edit form still holds the product as it was read (nothing typed in it).</summary>
     internal static bool Untouched(StackForm f, Tide.Domain.Entities.StackProduct p) =>
         Same(f.Name, p.Name) && Same(f.OtherNames, p.OtherNames) && Same(f.Versions, p.Versions) && Same(f.Notes, p.Notes)
-        && f.TeamId == p.TeamId && f.CheckedOn == p.CheckedOn;
+        && f.TeamId == p.TeamId && f.CheckedOn == p.CheckedOn && Same(f.ContactName, p.ContactName) && Same(f.ContactEmail, p.ContactEmail);
+
+    /// <summary>"Vendor PSIRT, psirt@vendor.example", or a dash.</summary>
+    internal static string Contact(Tide.Domain.Entities.StackProduct p) =>
+        string.Join(", ", new[] { p.ContactName, p.ContactEmail }.Where(x => !string.IsNullOrWhiteSpace(x))) is { Length: > 0 } c ? c : "—";
 
     private static bool Same(string? a, string? b) => string.Equals(a ?? "", b ?? "", StringComparison.Ordinal);
 
