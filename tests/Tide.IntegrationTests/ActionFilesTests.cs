@@ -67,6 +67,29 @@ public class ActionFileServiceTests : IDisposable
     private void AsAdmin() => As("S-1-5-21-TEST-1", "Test Analyst", AppRole.Analyst, AppRole.Admin);
 
     [Fact]
+    public async Task ARiskyFile_WhoseNameHasInvisibleCharactersInItsExtension_IsStillJudgedByTheNameItIsStoredUnder()
+    {
+        var a = await NewAction();
+        var added = (await _db.ActionFiles().AddAsync(a.Id, [new ActionFileUpload("update.ps​1",Samples.Text("Write-Host hi"))])).Single();
+        added.FileName.Should().Be("update.ps1");
+        added.RiskReason.Should().NotBeNull("it downloads as update.ps1, so it is a script");
+
+        await _db.Actions().AddCommentAsync(a.Id, "Dropper", [new ScreenshotUpload("run.b­at",Samples.Text("echo hi"))]);
+        var row = (await Detail(a))!.Files.Live.Single(f => f.FileName == "run.bat");
+        row.RiskReason.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task AddingTenFilesWithLongNames_KeepsEveryHashInTheHistory()
+    {
+        var a = await NewAction();
+        var uploads = Enumerable.Range(0, 10).Select(i => new ActionFileUpload(new string('n', 120) + i + ".log", Samples.Text("content " + i))).ToList();
+        await _db.ActionFiles().AddAsync(a.Id, uploads);
+        var history = string.Join(" | ", (await Detail(a))!.Action.Events.Select(e => e.Text));
+        foreach (var u in uploads) history.Should().Contain(Samples.Sha(u.Bytes));
+    }
+
+    [Fact]
     public async Task AFile_IsStoredWithItsHashAndSize_AndTheHistoryAndAuditTrailNameTheHash()
     {
         var a = await NewAction();
@@ -660,6 +683,24 @@ public class ActionFilePageTests(TideApp app) : IClassFixture<TideApp>
         await sp.GetRequiredService<OperationalSettingsService>().SaveAsync(new Dictionary<string, string?> { [OperationalSettings.ZipDownloads] = mode.ToString() });
         return true;
     });
+
+    [Fact]
+    public async Task APresentedAction_DoesNotListACommentFileThatWasRemoved()
+    {
+        var (number, id) = await NewAction("files-page: present removed");
+        await As(async sp =>
+        {
+            var actions = sp.GetRequiredService<ActionService>();
+            await actions.AddCommentAsync(id, "Two", [new ScreenshotUpload("kept-evidence.log", Samples.Text("k")), new ScreenshotUpload("gone-evidence.log", Samples.Text("g"))]);
+            var files = sp.GetRequiredService<ActionFileService>();
+            var gone = (await actions.GetAsync(number))!.Files.Live.Single(f => f.FileName == "gone-evidence.log");
+            await files.RemoveAsync(gone.FileId, "Wrong host");
+            return true;
+        });
+        var detail = await As(sp => sp.GetRequiredService<ActionService>().GetAsync(number));
+        await using var page = await RenderAsync<PresentAction>(app, "/present", new() { ["Detail"] = detail, ["Links"] = true });
+        (await page.Html()).Should().Contain("</span> kept-evidence.log</div>").And.NotContain("</span> gone-evidence.log</div>");
+    }
 
     [Fact]
     public async Task TheFilesSection_ListsBothKinds_WithSourceHashAndDownloads()
