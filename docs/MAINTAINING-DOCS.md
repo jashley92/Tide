@@ -36,11 +36,33 @@ no behavior change").
 
 ## Screenshots
 
-The images in `docs/screenshots/` are meant to be generated, not hand-edited. A capture tool
-(`tools/screenshots/capture.mjs`, Playwright, against a seeded dev database) is being added. Once it's in, its
-`README.md` says how to run all shots or a subset (`ONLY=name1,name2`). Numbered callouts are defined in the
-tool's manifest, and the doc that embeds an image holds the legend: renumber a callout and you update the legend
-too. Refresh the affected shots after any visible UI change, and review the PNG diff before committing.
+Every image in `docs/screenshots/` is generated, never hand-edited:
+
+```bash
+node tools/screenshots/capture.mjs                       # everything, about a minute
+ONLY=doc-editions,doc-api-tokens node tools/screenshots/capture.mjs
+```
+
+The tool seeds a demo database with fictional data (`DemoSeeder`, only with `Demo:Seed=true` in Development),
+starts TIDE on it, and drives each page with Playwright. Prerequisites and options are in
+[tools/screenshots/README.md](../tools/screenshots/README.md).
+
+The `doc-*` shots carry numbered callouts defined in the manifest in `capture.mjs`
+(`annotate: [[selector, n]]`). The doc that embeds the image holds the legend, a numbered list under it, so if you
+renumber a callout, update the legend too. When a selector stops matching, the run prints
+`annotation target(s) not found` and fails: fix the selector rather than committing an image without its callout.
+
+| Shot | Legend lives in |
+|---|---|
+| `doc-today-steps` | [workflows/brief-and-meeting.md](workflows/brief-and-meeting.md#today) |
+| `doc-triage-reading` | [workflows/intake-and-triage.md](workflows/intake-and-triage.md#the-triage-inbox) |
+| `doc-article-editor` | [workflows/writing-articles.md](workflows/writing-articles.md#the-editor) |
+| `doc-editions` | [workflows/distribution.md](workflows/distribution.md#before-it-goes-preview-and-test-send) |
+| `doc-action-detail` | [workflows/actions-and-hunting.md](workflows/actions-and-hunting.md#working-an-action-assignee-checklist-comments-files) |
+| `doc-admin-settings` | [workflows/administration.md](workflows/administration.md#the-frame-and-who-may-use-it) |
+| `doc-api-tokens` | [API.md](API.md#api-tokens) |
+
+Refresh the affected shots after any visible UI change, and review the PNG diff before committing.
 
 ## Diagrams
 

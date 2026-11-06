@@ -44,6 +44,15 @@ left behind is Attention. Triage is never "done": the feed is never finished.
 
 ![Today](../screenshots/brief-todays-numbers.png)
 
+![Today's step strip](../screenshots/doc-today-steps.png)
+
+1. **Triage**: new items waiting in the feed.
+2. **Write**: how many of the brief's articles are ready.
+3. **Order**: the running order, marked *Now* when it's the next step, with what's still missing (not marked ready, a number not entered).
+4. **Present**: the meeting time.
+5. **Send**: the editions to send.
+6. The one main button for whichever step is next (here *Mark ready*).
+
 Today (`/`, `Components/Pages/Home.razor`) is where the presenting analyst starts. It's the brief page drawn for the
 current brief date (`BriefPage` with `AsToday`, the date from `OrgClock.CurrentBriefDate` in the organization's time
 zone). Someone without the team edition (a Reader, a Visitor) is sent to `/published` instead. It shows:

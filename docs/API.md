@@ -74,6 +74,14 @@ sequenceDiagram
 
 ### API tokens
 
+![Administration › API access](screenshots/doc-api-tokens.png)
+
+1. The callers: each token's name and last four characters, its scopes, expiry and last use.
+2. Each token's own TLP ceiling (*Reads up to*).
+3. *Revoke* stops a token at once.
+4. *Issue a token*: name the caller, choose the ceiling, the days it lasts, and only the scopes it needs.
+5. The token is shown once, when issued. Only its hash is kept.
+
 An administrator issues tokens in **Administration › API access** (`/admin/api`, page
 `src/Tide.Web/Components/Pages/Admin/ApiAdmin.razor`, service `ApiTokenService` in
 `src/Tide.Application/Api/ApiTokens.cs`).

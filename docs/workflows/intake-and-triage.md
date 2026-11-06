@@ -235,6 +235,15 @@ What triage does with it:
 
 ![Triage inbox](../screenshots/triage-inbox.png)
 
+![The triage inbox with the reading pane open](../screenshots/doc-triage-reading.png)
+
+1. The tabs (New, Shortlisted, Promoted, Dismissed, Duplicates), each with its count.
+2. Filters: by source, by words in titles and CVEs, *Since the last brief*, and the *Newest* / *Likely used* order.
+3. The selected item: its source with its Admiralty grade, its TLP and its excerpt.
+4. CVE chips: the CVSS score, the EPSS percentage and, where it applies, KEV.
+5. The row's decisions: *Promote* (P), *Shortlist* (S), *Dismiss* (X) with a reason, *Attach to…* and *Add to what we run…*.
+6. The reading pane (V): the article's text, read once and kept for a week, with its CVEs and indicators marked.
+
 Triage (`/triage`, `Components/Pages/Triage.razor`) is a keyboard-driven inbox. Its tabs are the item states (New,
 Shortlisted, Dismissed, Duplicate, Promoted) and, set apart at the end, Sources. The tab, filters and selected row are
 kept in the address (`triage?tab=…&at=…`), so a reload or a copied link opens the same view.

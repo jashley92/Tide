@@ -21,6 +21,13 @@ server, is in [configuration.md](../operations/configuration.md); this page is t
 
 ## The frame and who may use it
 
+![Administration: organization settings](../screenshots/doc-admin-settings.png)
+
+1. The setting groups, as tabs.
+2. The pages in the selected group, as sub-tabs.
+3. Operational settings. Until one is saved here, the server's value is used, and each save is audited.
+4. Holidays, added one at a time or imported from an .ics calendar. They count as weekends do.
+
 One "Administration" entry in the sidebar opens every setting page. The pages share one frame (`AdminLayout`): the
 heading, the groups as tabs, a group's pages as sub-tabs (`TabBar`), and the page. `/admin` is the Overview: the
 getting-started checklist and an index of every page with a line on what it's for. Both read

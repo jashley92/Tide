@@ -226,6 +226,15 @@ an action is never re-checked, so an action overdue for over a year can still be
 
 ## Working an action: assignee, checklist, comments, files
 
+![An action's page](../screenshots/doc-action-detail.png)
+
+1. Status, changed in one click (outcomes are asked for when it's closed).
+2. The facts: due date with how close it is, assignee, team, priority, kind and external ticket.
+3. The checklist, each item ticked by name.
+4. Comments, in Markdown, with screenshots or evidence attached.
+5. *About*: the brief it was raised for and the article it came from.
+6. Files on the action: picked, dropped or pasted, each with its SHA-256.
+
 - **Assignee.** A new assignee must be a member of the action's team; one it already has keeps it (an analyst who took
   it). The meeting's assignee and due boxes change only what they say (`AssignAsync`, `SetDueAsync`), so a due date set
   in the meeting doesn't take the action back from someone a colleague just gave it to.

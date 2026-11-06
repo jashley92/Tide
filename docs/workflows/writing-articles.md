@@ -74,6 +74,15 @@ raises, never touches one already written, and isn't a column default, so saved 
 
 ## The editor
 
+![The article editor](../screenshots/doc-article-editor.png)
+
+1. Section pills, which jump to each part of the article.
+2. Assessment: Threat or Informational, priority, the article's TLP, the source and its link, and other reports.
+3. Each bullet's own TLP. A part can be marked higher than its article, never lower.
+4. *What readers get*: switch between the team and company-wide editions to see the article as each carries it.
+5. Readiness checks: what's missing before the article can be marked ready.
+6. The sticky save bar: save state, *Save*, *Back to draft*, and whether the article is on today's brief.
+
 The article page (`/articles/{id}`, `Components/Pages/ArticleEdit.razor`) has two halves:
 
 - **`ArticleEditorPanel`**: the form. Section pills jump to Assessment, Bottom line, Bullets, Why it matters,

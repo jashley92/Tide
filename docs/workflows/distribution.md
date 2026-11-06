@@ -58,6 +58,14 @@ The subject is `BriefRenderer.Subject(cut, teamName)`.
 
 ## Before it goes: preview and test send
 
+![Preview both editions of a sent brief](../screenshots/doc-editions.png)
+
+1. The security team edition, at its marking (here TLP:AMBER), carrying everything up to its ceiling.
+2. The company-wide edition, held to its ceiling (here TLP:GREEN).
+3. The day's numbers, which only the team edition carries.
+4. A part marked above the company-wide ceiling. It's in the team edition only.
+5. The company-wide edition says how many restricted parts it left out. They aren't hidden; they're never in it.
+
 - **Preview** (`DistributionService.PreviewEmailAsync`): the email exactly as it would go now, served at
   `/briefs/{day}/email/{edition}` with its images from the inline endpoint. Like the frozen-email endpoints, it has its
   own CSP: `default-src 'none'`, no script, `sandbox`, framable by the app only (`frame-ancestors 'self'`).
