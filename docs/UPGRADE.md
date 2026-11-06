@@ -171,6 +171,42 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
+### v1.5.4
+
+Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds one migration (`SavedQueriesAndActionIndicators`);
+none of the earlier ones change. No settings are new or renamed. On a DbaApplies install, the DBA applies that
+migration first, as for any release that carries one.
+
+**For administrators**
+- **"Something went wrong" can be traced.** When an action fails unexpectedly, its message now ends with a short
+  reference, such as `(reference 9C41F07A)`. The full error is in the Application event log under `Tide.Errors`, with
+  that reference, who it happened to and what they were doing. INSTALL.md's "Logs" section explains how to find each
+  kind of error.
+- **A page closing as the connection drops no longer ends the session.** Leaving a page with the running order, the
+  board, triage or present mode on it while the connection was shutting down could end the whole session ("Something
+  went wrong. Reload the page"). Those page cleanups now let a cancelled call go.
+- **Saved hunt queries** are a new team library, at **Saved queries** after Actions in the menu. Anyone who can read
+  actions sees them. Anyone who works actions can add, edit, retire and restore them. Deleting is for whoever saved one,
+  or an administrator. The built-in generation templates (**Administration > Query templates**) stay admin-only.
+
+**For everyone**
+- **Pages no longer flicker on reload.** Today, Triage, the actions list and board, an action's page, a new action,
+  present mode, the article editor and the review page used to draw, flash a loading skeleton, then draw again on
+  every reload. They now draw once.
+- **Hunt queries:**
+  - **Add a saved query** from an action's Hunt queries card, and **Save for the team** on any hunt, including one
+    you've edited.
+  - A saved query can say `{{days}}`, `{{values}}` (every indicator) or `{{values:domain}}`, `{{values:sha256}}` and
+    so on (one kind). Tide fills them in for the action, quoted for the query language. It lists the values the query
+    doesn't use, so **No hits, close** still asks you to acknowledge them.
+  - **Add indicators** from the hunt card: one at a time, or found in pasted text. On an action raised from an
+    article, they're saved on the article, so the brief, exports and other actions see them; that needs the right to
+    edit articles, and the card says so if you can't. An action with no article keeps its own.
+- **Present mode:**
+  - On an article's slide, **N indicators** is a button that opens them over the slide, by type and defanged. When
+    the presenter opens them, everyone following sees them, as with a product's card. Team edition only.
+  - The source's name at the top of an article's slide links to the original report, in a new tab.
+
 ### v1.5.3
 
 Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds no migration and no setting.
