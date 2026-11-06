@@ -93,9 +93,11 @@ public sealed class DatabaseHealthCheck(IAppDbContextFactory dbs) : IHealthCheck
 
 /// <summary>What a failed action tells the person: the message for errors we raise on purpose, a generic line otherwise.
 /// A refusal (<see cref="Application.Security.ForbiddenException"/>) is also logged as a warning, with who and which
-/// operation, so access-control failures leave a trace beyond a toast. The log and the user come from the ambient
-/// request or circuit activity (<see cref="Security.AmbientUser"/>), never from a static: a logger held past its host
-/// throws. Logging never changes what the person sees: a logger that fails is dropped, not raised in their handler.</summary>
+/// operation, so access-control failures leave a trace beyond a toast. Any other failure the person is told only
+/// "Something went wrong" about is logged as an error with its exception, under a reference the message gives them, so
+/// an administrator can find it. The logs and the user come from the ambient request or circuit activity
+/// (<see cref="Security.AmbientUser"/>), never from a static: a logger held past its host throws. Logging never changes
+/// what the person sees: a logger that fails is dropped, not raised in their handler.</summary>
 public static class UserFacingError
 {
     /// <param name="user">Who was refused, when the caller has them; otherwise the ambient user, and "unknown" outside a
@@ -112,7 +114,22 @@ public static class UserFacingError
             }
             catch (Exception) { /* a logging failure (a provider gone with its host, a full disk) isn't the person's problem */ }
         }
-        return Message(ex);
+        var message = Message(ex);
+        if (message is not null) return message;
+
+        // Unexpected: the person learns nothing from the exception, so it's logged where an administrator can find it.
+        // The reference is short enough to read out over the phone.
+        var reference = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(4));
+        if (Security.AmbientUser.ErrorLog is { } errors)
+        {
+            try
+            {
+                errors.LogError(ex, "Unexpected error {Reference} for {User} in {Operation}.", reference,
+                    (user ?? Security.AmbientUser.Current)?.UserId ?? "unknown", operation ?? Refused(ex) ?? "an operation");
+            }
+            catch (Exception) { /* as above */ }
+        }
+        return $"Something went wrong. Try again; if it keeps happening, tell an administrator (reference {reference}).";
     }
 
     /// <summary>The application service and method that threw: the first frame of the app's own code, named as a person
@@ -145,13 +162,14 @@ public static class UserFacingError
         return close > 1 ? name[1..close] : null;
     }
 
-    private static string Message(Exception ex) => ex switch
+    // The message for a failure the person can act on; null for one that's unexpected.
+    private static string? Message(Exception ex) => ex switch
     {
         ArgumentException or InvalidOperationException or KeyNotFoundException or Application.Security.ForbiddenException
             or Application.Articles.StaleEditException => ex.Message,
         // A save that lost a race with someone else's (the edit version moved under it): the data is safe, so say so.
         Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException =>
             "Someone else changed this at the same moment, so your change wasn't saved. Reload to see theirs, then try again.",
-        _ => "Something went wrong. Try again; if it keeps happening, tell an administrator.",
+        _ => null,
     };
 }

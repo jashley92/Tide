@@ -201,7 +201,7 @@ var accessLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger(A
 // A change is published on the publisher's thread, inside their circuit activity: each subscriber is called with the
 // publisher's user cleared, so work the subscriber starts isn't logged as the publisher's. (A static delegate to a static
 // method: nothing host-owned is kept.)
-ChangeFeed.AroundHandler = () => AmbientUser.Begin(null, null);
+ChangeFeed.AroundHandler = () => AmbientUser.Begin(null);
 app.UseStatusCodePages(context =>
 {
     var http = context.HttpContext;

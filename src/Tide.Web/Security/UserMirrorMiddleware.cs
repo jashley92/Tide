@@ -18,9 +18,9 @@ public sealed class UserMirrorMiddleware
 
     public async Task InvokeAsync(HttpContext context, IUserDirectory directory, ICurrentUser currentUser, ILoggerFactory loggers)
     {
-        // The request's user and this host's access log are ambient for the rest of the pipeline (a page prerendering,
-        // an endpoint), for a refusal logged where it's shown.
-        using var ambient = AmbientUser.Begin(currentUser, loggers.CreateLogger(AmbientUser.AccessLogCategory));
+        // The request's user and this host's access and error logs are ambient for the rest of the pipeline (a page
+        // prerendering, an endpoint), for a refusal or a failure logged where it's shown.
+        using var ambient = AmbientUser.Begin(currentUser, loggers);
         // The process-long directory lookups log through the serving host (cheap: the factory caches its loggers).
         DirectoryLog.Use(loggers.CreateLogger(DirectoryLog.Category));
         var principal = context.User;

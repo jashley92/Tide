@@ -384,7 +384,11 @@ On IIS, TIDE's log goes to the Windows **Application** event log (source `.NET R
 and errors are written there; information-level entries go to the console, which IIS doesn't keep. Each entry lists
 its category and event id, then its context: for a request, `TraceId`, `SpanId`, `RequestId` and `RequestPath`.
 When something fails, the error page shows the reader a reference such as `00-4bf92f3577b34da6a3ce929d0e0e4736-...`;
-search the event log for the 32-character part after `00-` (the `TraceId`) to find the matching error.
+search the event log for the 32-character part after `00-` (the `TraceId`) to find the matching error. When an action
+fails unexpectedly, its message ends with a shorter reference, such as `(reference 9C41F07A)`: search for that, and the
+`Tide.Errors` entry with that reference names who it happened to and holds the full exception. An error inside a page
+(the "Something went wrong on this page" card) has no reference; it's logged as `Unhandled exception rendering
+component`, so look for it by time.
 
 To keep more, set the level for the event log alone in `appsettings.Production.json`, so the console's stays as it is:
 

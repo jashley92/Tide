@@ -546,7 +546,7 @@ public sealed class TrailAuditTests : IDisposable
     public async Task APublisher_DoesNotLendItsUserToAnotherCircuitsSubscriber()
     {
         var log = new CapturingLogger("Tide.Access");
-        ChangeFeed.AroundHandler = () => AmbientUser.Begin(null, null);   // as Program.cs sets it
+        ChangeFeed.AroundHandler = () => AmbientUser.Begin(null);   // as Program.cs sets it
         var feed = new ChangeFeed();
         var presence = new Tide.Web.Services.Presence();
         var inHandler = new List<string?>();
