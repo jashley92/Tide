@@ -77,6 +77,29 @@ public class TriageGroupsTests
     }
 
     [Fact]
+    public void ANameAndAWord_GroupWhicheverWayEachOutletCapitalises()
+    {
+        // The DigiCert breach: one outlet writes in sentence case ("business"), the other capitalises every word ("Business").
+        var items = new List<GroupCandidate>
+        {
+            Item("Certificate authority DigiCert reports data breach involving business customer info", "The Record", 1),
+            Item("DigiCert Data Breach Impacts Business Customer Information", "SecurityWeek", 5),
+        };
+        var group = TriageGroups.Find(items).Should().ContainSingle().Subject;
+        group.Shared.Should().Equal(["DigiCert", "business"], "the name first, then the word, as the newest headline spells them");
+    }
+
+    [Fact]
+    public void TwoPlainWords_OrAWordOnlyTitleCaseCapitalises_ArentAName()
+    {
+        TriageGroups.Find(
+        [
+            Item("Retail business information stolen in supply chain attack", "The Record", 1),
+            Item("Logistics Business Information Exposed After Supply Chain Attack", "SecurityWeek", 2),
+        ]).Should().BeEmpty("they share business, information, supply and chain, but no name both write as one");
+    }
+
+    [Fact]
     public void ASharedCve_IsEnough_AndEveryCveIsListed()
     {
         var items = new List<GroupCandidate>
@@ -133,6 +156,12 @@ public class TriageGroupsTests
 
         TriageGroups.Tokens("Hackers Exploited Patched Flaws, Hitachi Says", "SecurityWeek").Keys
             .Should().BeEquivalentTo(["hitachi"], "an ending is trimmed to find a common word, but a name that starts like one stays");
+
+        // An uncommon word in lower case is kept too, but not as a name.
+        var plain = TriageGroups.Tokens("DigiCert reports data breach involving business customer info", "The Record");
+        plain.Keys.Should().BeEquivalentTo("digicert", "involving", "business", "info");
+        plain["digicert"].Name.Should().BeTrue();
+        plain["business"].Name.Should().BeFalse();
         TriageGroups.Tokens("$6B stolen; €20m more; $500,000 ransom", "x").Keys.Should().BeEquivalentTo("$billion", "$million", "$500000");
     }
 
