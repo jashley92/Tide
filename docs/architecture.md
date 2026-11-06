@@ -354,7 +354,9 @@ would use, and `{{values}}` with every indicator on the article and the action, 
 other kinds are then named in a "not included" comment that `LeftOut` counts, so No hits, close asks for them. A
 placeholder that would get no values refuses the add, as Generate refuses with no indicators, and a kind TIDE doesn't
 know is refused when the query is saved. Its first line names the query and, with `{{days}}`, the window, so
-`WindowOf` reads it back. The config bundle doesn't carry saved queries: like playbooks and card rules, they're the
+`WindowOf` reads it back. Past `MaxValuesPerBlock` values for a placeholder the query is repeated, a block each, as a
+generated query repeats a kind's block. "Save for the team" on a hunt added from a saved query that still exists offers
+that query's own text (`SavedQueryService.DraftTextAsync`), so a tuned copy keeps its placeholders. The config bundle doesn't carry saved queries: like playbooks and card rules, they're the
 team's working content, not installation settings.
 
 `ReminderService` holds the scans (due soon, overdue, weekly digest, personal digest, brief not ready, presenting).

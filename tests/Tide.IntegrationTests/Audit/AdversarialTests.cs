@@ -866,7 +866,7 @@ public sealed class ServiceWorld : IDisposable
             ("Actions.AddSavedHunt", () => db.Actions().AddSavedHuntAsync(Action, Guid.NewGuid())),
             ("Actions.AddIndicators", () => db.Actions().AddIndicatorsAsync(Action, [new IndicatorForm { Type = IndicatorType.Domain, Value = "evil.example" }])),
             ("SavedQueries.Save", () => db.SavedQueries().SaveAsync(new SavedQueryForm { Name = "x", Dialect = "kql", Text = "x" })),
-            ("SavedQueries.SaveFromHunt", () => db.SavedQueries().SaveFromHuntAsync(Hunt, "x", null)),
+            ("SavedQueries.SaveFromHunt", () => db.SavedQueries().SaveFromHuntAsync(Hunt, "x", null, "x")),
             ("SavedQueries.SetRetired", () => db.SavedQueries().SetRetiredAsync(Guid.NewGuid(), true)),
             ("SavedQueries.Delete", () => db.SavedQueries().DeleteAsync(Guid.NewGuid())),
             ("Teams.Add", () => db.Teams().AddAsync("x", null, null)),

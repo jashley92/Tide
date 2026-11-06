@@ -450,19 +450,40 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
     /// Adds indicators to an article without touching the rest of it, in the caller's save (from an action's Hunt queries
     /// card, whose history line goes with it): normalised and folded as a save does, those it already carries skipped, and
     /// refused past <see cref="IocExtractor.MaxIndicators"/>. The article's edit version moves, so an editor open on the
-    /// older copy can't save its own indicators over these. Returns how many were new. The caller checks WriteArticles.
+    /// older copy can't save its own indicators over these. Returns how many were new. It takes writing articles;
+    /// <paramref name="refusal"/> is what someone who can't is told. <paramref name="a"/> is tracked by <paramref name="db"/>,
+    /// with its indicators.
     /// </summary>
-    internal static int AddIndicators(IAppDbContext db, Article a, IEnumerable<IndicatorForm> indicators)
+    public int AddIndicators(IAppDbContext db, Article a, IEnumerable<IndicatorForm> indicators, string refusal = WriteRefusal)
     {
-        var wanted = WantedIndicators(indicators);
-        foreach (var existing in a.Indicators) wanted.Remove($"{(int)existing.Type}|{existing.Value}");
-        if (wanted.Count == 0) return 0;
-        if (a.Indicators.Count + wanted.Count > IocExtractor.MaxIndicators)
-            throw new ArgumentException($"An article can carry at most {IocExtractor.MaxIndicators} indicators.");
-        foreach (var f in wanted.Values)
+        if (!user.Has(Permission.WriteArticles)) throw new ForbiddenException(refusal);
+        var added = NewIndicators(indicators, a.Indicators.Select(i => (i.Type, i.Value)), "An article");
+        if (added.Count == 0) return 0;
+        foreach (var f in added)
             db.ArticleIndicators.Add(new ArticleIndicator { ArticleId = a.Id, Type = f.Type, Value = f.Value, Note = f.Note });
         a.EditVersion = Guid.NewGuid();
-        return wanted.Count;
+        return added.Count;
+    }
+
+    /// <summary>
+    /// The rule for adding indicators to what already carries <paramref name="have"/> (an article, or an action with no
+    /// article): <paramref name="indicators"/> normalised and folded as a save does (<see cref="WantedIndicators"/>), those
+    /// already there skipped, and refused past <see cref="IocExtractor.MaxIndicators"/> in all, the refusal naming
+    /// <paramref name="carrier"/> ("An article"). The new ones; none is never refused.
+    /// </summary>
+    internal static List<IndicatorForm> NewIndicators(IEnumerable<IndicatorForm> indicators, IEnumerable<(IndicatorType Type, string Value)> have, string carrier)
+    {
+        var wanted = WantedIndicators(indicators);
+        var had = 0;
+        foreach (var (type, value) in have)
+        {
+            wanted.Remove($"{(int)type}|{value}");
+            had++;
+        }
+        if (wanted.Count == 0) return [];
+        if (had + wanted.Count > IocExtractor.MaxIndicators)
+            throw new ArgumentException($"{carrier} can carry at most {IocExtractor.MaxIndicators} indicators.");
+        return [.. wanted.Values];
     }
 
     /// <summary>The bullets a save keeps, in order: trimmed, with the blank ones dropped.</summary>
@@ -661,8 +682,10 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
         if (!user.Has(Permission.ReadTeamEdition)) throw new ForbiddenException("You don't have access to articles.");
     }
 
+    private const string WriteRefusal = "Only analysts can write articles.";
+
     private void RequireWrite()
     {
-        if (!user.Has(Permission.WriteArticles)) throw new ForbiddenException("Only analysts can write articles.");
+        if (!user.Has(Permission.WriteArticles)) throw new ForbiddenException(WriteRefusal);
     }
 }

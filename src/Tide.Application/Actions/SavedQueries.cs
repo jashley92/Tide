@@ -38,7 +38,9 @@ public sealed class SavedQueryService(IAppDbContextFactory dbs, ICurrentUser use
     public bool CanWrite => user.Has(Permission.WorkActions);
 
     /// <summary>Whether the current user may delete <paramref name="q"/>: an administrator, or whoever saved it.</summary>
-    public bool CanDelete(SavedQuery q) => user.Has(Permission.Administer) || (CanWrite && q.CreatedBy == user.UserId);
+    public bool CanDelete(SavedQuery q) => CanDelete(q.CreatedBy);
+
+    private bool CanDelete(string? savedBy) => user.Has(Permission.Administer) || (CanWrite && savedBy is not null && savedBy == user.UserId);
 
     /// <summary>
     /// Every saved query, retired ones too when <paramref name="includeRetired"/>, by language (as the languages are
@@ -49,13 +51,26 @@ public sealed class SavedQueryService(IAppDbContextFactory dbs, ICurrentUser use
         RequireRead();
         await using var db = await dbs.CreateAsync(ct);
         var all = await db.SavedQueries.AsNoTracking().Where(q => includeRetired || !q.IsRetired).ToListAsync(ct);
-        // Each action once, however many times the query went on it.
-        var used = (await db.HuntQueries.AsNoTracking().Where(h => h.SavedQueryId != null)
-                .Select(h => new { h.SavedQueryId, h.ActionId }).Distinct().ToListAsync(ct))
-            .GroupBy(h => h.SavedQueryId!.Value).ToDictionary(g => g.Key, g => g.Count());
-        return all.OrderBy(q => DialectOrder(q.Dialect)).ThenBy(q => q.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(q => new SavedQueryRow(q, used.GetValueOrDefault(q.Id))).ToList();
+        var ids = all.Select(q => q.Id).ToList();
+        // Counted in the database, for the queries read: each action once, however many times the query went on it.
+        var used = await db.HuntQueries.Where(h => h.SavedQueryId != null && ids.Contains(h.SavedQueryId.Value))
+            .GroupBy(h => h.SavedQueryId!.Value)
+            .Select(g => new { g.Key, Actions = g.Select(h => h.ActionId).Distinct().Count() })
+            .ToDictionaryAsync(x => x.Key, x => x.Actions, ct);
+        return Ordered(all).Select(q => new SavedQueryRow(q, used.GetValueOrDefault(q.Id))).ToList();
     }
+
+    /// <summary>The saved queries an action's Hunt queries card offers (not retired), in the list's order, without the counts.</summary>
+    public async Task<IReadOnlyList<SavedQuery>> OfferedAsync(CancellationToken ct = default)
+    {
+        RequireRead();
+        await using var db = await dbs.CreateAsync(ct);
+        return Ordered(await db.SavedQueries.AsNoTracking().Where(q => !q.IsRetired).ToListAsync(ct)).ToList();
+    }
+
+    // By language (as the languages are listed), then name.
+    private static IOrderedEnumerable<SavedQuery> Ordered(IEnumerable<SavedQuery> queries) =>
+        queries.OrderBy(q => DialectOrder(q.Dialect)).ThenBy(q => q.Name, StringComparer.OrdinalIgnoreCase);
 
     public async Task<SavedQuery?> GetAsync(Guid id, CancellationToken ct = default)
     {
@@ -65,15 +80,15 @@ public sealed class SavedQueryService(IAppDbContextFactory dbs, ICurrentUser use
     }
 
     /// <summary>
-    /// Whether <paramref name="q"/> matches what was typed: every word in its name, description, language or text,
-    /// ignoring case. The list is the team's own and short, so it's matched here rather than in the database.
+    /// Whether <paramref name="q"/> matches the words typed (a filter split into words, as the tables split theirs):
+    /// each in its name, description, language or text, ignoring case. The list is the team's own and short, so it's
+    /// matched here rather than in the database.
     /// </summary>
-    public static bool Matches(SavedQuery q, string? words)
-    {
-        var all = $"{q.Name} {q.Description} {HuntQueryBuilder.DialectName(q.Dialect)} {q.Text}";
-        return (words ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .All(w => all.Contains(w, StringComparison.OrdinalIgnoreCase));
-    }
+    public static bool Matches(SavedQuery q, IReadOnlyList<string> words) => words.All(w =>
+        q.Name.Contains(w, StringComparison.OrdinalIgnoreCase)
+        || (q.Description?.Contains(w, StringComparison.OrdinalIgnoreCase) ?? false)
+        || HuntQueryBuilder.DialectName(q.Dialect).Contains(w, StringComparison.OrdinalIgnoreCase)
+        || q.Text.Contains(w, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Saves a new query, or changes one; its id. A change begun on a copy someone has since changed is refused.</summary>
     public async Task<Guid> SaveAsync(SavedQueryForm form, CancellationToken ct = default)
@@ -95,6 +110,8 @@ public sealed class SavedQueryService(IAppDbContextFactory dbs, ICurrentUser use
             q = await db.SavedQueries.FirstOrDefaultAsync(x => x.Id == id, ct) ?? throw new KeyNotFoundException("That saved query no longer exists.");
             if (q.EditVersion != form.EditVersion) throw new StaleEditException(Stale);
             if (q.Name == name && q.Dialect == d.Key && q.Description == description && q.Text == text) return q.Id;
+            q.ModifiedByName = user.DisplayName;
+            q.EditVersion = Guid.NewGuid();
         }
         else
         {
@@ -109,29 +126,38 @@ public sealed class SavedQueryService(IAppDbContextFactory dbs, ICurrentUser use
         q.Dialect = d.Key;
         q.Description = description;
         q.Text = text;
-        if (form.Id is not null)
-        {
-            q.ModifiedByName = user.DisplayName;
-            q.EditVersion = Guid.NewGuid();
-        }
         await SaveEditAsync(db, ct);
         return q.Id;
     }
 
     /// <summary>
-    /// Saves a hunt on an action for the team: its language, and its text as it stands (unless <paramref name="text"/>
-    /// says otherwise), without the first line TIDE wrote on it.
+    /// What Save for the team offers to save of <paramref name="hunt"/>: for one added from a saved query that's still
+    /// there, that query's own text (its <c>{{values}}</c> and <c>{{days}}</c>, not this action's values and window, nor
+    /// the lines naming what it left out); for any other, its text as it stands without the first line TIDE wrote on it.
     /// </summary>
-    public async Task<Guid> SaveFromHuntAsync(Guid huntId, string name, string? description, string? text = null, CancellationToken ct = default)
+    public async Task<string> DraftTextAsync(HuntQuery hunt, CancellationToken ct = default)
     {
         RequireWrite();
-        HuntQuery hunt;
-        await using (var db = await dbs.CreateAsync(ct))
-            hunt = await db.HuntQueries.AsNoTracking().FirstOrDefaultAsync(h => h.Id == huntId, ct) ?? throw new KeyNotFoundException("That hunt query no longer exists.");
-        return await SaveAsync(new SavedQueryForm
+        if (hunt.SavedQueryId is { } id)
         {
-            Name = name, Dialect = hunt.Dialect, Description = description, Text = text ?? HuntQueryBuilder.WithoutHeader(hunt.Dialect, hunt.Text),
-        }, ct);
+            await using var db = await dbs.CreateAsync(ct);
+            if (await db.SavedQueries.AsNoTracking().Where(q => q.Id == id).Select(q => q.Text).FirstOrDefaultAsync(ct) is { } template) return template;
+        }
+        return HuntQueryBuilder.WithoutHeader(hunt.Dialect, hunt.Text);
+    }
+
+    /// <summary>
+    /// Saves a hunt on an action for the team, in its language, as <paramref name="text"/>: what
+    /// <see cref="DraftTextAsync"/> offered, as edited.
+    /// </summary>
+    public async Task<Guid> SaveFromHuntAsync(Guid huntId, string name, string? description, string text, CancellationToken ct = default)
+    {
+        RequireWrite();
+        string dialect;
+        await using (var db = await dbs.CreateAsync(ct))
+            dialect = await db.HuntQueries.AsNoTracking().Where(h => h.Id == huntId).Select(h => h.Dialect).FirstOrDefaultAsync(ct)
+                      ?? throw new KeyNotFoundException("That hunt query no longer exists.");
+        return await SaveAsync(new SavedQueryForm { Name = name, Dialect = dialect, Description = description, Text = text }, ct);
     }
 
     /// <summary>Retires a query (it's no longer offered on actions, and stays on the list to read) or restores it.</summary>
@@ -149,10 +175,12 @@ public sealed class SavedQueryService(IAppDbContextFactory dbs, ICurrentUser use
     /// <summary>Deletes a query: whoever saved it, or an administrator. Hunts added from it keep its name.</summary>
     public async Task DeleteAsync(Guid id, CancellationToken ct = default)
     {
-        if (!CanWrite && !user.Has(Permission.Administer)) throw new ForbiddenException(Refusal);
         await using var db = await dbs.CreateAsync(ct);
-        if (await db.SavedQueries.FirstOrDefaultAsync(x => x.Id == id, ct) is not { } q) return;
-        if (!CanDelete(q)) throw new ForbiddenException("Only the person who saved it, or an administrator, can delete a saved query. Retire it instead.");
+        var q = await db.SavedQueries.FirstOrDefaultAsync(x => x.Id == id, ct);
+        // One rule (CanDelete), applied to one that's gone too, as if it were their own: whoever could delete their own
+        // is let by (it's gone, as asked), and anyone else is refused as for any other.
+        if (!CanDelete(q is null ? user.UserId : q.CreatedBy)) throw new ForbiddenException("Only the person who saved it, or an administrator, can delete a saved query. Retire it instead.");
+        if (q is null) return;
         db.SavedQueries.Remove(q);
         try { await db.SaveChangesAsync(ct); }
         // Someone deleted it first: it's gone, as asked.

@@ -177,6 +177,28 @@ public class SavedQueryServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task HowOftenEachIsUsed_CountsEachActionOnce_ForTheQueriesListed()
+    {
+        var a = await ActionWithArticle((IndicatorType.IpAddress, "203.0.113.45"));
+        var b = await Action();
+        var sweep = await Save("Sweep", text: "x in ({{values}})");
+        var shells = await Save("Shells");
+        var unused = await Save("Unused");
+        await _db.Actions().AddSavedHuntAsync(a.Id, sweep);
+        await _db.Actions().AddSavedHuntAsync(a.Id, sweep);
+        await _db.Actions().AddSavedHuntAsync(a.Id, shells);
+        await _db.Actions().AddSavedHuntAsync(b.Id, shells);
+        await _db.Actions().AddHandWrittenHuntAsync(b.Id, "kql", "SigninLogs");
+        await _db.SavedQueries().SetRetiredAsync(shells, true);
+
+        (await _db.SavedQueries().ListAsync()).ToDictionary(r => r.Query.Id, r => r.Actions)
+            .Should().Equal(new Dictionary<Guid, int> { [sweep] = 1, [unused] = 0 }, "a retired query isn't read, nor counted");
+        (await _db.SavedQueries().ListAsync(includeRetired: true)).ToDictionary(r => r.Query.Id, r => r.Actions)
+            .Should().Equal(new Dictionary<Guid, int> { [sweep] = 1, [shells] = 2, [unused] = 0 }, "each action once, however often it went on");
+        (await _db.SavedQueries().OfferedAsync()).Select(q => q.Id).Should().BeEquivalentTo([sweep, unused], "the card offers the live ones");
+    }
+
+    [Fact]
     public async Task SavingAHunt_ForTheTeam_TakesItsLanguageAndText_WithoutTheLineTideWrote()
     {
         var articles = _db.Articles();
@@ -187,7 +209,7 @@ public class SavedQueryServiceTests : IDisposable
         var action = await Action(article);
         var generated = await _db.Actions().GenerateHuntAsync(action.Id, "kql");
 
-        var id = await _db.SavedQueries().SaveFromHuntAsync(generated.Id, "VPN IPs", "From A-1");
+        var id = await _db.SavedQueries().SaveFromHuntAsync(generated.Id, "VPN IPs", "From A-1", await _db.SavedQueries().DraftTextAsync(generated));
 
         var q = (await _db.SavedQueries().GetAsync(id))!;
         q.Dialect.Should().Be("kql");
@@ -196,7 +218,25 @@ public class SavedQueryServiceTests : IDisposable
         HuntQueryBuilder.WithoutHeader("kql", "// My own note\nSigninLogs").Should().Be("// My own note\nSigninLogs", "only TIDE's own line goes");
 
         _db.User.Roles = new HashSet<AppRole> { AppRole.Viewer };
-        await FluentActions.Invoking(() => _db.SavedQueries().SaveFromHuntAsync(generated.Id, "Mine", null)).Should().ThrowAsync<ForbiddenException>();
+        await FluentActions.Invoking(() => _db.SavedQueries().SaveFromHuntAsync(generated.Id, "Mine", null, "x")).Should().ThrowAsync<ForbiddenException>();
+        await FluentActions.Invoking(() => _db.SavedQueries().DraftTextAsync(generated)).Should().ThrowAsync<ForbiddenException>();
+    }
+
+    [Fact]
+    public async Task SavingAHunt_AddedFromASavedQuery_OffersThatQuerysText_PlaceholdersAndAll_UntilItsDeleted()
+    {
+        var action = await ActionWithArticle((IndicatorType.IpAddress, "203.0.113.45"), (IndicatorType.Domain, "evil.example"));
+        const string template = "DeviceNetworkEvents\n| where Timestamp > ago({{days}}d)\n| where RemoteUrl has_any ({{values:domain}})";
+        var id = await Save("Their domains", text: template);
+        var hunt = await _db.Actions().AddSavedHuntAsync(action.Id, id);
+        hunt.Text.Should().Contain("// IPv4 addresses: not in this saved query").And.Contain("\"evil.example\"");
+
+        (await _db.SavedQueries().DraftTextAsync(hunt)).Should().Be(template, "the team's copy keeps {{values}} and {{days}}, not this action's values, window or left-out lines");
+        var tuned = await _db.SavedQueries().SaveFromHuntAsync(hunt.Id, "Their domains (tuned)", null, await _db.SavedQueries().DraftTextAsync(hunt) + "\n| take 100");
+        (await _db.SavedQueries().GetAsync(tuned))!.Text.Should().Be(template + "\n| take 100");
+
+        await _db.SavedQueries().DeleteAsync(id);
+        (await _db.SavedQueries().DraftTextAsync(hunt)).Should().Be(HuntQueryBuilder.WithoutHeader("kql", hunt.Text), "with the saved query gone, the hunt as it stands");
     }
 
     private async Task<ActionItem> ActionWithArticle(params (IndicatorType Type, string Value)[] indicators)
@@ -256,7 +296,7 @@ public class SavedQueryServiceTests : IDisposable
         (await svc.AddIndicatorsAsync(action.Id, [new() { Type = IndicatorType.IpAddress, Value = "203.0.113[.]9" }, new() { Type = IndicatorType.IpAddress, Value = "203.0.113.9" }]))
             .Should().Be(1, "refanged and folded, as an article's are");
         (await svc.AddIndicatorsAsync(action.Id, [new() { Type = IndicatorType.IpAddress, Value = "203.0.113.9" }])).Should().Be(0);
-        (await svc.HuntSourcesAsync(action.Id)).Should().Be(new HuntSources(0, 1, 0, 1));
+        (await svc.HuntSourcesAsync(action.Id)).Should().Be(new HuntSources(1, 1, 0));
 
         (await svc.GenerateHuntAsync(action.Id, "kql")).Text.Should().Contain("\"203.0.113.9\"");
         (await svc.AddSavedHuntAsync(action.Id, await Save("Every value", text: "x in ({{values}})"))).Text.Should().Contain("x in (\"203.0.113.9\")");
@@ -273,7 +313,7 @@ public class SavedQueryServiceTests : IDisposable
         await FluentActions.Invoking(() => svc.AddIndicatorsAsync(action.Id, [new() { Type = IndicatorType.Domain, Value = "evil.example" }])).Should().ThrowAsync<ForbiddenException>();
         _db.User.Roles = new HashSet<AppRole> { AppRole.Analyst };
         await svc.RemoveIndicatorAsync(read.Indicators[0].Id);
-        (await svc.HuntSourcesAsync(action.Id)).Own.Should().Be(0);
+        (await svc.HuntSourcesAsync(action.Id)).Indicators.Should().Be(0);
     }
 
     [Fact]
@@ -287,7 +327,8 @@ public class SavedQueryServiceTests : IDisposable
 
         var article = (await _db.Articles().GetAsync(action.ArticleId.Value))!;
         article.Indicators.Select(i => i.Value).Should().BeEquivalentTo(["203.0.113.45", "evil.example"]);
-        (await _db.Actions().HuntSourcesAsync(action.Id)).Should().Be(new HuntSources(2, 2, 1, 0), "on the article, not the action");
+        (await _db.Actions().HuntSourcesAsync(action.Id)).Should().Be(new HuntSources(2, 2, 1), "on the article, not the action");
+        (await _db.Actions().GetAsync(action.Number))!.Action.Indicators.Should().BeEmpty();
         (await _db.Actions().GetAsync(action.Number))!.Action.Events.Should().Contain(e => e.Text == "Added 1 indicator to the article.");
         editorOpen.Bluf = "Edited meanwhile";
         await FluentActions.Invoking(() => _db.Articles().SaveAsync(editorOpen)).Should().ThrowAsync<StaleEditException>("an editor open on the older copy would drop the new indicator");
@@ -344,9 +385,9 @@ public class SavedQueryPageTests(TideApp app) : IClassFixture<TideApp>
                 .And.Contain("aria-label=\"Add Office spawning PowerShell " + tag + "\"")
                 .And.NotContain("Sign-ins from new countries " + tag, "only the chosen language's, until All languages is ticked")
                 .And.Contain("href=\"hunts/saved\"", "relative, so it works under a sub-path");
-            r.Component.Offered.Should().Contain(s => s.Query.Id == xql);
+            r.Component.Offered.Should().Contain(q => q.Id == xql);
 
-            await r.Click(p => p.AddSaved(r.Component.Offered.Single(s => s.Query.Id == xql).Query));
+            await r.Click(p => p.AddSaved(r.Component.Offered.Single(q => q.Id == xql)));
             Toasts(r).Select(t => t.Message).Should().Contain("Office spawning PowerShell " + tag + " added.");
         }
 
@@ -385,6 +426,24 @@ public class SavedQueryPageTests(TideApp app) : IClassFixture<TideApp>
         await using var scope2 = SignedIn(app, SignIn.Analyst);
         var saved = (await scope2.ServiceProvider.GetRequiredService<SavedQueryService>().ListAsync()).Single(s => s.Query.Name == "Hunt for web shells " + tag).Query;
         (saved.Dialect, saved.Text, saved.Description).Should().Be(("kql", "DeviceProcessEvents\n| where InitiatingProcessFileName =~ \"php-fpm\"", $"From A-{number}, Hunt for web shells {tag}"));
+    }
+
+    [Fact]
+    public async Task SaveForTheTeam_OnAHuntFromASavedQuery_OffersThatQuerysText()
+    {
+        var tag = Guid.NewGuid().ToString("N")[..6];
+        var id = await Saved("Sign-ins from new countries " + tag, "kql", "SigninLogs\n| where TimeGenerated > ago({{days}}d)");
+        var number = await HuntAction("Hunt for odd sign-ins " + tag);
+        var added = await Read(number);
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            await scope.ServiceProvider.GetRequiredService<ActionService>().AddSavedHuntAsync(added.Id, id);
+        var action = await Read(number);
+
+        await using var r = await RenderAsync<HuntPanel>(app, "/actions/" + number, new() { ["Action"] = action, ["CanWork"] = true });
+        await r.Press(p => p.StartSave(action.Hunts[0]));
+        var html = await r.HtmlOnce("for the team</h2>");
+        html.Should().Contain($"value=\"Sign-ins from new countries {tag}\"")
+            .And.Contain("ago({{days}}d)", "the saved query's own text in the box, not this action's window (the hunt above shows that)");
     }
 
     [Fact]
@@ -441,7 +500,7 @@ public class SavedQueryPageTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task TheHuntPanel_AddsIndicatorsToAnActionWithNoArticle_AndItsGenerateButtonFollows_WithoutAReload()
+    public async Task TheHuntPanel_AddsIndicatorsToAnActionWithNoArticle_AndItsGenerateButtonFollows_TheActionReadAgain()
     {
         var number = await HuntAction("Hunt for the beacon " + Guid.NewGuid().ToString("N")[..6]);
         await using var r = await RenderAsync<HuntPanel>(app, "/actions/" + number, new() { ["Action"] = await Read(number), ["CanWork"] = true });
@@ -455,8 +514,11 @@ public class SavedQueryPageTests(TideApp app) : IClassFixture<TideApp>
         await r.Click(p => p.AddIndicators(new IndicatorAdd.Addition([new IndicatorForm { Type = IndicatorType.IpAddress, Value = "198.51.100.7" }], [], false)));
 
         Toasts(r).Select(t => t.Message).Should().Contain("Added 1 indicator.");
-        (await r.Html()).Should().Contain("Generate from 1 indicator</button>");
-        (await Read(number)).Indicators.Should().ContainSingle().Which.Value.Should().Be("198.51.100.7");
+        var action = await Read(number);
+        action.Indicators.Should().ContainSingle().Which.Value.Should().Be("198.51.100.7");
+        // The page reads the action again (the panel's Changed) and hands it over, and the card reads its counts once, then.
+        await using var again = await RenderAsync<HuntPanel>(app, "/actions/" + number, new() { ["Action"] = action, ["CanWork"] = true });
+        (await again.Html()).Should().Contain("Generate from 1 indicator</button>");
     }
 
     [Fact]

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Tide.Application.Abstractions;
 using Tide.Application.Articles;
+using Tide.Application.Content;
 using Tide.Application.Files;
 using Tide.Application.Indicators;
 using Tide.Application.Org;
@@ -152,12 +153,12 @@ public sealed record TeamLoad(Team Team, int Open, int Overdue, int DueSoon, int
 /// <summary>One holder's share of a team's open actions; a null id is the team's own (unassigned).</summary>
 public sealed record AssigneeLoad(string? AssigneeId, string Assignee, int Open, int Overdue, int P1);
 
-/// <summary>What a hunt can be built from: the action's article's indicators, and its story's (distinct).</summary>
-public sealed record HuntSources(int ArticleIndicators, int StoryIndicators, int StoryArticles, int ActionIndicators = 0)
-{
-    /// <summary>What "Generate" builds from: the article's indicators and the action's own.</summary>
-    public int Own => ArticleIndicators + ActionIndicators;
-}
+/// <summary>
+/// What a hunt can be built from, each indicator counted once: <paramref name="Indicators"/>, what Generate hunts for (the
+/// action's article's and any added on the action); <paramref name="StoryIndicators"/>, what building from the story hunts
+/// for (every one of its <paramref name="StoryArticles"/> articles', with the action's own).
+/// </summary>
+public sealed record HuntSources(int Indicators, int StoryIndicators, int StoryArticles);
 
 /// <summary>
 /// Follow-up actions: created by analysts (from an article, or in the meeting), owned by a team, worked by its
@@ -170,7 +171,7 @@ public sealed record HuntSources(int ArticleIndicators, int StoryIndicators, int
 /// </para>
 /// </summary>
 public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, SlaSettings sla, OrgClock clock, HuntQueryBuilder queries,
-    ScreenshotService files, Briefs.IMeetingsInProgress? meetings = null)
+    ScreenshotService files, ArticleService articles, Briefs.IMeetingsInProgress? meetings = null)
 {
     public DateOnly Today => clock.Today;
 
@@ -930,46 +931,41 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     // --- hunts --------------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// What a hunt can be built from: the indicators on the action's article, and on every article in that article's
-    /// story (a later report often carries the indicators the first one lacked), and any added on the action itself.
+    /// What a hunt can be built from: the indicators on the action's article and any added on the action itself (what
+    /// Generate uses), and those with every article's in that article's story (a later report often carries the
+    /// indicators the first one lacked).
     /// </summary>
     public async Task<HuntSources> HuntSourcesAsync(Guid actionId, CancellationToken ct = default)
     {
         RequireRead(user);
         await using var db = await dbs.CreateAsync(ct);
-        var a = await db.Actions.AsNoTracking().Include(x => x.Article).ThenInclude(x => x!.Indicators).Include(x => x.Indicators)
-                    .FirstOrDefaultAsync(x => x.Id == actionId, ct)
-                ?? throw new KeyNotFoundException("That action no longer exists.");
-        var story = await StoryArticlesAsync(db, a, ct);
-        var own = OwnIndicators(a);
-        return new HuntSources(a.Article?.Indicators.Count ?? 0, Distinct(DistinctIndicators(story).Concat(own)).Count, story.Count, own.Count);
+        var a = await HuntActionAsync(db, actionId, tracked: false, ct);
+        var own = await HuntInputsAsync(db, a, fromStory: false, ct);
+        var story = await HuntInputsAsync(db, a, fromStory: true, ct);
+        return new HuntSources(own.Indicators.Count, story.Indicators.Count, story.Articles);
     }
 
     /// <summary>
     /// Generates a hunt query in <paramref name="dialect"/> from the source article's indicators, or (<paramref name="fromStory"/>)
-    /// every article's in its story, with any added on the action itself. It looks back from a week before the earliest of
-    /// those articles, at least 30 days.
+    /// every article's in its story, with any added on the action itself, over the window <see cref="HuntInputsAsync"/> sets.
     /// </summary>
     public async Task<HuntQuery> GenerateHuntAsync(Guid actionId, string dialect, bool fromStory = false, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
-        var a = await db.Actions.Include(x => x.Article).ThenInclude(x => x!.Indicators).Include(x => x.Indicators).FirstOrDefaultAsync(x => x.Id == actionId, ct)
-                ?? throw new KeyNotFoundException("That action no longer exists.");
+        var a = await HuntActionAsync(db, actionId, tracked: false, ct);
         await RequireWork(db, user, a, ct);
-        var sources = fromStory ? await StoryArticlesAsync(db, a, ct) : a.Article is { } own ? [own] : [];
-        var indicators = Distinct(DistinctIndicators(sources).Concat(OwnIndicators(a)));
-        if (indicators.Count == 0)
+        var inputs = await HuntInputsAsync(db, a, fromStory, ct);
+        if (inputs.Indicators.Count == 0)
             throw new InvalidOperationException(fromStory ? "No article in the story has indicators to hunt for."
                 : a.Article is null ? "The action has no indicators to hunt for. Add them on this card, or write a query by hand."
                 : "The action's article has no indicators to hunt for. Add them on the article first, or build it from the story.");
-        var days = HuntQueryBuilder.WindowDays(sources.Min(x => (DateTimeOffset?)(x.PublishedAtUtc ?? x.CreatedAtUtc)), DateTimeOffset.UtcNow);
-        var text = await queries.BuildAsync(dialect, indicators, days, ct);
+        var text = await queries.BuildAsync(dialect, inputs.Indicators, inputs.Days, ct);
         var hunt = new HuntQuery
         {
             ActionId = a.Id, Dialect = dialect, GeneratedText = text, Text = text, CreatedAtUtc = DateTimeOffset.UtcNow, CreatedByName = user.DisplayName,
         };
         db.HuntQueries.Add(hunt);
-        db.ActionEvents.Add(Event(user, a.Id, $"Generated a {HuntQueryBuilder.DialectName(dialect)} hunt query{(fromStory ? $" from the story's {sources.Count} articles" : "")}."));
+        db.ActionEvents.Add(Event(user, a.Id, $"Generated a {HuntQueryBuilder.DialectName(dialect)} hunt query{(fromStory ? $" from the story's {inputs.Articles} articles" : "")}."));
         await db.SaveChangesAsync(ct);
         return hunt;
     }
@@ -995,24 +991,22 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     }
 
     /// <summary>
-    /// Adds a query from the team's saved ones (<see cref="SavedQueryService"/>): its <c>{{days}}</c> filled with the window
-    /// a query generated from the action's article would look back, and its <c>{{values}}</c> with the indicators on the
-    /// article and the action (<see cref="HuntQueryBuilder.FromSaved"/>). It's recorded like a generated one, and names
-    /// the saved query it came from. A retired saved query isn't added.
+    /// Adds a query from the team's saved ones (<see cref="SavedQueryService"/>): its <c>{{days}}</c> and <c>{{values}}</c>
+    /// filled with the window and indicators a query generated from the action would have (<see cref="HuntInputsAsync"/>,
+    /// <see cref="HuntQueryBuilder.FromSaved"/>). It's recorded like a generated one, and names the saved query it came
+    /// from. A retired saved query isn't added.
     /// </summary>
     public async Task<HuntQuery> AddSavedHuntAsync(Guid actionId, Guid savedQueryId, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
-        var a = await db.Actions.Include(x => x.Article).ThenInclude(x => x!.Indicators).Include(x => x.Indicators).FirstOrDefaultAsync(x => x.Id == actionId, ct)
-                ?? throw new KeyNotFoundException("That action no longer exists.");
+        var a = await HuntActionAsync(db, actionId, tracked: false, ct);
         await RequireWork(db, user, a, ct);
         var saved = await db.SavedQueries.AsNoTracking().FirstOrDefaultAsync(q => q.Id == savedQueryId, ct)
                     ?? throw new KeyNotFoundException("That saved query no longer exists.");
         if (saved.IsRetired) throw new InvalidOperationException($"{saved.Name} is retired. Restore it on Saved queries to use it.");
         var d = QueryDialects.Find(saved.Dialect) ?? throw new ArgumentException("That saved query's language isn't one TIDE knows.");
-        var days = HuntQueryBuilder.WindowDays(a.Article is { } article ? article.PublishedAtUtc ?? article.CreatedAtUtc : null, DateTimeOffset.UtcNow);
-        var indicators = Distinct((a.Article?.Indicators ?? []).Concat(OwnIndicators(a)));
-        var text = HuntText(HuntQueryBuilder.FromSaved(d, saved.Name, saved.Text, days, indicators));
+        var inputs = await HuntInputsAsync(db, a, fromStory: false, ct);
+        var text = HuntText(HuntQueryBuilder.FromSaved(d, saved.Name, saved.Text, inputs.Days, inputs.Indicators));
         var hunt = new HuntQuery
         {
             ActionId = a.Id, Dialect = d.Key, GeneratedText = text, Text = text, CreatedAtUtc = DateTimeOffset.UtcNow, CreatedByName = user.DisplayName,
@@ -1026,38 +1020,33 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
 
     /// <summary>
     /// Adds indicators for the action's hunts, from its Hunt queries card, and says how many were new. An action raised
-    /// from an article adds them to the article (as its editor would, so the brief, exports and other actions have them
-    /// too), which takes writing articles as well as working the action; one with no article keeps them itself. Either
-    /// way they're normalised and folded as an article's are, at most <see cref="IocExtractor.MaxIndicators"/>, and the
-    /// action's history says so.
+    /// from an article adds them to the article (<see cref="ArticleService.AddIndicators"/>, as its editor would, so the
+    /// brief, exports and other actions have them too), which takes writing articles as well as working the action; one
+    /// with no article keeps them itself. Either way they're added by the same rule
+    /// (<see cref="ArticleService.NewIndicators"/>), and the action's history says so.
     /// </summary>
     public async Task<int> AddIndicatorsAsync(Guid actionId, IEnumerable<IndicatorForm> indicators, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
-        var a = await WorkableAsync(db, actionId, ct);
+        var a = await HuntActionAsync(db, actionId, tracked: true, ct);
+        await RequireWork(db, user, a, ct);
         int added;
-        if (a.ArticleId is { } articleId)
+        if (a.ArticleId is not null)
         {
-            if (!user.Has(Permission.WriteArticles)) throw new ForbiddenException(OnTheArticle);
-            var article = await db.Articles.Include(x => x.Indicators).FirstOrDefaultAsync(x => x.Id == articleId, ct)
-                          ?? throw new KeyNotFoundException("The action's article no longer exists.");
-            added = ArticleService.AddIndicators(db, article, indicators);
-            if (added > 0) db.ActionEvents.Add(Event(user, a.Id, $"Added {Indicators(added)} to the article."));
+            var article = a.Article ?? throw new KeyNotFoundException("The action's article no longer exists.");
+            added = articles.AddIndicators(db, article, indicators, OnTheArticle);
+            if (added > 0) db.ActionEvents.Add(Event(user, a.Id, $"Added {Words.Plural(added, "indicator")} to the article."));
         }
         else
         {
-            var wanted = ArticleService.WantedIndicators(indicators);
-            var have = await db.ActionIndicators.Where(i => i.ActionId == a.Id).ToListAsync(ct);
-            foreach (var existing in have) wanted.Remove($"{(int)existing.Type}|{existing.Value}");
-            if (have.Count + wanted.Count > IocExtractor.MaxIndicators)
-                throw new ArgumentException($"An action can carry at most {IocExtractor.MaxIndicators} indicators.");
+            var wanted = ArticleService.NewIndicators(indicators, a.Indicators.Select(i => (i.Type, i.Value)), "An action");
             var now = DateTimeOffset.UtcNow;
-            db.ActionIndicators.AddRange(wanted.Values.Select(f => new ActionIndicator
+            db.ActionIndicators.AddRange(wanted.Select(f => new ActionIndicator
             {
                 ActionId = a.Id, Type = f.Type, Value = f.Value, Note = f.Note, AddedAtUtc = now, AddedByName = user.DisplayName,
             }));
             added = wanted.Count;
-            if (added > 0) db.ActionEvents.Add(Event(user, a.Id, $"Added {Indicators(added)}."));
+            if (added > 0) db.ActionEvents.Add(Event(user, a.Id, $"Added {Words.Plural(added, "indicator")}."));
         }
         if (added == 0) return 0;
         try { await db.SaveChangesAsync(ct); }
@@ -1081,11 +1070,34 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         catch (DbUpdateConcurrencyException) { /* someone removed it first */ }
     }
 
-    private static string Indicators(int n) => $"{n} indicator{(n == 1 ? "" : "s")}";
+    /// <summary>
+    /// The action with what its hunts are built from: its article's indicators and its own. The two collections are read
+    /// as separate queries, so the rows don't multiply. <paramref name="tracked"/> when the article is written to.
+    /// </summary>
+    private static async Task<ActionItem> HuntActionAsync(IAppDbContext db, Guid actionId, bool tracked, CancellationToken ct)
+    {
+        var query = db.Actions.Include(x => x.Article).ThenInclude(x => x!.Indicators).Include(x => x.Indicators).AsSplitQuery();
+        return await (tracked ? query : query.AsNoTracking()).FirstOrDefaultAsync(x => x.Id == actionId, ct)
+               ?? throw new KeyNotFoundException("That action no longer exists.");
+    }
 
-    // The action's own indicators as a hunt reads them (the builder works on an article's).
-    private static List<ArticleIndicator> OwnIndicators(ActionItem a) =>
-        a.Indicators.Select(i => new ArticleIndicator { Id = i.Id, Type = i.Type, Value = i.Value, Note = i.Note }).ToList();
+    /// <summary>
+    /// What a hunt on <paramref name="a"/> searches for: its article's indicators, or (<paramref name="fromStory"/>) every
+    /// article's in the article's story, with any added on the action, each once; and how far back, from a week before the
+    /// earliest of those articles (<see cref="HuntQueryBuilder.WindowDays"/>). Generate and a saved query both use it, so
+    /// they look back the same way.
+    /// </summary>
+    private static async Task<HuntInputs> HuntInputsAsync(IAppDbContext db, ActionItem a, bool fromStory, CancellationToken ct)
+    {
+        List<Article> sources = fromStory ? await StoryArticlesAsync(db, a, ct) : a.Article is { } own ? [own] : [];
+        // The action's own as a hunt reads them (the builder works on an article's).
+        var indicators = Distinct(sources.SelectMany(x => x.Indicators)
+            .Concat(a.Indicators.Select(i => new ArticleIndicator { Id = i.Id, Type = i.Type, Value = i.Value, Note = i.Note })));
+        var days = HuntQueryBuilder.WindowDays(sources.Min(x => (DateTimeOffset?)(x.PublishedAtUtc ?? x.CreatedAtUtc)), DateTimeOffset.UtcNow);
+        return new HuntInputs(indicators, days, sources.Count);
+    }
+
+    private sealed record HuntInputs(List<ArticleIndicator> Indicators, int Days, int Articles);
 
     private static List<ArticleIndicator> Distinct(IEnumerable<ArticleIndicator> indicators) =>
         indicators.DistinctBy(i => (i.Type, i.Value.Trim().ToLowerInvariant())).ToList();
@@ -1097,9 +1109,6 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (a.Article.StoryId is not { } storyId) return [a.Article];
         return await db.Articles.AsNoTracking().Include(x => x.Indicators).Where(x => x.StoryId == storyId).ToListAsync(ct);
     }
-
-    private static List<ArticleIndicator> DistinctIndicators(IEnumerable<Article> articles) => articles.SelectMany(x => x.Indicators)
-        .DistinctBy(i => (i.Type, i.Value.Trim().ToLowerInvariant())).ToList();
 
     private static string HuntText(string? text)
     {

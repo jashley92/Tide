@@ -42,11 +42,11 @@
     <div class="row g-2 align-items-end">
         <div class="col-md-6">
             <label class="tide-field-label" for="sq-find">Find</label>
-            <input id="sq-find" type="search" class="form-control form-control-sm" placeholder="Name, description or query text" @bind="_words" @bind:event="oninput" />
+            <input id="sq-find" type="search" class="form-control form-control-sm" placeholder="Name, description or query text" @bind="_words" @bind:event="oninput" @bind:after="Filter" />
         </div>
         <div class="col-md-4">
             <label class="tide-field-label" for="sq-language">Language</label>
-            <select id="sq-language" class="form-select form-select-sm" @bind="_language">
+            <select id="sq-language" class="form-select form-select-sm" @bind="_language" @bind:after="Filter">
                 <option value="">All languages</option>
                 @foreach (var d in QueryDialects.All) { <option value="@d.Key">@d.Name</option> }
             </select>
@@ -134,14 +134,22 @@ else
     internal IReadOnlyList<SavedQueryRow>? Rows => _rows;
     internal SavedQueryForm? Form => _form;
 
-    /// <summary>The rows the filters leave: the language chosen (or all) and every word typed.</summary>
-    internal IReadOnlyList<SavedQueryRow> Shown => (_rows ?? [])
-        .Where(r => _language.Length == 0 || r.Query.Dialect == _language).Where(r => SavedQueryService.Matches(r.Query, _words)).ToList();
+    private IReadOnlyList<SavedQueryRow> _shown = [];
+
+    /// <summary>The rows the filters leave: the language chosen (or all) and every word typed (<see cref="Filter"/>).</summary>
+    internal IReadOnlyList<SavedQueryRow> Shown => _shown;
+
+    // Worked out when the rows or the filters change, not on each redraw.
+    private void Filter()
+    {
+        var words = TableView.Words(_words);
+        _shown = (_rows ?? []).Where(r => _language.Length == 0 || r.Query.Dialect == _language).Where(r => SavedQueryService.Matches(r.Query, words)).ToList();
+    }
 
     private string Provenance(SavedQuery q) => $"Saved by {q.CreatedByName}, {Ui.When(Clock, q.CreatedAtUtc)}"
         + (q.ModifiedAtUtc is { } changed ? $" · changed by {q.ModifiedByName ?? "someone"}, {Ui.When(Clock, changed)}" : "");
 
-    private static string Used(int actions) => actions == 0 ? "Not used yet" : $"Used on {actions} action{(actions == 1 ? "" : "s")}";
+    private static string Used(int actions) => actions == 0 ? "Not used yet" : $"Used on {Ui.Plural(actions, "action")}";
 
     private RenderFragment EditForm => __builder =>
     {
@@ -198,6 +206,7 @@ else
     {
         try { _rows = await SavedSvc.ListAsync(_showRetired); }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        Filter();
     }
 
     private async Task ToggleRetired(ChangeEventArgs e)
