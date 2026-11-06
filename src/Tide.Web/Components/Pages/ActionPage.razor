@@ -14,6 +14,7 @@
 @inject IJSRuntime JS
 @inject ChangeFeed Feed
 @inject ChangeOrigin Origin
+@inject PrerenderHandoff Handoff
 @implements IDisposable
 
 <PageTitle>@(Number is { } n ? Ui.ActionLabel(n) : "New action") · TIDE</PageTitle>
@@ -338,10 +339,19 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
-        _loaded = false;
+        // The first interactive draw starts from what the prerender read, so a reload doesn't flash "Loading" over the
+        // page; it's then read again below, quietly.
+        var adopted = Handoff.Take<ActionPage>(PrerenderedState, CurrentUser.UserId) is { } prerendered && prerendered.Number == Number
+            && prerendered.ArticleParam == ArticleParam && prerendered.ParentParam == ParentParam && Adopt(prerendered);
+        PrerenderedState = null;
+        if (!adopted) _loaded = false;
         _teams = await TeamSvc.ListAsync(includeRetired: true);
         if (CurrentUser.Has(Permission.WriteArticles)) _people = await Users.ListAsync();
-        if (Number is null) await PrepareNew();
+        // A new action's form is kept as the prerender left it: built again, the editor would start over in front of them.
+        if (Number is null)
+        {
+            if (!adopted) await PrepareNew();
+        }
         else
         {
             // Another action: its empty checklist starts closed, and an edit form, comment draft or outcome prompt left open
@@ -358,6 +368,21 @@ else
             await Reload();
         }
         _loaded = true;
+        if (!RendererInfo.IsInteractive) PrerenderedState = Handoff.Keep(CurrentUser.UserId, this);
+    }
+
+    /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.</summary>
+    [PersistentState]
+    public string? PrerenderedState { get; set; }
+
+    // Takes what the prerendered page read: the action, or the new one's form and where it's from, and the teams and
+    // people its editor offers.
+    private bool Adopt(ActionPage p)
+    {
+        (_teams, _people, _detail, _topic, _shownNumber) = (p._teams, p._people, p._detail, p._topic, p._shownNumber);
+        (_form, _parent, _articleTitle) = (p._form, p._parent, p._articleTitle);
+        _loaded = true;
+        return true;
     }
 
     private async Task PrepareNew()

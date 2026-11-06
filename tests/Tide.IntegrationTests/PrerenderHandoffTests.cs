@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
+using Tide.Application.Actions;
 using Tide.Web.Services;
 
 namespace Tide.IntegrationTests;
@@ -82,5 +83,51 @@ public class PrerenderHandoffTests
 
         html.Should().Contain("handoff: vendor fixes an exploited VPN bug");
         handoff.Count.Should().Be(before + 1, "the prerender kept its inbox for the circuit to start from");
+    [Theory]
+    [InlineData("/actions?view=open&layout=list", "Sweep VPN and firewall logs")]
+    [InlineData("/actions?view=open&layout=board", "Sweep VPN and firewall logs")]
+    public async Task TheActionsPrerender_KeepsWhatItRead_ForItsInteractiveRender(string path, string shown)
+    {
+        using var app = new TideApp();
+        var handoff = app.Services.GetRequiredService<PrerenderHandoff>();
+        var before = handoff.Count;
+
+        var html = await app.CreateClient().GetStringAsync(path);
+
+        html.Should().Contain(shown);
+        handoff.Count.Should().Be(before + 1, "the prerender kept its list or board for the circuit to start from");
+    }
+
+    [Fact]
+    public async Task AnActionsPrerender_KeepsItsPage_ItsChecklist_AndItsHuntPanel()
+    {
+        using var app = new TideApp();
+        var handoff = app.Services.GetRequiredService<PrerenderHandoff>();
+        var before = handoff.Count;
+
+        // A sweep with a checklist, which its worker can work: the checklist and the hunt panel read their own, and keep
+        // it as the page does.
+        await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+        {
+            var actions = scope.ServiceProvider.GetRequiredService<ActionService>();
+            await actions.AddChecklistItemAsync((await actions.GetAsync(1))!.Action.Id, "Pull 30 days of VPN logs");
+        }
+        var html = await app.CreateClient().GetStringAsync("/actions/1");
+
+        html.Should().Contain("Sweep VPN and firewall logs").And.Contain("Hunt queries").And.Contain("Pull 30 days of VPN logs");
+        handoff.Count.Should().Be(before + 3);
+    }
+
+    [Fact]
+    public async Task ANewActionsPrerender_KeepsItsFormAndItsEditor()
+    {
+        using var app = new TideApp();
+        var handoff = app.Services.GetRequiredService<PrerenderHandoff>();
+        var before = handoff.Count;
+
+        var html = await app.CreateClient().GetStringAsync("/actions/new");
+
+        html.Should().Contain("id=\"a-title\"").And.Contain("From the SLA target.");
+        handoff.Count.Should().Be(before + 2, "the page keeps its form, and the editor what it read for it");
     }
 }

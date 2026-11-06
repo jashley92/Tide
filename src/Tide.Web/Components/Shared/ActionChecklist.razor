@@ -3,6 +3,8 @@
 @inject ActionService ActionSvc
 @inject PlaybookService PlaybookSvc
 @inject ToastService Toasts
+@inject PrerenderHandoff Handoff
+@inject ICurrentUser CurrentUser
 
 @if (_items is null)
 {
@@ -74,10 +76,25 @@ else
     private bool _busy, _focused;
     private ElementReference _newInput;
 
+    /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.
+    /// Only the action page's (full) checklist keeps one: a board's or the meeting's are drawn later, or several at once.</summary>
+    [PersistentState]
+    public string? PrerenderedState { get; set; }
+
     protected override async Task OnParametersSetAsync()
     {
+        // The action page's first interactive draw has the prerendered items, not "Loading" over them; they're read again.
+        if (PrerenderedState is not null && RendererInfo.IsInteractive)
+        {
+            if (Handoff.Take<ActionChecklist>(PrerenderedState, CurrentUser.UserId) is { } prerendered && prerendered.ActionId == ActionId
+                && prerendered.CanWork == CanWork && !Compact)
+                (_items, _playbooks) = (prerendered._items, prerendered._playbooks);
+            PrerenderedState = null;
+        }
         await Load();
         if (!Compact && CanWork) _playbooks = await PlaybookSvc.ForKindAsync(Kind);
+        // Kept once: the page around it can draw again while it's prerendered, which sets its parameters again.
+        if (!Compact && !RendererInfo.IsInteractive && PrerenderedState is null) PrerenderedState = Handoff.Keep(CurrentUser.UserId, this);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

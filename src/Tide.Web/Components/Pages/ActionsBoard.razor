@@ -12,6 +12,7 @@
 @implements IDisposable
 @inject CardRuleService RuleSvc
 @inject UserPreferenceService Prefs
+@inject PrerenderHandoff Handoff
 
 <PageTitle>Actions · TIDE</PageTitle>
 
@@ -124,6 +125,13 @@ else
 
     private bool SavedBoard => SavedLayout == UserPreferences.Board;
 
+    /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.</summary>
+    [PersistentState]
+    public string? PrerenderedState { get; set; }
+
+    // The first interactive draw is the prerendered page: its first read keeps the page on screen while it's done again.
+    private bool _adopted;
+
     // The address didn't say which layout: once drawn, it's made to say the one shown.
     private bool _sayLayout;
 
@@ -199,6 +207,10 @@ else
             catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
             StateHasChanged();
         });
+        // Taken before the first await, which is when the interactive render first draws: from the same address only.
+        _adopted = Handoff.Take<ActionsBoard>(PrerenderedState, CurrentUser.UserId) is { } prerendered
+            && prerendered._applied == (ViewParam, TeamParam, AssigneeParam, LayoutParam, RuleParam, GroupParam) && Adopt(prerendered);
+        PrerenderedState = null;
         _teams = await Teams.ListAsync();
         _rules = await RuleSvc.ListAsync();
         SavedLayout ??= await Prefs.GetAsync(UserPreferences.ActionsLayout);
@@ -225,7 +237,18 @@ else
         _ruleId = _rules.Any(r => r.Id == RuleParam && r.ShowAsFilter) ? RuleParam : null;
         _teamId = TeamParam;
         _assignee = string.IsNullOrWhiteSpace(AssigneeParam) ? null : AssigneeParam;
-        await Load();
+        var quiet = _adopted;
+        _adopted = false;
+        if (await Read(quiet) && !RendererInfo.IsInteractive) PrerenderedState = Handoff.Keep(CurrentUser.UserId, this);
+    }
+
+    // Takes what the prerendered page read and chose from its address, so the first interactive draw is the same page.
+    private bool Adopt(ActionsBoard p)
+    {
+        (_teams, _rules, _board, _rows) = (p._teams, p._rules, p._board, p._rows);
+        (_view, _asBoard, _groupByKind, _ruleId, _teamId, _assignee) = (p._view, p._asBoard, p._groupByKind, p._ruleId, p._teamId, p._assignee);
+        _loading = false;
+        return true;
     }
 
     private Task ClearAssignee()
@@ -285,9 +308,13 @@ else
         Remember();
     }
 
-    private async Task Load()
+    private Task Load() => Read(quiet: false);
+
+    // Quiet, the list stays as it is while it's read (it's the prerendered one); otherwise it shows "Loading". False when
+    // the read failed.
+    private async Task<bool> Read(bool quiet)
     {
-        _loading = true;
+        if (!quiet) _loading = true;
         _movedBy = new Dictionary<Guid, string>();   // what's shown next is this person's choice, not a colleague's news
         _marks?.Clear();
         try
@@ -296,8 +323,14 @@ else
             if (_asBoard) _board = await ActionSvc.BoardAsync(filter);
             else _rows = await ActionSvc.ListAsync(filter);
         }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            _loading = false;
+            return false;
+        }
         _loading = false;
+        return true;
     }
 
     public void Dispose()

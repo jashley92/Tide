@@ -2,6 +2,8 @@
    priority and kind until someone sets it; on a saved action, a new priority offers its SLA date. *@
 @inject ActionService ActionSvc
 @inject PlaybookService PlaybookSvc
+@inject PrerenderHandoff Handoff
+@inject ICurrentUser CurrentUser
 
 <div class="row g-2">
     <div class="col-12">
@@ -148,12 +150,23 @@
 
     private IReadOnlyList<Playbook> _playbooks = [];
 
+    /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.
+    /// Only a new action's editor keeps one; an edit's opens on a click.</summary>
+    [PersistentState]
+    public string? PrerenderedState { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
-        if (IsNew && Form.DueDate is null) await Suggest();
-        else _dueTouched = true;
+        // The new-action page hands its prerendered form to its interactive draw: with it, what the editor read for it, so
+        // the suggested date still says so and the duplicates and playbooks don't drop out and back. Read again after.
+        if (Handoff.Take<ActionEditor>(PrerenderedState, CurrentUser.UserId) is { } prerendered && ReferenceEquals(prerendered.Form, Form))
+            (_dueTouched, _duplicates, _playbooks) = (prerendered._dueTouched, prerendered._duplicates, prerendered._playbooks);
+        else _dueTouched = !IsNew || Form.DueDate is not null;
+        PrerenderedState = null;
+        await Suggest();
         await CheckDuplicates();
         await LoadPlaybooks();
+        if (IsNew && !RendererInfo.IsInteractive) PrerenderedState = Handoff.Keep(CurrentUser.UserId, this);
     }
 
     private async Task KindChanged()
