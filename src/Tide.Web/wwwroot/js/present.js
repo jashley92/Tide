@@ -39,6 +39,13 @@ window.tidePresent = (function () {
 
     function slideBody() { return document.querySelector('#present-root > .tide-slide > .tide-slide-body'); }
 
+    // What Space and Page Down page: the body of a panel open over the slide (an action, a product's card, the tag
+    // panel), which is what's in view, rather than the slide hidden behind it; else the slide's body.
+    function pagedBody() {
+        const open = document.querySelectorAll('#present-root .tide-present-action > .tide-present-action-body');
+        return open.length ? open[open.length - 1] : slideBody();
+    }
+
     function behavior(instant) { return instant || reduced.matches ? 'instant' : 'smooth'; }
 
     // How far the element scrolls.
@@ -202,7 +209,9 @@ window.tidePresent = (function () {
 
     // --- scroll by hand, shared -----------------------------------------------------------------------------------------
 
-    let intentAt = 0, lastSent = 0, sendTimer = 0;
+    // When the person last scrolled, or pressed or touched, the slide: never, to begin with (not 0, which is when the
+    // page opened, so a late joiner's landing at the presenter's place in its first moments isn't taken for their own).
+    let intentAt = -Infinity, lastSent = 0, sendTimer = 0;
 
     function intended() { intentAt = performance.now(); }
 
@@ -256,7 +265,7 @@ window.tidePresent = (function () {
         if (frame) { cancelAnimationFrame(frame); settle(); }
         const el = slideBody();
         if (!el) return;
-        intentAt = 0;
+        intentAt = -Infinity;
         el.scrollTo({ top: f * range(el), behavior: behavior(instant) });
     }
 
@@ -283,7 +292,7 @@ window.tidePresent = (function () {
         const page = paging(e);
         if (page) {
             e.preventDefault();
-            const el = slideBody(), forward = page === 'down';
+            const el = pagedBody(), forward = page === 'down';
             if (!atEdge(el, forward)) { pageBy(el, forward); return; }
             ref.invokeMethodAsync('OnPresentKey', forward ? 'next' : 'prev').catch(function () { });
             return;
@@ -350,6 +359,8 @@ window.tidePresent = (function () {
             if (document.fullscreenElement) document.exitFullscreen().catch(function () { });
         },
         toggleFullscreen: toggleFullscreen,
-        follow: follow
+        follow: follow,
+        // .NET: this page has just become the presenter: where it is on the slide is now the room's.
+        share: function () { if (ref) send(); }
     };
 })();
