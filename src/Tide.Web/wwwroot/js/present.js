@@ -247,7 +247,7 @@ window.tidePresent = (function () {
             if (window.ResizeObserver) resizes = new ResizeObserver(schedule);
             mutations = new MutationObserver(onMutations);
             mutations.observe(document.body, { childList: true, subtree: true, characterData: true });
-            if (document.fonts && document.fonts.ready) document.fonts.ready.then(schedule);
+            if (document.fonts) document.fonts.ready.then(schedule, function () { /* fonts never settled: the next resize re-fits */ });
             schedule();
         },
         stop: function () {

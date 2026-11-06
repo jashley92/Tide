@@ -224,7 +224,7 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
         MeetingScroll said;
         lock (_gate)
         {
-            if (Seated(seat) is not (var m, var s) || m.PresenterId != s.UserId || m.Scroll.Equals(fraction)) return false;
+            if (Seated(seat) is not (var m, var s) || m.PresenterId != s.UserId || Math.Abs(m.Scroll - fraction) < 1e-9) return false;
             (m.Scroll, m.ScrollOrigin) = (fraction, s.Origin);
             var now = _time.GetUtcNow();
             if (m.ScrollSaidAtUtc is { } last && now - last < ScrollEvery)
