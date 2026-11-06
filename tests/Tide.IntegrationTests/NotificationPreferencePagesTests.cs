@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Tide.Application.Actions;
 using Tide.Application.Preferences;
 using Tide.Application.Settings;
 using Tide.Web.Components.Pages;
@@ -94,10 +95,10 @@ public class NotificationPreferencePagesTests(TideApp app) : IClassFixture<TideA
         html.Should().Contain(TeamsAdmin.CountText(UserPreferences.NotifyRotationRequests, counts[UserPreferences.NotifyRotationRequests]))
             .And.Contain(TeamsAdmin.CountText(UserPreferences.NotifyDigest, counts[UserPreferences.NotifyDigest])).And.Contain("No one opted out");
 
-        await r.Click(c => c.ShowChoosers(UserPreferences.NotifyDigest, "PersonalDigest"));
+        await r.Click(c => c.ShowChoosers(UserPreferences.NotifyDigest, ReminderKind.PersonalDigest));
         html = await r.Html();
         html.Should().Contain(who.UserId, "not yet in the user mirror, so listed by id").And.Contain("weekly").And.Contain("tide-optlist");
-        await r.Click(c => c.ShowChoosers(UserPreferences.NotifyDigest, "PersonalDigest"));
+        await r.Click(c => c.ShowChoosers(UserPreferences.NotifyDigest, ReminderKind.PersonalDigest));
         (await r.Html()).Should().NotContain("tide-optlist\"", "a second click closes it");
     }
 
@@ -109,7 +110,7 @@ public class NotificationPreferencePagesTests(TideApp app) : IClassFixture<TideA
             await scope.ServiceProvider.GetRequiredService<NotificationPreferenceService>().SetMineAsync(UserPreferences.NotifyRotationReminders, UserPreferences.Off);
 
         await using var r = await RenderAsync<TeamsAdmin>(app, "/admin/teams");
-        await r.Click(c => c.ShowChoosers(UserPreferences.NotifyRotationReminders, "Presenting"));
+        await r.Click(c => c.ShowChoosers(UserPreferences.NotifyRotationReminders, ReminderKind.Presenting));
         var html = await r.Html();
 
         System.Text.RegularExpressions.Regex.Matches(html, "<table[^>]*tide-optlist").Should().HaveCount(1, "the other row with the same choice stays closed");
