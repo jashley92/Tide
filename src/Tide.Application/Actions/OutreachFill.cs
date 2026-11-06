@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Tide.Application.Briefs;
 using Tide.Application.Content;
+using Tide.Application.Org;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 using Tide.Domain.Observables;
@@ -55,6 +56,10 @@ public sealed record OutreachFacts
     public string SenderName { get; init; } = "";
     public string? SenderTeam { get; init; }
     public DateOnly Today { get; init; }
+
+    /// <summary>The organization's working days, which <c>{{today:+2}}</c> and <c>{{today:-2}}</c> count in (weekends and
+    /// holidays skipped).</summary>
+    public WorkingDays Days { get; init; } = WorkingDays.Weekdays;
 
     /// <summary>What the ceiling held back, a sentence each, with the placeholders it concerns.</summary>
     public IReadOnlyList<OutreachLeftOut> LeftOut { get; init; } = [];
@@ -128,14 +133,38 @@ public static partial class OutreachFill
         new("sender.name", ActionGroup, "Your name."),
         new("sender.team", ActionGroup, "Your team: the action's, when you're on it."),
         new("today", ActionGroup, "Today's date."),
+        new(TodayName + ":+2", ActionGroup, $"A date that many business days from today (up to {MaxDaysAhead}), skipping weekends and holidays, as in \"action required by {{{{today:+2}}}}\"."),
+        new(TodayName + ":-2", ActionGroup, $"A date that many business days before today (up to {MaxDaysAhead}), as in \"since {{{{today:-2}}}}\"."),
         new(TlpName, ActionGroup, "The email's TLP, as TLP:GREEN. Without it, the body starts with a TLP line."),
     ];
 
     // The names a template may use; {{indicators:kind}} is checked by kind.
     private static readonly HashSet<string> Names = All.Select(p => p.Name).Where(n => !n.Contains(':')).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-    [GeneratedRegex(@"\{\{\s*([A-Za-z][A-Za-z0-9.\-]*)(?::([A-Za-z0-9]*))?\s*\}\}", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    [GeneratedRegex(@"\{\{\s*([A-Za-z][A-Za-z0-9.\-]*)(?::([A-Za-z0-9+\-]*))?\s*\}\}", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex Pattern();
+
+    /// <summary>The placeholder for today's date; with <c>:+N</c> a date N business days on, with <c>:-N</c> one back.</summary>
+    public const string TodayName = "today";
+
+    /// <summary>The most business days <c>{{today:+N}}</c> looks ahead, or <c>{{today:-N}}</c> back (about three months).</summary>
+    public const int MaxDaysAhead = 60;
+
+    [GeneratedRegex(@"^([+-])(\d{1,3})$", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex DaysAhead();
+
+    // The business days in "+2" (or -2 for "-2"), or null when it isn't a number of days TIDE counts.
+    private static int? DaysAheadOf(string modifier) =>
+        DaysAhead().Match(modifier) is { Success: true } m && int.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture) is var n and >= 1 and <= MaxDaysAhead
+            ? m.Groups[1].Value == "-" ? -n : n : null;
+
+    // Today moved by that many business days, forwards or back.
+    private static DateOnly Moved(DateOnly today, int days, WorkingDays w)
+    {
+        var d = today;
+        for (var i = 0; i < Math.Abs(days); i++) d = days > 0 ? w.Next(d) : w.Previous(d);
+        return d;
+    }
 
     [GeneratedRegex(@"\[\[[a-z0-9.:\-]+: (?:nothing to fill|above TLP:[A-Z+]+, left out)\]\]", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex MarkerPattern();
@@ -159,8 +188,14 @@ public static partial class OutreachFill
             if (!Names.Contains(name))
                 throw new ArgumentException($"{{{{{name}}}}} isn't a placeholder TIDE fills. Use one of: {string.Join(", ", All.Where(p => !p.Name.Contains(':')).Select(p => p.Written))}.");
             if (!m.Groups[2].Success) continue;
+            if (string.Equals(name, TodayName, StringComparison.OrdinalIgnoreCase))
+            {
+                if (DaysAheadOf(m.Groups[2].Value) is null)
+                    throw new ArgumentException($"{{{{{TodayName}:{m.Groups[2].Value}}}}} isn't a number of business days. Write it as {{{{{TodayName}:+2}}}} or {{{{{TodayName}:-2}}}}, up to {MaxDaysAhead}.");
+                continue;
+            }
             if (!string.Equals(name, IndicatorsName, StringComparison.OrdinalIgnoreCase))
-                throw new ArgumentException($"{{{{{name}}}}} takes no kind: only {{{{{IndicatorsName}:…}}}} does.");
+                throw new ArgumentException($"{{{{{name}}}}} takes nothing after a colon: only {{{{{IndicatorsName}:…}}}} and {{{{{TodayName}:+2}}}} do.");
             if (HuntQueryBuilder.KindNamed(m.Groups[2].Value) is null)
                 throw new ArgumentException($"{{{{{IndicatorsName}:{m.Groups[2].Value}}}}} isn't a kind of indicator TIDE knows. Use {{{{{IndicatorsName}}}}}, or one of: {string.Join(", ", Enum.GetValues<HuntValueKind>().Select(IndicatorsOf))}.");
         }
@@ -237,9 +272,10 @@ public static partial class OutreachFill
             var name = m.Groups[1].Value.ToLowerInvariant();
             used.Add(name);
             if (name == TlpName) return TlpSlot;   // filled once the marking is known
-            var scope = m.Groups[2].Success ? HuntQueryBuilder.KindNamed(m.Groups[2].Value) : null;
-            var label = scope is { } k ? IndicatorsNameOf(k) : name;
-            var (value, tlp, above) = ValueOf(name, scope, facts);
+            var scope = m.Groups[2].Success && name == IndicatorsName ? HuntQueryBuilder.KindNamed(m.Groups[2].Value) : null;
+            var ahead = m.Groups[2].Success && name == TodayName ? DaysAheadOf(m.Groups[2].Value) : null;
+            var label = scope is { } k ? IndicatorsNameOf(k) : ahead is { } n ? $"{TodayName}:{n:+0;-0}" : name;
+            var (value, tlp, above) = ValueOf(name, scope, ahead, facts);
             if (string.IsNullOrWhiteSpace(value))
             {
                 var written = "{{" + label + "}}";
@@ -265,7 +301,7 @@ public static partial class OutreachFill
     private const string TlpSlot = "\u0000tlp\u0000";
 
     // A placeholder's value, the TLP it carries, and whether the ceiling held it back (rather than there being nothing).
-    private static (string? Value, TlpLevel Tlp, bool Above) ValueOf(string name, HuntValueKind? scope, OutreachFacts f)
+    private static (string? Value, TlpLevel Tlp, bool Above) ValueOf(string name, HuntValueKind? scope, int? ahead, OutreachFacts f)
     {
         if (name == IndicatorsName) return Indicators(f, scope);
         if (name.StartsWith("article.", StringComparison.Ordinal)) return ArticlePart(name, f);
@@ -281,7 +317,7 @@ public static partial class OutreachFill
             "action.due" => f.Due?.ToString("dddd, MMMM d, yyyy", inv),
             "sender.name" => f.SenderName,
             "sender.team" => f.SenderTeam,
-            "today" => f.Today.ToString("dddd, MMMM d, yyyy", inv),
+            TodayName => (ahead is { } n ? Moved(f.Today, n, f.Days) : f.Today).ToString("dddd, MMMM d, yyyy", inv),
             _ => null,
         };
         // Our stack's and the action's own facts carry no marking: the API gives a product's name, versions and team to
