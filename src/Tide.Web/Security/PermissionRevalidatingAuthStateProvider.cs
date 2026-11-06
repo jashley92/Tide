@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Server;
 
@@ -9,6 +10,10 @@ namespace Tide.Web.Security;
 /// changed it publishes the updated principal, so page authorization, AuthorizeViews and service-level checks all
 /// follow — someone whose access is removed loses it within minutes instead of whenever they next reconnect, and
 /// someone granted access gets it without reloading.
+/// <para>It also keeps the circuit's principal free of the Windows sign-in's token (<see cref="Detached"/>): the host
+/// hands it the connection's WindowsPrincipal, whose claims are read from a logon token that IIS closes when that
+/// connection ends. A circuit outlives its connection (a reconnect, a laptop waking), and then every permission check
+/// on the page, and this re-check, failed with "Cannot access a disposed object ... SafeAccessTokenHandle".</para>
 /// </summary>
 public sealed class PermissionRevalidatingAuthStateProvider : ServerAuthenticationStateProvider, IDisposable
 {
@@ -29,13 +34,51 @@ public sealed class PermissionRevalidatingAuthStateProvider : ServerAuthenticati
         AuthenticationStateChanged += OnChanged;
     }
 
-    // The host sets the circuit's initial state once; start re-checking from then. Our own publishes also raise the
-    // event, which the flags ignore.
+    // The host sets the circuit's initial state once; it's detached from the sign-in's token at once, and re-checked
+    // from then. Our own publishes also raise the event, which the flags ignore.
     private void OnChanged(Task<AuthenticationState> state)
     {
-        if (_looping || _publishing) return;
+        if (_publishing) return;
+        _ = DetachAsync(state);
+        if (_looping) return;
         _looping = true;
         _ = LoopAsync(_stop.Token);
+    }
+
+    // Read while the connection that brought it is still open, so its token is still good.
+    private async Task DetachAsync(Task<AuthenticationState> state)
+    {
+        try
+        {
+            var user = (await state).User;
+            if (!HoldsToken(user)) return;
+            Publish(Detached(user));
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Couldn't copy the session's sign-in; it keeps the one its connection gave it");
+        }
+    }
+
+    // A principal whose identities are all plain ClaimsIdentity reads nothing from outside itself.
+    private static bool HoldsToken(ClaimsPrincipal user) => user.Identities.Any(i => i.GetType() != typeof(ClaimsIdentity));
+
+    /// <summary>
+    /// <paramref name="user"/> as plain claims identities, with each identity's claims, authentication type, name and role
+    /// claim types and label copied: the same sign-in, nothing left to read from a WindowsIdentity's token (which the
+    /// connection that brought it disposes). Not WindowsIdentity.Clone, which duplicates the token, a handle per circuit.
+    /// </summary>
+    public static ClaimsPrincipal Detached(ClaimsPrincipal user) =>
+        new(user.Identities.Select(i => new ClaimsIdentity(i.Claims.Select(c => c.Clone()), i.AuthenticationType, i.NameClaimType, i.RoleClaimType)
+        {
+            Label = i.Label,
+        }));
+
+    private void Publish(ClaimsPrincipal user)
+    {
+        _publishing = true;
+        try { SetAuthenticationState(Task.FromResult(new AuthenticationState(user))); }
+        finally { _publishing = false; }
     }
 
     private async Task LoopAsync(CancellationToken ct)
@@ -63,9 +106,7 @@ public sealed class PermissionRevalidatingAuthStateProvider : ServerAuthenticati
         var state = await GetAuthenticationStateAsync();
         if (await _refresher.RefreshAsync(state.User) is not { } updated) return false;
 
-        _publishing = true;
-        try { SetAuthenticationState(Task.FromResult(new AuthenticationState(updated))); }
-        finally { _publishing = false; }
+        Publish(updated);
         _log.LogInformation("Refreshed TIDE permissions for an open session of {User}", updated.Identity?.Name);
         return true;
     }
