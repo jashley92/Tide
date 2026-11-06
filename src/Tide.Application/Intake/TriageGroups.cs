@@ -18,8 +18,10 @@ public sealed record TriageGroup(IReadOnlyList<Guid> Ids, int Sources, IReadOnly
 /// <summary>
 /// "Looks like one event": the inbox's suggested groups, worked out each time the inbox loads and never stored. Two
 /// items published within <see cref="Window"/> of each other join when they name a CVE in common, or when their
-/// headlines share at least two distinctive tokens, one of them a name: a capitalised or product-like word ("Binance",
-/// "DevOps", "iOS"), or an amount ("$6.3 billion", "16 billion"). Common words, the words every security headline uses
+/// headlines share at least two distinctive tokens, one of them a name both write as one: a capitalised or product-like
+/// word ("Binance", "DevOps", "iOS"). The other can be an amount ("$6.3 billion", "16 billion") or any other uncommon word,
+/// whatever its case: one outlet writes "business" where another, capitalising every word, writes "Business", and both
+/// mean the same thing. Common words, the words every security headline uses
 /// (hack, breach, flaw, critical, patch, add...) and the publisher's own name don't count. A group grows from its
 /// tightest pair, held to <see cref="MaxSize"/> items, and every report in it pairs with every other: a roundup that
 /// names two events can't chain them into one. It's offered only when it has two or more items from two
@@ -71,6 +73,7 @@ public static partial class TriageGroups
         "service", "vendor", "expert", "analyst", "hallmark", "bear", "sign", "trace", "tie", "blame", "attribute", "arrest",
         "charge", "sanction", "seize", "takedown", "dismantle", "operation", "roundup", "recap", "digest", "million",
         "billion", "thousand", "trillion", "freeze", "lose", "loss", "claim", "admit", "add", "list", "catalog", "catalogue",
+        "ransom", "extort", "extortion",
     };
 
     private static readonly string[] Endings = ["s", "es", "ed", "d", "ing", "er", "ers", "ies"];
@@ -93,7 +96,8 @@ public static partial class TriageGroups
     [GeneratedRegex(@"\s+", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex Space();
 
-    /// <summary>A token a headline offers: its key, how it reads, and whether it's a name (not an amount).</summary>
+    /// <summary>A token a headline offers: its key, how it reads, and whether it's written as a name (not an amount, or a
+    /// word in lower case).</summary>
     internal readonly record struct Token(string Key, string Shown, bool Name);
 
     /// <summary>The distinctive tokens of a headline from <paramref name="publisher"/>, by key, first spelling kept.</summary>
@@ -120,10 +124,12 @@ public static partial class TriageGroups
         foreach (Match m in Word().Matches(rest))
         {
             var word = m.Value.EndsWith("'s", StringComparison.Ordinal) || m.Value.EndsWith("’s", StringComparison.Ordinal) ? m.Value[..^2] : m.Value;
-            if (word.Length < 2 || word.All(char.IsDigit) || !NameLike(word)) continue;
+            if (word.Length < 2 || word.All(char.IsDigit)) continue;
             var key = word.ToLowerInvariant();
             if (Stop.Contains(key) || own.Contains(key) || IsGeneric(key)) continue;
-            found.TryAdd(key, new Token(key, word, Name: true));
+            // Kept as written when the word comes again: a later capitalised spelling makes it a name.
+            var token = new Token(key, word, Name: NameLike(word));
+            if (!found.TryAdd(key, token) && token.Name && !found[key].Name) found[key] = token;
         }
         return found;
     }
@@ -208,16 +214,17 @@ public static partial class TriageGroups
     }
 
     // A shared CVE joins two items outright, and counts above any number of shared words; otherwise they need two
-    // shared tokens, one of them a name (two amounts alone don't make one event).
+    // shared tokens, one of them written as a name in both (two amounts, or two plain words, don't make one event; nor
+    // does a word only a headline in title case capitalises).
     private static int Weight(IReadOnlyDictionary<string, Token> a, IReadOnlyDictionary<string, Token> b, HashSet<string> cvesA, HashSet<string> cvesB)
     {
         var shared = a.Values.Where(t => b.ContainsKey(t.Key)).ToList();
         if (cvesA.Overlaps(cvesB)) return 100 + shared.Count;
-        return shared.Count >= 2 && shared.Any(t => t.Name) ? shared.Count : 0;
+        return shared.Count >= 2 && shared.Any(t => t.Name && b[t.Key].Name) ? shared.Count : 0;
     }
 
-    // The tokens two or more of the group's headlines share, the most shared first (names before amounts), as the newest
-    // headline spells them.
+    // The tokens two or more of the group's headlines share, the most shared first (names before other words and
+    // amounts), as the newest headline spells them.
     private static List<string> Shared(IReadOnlyList<IReadOnlyDictionary<string, Token>> members) =>
         members.SelectMany((m, order) => m.Values.Select(t => (t, order)))
             .GroupBy(x => x.t.Key)
