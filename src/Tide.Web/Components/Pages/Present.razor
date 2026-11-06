@@ -249,7 +249,12 @@ else
                             <ClassBadge Classification="a.Classification" Priority="a.Priority" />
                             <TlpBadge Level="a.Tlp" />
                             @if (ea.Marking > a.Tlp) { <span title="Some of this article is marked higher than the article itself">holds <TlpBadge Level="ea.Marking" /></span> }
-                            @if (!string.IsNullOrWhiteSpace(a.SourceName)) { <span>@a.SourceName</span> }
+                            @if (!string.IsNullOrWhiteSpace(a.SourceUrl))
+                            {
+                                @* The original report, for a question the slide doesn't answer: a new tab, so the meeting stays put. *@
+                                <a class="tide-slide-source" href="@a.SourceUrl" target="_blank" rel="noopener noreferrer" title="Open the source in a new tab">@(string.IsNullOrWhiteSpace(a.SourceName) ? "Source" : a.SourceName) <span class="bi bi-box-arrow-up-right" aria-hidden="true"></span><span class="visually-hidden"> (opens in a new tab)</span></a>
+                            }
+                            else if (!string.IsNullOrWhiteSpace(a.SourceName)) { <span>@a.SourceName</span> }
                             @if (HandsOn(a.Id) is { Count: > 0 } hands)
                             {
                                 <span class="tide-hand" title="@string.Join(", ", hands.Select(h => h.Name))"><span class="bi bi-hand-index-thumb" aria-hidden="true"></span> @string.Join(", ", hands.Select(h => h.Name))</span>
@@ -403,7 +408,16 @@ else
                                 }
                                 @if (ea.Indicators.Count > 0)
                                 {
-                                    <div class="tide-present-help mt-2">@ea.Indicators.Count indicator@(ea.Indicators.Count == 1 ? "" : "s") on the article.</div>
+                                    var iocs = $"{ea.Indicators.Count} indicator{(ea.Indicators.Count == 1 ? "" : "s")}";
+                                    @if (CanOpenProduct)
+                                    {
+                                        <button type="button" class="btn btn-sm btn-outline-secondary mt-2 tide-slide-iocs" aria-expanded="@Ui.Aria(ShownIndicators?.Article.Id == a.Id)"
+                                                title="Show them over the slide" @onclick="() => ShowIndicators(a.Id)"><span class="bi bi-fingerprint" aria-hidden="true"></span> @iocs</button>
+                                    }
+                                    else
+                                    {
+                                        <div class="tide-present-help mt-2">@iocs on the article.</div>
+                                    }
                                 }
                                 @if (ea.WithheldParts > 0)
                                 {
@@ -758,6 +772,10 @@ else
         {
             <PresentProduct Card="shownProduct" Kicker="@Kicker(_popup.Own)" CanClose="!Held" Autofocus="_focusProduct" OnClose="CloseProduct" Links="_readsTeam" />
         }
+        else if (ShownIndicators is { } shownIocs)
+        {
+            <PresentIndicators Article="shownIocs" Kicker="@Kicker(_popup.Own)" CanClose="!Held" Autofocus="_focusProduct" OnClose="CloseProduct" Links="_readsTeam" />
+        }
 
         @* Inside the slides' root, so it shows in full screen too; present.js leaves the keys to it while it's open. *@
         <ConfirmDialog @ref="_confirm" />
@@ -1076,7 +1094,7 @@ else
             case "last": Go(LastSlide); break;
             case "close":
                 if (_zoom is not null) _zoom = null;
-                else if (_product is not null) await CloseProduct();
+                else if (CardOpen) await CloseProduct();
                 else await CloseAction();
                 break;
             case "discussed":
@@ -1568,10 +1586,10 @@ else
         }
         _seat.At(_slide, key: SlideKey(_slide));
         if (_actionDetail is { } open) Meetings.Open(_seat, open.Action.Number);   // what's open goes to the room
-        else if (_product is { } card)
+        else if (CardOpen && _popup.Shown is { } card)
         {
-            Meetings.Show(_seat, card.Product.Id);
-            _popup.Open(card.Product.Id, presenting: true, inMeeting: true);
+            Meetings.Show(_seat, card);
+            _popup.Open(card, presenting: true, inMeeting: true);
         }
         await Seated();
     });
@@ -2081,15 +2099,28 @@ else
         else if (!_ownAction) DropAction();
     }
 
-    // --- an Our stack product's card opened over an article's slide ---------------------------------------------------
+    // --- a card opened over an article's slide: an Our stack product's, or the article's indicators ---------------------
+    // One card at a time, shown to the room as one: the meeting's card is the product's id or the article's (Guids, so
+    // they can't be taken for each other), and moving on, handing over or the meeting's end closes either alike.
 
     private IReadOnlyDictionary<Guid, IReadOnlyList<StackProduct>> _stackOf = new Dictionary<Guid, IReadOnlyList<StackProduct>>();
     private readonly MeetingPopup _popup = new();
     private Tide.Application.Stack.StackCard? _product;
     private bool _focusProduct;
 
-    /// <summary>Whether this page can open a product's card: on the team edition, and not held by the presenter's lock.</summary>
+    /// <summary>Whether this page can open a card: on the team edition, and not held by the presenter's lock.</summary>
     private bool CanOpenProduct => TeamEdition && !Held && _readsTeam;
+
+    // The article whose indicators are open over its slide, as this page's edition carries them (read again with it).
+    private EditionArticle? ShownIndicators =>
+        TeamEdition && _product is null && _popup.Shown is { } id && _brief is not null
+            ? Cut(_brief).Articles.FirstOrDefault(x => x.Article.Id == id && x.Indicators.Count > 0)
+            : null;
+
+    private bool CardOpen => _product is not null || ShownIndicators is not null;
+
+    /// <summary>Shows an article's indicators over its slide, as <see cref="ShowProduct"/> does a product's card.</summary>
+    internal Task ShowIndicators(Guid articleId) => ShowProduct(articleId);
 
     // Each article's tactics and scorecard tags as its slide draws them, worked out once per read of the brief rather than
     // on every render. A brief read again is a new object, with new articles: the cache starts afresh for it.
@@ -2114,8 +2145,9 @@ else
         brief is null ? new Dictionary<Guid, IReadOnlyList<StackProduct>>() : await StackSvc.ForArticlesAsync(brief.Items.Select(i => i.ArticleId));
 
     /// <summary>
-    /// Opens a product's card over the slide, as <see cref="ShowAction"/> does an action: the presenter's opens for everyone
-    /// following them; anyone else's (unless the presenter has them locked) is theirs alone.
+    /// Opens a card over the slide (a product's, or an article's indicators by the article's id), as <see cref="ShowAction"/>
+    /// does an action: the presenter's opens for everyone following them; anyone else's (unless the presenter has them
+    /// locked) is theirs alone.
     /// </summary>
     internal async Task ShowProduct(Guid productId)
     {
@@ -2127,17 +2159,17 @@ else
         }
         _popup.Open(productId, Presenting, _seat is not null);
         await LoadProduct(focus: true);
-        if (Presenting && _product is null && Meetings.Get(_date)?.Product == productId)
+        if (Presenting && !CardOpen && Meetings.Get(_date)?.Product == productId)
         {
             Meetings.Show(_seat!, null);
             Refresh();
         }
     }
 
-    /// <summary>Closes the product's card: the presenter's, for everyone following; anyone else's, for themselves.</summary>
+    /// <summary>Closes the card: the presenter's, for everyone following; anyone else's, for themselves.</summary>
     internal Task CloseProduct()
     {
-        if (_product is null || Held) return Task.CompletedTask;
+        if (!CardOpen || Held) return Task.CompletedTask;
         if (Presenting)
         {
             Meetings.Show(_seat!, null);
@@ -2162,6 +2194,13 @@ else
         Tide.Application.Stack.StackCard? card = null;
         if (TeamEdition && _popup.Shown is { } id)
         {
+            _product = null;
+            if (ShownIndicators is not null)
+            {
+                DropAction();   // one thing open over the slide at a time
+                _focusProduct = focus;
+                return;
+            }
             try { card = await StackSvc.CardAsync(id, _teamMax, ShownArticle()); }
             catch (ForbiddenException) { /* not theirs to read: closed quietly */ }
             // Another was opened (or this one closed, or the edition changed) while it was read: that decides what shows.
@@ -2200,7 +2239,7 @@ else
         if (_seat is null) return;
         var now = Meetings.Get(_date);
         if (live.Action is not null && _actionDetail is null && now?.Action == live.Action) Meetings.Open(_seat, null);
-        if (live.Product is not null && _product is null && now?.Product == live.Product) Meetings.Show(_seat, null);
+        if (live.Product is not null && !CardOpen && now?.Product == live.Product) Meetings.Show(_seat, null);
         Refresh();
     }
 

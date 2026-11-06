@@ -1964,6 +1964,10 @@ button.tide-slide-werun-chip:focus-visible { outline: 3px solid var(--tide-slide
 .tide-present-product .tide-facts dd { font-size: 1.05em; }
 .tide-present-product-articles { list-style: none; padding: 0; margin: 0; }
 .tide-present-product-articles li { padding: .35em 0; border-bottom: 1px solid var(--tide-slide-line); line-height: 1.35; }
+.tide-present-iocs-list { list-style: none; padding: 0; margin: 0 0 1em; }
+.tide-present-iocs-list li { padding: .3em 0; border-bottom: 1px solid var(--tide-slide-line); display: flex; flex-wrap: wrap; gap: .25em 1em; align-items: baseline; }
+.tide-present-iocs-list .tide-data { overflow-wrap: anywhere; }
+.tide-slide-source { color: inherit; }
 
 /* An action's Files in the page's side column (ActionFilesPanel): a compact list, each file one row (icon, name cut short
    with the full name in its title, size, the "Can run" badge and its downloads) over a muted line (where it is, who, when)
