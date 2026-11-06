@@ -61,11 +61,16 @@ public sealed record TrendReport(
 
     public TrendRow? Find(string? key)
     {
-        // A link to Outreach's line from before the rename named the kind "VendorInquiry".
-        if (key?.EndsWith("raised-kind:" + ActionService.FormerOutreachName, StringComparison.Ordinal) == true)
-            key = key[..^ActionService.FormerOutreachName.Length] + ActionKind.Outreach;
+        // A link to a kind's line from before a rename names it by its old name ("VendorInquiry" for Outreach), exactly as
+        // the line's key was written then.
+        if (key?.LastIndexOf(RaisedKind, StringComparison.Ordinal) is >= 0 and var at
+            && ActionService.FormerKind(key[(at + RaisedKind.Length)..], StringComparison.Ordinal) is { } kind)
+            key = key[..(at + RaisedKind.Length)] + kind;
         return AllRows.FirstOrDefault(r => r.Key == key);
     }
+
+    /// <summary>What an action line's key says before the kind ("actions:raised-kind:Block").</summary>
+    internal const string RaisedKind = "raised-kind:";
 
     /// <summary>Whether a line counts actions (its ids open as actions) rather than articles.</summary>
     public bool IsActionRow(TrendRow row) => Actions.Contains(row);
@@ -314,7 +319,7 @@ public sealed class TrendsService(IAppDbContextFactory dbs, ICurrentUser user, O
         static bool OpenAt(ActionFact f, DateOnly day) => f.Raised <= day && (f.Closed is not { } c || c > day);
 
         var rows = new List<TrendRow> { Row("raised", "Raised", "Raised", Raised, rollup: true) };
-        rows.AddRange(Enum.GetValues<ActionKind>().Select(k => Row("raised-kind:" + k, ActionService.KindName(k), "Raised by kind", (f, p) => f.Kind == k && Raised(f, p))).Where(r => r.Any));
+        rows.AddRange(Enum.GetValues<ActionKind>().Select(k => Row(TrendReport.RaisedKind + k, ActionService.KindName(k), "Raised by kind", (f, p) => f.Kind == k && Raised(f, p))).Where(r => r.Any));
         rows.AddRange(teams.Select(t => (Team: t, Row: Row("raised-team:" + t.Key, t.Name, "Raised by team", (f, p) => f.Team == t.Id && Raised(f, p))))
             .Where(x => x.Row.Any || !x.Team.IsRetired).Select(x => x.Row));
 

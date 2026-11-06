@@ -38,29 +38,31 @@ public class OutreachFillTests
 
     private static OutreachFacts Facts(Article? article, TlpLevel ceiling, int ownIndicators = 0, IReadOnlyList<ArticleIndicator>? own = null)
     {
-        var (cut, ownKept, leftOut) = OutreachFill.Cut(article, ownIndicators, ceiling);
-        var indicators = (cut?.Indicators ?? []).Concat(ownKept ? own ?? [] : []).ToList();
+        var cut = OutreachFill.Cut(article, ownIndicators, ceiling);
+        var indicators = (cut.Article?.Indicators ?? []).Concat(cut.OwnIndicators ? own ?? [] : []).ToList();
         return new OutreachFacts
         {
             Ceiling = ceiling,
             FromArticle = article is not null,
-            Article = cut,
+            Article = cut.Article,
             Cves = new Dictionary<string, CveRecord>
             {
                 ["CVE-2026-1234"] = new() { CveId = "CVE-2026-1234", IsKev = true, KevRansomware = true, EpssScore = 0.941m },
             },
             Indicators = indicators,
-            IndicatorsTlp = new[] { cut is { Indicators.Count: > 0 } ? cut.Article.Tlp : TlpLevel.Clear, ownKept ? OutreachFill.UnmarkedTlp : TlpLevel.Clear }.Max(),
-            IndicatorsHeldBack = (article is { Indicators.Count: > 0 } && cut is null) || (ownIndicators > 0 && !ownKept),
-            Product = new StackProduct { Name = "Edge VPN", Versions = "22.7R2", ContactName = "Vendor PSIRT", ContactEmail = "psirt@vendor.example" },
-            ProductTeam = "Network",
+            IndicatorsTlp = cut.IndicatorsTlp,
+            IndicatorsHeldBack = cut.IndicatorsHeldBack,
+            Product = new StackProduct
+            {
+                Name = "Edge VPN", Versions = "22.7R2", ContactName = "Vendor PSIRT", ContactEmail = "psirt@vendor.example", Team = new Team { Name = "Network" },
+            },
             ActionNumber = 12,
             ActionLink = "https://tide.example.org/actions/12",
             Due = new DateOnly(2026, 11, 10),
             SenderName = "Robin",
             SenderTeam = "Cyber Threat Intelligence",
             Today = Today,
-            LeftOut = leftOut,
+            LeftOut = cut.LeftOut,
         };
     }
 

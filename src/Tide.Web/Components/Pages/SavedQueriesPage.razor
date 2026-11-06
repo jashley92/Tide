@@ -146,8 +146,7 @@ else
         _shown = (_rows ?? []).Where(r => _language.Length == 0 || r.Query.Dialect == _language).Where(r => SavedQueryService.Matches(r.Query, words)).ToList();
     }
 
-    private string Provenance(SavedQuery q) => $"Saved by {q.CreatedByName}, {Ui.When(Clock, q.CreatedAtUtc)}"
-        + (q.ModifiedAtUtc is { } changed ? $" · changed by {q.ModifiedByName ?? "someone"}, {Ui.When(Clock, changed)}" : "");
+    private string Provenance(SavedQuery q) => Ui.Provenance(Clock, q, q.CreatedByName, q.ModifiedByName);
 
     private static string Used(int actions) => actions == 0 ? "Not used yet" : $"Used on {Ui.Plural(actions, "action")}";
 

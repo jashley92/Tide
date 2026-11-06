@@ -44,6 +44,20 @@ public sealed record OutreachState(IReadOnlyList<OutreachMessage> Messages, int?
 }
 
 /// <summary>
+/// The follow-up reminder's dates, worked out one way for the reminder that goes and the action that says when it will,
+/// so the two can't disagree.
+/// </summary>
+public static class OutreachDates
+{
+    /// <summary>The day, in the organization's zone, an email marked sent at <paramref name="sentAtUtc"/> was sent.</summary>
+    public static DateOnly SentOn(DateTimeOffset sentAtUtc, OrgClock clock) => DateOnly.FromDateTime(clock.ToLocal(sentAtUtc).DateTime);
+
+    /// <summary>The day the reminder follows up an email sent at <paramref name="sentAtUtc"/>: <paramref name="days"/> business days on.</summary>
+    public static DateOnly FollowUpOn(DateTimeOffset sentAtUtc, int days, OrgClock clock) =>
+        ActionSla.DueDate(SentOn(sentAtUtc, clock), Math.Max(days, 1), clock.Days)!.Value;
+}
+
+/// <summary>
 /// Outreach actions' emails (ADR 0019). TIDE writes the email and never sends it: "Write the email" fills a template from
 /// the action (<see cref="WriteAsync"/>) for the analyst to edit and copy into their own mail; they mark it sent to whom
 /// (<see cref="MarkSentAsync"/>), and the action waits for the reply, with a follow-up reminder
@@ -71,7 +85,7 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
 
     /// <summary>The day a reminder follows up <paramref name="m"/>, or null when it won't (answered, or the reminder is off).</summary>
     public DateOnly? FollowUpOn(OutreachMessage m) =>
-        m.IsWaiting && FollowUpDays is { } days ? ActionSla.DueDate(DateOnly.FromDateTime(clock.ToLocal(m.SentAtUtc).DateTime), days, clock.Days) : null;
+        m.IsWaiting && FollowUpDays is { } days ? OutreachDates.FollowUpOn(m.SentAtUtc, days, clock) : null;
 
     /// <summary>
     /// The products from Our stack the action is about, live ones only: those its article is tagged with, then those its
@@ -92,22 +106,26 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
         var tagged = a.ArticleId is { } article
             ? await db.ArticleProducts.AsNoTracking().Where(t => t.ArticleId == article).Select(t => t.ProductId).ToListAsync(ct)
             : [];
-        var entries = await Stack.StackService.EntriesAsync(db, ct);
+        // The live products once, with their teams (an email names the owner): matched against here, and returned from here.
+        var live = await Stack.StackService.InUse(db).Include(p => p.Team).ToListAsync(ct);
+        var entries = live.Select(Stack.StackService.Entry).ToList();
         var named = Stack.StackService.MatchAll(entries, a.Title, a.Description)
             .Concat(a.Article is { } art ? Stack.StackService.MatchAll(entries, art.Title, art.Bluf) : [])
             .Select(e => e.Id);
         var ids = tagged.Concat(named).Distinct().ToList();
-        var products = await db.StackProducts.AsNoTracking().Include(p => p.Team).Where(p => ids.Contains(p.Id) && !p.IsRetired).ToListAsync(ct);
-        return [.. ids.Select(id => products.Find(p => p.Id == id)).OfType<StackProduct>()];
+        return [.. ids.Select(id => live.Find(p => p.Id == id)).OfType<StackProduct>()];
     }
 
     /// <summary>
     /// Fills <paramref name="templateId"/> for the action, for whoever works it: the article cut to the template's ceiling
-    /// (<see cref="OutreachFill.Cut"/>), the indicators a hunt on the action would search (<see cref="ActionService.HuntInputsAsync"/>,
-    /// less any the ceiling holds back), <paramref name="productId"/> (else the first product the action names), and the
-    /// action and its sender. Saves nothing. A retired template isn't used.
+    /// (<see cref="OutreachFill.Cut"/>), the indicators a hunt on the action would search, of those the ceiling lets
+    /// through (<see cref="ActionService.HuntIndicators"/>), <paramref name="productId"/> (else the first product the
+    /// action names), and the action and its sender. Saves nothing. A retired template isn't used. <paramref name="products"/> is the action's
+    /// products as <see cref="ProductsAsync(Guid, CancellationToken)"/> gave them, when the caller already holds them;
+    /// left out, they're read here.
     /// </summary>
-    public async Task<OutreachWritten> WriteAsync(Guid actionId, Guid templateId, Guid? productId = null, CancellationToken ct = default)
+    public async Task<OutreachWritten> WriteAsync(Guid actionId, Guid templateId, Guid? productId = null, IReadOnlyList<StackProduct>? products = null,
+        CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
         var a = await ActionService.HuntActionAsync(db, actionId, tracked: false, ct);
@@ -122,19 +140,15 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
             article.Bullets = await db.ArticleBullets.AsNoTracking().Where(b => b.ArticleId == article.Id).ToListAsync(ct);
             article.Cves = await db.ArticleCves.AsNoTracking().Where(c => c.ArticleId == article.Id).ToListAsync(ct);
         }
-        var (cut, own, leftOut) = OutreachFill.Cut(a.Article, a.Indicators.Count, template.Ceiling);
-        var heldBack = (a.Article is { Indicators.Count: > 0 } && cut is null) || (a.Indicators.Count > 0 && !own);
-        var indicatorsTlp = new[] { cut is { Indicators.Count: > 0 } ? cut.Article.Tlp : TlpLevel.Clear, own ? OutreachFill.UnmarkedTlp : TlpLevel.Clear }.Max();
-        // What the ceiling holds back never reaches the hunt loader, which then merges what's left as a hunt would.
-        if (a.Article is not null && cut is null) a.Article.Indicators = [];
-        if (!own) a.Indicators = [];
-        var inputs = await ActionService.HuntInputsAsync(db, a, fromStory: false, ct);
+        var cut = OutreachFill.Cut(a.Article, a.Indicators.Count, template.Ceiling);
+        // Only what the ceiling lets through is merged, as a hunt merges the article's indicators and the action's own.
+        var indicators = ActionService.HuntIndicators(cut.Article is null ? [] : a.Article!.Indicators, cut.OwnIndicators ? a.Indicators : []);
 
-        var cveIds = cut?.Article.Cves.Select(c => c.CveId).ToList() ?? [];
+        var cveIds = cut.Article?.Article.Cves.Select(c => c.CveId).ToList() ?? [];
         var cves = cveIds.Count == 0 ? new Dictionary<string, CveRecord>()
             : await db.CveRecords.AsNoTracking().Where(c => cveIds.Contains(c.CveId)).ToDictionaryAsync(c => c.CveId, StringComparer.OrdinalIgnoreCase, ct);
 
-        var products = await ProductsAsync(db, a, ct);
+        products ??= await ProductsAsync(db, a, ct);
         StackProduct? product = null;
         if (productId is { } pid)
             product = products.FirstOrDefault(p => p.Id == pid)
@@ -147,20 +161,19 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
         {
             Ceiling = template.Ceiling,
             FromArticle = a.Article is not null,
-            Article = cut,
+            Article = cut.Article,
             Cves = cves,
-            Indicators = inputs.Indicators,
-            IndicatorsTlp = indicatorsTlp,
-            IndicatorsHeldBack = heldBack,
+            Indicators = indicators,
+            IndicatorsTlp = cut.IndicatorsTlp,
+            IndicatorsHeldBack = cut.IndicatorsHeldBack,
             Product = product,
-            ProductTeam = product?.Team?.Name,
             ActionNumber = a.Number,
             ActionLink = string.IsNullOrWhiteSpace(baseUrl) ? null : $"{baseUrl}/actions/{a.Number.ToString(CultureInfo.InvariantCulture)}",
             Due = a.DueDate,
             SenderName = user.DisplayName,
             SenderTeam = await SenderTeamAsync(db, a, ct),
             Today = clock.Today,
-            LeftOut = leftOut,
+            LeftOut = cut.LeftOut,
         };
         var draft = OutreachFill.Fill(template.Subject, template.Body, facts);
 
@@ -188,12 +201,10 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
     public async Task<OutreachMessage> MarkSentAsync(Guid actionId, OutreachSend send, CancellationToken ct = default)
     {
         var to = Recipients(send.To);
-        var subject = (send.Subject ?? "").ReplaceLineEndings(" ").Trim();
-        if (subject.Length == 0) throw new ArgumentException("Give the email's subject.");
-        if (subject.Length > OutreachMessage.MaxSubject) throw new ArgumentException($"A subject can be at most {OutreachMessage.MaxSubject} characters.");
-        var body = (send.Body ?? "").Replace("\r\n", "\n").Trim();
-        if (body.Length == 0) throw new ArgumentException("Give the email's body.");
-        if (body.Length > OutreachMessage.MaxBody) throw new ArgumentException($"The body can be at most {OutreachMessage.MaxBody:N0} characters.");
+        var subject = OutreachFill.CleanSubject(send.Subject, OutreachMessage.MaxSubject,
+            "Give the email's subject.", $"A subject can be at most {OutreachMessage.MaxSubject} characters.");
+        var body = OutreachFill.CleanBody(send.Body, OutreachMessage.MaxBody,
+            "Give the email's body.", $"The body can be at most {OutreachMessage.MaxBody:N0} characters.");
         if (OutreachFill.HasMarker(subject) || OutreachFill.HasMarker(body))
             throw new ArgumentException("The email still has a [[…]] marker where TIDE had nothing to fill. Fill it in or take it out first.");
         var tlp = Tlp.Checked(send.Tlp);
@@ -274,13 +285,10 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
     /// <summary>The addresses an email went to as they're kept ("a@x.org; b@x.org"): at least one, each a valid address.</summary>
     internal static string Recipients(string? text)
     {
-        var raw = (text ?? "").Split(DistributionSettings.Separators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (raw.Length == 0) throw new ArgumentException("Say who it went to: an email address.");
-        var bad = raw.Where(r => !DistributionSettings.IsAddress(r)).ToList();
-        if (bad.Count > 0) throw new ArgumentException($"Not an email address: {string.Join(", ", bad.Take(3))}{(bad.Count > 3 ? "…" : "")}");
-        var list = raw.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        if (list.Count > MaxRecipients) throw new ArgumentException($"At most {MaxRecipients} addresses; use a distribution list for more.");
-        var value = string.Join("; ", list);
-        return value.Length <= OutreachMessage.MaxTo ? value : throw new ArgumentException("Those addresses are too long; use a distribution list.");
+        var value = DistributionSettings.CheckedAddresses(text,
+            MaxRecipients, $"At most {MaxRecipients} addresses; use a distribution list for more.",
+            OutreachMessage.MaxTo, "Those addresses are too long; use a distribution list.");
+        // Nothing given passes every check there, so it's refused here: an email went to someone.
+        return value.Length > 0 ? value : throw new ArgumentException("Say who it went to: an email address.");
     }
 }

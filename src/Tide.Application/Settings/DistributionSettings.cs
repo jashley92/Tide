@@ -114,15 +114,25 @@ public sealed class DistributionSettings(IAppDbContextFactory dbs, ICurrentUser 
     }
 
     // A recipient list as it's stored, or an ArgumentException saying what's wrong.
-    private static string CheckedRecipients(string? addresses)
+    private static string CheckedRecipients(string? addresses) => CheckedAddresses(addresses,
+        MaxRecipients, $"A list can hold at most {MaxRecipients} addresses; use a distribution list for more.",
+        4000, "That list is too long; use a distribution list.");
+
+    /// <summary>
+    /// Addresses as they're kept ("a@x.org; b@x.org"), the brief's recipients or an outreach email's: separated by
+    /// semicolons, commas, spaces or lines, each a valid address (the first few that aren't are named), repeats dropped ignoring
+    /// case. More than <paramref name="maxCount"/>, or longer than <paramref name="maxLength"/> written out, is refused
+    /// in the caller's words. None at all is "".
+    /// </summary>
+    internal static string CheckedAddresses(string? addresses, int maxCount, string tooMany, int maxLength, string tooLong)
     {
         var raw = (addresses ?? "").Split(Separators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var bad = raw.Where(a => !IsAddress(a)).ToList();
         if (bad.Count > 0) throw new ArgumentException($"Not an email address: {string.Join(", ", bad.Take(3))}{(bad.Count > 3 ? "…" : "")}");
         var kept = raw.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        if (kept.Count > MaxRecipients) throw new ArgumentException($"A list can hold at most {MaxRecipients} addresses; use a distribution list for more.");
+        if (kept.Count > maxCount) throw new ArgumentException(tooMany);
         var value = string.Join("; ", kept);
-        if (value.Length > 4000) throw new ArgumentException("That list is too long; use a distribution list.");
+        if (value.Length > maxLength) throw new ArgumentException(tooLong);
         return value;
     }
 

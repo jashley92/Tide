@@ -701,7 +701,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (ActionItem.IsClosedStatus(status) && !OutcomesFor(a.Kind, status, a.Outcome).Contains(outcome))
             throw new ArgumentException(a.Kind is ActionKind.IocSweep or ActionKind.ThreatHunt
                 ? "A hunt closes with what it found: no hits, or hits escalated."
-                : $"{(KindName(a.Kind)[0] is 'A' or 'E' or 'I' or 'O' or 'U' ? "An" : "A")} {KindName(a.Kind)} action closes with one of: {string.Join(", ", KindOutcomes(a.Kind).Select(OutcomeName))}.");
+                : $"{Words.AOrAn(KindName(a.Kind))} {KindName(a.Kind)} action closes with one of: {string.Join(", ", KindOutcomes(a.Kind).Select(OutcomeName))}.");
         var cleanNote = ArticleService.CleanOrNull(note, 2000, multiline: true);
         var was = a.Status;
         a.Status = status;
@@ -1090,14 +1090,20 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     internal static async Task<HuntInputs> HuntInputsAsync(IAppDbContext db, ActionItem a, bool fromStory, CancellationToken ct)
     {
         List<Article> sources = fromStory ? await StoryArticlesAsync(db, a, ct) : a.Article is { } own ? [own] : [];
-        // The action's own as a hunt reads them (the builder works on an article's).
-        var indicators = Distinct(sources.SelectMany(x => x.Indicators)
-            .Concat(a.Indicators.Select(i => new ArticleIndicator { Id = i.Id, Type = i.Type, Value = i.Value, Note = i.Note })));
+        var indicators = HuntIndicators(sources.SelectMany(x => x.Indicators), a.Indicators);
         var days = HuntQueryBuilder.WindowDays(sources.Min(x => (DateTimeOffset?)(x.PublishedAtUtc ?? x.CreatedAtUtc)), DateTimeOffset.UtcNow);
         return new HuntInputs(indicators, days, sources.Count);
     }
 
     internal sealed record HuntInputs(List<ArticleIndicator> Indicators, int Days, int Articles);
+
+    /// <summary>
+    /// Articles' indicators and the action's <paramref name="own"/> merged as a hunt searches them, each once. An outreach
+    /// email passes only those its template's ceiling lets through.
+    /// </summary>
+    internal static List<ArticleIndicator> HuntIndicators(IEnumerable<ArticleIndicator> articles, IEnumerable<ActionIndicator> own) =>
+        // The action's own as a hunt reads them (the builder works on an article's).
+        Distinct(articles.Concat(own.Select(i => new ArticleIndicator { Id = i.Id, Type = i.Type, Value = i.Value, Note = i.Note })));
 
     private static List<ArticleIndicator> Distinct(IEnumerable<ArticleIndicator> indicators) =>
         indicators.DistinctBy(i => (i.Type, i.Value.Trim().ToLowerInvariant())).ToList();
@@ -1350,15 +1356,26 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
 
     /// <summary>
     /// The kind a stored or typed name stands for (its code name, as an SLA setting's key or a trends line has it), ignoring
-    /// case, or null. "VendorInquiry", Outreach's name before the rename (ADR 0019), still reads as Outreach, so a bookmark, a server's
+    /// case, or null. A kind's name before a rename (<see cref="FormerKind"/>) still reads as the kind, so a bookmark, a server's
     /// <c>Actions:Sla:Kind</c> value or a configuration bundle from before the rename keeps working.
     /// </summary>
     public static ActionKind? KindNamed(string? name) =>
-        string.Equals(name?.Trim(), FormerOutreachName, StringComparison.OrdinalIgnoreCase) ? ActionKind.Outreach
-        : Domain.Common.EnumNames.TryParseExact(name?.Trim() ?? "", out ActionKind k, ignoreCase: true) ? k : null;
+        FormerKind(name?.Trim())
+        ?? (Domain.Common.EnumNames.TryParseExact(name?.Trim() ?? "", out ActionKind k, ignoreCase: true) ? k : null);
 
     /// <summary>What <see cref="ActionKind.Outreach"/> was called, and stored as in setting keys, before the rename (ADR 0019).</summary>
     public const string FormerOutreachName = "VendorInquiry";
+
+    // Kinds' code names before a rename, and the kind each is now. The kind names read anywhere (KindNamed, the SLA
+    // setting keys, the trends lines) go through this one list, so a rename is added here once.
+    private static readonly (string Name, ActionKind Kind)[] FormerKinds = [(FormerOutreachName, ActionKind.Outreach)];
+
+    /// <summary>
+    /// The kind <paramref name="name"/>, a kind's code name before a rename, is now, or null. Compared whole, as given (not
+    /// trimmed), ignoring case unless <paramref name="comparison"/> says otherwise.
+    /// </summary>
+    public static ActionKind? FormerKind(string? name, StringComparison comparison = StringComparison.OrdinalIgnoreCase) =>
+        name is null ? null : Array.Find(FormerKinds, f => string.Equals(f.Name, name, comparison)) is { Name: not null } former ? former.Kind : null;
 
     public static string StatusName(ActionStatus s) => s switch
     {

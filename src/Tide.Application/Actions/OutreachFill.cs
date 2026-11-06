@@ -44,8 +44,8 @@ public sealed record OutreachFacts
     /// <summary>Whether the ceiling held back indicators (the article's, or the action's own).</summary>
     public bool IndicatorsHeldBack { get; init; }
 
+    /// <summary>The product, with its <see cref="StackProduct.Team"/> loaded: <c>{{product.team}}</c> is its name.</summary>
     public StackProduct? Product { get; init; }
-    public string? ProductTeam { get; init; }
 
     public int ActionNumber { get; init; }
 
@@ -62,6 +62,14 @@ public sealed record OutreachFacts
 
 /// <summary>Something the ceiling held back, in a sentence, and the placeholders that would have carried it.</summary>
 public sealed record OutreachLeftOut(string Text, IReadOnlyList<string> Placeholders);
+
+/// <summary>
+/// What a template's ceiling lets through of an action (<see cref="OutreachFill.Cut"/>): its article as cut (null when
+/// left out whole), whether the action's own indicators are within it, what was held back, the marking of the indicators
+/// let through, and whether the ceiling held any back.
+/// </summary>
+public sealed record OutreachCut(EditionArticle? Article, bool OwnIndicators, IReadOnlyList<OutreachLeftOut> LeftOut, TlpLevel IndicatorsTlp,
+    bool IndicatorsHeldBack);
 
 /// <summary>
 /// An outreach email as filled, for the analyst to check and edit before sending it from their own mail. A placeholder
@@ -133,7 +141,10 @@ public static partial class OutreachFill
     private static partial Regex MarkerPattern();
 
     /// <summary>The placeholder for one kind of indicator ("{{indicators:sha256}}").</summary>
-    public static string IndicatorsOf(HuntValueKind kind) => "{{" + IndicatorsName + ":" + kind.ToString().ToLowerInvariant() + "}}";
+    public static string IndicatorsOf(HuntValueKind kind) => "{{" + IndicatorsNameOf(kind) + "}}";
+
+    // Its name between the braces ("indicators:sha256").
+    private static string IndicatorsNameOf(HuntValueKind kind) => IndicatorsName + ":" + kind.ToString().ToLowerInvariant();
 
     /// <summary>
     /// Refuses <paramref name="text"/> (a subject or body) when it names a placeholder TIDE doesn't fill, or a kind of
@@ -166,9 +177,9 @@ public static partial class OutreachFill
     /// <paramref name="article"/> (its bullets, indicators and CVEs loaded) as the ceiling lets it through, by the team
     /// edition's cut (<see cref="BriefEditions.BuildArticle"/>, which carries indicators), and whether the action's own
     /// <paramref name="ownIndicators"/> (unmarked, so <see cref="UnmarkedTlp"/>) are within it, with a sentence for each
-    /// thing held back.
+    /// thing held back, the marking of the indicators let through, and whether any were held back.
     /// </summary>
-    public static (EditionArticle? Article, bool OwnIndicators, IReadOnlyList<OutreachLeftOut> LeftOut) Cut(Article? article, int ownIndicators, TlpLevel ceiling)
+    public static OutreachCut Cut(Article? article, int ownIndicators, TlpLevel ceiling)
     {
         var leftOut = new List<OutreachLeftOut>();
         EditionArticle? kept = null;
@@ -189,8 +200,26 @@ public static partial class OutreachFill
         var own = ownIndicators > 0 && UnmarkedTlp <= ceiling;
         if (ownIndicators > 0 && !own)
             leftOut.Add(new($"The action's own indicators ({ownIndicators}) carry no marking, so count as {Tlp.Label(UnmarkedTlp)}, above {Tlp.Label(ceiling)}: left out.", [IndicatorsName]));
-        return (kept, own, leftOut);
+        // The article's indicators carry its marking, the action's own count as unmarked.
+        var indicatorsTlp = new[] { kept is { Indicators.Count: > 0 } ? kept.Article.Tlp : TlpLevel.Clear, own ? UnmarkedTlp : TlpLevel.Clear }.Max();
+        var heldBack = (article is { Indicators.Count: > 0 } && kept is null) || (ownIndicators > 0 && !own);
+        return new OutreachCut(kept, own, leftOut, indicatorsTlp, heldBack);
     }
+
+    /// <summary>A subject as it's kept, a template's or an email's: on one line, trimmed. Empty, or longer than
+    /// <paramref name="max"/>, is refused in the caller's words.</summary>
+    internal static string CleanSubject(string? text, int max, string empty, string tooLong) =>
+        Checked((text ?? "").ReplaceLineEndings(" ").Trim(), max, empty, tooLong);
+
+    /// <summary>A body as it's kept, a template's or an email's: \n line endings, trimmed. Empty, or longer than
+    /// <paramref name="max"/>, is refused in the caller's words.</summary>
+    internal static string CleanBody(string? text, int max, string empty, string tooLong) =>
+        Checked((text ?? "").Replace("\r\n", "\n").Trim(), max, empty, tooLong);
+
+    private static string Checked(string clean, int max, string empty, string tooLong) =>
+        clean.Length == 0 ? throw new ArgumentException(empty)
+        : clean.Length > max ? throw new ArgumentException(tooLong)
+        : clean;
 
     /// <summary>
     /// Fills a template's subject and body from <paramref name="facts"/>. Each placeholder becomes its value; one with
@@ -209,11 +238,11 @@ public static partial class OutreachFill
             used.Add(name);
             if (name == TlpName) return TlpSlot;   // filled once the marking is known
             var scope = m.Groups[2].Success ? HuntQueryBuilder.KindNamed(m.Groups[2].Value) : null;
-            var written = scope is { } k ? IndicatorsOf(k) : "{{" + name + "}}";
+            var label = scope is { } k ? IndicatorsNameOf(k) : name;
             var (value, tlp, above) = ValueOf(name, scope, facts);
             if (string.IsNullOrWhiteSpace(value))
             {
-                var label = written[2..^2];
+                var written = "{{" + label + "}}";
                 if (!unfilled.Contains(written)) unfilled.Add(written);
                 return Marker(label, above ? facts.Ceiling : null);
             }
@@ -245,7 +274,7 @@ public static partial class OutreachFill
         {
             "product.name" => f.Product?.Name,
             "product.versions" => f.Product?.Versions,
-            "product.team" => f.Product is null ? null : f.ProductTeam,
+            "product.team" => f.Product?.Team?.Name,
             "product.contact" => f.Product?.ContactName,
             "action.number" => $"A-{f.ActionNumber}",
             "action.link" => f.ActionLink,

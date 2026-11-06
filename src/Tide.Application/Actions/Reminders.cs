@@ -548,11 +548,16 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
         var today = clock.Today;
         var days = ReminderOptions.FollowUpOptions.Clamp(Options.OutreachFollowUp.Days);
         await using var db = await dbs.CreateAsync(ct);
-        var waiting = await db.OutreachMessages.AsNoTracking().Where(m => m.RepliedAtUtc == null).ToListAsync(ct);
-        waiting = [.. waiting.Where(m => ActionSla.DueDate(DateOnly.FromDateTime(clock.ToLocal(m.SentAtUtc).DateTime), days, clock.Days) <= today)];
+        // A business day is never shorter than a calendar day, so nothing sent after the start of the day `days` calendar
+        // days back can be due yet: the database leaves those out, and the exact business-day rule runs here on the rest.
+        var sentBefore = clock.StartOfDay(today.AddDays(1 - days));
+        var waiting = await db.OutreachMessages.AsNoTracking().Where(m => m.RepliedAtUtc == null && m.SentAtUtc < sentBefore)
+            .Select(m => new FollowUpEmail(m.Id, m.ActionId, m.To, m.SentAtUtc, m.SentById)).ToListAsync(ct);
+        waiting = [.. waiting.Where(m => OutreachDates.FollowUpOn(m.SentAtUtc, days, clock) <= today)];
         if (waiting.Count == 0) return 0;
-        var marks = (await db.NotificationMarks.AsNoTracking().Where(m => m.Kind == FollowUpMark).Select(m => m.Key).ToListAsync(ct)).ToHashSet();
-        waiting = [.. waiting.Where(m => !marks.Contains(m.Id.ToString("N")))];
+        var keys = waiting.Select(m => m.Key).ToList();
+        var marks = (await db.NotificationMarks.AsNoTracking().Where(m => m.Kind == FollowUpMark && keys.Contains(m.Key)).Select(m => m.Key).ToListAsync(ct)).ToHashSet();
+        waiting = [.. waiting.Where(m => !marks.Contains(m.Key))];
         var ids = waiting.Select(m => m.ActionId).Distinct().ToList();
         var open = await db.Actions.AsNoTracking().Include(a => a.Article).WhereOpen().Where(a => ids.Contains(a.Id) && a.Kind == ActionKind.Outreach)
             .ToDictionaryAsync(a => a.Id, ct);
@@ -573,18 +578,24 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
                 ["Actions"] = $"{list.Count} action{S(list.Count)}",
                 ["Days"] = $"{days} business day{S(days)}",
                 ["ActionList"] = Table(list, today),
-                ["WaitingList"] = WaitingList(emails.Select(m => (open[m.ActionId].Number, m.To, DateOnly.FromDateTime(clock.ToLocal(m.SentAtUtc).DateTime)))),
+                ["WaitingList"] = WaitingList(emails.Select(m => (open[m.ActionId].Number, m.To, OutreachDates.SentOn(m.SentAtUtc, clock)))),
             });
             var html = Shell(t.Heading, clock.TeamName + " · " + DayText(today), MarkingLine(list) + t.BodyHtml, Footer);
             var result = await email.SendAsync(new OutgoingEmail([to], Marked(t.Subject, list), html, ToText(html), []), ct);
             if (result.Status != EmailSendStatus.Sent) continue;
             sent++;
-            await MarkAsync(db, FollowUpMark, emails.Select(m => m.Id.ToString("N")).ToList());
+            await MarkAsync(db, FollowUpMark, emails.Select(m => m.Key).ToList());
         }
         return new Scan(sent, leftOut.Count);
     }
 
     private const string FollowUpMark = "outreach-follow-up";
+
+    // The columns of an email the follow-up reads (not its body); Key is its mark's key.
+    private sealed record FollowUpEmail(Guid Id, Guid ActionId, string To, DateTimeOffset SentAtUtc, string SentById)
+    {
+        public string Key => Id.ToString("N");
+    }
 
     /// <summary>The follow-up's lines saying where each email went and when ("A-12 to support@vendor.example, sent Mon Nov 2").</summary>
     internal static string WaitingList(IEnumerable<(int Number, string To, DateOnly Sent)> emails)
