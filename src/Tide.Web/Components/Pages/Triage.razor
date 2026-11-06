@@ -13,6 +13,7 @@
 @inject Microsoft.Extensions.Options.IOptionsMonitor<IntakeOptions> IntakeOpts
 @inject Tide.Application.Stack.StackService Stack
 @inject ReadingService Reading
+@inject PrerenderHandoff Handoff
 @implements IAsyncDisposable
 
 <PageTitle>Triage · TIDE</PageTitle>
@@ -686,7 +687,7 @@ else
     }
     private IReadOnlyDictionary<string, CveRecord> _cves = new Dictionary<string, CveRecord>();
     private int _selected;
-    private bool _loaded, _busy;
+    private bool _loaded, _busy, _failed;   // _failed: the last read threw, so there's no list for a prerender to keep
     private DotNetObjectReference<Triage>? _ref;
 
     // The item whose promote form is open in its row (or the newest report of the group whose form is open in the
@@ -859,6 +860,11 @@ else
         _live = new LiveChanges(Changes, Origin, c => c.Topic == ChangeFeed.Triage, InvokeAsync, Heard);
         _marks = new LiveMarks<Guid>(InvokeAsync, StateHasChanged);
         _tabMarks = new LiveMarks<FeedItemStatus>(InvokeAsync, StateHasChanged);
+        // The first interactive draw starts from what the prerender read, for the same address, so a reload doesn't
+        // flash "Loading" over the list; it's then read again below, quietly, for anything changed in between.
+        var adopted = Handoff.Take<Triage>(PrerenderedState, Me.UserId) is { } prerendered && prerendered.SameAddress(this)
+            && Adopt(prerendered);
+        PrerenderedState = null;
         _sources = await Intake.SourcesAsync(includeRetired: true);
         _lastBriefAt = await Intake.LastBriefAtAsync();
         if (string.Equals(TabParam, SourcesKey, StringComparison.OrdinalIgnoreCase)) _sourcesTab = true;
@@ -867,9 +873,32 @@ else
         _sourceId = SourceParam is { } sid && _sources.Any(s => s.Id == sid) ? sid : null;
         _search = string.IsNullOrWhiteSpace(SearchParam) ? null : SearchParam.Trim();
         _sinceLast = SinceParam == true && _lastBriefAt is not null;
-        _selected = Math.Max(0, RowParam ?? 0);
+        if (!adopted) _selected = Math.Max(0, RowParam ?? 0);   // adopted, the row Arrive selected stays while it's read again
         await Load();
         Arrive();
+        if (!RendererInfo.IsInteractive && !_failed) PrerenderedState = Handoff.Keep(Me.UserId, this);
+    }
+
+    /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.</summary>
+    [PersistentState]
+    public string? PrerenderedState { get; set; }
+
+    // The query shapes what's read and selected, so only a prerender of the same address is the page to keep.
+    private bool SameAddress(Triage p) =>
+        (p.TabParam, p.SourceParam, p.SearchParam, p.SinceParam, p.AtParam, p.RowParam, p.PromoteParam)
+        == (TabParam, SourceParam, SearchParam, SinceParam, AtParam, RowParam, PromoteParam);
+
+    // Takes what the prerendered page read and what its arrival selected or opened: everything the list draws from, so
+    // the first interactive draw is the prerendered page again. True, to say there's a page on screen to keep.
+    private bool Adopt(Triage p)
+    {
+        (_sources, _lastBriefAt, _status, _sourcesTab, _sourceId, _search, _sinceLast) = (p._sources, p._lastBriefAt, p._status, p._sourcesTab, p._sourceId, p._search, p._sinceLast);
+        (_rows, _lines, _missed, _counts, _cves, _polled) = (p._rows, p._lines, p._missed, p._counts, p._cves, p._polled);
+        (_olderCount, _readAt, _selected) = (p._olderCount, p._readAt, p._selected);
+        (_promoting, _promotingGroup, _pf, _suggested) = (p._promoting, p._promotingGroup, p._pf, p._suggested);
+        _open.UnionWith(p._open);
+        _loaded = true;
+        return true;
     }
 
     // Arriving at a row from the address: it's selected (Load found it by id, or kept its place), focused and scrolled
@@ -1046,6 +1075,7 @@ else
             // it shows the list as it's asked for now. These rows, read for what was asked before, would replace it if
             // they came back last.
             if (load != _loads) return;
+            _failed = false;
             // What was shown, compared from here: a read that was dropped changed nothing on screen.
             var keep = Current is { } current ? KeyOf(current) : ((Guid Id, bool Head)?)null;
             var (rowsWere, linesWere, selectedWas, countsWere, readWas) = (_rows, _lines, _selected, _counts, _readAt);
@@ -1066,7 +1096,11 @@ else
                 _focus = "tideTriage.focusRow";
             }
         }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        catch (Exception ex)
+        {
+            _failed = true;
+            Toasts.Error(UserFacingError.For(ex));
+        }
         _loaded = true;
     }
 

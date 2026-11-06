@@ -1,5 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Tide.Domain.Entities;
+using Tide.Domain.Enums;
 using Tide.Web.Services;
 
 namespace Tide.IntegrationTests;
@@ -55,5 +57,30 @@ public class PrerenderHandoffTests
 
         html.Should().Contain("id=\"running-order-h\"");
         handoff.Count.Should().Be(before + 1, "the prerender kept its brief for the circuit to start from");
+    }
+
+    [Fact]
+    public async Task TriagesPrerender_KeepsTheInboxItRead_ForItsInteractiveRender()
+    {
+        using var app = new TideApp();
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Tide.Infrastructure.Persistence.AppDbContext>();
+            var source = new Source { Name = "Handoff source", Url = "https://handoff.example/feed" };
+            var at = DateTimeOffset.UtcNow;
+            db.AddRange(source, new FeedItem
+            {
+                Source = source, Title = "handoff: vendor fixes an exploited VPN bug", Url = "https://handoff.example/1", UrlHash = "handoff-triage-1",
+                PublishedAtUtc = at, FetchedAtUtc = at, Status = FeedItemStatus.New,
+            });
+            await db.SaveChangesAsync();
+        }
+        var handoff = app.Services.GetRequiredService<PrerenderHandoff>();
+        var before = handoff.Count;
+
+        var html = await app.CreateClient().GetStringAsync("/triage");
+
+        html.Should().Contain("handoff: vendor fixes an exploited VPN bug");
+        handoff.Count.Should().Be(before + 1, "the prerender kept its inbox for the circuit to start from");
     }
 }
