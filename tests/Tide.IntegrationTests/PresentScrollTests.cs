@@ -102,6 +102,20 @@ public sealed class LiveMeetingsScrollTests : IDisposable
     }
 
     [Fact]
+    public void AScrollOfTheSlideThePresenterMovedOnFrom_IsDropped()
+    {
+        var pat = Start();
+        _meetings.Scroll(pat, 0.4, "article:a").Should().BeTrue();
+        pat.At(3, key: "article:b");
+
+        _meetings.Scroll(pat, 0.9, "article:a").Should().BeFalse("the last slide's scroll, sent late");
+        _meetings.Get(Day)!.Scroll.Should().Be(0);
+        _heard.Select(h => h.Fraction).Should().Equal(0.4);
+        _meetings.Scroll(pat, 0.2, "article:b").Should().BeTrue("the slide the meeting is on");
+        _meetings.Get(Day)!.Scroll.Should().Be(0.2);
+    }
+
+    [Fact]
     public void AnEndedMeeting_TakesNoScroll()
     {
         var pat = Start();

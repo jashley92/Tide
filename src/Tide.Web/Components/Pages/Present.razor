@@ -130,7 +130,7 @@ else
             var scrollPaused = ScrollBackShown(scrollKey);
         }
         <section class="tide-slide" aria-label="Slide @(_slide + 1) of @(last + 1)">
-            <div class="tide-slide-body tide-scrollfade" @key="scrollKey" data-slide-body data-scroll-share="@ScrollShare" data-scroll-paused="@(scrollPaused ? "true" : null)">
+            <div class="tide-slide-body tide-scrollfade" @key="scrollKey" data-slide-body data-slide-key="@scrollKey" data-scroll-share="@ScrollShare" data-scroll-paused="@(scrollPaused ? "true" : null)">
             <div class="tide-slide-inner">
                 @if (_slide == 0)
                 {
@@ -1485,6 +1485,7 @@ else
         _tagEdit = null;
         _tagEditor = null;
         _focusEditTags = true;
+        _scrollCaughtUp = null;   // the presenter may have scrolled meanwhile: to their place again, once it's drawn
         if (saved && await BriefSvc.GetAsync(_date) is { } brief)
         {
             var shown = SlideKey(_slide);
@@ -1602,6 +1603,7 @@ else
     {
         Refresh();
         (_attended, _following, _summons, _edition) = (true, true, _view?.Summons ?? 0, Edition.Team);
+        _scrollCaughtUp = null;   // the slide drawn before the seat (the title, as the page opened) may be the presenter's
         await MeetingSvc.JoinedAsync(_brief!.Id);
         await ReloadRecord();
     }
@@ -1673,11 +1675,13 @@ else
             DropAction();
             _sharedSeen = null;
             DropProduct(forget: true);
+            _scroll.Resume();   // a pause from before presenting isn't one now
         }
         if (Presenting)
         {
             _summons = _view.Summons;
-            if (was is not null && !was.IsPresenter(_me)) Toasts.Show("You're presenting.");
+            var handedMe = was is not null && !was.IsPresenter(_me);
+            if (handedMe) Toasts.Show("You're presenting.");
             // Another of my tabs moved, or took the meeting: this one (a projector window) goes where it is, and shows
             // what that one has open over the slide.
             var at = SlideFor(_view);
@@ -1687,6 +1691,8 @@ else
                 _sharedSeen = null;
                 DropProduct(forget: true);
             }
+            // Handed the meeting on the slide this page shows: where it is on it is now the room's.
+            if (handedMe && at == _slide) await ShareScroll();
             _slide = at;
             await MirrorPresenter(_view);
             return;
@@ -1737,12 +1743,12 @@ else
     /// <summary>The slide's body was scrolled by hand (present.js, at most ten times a second): the presenter's goes to the
     /// room; a follower's pauses following the presenter's scroll on this slide.</summary>
     [JSInvokable]
-    public void OnSlideScrolled(double fraction)
+    public void OnSlideScrolled(double fraction, string? slideKey = null)
     {
         if (_seat is null || _disposed) return;
         if (Presenting)
         {
-            Meetings.Scroll(_seat, fraction);
+            Meetings.Scroll(_seat, fraction, slideKey);
             return;
         }
         if (_following && _scroll.ScrolledByHand(SlideKey(_slide))) StateHasChanged();
@@ -1813,7 +1819,9 @@ else
         return v.Scroll > 0 ? v.Scroll : null;
     }
 
-    private async Task CatchUpScrollAsync()
+    /// <summary>After rendering: a page newly on a slide, newly seated, or with the tag panel just closed, goes to the
+    /// presenter's place on it (CatchUpScroll), once.</summary>
+    internal async Task CatchUpScrollAsync()
     {
         var key = _brief is null ? null : SlideKey(_slide);
         if (key == _scrollCaughtUp) return;
@@ -1831,6 +1839,21 @@ else
         catch (JSException) { }
     }
 
+    /// <summary>For tests: whether this page, handed the meeting, has told the room where it is on the slide.</summary>
+    internal bool SharedPlace { get; private set; }
+
+    // This page has just become the presenter: where it is on the slide is now the room's. The meeting starts a hand-off
+    // at the top (LiveMeetings.MakePresenter), but the new presenter's page is where it was: wherever the last presenter
+    // had the room, or where they'd scrolled to by hand.
+    private async Task ShareScroll()
+    {
+        SharedPlace = true;
+        try { await JS.InvokeVoidAsync("tidePresent.share"); }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) { }   // not live (prerendered)
+        catch (JSException) { }
+    }
+
     internal async Task BackToPresenter()
     {
         if (_view is null) return;
@@ -1838,12 +1861,13 @@ else
         await Move(SlideFor(_view));
     }
 
-    internal void TakeOver()
+    internal async Task TakeOver()
     {
         if (_seat is null || !Meetings.TakeOver(_seat)) return;
         Refresh();
         CloseHandedOn();
         Toasts.Show("You're presenting.");
+        await ShareScroll();
     }
 
     // The meeting changed hands, which closed what was open over the slide for the room: this page's goes too (this
@@ -1854,6 +1878,7 @@ else
         DropAction();
         _sharedSeen = null;
         DropProduct(forget: true);
+        _scroll.Resume();   // a pause from before presenting isn't one now
     }
 
     internal void ToggleHand()
