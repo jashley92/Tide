@@ -154,6 +154,22 @@ public class ViewerVisitorRoleTests : IDisposable
     }
 
     [Fact]
+    public async Task SomeoneMovedToViewer_CanNoLongerRemoveTheFileTheyAddedBefore()
+    {
+        var s = await Seed();
+        As(AppRole.Analyst, "S-1-5-21-TEST-6", "Ana Analyst");
+        var file = (await _db.ActionFiles().AddAsync(s.ActionId, [new ActionFileUpload("proxy.log", Samples.Text("log"), "text/plain")])).Single();
+        (await _db.Actions().GetAsync(s.Action))!.Files.Live.Should().ContainSingle(f => f.CanRemove);
+
+        As(AppRole.Viewer, "S-1-5-21-TEST-6", "Ana Analyst");
+
+        (await _db.Actions().GetAsync(s.Action))!.Files.Live.Should().ContainSingle(f => !f.CanRemove);
+        await Refused(() => _db.ActionFiles().RemoveAsync(file.FileId, "Changed my mind"));
+        As(AppRole.Reader, "S-1-5-21-TEST-6", "Ana Analyst");
+        await Refused(() => _db.ActionFiles().RemoveAsync(file.FileId, "Changed my mind"));
+    }
+
+    [Fact]
     public async Task Viewer_AddsAMeetingNote_AndRaisesAHand()
     {
         var s = await Seed();

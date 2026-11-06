@@ -312,9 +312,10 @@ public sealed class ActionFileService(IAppDbContextFactory dbs, ICurrentUser use
     }
 
     /// <summary>Whether <paramref name="who"/> may remove a file added by <paramref name="addedById"/> (a comment's file:
-    /// the comment's author): that person, an analyst or an administrator.</summary>
+    /// the comment's author): that person while they still work actions, an analyst or an administrator. Someone since moved
+    /// to a role that only reads (a Viewer) or to none that sees actions removes nothing, as they can't describe a file either.</summary>
     internal static bool CanRemove(ICurrentUser who, string addedById) =>
-        who.Has(Permission.WriteArticles) || (addedById.Length > 0 && addedById == who.UserId);
+        who.Has(Permission.WriteArticles) || (who.Has(Permission.WorkActions) && addedById.Length > 0 && addedById == who.UserId);
 
     // --- listing and opening ----------------------------------------------------------------------------------------
 
