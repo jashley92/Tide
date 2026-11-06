@@ -23,7 +23,8 @@ public class PresentMetricsTests(TideApp app) : IClassFixture<TideApp>
 {
     private static readonly SignIn Owner = new("dev:metrics-owner", "Olive Owner", "ActionOwner");
 
-    private readonly DateOnly Today = app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;   // read once: a test that straddles midnight mustn't see two days
+    // Read once: a test that straddles midnight mustn't see two days.
+    private DateOnly Today { get; } = app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;
 
     private static DateOnly Before(DateOnly day, int n)
     {
