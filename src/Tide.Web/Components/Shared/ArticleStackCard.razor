@@ -36,6 +36,12 @@
         return offered;
     }
 
+    protected override void Adopt(TagCard<StackProduct> prerendered)
+    {
+        var p = (ArticleStackCard)prerendered;
+        (_stack, _details) = (p._stack, p._details);
+    }
+
     protected override async Task ReadDetailsAsync() =>
         _details = await Stack.DetailsAsync(_stack!.Tagged.Select(p => p.Id).ToList());
 

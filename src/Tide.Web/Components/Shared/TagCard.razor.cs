@@ -28,6 +28,10 @@ public abstract partial class TagCard<TTag>
     /// <summary>Reads what each tag's row shows of how much else is about it, after <see cref="ReadAsync"/>.</summary>
     protected abstract Task ReadDetailsAsync();
 
+    /// <summary>Takes what the prerendered card (of this kind, for this article) read in <see cref="ReadAsync"/> and
+    /// <see cref="ReadDetailsAsync"/>, so the first interactive draw shows its tags rather than a loading row.</summary>
+    protected abstract void Adopt(TagCard<TTag> prerendered);
+
     /// <summary>The article's tags; null until read.</summary>
     protected abstract IReadOnlyList<TTag>? Tagged { get; }
 

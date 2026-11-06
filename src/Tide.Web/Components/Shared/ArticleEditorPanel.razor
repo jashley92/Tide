@@ -21,6 +21,7 @@
 @inject Tide.Application.Detections.DetectionService Detections
 @inject ChangeFeed Feed
 @inject ChangeOrigin Origin
+@inject PrerenderHandoff Handoff
 @implements IDisposable
 
 <PageTitle>@(_form?.Title ?? "Article") · TIDE</PageTitle>
@@ -749,25 +750,55 @@ else
         _loadedId = Id;
         _topic = ChangeFeed.Article(Id);
         _canWrite = CurrentUser.Has(Permission.WriteArticles);
+        // The first interactive draw starts from what the prerender read, so a reload doesn't flash "Loading" over the
+        // article; it's then read again below, quietly, keeping anything typed in between.
+        var adopted = Handoff.Take<ArticleEditorPanel>(PrerenderedState, CurrentUser.UserId) is { } prerendered && prerendered.Id == Id
+            && Adopt(prerendered);
+        PrerenderedState = null;
         _categories = await Scorecard.ListAsync();
-        await Reload();
+        await Reload(keepEdits: adopted);
+        if (!RendererInfo.IsInteractive && _article is not null) PrerenderedState = Handoff.Keep(CurrentUser.UserId, this);
     }
 
-    private async Task Reload()
+    /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.</summary>
+    [PersistentState]
+    public string? PrerenderedState { get; set; }
+
+    // Takes what the prerendered editor read: the saved article and the form made from it, edit version and all, and what
+    // the fields and the bar draw from. True, to say there's an article on screen to keep while it's read again.
+    private bool Adopt(ArticleEditorPanel p)
     {
-        _article = await ArticleSvc.GetAsync(Id);
+        (_article, _form, _categories, _briefDates, _whyHint) = (p._article, p._form, p._categories, p._briefDates, p._whyHint);
+        (_excerpt, _links, _rules, _notFound) = (p._excerpt, p._links, p._rules, p._notFound);
+        return _form is not null;
+    }
+
+    // keepEdits: the form on screen was the prerender's, and anything typed into it since stays, as a save in progress
+    // does; its edit version stays too, so if someone saved in between, saving it is refused as stale (and the banner
+    // says so) rather than overwriting theirs.
+    private async Task Reload(bool keepEdits = false)
+    {
+        var article = await ArticleSvc.GetAsync(Id);
         // Set each time: the page stays open from one article to the next (Ctrl+K, the stepper), missing or not.
-        _notFound = _article is null;
-        if (_article is null) return;
-        _form = ArticleForm.From(_article);
-        // A draft promoted as a threat arrives with "why it matters" at the AMBER default; say so the first time.
-        _whyHint = _form.WhyItMattersAtThreatDefault;
+        _notFound = article is null;
+        _article = article;
+        if (article is null) return;
+        if (keepEdits && (_dirty || _busy || _uploading))
+        {
+            if (article.EditVersion != _form!.EditVersion) _changedBy ??= "Someone else";
+        }
+        else
+        {
+            _form = ArticleForm.From(article);
+            // A draft promoted as a threat arrives with "why it matters" at the AMBER default; say so the first time.
+            _whyHint = _form.WhyItMattersAtThreatDefault;
+            _dirty = false;
+            _changedBy = null;
+        }
         _briefDates = (await ArticleSvc.BriefDatesAsync(Id)).ToList();
         _excerpt = await ArticleSvc.SourceExcerptAsync(Id);
         _links = await ArticleSvc.LinksAsync(Id);
         await LoadRules();
-        _dirty = false;
-        _changedBy = null;
         await OnFormChanged.InvokeAsync(_form);
     }
 
