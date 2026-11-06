@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Tide.Application.Actions;
+using Tide.Application.Org;
 using Tide.Application.Operations;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
@@ -69,7 +70,7 @@ public class OutreachFillTests
     // --- placeholders refused when saved ----------------------------------------------------------------------------
 
     [Theory]
-    [InlineData("{{article.title}} {{ARTICLE.CVES}} {{ indicators }} {{indicators:sha256}} {{Indicators:Domain}} {{tlp}} {{today}}")]
+    [InlineData("{{article.title}} {{ARTICLE.CVES}} {{ indicators }} {{indicators:sha256}} {{Indicators:Domain}} {{tlp}} {{today}} {{today:+2}} {{Today:+60}} {{today:-3}}")]
     [InlineData("No placeholders at all, and {{ }} isn't one.")]
     public void Check_AcceptsTheNamesTideFills_InAnyCase(string text) => FluentActions.Invoking(() => OutreachFill.Check(text)).Should().NotThrow();
 
@@ -77,13 +78,33 @@ public class OutreachFillTests
     [InlineData("{{article.titel}}", "{{article.titel}} isn't a placeholder TIDE fills. Use one of: {{article.title}}*")]
     [InlineData("{{values}}", "{{values}} isn't a placeholder TIDE fills*")]
     [InlineData("{{indicators:sha3}}", "{{indicators:sha3}} isn't a kind of indicator TIDE knows. Use {{indicators}}, or one of: {{indicators:ipv4}}*")]
-    [InlineData("{{article.title:domain}}", "{{article.title}} takes no kind: only {{indicators:…}} does.")]
+    [InlineData("{{article.title:domain}}", "{{article.title}} takes nothing after a colon: only {{indicators:…}} and {{today:+2}} do.")]
+    [InlineData("{{today:2}}", "{{today:2}} isn't a number of business days. Write it as {{today:+2}} or {{today:-2}}, up to 60.")]
+    [InlineData("{{today:-61}}", "{{today:-61}} isn't a number of business days*")]
+    [InlineData("{{today:+0}}", "{{today:+0}} isn't a number of business days*")]
+    [InlineData("{{today:+61}}", "{{today:+61}} isn't a number of business days*")]
     public void Check_RefusesAnUnknownPlaceholderOrKind_SayingWhatItCanUse(string text, string message) =>
         FluentActions.Invoking(() => OutreachFill.Check(text)).Should().Throw<ArgumentException>().WithMessage(message);
 
     [Fact]
     public void EveryPlaceholderListed_IsOneTheCheckAccepts() =>
         OutreachFill.All.Should().AllSatisfy(p => FluentActions.Invoking(() => OutreachFill.Check(p.Written)).Should().NotThrow());
+
+    [Fact]
+    public void TodayPlusDays_CountsBusinessDays_SkippingWeekendsAndHolidays()
+    {
+        // Today is Friday, November 6.
+        var facts = Facts(Article(), TlpLevel.Clear);
+        OutreachFill.Fill("A-12 - action required by {{today:+2}}", "x", facts).Subject
+            .Should().Be("A-12 - action required by Tuesday, November 10, 2026", "Monday and Tuesday, past the weekend");
+        OutreachFill.Fill("{{today:+1}} {{today}}", "x", facts).Subject.Should().Be("Monday, November 9, 2026 Friday, November 6, 2026");
+
+        var holiday = facts with { Days = new WorkingDays(new Dictionary<DateOnly, string> { [new(2026, 11, 9)] = "Office closed" }) };
+        OutreachFill.Fill("{{today:+2}}", "x", holiday).Subject.Should().Be("Wednesday, November 11, 2026", "the holiday doesn't count");
+
+        OutreachFill.Fill("since {{today:-1}}", "x", facts).Subject.Should().Be("since Thursday, November 5, 2026");
+        OutreachFill.Fill("{{today:-6}}", "x", facts).Subject.Should().Be("Thursday, October 29, 2026", "back past the weekend");
+    }
 
     // --- each group ---------------------------------------------------------------------------------------------------
 
