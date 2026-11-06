@@ -19,7 +19,7 @@
             <button type="button" class="btn btn-sm btn-outline-secondary" aria-label="Close @Ui.ActionLabel(a.Number)" title="Close (Esc)" @ref="_close" @onclick="Close"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
         }
     </div>
-    <div class="tide-present-action-body">
+    <div class="tide-present-action-body tide-scrollfade">
         @if (Detail.CanWork)
         {
             <ActionStatusControl @key="(a.Id, Version)" Action="a" Changed="OnChanged" Stale="OnChanged" />

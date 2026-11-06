@@ -31,7 +31,7 @@
 {
     <div class="tide-present">
         <div></div>
-        <div class="tide-slide"><div class="tide-slide-cover">
+        <div class="tide-slide"><div class="tide-slide-body"><div class="tide-slide-cover">
             @if (_loaded && !_valid)
             {
                 <h2>“@Day” isn't a day</h2>
@@ -62,7 +62,7 @@
             {
                 <LoadingBlock Rows="2" Columns="1" Label="Loading the brief…" />
             }
-        </div></div>
+        </div></div></div>
         <div></div>
     </div>
 }
@@ -121,7 +121,16 @@ else
 
         @* Announces the slide moved to, briefly; the slide itself isn't a live region, so a timer tick or typing isn't read out. *@
         <div class="visually-hidden" aria-live="polite" aria-atomic="true">Slide @(_slide + 1) of @(last + 1): @SlideTitle(edition, _slide)</div>
+        @* The slide's body scrolls inside the slide when it's too long even shrunk to fit (present.js: no less than 80%);
+           the header and the footer stay put, and the page itself never scrolls. A new body for each slide (its key), so
+           each starts at its top. present.js sets is-more-above and is-more-below on it (the edge fades, the More pill);
+           data-scroll-share says whether its scroll is the room's (presenting) or follows the presenter's. *@
+        @{
+            var scrollKey = SlideKey(_slide);
+            var scrollPaused = ScrollBackShown(scrollKey);
+        }
         <section class="tide-slide" aria-label="Slide @(_slide + 1) of @(last + 1)">
+            <div class="tide-slide-body tide-scrollfade" @key="scrollKey" data-slide-body data-scroll-share="@ScrollShare" data-scroll-paused="@(scrollPaused ? "true" : null)">
             <div class="tide-slide-inner">
                 @if (_slide == 0)
                 {
@@ -606,6 +615,14 @@ else
                     </div>
                 }
             </div>
+            </div>
+            <div class="tide-slide-dock">
+                @if (scrollPaused)
+                {
+                    <button type="button" class="tide-slide-back" @onclick="BackToPlace">Back to @(_view?.PresenterName)'s place</button>
+                }
+                <button type="button" class="tide-slide-more" data-slide-more aria-label="More below: scroll down">More <span aria-hidden="true">&darr;</span></button>
+            </div>
         </section>
 
         <footer class="tide-present-bottom">
@@ -679,7 +696,7 @@ else
             {
                 <PresenceNote Place="@($"brief:{Ui.IsoDay(_date)}")" Editing="NoteDirty" Compact="true" />
             }
-            <span class="d-none d-md-inline"><span class="tide-kbd">&larr;</span> <span class="tide-kbd">&rarr;</span> move &middot; <span class="tide-kbd">F</span> full screen</span>
+            <span class="d-none d-md-inline"><span class="tide-kbd">&larr;</span> <span class="tide-kbd">&rarr;</span> move &middot; <span class="tide-kbd">Space</span> scroll, then next &middot; <span class="tide-kbd">F</span> full screen</span>
         </footer>
 
         @if (_showNotes && TeamEdition)
@@ -860,6 +877,7 @@ else
             _focusEnd = false;
             await _endButton.TryFocusAsync(orGone: true);
         }
+        await CatchUpScrollAsync();
         if (!firstRender) return;
         // The elapsed time in the footer ticks once a minute. Started before the await below, so a page closed during it
         // still stops the clock when it's disposed.
@@ -1044,6 +1062,18 @@ else
         StateHasChanged();
     }
 
+    /// <summary>
+    /// Space or Page Down (forward), Shift+Space or Page Up (back), from present.js, which says whether the slide's body is
+    /// at its end that way: if not, it scrolls the body itself ("scroll"); if so, the slide changes.
+    /// </summary>
+    [JSInvokable]
+    public async Task<string> OnPageKey(bool forward, bool atEdge)
+    {
+        var step = SlidePaging.For(atEdge);
+        if (step == PageStep.Move) await OnPresentKey(forward ? "next" : "prev");
+        return SlidePaging.Reply(step);
+    }
+
     [JSInvokable]
     public void OnFullscreenChanged(bool on)
     {
@@ -1073,6 +1103,7 @@ else
         _visitor = MeetingAccess.MeetingOnly(CurrentUser);
         _readsTeam = CurrentUser.Has(Permission.ReadTeamEdition);
         Meetings.Changed += OnMeetingChanged;
+        Meetings.Scrolled += OnMeetingScrolled;
     }
 
     private HashSet<string> Followed()
@@ -1686,6 +1717,110 @@ else
         await SyncAction();
     }
 
+    // --- the slide's scroll, shared with the room ------------------------------------------------------------------
+    //
+    // The presenter's scroll down their slide's body goes to the meeting as a fraction (LiveMeetings.Scroll, at most ten
+    // times a second); everyone following, on the same slide, scrolls smoothly to it. Scrolling by hand pauses that for
+    // the slide (ScrollFollow), with a "Back to …'s place" button by the More pill; the slide changing ends the pause.
+    // Locked meetings: a follower may still scroll by hand (it's only looking), and the presenter's next scroll brings
+    // them back. Late joiners land at the presenter's fraction (CatchUpScroll).
+
+    private readonly ScrollFollow _scroll = new();
+
+    // The slide key whose scroll this page last caught up with after rendering it.
+    private string? _scrollCaughtUp;
+
+    /// <summary>For tests: where this page last asked the browser to scroll its slide to (a fraction), if anywhere.</summary>
+    internal double? ScrolledTo { get; private set; }
+
+    /// <summary>What present.js does with a scroll of the slide by hand: "present" passes it to the room, "follow" pauses
+    /// following the presenter's, nothing outside a meeting or away from the presenter.</summary>
+    private string? ScrollShare => _seat is null || _view is null ? null : Presenting ? "present" : _following ? "follow" : null;
+
+    /// <summary>Whether the "Back to …'s place" button shows: following, and paused on this slide by a scroll by hand.</summary>
+    private bool ScrollBackShown(string slideKey) => !Presenting && _seat is not null && _following && _scroll.Paused(slideKey);
+
+    /// <summary>For tests: whether following the presenter's scroll is paused on the slide shown.</summary>
+    internal bool ScrollPaused => ScrollBackShown(SlideKey(_slide));
+
+    // On the presenter's slide as the meeting names it.
+    private bool OnPresentersSlide(LiveMeetingView v, string key) => v.SlideKey is not null ? v.SlideKey == key : v.Slide == _slide;
+
+    /// <summary>The slide's body was scrolled by hand (present.js, at most ten times a second): the presenter's goes to the
+    /// room; a follower's pauses following the presenter's scroll on this slide.</summary>
+    [JSInvokable]
+    public void OnSlideScrolled(double fraction)
+    {
+        if (_seat is null || _disposed) return;
+        if (Presenting)
+        {
+            Meetings.Scroll(_seat, fraction);
+            return;
+        }
+        if (_following && _scroll.ScrolledByHand(SlideKey(_slide))) StateHasChanged();
+    }
+
+    private void OnMeetingScrolled(MeetingScroll scroll)
+    {
+        if (scroll.Day != _date || scroll.Origin == Origin.Id) return;
+        _ = InvokeAsync(async () =>
+        {
+            try { await HeardScroll(scroll); }
+            catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        });
+    }
+
+    /// <summary>The presenter scrolled: this page goes with them if it's following on the same slide and not paused (or
+    /// is the presenter's other tab).</summary>
+    internal async Task HeardScroll(MeetingScroll scroll)
+    {
+        if (_seat is null || _disposed || _brief is null) return;
+        var key = SlideKey(_slide);
+        if (Presenting)
+        {
+            if (scroll.SlideKey == key) await ScrollTo(scroll.Fraction, instant: false);
+            return;
+        }
+        var paused = _scroll.Paused(key);
+        if (_scroll.Heard(scroll.SlideKey, scroll.Fraction, key, _following && !Pinned, Held) is { } to) await ScrollTo(to, instant: false);
+        if (paused != _scroll.Paused(key)) StateHasChanged();
+    }
+
+    /// <summary>"Back to …'s place": following the presenter's scroll again, from where they are now.</summary>
+    internal async Task BackToPlace()
+    {
+        _scroll.Resume();
+        Refresh();
+        if (_view is { } v && _following && OnPresentersSlide(v, SlideKey(_slide))) await ScrollTo(v.Scroll, instant: false);
+    }
+
+    /// <summary>Where a page newly on the presenter's slide (just joined, or the slide just changed) scrolls to: the
+    /// presenter's place, when it's following them there and isn't paused; else nowhere.</summary>
+    internal double? CatchUpScroll()
+    {
+        if (_seat is null || _brief is null || Pinned || !Presenting && !_following) return null;
+        var key = SlideKey(_slide);
+        if (_scroll.Paused(key) || Meetings.Get(_date) is not { } v || !OnPresentersSlide(v, key)) return null;
+        return v.Scroll > 0 ? v.Scroll : null;
+    }
+
+    private async Task CatchUpScrollAsync()
+    {
+        var key = _brief is null ? null : SlideKey(_slide);
+        if (key == _scrollCaughtUp) return;
+        _scrollCaughtUp = key;
+        if (CatchUpScroll() is { } f) await ScrollTo(f, instant: true);
+    }
+
+    private async Task ScrollTo(double fraction, bool instant)
+    {
+        ScrolledTo = fraction;
+        try { await JS.InvokeVoidAsync("tidePresent.follow", fraction, instant); }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) { }   // not live (prerendered)
+        catch (JSException) { }
+    }
+
     internal async Task BackToPresenter()
     {
         if (_view is null) return;
@@ -2158,6 +2293,7 @@ else
     {
         _disposed = true;   // a join or follow still under way doesn't take a seat for a page that's gone
         Meetings.Changed -= OnMeetingChanged;
+        Meetings.Scrolled -= OnMeetingScrolled;
         LeaveMeeting();
         _live?.Dispose();
         if (_clock is not null) await _clock.DisposeAsync();

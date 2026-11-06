@@ -14,10 +14,12 @@ public sealed record RaisedHand(string UserId, string Name, Guid? ArticleId, Dat
 /// it hasn't loaded yet) still goes to the same one. <see cref="Action"/>: the action the presenter has open over their
 /// slide (its number), which those following see with them; <see cref="Product"/>, likewise, the Our stack product whose
 /// card the presenter has open over an article's slide (team edition only). One of the two at most is open.
+/// <see cref="Scroll"/>: how far down their slide the presenter has scrolled, as a fraction of the way (0 the top, 1 the
+/// bottom), so a page that joins late lands where they are.
 /// </summary>
 public sealed record LiveMeetingView(DateOnly Day, Guid BriefId, string PresenterId, string PresenterName, int Slide, int Summons,
     bool PresenterHere, bool CanTakeOver, IReadOnlyList<MeetingPerson> People, IReadOnlyList<RaisedHand> Hands, DateTimeOffset StartedAtUtc,
-    bool Locked = false, string? SlideKey = null, int? Action = null, Guid? Product = null)
+    bool Locked = false, string? SlideKey = null, int? Action = null, Guid? Product = null, double Scroll = 0)
 {
     public bool IsPresenter(string userId) => PresenterId == userId;
 
@@ -32,6 +34,13 @@ public sealed record LiveMeetingView(DateOnly Day, Guid BriefId, string Presente
 /// <summary>A day's meeting changed, from <see cref="Origin"/> (the page's ChangeOrigin; empty for the sweep), so a page can
 /// skip what it did itself, as it does a ChangeFeed change.</summary>
 public readonly record struct MeetingChange(DateOnly Day, Guid Origin);
+
+/// <summary>
+/// The presenter scrolled the body of their slide (<see cref="SlideKey"/>, <see cref="Slide"/>) to <see cref="Fraction"/>
+/// of the way down: scrollTop / (scrollHeight - clientHeight), so windows of other sizes line up roughly. From
+/// <see cref="Origin"/>, the presenter's page.
+/// </summary>
+public readonly record struct MeetingScroll(DateOnly Day, Guid Origin, string? SlideKey, int Slide, double Fraction);
 
 /// <summary>A page's seat in a live meeting. Disposing it leaves.</summary>
 public interface IMeetingSeat : IDisposable
@@ -61,6 +70,12 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
     /// <summary>How long a meeting nobody is in is kept before it's dropped.</summary>
     public static readonly TimeSpan Abandoned = TimeSpan.FromMinutes(15);
 
+    /// <summary>
+    /// The presenter's scroll is passed on to the room at most this often (ten times a second): a scroll in between is
+    /// kept, and passed on when the time is up, so the last one always arrives.
+    /// </summary>
+    public static readonly TimeSpan ScrollEvery = TimeSpan.FromMilliseconds(100);
+
     private readonly TimeProvider _time;
     private readonly ITimer _sweeper;
     private readonly Lock _gate = new();
@@ -74,6 +89,12 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
 
     /// <summary>Raised when a day's meeting changed: started, moved, joined, left, ended.</summary>
     public event Action<MeetingChange>? Changed;
+
+    /// <summary>
+    /// Raised when the presenter scrolled their slide, at most every <see cref="ScrollEvery"/>. Apart from
+    /// <see cref="Changed"/>, as it comes often and a page needs only to scroll, not to draw the slides again.
+    /// </summary>
+    public event Action<MeetingScroll>? Scrolled;
 
     public LiveMeetingView? Get(DateOnly day)
     {
@@ -192,6 +213,66 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
         return true;
     });
 
+    /// <summary>
+    /// The presenter scrolled the body of their slide to <paramref name="fraction"/> of the way down (0 to 1). Kept for
+    /// those who join later, and passed on to the room at most every <see cref="ScrollEvery"/> (<see cref="Scrolled"/>):
+    /// one sooner than that is passed on when the time is up. Refused for anyone but the presenter.
+    /// </summary>
+    public bool Scroll(IMeetingSeat seat, double fraction)
+    {
+        fraction = ScrollFraction.Clamp(fraction);
+        MeetingScroll said;
+        lock (_gate)
+        {
+            if (Seated(seat) is not (var m, var s) || m.PresenterId != s.UserId || Math.Abs(m.Scroll - fraction) < 1e-9) return false;
+            (m.Scroll, m.ScrollOrigin) = (fraction, s.Origin);
+            var now = _time.GetUtcNow();
+            if (m.ScrollSaidAtUtc is { } last && now - last < ScrollEvery)
+            {
+                // Too soon after the last: this one waits for the time to be up (one wait at a time, saying the latest).
+                m.ScrollTimer ??= _time.CreateTimer(_ => SayOwedScroll(m), null, ScrollEvery - (now - last), Timeout.InfiniteTimeSpan);
+                return true;
+            }
+            said = SaidScroll(m, now);
+        }
+        Together.Notify(Scrolled, said);
+        return true;
+    }
+
+    // The scroll kept back by the throttle, said once its wait is up: unless the meeting ended, or the presenter moved
+    // on (which starts the new slide at its top) meanwhile.
+    private void SayOwedScroll(Meeting m)
+    {
+        MeetingScroll said;
+        lock (_gate)
+        {
+            if (m.ScrollTimer is null || !_meetings.TryGetValue(m.Day, out var live) || live != m) return;
+            said = SaidScroll(m, _time.GetUtcNow());
+        }
+        Together.Notify(Scrolled, said);
+    }
+
+    private static MeetingScroll SaidScroll(Meeting m, DateTimeOffset now)
+    {
+        DropScrollTimer(m);
+        m.ScrollSaidAtUtc = now;
+        return new MeetingScroll(m.Day, m.ScrollOrigin, m.SlideKey, m.Slide, m.Scroll);
+    }
+
+    // The presenter is on a new slide (moved, or someone new presenting): it starts at its top, and a scroll owed on the
+    // last one isn't said.
+    private static void ScrollToTop(Meeting m)
+    {
+        m.Scroll = 0;
+        DropScrollTimer(m);
+    }
+
+    private static void DropScrollTimer(Meeting m)
+    {
+        m.ScrollTimer?.Dispose();
+        m.ScrollTimer = null;
+    }
+
     private static void BringBack(Meeting m)
     {
         m.Summons++;
@@ -224,6 +305,7 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
                 left[g.Key] = left.TryGetValue(g.Key, out var before) && before > last ? before : last;
             }
             _meetings.Remove(m.Day);
+            DropScrollTimer(m);
             origin = s.Origin;
         }
         Notify(seat.Day, origin);
@@ -279,6 +361,7 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
                 if (!Here(m).Any() && m.EmptySinceUtc is { } empty && now - empty >= Abandoned)
                 {
                     _meetings.Remove(m.Day);
+                    DropScrollTimer(m);
                     changed.Add(m.Day);
                 }
                 else if (CanTakeOver(m) && !m.TakeOverSaid)
@@ -311,6 +394,7 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
     {
         foreach (var s in m.Seats.Values.Where(s => s.UserId == m.PresenterId)) s.Following = true;
         (m.PresenterId, m.PresenterName, m.PresenterGoneAtUtc, m.TakeOverSaid, m.Slide, m.SlideKey, m.Action, m.Product) = (to.UserId, to.Name, null, false, to.Slide, to.Key, null, null);
+        ScrollToTop(m);
         to.Following = false;
         foreach (var s in m.Seats.Values.Where(s => s.Following)) (s.Slide, s.Key) = (to.Slide, to.Key);
         if (m.Locked) BringBack(m);   // a lock carried over holds everyone on the new presenter's slide
@@ -344,7 +428,11 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
                 // They were open over the last slide. Told by its key where both pages give one: the same slide renumbered
                 // (a colleague added the opening note) keeps them, and another slide come to the same number doesn't.
                 var moved = key is not null && m.SlideKey is not null ? key != m.SlideKey : m.Slide != slide;
-                if (moved) (m.Action, m.Product) = (null, null);
+                if (moved)
+                {
+                    (m.Action, m.Product) = (null, null);
+                    ScrollToTop(m);
+                }
                 (m.Slide, m.SlideKey) = (slide, key);
                 // Everyone following, and the presenter's own other tabs (a projector window), move with the presenter.
                 foreach (var s in m.Seats.Values.Where(s => s.Following || s.UserId == m.PresenterId)) (s.Slide, s.Key) = (slide, key);
@@ -408,12 +496,17 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
             .ToList();
         return new LiveMeetingView(m.Day, m.BriefId, m.PresenterId, m.PresenterName, m.Slide, m.Summons,
             people.Any(p => p.UserId == m.PresenterId), CanTakeOver(m), people, m.Hands.Values.OrderBy(h => h.AtUtc).ToList(), m.StartedAtUtc,
-            m.Locked, m.SlideKey, m.Action, m.Product);
+            m.Locked, m.SlideKey, m.Action, m.Product, m.Scroll);
     }
 
     private void Notify(DateOnly day, Guid origin) => Together.Notify(Changed, new MeetingChange(day, origin));
 
-    public void Dispose() => _sweeper.Dispose();
+    public void Dispose()
+    {
+        _sweeper.Dispose();
+        lock (_gate)
+            foreach (var m in _meetings.Values) DropScrollTimer(m);
+    }
 
     private sealed class Meeting(DateOnly day, Guid briefId, string presenterId, string presenterName, DateTimeOffset startedAtUtc)
     {
@@ -428,6 +521,13 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
         public bool Locked { get; set; }
         public int? Action { get; set; }
         public Guid? Product { get; set; }
+
+        /// <summary>How far down their slide the presenter has scrolled (0 to 1), from which page, and when that was last
+        /// passed on; a scroll kept back meanwhile is passed on when <see cref="ScrollTimer"/> fires.</summary>
+        public double Scroll { get; set; }
+        public Guid ScrollOrigin { get; set; }
+        public DateTimeOffset? ScrollSaidAtUtc { get; set; }
+        public ITimer? ScrollTimer { get; set; }
         public DateTimeOffset? PresenterGoneAtUtc { get; set; }
         public bool TakeOverSaid { get; set; }
         public DateTimeOffset? EmptySinceUtc { get; set; }

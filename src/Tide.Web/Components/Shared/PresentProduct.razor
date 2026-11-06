@@ -19,7 +19,7 @@
             <button type="button" class="btn btn-sm btn-outline-secondary" aria-label="Close @p.Name" title="Close (Esc)" @ref="_close" @onclick="Close"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
         }
     </div>
-    <div class="tide-present-action-body">
+    <div class="tide-present-action-body tide-scrollfade">
         <dl class="tide-facts">
             @if (StackService.SplitNames(p.OtherNames) is { Count: > 0 } others)
             {

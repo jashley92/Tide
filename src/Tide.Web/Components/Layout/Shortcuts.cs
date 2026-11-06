@@ -82,8 +82,10 @@ public static class Shortcuts
 
     private static readonly ShortcutGroup Present = new("Present mode",
     [
-        new(["→", "Page Down", "Space", "Enter"], "Next slide"),
-        new(["←", "Page Up", "Backspace"], "Previous slide"),
+        new(["→", "Enter"], "Next slide"),
+        new(["←", "Backspace"], "Previous slide"),
+        new(["Space", "Page Down"], "Scroll a long slide down; at its end, the next slide"),
+        new(["Shift Space", "Page Up"], "Scroll a long slide up; at its top, the previous slide"),
         new(["Home", "End"], "First and last slide"),
         new(["D"], "Mark the article discussed, or not", Letter: true),
         new(["F"], "Full screen, or leave it", Letter: true),
