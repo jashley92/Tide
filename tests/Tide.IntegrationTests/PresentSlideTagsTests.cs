@@ -13,6 +13,7 @@ using Tide.Infrastructure.Persistence;
 using Tide.Web.Components.Pages;
 using Tide.Web.Components.Shared;
 using static Tide.IntegrationTests.ComponentHarness;
+using static Tide.IntegrationTests.PresentHarness;
 
 namespace Tide.IntegrationTests;
 
@@ -72,16 +73,6 @@ public class PresentSlideTagsTests(TideApp app) : IClassFixture<TideApp>
         return new Setup(day, tagged, plain, names);
     }
 
-    private Task<Rendered<Present>> Open(DateOnly day) =>
-        RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" });
-
-    private static Task Do(Rendered<Present> r, Action<Present> what) =>
-        r.Click(async p =>
-        {
-            what(p);
-            await p.OnPresentKey("render");
-        });
-
     private static async Task ToArticle(Rendered<Present> r, string title)
     {
         await r.Click(p => p.OnPresentKey("last"));
@@ -101,7 +92,7 @@ public class PresentSlideTagsTests(TideApp app) : IClassFixture<TideApp>
     public async Task TheTeamEdition_ShowsScorecardTagsByCategory_ThenATTCKByTactic_AtTheBottom_AndNothingUnderTheTitle()
     {
         var s = await Brief(91);
-        await using var r = await Open(s.Day);
+        await using var r = await Open(app, s.Day);
         await ToArticle(r, s.Tagged);
         var html = await r.Html();
         var section = Section(html)!;
@@ -151,7 +142,7 @@ public class PresentSlideTagsTests(TideApp app) : IClassFixture<TideApp>
         SlideTags.ShowsScorecard(Edition.Public).Should().BeFalse();
         SlideTags.ShowsScorecard(Edition.Team).Should().BeTrue();
 
-        await using var r = await Open(s.Day);
+        await using var r = await Open(app, s.Day);
         await Do(r, p => p.SetEdition(new ChangeEventArgs { Value = nameof(Edition.Public) }));
         await ToArticle(r, s.Tagged);
         var html = await r.Html();
@@ -166,7 +157,7 @@ public class PresentSlideTagsTests(TideApp app) : IClassFixture<TideApp>
     public async Task AnArticleWithNoTags_HasNoEmptySection()
     {
         var s = await Brief(93);
-        await using var r = await Open(s.Day);
+        await using var r = await Open(app, s.Day);
         await ToArticle(r, s.Plain);
         // An analyst's team edition slide keeps only the heading with the button to add some (PresentTagEditTests).
         var section = Section(await r.Html())!;

@@ -11,6 +11,7 @@ using Tide.Web.Components.Pages.Admin;
 using Tide.Web.Components.Shared;
 using Tide.Web.Services;
 using static Tide.IntegrationTests.ComponentHarness;
+using static Tide.IntegrationTests.PresentHarness;
 
 namespace Tide.IntegrationTests;
 
@@ -78,21 +79,11 @@ public class PresentMetricsTests(TideApp app) : IClassFixture<TideApp>
         finally { Once.Release(); }
     }
 
-    private Task<Rendered<Present>> Open(DateOnly day, SignIn? who = null) =>
-        RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" }, who);
-
-    private static Task Do(Rendered<Present> r, Func<Present, Task> what) =>
-        r.Click(async p =>
-        {
-            await what(p);
-            await p.OnPresentKey("render");
-        });
-
     [Fact]
     public async Task EachGroup_GetsItsOwnSlide_ItsNumbersOverItsChart_AndAnAllZeroGroupIsALineOnTheFirst()
     {
         var day = await Setup();
-        await using var r = await Open(day);
+        await using var r = await Open(app, day);
         var html = await r.Html();
         html.Should().Contain("title=\"Numbers: Cases\"").And.Contain("title=\"Numbers: Email triage\"").And.Contain("title=\"Numbers: Hunts\"")
             .And.NotContain("Numbers: Vulnerabilities", "an all-0 group has no slide of its own")
@@ -122,7 +113,7 @@ public class PresentMetricsTests(TideApp app) : IClassFixture<TideApp>
     {
         var day = await Setup();
         var meetings = app.Services.GetRequiredService<LiveMeetings>();
-        await using var pat = await Open(day);
+        await using var pat = await Open(app, day);
         await Do(pat, p => p.StartMeeting());
         try
         {
@@ -130,7 +121,7 @@ public class PresentMetricsTests(TideApp app) : IClassFixture<TideApp>
             await pat.Click(p => p.OnPresentKey("next"));
             meetings.Get(day)!.Should().Match<LiveMeetingView>(v => v.Slide == 2 && v.SlideKey == "metrics:email-triage");
 
-            await using var owner = await Open(day, Owner);
+            await using var owner = await Open(app, day, Owner);
             await Do(owner, p => p.JoinIfLive());
             (await owner.Html()).Should().Contain("<h2>Email triage</h2>").And.Contain("Following Tester");
 
@@ -145,7 +136,7 @@ public class PresentMetricsTests(TideApp app) : IClassFixture<TideApp>
     public async Task TheCompanyWideEdition_HasNoMetricSlides()
     {
         var day = await Setup();
-        await using var r = await Open(day);
+        await using var r = await Open(app, day);
         await r.Click(p =>
         {
             p.SetEdition(new Microsoft.AspNetCore.Components.ChangeEventArgs { Value = nameof(Edition.Public) });

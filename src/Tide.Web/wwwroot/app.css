@@ -708,10 +708,9 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
     --tide-fit: 1;
     overflow-y: auto; overscroll-behavior: contain; scroll-behavior: smooth;
     padding: clamp(1em, 3.6cqh, 2em) clamp(1.25em, 4.5cqi, 4em) clamp(1.5em, 4.5cqh, 2.5em);
-    /* A slim scrollbar in the slides' colours, inside the slide. */
-    scrollbar-width: thin; scrollbar-color: var(--tide-slide-line-strong) transparent;
 }
 .tide-slide-body > .tide-slide-inner, .tide-slide-body > .tide-slide-cover { font-size: calc(1em * var(--tide-fit, 1)); }
+/* A slim scrollbar in the slides' colours, inside the slide or the card (the ::-webkit-scrollbar rules for Safari). */
 .tide-scrollfade::-webkit-scrollbar { width: 10px; }
 .tide-scrollfade::-webkit-scrollbar-track { background: transparent; }
 .tide-scrollfade::-webkit-scrollbar-thumb { background: var(--tide-slide-line-strong); border-radius: var(--tide-radius-pill); border: 2px solid transparent; background-clip: padding-box; }

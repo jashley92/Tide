@@ -11,6 +11,7 @@ using Tide.Web.Components.Pages;
 using Tide.Web.Components.Shared;
 using Tide.Web.Services;
 using static Tide.IntegrationTests.ComponentHarness;
+using static Tide.IntegrationTests.PresentHarness;
 
 namespace Tide.IntegrationTests;
 
@@ -74,32 +75,14 @@ public class PresentWeRunTests(TideApp app) : IClassFixture<TideApp>
         await r.Click(p => p.OnPresentKey("prev"));
     }
 
-    private static Task Do(Rendered<Present> r, Func<Present, Task> what) =>
-        r.Click(async p =>
-        {
-            await what(p);
-            await p.OnPresentKey("render");
-        });
-
-    private static Task Do(Rendered<Present> r, Action<Present> what) => Do(r, p =>
-    {
-        what(p);
-        return Task.CompletedTask;
-    });
-
     private static Task Edition(Rendered<Present> r, Edition edition) =>
         Do(r, p => p.SetEdition(new ChangeEventArgs { Value = edition.ToString() }));
-
-    private void EndMeeting(DateOnly day) => Meetings.End(Meetings.Join(day, "dev:tester", "Tester", true, "", Guid.NewGuid(), 0)!);
-
-    private Task<Rendered<Present>> Open(DateOnly day, SignIn? who = null) =>
-        RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" }, who);
 
     [Fact]
     public async Task TheTeamEdition_ShowsWeRunChips_AndTheirCard_AndTheCompanyWideEditionNothingOfThem()
     {
         var s = await Brief(69);
-        await using var pat = await Open(s.Day);
+        await using var pat = await Open(app, s.Day);
         await FirstArticle(pat);
         var html = await pat.Html();
         html.Should().Contain("tide-slide-werun").And.Contain($"aria-label=\"We run {s.Name} 9.1R18: open its notes\"")
@@ -143,9 +126,9 @@ public class PresentWeRunTests(TideApp app) : IClassFixture<TideApp>
     public async Task ThePresentersCard_ShowsForThoseFollowing_ALateJoiner_AndClosesForThem_WhileAFollowerOffAlonesIsTheirOwn()
     {
         var s = await Brief(70);
-        await using var pat = await Open(s.Day);
+        await using var pat = await Open(app, s.Day);
         await Do(pat, p => p.StartMeeting());
-        await using var owner = await Open(s.Day, Owner);
+        await using var owner = await Open(app, s.Day, Owner);
         await Do(owner, p => p.JoinIfLive());
         await FirstArticle(pat);
         await Do(owner, p => p.Follow());
@@ -158,7 +141,7 @@ public class PresentWeRunTests(TideApp app) : IClassFixture<TideApp>
         (await owner.Html()).Should().Contain("present-product-title").And.Contain("Tester is showing this").And.Contain(s.Other);
 
         // Someone joining late sees it too.
-        await using var robin = await Open(s.Day, Robin);
+        await using var robin = await Open(app, s.Day, Robin);
         await Do(robin, p => p.JoinIfLive());
         (await robin.Html()).Should().Contain("present-product-title").And.Contain("Tester is showing this");
 
@@ -203,14 +186,14 @@ public class PresentWeRunTests(TideApp app) : IClassFixture<TideApp>
         await pat.Click(p => p.OnPresentKey("next"));
         Meetings.Get(s.Day)!.Product.Should().BeNull();
 
-        EndMeeting(s.Day);
+        EndMeeting(app, s.Day);
     }
 
     [Fact]
     public async Task ThePresentersCard_StaysWhenTheirSlideIsRenumbered_AndGoesWhenItsArticleLeavesTheBrief()
     {
         var s = await Brief(72);
-        await using var pat = await Open(s.Day);
+        await using var pat = await Open(app, s.Day);
         await Do(pat, p => p.StartMeeting());
         await FirstArticle(pat);
         await Do(pat, p => p.ShowProduct(s.Product));
@@ -236,16 +219,16 @@ public class PresentWeRunTests(TideApp app) : IClassFixture<TideApp>
         await Do(pat, p => p.OnChangedElsewhere([heard]));
         Meetings.Get(s.Day)!.Product.Should().BeNull();
         (await pat.Html()).Should().NotContain("present-product-title").And.Contain("<h2>We run second 72</h2>");
-        EndMeeting(s.Day);
+        EndMeeting(app, s.Day);
     }
 
     [Fact]
     public async Task ThePresentersOtherTab_ShowsAndClosesTheCardTheyOpenedInTheFirst()
     {
         var s = await Brief(73);
-        await using var pat = await Open(s.Day);
+        await using var pat = await Open(app, s.Day);
         await Do(pat, p => p.StartMeeting());
-        await using var projector = await Open(s.Day);
+        await using var projector = await Open(app, s.Day);
         await Do(projector, p => p.JoinIfLive());
         await FirstArticle(pat);
         await Do(projector, p => p.Follow());
@@ -279,7 +262,7 @@ public class PresentWeRunTests(TideApp app) : IClassFixture<TideApp>
         Meetings.Get(s.Day)!.Product.Should().BeNull();
         await Do(pat, p => p.ShowAction(999_999));
         Meetings.Get(s.Day)!.Action.Should().BeNull();
-        EndMeeting(s.Day);
+        EndMeeting(app, s.Day);
     }
 
     [Fact]
@@ -293,7 +276,7 @@ public class PresentWeRunTests(TideApp app) : IClassFixture<TideApp>
             number = await scope.ServiceProvider.GetRequiredService<ActionService>()
                 .QuickAddAsync(s.First, "Patch the gateway", ActionKind.PatchRemediate, team, null, s.Day);
         }
-        await using var pat = await Open(s.Day);
+        await using var pat = await Open(app, s.Day);
         await Do(pat, p => p.StartMeeting());
         await FirstArticle(pat);
         await Do(pat, p => p.ShowProduct(s.Product));
@@ -304,10 +287,10 @@ public class PresentWeRunTests(TideApp app) : IClassFixture<TideApp>
         await Do(pat, p => p.ShowProduct(s.Product));
         (await pat.Html()).Should().Contain("present-product-title").And.NotContain("present-action-title");
         Meetings.Get(s.Day)!.Should().Match<LiveMeetingView>(v => v.Action == null && v.Product == s.Product);
-        EndMeeting(s.Day);
+        EndMeeting(app, s.Day);
 
         // Opened before the meeting starts, it goes to the room.
-        await using var robin = await Open(s.Day, Robin);
+        await using var robin = await Open(app, s.Day, Robin);
         await FirstArticle(robin);
         await Do(robin, p => p.ShowProduct(s.Product));
         await Do(robin, p => p.StartMeeting());

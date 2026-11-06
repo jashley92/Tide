@@ -2,13 +2,10 @@ using System.Net;
 using System.Text.RegularExpressions;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Tide.Application.Articles;
-using Tide.Application.Briefs;
-using Tide.Application.Org;
-using Tide.Domain.Enums;
 using Tide.Web.Components.Pages;
 using Tide.Web.Services;
 using static Tide.IntegrationTests.ComponentHarness;
+using static Tide.IntegrationTests.PresentHarness;
 
 namespace Tide.IntegrationTests;
 
@@ -18,44 +15,7 @@ public class PresentFollowPillTests(MeetingClockApp app) : IClassFixture<Meeting
     private static readonly SignIn Owner = new("dev:pill-owner", "Olive Owner", "ActionOwner");
     private static readonly SignIn Robin = new("dev:pill-robin", "Robin Analyst", "Analyst");
 
-    private DateOnly Today => app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;
     private LiveMeetings Meetings => app.Services.GetRequiredService<LiveMeetings>();
-
-    private static DateOnly BusinessDaysBefore(DateOnly day, int n)
-    {
-        for (var i = 0; i < n; i++) day = WorkingDays.Weekdays.Previous(day);
-        return day;
-    }
-
-    private async Task<DateOnly> Brief(int daysBack)
-    {
-        var day = BusinessDaysBefore(Today, daysBack);
-        await using var scope = SignedIn(app, SignIn.Analyst);
-        var articles = scope.ServiceProvider.GetRequiredService<ArticleService>();
-        var briefs = scope.ServiceProvider.GetRequiredService<BriefService>();
-        var brief = await briefs.GetOrStartAsync(day);
-        await briefs.AddArticleAsync(brief.Id, await articles.CreateAsync($"Pill first {daysBack}", "Vendor", null, TlpLevel.Clear));
-        await briefs.AddArticleAsync(brief.Id, await articles.CreateAsync($"Pill second {daysBack}", "Vendor", null, TlpLevel.Clear));
-        return day;
-    }
-
-    private static Task Do(Rendered<Present> r, Func<Present, Task> what) =>
-        r.Click(async p =>
-        {
-            await what(p);
-            await p.OnPresentKey("render");
-        });
-
-    private static Task Do(Rendered<Present> r, Action<Present> what) => Do(r, p =>
-    {
-        what(p);
-        return Task.CompletedTask;
-    });
-
-    private void EndMeeting(DateOnly day) => Meetings.End(Meetings.Join(day, "dev:tester", "Tester", true, "", Guid.NewGuid(), 0)!);
-
-    private Task<Rendered<Present>> Open(DateOnly day, SignIn? who = null) =>
-        RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" }, who);
 
     /// <summary>The pill's markup: inside the header's tools, with no full-width bar anywhere.</summary>
     internal static string Markup(string html)
@@ -79,15 +39,15 @@ public class PresentFollowPillTests(MeetingClockApp app) : IClassFixture<Meeting
     [Fact]
     public async Task ALateJoiner_Follows_ThenBrowsesAway_AndIsBroughtBack()
     {
-        var day = await Brief(101);
-        await using var pat = await Open(day);
+        var day = await TwoArticleBrief(app, 101, "Pill");
+        await using var pat = await Open(app, day);
         await Do(pat, p => p.StartMeeting());
         await pat.Click(p => p.OnPresentKey("next"));
         await pat.Click(p => p.OnPresentKey("next"));
         (await pat.Html()).Should().NotContain("class=\"tide-follow ", "the presenter has no pill");
 
         // Joining late lands on the presenter's slide, following.
-        await using var owner = await Open(day, Owner);
+        await using var owner = await Open(app, day, Owner);
         await Do(owner, p => p.JoinIfLive());
         var html = await owner.Html();
         Markup(html).Should().Contain("class=\"tide-follow is-following\" role=\"status\"");
@@ -103,16 +63,16 @@ public class PresentFollowPillTests(MeetingClockApp app) : IClassFixture<Meeting
         html = await owner.Html();
         Shown(html).Should().Be("Following Tester");
         html.Should().Contain("aria-label=\"Slide 3 of", "back on the presenter's slide");
-        EndMeeting(day);
+        EndMeeting(app, day);
     }
 
     [Fact]
     public async Task WhenLocked_ThePillSaysSo()
     {
-        var day = await Brief(102);
-        await using var pat = await Open(day);
+        var day = await TwoArticleBrief(app, 102, "Pill");
+        await using var pat = await Open(app, day);
         await Do(pat, p => p.StartMeeting());
-        await using var owner = await Open(day, Owner);
+        await using var owner = await Open(app, day, Owner);
         await Do(owner, p => p.JoinIfLive());
         await Do(pat, p => p.ToggleLock());
         await Do(owner, p => p.Follow());
@@ -121,18 +81,18 @@ public class PresentFollowPillTests(MeetingClockApp app) : IClassFixture<Meeting
         Markup(html).Should().Contain("is-held").And.Contain("bi-lock-fill");
         Shown(html).Should().Be("Following Tester · locked");
         Heard(html).Should().Be("Following Tester · locked by the presenter");
-        EndMeeting(day);
+        EndMeeting(app, day);
     }
 
     [Fact]
     public async Task WhenThePresenterGoes_ThePillSaysTheyreReconnecting_ThenOffersTheTakeOver_ToThoseWhoCanPresent()
     {
-        var day = await Brief(103);
-        var pat = await Open(day);
+        var day = await TwoArticleBrief(app, 103, "Pill");
+        var pat = await Open(app, day);
         await Do(pat, p => p.StartMeeting());
-        await using var owner = await Open(day, Owner);
+        await using var owner = await Open(app, day, Owner);
         await Do(owner, p => p.JoinIfLive());
-        await using var robin = await Open(day, Robin);
+        await using var robin = await Open(app, day, Robin);
         await Do(robin, p => p.JoinIfLive());
 
         await pat.DisposeAsync();   // the presenter's tab closed
@@ -160,12 +120,12 @@ public class PresentFollowPillTests(MeetingClockApp app) : IClassFixture<Meeting
     [Fact]
     public async Task AViewerAndAVisitor_FollowWithThePill_AndAreNeverOfferedTheTakeOver()
     {
-        var day = await Brief(104);
-        var pat = await Open(day);
+        var day = await TwoArticleBrief(app, 104, "Pill");
+        var pat = await Open(app, day);
         await Do(pat, p => p.StartMeeting());
-        await using var viewer = await Open(day, new SignIn("dev:pill-viewer", "Val Viewer", "Viewer"));
+        await using var viewer = await Open(app, day, new SignIn("dev:pill-viewer", "Val Viewer", "Viewer"));
         await Do(viewer, p => p.JoinIfLive());
-        await using var visitor = await Open(day, new SignIn("dev:pill-visitor", "Vic Visitor", "Visitor"));
+        await using var visitor = await Open(app, day, new SignIn("dev:pill-visitor", "Vic Visitor", "Visitor"));
         await Do(visitor, p => p.GoLive());
         Meetings.Get(day)!.People.Select(p => p.Name).Should().Contain(["Val Viewer", "Vic Visitor"]);
         foreach (var r in new[] { viewer, visitor })
@@ -185,6 +145,6 @@ public class PresentFollowPillTests(MeetingClockApp app) : IClassFixture<Meeting
             Shown(html).Should().Be("Tester dropped out");
             html.Should().NotContain("Take over");
         }
-        EndMeeting(day);
+        EndMeeting(app, day);
     }
 }
