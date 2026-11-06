@@ -171,6 +171,18 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
+### v1.5.1
+
+Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds no migration and no setting, and nothing you see changes.
+
+**Present mode, under the hood**
+- **Space and Page Down answer at once.** The page decides for itself whether to scroll the slide or move to the next
+  one, instead of asking the server first.
+- **Fitting a slide does less work.** A slide is measured fewer times when it's fitted, and only when the slide or
+  its content changes size, not on every change elsewhere on the page. The sizes slides settle at are the same.
+- **Following the presenter's scroll is lighter.** The presenter's page sends at most ten updates a second, and each
+  follower is sent only the latest one at a time, so slow connections don't fall behind.
+
 ### v1.5.0
 
 Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds no migration and no setting.
