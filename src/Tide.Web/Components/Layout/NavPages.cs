@@ -38,8 +38,6 @@ public static class NavPages
         new(Triage, "Triage", "bi-inbox", "triage", Daily, [Permission.ReadTeamEdition, Permission.WriteArticles], Keywords: "inbox feeds intake"),
         new("articles", "Articles", "bi-newspaper", "articles", Daily, [Permission.ReadTeamEdition]),
         new(Actions, "Actions", "bi-list-check", "actions", Daily, [Permission.ReadActions], Keywords: "board tasks"),
-        new("saved-queries", "Saved queries", "bi-bookmark", "hunts/saved", Daily, [Permission.ReadActions], Keywords: "hunt query library siem kql xql"),
-        new("outreach-templates", "Outreach templates", "bi-envelope-paper", "outreach/templates", Daily, [Permission.ReadActions], Keywords: "email vendor partner isac ask template library"),
         new("search", "Search", "bi-search", "search", Daily, [Permission.ReadTeamEdition], Keywords: "indicator lookup cve ioc"),
         new("stories", "Stories", "bi-bezier2", "stories", Intelligence, [Permission.ReadTeamEdition]),
         new("archive", "Brief archive", "bi-archive", "briefs", Intelligence, [Permission.ReadTeamEdition], NavLinkMatch.All, "past briefs"),
@@ -51,6 +49,8 @@ public static class NavPages
         new("metrics", "Metrics", "bi-graph-up", "metrics", Intelligence, [Permission.ReadTeamEdition, Permission.WriteArticles]),   // listed for those who make the brief; the page stays open to action owners
         new("rotation", "Brief rotation", "bi-calendar3", "rotation", Team, [Permission.ReadTeamEdition, Permission.WriteArticles], Keywords: "rota schedule"),
         new("workload", "Workload", "bi-people", "workload", Team, [Permission.ReadActions]),
+        new("saved-queries", "Saved queries", "bi-bookmark", "hunts/saved", Team, [Permission.ReadActions], Keywords: "hunt query library siem kql xql"),
+        new("outreach-templates", "Outreach templates", "bi-envelope-paper", "outreach/templates", Team, [Permission.ReadActions], Keywords: "email vendor partner isac ask template library"),
         new("published", "Published briefs", "bi-megaphone", "published", CompanyWide, [Permission.ReadPublished], Keywords: "archive company"),
         // One entry; the Administration page's tabs reach every admin page (AdminLayout).
         new("admin", "Administration", "bi-sliders", "admin", Administration, [Permission.Administer], Keywords: "settings admin"),
