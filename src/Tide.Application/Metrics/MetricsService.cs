@@ -344,7 +344,7 @@ public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, 
         if (!Enum.IsDefined(form.Format) || !Enum.IsDefined(form.Direction)) throw new ArgumentException("Choose a format and a direction.");
         if (MetricMath.ThresholdProblem(form.Direction, form.WarnThreshold, form.CriticalThreshold) is { } problem) throw new ArgumentException(problem);
         // Thresholds are kept in the same column as values: one too large (or too fine) would only fail on SQL Server.
-        if (form.WarnThreshold is { } warn && !MetricMath.Fits(warn) || form.CriticalThreshold is { } crit && !MetricMath.Fits(crit))
+        if ((form.WarnThreshold is { } warn && !MetricMath.Fits(warn)) || (form.CriticalThreshold is { } crit && !MetricMath.Fits(crit)))
             throw new ArgumentException("That threshold is too large.");
         await using var db = await dbs.CreateAsync(ct);
         if (!await db.MetricGroups.AnyAsync(g => g.Id == form.GroupId, ct)) throw new KeyNotFoundException("That group no longer exists.");

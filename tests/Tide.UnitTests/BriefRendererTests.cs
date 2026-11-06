@@ -4,6 +4,7 @@ using Tide.Application.Content;
 using Tide.Application.Distribution;
 using Tide.Application.Files;
 using Tide.Application.Metrics;
+using Tide.Application.Org;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 
@@ -50,7 +51,7 @@ public class BriefRendererTests
         var tue = new DateOnly(2026, 10, 27);
         var group = new MetricGroup { Name = "Alert queue" };
         var tile = new MetricTile(new MetricDefinition { Name = "Open" }, 3m, null, new MetricComparison(new DateOnly(2026, 10, 23), 5m, -2m, MetricTrend.Better), MetricLevel.Normal, [5m, 3m]);
-        var holidays = new Tide.Application.Org.WorkingDays(new Dictionary<DateOnly, string> { [new DateOnly(2026, 10, 26)] = "Founders' Day" });
+        var holidays = new WorkingDays(new Dictionary<DateOnly, string> { [new DateOnly(2026, 10, 26)] = "Founders' Day" });
         var day = new MetricDay(tue, [new MetricGroupDay(group, [tile])]) { Days = holidays };
 
         var team = _renderer.Render(BriefEditions.Build(Brief(), Edition.Team, TlpLevel.AmberStrict), new("CTI", day, null, img => "cid:" + img.ContentId));

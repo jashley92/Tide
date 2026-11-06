@@ -397,7 +397,7 @@ public partial class DeployScriptPowerShellTests
             ConvertTo-Json -Depth 4 -Compress -InputObject $out
             """);
         r.GetProperty("text").GetString().Should().Be(@"D:\Web Sites\tide");
-        r.GetProperty("attribute").GetString().Should().Be(@"D:\Web Sites\tide", "an attribute object's .Value, not '@{Value=...}'");
+        r.GetProperty("attribute").GetString().Should().Be(@"D:\Web Sites\tide", "an attribute object's .Value, not the object printed as text");
         r.GetProperty("bag").GetString().Should().Be(@"D:\Web Sites\tide");
         r.GetProperty("bagOfAttribute").GetString().Should().Be(@"C:\inetpub\tide");
         r.GetProperty("empty").ValueKind.Should().Be(JsonValueKind.Null);
