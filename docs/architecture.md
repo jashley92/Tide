@@ -467,13 +467,18 @@ presented or on a presented or sent brief unless the caller says so outright; co
 (`Coverage.Attachable`), with the covering articles' open actions for the row's "Follow-up to" line. `SimilarToId` is
 set once, at intake, by the first match, so a reworded headline often isn't flagged; the inbox also suggests groups
 ("Looks like one event", `TriageGroups.Find`) each time it loads, in New and Shortlisted, over the items shown, and
-stores nothing (no column, no migration). Two items published within 48 hours join when they share a CVE, or at least
+stores no group. Two items published within `Intake:GroupWindowHours` (48, 12 to 96) join when they share a CVE, or at least
 two distinctive headline tokens, one of them a name: capitalised or product-like words and amounts (money counts by its
 scale, as outlets round it differently), leaving out common words, the words every security headline uses (hack,
-breach, flaw, critical, patch…) and the publisher's own name. Groups are connected runs of such pairs, joined tightest
+breach, flaw, critical, patch…), an administrator's extra words (`Intake:GroupIgnoredWords`, matched as the built-in
+ones are, endings trimmed; grouping only, not `TitleMatch`) and the publisher's own name. Both are in-app settings on
+Sources, which also lists the built-in words. Groups are connected runs of such pairs, joined tightest
 pair first and held to 8 items, and are offered only with two or more items from two or more feeds
-(`InboxRow.Group`). Triage shows a group as one line that opens to its reports' own rows; "Not the same" splits it in
-the page only. "Promote as one article" (`IntakeService.PromoteAsOneAsync`) claims every report in one statement
+(`InboxRow.Group`). Triage shows a group as one line that opens to its reports' own rows; "Not the same"
+(`IntakeService.SplitAsync`, EP-84) splits it for everyone: `TriageSplits` keeps a row per report under the split's
+batch (who and when), and two reports that share a batch never pair, so each can still group with others. The newest
+report notes who split it, with Undo (`UndoSplitAsync`, anyone who triages, deletes the batch); both are audited and
+heard on the triage topic. A report's rows go with it when it's pruned (cascade). "Promote as one article" (`IntakeService.PromoteAsOneAsync`) claims every report in one statement
 inside a transaction, so a group is claimed whole or not at all, makes the article from the newest report (at the most
 restrictive of the sources' TLPs, unless chosen) and adds each of the others as a report, as attaching does, CVEs
 included; a failure after the claim removes the article and gives every report back. An analyst can

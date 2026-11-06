@@ -325,6 +325,43 @@
     <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveAgeing">Save</button>
 </section>
 
+<section class="tide-card" aria-labelledby="grouping-title">
+    <h2 id="grouping-title"><span class="bi bi-collection" aria-hidden="true"></span> Triage grouping</h2>
+    <p class="small tide-muted">Triage suggests reports that look like one event told by several feeds: published close together, naming a CVE in common or
+        sharing two uncommon words, one of them a name. Common words don't count. These change only that suggestion, not the check for a repeated
+        headline when items come in.</p>
+    <div class="row g-3">
+        <div class="col-md-4">
+            <label class="tide-field-label" for="group-window">How far apart two reports of one event can be (hours)</label>
+            <input id="group-window" type="number" min="@TriageGroups.MinWindowHours" max="@TriageGroups.MaxWindowHours" class="form-control form-control-sm"
+                   @bind="_groupHours" aria-describedby="group-window-help" />
+            <div class="form-text" id="group-window-help">@TriageGroups.MinWindowHours to @TriageGroups.MaxWindowHours; @((int)TriageGroups.DefaultWindow.TotalHours) until changed. Reports published further apart aren't grouped.</div>
+        </div>
+        <div class="col-md-8">
+            <label class="tide-field-label" for="group-words">Extra words to ignore</label>
+            <textarea id="group-words" class="form-control form-control-sm" rows="5" @bind="IgnoredWords" @bind:event="oninput" aria-describedby="group-words-help group-words-built-in"></textarea>
+            <div class="form-text" id="group-words-help">One word per line: letters, digits and hyphens, up to @TriageGroups.MaxWordLength characters, at most @TriageGroups.MaxWords.
+                Endings are trimmed as they are for the built-in words, so "webinar" also ignores "webinars". A hyphenated word is ignored as each of its parts.</div>
+            <div class="small tide-muted" id="group-words-built-in" role="status">
+                @if (BuiltInTyped() is { Count: > 0 } builtIn) { <text>Always ignored already, so left out: @string.Join(", ", builtIn)</text> }
+            </div>
+        </div>
+    </div>
+    <details class="mt-2">
+        <summary>Always ignored: @(TriageGroups.StopWords.Count + TriageGroups.GenericWords.Count) built-in words</summary>
+        <p class="small tide-muted mt-2 mb-1">Built in, so they can't be switched off. A word that only starts the same way as one of these ("Hitachi") still counts.</p>
+        <h3 class="h6 mt-2" id="stop-words-title">Plain words (@TriageGroups.StopWords.Count)</h3>
+        <ul class="list-inline small mb-2" aria-labelledby="stop-words-title">
+            @foreach (var w in TriageGroups.StopWords) { <li class="list-inline-item tide-data">@w</li> }
+        </ul>
+        <h3 class="h6" id="generic-words-title">Words every security headline uses, with any ending (@TriageGroups.GenericWords.Count)</h3>
+        <ul class="list-inline small mb-0" aria-labelledby="generic-words-title">
+            @foreach (var w in TriageGroups.GenericWords) { <li class="list-inline-item tide-data">@w</li> }
+        </ul>
+    </details>
+    <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveGrouping">Save triage grouping</button>
+</section>
+
 <section class="tide-card" aria-labelledby="cve-title">
     <h2 id="cve-title"><span class="bi bi-shield-exclamation" aria-hidden="true"></span> CVE enrichment</h2>
     <p class="small tide-muted">CVSS from NVD, the EPSS exploit-prediction score from FIRST, and CISA's known exploited list, for the CVEs on articles and recent
@@ -396,6 +433,12 @@
     internal string AdLabels { get; set; } = "";
     // The ageing window: days before an untouched new item folds into Older.
     private int _ageDays = 7;
+    // Triage grouping: the window in hours, and the extra words as typed (one per line); internal for the render tests.
+    private int _groupHours;
+    internal string IgnoredWords { get; set; } = "";
+
+    // The words typed that the built-in sets ignore already: saving leaves them out.
+    private List<string> BuiltInTyped() => [.. TriageGroups.ParseWords(IgnoredWords).Where(TriageGroups.IsBuiltIn)];
 
     internal SponsoredCheck Verdict() =>
         new SponsoredFilter(SponsoredFilter.Parse(Markers), SponsoredFilter.Parse(Exceptions)).Check(Probe);
@@ -411,6 +454,8 @@
         Markers = Lines(i.SponsoredMarkers ?? SponsoredFilter.DefaultMarkers);
         Exceptions = Lines(i.SponsoredExceptions ?? SponsoredFilter.DefaultExceptions);
         _ageDays = i.AgeDays;
+        _groupHours = i.GroupWindowHours;
+        IgnoredWords = Lines(i.GroupIgnoredWords ?? "");
         AdSelectors = Lines(i.AdSelectors ?? Tide.Application.Assist.ArticleCleanup.DefaultSelectors);
         AdLabels = Lines(i.AdLabels ?? Tide.Application.Assist.ArticleCleanup.DefaultLabels);
         var c = CveOptionsMonitor.CurrentValue;
@@ -464,6 +509,19 @@
         });
         ReadSettings();
         Toasts.Show("Saved.");
+    });
+
+    internal Task SaveGrouping() => Run(async () =>
+    {
+        var builtIn = BuiltInTyped();
+        await Settings.SaveAsync(new Dictionary<string, string?>
+        {
+            [OperationalSettings.GroupWindowHours] = _groupHours.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            [OperationalSettings.GroupIgnoredWords] = IgnoredWords,
+        });
+        ReadSettings();
+        Toasts.Show(builtIn.Count == 0 ? "Saved. Triage groups by these from its next load."
+            : $"Saved, leaving out {string.Join(", ", builtIn.Take(5))}{(builtIn.Count > 5 ? "…" : "")}: always ignored already.");
     });
 
     internal Task SaveCve() => Run(async () =>

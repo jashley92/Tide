@@ -73,6 +73,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<Source> Sources => Set<Source>();
     public DbSet<FeedItem> FeedItems => Set<FeedItem>();
     public DbSet<FeedItemText> FeedItemTexts => Set<FeedItemText>();
+    public DbSet<TriageSplit> TriageSplits => Set<TriageSplit>();
     public DbSet<Story> Stories => Set<Story>();
     public DbSet<CveRecord> CveRecords => Set<CveRecord>();
     public DbSet<RotationMember> RotationMembers => Set<RotationMember>();
@@ -710,6 +711,15 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasIndex(x => x.FetchedAtUtc);
             e.HasIndex(x => x.SourceId);
             e.HasIndex(x => x.ArticleId);
+        });
+
+        b.Entity<TriageSplit>(e =>
+        {
+            e.HasOne<FeedItem>().WithMany().HasForeignKey(x => x.ItemId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.Batch, x.ItemId }).IsUnique();
+            e.HasIndex(x => x.ItemId);
+            e.Property(x => x.SplitBy).HasMaxLength(TriageSplit.MaxName);
+            e.Property(x => x.SplitByName).HasMaxLength(TriageSplit.MaxName);
         });
 
         b.Entity<Story>(e =>

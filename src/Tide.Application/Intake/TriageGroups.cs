@@ -16,22 +16,48 @@ public sealed record TriageGroup(IReadOnlyList<Guid> Ids, int Sources, IReadOnly
 }
 
 /// <summary>
-/// "Looks like one event": the inbox's suggested groups, worked out each time the inbox loads and never stored. Two
-/// items published within <see cref="Window"/> of each other join when they name a CVE in common, or when their
-/// headlines share at least two distinctive tokens, one of them a name both write as one: a capitalised or product-like
-/// word ("Binance", "DevOps", "iOS"). The other can be an amount ("$6.3 billion", "16 billion") or any other uncommon word,
-/// whatever its case: one outlet writes "business" where another, capitalising every word, writes "Business", and both
-/// mean the same thing. Common words, the words every security headline uses
-/// (hack, breach, flaw, critical, patch, add...) and the publisher's own name don't count. A group grows from its
-/// tightest pair, held to <see cref="MaxSize"/> items, and every report in it pairs with every other: a roundup that
-/// names two events can't chain them into one. It's offered only when it has two or more items from two
-/// or more feeds. A reworded headline groups where <see cref="TitleMatch"/>'s one-off intake
+/// What <see cref="TriageGroups.Find"/> takes besides the items (EP-84): how far apart two reports of one event can be
+/// published, the words an administrator added to the built-in common ones (as <see cref="TriageGroups.Words"/> reads
+/// them), and the splits someone made ("Not the same"), whose reports never group with each other again.
+/// </summary>
+public sealed record TriageGroupOptions
+{
+    /// <summary>The defaults: <see cref="TriageGroups.DefaultWindow"/>, no extra words, nothing split.</summary>
+    public static readonly TriageGroupOptions Default = new();
+
+    public TimeSpan Window { get; init; } = TriageGroups.DefaultWindow;
+
+    /// <summary>Extra common words, in lower case: matched as the built-in ones are, endings and all.</summary>
+    public IReadOnlySet<string> Ignored { get; init; } = TriageGroups.NoWords;
+
+    /// <summary>The splits, each as its reports' ids: no two reports of one split pair.</summary>
+    public IReadOnlyCollection<IReadOnlyCollection<Guid>> Split { get; init; } = [];
+}
+
+/// <summary>
+/// "Looks like one event": the inbox's suggested groups, worked out each time the inbox loads and never stored (only a
+/// split is: two items someone said aren't the same never pair). Two items published within the window
+/// (<see cref="TriageGroupOptions.Window"/>, <see cref="DefaultWindow"/> until an administrator changes it) of each other
+/// join when they name a CVE in common, or when their headlines share at least two distinctive tokens, one of them a name
+/// both write as one: a capitalised or product-like word ("Binance", "DevOps", "iOS"). The other can be an amount
+/// ("$6.3 billion", "16 billion") or any other uncommon word, whatever its case: one outlet writes "business" where
+/// another, capitalising every word, writes "Business", and both mean the same thing. Common words, the words every
+/// security headline uses (hack, breach, flaw, critical, patch, add...), any an administrator added, and the publisher's
+/// own name don't count. A group grows from its tightest pair, held to <see cref="MaxSize"/> items, and every report in
+/// it pairs with every other: a roundup that names two events can't chain them into one. It's offered only when it has
+/// two or more items from two or more feeds. A reworded headline groups where <see cref="TitleMatch"/>'s one-off intake
 /// match didn't, because a few shared names count, not the overlap of every word.
 /// </summary>
 public static partial class TriageGroups
 {
-    /// <summary>How far apart two reports of one event can be published.</summary>
-    public static readonly TimeSpan Window = TimeSpan.FromHours(48);
+    /// <summary>How far apart two reports of one event can be published, until an administrator changes it
+    /// (<see cref="MinWindowHours"/> to <see cref="MaxWindowHours"/> hours).</summary>
+    public static readonly TimeSpan DefaultWindow = TimeSpan.FromHours(48);
+
+    public const int MinWindowHours = 12, MaxWindowHours = 96;
+
+    /// <summary>The most words an administrator adds, and the longest one.</summary>
+    public const int MaxWords = 200, MaxWordLength = 40;
 
     /// <summary>The most items one group holds; a bigger run keeps its tightest pairs.</summary>
     public const int MaxSize = 8;
@@ -78,9 +104,63 @@ public static partial class TriageGroups
 
     private static readonly string[] Endings = ["s", "es", "ed", "d", "ing", "er", "ers", "ies"];
 
-    private static bool IsGeneric(string key) =>
-        Generic.Contains(key) || Endings.Any(e => key.Length > e.Length + 2 && key.EndsWith(e, StringComparison.Ordinal)
-            && (Generic.Contains(key[..^e.Length]) || (e == "ies" && Generic.Contains(key[..^3] + "y"))));
+    internal static readonly IReadOnlySet<string> NoWords = new HashSet<string>(StringComparer.Ordinal);
+
+    /// <summary>The built-in words that never count, as Administration shows them: the plain ones (a, the, says...) and
+    /// the ones every security headline uses (hack, breach...), each in order.</summary>
+    public static IReadOnlyList<string> StopWords { get; } = [.. Stop.Order(StringComparer.Ordinal)];
+
+    /// <inheritdoc cref="StopWords"/>
+    public static IReadOnlyList<string> GenericWords { get; } = [.. Generic.Order(StringComparer.Ordinal)];
+
+    /// <summary>Whether a word in lower case is one the built-in sets ignore already, with an ending trimmed or not.</summary>
+    public static bool IsBuiltIn(string word) => Stop.Contains(word) || IsGeneric(word, NoWords);
+
+    private static bool IsGeneric(string key, IReadOnlySet<string> extra)
+    {
+        bool Common(string w) => Generic.Contains(w) || extra.Contains(w);
+        return Common(key) || Endings.Any(e => key.Length > e.Length + 2 && key.EndsWith(e, StringComparison.Ordinal)
+            && (Common(key[..^e.Length]) || (e == "ies" && Common(key[..^3] + "y"))));
+    }
+
+    // One word an administrator adds: letters, digits and hyphens, starting with a letter or digit.
+    [GeneratedRegex(@"^[\p{L}\p{N}][\p{L}\p{N}-]*$", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex ExtraWord();
+
+    private static bool IsValidWord(string word) => word.Length <= MaxWordLength && ExtraWord().IsMatch(word);
+
+    /// <summary>The words in a list as typed or stored (one per line, or separated by semicolons), in lower case, each
+    /// once, in order.</summary>
+    public static IReadOnlyList<string> ParseWords(string? text) =>
+        [.. SponsoredFilter.Parse(text).Select(w => w.ToLowerInvariant()).Distinct(StringComparer.Ordinal)];
+
+    /// <summary>
+    /// The extra words as they're stored ("outage; webinar"), with the built-in ones left out: they're ignored anyway, and
+    /// a later release that builds one in mustn't make a saved list fail its check. Throws <see cref="ArgumentException"/>
+    /// saying what's wrong: more than one word to an entry, a character other than a letter, digit or hyphen, a word
+    /// longer than <see cref="MaxWordLength"/>, or more than <see cref="MaxWords"/>.
+    /// </summary>
+    public static string NormalizeWords(string? text)
+    {
+        var words = ParseWords(text);
+        if (words.FirstOrDefault(w => !IsValidWord(w)) is { } bad)
+            throw new ArgumentException(bad.Any(char.IsWhiteSpace) ? $"One word to a line: '{bad}' is more than one."
+                : bad.Length > MaxWordLength ? $"'{bad[..20]}…' is longer than {MaxWordLength} characters."
+                : $"'{bad}' isn't a word: use letters, digits and hyphens only.");
+        var kept = words.Where(w => !IsBuiltIn(w)).ToList();
+        if (kept.Count > MaxWords) throw new ArgumentException($"At most {MaxWords} extra words.");
+        return string.Join("; ", kept);
+    }
+
+    /// <summary>
+    /// The stored extra words as <see cref="TriageGroupOptions.Ignored"/> takes them. A headline's words break at a
+    /// hyphen, so a hyphenated one ("zero-click") is ignored as each of its parts. A word that wouldn't pass
+    /// <see cref="NormalizeWords"/> (the server's configuration isn't checked) is left out.
+    /// </summary>
+    public static IReadOnlySet<string> Words(string? stored) =>
+        ParseWords(stored).Where(IsValidWord)
+            .SelectMany(w => w.Split('-', StringSplitOptions.RemoveEmptyEntries))
+            .ToHashSet(StringComparer.Ordinal);
 
     // An amount of money: "$6.3 billion", "$6B", "€20m", "$500,000".
     [GeneratedRegex(@"[$€£]\s?\d+(?:[.,]\d+)*(?:\s?(?<scale>thousand|million|billion|trillion|bn|k|m|b)\b)?", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
@@ -100,9 +180,11 @@ public static partial class TriageGroups
     /// word in lower case).</summary>
     internal readonly record struct Token(string Key, string Shown, bool Name);
 
-    /// <summary>The distinctive tokens of a headline from <paramref name="publisher"/>, by key, first spelling kept.</summary>
-    internal static IReadOnlyDictionary<string, Token> Tokens(string title, string publisher)
+    /// <summary>The distinctive tokens of a headline from <paramref name="publisher"/>, by key, first spelling kept. The
+    /// <paramref name="ignored"/> words don't count, as the built-in common ones don't.</summary>
+    internal static IReadOnlyDictionary<string, Token> Tokens(string title, string publisher, IReadOnlySet<string>? ignored = null)
     {
+        ignored ??= NoWords;
         var found = new Dictionary<string, Token>(StringComparer.Ordinal);
         var own = PublisherWords(publisher);
         var rest = title;
@@ -126,7 +208,7 @@ public static partial class TriageGroups
             var word = m.Value.EndsWith("'s", StringComparison.Ordinal) || m.Value.EndsWith("’s", StringComparison.Ordinal) ? m.Value[..^2] : m.Value;
             if (word.Length < 2 || word.All(char.IsDigit)) continue;
             var key = word.ToLowerInvariant();
-            if (Stop.Contains(key) || own.Contains(key) || IsGeneric(key)) continue;
+            if (Stop.Contains(key) || own.Contains(key) || IsGeneric(key, ignored)) continue;
             // Kept as written when the word comes again: a later capitalised spelling makes it a name.
             var token = new Token(key, word, Name: NameLike(word));
             if (!found.TryAdd(key, token) && token.Name && !found[key].Name) found[key] = token;
@@ -155,13 +237,24 @@ public static partial class TriageGroups
         return words;
     }
 
-    /// <summary>The groups among <paramref name="items"/>, the newest group first; items in no group aren't listed.</summary>
-    public static IReadOnlyList<TriageGroup> Find(IReadOnlyList<GroupCandidate> items)
+    /// <summary>The groups among <paramref name="items"/>, the newest group first; items in no group aren't listed. With
+    /// no <paramref name="options"/>, <see cref="TriageGroupOptions.Default"/>.</summary>
+    public static IReadOnlyList<TriageGroup> Find(IReadOnlyList<GroupCandidate> items, TriageGroupOptions? options = null)
     {
-        var tokens = items.Select(i => Tokens(i.Title, i.SourceName)).ToArray();
+        options ??= TriageGroupOptions.Default;
+        var window = options.Window;
+        var tokens = items.Select(i => Tokens(i.Title, i.SourceName, options.Ignored)).ToArray();
         var cves = items.Select(i => i.Cves.ToHashSet(StringComparer.OrdinalIgnoreCase)).ToArray();
-        var root = Join(items.Count, Pairs(items, tokens, cves), (a, b) => Weight(tokens[a], tokens[b], cves[a], cves[b]) > 0
-            && (items[a].At - items[b].At).Duration() <= Window);
+        // Each item's splits, by number. Two items in one split don't pair, so they never share a group: Join asks every
+        // member of one run to pair with every member of the other.
+        var splitsOf = new Dictionary<Guid, HashSet<int>>();
+        foreach (var (split, n) in options.Split.Select((s, n) => (s, n)))
+            foreach (var id in split)
+                (splitsOf.TryGetValue(id, out var of) ? of : (splitsOf[id] = [])).Add(n);
+        bool Apart(int a, int b) => splitsOf.TryGetValue(items[a].Id, out var x) && splitsOf.TryGetValue(items[b].Id, out var y) && x.Overlaps(y);
+        var pairs = Pairs(items, tokens, cves, window, Apart);
+        var linked = pairs.Select(p => (p.A, p.B)).ToHashSet();
+        var root = Join(items.Count, pairs, (a, b) => linked.Contains(a < b ? (a, b) : (b, a)));
         return Enumerable.Range(0, items.Count).GroupBy(i => root[i])
             .Select(g => g.OrderByDescending(i => items[i].At).ThenBy(i => i).ToList())
             .Where(g => g.Count >= 2 && g.Select(i => items[i].SourceId).Distinct().Count() >= 2)
@@ -174,16 +267,17 @@ public static partial class TriageGroups
             .ToList();
     }
 
-    // Every two items published within the window that have enough in common, and how much.
+    // Every two items that pair (published within the window, not split, enough in common), and how much: the cheap
+    // checks first.
     private static List<(int A, int B, int Weight, TimeSpan Gap)> Pairs(IReadOnlyList<GroupCandidate> items,
-        IReadOnlyDictionary<string, Token>[] tokens, HashSet<string>[] cves)
+        IReadOnlyDictionary<string, Token>[] tokens, HashSet<string>[] cves, TimeSpan window, Func<int, int, bool> apart)
     {
         var pairs = new List<(int A, int B, int Weight, TimeSpan Gap)>();
         for (var a = 0; a < items.Count; a++)
             for (var b = a + 1; b < items.Count; b++)
             {
                 var gap = (items[a].At - items[b].At).Duration();
-                if (gap <= Window && Weight(tokens[a], tokens[b], cves[a], cves[b]) is var weight and > 0) pairs.Add((a, b, weight, gap));
+                if (gap <= window && !apart(a, b) && Weight(tokens[a], tokens[b], cves[a], cves[b]) is var weight and > 0) pairs.Add((a, b, weight, gap));
             }
         return pairs;
     }

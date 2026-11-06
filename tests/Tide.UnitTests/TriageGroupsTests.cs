@@ -189,4 +189,143 @@ public class TriageGroupsTests
         TriageGroups.Find([]).Should().BeEmpty();
         TriageGroups.Find([Item("Binance links $6.3 billion crypto theft", "SecurityWeek", 1)]).Should().BeEmpty();
     }
+
+    // --- EP-84: splits, extra words and the window ---------------------------------------------------------------
+
+    [Fact]
+    public void TwoReportsOfOneSplit_NeverGroup()
+    {
+        var items = Polymarket();
+        TriageGroups.Find(items, new TriageGroupOptions { Split = [[items[1].Id, items[0].Id]] }).Should().BeEmpty();
+        TriageGroups.Find(items, new TriageGroupOptions { Split = [[items[0].Id, Guid.NewGuid()], [items[1].Id, Guid.NewGuid()]] })
+            .Should().ContainSingle("they're in different splits, so not split from each other");
+    }
+
+    [Fact]
+    public void ASplitReport_StillGroupsWithOthers_ButNotWithTheOneItWasSplitFrom()
+    {
+        // The Binance five, with the newest split from the oldest: every report must pair with every other, so the two
+        // can't share a group, and the other three each go with one of them.
+        var items = Binance();
+        var groups = TriageGroups.Find(items, new TriageGroupOptions { Split = [[items[1].Id, items[4].Id]] });
+
+        groups.Should().NotContain(g => g.Ids.Contains(items[1].Id) && g.Ids.Contains(items[4].Id));
+        groups.Should().Contain(g => g.Ids.Contains(items[1].Id) && g.Ids.Count >= 2, "the newest still groups with the reports it wasn't split from");
+        groups.SelectMany(g => g.Ids).Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
+    public void ASplitOfAWholeGroup_LeavesEveryReportOnItsOwn()
+    {
+        var items = Binance();
+        TriageGroups.Find(items, new TriageGroupOptions { Split = [items.Select(i => i.Id).ToList()] }).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void AReportInTwoSplits_IsKeptFromTheReportsOfBoth()
+    {
+        // The newest split once from the oldest, and again from the second oldest.
+        var items = Binance();
+        var groups = TriageGroups.Find(items, new TriageGroupOptions { Split = [[items[1].Id, items[4].Id], [items[1].Id, items[3].Id]] });
+        groups.Should().NotContain(g => g.Ids.Contains(items[1].Id) && (g.Ids.Contains(items[4].Id) || g.Ids.Contains(items[3].Id)));
+    }
+
+    [Fact]
+    public void AnExtraWord_IsIgnored_WithItsEndingsTrimmed_AsTheBuiltInOnesAre()
+    {
+        var items = new List<GroupCandidate>
+        {
+            Item("Zentrix Outage Hits Hospitals", "SecurityWeek", 1),
+            Item("Hospitals report outages after Zentrix failure", "The Record", 2),
+        };
+        TriageGroups.Find(items).Should().ContainSingle("Zentrix and hospitals are two words in common, one a name");
+
+        var options = new TriageGroupOptions { Ignored = TriageGroups.Words("hospital") };
+        TriageGroups.Find(items, options).Should().BeEmpty("hospital is ignored now, and hospitals with it, leaving only Zentrix");
+        TriageGroups.Tokens("Zentrix failures hit hospitals", "x", TriageGroups.Words("failure; hospital")).Keys.Should().Equal("zentrix");
+        TriageGroups.Tokens("Zentrix failures hit hospitals", "x").Keys.Should().Contain(["failures", "hospitals"], "without the extra words they count");
+    }
+
+    [Fact]
+    public void AHyphenatedExtraWord_IsIgnoredAsItsParts_AsHeadlinesSplitThere()
+    {
+        TriageGroups.Words("Zero-Click; ;webinar").Should().BeEquivalentTo("zero", "click", "webinar");
+        TriageGroups.Words("two words; bad!word").Should().BeEmpty("the server's configuration isn't checked, so what wouldn't pass is left out");
+    }
+
+    [Fact]
+    public void TheWindow_IsAnOption()
+    {
+        var items = new List<GroupCandidate>
+        {
+            Item("Binance links $6.3 billion crypto theft to DevOps laptop", "SecurityWeek", 0),
+            Item("Binance probes potential $5.8 billion crypto-theft", "The Record", 30),
+        };
+        TriageGroups.Find(items).Should().ContainSingle("30 hours is within the default 48");
+        TriageGroups.Find(items, new TriageGroupOptions { Window = TimeSpan.FromHours(24) }).Should().BeEmpty();
+        TriageGroups.Find(
+        [
+            Item("Binance links $6.3 billion crypto theft to DevOps laptop", "SecurityWeek", 0),
+            Item("Binance probes potential $5.8 billion crypto-theft", "The Record", 49),
+        ], new TriageGroupOptions { Window = TimeSpan.FromHours(72) }).Should().ContainSingle();
+    }
+
+    [Fact]
+    public void TheDefaults_AreTheBuiltInWordsAndFortyEightHours()
+    {
+        TriageGroupOptions.Default.Window.Should().Be(TimeSpan.FromHours(48));
+        TriageGroupOptions.Default.Ignored.Should().BeEmpty();
+        TriageGroupOptions.Default.Split.Should().BeEmpty();
+        new IntakeOptions().Grouping().Should().BeEquivalentTo(TriageGroupOptions.Default);
+        new IntakeOptions().GroupWindowHours.Should().Be(48);
+        new IntakeOptions { GroupWindowHours = 500 }.Grouping().Window.Should().Be(TimeSpan.FromHours(96), "a server value out of range is held to it");
+    }
+
+    [Fact]
+    public void TheExtraWords_AreParsedOnce_UntilTheyChange()
+    {
+        var o = new IntakeOptions { GroupIgnoredWords = "webinar" };
+        var first = o.Grouping().Ignored;
+        o.Grouping().Ignored.Should().BeSameAs(first);
+        o.GroupIgnoredWords = "webinar; roundtable";
+        o.Grouping().Ignored.Should().BeEquivalentTo("webinar", "roundtable");
+    }
+
+    [Fact]
+    public void TheBuiltInWords_AreListed_AndKnownWithTheirEndings()
+    {
+        TriageGroups.StopWords.Should().Contain(["the", "says"]).And.BeInAscendingOrder(StringComparer.Ordinal);
+        TriageGroups.GenericWords.Should().Contain(["hack", "outage"]).And.BeInAscendingOrder(StringComparer.Ordinal);
+        TriageGroups.IsBuiltIn("hackers").Should().BeTrue();
+        TriageGroups.IsBuiltIn("the").Should().BeTrue();
+        TriageGroups.IsBuiltIn("hitachi").Should().BeFalse();
+    }
+
+    [Fact]
+    public void ExtraWords_AreStoredInLowerCase_EachOnce_WithoutTheBuiltInOnes()
+    {
+        TriageGroups.NormalizeWords(" Webinar\nZero-Click; webinar ;HACKERS\n\n").Should().Be("webinar; zero-click", "hackers is built in, with its ending trimmed");
+        TriageGroups.NormalizeWords("").Should().BeEmpty();
+        TriageGroups.NormalizeWords(null).Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("supply chain", "One word to a line")]
+    [InlineData("c++", "letters, digits and hyphens only")]
+    [InlineData("webinar,roundtable", "letters, digits and hyphens only")]
+    [InlineData("-leading", "letters, digits and hyphens only")]
+    [InlineData("averyveryveryveryveryveryveryverylongword1", "longer than 40")]
+    public void ExtraWords_ThatArentOneWord_AreRefused(string text, string why)
+    {
+        var act = () => TriageGroups.NormalizeWords(text);
+        act.Should().Throw<ArgumentException>().WithMessage($"*{why}*");
+    }
+
+    [Fact]
+    public void TooManyExtraWords_AreRefused()
+    {
+        var act = () => TriageGroups.NormalizeWords(string.Join('\n', Enumerable.Range(0, TriageGroups.MaxWords + 1).Select(n => "zword" + n)));
+        act.Should().Throw<ArgumentException>().WithMessage("At most 200 extra words.");
+        TriageGroups.NormalizeWords(string.Join('\n', Enumerable.Range(0, TriageGroups.MaxWords).Select(n => "zword" + n))).Split("; ").Should().HaveCount(200);
+    }
 }

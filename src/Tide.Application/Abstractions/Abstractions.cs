@@ -66,6 +66,7 @@ public interface IAppDbContext : IAsyncDisposable, IDisposable
     DbSet<Source> Sources { get; }
     DbSet<FeedItem> FeedItems { get; }
     DbSet<FeedItemText> FeedItemTexts { get; }
+    DbSet<TriageSplit> TriageSplits { get; }
     DbSet<Story> Stories { get; }
     DbSet<CveRecord> CveRecords { get; }
     DbSet<RotationMember> RotationMembers { get; }

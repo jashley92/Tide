@@ -63,6 +63,30 @@ public sealed class IntakeOptions
 
     /// <summary><see cref="ReadSeconds"/>, as the reader takes it.</summary>
     public TimeSpan ReadBudget => TimeSpan.FromSeconds(Math.Clamp(ReadSeconds, 2, 60));
+
+    /// <summary>How far apart two reports of one event can be published for triage to group them, in hours (12 to 96).</summary>
+    public int GroupWindowHours { get; set; } = (int)TriageGroups.DefaultWindow.TotalHours;
+
+    /// <summary>Words triage's grouping ignores besides the built-in common ones ("outage; webinar"); not the intake's
+    /// duplicate check (<see cref="TitleMatch"/>).</summary>
+    public string? GroupIgnoredWords { get; set; }
+
+    /// <summary>What triage groups by: <see cref="GroupWindowHours"/> and <see cref="GroupIgnoredWords"/> (the splits are
+    /// the inbox's to add).</summary>
+    public TriageGroupOptions Grouping()
+    {
+        // The words as parsed, kept until they change: the inbox asks on every load.
+        if (_ignored is not { } kept || kept.From != GroupIgnoredWords) _ignored = kept = new(GroupIgnoredWords, TriageGroups.Words(GroupIgnoredWords));
+        return new()
+        {
+            Window = TimeSpan.FromHours(Math.Clamp(GroupWindowHours, TriageGroups.MinWindowHours, TriageGroups.MaxWindowHours)),
+            Ignored = kept.Words,
+        };
+    }
+
+    private sealed record ParsedWords(string? From, IReadOnlySet<string> Words);
+
+    private ParsedWords? _ignored;
 }
 
 public enum FetchStatus

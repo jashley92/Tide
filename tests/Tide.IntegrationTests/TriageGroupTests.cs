@@ -106,7 +106,7 @@ public class TriageGroupTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task NotTheSame_SplitsTheGroup_ForThisVisitOnly()
+    public async Task NotTheSame_SplitsTheGroup_ForEveryVisit()
     {
         const string key = "b";
         var ids = await Seed(key, 200);
@@ -115,10 +115,10 @@ public class TriageGroupTests(TideApp app) : IClassFixture<TideApp>
             await using (var r = await ComponentHarness.RenderAsync<Triage>(app, "/triage"))
             {
                 await r.HtmlOnce("Looks like one event");
-                await r.Click(t =>
+                await r.Click(async t =>
                 {
-                    t.Split(0);
-                    return t.OnTriageKey("prev");
+                    await t.Split(0);
+                    await t.OnTriageKey("prev");
                 });
                 var html = await r.Html();
                 html.Should().NotContain("tide-triage-group").And.NotContain("tide-triage-member");
@@ -126,9 +126,10 @@ public class TriageGroupTests(TideApp app) : IClassFixture<TideApp>
                 html.Should().Contain("Quorvexb hit by $6.3 billion hack").And.Contain("Quorvexb probes $5.8 billion theft");
             }
 
-            // Nothing was stored: the next visit suggests it again.
+            // It's stored (EP-84): the next visit shows the reports apart too.
             await using var again = await ComponentHarness.RenderAsync<Triage>(app, "/triage");
-            (await again.HtmlOnce("Looks like one event")).Should().Contain("Quorvexb links $6.3 billion theft");
+            (await again.HtmlOnce("Quorvexb links")).Should().NotContain("Newest: <span class=\"tide-triage-title\">“Quorvexb")
+                .And.Contain("Quorvexb hit by $6.3 billion hack");
         }
         finally { await SetAside(ids); }
     }

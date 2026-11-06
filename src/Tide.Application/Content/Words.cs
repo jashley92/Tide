@@ -10,4 +10,7 @@ public static class Words
     /// <summary>"An" before <paramref name="word"/> when it starts with a vowel, else "A", to start a sentence ("An Outreach
     /// action", "A Block action"). By the letter, not the sound, which is right for the names it's used with.</summary>
     public static string AOrAn(string word) => word.Length > 0 && "AEIOU".Contains(char.ToUpperInvariant(word[0])) ? "An" : "A";
+
+    /// <summary><paramref name="text"/> cut to at most <paramref name="max"/> characters, unmarked: for a column's length.</summary>
+    public static string Clip(string text, int max) => text.Length <= max ? text : text[..max];
 }

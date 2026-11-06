@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Tide.Application.Content;
 using Tide.Application.Metrics;
 using Tide.Domain.Entities;
 
@@ -272,11 +273,9 @@ public static partial class DetectionParsers
         foreach (var t in techniques)
         {
             if (Technique(t) is { } ok) { if (!good.Contains(ok)) good.Add(ok); }
-            else if (!string.IsNullOrWhiteSpace(t)) problems.Add($"{Clip(name, 60)}: “{Clip(t.Trim(), 20)}” isn't a technique id.");
+            else if (!string.IsNullOrWhiteSpace(t)) problems.Add($"{Words.Clip(name, 60)}: “{Words.Clip(t.Trim(), 20)}” isn't a technique id.");
         }
-        return new ParsedRule(Clip(id.Trim(), DetectionRule.MaxExternalId), Clip(name.Trim(), DetectionRule.MaxName), good,
-            platform is null ? null : Clip(platform.Trim(), DetectionRule.MaxPlatform), enabled);
+        return new ParsedRule(Words.Clip(id.Trim(), DetectionRule.MaxExternalId), Words.Clip(name.Trim(), DetectionRule.MaxName), good,
+            platform is null ? null : Words.Clip(platform.Trim(), DetectionRule.MaxPlatform), enabled);
     }
-
-    private static string Clip(string s, int max) => s.Length <= max ? s : s[..max];
 }

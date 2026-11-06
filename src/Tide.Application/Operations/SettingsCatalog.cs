@@ -121,6 +121,8 @@ public static class SettingsCatalog
         new("Intake", "Time allowed to read an article (seconds)", OperationalSettings.ReadSeconds, EditedIn: SourcesPage),
         new("Intake", "Advert selectors", OperationalSettings.AdSelectors, EditedIn: SourcesPage),
         new("Intake", "Advert labels", OperationalSettings.AdLabels, EditedIn: SourcesPage),
+        new("Intake", "How far apart two reports of one event can be (hours)", OperationalSettings.GroupWindowHours, EditedIn: SourcesPage),
+        new("Intake", "Extra words triage grouping ignores", OperationalSettings.GroupIgnoredWords, EditedIn: SourcesPage),
 
         new("CVE enrichment", "Enrichment", OperationalSettings.CveEnabled, EditedIn: SourcesPage),
         new("CVE enrichment", "Refresh (hours)", OperationalSettings.CveRefreshHours, EditedIn: SourcesPage),
