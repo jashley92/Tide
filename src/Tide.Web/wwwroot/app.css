@@ -696,21 +696,69 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 .tide-present .btn-primary { --bs-btn-color: var(--tide-slide-on-accent); --bs-btn-bg: var(--tide-slide-accent); --bs-btn-border-color: var(--tide-slide-accent); --bs-btn-hover-color: var(--tide-slide-on-accent); --bs-btn-hover-bg: var(--tide-slide-accent-hover); --bs-btn-hover-border-color: var(--tide-slide-accent-hover); }
 .tide-present .btn-outline-secondary { --bs-btn-color: var(--tide-slide-text); --bs-btn-border-color: var(--tide-slide-line-strong); --bs-btn-hover-bg: var(--tide-slide-line); --bs-btn-hover-color: var(--tide-slide-strong); --bs-btn-hover-border-color: var(--tide-slide-line-strong); --bs-btn-active-bg: var(--tide-slide-done); --bs-btn-active-color: var(--tide-slide-strong); font-size: .8em; }
 .tide-present-tools .form-select { background-color: var(--tide-slide-surface); color: var(--tide-slide-text); border-color: var(--tide-slide-line-strong); font-size: .8em; width: auto; }
-.tide-slide { overflow-y: auto; padding: 2em 4em 2.5em; }
 .tide-slide-inner { max-width: 1500px; margin: 0 auto; }
+/* Fit, then scroll. The slide is a size container: its spacing follows the room it has (cqh, cqi, in clamp()). Its type
+   follows --tide-fit, which present.js sets on the body to the largest size from 80% to 100% at which the slide fits;
+   everything in it is in em, so the metric tiles, the chart's key and the agenda shrink with it, and the charts and
+   screenshots, sized by the slide's height, by as much. Past 80% the body scrolls inside the slide: the header and the
+   footer stay put, and the page itself never scrolls. */
+html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scrollbar-gutter: auto; }
+.tide-slide { position: relative; min-height: 0; overflow: hidden; container-type: size; display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); }
+.tide-slide-body {
+    --tide-fit: 1;
+    overflow-y: auto; overscroll-behavior: contain; scroll-behavior: smooth;
+    padding: clamp(1em, 3.6cqh, 2em) clamp(1.25em, 4.5cqi, 4em) clamp(1.5em, 4.5cqh, 2.5em);
+    /* A slim scrollbar in the slides' colours, inside the slide. */
+    scrollbar-width: thin; scrollbar-color: var(--tide-slide-line-strong) transparent;
+}
+.tide-slide-body > .tide-slide-inner, .tide-slide-body > .tide-slide-cover { font-size: calc(1em * var(--tide-fit, 1)); }
+.tide-scrollfade::-webkit-scrollbar { width: 10px; }
+.tide-scrollfade::-webkit-scrollbar-track { background: transparent; }
+.tide-scrollfade::-webkit-scrollbar-thumb { background: var(--tide-slide-line-strong); border-radius: var(--tide-radius-pill); border: 2px solid transparent; background-clip: padding-box; }
+.tide-scrollfade::-webkit-scrollbar-thumb:hover { background-color: var(--tide-slide-muted); }
+.tide-scrollfade { scrollbar-width: thin; scrollbar-color: var(--tide-slide-line-strong) transparent; }
+/* The edge fades: soft, at the top and the bottom, only while there's more that way (present.js sets the classes as it
+   scrolls). The scrollbar's strip isn't faded. */
+@property --tide-fade-top { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@property --tide-fade-bottom { syntax: '<length>'; inherits: false; initial-value: 0px; }
+.tide-scrollfade {
+    --tide-fade-top: 0px; --tide-fade-bottom: 0px;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--tide-fade-top), #000 calc(100% - var(--tide-fade-bottom)), transparent 100%), linear-gradient(#000, #000);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 var(--tide-fade-top), #000 calc(100% - var(--tide-fade-bottom)), transparent 100%), linear-gradient(#000, #000);
+    -webkit-mask-size: calc(100% - 12px) 100%, 12px 100%; mask-size: calc(100% - 12px) 100%, 12px 100%;
+    -webkit-mask-position: 0 0, 100% 0; mask-position: 0 0, 100% 0;
+    -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+    transition: --tide-fade-top .2s ease, --tide-fade-bottom .2s ease;
+}
+.tide-scrollfade.is-more-above { --tide-fade-top: 3em; }
+.tide-scrollfade.is-more-below { --tide-fade-bottom: 3.5em; }
+/* "More ↓": at the bottom of the slide while there's more below; and, for a follower who scrolled by hand, the way back
+   to the presenter's place beside it. */
+.tide-slide-dock { position: absolute; left: 0; right: 0; bottom: .7em; display: flex; justify-content: center; gap: .6em; pointer-events: none; z-index: 2; }
+.tide-slide-dock > button { pointer-events: auto; display: inline-flex; align-items: center; gap: .35em; padding: .3em .95em; border-radius: var(--tide-radius-pill); font-size: .8em; line-height: 1.3; box-shadow: 0 4px 14px var(--tide-shadow-strong); }
+.tide-slide-more { display: none !important; border: 1px solid var(--tide-slide-line-strong); background: var(--tide-slide-surface); color: var(--tide-slide-text); }
+.tide-slide:has(> .tide-slide-body.is-more-below) .tide-slide-more { display: inline-flex !important; }
+.tide-slide-more:hover { border-color: var(--tide-slide-accent); color: var(--tide-slide-strong); }
+.tide-slide-back { border: 1px solid var(--tide-slide-accent); background: var(--tide-slide-accent); color: var(--tide-slide-on-accent); font-weight: var(--tide-weight-semibold); }
+.tide-slide-back:hover { background: var(--tide-slide-accent-hover); }
+.tide-slide-dock > button:focus-visible { outline: 3px solid var(--tide-slide-accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+    .tide-slide-body, .tide-scrollfade { scroll-behavior: auto; transition: none; }
+}
+@media (forced-colors: active) { .tide-scrollfade { -webkit-mask-image: none; mask-image: none; } }
 .tide-slide-kicker { display: flex; gap: .6em; align-items: center; flex-wrap: wrap; color: var(--tide-slide-muted); font-size: .85em; margin-bottom: .6em; }
 .tide-slide h2 { font-size: 2.1em; font-weight: var(--tide-weight-bold); line-height: 1.2; margin: 0 0 .5em; }
 .tide-slide-bluf { font-size: 1.25em; line-height: 1.45; border-left: 4px solid var(--tide-slide-accent); padding: .2em 0 .2em .9em; margin-bottom: 1.1em; }
 .tide-slide-threat .tide-slide-bluf { border-left-color: var(--tide-slide-threat-line); }
 .tide-slide-cols { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 2.2em; }
 .tide-slide-cols.no-shots { grid-template-columns: 1fr; }
-@media (max-width: 1000px) { .tide-slide-cols { grid-template-columns: 1fr; } .tide-slide { padding: 1.5em; } }
+@media (max-width: 1000px) { .tide-slide-cols { grid-template-columns: 1fr; } .tide-slide-body { padding: 1.5em; } }
 .tide-slide ul.tide-slide-bullets { font-size: 1.1em; line-height: 1.5; padding-left: 1.2em; }
 .tide-slide ul.tide-slide-bullets li { margin-bottom: .45em; }
 .tide-slide-section { color: var(--tide-slide-muted); text-transform: uppercase; letter-spacing: .08em; font-size: .72em; font-weight: var(--tide-weight-semibold); margin: 1.1em 0 .4em; }
 .tide-slide-shots { display: grid; gap: .8em; }
 .tide-slide-shots figure { margin: 0; background: var(--tide-slide-surface); border-radius: var(--tide-radius-lg); overflow: hidden; }
-.tide-slide-shots img { width: 100%; max-height: 52vh; object-fit: contain; display: block; cursor: zoom-in; background: var(--tide-slide-image-bg); }
+.tide-slide-shots img { width: 100%; max-height: calc(60cqh * var(--tide-fit, 1)); object-fit: contain; display: block; cursor: zoom-in; background: var(--tide-slide-image-bg); }
 .tide-slide-shots figcaption { padding: .45em .7em; color: var(--tide-slide-muted); font-size: .85em; }
 .tide-slide .tide-chip { background: var(--tide-slide-line); color: var(--tide-slide-text); font-size: .8em; }
 .tide-slide .tide-badge { --tide-badge-fg: var(--tide-slide-muted); --tide-badge-bg: var(--tide-slide-line); --tide-badge-on: var(--tide-slide-bg); }
@@ -719,8 +767,8 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 .tide-slide .tide-badge-warn { --tide-badge-fg: var(--tide-slide-warn); }
 .tide-slide .tide-badge-ok { --tide-badge-fg: var(--tide-slide-ok); }
 .tide-slide .tide-md { line-height: 1.5; }
-.tide-slide-cover { min-height: 60vh; display: grid; place-content: center; text-align: center; gap: .6em; }
-.tide-slide-cover h2 { font-size: 3em; }
+.tide-slide-cover { min-height: 70cqh; display: grid; place-content: center; text-align: center; gap: .6em; }
+.tide-slide-cover h2 { font-size: clamp(2.3em, 1em + 5cqh, 3em); }
 .tide-slide-cover .tide-cover-meta { color: var(--tide-slide-muted); font-size: 1.15em; }
 .tide-agenda { list-style: none; padding: 0; margin: 1.2em auto 0; text-align: left; max-width: 60em; font-size: 1.05em; }
 .tide-agenda li { display: flex; gap: .8em; align-items: center; padding: .45em 0; border-bottom: 1px solid var(--tide-slide-line); }
@@ -739,7 +787,7 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 .tide-present-action { position: fixed; top: 4.2em; left: 4vw; right: 4vw; bottom: 3.6em; z-index: 9; display: flex; flex-direction: column; background: var(--tide-slide-surface); border: 1px solid var(--tide-slide-line-strong); border-radius: var(--tide-radius-xl); box-shadow: 0 16px 40px var(--tide-shadow-strong); }
 .tide-present-action-head { display: flex; align-items: center; gap: .8em; padding: .8em 1.2em; border-bottom: 1px solid var(--tide-slide-line); }
 .tide-present-action-head h2 { font-size: 1.4em; font-weight: var(--tide-weight-bold); margin: 0; }
-.tide-present-action-body { overflow-y: auto; padding: 1em 1.2em 1.4em; }
+.tide-present-action-body { overflow-y: auto; overscroll-behavior: contain; padding: 1em 1.2em 1.4em; }
 .tide-present-action-cols { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 2em; margin-top: .6em; }
 @media (max-width: 1000px) { .tide-present-action-cols { grid-template-columns: 1fr; } .tide-present-action { left: .6em; right: .6em; } }
 .tide-present-action .tide-facts { margin: .8em 0 0; }
@@ -915,6 +963,7 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-mchart-key strong { font-variant-numeric: tabular-nums; }
 .tide-mchart-swatch { display: inline-block; width: .9em; height: .9em; border-radius: var(--tide-radius-xs); background: currentColor; flex: none; }
 .tide-mchart svg { display: block; width: 100%; height: auto; max-height: 36vh; overflow: visible; }
+.tide-slide .tide-mchart svg { max-height: calc(42cqh * var(--tide-fit, 1)); }
 .tide-mchart polyline { fill: none; stroke: currentColor; stroke-width: 5; stroke-linejoin: round; stroke-linecap: round; }
 .tide-mchart-dot { fill: currentColor; }
 .tide-mchart-ring { fill: none; stroke: var(--tide-slide-warn); stroke-width: 4; }
