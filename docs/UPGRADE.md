@@ -2,7 +2,7 @@
 
 How TIDE versions ship and how to move an install to a newer one. For a first install see **[INSTALL.md](INSTALL.md)**.
 
-> Development needs none of this: `git pull` and `dotnet run` against SQLite ([development.md](development.md)).
+> Development needs none of this: `git pull` and `dotnet run` against SQLite ([development/getting-started.md](development/getting-started.md)).
 
 ---
 
@@ -30,7 +30,7 @@ for a pre-release. Pre-releases never show as the latest release. A release's de
 [Notes](#notes); a pre-release without one gets GitHub's list of the pull requests merged since the previous tag.
 
 Once a release ships (a pre-release too), its migrations are fixed: databases installed from it have to keep upgrading.
-Change the schema by adding a migration ([development.md](development.md#changing-the-schema)).
+Change the schema by adding a migration ([development/recipes.md](development/recipes.md#add-an-entity-or-a-column-and-its-migration)).
 
 ### Cutting a release
 
