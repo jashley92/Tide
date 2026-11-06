@@ -292,6 +292,14 @@ public static class Ui
     /// <summary>A UTC instant in the organization's zone, e.g. "Oct 24, 9:41 AM".</summary>
     public static string When(Application.Org.OrgClock clock, DateTimeOffset utc) => clock.ToLocal(utc).ToString("MMM d, h:mm tt", System.Globalization.CultureInfo.InvariantCulture);
 
+    /// <summary>
+    /// Who saved a team library's entry (a saved query, an outreach template) and when, and who last changed it: "Saved by
+    /// Robin, Oct 24, 9:41 AM · changed by Sam, Oct 25, 2:10 PM". The names are the ones kept with it, as they were then.
+    /// </summary>
+    public static string Provenance(Application.Org.OrgClock clock, Domain.Common.AuditableEntity e, string createdByName, string? modifiedByName) =>
+        $"Saved by {createdByName}, {When(clock, e.CreatedAtUtc)}"
+        + (e.ModifiedAtUtc is { } changed ? $" · changed by {modifiedByName ?? "someone"}, {When(clock, changed)}" : "");
+
     /// <summary>A state ARIA reads as a word (aria-pressed, aria-expanded): "true" or "false". Bound to a bool, Blazor would
     /// write a bare attribute when on and drop it when off, so a toggle stops being one.</summary>
     public static string Aria(bool on) => on ? "true" : "false";

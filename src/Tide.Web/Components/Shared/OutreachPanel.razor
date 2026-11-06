@@ -56,8 +56,8 @@
                     <div class="col-md-6">
                         <label class="tide-field-label" for="ow-product">Product</label>
                         <select id="ow-product" class="form-select form-select-sm" aria-describedby="ow-product-help" @bind="ProductValue" @bind:after="Fill">
-                            <option value="">@(_products.Count == 0 ? "None named" : "None")</option>
-                            @foreach (var p in _products) { <option value="@p.Id">@p.Name</option> }
+                            <option value="">@((_products?.Count ?? 0) == 0 ? "None named" : "None")</option>
+                            @foreach (var p in _products ?? []) { <option value="@p.Id">@p.Name</option> }
                         </select>
                         <div class="form-text" id="ow-product-help">From Our stack: those the article is tagged with, or the action names.</div>
                     </div>
@@ -215,7 +215,7 @@
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
     }
 
-    private DateOnly SentOn(OutreachMessage m) => DateOnly.FromDateTime(Clock.ToLocal(m.SentAtUtc).DateTime);
+    private DateOnly SentOn(OutreachMessage m) => OutreachDates.SentOn(m.SentAtUtc, Clock);
 
     private string Waited(OutreachMessage m)
     {
@@ -236,7 +236,9 @@
     // --- writing the email ------------------------------------------------------------------------------------------
 
     private IReadOnlyList<OutreachTemplate>? _templates;
-    private IReadOnlyList<StackProduct> _products = [];
+
+    // The action's products as the writer read them when it opened, handed to each fill so it doesn't read them again.
+    private IReadOnlyList<StackProduct>? _products;
     private Guid? _templateId, _productId;
     private OutreachWritten? _written;
     private string? _to, _subject, _body;
@@ -262,11 +264,14 @@
             _written = null;
             return;
         }
-        _templates = null;
+        (_templates, _products) = (null, null);
         try
         {
-            _templates = await TemplateSvc.OfferedAsync();
-            _products = await OutreachSvc.ProductsAsync(Action.Id);
+            // Each service reads with its own short-lived context, so the two reads can run together.
+            var templates = TemplateSvc.OfferedAsync();
+            var products = OutreachSvc.ProductsAsync(Action.Id);
+            await Task.WhenAll(templates, products);
+            (_templates, _products) = (await templates, await products);
             _productId = _products.Count > 0 ? _products[0].Id : null;
             // One template: it's the one.
             if (_templates.Count == 1)
@@ -301,7 +306,7 @@
         }
         try
         {
-            _written = await OutreachSvc.WriteAsync(Action.Id, id, _productId);
+            _written = await OutreachSvc.WriteAsync(Action.Id, id, _productId, _products);
             (_to, _subject, _body) = (_written.To, _written.Draft.Subject, _written.Draft.Body);
             _productId = _written.Product?.Id;
         }
@@ -343,7 +348,8 @@
         (_replying, _replyNotes, _replyFile, _replyOutcome) = (m, null, null, ActionOutcome.None);
         _replyClose = Action.IsOpen;
         await _replyDialog.Ask($"Record the reply from {m.To}", null, "Record the reply", danger: false);
-        _replying = null;
+        // Recorded or cancelled, the dialog is closed: a file picked and not used isn't held on to.
+        (_replying, _replyFile) = (null, null);
     }
 
     /// <summary>The dialog's answers, for a test to set.</summary>
@@ -354,10 +360,11 @@
     {
         try
         {
-            using var ms = new MemoryStream();
             await using var stream = e.File.OpenReadStream(FileSvc.MaxReadBytes);
-            await stream.CopyToAsync(ms);
-            var upload = new ActionFileUpload(e.File.Name, ms.ToArray(), e.File.ContentType);
+            // Read straight into one buffer of the file's size (opening it has already refused one over the limit).
+            var bytes = new byte[e.File.Size];
+            await stream.ReadExactlyAsync(bytes);
+            var upload = new ActionFileUpload(e.File.Name, bytes, e.File.ContentType);
             FileSvc.Check([upload]);
             _replyFile = upload;
         }

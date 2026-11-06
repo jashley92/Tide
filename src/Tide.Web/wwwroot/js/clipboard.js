@@ -10,32 +10,37 @@
         setTimeout(function () { status.textContent = ''; }, 4000);
     }
 
-    function selectAndCopy(el) {
-        const range = document.createRange();
-        range.selectNodeContents(el);
-        const sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(range);
+    function isField(el) {
+        return el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement;
+    }
+
+    // Where the clipboard API isn't there or is refused: select the text and copy it the old way, a box's own text or a
+    // block's contents, and say whether that worked (with `done`) or how to do it by hand.
+    function legacyCopy(btn, el, done) {
         let ok = false;
-        try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
-        sel.removeAllRanges();
-        return ok;
+        if (isField(el)) {
+            el.focus();
+            el.select();
+            try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
+        } else {
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
+            sel.removeAllRanges();
+        }
+        say(btn, ok ? done : 'Select the text and press Ctrl+C.');
     }
 
     // A box's text as it stands, edits included (an outreach email's subject and body): plain text only.
     function copyField(btn, el) {
         const done = btn.getAttribute('data-copy-done') || 'Copied.';
-        const fallback = function () {
-            el.focus();
-            el.select();
-            let ok = false;
-            try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
-            say(btn, ok ? done : 'Select the text and press Ctrl+C.');
-        };
         if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(el.value).then(function () { say(btn, done); }, fallback);
+            navigator.clipboard.writeText(el.value).then(function () { say(btn, done); }, function () { legacyCopy(btn, el, done); });
         } else {
-            fallback();
+            legacyCopy(btn, el, done);
         }
     }
 
@@ -45,7 +50,7 @@
         const el = document.getElementById(btn.getAttribute('data-copy-target'));
         if (!el) return;
         e.preventDefault();
-        if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
+        if (isField(el)) {
             copyField(btn, el);
             return;
         }
@@ -57,9 +62,9 @@
             });
             navigator.clipboard.write([item]).then(
                 function () { say(btn, done); },
-                function () { say(btn, selectAndCopy(el) ? 'Copied.' : 'Select the text below and press Ctrl+C.'); });
+                function () { legacyCopy(btn, el, 'Copied.'); });
         } else {
-            say(btn, selectAndCopy(el) ? 'Copied.' : 'Select the text below and press Ctrl+C.');
+            legacyCopy(btn, el, 'Copied.');
         }
     });
 })();

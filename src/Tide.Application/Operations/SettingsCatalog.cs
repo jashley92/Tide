@@ -144,15 +144,16 @@ public static class SettingsCatalog
     public static bool IsSecret(string key) => Find(key)?.Kind == SettingKind.Secret || SecretMask.LooksSecret(key);
 
     /// <summary>
-    /// A key an earlier release wrote, as this one writes it, or null: Outreach's SLA target was saved under its name
-    /// before the rename (ADR 0019: "Actions:Sla:Kind:VendorInquiry"). The upgrade's migration moves saved rows; this reads a bundle
-    /// exported before it.
+    /// A key an earlier release wrote, as this one writes it, or null: a kind's SLA target was saved under its name before
+    /// a rename (<see cref="ActionService.FormerKind"/>; ADR 0019: "Actions:Sla:Kind:VendorInquiry"). The upgrade's
+    /// migration moves saved rows; this reads a bundle exported before it.
     /// </summary>
     public static string? Renamed(string key) =>
-        string.Equals(key, FormerOutreachSla, StringComparison.OrdinalIgnoreCase) ? "Actions:Sla:Kind:" + ActionKind.Outreach : null;
+        key.StartsWith(SlaKindPrefix, StringComparison.OrdinalIgnoreCase) && ActionService.FormerKind(key[SlaKindPrefix.Length..]) is { } kind
+            ? SlaKindPrefix + kind
+            : null;
 
-    /// <summary>Outreach's SLA setting key before the rename.</summary>
-    public const string FormerOutreachSla = "Actions:Sla:Kind:" + ActionService.FormerOutreachName;
+    private const string SlaKindPrefix = "Actions:Sla:Kind:";
 
     /// <summary>Whether a saved setting row is one an administrator sets (and so travels in a configuration bundle), as
     /// opposed to the app's own bookkeeping (when CVE data was last refreshed).</summary>

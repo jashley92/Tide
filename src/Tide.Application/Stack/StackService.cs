@@ -89,8 +89,11 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
     internal static async Task<IReadOnlyList<StackEntry>> EntriesAsync(IAppDbContext db, CancellationToken ct) =>
         (await InUseAsync(db, ct)).Select(Entry).ToList();
 
-    private static Task<List<StackProduct>> InUseAsync(IAppDbContext db, CancellationToken ct) =>
-        db.StackProducts.AsNoTracking().Where(p => !p.IsRetired).OrderByName(p => p.Name).ToListAsync(ct);
+    private static Task<List<StackProduct>> InUseAsync(IAppDbContext db, CancellationToken ct) => InUse(db).ToListAsync(ct);
+
+    /// <summary>The products still in use, by name: the order matching tries them in.</summary>
+    internal static IQueryable<StackProduct> InUse(IAppDbContext db) =>
+        db.StackProducts.AsNoTracking().Where(p => !p.IsRetired).OrderByName(p => p.Name);
 
     public static StackEntry Entry(StackProduct p) => new(p.Id, p.Name, [p.Name, .. SplitNames(p.OtherNames)]);
 

@@ -95,12 +95,10 @@ public sealed class OutreachTemplateService(IAppDbContextFactory dbs, ICurrentUs
         var name = ArticleService.Clean(form.Name, OutreachTemplate.MaxName);
         if (name.Length == 0) throw new ArgumentException("A template needs a name.");
         var description = ArticleService.CleanOrNull(form.Description, OutreachTemplate.MaxDescription);
-        var subject = (form.Subject ?? "").ReplaceLineEndings(" ").Trim();
-        if (subject.Length == 0) throw new ArgumentException("A template needs a subject.");
-        if (subject.Length > OutreachTemplate.MaxSubject) throw new ArgumentException($"A subject can be at most {OutreachTemplate.MaxSubject} characters.");
-        var body = (form.Body ?? "").Replace("\r\n", "\n").Trim();
-        if (body.Length == 0) throw new ArgumentException("A template needs a body.");
-        if (body.Length > OutreachTemplate.MaxBody) throw new ArgumentException($"A body can be at most {OutreachTemplate.MaxBody:N0} characters.");
+        var subject = OutreachFill.CleanSubject(form.Subject, OutreachTemplate.MaxSubject,
+            "A template needs a subject.", $"A subject can be at most {OutreachTemplate.MaxSubject} characters.");
+        var body = OutreachFill.CleanBody(form.Body, OutreachTemplate.MaxBody,
+            "A template needs a body.", $"A body can be at most {OutreachTemplate.MaxBody:N0} characters.");
         // A placeholder misspelt is refused now, not when an email is written from it.
         OutreachFill.Check(subject);
         OutreachFill.Check(body);
@@ -162,10 +160,13 @@ public sealed class OutreachTemplateService(IAppDbContextFactory dbs, ICurrentUs
     {
         await using var db = await dbs.CreateAsync(ct);
         var t = await db.OutreachTemplates.FirstOrDefaultAsync(x => x.Id == id, ct);
-        // One rule (CanDelete), applied to one that's gone too, as if it were their own: whoever could delete their own is
-        // let by (it's gone, as asked), and anyone else is refused as for any other.
-        if (!CanDelete(t is null ? user.UserId : t.CreatedBy)) throw new ForbiddenException("Only the person who saved it, or an administrator, can delete a template. Retire it instead.");
-        if (t is null) return;
+        if (t is null)
+        {
+            // Already gone, as asked: whoever could delete one they saved is let by, and anyone else is refused as for any other.
+            if (!CanDelete(user.UserId)) throw new ForbiddenException(NotTheirs);
+            return;
+        }
+        if (!CanDelete(t)) throw new ForbiddenException(NotTheirs);
         db.OutreachTemplates.Remove(t);
         try { await db.SaveChangesAsync(ct); }
         // Someone deleted it first: it's gone, as asked.
@@ -174,6 +175,7 @@ public sealed class OutreachTemplateService(IAppDbContextFactory dbs, ICurrentUs
 
     private const string Stale = "Someone else changed this template since you opened it. Reload to see their changes.";
     private const string Refusal = "Only people who work actions can change the outreach templates.";
+    private const string NotTheirs = "Only the person who saved it, or an administrator, can delete a template. Retire it instead.";
 
     // A save that lost the race to another edit (the version moved under it) is refused as stale, not as a database error.
     private static async Task SaveEditAsync(IAppDbContext db, CancellationToken ct)

@@ -140,16 +140,9 @@ else
         _shown = (_rows ?? []).Where(r => OutreachTemplateService.Matches(r.Template, words)).ToList();
     }
 
-    private string Provenance(OutreachTemplate t) => $"Saved by {t.CreatedByName}, {Ui.When(Clock, t.CreatedAtUtc)}"
-        + (t.ModifiedAtUtc is { } changed ? $" · changed by {t.ModifiedByName ?? "someone"}, {Ui.When(Clock, changed)}" : "");
+    private string Provenance(OutreachTemplate t) => Ui.Provenance(Clock, t, t.CreatedByName, t.ModifiedByName);
 
     private static string Used(int emails) => emails == 0 ? "Not used yet" : $"Used for {Ui.Plural(emails, "email")}";
-
-    private string CeilingValue
-    {
-        get => _form?.Ceiling.ToString() ?? "";
-        set { if (_form is not null && Enum.TryParse<TlpLevel>(value, out var tlp) && Enum.IsDefined(tlp)) _form.Ceiling = tlp; }
-    }
 
     private RenderFragment EditForm => __builder =>
     {
@@ -161,9 +154,7 @@ else
             </div>
             <div class="col-md-3">
                 <label class="tide-field-label" for="ot-f-ceiling">Highest TLP it carries</label>
-                <select id="ot-f-ceiling" class="form-select form-select-sm" aria-describedby="ot-f-ceiling-help" @bind="CeilingValue">
-                    @foreach (var level in Enum.GetValues<TlpLevel>()) { <option value="@level">@Tlp.Label(level)</option> }
-                </select>
+                <TlpSelect @bind-Value="f.Ceiling" Id="ot-f-ceiling" DescribedBy="ot-f-ceiling-help" Label="Highest TLP it carries" />
                 <div class="form-text" id="ot-f-ceiling-help">Parts above it are left out. CLEAR or GREEN for outside the organization.</div>
             </div>
             <div class="col-md-3">
