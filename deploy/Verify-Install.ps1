@@ -47,6 +47,15 @@ function Get-Status([string] $u, [switch] $UseDefaultCredentials) {
 
 . (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'lib\TideWebSockets.ps1')
 $wsFix = Get-TideWebSocketFixText
+$warned = 0
+$elevated = Test-TideElevated
+function Warn([string] $what) { Write-Host "  [WARN] $what" -ForegroundColor Yellow; $script:warned++ }
+function Report-Checked([bool] $ok, [bool] $checked, [string] $warning, [string] $what, [string] $fix) {
+    # A check that couldn't read what it checks is a warning, not an OK; elevated, where it should have read it, a failure.
+    if (-not $ok -or $checked) { Report $ok $what $fix }
+    elseif ($elevated) { Report $false $what ($warning -replace ': run elevated to check it\.$', ', although this runs elevated.') }
+    else { Warn $warning }
+}
 $base = $Url.TrimEnd('/')
 Write-Host "Checking TIDE at $base" -ForegroundColor Cyan
 
@@ -61,12 +70,13 @@ if (Get-Module -ListAvailable WebAdministration) {
     # WebSockets: the feature, then whether IIS has them on where TIDE answers (the site, or the application under it
     # that the URL's path names).
     $iisPath = Resolve-TideIisPath $SiteName ([Uri]$Url).AbsolutePath
-    $physical = try { [Environment]::ExpandEnvironmentVariables((Get-ItemProperty "IIS:\Sites\$($iisPath.Replace('/', '\'))" -Name physicalPath)) } catch { $null }
+    $physical = Get-TideIisPhysicalPath $iisPath
+    if (-not $physical) { Warn "Couldn't read the folder IIS serves '$iisPath' from, so its web.config wasn't checked for <webSocket enabled=""false"" />." }
     $ws = Test-TideWebSockets -IisPath $iisPath -SitePath $physical
     $feature = $ws.Feature
     $featureState = if ($feature.Installed) { 'installed' } elseif ($null -eq $feature.Installed) { "unreadable: $($feature.Detail)" } else { 'not installed' }
-    Report $ws.FeatureOk "The IIS WebSocket Protocol feature ($($feature.Name)) is installed (it's $featureState)" "$($feature.InstallCommand); $wsFix"
-    Report $ws.ConfigOk "WebSockets are on for '$iisPath' (system.webServer/webSocket: $($ws.Config.Effective))" "$($ws.ConfigProblems -join ' ') $wsFix"
+    Report-Checked $ws.FeatureOk $ws.FeatureChecked $ws.FeatureWarning "The IIS WebSocket Protocol feature ($($feature.Name)) is installed (it's $featureState)" "$($feature.InstallCommand); $wsFix"
+    Report-Checked $ws.ConfigOk $ws.ConfigChecked $ws.ConfigWarning "WebSockets are on for '$iisPath' (system.webServer/webSocket: $($ws.Config.Effective))" "$($ws.ConfigProblems -join ' ') $wsFix"
 }
 
 Report ((Get-Status "$base/health/live") -eq 200) "The app answers (/health/live)" "500.30/500.37: read the Application event log and stdout logs"
@@ -84,4 +94,5 @@ if (-not $SkipWebSocketHandshake) {
 }
 
 if ($failed -gt 0) { Write-Host "$failed check(s) failed." -ForegroundColor Red; exit 1 }
+if ($warned -gt 0) { Write-Host "All checks passed, with $warned warning(s): see [WARN] above." -ForegroundColor Yellow; exit 0 }
 Write-Host "All checks passed." -ForegroundColor Green

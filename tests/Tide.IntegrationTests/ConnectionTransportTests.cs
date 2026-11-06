@@ -44,6 +44,9 @@ public sealed class TestHub : Hub
     /// <summary>Named as Blazor's hub method that starts a circuit.</summary>
     public static void StartCircuit() { /* invoked only through the filter */ }
 
+    /// <summary>Named as Blazor's hub method that hands a page's components over, which brings a new circuit's connection up.</summary>
+    public static void UpdateRootComponents() { /* invoked only through the filter */ }
+
     /// <summary>Any other hub method (a browser event, a JS interop call).</summary>
     public static void Ping() { /* invoked only through the filter */ }
 }
@@ -110,7 +113,18 @@ public class ConnectionTransportUnitTests
         var hub = typeof(CircuitHandler).Assembly.GetType("Microsoft.AspNetCore.Components.Server.ComponentHub", throwOnError: true)!;
         var methods = hub.GetMethods(BindingFlags.Public | BindingFlags.Instance).Select(m => m.Name).ToHashSet();
         TransportHubFilter.CircuitMethods.Should().BeSubsetOf(methods, "a rename in Blazor would leave circuits without their transport");
-        TransportHubFilter.CircuitMethods.Should().Contain(["StartCircuit", "ConnectCircuit"]);
+        TransportHubFilter.CircuitMethods.Should().Contain(["StartCircuit", "UpdateRootComponents", "ConnectCircuit"]);
+    }
+
+    [Fact]
+    public async Task ANewCircuit_KeepsTheTransport_ItsFirstUpdateRootComponentsRanOver()
+    {
+        // Blazor calls a new circuit's OnConnectionUpAsync from its first UpdateRootComponents (the page handing over its
+        // components), not from StartCircuit: with only StartCircuit's transport ambient, every live page showed "Unknown".
+        var circuit = new PresenceCircuit(new Presence());
+        await InHubMethod(HttpTransportType.LongPolling, () => circuit.OnConnectionUpAsync(null!, CancellationToken.None),
+            method: typeof(TestHub).GetMethod(nameof(TestHub.UpdateRootComponents)));
+        circuit.Transport.Should().Be(HttpTransportType.LongPolling);
     }
 
     [Fact]

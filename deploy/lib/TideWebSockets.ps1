@@ -52,18 +52,19 @@ function Get-TideWebSocketFeature {
         }
     }
     $k = $kinds[$Kind]
-    $installed = $null; $detail = $null
+    $installed = $null; $detail = $null; $byFile = $false
     try {
         $installed = & $k.Read $k.Name
         if ($null -eq $installed) { $detail = "$($k.Cmdlet) doesn't know $($k.Name)." }
     } catch { $detail = $_.Exception.Message }
     # The cmdlets need elevation (Get-WindowsOptionalFeature) or ServerManager: without them, the feature's module file
-    # tells, which IIS puts in inetsrv only when the feature is installed.
+    # tells, which IIS puts in inetsrv only when the feature is installed. JudgedByFile says the cmdlet couldn't check.
     if ($null -eq $installed) {
         $installed = Test-TideWebSocketModuleFile
+        $byFile = $true
         $detail = "judged by iiswsock.dll, as $($k.CheckCommand) couldn't run: $detail"
     }
-    return [pscustomobject]@{ Kind = $Kind; Name = $k.Name; Installed = $installed; InstallCommand = $k.InstallCommand; CheckCommand = $k.CheckCommand; Detail = $detail }
+    return [pscustomobject]@{ Kind = $Kind; Name = $k.Name; Installed = $installed; InstallCommand = $k.InstallCommand; CheckCommand = $k.CheckCommand; Detail = $detail; JudgedByFile = $byFile }
 }
 
 function Test-TideWebSocketModuleFile {
@@ -116,15 +117,18 @@ function Read-TideWebSocketSetting([string] $Location) {
 
 function Get-TideWebSocketConfig {
     # Where WebSockets are turned on or off for TIDE: server-wide, at the site (or application) in applicationHost.config,
-    # and in the site's own web.config. Each 'true', 'false' or $null (not set, or unreadable). Effective is what IIS
-    # uses: web.config over the site's entry, over the server's; 'true' when nothing sets it (the schema's default).
+    # and in the site's own web.config. Server and Site are 'true' or 'false' (IIS answers with the schema's default when
+    # nothing sets it), or $null when applicationHost.config couldn't be read: unelevated, or without the feature, whose
+    # schema the section comes with. WebConfig is $null when the file doesn't set it. Readable says applicationHost.config
+    # answered. Effective is what IIS uses: web.config over the site's entry, over the server's; $null when unknown.
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)] [string] $IisPath, [string] $SitePath)
     $server = Read-TideWebSocketSetting
     $site = Read-TideWebSocketSetting -Location $IisPath
     $webConfig = if ($SitePath) { Get-TideWebConfigWebSocket ([IO.Path]::Combine($SitePath, 'web.config')) } else { $null }
-    $effective = if ($webConfig) { $webConfig } elseif ($site) { $site } elseif ($server) { $server } else { 'true' }
-    return [pscustomobject]@{ Server = $server; Site = $site; WebConfig = $webConfig; Effective = $effective }
+    $readable = ($null -ne $server -or $null -ne $site)
+    $effective = if ($webConfig) { $webConfig } elseif ($site) { $site } elseif ($server) { $server } else { $null }
+    return [pscustomobject]@{ Server = $server; Site = $site; WebConfig = $webConfig; Readable = $readable; Effective = $effective }
 }
 
 function Get-TideWebSocketVerdict {
@@ -153,18 +157,57 @@ function Test-TideWebSockets {
     # The WebSocket check the scripts share: the IIS feature (unless -SkipFeature) and, given -IisPath, whether IIS has
     # them on where TIDE answers. Returns Feature and Config (Get-TideWebSocketFeature's and Get-TideWebSocketConfig's,
     # $null when not checked), and Get-TideWebSocketVerdict's judgement of each and of both: FeatureOk and
-    # FeatureProblems, ConfigOk and ConfigProblems, Ok and Problems (the feature's first).
+    # FeatureProblems, ConfigOk and ConfigProblems, Ok and Problems (the feature's first). FeatureChecked and
+    # ConfigChecked are $false when that part couldn't be read (its Ok then means only that nothing wrong was seen), with
+    # FeatureWarning and ConfigWarning saying so; Warnings lists both.
     [CmdletBinding()]
     param([string] $IisPath, [string] $SitePath, [switch] $SkipFeature)
     $feature = if ($SkipFeature) { $null } else { Get-TideWebSocketFeature }
     $config = if ($IisPath) { Get-TideWebSocketConfig -IisPath $IisPath -SitePath $SitePath } else { $null }
     $f = Get-TideWebSocketVerdict -Feature $feature
     $c = Get-TideWebSocketVerdict -Config $config
-    return [pscustomobject]@{
-        Feature = $feature; FeatureOk = $f.Ok; FeatureProblems = @($f.Problems)
-        Config = $config; ConfigOk = $c.Ok; ConfigProblems = @($c.Problems)
-        Ok = ($f.Ok -and $c.Ok); Problems = @($f.Problems) + @($c.Problems)
+    $featureChecked = -not ($feature -and $feature.JudgedByFile)
+    $featureWarning = if ($featureChecked) { $null } else {
+        "Couldn't check the IIS WebSocket Protocol feature ($($feature.Name)) with $($feature.CheckCommand), so it was judged by iiswsock.dll: run elevated to check it."
     }
+    $configChecked = -not $config -or $config.Readable -or [bool]$config.WebConfig
+    $configWarning = if ($configChecked) { $null } else {
+        "Couldn't check whether WebSockets are on for '$IisPath' (system.webServer/webSocket in applicationHost.config couldn't be read): run elevated to check it."
+    }
+    return [pscustomobject]@{
+        Feature = $feature; FeatureOk = $f.Ok; FeatureProblems = @($f.Problems); FeatureChecked = $featureChecked; FeatureWarning = $featureWarning
+        Config = $config; ConfigOk = $c.Ok; ConfigProblems = @($c.Problems); ConfigChecked = $configChecked; ConfigWarning = $configWarning
+        Ok = ($f.Ok -and $c.Ok); Problems = @($f.Problems) + @($c.Problems)
+        Warnings = @(@($featureWarning, $configWarning) | Where-Object { $_ })
+    }
+}
+
+function Test-TideElevated {
+    # Whether this PowerShell runs as an administrator (elevated); $false where that can't be told (not Windows).
+    try {
+        $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+        return (New-Object Security.Principal.WindowsPrincipal($id)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch { return $false }
+}
+
+function ConvertTo-TideIisText($Value, [string] $Name) {
+    # An IIS provider answer as plain text: the bare string, a ConfigurationAttribute's .Value, or a property bag's
+    # <Name> (Get-ItemProperty -Name answers each way, by provider and version). $null when there is none.
+    if ($null -eq $Value) { return $null }
+    if ($Name -and $Value.PSObject.Properties[$Name]) { $Value = $Value.$Name }
+    if ($null -ne $Value -and $Value -isnot [string] -and $Value.PSObject.Properties['Value']) { $Value = $Value.Value }
+    $text = [string]$Value
+    if ($text) { return $text }
+    return $null
+}
+
+function Get-TideIisPhysicalPath([string] $IisPath) {
+    # The folder IIS serves the site or application ('Intranet/tide') from, environment variables expanded, or $null
+    # when IIS doesn't say.
+    try { $v = Get-ItemProperty "IIS:\Sites\$($IisPath.Replace('/', '\'))" -Name physicalPath -ErrorAction Stop } catch { return $null }
+    $text = ConvertTo-TideIisText $v 'physicalPath'
+    if (-not $text) { return $null }
+    return [Environment]::ExpandEnvironmentVariables($text)
 }
 
 function Resolve-TideIisPath([string] $SiteName, [string] $AppPath) {

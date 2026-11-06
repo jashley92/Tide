@@ -44,10 +44,14 @@ public static class ConnectionTransport
 /// </summary>
 public sealed class TransportHubFilter(TransportCounts counts) : IHubFilter
 {
-    /// <summary>Blazor's hub methods that start, reconnect or resume a circuit. Every other call passes straight through.</summary>
+    /// <summary>
+    /// Blazor's hub methods that start, reconnect or resume a circuit. Every other call passes straight through. A new
+    /// circuit's <c>OnConnectionUpAsync</c> runs in its first <c>UpdateRootComponents</c> (when the page hands over its
+    /// components), not in <c>StartCircuit</c>, which only creates the circuit.
+    /// </summary>
     internal static readonly IReadOnlySet<string> CircuitMethods = new HashSet<string>(StringComparer.Ordinal)
     {
-        "StartCircuit", "ConnectCircuit", "ResumeCircuit",
+        "StartCircuit", "UpdateRootComponents", "ConnectCircuit", "ResumeCircuit",
     };
 
     private static readonly AsyncLocal<HttpTransportType?> Ambient = new();
