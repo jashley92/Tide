@@ -169,6 +169,41 @@ public class RotationServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Undo_OfAChangePartlyPast_GivesBackOnlyTheDaysToCome()
+    {
+        await Roster();
+        await _db.Rotation().SetWeekAsync(_week1, Me);
+        As(Me);
+        var change = await _db.Rotation().RequestAsync(new RotationRequest { PartnerId = Robin, GiveFrom = _week1, GiveTo = _week1.AddDays(4) });
+        As(Robin);
+        await _db.Rotation().ApproveAsync(change.Id);
+
+        var wednesday = Later(days: 2);
+        As(Me, AppRole.Admin);
+        await _db.Rotation(wednesday).CancelAsync(change.Id);
+
+        var days = await _db.Rotation(wednesday).CalendarAsync(_week1, _week1.AddDays(4));
+        // Monday and Tuesday were Robin's to present; only the days to come go back.
+        days.Select(d => d.AnalystId).Should().Equal(Robin, Robin, Me, Me, Me);
+    }
+
+    [Fact]
+    public async Task Undo_OfAChangeWhoseDaysAllPassed_IsRefused_AsThePageDoesNotOfferIt()
+    {
+        await Roster();
+        await _db.Rotation().SetWeekAsync(_week1, Me);
+        As(Me);
+        var change = await _db.Rotation().RequestAsync(new RotationRequest { PartnerId = Robin, GiveFrom = _week1, GiveTo = _week1.AddDays(1) });
+        As(Robin);
+        await _db.Rotation().ApproveAsync(change.Id);
+
+        As(Me, AppRole.Admin);
+        var tooLate = () => _db.Rotation(Later(days: 9)).CancelAsync(change.Id);
+        await tooLate.Should().ThrowAsync<InvalidOperationException>().WithMessage("*nothing to undo*");
+        (await _db.Rotation(Later(days: 9)).CalendarAsync(_week1, _week1)).Single().AnalystId.Should().Be(Robin);
+    }
+
+    [Fact]
     public async Task Approval_OfTwoRequestsForTheSameDay_AtTheSameMoment_LetsOnlyOneThrough()
     {
         await Roster();

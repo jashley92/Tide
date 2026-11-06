@@ -39,7 +39,8 @@ public class PresentMidMeetingTests(MeetingClockApp app) : IClassFixture<Meeting
     private static readonly SignIn Robin = new("dev:midmeeting-robin", "Robin Analyst", "Analyst");
     private static readonly SignIn Owner = new("dev:midmeeting-owner", "Olive Owner", "ActionOwner");
 
-    private DateOnly Today => app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;
+    // Read once: a test that straddles midnight mustn't see two days.
+    private DateOnly Today { get; } = app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;
     private LiveMeetings Meetings => app.Services.GetRequiredService<LiveMeetings>();
 
     private sealed record Setup(DateOnly Day, Guid Brief, Guid First, Guid Product, string Name);

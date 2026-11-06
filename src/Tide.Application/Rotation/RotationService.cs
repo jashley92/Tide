@@ -476,6 +476,8 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
         else if (change.Status == RotationChangeStatus.Approved)
         {
             if (!user.Has(Permission.Administer)) throw new ForbiddenException("Only an administrator can undo an approved change.");
+            if (change.GiveTo < clock.Today && (change.TakeTo ?? DateOnly.MinValue) < clock.Today)
+                throw new InvalidOperationException("Every day in this change has passed, so there's nothing to undo.");
             await RestoreDaysAsync(db, change, ct);
         }
         else return;
@@ -484,10 +486,11 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
     }
 
     // The days an approved change held go back to what they were: the latest other approved change that still covers the
-    // day (this one may have been layered on it), else the weekly rota.
+    // day (this one may have been layered on it), else the weekly rota. A day that has passed stays with whoever had it.
     private async Task RestoreDaysAsync(IAppDbContext db, RotationChange change, CancellationToken ct)
     {
-        var held = await db.RotationOverrides.Where(o => o.ChangeId == change.Id).ToListAsync(ct);
+        var today = clock.Today;
+        var held = await db.RotationOverrides.Where(o => o.ChangeId == change.Id && o.Date >= today).ToListAsync(ct);
         if (held.Count == 0) return;
         var first = held.Min(o => o.Date);
         var last = held.Max(o => o.Date);
