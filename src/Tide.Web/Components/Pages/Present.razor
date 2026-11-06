@@ -21,6 +21,7 @@
 @inject LiveMeetings Meetings
 @inject PresenceCircuit Circuit
 @inject Tide.Application.Stack.StackService StackSvc
+@inject PrerenderHandoff Handoff
 @implements IAsyncDisposable
 
 <PageTitle>Presenting @Ui.ShortDay(_date) · TIDE</PageTitle>
@@ -823,6 +824,10 @@ else
             _loaded = _interactive;
             return;
         }
+        // The first interactive draw starts from the slides the prerender read, so a reload doesn't flash "Loading" over
+        // them; they're read again below, quietly, and the meeting is joined once the page is live, as ever.
+        if (Handoff.Take<Present>(PrerenderedState, CurrentUser.UserId) is { } prerendered && prerendered._day == day) Adopt(prerendered);
+        PrerenderedState = null;
         try
         {
             // Read in full before anything is shown, and dropped if the address moved on meanwhile.
@@ -859,7 +864,28 @@ else
             if (Day != day) return;
             _failed = _brief is null;
             Toasts.Error(UserFacingError.For(ex));
+            _loaded = true;
+            return;
         }
+        _loaded = true;
+        if (!RendererInfo.IsInteractive) PrerenderedState = Handoff.Keep(CurrentUser.UserId, this);
+    }
+
+    /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.</summary>
+    [PersistentState]
+    public string? PrerenderedState { get; set; }
+
+    // Takes what the prerendered page read, so the first interactive draw is the prerendered page again. Not its seat,
+    // view of the meeting or live subscriptions: those were the prerender's, and it's gone. The meeting as it is now is
+    // read here instead, so a follower sees the slides rather than "No meeting going on" until the page is live.
+    private void Adopt(Present p)
+    {
+        _stackOf = p._stackOf;
+        (_publicMax, _teamMax, _brief, _metrics, _open, _canCreate, _teams, _teamsByKind, _actions, _cves, _canPresent, _record) =
+            (p._publicMax, p._teamMax, p._brief, p._metrics, p._open, p._canCreate, p._teams, p._teamsByKind, p._actions, p._cves, p._canPresent, p._record);
+        (_canWork, _canNote, _qaTeam, _past, _heldAt) = (p._canWork, p._canNote, p._qaTeam, p._past, p._heldAt);
+        Seen();
+        Refresh();
         _loaded = true;
     }
 

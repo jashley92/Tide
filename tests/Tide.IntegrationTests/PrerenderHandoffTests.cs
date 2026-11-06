@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 using Tide.Application.Actions;
+using Tide.Application.Org;
 using Tide.Web.Services;
 
 namespace Tide.IntegrationTests;
@@ -129,5 +130,16 @@ public class PrerenderHandoffTests
 
         html.Should().Contain("id=\"a-title\"").And.Contain("From the SLA target.");
         handoff.Count.Should().Be(before + 2, "the page keeps its form, and the editor what it read for it");
+    public async Task PresentsPrerender_KeepsTheSlidesItRead_ForItsInteractiveRender()
+    {
+        using var app = new TideApp();
+        var handoff = app.Services.GetRequiredService<PrerenderHandoff>();
+        var day = app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;
+        var before = handoff.Count;
+
+        var html = await app.CreateClient().GetStringAsync($"/present/{day:yyyy-MM-dd}");
+
+        html.Should().Contain("tide-cover-meta").And.NotContain("Loading the brief");
+        handoff.Count.Should().Be(before + 1, "the prerender kept its slides for the circuit to start from");
     }
 }
