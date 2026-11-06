@@ -1,0 +1,65 @@
+@* An article's indicators, opened over its slide in present mode from the slide's "N indicators" button: every one the
+   team edition carries, by type, defanged as the email shows them, with their notes. Team edition only (ADR 0005):
+   Present draws it only there. *@
+@using Tide.Application.Briefs
+@using Tide.Application.Indicators
+
+@{ var a = Article.Article; }
+@* A region, not a dialog, like the product's card: present.js keeps the keys, so Esc closes it. *@
+<section class="tide-present-action tide-present-product tide-present-iocs" aria-labelledby="present-iocs-title">
+    <div class="tide-present-action-head">
+        <h2 id="present-iocs-title"><span class="tide-present-product-kicker">Indicators</span> @a.Title</h2>
+        @if (Kicker is not null) { <span class="tide-present-help">@Kicker</span> }
+        @if (Links)
+        {
+            <a class="btn btn-sm btn-outline-secondary ms-auto" href="@($"articles/{a.Id}")" target="_blank" rel="noopener">Open the article</a>
+        }
+        @if (CanClose)
+        {
+            <button type="button" class="btn btn-sm btn-outline-secondary" aria-label="Close the indicators" title="Close (Esc)" @ref="_close" @onclick="Close"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+        }
+    </div>
+    <div class="tide-present-action-body tide-scrollfade">
+        @foreach (var group in Article.Indicators.GroupBy(i => i.Type).OrderBy(g => g.Key))
+        {
+            <div class="tide-slide-section">@IndicatorLabels.For(group.Key) (@group.Count())</div>
+            <ul class="tide-present-iocs-list">
+                @foreach (var ind in group)
+                {
+                    <li @key="ind.Id"><span class="tide-data">@IndicatorLabels.Shown(ind.Type, ind.Value)</span>
+                        @if (!string.IsNullOrWhiteSpace(ind.Note)) { <span class="tide-present-help">@ind.Note</span> }</li>
+                }
+            </ul>
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public EditionArticle Article { get; set; } = default!;
+
+    /// <summary>A word on whose it is: "Shown to everyone following", "Tester is showing this".</summary>
+    [Parameter] public string? Kicker { get; set; }
+
+    /// <summary>Whether this page may close it: not a follower held by the presenter's lock.</summary>
+    [Parameter] public bool CanClose { get; set; } = true;
+
+    /// <summary>Takes focus once drawn: this page opened it.</summary>
+    [Parameter] public bool Autofocus { get; set; }
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>Whether it links to the article: not for a Visitor, who sees the indicators only in the meeting.</summary>
+    [Parameter] public bool Links { get; set; } = true;
+
+    private ElementReference _close;
+    private Guid? _focused;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!Autofocus || !CanClose || _focused == Article.Article.Id) return;
+        _focused = Article.Article.Id;
+        await _close.TryFocusAsync(orGone: true);
+    }
+
+    private Task Close() => CanClose ? OnClose.InvokeAsync() : Task.CompletedTask;
+}

@@ -12,8 +12,9 @@ public sealed record RaisedHand(string UserId, string Name, Guid? ArticleId, Dat
 /// <see cref="Locked"/>: the presenter has everyone following, with no browsing off. <see cref="SlideKey"/> says what
 /// the presenter's slide is ("article:{id}", "wrap", …), so a page whose slides number differently (an open-actions slide
 /// it hasn't loaded yet) still goes to the same one. <see cref="Action"/>: the action the presenter has open over their
-/// slide (its number), which those following see with them; <see cref="Product"/>, likewise, the Our stack product whose
-/// card the presenter has open over an article's slide (team edition only). One of the two at most is open.
+/// slide (its number), which those following see with them; <see cref="Product"/>, likewise, the card the presenter has
+/// open over an article's slide (team edition only): an Our stack product's (its id), or the article's indicators (the
+/// article's id). One of the two at most is open.
 /// <see cref="Scroll"/>: how far down their slide the presenter has scrolled, as a fraction of the way (0 the top, 1 the
 /// bottom), so a page that joins late lands where they are.
 /// </summary>
