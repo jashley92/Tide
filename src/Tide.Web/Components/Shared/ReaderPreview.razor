@@ -19,6 +19,7 @@
 @inject ICurrentUser CurrentUser
 @inject ToastService Toasts
 @inject IJSRuntime JS
+@inject PrerenderHandoff Handoff
 @implements IAsyncDisposable
 
 <section class="tide-card tide-reader" aria-labelledby="reader-h">
@@ -190,7 +191,28 @@
     private (Guid Id, string Name)? SuggestedStory =>
         _storyId is null && _work?.Articles.FirstOrDefault(a => a.StoryId is not null) is { StoryId: { } id, StoryName: { } name } ? (id, name) : null;
 
-    protected override async Task OnInitializedAsync() => (_publicMax, _teamMax) = await Distribution.GetAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        // The first interactive draw is the prerendered preview again, not an empty card; the actions and related work
+        // are then read again (OnParametersSetAsync), quietly.
+        if (Handoff.Take<ReaderPreview>(PrerenderedState, CurrentUser.UserId) is { } prerendered
+            && prerendered._actionsFor == State.Article.Id && prerendered.EditionKey == EditionKey)
+            Adopt(prerendered);
+        PrerenderedState = null;
+        (_publicMax, _teamMax) = await Distribution.GetAsync();
+    }
+
+    /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.</summary>
+    [PersistentState]
+    public string? PrerenderedState { get; set; }
+
+    // Takes what the prerendered preview read and built, but not which article its actions were read for: left unset,
+    // they're read again.
+    private void Adopt(ReaderPreview p)
+    {
+        (_publicMax, _teamMax, _actions, _canWrite, _storyId, _work) = (p._publicMax, p._teamMax, p._actions, p._canWrite, p._storyId, p._work);
+        (_edition, _keySeen, _keyRead, _both, _cveIds) = (p._edition, p._keySeen, p._keyRead, p._both, p._cveIds);
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -213,6 +235,7 @@
         // A form just loaded is drawn at once; an edit to it, once typing settles.
         if (!ReferenceEquals(State.Form, _builtFrom)) Build();
         else Rebuild();
+        if (!RendererInfo.IsInteractive) PrerenderedState = Handoff.Keep(CurrentUser.UserId, this);
     }
 
     private void Build()

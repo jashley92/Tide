@@ -9,6 +9,7 @@
 @inject OrgClock Clock
 @inject ICurrentUser Me
 @inject IJSRuntime JS
+@inject PrerenderHandoff Handoff
 
 @* EP-80: the review of an article, as the reviewer works it: the article as each edition will carry it, comments on its
    parts (select words in the preview, then "Use the selected words"), the checklist, and Approve or Ask for changes.
@@ -149,6 +150,11 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
+        // The first interactive draw starts from what the prerender read, so a reload doesn't flash "Loading" over the
+        // review. It's then read again as after a comment: words changed in between are offered, not swapped in.
+        if (Handoff.Take<ReviewPage>(PrerenderedState, Me.UserId) is { } prerendered && prerendered._loadedFor == Id)
+            Adopt(prerendered);
+        PrerenderedState = null;
         // Another article's review (Back, Forward): nothing of the last one's is carried over, ticks above all.
         if (_loadedFor != Id)
         {
@@ -158,7 +164,16 @@ else
             _passed.Clear();
         }
         await Load();
+        if (!RendererInfo.IsInteractive && _article is not null && !_failed) PrerenderedState = Handoff.Keep(Me.UserId, this);
     }
+
+    /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.</summary>
+    [PersistentState]
+    public string? PrerenderedState { get; set; }
+
+    // Takes what the prerendered review read: the article as read, with its content version, its two editions and the review.
+    private void Adopt(ReviewPage p) =>
+        (_loadedFor, _article, _read, _team, _company, _state) = (p._loadedFor, p._article, p._read, p._team, p._company, p._state);
 
     private async Task Load(bool readAgain = false)
     {

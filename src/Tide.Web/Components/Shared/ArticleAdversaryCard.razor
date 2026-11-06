@@ -37,6 +37,12 @@
         return offered;
     }
 
+    protected override void Adopt(TagCard<Adversary> prerendered)
+    {
+        var p = (ArticleAdversaryCard)prerendered;
+        (_mine, _details) = (p._mine, p._details);
+    }
+
     protected override async Task ReadDetailsAsync() =>
         _details = await Adversaries.DetailsAsync(_mine!.Tagged.Select(a => a.Id).ToList());
 

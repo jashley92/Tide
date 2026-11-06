@@ -8,6 +8,8 @@
 @inject ScreenshotService Shots
 @inject OrgClock Clock
 @inject ToastService Toasts
+@inject PrerenderHandoff Handoff
+@inject ICurrentUser CurrentUser
 
 <div class="tide-card">
     <h2>Hunt queries <span class="tide-count tide-muted fw-normal">(@Action.Hunts.Count)</span></h2>
@@ -236,12 +238,28 @@
     // around it, which happens on each keystroke in its comment box.
     private ActionItem? _sourcesFor;
 
+    /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.</summary>
+    [PersistentState]
+    public string? PrerenderedState { get; set; }
+
     protected override async Task OnParametersSetAsync()
     {
+        // The first interactive draw has the prerendered panel's buttons, not "no indicators" until they're read again.
+        if (RendererInfo.IsInteractive && PrerenderedState is not null)
+        {
+            if (Handoff.Take<HuntPanel>(PrerenderedState, CurrentUser.UserId) is { } prerendered && prerendered.Action.Id == Action.Id)
+                _sources = prerendered._sources;
+            PrerenderedState = null;
+        }
         if (ReferenceEquals(Action, _sourcesFor)) return;
         _sourcesFor = Action;
         try { _sources = await ActionSvc.HuntSourcesAsync(Action.Id); }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            return;
+        }
+        if (!RendererInfo.IsInteractive && PrerenderedState is null) PrerenderedState = Handoff.Keep(CurrentUser.UserId, this);
     }
     private Guid? _editingHunt, _recording;
     private ConfirmDialog _record = default!;

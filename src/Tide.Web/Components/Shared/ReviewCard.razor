@@ -3,6 +3,7 @@
 @inject ToastService Toasts
 @inject OrgClock Clock
 @inject ICurrentUser Me
+@inject PrerenderHandoff Handoff
 
 @* EP-80: the article's review, in the editor. The author asks a colleague (this week's presenter is suggested), sees
    where it stands, and resolves each comment; an edit after approval shows the approval is out of date. Optional
@@ -84,12 +85,21 @@
     {
         // Again when the article changes, or is saved or a screenshot comes or goes (which can put an approval out of date).
         var content = ReviewService.ContentVersion(Article);
+        // A reload draws the prerendered card at once, rather than no card until it's read; it's read again below.
+        if (Handoff.Take<ReviewCard>(PrerenderedState, Me.UserId) is { } prerendered && prerendered._loadedFor == Article.Id)
+            (_loadedFor, _state, _rule, _reviewers, _reviewerId) = (prerendered._loadedFor, prerendered._state, prerendered._rule, prerendered._reviewers, prerendered._reviewerId);
+        PrerenderedState = null;
         if (_loadedFor == Article.Id && _loadedVersion == Article.EditVersion && _loadedContent == content) return;
         // Another article: the reviewer chosen and the note written were for the last one.
         if (_loadedFor != Article.Id) (_reviewerId, _note) = (null, null);
         (_loadedFor, _loadedVersion, _loadedContent) = (Article.Id, Article.EditVersion, content);
         await Load();
+        if (!RendererInfo.IsInteractive && _state is not null) PrerenderedState = Handoff.Keep(Me.UserId, this);
     }
+
+    /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.</summary>
+    [PersistentState]
+    public string? PrerenderedState { get; set; }
 
     private async Task Load()
     {

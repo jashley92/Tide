@@ -8,6 +8,7 @@
 @inject ICurrentUser CurrentUser
 @inject OrgClock Clock
 @inject ToastService Toasts
+@inject PrerenderHandoff Handoff
 
 <div class="tide-story-pick">
     @if (_canWrite && (StoryId is null || _changing))
@@ -89,6 +90,10 @@
     protected override async Task OnParametersSetAsync()
     {
         if (_loaded && _shown == StoryId) return;
+        // A reload draws the prerendered story, or the search, at once; they're read again below.
+        if (Handoff.Take<StoryPicker>(PrerenderedState, CurrentUser.UserId) is { } prerendered && prerendered._shown == StoryId && prerendered.ArticleId == ArticleId)
+            (_current, _found, _foundFor) = (prerendered._current, prerendered._found, prerendered._foundFor);
+        PrerenderedState = null;
         _loaded = true;
         _shown = StoryId;
         _canWrite = CurrentUser.Has(Permission.WriteArticles);
@@ -96,9 +101,14 @@
         {
             _current = StoryId is { } id ? await Stories.RowAsync(id) : null;
             if (_canWrite && StoryId is null) await Find();
+            if (!RendererInfo.IsInteractive) PrerenderedState = Handoff.Keep(CurrentUser.UserId, this);
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
     }
+
+    /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.</summary>
+    [PersistentState]
+    public string? PrerenderedState { get; set; }
 
     // Typed in the box: the search runs once typing pauses (TypingPause.SearchMs), as the other pickers' do.
     private async Task Typed()

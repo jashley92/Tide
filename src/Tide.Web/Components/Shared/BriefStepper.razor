@@ -4,6 +4,8 @@
    At an end the step is there but dimmed. K and J press them (editor.js), unless focus is in a field.
    Draws nothing for an article that isn't on today's brief. *@
 @inject BriefService Briefs
+@inject PrerenderHandoff Handoff
+@inject ICurrentUser CurrentUser
 
 @if (_at >= 0)
 {
@@ -30,10 +32,19 @@
     protected override async Task OnParametersSetAsync()
     {
         if (_readFor == ArticleId) return;
+        // A reload draws the prerender's steps at once, not nothing until they're read; they're read again below.
+        if (Handoff.Take<BriefStepper>(PrerenderedState, CurrentUser.UserId) is { } prerendered && prerendered._readFor == ArticleId)
+            (_order, _at) = (prerendered._order, prerendered._at);
+        PrerenderedState = null;
         _readFor = ArticleId;
         _order = await Briefs.RunningOrderAsync(Briefs.CurrentDate);
         _at = _order.Select(s => s.ArticleId).ToList().IndexOf(ArticleId);
+        if (!RendererInfo.IsInteractive) PrerenderedState = Handoff.Keep(CurrentUser.UserId, this);
     }
+
+    /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.</summary>
+    [PersistentState]
+    public string? PrerenderedState { get; set; }
 
     /// <summary>The address of an article on the brief, in the edition shown.</summary>
     public static string Href(Guid articleId, string? editionKey) =>
