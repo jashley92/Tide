@@ -20,9 +20,9 @@
                 <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Link(hint.Id)">Use it</button>
             </div>
         }
-        <SearchCombobox TItem="StoryRow" Id="story-pick" Type="search" Open="true" Placeholder="Find a story, or name a new one" ListLabel="Stories"
+        <SearchCombobox @ref="_combo" TItem="StoryRow" Id="story-pick" Type="search" Open="true" Placeholder="Find a story, or name a new one" ListLabel="Stories"
                         Help="Matching stories are listed below. Choose one to put the article in it." Disabled="_busy"
-                        @bind-Text="_text" @bind-Text:after="Typed" Items="_found" Key="s => s.Id" OnPick="s => Link(s.Id)"
+                        @bind-Text="_text" @bind-Text:after="Typed" Items="_found" Key="s => s.Id" OnPick="Pick"
                         NewOption="@(CanStart ? NewStory : null)" OnNew="StartStory" Empty="@(_found.Count == 0 && !CanStart ? NoStories : null)">
             <ItemTemplate Context="s">
                 <span class="tide-story-result-name">@s.Name</span>
@@ -68,7 +68,8 @@
     /// <summary>The article was linked to a story, or taken off one (null).</summary>
     [Parameter] public EventCallback<Guid?> StoryChanged { get; set; }
 
-    private IReadOnlyList<StoryRow> _found = [];
+    internal IReadOnlyList<StoryRow> _found = [];
+    internal SearchCombobox<StoryRow>? _combo;
     private StoryRow? _current;
     private Guid? _shown;
     private bool _canWrite, _busy, _loaded, _changing;
@@ -83,7 +84,7 @@
     private static readonly RenderFragment NoStories = @<text>No open stories yet. Type a name to start one.</text>;
 
     // A new story by the words typed, unless a story listed is already called that.
-    private bool CanStart => Text.Length > 0 && !_found.Any(s => string.Equals(s.Name, Text, StringComparison.OrdinalIgnoreCase));
+    internal bool CanStart => Text.Length > 0 && !_found.Any(s => string.Equals(s.Name, Text, StringComparison.OrdinalIgnoreCase));
 
     protected override async Task OnParametersSetAsync()
     {
@@ -109,10 +110,34 @@
     internal async Task Find()
     {
         var mine = _pause.Now();
+        var text = Text;
         var found = await Stories.FindAsync(_text);
         if (!_pause.IsLatest(mine)) return;
-        _found = found;
+        (_found, _foundFor) = (found, text);
         StateHasChanged();
+    }
+
+    // What _found was found for: until the search for what's typed now has run (it waits out the typing pause), the list
+    // and "Start a story" still answer the words typed before.
+    private string? _foundFor;
+
+    private bool Stale => Text != _foundFor;
+
+    // Enter (or a click) before the search for what's typed has run: it runs now, and the choice stands only if it's still
+    // listed, so Enter right after typing never links the story the earlier words found (or the ones offered before
+    // anything was typed), nor starts one a story listed is already called.
+    private async Task<bool> Current(Func<bool> stillGood)
+    {
+        if (!Stale) return true;
+        await Find();
+        return !Stale && stillGood();
+    }
+
+    // A story picked from the list.
+    internal async Task Pick(StoryRow s)
+    {
+        if (_busy) return;
+        if (await Current(() => _found.Any(f => f.Id == s.Id))) await Link(s.Id);
     }
 
     private async Task StartChanging()
@@ -154,6 +179,7 @@
         _busy = true;
         try
         {
+            if (!await Current(() => CanStart)) return;
             var id = await Stories.CreateAsync(Text, null);
             await Stories.LinkAsync(ArticleId, id);
             (_changing, _text) = (false, null);

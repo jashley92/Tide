@@ -44,8 +44,8 @@ public sealed class HistoryService(IAppDbContextFactory dbs, ICurrentUser user)
     public const int PageSize = 50;
 
     /// <summary>
-    /// An article's history: its own fields, and its scorecard tags, ATT&amp;CK techniques and CVEs as they were added
-    /// and removed. Bullets, screenshots and indicators are rows of their own, keyed by their own ids, and aren't
+    /// An article's history: its own fields, and its scorecard tags, ATT&amp;CK techniques, CVEs, threat actors and
+    /// products we run as they were added and removed. Bullets, screenshots and indicators are rows of their own, keyed by their own ids, and aren't
     /// included.
     /// </summary>
     public async Task<HistoryPage> ArticleAsync(Guid id, int skip = 0, CancellationToken ct = default)
@@ -56,7 +56,8 @@ public sealed class HistoryService(IAppDbContextFactory dbs, ICurrentUser user)
         await using var db = await dbs.CreateAsync(ct);
         var rows = await Page(db.AuditLog.AsNoTracking().Where(e =>
             (e.EntityType == nameof(Article) && e.EntityKey == key)
-            || ((e.EntityType == nameof(ArticleTag) || e.EntityType == nameof(ArticleTechnique) || e.EntityType == nameof(ArticleCve))
+            || ((e.EntityType == nameof(ArticleTag) || e.EntityType == nameof(ArticleTechnique) || e.EntityType == nameof(ArticleCve)
+                    || e.EntityType == nameof(ArticleAdversary) || e.EntityType == nameof(ArticleProduct))
                 && e.EntityKey.StartsWith(prefix))), skip, ct);
         return Build(rows, skip, await TagNamesAsync(db, rows, ct));
     }
@@ -79,13 +80,21 @@ public sealed class HistoryService(IAppDbContextFactory dbs, ICurrentUser user)
     private static Task<List<AuditLogEntry>> Page(IQueryable<AuditLogEntry> q, int skip, CancellationToken ct) =>
         q.OrderByDescending(e => e.AtUtc).ThenBy(e => e.Id).Skip(Math.Max(0, skip)).Take(PageSize + 1).ToListAsync(ct);
 
-    /// <summary>The names of the scorecard tags that <paramref name="rows"/> add or remove, by id, read in one query.</summary>
+    /// <summary>
+    /// The names of the scorecard tags, threat actors (adversary profiles) and products that <paramref name="rows"/> add
+    /// to an article or remove, by id: one query for each kind on the page.
+    /// </summary>
     internal static async Task<Func<Guid, string?>> TagNamesAsync(IAppDbContext db, List<AuditLogEntry> rows, CancellationToken ct)
     {
-        var tagIds = rows.Where(r => r.EntityType == nameof(ArticleTag)).Select(r => Guid.TryParse(HistoryFormatter.Part(r.EntityKey), out var g) ? g : Guid.Empty)
+        List<Guid> Ids(string type) => rows.Where(r => r.EntityType == type).Select(r => Guid.TryParse(HistoryFormatter.Part(r.EntityKey), out var g) ? g : Guid.Empty)
             .Where(g => g != Guid.Empty).Distinct().ToList();
-        var names = tagIds.Count == 0 ? new Dictionary<Guid, string>()
-            : await db.ScorecardTags.AsNoTracking().Where(t => tagIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, t => t.Name, ct);
+        var names = new Dictionary<Guid, string>();
+        if (Ids(nameof(ArticleTag)) is { Count: > 0 } tags)
+            foreach (var t in await db.ScorecardTags.AsNoTracking().Where(t => tags.Contains(t.Id)).Select(t => new { t.Id, t.Name }).ToListAsync(ct)) names[t.Id] = t.Name;
+        if (Ids(nameof(ArticleAdversary)) is { Count: > 0 } actors)
+            foreach (var a in await db.Adversaries.AsNoTracking().Where(a => actors.Contains(a.Id)).Select(a => new { a.Id, a.Name }).ToListAsync(ct)) names[a.Id] = a.Name;
+        if (Ids(nameof(ArticleProduct)) is { Count: > 0 } products)
+            foreach (var p in await db.StackProducts.AsNoTracking().Where(p => products.Contains(p.Id)).Select(p => new { p.Id, p.Name }).ToListAsync(ct)) names[p.Id] = p.Name;
         return id => names.GetValueOrDefault(id);
     }
 
@@ -159,18 +168,28 @@ public static class HistoryFormatter
         [nameof(ArticleTag)] = "scorecard tag",
         [nameof(ArticleTechnique)] = "technique",
         [nameof(ArticleCve)] = "CVE",
+        [nameof(ArticleAdversary)] = "threat actor",
+        [nameof(ArticleProduct)] = "product we run",
+    };
+
+    // A link row that names something by id (TagNamesAsync), and what it says when that's gone.
+    private static readonly Dictionary<string, string> Gone = new(StringComparer.Ordinal)
+    {
+        [nameof(ArticleTag)] = "a tag since removed",
+        [nameof(ArticleAdversary)] = "a profile since removed",
+        [nameof(ArticleProduct)] = "a product since removed",
     };
 
     /// <summary>
     /// <paramref name="row"/> as a history entry, or null when nothing in it is worth showing (a change of noise fields
-    /// only). <paramref name="tagName"/> names a scorecard tag by id, for a tag added or removed.
+    /// only). <paramref name="tagName"/> names a scorecard tag, a threat actor or a product by id, for one added or removed.
     /// </summary>
     public static HistoryEntry? Entry(AuditLogEntry row, Func<Guid, string?>? tagName = null)
     {
         if (Parts.TryGetValue(row.EntityType, out var part))
         {
             var value = Part(row.EntityKey);
-            if (row.EntityType == nameof(ArticleTag) && Guid.TryParse(value, out var tagId)) value = tagName?.Invoke(tagId) ?? "a tag since removed";
+            if (Gone.TryGetValue(row.EntityType, out var gone) && Guid.TryParse(value, out var tagId)) value = tagName?.Invoke(tagId) ?? gone;
             var what = row.Action == "Deleted" ? $"Removed a {part}" : $"Added a {part}";
             return new HistoryEntry(row.Id, row.AtUtc, row.UserName, what, [new HistoryChange(Capital(part), null, value)]);
         }
