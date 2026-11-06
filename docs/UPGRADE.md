@@ -171,6 +171,24 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
+### v1.5.0
+
+Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds no migration and no setting.
+
+**For everyone**
+- **Long slides fit the screen.** In present mode a slide that's too tall for the window shrinks smoothly, down to 80%
+  of its normal size (text, metric tiles, charts and screenshots together). Below that, only the slide's content
+  scrolls: the header and the progress bar stay put, and the page itself never scrolls.
+- **Scrolling a slide looks the part.** The content fades at the edge where there's more, the scrollbar is slim and in
+  the slide's colours, and a **More ↓** button scrolls most of a screen and hides at the bottom. Long action and
+  product cards get the same scrollbar and fades. With reduced motion, scrolling is instant and nothing fades in.
+- **Space and Page Down scroll first,** and go to the next slide only once you're at the bottom; Shift+Space and
+  Page Up do the reverse. The arrow keys still change slides straight away. The shortcuts list says so.
+- **Followers follow the presenter's scroll.** When the presenter scrolls a slide, everyone following on that slide
+  scrolls to the same place, and someone joining late starts there. Scrolling on your own pauses following for that
+  slide only and shows **Back to {presenter}'s place**; that button or the next slide picks following back up. In a
+  held meeting you can still scroll on your own, and the presenter's next scroll brings you back.
+
 ### v1.4.0
 
 Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds no migration and no setting.
