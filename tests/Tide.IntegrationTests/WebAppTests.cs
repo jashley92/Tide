@@ -80,6 +80,7 @@ public class WebAppTests(TideApp app) : IClassFixture<TideApp>
         "/actions/new",
         "/actions/1",
         "/workload",
+        "/hunts/saved",
         "/admin/teams",
         "/admin/organization",
         "/admin/queries",

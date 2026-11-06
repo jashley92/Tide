@@ -99,6 +99,9 @@ public class ActionItem : AuditableEntity
     public List<ActionEvent> Events { get; set; } = [];
     public List<HuntQuery> Hunts { get; set; } = [];
 
+    /// <summary>Indicators added on the action itself, for one with no article to carry them; its hunts use them.</summary>
+    public List<ActionIndicator> Indicators { get; set; } = [];
+
     /// <summary>Files added to the action itself (removed ones included); its comments' files are on the comments.</summary>
     public List<ActionFile> Files { get; set; } = [];
 
@@ -356,6 +359,55 @@ public class HuntQuery : Entity
 
     /// <summary>A screenshot of the result, as evidence.</summary>
     public Guid? EvidenceFileId { get; set; }
+
+    /// <summary>The saved query it was added from, and its name then: the name stays when the saved query is deleted.</summary>
+    public Guid? SavedQueryId { get; set; }
+    public string? SavedQueryName { get; set; }
+}
+
+/// <summary>
+/// An indicator added on an action that has no article (one raised from the board, say). An action raised from an article
+/// adds its indicators to the article instead, so the brief, exports and other actions see them too.
+/// </summary>
+public class ActionIndicator : Entity
+{
+    public Guid ActionId { get; set; }
+    public IndicatorType Type { get; set; }
+    public string Value { get; set; } = string.Empty;
+    public string? Note { get; set; }
+    public DateTimeOffset AddedAtUtc { get; set; }
+    public string AddedByName { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// A hunt query kept for the team to reuse (a tuned sweep, a behavioural hunt with no indicators): its name, language,
+/// text and what it's for. <c>{{days}}</c> and <c>{{values}}</c> in the text are filled from an action when it's added to one. Anyone
+/// who works actions keeps the library; it's retired rather than deleted while it's still useful to read.
+/// </summary>
+public class SavedQuery : AuditableEntity
+{
+    public const int MaxName = 100;
+    public const int MaxDescription = 300;
+
+    /// <summary>Under a hunt's 20,000: room for the line TIDE writes over it on an action.</summary>
+    public const int MaxText = 19500;
+
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>The dialect's key ("xql", "kql", "fql").</summary>
+    public string Dialect { get; set; } = string.Empty;
+
+    public string Text { get; set; } = string.Empty;
+    public string? Description { get; set; }
+
+    /// <summary>The names <see cref="AuditableEntity.CreatedBy"/> and <see cref="AuditableEntity.ModifiedBy"/> had then.</summary>
+    public string CreatedByName { get; set; } = string.Empty;
+    public string? ModifiedByName { get; set; }
+
+    public bool IsRetired { get; set; }
+
+    /// <summary>Moves on every edit, so an edit begun on an older copy is refused, as an action's is.</summary>
+    public Guid EditVersion { get; set; } = Guid.NewGuid();
 }
 
 /// <summary>

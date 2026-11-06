@@ -51,7 +51,7 @@ public class NavMenuTests(TideApp app) : IClassFixture<TideApp>
     {
         var nav = await RenderedNav.GetAsync(app.CreateClient(), "/articles");
         nav.Groups.Select(g => (g.Label, string.Join(",", g.Links))).Should().Equal(
-            ("Daily", ",triage,articles,actions,search"),
+            ("Daily", ",triage,articles,actions,hunts/saved,search"),
             ("Intelligence", "stories,briefs,trends,stack,adversaries,reports,coverage,metrics"),
             ("Team", "rotation,workload"),
             ("Company-wide", "published"),
@@ -131,7 +131,7 @@ public class ActionOwnerNavTests(ActionOwnerApp app) : IClassFixture<ActionOwner
     {
         var nav = await RenderedNav.GetAsync(app.CreateClient(), "/actions");
         nav.Groups.Select(g => (g.Label, string.Join(",", g.Links))).Should().Equal(
-            ("Daily", ",articles,actions,search"),
+            ("Daily", ",articles,actions,hunts/saved,search"),
             ("Intelligence", "stories,briefs,trends,stack,adversaries"),
             ("Team", "workload"),
             ("Company-wide", "published"));

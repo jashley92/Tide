@@ -97,6 +97,10 @@ brief's live meeting.
 | Add and describe files | Yes | Yes | own team's | No | No | No |
 | Remove files | Yes | Yes | own files | No | No | No |
 | Restore removed files | Yes | No | No | No | No | No |
+| Add indicators for an action's hunts | Yes | Yes | own team's, with no article | No | No | No |
+| Read the saved hunt queries | Yes | Yes | Yes | Yes | No | No |
+| Save, edit, retire and restore saved hunt queries | Yes | Yes | Yes | No | No | No |
+| Delete saved hunt queries | Yes | own ones | own ones | No | No | No |
 | Choose my own notifications (reminders, digests, rotation emails) | Yes | Yes | Yes | Yes | No | No |
 | **Numbers** | | | | | | |
 | Enter the day's numbers | Yes | Yes | No | No | No | No |

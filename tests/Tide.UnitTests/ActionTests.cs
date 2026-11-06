@@ -243,6 +243,55 @@ public class HuntQueryTests
     }
 }
 
+/// <summary>A saved query's values past <see cref="HuntQueryBuilder.MaxValuesPerBlock"/>: the query repeated, a block each.</summary>
+public class SavedQueryBlockTests
+{
+    private static readonly IQueryDialect Kql = QueryDialects.Find("kql")!;
+
+    private static IEnumerable<ArticleIndicator> Ips(int n) =>
+        Enumerable.Range(0, n).Select(i => new ArticleIndicator { Type = IndicatorType.IpAddress, Value = $"10.{i / 65536}.{i / 256 % 256}.{i % 256}" });
+
+    private static IEnumerable<ArticleIndicator> Domains(int n) =>
+        Enumerable.Range(0, n).Select(i => new ArticleIndicator { Type = IndicatorType.Domain, Value = $"d{i}.example" });
+
+    [Fact]
+    public void FromSaved_UpToABlock_IsOneQuery_AsBefore()
+    {
+        var q = HuntQueryBuilder.FromSaved(Kql, "Sweep", "x in ({{values}}) or y in ({{values}})", 30, Ips(HuntQueryBuilder.MaxValuesPerBlock));
+        q.Should().StartWith($"// From the saved query \"Sweep\" with {HuntQueryBuilder.MaxValuesPerBlock} indicator(s).\nx in (\"10.0.0.0\"").And.NotContain("Part ");
+        q.Split('\n').Should().HaveCount(3, "the header, the query, and the closing newline");
+    }
+
+    [Fact]
+    public void FromSaved_PastABlock_RepeatsTheQuery_OneBlockEach_AndCountsEveryValue()
+    {
+        var n = HuntQueryBuilder.MaxValuesPerBlock + 3;
+        var q = HuntQueryBuilder.FromSaved(Kql, "Sweep", "T\n| where Timestamp > ago({{days}}d)\n| where x in ({{values}})", 45, Ips(n));
+
+        q.Should().StartWith($"// From the saved query \"Sweep\" with {n} indicator(s), looking back 45 days.\n// Part 1 of 2\nT\n");
+        q.Should().Contain("\n\n// Part 2 of 2\nT\n| where Timestamp > ago(45d)\n| where x in (\"10.0.1.244\", \"10.0.1.245\", \"10.0.1.246\")\n");
+        var lists = q.Split('\n').Where(l => l.StartsWith("| where x in (", StringComparison.Ordinal)).ToList();
+        lists.Select(l => l.Split(", ").Length).Should().Equal(HuntQueryBuilder.MaxValuesPerBlock, 3);
+        HuntQueryBuilder.WindowOf(q).Should().Be(45);
+        HuntQueryBuilder.LeftOut(q).Should().Be(0, "every value is searched");
+    }
+
+    [Fact]
+    public void FromSaved_TwoKindsPastABlock_RepeatsItForEachPairOfBlocks_AndOneUnderIsInEveryCopy()
+    {
+        var limit = HuntQueryBuilder.MaxValuesPerBlock;
+        var both = HuntQueryBuilder.FromSaved(Kql, "Pairs", "a in ({{values:ipv4}}) and b in ({{values:domain}})", 30, Ips(limit + 1).Concat(Domains(limit + 2)));
+        both.Should().Contain("// Part 4 of 4").And.NotContain("Part 5");
+        var copies = both.Split('\n').Where(l => l.StartsWith("a in (", StringComparison.Ordinal)).ToList();
+        copies.Should().HaveCount(4).And.OnlyHaveUniqueItems("each pairing of an address block with a domain block once");
+        copies.Should().Contain(c => c.Contains("(\"10.0.1.244\") and") && c.Contains("\"d501.example\"") && !c.Contains("\"d0.example\""));
+
+        var one = HuntQueryBuilder.FromSaved(Kql, "Pairs", "a in ({{values:ipv4}}) and b in ({{values:domain}})", 30, Ips(limit + 1).Concat(Domains(2)));
+        var halves = one.Split('\n').Where(l => l.StartsWith("a in (", StringComparison.Ordinal)).ToList();
+        halves.Should().HaveCount(2).And.OnlyContain(c => c.EndsWith("b in (\"d0.example\", \"d1.example\")", StringComparison.Ordinal));
+    }
+}
+
 public class HuntWindowTests
 {
     [Fact]

@@ -1,0 +1,261 @@
+@page "/hunts/saved"
+@attribute [Authorize(Policy = Policies.ReadActions)]
+@inject SavedQueryService SavedSvc
+@inject ToastService Toasts
+@inject OrgClock Clock
+@inject ChangeFeed Feed
+@inject ChangeOrigin Origin
+@implements IDisposable
+
+@* The team's saved hunt queries (ADR 0006), by language: a tuned sweep or a behavioural hunt kept for a colleague to add
+   to their own action from its Hunt queries card. Whoever works actions saves, edits, retires and restores them, and
+   deletes one they saved (an administrator, any); everyone else who reads actions reads them. Each shows how many actions
+   it was added to. A colleague's change re-reads the list in place; an edit under way keeps what's typed, and its save
+   is refused if the query changed since it began. *@
+
+<PageTitle>Saved queries · TIDE</PageTitle>
+
+<ConfirmDialog @ref="_confirm" />
+
+<div class="tide-page-head">
+    <div>
+        <h1>Saved queries</h1>
+        <div class="tide-sub">Hunt queries kept for the team. Add one to an action from its Hunt queries card:
+            <span class="tide-data">@QueryDialects.DaysPlaceholder</span> is filled in with the action's window, and <span class="tide-data">@QueryDialects.Placeholder</span>
+            with its indicators (the article's, and any added on the action). TIDE never runs a query itself. Changes are audited.</div>
+    </div>
+    @if (_canWrite && _form is null)
+    {
+        <button class="btn btn-primary" @onclick="New"><span class="bi bi-plus-lg" aria-hidden="true"></span> New saved query</button>
+    }
+</div>
+
+@if (_form is { Id: null })
+{
+    <section class="tide-card tide-card-form" aria-labelledby="sq-new-h">
+        <h2 id="sq-new-h">New saved query</h2>
+        @EditForm
+    </section>
+}
+
+<div class="tide-card">
+    <div class="row g-2 align-items-end">
+        <div class="col-md-6">
+            <label class="tide-field-label" for="sq-find">Find</label>
+            <input id="sq-find" type="search" class="form-control form-control-sm" placeholder="Name, description or query text" @bind="_words" @bind:event="oninput" @bind:after="Filter" />
+        </div>
+        <div class="col-md-4">
+            <label class="tide-field-label" for="sq-language">Language</label>
+            <select id="sq-language" class="form-select form-select-sm" @bind="_language" @bind:after="Filter">
+                <option value="">All languages</option>
+                @foreach (var d in QueryDialects.All) { <option value="@d.Key">@d.Name</option> }
+            </select>
+        </div>
+        <div class="col-md-2">
+            <div class="form-check mb-1">
+                <input class="form-check-input" type="checkbox" id="sq-retired" checked="@_showRetired" @onchange="ToggleRetired" />
+                <label class="form-check-label small" for="sq-retired">Show retired</label>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (_rows is null)
+{
+    <LoadingBlock />
+}
+else if (_rows.Count == 0)
+{
+    <div class="tide-card">
+        <EmptyState Icon="bi-bookmark" Title="No saved queries yet.">Save one from any hunt on an action with Save for the team@(_canWrite ? ", or add one here" : "").</EmptyState>
+    </div>
+}
+else if (Shown.Count == 0)
+{
+    <div class="tide-card">
+        <EmptyState Icon="bi-search" Title="No saved query matches these filters." />
+    </div>
+}
+else
+{
+    @foreach (var group in Shown.GroupBy(r => r.Query.Dialect))
+    {
+        var headingId = "sq-" + group.Key;
+        <section class="tide-card" aria-labelledby="@headingId" @key="group.Key">
+            <h2 id="@headingId">@HuntQueryBuilder.DialectName(group.Key) <span class="tide-count tide-muted fw-normal">(@group.Count())</span></h2>
+            @foreach (var r in group)
+            {
+                var q = r.Query;
+                var id = "sq-" + q.Id.ToString("N");
+                <article class="tide-hunt tide-saved-query @(q.IsRetired ? "tide-retired" : "")" aria-labelledby="@(id + "-h")" @key="q.Id">
+                    @if (_form?.Id == q.Id)
+                    {
+                        <h3 class="tide-subhead mt-0" id="@(id + "-h")">Edit @q.Name</h3>
+                        @EditForm
+                    }
+                    else
+                    {
+                        <div class="d-flex gap-2 align-items-center flex-wrap">
+                            <h3 class="tide-subhead my-0" id="@(id + "-h")">@q.Name</h3>
+                            @if (q.IsRetired) { <Badge>Retired</Badge> }
+                            <span class="ms-auto small tide-muted">@Used(r.Actions)</span>
+                        </div>
+                        @if (q.Description is { } about) { <p class="small mb-1">@about</p> }
+                        <div class="small tide-muted mb-2">@Provenance(q)</div>
+                        <pre id="@(id + "-text")" class="tide-query">@q.Text</pre>
+                        <div class="d-flex gap-2 align-items-center flex-wrap">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="@(id + "-text")" data-copy-status="@(id + "-status")"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
+                            @if (_canWrite)
+                            {
+                                <button class="btn btn-outline-secondary btn-sm" disabled="@(_form is not null)" aria-label="Edit @q.Name" @onclick="() => Edit(q)"><span class="bi bi-pencil" aria-hidden="true"></span> Edit</button>
+                                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" aria-label="@((q.IsRetired ? "Restore " : "Retire ") + q.Name)" @onclick="() => Retire(q, !q.IsRetired)">@(q.IsRetired ? "Restore" : "Retire")</button>
+                            }
+                            @if (SavedSvc.CanDelete(q))
+                            {
+                                <button class="btn btn-link btn-sm text-danger" disabled="@_busy" aria-label="Delete @q.Name" @onclick="() => Delete(q)">Delete</button>
+                            }
+                            <span id="@(id + "-status")" class="small tide-muted" role="status" aria-live="polite"></span>
+                        </div>
+                    }
+                </article>
+            }
+        </section>
+    }
+}
+
+@code {
+    private IReadOnlyList<SavedQueryRow>? _rows;
+    private SavedQueryForm? _form;
+    private ConfirmDialog _confirm = default!;
+    private bool _canWrite, _busy, _showRetired;
+    private string? _words;
+    private string _language = "";
+
+    internal IReadOnlyList<SavedQueryRow>? Rows => _rows;
+    internal SavedQueryForm? Form => _form;
+
+    private IReadOnlyList<SavedQueryRow> _shown = [];
+
+    /// <summary>The rows the filters leave: the language chosen (or all) and every word typed (<see cref="Filter"/>).</summary>
+    internal IReadOnlyList<SavedQueryRow> Shown => _shown;
+
+    // Worked out when the rows or the filters change, not on each redraw.
+    private void Filter()
+    {
+        var words = TableView.Words(_words);
+        _shown = (_rows ?? []).Where(r => _language.Length == 0 || r.Query.Dialect == _language).Where(r => SavedQueryService.Matches(r.Query, words)).ToList();
+    }
+
+    private string Provenance(SavedQuery q) => $"Saved by {q.CreatedByName}, {Ui.When(Clock, q.CreatedAtUtc)}"
+        + (q.ModifiedAtUtc is { } changed ? $" · changed by {q.ModifiedByName ?? "someone"}, {Ui.When(Clock, changed)}" : "");
+
+    private static string Used(int actions) => actions == 0 ? "Not used yet" : $"Used on {Ui.Plural(actions, "action")}";
+
+    private RenderFragment EditForm => __builder =>
+    {
+        var f = _form!;
+        <div class="row g-2">
+            <div class="col-md-7">
+                <label class="tide-field-label" for="sq-f-name">Name</label>
+                <input id="sq-f-name" class="form-control form-control-sm" maxlength="@SavedQuery.MaxName" placeholder="Encoded PowerShell from Office" @bind="f.Name" />
+            </div>
+            <div class="col-md-5">
+                <label class="tide-field-label" for="sq-f-language">Language</label>
+                <select id="sq-f-language" class="form-select form-select-sm" @bind="f.Dialect">
+                    @foreach (var d in QueryDialects.All) { <option value="@d.Key">@d.Name</option> }
+                </select>
+            </div>
+            <div class="col-12">
+                <label class="tide-field-label" for="sq-f-about">What it's for (optional)</label>
+                <input id="sq-f-about" class="form-control form-control-sm" maxlength="@SavedQuery.MaxDescription" @bind="f.Description" />
+            </div>
+            <div class="col-12">
+                <label class="tide-field-label" for="sq-f-text">Query</label>
+                <textarea id="sq-f-text" class="tide-query" spellcheck="false" aria-describedby="sq-f-text-help" @bind="f.Text"></textarea>
+                <SavedQueryHelp Id="sq-f-text-help" />
+            </div>
+        </div>
+        <div class="d-flex gap-2 mt-2">
+            <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="Save">Save</button>
+            <button class="btn btn-outline-secondary btn-sm" @onclick="() => _form = null">Cancel</button>
+        </div>
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _canWrite = SavedSvc.CanWrite;
+        _live = new LiveChanges(Feed, Origin, c => c.Topic == ChangeFeed.SavedQueries, InvokeAsync, OnChangedElsewhere);
+        await Load();
+    }
+
+    // A colleague saved, changed, retired or deleted one: re-read in place. An edit under way keeps what's typed; its save
+    // is refused as stale if that query was the one changed.
+    private LiveChanges? _live;
+
+    public void Dispose() => _live?.Dispose();
+
+    internal async Task OnChangedElsewhere(IReadOnlyList<Change> heard)
+    {
+        if (_busy) return;   // a step is under way, and it reads theirs when it's done
+        await Load();
+        Toasts.Show($"{LiveChanges.Who(heard)} updated the saved queries.");
+        StateHasChanged();
+    }
+
+    private async Task Load()
+    {
+        try { _rows = await SavedSvc.ListAsync(_showRetired); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        Filter();
+    }
+
+    private async Task ToggleRetired(ChangeEventArgs e)
+    {
+        _showRetired = e.Value is true;
+        await Load();
+    }
+
+    private void New() => _form = new SavedQueryForm { Dialect = _language.Length > 0 ? _language : QueryDialects.All[0].Key };
+
+    internal void Edit(SavedQuery q)
+    {
+        _form = SavedQueryForm.From(q);
+        StateHasChanged();
+    }
+
+    private async Task Run(Func<Task> step)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await step();
+            await Load();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    internal Task Save() => Run(async () =>
+    {
+        await SavedSvc.SaveAsync(_form!);
+        Toasts.Show(_form!.Id is null ? $"{_form.Name.Trim()} saved for the team." : "Saved.");
+        _form = null;
+    });
+
+    internal Task Retire(SavedQuery q, bool retired) => Run(async () =>
+    {
+        await SavedSvc.SetRetiredAsync(q.Id, retired);
+        Toasts.Show(retired ? $"{q.Name} retired. It's no longer offered on actions." : $"{q.Name} restored.");
+    });
+
+    private async Task Delete(SavedQuery q)
+    {
+        if (!await _confirm.Ask($"Delete {q.Name}?", "It goes from the team's saved queries. Hunts already added from it keep their text and its name.", "Delete")) return;
+        await Run(async () =>
+        {
+            await SavedSvc.DeleteAsync(q.Id);
+            Toasts.Show($"{q.Name} deleted.");
+        });
+    }
+}

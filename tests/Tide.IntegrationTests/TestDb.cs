@@ -479,9 +479,10 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public HuntQueryBuilder Queries() => new(this, User);
 
-    public ActionService Actions() => new(this, User, Sla(), Clock, Queries(), Screenshots(), Live);
+    public ActionService Actions() => new(this, User, Sla(), Clock, Queries(), Screenshots(), Articles(), Live);
 
     public PlaybookService Playbooks() => new(this, User);
+    public SavedQueryService SavedQueries() => new(this, User);
 
     public CardRuleService CardRules() => new(this, User);
 

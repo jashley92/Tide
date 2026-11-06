@@ -187,6 +187,7 @@ public class ReaderOverHttpTests(ReaderApp app) : IClassFixture<ReaderApp>
     [InlineData("/actions/new")]
     [InlineData("/actions/1")]
     [InlineData("/workload")]
+    [InlineData("/hunts/saved")]
     [InlineData("/admin")]
     [InlineData("/admin/access")]
     [InlineData("/admin/scorecard")]
@@ -862,6 +863,12 @@ public sealed class ServiceWorld : IDisposable
             ("Actions.SaveHuntText", () => db.Actions().SaveHuntTextAsync(Hunt, "x")),
             ("Actions.RecordHuntResult", () => db.Actions().RecordHuntResultAsync(Hunt, HuntResult.NoHits, 0, null, null)),
             ("Actions.RemoveHunt", () => db.Actions().RemoveHuntAsync(Hunt)),
+            ("Actions.AddSavedHunt", () => db.Actions().AddSavedHuntAsync(Action, Guid.NewGuid())),
+            ("Actions.AddIndicators", () => db.Actions().AddIndicatorsAsync(Action, [new IndicatorForm { Type = IndicatorType.Domain, Value = "evil.example" }])),
+            ("SavedQueries.Save", () => db.SavedQueries().SaveAsync(new SavedQueryForm { Name = "x", Dialect = "kql", Text = "x" })),
+            ("SavedQueries.SaveFromHunt", () => db.SavedQueries().SaveFromHuntAsync(Hunt, "x", null, "x")),
+            ("SavedQueries.SetRetired", () => db.SavedQueries().SetRetiredAsync(Guid.NewGuid(), true)),
+            ("SavedQueries.Delete", () => db.SavedQueries().DeleteAsync(Guid.NewGuid())),
             ("Teams.Add", () => db.Teams().AddAsync("x", null, null)),
             ("Teams.Update", () => db.Teams().UpdateAsync(TeamA, "x", null, null)),
             ("Teams.SetRetired", () => db.Teams().SetRetiredAsync(TeamA, true)),
@@ -972,6 +979,7 @@ public sealed class ServiceWorld : IDisposable
             ("Playbooks.List", () => db.Playbooks().ListAsync()),
             ("CardRules.List", () => db.CardRules().ListAsync()),
             ("Queries.Templates", () => db.Queries().TemplatesAsync()),
+            ("SavedQueries.List", () => db.SavedQueries().ListAsync()),
         ];
     }
 }
@@ -1093,6 +1101,8 @@ public class ActionOwnerAgainstTheServicesTests : IAsyncLifetime
             "Actions.SetChecklistItem", "Actions.AddChecklistItem", "Actions.RemoveChecklistItem", "Actions.ApplyPlaybook", "Actions.GenerateHunt",
             "Actions.AddHandWrittenHunt", "Actions.SaveHuntText", "Actions.RecordHuntResult", "Actions.RemoveHunt", "Actions.Save", "Screenshots.StoreEvidence",
             "Actions.Assign",
+            // The team's saved hunt queries are kept by whoever works actions.
+            "Actions.AddSavedHunt", "Actions.AddIndicators", "SavedQueries.Save", "SavedQueries.SaveFromHunt", "SavedQueries.SetRetired", "SavedQueries.Delete",
             // At the meeting they join it and take notes like anyone on the team edition (their own notes only).
             "Meetings.Joined", "Meetings.AddNote", "Meetings.EditNote", "Meetings.DeleteNote",
         };

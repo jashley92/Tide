@@ -276,6 +276,12 @@ that fits its kind.
 - **Which SIEMs.** **Cortex XSIAM (XQL)**, **Microsoft Sentinel / Defender (KQL)** and **CrowdStrike Falcon / Next-Gen
   SIEM**.
 - **Templates.** Administrators edit a template per kind of indicator.
+- **Saved queries.** Any hunt can be saved for the team (*Save for the team*), and the Saved queries page lists them by
+  language, with how many actions used each. *Add a saved query* puts one on an action: `{{days}}` becomes the
+  action's window and `{{values}}` its indicators (`{{values:domain}}` and the like take one kind). Whoever works
+  actions edits, retires and restores them; whoever saved one, or an administrator, deletes it.
+- **Adding indicators.** The Hunt queries card adds indicators, typed or found in pasted text. An action raised from an
+  article adds them to the article (for an analyst); one with no article keeps them itself.
 - **Running them.** Copy the query and run it in your SIEM; TIDE never signs in to a SIEM. Then record hits or no
   hits, with a screenshot.
 - **Closing a clean sweep.** A sweep whose query came back clean closes in one step, *No hits, close*, once the query

@@ -323,7 +323,7 @@ Today's team queue (`ActionService.TeamQueueAsync`, ordered by `TeamQueue.From`)
 check. The page branches on those permissions, never on a role name (ADR 0002).
 
 Hunt queries (ADR 0006) are built by `HuntQueryBuilder` from the article's indicators, or from every article's in its
-story, looking back `{{days}}` (`HuntQueryBuilder.WindowDays`); an analyst can also add a hand-written query. `HuntValues` first splits them
+story, looking back `{{days}}` (`HuntQueryBuilder.WindowDays`); an analyst can also add a hand-written query, or one of the team's saved ones (below). `HuntValues` first splits them
 into kinds (`HuntValueKind`): an indicator type, except that IPv4 and IPv6 addresses, and MD5, SHA-1, SHA-256 and
 SHA-512 hashes (by length), are kinds of their own, because SIEMs keep them in different fields. Each kind gets one
 block, from the dialect's template (`IQueryDialect`: XQL, KQL, CrowdStrike) or an administrator's `QueryTemplate`
@@ -333,6 +333,31 @@ many days it looks back, and each kind it couldn't query says how many values it
 `LeftOut`). `ActionService.CloseWithNoHitsAsync` records a query's result as no hits and closes its sweep or hunt Done
 (No hits) in one save and one history line, naming the days searched; it needs left-out values acknowledged, and is
 refused while another query on the action has hits or hasn't been run.
+
+An action with no article keeps indicators of its own (`ActionIndicator`), added on its Hunt queries card; Generate and
+saved queries use them with the article's. On an action raised from an article, the card adds them to the article
+instead (`ArticleService.AddIndicators`, the editor's rules: normalised, folded, at most 500), which needs
+`WriteArticles` as well as working the action, and moves the article's edit version so an editor open on the older copy
+can't save over them; the card tells someone who can't (`ActionService.OnTheArticle`). Both write a line in the action's
+history. The card's box is the editor's (`IndicatorAdd`: one typed, or found in pasted text by `ArticleService.Suggest`),
+without CVEs, which a hunt doesn't search for.
+
+The team keeps a library of saved hunt queries (`SavedQuery`, `SavedQueryService`, the Saved queries page at
+`/hunts/saved`): a name, a language, the text, an optional description, who saved it and last changed it, and retired.
+Anyone with `WorkActions` saves (from any hunt, "Save for the team", or on the page), edits, retires and restores them;
+whoever saved one, or an administrator, deletes it, and hunts added from it keep its name (`HuntQuery.SavedQueryName`).
+Anyone with `ReadActions` reads them. An edit carries the query's `EditVersion` and is refused once someone else has
+saved it since. Writes are audited and published on `ChangeFeed.SavedQueries`. Adding one to an action
+(`ActionService.AddSavedHuntAsync`, `HuntQueryBuilder.FromSaved`) fills `{{days}}` with the window a generated query
+would use, and `{{values}}` with every indicator on the article and the action, written as the dialect writes a list;
+`{{values:domain}}`, `{{values:sha256}}` and so on (a `HuntValueKind` by name) take that kind only, and the action's
+other kinds are then named in a "not included" comment that `LeftOut` counts, so No hits, close asks for them. A
+placeholder that would get no values refuses the add, as Generate refuses with no indicators, and a kind TIDE doesn't
+know is refused when the query is saved. Its first line names the query and, with `{{days}}`, the window, so
+`WindowOf` reads it back. Past `MaxValuesPerBlock` values for a placeholder the query is repeated, a block each, as a
+generated query repeats a kind's block. "Save for the team" on a hunt added from a saved query that still exists offers
+that query's own text (`SavedQueryService.DraftTextAsync`), so a tuned copy keeps its placeholders. The config bundle doesn't carry saved queries: like playbooks and card rules, they're the
+team's working content, not installation settings.
 
 `ReminderService` holds the scans (due soon, overdue, weekly digest, personal digest, brief not ready, presenting).
 `ReminderHostedService` polls every five minutes; each scan is off until enabled, waits for its time of day, batches

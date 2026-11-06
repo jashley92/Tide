@@ -335,6 +335,41 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.ToTable("ActionFiles");
                 });
 
+            modelBuilder.Entity("Tide.Domain.Entities.ActionIndicator", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ActionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("AddedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("AddedByName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActionId");
+
+                    b.ToTable("ActionIndicators");
+                });
+
             modelBuilder.Entity("Tide.Domain.Entities.ActionItem", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1794,6 +1829,13 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("SavedQueryId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SavedQueryName")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Text")
                         .IsRequired()
                         .HasMaxLength(20000)
@@ -1804,6 +1846,8 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.HasIndex("ActionId");
 
                     b.HasIndex("EvidenceFileId");
+
+                    b.HasIndex("SavedQueryId");
 
                     b.ToTable("HuntQueries");
                 });
@@ -2443,6 +2487,69 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.ToTable("RotationWeeks");
                 });
 
+            modelBuilder.Entity("Tide.Domain.Entities.SavedQuery", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedByName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Dialect")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("EditVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsRetired")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("ModifiedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ModifiedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(19500)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Dialect", "Name")
+                        .IsUnique();
+
+                    b.ToTable("SavedQueries");
+                });
+
             modelBuilder.Entity("Tide.Domain.Entities.ScorecardCategory", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3023,6 +3130,15 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Tide.Domain.Entities.ActionIndicator", b =>
+                {
+                    b.HasOne("Tide.Domain.Entities.ActionItem", null)
+                        .WithMany("Indicators")
+                        .HasForeignKey("ActionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Tide.Domain.Entities.ActionItem", b =>
                 {
                     b.HasOne("Tide.Domain.Entities.Article", "Article")
@@ -3296,6 +3412,11 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("EvidenceFileId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Tide.Domain.Entities.SavedQuery", null)
+                        .WithMany()
+                        .HasForeignKey("SavedQueryId")
+                        .OnDelete(DeleteBehavior.SetNull);
                 });
 
             modelBuilder.Entity("Tide.Domain.Entities.MeetingAttendee", b =>
@@ -3414,6 +3535,8 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Navigation("Files");
 
                     b.Navigation("Hunts");
+
+                    b.Navigation("Indicators");
                 });
 
             modelBuilder.Entity("Tide.Domain.Entities.Article", b =>

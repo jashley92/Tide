@@ -58,6 +58,8 @@ public interface IAppDbContext : IAsyncDisposable, IDisposable
     DbSet<ActionCardRule> ActionCardRules { get; }
     DbSet<HuntQuery> HuntQueries { get; }
     DbSet<QueryTemplate> QueryTemplates { get; }
+    DbSet<SavedQuery> SavedQueries { get; }
+    DbSet<ActionIndicator> ActionIndicators { get; }
     DbSet<NotificationMark> NotificationMarks { get; }
     DbSet<Source> Sources { get; }
     DbSet<FeedItem> FeedItems { get; }
