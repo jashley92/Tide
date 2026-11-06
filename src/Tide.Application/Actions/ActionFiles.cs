@@ -165,8 +165,11 @@ public sealed class ActionFileService(IAppDbContextFactory dbs, ICurrentUser use
                 db.ActionFiles.Add(file);
                 added.Add(file);
             }
-            db.ActionEvents.Add(Event(a.Id, (added.Count == 1 ? "Added the file " : $"Added {added.Count} files: ")
-                + string.Join("; ", added.Select(f => $"{f.FileName} ({FileSizes.Text(f.SizeBytes)}, SHA-256 {f.Sha256})")) + "."));
+            var each = added.Select(f => $"{f.FileName} ({FileSizes.Text(f.SizeBytes)}, SHA-256 {f.Sha256})").ToList();
+            var together = (added.Count == 1 ? "Added the file " : $"Added {added.Count} files: ") + string.Join("; ", each) + ".";
+            // One line for the lot, unless it would be cut short (a history line is clipped) and lose later files' hashes.
+            if (ActionService.ClipEvent(together) == together) db.ActionEvents.Add(Event(a.Id, together));
+            else foreach (var line in each) db.ActionEvents.Add(Event(a.Id, "Added the file " + line + "."));
             await db.SaveChangesAsync(ct);
         }
         catch
@@ -182,7 +185,8 @@ public sealed class ActionFileService(IAppDbContextFactory dbs, ICurrentUser use
     private (FileInspection Seen, string? Description) Inspect(ActionFileUpload u)
     {
         if (u.Bytes.Length == 0) throw new ArgumentException($"'{u.FileName}' is empty.");
-        var seen = FileRisk.Inspect(u.FileName, u.DeclaredType, u.Bytes);
+        // Judged on the name it's stored and downloaded under: the name's odd characters are dropped when it's kept.
+        var seen = FileRisk.Inspect(ScreenshotService.EvidenceName(u.FileName), u.DeclaredType, u.Bytes);
         if (seen.IsImage && u.Bytes.Length > MaxImageBytes) throw new ArgumentException($"'{u.FileName}' is over the {MaxImageMB} MB limit for images.");
         if (!seen.IsImage && u.Bytes.Length > MaxFileBytes) throw new ArgumentException($"'{u.FileName}' is over the {MaxFileMB} MB limit for files.");
         return (seen, CleanDescription(u.Description));

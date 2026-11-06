@@ -72,7 +72,7 @@
                     <div class="tide-comment" @key="c.Id">
                         <div class="tide-present-help"><strong>@c.AuthorName</strong> &middot; @Ui.When(Clock, c.AtUtc)@(c.EditedAtUtc is not null ? " (edited)" : "")</div>
                         @if (c.Text.Length > 0) { <Md Text="@c.Text" /> }
-                        @{ var shots = Links ? c.Files.Where(f => f.IsImage).OrderBy(f => f.SortOrder).ToList() : []; }
+                        @{ var shots = Links ? c.Files.Where(f => !f.IsRemoved && f.IsImage).OrderBy(f => f.SortOrder).ToList() : []; }
                         @if (shots.Count > 0)
                         {
                             <div class="tide-comment-shots">
@@ -84,7 +84,7 @@
                                 }
                             </div>
                         }
-                        @foreach (var f in c.Files.Where(f => Links && !f.IsImage).OrderBy(f => f.SortOrder))
+                        @foreach (var f in c.Files.Where(f => Links && !f.IsRemoved && !f.IsImage).OrderBy(f => f.SortOrder))
                         {
                             <div class="tide-present-help"><span class="bi bi-paperclip" aria-hidden="true"></span> @f.FileName</div>
                         }

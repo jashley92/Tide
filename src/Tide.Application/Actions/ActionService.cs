@@ -746,7 +746,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             comment.Files.Add(new ActionCommentFile
             {
                 FileId = file.Id, FileName = file.FileName, SizeBytes = file.SizeBytes, IsImage = isImage, SortOrder = i,
-                RiskReason = FileRisk.Inspect(u.FileName, u.DeclaredType, u.Bytes).RiskReason,
+                RiskReason = FileRisk.Inspect(file.FileName, u.DeclaredType, u.Bytes).RiskReason,
             });
         }
         db.ActionComments.Add(comment);
