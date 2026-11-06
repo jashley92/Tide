@@ -149,10 +149,12 @@ public static class AuditKinds
         [nameof(ActionFile)] = "Action file",
         [nameof(ActionChecklistItem)] = "Checklist item",
         [nameof(HuntQuery)] = "Hunt query",
+        [nameof(ActionIndicator)] = "Action indicator",
         [nameof(Playbook)] = "Playbook",
         [nameof(PlaybookStep)] = "Playbook step",
         [nameof(ActionCardRule)] = "Card rule",
         [nameof(QueryTemplate)] = "Query template",
+        [nameof(SavedQuery)] = "Saved query",
         [nameof(Story)] = "Story",
         [nameof(Source)] = "Source",
         [nameof(Team)] = "Team",
@@ -378,6 +380,7 @@ internal static class AuditRecords
         [nameof(ActionChecklistItem)] = (nameof(ActionItem), nameof(ActionChecklistItem.ActionId)),
         [nameof(ActionFile)] = (nameof(ActionItem), nameof(ActionFile.ActionId)),
         [nameof(HuntQuery)] = (nameof(ActionItem), nameof(HuntQuery.ActionId)),
+        [nameof(ActionIndicator)] = (nameof(ActionItem), nameof(ActionIndicator.ActionId)),
         [nameof(PlaybookStep)] = (nameof(Playbook), nameof(PlaybookStep.PlaybookId)),
         [nameof(MetricValue)] = (nameof(MetricDefinition), nameof(MetricValue.DefinitionId)),
     };
@@ -478,6 +481,7 @@ internal static class AuditRecords
         nameof(ActionFile) => await db.ActionFiles.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.ActionId, ct),
         nameof(ActionChecklistItem) => await db.ActionChecklistItems.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.ActionId, ct),
         nameof(HuntQuery) => await db.HuntQueries.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.ActionId, ct),
+        nameof(ActionIndicator) => await db.ActionIndicators.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.ActionId, ct),
         nameof(PlaybookStep) => await db.PlaybookSteps.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.PlaybookId, ct),
         nameof(MetricValue) => await db.MetricValues.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.DefinitionId, ct),
         _ => [],
@@ -514,6 +518,8 @@ internal static class AuditRecords
                 return Named(await db.ScorecardCategories.AsNoTracking().Where(x => ids.Contains(x.Id)).Select(x => new { x.Id, x.Name }).ToListAsync(ct), x => x.Id, x => x.Name, "admin/scorecard");
             case nameof(Playbook):
                 return Named(await db.Playbooks.AsNoTracking().Where(x => ids.Contains(x.Id)).Select(x => new { x.Id, x.Name }).ToListAsync(ct), x => x.Id, x => x.Name, "admin/playbooks");
+            case nameof(SavedQuery):
+                return Named(await db.SavedQueries.AsNoTracking().Where(x => ids.Contains(x.Id)).Select(x => new { x.Id, x.Name }).ToListAsync(ct), x => x.Id, x => x.Name, "hunts/saved");
             case nameof(ActionCardRule):
                 return Named(await db.ActionCardRules.AsNoTracking().Where(x => ids.Contains(x.Id)).Select(x => new { x.Id, x.Name }).ToListAsync(ct), x => x.Id, x => x.Name, "admin/card-rules");
             case nameof(MetricDefinition):

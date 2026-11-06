@@ -96,6 +96,7 @@ public static class DependencyInjection
         services.AddScoped<HuntQueryBuilder>();
         services.AddScoped<ActionService>();
         services.AddScoped<PlaybookService>();
+        services.AddScoped<SavedQueryService>();
         services.AddScoped<CardRuleService>();
         services.AddScoped<ReminderService>();
         services.AddScoped<IntakeService>();

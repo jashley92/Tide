@@ -2,13 +2,17 @@
    language, or add a hand-written one, copy it into the SIEM, and record what it found. TIDE never runs the query.
    The language last used is remembered in the browser. A sweep or hunt whose query came back clean closes in one step,
    "No hits, close": only once the query was copied here (or written by hand), saying how many days it searched, and
-   with the values it left out acknowledged. *@
+   with the values it left out acknowledged. A query can also come from the team's saved ones (in the chosen language,
+   or any), its window and indicators filled in; and any query here can be saved for the team, as it stands. Indicators
+   can be added here too: to the article the action was raised from (for an analyst), or, with no article, to the action. *@
 @inject ActionService ActionSvc
+@inject SavedQueryService SavedSvc
 @inject IJSRuntime JS
 @inject ScreenshotService Shots
 @inject OrgClock Clock
 @inject ToastService Toasts
 @inject PrerenderHandoff Handoff
+@inject ICurrentUser CurrentUser
 
 <div class="tide-card">
     <h2>Hunt queries <span class="tide-count tide-muted fw-normal">(@Action.Hunts.Count)</span></h2>
@@ -18,19 +22,50 @@
             <select class="tide-maxw-md form-select form-select-sm" aria-label="Query language" @bind="_dialect" @bind:after="RememberDialect">
                 @foreach (var d in QueryDialects.All) { <option value="@d.Key">@d.Name</option> }
             </select>
-            @if (_sources.ArticleIndicators > 0)
+            @if (_sources.Own > 0)
             {
-                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Generate(false)"><span class="bi bi-terminal" aria-hidden="true"></span> Generate from @_sources.ArticleIndicators indicator@(_sources.ArticleIndicators == 1 ? "" : "s")</button>
+                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Generate(false)"><span class="bi bi-terminal" aria-hidden="true"></span> Generate from @_sources.Own indicator@(_sources.Own == 1 ? "" : "s")</button>
             }
-            @if (_sources.StoryArticles > 1 && _sources.StoryIndicators > _sources.ArticleIndicators)
+            @if (_sources.StoryArticles > 1 && _sources.StoryIndicators > _sources.Own)
             {
                 <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Generate(true)"><span class="bi bi-diagram-3" aria-hidden="true"></span> From the story's @_sources.StoryArticles articles (@_sources.StoryIndicators indicators)</button>
             }
             <button class="btn btn-link btn-sm" @onclick="() => _writing = !_writing">Write one by hand</button>
+            <button class="btn btn-link btn-sm" aria-expanded="@(_picking ? "true" : "false")" aria-controls="hunt-saved-picker" @onclick="TogglePicker">Add a saved query</button>
+            <button class="btn btn-link btn-sm" aria-expanded="@(_addingIndicators ? "true" : "false")" aria-controls="hunt-indicators" @onclick="ToggleIndicators">Add indicators</button>
         </div>
         @if (_sources.StoryIndicators == 0)
         {
-            <p class="small tide-muted">@(Action.Article is null ? "Not from an article, so there are no indicators. Write a query by hand." : "No indicators on the article. Add them there, or write a query by hand.")</p>
+            <p class="small tide-muted">@(Action.Article is null ? "Not from an article, so there are no indicators yet. Add some, or write a query by hand." : "No indicators on the article. Add some, or write a query by hand.")</p>
+        }
+        @if (_addingIndicators)
+        {
+            <div class="tide-hunt-picker mb-3" id="hunt-indicators">
+                @if (Action.Article is not null && !CurrentUser.Has(Permission.WriteArticles))
+                {
+                    <p class="small mb-0">@ActionService.OnTheArticle</p>
+                }
+                else
+                {
+                    <p class="small tide-muted mb-2">@(Action.Article is null
+                        ? "Kept on this action, for its hunts."
+                        : "Added to the article this action was raised from, so the brief, its exports and other actions have them too.")</p>
+                    @if (Action.Indicators.Count > 0)
+                    {
+                        <ul class="tide-hunt-picks mb-2" aria-label="Indicators on this action">
+                            @foreach (var i in Action.Indicators)
+                            {
+                                <li @key="i.Id">
+                                    <span class="tide-chip mb-0">@Ui.IndicatorLabel(i.Type)</span>
+                                    <span class="tide-ioc flex-grow-1">@IocObservable.Defang(i.Type, i.Value)</span>
+                                    <button type="button" class="tide-icon-btn" title="Remove" aria-label="Remove indicator @i.Value" disabled="@_busy" @onclick="() => RemoveIndicator(i)"><span class="bi bi-trash3" aria-hidden="true"></span></button>
+                                </li>
+                            }
+                        </ul>
+                    }
+                    <IndicatorAdd Have="HaveIndicators" Cves="false" Disabled="_busy" Adding="AddIndicators" />
+                }
+            </div>
         }
         @if (_writing)
         {
@@ -42,6 +77,44 @@
                 </div>
             </div>
         }
+        @if (_picking)
+        {
+            <div class="tide-hunt-picker mb-3" id="hunt-saved-picker">
+                <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
+                    <input type="search" class="tide-maxw-md form-control form-control-sm" aria-label="Find a saved query" placeholder="Find a saved query"
+                           @bind="_pickWords" @bind:event="oninput" />
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" id="hunt-pick-all" @bind="_pickAll" />
+                        <label class="form-check-label small" for="hunt-pick-all">All languages</label>
+                    </div>
+                    <a class="small ms-auto" href="hunts/saved">All saved queries</a>
+                </div>
+                @if (_saved is null)
+                {
+                    <LoadingBlock Rows="2" />
+                }
+                else if (Offered.Count == 0)
+                {
+                    <p class="small tide-muted mb-0">@PickerEmpty</p>
+                }
+                else
+                {
+                    <ul class="tide-hunt-picks" aria-label="Saved queries">
+                        @foreach (var s in Offered)
+                        {
+                            <li @key="s.Query.Id">
+                                <div class="flex-grow-1">
+                                    <strong>@s.Query.Name</strong> <span class="small tide-muted">@HuntQueryBuilder.DialectName(s.Query.Dialect)</span>
+                                    @if (s.Query.Description is { } about) { <div class="small tide-muted">@about</div> }
+                                    @if (UsesIndicators(s.Query)) { <div class="small tide-muted">Fills in the action's indicators.</div> }
+                                </div>
+                                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" aria-label="Add @s.Query.Name" @onclick="() => AddSaved(s.Query)">Add</button>
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        }
     }
     @foreach (var h in Action.Hunts)
     {
@@ -49,7 +122,8 @@
         <div class="tide-hunt" @key="h.Id">
             <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
                 <strong>@HuntQueryBuilder.DialectName(h.Dialect)</strong>
-                @if (h.GeneratedText.Length == 0) { <Badge>hand-written</Badge> }
+                @if (h.SavedQueryName is { } savedName) { <Badge Icon="bi-bookmark">saved query: @savedName</Badge> }
+                else if (h.GeneratedText.Length == 0) { <Badge>hand-written</Badge> }
                 <span class="small tide-muted">@h.CreatedByName &middot; @Ui.When(Clock, h.CreatedAtUtc)</span>
                 <span class="ms-auto small">
                     <HuntBadge Result="h.Result" OfOneHunt="true" Count="h.ResultCount" />
@@ -76,6 +150,10 @@
                             <button class="btn btn-outline-secondary btn-sm" @onclick="() => StartRecord(h)"><span class="bi bi-check2-square" aria-hidden="true"></span> Record the result</button>
                             <button class="btn btn-link btn-sm" disabled="@_busy" @onclick="() => Remove(h)">Remove</button>
                         }
+                    }
+                    @if (SavedSvc.CanWrite)
+                    {
+                        <button class="btn btn-link btn-sm" @onclick="() => StartSave(h)"><span class="bi bi-bookmark-plus" aria-hidden="true"></span> Save for the team</button>
                     }
                     <span id="@(id + "-status")" class="small tide-muted" role="status" aria-live="polite"></span>
                 </div>
@@ -152,6 +230,24 @@
     <div class="mt-2">
         <label class="tide-field-label" for="hunt-r-ev">Evidence screenshot (optional)</label>
         <InputFile id="hunt-r-ev" class="form-control form-control-sm" accept="image/png,image/jpeg,image/gif,image/webp" OnChange="PickEvidence" />
+    </div>
+</ConfirmDialog>
+
+@* Saving a query for the team: a name and what it's for, prefilled, and the query as it stands, which can be tidied
+   first (a fixed number of days made {{days}}, or the indicators {{values}}, say). *@
+<ConfirmDialog @ref="_saveDialog" Form="true" Wide="true" ConfirmDisabled="@(string.IsNullOrWhiteSpace(_saveName) || string.IsNullOrWhiteSpace(_saveText))" Confirming="SaveForTeam">
+    <div>
+        <label class="tide-field-label" for="hunt-s-name">Name</label>
+        <input id="hunt-s-name" class="form-control form-control-sm" maxlength="@SavedQuery.MaxName" @bind="_saveName" @bind:event="oninput" />
+    </div>
+    <div class="mt-2">
+        <label class="tide-field-label" for="hunt-s-about">What it's for (optional)</label>
+        <input id="hunt-s-about" class="form-control form-control-sm" maxlength="@SavedQuery.MaxDescription" @bind="_saveDescription" />
+    </div>
+    <div class="mt-2">
+        <label class="tide-field-label" for="hunt-s-text">Query</label>
+        <textarea id="hunt-s-text" class="tide-query" spellcheck="false" aria-describedby="hunt-s-text-help" @bind="_saveText" @bind:event="oninput"></textarea>
+        <SavedQueryHelp Id="hunt-s-text-help" />
     </div>
 </ConfirmDialog>
 
@@ -331,6 +427,106 @@
     });
 
     private Task Remove(HuntQuery h) => Run(() => ActionSvc.RemoveHuntAsync(h.Id));
+
+    // --- indicators added here ------------------------------------------------------------------------------------
+
+    private bool _addingIndicators;
+
+    internal void ToggleIndicators()
+    {
+        _addingIndicators = !_addingIndicators;
+        StateHasChanged();
+    }
+
+    // What the pasted text shouldn't offer again: the article's and the action's own.
+    private IReadOnlyCollection<IndicatorForm> HaveIndicators =>
+        (Action.Article?.Indicators.Select(i => (i.Type, i.Value)) ?? []).Concat(Action.Indicators.Select(i => (i.Type, i.Value)))
+            .Select(i => new IndicatorForm { Type = i.Type, Value = i.Value }).ToList();
+
+    // The card's counts and Generate button follow at once, before the page hands over the action read again.
+    internal Task<bool> AddIndicators(IndicatorAdd.Addition add) => Run(async () =>
+    {
+        var n = await ActionSvc.AddIndicatorsAsync(Action.Id, add.Indicators);
+        Toasts.Show(n == 0 ? "Those are already there." : $"Added {n} indicator{(n == 1 ? "" : "s")}{(Action.Article is null ? "" : " to the article")}.");
+        await ReadSources();
+    });
+
+    private Task RemoveIndicator(ActionIndicator i) => Run(async () =>
+    {
+        await ActionSvc.RemoveIndicatorAsync(i.Id);
+        await ReadSources();
+    });
+
+    private async Task ReadSources()
+    {
+        _sources = await ActionSvc.HuntSourcesAsync(Action.Id);
+        StateHasChanged();
+    }
+
+    private static bool UsesIndicators(SavedQuery q) => q.Text.Contains("{{values", StringComparison.Ordinal);
+
+    // --- the team's saved queries ----------------------------------------------------------------------------------
+
+    private bool _picking, _pickAll;
+    private string? _pickWords;
+    private IReadOnlyList<SavedQueryRow>? _saved;
+
+    /// <summary>The saved queries offered: in the chosen language (or all), matching what's typed.</summary>
+    internal IReadOnlyList<SavedQueryRow> Offered => (_saved ?? [])
+        .Where(s => _pickAll || s.Query.Dialect == _dialect).Where(s => SavedQueryService.Matches(s.Query, _pickWords)).ToList();
+
+    private string PickerEmpty =>
+        _saved is { Count: 0 } ? "No saved queries yet. Save one from any hunt here with Save for the team."
+        : !string.IsNullOrWhiteSpace(_pickWords) ? "No saved query matches that."
+        : $"No saved queries in {HuntQueryBuilder.DialectName(_dialect)}. Tick All languages to see the others.";
+
+    // Read each time the picker opens, so one a colleague saved since the page loaded is there.
+    internal async Task TogglePicker()
+    {
+        _picking = !_picking;
+        if (!_picking) return;
+        _saved = null;
+        try { _saved = await SavedSvc.ListAsync(); }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            _picking = false;
+        }
+        StateHasChanged();
+    }
+
+    internal Task AddSaved(SavedQuery q) => Run(async () =>
+    {
+        await ActionSvc.AddSavedHuntAsync(Action.Id, q.Id);
+        _picking = false;
+        Toasts.Show($"{q.Name} added.");
+    });
+
+    private ConfirmDialog _saveDialog = default!;
+    private Guid? _saving;
+    private string? _saveName, _saveDescription, _saveText;
+
+    /// <summary>
+    /// Opens Save for the team on <paramref name="h"/>: named for the saved query it came from ("(tuned)" once edited) or
+    /// the action, described by the action, and its text without the line TIDE wrote over it.
+    /// </summary>
+    internal async Task StartSave(HuntQuery h)
+    {
+        _saving = h.Id;
+        _saveName = Clip(h.SavedQueryName is { } from ? (h.Text == h.GeneratedText ? from : from + " (tuned)") : Action.Title, SavedQuery.MaxName);
+        _saveDescription = Clip($"From {Ui.ActionLabel(Action.Number)}, {Action.Title}", SavedQuery.MaxDescription);
+        _saveText = HuntQueryBuilder.WithoutHeader(h.Dialect, h.Text);
+        await _saveDialog.Ask($"Save the {HuntQueryBuilder.DialectName(h.Dialect)} query for the team", null, "Save for the team", danger: false);
+        _saving = null;
+    }
+
+    internal Task<bool> SaveForTeam() => Run(async () =>
+    {
+        await SavedSvc.SaveFromHuntAsync(_saving!.Value, _saveName ?? "", _saveDescription, _saveText);
+        Toasts.Show($"Saved for the team as {_saveName?.Trim()}.");
+    });
+
+    private static string Clip(string text, int max) => text.Length <= max ? text : text[..(max - 1)].TrimEnd() + "…";
 
     // True when it worked; a failure is a toast.
     private async Task<bool> Run(Func<Task> action)

@@ -1,0 +1,12 @@
+@* What a saved query's placeholders do, under each box a saved query is written in (Saved queries, Save for the team). *@
+<div class="form-text" id="@Id">
+    Write <span class="tide-data">@QueryDialects.DaysPlaceholder</span> where the number of days back goes, and
+    <span class="tide-data">@QueryDialects.Placeholder</span> where the action's indicators go, written as the language writes a list:
+    they're filled in when the query is added to an action. <span class="tide-data">@HuntQueryBuilder.ValuesPlaceholder(HuntValueKind.Domain)</span>,
+    <span class="tide-data">@HuntQueryBuilder.ValuesPlaceholder(HuntValueKind.Sha256)</span> and the like take one kind only, and the action's
+    other kinds are named as left out. A query that needs indicators the action doesn't have isn't added.
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+}

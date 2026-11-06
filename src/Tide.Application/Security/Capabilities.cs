@@ -77,6 +77,11 @@ public static class Capabilities
         new(Actions, "Add and describe files", "ActionFileService.RequireWorkAsync", [G(Permission.WriteArticles), Q("own team's", Permission.WorkActions)]),
         new(Actions, "Remove files", "ActionFileService.CanRemove", [G(Permission.WriteArticles), Q("own files", Permission.WorkActions)]),
         new(Actions, "Restore removed files", "ActionFileService.RestoreAsync", [G(Permission.Administer)]),
+        new(Actions, "Add indicators for an action's hunts", "ActionService.AddIndicatorsAsync",
+            [G(Permission.WriteArticles), Q("own team's, with no article", Permission.WorkActions)]),
+        new(Actions, "Read the saved hunt queries", "Policies.ReadActions; SavedQueryService.RequireRead", [G(Permission.ReadActions)]),
+        new(Actions, "Save, edit, retire and restore saved hunt queries", "SavedQueryService.RequireWrite", [G(Permission.WorkActions)]),
+        new(Actions, "Delete saved hunt queries", "SavedQueryService.CanDelete", [G(Permission.Administer), Q("own ones", Permission.WorkActions)]),
         new(Actions, "Choose my own notifications (reminders, digests, rotation emails)", "NotificationPreferenceService.Require (My notifications)",
             [G(Permission.ReadActions)]),
 

@@ -37,6 +37,9 @@ public sealed class ChangeFeed
     /// <summary>Our stack's products: one added, edited or retired (present mode's "We run" chips and product cards).</summary>
     public const string Stack = "stack";
 
+    /// <summary>The team's saved hunt queries: one saved, edited, retired, restored or deleted.</summary>
+    public const string SavedQueries = "saved-queries";
+
     public static string Article(Guid id) => $"article:{id}";
 
     /// <summary>An article's adversary and product tags, which the editor's We run and Threat actors pickers show. Apart from the article's

@@ -21,6 +21,11 @@ differently, so no built-in query fits every install.
   analyst can also add a query they wrote, such as a behavioural one; it's kept and recorded like a generated one,
   marked hand-written. `{{days}}` in a template is how far back to look: a week before the earliest article hunted
   from, at least 30 days and at most 180. The KQL defaults use it.
+- **Saved queries and an action's own indicators.** (Added November 2026.) The team keeps hunt queries to reuse: a
+  tuned sweep, or a behavioural hunt with no indicators. Anyone who works actions keeps the library. A saved query may
+  use `{{days}}`, and `{{values}}` (or one kind's, `{{values:sha256}}`), filled from the action when it's added there,
+  so it is still generated text with nothing run. An action with no article can carry indicators of its own for this;
+  one raised from an article adds them to the article, so every edition and export sees the same indicators.
 - **No SIEM credentials.** The analyst copies the query, runs it in their SIEM, and records the result (hits or no
   hits, a count, notes, a screenshot) on the action. TIDE holds no SIEM credentials and makes no SIEM API calls in
   v1.

@@ -65,6 +65,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<ActionCardRule> ActionCardRules => Set<ActionCardRule>();
     public DbSet<HuntQuery> HuntQueries => Set<HuntQuery>();
     public DbSet<QueryTemplate> QueryTemplates => Set<QueryTemplate>();
+    public DbSet<SavedQuery> SavedQueries => Set<SavedQuery>();
+    public DbSet<ActionIndicator> ActionIndicators => Set<ActionIndicator>();
     public DbSet<NotificationMark> NotificationMarks => Set<NotificationMark>();
     public DbSet<Source> Sources => Set<Source>();
     public DbSet<FeedItem> FeedItems => Set<FeedItem>();
@@ -483,6 +485,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasMany(x => x.Events).WithOne().HasForeignKey(x => x.ActionId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Hunts).WithOne().HasForeignKey(x => x.ActionId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Checklist).WithOne().HasForeignKey(x => x.ActionId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.Indicators).WithOne().HasForeignKey(x => x.ActionId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Files).WithOne().HasForeignKey(x => x.ActionId).OnDelete(DeleteBehavior.Cascade);
             e.Property(x => x.PlaybookName).HasMaxLength(100);
             e.HasOne<Playbook>().WithMany().HasForeignKey(x => x.PlaybookId).OnDelete(DeleteBehavior.Restrict);
@@ -533,6 +536,14 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasIndex(x => x.FileId).IsUnique();
         });
 
+        b.Entity<ActionIndicator>(e =>
+        {
+            e.Property(x => x.Value).HasMaxLength(2000);
+            e.Property(x => x.Note).HasMaxLength(300);
+            e.Property(x => x.AddedByName).HasMaxLength(256);
+            e.HasIndex(x => x.ActionId);
+        });
+
         b.Entity<ActionChecklistItem>(e =>
         {
             e.Property(x => x.Text).HasMaxLength(ActionChecklistItem.MaxText);
@@ -579,6 +590,23 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasOne<StoredFile>().WithMany().HasForeignKey(x => x.EvidenceFileId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => x.ActionId);
             e.HasIndex(x => x.EvidenceFileId);
+            e.Property(x => x.SavedQueryName).HasMaxLength(SavedQuery.MaxName);
+            // A saved query can be deleted; the hunts added from it keep its name.
+            e.HasOne<SavedQuery>().WithMany().HasForeignKey(x => x.SavedQueryId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(x => x.SavedQueryId);
+        });
+
+        b.Entity<SavedQuery>(e =>
+        {
+            e.Property(x => x.Name).HasMaxLength(SavedQuery.MaxName);
+            e.Property(x => x.Dialect).HasMaxLength(16);
+            e.HasIndex(x => new { x.Dialect, x.Name }).IsUnique();
+            e.Property(x => x.Text).HasMaxLength(SavedQuery.MaxText);
+            e.Property(x => x.Description).HasMaxLength(SavedQuery.MaxDescription);
+            e.Property(x => x.CreatedByName).HasMaxLength(256);
+            e.Property(x => x.ModifiedByName).HasMaxLength(256);
+            e.Property(x => x.EditVersion).IsConcurrencyToken();
+            Audited(e);
         });
 
         b.Entity<QueryTemplate>(e =>

@@ -432,13 +432,37 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
     }
 
     /// <summary>Indicators and CVEs found in <paramref name="text"/> that the article doesn't already carry.</summary>
-    public static IocExtractor.Found Suggest(string? text, ArticleForm form)
+    public static IocExtractor.Found Suggest(string? text, ArticleForm form) => Suggest(text, form.Indicators, form.Cves);
+
+    /// <summary>Indicators and CVEs found in <paramref name="text"/> that aren't among <paramref name="have"/> and
+    /// <paramref name="haveCves"/> (an article's, or an action's on its Hunt queries card).</summary>
+    public static IocExtractor.Found Suggest(string? text, IEnumerable<IndicatorForm> have, IEnumerable<string> haveCves)
     {
         var found = IocExtractor.Extract(text);
-        var have = form.Indicators.Select(i => $"{(int)i.Type}|{i.Value}").ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var had = have.Select(i => $"{(int)i.Type}|{i.Value}").ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var hadCves = haveCves.ToHashSet(StringComparer.OrdinalIgnoreCase);
         return new IocExtractor.Found(
-            found.Indicators.Where(i => !have.Contains($"{(int)i.Type}|{i.Value}")).ToList(),
-            found.Cves.Where(c => !form.Cves.Contains(c, StringComparer.OrdinalIgnoreCase)).ToList());
+            found.Indicators.Where(i => !had.Contains($"{(int)i.Type}|{i.Value}")).ToList(),
+            found.Cves.Where(c => !hadCves.Contains(c)).ToList());
+    }
+
+    /// <summary>
+    /// Adds indicators to an article without touching the rest of it, in the caller's save (from an action's Hunt queries
+    /// card, whose history line goes with it): normalised and folded as a save does, those it already carries skipped, and
+    /// refused past <see cref="IocExtractor.MaxIndicators"/>. The article's edit version moves, so an editor open on the
+    /// older copy can't save its own indicators over these. Returns how many were new. The caller checks WriteArticles.
+    /// </summary>
+    internal static int AddIndicators(IAppDbContext db, Article a, IEnumerable<IndicatorForm> indicators)
+    {
+        var wanted = WantedIndicators(indicators);
+        foreach (var existing in a.Indicators) wanted.Remove($"{(int)existing.Type}|{existing.Value}");
+        if (wanted.Count == 0) return 0;
+        if (a.Indicators.Count + wanted.Count > IocExtractor.MaxIndicators)
+            throw new ArgumentException($"An article can carry at most {IocExtractor.MaxIndicators} indicators.");
+        foreach (var f in wanted.Values)
+            db.ArticleIndicators.Add(new ArticleIndicator { ArticleId = a.Id, Type = f.Type, Value = f.Value, Note = f.Note });
+        a.EditVersion = Guid.NewGuid();
+        return wanted.Count;
     }
 
     /// <summary>The bullets a save keeps, in order: trimmed, with the blank ones dropped.</summary>

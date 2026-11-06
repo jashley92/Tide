@@ -340,6 +340,41 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.ToTable("ActionFiles");
                 });
 
+            modelBuilder.Entity("Tide.Domain.Entities.ActionIndicator", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ActionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("AddedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("AddedByName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActionId");
+
+                    b.ToTable("ActionIndicators");
+                });
+
             modelBuilder.Entity("Tide.Domain.Entities.ActionItem", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1799,6 +1834,13 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<Guid?>("SavedQueryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SavedQueryName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<string>("Text")
                         .IsRequired()
                         .HasMaxLength(20000)
@@ -1809,6 +1851,8 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.HasIndex("ActionId");
 
                     b.HasIndex("EvidenceFileId");
+
+                    b.HasIndex("SavedQueryId");
 
                     b.ToTable("HuntQueries");
                 });
@@ -2448,6 +2492,69 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.ToTable("RotationWeeks");
                 });
 
+            modelBuilder.Entity("Tide.Domain.Entities.SavedQuery", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("CreatedByName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("Dialect")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<Guid>("EditVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsRetired")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("ModifiedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(19500)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Dialect", "Name")
+                        .IsUnique();
+
+                    b.ToTable("SavedQueries");
+                });
+
             modelBuilder.Entity("Tide.Domain.Entities.ScorecardCategory", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3028,6 +3135,15 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Tide.Domain.Entities.ActionIndicator", b =>
+                {
+                    b.HasOne("Tide.Domain.Entities.ActionItem", null)
+                        .WithMany("Indicators")
+                        .HasForeignKey("ActionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Tide.Domain.Entities.ActionItem", b =>
                 {
                     b.HasOne("Tide.Domain.Entities.Article", "Article")
@@ -3301,6 +3417,11 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .WithMany()
                         .HasForeignKey("EvidenceFileId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Tide.Domain.Entities.SavedQuery", null)
+                        .WithMany()
+                        .HasForeignKey("SavedQueryId")
+                        .OnDelete(DeleteBehavior.SetNull);
                 });
 
             modelBuilder.Entity("Tide.Domain.Entities.MeetingAttendee", b =>
@@ -3419,6 +3540,8 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Navigation("Files");
 
                     b.Navigation("Hunts");
+
+                    b.Navigation("Indicators");
                 });
 
             modelBuilder.Entity("Tide.Domain.Entities.Article", b =>

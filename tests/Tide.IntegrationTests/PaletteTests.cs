@@ -53,7 +53,7 @@ public class PaletteEntryTests
     }
 
     [Theory]
-    [InlineData("", 20)]
+    [InlineData("", 21)]
     [InlineData("triage", 1)]
     [InlineData("TRIAGE", 1)]
     [InlineData("ioc", 1)]
@@ -62,7 +62,7 @@ public class PaletteEntryTests
     public void Match_NeedsEveryWord_InTheNameOrItsOtherWords(string query, int expected)
     {
         var all = PaletteEntries.For(new FakeUser(AppRole.Admin), Day);
-        all.Should().HaveCount(20);
+        all.Should().HaveCount(21, "every page, Saved queries among them, and the shortcuts");
         PaletteEntries.Match(all, query).Should().HaveCount(expected);
     }
 

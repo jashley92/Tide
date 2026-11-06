@@ -189,7 +189,8 @@ public partial class ArticleEditorTests(TideApp app) : IClassFixture<TideApp>
         while (root is not null && !File.Exists(Path.Combine(root.FullName, "Tide.sln"))) root = root.Parent;
         root.Should().NotBeNull("the tests run from inside the repository");
         var components = Path.Combine(root!.FullName, "src", "Tide.Web", "Components");
-        return new[] { Path.Combine(components, "Pages", "ArticleEdit.razor"), Path.Combine(components, "Shared", "ArticleEditorPanel.razor") }
+        return new[] { Path.Combine(components, "Pages", "ArticleEdit.razor"), Path.Combine(components, "Shared", "ArticleEditorPanel.razor"),
+                Path.Combine(components, "Shared", "IndicatorAdd.razor") }
             .Where(File.Exists).Select(File.ReadAllText);
     }
 
