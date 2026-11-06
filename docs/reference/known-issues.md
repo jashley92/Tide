@@ -82,7 +82,7 @@ Other scale limits:
 | **Two prompts are the browser's own**: leaving an article with unsaved changes, and ending the meeting in present mode. | They look unlike TIDE's own dialogs. | None; navigation must be answered synchronously. |
 | **Long polling where WebSockets aren't available.** | Slower live updates and higher server load when IIS's WebSocket Protocol feature is missing or a proxy blocks it. | Install the feature (`InstallWebSockets` in the answers file). Diagnostics shows each connection's transport. |
 | **No stemming in search**: "patching" doesn't find "patch". | Analysts must try word forms. | Search for the stem. |
-| **Results are capped**: search 50 per kind per page, the article list 50 a page. | Older items need a narrower filter. | Use filters and dates. |
+| **Results are capped**: search 50 per kind per page. | Older items need a narrower filter. | Use filters and dates. |
 | **Analyst Pull now is rate-limited** per source (`Intake:PullNowMinutes`, 15 by default). | A source pulled recently can't be pulled again from Triage. | An administrator's Poll now on Sources isn't held to it. |
 | **A Visitor sees a meeting only while seated in it.** | Reloading after the meeting ends, or opening a link out, is refused. | By design ([architecture/security.md](../architecture/security.md)). |
 | **The development `?as=` identity sticks** in a cookie. | A developer stays "Robin" until the cookie is cleared. | Use a private window ([development/getting-started.md](../development/getting-started.md#the-development-sign-in)). |

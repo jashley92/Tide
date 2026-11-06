@@ -66,8 +66,8 @@ public static class Shortcuts
     private static readonly ShortcutGroup Triage = new("Triage",
     [
         new(["↓", "↑"], "Next and previous item"),
-        new(["J"], "Next item", Letter: true),
-        new(["K"], "Previous item", Letter: true),
+        new(["J"], "Next item, on to the next page at the end", Letter: true),
+        new(["K"], "Previous item, back a page at the start", Letter: true),
         new(["S"], "Shortlist", Letter: true),
         new(["X"], "Dismiss", Letter: true),
         new(["D"], "Mark as a duplicate of the similar article", Letter: true),
