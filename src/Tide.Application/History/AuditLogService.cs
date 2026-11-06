@@ -131,6 +131,8 @@ public static class AuditKinds
         [nameof(ArticleBullet)] = "Article bullet",
         [nameof(ArticleScreenshot)] = "Screenshot",
         [nameof(ArticleTag)] = "Article scorecard tag",
+        [nameof(ArticleAdversary)] = "Article threat actor",
+        [nameof(ArticleProduct)] = "Article product we run",
         [nameof(ArticleTechnique)] = "Article technique",
         [nameof(ArticleIndicator)] = "Indicator",
         [nameof(ArticleCve)] = "Article CVE",
@@ -384,6 +386,8 @@ internal static class AuditRecords
     private static readonly Dictionary<string, string> Links = new(StringComparer.Ordinal)
     {
         [nameof(ArticleTag)] = nameof(Article),
+        [nameof(ArticleAdversary)] = nameof(Article),
+        [nameof(ArticleProduct)] = nameof(Article),
         [nameof(ArticleTechnique)] = nameof(Article),
         [nameof(ArticleCve)] = nameof(Article),
         [nameof(TeamMember)] = nameof(Team),

@@ -289,24 +289,32 @@ else
     }
 
     // "Add 'X'": the one by that name (made now, with the name alone; refused on the server for anyone but an analyst),
-    // tagged; a link to fill it in.
+    // tagged; a link to fill it in. Once per click: a double-click adds one.
     internal async Task AddNew()
     {
-        if (_busy || Text.Length == 0) return;
-        if (!await Current(() => CanAdd)) return;
-        var name = Text;
-        Guid id;
-        try { id = await Source.AddByNameAsync(name); }
-        catch (Exception ex)
+        if (_busy || _adding || Text.Length == 0) return;
+        _adding = true;
+        try
         {
-            Toasts.Error(UserFacingError.For(ex));
-            return;
+            if (!await Current(() => CanAdd)) return;
+            var name = Text;
+            Guid id;
+            try { id = await Source.AddByNameAsync(name); }
+            catch (Exception ex)
+            {
+                Toasts.Error(UserFacingError.For(ex));
+                return;
+            }
+            Cleared();
+            _added = (id, name);
+            await Tag(id);
+            await Refocus();
         }
-        Cleared();
-        _added = (id, name);
-        await Tag(id);
-        await Refocus();
+        finally { _adding = false; }
     }
+
+    // An "Add" is under way (internal for the tests): another waits for it.
+    internal bool _adding;
 
     // Drawn now (the list without the one just tagged), and the box keeps focus for the next.
     private Task Refocus()

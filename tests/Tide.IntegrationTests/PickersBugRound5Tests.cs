@@ -152,4 +152,66 @@ public class PickersBugRound5Tests(TideApp app) : IClassFixture<TideApp>
             .And.Contain(e => e.What == "Removed a threat actor" && e.Changes.Single().After == "r5hist Scattered Spider")
             .And.Contain(e => e.What == "Added a product we run" && e.Changes.Single().After == "r5hist Edge Gateway");
     }
+
+    [Fact]
+    public async Task TheAuditLog_NamesThreatActorAndProductTags_AndTheArticleTheyreOn()
+    {
+        Guid article;
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+        {
+            var sp = scope.ServiceProvider;
+            var actor = await sp.GetRequiredService<AdversaryService>().SaveAsync(new AdversaryForm { Name = "r5audit APT29" });
+            var product = await sp.GetRequiredService<StackService>().SaveAsync(new StackForm { Name = "r5audit Mail Gateway" });
+            article = await sp.GetRequiredService<ArticleService>().CreateAsync("Round 5 audit kinds", "Vendor", null, TlpLevel.Clear);
+            await sp.GetRequiredService<AdversaryService>().TagArticleAsync(article, actor);
+            await sp.GetRequiredService<StackService>().TagArticleAsync(article, product);
+        }
+
+        await using var read = SignedIn(app, SignIn.Analyst);
+        var audit = read.ServiceProvider.GetRequiredService<AuditLogService>();
+        var actorRow = (await audit.PageAsync(new AuditFilter { Kind = nameof(Domain.Entities.ArticleAdversary) })).Rows
+            .Single(r => r.EntityKey.StartsWith(article.ToString(), StringComparison.Ordinal));
+        actorRow.Should().Match<AuditRow>(r => r.Kind == "Article threat actor" && r.Record == "Round 5 audit kinds" && r.Href == $"articles/{article}");
+        actorRow.Changes.Should().ContainSingle().Which.After.Should().Be("r5audit APT29");
+        var productRow = (await audit.PageAsync(new AuditFilter { Kind = nameof(Domain.Entities.ArticleProduct) })).Rows
+            .Single(r => r.EntityKey.StartsWith(article.ToString(), StringComparison.Ordinal));
+        productRow.Should().Match<AuditRow>(r => r.Kind == "Article product we run" && r.Record == "Round 5 audit kinds" && r.Href == $"articles/{article}");
+        AuditKinds.All.Should().Contain((nameof(Domain.Entities.ArticleAdversary), "Article threat actor"), "the kind filter offers it");
+    }
+
+    [Fact]
+    public async Task Add_WhileAnAddIsUnderWay_DoesNothing_SoADoubleClickAddsOne()
+    {
+        var (article, _) = await Profiles("Round 5 double add");
+        await using var r = await RenderAsync<ArticleAdversaryCard>(app, $"/articles/{article}", new() { ["ArticleId"] = article, ["CanWrite"] = true });
+        await r.Click(c =>
+        {
+            c._combo!._focused = true;
+            c._text = "r5pick Muddled Libra";
+            return c.Find();
+        });
+
+        // The first click's add is still under way: the second is ignored.
+        await r.Click(c =>
+        {
+            c._adding = true;
+            return c.AddNew();
+        });
+        await using (var check = SignedIn(app, SignIn.Analyst))
+            (await check.ServiceProvider.GetRequiredService<AppDbContext>().Adversaries.CountAsync(a => a.Name == "r5pick Muddled Libra")).Should().Be(0);
+
+        // Two clicks at once: one profile, tagged.
+        Task first = Task.CompletedTask, second = Task.CompletedTask;
+        await r.Renderer.Dispatcher.InvokeAsync(() =>
+        {
+            r.Component._adding = false;
+            first = r.Pressed(c => c.AddNew());
+            second = r.Pressed(c => c.AddNew());
+        });
+        await Task.WhenAll(first, second);
+        r.Component._adding.Should().BeFalse("the add is done");
+        await using (var check = SignedIn(app, SignIn.Analyst))
+            (await check.ServiceProvider.GetRequiredService<AppDbContext>().Adversaries.CountAsync(a => a.Name == "r5pick Muddled Libra")).Should().Be(1);
+        (await TaggedActors(article)).Should().Equal("r5pick Muddled Libra");
+    }
 }
