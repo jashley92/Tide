@@ -89,6 +89,20 @@ public class SearchServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ALoneDigit_FindsThatActionOnly()
+    {
+        var team = await _db.Teams().AddAsync("Cyber Defense", null, null);
+        var numbers = new List<int>();
+        for (var i = 0; i < 2; i++) numbers.Add(await _db.Actions().CreateAsync(new ActionForm { Title = "Sweep 1 for APT29", Kind = ActionKind.IocSweep, TeamId = team }));
+        await Article("Scattered Spider 1 note");
+
+        var r = await Search().SearchAsync($"{numbers[0]}");
+
+        r.Actions.Items.Select(a => a.Number).Should().Equal(numbers[0]);
+        r.Articles.Items.Should().BeEmpty("a digit is looked for as an action's number, not in the text");
+    }
+
+    [Fact]
     public async Task Text_SaysHowManyMatchInAll_AndPagesEachKind()
     {
         for (var i = 0; i < 3; i++) await Article($"Zebrafish lure {i}");
