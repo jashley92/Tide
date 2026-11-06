@@ -288,12 +288,13 @@
         StateHasChanged();
     }
 
-    /// <summary>Chooses a template (and a product) and fills it, as the pickers do.</summary>
-    internal Task Choose(Guid templateId, Guid? productId = null)
+    /// <summary>Chooses a template (and a product) and fills it, as the pickers do, and draws it as their change does.</summary>
+    internal async Task Choose(Guid templateId, Guid? productId = null)
     {
         _templateId = templateId;
         if (productId is not null) _productId = productId;
-        return Fill();
+        await Fill();
+        StateHasChanged();
     }
 
     // A template or product chosen: fill it again. What was typed in the boxes is replaced by the new fill.

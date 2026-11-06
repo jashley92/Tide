@@ -50,12 +50,7 @@ public sealed class PlaybookService(IAppDbContextFactory dbs, ICurrentUser user)
     public async Task<Guid> SaveAsync(PlaybookForm form, CancellationToken ct = default)
     {
         RequireAdmin();
-        var name = ArticleService.Clean(form.Name, 100);
-        if (name.Length == 0) throw new ArgumentException("A playbook needs a name.");
-        if (form.Kind is { } k && !Enum.IsDefined(k)) throw new ArgumentException("Choose a kind of action.");
-        var steps = form.Steps.Select(s => ArticleService.Clean(s, ActionChecklistItem.MaxText)).Where(s => s.Length > 0).ToList();
-        if (steps.Count == 0) throw new ArgumentException("A playbook needs at least one step.");
-        if (steps.Count > Playbook.MaxSteps) throw new ArgumentException($"A playbook can have at most {Playbook.MaxSteps} steps.");
+        var (name, description, steps) = Checked(form);
 
         await using var db = await dbs.CreateAsync(ct);
         Playbook p;
@@ -74,12 +69,27 @@ public sealed class PlaybookService(IAppDbContextFactory dbs, ICurrentUser user)
         if (await db.Playbooks.AnyAsync(x => x.Id != p.Id && EF.Functions.Like(x.Name, exact, Search.SearchText.Escape), ct))
             throw new ArgumentException($"There's already a playbook called {name}.");
         p.Name = name;
-        p.Description = ArticleService.CleanOrNull(form.Description, 1000, multiline: true);
+        p.Description = description;
         p.Kind = form.Kind;
         p.IsActive = form.IsActive;
         db.PlaybookSteps.AddRange(steps.Select((s, i) => new PlaybookStep { PlaybookId = p.Id, Order = i, Text = s }));
         await db.SaveChangesAsync(ct);
         return p.Id;
+    }
+
+    /// <summary>
+    /// A form's name, description and steps as they're kept (blank steps dropped), or refused in the form's words. Also
+    /// what the starter set (<see cref="StarterPlaybooks"/>) is held to.
+    /// </summary>
+    internal static (string Name, string? Description, List<string> Steps) Checked(PlaybookForm form)
+    {
+        var name = ArticleService.Clean(form.Name, 100);
+        if (name.Length == 0) throw new ArgumentException("A playbook needs a name.");
+        if (form.Kind is { } k && !Enum.IsDefined(k)) throw new ArgumentException("Choose a kind of action.");
+        var steps = form.Steps.Select(s => ArticleService.Clean(s, ActionChecklistItem.MaxText)).Where(s => s.Length > 0).ToList();
+        if (steps.Count == 0) throw new ArgumentException("A playbook needs at least one step.");
+        if (steps.Count > Playbook.MaxSteps) throw new ArgumentException($"A playbook can have at most {Playbook.MaxSteps} steps.");
+        return (name, ArticleService.CleanOrNull(form.Description, 1000, multiline: true), steps);
     }
 
     /// <summary>Removes a playbook: deleted if no action was started from it, otherwise retired (hidden from the pickers).</summary>

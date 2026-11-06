@@ -69,7 +69,7 @@ jobs:
           /d:sonar.qualitygate.wait=true /d:sonar.qualitygate.timeout=600
           /d:sonar.cs.opencover.reportsPaths="tests/**/TestResults/*/coverage.opencover.xml"
           /d:sonar.exclusions="**/*.ps1,**/*.psd1"
-          /d:sonar.cpd.exclusions="src/Tide.Migrations.SqlServer/Migrations/**,src/Tide.Infrastructure/Persistence/Migrations/**"
+          /d:sonar.cpd.exclusions="src/Tide.Migrations.SqlServer/Migrations/**,src/Tide.Infrastructure/Persistence/Migrations/**,src/Tide.Application/Actions/Starter*.cs"
           /d:sonar.coverage.exclusions="src/Tide.Migrations.SqlServer/Migrations/**,src/Tide.Infrastructure/Persistence/Migrations/**,**/*.razor,src/Tide.Web/Components/**,**/*.ps1,**/*.js,**/*.mjs"
           /d:sonar.issue.ignore.multicriteria=hdr
           /d:sonar.issue.ignore.multicriteria.hdr.ruleKey="xml:S5734"

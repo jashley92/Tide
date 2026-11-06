@@ -94,14 +94,7 @@ public sealed class SavedQueryService(IAppDbContextFactory dbs, ICurrentUser use
     public async Task<Guid> SaveAsync(SavedQueryForm form, CancellationToken ct = default)
     {
         RequireWrite();
-        var d = QueryDialects.Find(form.Dialect) ?? throw new ArgumentException("Choose a query language.");
-        var name = ArticleService.Clean(form.Name, SavedQuery.MaxName);
-        if (name.Length == 0) throw new ArgumentException("A saved query needs a name.");
-        var description = ArticleService.CleanOrNull(form.Description, SavedQuery.MaxDescription);
-        var text = (form.Text ?? "").Replace("\r\n", "\n").Trim();
-        if (text.Length == 0) throw new ArgumentException("The query is empty.");
-        if (text.Length > SavedQuery.MaxText) throw new ArgumentException($"A saved query can be at most {SavedQuery.MaxText:N0} characters.");
-        _ = HuntQueryBuilder.ValuesPlaceholders(text);   // a kind misspelt in {{values:…}} is refused now, not when it's used
+        var (d, name, description, text) = Checked(form);
 
         await using var db = await dbs.CreateAsync(ct);
         SavedQuery q;
@@ -128,6 +121,23 @@ public sealed class SavedQueryService(IAppDbContextFactory dbs, ICurrentUser use
         q.Text = text;
         await SaveEditAsync(db, ct);
         return q.Id;
+    }
+
+    /// <summary>
+    /// A form's language, name, description and text as they're kept, or refused in the form's words. Also what the
+    /// starter set (<see cref="StarterSavedQueries"/>) is held to.
+    /// </summary>
+    internal static (IQueryDialect Dialect, string Name, string? Description, string Text) Checked(SavedQueryForm form)
+    {
+        var d = QueryDialects.Find(form.Dialect) ?? throw new ArgumentException("Choose a query language.");
+        var name = ArticleService.Clean(form.Name, SavedQuery.MaxName);
+        if (name.Length == 0) throw new ArgumentException("A saved query needs a name.");
+        var description = ArticleService.CleanOrNull(form.Description, SavedQuery.MaxDescription);
+        var text = (form.Text ?? "").Replace("\r\n", "\n").Trim();
+        if (text.Length == 0) throw new ArgumentException("The query is empty.");
+        if (text.Length > SavedQuery.MaxText) throw new ArgumentException($"A saved query can be at most {SavedQuery.MaxText:N0} characters.");
+        _ = HuntQueryBuilder.ValuesPlaceholders(text);   // a kind misspelt in {{values:…}} is refused now, not when it's used
+        return (d, name, description, text);
     }
 
     /// <summary>

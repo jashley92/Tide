@@ -92,18 +92,7 @@ public sealed class OutreachTemplateService(IAppDbContextFactory dbs, ICurrentUs
     public async Task<Guid> SaveAsync(OutreachTemplateForm form, CancellationToken ct = default)
     {
         RequireWrite();
-        var name = ArticleService.Clean(form.Name, OutreachTemplate.MaxName);
-        if (name.Length == 0) throw new ArgumentException("A template needs a name.");
-        var description = ArticleService.CleanOrNull(form.Description, OutreachTemplate.MaxDescription);
-        var subject = OutreachFill.CleanSubject(form.Subject, OutreachTemplate.MaxSubject,
-            "A template needs a subject.", $"A subject can be at most {OutreachTemplate.MaxSubject} characters.");
-        var body = OutreachFill.CleanBody(form.Body, OutreachTemplate.MaxBody,
-            "A template needs a body.", $"A body can be at most {OutreachTemplate.MaxBody:N0} characters.");
-        // A placeholder misspelt is refused now, not when an email is written from it.
-        OutreachFill.Check(subject);
-        OutreachFill.Check(body);
-        var to = Address(form.To);
-        var ceiling = Tlp.Checked(form.Ceiling);
+        var (name, description, subject, body, to, ceiling) = Checked(form);
 
         await using var db = await dbs.CreateAsync(ct);
         OutreachTemplate t;
@@ -132,6 +121,25 @@ public sealed class OutreachTemplateService(IAppDbContextFactory dbs, ICurrentUs
         t.Ceiling = ceiling;
         await SaveEditAsync(db, ct);
         return t.Id;
+    }
+
+    /// <summary>
+    /// A form's fields as they're kept, or refused in the form's words. Also what the starter set
+    /// (<see cref="StarterOutreachTemplates"/>) is held to.
+    /// </summary>
+    internal static (string Name, string? Description, string Subject, string Body, string? To, TlpLevel Ceiling) Checked(OutreachTemplateForm form)
+    {
+        var name = ArticleService.Clean(form.Name, OutreachTemplate.MaxName);
+        if (name.Length == 0) throw new ArgumentException("A template needs a name.");
+        var description = ArticleService.CleanOrNull(form.Description, OutreachTemplate.MaxDescription);
+        var subject = OutreachFill.CleanSubject(form.Subject, OutreachTemplate.MaxSubject,
+            "A template needs a subject.", $"A subject can be at most {OutreachTemplate.MaxSubject} characters.");
+        var body = OutreachFill.CleanBody(form.Body, OutreachTemplate.MaxBody,
+            "A template needs a body.", $"A body can be at most {OutreachTemplate.MaxBody:N0} characters.");
+        // A placeholder misspelt is refused now, not when an email is written from it.
+        OutreachFill.Check(subject);
+        OutreachFill.Check(body);
+        return (name, description, subject, body, Address(form.To), Tlp.Checked(form.Ceiling));
     }
 
     /// <summary>A fixed To address as it's kept: one address, or none.</summary>

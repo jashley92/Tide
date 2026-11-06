@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Tide.Application.Abstractions;
+using Tide.Application.Actions;
 using Tide.Application.Org;
 using Tide.Application.Scorecard;
 using Tide.Domain.Entities;
@@ -14,8 +15,9 @@ namespace Tide.Infrastructure.Persistence;
 
 /// <summary>
 /// Run once at startup: applies migrations (unless a DBA applies the schema), seeds the AD-group→role mappings from
-/// configuration on first run, adds the scorecard starter set to an empty install, and in Development adds a few sample
-/// articles and today's brief so there's something to look at.
+/// configuration on first run, adds the scorecard starter set to an empty install and the starter saved queries, outreach
+/// templates and playbooks to an empty library (once each), and in Development adds a few sample articles and today's
+/// brief so there's something to look at.
 /// </summary>
 public sealed class DatabaseInitializer(
     AppDbContext db,
@@ -46,6 +48,7 @@ public sealed class DatabaseInitializer(
         await SeedRoleMappingsAsync(ct);
         roles.Invalidate();
         await scorecard.SeedStarterSetAsync(ct);
+        await SeedStarterLibrariesAsync(db, ct);
         await CanonicalizeIndicatorsAsync(db, log, ct);
         if (env.IsDevelopment()) await SeedSamplesAsync(ct);
     }
@@ -93,6 +96,33 @@ public sealed class DatabaseInitializer(
         if (changed + merged > 0)
             log.LogInformation("Brought {Changed} stored indicator(s) to their canonical spelling and merged {Merged} duplicate(s).", changed, merged);
         return changed + merged;
+    }
+
+    /// <summary>The settings that say each library's starter set has been offered.</summary>
+    public const string StarterSavedQueriesKey = "Data:StarterSavedQueries";
+    public const string StarterOutreachTemplatesKey = "Data:StarterOutreachTemplates";
+    public const string StarterPlaybooksKey = "Data:StarterPlaybooks";
+
+    /// <summary>
+    /// Adds the starter saved queries, outreach templates and playbooks, each to a library with nothing in it, on a new
+    /// install and an upgrade alike. Each library is offered its set once: the marker is written with the rows (or alone,
+    /// when the team already has its own), so starters a team deletes or retires never come back.
+    /// </summary>
+    public static async Task SeedStarterLibrariesAsync(AppDbContext db, CancellationToken ct = default)
+    {
+        await SeedOnceAsync(db, StarterSavedQueriesKey, db.SavedQueries, () => StarterSavedQueries.All.Select(StarterSavedQueries.ToEntity), ct);
+        await SeedOnceAsync(db, StarterOutreachTemplatesKey, db.OutreachTemplates, () => StarterOutreachTemplates.All.Select(StarterOutreachTemplates.ToEntity), ct);
+        await SeedOnceAsync(db, StarterPlaybooksKey, db.Playbooks, () => StarterPlaybooks.All.Select(StarterPlaybooks.ToEntity), ct);
+    }
+
+    // The rows and the marker are one save, so a start that fails partway offers the set again next time.
+    private static async Task SeedOnceAsync<T>(AppDbContext db, string marker, DbSet<T> library, Func<IEnumerable<T>> starters, CancellationToken ct)
+        where T : class
+    {
+        if (await db.Settings.AnyAsync(s => s.Key == marker, ct)) return;
+        if (!await library.AnyAsync(ct)) library.AddRange(starters());
+        db.Settings.Add(new AppSetting { Key = marker, Value = "1", UpdatedAtUtc = DateTimeOffset.UtcNow, UpdatedBy = "system" });
+        await db.SaveChangesAsync(ct);
     }
 
     private async Task SeedRoleMappingsAsync(CancellationToken ct)
