@@ -35,7 +35,7 @@ if [[ "$bad" -ne 0 ]]; then
   cat <<'EOF'
 
 A released migration must never be edited, deleted, renamed, regenerated, or squashed: databases
-installed from that release would no longer upgrade (see docs/development.md). To change the schema, ADD a new
+installed from that release would no longer upgrade (see docs/development/recipes.md). To change the schema, ADD a new
 migration (dotnet ef migrations add ...) that alters what the old one created.
 EOF
   exit 1
