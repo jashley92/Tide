@@ -171,6 +171,54 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
+### v1.6.0
+
+Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds two migrations, `OutreachEmailsAndStackContacts` and
+`TriageSplitsAndGroupingSettings`; none of the earlier ones change. On a DbaApplies install, the DBA applies them
+first, as for any release that carries one.
+
+**Changes to check before upgrading**
+- **"Vendor inquiry" is now "Outreach".** Every existing vendor inquiry becomes an Outreach action, with its outcomes,
+  SLA, playbooks and card rules unchanged. An SLA target saved under the old name moves with the migration. A server's
+  `Actions:Sla:Kind:VendorInquiry` value, an older config bundle and an old trends link still read as Outreach.
+- **The API says `Outreach`.** Where it used to return the kind `VendorInquiry`, it now returns `Outreach`. A script
+  or SOAR playbook that matches on the old name needs updating.
+
+**For administrators**
+- **New settings:**
+  - **Outreach follow-up reminder**, in Administration › Organization › Teams & SLA. It's off until you turn it on.
+    The wait is 1 to 30 business days, default 5. Each person can turn it off in My notifications.
+  - **Triage grouping**, in Administration › Sources:
+    - How far apart two reports of one event can be, 12 to 96 hours, default 48 (unchanged).
+    - Extra words for the grouping to ignore.
+    - The built-in words it always ignores, shown read-only.
+- **Open pages no longer break after a reconnect.** A page left open could start showing "Cannot access a disposed
+  object … SafeAccessTokenHandle" on every action once its connection had dropped and come back (a network blip, a
+  laptop waking). Until then, reloading cleared it. The same fault stopped the two-minute permission re-check on
+  those pages, so role changes might not have reached them.
+- **Pages open with less server work.** A page used to read everything twice as it opened: once to draw it, again
+  when it went live. It now reads again only if something was saved in between. Today's reload costs about half the
+  server time it did.
+
+**For everyone**
+- **Outreach emails from templates.** For asking a vendor, an ISAC, another team or a site's owner for information:
+  - **Outreach templates**, in the menu, is the team's library of email templates. Anyone who works actions can add,
+    edit and retire them. A template fills in the article (title, bottom line, source, CVEs with KEV and EPSS), its
+    indicators (defanged, all of them or one kind), the Our stack product, and the action and sender. Its TLP ceiling
+    decides what it may carry: anything above it is left out, and the email says so.
+  - On an Outreach action, **Write the email** fills a template for you to copy into your own mail. TIDE never sends
+    it. **Mark sent** records who it went to, and the action then waits for the reply. **Record the reply** attaches what
+    came back and closes the conversation.
+  - A template can name a date in business days, skipping weekends and holidays: `{{today:+2}}` is two business
+    days from today, as in "action required by {{today:+2}}", and `{{today:-2}}` two back.
+  - **Our stack products have a contact**, a name and an email address. When an Outreach action names that product,
+    its contact is offered as the recipient.
+- **Triage groups more of the same story.** Two reports of one event now group even when one outlet writes its
+  headline in sentence case and the other capitalises every word (as with the two DigiCert breach reports). They still
+  need a name in common.
+- **"Not the same: split" is kept for everyone.** Splitting a suggested group used to last until you left the page. It
+  now holds for the whole team, the row says who split it and when, and Undo puts it back.
+
 ### v1.5.4
 
 Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds one migration (`SavedQueriesAndActionIndicators`);

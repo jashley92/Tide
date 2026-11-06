@@ -173,6 +173,7 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
             SenderName = user.DisplayName,
             SenderTeam = await SenderTeamAsync(db, a, ct),
             Today = clock.Today,
+            Days = clock.Days,
             LeftOut = cut.LeftOut,
         };
         var draft = OutreachFill.Fill(template.Subject, template.Body, facts);

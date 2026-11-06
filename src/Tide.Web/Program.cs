@@ -188,6 +188,10 @@ using (var scope = app.Services.CreateScope())
     await app.Services.GetRequiredService<EmailTemplateStore>().RefreshAsync(scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>());
 }
 
+// Development only: the screenshot tool's fuller demo data (tools/screenshots), when Demo:Seed is set.
+if (app.Environment.IsDevelopment() && app.Configuration.GetValue<bool>("Demo:Seed"))
+    await DemoSeeder.SeedAsync(app.Services, app.Configuration, app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Tide.Demo"));
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/error", createScopeForErrors: true);
