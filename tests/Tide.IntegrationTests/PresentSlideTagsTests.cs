@@ -23,7 +23,7 @@ namespace Tide.IntegrationTests;
 /// </summary>
 public class PresentSlideTagsTests(TideApp app) : IClassFixture<TideApp>
 {
-    private DateOnly Today => app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;
+    private readonly DateOnly Today = app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;   // read once: a test that straddles midnight mustn't see two days
 
     private static DateOnly BusinessDaysBefore(DateOnly day, int n)
     {

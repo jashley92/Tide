@@ -24,7 +24,7 @@ public class PresentWeRunTests(TideApp app) : IClassFixture<TideApp>
     private static readonly SignIn Owner = new("dev:werun-owner", "Olive Owner", "ActionOwner");
     private static readonly SignIn Robin = new("dev:werun-robin", "Robin Analyst", "Analyst");
 
-    private DateOnly Today => app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;
+    private readonly DateOnly Today = app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;   // read once: a test that straddles midnight mustn't see two days
     private LiveMeetings Meetings => app.Services.GetRequiredService<LiveMeetings>();
 
     private static DateOnly BusinessDaysBefore(DateOnly day, int n)

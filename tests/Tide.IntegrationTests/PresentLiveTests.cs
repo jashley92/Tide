@@ -22,7 +22,7 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
     private static readonly SignIn Robin = new("dev:live-robin", "Robin Analyst", "Analyst");
     private static readonly SignIn Reader = new("dev:live-reader", "Reese Reader", "Reader");
 
-    private DateOnly Today => app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;
+    private readonly DateOnly Today = app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;   // read once: a test that straddles midnight mustn't see two days
     private LiveMeetings Meetings => app.Services.GetRequiredService<LiveMeetings>();
 
     private static DateOnly BusinessDaysBefore(DateOnly day, int n)
