@@ -12,8 +12,22 @@ namespace Tide.Infrastructure.Persistence;
 /// the tracker after it) and published only if it succeeds. A save inside a transaction the caller opened is published
 /// when that transaction commits, and forgotten if it rolls back (no service opens one today; this keeps it true).
 /// </summary>
-public sealed class ChangeInterceptor(ChangeFeed feed, ICurrentUser user, ChangeOrigin origin) : SaveChangesInterceptor, IDbTransactionInterceptor
+public sealed class ChangeInterceptor(ChangeFeed feed, ICurrentUser user, ChangeOrigin origin) : SaveChangesInterceptor, IDbTransactionInterceptor, IDbCommandInterceptor
 {
+    // A bulk update or delete (ExecuteUpdate, ExecuteDelete) skips SaveChanges, so no topics; it's still a write.
+    public int NonQueryExecuted(System.Data.Common.DbCommand command, CommandExecutedEventData eventData, int result)
+    {
+        feed.Wrote();
+        return result;
+    }
+
+    public ValueTask<int> NonQueryExecutedAsync(System.Data.Common.DbCommand command, CommandExecutedEventData eventData, int result,
+        CancellationToken cancellationToken = default)
+    {
+        feed.Wrote();
+        return ValueTask.FromResult(result);
+    }
+
     // A scope can save on more than one context at once (overlapping handlers), so the topics are kept per context.
     private readonly ConditionalWeakTable<DbContext, HashSet<string>> _pending = [];
 
@@ -51,6 +65,7 @@ public sealed class ChangeInterceptor(ChangeFeed feed, ICurrentUser user, Change
 
     public override int SavedChanges(SaveChangesCompletedEventData eventData, int result)
     {
+        feed.Wrote();   // whatever it changed, followed by a page or not
         Publish(eventData.Context);
         return result;
     }
@@ -58,6 +73,7 @@ public sealed class ChangeInterceptor(ChangeFeed feed, ICurrentUser user, Change
     public override ValueTask<int> SavedChangesAsync(SaveChangesCompletedEventData eventData, int result,
         CancellationToken cancellationToken = default)
     {
+        feed.Wrote();
         Publish(eventData.Context);
         return ValueTask.FromResult(result);
     }

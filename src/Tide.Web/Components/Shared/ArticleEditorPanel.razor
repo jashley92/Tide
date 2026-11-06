@@ -704,7 +704,8 @@ else
         // article. It's read again below, quietly, keeping anything typed in between, only if something was saved since.
         var adopted = Handoff.Take<ArticleEditorPanel>(RendererInfo, PrerenderedState, out var current) is { } prerendered
             && prerendered.Id == Id && Adopt(prerendered);
-        if (adopted && current) await OnFormChanged.InvokeAsync(_form);
+        var fresh = adopted && current;
+        if (fresh) await OnFormChanged.InvokeAsync(_form);
         else
         {
             _categories = await Scorecard.ListAsync();

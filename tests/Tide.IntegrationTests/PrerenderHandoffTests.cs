@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.AspNetCore.Components;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Abstractions;
 using Tide.Application.Actions;
@@ -116,6 +117,44 @@ public class PrerenderHandoffTests
         // Nothing to take: not current, whatever the feed says.
         new PrerenderHandoff(store, user, feed).Take<string>(interactive, key, out current).Should().BeNull();
         current.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task EveryWrite_MovesTheFeedsCount_EvenOneNoPageFollows_AndAReadDoesNot()
+    {
+        using var app = new TideApp();
+        var feed = app.Services.GetRequiredService<ChangeFeed>();
+        await using var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst);
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var key = "w-" + Guid.NewGuid().ToString("N")[..8];
+
+        var before = feed.Version;
+        _ = await db.Teams.AsNoTracking().ToListAsync();
+        feed.Version.Should().Be(before, "a read writes nothing");
+
+        // A team: no page follows it, so the feed tells no one, but a prerender that read it is out of date.
+        db.Teams.Add(new Team { Key = key, Name = "Write count " + key });
+        await db.SaveChangesAsync();
+        feed.Version.Should().BeGreaterThan(before);
+
+        // A bulk update skips SaveChanges altogether.
+        var saved = feed.Version;
+        await db.Teams.Where(t => t.Key == key).ExecuteUpdateAsync(u => u.SetProperty(t => t.Description, "changed"));
+        feed.Version.Should().BeGreaterThan(saved);
+    }
+
+    [Fact]
+    public async Task OpeningToday_WritesNothing_SoItsCircuitNeedNotReadAgain()
+    {
+        using var app = new TideApp();
+        var feed = app.Services.GetRequiredService<ChangeFeed>();
+        var client = app.CreateClient();
+        await client.GetStringAsync("/");   // the first visit records who's signed in
+
+        var before = feed.Version;
+        await client.GetStringAsync("/");
+
+        feed.Version.Should().Be(before, "a page that writes as it opens would always read twice");
     }
 
     [Fact]

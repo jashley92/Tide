@@ -862,14 +862,13 @@ else
         _tabMarks = new LiveMarks<FeedItemStatus>(InvokeAsync, StateHasChanged);
         // The first interactive draw starts from what the prerender read, for the same address, so a reload doesn't
         // flash "Loading" over the list; it's read again below, quietly, only if something was saved in between.
-        var adopted = false;
+        var (adopted, fresh) = (false, false);
         if (Handoff.Take<Triage>(RendererInfo, PrerenderedState, out var current) is { } prerendered && prerendered.SameAddress(this))
         {
             Adopt(prerendered);
-            adopted = true;
+            (adopted, fresh) = (true, current);
         }
-        var read = !adopted || !current;
-        if (read)
+        if (!fresh)
         {
             _sources = await Intake.SourcesAsync(includeRetired: true);
             _lastBriefAt = await Intake.LastBriefAtAsync();
@@ -881,7 +880,7 @@ else
         _search = string.IsNullOrWhiteSpace(SearchParam) ? null : SearchParam.Trim();
         _sinceLast = SinceParam == true && _lastBriefAt is not null;
         if (!adopted) _selected = Math.Max(0, RowParam ?? 0);   // adopted, the row Arrive selected stays while it's read again
-        if (read) await Load();
+        if (!fresh) await Load();
         Arrive();
         if (!_failed) PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
     }

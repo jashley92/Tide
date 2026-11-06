@@ -374,13 +374,13 @@ else
         _past = BriefSvc.IsPast(_date);
         // The first interactive draw starts from what the prerender read, so a reload doesn't flash "Loading" over the
         // page. It's read again below, quietly, only if something was saved in between: otherwise it's what a read gives.
-        var adopted = false;
+        var (adopted, fresh) = (false, false);
         if (Handoff.Take<BriefPage>(RendererInfo, PrerenderedState, out var current) is { } prerendered && prerendered._date == _date)
         {
             Adopt(prerendered);
-            adopted = true;
+            (adopted, fresh) = (true, current);
         }
-        if (!adopted || !current) await Read(adopted);
+        if (!fresh) await Read(adopted);
         PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
         if (tab.Send && _brief is not null)
         {

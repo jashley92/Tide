@@ -82,13 +82,17 @@ public sealed class ChangeFeed
 
     private long _version;
 
-    /// <summary>How many changes have been published since the app started: unchanged between two reads, nothing that any
-    /// page follows was saved in between (a prerendered page's state is then still current, <c>PrerenderHandoff</c>).</summary>
+    /// <summary>Moves with every write to the database (<see cref="Wrote"/>) and every change published: unchanged
+    /// between two reads, nothing was saved in between, so a prerendered page's state is still current
+    /// (<c>PrerenderHandoff</c>). Writes no page follows count too: a team, a setting, a bulk update.</summary>
     public long Version => Interlocked.Read(ref _version);
+
+    /// <summary>Records that something was written, whether or not any page follows it.</summary>
+    public void Wrote() => Interlocked.Increment(ref _version);
 
     public void Publish(Change change)
     {
-        Interlocked.Increment(ref _version);
+        Wrote();
         var handlers = Changed;
         if (handlers is null) return;
         // Each subscriber in turn, on the publisher's thread (another circuit, or the poller): one that throws (a page

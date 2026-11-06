@@ -853,8 +853,12 @@ else
         }
         try
         {
-            if (!fresh) await ReadDay(day, date);
-            if (Day != day) return;
+            if (!fresh)
+            {
+                var read = await ReadDay(date);
+                if (Day != day) return;
+                DayRead = read;
+            }
             Seen();   // the notes there already aren't news
             _qaTeam = _teams.FirstOrDefault()?.Id ?? Guid.Empty;
             _follow = Followed();
@@ -876,8 +880,10 @@ else
         _loaded = true;
     }
 
-    // Reads the day in full before anything is shown: dropped if the address moved on meanwhile.
-    private async Task ReadDay(string? day, DateOnly date)
+    // Reads the day in full, before anything is shown (and dropped if the address moved on meanwhile).
+    private async Task<(TlpLevel, TlpLevel, Brief?, Tide.Application.Metrics.MetricDay?, OpenActionsReview, bool, IReadOnlyList<Team>,
+        IReadOnlyDictionary<ActionKind, Guid>, ILookup<Guid, EditionAction>?, IReadOnlyDictionary<string, CveRecord>, bool, MeetingRecord,
+        IReadOnlyDictionary<Guid, IReadOnlyList<StackProduct>>, bool, bool)> ReadDay(DateOnly date)
     {
         var (publicMax, teamMax) = await Distribution.GetAsync();
         var brief = await BriefSvc.GetAsync(date);
@@ -892,8 +898,7 @@ else
         var actions = brief is null ? null : await BriefSvc.EditionActionsAsync(brief);
         var cves = brief is null ? new Dictionary<string, CveRecord>() : await CvesOf(brief);
         var stack = await StackOf(brief);
-        if (Day != day) return;
-        DayRead = (publicMax, teamMax, brief, metrics, open, canCreate, teams, teamsByKind, actions, cves, canPresent, record, stack, canWork, canNote);
+        return (publicMax, teamMax, brief, metrics, open, canCreate, teams, teamsByKind, actions, cves, canPresent, record, stack, canWork, canNote);
     }
 
     // What a read of the day sets, as one: the read and Adopt both go through it, so neither can miss a part.
