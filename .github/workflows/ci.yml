@@ -16,6 +16,9 @@ on:
       - 'LICENSE'
       - '.gitignore'
   workflow_call:
+    secrets:
+      SONAR_TOKEN:
+        required: false
 
 # Only keep the latest run per ref; cancel superseded in-progress runs.
 concurrency:
