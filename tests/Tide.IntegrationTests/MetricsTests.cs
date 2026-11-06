@@ -107,6 +107,39 @@ public class MetricsServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetDay_CarriesTheWorkingDays_SoTheDayAfterAHolidayStillSaysFri()
+    {
+        var id = await Metric();
+        var tue = new DateOnly(2026, 10, 27);
+        _db.Clock.UseHolidays(new Dictionary<DateOnly, string> { [Mon] = "Founders' Day" });
+        var svc = new MetricsService(_db, _db.User, _db.Clock);
+        await svc.SaveValueAsync(id, Fri, 3, null);
+        await svc.SaveValueAsync(id, tue, 4, null);
+
+        var day = await svc.GetDayAsync(tue);
+
+        var from = day.Groups.Single().Tiles.Single().Previous!.Date;
+        from.Should().Be(Fri);
+        MetricMath.ReferenceLabel(from, tue, day.Days).Should().Be("Fri", "the holiday between isn't a business day");
+    }
+
+    [Fact]
+    public async Task ValuesAndThresholds_TooLargeForTheColumn_AreRefused_EvenWhenRoundingBringsThemThere()
+    {
+        var id = await Metric();
+        var group = (await _db.Metrics().ListAsync()).Single().Id;
+
+        var value = () => _db.Metrics().SaveValueAsync(id, Fri, 99_999_999_999_999.99996m, null);
+        var warn = () => _db.Metrics().SaveMetricAsync(new MetricForm { Id = id, GroupId = group, Name = "Big", WarnThreshold = 1_000_000_000_000_000_000m });
+        await value.Should().ThrowAsync<ArgumentException>().WithMessage("*too large*");
+        await warn.Should().ThrowAsync<ArgumentException>().WithMessage("*too large*");
+
+        await _db.Metrics().SaveMetricAsync(new MetricForm { Id = id, GroupId = group, Name = "Fine", WarnThreshold = 1.23456m });
+        await using var ctx = _db.Context();
+        (await ctx.MetricDefinitions.SingleAsync()).WarnThreshold.Should().Be(1.2346m, "kept to the four places the column holds");
+    }
+
+    [Fact]
     public async Task RenameAndRetire_KeepHistory_RetiredDropsOffTheDay()
     {
         var id = await Metric();

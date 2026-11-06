@@ -44,6 +44,20 @@ public class BriefRendererTests
         return new MetricDay(new DateOnly(2026, 10, 26), [new MetricGroupDay(group, [tile])]);
     }
 
+    [Fact]
+    public void Email_NamesTheDayComparedWithByTheOrgsWorkingDays_SoAHolidayBetweenKeepsTheWeekday()
+    {
+        var tue = new DateOnly(2026, 10, 27);
+        var group = new MetricGroup { Name = "Alert queue" };
+        var tile = new MetricTile(new MetricDefinition { Name = "Open" }, 3m, null, new MetricComparison(new DateOnly(2026, 10, 23), 5m, -2m, MetricTrend.Better), MetricLevel.Normal, [5m, 3m]);
+        var holidays = new Tide.Application.Org.WorkingDays(new Dictionary<DateOnly, string> { [new DateOnly(2026, 10, 26)] = "Founders' Day" });
+        var day = new MetricDay(tue, [new MetricGroupDay(group, [tile])]) { Days = holidays };
+
+        var team = _renderer.Render(BriefEditions.Build(Brief(), Edition.Team, TlpLevel.AmberStrict), new("CTI", day, null, img => "cid:" + img.ContentId));
+
+        team.EmailHtml.Should().Contain("vs Fri").And.NotContain("vs Oct 23");
+    }
+
     private BriefRenderContext Context() => new("CTI", Metrics(), "https://tide.example.org", img => "cid:" + img.ContentId);
 
     private static readonly string[] Restricted = ["ISAC-only bullet", "secret caption", "Partner-only article", "partner detail", "Call them.", "Shared by a partner."];

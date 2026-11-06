@@ -90,5 +90,6 @@ public class MetricCsvTests
     [InlineData("n/a")]
     [InlineData("1,5e3")]
     [InlineData("100000000000000")]
+    [InlineData("99999999999999.99996")]
     public void NonNumbersAndHugeValues_DontRead(string text) => MetricMath.TryParseValue(text, out _).Should().BeFalse();
 }
