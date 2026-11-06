@@ -191,7 +191,7 @@ public sealed class BriefRenderer(IMarkdownService markdown)
                 var valueColor = t.Level switch { MetricLevel.Critical => Palette.Threat, MetricLevel.Warn => Palette.Warn, _ => Palette.Text };
                 var change = t.Previous is { } p
                     ? $"<span style=\"color:{TrendColor(p.Trend)};\">{MetricMath.Arrow(p.Delta)} {Esc(MetricMath.FormatDelta(t.Metric.Format, p.Delta))}</span>" +
-                      $" <span style=\"color:{Palette.Muted};\">vs {Esc(MetricMath.ReferenceLabel(p.Date, day.Date))}</span>"
+                      $" <span style=\"color:{Palette.Muted};\">vs {Esc(MetricMath.ReferenceLabel(p.Date, day.Date, day.Days))}</span>"
                     : $"<span style=\"color:{Palette.Muted};\">{(t.Value is null ? "no value" : "no earlier value")}</span>";
                 sb.Append(Invariant, $"""
                     <tr>

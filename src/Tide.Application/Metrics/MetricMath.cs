@@ -99,6 +99,10 @@ public static class MetricMath
     /// <summary>The largest value kept (beyond it a number is almost certainly a mistake, and the column's precision).</summary>
     public const decimal MaxValue = 100_000_000_000_000m;
 
+    /// <summary>Whether <paramref name="value"/> fits the column once rounded to the four places it keeps: a number a hair
+    /// under <see cref="MaxValue"/> rounds up to it, a digit too many for SQL Server's decimal(18,4).</summary>
+    public static bool Fits(decimal value) => Math.Abs(Math.Round(value, 4)) < MaxValue;
+
     /// <summary>
     /// Reads a value as typed or imported: "1,204", "97.5%", "3.5h" and "-2" all read; thousands separators, a percent
     /// sign and an hours suffix are ignored, and the decimal point is a full stop.
@@ -106,7 +110,7 @@ public static class MetricMath
     public static bool TryParseValue(string? text, out decimal value)
     {
         var clean = (text ?? "").Replace(",", "").Replace("%", "").Replace("h", "").Trim();
-        return decimal.TryParse(clean, NumberStyles.Number, CultureInfo.InvariantCulture, out value) && Math.Abs(value) < MaxValue;
+        return decimal.TryParse(clean, NumberStyles.Number, CultureInfo.InvariantCulture, out value) && Fits(value);
     }
 
     /// <summary>A value as the metric shows it: "1,204", "97.5%", "3.5 h".</summary>

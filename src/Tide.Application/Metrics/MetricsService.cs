@@ -45,6 +45,9 @@ public sealed record MetricDay(DateOnly Date, IReadOnlyList<MetricGroupDay> Grou
 {
     public bool Any => Groups.Count > 0;
 
+    /// <summary>The working days the comparisons were made on, so a reader names the day compared with as the entry form does.</summary>
+    public WorkingDays? Days { get; init; }
+
     /// <summary>The metrics that flag a missing value and have none on this date.</summary>
     public IReadOnlyList<MetricDefinition> Missing => Groups.SelectMany(g => g.Tiles)
         .Where(t => t.Value is null && t.Metric.FlagMissing).Select(t => t.Metric).ToList();
@@ -128,7 +131,7 @@ public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, 
     {
         if (!Briefs.MeetingAccess.SeatedOn(user, meetings, day)) RequireRead();
         var groups = (await GroupsAsync(false, ct)).Where(g => g.Metrics.Count > 0).ToList();
-        if (groups.Count == 0) return new MetricDay(day, []);
+        if (groups.Count == 0) return new MetricDay(day, []) { Days = clock?.Days };
         var ids = groups.SelectMany(g => g.Metrics).Select(m => m.Id).ToList();
         var from = day.AddDays(-LookBackDays);
         await using var db = await dbs.CreateAsync(ct);
@@ -143,7 +146,7 @@ public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, 
             // A holiday counts as a trend day for the group once someone has entered one of its numbers on it.
             var trendDays = MetricMath.TrendDaysWithin(day, TrendDays, g.Metrics.SelectMany(m => values[m.Id]).Select(v => v.BriefDate), clock?.Days);
             return new MetricGroupDay(g, g.Metrics.Select(m => Tile(m, values[m.Id].ToList(), trendDays)).ToList()) { TrendDays = trendDays };
-        }).ToList());
+        }).ToList()) { Days = clock?.Days };
 
         MetricTile Tile(MetricDefinition m, List<MetricValue> mine, IReadOnlyList<DateOnly> trendDays)
         {
@@ -203,7 +206,7 @@ public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, 
         if (!user.Has(Permission.EnterMetrics)) throw new ForbiddenException("Only analysts can enter the day's metrics.");
         // A holiday's numbers are kept if someone enters them (they're just not expected); a weekend's never are.
         if (WorkingDays.IsWeekend(day)) throw new ArgumentException("Metrics are kept for business days.");
-        if (value is { } v && Math.Abs(v) >= MetricMath.MaxValue) throw new ArgumentException("That number is too large.");
+        if (value is { } v && !MetricMath.Fits(v)) throw new ArgumentException("That number is too large.");
         var cleanNote = Articles.ArticleService.CleanOrNull(note, 300);
         // Two people saving the day's first value at the same moment both found no row and both added one; the second
         // add hit the unique (metric, day) index. Read again on a fresh context and save once more: it then updates the
@@ -340,6 +343,9 @@ public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, 
         var name = AdminLists.Name(form.Name);
         if (!Enum.IsDefined(form.Format) || !Enum.IsDefined(form.Direction)) throw new ArgumentException("Choose a format and a direction.");
         if (MetricMath.ThresholdProblem(form.Direction, form.WarnThreshold, form.CriticalThreshold) is { } problem) throw new ArgumentException(problem);
+        // Thresholds are kept in the same column as values: one too large (or too fine) would only fail on SQL Server.
+        if ((form.WarnThreshold is { } warn && !MetricMath.Fits(warn)) || (form.CriticalThreshold is { } crit && !MetricMath.Fits(crit)))
+            throw new ArgumentException("That threshold is too large.");
         await using var db = await dbs.CreateAsync(ct);
         if (!await db.MetricGroups.AnyAsync(g => g.Id == form.GroupId, ct)) throw new KeyNotFoundException("That group no longer exists.");
         MetricDefinition metric;
@@ -360,8 +366,8 @@ public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, 
         metric.Name = name;
         metric.Format = form.Format;
         metric.Direction = form.Direction;
-        metric.WarnThreshold = form.WarnThreshold;
-        metric.CriticalThreshold = form.CriticalThreshold;
+        metric.WarnThreshold = form.WarnThreshold is { } w ? Math.Round(w, 4) : null;
+        metric.CriticalThreshold = form.CriticalThreshold is { } c ? Math.Round(c, 4) : null;
         metric.FlagMissing = form.FlagMissing;
         await db.SaveChangesAsync(ct);
         return metric.Id;

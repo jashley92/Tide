@@ -4,6 +4,7 @@ using Tide.Application.Content;
 using Tide.Application.Distribution;
 using Tide.Application.Files;
 using Tide.Application.Metrics;
+using Tide.Application.Org;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 
@@ -42,6 +43,20 @@ public class BriefRendererTests
         var metric = new MetricDefinition { Name = "Older than 24 hours", Direction = MetricDirection.LowerIsBetter, WarnThreshold = 1 };
         var tile = new MetricTile(metric, 3m, null, new MetricComparison(new DateOnly(2026, 10, 23), 5m, -2m, MetricTrend.Better), MetricLevel.Warn, [5m, 3m]);
         return new MetricDay(new DateOnly(2026, 10, 26), [new MetricGroupDay(group, [tile])]);
+    }
+
+    [Fact]
+    public void Email_NamesTheDayComparedWithByTheOrgsWorkingDays_SoAHolidayBetweenKeepsTheWeekday()
+    {
+        var tue = new DateOnly(2026, 10, 27);
+        var group = new MetricGroup { Name = "Alert queue" };
+        var tile = new MetricTile(new MetricDefinition { Name = "Open" }, 3m, null, new MetricComparison(new DateOnly(2026, 10, 23), 5m, -2m, MetricTrend.Better), MetricLevel.Normal, [5m, 3m]);
+        var holidays = new WorkingDays(new Dictionary<DateOnly, string> { [new DateOnly(2026, 10, 26)] = "Founders' Day" });
+        var day = new MetricDay(tue, [new MetricGroupDay(group, [tile])]) { Days = holidays };
+
+        var team = _renderer.Render(BriefEditions.Build(Brief(), Edition.Team, TlpLevel.AmberStrict), new("CTI", day, null, img => "cid:" + img.ContentId));
+
+        team.EmailHtml.Should().Contain("vs Fri").And.NotContain("vs Oct 23");
     }
 
     private BriefRenderContext Context() => new("CTI", Metrics(), "https://tide.example.org", img => "cid:" + img.ContentId);
