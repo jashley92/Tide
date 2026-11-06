@@ -70,11 +70,11 @@ public class ActionFileServiceTests : IDisposable
     public async Task ARiskyFile_WhoseNameHasInvisibleCharactersInItsExtension_IsStillJudgedByTheNameItIsStoredUnder()
     {
         var a = await NewAction();
-        var added = (await _db.ActionFiles().AddAsync(a.Id, [new ActionFileUpload("update.ps​1", Samples.Text("Write-Host hi"))])).Single();
+        var added = (await _db.ActionFiles().AddAsync(a.Id, [new ActionFileUpload("update.ps​1",Samples.Text("Write-Host hi"))])).Single();
         added.FileName.Should().Be("update.ps1");
         added.RiskReason.Should().NotBeNull("it downloads as update.ps1, so it is a script");
 
-        await _db.Actions().AddCommentAsync(a.Id, "Dropper", [new ScreenshotUpload("run.b­at", Samples.Text("echo hi"))]);
+        await _db.Actions().AddCommentAsync(a.Id, "Dropper", [new ScreenshotUpload("run.b­at",Samples.Text("echo hi"))]);
         var row = (await Detail(a))!.Files.Live.Single(f => f.FileName == "run.bat");
         row.RiskReason.Should().NotBeNull();
     }
