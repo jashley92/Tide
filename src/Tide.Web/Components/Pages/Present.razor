@@ -130,7 +130,7 @@ else
             var scrollPaused = ScrollBackShown(scrollKey);
         }
         <section class="tide-slide" aria-label="Slide @(_slide + 1) of @(last + 1)">
-            <div class="tide-slide-body tide-scrollfade" @key="scrollKey" data-slide-body data-scroll-share="@ScrollShare" data-scroll-paused="@(scrollPaused ? "true" : null)">
+            <div class="tide-slide-body tide-scrollfade" @key="scrollKey" data-slide-body data-slide-key="@scrollKey" data-scroll-share="@ScrollShare" data-scroll-paused="@(scrollPaused ? "true" : null)">
             <div class="tide-slide-inner">
                 @if (_slide == 0)
                 {
@@ -1743,12 +1743,12 @@ else
     /// <summary>The slide's body was scrolled by hand (present.js, at most ten times a second): the presenter's goes to the
     /// room; a follower's pauses following the presenter's scroll on this slide.</summary>
     [JSInvokable]
-    public void OnSlideScrolled(double fraction)
+    public void OnSlideScrolled(double fraction, string? slideKey = null)
     {
         if (_seat is null || _disposed) return;
         if (Presenting)
         {
-            Meetings.Scroll(_seat, fraction);
+            Meetings.Scroll(_seat, fraction, slideKey);
             return;
         }
         if (_following && _scroll.ScrolledByHand(SlideKey(_slide))) StateHasChanged();

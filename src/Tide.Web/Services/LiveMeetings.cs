@@ -210,15 +210,17 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
     /// <summary>
     /// The presenter scrolled the body of their slide to <paramref name="fraction"/> of the way down (0 to 1, clamped here
     /// and only here). Kept for those who join later, and passed on to the room at once (<see cref="Scrolled"/>): the
-    /// browser already sends at most ten a second. Refused for anyone but the presenter.
+    /// browser already sends at most ten a second. Refused for anyone but the presenter, and for a scroll of a slide
+    /// (<paramref name="slideKey"/>, as the page names it) the meeting has moved on from: the last one, sent late.
     /// </summary>
-    public bool Scroll(IMeetingSeat seat, double fraction)
+    public bool Scroll(IMeetingSeat seat, double fraction, string? slideKey = null)
     {
         fraction = ScrollFraction.Clamp(fraction);
         MeetingScroll said;
         lock (_gate)
         {
             if (Seated(seat) is not (var m, var s) || m.PresenterId != s.UserId || Math.Abs(m.Scroll - fraction) < 1e-9) return false;
+            if (slideKey is not null && m.SlideKey is not null && slideKey != m.SlideKey) return false;
             (m.Scroll, m.ScrollOrigin) = (fraction, s.Origin);
             said = new MeetingScroll(m.Day, m.ScrollOrigin, m.SlideKey, m.Slide, m.Scroll);
         }

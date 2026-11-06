@@ -243,7 +243,9 @@ window.tidePresent = (function () {
         lastSent = performance.now();
         const el = slideBody();
         if (!el || !ref) return;
-        ref.invokeMethodAsync('OnSlideScrolled', fraction(el)).catch(function () { });
+        // With the slide it's of: one sent on the timer after the presenter moved on is the last slide's, which the
+        // meeting drops rather than taking it for the new one's.
+        ref.invokeMethodAsync('OnSlideScrolled', fraction(el), el.dataset.slideKey || null).catch(function () { });
     }
 
     function pageBy(el, forward) {
