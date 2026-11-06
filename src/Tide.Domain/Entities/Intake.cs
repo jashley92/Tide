@@ -132,6 +132,28 @@ public class FeedItemText
 }
 
 /// <summary>
+/// One report of a group someone said isn't one event ("Not the same: split", EP-84): a row per report, the split's
+/// reports sharing a <see cref="Batch"/>. Two items in one batch never group again, for anyone; each can still group
+/// with other reports, and an item can be in several batches. Undo deletes the batch. It goes with its item when that's
+/// pruned.
+/// </summary>
+public class TriageSplit : Entity
+{
+    public const int MaxName = 256;
+
+    /// <summary>The split: every report of the group split at once.</summary>
+    public Guid Batch { get; set; }
+
+    public Guid ItemId { get; set; }
+
+    public DateTimeOffset SplitAtUtc { get; set; }
+
+    /// <summary>Who split it: their user id, and their name as it was then.</summary>
+    public string SplitBy { get; set; } = string.Empty;
+    public string SplitByName { get; set; } = string.Empty;
+}
+
+/// <summary>
 /// A threat story: a campaign, a vulnerability, an actor's run of activity, followed across days. Its timeline is the
 /// articles linked to it, oldest first.
 /// </summary>

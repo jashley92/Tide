@@ -96,6 +96,10 @@ public sealed record InboxRow(FeedItem Item, Source Source, FeedItem? Similar, I
     /// <summary>"Looks like one event": the group <see cref="TriageGroups"/> suggests for the item, the same one on each member's row.</summary>
     public TriageGroup? Group { get; init; }
 
+    /// <summary>The latest split ("Not the same", EP-84) this item was the newest report of, among the items shown: who
+    /// split it and when, for its note and Undo.</summary>
+    public SplitNote? Split { get; init; }
+
     /// <summary>The product from Our stack the item names, or null.</summary>
     public Stack.StackEntry? WeRun { get; init; }
 
@@ -106,6 +110,10 @@ public sealed record InboxRow(FeedItem Item, Source Source, FeedItem? Similar, I
     public Likelihood? Likely { get; init; }
 
 }
+
+/// <summary>A split of a suggested group, as triage notes it: the split's batch (what Undo takes back), who split it and
+/// when, and how many of its reports are shown.</summary>
+public sealed record SplitNote(Guid Batch, string ByName, DateTimeOffset AtUtc, int Reports);
 
 /// <summary>
 /// The intake pipeline: administered sources are polled (off until <c>Intake:Enabled</c>), new items land in the
@@ -557,20 +565,42 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         var similarIds = items.Select(i => i.SimilarToId).OfType<Guid>().Distinct().ToList();
         var similar = await db.FeedItems.AsNoTracking().Where(i => similarIds.Contains(i.Id)).ToDictionaryAsync(i => i.Id, ct);
         var coverage = await CoverageAsync(db, items, ct);
-        // Reports that look like one event, among the items still to decide: worked out now, from what's shown, and never stored.
-        var groups = filter.Status is FeedItemStatus.New or FeedItemStatus.Shortlisted
-            ? TriageGroups.Find(items.Select(i => new GroupCandidate(i.Id, i.Title, i.SourceId, i.Source!.Name, i.PublishedAtUtc ?? i.FetchedAtUtc, i.CveList.ToList())).ToList())
+        // Reports that look like one event, among the items still to decide: worked out now, from what's shown, and never
+        // stored. Only what someone split is (EP-84): those reports never group with each other. A split matters here
+        // when two or more of its reports are shown.
+        var grouping = filter.Status is FeedItemStatus.New or FeedItemStatus.Shortlisted;
+        var itemIds = items.Select(i => i.Id).ToList();
+        var splits = grouping
+            ? (await db.TriageSplits.AsNoTracking().Where(s => itemIds.Contains(s.ItemId)).ToListAsync(ct))
+                .GroupBy(s => s.Batch).Where(g => g.Count() >= 2).Select(g => g.ToList()).ToList()
+            : [];
+        var groups = grouping
+            ? TriageGroups.Find(items.Select(i => new GroupCandidate(i.Id, i.Title, i.SourceId, i.Source!.Name, i.PublishedAtUtc ?? i.FetchedAtUtc, i.CveList.ToList())).ToList(),
+                options.CurrentValue.Grouping() with { Split = [.. splits.Select(b => b.Select(s => s.ItemId).ToList())] })
             : [];
         var groupOf = groups.SelectMany(g => g.Ids.Select(id => (id, g))).ToDictionary(x => x.id, x => x.g);
+        var splitOf = SplitNotes(items, splits);
         return items.Select(i => new InboxRow(i, i.Source!, i.SimilarToId is { } s ? similar.GetValueOrDefault(s) : null,
             coverage.GetValueOrDefault(i.Id) ?? [], i.CveList.SelectMany(c => byCve[c]).Where(id => id != i.Id).Distinct().ToList())
         {
             SharedCve = i.CveList.FirstOrDefault(c => byCve[c].Any(id => id != i.Id)),
             Group = groupOf.GetValueOrDefault(i.Id),
+            Split = splitOf.GetValueOrDefault(i.Id),
             WeRun = named[i.Id],
             Watching = watching[i.Id],
             Likely = likely?.GetValueOrDefault(i.Id),
         }).ToList();
+    }
+
+    // Each split among the items shown, noted on its newest report (where the group's line was): the latest split there.
+    private static Dictionary<Guid, SplitNote> SplitNotes(List<FeedItem> items, List<List<TriageSplit>> splits)
+    {
+        var at = items.ToDictionary(i => i.Id, i => i.PublishedAtUtc ?? i.FetchedAtUtc);
+        return splits
+            .Select(b => (Newest: b.Select(s => s.ItemId).OrderByDescending(id => at[id]).ThenBy(id => id).First(),
+                Note: new SplitNote(b[0].Batch, b[0].SplitByName, b[0].SplitAtUtc, b.Count)))
+            .GroupBy(x => x.Newest)
+            .ToDictionary(g => g.Key, g => g.MaxBy(x => x.Note.AtUtc).Note);
     }
 
     // What matching, ageing and grouping read of an item: no source, and only the start of the excerpt Match looks at.
@@ -847,6 +877,49 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         var clean = ArticleService.CleanOrNull(reason, 200) ?? DismissReasons[0];
         await using var db = await dbs.CreateAsync(ct);
         return await StampAsync(db.FeedItems.Where(i => ids.Contains(i.Id) && i.Status == FeedItemStatus.New), FeedItemStatus.Dismissed, clean, null, ct);
+    }
+
+    // --- splits (EP-84) ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// "Not the same": the reports of a suggested group aren't one event, for everyone from now on. Kept as a row per
+    /// report under one batch (each report can still group with others), for <see cref="UndoSplitAsync"/>, and audited.
+    /// The batch, or null when every two of them share a split already.
+    /// </summary>
+    public async Task<Guid?> SplitAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default)
+    {
+        RequireTriage();
+        var distinct = ids.Distinct().ToList();
+        if (distinct.Count is < 2 or > TriageGroups.MaxSize) throw new ArgumentException($"Split 2 to {TriageGroups.MaxSize} reports.");
+        await using var db = await dbs.CreateAsync(ct);
+        if (await db.FeedItems.CountAsync(i => distinct.Contains(i.Id), ct) != distinct.Count) throw new KeyNotFoundException("A report in that group is gone.");
+        var had = (await db.TriageSplits.AsNoTracking().Where(s => distinct.Contains(s.ItemId)).Select(s => new { s.Batch, s.ItemId }).ToListAsync(ct))
+            .GroupBy(s => s.Batch, s => s.ItemId).Select(g => g.ToHashSet()).ToList();
+        if (distinct.SelectMany((a, n) => distinct.Skip(n + 1).Select(b => (a, b))).All(p => had.Any(h => h.Contains(p.a) && h.Contains(p.b)))) return null;
+        var batch = Guid.NewGuid();
+        var now = time.GetUtcNow();
+        var name = Content.Words.Clip(user.DisplayName, TriageSplit.MaxName);
+        db.TriageSplits.AddRange(distinct.Select(id => new TriageSplit
+        {
+            Batch = batch, ItemId = id, SplitAtUtc = now, SplitBy = user.UserId, SplitByName = name,
+        }));
+        await db.SaveChangesAsync(ct);
+        return batch;
+    }
+
+    /// <summary>Undoes a split: its reports may group again. Anyone who triages can. How many reports it held (none when
+    /// a colleague undid it first).</summary>
+    public async Task<int> UndoSplitAsync(Guid batch, CancellationToken ct = default)
+    {
+        RequireTriage();
+        await using var db = await dbs.CreateAsync(ct);
+        // Through the tracker, not a bulk delete, so the undo is audited and colleagues' inboxes hear it.
+        var members = await db.TriageSplits.Where(s => s.Batch == batch).ToListAsync(ct);
+        if (members.Count == 0) return 0;
+        db.TriageSplits.RemoveRange(members);
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException) { return 0; }   // a colleague undid it at the same moment
+        return members.Count;
     }
 
     private async Task SetAsync(Guid id, FeedItemStatus status, string? reason, Guid? duplicateOf, CancellationToken ct)
@@ -1221,7 +1294,8 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         await db.SaveChangesAsync(ct);
         // Deleted only while still prunable, checked as the statement runs: an item a colleague promoted, attached or
         // shortlisted since it was read above stays (deleted from what was read, it took the promoted item from under its
-        // article, or failed the promotion part way and left its draft behind). Its kept text goes with it (cascade).
+        // article, or failed the promotion part way and left its draft behind). Its kept text and its place in any split
+        // go with it (cascade).
         return await Prunable(db.FeedItems.Where(i => old.Contains(i.Id)), cutoff).ExecuteDeleteAsync(ct);
     }
 

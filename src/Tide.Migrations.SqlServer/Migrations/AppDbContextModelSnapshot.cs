@@ -3137,6 +3137,40 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.ToTable("TeamMembers");
                 });
 
+            modelBuilder.Entity("Tide.Domain.Entities.TriageSplit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Batch")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("SplitAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("SplitBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("SplitByName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ItemId");
+
+                    b.HasIndex("Batch", "ItemId")
+                        .IsUnique();
+
+                    b.ToTable("TriageSplits");
+                });
+
             modelBuilder.Entity("Tide.Domain.Entities.UserPreference", b =>
                 {
                     b.Property<string>("UserId")
@@ -3683,6 +3717,15 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.HasOne("Tide.Domain.Entities.Team", null)
                         .WithMany("Members")
                         .HasForeignKey("TeamId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Tide.Domain.Entities.TriageSplit", b =>
+                {
+                    b.HasOne("Tide.Domain.Entities.FeedItem", null)
+                        .WithMany()
+                        .HasForeignKey("ItemId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

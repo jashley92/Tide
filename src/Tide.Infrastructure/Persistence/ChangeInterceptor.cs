@@ -106,6 +106,7 @@ public sealed class ChangeInterceptor(ChangeFeed feed, ICurrentUser user, Change
         StackProduct => [ChangeFeed.Stack],
         SavedQuery => [ChangeFeed.SavedQueries],
         OutreachTemplate => [ChangeFeed.OutreachTemplates],
+        TriageSplit => [ChangeFeed.Triage],   // a split or its undo regroups colleagues' inboxes; their triage is announced by the page
         _ => [],
     };
 

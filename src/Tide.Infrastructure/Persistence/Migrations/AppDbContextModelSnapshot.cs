@@ -3132,6 +3132,40 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.ToTable("TeamMembers");
                 });
 
+            modelBuilder.Entity("Tide.Domain.Entities.TriageSplit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("Batch")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("SplitAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SplitBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SplitByName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ItemId");
+
+                    b.HasIndex("Batch", "ItemId")
+                        .IsUnique();
+
+                    b.ToTable("TriageSplits");
+                });
+
             modelBuilder.Entity("Tide.Domain.Entities.UserPreference", b =>
                 {
                     b.Property<string>("UserId")
@@ -3678,6 +3712,15 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.HasOne("Tide.Domain.Entities.Team", null)
                         .WithMany("Members")
                         .HasForeignKey("TeamId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Tide.Domain.Entities.TriageSplit", b =>
+                {
+                    b.HasOne("Tide.Domain.Entities.FeedItem", null)
+                        .WithMany()
+                        .HasForeignKey("ItemId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

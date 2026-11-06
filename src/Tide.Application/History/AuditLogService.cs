@@ -158,6 +158,7 @@ public static class AuditKinds
         [nameof(OutreachTemplate)] = "Outreach template",
         [nameof(OutreachMessage)] = "Outreach email",
         [nameof(Story)] = "Story",
+        [nameof(TriageSplit)] = "Triage split",
         [nameof(Source)] = "Source",
         [nameof(Team)] = "Team",
         [nameof(TeamMember)] = "Team member",

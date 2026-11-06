@@ -172,7 +172,8 @@ else
                                     <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => ActOnGroup(line, TriageStep.Shortlist)">Shortlist the @line.Members.Count <span class="tide-kbd">S</span></button>
                                     <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => ActOnGroup(line, TriageStep.Dismiss)">Dismiss the @line.Members.Count <span class="tide-kbd">X</span></button>
                                 }
-                                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Split(i)">Not the same: split</button>
+                                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" title="For everyone: these reports won't be grouped together again"
+                                        @onclick:stopPropagation="true" @onclick="() => Split(i)">Not the same: split</button>
                                 <button class="btn btn-outline-secondary btn-sm" @onclick:stopPropagation="true" @onclick="() => Toggle(i)">@(open ? "Hide" : "Show") the @line.Members.Count reports</button>
                             </div>
                         }
@@ -240,6 +241,13 @@ else
                             @if (item.Status != FeedItemStatus.New && item.StatusByName is not null)
                             {
                                 <span>by @item.StatusByName@(item.StatusAtUtc is { } decidedAt ? ", " + Ui.When(Clock, decidedAt) : "")</span>
+                            }
+                            @* Where a split group's line was (its newest report): who said its reports aren't one event, and Undo. *@
+                            @if (row.Split is { } split)
+                            {
+                                <span><span class="bi bi-scissors" aria-hidden="true"></span> Split by @split.ByName, @Ui.When(Clock, split.AtUtc)
+                                    <button type="button" class="btn btn-link btn-sm p-0 align-baseline" disabled="@_busy" aria-label="@($"Undo the split of {split.Reports} reports")"
+                                            @onclick:stopPropagation="true" @onclick="() => UndoSplit(split.Batch)">Undo</button></span>
                             }
                             @if (item.Status == FeedItemStatus.Promoted && item.ArticleId is { } aid) { <a href="articles/@aid" @onclick:stopPropagation="true">Open the article</a> }
                         </div>
@@ -579,7 +587,6 @@ else
     private IReadOnlyList<InboxRow> _rows = [];
     private List<Line> _lines = [];
     private readonly HashSet<Guid> _open = [];    // the groups shown open, by their reports' ids
-    private readonly HashSet<Guid> _apart = [];   // reports whose group was split ("Not the same"), for this visit only
     private IReadOnlyDictionary<FeedItemStatus, int> _counts = new Dictionary<FeedItemStatus, int>();
     private static readonly int ShownAtMost = new InboxFilter().Take;
 
@@ -775,8 +782,8 @@ else
     // A group's article starts at the most restrictive of its sources' TLPs.
     private static TlpLevel GroupTlp(Line line) => line.Members.Max(m => m.Source.DefaultTlp);
 
-    // The list as shown: each group the inbox suggests (and nobody split) where its newest report would be, with its
-    // reports under it while it's open; every other item as its own row.
+    // The list as shown: each group the inbox suggests where its newest report would be, with its reports under it
+    // while it's open; every other item as its own row.
     private void BuildLines()
     {
         var byId = _rows.ToDictionary(r => r.Item.Id);
@@ -785,7 +792,7 @@ else
         foreach (var row in _rows)
         {
             if (!placed.Add(row.Item.Id)) continue;
-            if (row.Group is { } group && !group.Ids.Any(_apart.Contains))
+            if (row.Group is { } group)
             {
                 var members = group.Ids.Select(byId.GetValueOrDefault).OfType<InboxRow>().ToList();
                 placed.UnionWith(group.Ids);
@@ -819,17 +826,46 @@ else
         SelectItem(group.Newest, head: true);
     }
 
-    // "Not the same": the group's reports go back to rows of their own, until the page is left (nothing is stored).
-    internal void Split(int i)
+    // "Not the same": the group's reports aren't one event, for everyone (EP-84). Stored as their pairs, so they come back
+    // as rows of their own here, in colleagues' open inboxes (the save is heard) and on every later visit. Undo is on the
+    // toast, and on the note the newest report carries.
+    internal async Task Split(int i)
     {
-        if (i >= _lines.Count || _lines[i] is not { Row: null, Group: { } group }) return;
-        _apart.UnionWith(group.Ids);
-        _open.ExceptWith(group.Ids);
-        if (_promotingGroup is not null && group.Ids.Contains(_promotingGroup.Newest)) CancelPromote();
-        BuildLines();
-        SelectItem(group.Newest);
-        _focus = "tideTriage.focusRow";
-        Toasts.Show($"Split into {group.Ids.Count} rows, until you leave this page.");
+        if (_busy || i >= _lines.Count || _lines[i] is not { Row: null, Group: { } group }) return;
+        _busy = true;
+        try
+        {
+            var batch = await Intake.SplitAsync(group.Ids);
+            _open.ExceptWith(group.Ids);
+            if (_promotingGroup is not null && group.Ids.Contains(_promotingGroup.Newest)) CancelPromote();
+            await Load();
+            SelectItem(group.Newest);
+            _focus = "tideTriage.focusRow";
+            if (batch is { } b)
+                Toasts.Show($"Split into {group.Ids.Count} rows, for everyone.", async () =>
+                {
+                    // From the toast: this page re-renders itself, as the click wasn't on it.
+                    await UndoSplit(b);
+                    StateHasChanged();
+                });
+            else Toasts.Show("Already split: a colleague got there first.");
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    // Undo of a split, from its toast or its note: the reports may group again, for everyone.
+    internal async Task UndoSplit(Guid batch)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            Toasts.Show(await Intake.UndoSplitAsync(batch) == 0 ? "Nothing to undo: a colleague already did." : "Split undone: those reports can group again.");
+            await Load();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
     }
 
     // The address Back returns to after "Promote and write" (Address), and the brief's "Promote" on a shortlisted item:
@@ -912,7 +948,7 @@ else
     private void Arrive()
     {
         if (AtParam is not { } at || _lines.Count == 0) return;
-        if (_rows.FirstOrDefault(r => r.Item.Id == at)?.Group is { } group && !group.Ids.Any(_apart.Contains) && !IsOpen(group))
+        if (_rows.FirstOrDefault(r => r.Item.Id == at)?.Group is { } group && !IsOpen(group))
         {
             _open.UnionWith(group.Ids);
             BuildLines();

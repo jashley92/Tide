@@ -50,6 +50,11 @@ public static class OperationalSettings
     public const string AdSelectors = "Intake:AdSelectors";
     public const string AdLabels = "Intake:AdLabels";
 
+    /// <summary>Triage's suggested groups (EP-84): how far apart two reports of one event can be, in hours, and the
+    /// words that don't count besides the built-in ones.</summary>
+    public const string GroupWindowHours = "Intake:GroupWindowHours";
+    public const string GroupIgnoredWords = "Intake:GroupIgnoredWords";
+
     public const string CveEnabled = "Cve:Enabled";
     public const string CveRefreshHours = "Cve:RefreshHours";
 
@@ -103,6 +108,8 @@ public static class OperationalSettings
         [ReadSeconds] = Number("The time allowed to read an article", 2, 60),
         [AdSelectors] = Assist.ArticleCleanup.NormalizeSelectors,
         [AdLabels] = Assist.ArticleCleanup.NormalizeLabels,
+        [GroupWindowHours] = Number("How far apart two reports of one event can be", TriageGroups.MinWindowHours, TriageGroups.MaxWindowHours),
+        [GroupIgnoredWords] = TriageGroups.NormalizeWords,
         [CveEnabled] = Switch,
         [CveRefreshHours] = Number("The CVE refresh", 1, 168),
         [DropFolderEnabled] = Switch,
@@ -193,6 +200,8 @@ public static class OperationalSettings
         s.Use(ReadSeconds, v => o.ReadSeconds = int.Parse(v, Invariant));
         s.Use(AdSelectors, v => o.AdSelectors = v);
         s.Use(AdLabels, v => o.AdLabels = v);
+        s.Use(GroupWindowHours, v => o.GroupWindowHours = int.Parse(v, Invariant));
+        s.Use(GroupIgnoredWords, v => o.GroupIgnoredWords = v);
     }
 
     internal static void Apply(SavedSettings s, CveOptions o)
