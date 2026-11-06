@@ -380,7 +380,7 @@ kind on save.
 | Article | `article.title`, `article.bottom-line`, `article.why-it-matters`, `article.key-points`, `article.link`, `article.cves` (with KEV and EPSS), `article.tlp` |
 | Indicators | `indicators` (every indicator on the article and action, defanged), `indicators:domain` and the like (one `HuntValueKind`) |
 | Product | `product.name`, `product.versions`, `product.team`, `product.contact` |
-| Action and sender | `action.number`, `action.link` (needs `App:BaseUrl`), `action.due`, `sender.name`, `sender.team`, `today`, `tlp` |
+| Action and sender | `action.number`, `action.link` (needs `App:BaseUrl`), `action.due`, `sender.name`, `sender.team`, `today`, `today:+N` and `today:-N` (N business days after or before today, 1 to 60, skipping weekends and holidays: "reply by {{today:+2}}", "since {{today:-2}}"), `tlp` |
 
 **Writing the email** (`OutreachService.WriteAsync`, saves nothing):
 
