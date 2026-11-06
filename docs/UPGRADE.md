@@ -171,6 +171,34 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
+### v1.5.2
+
+Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds no migration and no setting.
+
+**For administrators**
+- **Diagnostics shows the real connection type again.** Administration › System › Diagnostics showed every live
+  page's connection as "Unknown", so a page stuck on long polling never got its warning. It now shows WebSockets or
+  Long polling, with the warning for the latter.
+- **Verify-Install and the upgrade no longer report OK for what they couldn't read.** When the WebSocket feature or
+  IIS's setting for it can't be read (usually because the script isn't elevated), Verify-Install now warns "run
+  elevated to check it", or fails if it is already elevated; the upgrade warns and carries on. Verify-Install also
+  reads the site's folder whichever way IIS gives it, so its web.config check is no longer skipped without a word.
+- **The audit log names threat-actor and We run tags** ("Article threat actor", "Article product we run") and links
+  the article they're on, instead of a raw key.
+
+**For everyone**
+- **Pickers act on what you typed.** Pressing Enter or clicking straight after typing in Threat actors, We run or the
+  threat story picker could pick from the list for the earlier letters, such as tagging APT28 for "APT29", making a
+  new profile for a MITRE id an existing one has, or linking the wrong story. A double click on "Add" adds once.
+- **An article's History shows its threat actors and products we run** being added and removed, by name.
+- **Present mode follows better:**
+  - someone joining late is no longer paused as soon as they land, and catches up on a title slide that scrolls;
+  - after the presenter changes hands, a late joiner lands where the new presenter is, and a follower's earlier pause
+    doesn't come back;
+  - Space and Page Down scroll the open card or tag panel, not the slide behind it, and closing the tag panel puts a
+    follower back in step;
+  - a scroll the presenter made just before moving on is no longer applied to the next slide.
+
 ### v1.5.1
 
 Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds no migration and no setting, and nothing you see changes.
