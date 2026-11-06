@@ -171,6 +171,38 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
+### v1.5.3
+
+Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds no migration and no setting.
+
+**For administrators**
+- **Reminder runs keep what they sent.** The reminder check comes round every few minutes after its time; a later
+  check that found nothing new no longer replaces the day's real result, so Teams & SLA no longer says "0 sent" (or
+  "all recipients opted out") after emails went out.
+- **On Teams & SLA, a count opens one list.** The rotation reminder and the brief-not-ready nudge share one choice;
+  clicking either count now opens the list of people under that row only.
+- **A broken email pickup folder is a failed send.** When `Email:PickupDirectory` can't be created or written, a send
+  or correction is recorded as failed with a plain message, instead of an unknown outcome that blocked finishing the
+  brief; a test copy shows the message instead of an error.
+- **Too-large metrics are refused everywhere.** A value or a warning or critical threshold that would round past what
+  the database holds is refused with "too large" on SQLite as on SQL Server, and thresholds keep four decimal places.
+- **The repository's automation asks for less.** The release workflow passes CI only the one secret it reads, and
+  Dependabot waits a week before proposing a newly published version (security updates aren't held back).
+
+**For everyone**
+- **Files on actions:**
+  - a file whose name hides an invisible character in its extension (`update.ps1` written with one) is judged by the
+    name it's stored and downloaded under, so a script is flagged and zipped as it should be;
+  - present mode no longer lists a comment's removed files;
+  - adding many files at once keeps every file's SHA-256 in the history;
+  - someone moved to a role that only reads (Viewer, Reader) can no longer remove files they added before.
+- **Rotation:** undoing an approved swap or cover partway through gives back only the days still to come; days already
+  presented stay with whoever presented them, and a change whose days have all passed can't be undone.
+- **Metrics:** the day a number is compared with is named the same way in the email and the edition preview as on the
+  entry form and in present mode, so after a holiday it says "vs Fri".
+- **Search:** typing a single digit finds that action (it used to find nothing).
+- **Reports:** the period report's CSV also guards names that start with a tab or a line break, as the other exports do.
+
 ### v1.5.2
 
 Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds no migration and no setting.
