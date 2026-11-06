@@ -49,8 +49,19 @@ public sealed class EmailSender(IOptionsMonitor<EmailOptions> options, ILogger<E
             return new EmailSendResult(EmailSendStatus.Failed, ex.Message);
         }
 
+        SmtpClient client;
+        try { client = SmtpClientFactory.Create(o); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            // The pickup folder can't be made or used: nothing was handed to anyone, so it's a failure, not an unknown outcome.
+            message.Dispose();
+            circuit.Release(target);
+            log.LogError("The email pickup directory can't be used: {Failure}.", ex.GetType().Name);
+            return new EmailSendResult(EmailSendStatus.Failed, "The email pickup folder (Email:PickupDirectory) can't be created or written to.");
+        }
+
         using (message)
-        using (var client = SmtpClientFactory.Create(o))
+        using (client)
         using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct))
         {
             timeout.CancelAfter(o.Timeout);
