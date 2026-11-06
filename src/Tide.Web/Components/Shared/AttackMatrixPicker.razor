@@ -293,7 +293,6 @@
     public async ValueTask DisposeAsync()
     {
         _pause.Now();
-        try { await JS.InvokeVoidAsync("tideDialog.close"); }
-        catch (JSDisconnectedException) { }
+        await JS.StopAsync("tideDialog.close");
     }
 }

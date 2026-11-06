@@ -1389,9 +1389,7 @@ else
         _marks?.Dispose();
         _tabMarks?.Dispose();
         if (_ticking is not null) await _ticking.DisposeAsync();
-        try { await JS.InvokeVoidAsync("tideTriage.stop"); }
-        catch (JSDisconnectedException) { }
-        catch (InvalidOperationException) { }
+        await JS.StopAsync("tideTriage.stop");
         _ref?.Dispose();
     }
 }

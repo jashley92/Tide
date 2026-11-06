@@ -148,8 +148,7 @@
     {
         // Only a list that started (interactively, after its first render) has anything to stop.
         if (_self is null) return;
-        try { await JS.InvokeVoidAsync("tideOrder.stop"); }
-        catch (JSDisconnectedException) { }
+        await JS.StopAsync("tideOrder.stop");
         _self.Dispose();
     }
 }

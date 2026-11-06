@@ -224,8 +224,7 @@
     {
         if (_typing is not null) await _typing.CancelAsync();
         _typing?.Dispose();
-        try { if (_ref is not null) await JS.InvokeVoidAsync("tidePalette.stopPalette", _id); }
-        catch (JSDisconnectedException) { /* the circuit has gone */ }
+        if (_ref is not null) await JS.StopAsync("tidePalette.stopPalette", _id);
         _ref?.Dispose();
     }
 }

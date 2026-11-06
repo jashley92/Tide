@@ -117,8 +117,7 @@
 
     public async ValueTask DisposeAsync()
     {
-        try { if (_ref is not null) await JS.InvokeVoidAsync("tidePalette.stopOverlay", _id); }
-        catch (JSDisconnectedException) { /* the circuit has gone */ }
+        if (_ref is not null) await JS.StopAsync("tidePalette.stopOverlay", _id);
         _ref?.Dispose();
     }
 }
