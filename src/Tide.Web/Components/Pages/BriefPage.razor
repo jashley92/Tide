@@ -17,6 +17,7 @@
 @inject ChangeFeed Feed
 @inject ChangeOrigin Origin
 @inject LiveMeetings Meetings
+@inject PrerenderHandoff Handoff
 @implements IDisposable
 
 @* A day's brief. Today's is the start page (Home renders this with AsToday): the step strip, the running order, the
@@ -371,6 +372,11 @@ else
         }
         _canWrite = CurrentUser.Has(Permission.WriteArticles);
         _past = BriefSvc.IsPast(_date);
+        // The first interactive draw starts from what the prerender read, so a reload doesn't flash "Loading" over the
+        // page; it's then read again below, quietly, for anything changed in between.
+        var adopted = Handoff.Take<BriefPage>(PrerenderedState, CurrentUser.UserId) is { } prerendered && prerendered._date == _date
+            && Adopt(prerendered);
+        PrerenderedState = null;
         (_publicMax, _teamMax) = await Distribution.GetAsync();
         if (_canWrite) _people = await Users.ListAsync();
         if (AsToday)
@@ -378,8 +384,9 @@ else
             _recent = (await ArticleSvc.ListAsync(take: 8)).ToList();
             _upcoming = await Rotation.UpcomingAsync();
         }
-        _brief = null;   // another day: "Loading" until it's read (a reload after an action keeps the page, and focus, in place)
+        if (!adopted) _brief = null;   // another day: "Loading" until it's read (a reload after an action keeps the page, and focus, in place)
         await Load();
+        if (!RendererInfo.IsInteractive) PrerenderedState = Handoff.Keep(CurrentUser.UserId, this);
         if (tab.Send && _brief is not null)
         {
             // The old Distribute tab's link: the Send dialog, once it's drawn (the first render, which yielding lets happen).
@@ -589,6 +596,23 @@ else
         _around?.Dispose();
         _meetingLive?.Dispose();
         Meetings.Changed -= MeetingStartedOrEnded;
+    }
+
+    /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.</summary>
+    [PersistentState]
+    public string? PrerenderedState { get; set; }
+
+    // Takes what the prerendered page read: everything the page draws from, so the first interactive draw is the
+    // prerendered page again. True, to say there's a page on screen to keep while it's read again.
+    private bool Adopt(BriefPage p)
+    {
+        (_publicMax, _teamMax, _people, _recent, _upcoming) = (p._publicMax, p._teamMax, p._people, p._recent, p._upcoming);
+        (_brief, _follow, _rotaDay, _mine, _queue) = (p._brief, p._follow, p._rotaDay, p._mine, p._queue);
+        (_readiness, _analystId, _intro, _introTlp, _teamNote) = (p._readiness, p._analystId, p._intro, p._introTlp, p._teamNote);
+        (_candidates, _shortlist, _actions, _meeting, _newInFeed) = (p._candidates, p._shortlist, p._actions, p._meeting, p._newInFeed);
+        (_sends, _nothingToSend, _asSent, _metrics, _missingNumbers) = (p._sends, p._nothingToSend, p._asSent, p._metrics, p._missingNumbers);
+        _loading = false;
+        return true;
     }
 
     private async Task Load()

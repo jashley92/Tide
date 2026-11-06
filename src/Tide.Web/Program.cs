@@ -130,6 +130,7 @@ builder.Services.AddScoped<ToastService>();
 builder.Services.AddSingleton<Presence>();
 builder.Services.AddSingleton<BoardDrags>();
 builder.Services.AddSingleton<LiveMeetings>();
+builder.Services.AddSingleton(new PrerenderHandoff(TimeProvider.System));
 builder.Services.AddSingleton<Tide.Application.Briefs.IMeetingsInProgress>(sp => sp.GetRequiredService<LiveMeetings>());
 // Clears a closed tab's presence: the circuit's handler, and the circuit id presence notes join with. It also keeps the
 // transport the circuit is on, for Diagnostics.
