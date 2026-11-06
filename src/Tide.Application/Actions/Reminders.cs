@@ -166,12 +166,16 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
                 ReminderKind.PersonalDigest => await PersonalDigestAsync(scheduled, ct),
                 _ => await BriefNotReadyAsync(ct),
             };
-            log.Record(new ReminderRun(kind, DateTimeOffset.UtcNow, scan.Sent, null, scan.Note));
+            // The poll comes round every few minutes after the scan's time, and most find nothing new to send (or only
+            // people who opted out). That mustn't overwrite what the day's real run sent.
+            var last = log.Last(kind);
+            var quiet = scheduled && scan.Sent == 0 && last is { Error: null, Sent: > 0 } && clock.ToLocal(last.AtUtc).Date == clock.Now.Date;
+            if (!quiet) log.Record(new ReminderRun(kind, clock.Now.ToUniversalTime(), scan.Sent, null, scan.Note));
             return scan.Sent;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            log.Record(new ReminderRun(kind, DateTimeOffset.UtcNow, 0, ex.GetType().Name + ": " + ex.Message));
+            log.Record(new ReminderRun(kind, clock.Now.ToUniversalTime(), 0, ex.GetType().Name + ": " + ex.Message));
             if (rethrow) throw;
             return 0;
         }

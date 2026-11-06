@@ -142,13 +142,13 @@
                                     <label class="form-check-label" for="@id">@KindText(kind)</label>
                                 </div>
                                 <div class="small tide-muted">@KindAbout(kind)@(last is null ? "" : $" · last run {Ui.When(Clock, last.AtUtc)}: {(last.Error ?? $"{last.Sent} sent")}{(last.Note is { } note ? $" ({note})" : "")}")</div>
-                                @Count(PreferenceOf(kind))
+                                @Count(PreferenceOf(kind), kind.ToString())
                             </td>
                             <td class="text-end"><button class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@_busy" aria-label="Run @KindText(kind) now" @onclick="() => RunNow(kind)">Run now</button></td>
                         </tr>
-                        @if (_showing == PreferenceOf(kind))
+                        @if (_showing == PreferenceOf(kind) && _owner == kind.ToString())
                         {
-                            <tr><td colspan="2" class="pt-0">@List(_showing, KindText(kind))</td></tr>
+                            <tr><td colspan="2" class="pt-0">@List(_showing, KindText(kind), kind.ToString())</td></tr>
                         }
                     }
                     <tr>
@@ -156,7 +156,7 @@
                             <div>@NotificationKinds.RotationRequests.Title</div>
                             <div class="small tide-muted">Swap and cover requests, and approved, recorded or declined notices: always sent. The managers' copies aren't anyone's to turn off.</div>
                             @Count(NotificationKinds.RotationRequests.Name)
-                            @if (_showing == NotificationKinds.RotationRequests.Name) { @List(_showing, NotificationKinds.RotationRequests.Title) }
+                            @if (_showing == NotificationKinds.RotationRequests.Name) { @List(_showing, NotificationKinds.RotationRequests.Title, null) }
                         </td>
                     </tr>
                 </tbody>
@@ -316,7 +316,7 @@
     private static string PreferenceOf(ReminderKind k) => NotificationKinds.For(k).Name;
 
     private IReadOnlyDictionary<string, int> _counts = new Dictionary<string, int>();
-    private string? _showing;
+    private string? _showing, _owner;
     private IReadOnlyList<NotificationChooser> _choosers = [];
 
     /// <summary>"3 people opted out" or "5 people get a personal digest".</summary>
@@ -328,13 +328,14 @@
             : n == 0 ? "No one opted out" : $"{people} opted out";
     }
 
-    private static string ListId(string pref) => "optlist-" + pref.Replace('.', '-');
+    // Two scans can share a choice (the rotation reminders), so a list is named for the row that opened it too.
+    private static string ListId(string pref, string? owner) => "optlist-" + pref.Replace('.', '-') + (owner is null ? "" : "-" + owner);
 
     // The count under a kind, a button that opens the list of those people (read-only) below it.
-    private RenderFragment Count(string pref) => __builder =>
+    private RenderFragment Count(string pref, string? owner = null) => __builder =>
     {
         var n = _counts.GetValueOrDefault(pref);
-        var listId = ListId(pref);
+        var listId = ListId(pref, owner);
         <div class="small">
             @if (n == 0)
             {
@@ -342,17 +343,17 @@
             }
             else
             {
-                <button type="button" class="tide-optcount" aria-expanded="@(_showing == pref ? "true" : "false")" aria-controls="@listId"
-                        @onclick="() => ShowChoosers(pref)">@CountText(pref, n)</button>
+                <button type="button" class="tide-optcount" aria-expanded="@(_showing == pref && _owner == owner ? "true" : "false")" aria-controls="@listId"
+                        @onclick="() => ShowChoosers(pref, owner)">@CountText(pref, n)</button>
             }
         </div>
     };
 
     // Who opted out of a kind (or takes a personal digest), and since when.
-    private RenderFragment List(string pref, string what) => __builder =>
+    private RenderFragment List(string pref, string what, string? owner) => __builder =>
     {
         var digest = pref == UserPreferences.NotifyDigest;
-        <table class="tide-table tide-optlist" id="@ListId(pref)" aria-label="@what: @CountText(pref, _counts.GetValueOrDefault(pref))">
+        <table class="tide-table tide-optlist" id="@ListId(pref, owner)" aria-label="@what: @CountText(pref, _counts.GetValueOrDefault(pref))">
             <thead><tr><th>Name</th><th>Email</th>@if (digest) { <th>How often</th> }<th>Since</th></tr></thead>
             <tbody>
                 @foreach (var c in _choosers)
@@ -368,18 +369,18 @@
         </table>
     };
 
-    internal async Task ShowChoosers(string pref)
+    internal async Task ShowChoosers(string pref, string? owner = null)
     {
-        if (_showing == pref)
+        if (_showing == pref && _owner == owner)
         {
-            _showing = null;
+            _showing = _owner = null;
         }
         else
         {
             try
             {
                 _choosers = await NotifyPrefs.PeopleAsync(pref);
-                _showing = pref;
+                (_showing, _owner) = (pref, owner);
             }
             catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         }

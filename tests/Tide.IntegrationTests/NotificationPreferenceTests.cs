@@ -131,6 +131,30 @@ public class NotificationPreferenceTests : IDisposable
     }
 
     [Fact]
+    public async Task TheLastRun_KeepsWhatTheDaysRealScanSent_WhenLaterPollsOnlyFindOptedOutPeople()
+    {
+        await Person(Robin, "robin@example.org");
+        await Person(Sam, "sam@example.org");
+        var team = await TeamWith(null, Robin, Sam);
+        await _db.Actions().CreateAsync(new ActionForm { Title = "Patch it", TeamId = team, DueDate = new DateOnly(2026, 10, 26) });
+        await Choose(Sam, NotifyDueSoon);
+        var log = new ReminderLog();
+        var options = new ReminderOptions { DueSoon = { Enabled = true } };
+
+        await _db.Reminders(options, At(26), log).RunDueAsync();
+        log.Last(ReminderKind.DueSoon)!.Sent.Should().Be(1);
+
+        // The next poll, five minutes on: nothing new, and Sam's action is still waiting on no one.
+        await _db.Reminders(options, At(26, 13, 50), log).RunDueAsync();
+        log.Last(ReminderKind.DueSoon)!.Sent.Should().Be(1, "a poll that sent nothing doesn't wipe the run that did");
+        log.Last(ReminderKind.DueSoon)!.Note.Should().Be("1 opted out");
+
+        // The next day's poll is a new run, whatever it found.
+        await _db.Reminders(options, At(27), log).RunDueAsync();
+        log.Last(ReminderKind.DueSoon)!.AtUtc.Should().BeAfter(new DateTimeOffset(2026, 10, 26, 14, 0, 0, TimeSpan.Zero));
+    }
+
+    [Fact]
     public async Task TeamDigestOptOut_LeavesThatMemberOut_ButATeamMailboxStillGetsIt()
     {
         await Person(Robin, "robin@example.org");
