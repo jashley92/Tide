@@ -91,9 +91,8 @@
     {
         if (_loaded && _shown == StoryId) return;
         // A reload draws the prerendered story, or the search, at once; they're read again below.
-        if (Handoff.Take<StoryPicker>(PrerenderedState, CurrentUser.UserId) is { } prerendered && prerendered._shown == StoryId && prerendered.ArticleId == ArticleId)
+        if (Handoff.Take<StoryPicker>(RendererInfo, PrerenderedState) is { } prerendered && prerendered._shown == StoryId && prerendered.ArticleId == ArticleId)
             (_current, _found, _foundFor) = (prerendered._current, prerendered._found, prerendered._foundFor);
-        PrerenderedState = null;
         _loaded = true;
         _shown = StoryId;
         _canWrite = CurrentUser.Has(Permission.WriteArticles);
@@ -101,7 +100,7 @@
         {
             _current = StoryId is { } id ? await Stories.RowAsync(id) : null;
             if (_canWrite && StoryId is null) await Find();
-            if (!RendererInfo.IsInteractive) PrerenderedState = Handoff.Keep(CurrentUser.UserId, this);
+            PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
     }

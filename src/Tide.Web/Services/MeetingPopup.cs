@@ -1,29 +1,31 @@
+using Tide.Application.Briefs;
+
 namespace Tide.Web.Services;
 
 /// <summary>
-/// Something a page in present mode can open over the slide that the presenter can show to the room (an Our stack
-/// product's card, by its id): what this page has open, whether it opened it alone, and the presenter's open one it last
+/// A card a page in present mode can open over the slide that the presenter can show to the room (a product's, an
+/// article's indicators): what this page has open, whether it opened it alone, and the presenter's open one it last
 /// went along with, so one a follower closed for themselves stays closed until the presenter opens another.
 /// </summary>
 public sealed class MeetingPopup
 {
-    private Guid? _seen;
+    private MeetingCard? _seen;
 
     /// <summary>What this page has open, if anything.</summary>
-    public Guid? Shown { get; private set; }
+    public MeetingCard? Shown { get; private set; }
 
     /// <summary>Opened by this page alone (a follower's own look), not the presenter's shown to the room.</summary>
     public bool Own { get; private set; }
 
     /// <summary>
-    /// This page opens <paramref name="id"/>: the presenter's opening shows it to the room (and is the one seen); anyone
+    /// This page opens <paramref name="card"/>: the presenter's opening shows it to the room (and is the one seen); anyone
     /// else's in a meeting is theirs alone.
     /// </summary>
-    public void Open(Guid id, bool presenting, bool inMeeting)
+    public void Open(MeetingCard card, bool presenting, bool inMeeting)
     {
-        Shown = id;
+        Shown = card;
         Own = inMeeting && !presenting;
-        if (presenting) _seen = id;
+        if (presenting) _seen = card;
     }
 
     /// <summary>This page closes it (or it goes with the slide it was open over).</summary>
@@ -40,7 +42,7 @@ public sealed class MeetingPopup
     /// when following, unless this page closed that one itself. Their closing it closes it here, unless this page opened
     /// its own. True when what's shown changed.
     /// </summary>
-    public bool Sync(Guid? shared, bool following, bool held)
+    public bool Sync(MeetingCard? shared, bool following, bool held)
     {
         var was = Shown;
         if (held)

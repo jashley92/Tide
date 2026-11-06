@@ -2487,12 +2487,14 @@ public class AmbientUserChallengeTests(TideApp app) : IClassFixture<TideApp>
     public async Task APublisherNotifyingAnotherCircuitsSubscriber_LendsNothingOfItsUserToThatSubscribersWork()
     {
         // Presence (Together.Notify) and ChangeFeed call subscribers on the publisher's thread, inside the publisher's
-        // circuit activity. Each handler runs in a cleared ambient scope (A1 round 5), so the subscriber's continuation
-        // (InvokeAsync, Task.Run, an await) sees no user and no log: a refusal there is never logged under the publisher.
+        // circuit activity. Each handler runs with the user cleared (A1 round 5), so the subscriber's continuation
+        // (InvokeAsync, Task.Run, an await) sees no user: a refusal there is never logged under the publisher. The host's
+        // log stays, so it's still logged, as nobody's.
         var presence = new Tide.Web.Services.Presence();
         var subscriberLog = new Recorder();
         var seenInHandler = new TaskCompletionSource<string?>();
         var seenAfterYield = new TaskCompletionSource<string?>();
+        var logged = new TaskCompletionSource();
         presence.Changed += place =>
         {
             seenInHandler.TrySetResult(AmbientUser.Current?.UserId);
@@ -2502,6 +2504,7 @@ public class AmbientUserChallengeTests(TideApp app) : IClassFixture<TideApp>
                 seenAfterYield.TrySetResult(AmbientUser.Current?.UserId);
                 // What a page's handler does on a refusal, without naming its own user:
                 Tide.Web.Services.UserFacingError.For(new ForbiddenException("Subscriber B was refused."));
+                logged.TrySetResult();
             });
         };
         using (AmbientUser.Begin(User("publisher-A"), subscriberLog))
@@ -2511,8 +2514,11 @@ public class AmbientUserChallengeTests(TideApp app) : IClassFixture<TideApp>
         }
         (await seenInHandler.Task).Should().BeNull("the handler runs in a cleared scope");
         (await seenAfterYield.Task).Should().BeNull("and so does what it starts");
-        await Task.Delay(100);
-        subscriberLog.Lines.Should().BeEmpty("the publisher's log isn't lent to the subscriber either");
+        await logged.Task;
+        // The join and the leave each call the handler: each refusal is logged to the host's log, as nobody's.
+        lock (subscriberLog.Lines)
+            subscriberLog.Lines.Should().NotBeEmpty("the refusal is still logged, to the host's log")
+                .And.OnlyContain(l => l.StartsWith("Access denied for unknown") && !l.Contains("publisher-A"));
 
         // The change feed clears the scope the same way (Program.cs sets ChangeFeed.AroundHandler when the host starts).
         _ = app.Server;

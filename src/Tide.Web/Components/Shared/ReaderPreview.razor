@@ -195,10 +195,9 @@
     {
         // The first interactive draw is the prerendered preview again, not an empty card; the actions and related work
         // are then read again (OnParametersSetAsync), quietly.
-        if (Handoff.Take<ReaderPreview>(PrerenderedState, CurrentUser.UserId) is { } prerendered
+        if (Handoff.Take<ReaderPreview>(RendererInfo, PrerenderedState) is { } prerendered
             && prerendered._actionsFor == State.Article.Id && prerendered.EditionKey == EditionKey)
             Adopt(prerendered);
-        PrerenderedState = null;
         (_publicMax, _teamMax) = await Distribution.GetAsync();
     }
 
@@ -235,7 +234,7 @@
         // A form just loaded is drawn at once; an edit to it, once typing settles.
         if (!ReferenceEquals(State.Form, _builtFrom)) Build();
         else Rebuild();
-        if (!RendererInfo.IsInteractive) PrerenderedState = Handoff.Keep(CurrentUser.UserId, this);
+        PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
     }
 
     private void Build()

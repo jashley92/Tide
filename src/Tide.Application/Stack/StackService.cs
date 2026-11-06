@@ -255,7 +255,7 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
     public async Task<StackCard?> CardAsync(Guid id, TlpLevel ceiling, Guid? exceptArticleId = null, CancellationToken ct = default)
     {
         // A Visitor sees only the card the presenter has open for the room, while they're in the meeting (MeetingAccess).
-        if (!Briefs.MeetingAccess.Seats(user, meetings).Any(s => s.Product == id)) RequireRead();
+        if (!Briefs.MeetingAccess.Seats(user, meetings).Any(s => s.Card == Briefs.MeetingCard.ForProduct(id))) RequireRead();
         await using var db = await dbs.CreateAsync(ct);
         var p = await db.StackProducts.AsNoTracking().Include(x => x.Team).FirstOrDefaultAsync(x => x.Id == id, ct);
         if (p is null) return null;

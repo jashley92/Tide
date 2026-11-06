@@ -277,7 +277,7 @@ else
                                     var v = Tide.Application.Stack.StackService.ChipVersions(p.Versions);
                                     var what = p.Name + (v is null ? "" : " " + v) + (p.IsRetired ? " (retired)" : "");
                                     var muted = p.IsRetired ? "tide-slide-werun-retired" : "";
-                                    @if (CanOpenProduct)
+                                    @if (CanOpenCard)
                                     {
                                         <button type="button" @key="p.Id" class="tide-chip tide-slide-werun-chip @muted" title="Open what we know about @p.Name"
                                                 aria-label="We run @what: open its notes" @onclick="() => ShowProduct(p.Id)">@p.Name@if (v is not null) { <span class="tide-slide-werun-ver">@v</span> }@if (p.IsRetired) { <span class="tide-slide-werun-ver">retired</span> }</button>
@@ -408,8 +408,8 @@ else
                                 }
                                 @if (ea.Indicators.Count > 0)
                                 {
-                                    var iocs = $"{ea.Indicators.Count} indicator{(ea.Indicators.Count == 1 ? "" : "s")}";
-                                    @if (CanOpenProduct)
+                                    var iocs = Ui.Plural(ea.Indicators.Count, "indicator");
+                                    @if (CanOpenCard)
                                     {
                                         <button type="button" class="btn btn-sm btn-outline-secondary mt-2 tide-slide-iocs" aria-expanded="@Ui.Aria(ShownIndicators?.Article.Id == a.Id)"
                                                 title="Show them over the slide" @onclick="() => ShowIndicators(a.Id)"><span class="bi bi-fingerprint" aria-hidden="true"></span> @iocs</button>
@@ -770,11 +770,11 @@ else
         }
         @if (TeamEdition && _product is { } shownProduct)
         {
-            <PresentProduct Card="shownProduct" Kicker="@Kicker(_popup.Own)" CanClose="!Held" Autofocus="_focusProduct" OnClose="CloseProduct" Links="_readsTeam" />
+            <PresentProduct Card="shownProduct" Kicker="@Kicker(_popup.Own)" CanClose="!Held" Autofocus="_focusCard" OnClose="CloseCard" Links="_readsTeam" />
         }
         else if (ShownIndicators is { } shownIocs)
         {
-            <PresentIndicators Article="shownIocs" Kicker="@Kicker(_popup.Own)" CanClose="!Held" Autofocus="_focusProduct" OnClose="CloseProduct" Links="_readsTeam" />
+            <PresentIndicators Article="shownIocs" Kicker="@Kicker(_popup.Own)" CanClose="!Held" Autofocus="_focusCard" OnClose="CloseCard" Links="_readsTeam" />
         }
 
         @* Inside the slides' root, so it shows in full screen too; present.js leaves the keys to it while it's open. *@
@@ -827,7 +827,7 @@ else
             LeaveMeeting();
             (_noteText, _addName, _editText, _editingNote, _showNotes) = (null, null, null, null, false);
             (_actionDetail, _ownAction, _sharedSeen) = (null, false, null);
-            DropProduct(forget: true);
+            DropCard(forget: true);
             _seen.Clear();
             _follow = [];
             _carry.Clear();
@@ -844,8 +844,7 @@ else
         }
         // The first interactive draw starts from the slides the prerender read, so a reload doesn't flash "Loading" over
         // them; they're read again below, quietly, and the meeting is joined once the page is live, as ever.
-        if (Handoff.Take<Present>(PrerenderedState, CurrentUser.UserId) is { } prerendered && prerendered._day == day) Adopt(prerendered);
-        PrerenderedState = null;
+        if (Handoff.Take<Present>(RendererInfo, PrerenderedState) is { } prerendered && prerendered._day == day) Adopt(prerendered);
         try
         {
             // Read in full before anything is shown, and dropped if the address moved on meanwhile.
@@ -855,7 +854,7 @@ else
             var open = brief is null ? OpenActionsReview.None : await ActionSvc.OutstandingAsync(date, teamMax);
             var canCreate = CurrentUser.Has(Permission.WriteArticles);
             var canPresent = CurrentUser.Has(Permission.PresentBriefs);
-            (_canWork, _canNote) = (CurrentUser.Has(Permission.WorkActions), MeetingSvc.CanNote);
+            var (canWork, canNote) = (CurrentUser.Has(Permission.WorkActions), MeetingSvc.CanNote);
             var record = brief is null ? MeetingRecord.None : await MeetingSvc.GetAsync(brief.Id);
             var teams = _readsTeam ? (await TeamSvc.ListAsync()).ToList() : [];
             var teamsByKind = canCreate ? await ActionSvc.TeamsByKindAsync() : new Dictionary<ActionKind, Guid>();
@@ -863,9 +862,7 @@ else
             var cves = brief is null ? new Dictionary<string, CveRecord>() : await CvesOf(brief);
             var stack = await StackOf(brief);
             if (Day != day) return;
-            _stackOf = stack;
-            (_publicMax, _teamMax, _brief, _metrics, _open, _canCreate, _teams, _teamsByKind, _actions, _cves, _canPresent, _record) =
-                (publicMax, teamMax, brief, metrics, open, canCreate, teams, teamsByKind, actions, cves, canPresent, record);
+            DayRead = (publicMax, teamMax, brief, metrics, open, canCreate, teams, teamsByKind, actions, cves, canPresent, record, stack, canWork, canNote);
             Seen();   // the notes there already aren't news
             _qaTeam = _teams.FirstOrDefault()?.Id ?? Guid.Empty;
             _follow = Followed();
@@ -874,6 +871,7 @@ else
             _slide = Math.Min(_slide, LastSlide);
             _failed = false;
             _view = Meetings.Get(_date);
+            PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
             if (_interactive) await JoinIfLive();
         }
         catch (Exception ex)
@@ -882,11 +880,18 @@ else
             if (Day != day) return;
             _failed = _brief is null;
             Toasts.Error(UserFacingError.For(ex));
-            _loaded = true;
-            return;
         }
         _loaded = true;
-        if (!RendererInfo.IsInteractive) PrerenderedState = Handoff.Keep(CurrentUser.UserId, this);
+    }
+
+    // What a read of the day sets, as one: the read and Adopt both go through it, so neither can miss a part.
+    private (TlpLevel PublicMax, TlpLevel TeamMax, Brief? Brief, Tide.Application.Metrics.MetricDay? Metrics, OpenActionsReview Open, bool CanCreate,
+        IReadOnlyList<Team> Teams, IReadOnlyDictionary<ActionKind, Guid> TeamsByKind, ILookup<Guid, EditionAction>? Actions,
+        IReadOnlyDictionary<string, CveRecord> Cves, bool CanPresent, MeetingRecord Record, IReadOnlyDictionary<Guid, IReadOnlyList<StackProduct>> StackOf,
+        bool CanWork, bool CanNote) DayRead
+    {
+        get => (_publicMax, _teamMax, _brief, _metrics, _open, _canCreate, _teams, _teamsByKind, _actions, _cves, _canPresent, _record, _stackOf, _canWork, _canNote);
+        set => (_publicMax, _teamMax, _brief, _metrics, _open, _canCreate, _teams, _teamsByKind, _actions, _cves, _canPresent, _record, _stackOf, _canWork, _canNote) = value;
     }
 
     /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.</summary>
@@ -898,10 +903,8 @@ else
     // read here instead, so a follower sees the slides rather than "No meeting going on" until the page is live.
     private void Adopt(Present p)
     {
-        _stackOf = p._stackOf;
-        (_publicMax, _teamMax, _brief, _metrics, _open, _canCreate, _teams, _teamsByKind, _actions, _cves, _canPresent, _record) =
-            (p._publicMax, p._teamMax, p._brief, p._metrics, p._open, p._canCreate, p._teams, p._teamsByKind, p._actions, p._cves, p._canPresent, p._record);
-        (_canWork, _canNote, _qaTeam, _past, _heldAt) = (p._canWork, p._canNote, p._qaTeam, p._past, p._heldAt);
+        DayRead = p.DayRead;
+        (_qaTeam, _past, _heldAt) = (p._qaTeam, p._past, p._heldAt);
         Seen();
         Refresh();
         _loaded = true;
@@ -1038,7 +1041,7 @@ else
             // An action or a product's card open over the slide was that slide's; back on the presenter's, theirs shows again.
             DropAction();
             _sharedSeen = null;
-            DropProduct(forget: true);
+            DropCard(forget: true);
         }
         _slide = to;
         _dueTyped.Clear();
@@ -1065,7 +1068,7 @@ else
         if (!TeamEdition)
         {
             (_showNotes, _actionDetail, _tagEdit) = (false, null, null);   // the meeting notes are the team's, like its actions
-            DropProduct(forget: true);   // and Our stack's notes, internal to it
+            DropCard(forget: true);   // and Our stack's notes, internal to it
         }
         _slide = SlideNamed(shown) ?? Math.Min(_slide, LastSlide);
     }
@@ -1094,7 +1097,7 @@ else
             case "last": Go(LastSlide); break;
             case "close":
                 if (_zoom is not null) _zoom = null;
-                else if (CardOpen) await CloseProduct();
+                else if (CardOpen) await CloseCard();
                 else await CloseAction();
                 break;
             case "discussed":
@@ -1164,7 +1167,7 @@ else
         if (changes.Any(IsTags))
         {
             _stackOf = await StackOf(_brief);
-            if (_product is not null && changes.Any(c => c.Topic == ChangeFeed.Stack)) await LoadProduct();
+            if (_product is not null && changes.Any(c => c.Topic == ChangeFeed.Stack)) await LoadCard();
             changes = changes.Where(c => !IsTags(c)).ToList();
             if (changes.Count == 0)
             {
@@ -1238,7 +1241,7 @@ else
         {
             DropAction();
             _sharedSeen = null;
-            DropProduct(forget: true);
+            DropCard(forget: true);
         }
         if (Presenting) _seat!.At(_slide, key: SlideKey(_slide));
         else _seat?.At(_slide, _following, SlideKey(_slide));
@@ -1606,7 +1609,7 @@ else
         _edition = Edition.Team;   // first, so the slide is found among the team edition's
         _slide = SlideFor(live);
         DropAction();   // the presenter's, if any, shows instead
-        DropProduct(forget: true);
+        DropCard(forget: true);
         try
         {
             await Seated();
@@ -1639,7 +1642,7 @@ else
         _seat?.Dispose();
         (_seat, _seatTaken, _slide) = (null, false, 0);
         DropAction();
-        DropProduct(forget: true);
+        DropCard(forget: true);
     }
 
     // In the meeting, started or joined: on the team edition, following, and recorded as there.
@@ -1703,7 +1706,7 @@ else
             _seat = null;
             _slide = LastSlide;
             DropAction();
-            DropProduct(forget: true);
+            DropCard(forget: true);
             Toasts.Show("The meeting has ended.");
             return;
         }
@@ -1718,7 +1721,7 @@ else
         {
             DropAction();
             _sharedSeen = null;
-            DropProduct(forget: true);
+            DropCard(forget: true);
             _scroll.Resume();   // a pause from before presenting isn't one now
         }
         if (Presenting)
@@ -1733,7 +1736,7 @@ else
             {
                 DropAction();
                 _sharedSeen = null;
-                DropProduct(forget: true);
+                DropCard(forget: true);
             }
             // Handed the meeting on the slide this page shows: where it is on it is now the room's.
             if (handedMe && at == _slide) await ShareScroll();
@@ -1750,7 +1753,7 @@ else
             _slide = SlideFor(_view);
             _dueTyped.Clear();   // a date typed on the slide that moved away isn't saved later, unseen
             DropAction();   // one opened on the last slide was that slide's
-            DropProduct(forget: true);
+            DropCard(forget: true);
         }
         await SyncAction();
     }
@@ -1921,7 +1924,7 @@ else
     {
         DropAction();
         _sharedSeen = null;
-        DropProduct(forget: true);
+        DropCard(forget: true);
         _scroll.Resume();   // a pause from before presenting isn't one now
     }
 
@@ -2058,7 +2061,7 @@ else
             Toasts.Error($"{Ui.ActionLabel(number)} wasn't found.");
             return;
         }
-        DropProduct();   // one thing open over the slide at a time
+        DropCard();   // one thing open over the slide at a time
         (_actionDetail, _focusAction) = (detail, focus);
         _actionVersion++;
         _follow = Followed();
@@ -2077,7 +2080,7 @@ else
     // closed that one itself. Their closing it closes it here, unless this page opened its own.
     internal async Task SyncAction()
     {
-        await SyncProduct();
+        await SyncCard();
         if (_seat is null || _view is not { } live || Presenting || !TeamEdition) return;
         var shared = live.Action;
         if (Held)
@@ -2100,27 +2103,24 @@ else
     }
 
     // --- a card opened over an article's slide: an Our stack product's, or the article's indicators ---------------------
-    // One card at a time, shown to the room as one: the meeting's card is the product's id or the article's (Guids, so
-    // they can't be taken for each other), and moving on, handing over or the meeting's end closes either alike.
+    // One card at a time, shown to the room as one (a MeetingCard, which says which kind it is), and moving on, handing
+    // over or the meeting's end closes either alike.
 
     private IReadOnlyDictionary<Guid, IReadOnlyList<StackProduct>> _stackOf = new Dictionary<Guid, IReadOnlyList<StackProduct>>();
     private readonly MeetingPopup _popup = new();
-    private Tide.Application.Stack.StackCard? _product;
-    private bool _focusProduct;
+    private Tide.Application.Stack.StackCard? _product;   // a product's card, as read
+    private bool _focusCard;
 
     /// <summary>Whether this page can open a card: on the team edition, and not held by the presenter's lock.</summary>
-    private bool CanOpenProduct => TeamEdition && !Held && _readsTeam;
+    private bool CanOpenCard => TeamEdition && !Held && _readsTeam;
 
     // The article whose indicators are open over its slide, as this page's edition carries them (read again with it).
     private EditionArticle? ShownIndicators =>
-        TeamEdition && _product is null && _popup.Shown is { } id && _brief is not null
+        TeamEdition && _popup.Shown is { Kind: MeetingCardKind.Indicators, Id: var id } && _brief is not null
             ? Cut(_brief).Articles.FirstOrDefault(x => x.Article.Id == id && x.Indicators.Count > 0)
             : null;
 
     private bool CardOpen => _product is not null || ShownIndicators is not null;
-
-    /// <summary>Shows an article's indicators over its slide, as <see cref="ShowProduct"/> does a product's card.</summary>
-    internal Task ShowIndicators(Guid articleId) => ShowProduct(articleId);
 
     // Each article's tactics and scorecard tags as its slide draws them, worked out once per read of the brief rather than
     // on every render. A brief read again is a new object, with new articles: the cache starts afresh for it.
@@ -2144,22 +2144,27 @@ else
     private async Task<IReadOnlyDictionary<Guid, IReadOnlyList<StackProduct>>> StackOf(Brief? brief) =>
         brief is null ? new Dictionary<Guid, IReadOnlyList<StackProduct>>() : await StackSvc.ForArticlesAsync(brief.Items.Select(i => i.ArticleId));
 
+    /// <summary>Opens a product's card over the slide (<see cref="ShowCard"/>).</summary>
+    internal Task ShowProduct(Guid productId) => ShowCard(MeetingCard.ForProduct(productId));
+
+    /// <summary>Shows an article's indicators over its slide (<see cref="ShowCard"/>).</summary>
+    internal Task ShowIndicators(Guid articleId) => ShowCard(MeetingCard.ForIndicators(articleId));
+
     /// <summary>
-    /// Opens a card over the slide (a product's, or an article's indicators by the article's id), as <see cref="ShowAction"/>
-    /// does an action: the presenter's opens for everyone following them; anyone else's (unless the presenter has them
-    /// locked) is theirs alone.
+    /// Opens a card over the slide, as <see cref="ShowAction"/> does an action: the presenter's opens for everyone
+    /// following them; anyone else's (unless the presenter has them locked) is theirs alone.
     /// </summary>
-    internal async Task ShowProduct(Guid productId)
+    private async Task ShowCard(MeetingCard card)
     {
-        if (!CanOpenProduct) return;
+        if (!CanOpenCard) return;
         if (Presenting)
         {
-            Meetings.Show(_seat!, productId);
+            Meetings.Show(_seat!, card);
             Refresh();
         }
-        _popup.Open(productId, Presenting, _seat is not null);
-        await LoadProduct(focus: true);
-        if (Presenting && !CardOpen && Meetings.Get(_date)?.Product == productId)
+        _popup.Open(card, Presenting, _seat is not null);
+        await LoadCard(focus: true);
+        if (Presenting && !CardOpen && Meetings.Get(_date)?.Card == card)
         {
             Meetings.Show(_seat!, null);
             Refresh();
@@ -2167,7 +2172,7 @@ else
     }
 
     /// <summary>Closes the card: the presenter's, for everyone following; anyone else's, for themselves.</summary>
-    internal Task CloseProduct()
+    internal Task CloseCard()
     {
         if (!CardOpen || Held) return Task.CompletedTask;
         if (Presenting)
@@ -2175,44 +2180,43 @@ else
             Meetings.Show(_seat!, null);
             Refresh();
         }
-        DropProduct();
+        DropCard();
         return Task.CompletedTask;
     }
 
     // Closes the card; forgetting the presenter's too, so theirs shows again (a move, a hand-off, a new day).
-    private void DropProduct(bool forget = false)
+    private void DropCard(bool forget = false)
     {
         if (forget) _popup.Reset();
         else _popup.Close();
-        (_product, _focusProduct) = (null, false);
+        (_product, _focusCard) = (null, false);
     }
 
-    // Reads the card for what's open. One that can't be read (gone, or not this edition's) closes quietly: it may be the
-    // presenter's, named by a key this page can't show.
-    private async Task LoadProduct(bool focus = false)
+    // Reads the card for what's open. One that can't be read or shown (gone, or not this edition's) closes quietly: it
+    // may be the presenter's, naming what this page can't show.
+    private async Task LoadCard(bool focus = false)
     {
-        Tide.Application.Stack.StackCard? card = null;
-        if (TeamEdition && _popup.Shown is { } id)
+        _product = null;
+        switch (TeamEdition ? _popup.Shown : null)
         {
-            _product = null;
-            if (ShownIndicators is not null)
-            {
-                DropAction();   // one thing open over the slide at a time
-                _focusProduct = focus;
-                return;
-            }
-            try { card = await StackSvc.CardAsync(id, _teamMax, ShownArticle()); }
-            catch (ForbiddenException) { /* not theirs to read: closed quietly */ }
-            // Another was opened (or this one closed, or the edition changed) while it was read: that decides what shows.
-            if (_popup.Shown != id) return;
+            case { Kind: MeetingCardKind.Product, Id: var id } shown:
+                Tide.Application.Stack.StackCard? card = null;
+                try { card = await StackSvc.CardAsync(id, _teamMax, ShownArticle()); }
+                catch (ForbiddenException) { /* not theirs to read: closed quietly */ }
+                // Another was opened (or this one closed, or the edition changed) while it was read: that decides what shows.
+                if (_popup.Shown != shown) return;
+                _product = card;
+                break;
+            case { Kind: MeetingCardKind.Indicators }:
+                break;   // drawn from the edition as read (ShownIndicators)
         }
-        if (card is null)
+        if (!CardOpen)
         {
-            DropProduct();
+            DropCard();
             return;
         }
         DropAction();   // one thing open over the slide at a time
-        (_product, _focusProduct) = (card, focus);
+        _focusCard = focus;
     }
 
     // The presenter's other tab (a projector window) shows what the meeting has open: the presenter opened or closed it
@@ -2225,34 +2229,34 @@ else
             if (live.Action is { } n) await LoadAction(n);
             else DropAction();
         }
-        if (live.Product != _popup.Shown)
+        if (live.Card != _popup.Shown)
         {
-            if (live.Product is { } id)
+            if (live.Card is { } card)
             {
-                _popup.Open(id, presenting: true, inMeeting: true);
-                await LoadProduct();
+                _popup.Open(card, presenting: true, inMeeting: true);
+                await LoadCard();
             }
-            else DropProduct();
+            else DropCard();
         }
         // What this presenter's page can't read (gone since) isn't left open for the room, which they couldn't close.
         // Only what's still open for the room: the presenter may have opened another while this was read.
         if (_seat is null) return;
         var now = Meetings.Get(_date);
         if (live.Action is not null && _actionDetail is null && now?.Action == live.Action) Meetings.Open(_seat, null);
-        if (live.Product is not null && !CardOpen && now?.Product == live.Product) Meetings.Show(_seat, null);
+        if (live.Card is not null && !CardOpen && now?.Card == live.Card) Meetings.Show(_seat, null);
         Refresh();
     }
 
-    // Goes along with the product card the presenter has open, as SyncAction does their action.
-    internal async Task SyncProduct()
+    // Goes along with the card the presenter has open, as SyncAction does their action.
+    internal async Task SyncCard()
     {
         if (_seat is null || _view is not { } live || Presenting) return;
         if (!TeamEdition)
         {
-            DropProduct();
+            DropCard();
             return;
         }
-        if (_popup.Sync(live.Product, _following, Held)) await LoadProduct();
+        if (_popup.Sync(live.Card, _following, Held)) await LoadCard();
     }
 
     private List<RaisedHand> HandsOn(Guid articleId) => _view?.Hands.Where(h => h.ArticleId == articleId).ToList() ?? [];

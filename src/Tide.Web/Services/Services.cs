@@ -105,31 +105,32 @@ public static class UserFacingError
     /// <param name="operation">What was refused, when the caller knows; otherwise the service method that refused it, from the exception.</param>
     public static string For(Exception ex, ICurrentUser? user = null, string? operation = null)
     {
-        if (ex is Application.Security.ForbiddenException forbidden && Security.AmbientUser.AccessLog is { } log)
-        {
-            try
-            {
-                log.LogWarning("Access denied for {User} in {Operation}: {Reason}", (user ?? Security.AmbientUser.Current)?.UserId ?? "unknown",
-                    operation ?? Refused(forbidden) ?? "an operation", forbidden.Message);
-            }
-            catch (Exception) { /* a logging failure (a provider gone with its host, a full disk) isn't the person's problem */ }
-        }
+        var forbidden = ex as Application.Security.ForbiddenException;
         var message = Message(ex);
-        if (message is not null) return message;
+        if (message is not null && forbidden is null) return message;   // nothing to log
+
+        // Who and what, for the line logged: a refusal's warning, or an unexpected failure's error.
+        var who = (user ?? Security.AmbientUser.Current)?.UserId ?? "unknown";
+        var what = operation ?? Refused(ex) ?? "an operation";
+        if (forbidden is not null)
+        {
+            TryLog(Security.AmbientUser.AccessLog, log => log.LogWarning("Access denied for {User} in {Operation}: {Reason}", who, what, forbidden.Message));
+            return forbidden.Message;
+        }
 
         // Unexpected: the person learns nothing from the exception, so it's logged where an administrator can find it.
         // The reference is short enough to read out over the phone.
         var reference = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(4));
-        if (Security.AmbientUser.ErrorLog is { } errors)
-        {
-            try
-            {
-                errors.LogError(ex, "Unexpected error {Reference} for {User} in {Operation}.", reference,
-                    (user ?? Security.AmbientUser.Current)?.UserId ?? "unknown", operation ?? Refused(ex) ?? "an operation");
-            }
-            catch (Exception) { /* as above */ }
-        }
+        TryLog(Security.AmbientUser.ErrorLog, log => log.LogError(ex, "Unexpected error {Reference} for {User} in {Operation}.", reference, who, what));
         return $"Something went wrong. Try again; if it keeps happening, tell an administrator (reference {reference}).";
+    }
+
+    // A logging failure (a provider gone with its host, a full disk) isn't the person's problem: the line is dropped.
+    private static void TryLog(ILogger? log, Action<ILogger> write)
+    {
+        if (log is null) return;
+        try { write(log); }
+        catch (Exception) { /* dropped, as above */ }
     }
 
     /// <summary>The application service and method that threw: the first frame of the app's own code, named as a person

@@ -541,12 +541,13 @@ public sealed class TrailAuditTests : IDisposable
     }
 
     // A5-R-5: a change or a presence note is published on the publisher's thread, inside their circuit activity. Each
-    // subscriber is called with that user cleared, so a refusal from work the subscriber starts isn't logged as theirs.
+    // subscriber is called with that user cleared, so a refusal from work the subscriber starts isn't logged as theirs;
+    // the host's log stays, so it's still logged, as nobody's.
     [Fact]
     public async Task APublisher_DoesNotLendItsUserToAnotherCircuitsSubscriber()
     {
         var log = new CapturingLogger("Tide.Access");
-        ChangeFeed.AroundHandler = () => AmbientUser.Begin(null);   // as Program.cs sets it
+        ChangeFeed.AroundHandler = AmbientUser.WithoutUser;   // as Program.cs sets it
         var feed = new ChangeFeed();
         var presence = new Tide.Web.Services.Presence();
         var inHandler = new List<string?>();
@@ -576,6 +577,8 @@ public sealed class TrailAuditTests : IDisposable
         inHandler.Should().HaveCount(3).And.OnlyContain(id => id == null);
         foreach (var later in afterYield) (await later.Task).Should().BeNull();
         log.Lines.Should().NotContain(l => l.Message.Contains("publisher-A"), "the refusal was the subscriber's, never the publisher's");
+        log.Lines.Should().HaveCount(3, "each subscriber's refusal is still logged")
+            .And.OnlyContain(l => l.Message.Contains("Access denied for unknown in Triage.Load"));
     }
 
     [Fact]

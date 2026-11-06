@@ -9,7 +9,6 @@
 @inject ToastService Toasts
 @inject IJSRuntime JS
 @inject PrerenderHandoff Handoff
-@inject ICurrentUser CurrentUser
 
 <section class="tide-card tide-section tide-draft-assist" aria-labelledby="sec-draft">
     <h2 id="sec-draft" class="mb-0">
@@ -299,12 +298,11 @@
     {
         // A reload draws the prerendered card at once, not "Loading" in it. Its status is read again below; the source
         // text isn't, so nothing typed into it meanwhile is lost.
-        if (Handoff.Take<DraftAssist>(PrerenderedState, CurrentUser.UserId) is { } prerendered && prerendered._loadedFor == ArticleId)
+        if (Handoff.Take<DraftAssist>(RendererInfo, PrerenderedState) is { } prerendered && prerendered._loadedFor == ArticleId)
         {
             (_loadedFor, _open, _sourceText, _origin, _others) = (prerendered._loadedFor, prerendered._open, prerendered._sourceText, prerendered._origin, prerendered._others);
             _status = prerendered._status;
         }
-        PrerenderedState = null;
         // A new article starts the card open while it has no bottom line; the status follows the article's TLP.
         if (_loadedFor != ArticleId)
         {
@@ -327,7 +325,7 @@
             try { _status = await Assist.StatusAsync(ArticleId, Form.Tlp); }
             catch (ForbiddenException) { _status = null; }
         }
-        if (!RendererInfo.IsInteractive) PrerenderedState = Handoff.Keep(CurrentUser.UserId, this);
+        PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
     }
 
     /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.</summary>

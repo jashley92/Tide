@@ -98,7 +98,7 @@ public class PresentIndicatorsTests(TideApp app) : IClassFixture<TideApp>
         await Do(owner, p => p.Follow());
 
         await Do(pat, p => p.ShowIndicators(s.WithIocs));
-        Meetings.Get(s.Day)!.Product.Should().Be(s.WithIocs, "the room's card is the article's indicators");
+        Meetings.Get(s.Day)!.Card.Should().Be(MeetingCard.ForIndicators(s.WithIocs), "the room's card is the article's indicators");
         (await pat.Html()).Should().Contain("present-iocs-title").And.Contain("Shown to everyone following");
         await Do(owner, p => p.Follow());
         (await owner.Html()).Should().Contain("present-iocs-title").And.Contain("Tester is showing this").And.Contain("bad72[.]example[.]net");
@@ -107,13 +107,13 @@ public class PresentIndicatorsTests(TideApp app) : IClassFixture<TideApp>
         using (var otherTab = Meetings.Join(s.Day, "dev:tester", "Tester", true, "", Guid.NewGuid(), Meetings.Get(s.Day)!.Slide)!)
         {
             Meetings.Open(otherTab, 1).Should().BeTrue();
-            Meetings.Get(s.Day)!.Product.Should().BeNull("one thing open over the slide at a time");
+            Meetings.Get(s.Day)!.Card.Should().BeNull("one thing open over the slide at a time");
         }
 
         // Moving on closes it for everyone.
         await Do(pat, p => p.ShowIndicators(s.WithIocs));
         await pat.Click(p => p.OnPresentKey("next"));
-        Meetings.Get(s.Day)!.Product.Should().BeNull();
+        Meetings.Get(s.Day)!.Card.Should().BeNull();
         await Do(owner, p => p.Follow());
         (await owner.Html()).Should().NotContain("present-iocs-title");
 

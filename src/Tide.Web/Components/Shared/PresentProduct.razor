@@ -2,24 +2,14 @@
    where, who owns it, its notes (as the stack page renders them), when it was last checked, and the other articles
    about it. Team edition only: the notes are internal (TLP:AMBER); Present draws it only there. *@
 @using Tide.Application.Stack
+@inherits PresentCardBase
 
 @{ var p = Card.Product; }
-@* A region, not a dialog, like the action opened over a slide: present.js keeps the keys, so Esc closes it. *@
-<section class="tide-present-action tide-present-product" aria-labelledby="present-product-title">
-    <div class="tide-present-action-head">
-        <h2 id="present-product-title"><span class="tide-present-product-kicker">We run</span> @p.Name
-            @if (p.IsRetired) { <Badge Tone="BadgeTone.Neutral">Retired</Badge> }</h2>
-        @if (Kicker is not null) { <span class="tide-present-help">@Kicker</span> }
-        @if (Links)
-        {
-            <a class="btn btn-sm btn-outline-secondary ms-auto" href="@($"stack/{p.Id}")" target="_blank" rel="noopener">Open on Our stack</a>
-        }
-        @if (CanClose)
-        {
-            <button type="button" class="btn btn-sm btn-outline-secondary" aria-label="Close @p.Name" title="Close (Esc)" @ref="_close" @onclick="Close"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
-        }
-    </div>
-    <div class="tide-present-action-body tide-scrollfade">
+<PresentCard Shown="p.Id" TitleId="present-product-title" Href="@($"stack/{p.Id}")" LinkText="Open on Our stack" CloseLabel="@($"Close {p.Name}")"
+             Kicker="@Kicker" CanClose="CanClose" Autofocus="Autofocus" OnClose="OnClose" Links="Links">
+    <Title><span class="tide-present-product-kicker">We run</span> @p.Name
+        @if (p.IsRetired) { <Badge Tone="BadgeTone.Neutral">Retired</Badge> }</Title>
+    <ChildContent>
         <dl class="tide-facts">
             @if (StackService.SplitNames(p.OtherNames) is { Count: > 0 } others)
             {
@@ -48,37 +38,9 @@
                 }
             </div>
         </div>
-    </div>
-</section>
+    </ChildContent>
+</PresentCard>
 
 @code {
     [Parameter, EditorRequired] public StackCard Card { get; set; } = default!;
-
-    /// <summary>A word on whose it is: "Shown to everyone following", "Tester is showing this".</summary>
-    [Parameter] public string? Kicker { get; set; }
-
-    /// <summary>Whether this page may close it: not a follower held by the presenter's lock.</summary>
-    [Parameter] public bool CanClose { get; set; } = true;
-
-    /// <summary>Takes focus once drawn: this page opened it.</summary>
-    [Parameter] public bool Autofocus { get; set; }
-
-    [Parameter] public EventCallback OnClose { get; set; }
-
-    /// <summary>Whether it links to Our stack: not for a Visitor, who sees the card only in the meeting.</summary>
-    [Parameter] public bool Links { get; set; } = true;
-
-    private ElementReference _close;
-    private Guid? _focused;
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (!Autofocus || !CanClose || _focused == Card.Product.Id) return;
-        _focused = Card.Product.Id;
-        try { await _close.FocusAsync(); }
-        catch (JSException) { }
-        catch (JSDisconnectedException) { }
-    }
-
-    private Task Close() => CanClose ? OnClose.InvokeAsync() : Task.CompletedTask;
 }

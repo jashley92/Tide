@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Actions;
 using Tide.Application.Org;
@@ -22,7 +23,7 @@ public class PrerenderHandoffTests
     public void WhatsKept_IsTakenOnce_ByTheSameUser_WhileItsFresh()
     {
         var clock = new Clock();
-        var handoff = new PrerenderHandoff(clock);
+        var handoff = new PrerenderStore(clock);
         var state = new object();
 
         var key = handoff.Keep("S-1-5-21-A", state);
@@ -36,10 +37,10 @@ public class PrerenderHandoffTests
 
         // A circuit that comes too late, or not at all, finds nothing; a later prerender sweeps what was left.
         var late = handoff.Keep("S-1-5-21-A", state);
-        clock.Now += PrerenderHandoff.Lifetime;
+        clock.Now += PrerenderStore.Lifetime;
         handoff.Take<object>(late, "S-1-5-21-A").Should().BeNull();
         handoff.Keep("S-1-5-21-A", state);
-        clock.Now += PrerenderHandoff.Lifetime;
+        clock.Now += PrerenderStore.Lifetime;
         handoff.Keep("S-1-5-21-A", state);
         handoff.Count.Should().Be(1, "the expired one was swept");
 
@@ -49,10 +50,46 @@ public class PrerenderHandoffTests
     }
 
     [Fact]
+    public void TheStore_KeepsAtMostItsCapacity_DroppingTheOldest_AndNeverHandsOnAnExpiredOne()
+    {
+        var clock = new Clock();
+        var store = new PrerenderStore(clock);
+        var first = store.Keep("S-1-5-21-A", "first");
+        for (var i = 1; i < PrerenderStore.Capacity; i++) store.Keep("S-1-5-21-A", "more");
+        store.Count.Should().Be(PrerenderStore.Capacity);
+        var last = store.Keep("S-1-5-21-A", "last");
+        store.Count.Should().Be(PrerenderStore.Capacity, "the oldest made room");
+        store.Take<string>(first, "S-1-5-21-A").Should().BeNull();
+
+        // Expired between sweeps: still not handed on.
+        var late = store.Keep("S-1-5-21-A", "late");
+        clock.Now += PrerenderStore.Lifetime;
+        store.Take<string>(late, "S-1-5-21-A").Should().BeNull();
+        store.Take<string>(last, "S-1-5-21-A").Should().BeNull();
+    }
+
+    [Fact]
+    public void TheHandoff_KeepsOncePerPrerender_AndTakesOnlyOnceInteractive()
+    {
+        var store = new PrerenderStore(new Clock());
+        var handoff = new PrerenderHandoff(store, new FakeUser(AppRole.Analyst) { UserId = "S-1-5-21-A" });
+        RendererInfo prerendering = new("Static", isInteractive: false), interactive = new("Server", isInteractive: true);
+        var state = new object();
+
+        var key = handoff.Keep(prerendering, state, null);
+        handoff.Keep(prerendering, state, key).Should().Be(key, "kept once, however often its parameters are set");
+        store.Count.Should().Be(1);
+        handoff.Take<object>(prerendering, key).Should().BeNull("nothing is taken while prerendering");
+        handoff.Keep(interactive, state, key).Should().BeNull("there's nothing to hand on once interactive");
+        handoff.Take<object>(interactive, key).Should().BeSameAs(state);
+        store.Count.Should().Be(0);
+    }
+
+    [Fact]
     public async Task TodaysPrerender_KeepsWhatItRead_ForItsInteractiveRender()
     {
         using var app = new TideApp();
-        var handoff = app.Services.GetRequiredService<PrerenderHandoff>();
+        var handoff = app.Services.GetRequiredService<PrerenderStore>();
         var before = handoff.Count;
 
         var html = await app.CreateClient().GetStringAsync("/");
@@ -77,7 +114,7 @@ public class PrerenderHandoffTests
             });
             await db.SaveChangesAsync();
         }
-        var handoff = app.Services.GetRequiredService<PrerenderHandoff>();
+        var handoff = app.Services.GetRequiredService<PrerenderStore>();
         var before = handoff.Count;
 
         var html = await app.CreateClient().GetStringAsync("/triage");
@@ -92,7 +129,7 @@ public class PrerenderHandoffTests
     public async Task TheActionsPrerender_KeepsWhatItRead_ForItsInteractiveRender(string path, string shown)
     {
         using var app = new TideApp();
-        var handoff = app.Services.GetRequiredService<PrerenderHandoff>();
+        var handoff = app.Services.GetRequiredService<PrerenderStore>();
         var before = handoff.Count;
 
         var html = await app.CreateClient().GetStringAsync(path);
@@ -105,7 +142,7 @@ public class PrerenderHandoffTests
     public async Task AnActionsPrerender_KeepsItsPage_ItsChecklist_AndItsHuntPanel()
     {
         using var app = new TideApp();
-        var handoff = app.Services.GetRequiredService<PrerenderHandoff>();
+        var handoff = app.Services.GetRequiredService<PrerenderStore>();
         var before = handoff.Count;
 
         // A sweep with a checklist, which its worker can work: the checklist and the hunt panel read their own, and keep
@@ -125,7 +162,7 @@ public class PrerenderHandoffTests
     public async Task ANewActionsPrerender_KeepsItsFormAndItsEditor()
     {
         using var app = new TideApp();
-        var handoff = app.Services.GetRequiredService<PrerenderHandoff>();
+        var handoff = app.Services.GetRequiredService<PrerenderStore>();
         var before = handoff.Count;
 
         var html = await app.CreateClient().GetStringAsync("/actions/new");
@@ -138,7 +175,7 @@ public class PrerenderHandoffTests
     public async Task PresentsPrerender_KeepsTheSlidesItRead_ForItsInteractiveRender()
     {
         using var app = new TideApp();
-        var handoff = app.Services.GetRequiredService<PrerenderHandoff>();
+        var handoff = app.Services.GetRequiredService<PrerenderStore>();
         var day = app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;
         var before = handoff.Count;
 
@@ -162,7 +199,7 @@ public class PrerenderHandoffTests
     public async Task TheEditorsPrerender_KeepsWhatEachPartOfItRead_ForItsInteractiveRender()
     {
         using var app = new TideApp();
-        var handoff = app.Services.GetRequiredService<PrerenderHandoff>();
+        var handoff = app.Services.GetRequiredService<PrerenderStore>();
         var id = await NewArticle(app);
         var before = handoff.Count;
 
@@ -177,7 +214,7 @@ public class PrerenderHandoffTests
     public async Task TheReviewsPrerender_KeepsWhatItRead_ForItsInteractiveRender()
     {
         using var app = new TideApp();
-        var handoff = app.Services.GetRequiredService<PrerenderHandoff>();
+        var handoff = app.Services.GetRequiredService<PrerenderStore>();
         var id = await NewArticle(app);
         var before = handoff.Count;
 
@@ -191,7 +228,7 @@ public class PrerenderHandoffTests
     public async Task AMissingArticle_KeepsNothing()
     {
         using var app = new TideApp();
-        var handoff = app.Services.GetRequiredService<PrerenderHandoff>();
+        var handoff = app.Services.GetRequiredService<PrerenderStore>();
         var before = handoff.Count;
 
         (await app.CreateClient().GetStringAsync($"/articles/{Guid.NewGuid()}")).Should().Contain("That article doesn't exist");

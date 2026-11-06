@@ -11,7 +11,6 @@
 @inject ChangeFeed Feed
 @inject ChangeOrigin Origin
 @inject PrerenderHandoff Handoff
-@inject ICurrentUser CurrentUser
 @implements IDisposable
 
 @if (Boxed)
@@ -76,15 +75,14 @@ else
         _topic = ChangeFeed.Article(ArticleId);
         _tagsTopic = ChangeFeed.ArticleTags(ArticleId);
         // A reload draws the prerendered tags at once, not a loading row; they're read again below.
-        if (Handoff.Take<TagCard<TTag>>(PrerenderedState, CurrentUser.UserId) is { } prerendered && prerendered.GetType() == GetType()
+        if (Handoff.Take<TagCard<TTag>>(RendererInfo, PrerenderedState) is { } prerendered && prerendered.GetType() == GetType()
             && prerendered.ArticleId == ArticleId)
         {
             _offered = prerendered._offered;
             Adopt(prerendered);
         }
-        PrerenderedState = null;
         await Load();
-        if (!RendererInfo.IsInteractive && Tagged is not null) PrerenderedState = Handoff.Keep(CurrentUser.UserId, this);
+        if (Tagged is not null) PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
     }
 
     /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.</summary>

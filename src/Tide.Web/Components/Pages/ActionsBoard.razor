@@ -208,9 +208,9 @@ else
             StateHasChanged();
         });
         // Taken before the first await, which is when the interactive render first draws: from the same address only.
-        _adopted = Handoff.Take<ActionsBoard>(PrerenderedState, CurrentUser.UserId) is { } prerendered
-            && prerendered._applied == (ViewParam, TeamParam, AssigneeParam, LayoutParam, RuleParam, GroupParam) && Adopt(prerendered);
-        PrerenderedState = null;
+        if (Handoff.Take<ActionsBoard>(RendererInfo, PrerenderedState) is { } prerendered
+            && prerendered._applied == (ViewParam, TeamParam, AssigneeParam, LayoutParam, RuleParam, GroupParam))
+            Adopt(prerendered);
         _teams = await Teams.ListAsync();
         _rules = await RuleSvc.ListAsync();
         SavedLayout ??= await Prefs.GetAsync(UserPreferences.ActionsLayout);
@@ -239,16 +239,15 @@ else
         _assignee = string.IsNullOrWhiteSpace(AssigneeParam) ? null : AssigneeParam;
         var quiet = _adopted;
         _adopted = false;
-        if (await Read(quiet) && !RendererInfo.IsInteractive) PrerenderedState = Handoff.Keep(CurrentUser.UserId, this);
+        if (await Read(quiet)) PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
     }
 
     // Takes what the prerendered page read and chose from its address, so the first interactive draw is the same page.
-    private bool Adopt(ActionsBoard p)
+    private void Adopt(ActionsBoard p)
     {
         (_teams, _rules, _board, _rows) = (p._teams, p._rules, p._board, p._rows);
         (_view, _asBoard, _groupByKind, _ruleId, _teamId, _assignee) = (p._view, p._asBoard, p._groupByKind, p._ruleId, p._teamId, p._assignee);
-        _loading = false;
-        return true;
+        (_loading, _adopted) = (false, true);
     }
 
     private Task ClearAssignee()
@@ -322,15 +321,14 @@ else
             var filter = new ActionFilter(_view, _teamId, _kind, AssigneeId: _assignee);
             if (_asBoard) _board = await ActionSvc.BoardAsync(filter);
             else _rows = await ActionSvc.ListAsync(filter);
+            return true;
         }
         catch (Exception ex)
         {
             Toasts.Error(UserFacingError.For(ex));
-            _loading = false;
             return false;
         }
-        _loading = false;
-        return true;
+        finally { _loading = false; }
     }
 
     public void Dispose()
