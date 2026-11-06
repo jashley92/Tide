@@ -284,7 +284,7 @@ public class ViewerVisitorRoleTests : IDisposable
         await Refused(() => _db.Actions().ChecklistAsync(s.ActionId));
         await Refused(() => _db.Actions().AddCommentAsync(s.ActionId, "Hello from elsewhere"));
 
-        _meetings.Show(presenter, s.Product);
+        _meetings.Show(presenter, MeetingCard.ForProduct(s.Product));
         (await _db.Stack().CardAsync(s.Product, TlpLevel.AmberStrict)).Should().NotBeNull();
         await Refused(() => _db.Actions().GetAsync(s.Action));   // opening the card closed the action
     }

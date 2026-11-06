@@ -341,10 +341,14 @@ else
     {
         // The first interactive draw starts from what the prerender read, so a reload doesn't flash "Loading" over the
         // page; it's then read again below, quietly.
-        var adopted = Handoff.Take<ActionPage>(PrerenderedState, CurrentUser.UserId) is { } prerendered && prerendered.Number == Number
-            && prerendered.ArticleParam == ArticleParam && prerendered.ParentParam == ParentParam && Adopt(prerendered);
-        PrerenderedState = null;
-        if (!adopted) _loaded = false;
+        var adopted = false;
+        if (Handoff.Take<ActionPage>(RendererInfo, PrerenderedState) is { } prerendered && prerendered.Number == Number
+            && prerendered.ArticleParam == ArticleParam && prerendered.ParentParam == ParentParam)
+        {
+            Adopt(prerendered);
+            adopted = true;
+        }
+        else _loaded = false;
         _teams = await TeamSvc.ListAsync(includeRetired: true);
         if (CurrentUser.Has(Permission.WriteArticles)) _people = await Users.ListAsync();
         // A new action's form is kept as the prerender left it: built again, the editor would start over in front of them.
@@ -368,7 +372,7 @@ else
             await Reload();
         }
         _loaded = true;
-        if (!RendererInfo.IsInteractive) PrerenderedState = Handoff.Keep(CurrentUser.UserId, this);
+        PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
     }
 
     /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.</summary>
@@ -377,12 +381,11 @@ else
 
     // Takes what the prerendered page read: the action, or the new one's form and where it's from, and the teams and
     // people its editor offers.
-    private bool Adopt(ActionPage p)
+    private void Adopt(ActionPage p)
     {
         (_teams, _people, _detail, _topic, _shownNumber) = (p._teams, p._people, p._detail, p._topic, p._shownNumber);
         (_form, _parent, _articleTitle) = (p._form, p._parent, p._articleTitle);
         _loaded = true;
-        return true;
     }
 
     private async Task PrepareNew()

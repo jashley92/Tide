@@ -128,19 +128,19 @@ public class PresentMirrorRound3Tests(GatedDatabaseTideApp app) : IClassFixture<
         var held = Gate.Arm();
         // The page hears of it on this thread: signed in as the page is, as its circuit would be.
         pat.Scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.Http.IHttpContextAccessor>().HttpContext = pat.Signedin;
-        Meetings.Show(other, Guid.NewGuid()).Should().BeTrue();
+        Meetings.Show(other, MeetingCard.ForProduct(Guid.NewGuid())).Should().BeTrue();
         await held.WaitAsync(TimeSpan.FromSeconds(10));
 
         // Meanwhile the presenter opens a product here, for the room.
         await pat.Click(p => p.ShowProduct(product));
-        Meetings.Get(day)!.Product.Should().Be(product);
+        Meetings.Get(day)!.Card.Should().Be(MeetingCard.ForProduct(product));
 
         // The held read comes back with nothing: it was for the other card, which isn't open any more.
         Gate.ReleaseHeld();
         await pat.Click(_ => Task.CompletedTask);
         await pat.Click(_ => Task.CompletedTask);
 
-        Meetings.Get(day)!.Product.Should().Be(product, "the card the presenter opened since stays open for the room");
+        Meetings.Get(day)!.Card.Should().Be(MeetingCard.ForProduct(product), "the card the presenter opened since stays open for the room");
         (await pat.Html()).Should().Contain("present-product-title").And.Contain("Northwind Mirror Gateway 81");
 
         Meetings.End(Meetings.Join(day, SignIn.Analyst.UserId, SignIn.Analyst.Name, true, "", Guid.NewGuid(), 0)!);

@@ -38,9 +38,16 @@ public static class AmbientUser
         return new Scope(previous);
     }
 
-    /// <summary>Makes <paramref name="user"/> and <paramref name="loggers"/>' access and error logs ambient.</summary>
-    public static IDisposable Begin(ICurrentUser? user, ILoggerFactory loggers) =>
-        Begin(user, loggers.CreateLogger(AccessLogCategory), loggers.CreateLogger(ErrorLogCategory));
+    /// <summary>
+    /// Clears the user until the returned scope is disposed, keeping the host's logs: work begun for someone else (a
+    /// subscriber called on a publisher's thread) isn't logged as the person whose flow it's on, but is still logged.
+    /// </summary>
+    public static IDisposable WithoutUser()
+    {
+        var previous = Ambient.Value;
+        Ambient.Value = (null, previous.AccessLog, previous.ErrorLog);
+        return new Scope(previous);
+    }
 
     private sealed class Scope((ICurrentUser? User, ILogger? AccessLog, ILogger? ErrorLog) previous) : IDisposable
     {

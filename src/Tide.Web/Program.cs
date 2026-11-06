@@ -130,7 +130,8 @@ builder.Services.AddScoped<ToastService>();
 builder.Services.AddSingleton<Presence>();
 builder.Services.AddSingleton<BoardDrags>();
 builder.Services.AddSingleton<LiveMeetings>();
-builder.Services.AddSingleton(new PrerenderHandoff(TimeProvider.System));
+builder.Services.AddSingleton<PrerenderStore>();
+builder.Services.AddScoped<PrerenderHandoff>();
 builder.Services.AddSingleton<Tide.Application.Briefs.IMeetingsInProgress>(sp => sp.GetRequiredService<LiveMeetings>());
 // Clears a closed tab's presence: the circuit's handler, and the circuit id presence notes join with. It also keeps the
 // transport the circuit is on, for Diagnostics.
@@ -200,9 +201,9 @@ if (!app.Environment.IsDevelopment())
 // for HTML. Files, exports, emails, the circuit and health probes keep their real status codes.
 var accessLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger(AmbientUser.AccessLogCategory);
 // A change is published on the publisher's thread, inside their circuit activity: each subscriber is called with the
-// publisher's user cleared, so work the subscriber starts isn't logged as the publisher's. (A static delegate to a static
-// method: nothing host-owned is kept.)
-ChangeFeed.AroundHandler = () => AmbientUser.Begin(null);
+// publisher's user cleared, so work the subscriber starts isn't logged as the publisher's; the host's logs stay, so it's
+// still logged. (A static delegate to a static method: nothing host-owned is kept.)
+ChangeFeed.AroundHandler = AmbientUser.WithoutUser;
 app.UseStatusCodePages(context =>
 {
     var http = context.HttpContext;

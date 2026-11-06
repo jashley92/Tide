@@ -89,7 +89,7 @@ public class PresentMidMeetingTests(MeetingClockApp app) : IClassFixture<Meeting
         (await robin.Html()).Should().Contain("present-product-title");
 
         await Do(pat, p => p.HandOff(new ChangeEventArgs { Value = Robin.UserId }));
-        Meetings.Get(s.Day)!.Should().Match<LiveMeetingView>(v => v.PresenterId == Robin.UserId && v.Product == null && v.Locked);
+        Meetings.Get(s.Day)!.Should().Match<LiveMeetingView>(v => v.PresenterId == Robin.UserId && v.Card == null && v.Locked);
         (await pat.Html()).Should().NotContain("present-product-title", "the room's card closed with the hand-off, and a lock wouldn't let them close it")
             .And.Contain("is-held");
         PresentFollowPillTests.Heard(await pat.Html()).Should().Be("Following Robin Analyst · locked by the presenter");
@@ -115,7 +115,7 @@ public class PresentMidMeetingTests(MeetingClockApp app) : IClassFixture<Meeting
         app.Clock.Now += LiveMeetings.Grace + TimeSpan.FromSeconds(1);
         await Do(robin, p => p.Follow());
         await Do(robin, p => p.TakeOver());
-        Meetings.Get(s.Day)!.Should().Match<LiveMeetingView>(v => v.PresenterId == Robin.UserId && v.Product == null);
+        Meetings.Get(s.Day)!.Should().Match<LiveMeetingView>(v => v.PresenterId == Robin.UserId && v.Card == null);
         (await robin.Html()).Should().NotContain("present-product-title").And.NotContain("Shown to everyone following");
         EndMeeting(app, s.Day);
     }
@@ -132,17 +132,17 @@ public class PresentMidMeetingTests(MeetingClockApp app) : IClassFixture<Meeting
 
         await using var again = await Open(app, s.Day);
         await Do(again, p => p.JoinIfLive());
-        Meetings.Get(s.Day)!.Should().Match<LiveMeetingView>(v => v.PresenterId == "dev:tester" && v.Product == s.Product);
+        Meetings.Get(s.Day)!.Should().Match<LiveMeetingView>(v => v.PresenterId == "dev:tester" && v.Card == MeetingCard.ForProduct(s.Product));
         (await again.Html()).Should().Contain("present-product-title").And.Contain("Shown to everyone following");
-        await Do(again, p => p.CloseProduct());
-        Meetings.Get(s.Day)!.Product.Should().BeNull("they can close it for the room");
+        await Do(again, p => p.CloseCard());
+        Meetings.Get(s.Day)!.Card.Should().BeNull("they can close it for the room");
 
         // The presenter's other tab shows a product this page can't read: it isn't left open for the room.
         using (var tab = Meetings.Join(s.Day, "dev:tester", "Tester", true, "", Guid.NewGuid(), Meetings.Get(s.Day)!.Slide)!)
         {
-            Meetings.Show(tab, Guid.NewGuid()).Should().BeTrue();
+            Meetings.Show(tab, MeetingCard.ForProduct(Guid.NewGuid())).Should().BeTrue();
             await Do(again, p => p.Follow());
-            Meetings.Get(s.Day)!.Product.Should().BeNull();
+            Meetings.Get(s.Day)!.Card.Should().BeNull();
         }
         EndMeeting(app, s.Day);
     }

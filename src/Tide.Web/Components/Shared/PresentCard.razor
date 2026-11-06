@@ -1,0 +1,56 @@
+@* The chrome of a card opened over a slide in present mode (a product's, an article's indicators): its head, with the
+   title, whose it is, a link to open it in full and the close button, and its body. *@
+@inherits PresentCardBase
+
+@* A region, not a dialog, like the action opened over a slide: present.js keeps the keys, so Esc closes it. *@
+<section class="@(Class is null ? "tide-present-action tide-present-product" : "tide-present-action tide-present-product " + Class)" aria-labelledby="@TitleId">
+    <div class="tide-present-action-head">
+        <h2 id="@TitleId">@Title</h2>
+        @if (Kicker is not null) { <span class="tide-present-help">@Kicker</span> }
+        @if (Links)
+        {
+            <a class="btn btn-sm btn-outline-secondary ms-auto" href="@Href" target="_blank" rel="noopener">@LinkText</a>
+        }
+        @if (CanClose)
+        {
+            <button type="button" class="btn btn-sm btn-outline-secondary" aria-label="@CloseLabel" title="Close (Esc)" @ref="_close" @onclick="Close"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+        }
+    </div>
+    <div class="tide-present-action-body tide-scrollfade">
+        @ChildContent
+    </div>
+</section>
+
+@code {
+    /// <summary>What's shown (the product's id, the article's): focus goes to the close button once for each.</summary>
+    [Parameter, EditorRequired] public Guid Shown { get; set; }
+
+    /// <summary>The heading's id, which names the region.</summary>
+    [Parameter, EditorRequired] public string TitleId { get; set; } = default!;
+
+    [Parameter, EditorRequired] public RenderFragment Title { get; set; } = default!;
+
+    /// <summary>Another class on the card, for its own look.</summary>
+    [Parameter] public string? Class { get; set; }
+
+    /// <summary>Where the card opens in full, in a new tab, and what the link says.</summary>
+    [Parameter, EditorRequired] public string Href { get; set; } = default!;
+
+    [Parameter, EditorRequired] public string LinkText { get; set; } = default!;
+
+    [Parameter, EditorRequired] public string CloseLabel { get; set; } = default!;
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private ElementReference _close;
+    private Guid? _focused;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!Autofocus || !CanClose || _focused == Shown) return;
+        _focused = Shown;
+        await _close.TryFocusAsync(orGone: true);
+    }
+
+    private Task Close() => CanClose ? OnClose.InvokeAsync() : Task.CompletedTask;
+}

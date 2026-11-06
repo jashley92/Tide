@@ -152,9 +152,8 @@ else
     {
         // The first interactive draw starts from what the prerender read, so a reload doesn't flash "Loading" over the
         // review. It's then read again as after a comment: words changed in between are offered, not swapped in.
-        if (Handoff.Take<ReviewPage>(PrerenderedState, Me.UserId) is { } prerendered && prerendered._loadedFor == Id)
+        if (Handoff.Take<ReviewPage>(RendererInfo, PrerenderedState) is { } prerendered && prerendered._loadedFor == Id)
             Adopt(prerendered);
-        PrerenderedState = null;
         // Another article's review (Back, Forward): nothing of the last one's is carried over, ticks above all.
         if (_loadedFor != Id)
         {
@@ -164,7 +163,7 @@ else
             _passed.Clear();
         }
         await Load();
-        if (!RendererInfo.IsInteractive && _article is not null && !_failed) PrerenderedState = Handoff.Keep(Me.UserId, this);
+        if (_article is not null && !_failed) PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
     }
 
     /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.</summary>

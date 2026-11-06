@@ -1,3 +1,5 @@
+using Tide.Application.Briefs;
+
 namespace Tide.Web.Services;
 
 /// <summary>Someone in a live meeting: the slide they're on, and whether they could present it.</summary>
@@ -12,15 +14,15 @@ public sealed record RaisedHand(string UserId, string Name, Guid? ArticleId, Dat
 /// <see cref="Locked"/>: the presenter has everyone following, with no browsing off. <see cref="SlideKey"/> says what
 /// the presenter's slide is ("article:{id}", "wrap", …), so a page whose slides number differently (an open-actions slide
 /// it hasn't loaded yet) still goes to the same one. <see cref="Action"/>: the action the presenter has open over their
-/// slide (its number), which those following see with them; <see cref="Product"/>, likewise, the card the presenter has
-/// open over an article's slide (team edition only): an Our stack product's (its id), or the article's indicators (the
-/// article's id). One of the two at most is open.
+/// slide (its number), which those following see with them; <see cref="Card"/>, likewise, the card the presenter has
+/// open over an article's slide (team edition only): an Our stack product's, or the article's indicators. One of the two
+/// at most is open.
 /// <see cref="Scroll"/>: how far down their slide the presenter has scrolled, as a fraction of the way (0 the top, 1 the
 /// bottom), so a page that joins late lands where they are.
 /// </summary>
 public sealed record LiveMeetingView(DateOnly Day, Guid BriefId, string PresenterId, string PresenterName, int Slide, int Summons,
     bool PresenterHere, bool CanTakeOver, IReadOnlyList<MeetingPerson> People, IReadOnlyList<RaisedHand> Hands, DateTimeOffset StartedAtUtc,
-    bool Locked = false, string? SlideKey = null, int? Action = null, Guid? Product = null, double Scroll = 0)
+    bool Locked = false, string? SlideKey = null, int? Action = null, MeetingCard? Card = null, double Scroll = 0)
 {
     public bool IsPresenter(string userId) => PresenterId == userId;
 
@@ -110,7 +112,7 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
     {
         lock (_gate)
             return _meetings.Values.Where(m => Here(m).Any(s => s.UserId == userId))
-                .Select(m => new Tide.Application.Briefs.SeatedMeeting(m.Day, m.BriefId, m.Action, m.Product)).ToList();
+                .Select(m => new Tide.Application.Briefs.SeatedMeeting(m.Day, m.BriefId, m.Action, m.Card)).ToList();
     }
 
     /// <summary>Every meeting going on, oldest first.</summary>
@@ -186,25 +188,26 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
 
     /// <summary>
     /// The presenter opens an action over their slide (its number), or closes it (null), for those following too. Moving
-    /// to another slide closes it, and so does handing the meeting on. Opening one closes a product's card.
+    /// to another slide closes it, and so does handing the meeting on. Opening one closes a card.
     /// </summary>
     public bool Open(IMeetingSeat seat, int? action) => Change(seat, presenter: true, (m, _) =>
     {
         if (m.Action == action) return false;
         m.Action = action;
-        if (action is not null) m.Product = null;
+        if (action is not null) m.Card = null;
         return true;
     });
 
     /// <summary>
-    /// The presenter opens an Our stack product's card over their slide, or closes it (null), for those following too, as
-    /// <see cref="Open"/> does an action: moving on or handing the meeting over closes it, and opening it closes an action.
+    /// The presenter opens a card over their slide (a product's, an article's indicators), or closes it (null), for those
+    /// following too, as <see cref="Open"/> does an action: moving on or handing the meeting over closes it, and opening it
+    /// closes an action.
     /// </summary>
-    public bool Show(IMeetingSeat seat, Guid? product) => Change(seat, presenter: true, (m, _) =>
+    public bool Show(IMeetingSeat seat, MeetingCard? card) => Change(seat, presenter: true, (m, _) =>
     {
-        if (m.Product == product) return false;
-        m.Product = product;
-        if (product is not null) m.Action = null;
+        if (m.Card == card) return false;
+        m.Card = card;
+        if (card is not null) m.Action = null;
         return true;
     });
 
@@ -347,7 +350,7 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
     private static bool MakePresenter(Meeting m, Seat to)
     {
         foreach (var s in m.Seats.Values.Where(s => s.UserId == m.PresenterId)) s.Following = true;
-        (m.PresenterId, m.PresenterName, m.PresenterGoneAtUtc, m.TakeOverSaid, m.Slide, m.SlideKey, m.Action, m.Product) = (to.UserId, to.Name, null, false, to.Slide, to.Key, null, null);
+        (m.PresenterId, m.PresenterName, m.PresenterGoneAtUtc, m.TakeOverSaid, m.Slide, m.SlideKey, m.Action, m.Card) = (to.UserId, to.Name, null, false, to.Slide, to.Key, null, null);
         m.Scroll = 0;   // a new slide starts at its top
         to.Following = false;
         foreach (var s in m.Seats.Values.Where(s => s.Following)) (s.Slide, s.Key) = (to.Slide, to.Key);
@@ -384,7 +387,7 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
                 var moved = key is not null && m.SlideKey is not null ? key != m.SlideKey : m.Slide != slide;
                 if (moved)
                 {
-                    (m.Action, m.Product, m.Scroll) = (null, null, 0);   // the new slide starts at its top
+                    (m.Action, m.Card, m.Scroll) = (null, null, 0);   // the new slide starts at its top
                 }
                 (m.Slide, m.SlideKey) = (slide, key);
                 // Everyone following, and the presenter's own other tabs (a projector window), move with the presenter.
@@ -449,7 +452,7 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
             .ToList();
         return new LiveMeetingView(m.Day, m.BriefId, m.PresenterId, m.PresenterName, m.Slide, m.Summons,
             people.Any(p => p.UserId == m.PresenterId), CanTakeOver(m), people, m.Hands.Values.OrderBy(h => h.AtUtc).ToList(), m.StartedAtUtc,
-            m.Locked, m.SlideKey, m.Action, m.Product, m.Scroll);
+            m.Locked, m.SlideKey, m.Action, m.Card, m.Scroll);
     }
 
     private void Notify(DateOnly day, Guid origin) => Together.Notify(Changed, new MeetingChange(day, origin));
@@ -468,7 +471,7 @@ public sealed class LiveMeetings : IDisposable, Tide.Application.Briefs.IMeeting
         public int Summons { get; set; }
         public bool Locked { get; set; }
         public int? Action { get; set; }
-        public Guid? Product { get; set; }
+        public MeetingCard? Card { get; set; }
 
         /// <summary>How far down their slide the presenter has scrolled (0 to 1), and from which page.</summary>
         public double Scroll { get; set; }

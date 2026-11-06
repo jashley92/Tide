@@ -20,9 +20,29 @@ public interface IMeetingsInProgress
     IReadOnlyList<SeatedMeeting> SeatedIn(string userId) => [];
 }
 
-/// <summary>A live meeting someone is seated in: its day and brief, and the action (its number) or Our stack product
-/// whose card the presenter has open over the slide for the room, if any.</summary>
-public sealed record SeatedMeeting(DateOnly Day, Guid BriefId, int? Action, Guid? Product);
+/// <summary>A live meeting someone is seated in: its day and brief, and the action (its number) or the card the
+/// presenter has open over the slide for the room, if any.</summary>
+public sealed record SeatedMeeting(DateOnly Day, Guid BriefId, int? Action, MeetingCard? Card);
+
+/// <summary>What a card opened over a slide in present mode shows.</summary>
+public enum MeetingCardKind
+{
+    /// <summary>An Our stack product's card, by the product's id.</summary>
+    Product,
+
+    /// <summary>An article's indicators, by the article's id.</summary>
+    Indicators,
+}
+
+/// <summary>A card opened over a slide in present mode: what kind it is, and whose (a product's id, an article's).</summary>
+public sealed record MeetingCard(MeetingCardKind Kind, Guid Id)
+{
+    /// <summary>The Our stack product <paramref name="productId"/>'s card.</summary>
+    public static MeetingCard ForProduct(Guid productId) => new(MeetingCardKind.Product, productId);
+
+    /// <summary>The article <paramref name="articleId"/>'s indicators.</summary>
+    public static MeetingCard ForIndicators(Guid articleId) => new(MeetingCardKind.Indicators, articleId);
+}
 
 /// <summary>No meeting is ever running: where present mode isn't (a test, a tool).</summary>
 public sealed class NoMeetingsInProgress : IMeetingsInProgress

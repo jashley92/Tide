@@ -13,16 +13,24 @@ namespace Tide.Web.Security;
 public sealed class UserMirrorMiddleware
 {
     private readonly RequestDelegate _next;
+    // This host's, made once: the middleware lives as long as the host does.
+    private readonly ILogger _accessLog, _errorLog, _directoryLog;
 
-    public UserMirrorMiddleware(RequestDelegate next) => _next = next;
+    public UserMirrorMiddleware(RequestDelegate next, ILoggerFactory loggers)
+    {
+        _next = next;
+        _accessLog = loggers.CreateLogger(AmbientUser.AccessLogCategory);
+        _errorLog = loggers.CreateLogger(AmbientUser.ErrorLogCategory);
+        _directoryLog = loggers.CreateLogger(DirectoryLog.Category);
+    }
 
-    public async Task InvokeAsync(HttpContext context, IUserDirectory directory, ICurrentUser currentUser, ILoggerFactory loggers)
+    public async Task InvokeAsync(HttpContext context, IUserDirectory directory, ICurrentUser currentUser)
     {
         // The request's user and this host's access and error logs are ambient for the rest of the pipeline (a page
         // prerendering, an endpoint), for a refusal or a failure logged where it's shown.
-        using var ambient = AmbientUser.Begin(currentUser, loggers);
-        // The process-long directory lookups log through the serving host (cheap: the factory caches its loggers).
-        DirectoryLog.Use(loggers.CreateLogger(DirectoryLog.Category));
+        using var ambient = AmbientUser.Begin(currentUser, _accessLog, _errorLog);
+        // The process-long directory lookups log through the serving host.
+        DirectoryLog.Use(_directoryLog);
         var principal = context.User;
         if (principal.Identity?.IsAuthenticated == true)
         {

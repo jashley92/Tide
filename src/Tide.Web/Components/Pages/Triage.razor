@@ -862,9 +862,12 @@ else
         _tabMarks = new LiveMarks<FeedItemStatus>(InvokeAsync, StateHasChanged);
         // The first interactive draw starts from what the prerender read, for the same address, so a reload doesn't
         // flash "Loading" over the list; it's then read again below, quietly, for anything changed in between.
-        var adopted = Handoff.Take<Triage>(PrerenderedState, Me.UserId) is { } prerendered && prerendered.SameAddress(this)
-            && Adopt(prerendered);
-        PrerenderedState = null;
+        var adopted = false;
+        if (Handoff.Take<Triage>(RendererInfo, PrerenderedState) is { } prerendered && prerendered.SameAddress(this))
+        {
+            Adopt(prerendered);
+            adopted = true;
+        }
         _sources = await Intake.SourcesAsync(includeRetired: true);
         _lastBriefAt = await Intake.LastBriefAtAsync();
         if (string.Equals(TabParam, SourcesKey, StringComparison.OrdinalIgnoreCase)) _sourcesTab = true;
@@ -876,7 +879,7 @@ else
         if (!adopted) _selected = Math.Max(0, RowParam ?? 0);   // adopted, the row Arrive selected stays while it's read again
         await Load();
         Arrive();
-        if (!RendererInfo.IsInteractive && !_failed) PrerenderedState = Handoff.Keep(Me.UserId, this);
+        if (!_failed) PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
     }
 
     /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.</summary>
@@ -889,8 +892,8 @@ else
         == (TabParam, SourceParam, SearchParam, SinceParam, AtParam, RowParam, PromoteParam);
 
     // Takes what the prerendered page read and what its arrival selected or opened: everything the list draws from, so
-    // the first interactive draw is the prerendered page again. True, to say there's a page on screen to keep.
-    private bool Adopt(Triage p)
+    // the first interactive draw is the prerendered page again.
+    private void Adopt(Triage p)
     {
         (_sources, _lastBriefAt, _status, _sourcesTab, _sourceId, _search, _sinceLast) = (p._sources, p._lastBriefAt, p._status, p._sourcesTab, p._sourceId, p._search, p._sinceLast);
         (_rows, _lines, _missed, _counts, _cves, _polled) = (p._rows, p._lines, p._missed, p._counts, p._cves, p._polled);
@@ -898,7 +901,6 @@ else
         (_promoting, _promotingGroup, _pf, _suggested) = (p._promoting, p._promotingGroup, p._pf, p._suggested);
         _open.UnionWith(p._open);
         _loaded = true;
-        return true;
     }
 
     // Arriving at a row from the address: it's selected (Load found it by id, or kept its place), focused and scrolled

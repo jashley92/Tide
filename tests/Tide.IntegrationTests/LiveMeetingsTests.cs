@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Tide.Application.Briefs;
 using Tide.Web.Services;
 
 namespace Tide.IntegrationTests;
@@ -267,59 +268,59 @@ public sealed class LiveMeetingsTests : IDisposable
         var pat = Start();
         var sam = Join("sam", "Sam");
         Join("robin", "Robin", canPresent: true);
-        var product = Guid.NewGuid();
+        var product = MeetingCard.ForProduct(Guid.NewGuid());
 
         _meetings.Show(sam, product).Should().BeFalse("only the presenter shows one to the meeting");
         _meetings.Show(pat, product).Should().BeTrue();
-        View.Product.Should().Be(product);
+        View.Card.Should().Be(product);
         _meetings.Show(pat, product).Should().BeFalse("no news");
 
         _meetings.Open(pat, 12).Should().BeTrue();
-        View.Should().Match<LiveMeetingView>(v => v.Action == 12 && v.Product == null, "an action replaces the card");
+        View.Should().Match<LiveMeetingView>(v => v.Action == 12 && v.Card == null, "an action replaces the card");
         _meetings.Show(pat, product);
-        View.Should().Match<LiveMeetingView>(v => v.Action == null && v.Product == product, "and the card the action");
+        View.Should().Match<LiveMeetingView>(v => v.Action == null && v.Card == product, "and the card the action");
         _meetings.Open(pat, null).Should().BeFalse("no action to close");
-        View.Product.Should().Be(product, "closing no action leaves the card");
+        View.Card.Should().Be(product, "closing no action leaves the card");
 
         pat.At(0);
-        View.Product.Should().Be(product, "still on the same slide");
+        View.Card.Should().Be(product, "still on the same slide");
         pat.At(2);
-        View.Product.Should().BeNull("it was the last slide's");
+        View.Card.Should().BeNull("it was the last slide's");
 
         _meetings.Show(pat, product);
         _meetings.Show(pat, null).Should().BeTrue();
-        View.Product.Should().BeNull();
+        View.Card.Should().BeNull();
 
         _meetings.Show(pat, product);
         _meetings.HandTo(pat, "robin").Should().BeTrue();
-        View.Product.Should().BeNull("the new presenter starts with nothing open");
+        View.Card.Should().BeNull("the new presenter starts with nothing open");
     }
 
     [Fact]
     public void WhatsOpen_StaysWhenTheSameSlideIsRenumbered_AndGoesWhenAnotherSlideTakesItsNumber()
     {
         var pat = Start();
-        var product = Guid.NewGuid();
+        var product = MeetingCard.ForProduct(Guid.NewGuid());
         pat.At(4, key: "article:a");
         _meetings.Show(pat, product);
 
         // A colleague added the opening note: the same article, one slide later.
         pat.At(5, key: "article:a");
-        View.Product.Should().Be(product, "the presenter is still on the article it was opened over");
+        View.Card.Should().Be(product, "the presenter is still on the article it was opened over");
         _meetings.Open(pat, 7);
         pat.At(4, key: "article:a");
         View.Action.Should().Be(7, "an action stays too");
 
         // The article left the brief: the next one is now at its number.
         pat.At(4, key: "article:b");
-        View.Should().Match<LiveMeetingView>(v => v.Action == null && v.Product == null, "it was the other article's");
+        View.Should().Match<LiveMeetingView>(v => v.Action == null && v.Card == null, "it was the other article's");
     }
 
     [Fact]
     public void APopup_FollowsThePresentersUnlessClosedHere_AndALockHoldsIt()
     {
         var popup = new MeetingPopup();
-        Guid a = Guid.NewGuid(), b = Guid.NewGuid();
+        MeetingCard a = MeetingCard.ForProduct(Guid.NewGuid()), b = MeetingCard.ForProduct(Guid.NewGuid());
 
         popup.Sync(a, following: true, held: false).Should().BeTrue();
         (popup.Shown, popup.Own).Should().Be((a, false));

@@ -374,9 +374,12 @@ else
         _past = BriefSvc.IsPast(_date);
         // The first interactive draw starts from what the prerender read, so a reload doesn't flash "Loading" over the
         // page; it's then read again below, quietly, for anything changed in between.
-        var adopted = Handoff.Take<BriefPage>(PrerenderedState, CurrentUser.UserId) is { } prerendered && prerendered._date == _date
-            && Adopt(prerendered);
-        PrerenderedState = null;
+        var adopted = false;
+        if (Handoff.Take<BriefPage>(RendererInfo, PrerenderedState) is { } prerendered && prerendered._date == _date)
+        {
+            Adopt(prerendered);
+            adopted = true;
+        }
         (_publicMax, _teamMax) = await Distribution.GetAsync();
         if (_canWrite) _people = await Users.ListAsync();
         if (AsToday)
@@ -386,7 +389,7 @@ else
         }
         if (!adopted) _brief = null;   // another day: "Loading" until it's read (a reload after an action keeps the page, and focus, in place)
         await Load();
-        if (!RendererInfo.IsInteractive) PrerenderedState = Handoff.Keep(CurrentUser.UserId, this);
+        PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
         if (tab.Send && _brief is not null)
         {
             // The old Distribute tab's link: the Send dialog, once it's drawn (the first render, which yielding lets happen).
@@ -603,8 +606,8 @@ else
     public string? PrerenderedState { get; set; }
 
     // Takes what the prerendered page read: everything the page draws from, so the first interactive draw is the
-    // prerendered page again. True, to say there's a page on screen to keep while it's read again.
-    private bool Adopt(BriefPage p)
+    // prerendered page again.
+    private void Adopt(BriefPage p)
     {
         (_publicMax, _teamMax, _people, _recent, _upcoming) = (p._publicMax, p._teamMax, p._people, p._recent, p._upcoming);
         (_brief, _follow, _rotaDay, _mine, _queue) = (p._brief, p._follow, p._rotaDay, p._mine, p._queue);
@@ -612,7 +615,6 @@ else
         (_candidates, _shortlist, _actions, _meeting, _newInFeed) = (p._candidates, p._shortlist, p._actions, p._meeting, p._newInFeed);
         (_sends, _nothingToSend, _asSent, _metrics, _missingNumbers) = (p._sends, p._nothingToSend, p._asSent, p._metrics, p._missingNumbers);
         _loading = false;
-        return true;
     }
 
     private async Task Load()

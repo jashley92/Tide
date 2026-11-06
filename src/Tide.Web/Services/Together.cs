@@ -257,7 +257,7 @@ internal static class Together
 {
     // Each subscriber in turn, on the publisher's thread (another circuit): one that throws (a page closing at that
     // moment) mustn't fail the publisher's own action or keep the others from hearing. The publisher's ambient user is
-    // cleared for each, so work a subscriber starts from here isn't logged as the publisher's.
+    // cleared for each (the host's logs stay), so work a subscriber starts from here isn't logged as the publisher's.
     public static void Notify<T>(Action<T>? handlers, T topic)
     {
         if (handlers is null) return;
@@ -265,7 +265,7 @@ internal static class Together
         {
             try
             {
-                using (Security.AmbientUser.Begin(null)) h(topic);
+                using (Security.AmbientUser.WithoutUser()) h(topic);
             }
             catch (Exception) { /* that subscriber is gone or broken; the rest still hear */ }
         }

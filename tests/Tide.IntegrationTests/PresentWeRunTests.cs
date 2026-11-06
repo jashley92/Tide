@@ -136,7 +136,7 @@ public class PresentWeRunTests(TideApp app) : IClassFixture<TideApp>
         (await owner.Html()).Should().Contain("tide-slide-werun", "anyone on the team edition sees the chips");
 
         await Do(pat, p => p.ShowProduct(s.Product));
-        Meetings.Get(s.Day)!.Product.Should().Be(s.Product);
+        Meetings.Get(s.Day)!.Card.Should().Be(MeetingCard.ForProduct(s.Product));
         (await pat.Html()).Should().Contain("present-product-title").And.Contain("Shown to everyone following");
         await Do(owner, p => p.Follow());
         (await owner.Html()).Should().Contain("present-product-title").And.Contain("Tester is showing this").And.Contain(s.Other);
@@ -147,8 +147,8 @@ public class PresentWeRunTests(TideApp app) : IClassFixture<TideApp>
         (await robin.Html()).Should().Contain("present-product-title").And.Contain("Tester is showing this");
 
         // The presenter closes it: it closes for them.
-        await Do(pat, p => p.CloseProduct());
-        Meetings.Get(s.Day)!.Product.Should().BeNull();
+        await Do(pat, p => p.CloseCard());
+        Meetings.Get(s.Day)!.Card.Should().BeNull();
         await Do(owner, p => p.Follow());
         await Do(robin, p => p.Follow());
         (await owner.Html()).Should().NotContain("present-product-title");
@@ -158,7 +158,7 @@ public class PresentWeRunTests(TideApp app) : IClassFixture<TideApp>
         await owner.Click(p => p.OnPresentKey("next"));
         await Do(owner, p => p.ShowProduct(s.Product));
         (await owner.Html()).Should().Contain("present-product-title").And.Contain("Only you see this");
-        Meetings.Get(s.Day)!.Product.Should().BeNull("theirs alone");
+        Meetings.Get(s.Day)!.Card.Should().BeNull("theirs alone");
         await Do(robin, p => p.Follow());
         (await robin.Html()).Should().NotContain("present-product-title");
 
@@ -168,7 +168,7 @@ public class PresentWeRunTests(TideApp app) : IClassFixture<TideApp>
         (await robin.Html()).Should().Contain("present-product-title");
         using (var another = Meetings.Join(s.Day, "dev:tester", "Tester", true, "", Guid.NewGuid(), Meetings.Get(s.Day)!.Slide)!)
         {
-            Meetings.Show(another, Guid.NewGuid()).Should().BeTrue("the presenter's other tab");
+            Meetings.Show(another, MeetingCard.ForProduct(Guid.NewGuid())).Should().BeTrue("the presenter's other tab");
             await Do(robin, p => p.Follow());
             (await robin.Html()).Should().NotContain("present-product-title");
             robin.Scope.ServiceProvider.GetRequiredService<ToastService>().Toasts.Should().NotContain(t => t.IsError, "closed quietly");
@@ -185,7 +185,7 @@ public class PresentWeRunTests(TideApp app) : IClassFixture<TideApp>
         // Moving on closes it for everyone.
         await Do(owner, p => p.ShowProduct(s.Product));
         await pat.Click(p => p.OnPresentKey("next"));
-        Meetings.Get(s.Day)!.Product.Should().BeNull();
+        Meetings.Get(s.Day)!.Card.Should().BeNull();
 
         EndMeeting(app, s.Day);
     }
@@ -211,14 +211,14 @@ public class PresentWeRunTests(TideApp app) : IClassFixture<TideApp>
         }
         var heard = new Tide.Application.Abstractions.Change(Tide.Application.Abstractions.ChangeFeed.Brief(briefId), Robin.UserId, Robin.Name, Guid.NewGuid());
         await Do(pat, p => p.OnChangedElsewhere([heard]));
-        Meetings.Get(s.Day)!.Should().Match<LiveMeetingView>(v => v.Slide == slide + 1 && v.Product == s.Product);
+        Meetings.Get(s.Day)!.Should().Match<LiveMeetingView>(v => v.Slide == slide + 1 && v.Card == MeetingCard.ForProduct(s.Product));
         (await pat.Html()).Should().Contain("present-product-title").And.Contain($"<h2>{s.FirstTitle}</h2>");
 
         // The article leaves the brief: the next one takes its slide, and the card that was over it goes.
         await using (var scope = SignedIn(app, Robin))
             await scope.ServiceProvider.GetRequiredService<BriefService>().RemoveItemAsync(briefId, item);
         await Do(pat, p => p.OnChangedElsewhere([heard]));
-        Meetings.Get(s.Day)!.Product.Should().BeNull();
+        Meetings.Get(s.Day)!.Card.Should().BeNull();
         (await pat.Html()).Should().NotContain("present-product-title").And.Contain("<h2>We run second 72</h2>");
         EndMeeting(app, s.Day);
     }
@@ -239,7 +239,7 @@ public class PresentWeRunTests(TideApp app) : IClassFixture<TideApp>
         await Do(projector, p => p.Follow());
         (await projector.Html()).Should().Contain("present-product-title").And.Contain("Shown to everyone following");
 
-        await Do(pat, p => p.CloseProduct());
+        await Do(pat, p => p.CloseCard());
         await Do(projector, p => p.Follow());
         (await projector.Html()).Should().NotContain("present-product-title");
 
@@ -260,7 +260,7 @@ public class PresentWeRunTests(TideApp app) : IClassFixture<TideApp>
 
         // One that can't be read isn't left open for the room.
         await Do(pat, p => p.ShowProduct(Guid.NewGuid()));
-        Meetings.Get(s.Day)!.Product.Should().BeNull();
+        Meetings.Get(s.Day)!.Card.Should().BeNull();
         await Do(pat, p => p.ShowAction(999_999));
         Meetings.Get(s.Day)!.Action.Should().BeNull();
         EndMeeting(app, s.Day);
@@ -283,11 +283,11 @@ public class PresentWeRunTests(TideApp app) : IClassFixture<TideApp>
         await Do(pat, p => p.ShowProduct(s.Product));
         await Do(pat, p => p.ShowAction(number));
         (await pat.Html()).Should().Contain("present-action-title").And.NotContain("present-product-title");
-        Meetings.Get(s.Day)!.Should().Match<LiveMeetingView>(v => v.Action == number && v.Product == null);
+        Meetings.Get(s.Day)!.Should().Match<LiveMeetingView>(v => v.Action == number && v.Card == null);
 
         await Do(pat, p => p.ShowProduct(s.Product));
         (await pat.Html()).Should().Contain("present-product-title").And.NotContain("present-action-title");
-        Meetings.Get(s.Day)!.Should().Match<LiveMeetingView>(v => v.Action == null && v.Product == s.Product);
+        Meetings.Get(s.Day)!.Should().Match<LiveMeetingView>(v => v.Action == null && v.Card == MeetingCard.ForProduct(s.Product));
         EndMeeting(app, s.Day);
 
         // Opened before the meeting starts, it goes to the room.
@@ -295,7 +295,7 @@ public class PresentWeRunTests(TideApp app) : IClassFixture<TideApp>
         await FirstArticle(robin);
         await Do(robin, p => p.ShowProduct(s.Product));
         await Do(robin, p => p.StartMeeting());
-        Meetings.Get(s.Day)!.Product.Should().Be(s.Product);
+        Meetings.Get(s.Day)!.Card.Should().Be(MeetingCard.ForProduct(s.Product));
         Meetings.End(Meetings.Join(s.Day, Robin.UserId, Robin.Name, true, "", Guid.NewGuid(), 0)!);
     }
 }
