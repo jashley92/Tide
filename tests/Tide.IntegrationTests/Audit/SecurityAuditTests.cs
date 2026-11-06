@@ -625,7 +625,7 @@ public sealed class TrailAuditTests : IDisposable
         provider.SetAuthenticationState(Task.FromResult(new Microsoft.AspNetCore.Components.Authorization.AuthenticationState(new ClaimsPrincipal([signIn, grants]))));
 
         var user = (await provider.GetAuthenticationStateAsync()).User;
-        user.Identities.Should().AllSatisfy(i => i.GetType().Should().Be(typeof(ClaimsIdentity)), "nothing is left to read from the token");
+        user.Identities.Should().AllSatisfy(i => i.GetType().Should().Be<ClaimsIdentity>(), "nothing is left to read from the token");
         user.Identity!.IsAuthenticated.Should().BeTrue();
         user.Identity.AuthenticationType.Should().Be("Negotiate");
         user.Identities.Should().ContainSingle(i => i.Label == RoleClaimsTransformer.GrantsLabel && !i.IsAuthenticated, "the grants stay apart from the sign-in");
