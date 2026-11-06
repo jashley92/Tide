@@ -184,4 +184,19 @@ public class SmtpTests : IDisposable
         result.Status.Should().Be(EmailSendStatus.Failed);
         _smtp.Messages.Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task Send_APickupDirectoryThatCantBeMade_FailsWithAMessage_RatherThanThrowing()
+    {
+        // A folder under a file can't be created: nothing was handed to anyone, so it's a failure, not an unknown outcome.
+        var blocker = Path.GetTempFileName();
+        try
+        {
+            var result = await Sender(o => o.PickupDirectory = Path.Combine(blocker, "pickup"))
+                .SendAsync(new OutgoingEmail(["a@example.org"], "s", "<p>h</p>", "t", []));
+            result.Status.Should().Be(EmailSendStatus.Failed);
+            result.Error.Should().Contain("pickup");
+        }
+        finally { File.Delete(blocker); }
+    }
 }
