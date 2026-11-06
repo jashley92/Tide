@@ -11,7 +11,7 @@
    scrolls inside its card, with a shadow at the edge that has more. TableView holds the logic. *@
 <div class="tide-dt">
     <div class="tide-dt-bar">
-        @if (ServerSide || Columns.Any(c => c.FilterBy is not null))
+        @if (FilterBox && (ServerSide || Columns.Any(c => c.FilterBy is not null)))
         {
             <div class="tide-dt-filter" role="search">
                 <span class="bi bi-search" aria-hidden="true"></span>
@@ -87,7 +87,7 @@
                 }
                 else
                 {
-                    @foreach (var g in TableView.Group(_view, _rows, GroupBy, GroupOrder))
+                    @foreach (var g in GroupTotals is { } totals ? TableView.Group(_view, totals, GroupBy, GroupOrder) : TableView.Group(_view, _rows, GroupBy, GroupOrder))
                     {
                         <tbody>
                             <tr class="tide-dt-group">
@@ -108,7 +108,7 @@
                 }
             </table>
         </div>
-        <Pager Page="_page" Pages="TableView.Pages(_matching, PageSize)" Many="@Many" Busy="Busy" OnPage="GoTo" />
+        <Pager Page="_page" Pages="TableView.Pages(_matching, PageSize)" Many="@Many" Busy="Busy" OnPage="GoTo" Href="@(PageInAddress ? PageHref : null)" />
     }
 </div>
 
@@ -129,6 +129,10 @@
     /// <summary>The table's name for screen readers ("Articles"); the sort is said after it.</summary>
     [Parameter, EditorRequired] public string Caption { get; set; } = "";
     [Parameter] public string FilterLabel { get; set; } = "Filter";
+
+    /// <summary>Whether the table has its own filter box. A page with a search of its own in its filter bar (one box for
+    /// the list and the board) turns it off; <see cref="Filter"/> still names what the empty state says matched nothing.</summary>
+    [Parameter] public bool FilterBox { get; set; } = true;
     [Parameter] public string? FilterPlaceholder { get; set; }
 
     /// <summary>The filter to start with (a page's <c>?q=</c>). A new one later (Back to another <c>?q=</c>) replaces the box's.</summary>
@@ -162,6 +166,10 @@
     /// <summary>Group headings ("Name (count)"), in <see cref="GroupOrder"/>'s order.</summary>
     [Parameter] public Func<TItem, string>? GroupBy { get; set; }
     [Parameter] public IReadOnlyList<string>? GroupOrder { get; set; }
+
+    /// <summary>With <see cref="ServerSide"/>, how many matching rows each group holds in all (the server counts them), so
+    /// a heading counts every row in its group and not only this page's.</summary>
+    [Parameter] public IReadOnlyDictionary<string, int>? GroupTotals { get; set; }
 
     /// <summary>
     /// The page filters, sorts and pages: <see cref="OnQuery"/> asks it for a page of a filter and sort (the first, after
@@ -309,6 +317,9 @@
         else if (PageInAddress && wasPage > 1) Nav.NavigateTo(Nav.GetUriWithQueryParameter(PageParameter, (int?)null), replace: true);
         Refresh();
     }
+
+    // A page's link: this address with ?page= (none for the first), the rest of the query as it is.
+    private string PageHref(int page) => Nav.GetUriWithQueryParameter(PageParameter, page == 1 ? null : page);
 
     internal async Task GoTo(int page)
     {

@@ -5,6 +5,7 @@
 @inject OrgClock Clock
 @inject ChangeFeed Feed
 @inject ChangeOrigin Origin
+@inject NavigationManager Nav
 @implements IDisposable
 
 @* The team's outreach emails (ADR 0019): a question to a vendor, a partner, an ISAC or another team, kept for a
@@ -43,7 +44,7 @@
     <div class="row g-2 align-items-end">
         <div class="col-md-10">
             <label class="tide-field-label" for="ot-find">Find</label>
-            <input id="ot-find" type="search" class="form-control form-control-sm" placeholder="Name, description, subject or body" @bind="_words" @bind:event="oninput" @bind:after="Filter" />
+            <input id="ot-find" type="search" class="form-control form-control-sm" placeholder="Name, description, subject or body" @bind="_words" @bind:event="oninput" @bind:after="Refilter" />
         </div>
         <div class="col-md-2">
             <div class="form-check mb-1">
@@ -74,7 +75,8 @@ else
 {
     <section class="tide-card" aria-labelledby="ot-list-h">
         <h2 id="ot-list-h">Templates <span class="tide-count tide-muted fw-normal">(@Shown.Count)</span></h2>
-        @foreach (var r in Shown)
+        <p class="small tide-muted mb-2" role="status">@CountText</p>
+        @foreach (var r in OnPage)
         {
             var t = r.Template;
             var id = "ot-" + t.Id.ToString("N");
@@ -115,6 +117,7 @@ else
                 }
             </article>
         }
+        <Pager Page="_page" Pages="TableView.Pages(_shown.Count, PageSize)" Many="templates" Href="PageHref" />
     </section>
 }
 
@@ -138,7 +141,55 @@ else
     {
         var words = TableView.Words(_words);
         _shown = (_rows ?? []).Where(r => OutreachTemplateService.Matches(r.Template, words)).ToList();
+        Slice();
     }
+
+    private IReadOnlyList<OutreachTemplateRow> _onPage = [];
+
+    /// <summary>The rows on the page shown, of <see cref="Shown"/>.</summary>
+    internal IReadOnlyList<OutreachTemplateRow> OnPage => _onPage;
+
+    // This page's cards, or the last page's when this one has gone.
+    private void Slice()
+    {
+        var asked = _page;
+        (_onPage, _page) = TableView.PageOf(_shown, _page, PageSize);
+        if (_page != asked) TableView.SayPage(Nav, RendererInfo, _page);
+    }
+
+    // "1–20 of 34 templates", or "12 templates" on one page.
+    private string CountText => TableView.Count((_page - 1) * PageSize + 1, _onPage.Count, _shown.Count, null, false, "template", "templates");
+
+    // A page of 20 cards at a time (they're long: the whole query or email), the page from the address (?page=2), so a
+    // reload, Back or a copied link keeps it. A filter starts again from the first page; an edit, or a colleague's change,
+    // keeps the page, or shows the last one when a delete or retire took this page away.
+    [SupplyParameterFromQuery(Name = "page")] public string? PageParam { get; set; }
+
+    internal const int PageSize = 20;
+    private int _page = 1;
+
+    /// <summary>The page shown, from 1.</summary>
+    internal int Page => _page;
+
+    // Another page in the address (a pager link, Back): show it.
+    protected override void OnParametersSet()
+    {
+        var page = TableView.PageFrom(PageParam);
+        if (page == _page) return;
+        _page = page;
+        Slice();
+    }
+
+    private string PageHref(int page) => Nav.GetUriWithQueryParameter("page", page == 1 ? null : page);
+
+    // A filter changed: the first page, and the address says so.
+    private void Refilter()
+    {
+        _page = 1;
+        Filter();
+        TableView.SayPage(Nav, RendererInfo, 1);
+    }
+
 
     private string Provenance(OutreachTemplate t) => Ui.Provenance(Clock, t, t.CreatedByName, t.ModifiedByName);
 
@@ -185,6 +236,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         _canWrite = TemplateSvc.CanWrite;
+        _page = TableView.PageFrom(PageParam);
         _live = new LiveChanges(Feed, Origin, c => c.Topic == ChangeFeed.OutreachTemplates, InvokeAsync, OnChangedElsewhere);
         await Load();
     }
@@ -213,6 +265,8 @@ else
     private async Task ToggleRetired(ChangeEventArgs e)
     {
         _showRetired = e.Value is true;
+        _page = 1;
+        TableView.SayPage(Nav, RendererInfo, 1);
         await Load();
     }
 

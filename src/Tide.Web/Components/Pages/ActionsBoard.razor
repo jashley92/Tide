@@ -36,7 +36,11 @@
             Items="@([new TabBarItem("List", "", "bi-list-ul", "list"), new TabBarItem("Board", "", "bi-kanban", "board")])" />
 </div>
 
-<div class="tide-filters">
+@* One bar for the list and the board: the words, then a select per filter. They combine, go in the address, and a change
+   starts the list again from its first page. On a phone each takes a share of a row and they wrap. *@
+<div class="tide-filters tide-action-filters">
+    <input type="search" class="tide-maxw-sm form-control form-control-sm" placeholder="Title, A-number or article" aria-label="Search actions" maxlength="200"
+           @bind="_search" @bind:event="oninput" @bind:after="SearchChanged" />
     <select class="tide-maxw-sm form-select form-select-sm" aria-label="Team" @bind="_teamId" @bind:after="Refilter">
         <option value="">All teams</option>
         @foreach (var t in _teams)
@@ -51,6 +55,27 @@
             <option value="@k">@ActionService.KindName(k)</option>
         }
     </select>
+    <select class="tide-maxw-sm form-select form-select-sm" aria-label="Priority" @bind="_priority" @bind:after="Refilter">
+        <option value="">Any priority</option>
+        @foreach (var p in Enum.GetValues<Priority>())
+        {
+            <option value="@p">@p</option>
+        }
+    </select>
+    @* This week is the organization's business week, its holidays included: today to its last working day. *@
+    <select class="tide-maxw-sm form-select form-select-sm" aria-label="Due" @bind="_due" @bind:after="Refilter">
+        <option value="">Any due date</option>
+        <option value="@ActionDue.Overdue">Overdue</option>
+        <option value="@ActionDue.ThisWeek">Due this week</option>
+        <option value="@ActionDue.None">No due date</option>
+    </select>
+    <select class="tide-maxw-sm form-select form-select-sm" aria-label="Status" @bind="_status" @bind:after="Refilter">
+        <option value="">Any status</option>
+        @foreach (var st in OpenStatuses)
+        {
+            <option value="@st">@ActionService.StatusName(st)</option>
+        }
+    </select>
     @if (_assignee is not null)
     {
         <span class="tide-chip">
@@ -61,7 +86,7 @@
     @if (!_asBoard)
     {
         <div class="form-check form-switch ms-2">
-            <input class="form-check-input" type="checkbox" id="group-kind" @bind="_groupByKind" @bind:after="Remember" />
+            <input class="form-check-input" type="checkbox" id="group-kind" @bind="_groupByKind" @bind:after="Regroup" />
             <label class="form-check-label small" for="group-kind">Group by kind</label>
         </div>
     }
@@ -78,7 +103,7 @@
         {
             var on = _ruleId == r.Id;
             <button type="button" class="tide-rule-chip @Ui.RuleClass(r.Colour) @(on ? "on" : "")" aria-pressed="@Ui.Aria(on)" @onclick="() => SetRule(on ? null : r.Id)">
-                @r.Name <span class="tide-rule-chip-n">@Unfiltered.Count(c => ActionRules.Matches(r, c, ActionSvc.Today, ActionSvc.Days))</span>
+                @r.Name <span class="tide-rule-chip-n">@RuleCount(r)</span>
             </button>
         }
     </div>
@@ -92,14 +117,16 @@
     }
     else
     {
-        <ActionKanban Board="@(_board with { Cards = Matching(_board.Cards) })" Today="ActionSvc.Today" Rules="_rules" MovedBy="_movedBy" OnChanged="Load" />
+        <ActionKanban Board="@(_board with { Cards = Matching(_board.Cards) })" Today="ActionSvc.Today" Rules="_rules" MovedBy="_movedBy" OnChanged="Load" OnShowOlder="ShowOlder" />
     }
 }
 else
 {
 <div class="tide-card">
-    <ActionTable PageInAddress="true" Rows="@(_loading ? null : ListRows)" Today="ActionSvc.Today" Live="_marks" Rules="_rules" Filter="@Q" GroupByKind="_groupByKind" GroupByUrgency="ByUrgency"
-                 DefaultSort="@(_view == ActionView.Closed ? null : ActionTable.SoonestDue)" Caption="@(ViewName + (_view == ActionView.Closed ? ", most recently closed first" : ByUrgency ? ", grouped by when they're due" : ""))">
+    @* The server filters, sorts, groups and pages the list, 50 rows a page; the page is ?page=, its pager links. *@
+    <ActionTable PageInAddress="true" ServerSide="true" Total="_total" GroupTotals="_groups" PageSize="ActionService.ListPageSize" OnQuery="Query" Filtered="Filtered"
+                 Rows="@(_loading ? null : _rows)" Today="ActionSvc.Today" Live="_marks" Rules="_rules" Filter="@_search" GroupByKind="_groupByKind" GroupByUrgency="ByUrgency"
+                 DefaultSort="@DefaultSort(_view)" Caption="@(ViewName + (_view == ActionView.Closed ? ", most recently closed first" : ByUrgency ? ", grouped by when they're due" : ""))">
         <Empty><EmptyState Icon="@(_view == ActionView.Overdue ? "bi-check2-circle" : "bi-list-check")" Title="@Empty" /></Empty>
     </ActionTable>
 </div>
@@ -113,6 +140,13 @@ else
     [SupplyParameterFromQuery(Name = "rule")] public Guid? RuleParam { get; set; }
     [SupplyParameterFromQuery(Name = "group")] public string? GroupParam { get; set; }
     [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
+    [SupplyParameterFromQuery(Name = "kind")] public string? KindParam { get; set; }
+    [SupplyParameterFromQuery(Name = "priority")] public string? PriorityParam { get; set; }
+    [SupplyParameterFromQuery(Name = "due")] public string? DueParam { get; set; }
+    [SupplyParameterFromQuery(Name = "status")] public string? StatusParam { get; set; }
+
+    /// <summary>The list's page, from 1 (text, so "?page=abc" is the first page, not a broken one).</summary>
+    [SupplyParameterFromQuery(Name = DataTable<ActionRow>.PageParameter)] public string? PageParam { get; set; }
 
     /// <summary>
     /// The layout this person last chose with the List / Board tab (the board until they choose), kept on the server so
@@ -140,22 +174,30 @@ else
         (ActionView.Mine, "Mine"), (ActionView.MyTeams, "My teams"), (ActionView.Open, "All open"), (ActionView.Overdue, "Overdue"), (ActionView.Closed, "Recently closed"),
     ];
 
+    // The status filter's choices: the open columns (closed actions are the Recently closed view's).
+    private static readonly ActionStatus[] OpenStatuses = [ActionStatus.Open, ActionStatus.InProgress, ActionStatus.Blocked];
+
     private bool _loading = true, _groupByKind, _asBoard;
     private ActionBoard? _board;
 
     // The board's views are whose actions; Overdue and Recently closed are the list's (the board shows both by column and SLA).
     private static bool OnBoard(ActionView v) => v is ActionView.Mine or ActionView.MyTeams or ActionView.Open;
     private IReadOnlyList<ActionRow> Unfiltered => _asBoard ? _board?.Cards ?? [] : _rows;
-    private IReadOnlyList<ActionRow> Shown => Matching(Unfiltered);
-    private IReadOnlyList<ActionRow> ListRows => Matching(_rows);
+    private IReadOnlyList<ActionRow> Shown => _asBoard ? Matching(Unfiltered) : _rows;
     private int Count => Shown.Count;
     // Mine is grouped by when it's due, unless it's asked to be by kind.
     private bool ByUrgency => _view == ActionView.Mine && !_groupByKind;
     private string ViewName => Views.First(v => v.Item1 == _view).Item2 + " actions";
 
-    // The administrators' card rules, and the one chosen as a filter (?rule=).
+    // The administrators' card rules, and the one chosen as a filter (?rule=). The list's server filters by it and counts
+    // each rule's matches; the board has every card, so it matches and counts them itself.
     private IReadOnlyList<ActionCardRule> _rules = [];
     private Guid? _ruleId;
+    private IReadOnlyDictionary<Guid, int> _ruleCounts = new Dictionary<Guid, int>();
+
+    private int RuleCount(ActionCardRule r) => _asBoard
+        ? Unfiltered.Count(c => ActionRules.Matches(r, c, ActionSvc.Today, ActionSvc.Days))
+        : _ruleCounts.GetValueOrDefault(r.Id);
 
     private IReadOnlyList<ActionRow> Matching(IReadOnlyList<ActionRow> rows) =>
         _rules.FirstOrDefault(r => r.Id == _ruleId) is { } rule ? rows.Where(c => ActionRules.Matches(rule, c, ActionSvc.Today, ActionSvc.Days)).ToList() : rows;
@@ -163,17 +205,36 @@ else
     private Guid? _teamId;
     private ActionKind? _kind;
     private string? _assignee;   // from Workload: one holder's open actions
+    private string? _search;
+    private Priority? _priority;
+    private ActionDue? _due;
+    private ActionStatus? _status;
     private IReadOnlyList<Team> _teams = [];
+
+    // The list: this page's rows, how many match in all, and in each group; its page and sort. The board: how far back
+    // its closed columns reach (Show older takes them to 30 days, for this visit).
     private IReadOnlyList<ActionRow> _rows = [];
+    private int _total, _page = 1, _closedDays = ActionService.BoardClosedDays;
+    private IReadOnlyDictionary<string, int>? _groups;
+    private TableSort? _sort = ActionTable.SoonestDue;
+
+    // How long typing in the search box pauses before the actions are searched.
+    private readonly TypingPause _typing = new(300);
+
+    private bool Filtered => _search is not null || _priority is not null || _due is not null || _status is not null || _ruleId is not null;
 
     private string Empty => _view switch
     {
+        _ when _priority is not null || _due is not null || _status is not null || (_ruleId is not null && !_asBoard) => "No actions match these filters.",
         ActionView.Mine => "Nothing assigned to you.",
         ActionView.MyTeams => "Your teams have no open actions (or you're on no team).",
         ActionView.Overdue => "Nothing is overdue.",
         ActionView.Closed => "Nothing closed in the last 90 days.",
         _ => "No open actions.",
     };
+
+    // A view's own order: soonest due first, or for Recently closed, most recently closed first.
+    private static TableSort? DefaultSort(ActionView view) => view == ActionView.Closed ? null : ActionTable.SoonestDue;
 
     // A colleague created, took, moved or closed an action: re-read the list in place (no loading flash), once per burst.
     // Each save is heard as the action's own topic too, which says whose card it was and who moved it (the board says so).
@@ -195,36 +256,38 @@ else
                 .GroupBy(x => x.Id!.Value).ToDictionary(g => g.Key, g => g.Last().ActorName);
             try
             {
-                var filter = new ActionFilter(_view, _teamId, _kind, AssigneeId: _assignee);
-                if (_asBoard) _board = await ActionSvc.BoardAsync(filter);
-                else
-                {
-                    var was = _rows;
-                    _rows = await ActionSvc.ListAsync(filter);
-                    _marks?.Apply(LiveDiff.Of(was, _rows, r => r.Id, r => r));
-                }
+                var was = _rows;
+                await Fetch();
+                if (!_asBoard) _marks?.Apply(LiveDiff.Of(was, _rows, r => r.Id, r => r));
             }
             catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
             StateHasChanged();
         });
         // Taken before the first await, which is when the interactive render first draws: from the same address only.
-        if (Handoff.Take<ActionsBoard>(RendererInfo, PrerenderedState) is { } prerendered
-            && prerendered._applied == (ViewParam, TeamParam, AssigneeParam, LayoutParam, RuleParam, GroupParam))
+        if (Handoff.Take<ActionsBoard>(RendererInfo, PrerenderedState) is { } prerendered && prerendered._applied == FromAddress())
             Adopt(prerendered);
         _teams = await Teams.ListAsync();
         _rules = await RuleSvc.ListAsync();
         SavedLayout ??= await Prefs.GetAsync(UserPreferences.ActionsLayout);
     }
 
+    // What the address says, as it says it: compared, not parsed, so the page knows when a link has changed it.
+    private sealed record Address(string? View, Guid? Team, string? Assignee, string? Layout, Guid? Rule, string? Group,
+        string? Q, string? Kind, string? Priority, string? Due, string? Status, string? Page);
+
+    private Address FromAddress() =>
+        new(ViewParam, TeamParam, AssigneeParam, LayoutParam, RuleParam, GroupParam, Q, KindParam, PriorityParam, DueParam, StatusParam, PageParam);
+
     // The address as last applied. The page stays open when a link changes only the query (the sidebar's Actions from
-    // ?view=closed, a link to ?view=overdue), so the address is read whenever it changes, not only when the page opens.
-    // The page's own address updates (Remember) record what they write first, so they don't re-read it.
-    private (string? View, Guid? Team, string? Assignee, string? Layout, Guid? Rule, string? Group)? _applied;
+    // ?view=closed, a link to ?view=overdue, a pager link), so the address is read whenever it changes, not only when the
+    // page opens. The page's own address updates (Remember) record what they write first, so they don't re-read it.
+    private Address? _applied;
 
     protected override async Task OnParametersSetAsync()
     {
-        var query = (ViewParam, TeamParam, AssigneeParam, LayoutParam, RuleParam, GroupParam);
+        var query = FromAddress();
         if (_applied == query) return;
+        var was = _applied;
         _applied = query;
         _view = EnumNames.OrNull<ActionView>(ViewParam, ignoreCase: true) ?? ActionView.Mine;
         _groupByKind = string.Equals(GroupParam, "kind", StringComparison.OrdinalIgnoreCase);
@@ -237,16 +300,42 @@ else
         _ruleId = _rules.Any(r => r.Id == RuleParam && r.ShowAsFilter) ? RuleParam : null;
         _teamId = TeamParam;
         _assignee = string.IsNullOrWhiteSpace(AssigneeParam) ? null : AssigneeParam;
+        _search = string.IsNullOrWhiteSpace(Q) ? null : Q.Trim();
+        _kind = EnumNames.OrNull<ActionKind>(KindParam, ignoreCase: true);
+        _priority = EnumNames.OrNull<Priority>(PriorityParam, ignoreCase: true);
+        _due = DueFrom(DueParam);
+        _status = EnumNames.OrNull<ActionStatus>(StatusParam, ignoreCase: true) is { } st && OpenStatuses.Contains(st) ? st : null;
+        _page = TableView.PageFrom(PageParam);
+        // Only another view resets the sort: another page (or filter) keeps the one chosen.
+        if (was is null || !string.Equals(was.View, query.View, StringComparison.OrdinalIgnoreCase)) _sort = DefaultSort(_view);
         var quiet = _adopted;
         _adopted = false;
         if (await Read(quiet)) PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
     }
+
+    private static ActionDue? DueFrom(string? text) => text?.Trim().ToLowerInvariant() switch
+    {
+        "overdue" => ActionDue.Overdue,
+        "week" => ActionDue.ThisWeek,
+        "none" => ActionDue.None,
+        _ => null,
+    };
+
+    private static string? DueKey(ActionDue? due) => due switch
+    {
+        ActionDue.Overdue => "overdue",
+        ActionDue.ThisWeek => "week",
+        ActionDue.None => "none",
+        _ => null,
+    };
 
     // Takes what the prerendered page read and chose from its address, so the first interactive draw is the same page.
     private void Adopt(ActionsBoard p)
     {
         (_teams, _rules, _board, _rows) = (p._teams, p._rules, p._board, p._rows);
         (_view, _asBoard, _groupByKind, _ruleId, _teamId, _assignee) = (p._view, p._asBoard, p._groupByKind, p._ruleId, p._teamId, p._assignee);
+        (_search, _kind, _priority, _due, _status) = (p._search, p._kind, p._priority, p._due, p._status);
+        (_total, _page, _groups, _sort, _ruleCounts) = (p._total, p._page, p._groups, p._sort, p._ruleCounts);
         (_loading, _adopted) = (false, true);
     }
 
@@ -256,17 +345,29 @@ else
         return Refilter();
     }
 
-    // Another team, kind or holder: the list from its first page, as a new filter starts.
-    private Task Refilter()
+    // Another team, kind, priority, due date, status or holder: read from the list's first page, and the address says so.
+    private async Task Refilter()
     {
-        TableView.FirstPage(Nav, DataTable<ActionRow>.PageParameter);
-        return Load();
+        _page = 1;
+        await Load();
+        Remember();
+    }
+
+    // Grouping by kind is the list's own order: from its first page too.
+    private Task Regroup() => Refilter();
+
+    // Search as you type, once typing pauses.
+    private async Task SearchChanged()
+    {
+        if (await _typing.Settled()) await Refilter();
     }
 
     private async Task SetView(ActionView view)
     {
         _view = view;
         _assignee = null;
+        _page = 1;
+        _sort = DefaultSort(view);
         Remember();
         await Load();
     }
@@ -277,7 +378,7 @@ else
         _sayLayout = false;
         // Only the layout is added (the team, holder and the rest stay as they were), and recorded first so it isn't re-read.
         var layout = _asBoard ? UserPreferences.Board : UserPreferences.List;
-        _applied = (ViewParam, TeamParam, AssigneeParam, layout, RuleParam, GroupParam);
+        _applied = FromAddress() with { Layout = layout };
         Nav.NavigateTo(Nav.GetUriWithQueryParameter("layout", layout), replace: true);
     }
 
@@ -286,6 +387,7 @@ else
     {
         _asBoard = layout == "board";
         if (_asBoard && !OnBoard(_view)) _view = ActionView.Open;
+        _page = 1;
         SavedLayout = _asBoard ? UserPreferences.Board : UserPreferences.List;
         try { await Prefs.SetAsync(UserPreferences.ActionsLayout, SavedLayout); }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
@@ -293,21 +395,83 @@ else
         await Load();
     }
 
+    // The address of what's shown: every filter, and the page when it isn't the first. Recorded first, so writing it
+    // doesn't read it again.
     private void Remember()
     {
         // The address always says which layout it is, so a reload or a copy of it opens what's shown.
         var layout = _asBoard ? UserPreferences.Board : UserPreferences.List;
-        _applied = (_view.ToString().ToLowerInvariant(), null, null, layout, _ruleId, !_asBoard && _groupByKind ? "kind" : null);
-        Nav.NavigateTo($"actions?view={_view.ToString().ToLowerInvariant()}&layout={layout}{(!_asBoard && _groupByKind ? "&group=kind" : "")}{(_ruleId is { } r ? $"&rule={r}" : "")}", replace: true);
+        var view = _view.ToString().ToLowerInvariant();
+        var group = !_asBoard && _groupByKind ? "kind" : null;
+        var (kind, priority, status) = (_kind?.ToString().ToLowerInvariant(), _priority?.ToString().ToLowerInvariant(), _status?.ToString().ToLowerInvariant());
+        var page = !_asBoard && _page > 1 ? _page.ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
+        _applied = new Address(view, _teamId, _assignee, layout, _ruleId, group, _search, kind, priority, DueKey(_due), status, page);
+        Nav.NavigateTo(Nav.GetUriWithQueryParameters("actions", new Dictionary<string, object?>
+        {
+            ["view"] = view, ["layout"] = layout, ["group"] = group, ["rule"] = _ruleId, ["team"] = _teamId, ["assignee"] = _assignee,
+            ["q"] = _search, ["kind"] = kind, ["priority"] = priority, ["due"] = DueKey(_due), ["status"] = status, ["page"] = page,
+        }), replace: true);
     }
 
-    private void SetRule(Guid? id)
+    private async Task SetRule(Guid? id)
     {
         _ruleId = id;
+        _page = 1;
+        // The board matches its cards itself; the list asks the server for the rule's actions.
+        if (!_asBoard) await Load();
         Remember();
     }
 
+    // A new sort from the list's headings, or "Clear the filter" from its empty state: from the first page.
+    private async Task Query(TableQuery q)
+    {
+        _sort = q.Sort;
+        _search = string.IsNullOrWhiteSpace(q.Filter) ? null : q.Filter.Trim();
+        _page = 1;
+        await Load();
+        Remember();
+    }
+
+    // Show older under the board's Done: the closed columns reach back 30 days, for this visit.
+    private async Task ShowOlder()
+    {
+        _closedDays = ActionService.BoardOlderDays;
+        await Load();
+    }
+
     private Task Load() => Read(quiet: false);
+
+    private ActionFilter Filter() => new ActionFilter(_view, _teamId, _kind, AssigneeId: _assignee)
+    {
+        Search = _search, Priority = _priority, Due = _due, Status = _status,
+    };
+
+    private ActionSort SortOf(TableSort? sort) => sort?.Key switch
+    {
+        "number" => ActionSort.Number,
+        "title" => ActionSort.Title,
+        "kind" => ActionSort.Kind,
+        "team" => ActionSort.Team,
+        "status" => ActionSort.Status,
+        "due" => ActionSort.Due,
+        _ => _view == ActionView.Closed ? ActionSort.Closed : ActionSort.Due,
+    };
+
+    // Reads the board, or the list's page (with the rule chips' counts).
+    private async Task Fetch()
+    {
+        var filter = Filter();
+        if (_asBoard)
+        {
+            _board = await ActionSvc.BoardAsync(filter, _closedDays);
+            return;
+        }
+        var grouping = _groupByKind ? ActionGrouping.Kind : ByUrgency ? ActionGrouping.Urgency : ActionGrouping.None;
+        var page = await ActionSvc.PageAsync(filter with { RuleId = _ruleId }, SortOf(_sort), _sort?.Descending ?? false, grouping, _page);
+        // A page past the end (an old link, or the list shrank) shows the last one; the pager says which.
+        (_rows, _total, _page, _groups) = (page.Rows, page.Total, page.Page, page.Groups);
+        _ruleCounts = _rules.Any(r => r.ShowAsFilter) ? await ActionSvc.RuleCountsAsync(filter, _rules.Where(r => r.ShowAsFilter)) : new Dictionary<Guid, int>();
+    }
 
     // Quiet, the list stays as it is while it's read (it's the prerendered one); otherwise it shows "Loading". False when
     // the read failed.
@@ -318,9 +482,7 @@ else
         _marks?.Clear();
         try
         {
-            var filter = new ActionFilter(_view, _teamId, _kind, AssigneeId: _assignee);
-            if (_asBoard) _board = await ActionSvc.BoardAsync(filter);
-            else _rows = await ActionSvc.ListAsync(filter);
+            await Fetch();
             return true;
         }
         catch (Exception ex)
@@ -333,6 +495,7 @@ else
 
     public void Dispose()
     {
+        _typing.Now();   // a search typed just before is dropped
         _live?.Dispose();
         _marks?.Dispose();
     }

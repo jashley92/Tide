@@ -5,6 +5,7 @@
 @inject OrgClock Clock
 @inject ChangeFeed Feed
 @inject ChangeOrigin Origin
+@inject NavigationManager Nav
 @implements IDisposable
 
 @* The team's saved hunt queries (ADR 0006), by language: a tuned sweep or a behavioural hunt kept for a colleague to add
@@ -42,11 +43,11 @@
     <div class="row g-2 align-items-end">
         <div class="col-md-6">
             <label class="tide-field-label" for="sq-find">Find</label>
-            <input id="sq-find" type="search" class="form-control form-control-sm" placeholder="Name, description or query text" @bind="_words" @bind:event="oninput" @bind:after="Filter" />
+            <input id="sq-find" type="search" class="form-control form-control-sm" placeholder="Name, description or query text" @bind="_words" @bind:event="oninput" @bind:after="Refilter" />
         </div>
         <div class="col-md-4">
             <label class="tide-field-label" for="sq-language">Language</label>
-            <select id="sq-language" class="form-select form-select-sm" @bind="_language" @bind:after="Filter">
+            <select id="sq-language" class="form-select form-select-sm" @bind="_language" @bind:after="Refilter">
                 <option value="">All languages</option>
                 @foreach (var d in QueryDialects.All) { <option value="@d.Key">@d.Name</option> }
             </select>
@@ -78,11 +79,16 @@ else if (Shown.Count == 0)
 }
 else
 {
-    @foreach (var group in Shown.GroupBy(r => r.Query.Dialect))
+    <div class="tide-paged">
+    <p class="small tide-muted mb-2" role="status">@CountText</p>
+    @* The page's cards under their language's heading, which counts the language's every match; a language that runs on
+       from the page before says so, its heading repeated. *@
+    @foreach (var group in OnPage.GroupBy(r => r.Query.Dialect))
     {
         var headingId = "sq-" + group.Key;
+        var continued = Continues(group.First());
         <section class="tide-card" aria-labelledby="@headingId" @key="group.Key">
-            <h2 id="@headingId">@HuntQueryBuilder.DialectName(group.Key) <span class="tide-count tide-muted fw-normal">(@group.Count())</span></h2>
+            <h2 id="@headingId">@HuntQueryBuilder.DialectName(group.Key) <span class="tide-count tide-muted fw-normal">(@_shown.Count(r => r.Query.Dialect == group.Key))</span>@if (continued) { <span class="small tide-muted fw-normal">, continued</span> }</h2>
             @foreach (var r in group)
             {
                 var q = r.Query;
@@ -121,6 +127,8 @@ else
             }
         </section>
     }
+    <Pager Page="_page" Pages="TableView.Pages(_shown.Count, PageSize)" Many="saved queries" Href="PageHref" />
+    </div>
 }
 
 @code {
@@ -139,12 +147,69 @@ else
     /// <summary>The rows the filters leave: the language chosen (or all) and every word typed (<see cref="Filter"/>).</summary>
     internal IReadOnlyList<SavedQueryRow> Shown => _shown;
 
-    // Worked out when the rows or the filters change, not on each redraw.
+    private IReadOnlyList<SavedQueryRow> _onPage = [];
+
+    /// <summary>The rows on the page shown, of <see cref="Shown"/>.</summary>
+    internal IReadOnlyList<SavedQueryRow> OnPage => _onPage;
+
+    // Worked out when the rows or the filters change, not on each redraw. Each language's queries together (the languages
+    // in the order they first come, as their headings are), so the pages run through the headings in order.
     private void Filter()
     {
         var words = TableView.Words(_words);
-        _shown = (_rows ?? []).Where(r => _language.Length == 0 || r.Query.Dialect == _language).Where(r => SavedQueryService.Matches(r.Query, words)).ToList();
+        _shown = (_rows ?? []).Where(r => _language.Length == 0 || r.Query.Dialect == _language).Where(r => SavedQueryService.Matches(r.Query, words))
+            .GroupBy(r => r.Query.Dialect).SelectMany(g => g).ToList();
+        Slice();
     }
+
+    // This page's cards, or the last page's when this one has gone.
+    private void Slice()
+    {
+        var asked = _page;
+        (_onPage, _page) = TableView.PageOf(_shown, _page, PageSize);
+        if (_page != asked) TableView.SayPage(Nav, RendererInfo, _page);
+    }
+
+    // Whether a card's language runs on from the page before: its heading says "continued".
+    private bool Continues(SavedQueryRow first)
+    {
+        var at = (_page - 1) * PageSize;
+        return _onPage.Count > 0 && first == _onPage[0] && at > 0 && _shown[at - 1].Query.Dialect == first.Query.Dialect;
+    }
+
+    // "1–20 of 34 saved queries", or "12 saved queries" on one page.
+    private string CountText => TableView.Count((_page - 1) * PageSize + 1, _onPage.Count, _shown.Count, null, false, "saved query", "saved queries");
+
+    // A page of 20 cards at a time (they're long: the whole query or email), the page from the address (?page=2), so a
+    // reload, Back or a copied link keeps it. A filter starts again from the first page; an edit, or a colleague's change,
+    // keeps the page, or shows the last one when a delete or retire took this page away.
+    [SupplyParameterFromQuery(Name = "page")] public string? PageParam { get; set; }
+
+    internal const int PageSize = 20;
+    private int _page = 1;
+
+    /// <summary>The page shown, from 1.</summary>
+    internal int Page => _page;
+
+    // Another page in the address (a pager link, Back): show it.
+    protected override void OnParametersSet()
+    {
+        var page = TableView.PageFrom(PageParam);
+        if (page == _page) return;
+        _page = page;
+        Slice();
+    }
+
+    private string PageHref(int page) => Nav.GetUriWithQueryParameter("page", page == 1 ? null : page);
+
+    // A filter changed: the first page, and the address says so.
+    private void Refilter()
+    {
+        _page = 1;
+        Filter();
+        TableView.SayPage(Nav, RendererInfo, 1);
+    }
+
 
     private string Provenance(SavedQuery q) => Ui.Provenance(Clock, q, q.CreatedByName, q.ModifiedByName);
 
@@ -183,6 +248,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         _canWrite = SavedSvc.CanWrite;
+        _page = TableView.PageFrom(PageParam);
         _live = new LiveChanges(Feed, Origin, c => c.Topic == ChangeFeed.SavedQueries, InvokeAsync, OnChangedElsewhere);
         await Load();
     }
@@ -211,6 +277,8 @@ else
     private async Task ToggleRetired(ChangeEventArgs e)
     {
         _showRetired = e.Value is true;
+        _page = 1;
+        TableView.SayPage(Nav, RendererInfo, 1);
         await Load();
     }
 

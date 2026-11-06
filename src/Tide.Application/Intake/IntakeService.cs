@@ -59,12 +59,29 @@ public sealed record PollResult(int New, int Seen, string? Error)
     public int Sponsored { get; init; }
 }
 
-/// <summary>Which items the inbox shows.</summary>
 /// <summary>What the inbox shows. <see cref="Since"/> keeps items published (or, undated, fetched) at or after it.
 /// <see cref="Older"/> (the New tab only) shows the items that aged out of New instead of those still in it.
-/// <see cref="Sort"/> <see cref="InboxSort.Likely"/> (New and Shortlisted) orders by what the team promoted before (EP-81).</summary>
-public sealed record InboxFilter(FeedItemStatus Status = FeedItemStatus.New, Guid? SourceId = null, string? Search = null, int Take = 200,
-    DateTimeOffset? Since = null, bool Older = false, InboxSort Sort = InboxSort.Newest);
+/// <see cref="Sort"/> <see cref="InboxSort.Likely"/> (New and Shortlisted) orders by what the team promoted before (EP-81).
+/// <see cref="Cves"/> keeps items naming a CVE (or a KEV-listed one), <see cref="Named"/> those naming a product on Our
+/// stack. <see cref="Page"/> is which <see cref="Take"/> rows of them, counting from 1.</summary>
+public sealed record InboxFilter(FeedItemStatus Status = FeedItemStatus.New, Guid? SourceId = null, string? Search = null, int Take = InboxFilter.PageSize,
+    DateTimeOffset? Since = null, bool Older = false, InboxSort Sort = InboxSort.Newest, int Page = 1, InboxCves Cves = InboxCves.All, bool Named = false)
+{
+    /// <summary>Rows on a page of the inbox.</summary>
+    public const int PageSize = 50;
+}
+
+/// <summary>The inbox's CVE filter: every item, those naming any CVE, or those naming one on CISA's KEV list.</summary>
+public enum InboxCves
+{
+    All = 0,
+    Any = 1,
+    Kev = 2,
+}
+
+/// <summary>A page of the inbox: its rows, how many items match in all, and which page it is (the last, when the one
+/// asked for is past the end).</summary>
+public sealed record InboxPage(IReadOnlyList<InboxRow> Rows, int Total, int Page);
 
 /// <summary>
 /// Where a feed item overlaps what's already been covered: an article (and the first brief it was on, if any), the
@@ -511,8 +528,17 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
 
     // --- the inbox ------------------------------------------------------------------------------------------------
 
-    /// <summary>Items in one triage state, newest first, with their source, a similar item and past coverage.</summary>
-    public async Task<IReadOnlyList<InboxRow>> InboxAsync(InboxFilter filter, CancellationToken ct = default)
+    /// <summary>A page of items in one triage state, newest first, with their source, a similar item and past coverage.</summary>
+    public async Task<IReadOnlyList<InboxRow>> InboxAsync(InboxFilter filter, CancellationToken ct = default) => (await InboxPageAsync(filter, ct)).Rows;
+
+    /// <summary>The most a page number is taken as: beyond any real inbox, and small enough that the rows skipped can't overflow.</summary>
+    private const int MaxPage = 100_000;
+
+    /// <summary>
+    /// A page of the inbox (<see cref="InboxFilter.Page"/>, <see cref="InboxFilter.Take"/> rows), with how many items
+    /// match in all: the count is always the whole of it, never a silent cut. A page past the end is the last page.
+    /// </summary>
+    public async Task<InboxPage> InboxPageAsync(InboxFilter filter, CancellationToken ct = default)
     {
         RequireTriage();
         await using var db = await dbs.CreateAsync(ct);
@@ -526,37 +552,70 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
             var p = Search.SearchText.Contains(filter.Search.Trim());
             q = q.Where(i => EF.Functions.Like(i.Title, p, Search.SearchText.Escape) || EF.Functions.Like(i.Cves!, p, Search.SearchText.Escape));
         }
-        // The filter and the cut run in the database: a tab that's never pruned (Promoted) grows for years.
+        // The filters and the page run in the database where they can: a tab that's never pruned (Promoted) grows for years.
         if (filter.Since is { } since) q = q.Where(i => (i.PublishedAtUtc ?? i.FetchedAtUtc) >= since);
-        q = q.OrderByDescending(i => i.PublishedAtUtc ?? i.FetchedAtUtc);
+        if (filter.Cves != InboxCves.All) q = q.Where(i => i.Cves != null && i.Cves != "");
+        // The id breaks ties, so an item is on one page only.
+        q = q.OrderByDescending(i => i.PublishedAtUtc ?? i.FetchedAtUtc).ThenByDescending(i => i.Id);
         var take = Math.Clamp(filter.Take, 1, 500);
-        // The New tab reads every new item once, so the CVE grouping (one story from several outlets) sees past the page:
-        // only what matching, ageing and grouping need, and the rows shown are read in full below.
-        var all = await Light(filter.Status == FeedItemStatus.New ? q : q.Take(take)).ToListAsync(ct);
+        var page = Math.Clamp(filter.Page, 1, MaxPage);
         var stack = await Stack.StackService.EntriesAsync(db, ct);
         var weRun = Stack.StackService.Matcher(stack);
-        var named = all.ToDictionary(i => i.Id, i => weRun(i.Title, i.Excerpt));
         var watched = Stack.StackService.Matcher(await Adversaries.AdversaryService.WatchedAsync(db, ct));
-        if (filter.Status == FeedItemStatus.New)
-        {
-            // Untouched items fold into Older after a while (never one naming what we run); what names it comes first.
-            var aged = await AgedAsync(db, all.Where(i => named[i.Id] is null).ToList(), ct);
-            all = all.Where(i => aged.Contains(i.Id) == filter.Older).OrderBy(i => named[i.Id] is null).ToList();
-        }
-        var watching = all.ToDictionary(i => i.Id, i => watched(i.Title, i.Excerpt));
+        var likelySort = filter.Sort == InboxSort.Likely && filter.Status is FeedItemStatus.New or FeedItemStatus.Shortlisted;
+        // What only this process can tell (which items aged into Older, which name what we run, which CVEs are on KEV,
+        // what the team used before) is worked out over every matching item, read light: only what matching, ageing and
+        // grouping need. The rows shown are read in full below. Otherwise the database counts and cuts the page.
+        var light = filter.Status == FeedItemStatus.New || likelySort || filter.Named || filter.Cves == InboxCves.Kev;
+        List<FeedItem> all, pageItems;
+        int total;
+        Dictionary<Guid, Stack.StackEntry?> named;
         Dictionary<Guid, Likelihood?>? likely = null;
-        if (filter.Sort == InboxSort.Likely && filter.Status is FeedItemStatus.New or FeedItemStatus.Shortlisted)
+        if (light)
         {
-            // What names a product we run, a watched adversary or a KEV-listed CVE stays on top; the rest by the share
-            // promoted from items like it, newest first among equals (the order the list was already in).
-            var learned = await LearnedAsync(db, stack, ct);
-            var sources = await db.Sources.AsNoTracking().ToDictionaryAsync(s => s.Id, ct);
-            likely = all.ToDictionary(i => i.Id, i => learned.For(sources[i.SourceId], named[i.Id]));
-            var kev = await KevAsync(db, all, ct);
-            all = all.OrderBy(i => named[i.Id] is null).ThenBy(i => watching[i.Id] is null).ThenBy(i => !i.CveList.Any(kev.Contains))
-                .ThenByDescending(i => likely[i.Id]?.Score ?? 0.5).ToList();
+            all = await Light(q).ToListAsync(ct);
+            named = all.ToDictionary(i => i.Id, i => weRun(i.Title, i.Excerpt));
+            if (filter.Status == FeedItemStatus.New)
+            {
+                // Untouched items fold into Older after a while (never one naming what we run); what names it comes first.
+                var aged = await AgedAsync(db, all.Where(i => named[i.Id] is null).ToList(), ct);
+                all = all.Where(i => aged.Contains(i.Id) == filter.Older).OrderBy(i => named[i.Id] is null).ToList();
+            }
+            var view = all;   // the New tab's "same CVE" looks across the view, past the two filters below
+            if (filter.Named) all = all.Where(i => named[i.Id] is not null).ToList();
+            HashSet<string>? kev = null;
+            if (filter.Cves == InboxCves.Kev)
+            {
+                // KEV as the CVE records TIDE keeps say it (the row's KEV chip reads the same records).
+                kev = await KevAsync(db, all, ct);
+                all = all.Where(i => i.CveList.Any(kev.Contains)).ToList();
+            }
+            if (likelySort)
+            {
+                // What names a product we run, a watched adversary or a KEV-listed CVE stays on top; the rest by the share
+                // promoted from items like it, newest first among equals (the order the list was already in).
+                var learned = await LearnedAsync(db, stack, ct);
+                var sources = await db.Sources.AsNoTracking().ToDictionaryAsync(s => s.Id, ct);
+                likely = all.ToDictionary(i => i.Id, i => learned.For(sources[i.SourceId], named[i.Id]));
+                kev ??= await KevAsync(db, all, ct);
+                var watches = all.ToDictionary(i => i.Id, i => watched(i.Title, i.Excerpt) is not null);
+                all = all.OrderBy(i => named[i.Id] is null).ThenBy(i => !watches[i.Id]).ThenBy(i => !i.CveList.Any(kev.Contains))
+                    .ThenByDescending(i => likely[i.Id]?.Score ?? 0.5).ToList();
+            }
+            total = all.Count;
+            page = Math.Min(page, Pages(total, take));
+            pageItems = all.Skip((page - 1) * take).Take(take).ToList();
+            all = view;
         }
-        var shownIds = all.Take(take).Select(i => i.Id).ToList();
+        else
+        {
+            total = await q.CountAsync(ct);
+            page = Math.Min(page, Pages(total, take));
+            all = pageItems = await Light(q.Skip((page - 1) * take).Take(take)).ToListAsync(ct);
+            named = all.ToDictionary(i => i.Id, i => weRun(i.Title, i.Excerpt));
+        }
+        var watching = pageItems.ToDictionary(i => i.Id, i => watched(i.Title, i.Excerpt));
+        var shownIds = pageItems.Select(i => i.Id).ToList();
         var full = await db.FeedItems.AsNoTracking().Include(i => i.Source).Where(i => shownIds.Contains(i.Id)).ToDictionaryAsync(i => i.Id, ct);
         var items = shownIds.Where(full.ContainsKey).Select(id => full[id]).ToList();
         var byCve = filter.Status == FeedItemStatus.New
@@ -566,8 +625,9 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         var similar = await db.FeedItems.AsNoTracking().Where(i => similarIds.Contains(i.Id)).ToDictionaryAsync(i => i.Id, ct);
         var coverage = await CoverageAsync(db, items, ct);
         // Reports that look like one event, among the items still to decide: worked out now, from what's shown, and never
-        // stored. Only what someone split is (EP-84): those reports never group with each other. A split matters here
-        // when two or more of its reports are shown.
+        // stored. What's shown is this page: a group's reports came out close together, so they share a page, unless the
+        // page ends among them (the rest group on the next). Only what someone split is (EP-84): those reports never group
+        // with each other. A split matters here when two or more of its reports are shown.
         var grouping = filter.Status is FeedItemStatus.New or FeedItemStatus.Shortlisted;
         var itemIds = items.Select(i => i.Id).ToList();
         var splits = grouping
@@ -580,7 +640,7 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
             : [];
         var groupOf = groups.SelectMany(g => g.Ids.Select(id => (id, g))).ToDictionary(x => x.id, x => x.g);
         var splitOf = SplitNotes(items, splits);
-        return items.Select(i => new InboxRow(i, i.Source!, i.SimilarToId is { } s ? similar.GetValueOrDefault(s) : null,
+        var rows = items.Select(i => new InboxRow(i, i.Source!, i.SimilarToId is { } s ? similar.GetValueOrDefault(s) : null,
             coverage.GetValueOrDefault(i.Id) ?? [], i.CveList.SelectMany(c => byCve[c]).Where(id => id != i.Id).Distinct().ToList())
         {
             SharedCve = i.CveList.FirstOrDefault(c => byCve[c].Any(id => id != i.Id)),
@@ -590,7 +650,11 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
             Watching = watching[i.Id],
             Likely = likely?.GetValueOrDefault(i.Id),
         }).ToList();
+        return new InboxPage(rows, total, page);
     }
+
+    // How many pages of take rows total items make (at least one).
+    private static int Pages(int total, int take) => Math.Max(1, (total + take - 1) / take);
 
     // Each split among the items shown, noted on its newest report (where the group's line was): the latest split there.
     private static Dictionary<Guid, SplitNote> SplitNotes(List<FeedItem> items, List<List<TriageSplit>> splits)

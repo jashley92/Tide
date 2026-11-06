@@ -113,6 +113,22 @@ public static class TableView
     }
 
     /// <summary>
+    /// The same for a list the server pages: how many matching rows each group holds comes from <paramref name="totals"/>
+    /// (counted where the rows are), as only this page's rows are here.
+    /// </summary>
+    public static IReadOnlyList<TableGroup<TItem>> Group<TItem>(IReadOnlyList<TItem> shown, IReadOnlyDictionary<string, int> totals, Func<TItem, string> groupBy, IReadOnlyList<string>? order = null)
+    {
+        var rows = shown.GroupBy(groupBy).ToDictionary(g => g.Key, g => (IReadOnlyList<TItem>)g.ToList());
+        var rank = (order ?? []).Select((name, i) => (name, i)).ToDictionary(x => x.name, x => x.i);
+        // A group on this page that the counts missed (a row that arrived between the two reads) counts what's shown.
+        var names = totals.Where(t => t.Value > 0).Select(t => t.Key).Concat(rows.Keys).Distinct().ToList();
+        return names.Select((name, seen) => (name, at: rank.TryGetValue(name, out var r) ? r : rank.Count + seen))
+            .OrderBy(x => x.at)
+            .Select(x => new TableGroup<TItem>(x.name, rows.GetValueOrDefault(x.name, []), Math.Max(totals.GetValueOrDefault(x.name), rows.GetValueOrDefault(x.name, []).Count)))
+            .ToList();
+    }
+
+    /// <summary>
     /// The count over a table: which rows this page shows (<paramref name="first"/>, counting from 1, and how many,
     /// <paramref name="shown"/>), of how many match the filter, of how many there are (null when only the server knows,
     /// as when it does the filtering). "1–100 of 235 profiles"; on one page, as before: "12 articles", "Showing 8 of 12".
@@ -149,6 +165,29 @@ public static class TableView
         var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(nav.Uri).Query);
         if (query.ContainsKey(parameter))
             nav.NavigateTo(Microsoft.AspNetCore.Components.NavigationManagerExtensions.GetUriWithQueryParameter(nav, parameter, (int?)null), replace: true);
+    }
+
+    /// <summary>
+    /// Page <paramref name="page"/> of <paramref name="rows"/> at <paramref name="size"/> a page, for a list held whole in
+    /// memory, and which page that is: the last, when the one asked for is past the end (after a delete, say).
+    /// </summary>
+    public static (IReadOnlyList<T> Rows, int Page) PageOf<T>(IReadOnlyList<T> rows, int page, int size)
+    {
+        page = Math.Clamp(page, 1, Pages(rows.Count, size));
+        return (rows.Skip((page - 1) * size).Take(size).ToList(), page);
+    }
+
+    /// <summary>
+    /// The address with <paramref name="page"/> as its <c>?page=</c>, in place (not a step for Back), when it says another:
+    /// a filter that starts again from the first page, or a page that's gone (the last instead). Only on a live page; a
+    /// prerender can't move the address, and its page is read from it again.
+    /// </summary>
+    public static void SayPage(Microsoft.AspNetCore.Components.NavigationManager nav, Microsoft.AspNetCore.Components.RendererInfo renderer, int page, string parameter = "page")
+    {
+        if (!renderer.IsInteractive) return;
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(nav.Uri).Query);
+        if (PageFrom(query.TryGetValue(parameter, out var v) ? v.ToString() : null) == page) return;
+        nav.NavigateTo(Microsoft.AspNetCore.Components.NavigationManagerExtensions.GetUriWithQueryParameter(nav, parameter, page == 1 ? null : page), replace: true);
     }
 
     /// <summary>How many pages <paramref name="rows"/> make at <paramref name="size"/> a page (at least one).</summary>

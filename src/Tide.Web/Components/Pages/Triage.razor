@@ -50,14 +50,24 @@ else
 {
 <div class="tide-inbox-view">
 <div class="tide-filters">
-    <select class="tide-maxw-sm form-select form-select-sm" aria-label="Source" @bind="_sourceId" @bind:after="Load">
+    <select class="tide-maxw-sm form-select form-select-sm" aria-label="Source" @bind="_sourceId" @bind:after="Refilter">
         <option value="">All sources</option>
         @foreach (var s in _sources) { <option value="@s.Id">@s.Name</option> }
     </select>
     <input class="tide-maxw-sm form-control form-control-sm" placeholder="Search titles and CVEs" aria-label="Search" @bind="_search" @bind:event="oninput" @bind:after="SearchChanged" />
     <div class="form-check mb-0">
-        <input class="form-check-input" type="checkbox" id="since-last" @bind="_sinceLast" @bind:after="Load" disabled="@(_lastBriefAt is null)" />
+        <input class="form-check-input" type="checkbox" id="since-last" @bind="_sinceLast" @bind:after="Refilter" disabled="@(_lastBriefAt is null)" />
         <label class="form-check-label small" for="since-last">Since the last brief@(_lastBriefAt is { } at ? $" ({Ui.When(Clock, at)})" : "")</label>
+    </div>
+    @* What we'd act on first: items naming a CVE (or one on CISA's KEV list, as TIDE's CVE records say), or a product on Our stack. *@
+    <select class="tide-maxw-sm form-select form-select-sm w-auto" aria-label="CVEs" @bind="_cveFilter" @bind:after="Refilter">
+        <option value="@InboxCves.All">Any or no CVE</option>
+        <option value="@InboxCves.Any">Names a CVE</option>
+        <option value="@InboxCves.Kev">Names a KEV-listed CVE</option>
+    </select>
+    <div class="form-check mb-0">
+        <input class="form-check-input" type="checkbox" id="named-only" @bind="_named" @bind:after="Refilter" />
+        <label class="form-check-label small" for="named-only">Names what we run</label>
     </div>
     @if (_status is FeedItemStatus.New or FeedItemStatus.Shortlisted)
     {
@@ -72,6 +82,10 @@ else
     @if (_status == FeedItemStatus.New && _rows.Count > 0)
     {
         <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="AskDismissAll">Dismiss all @_rows.Count shown…</button>
+    }
+    @if (_loaded && _rows.Count > 0)
+    {
+        <span class="tide-muted small" role="status">@CountText</span>
     }
     @* A colleague's change heard while a promote form or the attach picker is open waits, so the row being worked on
        doesn't move; it shows when the form closes, or now from here. *@
@@ -328,11 +342,9 @@ else
         <button type="button" class="btn btn-outline-secondary btn-sm mt-2" @onclick="() => ShowOlder(true)">
             <span class="bi bi-archive" aria-hidden="true"></span> Older: @_olderCount new item@(_olderCount == 1 ? "" : "s") untouched for @AgeText</button>
     }
-    @* The list holds the newest InboxFilter.Take items; say so when there are more, rather than end as if that's all. *@
-    @if (_rows.Count >= ShownAtMost && _counts.GetValueOrDefault(_status) > _rows.Count)
-    {
-        <p class="small tide-muted mt-2 mb-0">Showing the newest @_rows.Count of @_counts.GetValueOrDefault(_status). Choose a source or search to reach older ones.</p>
-    }
+    @* A page at a time, every page a link (the address is the page's); J on the last row and K on the first go on to the
+       next and back to the previous one. *@
+    <Pager Page="_page" Pages="Pages" Many="items" Href="PageHref" />
 </div>
 @if (_reading) { @ReadingPane() }
 </div>
@@ -540,13 +552,47 @@ else
         await Load();
     }
 
-    // The tab chosen goes in the address (?tab=sources), so a reload or a copied link opens it.
+    // The tab, filters and page go in the address (?tab=sources), so a reload or a copied link opens them.
     private async Task RememberTab()
     {
-        var address = _sourcesTab ? "triage?tab=sources" : Address(_status, _sourceId, _search, _sinceLast, null, 0);
+        var address = _sourcesTab ? "triage?tab=sources" : PageHref(_page);
+        _addressPage = _sourcesTab ? 1 : _page;
         try { await JS.InvokeVoidAsync("tideTriage.remember", address); }
         catch (JSDisconnectedException) { }
         catch (InvalidOperationException) { }   // rendered without a browser (prerendering, tests)
+    }
+
+    // A page of this tab, with its filters: the pager's links, and the address a filter change writes.
+    private string PageHref(int page) => Address(_status, _sourceId, _search, _sinceLast, null, 0, page, _cveFilter, _named, _older && _status == FeedItemStatus.New);
+
+    /// <summary>A filter changed: its first page, and the address says so.</summary>
+    internal async Task Refilter()
+    {
+        _page = 1;
+        _selected = 0;
+        _marks.Clear();
+        await Load();
+        await RememberTab();
+    }
+
+    /// <summary>Shows another page of the list (the pager's links come here through the address; J and K at its ends
+    /// directly), selecting its first row, or with <paramref name="last"/> its last.</summary>
+    internal async Task GoToPage(int page, bool last = false)
+    {
+        if (_sourcesTab) return;
+        _page = Math.Max(1, page);
+        _selected = 0;
+        _promoting = null;
+        _promotingGroup = null;
+        _attaching = false;
+        _marks.Clear();
+        await Load();
+        if (last) _selected = Math.Max(0, _lines.Count - 1);
+        Select(_selected);
+        _said = $"Page {_page} of {Pages}.";
+        _focus = "tideTriage.focusSelected";
+        await RememberTab();
+        await Follow();
     }
 
     /// <summary>Pull now on the Sources tab: the source is polled (unless it was within the pull-now window, or is being
@@ -588,7 +634,19 @@ else
     private List<Line> _lines = [];
     private readonly HashSet<Guid> _open = [];    // the groups shown open, by their reports' ids
     private IReadOnlyDictionary<FeedItemStatus, int> _counts = new Dictionary<FeedItemStatus, int>();
-    private static readonly int ShownAtMost = new InboxFilter().Take;
+
+    // The page shown (from 1), how many items match the tab and filters in all (the tab counts are each tab's whole), and
+    // the page the address says, so a link or Back to another page is read and this page's own moves aren't.
+    private int _page = 1, _total, _addressPage = 1;
+    private const int PageSize = InboxFilter.PageSize;
+    private int Pages => TableView.Pages(_total, PageSize);
+
+    // "1–50 of 213 items", or "12 items" when they fit on one page.
+    private string CountText => TableView.Count((_page - 1) * PageSize + 1, _rows.Count, _total, null, false, "item", "items");
+
+    // The CVE and Our stack filters.
+    private InboxCves _cveFilter;
+    private bool _named;
 
     // The product from Our stack that a line names: its own, or (a group's line) any of its reports'.
     private static Tide.Application.Stack.StackEntry? WeRunOf(Line line) => line.Row?.WeRun ?? line.Members.Select(m => m.WeRun).FirstOrDefault(w => w is not null);
@@ -632,10 +690,9 @@ else
     {
         if (_sort == sort) return;
         _sort = sort;
-        _selected = 0;
         try { await JS.InvokeVoidAsync("tideTriage.pref", "sort", sort == InboxSort.Likely ? nameof(InboxSort.Likely) : null); }
         catch (JSDisconnectedException) { }
-        await Load();
+        await Refilter();
     }
 
     // The ISO week, so "Hide until next week" lasts until Monday.
@@ -665,8 +722,7 @@ else
     private async Task ShowOlder(bool on)
     {
         _older = on;
-        _selected = 0;
-        await Load();
+        await Refilter();
     }
 
     // X or S on a group's line: every report in it, once confirmed (a group can hide what one report adds).
@@ -878,13 +934,25 @@ else
     [SupplyParameterFromQuery(Name = "row")] public int? RowParam { get; set; }
     [SupplyParameterFromQuery(Name = "promote")] public bool? PromoteParam { get; set; }
 
-    /// <summary>Triage's address at a tab, filters and row, for Back to return to.</summary>
-    internal static string Address(FeedItemStatus status, Guid? sourceId, string? search, bool sinceLast, Guid? at, int row)
+    // The page (text, so "?page=abc" is the first page, not a broken one), the CVE and Our stack filters, and New's Older view.
+    [SupplyParameterFromQuery(Name = "page")] public string? PageParam { get; set; }
+    [SupplyParameterFromQuery(Name = "cve")] public string? CveParam { get; set; }
+    [SupplyParameterFromQuery(Name = "named")] public bool? NamedParam { get; set; }
+    [SupplyParameterFromQuery(Name = "older")] public bool? OlderParam { get; set; }
+
+    /// <summary>Triage's address at a tab, filters, page and row, for Back to return to. Relative, so it holds under the
+    /// app's path base.</summary>
+    internal static string Address(FeedItemStatus status, Guid? sourceId, string? search, bool sinceLast, Guid? at, int row,
+        int page = 1, InboxCves cves = InboxCves.All, bool named = false, bool older = false)
     {
         var query = new List<string> { "tab=" + status.ToString().ToLowerInvariant() };
         if (sourceId is { } s) query.Add("source=" + s);
         if (!string.IsNullOrWhiteSpace(search)) query.Add("q=" + Uri.EscapeDataString(search.Trim()));
         if (sinceLast) query.Add("since=true");
+        if (cves != InboxCves.All) query.Add("cve=" + cves.ToString().ToLowerInvariant());
+        if (named) query.Add("named=true");
+        if (older && status == FeedItemStatus.New) query.Add("older=true");
+        if (page > 1) query.Add("page=" + page);
         if (at is { } id) query.Add("at=" + id);
         if (row > 0) query.Add("row=" + row);
         return "triage?" + string.Join("&", query);
@@ -916,10 +984,23 @@ else
         _sourceId = SourceParam is { } sid && _sources.Any(s => s.Id == sid) ? sid : null;
         _search = string.IsNullOrWhiteSpace(SearchParam) ? null : SearchParam.Trim();
         _sinceLast = SinceParam == true && _lastBriefAt is not null;
+        _cveFilter = Enum.TryParse<InboxCves>(CveParam, ignoreCase: true, out var cves) && Enum.IsDefined(cves) ? cves : InboxCves.All;
+        _named = NamedParam == true;
+        _older = OlderParam == true && _status == FeedItemStatus.New && !_sourcesTab;
+        _page = _addressPage = TableView.PageFrom(PageParam);
         if (!adopted) _selected = Math.Max(0, RowParam ?? 0);   // adopted, the row Arrive selected stays while it's read again
         if (read) await Load();
         Arrive();
         if (!_failed) PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
+    }
+
+    // The page stays open when a link changes only the query: a pager link, or Back to another page, shows that page.
+    protected override async Task OnParametersSetAsync()
+    {
+        var page = TableView.PageFrom(PageParam);
+        if (page == _addressPage || _sourcesTab) return;
+        _addressPage = page;
+        await GoToPage(page);
     }
 
     /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.</summary>
@@ -928,8 +1009,8 @@ else
 
     // The query shapes what's read and selected, so only a prerender of the same address is the page to keep.
     private bool SameAddress(Triage p) =>
-        (p.TabParam, p.SourceParam, p.SearchParam, p.SinceParam, p.AtParam, p.RowParam, p.PromoteParam)
-        == (TabParam, SourceParam, SearchParam, SinceParam, AtParam, RowParam, PromoteParam);
+        (p.TabParam, p.SourceParam, p.SearchParam, p.SinceParam, p.AtParam, p.RowParam, p.PromoteParam, p.PageParam, p.CveParam, p.NamedParam, p.OlderParam)
+        == (TabParam, SourceParam, SearchParam, SinceParam, AtParam, RowParam, PromoteParam, PageParam, CveParam, NamedParam, OlderParam);
 
     // Takes what the prerendered page read and what its arrival selected or opened: everything the list draws from, so
     // the first interactive draw is the prerendered page again.
@@ -938,6 +1019,7 @@ else
         (_sources, _lastBriefAt, _status, _sourcesTab, _sourceId, _search, _sinceLast) = (p._sources, p._lastBriefAt, p._status, p._sourcesTab, p._sourceId, p._search, p._sinceLast);
         (_rows, _lines, _missed, _counts, _cves, _polled) = (p._rows, p._lines, p._missed, p._counts, p._cves, p._polled);
         (_olderCount, _readAt, _selected) = (p._olderCount, p._readAt, p._selected);
+        (_page, _addressPage, _total, _cveFilter, _named, _older) = (p._page, p._addressPage, p._total, p._cveFilter, p._named, p._older);
         (_promoting, _promotingGroup, _pf, _suggested) = (p._promoting, p._promotingGroup, p._pf, p._suggested);
         _open.UnionWith(p._open);
         _loaded = true;
@@ -1024,6 +1106,7 @@ else
         _sourcesTab = false;
         _status = status;
         _older = false;
+        _page = 1;
         _selected = 0;
         _promoting = null;
         _promotingGroup = null;
@@ -1108,7 +1191,9 @@ else
             var status = _status;
             var sourcesTab = _sourcesTab;
             // The Sources tab shows no items: only the tab counts and the polled sources are read for it.
-            var rows = sourcesTab ? [] : await Intake.InboxAsync(new InboxFilter(status, _sourceId, _search, Since: _sinceLast ? _lastBriefAt : null, Older: _older && status == FeedItemStatus.New, Sort: _sort));
+            var page = sourcesTab ? new InboxPage([], 0, 1) : await Intake.InboxPageAsync(new InboxFilter(status, _sourceId, _search, Since: _sinceLast ? _lastBriefAt : null,
+                Older: _older && status == FeedItemStatus.New, Sort: _sort, Page: _page, Cves: _cveFilter, Named: _named));
+            var rows = page.Rows;
             var missed = !sourcesTab && status == FeedItemStatus.New ? await Intake.MissedAsync() : [];
             var (counts, older) = await Intake.TallyAsync();
             var cves = await Cves.GetAsync(rows.SelectMany(r => r.Item.CveList));
@@ -1122,6 +1207,8 @@ else
             var keep = Current is { } current ? KeyOf(current) : ((Guid Id, bool Head)?)null;
             var (rowsWere, linesWere, selectedWas, countsWere, readWas) = (_rows, _lines, _selected, _counts, _readAt);
             (_rows, _missed, _counts, _cves, _polled) = (rows, missed, counts, cves, polled);
+            // A page past the end (an old link, or the list shrank under it) is the last one.
+            (_total, _page) = (page.Total, page.Page);
             _olderCount = !sourcesTab && status == FeedItemStatus.New ? older : 0;
             _readAt = reading;
             BuildLines();
@@ -1251,6 +1338,10 @@ else
         }
         switch (action)
         {
+            // J on the last row goes on to the next page's first, K on the first back to the previous page's last: the
+            // list reads on as one, and the status line says which page it is.
+            case "next" when _selected >= _lines.Count - 1 && _page < Pages: await GoToPage(_page + 1); break;
+            case "prev" when _selected == 0 && _page > 1: await GoToPage(_page - 1, last: true); break;
             case "next": _selected = Math.Min(_selected + 1, Math.Max(0, _lines.Count - 1)); await Follow(); break;
             case "prev": _selected = Math.Max(_selected - 1, 0); await Follow(); break;
             case "read": await Read(); break;
@@ -1368,7 +1459,7 @@ else
             Announce();
             Toasts.Show(group is null ? "Promoted to a draft article." : $"Promoted {group.Ids.Count} reports as one draft article.");
             // The browser's Back comes back here, to this tab, these filters and this row (or the one that took its place).
-            try { await JS.InvokeVoidAsync("tideTriage.remember", Address(_status, _sourceId, _search, _sinceLast, id, _selected)); }
+            try { await JS.InvokeVoidAsync("tideTriage.remember", Address(_status, _sourceId, _search, _sinceLast, id, _selected, _page, _cveFilter, _named, _older)); }
             catch (JSDisconnectedException) { }
             catch (InvalidOperationException) { }   // rendered without a browser (prerendering, tests)
             Nav.NavigateTo($"articles/{articleId}");
@@ -1383,14 +1474,14 @@ else
     {
         if (row.SharedCve is not { } cve) return;
         _search = cve;
-        await Load();
+        await Refilter();
         StateHasChanged();
     }
 
     // Search as you type, once typing pauses.
     private async Task SearchChanged()
     {
-        if (await _typing.Settled()) await Load();
+        if (await _typing.Settled()) await Refilter();
     }
 
     /// <summary>
