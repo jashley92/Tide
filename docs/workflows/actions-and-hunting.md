@@ -68,7 +68,7 @@ policy, and the services check again, so a page that forgets can't write.
 
 | Activity | Needs | Checked in |
 |---|---|---|
-| Read actions, the board, Workload, Saved queries, Outreach templates, My notifications | `ReadActions` (pages); `ReadTeamEdition` or `WorkActions` in `ActionService.RequireRead` | page policy, service |
+| Read actions, the board, Workload, Saved queries, Outreach templates, Playbooks, Board rules, My notifications | `ReadActions` (pages); `ReadTeamEdition` or `WorkActions` in `ActionService.RequireRead` | page policy, service |
 | Create an action (form, article, meeting, Coverage) | `WriteArticles` | `ActionService.CreateAsync` |
 | Edit, take, assign, move, close, hunt, write outreach, add files | `WriteArticles`, or `WorkActions` and membership of the owning team | `ActionService.CanWork` / `RequireWork` |
 | Change an action's article link or parent | `WriteArticles` (a team member's save keeps them as they were) | `ActionService.SaveAsync` |
@@ -83,7 +83,8 @@ policy, and the services check again, so a page that forgets can't write.
 | Add, edit, retire external teams, and set an external team's escalation contact | `WorkActions` | `TeamService.AddExternalAsync`, `UpdateExternalAsync`, `SetRetiredAsync`, `SetEscalationContactAsync` |
 | Set an internal team's escalation contact | `Administer` | `TeamService.SetEscalationContactAsync` |
 | Turn an action's external reminders off | whoever can work it | `ActionService.SetNoRemindersAsync` |
-| Teams, members, SLA targets, reminder and escalation settings, playbooks, card rules, query templates | `Administer` | `TeamService`, `SlaSettings`, `PlaybookService`, `CardRuleService`, `HuntQueryBuilder` |
+| Add, edit, reorder, retire and restore playbooks; delete one you made (an administrator, any) | `WorkActions` | `PlaybookService` |
+| Teams, members, SLA targets, reminder and escalation settings, card rules, query templates | `Administer` | `TeamService`, `SlaSettings`, `CardRuleService`, `HuntQueryBuilder` |
 | A team's active limit | `Administer` | `TeamService.SetLimitAsync` |
 | Run a reminder scan now | `Administer` | `ReminderService.RunNowAsync` |
 
@@ -252,10 +253,8 @@ an action is never re-checked, so an action overdue for over a year can still be
 - **Assignee.** A new assignee must be a member of the action's team; one it already has keeps it (an analyst who took
   it). The meeting's assignee and due boxes change only what they say (`AssignAsync`, `SetDueAsync`), so a due date set
   in the meeting doesn't take the action back from someone a colleague just gave it to.
-- **Checklist.** Up to 50 items (`ActionChecklistItem`). A playbook (`Playbook`, administered) adds its steps that the
-  checklist doesn't already have, at the end (`ApplyPlaybookAsync`). A new install, or an upgrade with no playbooks,
-  starts with 7, one for each kind of action but Other (`StarterPlaybooks`), added once and marked by the setting
-  `Data:StarterPlaybooks`.
+- **Checklist.** Up to 50 items (`ActionChecklistItem`). A playbook (`Playbook`, the team's: see
+  [Playbooks](#playbooks)) adds its steps that the checklist doesn't already have, at the end (`ApplyPlaybookAsync`).
 - **Comments.** Text up to 8,000 characters, with screenshots or evidence files. Each comment has its own
   `EditVersion`: an edit from an older version is refused and names who changed it, and the page shows their text over
   the box while keeping what was typed. Deleting a comment keeps its files on the action as removed, with the reason
@@ -386,6 +385,37 @@ page is headed there too, its heading counting every match; a page that a delete
 - **Editing** carries the query's `EditVersion` and is refused once someone else has saved it since. Writes are audited
   and published on the `saved-queries` topic, so an open Saved queries page follows.
 - **Not in the configuration bundle.** Saved queries are the team's working content, not installation settings.
+
+## Playbooks
+
+The team's checklists (`Playbook`, `PlaybookService`, the Playbooks page at `/playbooks`, under Team in the sidebar),
+kept as saved queries are (EP-89, business rule A26). A playbook has a name, an optional description, the kind of
+action it's for (or any kind), up to 40 steps, who made it and last changed it, and whether it's retired. A new action
+can start its checklist from one for its kind or for any kind; an action already open applies one from its checklist.
+The steps are copied, so a later edit doesn't change actions already started.
+
+- **Who keeps them.** `WorkActions` adds, edits, reorders (the pickers' order) and retires or restores; whoever made
+  one, or an administrator, deletes it. The 7 starters (`StarterPlaybooks`), one for each kind of action but Other,
+  are made by "TIDE", so only an administrator deletes them; anyone who works actions can retire them. They're added
+  once, only to an empty library, and marked by the setting `Data:StarterPlaybooks`.
+- **Kept for history.** One an action was started from (`ActionItem.PlaybookId`, a restrict key) is never deleted:
+  Delete is refused and the page offers Retire. A retired one isn't offered on actions; the actions keep its name.
+- **Editing** carries the playbook's `EditVersion` and is refused once someone else has saved it since. The steps are
+  written again only when they change. Writes are audited and published on the `playbooks` topic.
+- **The page.** 20 cards a page (`?page=`), each with its kind, steps, how many actions were started from it and
+  "Saved by …, changed by …". The filter bar has the search box (name, description, kind or a step), a pill per kind
+  of action (one at a time: those offered on that kind, its own and those for any) and **Show retired**. Moving up and
+  down is offered on the whole list, with no filter set: a playbook swaps places with the next one offered that way (a
+  retired one between them stays put), and a move is a change like any other, so it moves the version and names who
+  made it. The old address, `/admin/playbooks`, redirects here.
+- **Not in the configuration bundle**, as the other libraries aren't.
+
+## Board rules
+
+The administrators' card rules, read-only, for everyone with `ReadActions` (`BoardRulesPage` at `/board-rules`, under
+Team in the sidebar and linked from the Actions page): each rule turned on, in order, with its label in its colour,
+what it matches (`ActionRules.Describe`), the colour's name and whether it's offered as a filter. Administrators keep
+them on Administration › Card rules.
 
 ## Outreach
 
@@ -773,7 +803,7 @@ Every one of these follows colleagues' saves live through the `actions` and `act
 | Outreach | `src/Tide.Application/Actions/Outreach.cs` (`OutreachService`, `OutreachDates`), `OutreachFill.cs`, `OutreachTemplates.cs` |
 | Files | `src/Tide.Application/Actions/ActionFiles.cs` (`ActionFileService`), `src/Tide.Application/Files/FileRisk.cs` |
 | Meeting lines | `src/Tide.Application/Actions/RecommendedActions.cs` |
-| Playbooks, card rules | `src/Tide.Application/Actions/Playbooks.cs` |
+| Playbooks, card rules | `src/Tide.Application/Actions/Playbooks.cs`; the rules the team libraries share, `TeamLibrary.cs` |
 | Starter saved queries, templates and playbooks | `src/Tide.Application/Actions/StarterSavedQueries.cs`, `StarterOutreachTemplates.cs`, `StarterPlaybooks.cs`; added by `src/Tide.Infrastructure/Persistence/DatabaseInitializer.cs` (`SeedStarterLibrariesAsync`) |
 | Teams | `src/Tide.Application/Actions/TeamService.cs` (`ExternalTeamForm`) |
 | Hand-offs, splits, limits, rollup | `src/Tide.Application/Actions/Handoffs.cs` (`HandoffService`), `ActiveLimits.cs`, `ActionRollup.cs` |

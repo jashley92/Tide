@@ -279,6 +279,9 @@ as well as a claim:
   (`TeamService.SetEscalationContactAsync`): an external team's with `WorkActions`, an internal team's with
   `Administer`. An external team can't have members, so adding one grants nobody access.
 - **Handing an action off** (`HandoffService.HandOffAsync`): whoever can work it. **Splitting** one: `WriteArticles`.
+- **The team libraries** (saved queries, outreach templates, playbooks; `TeamLibrary`): `WorkActions` adds, edits,
+  retires and restores; deleting is for whoever made an entry (`CreatedBy`) or `Administer`. A playbook an action was
+  started from is never deleted. Card rules stay `Administer`'s to change; `ReadActions` reads them on Board rules.
 - **A Visitor's reads**: `MeetingAccess`, below.
 - **An API token**: its scope claim, and its TLP ceiling, below.
 

@@ -122,8 +122,7 @@ else
                 @foreach (var (r, i) in _rules.Select((r, i) => (r, i)))
                 {
                     <tr @key="r.Id" class="@(r.IsActive ? "" : "tide-muted")">
-                        <td><span class="tide-rule-label @Ui.RuleClass(r.Colour)">@r.Name</span>@if (!r.IsActive) { <span class="small"> (off)</span> }</td>
-                        <td class="small">@ActionRules.Describe(r, id => _teams.FirstOrDefault(t => t.Id == id)?.Name)</td>
+                        <CardRuleCells Rule="r" Teams="_teams" />
                         <td class="small">@(r.ShowAsFilter ? "Yes" : "No")</td>
                         <td class="text-nowrap text-end">
                             <button class="btn btn-outline-secondary btn-sm" aria-label="Move @r.Name up" disabled="@(i == 0)" @onclick="() => Move(r, -1)"><span class="bi bi-arrow-up" aria-hidden="true"></span></button>

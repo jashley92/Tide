@@ -109,6 +109,10 @@ brief's live meeting.
 | Read the outreach templates | Yes | Yes | Yes | Yes | No | No |
 | Save, edit, retire and restore outreach templates | Yes | Yes | Yes | No | No | No |
 | Delete outreach templates | Yes | own ones | own ones | No | No | No |
+| Read the playbooks | Yes | Yes | Yes | Yes | No | No |
+| Add, edit, reorder, retire and restore playbooks | Yes | Yes | Yes | No | No | No |
+| Delete playbooks no action was started from | Yes | own ones | own ones | No | No | No |
+| Read the board rules (the card rules, read-only) | Yes | Yes | Yes | Yes | No | No |
 | Choose my own notifications (reminders, digests, rotation emails) | Yes | Yes | Yes | Yes | No | No |
 | **Numbers** | | | | | | |
 | Enter the day's numbers | Yes | Yes | No | No | No | No |
@@ -122,7 +126,7 @@ brief's live meeting.
 | Coverage of detection rules | Yes | Yes | No | No | No | No |
 | **Administration** | | | | | | |
 | Organization, holidays, teams and SLAs, rotation | Yes | No | No | No | No | No |
-| Playbooks, card rules, query templates | Yes | No | No | No | No | No |
+| Card rules, query templates | Yes | No | No | No | No | No |
 | Sources, source health, scorecard tags, detection rules | Yes | No | No | No | No | No |
 | Opening metrics and metric imports | Yes | No | No | No | No | No |
 | Role mappings, edition ceilings, recipients, email templates | Yes | No | No | No | No | No |

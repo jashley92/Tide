@@ -101,8 +101,8 @@ unless marked singleton. "Checks" lists the permissions the service itself tests
 | `SavedQueryService` | `Actions/SavedQueries.cs` | The team's saved hunt queries | `ListAsync`, `GetAsync`, `SaveAsync`, `SaveFromHuntAsync`, `SetRetiredAsync`, `DeleteAsync`, `OfferedAsync` | ReadActions; WorkActions to change; Administer to delete any |
 | `OutreachTemplateService` | `Actions/OutreachTemplates.cs` | Outreach email templates | `ListAsync`, `GetAsync`, `SaveAsync`, `SetRetiredAsync`, `DeleteAsync`, `OfferedAsync` | as `SavedQueryService` |
 | `OutreachService` | `Actions/Outreach.cs` | Writing an Outreach action's email, marking it sent, recording the reply (ADR [0019](../decisions/0019-outreach-emails-are-written-never-sent.md)) | `WriteAsync`, `MarkSentAsync`, `RecordReplyAsync`, `WithdrawAsync`, `ForActionAsync` | reading actions; working the action |
-| `PlaybookService` | `Actions/Playbooks.cs` | Checklist playbooks per action kind | `ListAsync`, `ForKindAsync`, `SaveAsync`, `MoveAsync`, `RemoveAsync`, `DeleteAsync` | ReadTeamEdition or WorkActions to read; Administer to change |
-| `CardRuleService` | `Actions/Playbooks.cs` | Which actions stand out on the board, and the rules offered as filters | `ListAsync`, `SaveAsync`, `MoveAsync`, `RemoveAsync` | as `PlaybookService` |
+| `PlaybookService` | `Actions/Playbooks.cs` | The team's checklist playbooks per action kind, kept as the saved queries are (`TeamLibrary` in `TeamLibrary.cs` holds the rules the three libraries share) | `ListAsync`, `RowsAsync`, `ForKindAsync`, `SaveAsync`, `MoveAsync`, `SetRetiredAsync`, `DeleteAsync` | ReadTeamEdition or WorkActions to read; WorkActions to change; the maker or Administer to delete |
+| `CardRuleService` | `Actions/Playbooks.cs` | Which actions stand out on the board, and the rules offered as filters | `ListAsync`, `SaveAsync`, `MoveAsync`, `DeleteAsync` | ReadActions, ReadTeamEdition or WorkActions to read; Administer to change |
 | `TeamService` | `Actions/TeamService.cs` | Teams that own actions, and their members; external teams (ADR 0020), active limits and escalation contacts | `ListAsync`, `AddAsync`, `UpdateAsync`, `AddMemberAsync`, `RemoveMemberAsync`, `SetRetiredAsync`, `TeamsOfAsync`, `AddExternalAsync`, `UpdateExternalAsync`, `SetLimitAsync`, `SetEscalationContactAsync` | ReadTeamEdition or WorkActions to read; WorkActions for an external team; Administer for an internal one, members and limits |
 | `HandoffService` | `Actions/Handoffs.cs` | Hand-offs to another team (with a reason, emailing the receiving team unless it's external), the same hand-off for a team changed in the editor (`HandOverAsync`, which `ActionService.SaveAsync` calls; `HandoffNotices` sends the email), and splits to several teams at once | `HandOffAsync`, `SplitAsync` | whoever can work the action to hand it off; WriteArticles to split |
 | `SlaSettings` | `Actions/ActionSla.cs` | SLA targets per priority and kind | `GetAsync`, `SaveAsync` | Administer to save |
@@ -113,7 +113,7 @@ Long lists are read a page at a time, with the count of every match. The triage 
 filter depend on what only the app knows (ageing into Older, the Our stack matcher, the CVE records' KEV flag, the learned
 counts), so those read every matching item light and page that. Its suggested groups are worked out over the page shown.
 The actions list (`ActionService.PageAsync`, 50 rows) sorts, groups and pages in SQL; the board loads every open card and
-caps each column on screen. Saved queries and outreach templates, libraries of tens, page in memory (20 cards).
+caps each column on screen. Saved queries, outreach templates and playbooks, libraries of tens, page in memory (20 cards).
 
 ### Rotation, metrics, trends and search
 
@@ -352,6 +352,7 @@ pause briefly so a burst is one reload. How pages subscribe is in [collaboration
 | `stack` | A product in Our stack |
 | `saved-queries` | A saved hunt query |
 | `outreach-templates` | An outreach template |
+| `playbooks` | A playbook or its steps |
 | `triage` | A triage split or its undo (saved), or new items from a poll (`IntakeHostedService` publishes it) |
 
 ## Errors

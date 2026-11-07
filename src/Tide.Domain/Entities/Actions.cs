@@ -355,12 +355,15 @@ public class ActionChecklistItem : Entity
 }
 
 /// <summary>
-/// An administrator's playbook: named, ordered steps for a kind of action (or any kind). Whoever creates
-/// an action, or works one, can start its checklist from one; the steps are copied, so editing a playbook changes only
-/// the actions started from it afterwards. Retired (inactive), never deleted, once used.
+/// A playbook the team keeps: named, ordered steps for a kind of action (or any kind). Whoever creates an action, or
+/// works one, can start its checklist from one; the steps are copied, so editing a playbook changes only the actions
+/// started from it afterwards. Anyone who works actions keeps the library, as they keep the saved hunt queries; one an
+/// action was started from is retired, never deleted.
 /// </summary>
-public class Playbook : AuditableEntity
+public class Playbook : AuditableEntity, ITeamLibraryEntry
 {
+    public const int MaxName = 100;
+    public const int MaxDescription = 1000;
     public const int MaxSteps = 40;
 
     public string Name { get; set; } = string.Empty;
@@ -369,8 +372,16 @@ public class Playbook : AuditableEntity
     /// <summary>The kind of action it's for; null offers it for every kind.</summary>
     public ActionKind? Kind { get; set; }
 
-    public bool IsActive { get; set; } = true;
+    /// <summary>Retired: no longer offered on actions, and still read on the Playbooks page and in their history.</summary>
+    public bool IsRetired { get; set; }
+
+    /// <summary>Its place in the pickers.</summary>
     public int SortOrder { get; set; }
+
+    public string CreatedByName { get; set; } = string.Empty;
+    public string? ModifiedByName { get; set; }
+
+    public Guid EditVersion { get; set; } = Guid.NewGuid();
 
     public List<PlaybookStep> Steps { get; set; } = [];
 }
@@ -475,7 +486,7 @@ public class ActionIndicator : Entity
 /// text and what it's for. <c>{{days}}</c> and <c>{{values}}</c> in the text are filled from an action when it's added to one. Anyone
 /// who works actions keeps the library; it's retired rather than deleted while it's still useful to read.
 /// </summary>
-public class SavedQuery : AuditableEntity
+public class SavedQuery : AuditableEntity, ITeamLibraryEntry
 {
     public const int MaxName = 100;
     public const int MaxDescription = 300;
@@ -508,7 +519,7 @@ public class SavedQuery : AuditableEntity
 /// filled email may carry: parts above it are left out. Anyone who works actions keeps the library, as they keep the
 /// saved hunt queries; TIDE never sends one.
 /// </summary>
-public class OutreachTemplate : AuditableEntity
+public class OutreachTemplate : AuditableEntity, ITeamLibraryEntry
 {
     public const int MaxName = 100;
     public const int MaxDescription = 300;

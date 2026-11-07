@@ -190,7 +190,7 @@ API endpoints and hosted services.
 | `/search` | `Search.razor` | Search and indicator lookup. |
 | `/rotation` | `RotationPage.razor` | The presenter rotation. |
 | `/notifications` | `MyNotifications.razor` | A person's notification choices. |
-| `/admin/…` | `Pages/Admin/*.razor` | Sources, source health, teams, metrics, metric imports, scorecard, playbooks, card rules, query templates, detections, rotation, organization, email templates, access, API, and System (diagnostics, server config, setting sources, updates, config bundle, audit log). |
+| `/admin/…` | `Pages/Admin/*.razor` | Sources, source health, teams, metrics, metric imports, scorecard, card rules, query templates, detections, rotation, organization, email templates, access, API, and System (diagnostics, server config, setting sources, updates, config bundle, audit log). |
 | `/error`, `/not-found`, `/access-denied` | `ErrorPage.razor`, `NotFoundPage.razor`, `SystemPages.razor` | |
 
 [../product/screens.md](../product/screens.md) describes each screen.

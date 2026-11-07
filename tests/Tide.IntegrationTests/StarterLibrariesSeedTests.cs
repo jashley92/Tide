@@ -57,7 +57,7 @@ public class StarterLibrariesSeedTests
         templates.Select(t => (t.Name, t.Subject, t.Ceiling)).Should().BeEquivalentTo(StarterOutreachTemplates.All.Select(s => (s.Name, s.Subject, s.Ceiling)));
         templates.Should().OnlyContain(t => t.CreatedByName == "TIDE" && t.CreatedBy == "system" && t.To == null);
         var playbooks = await Read(app, db => db.Playbooks.AsNoTracking().Include(p => p.Steps).ToListAsync());
-        playbooks.Should().OnlyContain(p => p.IsActive && p.CreatedBy == "system");
+        playbooks.Should().OnlyContain(p => !p.IsRetired && p.CreatedBy == "system" && p.CreatedByName == "TIDE");
         playbooks.Single(p => p.Kind == ActionKind.Outreach).Steps.OrderBy(s => s.Order).Select(s => s.Text)
             .Should().Equal(StarterPlaybooks.All.Single(s => s.Kind == ActionKind.Outreach).Steps);
 
@@ -93,7 +93,7 @@ public class StarterLibrariesSeedTests
             db.Settings.RemoveRange(await db.Settings.Where(s => Markers.Contains(s.Key)).ToListAsync());
             db.SavedQueries.Add(new SavedQuery { Name = "Ours", Dialect = "kql", Text = "SigninLogs", CreatedByName = "Robin", IsRetired = true });
             db.OutreachTemplates.Add(new OutreachTemplate { Name = "Ours", Subject = "Hello", Body = "Hello", CreatedByName = "Robin" });
-            db.Playbooks.Add(new Playbook { Name = "Ours", IsActive = false, Steps = [new PlaybookStep { Text = "Do it" }] });
+            db.Playbooks.Add(new Playbook { Name = "Ours", IsRetired = true, Steps = [new PlaybookStep { Text = "Do it" }] });
         });
         (await Counts(app)).Should().Be((1, 1, 1, 0));
 

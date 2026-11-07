@@ -522,7 +522,7 @@ internal static class AuditRecords
             case nameof(ScorecardCategory):
                 return Named(await db.ScorecardCategories.AsNoTracking().Where(x => ids.Contains(x.Id)).Select(x => new { x.Id, x.Name }).ToListAsync(ct), x => x.Id, x => x.Name, "admin/scorecard");
             case nameof(Playbook):
-                return Named(await db.Playbooks.AsNoTracking().Where(x => ids.Contains(x.Id)).Select(x => new { x.Id, x.Name }).ToListAsync(ct), x => x.Id, x => x.Name, "admin/playbooks");
+                return Named(await db.Playbooks.AsNoTracking().Where(x => ids.Contains(x.Id)).Select(x => new { x.Id, x.Name }).ToListAsync(ct), x => x.Id, x => x.Name, "playbooks");
             case nameof(SavedQuery):
                 return Named(await db.SavedQueries.AsNoTracking().Where(x => ids.Contains(x.Id)).Select(x => new { x.Id, x.Name }).ToListAsync(ct), x => x.Id, x => x.Name, "hunts/saved");
             case nameof(OutreachTemplate):

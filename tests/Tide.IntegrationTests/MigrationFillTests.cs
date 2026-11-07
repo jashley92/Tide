@@ -117,6 +117,13 @@ public class MigrationFillTests
         AtUtc = at, UserId = "x", UserName = "X", Action = action, EntityType = type, EntityKey = key.ToString(), ChangesJson = changes,
     };
 
+    // The same, by someone named.
+    private static AuditLogEntry By(string name, AuditLogEntry e)
+    {
+        e.UserName = name;
+        return e;
+    }
+
     [Theory]
     [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
     public async Task HandoffsTrackingAndExternalTeams_GivesExistingTeamsTheReminderDefaults_AndLeavesThemInternalWithNoLimit(string provider)
@@ -159,6 +166,34 @@ public class MigrationFillTests
             (team.EscalationName, team.EscalationEmail, team.ContactEmail).Should().Be(((string?)null, (string?)null, "network@example.org"));
             (await ctx.Actions.SingleAsync()).Should().Match<ActionItem>(a => a.EscalatedForDue == null && a.EscalatedAtUtc == null && !a.IsEscalated,
                 "nothing is escalated until the ladder, turned on, says so");
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task PlaybooksTeamLibrary_TurnsActiveIntoRetired_AndNamesWhoMadeAndChangedEach(string provider)
+    {
+        using var database = new MigratedDatabase(provider);
+        var starter = new Playbook { Name = "IOC sweep", CreatedBy = "system", CreatedAtUtc = Decided };
+        var admins = new Playbook { Name = "Old sweep", CreatedBy = "S-1-ADA", CreatedAtUtc = Decided, ModifiedAtUtc = Decided.AddHours(1), IsRetired = true };
+        await using (var ctx = database.Context())
+        {
+            ctx.Playbooks.AddRange(starter, admins);
+            ctx.AuditLog.AddRange(
+                By("Ada Admin", Audit(nameof(Playbook), "Added", admins.Id, Decided, "{}")),
+                By("Bo", Audit(nameof(Playbook), "Modified", admins.Id, Decided.AddMinutes(30), "{}")),
+                By("Cy", Audit(nameof(Playbook), "Modified", admins.Id, Decided.AddHours(1), "{}")));
+            await ctx.SaveChangesAsync();
+        }
+
+        database.UpgradeAgainFrom("PlaybooksTeamLibrary");
+
+        await using (var ctx = database.Context())
+        {
+            var all = await ctx.Playbooks.ToDictionaryAsync(p => p.Id);
+            (all[starter.Id].IsRetired, all[starter.Id].CreatedByName, all[starter.Id].ModifiedByName).Should().Be((false, "TIDE", (string?)null), "the starters are TIDE's");
+            (all[admins.Id].IsRetired, all[admins.Id].CreatedByName, all[admins.Id].ModifiedByName).Should().Be((true, "Ada Admin", "Cy"),
+                "an inactive one is retired, named from the audit trail: who added it, and who changed it last");
         }
     }
 

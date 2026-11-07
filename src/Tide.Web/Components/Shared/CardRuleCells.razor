@@ -1,0 +1,12 @@
+@* A card rule's first two cells, wherever the rules are listed (Board rules, Administration › Card rules): its label in
+   its colour, marked when it's off, and what it matches in words, a team by its name. *@
+
+<td><span class="tide-rule-label @Ui.RuleClass(Rule.Colour)">@Rule.Name</span>@if (!Rule.IsActive) { <span class="small"> (off)</span> }</td>
+<td class="small">@ActionRules.Describe(Rule, id => Teams.FirstOrDefault(t => t.Id == id)?.Name)</td>
+
+@code {
+    [Parameter, EditorRequired] public ActionCardRule Rule { get; set; } = default!;
+
+    /// <summary>Every team, retired ones too, for a rule that names one.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<Team> Teams { get; set; } = [];
+}

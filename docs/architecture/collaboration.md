@@ -71,6 +71,7 @@ Topics are published by `ChangeInterceptor.TopicsOf` for each added, modified or
 | `StackProduct` | `stack` |
 | `SavedQuery` | `saved-queries` |
 | `OutreachTemplate` | `outreach-templates` |
+| `Playbook`, `PlaybookStep` | `playbooks` |
 | `TriageSplit` | `triage` |
 
 Two topics are also published by hand:
@@ -151,7 +152,7 @@ What pages do with it:
 | Triage | `triage` | re-reads, with LiveMarks, ghosts, tab counts and one toast (`TriageNews`); under an open promote form or attach picker it holds the changes behind an "Updates waiting" pill |
 | Articles list | `articles` | re-reads the rows it shows, with its filters |
 | Rotation | `rotation` | re-reads, saying when a request now waits for you or yours was answered |
-| Stories, Our stack, Saved queries, Outreach templates | `stories`, `stack`, `saved-queries`, `outreach-templates` | re-read; a product's edit form keeps what's typed |
+| Stories, Our stack, Saved queries, Outreach templates, Playbooks | `stories`, `stack`, `saved-queries`, `outreach-templates`, `playbooks` | re-read; a product's edit form keeps what's typed |
 | We run and Threat actors cards (`TagCard`) | `article-tags:{id}` | re-read the tags |
 
 The rule across all of them: TIDE never reloads over a draft. A page with nothing unsaved re-reads in place and names
