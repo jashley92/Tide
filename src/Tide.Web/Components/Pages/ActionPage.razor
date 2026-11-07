@@ -136,7 +136,7 @@ else
             {
                 <div class="tide-card tide-ord-2">
                     <h2>Edit</h2>
-                    <ActionEditor Form="_editing" Teams="_teams" People="@(CurrentUser.Has(Permission.WriteArticles) ? _people : null)" />
+                    <ActionEditor Form="_editing" Teams="_teams" People="@(CurrentUser.Has(Permission.WriteArticles) ? _people : null)" RemindersOff="a.NoReminders" />
                     <div class="d-flex gap-2 mt-3">
                         <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="SaveEdit">Save</button>
                         <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editing = null">Cancel</button>
@@ -419,6 +419,15 @@ else
         <textarea id="handoff-why" class="form-control form-control-sm tide-autogrow tide-grow-2" rows="2" maxlength="@ActionItem.MaxHandoffReason" @bind="_handWhy" @bind:event="oninput"
                   placeholder="The fix is theirs: a firewall change."></textarea>
         <div class="form-text">Kept in its history and shown on it. Its assignee stays only if they're on that team.</div>
+        @if (d.Action.NoReminders)
+        {
+            @* "Don't remind" was chosen for the team it's leaving: asked, not carried over unseen. *@
+            <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" id="handoff-keep-off" @bind:get="!_turnRemindersOn" @bind:set="v => _turnRemindersOn = !v" />
+                <label class="form-check-label" for="handoff-keep-off">Keep reminders off</label>
+            </div>
+            <div class="form-text">Its reminders are off. Untick to turn them back on for the team it goes to.</div>
+        }
         @if (_handError is not null) { <div class="text-danger small mt-2" role="alert">@_handError</div> }
     }
 </ConfirmDialog>
@@ -562,9 +571,11 @@ else
     private SplitDialog? _split;
     private Guid _handTo;
     private string? _handWhy, _handError;
+    private bool _turnRemindersOn;
 
     internal Guid HandTo { get => _handTo; set => _handTo = value; }
     internal string? HandWhy { get => _handWhy; set => _handWhy = value; }
+    internal bool KeepRemindersOff { get => !_turnRemindersOn; set => _turnRemindersOn = !value; }
     internal string? HandError => _handError;
     internal ActionForm NewForm => _form;
     internal OverLimitDialog OverLimit => _overLimit;
@@ -572,7 +583,7 @@ else
 
     internal async Task StartHandoff()
     {
-        (_handTo, _handWhy, _handError) = (Guid.Empty, null, null);
+        (_handTo, _handWhy, _handError, _turnRemindersOn) = (Guid.Empty, null, null, false);
         await _handoffDialog.Ask($"Hand {Ui.ActionLabel(_detail!.Action.Number)} off", null, "Hand off", danger: false);
     }
 
@@ -584,7 +595,7 @@ else
         {
             var told = 0;
             var to = _teams.First(t => t.Id == _handTo);
-            if (!await _overLimit.RunAsync(async reason => told = await HandoffSvc.HandOffAsync(_detail!.Action.Id, _handTo, _handWhy ?? "", reason))) return false;
+            if (!await _overLimit.RunAsync(async reason => told = await HandoffSvc.HandOffAsync(_detail!.Action.Id, _handTo, _handWhy ?? "", reason, _turnRemindersOn))) return false;
             await Reload();
             Toasts.Show($"Handed to {to.Name}." + (to.IsExternal ? "" : told > 0 ? " They've been emailed." : ""));
             return true;

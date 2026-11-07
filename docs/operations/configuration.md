@@ -145,7 +145,7 @@ is one, else the code default). **Where** is "Server" (file or environment varia
 | `DevAuth:DisplayName`, `UserId`, `Upn`, `Email` | `Dev Analyst`, `S-1-5-21-DEV-1001`, `dev.analyst@example.com` | Dev sign-in only. | Server | Start-up |
 | `DevAuth:Roles` | `["Analyst","Admin"]` in `appsettings.json` | Role names. No code default: the binder appends to an array, so a code default would stop you signing in with fewer roles. | Server | Start-up |
 | `AllowedHosts` | `*` | Host names separated by `;`. The installer writes the site's name. A request for another name gets HTTP 400. | Server | Next request |
-| `App:BaseUrl` | blank | The address readers reach TIDE at (`https://tide.example.org`). Used for links in email, webhooks and corrections, and as an allowed origin for the Blazor circuit (`CircuitOriginMiddleware`). Blank leaves links out. | Server | Start-up |
+| `App:BaseUrl` | blank | The address readers reach TIDE at (`https://tide.example.org`). Used for links in email, webhooks and corrections (a Markdown link written from the root, `/actions/12`, among them), and as an allowed origin for the Blazor circuit (`CircuitOriginMiddleware`). Blank leaves links out. | Server | Start-up |
 | `App:PathBase` | blank | A sub-path such as `/tide`, only behind a reverse proxy that forwards one. Letters, digits, `-`, `_`, `.` in `/`-separated parts; anything else stops start-up (`PathBaseSetting.Normalize`). Under IIS as an application within another site, IIS sets the path base and this stays blank. | Server | Start-up |
 | `DataProtection:KeyPath` | blank (in-memory keys, development) | An absolute folder. A relative path stops start-up. The key ring is persisted there and protected with machine-scope DPAPI. The installer sets `<data root>\dp-keys`. Without it, every app-pool recycle signs everyone out, and webhook secrets can't be read. | Server | Start-up |
 
@@ -212,7 +212,7 @@ send. See [integrations.md](integrations.md#smtp-relay) for behaviour.
 | `Email:SmtpUsername` | blank | An account to sign in as. Goes with `SmtpPassword`: both or neither. | Server | Next send |
 | `Email:SmtpPassword` | blank | Secret. Set as `Email__SmtpPassword`. | Server (environment) | Recycle |
 | `Email:SmtpUseDefaultCredentials` | `false` | `true` signs in as the app-pool account (on-premises Exchange). Can't be used with a user name or password (`EmailOptions.SignInProblem`). | Server | Next send |
-| `Email:SmtpTimeoutSeconds` | `30` | Clamped to 5 to 300. | Server | Next send |
+| `Email:SmtpTimeoutSeconds` | `30` | Clamped to 5 to 300. A send the relay doesn't answer within it is recorded as outcome unknown (it may have gone), not failed, and isn't sent again by itself. | Server | Next send |
 | `Email:From` | `tide@localhost` | The sender address. The relay must let TIDE send as it. | Server | Next send |
 | `Email:FromName` | `TIDE` | The display name. | Server | Next send |
 | `Email:PickupDirectory` | blank (`App_Data/mail` in development) | A folder; messages are written there as `.eml` files instead of going to a relay. | Server | Next send |

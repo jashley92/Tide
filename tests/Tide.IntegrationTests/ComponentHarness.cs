@@ -103,14 +103,16 @@ public static class ComponentHarness
         return scope;
     }
 
-    /// <summary>Renders <typeparamref name="T"/> at <paramref name="path"/>, signed in as <paramref name="as"/> (an analyst by default).</summary>
-    public static async Task<Rendered<T>> RenderAsync<T>(TideApp app, string path, Dictionary<string, object?>? values = null, SignIn? @as = null)
+    /// <summary>Renders <typeparamref name="T"/> at <paramref name="path"/>, signed in as <paramref name="as"/> (an analyst by default),
+    /// with the app at <paramref name="baseUri"/> (<c>http://localhost/tide/</c> for a sub-path).</summary>
+    public static async Task<Rendered<T>> RenderAsync<T>(TideApp app, string path, Dictionary<string, object?>? values = null, SignIn? @as = null,
+        string baseUri = "http://localhost/")
         where T : IComponent
     {
         var scope = SignedIn(app, @as ?? SignIn.Analyst);
         var sp = scope.ServiceProvider;
         var signedIn = sp.GetRequiredService<IHttpContextAccessor>().HttpContext!;
-        if (sp.GetRequiredService<NavigationManager>() is IHostEnvironmentNavigationManager nav) nav.Initialize("http://localhost/", "http://localhost" + path);
+        if (sp.GetRequiredService<NavigationManager>() is IHostEnvironmentNavigationManager nav) nav.Initialize(baseUri, baseUri.TrimEnd('/') + path);
 
         var renderer = new HtmlRenderer(sp, sp.GetRequiredService<ILoggerFactory>());
         T? got = default;

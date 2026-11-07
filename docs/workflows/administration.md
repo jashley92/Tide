@@ -68,6 +68,11 @@ outside TIDE there (contact, how to engage them, their reminders' cadence, their
 administrator also sets their active limits there. Internal teams stay on Teams & SLA, the administrators'. See
 [actions-and-hunting.md](actions-and-hunting.md#external-teams).
 
+A team's edit form, on either page, carries the team's edit version. When another person changed that team since it
+opened (saved it, set its limit or escalation contact, retired it or brought it back), its save is refused ("Someone
+else changed Network since you opened it…"), and the form stays open with the *changed elsewhere* banner and Reload,
+which shows theirs. Adding or taking off members and moving a team up or down don't count as a change to it.
+
 **Escalation** (on Teams & SLA) is the escalation ladder: a switch (off until turned on), which actions it climbs (all,
 only parts of a split, or only external teams'), and its steps in order, each a number of business days before, on or
 after the due date and what it does (remind the team, copy its escalation contact, raise priority, flag). Steps are

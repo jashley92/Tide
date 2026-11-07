@@ -41,27 +41,18 @@ public sealed class RoleMappingService(IAppDbContextFactory dbs, ICurrentUser us
     public async Task RemoveAsync(Guid id, CancellationToken ct = default)
     {
         RequireAdmin();
-        await using var outer = await dbs.CreateAsync(ct);
-        // The count and the removal in one serializable transaction: two administrators removing the last two Admin
-        // mappings at once each counted two and both went, leaving no one able to administer. SQLite takes the write lock
-        // at the start, so the second waits and counts one; SQL Server keeps the rows counted locked, so one of the two is
-        // chosen as a deadlock victim and retried by the execution strategy, and then counts one. Inside the strategy
-        // (a retrying strategy refuses a transaction opened outside it), each try on a context of its own, so a failed
-        // try's removal and audit entry aren't saved again with the next.
-        var strategy = outer.Database.CreateExecutionStrategy();
-        var removed = await strategy.ExecuteAsync(async () =>
+        // The count and the removal in one serializable transaction (SerializedAsync): two administrators removing the
+        // last two Admin mappings at once each counted two and both went, leaving no one able to administer. Now the
+        // second counts one.
+        var removed = await dbs.SerializedAsync(async db =>
         {
-            await using var db = await dbs.CreateAsync(ct);
-            await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
             var row = await db.RoleMappings.FirstOrDefaultAsync(m => m.Id == id, ct);
             if (row is null) return false;
             if (row.RoleName == nameof(AppRole.Admin) && await db.RoleMappings.CountAsync(m => m.RoleName == nameof(AppRole.Admin), ct) == 1)
                 throw new InvalidOperationException("That's the only group granting Admin. Add another before removing it.");
             db.RoleMappings.Remove(row);
-            await db.SaveChangesAsync(ct);
-            await tx.CommitAsync(ct);
             return true;
-        });
+        }, ct);
         if (removed) directory.Invalidate();
     }
 

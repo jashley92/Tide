@@ -473,7 +473,7 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
         new(this, User, clock ?? Clock, Email, Options.Create(new AppOptions { BaseUrl = "https://tide.example.org" }), EmailTemplates);
 
     /// <summary>The email templates saved in Administration, as the app keeps them (the reminders and rotation read it).</summary>
-    public EmailTemplateStore EmailTemplates { get; } = new();
+    public EmailTemplateStore EmailTemplates { get; } = new(Options.Create(new AppOptions { BaseUrl = "https://tide.example.org" }));
 
     public EmailTemplateService EmailTemplateAdmin() =>
         new(this, User, EmailTemplates, Email, Clock, Options.Create(new AppOptions { BaseUrl = "https://tide.example.org" }), TimeProvider.System);

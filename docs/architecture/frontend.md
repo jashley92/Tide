@@ -418,6 +418,13 @@ Markdown; it's rendered at the edges by `MarkdownService` (`src/Tide.Application
 - **No autolinks.** Bare addresses are never turned into links, because bullets quote malicious URLs and domains.
   Only a link the analyst wrote as `[text](url)` is one.
 - **Links open in a new tab** with `rel="noopener noreferrer"`, an angle-bracket `<https://…>` too.
+- **Links from the server's root follow the sub-path.** A link or image written from the root (`[x](/actions/12)`) is
+  given the app's base path when it's shown, so under `/tide` it goes to `/tide/actions/12`. The `Md` component reads
+  the base path from `NavigationManager.BaseUri` (`LinkRoot.FromBaseUri`). One that already starts with the base path
+  (`/tide/actions/12`) is left alone, and with no sub-path nothing changes. A protocol-relative `//host` isn't
+  root-relative: it's refused as before. In email and the SharePoint copy, which have no page to be relative to, such a
+  link is made absolute with `App:BaseUrl` (`LinkRoot.Email`); with no `App:BaseUrl` its text is kept without the link,
+  as the CSV exports leave the address out.
 - **Long words wrap.** `.tide-md` sets `overflow-wrap: anywhere`, so a pasted URL or hash breaks inside its card
   rather than scrolling the page sideways; a code block scrolls in itself.
 - **No inline images.** An image in Markdown is drawn as a placeholder ("Images aren't shown inline. Add it as a

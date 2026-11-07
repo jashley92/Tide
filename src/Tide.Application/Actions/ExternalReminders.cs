@@ -96,8 +96,14 @@ public sealed partial class ReminderService
             .Where(x => x.Step is not null).Select(x => (x.Action, Key: Key(x.Action, x.Step!), Unhanded: UnhandedKey(x.Action, x.Step!))).ToList();
         if (due.Count == 0) return 0;
         var keys = due.Select(x => x.Key).Concat(due.Where(x => x.Key != x.Unhanded).Select(x => x.Unhanded)).ToList();
-        var marked = await db.NotificationMarks.AsNoTracking().Where(m => m.Kind == ExternalMark && keys.Contains(m.Key))
-            .ToDictionaryAsync(m => m.Key, m => m.SentAtUtc, ct);
+        // With them, in the same read, the contacts' marks for today: who the ladder already reminded about what.
+        var contacts = teams.Values.ToDictionary(t => t.Id, t => Hash(t.ContactEmail!));
+        var contactKeys = due.Select(x => ContactKey(x.Action.Id, today, contacts[x.Action.TeamId])).ToList();
+        var marks = await db.NotificationMarks.AsNoTracking()
+            .Where(m => (m.Kind == ExternalMark && keys.Contains(m.Key)) || (m.Kind == ContactMark && contactKeys.Contains(m.Key)))
+            .Select(m => new { m.Kind, m.Key, m.SentAtUtc }).ToListAsync(ct);
+        var marked = marks.Where(m => m.Kind == ExternalMark).ToDictionary(m => m.Key, m => m.SentAtUtc);
+        var remindedToday = marks.Where(m => m.Kind == ContactMark).Select(m => m.Key).ToHashSet();
         // A mark without the team (as they were written before the team was in them) is the current team's when it was
         // written after the last hand-off.
         due = [.. due.Where(x => !marked.ContainsKey(x.Key)
@@ -109,14 +115,59 @@ public sealed partial class ReminderService
         foreach (var batch in due.GroupBy(x => x.Action.TeamId))
         {
             var team = teams[batch.Key];
-            var list = batch.Select(x => x.Action).OrderBy(a => a.DueDate).ThenBy(a => a.Number).ToList();
-            var result = await email.SendAsync(RequestsEmail(EmailTemplateCatalog.ExternalReminder, team, team.ContactEmail!, team.ContactName ?? team.Name,
-                list, today, replies), ct);
-            if (result.Status != EmailSendStatus.Sent) continue;
+            var step = batch.ToDictionary(x => x.Action.Id, x => x.Key);
+            var (result, went, skipped) = await SendExternalReminderAsync(db, team, batch.Select(x => x.Action), contacts[team.Id], remindedToday, replies, today, ct);
+            // The escalation ladder's remind step reached the contact about these today: their step is done all the same,
+            // so it doesn't go the next day instead.
+            if (skipped.Count > 0)
+            {
+                foreach (var a in skipped)
+                    db.ActionEvents.Add(new ActionEvent { ActionId = a.Id, AtUtc = DateTimeOffset.UtcNow, ByName = EscalatedBy, Text = Sentence(SkippedReminder(team.ContactEmail!)) });
+                await MarkAsync(db, ExternalMark, skipped.Select(a => step[a.Id]).ToList());
+            }
+            if (result is not { MayHaveGone: true }) continue;
             sent++;
-            await MarkAsync(db, ExternalMark, batch.Select(x => x.Key).ToList());
+            await MarkAsync(db, ExternalMark, went.Select(a => step[a.Id]).ToList());
         }
         return sent;
+    }
+
+    // --- one reminder per contact per action per day ------------------------------------------------------------
+
+    // That an external team's contact was reminded about an action today, by its cadence or by the ladder's remind step:
+    // the other is then skipped that day.
+    private const string ContactMark = "contact-reminded";
+
+    // "{action}:{day}:{contact}", the contact's address as its short hash (Hash) so a long one fits the key.
+    private static string ContactKey(Guid action, DateOnly day, string contactHash) => $"{action:N}:{day:yyyy-MM-dd}:{contactHash}";
+
+    // The contacts' marks among these keys: who was reminded about what today.
+    private static async Task<HashSet<string>> ContactMarksAsync(IAppDbContext db, IReadOnlyCollection<string> keys, CancellationToken ct) =>
+        keys.Count == 0 ? [] : (await db.NotificationMarks.AsNoTracking().Where(m => m.Kind == ContactMark && keys.Contains(m.Key))
+            .Select(m => m.Key).ToListAsync(ct)).ToHashSet();
+
+    /// <summary>Why a reminder didn't go: the contact already had one about the action that day. The ladder lists it
+    /// among a step's outcomes; the cadence's history line is it as a sentence (<see cref="Sentence"/>).</summary>
+    internal static string SkippedReminder(string contact) => $"reminder skipped: {contact} was already reminded today";
+
+    internal static string Sentence(string phrase) => phrase.Length == 0 ? phrase : char.ToUpperInvariant(phrase[0]) + phrase[1..] + ".";
+
+    // The one reminder email to an external team's contact, for the cadence and the ladder's remind step alike: the
+    // actions the contact was already reminded about today (in remindedToday, by the other) are skipped; the rest go in
+    // one email, in due order, and when it went or may have, each is marked so the other skips it today. Returns the
+    // send's result (null when every one was skipped) and which went and which were skipped; each caller records its own.
+    private async Task<(EmailSendResult? Result, IReadOnlyList<ActionItem> Went, IReadOnlyList<ActionItem> Skipped)> SendExternalReminderAsync(
+        IAppDbContext db, Team team, IEnumerable<ActionItem> actions, string contactHash, IReadOnlySet<string> remindedToday,
+        IReadOnlyDictionary<Guid, string?> replies, DateOnly today, CancellationToken ct)
+    {
+        var all = actions.ToList();
+        var skipped = all.Where(a => remindedToday.Contains(ContactKey(a.Id, today, contactHash))).ToList();
+        var go = all.Except(skipped).OrderBy(a => a.DueDate).ThenBy(a => a.Number).ToList();
+        if (go.Count == 0) return (null, go, skipped);
+        var result = await SendAsync(RequestsEmail(EmailTemplateCatalog.ExternalReminder, team, team.ContactEmail!, team.ContactName ?? team.Name,
+            go, today, replies), ct);
+        if (result.MayHaveGone) await MarkAsync(db, ContactMark, go.Select(a => ContactKey(a.Id, today, contactHash)).ToList());
+        return (result, go, skipped);
     }
 
     // An email about a team's requests, to someone who may not use TIDE (the external reminder template, and the escalation

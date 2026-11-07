@@ -98,6 +98,9 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<Guid>("ActionId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTimeOffset>("AddedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<DateTimeOffset?>("DoneAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -2642,7 +2645,7 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
-                    b.Property<Guid>("ChangeId")
+                    b.Property<Guid?>("ChangeId")
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Date");
@@ -3147,6 +3150,10 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<string>("Description")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
+
+                    b.Property<Guid>("EditVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Email")
                         .HasMaxLength(256)
@@ -3784,8 +3791,7 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.HasOne("Tide.Domain.Entities.RotationChange", null)
                         .WithMany()
                         .HasForeignKey("ChangeId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Cascade);
                 });
 
             modelBuilder.Entity("Tide.Domain.Entities.ScorecardTag", b =>

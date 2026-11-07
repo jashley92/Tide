@@ -70,11 +70,16 @@ public class Holiday
     public string Name { get; set; } = string.Empty;
 }
 
-/// <summary>One business day's presenting analyst when it differs from the week's, from an approved change.</summary>
+/// <summary>
+/// One business day's presenting analyst when it differs from the week's: from an approved change, or, with no change,
+/// a day kept for whoever presented it when an administrator gave the week to someone else afterwards.
+/// </summary>
 public class RotationOverride
 {
     public DateOnly Date { get; set; }
     public string AnalystId { get; set; } = string.Empty;
     public string AnalystName { get; set; } = string.Empty;
-    public Guid ChangeId { get; set; }
+
+    /// <summary>The approved change that moved the day; null for a day kept when its week changed hands.</summary>
+    public Guid? ChangeId { get; set; }
 }

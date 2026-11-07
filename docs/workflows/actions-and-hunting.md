@@ -85,7 +85,7 @@ policy, and the services check again, so a page that forgets can't write.
 | Turn an action's external reminders off | whoever can work it | `ActionService.SetNoRemindersAsync` |
 | Add, edit, reorder, retire and restore playbooks; delete one you made (an administrator, any) | `WorkActions` | `PlaybookService` |
 | Teams, members, SLA targets, reminder and escalation settings, card rules, query templates | `Administer` | `TeamService`, `SlaSettings`, `CardRuleService`, `HuntQueryBuilder` |
-| A team's active limit | `Administer` | `TeamService.SetLimitAsync` |
+| A team's active limit | `Administer` | `TeamService.UpdateAsync` (Teams & SLA), `UpdateExternalAsync` (External teams), `SetLimitAsync` |
 | Run a reminder scan now | `Administer` | `ReminderService.RunNowAsync` |
 
 An analyst (and an administrator, who holds every permission) works any action. An Action owner works only their
@@ -288,7 +288,9 @@ an action is never re-checked, so an action overdue for over a year can still be
   in the meeting doesn't take the action back from someone a colleague just gave it to.
 - **Checklist.** Up to 50 items (`ActionChecklistItem`). A playbook (`Playbook`, the team's: see
   [Playbooks](#playbooks)) adds its steps that the checklist doesn't already have, at the end (`ApplyPlaybookAsync`),
-  all or none: when they don't all fit within the 50, it's refused, saying how much room is left.
+  all or none: when they don't all fit within the 50, it's refused, saying how much room is left. Two people applying
+  the same playbook at the same moment add its steps once. Items keep their order, by place and then by when each was
+  added, so two added at once don't swap between loads. No checklist change makes the action's edit form stale.
 - **Comments.** Text up to 8,000 characters, with screenshots or evidence files. Each comment has its own
   `EditVersion`: an edit from an older version is refused and names who changed it, and the page shows their text over
   the box while keeping what was typed. Deleting a comment keeps its files on the action as removed, with the reason
@@ -567,10 +569,15 @@ it until it's done. Some of those teams work outside TIDE ([external teams](#ext
 shows "handed from {team} by {name}: {reason}" on the line under the action's badges. Its assignee stays only if they're on the
 receiving team. The receiving team is emailed (the *Action handed to a team* template): its mailbox, or its members who
 haven't turned *Hand-offs to your team* off in My notifications. An external team isn't emailed; its reminders tell it.
+When the action's reminders are off (*Don't remind*), the dialog asks *Keep reminders off*, ticked: that was chosen for
+the team it's leaving, so it isn't carried over unseen. Unticked, the hand-off turns them back on and its history line
+ends "Its reminders are back on." The service keeps them as they are unless told to turn them on (`turnRemindersOn`,
+false by default); while the reminders are on, it changes nothing.
 
 Choosing another team in an action's editor is the same hand-off (`HandoffService.HandOverAsync`, from
 `ActionService.SaveAsync`): the editor then offers *Why hand it to {team}?*, optional, and records "Changed the team
-in the editor" when it's left blank. Either way the lineage, the history line, the receiving team's limit and its email
+in the editor" when it's left blank. With the reminders off it offers *Keep reminders off* too, ticked
+(`ActionForm.TurnRemindersOn`, false unless unticked, so a caller that doesn't say keeps them as they are). Either way the lineage, the history line, the receiving team's limit and its email
 are the same, so an external team's Reply-To doesn't depend on which was used.
 
 **Split to teams.** On an open top-level action, an analyst's *Split to teams* (under *More*, and under a parent's lineage) opens a dialog: tick the teams, give each
@@ -650,7 +657,9 @@ reminders: on or off, how many business days before the due date (0 to 10, defau
 overdue every so many business days (1 to 20, default 3) or once. They can be retired like any team. Every change is
 audited. An action owned by an external team shows the team's contact and *Don't remind {team} about this one*. The
 page follows the `teams` topic: a colleague's change re-reads the list, keeping what's typed in the add and edit
-forms; an edit of a team a colleague retired or removed closes and says so.
+forms; an edit of a team a colleague retired or removed closes and says so. An edit opened before a colleague's change
+to that team (a save, its limit, retiring or bringing it back) shows the *changed elsewhere* banner, and its save is
+refused ("Someone else changed Facilities since you opened it…"): the form stays to copy from, and Reload shows theirs.
 
 **External reminders** (`ReminderKind.ExternalReminder`, `ReminderService.ExternalAsync`). At the reminder time on
 business days, when an administrator has *External team reminders* on, each external team with its reminders on and a
@@ -662,8 +671,11 @@ whoever follows the work: a part's parent's assignee, else the parent's team mai
 assignee, else the mailbox of the team that handed it over, else its creator (`ExternalCadence.ReplyTo`). Each step
 (`before`, `late-0`, `late-1`…) is marked, so it goes once; moving the due date starts over. An action handed from
 another team is marked for the team it's with now, so an external team it's handed to gets the step its last team
-was already sent (it hears only through its reminders), and each team still gets each step once. The internal
-reminders are unchanged.
+was already sent (it hears only through its reminders), and each team still gets each step once. The contact gets one
+reminder about an action a day: when the escalation ladder's *Remind* step already reminded them about it today (the
+organization's day), the cadence's step is skipped, marked done all the same (so it doesn't go the next day instead),
+and the action's history says *Reminder skipped: {contact} was already reminded today.* The internal reminders are
+unchanged.
 
 ## The escalation ladder
 
@@ -679,7 +691,7 @@ reminder does). What it does, from a fixed menu (`EscalationDoes`), any of:
 
 | Does | What happens |
 |---|---|
-| Remind | The owning team is emailed as its reminders go. An external team gets its own reminder email (the *External team reminder* template), unless its reminders or the action's are off or it has no contact email. An internal one: the assignee, else the team mailbox, else its members, with the *Actions due soon* template before the due date and *Overdue actions* after it, leaving out whoever turned that kind off in My notifications. |
+| Remind | The owning team is emailed as its reminders go. An external team gets its own reminder email (the *External team reminder* template), unless its reminders or the action's are off or it has no contact email, or its cadence already reminded the contact about that action today: then the step is skipped and done, its history line saying *reminder skipped: {contact} was already reminded today*. An internal one: the assignee, else the team mailbox, else its members, with the *Actions due soon* template before the due date and *Overdue actions* after it, leaving out whoever turned that kind off in My notifications. |
 | Copy the escalation contact | The team's escalation contact (a name and email on the team, internal or external: Teams & SLA, External teams) gets the *Escalation contact* template listing the team's actions at the step, one email per team. For an external team it has no TIDE link or number; for an internal one each request links to its page. Reply-To is whoever follows the work (`ExternalCadence.ReplyTo`). A team with no escalation contact copies no one, said in the history. |
 | Raise priority | Up one (P3 → P2), never above P1. |
 | Flag | `ActionItem.EscalatedForDue` is set to its due date (and `EscalatedAtUtc` to now): an *Escalated* badge on its row, card and page, the *Escalated* card on Today for its team, its assignee and (for a part) its parent's assignee, and the meeting's overdue list. Flagging one already escalated changes nothing. |
@@ -731,8 +743,8 @@ others. An administrator can run any scan now from Teams & SLA.
 | Brief not ready | its time on business days, before the meeting | the presenting analyst, else the fallback recipients | per day |
 | Presenting next | reminder time, the business day before a stretch | the analyst presenting next | per stretch |
 | Outreach follow-up | reminder time, N business days after an email was marked sent (1 to 30, default 5) | whoever marked it sent | `outreach-follow-up` per email |
-| External team reminders | reminder time, by each external team's cadence | the team's contact email, Reply-To whoever follows the work | `external-reminder` per action, due date and step (and, once handed over, the team it's with) |
-| Escalation ladder | reminder time on business days, by its steps ([above](#the-escalation-ladder)) | the owning team, its escalation contact | `escalation` per action, due date and step |
+| External team reminders | reminder time, by each external team's cadence | the team's contact email, Reply-To whoever follows the work | `external-reminder` per action, due date and step (and, once handed over, the team it's with); `contact-reminded` per action, day and contact |
+| Escalation ladder | reminder time on business days, by its steps ([above](#the-escalation-ladder)) | the owning team, its escalation contact | `escalation` per action, due date and step; `contact-reminded` as above |
 
 Each scan is off until an administrator enables it (`Notifications` section, set on Teams & SLA), except the
 personal digest's offer, which is on and sends nothing until someone chooses a digest. Each batches one email per
@@ -834,10 +846,13 @@ Every one of these follows colleagues' saves live through the `actions` and `act
 | An outreach body still holding `[[…]]` | Mark sent is refused until it's filled or removed. |
 | An action's article deleted | Its hunts and outreach use the action's own indicators only. |
 | Reminder relay down | Recipients not reached aren't marked, so the next scan tries them; an action anyone got is marked whole. |
+| Reminder relay timed out or dropped the connection | The email may have gone, so it's marked as sent and not tried again; the run's note and Diagnostics say to check it arrived. An escalation step's history says so too. |
 | A team at its limit set to Warn | Creating (the meeting's quick add and recommended lines too), reopening, moving into an active status, or handing to it asks why; cancelled, nothing changes. |
 | The ladder's run stopped partway (a shutdown, a send that threw) | The steps whose email went are kept (their marks, history and changes), so the next run doesn't email them again; the rest wait for it. |
 | Handing off to an external team | Its assignee is cleared (nobody is on the team); no email: its reminders tell it. |
+| Handing off an action whose reminders are off | Asked: *Keep reminders off*, ticked. Unticked, they're back on for the new team, said in the hand-off's history line. |
 | An external team with no contact email | Its reminders have nowhere to go: none is sent until one is given. |
+| The ladder's *Remind* and the team's cadence fall on the same day (by default, two business days before the due date) | The contact gets one email. Whichever runs second is skipped, says so in the history, and is marked done, so it doesn't go the next day. |
 | A split to a team twice, or from a part | Refused: each team once; parts split one level deep. |
 | The escalation ladder turned on with actions already weeks late | Each runs only its latest step that has come (flag, by the defaults); the earlier ones never run. |
 | An escalated action's date moved, even to one still before today | It's no longer escalated; its ladder starts again for the new date at that date's latest step, which may flag it again. |

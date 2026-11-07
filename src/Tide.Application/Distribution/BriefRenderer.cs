@@ -43,7 +43,13 @@ public sealed record BriefRenderContext(
     string? AppUrl,
     Func<RenderImage, string> ImageSrc,
     IReadOnlyDictionary<Guid, (int Width, int Height)>? Sizes = null,
-    Actions.OpenActionsReview? Open = null);
+    Actions.OpenActionsReview? Open = null)
+{
+    /// <summary>Where a root-relative link in the brief's Markdown ("/actions/12") points: at <see cref="AppUrl"/>, or
+    /// nowhere (its text kept) when that isn't set. The copy leaves TIDE, so it has no page to be relative to. Worked out
+    /// once, from the AppUrl the context is made with.</summary>
+    public LinkRoot Links { get; } = LinkRoot.Email(AppUrl);
+}
 
 /// <summary>A brief edition rendered for sending: the subject, the email (HTML and text), and the plain web copy.</summary>
 public sealed record RenderedBrief(string Subject, string EmailHtml, string Text, string WebHtml, IReadOnlyList<RenderImage> Images);
@@ -132,13 +138,13 @@ public sealed class BriefRenderer(IMarkdownService markdown)
             """);
 
         // The team's opening note, before the numbers: the team edition only (the edition carries it nowhere else).
-        if (edition.TeamNote is { } note) sb.Append(TeamNoteBlock(note));
+        if (edition.TeamNote is { } note) sb.Append(TeamNoteBlock(note, ctx.Links));
         if (edition.Edition == Edition.Team && ctx.Metrics is { Any: true } metrics) sb.Append(MetricsBlock(metrics));
         // Overdue actions, after the numbers: the team edition only, never the company-wide one (ADR 0005).
         if (edition.Edition == Edition.Team && ctx.Open is { Any: true } open) sb.Append(OpenActionsBlock(open, ctx.AppUrl));
 
         if (edition.ShowIntro)
-            sb.Append(Invariant, $"<tr><td style=\"padding:18px 24px 4px;\">{InlineStyles(markdown.ToHtml(brief.Intro))}</td></tr>");
+            sb.Append(Invariant, $"<tr><td style=\"padding:18px 24px 4px;\">{InlineStyles(markdown.ToHtml(brief.Intro, ctx.Links))}</td></tr>");
 
         if (edition.Articles.Count == 0)
             sb.Append(Invariant, $"<tr><td style=\"padding:18px 24px;font-size:15px;color:{Palette.Muted};\">Nothing in this edition today.</td></tr>");
@@ -174,9 +180,9 @@ public sealed class BriefRenderer(IMarkdownService markdown)
     /// <summary>The heading of the team's opening note, in the email and the plain copy.</summary>
     public const string TeamNoteHeading = "Opening note";
 
-    private string TeamNoteBlock(string note) =>
+    private string TeamNoteBlock(string note, LinkRoot links) =>
         $"<tr><td style=\"padding:16px 24px 6px;\"><div style=\"font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:{Palette.Muted};margin-bottom:6px;\">{TeamNoteHeading}</div>" +
-        $"{InlineStyles(markdown.ToHtml(note))}</td></tr>";
+        $"{InlineStyles(markdown.ToHtml(note, links))}</td></tr>";
 
     private static string MetricsBlock(MetricDay day)
     {
@@ -270,12 +276,12 @@ public sealed class BriefRenderer(IMarkdownService markdown)
             foreach (var b in ea.Bullets)
             {
                 var mark = a.Effective(b.Tlp) > a.Tlp ? " " + TlpLabel(a.Effective(b.Tlp), 10) : "";
-                sb.Append(Invariant, $"<li style=\"margin:0 0 5px;font-size:15px;line-height:1.5;color:{Palette.Text};\">{InlineStyles(markdown.ToInlineHtml(b.Text))}{mark}</li>");
+                sb.Append(Invariant, $"<li style=\"margin:0 0 5px;font-size:15px;line-height:1.5;color:{Palette.Text};\">{InlineStyles(markdown.ToInlineHtml(b.Text, ctx.Links))}{mark}</li>");
             }
             sb.Append("</ul>");
         }
-        if (ea.ShowWhy) Section(sb, "Why it matters to us", a.WhyItMatters, RaisedMark(a, a.WhyItMattersTlp));
-        Section(sb, "Recommended actions", a.RecommendedActions);
+        if (ea.ShowWhy) Section("Why it matters to us", a.WhyItMatters, RaisedMark(a, a.WhyItMattersTlp));
+        Section("Recommended actions", a.RecommendedActions);
         foreach (var s in ea.Screenshots)
         {
             if (!imageFor.TryGetValue(s.Id, out var img)) continue;
@@ -321,13 +327,13 @@ public sealed class BriefRenderer(IMarkdownService markdown)
             sb.Append(Invariant, $"<p style=\"margin:6px 0 0;font-size:13px;font-style:italic;color:{Palette.Muted};\">{WithheldParts(ea.WithheldParts)}</p>");
         sb.Append("</td></tr>");
         return sb.ToString();
-    }
 
-    private void Section(StringBuilder sb, string label, string? md, string mark = "")
-    {
-        if (string.IsNullOrWhiteSpace(md)) return;
-        sb.Append(Invariant, $"<div style=\"margin:10px 0 4px;font-size:13px;font-weight:700;color:{Palette.Text};\">{Esc(label)}{mark}</div>");
-        sb.Append(InlineStyles(markdown.ToHtml(md)));
+        void Section(string label, string? md, string mark = "")
+        {
+            if (string.IsNullOrWhiteSpace(md)) return;
+            sb.Append(Invariant, $"<div style=\"margin:10px 0 4px;font-size:13px;font-weight:700;color:{Palette.Text};\">{Esc(label)}{mark}</div>");
+            sb.Append(InlineStyles(markdown.ToHtml(md, ctx.Links)));
+        }
     }
 
     // A part's TLP label, when it's raised above its article's.
@@ -366,8 +372,8 @@ public sealed class BriefRenderer(IMarkdownService markdown)
         sb.Append(Invariant, $"<h1>{Esc(ctx.TeamName)} daily brief: {Esc(DayText(brief.BriefDate))}</h1>\n");
         sb.Append(Invariant, $"<p><strong>{Esc(Tlp.Label(edition.Marking))}</strong> {Esc(Tlp.Meaning(edition.Marking))} Presented by {Esc(brief.AnalystName)}.</p>\n");
         // An h3, not an h2: an h2 starts an article's section when a correction reads the frozen copy back (SentSections).
-        if (edition.TeamNote is { } note) sb.Append(Invariant, $"<h3>{TeamNoteHeading}</h3>\n").Append(Plain(markdown.ToHtml(note)));
-        if (edition.ShowIntro) sb.Append(Plain(markdown.ToHtml(brief.Intro)));
+        if (edition.TeamNote is { } note) sb.Append(Invariant, $"<h3>{TeamNoteHeading}</h3>\n").Append(Plain(markdown.ToHtml(note, ctx.Links)));
+        if (edition.ShowIntro) sb.Append(Plain(markdown.ToHtml(brief.Intro, ctx.Links)));
         if (edition.Articles.Count == 0) sb.Append("<p>Nothing in this edition today.</p>\n");
         for (var i = 0; i < edition.Articles.Count; i++)
         {
@@ -384,16 +390,16 @@ public sealed class BriefRenderer(IMarkdownService markdown)
                 foreach (var b in ea.Bullets)
                 {
                     var mark = a.Effective(b.Tlp) > a.Tlp ? $" <strong>({Esc(Tlp.Label(a.Effective(b.Tlp)))})</strong>" : "";
-                    sb.Append(Invariant, $"<li>{Plain(markdown.ToInlineHtml(b.Text))}{mark}</li>\n");
+                    sb.Append(Invariant, $"<li>{Plain(markdown.ToInlineHtml(b.Text, ctx.Links))}{mark}</li>\n");
                 }
                 sb.Append("</ul>\n");
             }
             if (ea.ShowWhy)
             {
                 var mark = a.Effective(a.WhyItMattersTlp) > a.Tlp ? $" ({Esc(Tlp.Label(a.Effective(a.WhyItMattersTlp)))})" : "";
-                sb.Append(Invariant, $"<h3>Why it matters to us{mark}</h3>\n").Append(Plain(markdown.ToHtml(a.WhyItMatters)));
+                sb.Append(Invariant, $"<h3>Why it matters to us{mark}</h3>\n").Append(Plain(markdown.ToHtml(a.WhyItMatters, ctx.Links)));
             }
-            if (!string.IsNullOrWhiteSpace(a.RecommendedActions)) sb.Append("<h3>Recommended actions</h3>\n").Append(Plain(markdown.ToHtml(a.RecommendedActions)));
+            if (!string.IsNullOrWhiteSpace(a.RecommendedActions)) sb.Append("<h3>Recommended actions</h3>\n").Append(Plain(markdown.ToHtml(a.RecommendedActions, ctx.Links)));
             foreach (var s in ea.Screenshots)
             {
                 if (!imageFor.TryGetValue(s.Id, out var img)) continue;

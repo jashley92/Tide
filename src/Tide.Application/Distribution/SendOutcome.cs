@@ -41,7 +41,7 @@ internal static class SendOutcome
         try
         {
             var result = await email.SendAsync(message, CancellationToken.None);
-            return (result.Status == EmailSendStatus.Sent ? SendStatus.Sent : SendStatus.Failed, Error(result));
+            return (Status(result), Error(result));
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -82,6 +82,15 @@ internal static class SendOutcome
     /// <summary>What the log says of a send or correction someone settled by hand (<c>SettleAsync</c>).</summary>
     internal static string Settled(string by, bool went) =>
         $"Its outcome wasn't known; {by} checked and marked it {(went ? "sent" : "not sent")}.";
+
+    /// <summary>How a relay's answer is logged: a timeout or a dropped connection may have gone, so it's
+    /// <see cref="SendStatus.Unknown"/>, settled by hand, never sent again by itself.</summary>
+    internal static SendStatus Status(EmailSendResult r) => r.Status switch
+    {
+        EmailSendStatus.Sent => SendStatus.Sent,
+        EmailSendStatus.Unknown => SendStatus.Unknown,
+        _ => SendStatus.Failed,
+    };
 
     internal static string? Error(EmailSendResult r) => r.Status switch
     {

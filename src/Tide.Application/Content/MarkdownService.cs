@@ -17,12 +17,15 @@ namespace Tide.Application.Content;
 /// </summary>
 public interface IMarkdownService
 {
-    /// <summary>Markdown to sanitised HTML (raw HTML escaped, unsafe link schemes dropped).</summary>
-    string ToHtml(string? markdown);
+    /// <summary>Markdown to sanitised HTML (raw HTML escaped, unsafe link schemes dropped). A link or image that starts
+    /// at the server's root (<c>[x](/actions/12)</c>) is pointed where <paramref name="links"/> says: under the app's
+    /// sub-path on a page, or at the app's address in an email; with none, as it was typed.</summary>
+    string ToHtml(string? markdown, LinkRoot? links = null);
 
     /// <summary>One line of Markdown to sanitised inline HTML with no wrapping paragraph: bold, italics, code and
-    /// links. Block syntax (lists, headings) isn't parsed and shows as typed.</summary>
-    string ToInlineHtml(string? markdown);
+    /// links. Block syntax (lists, headings) isn't parsed and shows as typed. Root-relative links as
+    /// <see cref="ToHtml"/> points them.</summary>
+    string ToInlineHtml(string? markdown, LinkRoot? links = null);
 
     /// <summary>Markdown to readable plain text (formatting stripped).</summary>
     string ToPlainText(string? markdown);
@@ -100,13 +103,13 @@ public sealed partial class MarkdownService : IMarkdownService
     [System.Text.RegularExpressions.GeneratedRegex(@"\n[ \t]*(?:\n[ \t]*)+")]
     private static partial System.Text.RegularExpressions.Regex BlankLines();
 
-    public string ToHtml(string? markdown) =>
-        string.IsNullOrWhiteSpace(markdown) ? string.Empty : Render(markdown, Pipeline);
+    public string ToHtml(string? markdown, LinkRoot? links = null) =>
+        string.IsNullOrWhiteSpace(markdown) ? string.Empty : Render(markdown, Pipeline, links ?? LinkRoot.None);
 
-    public string ToInlineHtml(string? markdown)
+    public string ToInlineHtml(string? markdown, LinkRoot? links = null)
     {
         if (string.IsNullOrWhiteSpace(markdown)) return string.Empty;
-        var html = Render(OneLine(markdown), InlinePipeline).Trim();
+        var html = Render(OneLine(markdown), InlinePipeline, links ?? LinkRoot.None).Trim();
         return html.StartsWith("<p>", StringComparison.Ordinal) && html.EndsWith("</p>", StringComparison.Ordinal) ? html[3..^4] : html;
     }
 
@@ -122,20 +125,20 @@ public sealed partial class MarkdownService : IMarkdownService
     public static bool IsRenderable(string? markdown)
     {
         if (string.IsNullOrWhiteSpace(markdown)) return true;
-        try { RenderOrThrow(markdown, Pipeline); return true; }
+        try { RenderOrThrow(markdown, Pipeline, LinkRoot.None); return true; }
         catch (ArgumentException) { return false; }
     }
 
     // Markdig refuses input nested deeper than it allows (a few hundred '[' or '> ' in a row) with an exception, from
     // the parser or the renderer. That would fail every render of the brief the text is on (the pages, the email, the
     // send) until someone found the field, so such text is shown as it was typed, escaped, instead.
-    private static string Render(string markdown, MarkdownPipeline pipeline)
+    private static string Render(string markdown, MarkdownPipeline pipeline, LinkRoot links)
     {
-        try { return RenderOrThrow(markdown, pipeline); }
+        try { return RenderOrThrow(markdown, pipeline, links); }
         catch (ArgumentException) { return "<p>" + System.Net.WebUtility.HtmlEncode(markdown.Trim()) + "</p>\n"; }
     }
 
-    private static string RenderOrThrow(string markdown, MarkdownPipeline pipeline)
+    private static string RenderOrThrow(string markdown, MarkdownPipeline pipeline, LinkRoot links)
     {
         var document = Markdown.Parse(markdown, pipeline);
         foreach (var link in document.Descendants<LinkInline>())
@@ -150,7 +153,7 @@ public sealed partial class MarkdownService : IMarkdownService
         using var writer = new StringWriter();
         var renderer = new HtmlRenderer(writer);
         pipeline.Setup(renderer);
-        renderer.ObjectRenderers.Replace<LinkInlineRenderer>(new SafeLinkRenderer());
+        renderer.ObjectRenderers.Replace<LinkInlineRenderer>(new SafeLinkRenderer(links));
         renderer.ObjectRenderers.Replace<AutolinkInlineRenderer>(new SafeAutolinkRenderer());
         renderer.Render(document);
         writer.Flush();
@@ -158,21 +161,25 @@ public sealed partial class MarkdownService : IMarkdownService
     }
 
     /// <summary>Links open in a new tab without a referrer or opener. An image isn't loaded inline: its URL would be
-    /// fetched by every reader's browser (a tracking pixel, or worse, from a malicious host the article is about).</summary>
-    private sealed class SafeLinkRenderer : LinkInlineRenderer
+    /// fetched by every reader's browser (a tracking pixel, or worse, from a malicious host the article is about).
+    /// A link or image from the server's root (<c>/actions/12</c>) is pointed where <paramref name="links"/> says; a link
+    /// with nowhere to point (in an email when <c>App:BaseUrl</c> isn't set) is left as its text.</summary>
+    private sealed class SafeLinkRenderer(LinkRoot links) : LinkInlineRenderer
     {
         protected override void Write(HtmlRenderer renderer, LinkInline link)
         {
+            var url = LinkRoot.IsRootRelative(link.Url) ? links.Resolve(link.Url!) : link.Url;
             if (link.IsImage)
             {
                 renderer.Write("<span class=\"tide-image-ref\" title=\"Images aren't shown inline. Add it as a screenshot.\">");
                 renderer.Write("<span class=\"bi bi-image\" aria-hidden=\"true\"></span> ");
-                if (link.FirstChild is null) renderer.WriteEscape(link.Url ?? "image");
+                if (link.FirstChild is null) renderer.WriteEscape(url ?? link.Url ?? "image");
                 else renderer.WriteChildren(link);
                 renderer.Write("</span>");
                 return;
             }
-            renderer.Write("<a href=\"").WriteEscapeUrl(link.Url ?? "#").Write("\" target=\"_blank\" rel=\"noopener noreferrer\">");
+            if (url is null && link.Url is not null) { renderer.WriteChildren(link); return; }
+            renderer.Write("<a href=\"").WriteEscapeUrl(url ?? "#").Write("\" target=\"_blank\" rel=\"noopener noreferrer\">");
             renderer.WriteChildren(link);
             renderer.Write("</a>");
         }

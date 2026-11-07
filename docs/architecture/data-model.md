@@ -54,7 +54,7 @@ snapshot is right.
 | **Times are UTC** | Every moment is a `DateTimeOffset` named `…AtUtc`. It's `datetimeoffset` on SQL Server. SQLite can't order or compare `DateTimeOffset`, so on SQLite `OnModelCreating` stores UTC ticks (`long`) and the offset is lost. Code writes UTC from `TimeProvider` or `DateTimeOffset.UtcNow`. |
 | **Org dates are `date`** | Business days are `DateOnly` (`date`) in the organization's time zone, never UTC: `Briefs.BriefDate`, `MetricValues.BriefDate`, `Actions.DueDate`/`RaisedOn`/`ClosedDate`, `Holidays.Date`, `RotationWeeks.WeekStart`, `RotationOverrides.Date`, `RotationChanges.GiveFrom`/`GiveTo`/`TakeFrom`/`TakeTo`, `StackProducts.CheckedOn`, `Webhooks.OverdueSentFor`, and the KEV dates on `CveRecords`. `OrgClock` (`src/Tide.Application/Org/OrgClock.cs`) works out "today" from `Org:TimeZone`, so the brief for "today" doesn't change at UTC midnight. |
 | **Stamps** | `AuditInterceptor` stamps **S** tables on every save. An insert sets `CreatedAtUtc` and `CreatedBy`; an update sets `ModifiedAtUtc` and `ModifiedBy`. Services don't set these columns. Tables that aren't **S** keep their own "who and when" columns, set by the service (`UpdatedAtUtc`/`UpdatedBy`, `AddedAtUtc`/`AddedByName`, `SentAtUtc`…). Some **S** tables also keep the person's display name (`SavedQueries.CreatedByName`), because `CreatedBy` holds only the id. |
-| **Concurrency** | These tables carry `EditVersion uniqueidentifier`, mapped with `IsConcurrencyToken()`: `Articles`, `Briefs`, `Actions`, `ActionComments`, `SavedQueries`, `OutreachTemplates`, `Playbooks`, `OutreachMessages`, `StackProducts`, `Adversaries` and `Sources`. The service gives it a new Guid on each save, and EF adds `WHERE EditVersion = @original` to the update. A save from an older copy fails with `DbUpdateConcurrencyException`, and the service rethrows it as `StaleEditException` (`src/Tide.Application/Articles/ArticleService.cs`), which the page shows. Nothing uses `rowversion`. |
+| **Concurrency** | These tables carry `EditVersion uniqueidentifier`, mapped with `IsConcurrencyToken()`: `Articles`, `Briefs`, `Actions`, `ActionComments`, `SavedQueries`, `OutreachTemplates`, `Playbooks`, `OutreachMessages`, `StackProducts`, `Adversaries`, `Sources` and `Teams`. The service gives it a new Guid on each save, and EF adds `WHERE EditVersion = @original` to the update. A save from an older copy fails with `DbUpdateConcurrencyException`, and the service rethrows it as `StaleEditException` (`src/Tide.Application/Articles/ArticleService.cs`), which the page shows. Nothing uses `rowversion`. |
 | **Retire, don't delete** | No table has an `IsDeleted` column, and there are no global query filters. Admin-managed lists use one rule: **delete a record nothing uses yet, otherwise retire it**. Retired records are marked with `IsRetired` (`Sources`, `Teams`, `ScorecardCategories`, `ScorecardTags`, `MetricGroups`, `MetricDefinitions`, `Adversaries`, `StackProducts`, `SavedQueries`, `OutreachTemplates`, `Playbooks`) or `IsActive = false` (`ActionCardRules`, `RotationMembers`). Examples: `TeamService.SetRetiredAsync`, `PlaybookService.DeleteAsync` (refused for one an action was started from) and `IntakeService` for sources. Retired records are hidden from pickers but stay readable in history. |
 | **Kept for the record** | An article that was briefed or had an action raised from it can't be deleted (`ArticleService.DeleteAsync`). Only a draft on no brief can. A story with articles is closed, not deleted (`StoryService.DeleteAsync`). Files on actions and comments are "removed": the record is hidden but its bytes, hash and row stay (`IRemovableFile` in `src/Tide.Domain/Entities/Actions.cs`). Sends, corrections, audit rows and action events are never deleted. |
 | **Pruned** | Two kinds of rows are deleted on a schedule by `IntakeHostedService`'s daily prune. `FeedItems` older than `Intake:RetentionDays` (minimum 7) are deleted if they're still New, Dismissed or Duplicate (`IntakeService.PruneAsync`). `FeedItemTexts` older than `Intake:ReadingDays` (1 to 30) are deleted by `ReadingService.PruneAsync`. Their `TriageSplits` rows and kept text go with them by cascade. |
@@ -338,6 +338,7 @@ erDiagram
         uuid Id PK
         string Key UK
         bool IsRetired
+        uuid EditVersion "concurrency"
         bool IsExternal
         int ActiveLimit
         string EscalationEmail
@@ -941,19 +942,25 @@ row itself is kept. Written by `CorrectionService`; `DistributionService` reads 
 [ADR 0008](../decisions/0008-teams-own-actions.md) covers team ownership.
 [../workflows/actions-and-hunting.md](../workflows/actions-and-hunting.md) describes the flow.
 
-### `Teams` (S, A) and `TeamMembers` (A)
+### `Teams` (S, A, V) and `TeamMembers` (A)
 
 A team owns follow-up actions. `Key` is stable and **unique**. A team that has never owned an action and isn't named by
 a card rule is deleted; otherwise it's retired (`TeamService.SetRetiredAsync`). `Email` is the team's shared mailbox,
 used for its digest and for reminders about unassigned actions. Columns: `Name` nvarchar(100), `Description`
-nvarchar(500), `Email` nvarchar(256), `SortOrder`, `IsRetired`, and the stamps. A team that handed an action on
-(`Actions.HandedFromTeamId`) counts as having owned one, so it's retired too.
+nvarchar(500), `Email` nvarchar(256), `SortOrder`, `IsRetired`, `EditVersion`, and the stamps. A team that handed an
+action on (`Actions.HandedFromTeamId`) counts as having owned one, so it's retired too.
+
+`EditVersion` (uniqueidentifier, concurrency token, from `TeamEditVersion`) moves on every change someone makes to the
+team's own fields: its name, description and mailbox, an external team's profile and reminders, its limit, its
+escalation contact, and retiring or bringing it back. Moving it in the list (`SortOrder`) and adding or taking off
+members don't, since no form saves them; nothing in the background writes a team. A form opened before any of those
+changes is refused. Rows from before the column have the empty Guid.
 
 The active limit and the external team's profile (EP-86):
 
 | Column | Type | Null | Meaning |
 |---|---|---|---|
-| `ActiveLimit` | int | yes | The most actions it may have active (Open, InProgress or Blocked) at once; null for none. Set by an administrator (`TeamService.SetLimitAsync`), 1 to 999. |
+| `ActiveLimit` | int | yes | The most actions it may have active (Open, InProgress or Blocked) at once; null for none. Set by an administrator with the team's form (`TeamService.UpdateAsync`, `UpdateExternalAsync`) or `SetLimitAsync`, 1 to 999. |
 | `LimitMode` | int | no | `ActiveLimitMode`: what happens when a change would take it over. Default 0 (Show). |
 | `IsExternal` | bit | no | Tracked here, working outside TIDE: no members, no assignees, reminded at `ContactEmail`. Kept by anyone with `WorkActions`. |
 | `ContactName` | nvarchar(200) | yes | An external team's contact. |
@@ -1000,7 +1007,7 @@ config change. A team owns it, it's due by a date the SLA targets suggest, and i
 | `ArticleId` | uniqueidentifier | yes | FK → `Articles`, **restrict**. Indexed. This is why an article with actions can't be deleted. |
 | `ParentId` | uniqueidentifier | yes | FK → `Actions`, **restrict**. The parent action of a remediation split across teams. Indexed. |
 | `PlaybookId`, `PlaybookName` | uniqueidentifier, nvarchar(100) | yes | FK → `Playbooks`, **restrict**. The playbook the checklist was copied from, and its name at the time. |
-| `NoReminders` | bit | no | Left out of its external team's reminder emails. Matters only while its team is external. |
+| `NoReminders` | bit | no | Left out of its external team's reminder emails. Matters only while its team is external. A hand-off keeps it only when whoever hands it off leaves *Keep reminders off* ticked. |
 | `HandedFromTeamId` | uniqueidentifier | yes | The team it was last handed from. No foreign key: the name is looked up, and "another team" stands in if it's gone. |
 | `HandedById`, `HandedByName` | nvarchar(256) | yes | Who handed it on last. |
 | `HandedAtUtc` | datetimeoffset | yes | When. |
@@ -1021,7 +1028,7 @@ where noted. In practice actions aren't deleted.
 | `ActionCommentFiles` | `Id` | `CommentId` (FK, cascade), `FileId` (FK → `Files`, restrict, indexed), `FileName` nvarchar(200), `SizeBytes` bigint, `IsImage`, `SortOrder`, `Description` nvarchar(500), `RiskReason` nvarchar(200), `RemovedAtUtc`/`RemovedById`/`RemovedByName`/`RemovedReason` | At most 10 per comment. `IRemovableFile`. |
 | `ActionFiles` | `Id` | `ActionId` (indexed), `FileId` (FK → `Files`, restrict, **unique**), `FileName` nvarchar(200), `SizeBytes`, `Sha256` nvarchar(64), `DeclaredType` nvarchar(100), `IsImage`, `TypeNote` nvarchar(200), `RiskReason` nvarchar(200), `Description` nvarchar(500), `AddedById`/`AddedByName`/`AddedAtUtc`, the removed columns, `FromCommentBy` nvarchar(256), `FromCommentAtUtc` | Written by `ActionFileService` (`Actions/ActionFiles.cs`). At most 100 per action and 10 per upload. `ActionFile.ShowsInlineFor` decides inline display: a real raster image with no `TypeNote` and no `RiskReason`. |
 | `ActionEvents` | `Id` | `ActionId`, `AtUtc`, `ByName` nvarchar(256), `Text` nvarchar(1000) | The readable timeline ("Status: Open → In progress"). Index `(ActionId, AtUtc)`. Also written by `ActionFileService`, `OutreachService` and `TeamService`. |
-| `ActionChecklistItems` | `Id` | `ActionId`, `SortOrder`, `Text` nvarchar(300), `IsDone`, `DoneByName` null, `DoneAtUtc` null | Index `(ActionId, SortOrder)`. At most 50. Copied from a playbook or added by hand. |
+| `ActionChecklistItems` | `Id` | `ActionId`, `SortOrder`, `AddedAtUtc`, `Text` nvarchar(300), `IsDone`, `DoneByName` null, `DoneAtUtc` null | Index `(ActionId, SortOrder)`. At most 50. Copied from a playbook or added by hand. Listed by `SortOrder`, then `AddedAtUtc`, then `Id` (`ActionService.InOrder`, in memory): two added at once share a place. `AddedAtUtc` came in `ChecklistItemAddedAt`; items from before it read as added at the minimum date and fall back to the id. |
 | `ActionIndicators` | `Id` | `ActionId` (indexed), `Type` int, `Value` nvarchar(2000), `Note` nvarchar(300), `AddedAtUtc`, `AddedByName` | Only for an action with no article. On an action raised from an article, indicators go to `ArticleIndicators`. |
 | `DetectionGaps` | `TechniqueId` nvarchar(16) | `ActionId` (FK, cascade, indexed), `RaisedAtUtc` | A briefed technique with no enabled rule, raised as an action. The key means one gap per technique. Written by `DetectionService`. |
 
@@ -1031,7 +1038,9 @@ Records that a reminder or digest was sent, so each scan sends it once. Key `(Ki
 `{action}:{due}`. An external team's reminder is `external-reminder` and `{action}:{due}:{step}`, the step `before` or
 `late-0`, `late-1`… (`ExternalCadence.Step`). A step of the escalation ladder is `escalation` and
 `{action}:{due}:{step}`, the step its offset and what it does (`+7.12`: seven business days after, raise and flag), so
-reordering the steps doesn't run one again. Only a step that ran is marked: one passed over can't be the latest again. `Kind` is nvarchar(32), `Key`
+reordering the steps doesn't run one again. Only a step that ran is marked: one passed over can't be the latest again.
+That an external team's contact was reminded about an action today, by either, is `contact-reminded` and
+`{action}:{day}:{contact}` (the address as a short hash), so the other is skipped that day. `Kind` is nvarchar(32), `Key`
 nvarchar(200), and `SentAtUtc` is indexed. Written by `ReminderService` (`Actions/Reminders.cs`, `EscalationScan.cs`).
 
 ## Hunting, outreach and playbooks
@@ -1218,7 +1227,7 @@ tables, and every change to them is published on the `rotation` change-feed topi
 | `RotationMembers` (A) | `UserId` nvarchar(256) | `DisplayName`, `SortOrder`, `IsActive` | The analysts in the rotation, in the order weeks are handed out. |
 | `RotationWeeks` (A) | `WeekStart` date | `AnalystId`/`AnalystName` (indexed), `UpdatedAtUtc`, `UpdatedBy` | Who presents Monday to Friday of the week starting `WeekStart` (a Monday). |
 | `RotationChanges` (A) | `Id` | `Kind` (`RotationChangeKind`), `RequesterId`/`Name` (indexed), `PartnerId`/`Name`, `GiveFrom`/`GiveTo` date, `TakeFrom`/`TakeTo` date null, `Note` nvarchar(500), `Status` (`RotationChangeStatus`, indexed with `PartnerId`), `CreatedById`/`Name`/`AtUtc`, `DecidedAtUtc`, `DecidedByName`, `DecisionNote` nvarchar(500) | A cover or swap request. Only the partner approves it. |
-| `RotationOverrides` (A) | `Date` date | `AnalystId`/`AnalystName` (indexed), `ChangeId` (FK → `RotationChanges`, **cascade**, indexed) | One business day's presenter when it differs from the week's, created by an approved change. |
+| `RotationOverrides` (A) | `Date` date | `AnalystId`/`AnalystName` (indexed), `ChangeId` (nullable FK → `RotationChanges`, **cascade**, indexed) | One business day's presenter when it differs from the week's: created by an approved change, or, with `ChangeId` null, a presented day kept for its presenter when its week was given to someone else (`RotationService.SetWeekAsync`). |
 | `Holidays` (A) | `Date` date | `Name` nvarchar(100) | A non-working day besides weekends. No brief is held, nothing is sent, and the day doesn't count towards deadlines. Written by `HolidayService` and `ConfigBundleService`, and loaded into `OrgClock` at startup and on save. |
 
 ## Reference data: scorecard, stack, adversaries
@@ -1464,7 +1473,7 @@ the stored values.
 | `ActionOutcome` | 0 **None**. 1 **NoHits**. 2 **HitsEscalated**: hits found and handed on (an incident case, the SOC). 3 **Remediated**. 4 **Blocked**. 5 **RiskAccepted**. 6 **NotAffected**. 7 **Answered**. 8 **Other**. |
 | `HuntResult` | 0 **NotRun**. 1 **NoHits**. 2 **Hits**. |
 | `ReviewStatus` (in `Entities/Review.cs`) | 0 **Asked**: waiting for the reviewer. 1 **Approved**. 2 **ChangesAsked**. 3 **Withdrawn**: replaced by a later request or taken back by the author. |
-| `SendStatus` | 0 **Sending**: frozen and handed to the relay, outcome not yet known (or the app stopped meanwhile). 1 **Sent**: the relay accepted it. 2 **Failed**: the relay refused it, and `Error` says why. 3 **Unknown**: the connection dropped mid-send. The send isn't published and doesn't mark the brief sent, but the next confirmation warns that it may have gone. |
+| `SendStatus` | 0 **Sending**: frozen and handed to the relay, outcome not yet known (or the app stopped meanwhile). 1 **Sent**: the relay accepted it. 2 **Failed**: the relay refused it, and `Error` says why. 3 **Unknown**: the relay may have taken it: it didn't answer in time, the connection dropped once the session began, or the send threw. The send isn't published and doesn't mark the brief sent, but the next confirmation warns that it may have gone. |
 | `RotationChangeStatus` | 0 **Pending**: waiting for the partner. 1 **Approved**. 2 **Declined**. 3 **Cancelled**. |
 
 ### Classification and marking

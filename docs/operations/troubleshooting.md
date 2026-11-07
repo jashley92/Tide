@@ -229,11 +229,13 @@ failure and counts, not content.
 
 ### A send says its outcome isn't known
 
-- **Cause:** a frozen send was handed to the relay and then something unexpected happened, so TIDE can't tell whether
-  it went: an unexpected exception during the send, or a send still "sending" 15 minutes later because the server
-  stopped or saving its outcome failed (`SendOutcome.Seen`). An unusable pickup folder used to land here; it's now a
-  plain failure.
-- **Where to look:** the brief's Send step: the send's log entry says "whether the relay took it isn't known".
+- **Cause:** a frozen send was handed to the relay and then TIDE couldn't tell whether it went: the relay didn't answer
+  within `Email:SmtpTimeoutSeconds` ("didn't answer within N seconds"), the connection dropped partway through, an
+  unexpected exception during the send, or a send still "sending" 15 minutes later because the server stopped or
+  saving its outcome failed (`SendOutcome.Seen`). A relay that refuses outright, can't be reached at all, or an
+  unusable pickup folder is a plain failure instead.
+- **Where to look:** the brief's Send step: the send's log entry says "whether it took the message isn't known" or
+  "whether the relay took it isn't known". A slow relay that times out often: raise `Email:SmtpTimeoutSeconds`.
 - **Fix:** ask a recipient. Then click **It went: mark sent** (the send is archived and the brief is Sent) or **It
   didn't: mark not sent** (it's Failed, and you can send again). Corrections have the same buttons. While a send is
   still with the relay, a second one of that edition is refused. See [distribution.md](../workflows/distribution.md).
@@ -253,6 +255,9 @@ failure and counts, not content.
   5. The person has no email address. TIDE reads `mail` from AD at sign-in; someone who never signed in, or has no
      `mail`, has none. An unassigned action goes to its team's mailbox, else its members.
   6. Email is off or failing (previous section). A recipient whose email failed is tried again at the next scan.
+     One whose email may have gone (the relay timed out or dropped the connection) isn't: it's marked as sent, and the
+     run's note (and Diagnostics' *Reminder and digest emails* job) says "N emails may not have arrived … check with
+     the recipients before sending again".
   7. The scan failed: the last run's error, and the log's "A reminder scan failed; it's tried again at the next poll."
 - **Fix:** turn the scan on, check the time zone, holidays and the person's address. **Run now** runs a scan
   immediately (marks still stop repeats). A restart clears the "last run" display, not the marks.

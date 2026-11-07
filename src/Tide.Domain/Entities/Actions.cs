@@ -26,6 +26,11 @@ public class Team : AuditableEntity
     public int SortOrder { get; set; }
     public bool IsRetired { get; set; }
 
+    /// <summary>Moved by each change someone makes to the team's own fields (its profile, mailbox, escalation contact,
+    /// limit, reminders, retiring or bringing it back), so a form opened before a colleague's change can't save over it.
+    /// Its place in the list and its members don't move it: no form saves them. Nothing in the background writes a team.</summary>
+    public Guid EditVersion { get; set; } = Guid.NewGuid();
+
     public List<TeamMember> Members { get; set; } = [];
 
     /// <summary>
@@ -348,6 +353,11 @@ public class ActionChecklistItem : Entity
 
     public Guid ActionId { get; set; }
     public int SortOrder { get; set; }
+
+    /// <summary>When it was put on the checklist. Two added at the same moment take the same place (the highest plus
+    /// one); this, then the id, puts them in the same order on every read (<c>ActionService.InOrder</c>).</summary>
+    public DateTimeOffset AddedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+
     public string Text { get; set; } = string.Empty;
     public bool IsDone { get; set; }
     public string? DoneByName { get; set; }

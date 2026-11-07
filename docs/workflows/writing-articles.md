@@ -63,6 +63,12 @@ Either way it's a **Draft** authored by the person who made it (`AuthorId`, `Aut
 | Other reports | `ArticleLink` | Added from triage, or by hand in the editor. |
 | Story | `StoryId` | The threat story it's part of. |
 
+**Linking to something in TIDE from Markdown.** Write the address from the root, `[the action](/actions/12)`, in a
+bullet, "why it matters", a comment, an action's details or a note. It works under a sub-path: on a page TIDE puts its
+base path in front (`/tide/actions/12`; a link that already has it is left alone), and in the email and the SharePoint
+copy it becomes the full address from `App:BaseUrl`. When `App:BaseUrl` isn't set, the email keeps the link's text
+without the link. See [frontend.md](../architecture/frontend.md#markdown-rendering).
+
 **"Why it matters" starts at AMBER on a threat.** It usually names our own systems and gaps.
 `Article.DefaultWhyItMattersTlp` is AMBER for a threat (or the article's TLP when higher) and CLEAR for an
 informational article. It's applied when an article is promoted as a threat, and when an informational article turns

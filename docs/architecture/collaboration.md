@@ -56,9 +56,10 @@ Topics are published by `ChangeInterceptor.TopicsOf` for each added, modified or
 
 | Row | Topics |
 |---|---|
-| `Article` | `article:{id}`, `articles` |
-| `ArticleBullet`, `ArticleScreenshot`, `ArticleTag`, `ArticleTechnique`, `ArticleIndicator`, `ArticleLink`, `ArticleCve` | `article:{id}` |
-| `ArticleAdversary` | `article-tags:{id}` (not the article's topic: a tag doesn't move its edit version), `adversaries` |
+| `Article` | `article:{id}`, `articles`, and `story:{id}` for the story it's on; a save that takes it off a story or moves it to another also publishes `story:{id}` for the story it left (`ChangeInterceptor.StoryLeft`, from the row's original `StoryId`) |
+| `ArticleBullet`, `ArticleScreenshot`, `ArticleTag`, `ArticleIndicator`, `ArticleLink` | `article:{id}` |
+| `ArticleTechnique`, `ArticleCve` | `article:{id}`, `article-summary:{id}` (what its story's page shows of it) |
+| `ArticleAdversary` | `article-tags:{id}` (not the article's topic: a tag doesn't move its edit version), `adversaries`, `article-summary:{id}` |
 | `ArticleProduct` | `article-tags:{id}` |
 | `Brief` | `brief:{id}`, `brief-day:{yyyy-MM-dd}` |
 | `BriefItem`, `BriefSend`, `BriefCorrection` | `brief:{id}` |
@@ -66,7 +67,7 @@ Topics are published by `ChangeInterceptor.TopicsOf` for each added, modified or
 | `ActionItem`, `ActionFile` | `action:{id}`, `actions` |
 | `ActionComment`, `HuntQuery`, `ActionIndicator`, `OutreachMessage`, `ActionChecklistItem`, `ActionEvent` | `action:{id}` |
 | `RotationChange`, `RotationOverride`, `RotationWeek`, `RotationMember` | `rotation` |
-| `Story` | `stories` |
+| `Story` | `stories`, `story:{id}` |
 | `MetricValue` | `metrics-day:{yyyy-MM-dd}` |
 | `MetricDefinition`, `MetricGroup` | `metrics` |
 | `StackProduct` | `stack` |
@@ -159,9 +160,10 @@ What pages do with it:
 | Triage | `triage` | re-reads, with LiveMarks, ghosts, tab counts and one toast (`TriageNews`); under an open promote form or attach picker it holds the changes behind an "Updates waiting" pill |
 | Articles list | `articles` | re-reads the rows it shows, with its filters |
 | Rotation | `rotation` | re-reads, saying when a request now waits for you or yours was answered |
-| Stories, Our stack, Saved queries, Outreach templates, Playbooks | `stories`, `stack`, `saved-queries`, `outreach-templates`, `playbooks` | re-read; a product's edit form keeps what's typed and shows `ChangedElsewhere` when a colleague saved that product; a library's edit follows its card to the page it moved to, or keeps its form above the list when the card left it (`LibraryPage.OnChangedElsewhere`, `EditingOffPage`) |
+| A story's page (`Stories`, `/stories/{id}`) | `story:{id}`, and `article-summary:{id}` for each article on it | re-reads the story and says "… updated this story": an article linked to it, taken off it or saved while on it (its row, heard on `story:{id}`), its articles' CVEs, techniques and threat actors, or the story itself. Its articles' bullets, screenshots, indicators and links, which it doesn't show, and other articles and stories are silent. The Edit form keeps what's typed (`Stories.OnChangedElsewhere`) |
+| Stories list, Our stack, Saved queries, Outreach templates, Playbooks | `stories` and `articles` (the counts), `stack`, `saved-queries`, `outreach-templates`, `playbooks` | re-read; a product's edit form keeps what's typed and shows `ChangedElsewhere` when a colleague saved that product; a library's edit follows its card to the page it moved to, or keeps its form above the list when the card left it (`LibraryPage.OnChangedElsewhere`, `EditingOffPage`) |
 | Adversaries list and profile (`AdversariesPage`) | `adversaries` | re-read; a profile's edit form keeps what's typed and shows `ChangedElsewhere` with Reload when a colleague changed that profile (only a change to the one shown is told) |
-| External teams | `teams` | re-reads the list; the add and edit forms keep what's typed; an edit of a team that's gone closes, and says so |
+| External teams | `teams` | re-reads the list; the add and edit forms keep what's typed; an edit of a team a colleague changed shows `ChangedElsewhere` (its save is refused until Reload); an edit of a team that's gone closes, and says so |
 | We run and Threat actors cards (`TagCard`) | `article-tags:{id}` | re-read the tags |
 
 The rule across all of them: TIDE never reloads over a draft. A page with nothing unsaved re-reads in place and names
@@ -242,8 +244,8 @@ column the card was in and is refused if it moved.
 ## Concurrency: the edit version
 
 These entities carry `EditVersion`, a `Guid` configured as an EF Core concurrency token in `AppDbContext`: `Article`,
-`Brief`, `ActionItem`, `ActionComment`, `SavedQuery`, `OutreachTemplate`, `Playbook`, `OutreachMessage`, `StackProduct`
-and `Adversary`.
+`Brief`, `ActionItem`, `ActionComment`, `SavedQuery`, `OutreachTemplate`, `Playbook`, `OutreachMessage`, `StackProduct`,
+`Adversary`, `Source` and `Team`.
 
 - The form carries the version it was opened on. The service compares it with the row's and refuses a mismatch with
   `StaleEditException` (`src/Tide.Application/Articles/ArticleService.cs`), naming who changed it where it can.
@@ -264,10 +266,24 @@ and `Adversary`.
   retiring or bringing it back, and a configuration bundle that changes it move the version; a poll's bookkeeping
   (written with `ExecuteUpdateAsync`) doesn't. A stale save is refused, and the form stays with `ChangedElsewhere`
   and Reload.
+- A team's form (Teams & SLA for an internal team, External teams for an external one) carries the version it opened
+  on. Saving the team's profile, mailbox, reminders, limit or escalation contact, and retiring or bringing it back,
+  move the version. The form saves in one call (`TeamService.UpdateAsync(id, TeamForm)`, or `UpdateExternalAsync` with
+  the limit when an administrator saves it): one version check, one save, one audit entry and one change heard, so a
+  refused save leaves nothing half-saved. Its place in the list
+  and its members don't move it. A stale save is refused ("Someone else changed Network since you opened it…"), and
+  the form stays with `ChangedElsewhere` and Reload; External teams, which follows `teams`, also shows the banner as
+  soon as it hears a colleague changed the team being edited.
 - Tags (`ArticleAdversary`, `ArticleProduct`) and meeting notes deliberately don't move the version, so they never make an
   open editor's save stale. Tagging, linking and merging profiles run in one serializable transaction each
-  (`AdversaryService.Serialized`), so a tag added to a profile as it's merged waits for the merge and lands on the
+  (`IAppDbContextFactory.SerializedAsync`, in Abstractions, which `StoryService` and `RoleMappingService` use too), so a tag added to a profile as it's merged waits for the merge and lands on the
   profile it was merged into.
+- An action's checklist doesn't move the action's version either: ticking, adding or removing an item, or applying a
+  playbook, never makes an open edit form stale. Applying a playbook checks who may and reads the playbook first, then
+  runs its read of the checklist and its save in one serializable transaction (`ActionService.ApplyPlaybookAsync`, on
+  `SerializedAsync`), so of two people applying the same playbook at once, the second waits and finds its steps
+  already there. Two items added at the same moment share a place; `ActionService.InOrder` breaks the tie by
+  `AddedAtUtc`, then id, so they keep one order on every load, Present mode's included.
 
 Email templates use a stamp of the saved parts instead of a column, with the same effect
 ([administration.md](../workflows/administration.md#email-templates)).

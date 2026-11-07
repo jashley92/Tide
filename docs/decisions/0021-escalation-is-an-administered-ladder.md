@@ -30,6 +30,9 @@ forget for a team that works outside TIDE. Organizations escalate differently, s
   internal team's due-soon or overdue email to its assignee, mailbox or members, with their opt-outs. The escalation
   contact (a name and email on each team, kept by whoever keeps that team) gets its own template, written for someone
   who may not use TIDE: no TIDE link or number for an external team, a link to each request for an internal one.
+  An external team's contact gets one reminder about an action a day: when the ladder's remind and the team's own
+  cadence fall on the same day (the defaults put both two business days before the due date), whichever runs second
+  is skipped, said in the history, and marked done.
 - **Escalated is derived, never cleared.** `ActionItem.EscalatedForDue` records the due date it was flagged for; it's
   escalated while it's open and still due then: a badge, Today's Escalated card for those who chase it, and the
   meeting's overdue list, first. Closing it or moving its date ends it with no code at every place that does those,

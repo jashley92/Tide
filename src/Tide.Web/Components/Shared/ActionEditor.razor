@@ -35,6 +35,13 @@
             <label class="tide-field-label" for="a-handoff">Why hand it to @TeamName? <span class="fw-normal">(optional)</span></label>
             <input id="a-handoff" class="form-control form-control-sm" maxlength="@ActionItem.MaxHandoffReason" @bind="Form.HandoffReason"
                    placeholder="@ActionService.EditorHandoffReason" />
+            @if (RemindersOff)
+            {
+                <div class="form-check mt-2">
+                    <input class="form-check-input" type="checkbox" id="a-keep-off" @bind:get="!Form.TurnRemindersOn" @bind:set="v => Form.TurnRemindersOn = !v" />
+                    <label class="form-check-label" for="a-keep-off">Keep reminders off</label>
+                </div>
+            }
         </div>
     }
     @if (_duplicates.Count > 0)
@@ -150,6 +157,10 @@
 
     /// <summary>A part's parent's due date: a later one is warned about (it's allowed).</summary>
     [Parameter] public DateOnly? ParentDue { get; set; }
+
+    /// <summary>Whether the action being edited has its reminders off ("Don't remind"): a team change then asks whether
+    /// they stay off.</summary>
+    [Parameter] public bool RemindersOff { get; set; }
 
     // An external team has no members in TIDE, so no one is offered as its assignee.
     private bool External => Teams.FirstOrDefault(t => t.Id == Form.TeamId)?.IsExternal == true;

@@ -16,13 +16,23 @@ public enum EmailSendStatus
     /// <summary>Email is turned off (<c>Email:Enabled</c>); nothing was sent.</summary>
     Disabled = 1,
 
-    /// <summary>The relay didn't take it; <see cref="EmailSendResult.Error"/> says why.</summary>
+    /// <summary>The relay clearly didn't take it (it refused the recipient, the sign-in or the sender before any data, or
+    /// it couldn't be reached at all); <see cref="EmailSendResult.Error"/> says why. Safe to send again.</summary>
     Failed = 2,
+
+    /// <summary>The relay may have taken it: it didn't answer in time, or the connection dropped once the session had
+    /// begun. It isn't sent again by itself, as that could email everyone twice; <see cref="EmailSendResult.Error"/> says to
+    /// check whether it arrived first.</summary>
+    Unknown = 3,
 }
 
 /// <summary>What became of a send. <see cref="Error"/> is safe to show: it never echoes the relay's reply, which can
 /// carry addresses.</summary>
-public sealed record EmailSendResult(EmailSendStatus Status, string? Error = null, int Refused = 0);
+public sealed record EmailSendResult(EmailSendStatus Status, string? Error = null, int Refused = 0)
+{
+    /// <summary>Whether it went or may have: either way it isn't sent again by itself.</summary>
+    public bool MayHaveGone => Status is EmailSendStatus.Sent or EmailSendStatus.Unknown;
+}
 
 /// <summary>Sends email through the organization's SMTP relay (configured in <c>Email:*</c>).</summary>
 public interface IEmailSender

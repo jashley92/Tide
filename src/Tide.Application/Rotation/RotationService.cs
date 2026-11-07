@@ -21,6 +21,12 @@ public sealed record RotationDay(DateOnly Date, string? AnalystId, string? Analy
     public bool IsChanged => ChangeId is not null && AnalystId != RegularId;
 }
 
+/// <summary>
+/// What setting a week did to its presented days: those kept for whoever presented them, or, as a correction, those
+/// changed to the new analyst.
+/// </summary>
+public sealed record WeekSet(IReadOnlyList<(DateOnly Date, string AnalystName)> Kept, IReadOnlyList<DateOnly> Corrected);
+
 /// <summary>A run of consecutive business days one analyst presents the brief.</summary>
 public sealed record RotationRun(string AnalystId, string AnalystName, DateOnly From, DateOnly To);
 
@@ -220,33 +226,90 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
         return filled;
     }
 
-    /// <summary>Sets (or, with no one, clears) a week's analyst.</summary>
-    public async Task SetWeekAsync(DateOnly weekStart, string? userId, CancellationToken ct = default)
+    /// <summary>
+    /// Sets (or, with no one, clears) a week's analyst. The week's days whose meeting was held (the brief presented or sent,
+    /// or held and put back to ready: <see cref="HeldAsync"/>) keep whoever presented them, as days kept for them, and are
+    /// returned in <see cref="WeekSet.Kept"/>; the rest pass to the new analyst. With <paramref name="correctPastDays"/>, an
+    /// administrator's deliberate correction, those days change too, and the audit trail records it as a correction.
+    /// A day an approved change moved stays with that change either way.
+    /// </summary>
+    public async Task<WeekSet> SetWeekAsync(DateOnly weekStart, string? userId, bool correctPastDays = false, CancellationToken ct = default)
     {
         RequireAdmin();
         var start = WeekStart(weekStart);
+        var end = start.AddDays(6);
         await using var db = await dbs.CreateAsync(ct);
         var row = await db.RotationWeeks.FirstOrDefaultAsync(w => w.WeekStart == start, ct);
         var was = row?.AnalystId;
-        if (string.IsNullOrWhiteSpace(userId))
+        var wasName = row?.AnalystName;
+        RotationMember? m = null;
+        if (!string.IsNullOrWhiteSpace(userId))
+            m = await db.RotationMembers.AsNoTracking().FirstOrDefaultAsync(x => x.UserId == userId, ct) ?? throw new ArgumentException("Add them to the rotation first.");
+        if (m?.UserId == was && !correctPastDays) return new WeekSet([], []);
+
+        var overrides = await db.RotationOverrides.Where(o => o.Date >= start && o.Date <= end).ToListAsync(ct);
+        var days = BusinessDays(start, end, clock.Days).ToList();
+        var briefs = await db.Briefs.AsNoTracking().Where(b => b.BriefDate >= start && b.BriefDate <= end).ToListAsync(ct);
+        var held = await HeldAsync(db, briefs, ct);
+        var heldDays = briefs.Where(b => held.Contains(b.Id)).Select(b => b.BriefDate).ToHashSet();
+        var kept = new List<(DateOnly, string)>();
+        var corrected = new List<DateOnly>();
+        foreach (var d in days.Where(heldDays.Contains))
+        {
+            var o = overrides.FirstOrDefault(x => x.Date == d);
+            if (o?.ChangeId is not null) continue;   // an approved change moved it: not the week's to give
+            var presenter = o?.AnalystId ?? was;
+            if (correctPastDays)
+            {
+                // The day follows the week again, kept or not before.
+                if (o is not null) db.RotationOverrides.Remove(o);
+                if (presenter != m?.UserId) corrected.Add(d);
+            }
+            else if (presenter == m?.UserId)
+            {
+                // Kept for the analyst the week goes back to: the week says so again.
+                if (o is not null) db.RotationOverrides.Remove(o);
+            }
+            else if (presenter is not null)
+            {
+                // Kept for whoever presented it.
+                if (o is null) db.RotationOverrides.Add(new RotationOverride { Date = d, AnalystId = presenter, AnalystName = wasName!, ChangeId = null });
+                kept.Add((d, o?.AnalystName ?? wasName!));
+            }
+        }
+
+        if (m is null)
         {
             if (row is not null) db.RotationWeeks.Remove(row);
         }
         else
         {
-            var m = await db.RotationMembers.AsNoTracking().FirstOrDefaultAsync(x => x.UserId == userId, ct) ?? throw new ArgumentException("Add them to the rotation first.");
             if (row is null) db.RotationWeeks.Add(row = new RotationWeek { WeekStart = start });
             row.AnalystId = m.UserId;
             row.AnalystName = m.DisplayName;
             row.UpdatedAtUtc = DateTimeOffset.UtcNow;
             row.UpdatedBy = user.UserId;
-            // The week's days that no change moves pass to the new analyst, and so do their briefs.
-            var end = start.AddDays(6);
-            var moved = await db.RotationOverrides.AsNoTracking().Where(o => o.Date >= start && o.Date <= end).Select(o => o.Date).ToListAsync(ct);
+            // The week's days that no change moves and that weren't presented pass to the new analyst, and so do their briefs.
+            var moved = overrides.Select(o => o.Date).ToHashSet();
             if (was is not null)
-                await FollowAsync(db, BusinessDays(start, end, clock.Days).Where(d => !moved.Contains(d)).Select(d => (d, was, m.UserId, m.DisplayName)), ct);
+                await FollowAsync(db, days.Where(d => !moved.Contains(d) && !heldDays.Contains(d)).Select(d => (d, was, m.UserId, m.DisplayName)), ct);
+        }
+        if (corrected.Count > 0)
+        {
+            // The interceptor records the week's row; this says the presented days were changed on purpose.
+            db.AuditLog.Add(new AuditLogEntry
+            {
+                AtUtc = DateTimeOffset.UtcNow, UserId = user.UserId, UserName = user.DisplayName, Action = "Modified", EntityType = nameof(RotationWeek),
+                EntityKey = start.ToString(CultureInfo.InvariantCulture),
+                ChangesJson = System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, string?[]>
+                {
+                    ["Correction"] = [null, "Presented days corrected: " + string.Join(", ", corrected.Select(Day))],
+                    ["AnalystName"] = [wasName, m?.DisplayName],
+                }),
+            });
         }
         await db.SaveChangesAsync(ct);
+        return new WeekSet(kept, corrected);
     }
 
     public async Task<IReadOnlyList<string>> ManagerEmailsAsync(CancellationToken ct = default)
@@ -561,24 +624,24 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
     // Whether a change still moves a day from first on: either half of a swap.
     private static bool HasDaysFrom(RotationChange c, DateOnly first) => c.GiveTo >= first || (c.TakeTo is { } takeTo && takeTo >= first);
 
-    // The first day whose presenter can still change: today, unless today's meeting has been held (its brief presented,
-    // sent, or held and put back to ready), when today is as past as yesterday and its brief says who presented it.
+    // The first day whose presenter can still change: today, unless today's meeting has been held (HeldAsync), when today
+    // is as past as yesterday and its brief says who presented it.
     private async Task<DateOnly> FirstDayToComeAsync(IAppDbContext db, CancellationToken ct)
     {
         var today = clock.Today;
         var brief = await db.Briefs.AsNoTracking().FirstOrDefaultAsync(b => b.BriefDate == today, ct);
-        if (brief is null) return today;
-        if (brief.Status is BriefStatus.Presented or BriefStatus.Sent) return today.AddDays(1);
-        return (await HeldAsync(db, [brief], ct)).Contains(brief.Id) ? today.AddDays(1) : today;
+        return brief is not null && (await HeldAsync(db, [brief], ct)).Contains(brief.Id) ? today.AddDays(1) : today;
     }
 
-    // The briefs among these whose meeting was held, though Back to ready (BriefService.ReopenAsync) took them back to
-    // Ready and cleared MeetingHeldAtUtc and PresentedAtUtc. What a reopen keeps says so: anyone recorded as attending, a
-    // meeting note (or the notes kept on the brief before they were per person), and, for a meeting ended with neither,
-    // the times in the brief's audit trail. A discussed tick isn't a sign: it can be set before the meeting.
+    // The briefs among these whose meeting was held: presented or sent, or held though Back to ready
+    // (BriefService.ReopenAsync) took them back to Ready and cleared MeetingHeldAtUtc and PresentedAtUtc. What a reopen
+    // keeps says so: anyone recorded as attending, a meeting note (or the notes kept on the brief before they were per
+    // person), and, for a meeting ended with neither, the times in the brief's audit trail. A discussed tick isn't a
+    // sign: it can be set before the meeting.
     private static async Task<HashSet<Guid>> HeldAsync(IAppDbContext db, IReadOnlyCollection<Brief> briefs, CancellationToken ct)
     {
-        var held = briefs.Where(b => b.MeetingHeldAtUtc is not null || b.PresentedAtUtc is not null || !string.IsNullOrWhiteSpace(b.MeetingNotes))
+        var held = briefs.Where(b => b.Status is BriefStatus.Presented or BriefStatus.Sent
+                                     || b.MeetingHeldAtUtc is not null || b.PresentedAtUtc is not null || !string.IsNullOrWhiteSpace(b.MeetingNotes))
             .Select(b => b.Id).ToHashSet();
         var ids = briefs.Select(b => b.Id).Where(id => !held.Contains(id)).ToList();
         if (ids.Count == 0) return held;

@@ -339,7 +339,8 @@ that fits its kind.
 - **Recording an update.** *Record an update* puts what a team said by email on its action in one step: their reply
   (kept as a comment headed as theirs), the status, a new due date and why, and a note, as one line in its history.
 - **Handing off.** *Hand off* gives an action to another team with a short reason, shown on it. The receiving team is
-  emailed, unless it works outside TIDE.
+  emailed, unless it works outside TIDE. When the action's reminders are off, the dialog asks *Keep reminders off*
+  (ticked); untick it to turn them back on for the new team.
 - **Tracking.** A status, and a board column between Blocked and Done, for work handed to others and followed: still
   open and due, but not counted against the team's limit.
 - **Limits.** A team may have a limit on its active actions; the list and board filtered to it say "4 of 5 active",
@@ -531,7 +532,8 @@ its send log.
 
 Stories link articles across days into a timeline, with their CVEs, actors, techniques and actions: a campaign, a
 vulnerability being exploited, or an actor followed over weeks. An article joins one from the editor, which suggests
-the story of a related article.
+the story of a related article. A story's page updates in place when a colleague links an article to it or takes one
+off, or changes one of its articles; changes to other articles don't touch it. The edit form keeps what's typed in it.
 
 ## Our stack
 
@@ -828,7 +830,7 @@ Every page, by tab (from `AdminLayout.Groups`):
 | Overview | Overview | `/admin` | What's left to set up, and where everything is set. |
 | Organization | Organization settings | `/admin/organization` | The team's name, its time zone, when the brief meets, and its holidays. |
 | Organization | Teams & SLA | `/admin/teams` | The teams that own actions, their members and escalation contacts, SLA targets, when reminder emails go, and the escalation ladder: the steps that run by themselves on an action as it slips. |
-| Organization | Brief rotation | `/admin/rotation` | Who presents the brief, the weekly rota, and who's told about swaps and cover. |
+| Organization | Brief rotation | `/admin/rotation` | Who presents the brief, the weekly rota (a week's days already presented keep their presenter unless *Correct past days* is ticked), and who's told about swaps and cover. |
 | Actions | Card rules | `/admin/card-rules` | Which actions are coloured and labelled on the board and list, and which rules the Actions filter bar offers. |
 | Intelligence | Sources | `/admin/sources` | The feeds and catalogs triage takes items from, and CVE enrichment. |
 | Intelligence | Source health | `/admin/source-health` | How much each source sends and how much of it the team uses, with feeds worth pausing. |

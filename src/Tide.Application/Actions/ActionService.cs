@@ -45,6 +45,10 @@ public sealed class ActionForm
     public Guid FromTeamId { get; set; }
     public string? HandoffReason { get; set; }
 
+    /// <summary>On an edit that changes the team, of an action whose reminders are off ("Don't remind"): turn them back on
+    /// for the new team. By default they stay as they are.</summary>
+    public bool TurnRemindersOn { get; set; }
+
     public static ActionForm From(ActionItem a) => new()
     {
         Id = a.Id, EditVersion = a.EditVersion, Title = a.Title, Description = a.Description, Kind = a.Kind, Priority = a.Priority,
@@ -724,6 +728,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         a.Events = a.Events.OrderByDescending(e => e.AtUtc).ToList();
         a.Hunts = a.Hunts.OrderByDescending(h => h.CreatedAtUtc).ToList();
         a.Outreach = a.Outreach.OrderByDescending(m => m.SentAtUtc).ToList();
+        a.Checklist = InOrder(a.Checklist);
         a.Indicators = a.Indicators.OrderBy(i => i.AddedAtUtc).ThenBy(i => i.Value, StringComparer.OrdinalIgnoreCase).ToList();
         var parent = a.ParentId is { } pid ? await Rows(db, db.Actions.AsNoTracking().Where(x => x.Id == pid)).FirstOrDefaultAsync(ct) : null;
         var children = (await Rows(db, db.Actions.AsNoTracking().Where(x => x.ParentId == a.Id)).ToListAsync(ct)).OrderBy(c => c.Number).ToList();
@@ -989,7 +994,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             var to = await HandoffService.ReceivingTeamAsync(db, form.TeamId, ct);
             if (form.AssigneeId is { } held && to.Members.All(m => m.UserId != held)) (form.AssigneeId, form.AssigneeName) = (null, null);
             handover = await HandoffService.HandOverAsync(db, user, a, to,
-                string.IsNullOrWhiteSpace(form.HandoffReason) ? EditorHandoffReason : form.HandoffReason, form.OverLimitReason, ct);
+                string.IsNullOrWhiteSpace(form.HandoffReason) ? EditorHandoffReason : form.HandoffReason, form.OverLimitReason, form.TurnRemindersOn, ct);
         }
         var before = (a.Title, a.Kind, a.Priority, a.AssigneeName, a.DueDate, a.TicketRef);
         await Apply(db, a, form, ct);
@@ -1359,8 +1364,16 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     {
         RequireRead(user);
         await using var db = await dbs.CreateAsync(ct);
-        return await db.ActionChecklistItems.AsNoTracking().Where(i => i.ActionId == actionId).OrderBy(i => i.SortOrder).ToListAsync(ct);
+        return InOrder(await db.ActionChecklistItems.AsNoTracking().Where(i => i.ActionId == actionId).ToListAsync(ct));
     }
+
+    /// <summary>
+    /// A checklist in its order: by place, then when each was added, then id. A place is the highest so far plus one, so
+    /// two items added at the same moment share one; without the rest they could swap between loads. Sorted here, as
+    /// <c>AdminLists.InOrder</c> is: SQL Server and .NET order Guids differently.
+    /// </summary>
+    private static List<ActionChecklistItem> InOrder(IEnumerable<ActionChecklistItem> items) =>
+        items.OrderBy(i => i.SortOrder).ThenBy(i => i.AddedAtUtc).ThenBy(i => i.Id).ToList();
 
     /// <summary>Ticks or unticks a checklist item, for whoever works the action. The history says who did it.</summary>
     public async Task SetChecklistItemAsync(Guid itemId, bool done, CancellationToken ct = default)
@@ -1407,20 +1420,32 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// <summary>
     /// Adds a playbook's steps to an action's checklist: only the steps it doesn't already have (by text,
     /// ignoring case), at the end. The action takes the playbook's name if it had none. Returns how many were added.
+    /// The action's edit version doesn't move: a checklist change isn't a change to the form someone may have open.
     /// </summary>
+    /// <remarks>
+    /// Who may and which playbook are read first; then the read of the checklist and the save run in one serializable
+    /// transaction (<see cref="SerializedChanges.SerializedAsync{T}"/>), so two people applying the same playbook at the
+    /// same moment don't both find its steps missing and add each one twice: the second waits and finds them there.
+    /// </remarks>
     public async Task<int> ApplyPlaybookAsync(Guid actionId, Guid playbookId, CancellationToken ct = default)
     {
-        await using var db = await dbs.CreateAsync(ct);
-        var a = await db.Actions.Include(x => x.Checklist).FirstOrDefaultAsync(x => x.Id == actionId, ct) ?? throw new KeyNotFoundException("That action no longer exists.");
-        await RequireWork(db, user, a, ct);
-        var playbook = await PlaybookFor(db, playbookId, a.Kind, ct);
-        var added = AddSteps(a, playbook);
-        db.ActionChecklistItems.AddRange(added);
-        db.ActionEvents.Add(Event(user, a.Id, added.Count == 0
-            ? $"Applied the {playbook.Name} playbook: its steps were all on the checklist already."
-            : $"Applied the {playbook.Name} playbook: {added.Count} step{(added.Count == 1 ? "" : "s")} added to the checklist."));
-        await db.SaveChangesAsync(ct);
-        return added.Count;
+        Playbook playbook;
+        await using (var check = await dbs.CreateAsync(ct))
+        {
+            var found = await FindAsync(check, actionId, ct);
+            await RequireWork(check, user, found, ct);
+            playbook = await PlaybookFor(check, playbookId, found.Kind, ct);
+        }
+        return await dbs.SerializedAsync(async db =>
+        {
+            var a = await db.Actions.Include(x => x.Checklist).FirstOrDefaultAsync(x => x.Id == actionId, ct) ?? throw new KeyNotFoundException("That action no longer exists.");
+            var added = AddSteps(a, playbook);
+            db.ActionChecklistItems.AddRange(added);
+            db.ActionEvents.Add(Event(user, a.Id, added.Count == 0
+                ? $"Applied the {playbook.Name} playbook: its steps were all on the checklist already."
+                : $"Applied the {playbook.Name} playbook: {added.Count} step{(added.Count == 1 ? "" : "s")} added to the checklist."));
+            return added.Count;
+        }, ct);
     }
 
     private static async Task<Playbook> PlaybookFor(IAppDbContext db, Guid playbookId, ActionKind kind, CancellationToken ct)
