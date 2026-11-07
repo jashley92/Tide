@@ -23,6 +23,11 @@ public sealed record StackEntry(Guid Id, string Name, IReadOnlyList<string> Term
 public sealed class StackForm
 {
     public Guid? Id { get; set; }
+
+    /// <summary>The product's <see cref="StackProduct.EditVersion"/> when the form opened; a save over a colleague's save
+    /// made since is refused. Null skips the check (a new product, or a caller that means to overwrite).</summary>
+    public Guid? EditVersion { get; set; }
+
     public string Name { get; set; } = "";
     public string? OtherNames { get; set; }
     public string? Versions { get; set; }
@@ -36,7 +41,7 @@ public sealed class StackForm
 
     public static StackForm From(StackProduct p) => new()
     {
-        Id = p.Id, Name = p.Name, OtherNames = p.OtherNames, Versions = p.Versions, Notes = p.Notes, TeamId = p.TeamId, CheckedOn = p.CheckedOn,
+        Id = p.Id, EditVersion = p.EditVersion, Name = p.Name, OtherNames = p.OtherNames, Versions = p.Versions, Notes = p.Notes, TeamId = p.TeamId, CheckedOn = p.CheckedOn,
         ContactName = p.ContactName, ContactEmail = p.ContactEmail,
     };
 }
@@ -393,6 +398,9 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         if (form.Id is { } id)
         {
             p = await db.StackProducts.FirstOrDefaultAsync(x => x.Id == id, ct) ?? throw new KeyNotFoundException("That product no longer exists.");
+            // The page keeps a form someone is typing in when a colleague saves the product: saving it then would put
+            // back everything they changed.
+            if (form.EditVersion is { } began && began != p.EditVersion) throw new StaleEditException(Stale(p));
         }
         else
         {
@@ -407,9 +415,14 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         p.CheckedOn = form.CheckedOn;
         p.ContactName = ArticleService.CleanOrNull(form.ContactName, StackProduct.MaxContactName);
         p.ContactEmail = contactEmail;
-        await db.SaveChangesAsync(ct);
+        p.EditVersion = Guid.NewGuid();
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException) { throw new StaleEditException(Stale(p)); }
         return p.Id;
     }
+
+    private static string Stale(StackProduct p) =>
+        $"Someone else saved {p.Name} since you opened it. Reload to see their changes, then make yours again.";
 
     /// <summary>Adds a product by name alone (from triage or the editor), or finds it if it's there; its id.</summary>
     public async Task<Guid> AddByNameAsync(string name, CancellationToken ct = default)

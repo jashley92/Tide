@@ -569,6 +569,10 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<Guid>("EditVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<bool>("IsRetired")
                         .HasColumnType("bit");
 
@@ -2234,6 +2238,10 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasMaxLength(40000)
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<Guid>("EditVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset?>("RepliedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -2981,6 +2989,10 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid>("EditVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<bool>("IsRetired")
                         .HasColumnType("bit");

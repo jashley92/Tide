@@ -564,6 +564,10 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("EditVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("IsRetired")
                         .HasColumnType("INTEGER");
 
@@ -2229,6 +2233,10 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasMaxLength(40000)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("EditVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("TEXT");
+
                     b.Property<long?>("RepliedAtUtc")
                         .HasColumnType("INTEGER");
 
@@ -2975,6 +2983,10 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("EditVersion")
+                        .IsConcurrencyToken()
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("IsRetired")

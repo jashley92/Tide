@@ -154,7 +154,7 @@ What pages do with it:
 | Triage | `triage` | re-reads, with LiveMarks, ghosts, tab counts and one toast (`TriageNews`); under an open promote form or attach picker it holds the changes behind an "Updates waiting" pill |
 | Articles list | `articles` | re-reads the rows it shows, with its filters |
 | Rotation | `rotation` | re-reads, saying when a request now waits for you or yours was answered |
-| Stories, Our stack, Saved queries, Outreach templates, Playbooks | `stories`, `stack`, `saved-queries`, `outreach-templates`, `playbooks` | re-read; a product's edit form keeps what's typed; a library's edit follows its card to the page it moved to, or keeps its form above the list when the card left it (`LibraryPage.OnChangedElsewhere`, `EditingOffPage`) |
+| Stories, Our stack, Saved queries, Outreach templates, Playbooks | `stories`, `stack`, `saved-queries`, `outreach-templates`, `playbooks` | re-read; a product's edit form keeps what's typed and shows `ChangedElsewhere` when a colleague saved that product; a library's edit follows its card to the page it moved to, or keeps its form above the list when the card left it (`LibraryPage.OnChangedElsewhere`, `EditingOffPage`) |
 | We run and Threat actors cards (`TagCard`) | `article-tags:{id}` | re-read the tags |
 
 The rule across all of them: TIDE never reloads over a draft. A page with nothing unsaved re-reads in place and names
@@ -234,8 +234,9 @@ column the card was in and is refused if it moved.
 
 ## Concurrency: the edit version
 
-Six entities carry `EditVersion`, a `Guid` configured as an EF Core concurrency token in `AppDbContext`: `Article`,
-`Brief`, `ActionItem`, `ActionComment`, `SavedQuery` and `OutreachTemplate`.
+These entities carry `EditVersion`, a `Guid` configured as an EF Core concurrency token in `AppDbContext`: `Article`,
+`Brief`, `ActionItem`, `ActionComment`, `SavedQuery`, `OutreachTemplate`, `Playbook`, `OutreachMessage`, `StackProduct`
+and `Adversary`.
 
 - The form carries the version it was opened on. The service compares it with the row's and refuses a mismatch with
   `StaleEditException` (`src/Tide.Application/Articles/ArticleService.cs`), naming who changed it where it can.
@@ -246,8 +247,16 @@ Six entities carry `EditVersion`, a `Guid` configured as an EF Core concurrency 
   from an action's Hunt queries card, attaching a triage item's CVEs, the rotation moving a started brief's presenter.
 - Recording a hunt's result, closing with no hits and removing a hunt move the action's version, so of two at once the
   second is refused rather than overwriting what the action was closed on.
+- Recording an outreach email's reply moves the email's version, so of two people recording it at once the second is
+  refused ("Sam recorded the reply to this email at the same moment"), and taking the email back as its reply is
+  recorded is refused too.
+- A product's form on Our stack and an adversary profile's form carry the version they opened on. A merge into a
+  profile, watching it and a MITRE import that adds its names move the profile's version, so a form opened before can't
+  save them away.
 - Tags (`ArticleAdversary`, `ArticleProduct`) and meeting notes deliberately don't move the version, so they never make an
-  open editor's save stale.
+  open editor's save stale. Tagging, linking and merging profiles run in one serializable transaction each
+  (`AdversaryService.Serialized`), so a tag added to a profile as it's merged waits for the merge and lands on the
+  profile it was merged into.
 
 Email templates use a stamp of the saved parts instead of a column, with the same effect
 ([administration.md](../workflows/administration.md#email-templates)).

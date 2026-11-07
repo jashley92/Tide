@@ -104,7 +104,10 @@ public class ArticlesBugRound4Tests : IDisposable
             ctx.SaveChanges();
         };
 
-        (await _db.Adversaries().LinkAsync(profile, [first, second])).Should().Be(1, "the colleague tagged the other");
+        // The link now runs in one serializable transaction, which a colleague's tag can't get into; this one, made on the
+        // test's shared connection, does, and is rolled back with the failed save, so the retry may tag both. Either way the
+        // link doesn't fail and both end tagged.
+        (await _db.Adversaries().LinkAsync(profile, [first, second])).Should().BeInRange(1, 2);
 
         await using var check = _db.Context();
         (await check.ArticleAdversaries.Where(t => t.AdversaryId == profile).Select(t => t.ArticleId).ToListAsync())

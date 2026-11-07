@@ -154,7 +154,11 @@ Markdown kept internal, watched, retired, merged into).
 **Changing profiles** (analysts, `WriteArticles`): save (a name no other live profile uses), add by name from the
 picker (`AddByNameAsync`), watch (triage marks items naming a watched profile), retire or bring back, and merge one into
 another (`MergeAsync`: its tags move, its name and aliases become the other's aliases, and it's retired pointing at
-it).
+it). A merge, a tag and a link each run in one serializable transaction, so a colleague tagging an article with the old
+profile while it merges waits, and the tag lands on the profile it was merged into; a tag or link from a page still
+showing a merged profile goes there too. A profile's form opened before a colleague's save, a merge into it, watching it
+or a MITRE import that added its names is refused on save ("Someone else changed … since you opened it"), so the merged
+names aren't saved away.
 
 **The earlier actors note.** `Article.Actors` was a free-text box before the picker. It's kept and no longer written.
 `AdversaryService.ForArticleAsync` splits it on commas and semicolons: a name a live profile goes by is offered as a
@@ -213,7 +217,9 @@ retired). Analysts keep it; the team edition reads it.
 - **Outreach.** A product's contact is offered on an Outreach action's To line
   ([actions-and-hunting.md](actions-and-hunting.md#outreach)).
 - **Live.** The list and a product's page follow the `stack` topic; a product's edit form keeps what's typed in it and
-  one not touched takes a colleague's change.
+  one not touched takes a colleague's change. When a colleague saves the product someone has typed into, the form says
+  who (`ChangedElsewhere`, with Reload), and saving it is refused by the product's `EditVersion` rather than putting
+  back what they changed.
 
 ## The tag pickers
 

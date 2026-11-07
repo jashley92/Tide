@@ -54,7 +54,7 @@ snapshot is right.
 | **Times are UTC** | Every moment is a `DateTimeOffset` named `…AtUtc`. It's `datetimeoffset` on SQL Server. SQLite can't order or compare `DateTimeOffset`, so on SQLite `OnModelCreating` stores UTC ticks (`long`) and the offset is lost. Code writes UTC from `TimeProvider` or `DateTimeOffset.UtcNow`. |
 | **Org dates are `date`** | Business days are `DateOnly` (`date`) in the organization's time zone, never UTC: `Briefs.BriefDate`, `MetricValues.BriefDate`, `Actions.DueDate`/`RaisedOn`/`ClosedDate`, `Holidays.Date`, `RotationWeeks.WeekStart`, `RotationOverrides.Date`, `RotationChanges.GiveFrom`/`GiveTo`/`TakeFrom`/`TakeTo`, `StackProducts.CheckedOn`, `Webhooks.OverdueSentFor`, and the KEV dates on `CveRecords`. `OrgClock` (`src/Tide.Application/Org/OrgClock.cs`) works out "today" from `Org:TimeZone`, so the brief for "today" doesn't change at UTC midnight. |
 | **Stamps** | `AuditInterceptor` stamps **S** tables on every save. An insert sets `CreatedAtUtc` and `CreatedBy`; an update sets `ModifiedAtUtc` and `ModifiedBy`. Services don't set these columns. Tables that aren't **S** keep their own "who and when" columns, set by the service (`UpdatedAtUtc`/`UpdatedBy`, `AddedAtUtc`/`AddedByName`, `SentAtUtc`…). Some **S** tables also keep the person's display name (`SavedQueries.CreatedByName`), because `CreatedBy` holds only the id. |
-| **Concurrency** | Six tables carry `EditVersion uniqueidentifier`, mapped with `IsConcurrencyToken()`: `Articles`, `Briefs`, `Actions`, `ActionComments`, `SavedQueries` and `OutreachTemplates`. The service gives it a new Guid on each save, and EF adds `WHERE EditVersion = @original` to the update. A save from an older copy fails with `DbUpdateConcurrencyException`, and the service rethrows it as `StaleEditException` (`src/Tide.Application/Articles/ArticleService.cs`), which the page shows. Nothing uses `rowversion`. |
+| **Concurrency** | These tables carry `EditVersion uniqueidentifier`, mapped with `IsConcurrencyToken()`: `Articles`, `Briefs`, `Actions`, `ActionComments`, `SavedQueries`, `OutreachTemplates`, `Playbooks`, `OutreachMessages`, `StackProducts` and `Adversaries`. The service gives it a new Guid on each save, and EF adds `WHERE EditVersion = @original` to the update. A save from an older copy fails with `DbUpdateConcurrencyException`, and the service rethrows it as `StaleEditException` (`src/Tide.Application/Articles/ArticleService.cs`), which the page shows. Nothing uses `rowversion`. |
 | **Retire, don't delete** | No table has an `IsDeleted` column, and there are no global query filters. Admin-managed lists use one rule: **delete a record nothing uses yet, otherwise retire it**. Retired records are marked with `IsRetired` (`Sources`, `Teams`, `ScorecardCategories`, `ScorecardTags`, `MetricGroups`, `MetricDefinitions`, `Adversaries`, `StackProducts`, `SavedQueries`, `OutreachTemplates`, `Playbooks`) or `IsActive = false` (`ActionCardRules`, `RotationMembers`). Examples: `TeamService.SetRetiredAsync`, `PlaybookService.DeleteAsync` (refused for one an action was started from) and `IntakeService` for sources. Retired records are hidden from pickers but stay readable in history. |
 | **Kept for the record** | An article that was briefed or had an action raised from it can't be deleted (`ArticleService.DeleteAsync`). Only a draft on no brief can. A story with articles is closed, not deleted (`StoryService.DeleteAsync`). Files on actions and comments are "removed": the record is hidden but its bytes, hash and row stay (`IRemovableFile` in `src/Tide.Domain/Entities/Actions.cs`). Sends, corrections, audit rows and action events are never deleted. |
 | **Pruned** | Two kinds of rows are deleted on a schedule by `IntakeHostedService`'s daily prune. `FeedItems` older than `Intake:RetentionDays` (minimum 7) are deleted if they're still New, Dismissed or Duplicate (`IntakeService.PruneAsync`). `FeedItemTexts` older than `Intake:ReadingDays` (1 to 30) are deleted by `ReadingService.PruneAsync`. Their `TriageSplits` rows and kept text go with them by cascade. |
@@ -62,7 +62,7 @@ snapshot is right.
 | **Lists in one column** | Some multi-valued fields are delimited text, not child tables. Comma-separated: `FeedItems.Cves`, `DetectionRules.Techniques`, `Users.RolesCsv`, `Articles.Sectors` and the legacy `Articles.Actors`. Semicolon-separated: `Adversaries.Aliases`, `StackProducts.OtherNames`, `BriefSends.Recipients`, `BriefCorrections.Recipients`/`ArticleIds` and `OutreachMessages.To`. Space-separated: `ApiTokens.Scopes` and `Webhooks.Events`. One per line: the `Sources` filter columns and `MetricImports.Problems`. Exact matching on these is done in code. |
 | **Decimals** | `MetricValues.Value` and the metric thresholds are `decimal(18,4)`. `CveRecords.CvssScore` is `decimal(4,1)`. The EPSS score and percentile are `decimal(8,5)`. |
 | **Bulk updates skip the interceptors** | A few services write with `ExecuteUpdateAsync` or `ExecuteDeleteAsync`, which bypass `SaveChanges`. Those writes are neither stamped, audited nor published to the change feed. They are: source poll results (`IntakeService`), triage status changes on feed items (not audited anyway), `Articles.ScreenshotsChangedAtUtc` (`ScreenshotService`), `ApiTokens.Calls`/`LastUsedAtUtc` (`ApiTokenService`), webhook delivery state (`WebhookService`) and the feed-item prune. |
-| **Two migration sets** | The model is the same for both providers, but each provider has its own migrations. SQLite's are in `src/Tide.Infrastructure/Persistence/Migrations`. SQL Server's are in their own assembly, `src/Tide.Migrations.SqlServer/Migrations`, because one assembly can hold only one `ModelSnapshot`. `AddInfrastructure` (`src/Tide.Infrastructure/DependencyInjection.cs`) picks the set from `Database:Provider`. At design time, `AppDbContextFactory` picks it from `TIDE_MIGRATIONS_PROVIDER`. The two sets hold the same migrations in step (44 each at the time of writing). Their timestamps differ by seconds. |
+| **Two migration sets** | The model is the same for both providers, but each provider has its own migrations. SQLite's are in `src/Tide.Infrastructure/Persistence/Migrations`. SQL Server's are in their own assembly, `src/Tide.Migrations.SqlServer/Migrations`, because one assembly can hold only one `ModelSnapshot`. `AddInfrastructure` (`src/Tide.Infrastructure/DependencyInjection.cs`) picks the set from `Database:Provider`. At design time, `AppDbContextFactory` picks it from `TIDE_MIGRATIONS_PROVIDER`. The two sets hold the same migrations in step (45 each at the time of writing). Their timestamps differ by seconds. |
 | **Who applies them** | `DatabaseInitializer.InitializeAsync` runs `MigrateAsync` at startup unless `Database:ApplyMigrations` is `false` (a DBA applies the schema). In that case it refuses to start while migrations are pending. It then loads holidays, seeds the role mappings from `RoleMapping:Groups` on first run, adds the scorecard starter set, adds the starter saved queries, outreach templates and playbooks (each once, and only into an empty library; marked by the settings `Data:StarterSavedQueries`, `Data:StarterOutreachTemplates` and `Data:StarterPlaybooks`, so a team that removes them doesn't see them come back), makes stored indicators canonical once (marked by the setting `Data:IndicatorsCanonical`), and in Development seeds sample data into an empty database. |
 
 ## Entity-relationship diagrams
@@ -397,6 +397,7 @@ erDiagram
         uuid ActionId FK
         uuid TemplateId FK
         datetimeoffset RepliedAtUtc
+        uuid EditVersion "concurrency"
     }
     OutreachTemplates {
         uuid Id PK
@@ -1078,7 +1079,7 @@ email may carry. Columns: `Name` nvarchar(100), `Description` nvarchar(300), `Su
 nvarchar(max) (8,000 in code), `To` nvarchar(254) null, `Ceiling` int, `CreatedByName`/`ModifiedByName`,
 `IsRetired`, `EditVersion` and the stamps. Written by `OutreachTemplateService` (`Actions/OutreachTemplates.cs`).
 
-### `OutreachMessages` (A)
+### `OutreachMessages` (A, V)
 
 An email an analyst sent from their own mail about an Outreach action, recorded when they mark it sent. TIDE never
 sends it. While a reply is outstanding, the action is waiting. Written by `OutreachService` (`Actions/Outreach.cs`).
@@ -1095,6 +1096,7 @@ sends it. While a reply is outstanding, the action is waiting. Written by `Outre
 | `RepliedAtUtc` | datetimeoffset | yes | Indexed. The follow-up scan reads the rows where it's null. |
 | `ReplyRecordedByName`, `ReplyNotes` | nvarchar(256), nvarchar(4000) | yes | |
 | `ReplyFileId` | uniqueidentifier | yes | The `Files` id of an `ActionFile` on the same action. **No FK**: a second cascade path to `Actions` would be refused by SQL Server, and `ActionFiles` rows aren't deleted while the action exists. |
+| `EditVersion` | uniqueidentifier | no | Concurrency token, moved when the reply is recorded: of two people recording it at once, the second is refused, and taking the email back as its reply is recorded is refused too. Rows from before the column have the empty Guid. |
 
 ### `Playbooks` (S, A, V) and `PlaybookSteps` (A)
 
@@ -1227,7 +1229,7 @@ Board-scorecard categories, and the tags under them that analysts put on article
 deleted; otherwise it's retired. Written by `ScorecardService`, which seeds the starter set into an empty install, and
 `ConfigBundleService`.
 
-### `StackProducts` (S, A)
+### `StackProducts` (S, A, V)
 
 A product the organization runs, listed on Our stack. Triage lifts items that name it, and articles can be tagged with
 it. Retired, never deleted. Written by `StackService`.
@@ -1243,9 +1245,10 @@ it. Retired, never deleted. Written by `StackService`.
 | `ContactName`, `ContactEmail` | nvarchar(100), nvarchar(254) | yes | Who to ask at the vendor. Outreach emails about the product are addressed to them. |
 | `CheckedOn` | date | yes | When the versions and notes were last confirmed. |
 | `IsRetired` | bit | no | |
+| `EditVersion` | uniqueidentifier | no | Concurrency token, moved by each save of the product's form; a form opened before a colleague's save is refused. |
 | stamps | | | **S** columns. |
 
-### `Adversaries` (S, A)
+### `Adversaries` (S, A, V)
 
 A threat actor or campaign profile, with every name it goes by in one place. Aliases come from MITRE ATT&CK when its
 groups are imported, and analysts add their own. Notes are internal (AMBER). Retired, never deleted. A profile merged
@@ -1264,6 +1267,7 @@ into another points at it. Written by `AdversaryService`.
 | `Watched` | bit | no | Triage marks new items that name a watched adversary. |
 | `IsRetired` | bit | no | |
 | `MergedIntoId` | uniqueidentifier | yes | The profile this one was merged into. **No FK**. |
+| `EditVersion` | uniqueidentifier | no | Concurrency token, moved by a save, watching or not, a merge into it (or of it) and a MITRE import that adds names; a form opened before any of those is refused. |
 | stamps | | | **S** columns. |
 
 ## Users, settings, security and the API

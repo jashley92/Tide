@@ -547,11 +547,11 @@ stateDiagram-v2
 - **Replied.** *Record the reply* keeps the notes and optionally a file already on the action's files, and either
   closes the action Done with an outcome in the same save (`ActionService.ApplyStatus`) or leaves it open (another email
   still waits). A file goes on the action's files before the reply is recorded; if recording is then refused (the
-  action was closed meanwhile), trying again names that same file rather than adding it twice or dropping it. A reply already recorded is refused, naming who recorded it. The reply's file is referenced by
+  action was closed meanwhile), trying again names that same file rather than adding it twice or dropping it. A reply already recorded is refused, naming who recorded it, and so is the second of two people recording it at the same moment (the email's `EditVersion`), so neither's notes are written over. The reply's file is referenced by
   `OutreachMessage.ReplyFileId` without a foreign key (SQL Server refuses a second cascade path to `StoredFile`), so the
   service checks it's a live file on the same action.
 - **Not sent after all** (`WithdrawAsync`) removes an email marked by mistake while it still waits; the history keeps
-  that it was.
+  that it was. Taken back as a colleague records its reply, it's refused and stays.
 
 Only an Outreach action keeps emails; on another kind the service refuses ("Change its kind first").
 
