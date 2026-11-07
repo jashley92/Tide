@@ -401,7 +401,9 @@ public sealed class TrendsService(IAppDbContextFactory dbs, ICurrentUser user, O
     /// <summary>The articles counted in a period, for writing the report: what each was, how it was tagged, and where.</summary>
     public static string ArticlesCsv(IReadOnlyList<TrendArticle> articles, string baseUrl)
     {
-        var root = baseUrl.TrimEnd('/');
+        // No server address (App:BaseUrl), no link, as the indicator CSV and the emails leave it out: "/articles/…" would
+        // be the site's root, not TIDE under a sub-path, and nothing a spreadsheet can open.
+        var root = string.IsNullOrWhiteSpace(baseUrl) ? null : baseUrl.TrimEnd('/');
         var sb = new StringBuilder("counted_on,briefed,title,article_url,tlp,classification,priority,source,source_url,bluf,tags,techniques,tactics,actions\n");
         foreach (var a in articles)
         {
@@ -409,7 +411,7 @@ public sealed class TrendsService(IAppDbContextFactory dbs, ICurrentUser user, O
                 .OrderBy(AttackMatrix.TacticRank).Select(AttackMatrix.TacticName);
             string[] cells =
             [
-                a.CountedOn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), a.Briefed ? "yes" : "no", a.Title, $"{root}/articles/{a.Id}",
+                a.CountedOn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), a.Briefed ? "yes" : "no", a.Title, root is null ? "" : $"{root}/articles/{a.Id}",
                 Tlp.Label(a.Tlp), a.Classification.ToString(), a.Priority?.ToString() ?? "", a.SourceName ?? "", a.SourceUrl ?? "", a.Bluf,
                 string.Join("; ", a.Tags), string.Join(' ', a.Techniques), string.Join("; ", tactics), a.Actions.ToString(CultureInfo.InvariantCulture),
             ];

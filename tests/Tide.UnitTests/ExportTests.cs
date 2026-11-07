@@ -61,6 +61,19 @@ public class ExportTests
     public void Stix_MatchesTheGoldenBundle() => Golden("export.stix.json", Encoding.UTF8.GetString(Stix.Write(Fixture(), "Cyber Threat Intelligence")));
 
     [Fact]
+    public void TrendArticlesCsv_LeavesTheArticleLinkOut_WhenTheServersAddressIsntSet()
+    {
+        var id = Guid.NewGuid();
+        var article = new Tide.Application.Trends.TrendArticle(id, "Loader", new DateOnly(2026, 10, 26), true, TlpLevel.Green, Classification.Threat,
+            Priority.P2, "Bottom line", null, null, [], [], 0);
+        // Blank, a link would be "/articles/…": the site's root, not TIDE under a sub-path, and no link in a spreadsheet.
+        var blank = Tide.Application.Trends.TrendsService.ArticlesCsv([article], "").Split('\n')[1].Split(',');
+        blank[3].Should().BeEmpty();
+        var set = Tide.Application.Trends.TrendsService.ArticlesCsv([article], "https://tide.example.org/tide/").Split('\n')[1].Split(',');
+        set[3].Should().Be($"https://tide.example.org/tide/articles/{id}");
+    }
+
+    [Fact]
     public void Csv_MatchesTheGoldenFile() => Golden("export.csv", IndicatorCsv.Write(Fixture(), "https://tide.example.org/"));
 
     [Fact]

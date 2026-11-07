@@ -122,7 +122,10 @@ else
     }
 }
 
+<OverLimitDialog @ref="_overLimit" />
+
 @code {
+    private OverLimitDialog _overLimit = default!;
     private CoverageReport? _report;
     private IReadOnlyList<Team> _teams = [];
     private Guid _teamId;
@@ -146,7 +149,8 @@ else
         _busy = true;
         try
         {
-            var number = await Detections.RaiseAsync(row.TechniqueId, _teamId);
+            var number = 0;
+            if (!await _overLimit.RunAsync(async reason => number = await Detections.RaiseAsync(row.TechniqueId, _teamId, reason))) return;
             Toasts.Show($"Raised A-{number} for {row.TechniqueId}.");
             _report = await Detections.CoverageAsync();
         }

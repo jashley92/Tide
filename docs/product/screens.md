@@ -580,7 +580,8 @@ sub-technique.
 
 - **Gaps first.** Techniques with no enabled rule are listed first, those a watched adversary uses at the top, each
   with how many articles showed it. *Raise action* opens a Config change action for the chosen team (one named for
-  detection is picked first), linked to the latest article, and the row shows it until it's closed.
+  detection is picked first), linked to the latest article, and the row shows it until it's closed. A team at its
+  active limit asks why first, when it warns rather than refuses.
 - **Where analysts write.** The editor's technique chips and an adversary profile's techniques say "2 rules", "1
   disabled" or "no rule", and the profile's Navigator layer is coloured by it.
 - **Internal.** Rule names and counts never reach an edition, an export or a webhook. See

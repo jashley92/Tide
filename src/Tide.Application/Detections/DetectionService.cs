@@ -338,9 +338,10 @@ public sealed class DetectionService(IAppDbContextFactory dbs, ICurrentUser user
     /// <summary>
     /// Raises an action for <paramref name="teamId"/> to add or tag a rule for a briefed technique with none, linked to
     /// the latest article that shows it, and remembers it on the Coverage row. Refused while an earlier one is open.
+    /// A team at its active limit that warns needs <paramref name="overLimitReason"/>, as creating any action does.
     /// Returns the action's number.
     /// </summary>
-    public async Task<int> RaiseAsync(string techniqueId, Guid teamId, CancellationToken ct = default)
+    public async Task<int> RaiseAsync(string techniqueId, Guid teamId, string? overLimitReason = null, CancellationToken ct = default)
     {
         RequireRead();
         var id = DetectionParsers.Technique(techniqueId) ?? throw new ArgumentException("That isn't a technique id.");
@@ -372,6 +373,7 @@ public sealed class DetectionService(IAppDbContextFactory dbs, ICurrentUser user
         {
             Title = Clip($"Detection gap: {name}", ActionItem.MaxTitle), Description = about.ToString(), Kind = ActionKind.ConfigChange,
             Priority = row.Watched.Count > 0 ? Priority.P2 : Priority.P3, TeamId = teamId, ArticleId = articles.Count > 0 ? articles[0].Id : null,
+            OverLimitReason = overLimitReason,
         }, ct);
         await using (var db = await dbs.CreateAsync(ct))
         {

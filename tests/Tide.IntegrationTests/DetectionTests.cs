@@ -250,6 +250,25 @@ public class DetectionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task RaisingAGap_ForATeamThatWarnsAtItsLimit_AsksWhy_AndGoesAheadWithTheReason()
+    {
+        var team = await _db.Teams().AddAsync("Detection engineering", null, null);
+        await _db.Teams().SetLimitAsync(team, 1, ActiveLimitMode.Warn);
+        await _db.Actions().CreateAsync(new Tide.Application.Actions.ActionForm { Title = "Already on it", TeamId = team });
+        await Briefed("Help desk calls", "T1621");
+
+        var ask = await FluentActions.Invoking(() => Detections().RaiseAsync("T1621", team)).Should().ThrowAsync<Tide.Application.Actions.ActiveLimitException>();
+        ask.Which.NeedsReason.Should().BeTrue();
+        (await _db.Context().Actions.CountAsync()).Should().Be(1);
+
+        var number = await Detections().RaiseAsync("T1621", team, "Rule gap for a watched actor");
+        var id = await _db.Context().Actions.Where(a => a.Number == number).Select(a => a.Id).SingleAsync();
+        var events = await _db.Context().ActionEvents.Where(e => e.ActionId == id).Select(e => e.Text).ToListAsync();
+        events.Should().Contain(e => e.Contains("(2 of 1 active): Rule gap for a watched actor"));
+        (await Detections().CoverageAsync()).Rows.Single().ActionNumber.Should().Be(number);
+    }
+
+    [Fact]
     public async Task TheNavigatorLayer_IsColouredByCoverage_OnceRulesAreImported()
     {
         var spider = await _db.Adversaries().SaveAsync(new AdversaryForm { Name = "Scattered Spider" });

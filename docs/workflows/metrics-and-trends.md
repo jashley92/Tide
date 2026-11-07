@@ -218,6 +218,8 @@ shows the techniques it was counted for.
 | The table, every line, a column per period | `GET /trends/export.csv?p=&subs=&n=` |
 | The articles one line counted in a period, with their tags, techniques and tactics | `GET /trends/articles.csv?p=&line=&subs=` |
 
+Each article's `article_url` is built from `App:BaseUrl`; with that blank it's left empty, as the indicator CSV leaves it.
+
 ![Trends](../screenshots/trends.png)
 
 ## Reports
