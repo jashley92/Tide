@@ -28,8 +28,12 @@ public sealed class Badge : ComponentBase
 
     /// <summary>The classes for a badge: <c>tide-badge tide-badge-{tone}</c>, and <c>tide-badge-solid</c> when filled.</summary>
     public static string Css(BadgeTone tone, bool solid = false, string? extra = null) =>
-        "tide-badge tide-badge-" + tone.ToString().ToLowerInvariant() + (solid ? " tide-badge-solid" : "")
+        "tide-badge " + ToneClass(tone) + (solid ? " tide-badge-solid" : "")
         + (string.IsNullOrWhiteSpace(extra) ? "" : " " + extra);
+
+    /// <summary>The tone alone (<c>tide-badge-ok</c>): its colours as <c>--tide-badge-fg</c> and <c>--tide-badge-bg</c>, for
+    /// something tinted like a badge that isn't one (a lineage node, a timeline bar).</summary>
+    public static string ToneClass(BadgeTone tone) => "tide-badge-" + tone.ToString().ToLowerInvariant();
 
     /// <summary>Writes a badge into another component's tree. A caller writing more than one puts each in a region of
     /// its own (<see cref="RenderTreeBuilder.OpenRegion"/>), since they share these sequence numbers.</summary>
@@ -180,6 +184,22 @@ public sealed class SlaBadge : ComponentBase
         Badge.Write(b, tone, State == Application.Actions.SlaState.Overdue, text, icon,
             Due is { } d ? "Due " + Ui.Day(d) : null);
     }
+}
+
+/// <summary>
+/// A lineage part's state in the tones the SLA badge uses: on track is its green, due soon its amber and overdue its red;
+/// closed is the blue of things done with (as <see cref="StatusBadge"/> has it), and tracking the Tracking status's purple.
+/// </summary>
+public static class LineageTones
+{
+    public static BadgeTone Of(Application.Actions.LineageState s) => s switch
+    {
+        Application.Actions.LineageState.Done => BadgeTone.Info,
+        Application.Actions.LineageState.DueSoon => BadgeTone.Warn,
+        Application.Actions.LineageState.Overdue => BadgeTone.Danger,
+        Application.Actions.LineageState.Tracking => BadgeTone.Purple,
+        _ => BadgeTone.Ok,
+    };
 }
 
 /// <summary>An action's status as a pill.</summary>

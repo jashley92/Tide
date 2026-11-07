@@ -313,8 +313,17 @@ that fits its kind.
 - **Raising.** Raise one from an article, from the board, or in the meeting without leaving the slide.
 - **Splitting.** A long remediation splits into parts, one per team: one at a time (*Split off a part*, prefilled from
   the parent, with no team chosen), or several at once (*Split to teams*: tick the teams, give each a due date and a
-  ticket link). A parent shows its parts' progress ("3 of 5 done · 1 overdue · next due Nov 20") and links to them on
-  the board; closing it with parts open asks first.
+  ticket link). A parent shows its parts in its lineage, with their progress ("3 of 5 done · 1 overdue · next due
+  Nov 20") and a link to them on the board; closing it with parts open asks first.
+- **Lineage.** A split action shows where it came from and went, left to right: the article and its CVEs, the
+  parent (with who handed it over, and its progress), and each part with its team (marked external), status and due
+  date or how late it is, tinted and labelled done, on track, due soon, overdue or tracking in the same colours as the
+  due-date badges. Each is a link. On the parent it takes the place of a list of parts, with the buttons to split off
+  more under it. A part's page shows its parent and the other parts, with itself marked. On a phone the steps stack.
+- **Remediation timeline.** Under it, on the parent: a bar per part from when it was raised to when it's due, the
+  days past due in red, when each closed, and a line for today, with each part's dates written under its bar.
+- **Recording an update.** *Record an update* puts what a team said by email on its action in one step: their reply
+  (kept as a comment headed as theirs), the status, a new due date and why, and a note, as one line in its history.
 - **Handing off.** *Hand off* gives an action to another team with a short reason, shown on it. The receiving team is
   emailed, unless it works outside TIDE.
 - **Tracking.** A status, and a board column between Blocked and Done, for work handed to others and followed: still

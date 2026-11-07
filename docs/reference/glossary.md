@@ -132,6 +132,7 @@ the tables and columns are in [data model](../architecture/data-model.md).
 
 | Term | Meaning | Code name |
 |---|---|---|
+| **Lineage** | Where a split action came from and went: its article (with its CVEs), the parent action and each part, drawn left to right on the parent's and each part's page and coloured by how each part stands. | `ActionLineage`, `LineageRules`, `ActionLineageFlow` |
 | **Link (report)** | Another report of the same event kept on an article, from *attach*, *promote as one*, or added by hand. Counts as the article's link for coverage. | `ArticleLink` |
 | **Live meeting** | A brief's meeting while the presenter runs it in present mode: who presents, their slide, who's on which slide, raised hands. In memory, one per brief day. | `LiveMeetings`, `IMeetingsInProgress` |
 
@@ -182,6 +183,8 @@ the tables and columns are in [data model](../architecture/data-model.md).
 | **Reader archive (Published briefs)** | The sent company-wide editions, shown exactly as frozen, and nothing else. A send withdrawn by a *TLP slip* isn't shown. | `/published`, `Published`, `DistributionService.Published`, `PublishedContent` |
 | **Readiness checks** | What's missing on an article before the meeting, and the warning when a threat's "why it matters" would reach the company-wide edition, with a one-click fix. | `ArticleChecks.For`, `ArticleChecks.WhyReachesCompany`, `ArticleFix` |
 | **Reading pane** | Triage's pane that shows the selected item's article text, fetched once and kept for `Intake:ReadingDays` (7). For reading inside TIDE only. | `FeedItemText` |
+| **Record an update** | Recording on an action what its team said outside TIDE (an emailed reply): the reply kept as a comment, the status, a new due date and why, and a note, in one history line. | `ActionService.RecordUpdateAsync`, `TeamUpdate`, `RecordUpdateDialog` |
+| **Remediation timeline** | A parent action's parts on one date scale: a bar each from creation to due date, the run past due, the day each closed, and today. | `RemediationTimeline`, `RemediationTimelineCard` |
 | **Reminder** | A scheduled email: due soon, overdue, the weekly team digest, the personal digest, brief not ready, presenting next, outreach follow-up. Each is off until enabled. | `ReminderService`, `ReminderKind`, `ReminderHostedService` |
 | **Review** | An optional check of an article by a colleague before it goes: comments on parts, a checklist, Approve or Ask for changes. An administrator can require it for AMBER and above, threats, or both. | `ArticleReview`, `ReviewComment`, `ReviewStatus` (`Asked`, `Approved`, `ChangesAsked`), `ReviewService` |
 | **Role** | A fixed bundle of permissions granted by AD groups: Analyst, Action owner, Reader, Admin, Viewer, Visitor. | `AppRole`, `RoleDefinitions`, `AdGroupRoleMapping` |

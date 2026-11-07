@@ -26,4 +26,7 @@ public static class Words
         var shown = Num(n);
         return shown + (shown == "1" ? " day" : " days");
     }
+
+    /// <summary>"Nov 20": a day in the short form lists, scales and rollups use.</summary>
+    public static string MonthDay(DateOnly d) => d.ToString("MMM d", CultureInfo.InvariantCulture);
 }

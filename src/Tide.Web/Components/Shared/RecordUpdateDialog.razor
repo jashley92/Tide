@@ -1,0 +1,120 @@
+@* Record an update: what the owning team said outside TIDE (an emailed reply, most often from an external team), in one
+   step. Their reply (kept as a comment quoting it), the status it's at now (closing asks for the outcome, as the status
+   buttons do, and a parent with open parts asks first), a new due date and why, and a note; ActionService.RecordUpdateAsync
+   saves it all as one history line. A team over its limit asks why (OverLimitDialog) or refuses, and the dialog stays
+   open saying so. *@
+@inject ActionService ActionSvc
+@inject ToastService Toasts
+
+<ConfirmDialog @ref="_dialog" Form="true" Wide="true" Confirming="Save" ConfirmIcon="bi-envelope-check" ConfirmDisabled="@(!Ready)">
+    @if (_form is { } f)
+    {
+        <label class="tide-field-label" for="update-reply">Their reply <span class="fw-normal">(optional)</span></label>
+        <textarea id="update-reply" class="form-control form-control-sm tide-autogrow" rows="4" maxlength="@TeamUpdates.MaxReply"
+                  placeholder="Paste what they wrote" @bind:get="f.Reply" @bind:set="v => f.Reply = v" @bind:event="oninput"></textarea>
+        <div class="form-text">Kept on the action as a comment from @Team, quoting it.</div>
+
+        <div class="row g-2 mt-1">
+            <div class="col-sm-6">
+                <label class="tide-field-label" for="update-status">Status</label>
+                <select id="update-status" class="form-select form-select-sm" @bind:get="f.Status" @bind:set="SetStatus">
+                    @foreach (var s in ActionItem.StatusOrder)
+                    {
+                        <option value="@s">@ActionService.StatusName(s)@(s == Action.Status ? " (now)" : "")</option>
+                    }
+                </select>
+            </div>
+            <div class="col-sm-6">
+                <label class="tide-field-label" for="update-due">New due date <span class="fw-normal">(optional)</span></label>
+                <input id="update-due" type="date" class="form-control form-control-sm" @bind="f.DueDate" />
+            </div>
+        </div>
+        @if (Closing)
+        {
+            <div class="mt-2">
+                <ActionCloseFields Kind="Action.Kind" Current="Action.Outcome" To="f.Status" Id="update-close" Outcome="f.Outcome" OutcomeChanged="o => f.Outcome = o"
+                                   Note="@f.Note" NoteChanged="n => f.Note = n" />
+            </div>
+        }
+        @if (DueMoves)
+        {
+            <label class="tide-field-label mt-2" for="update-due-why">Why it moves</label>
+            <input id="update-due-why" class="form-control form-control-sm" maxlength="@TeamUpdates.MaxNote" placeholder="Their change window moved to next week"
+                   @bind:get="f.DueReason" @bind:set="v => f.DueReason = v" @bind:event="oninput" />
+        }
+        @if (!Closing)
+        {
+            <label class="tide-field-label mt-2" for="update-note">Note <span class="fw-normal">(optional)</span></label>
+            <input id="update-note" class="form-control form-control-sm" maxlength="@TeamUpdates.MaxNote" placeholder="Patched the edge routers; the core waits for Tuesday"
+                   @bind:get="f.Note" @bind:set="v => f.Note = v" @bind:event="oninput" />
+        }
+        <div class="form-text">One line in its history: "Update from @Team: …".</div>
+        @if (_error is not null) { <div class="text-danger small mt-2" role="alert">@_error</div> }
+    }
+</ConfirmDialog>
+<ConfirmDialog @ref="_confirm" />
+<OverLimitDialog @ref="_overLimit" />
+
+@code {
+    [Parameter, EditorRequired] public ActionItem Action { get; set; } = default!;
+
+    /// <summary>How many of its parts are still open: closing it with any asks first.</summary>
+    [Parameter] public int OpenParts { get; set; }
+
+    /// <summary>After it's recorded: the page reloads the action.</summary>
+    [Parameter] public EventCallback Done { get; set; }
+
+    private ConfirmDialog _dialog = default!, _confirm = default!;
+    private OverLimitDialog _overLimit = default!;
+    private TeamUpdate? _form;
+    private string? _error;
+
+    private string Team => Action.Team?.Name ?? "the team";
+    private bool Closing => _form is { } f && f.Status != Action.Status && ActionItem.IsClosedStatus(f.Status);
+    private bool DueMoves => _form is { DueDate: { } d } && d != Action.DueDate;
+
+    // Something to record, and what a close or a moved date needs: an outcome for Done, a reason for the date.
+    private bool Ready => _form is { } f
+        && (!string.IsNullOrWhiteSpace(f.Reply) || !string.IsNullOrWhiteSpace(f.Note) || f.Status != Action.Status || DueMoves)
+        && (!Closing || ActionCloseFields.CanClose(f.Status, f.Outcome))
+        && (!DueMoves || !string.IsNullOrWhiteSpace(f.DueReason));
+
+    /// <summary>The form as filled in (a test fills it here).</summary>
+    internal TeamUpdate? Form => _form;
+
+    internal string? Error => _error;
+
+    /// <summary>Opens it, from the action as the page shows it.</summary>
+    public Task OpenAsync()
+    {
+        (_form, _error) = (new TeamUpdate { ActionId = Action.Id, From = Action.Status, Status = Action.Status }, null);
+        return _dialog.Ask($"Record an update from {Team}", null, "Record update", danger: false);
+    }
+
+    // Another status starts its outcome afresh: one chosen for Done may not fit Cancelled.
+    private void SetStatus(ActionStatus s) => (_form!.Status, _form.Outcome) = (s, ActionOutcome.None);
+
+    /// <summary>The dialog's Record update: kept open, saying why, when it's refused.</summary>
+    internal async Task<bool> Save()
+    {
+        var f = _form!;
+        _error = null;
+        if (Closing && OpenParts > 0 && !await ActionPrompts.ConfirmCloseParent(_confirm, Action.Number, OpenParts)) return false;
+        try
+        {
+            if (!await _overLimit.RunAsync(reason =>
+                {
+                    f.OverLimitReason = reason;
+                    return ActionSvc.RecordUpdateAsync(f);
+                })) return false;
+        }
+        catch (Exception ex)
+        {
+            _error = UserFacingError.For(ex);
+            return false;
+        }
+        Toasts.Show($"Update from {Team} recorded.");
+        await Done.InvokeAsync();
+        return true;
+    }
+}

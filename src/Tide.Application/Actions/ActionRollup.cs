@@ -1,4 +1,4 @@
-using System.Globalization;
+using Tide.Domain.Enums;
 
 namespace Tide.Application.Actions;
 
@@ -15,8 +15,15 @@ public static class ActionRollup
         if (total <= 0) return "";
         var parts = new List<string> { $"{closed} of {total} done" };
         if (overdue > 0) parts.Add($"{overdue} overdue");
-        if (closed < total && nextDue is { } d) parts.Add("next due " + d.ToString("MMM d", CultureInfo.InvariantCulture));
+        if (closed < total && nextDue is { } d) parts.Add("next due " + Content.Words.MonthDay(d));
         return string.Join(" · ", parts);
+    }
+
+    /// <summary>The same line from the parts themselves (their status and due date), counted as <see cref="Text"/> says.</summary>
+    public static string Of(IReadOnlyCollection<(ActionStatus Status, DateOnly? Due)> parts, DateOnly today)
+    {
+        var open = parts.Where(p => !Domain.Entities.ActionItem.IsClosedStatus(p.Status)).ToList();
+        return Text(parts.Count, parts.Count - open.Count, open.Count(p => p.Due < today), open.Min(p => p.Due));
     }
 
     /// <summary>Whether a part due <paramref name="child"/> is due after its parent (<paramref name="parent"/>): it's

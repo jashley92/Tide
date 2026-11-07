@@ -58,7 +58,8 @@ public sealed record ActionRow(Guid Id, int Number, string Title, ActionKind Kin
     string? AssigneeId, string? AssigneeName, DateOnly? DueDate, ActionStatus Status, ActionOutcome Outcome, DateOnly? ClosedDate,
     Guid? ArticleId, string? ArticleTitle, Guid? ParentId, int Children, DateTimeOffset CreatedAtUtc,
     int? ParentNumber = null, string? PlaybookName = null, int ChecklistDone = 0, int ChecklistTotal = 0, DateOnly? RaisedOn = null,
-    int Files = 0, int ChildrenClosed = 0, int ChildrenOverdue = 0, DateOnly? ChildrenNextDue = null)
+    int Files = 0, bool TeamExternal = false, Guid? HandedFromTeamId = null, int ChildrenClosed = 0, int ChildrenOverdue = 0,
+    DateOnly? ChildrenNextDue = null)
 {
     public SlaState Sla(DateOnly today, WorkingDays? workingDays = null) => ActionSla.StateOf(Status, DueDate, ClosedDate, today, workingDays);
     public ActionUrgency Urgency(DateOnly today, WorkingDays? workingDays = null) => ActionSla.UrgencyOf(Status, DueDate, today, workingDays);
@@ -224,6 +225,9 @@ public sealed record ActionDetail(ActionItem Action, ActionRow? Parent, IReadOnl
 
     /// <summary>Its parts' progress ("3 of 5 done · 1 overdue · next due Nov 20"), empty with none.</summary>
     public string Rollup { get; init; } = "";
+
+    /// <summary>Where it came from and went, for an action that has parts or is one; null otherwise.</summary>
+    public ActionLineage? Lineage { get; init; }
 }
 
 /// <summary>One team's load: open, overdue, due soon, P1, closed in the last week, and open by assignee (none for an external
@@ -626,7 +630,8 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         a.ClosedDate, a.ArticleId, a.Article == null ? null : a.Article.Title, a.ParentId, db.Actions.Count(c => c.ParentId == a.Id), a.CreatedAtUtc,
         db.Actions.Where(p => p.Id == a.ParentId).Select(p => (int?)p.Number).FirstOrDefault(), a.PlaybookName,
         a.Checklist.Count(i => i.IsDone), a.Checklist.Count, a.RaisedOn,
-        a.Files.Count(f => f.RemovedAtUtc == null) + a.Comments.SelectMany(c => c.Files).Count(f => f.RemovedAtUtc == null)));
+        a.Files.Count(f => f.RemovedAtUtc == null) + a.Comments.SelectMany(c => c.Files).Count(f => f.RemovedAtUtc == null),
+        a.Team!.IsExternal, a.HandedFromTeamId));
 
     // The rows, and each parent's rollup ("3 of 5 done · 1 overdue · next due Nov 20") from one grouped read of their parts.
     private async Task<List<ActionRow>> RowsAsync(IAppDbContext db, IQueryable<ActionItem> q, CancellationToken ct)
@@ -660,7 +665,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (!Briefs.MeetingAccess.Seats(user, meetings).Any(s => s.Action == number)) RequireRead(user);
         await using var db = await dbs.CreateAsync(ct);
         var a = await db.Actions.AsNoTracking()
-            .Include(x => x.Team).Include(x => x.Article).ThenInclude(x => x!.Indicators)
+            .Include(x => x.Team).Include(x => x.Article).ThenInclude(x => x!.Indicators).Include(x => x.Article).ThenInclude(x => x!.Cves)
             .Include(x => x.Comments).ThenInclude(c => c.Files).Include(x => x.Events).Include(x => x.Hunts).Include(x => x.Checklist)
             .Include(x => x.Indicators).AsSplitQuery().FirstOrDefaultAsync(x => x.Number == number, ct);
         if (a is null) return null;
@@ -669,16 +674,55 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         a.Hunts = a.Hunts.OrderByDescending(h => h.CreatedAtUtc).ToList();
         a.Indicators = a.Indicators.OrderBy(i => i.AddedAtUtc).ThenBy(i => i.Value, StringComparer.OrdinalIgnoreCase).ToList();
         var parent = a.ParentId is { } pid ? await Rows(db, db.Actions.AsNoTracking().Where(x => x.Id == pid)).FirstOrDefaultAsync(ct) : null;
-        var children = await Rows(db, db.Actions.AsNoTracking().Where(x => x.ParentId == a.Id)).ToListAsync(ct);
-        var rollup = children.Count == 0 ? "" : (await RollupsAsync(db, [a.Id], clock.Today, ct)).GetValueOrDefault(a.Id)?.Text ?? "";
+        var children = (await Rows(db, db.Actions.AsNoTracking().Where(x => x.ParentId == a.Id)).ToListAsync(ct)).OrderBy(c => c.Number).ToList();
         var canWork = await CanWork(db, user, a.TeamId, ct);
         var handedFrom = a.HandedFromTeamId is { } from ? await TeamName(db, from, ct) : null;
-        return new ActionDetail(a, parent, children.OrderBy(c => c.Number).ToList(), canWork, user.Has(Permission.WriteArticles),
-            canWork || CanComment)
+        var lineage = children.Count > 0 ? ParentLineage(a, handedFrom, children)
+            : parent is not null ? await PartLineageAsync(db, a, parent, ct) : null;
+        return new ActionDetail(a, parent, children, canWork, user.Has(Permission.WriteArticles), canWork || CanComment)
         {
-            Files = await ActionFileService.ListAsync(db, user, a.Id, ct, a.Comments), HandedFrom = handedFrom, Rollup = rollup,
+            Files = await ActionFileService.ListAsync(db, user, a.Id, ct, a.Comments), HandedFrom = handedFrom,
+            Rollup = lineage?.Parent.Id == a.Id ? lineage.Rollup : "", Lineage = lineage,
         };
     }
+
+    // A parent's lineage, from what its page has read already: itself, its article and its parts.
+    private ActionLineage ParentLineage(ActionItem a, string? handedFrom, IReadOnlyList<ActionRow> children) =>
+        Lineage(a.Article is { } art ? Article(art.Id, art.Title, art.Cves.Select(c => c.CveId)) : null,
+            Node(a.Id, a.Number, a.Title, a.Team?.Name ?? "", a.Team?.IsExternal == true, a.Status, a.DueDate, a.ClosedDate, a.CreatedAtUtc, handedFrom),
+            children, a.Id);
+
+    // A part's lineage: its parent (read already), and the parent's parts, itself among them, in one more read; the article
+    // is the part's own when it shares the parent's, as a split part does.
+    private async Task<ActionLineage> PartLineageAsync(IAppDbContext db, ActionItem a, ActionRow parent, CancellationToken ct)
+    {
+        var siblings = (await Rows(db, db.Actions.AsNoTracking().Where(x => x.ParentId == parent.Id)).ToListAsync(ct)).OrderBy(c => c.Number).ToList();
+        var handedFrom = parent.HandedFromTeamId is { } from ? await TeamName(db, from, ct) : null;
+        LineageArticle? article = null;
+        if (parent.ArticleId is { } articleId)
+        {
+            article = a.Article is { } own && own.Id == articleId ? Article(own.Id, own.Title, own.Cves.Select(c => c.CveId))
+                : await db.Articles.AsNoTracking().Where(x => x.Id == articleId)
+                    .Select(x => new { x.Id, x.Title, Cves = x.Cves.Select(c => c.CveId).ToList() }).FirstOrDefaultAsync(ct) is { } other
+                    ? Article(other.Id, other.Title, other.Cves) : null;
+        }
+        var p = parent;
+        return Lineage(article, Node(p.Id, p.Number, p.Title, p.TeamName, p.TeamExternal, p.Status, p.DueDate, p.ClosedDate, p.CreatedAtUtc, handedFrom),
+            siblings, a.Id);
+    }
+
+    private ActionLineage Lineage(LineageArticle? article, LineageNode parent, IReadOnlyList<ActionRow> parts, Guid current) =>
+        new(article, parent, [.. parts.Select(c => Node(c.Id, c.Number, c.Title, c.TeamName, c.TeamExternal, c.Status, c.DueDate, c.ClosedDate, c.CreatedAtUtc, null))],
+            current, ActionRollup.Of([.. parts.Select(c => (c.Status, c.DueDate))], clock.Today));
+
+    private static LineageArticle Article(Guid id, string title, IEnumerable<string> cves) =>
+        new(id, title, cves.Order(StringComparer.OrdinalIgnoreCase).ToList());
+
+    // Its state is worked out here, once, by the organization's calendar: the flow and the timeline both read it.
+    private LineageNode Node(Guid id, int number, string title, string team, bool external, ActionStatus status, DateOnly? due,
+        DateOnly? closed, DateTimeOffset created, string? handedFrom) =>
+        new(id, number, title, team, external, status, due, closed, DateOnly.FromDateTime(clock.ToLocal(created).DateTime),
+            LineageRules.StateOf(status, due, clock.Today, clock.Days), handedFrom);
 
     /// <summary>An action's details (Markdown), or null: a new part starts from its parent's.</summary>
     public async Task<string?> DescriptionAsync(Guid id, CancellationToken ct = default)
@@ -1003,6 +1047,12 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         await SaveEditAsync(db, ct);
     }
 
+    // A move or change begun from the status the page showed (at): refused when someone has moved it since.
+    private static void RequireAt(ActionItem a, ActionStatus at)
+    {
+        if (a.Status != at) throw new StaleEditException($"Someone else moved A-{a.Number} to {StatusName(a.Status)} in the meantime.");
+    }
+
     // A move into an active status from one that isn't (Tracking, or reopening a closed one) adds to the team's active count.
     private static Task<string> OverLimit(IAppDbContext db, ActionItem a, ActionStatus to, string? reason, CancellationToken ct) =>
         ActiveLimits.CheckChangeAsync(db, (a.TeamId, a.Status), (a.TeamId, to), a.Id, reason, null, ct);
@@ -1018,8 +1068,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (!Enum.IsDefined(from) || !Enum.IsDefined(to) || !Enum.IsDefined(outcome)) throw new ArgumentException("Choose a status and an outcome.");
         await using var db = await dbs.CreateAsync(ct);
         var a = await WorkableAsync(db, id, ct);
-        if (a.Status != from)
-            throw new StaleEditException($"Someone else moved A-{a.Number} to {StatusName(a.Status)} in the meantime.");
+        RequireAt(a, from);
         if (from == to) return;
         var over = await OverLimit(db, a, to, overLimitReason, ct);
         var line = ApplyStatus(db, a, to, outcome, note);
@@ -1037,9 +1086,50 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (!ActionItem.IsClosedStatus(at) || !Enum.IsDefined(outcome)) throw new ArgumentException("Choose a status and an outcome.");
         await using var db = await dbs.CreateAsync(ct);
         var a = await WorkableAsync(db, id, ct);
-        if (a.Status != at)
-            throw new StaleEditException($"Someone else moved A-{a.Number} to {StatusName(a.Status)} in the meantime.");
+        RequireAt(a, at);
         ApplyStatus(db, a, at, outcome, note);
+        await SaveEditAsync(db, ct);
+    }
+
+    /// <summary>
+    /// Records what the owning team said outside TIDE, in one save and one history line ("Update from Network Engineering:
+    /// …"): the reply kept as a comment quoting it, a move to <see cref="TeamUpdate.Status"/> by the rules a move follows
+    /// (its team's active limit, an outcome to close it Done), and a new due date with its reason. Who may: whoever works
+    /// the action. Refused, as a move is, when the action moved since the dialog opened, and when there's nothing to record.
+    /// </summary>
+    public async Task RecordUpdateAsync(TeamUpdate update, CancellationToken ct = default)
+    {
+        if (!Enum.IsDefined(update.Status) || !Enum.IsDefined(update.Outcome)) throw new ArgumentException("Choose a status and an outcome.");
+        var reply = ArticleService.CleanOrNull(update.Reply, TeamUpdates.MaxReply, multiline: true);
+        var note = ArticleService.CleanOrNull(update.Note, TeamUpdates.MaxNote, multiline: true);
+        await using var db = await dbs.CreateAsync(ct);
+        var a = await WorkableAsync(db, update.ActionId, ct);
+        RequireAt(a, update.From);
+        var team = await TeamName(db, a.TeamId, ct);
+        (DateOnly?, DateOnly, string)? due = null;
+        if (update.DueDate is { } newDue && newDue != a.DueDate)
+        {
+            CheckDue(newDue);
+            var why = ArticleService.CleanOrNull(update.DueReason, TeamUpdates.MaxNote) ?? throw new ArgumentException("Say why the due date moves.");
+            due = (a.DueDate, newDue, why);
+            a.DueDate = newDue;
+        }
+        var moves = update.Status != a.Status;
+        if (reply is null && note is null && due is null && !moves) throw new ArgumentException("Paste their reply, write a note, or change its status or due date first.");
+        var closing = moves && ActionItem.IsClosedStatus(update.Status);
+        var lead = TeamUpdates.Line(team, closing ? null : note, due, reply is not null);
+        if (moves)
+        {
+            var over = await OverLimit(db, a, update.Status, update.OverLimitReason, ct);
+            var line = ApplyStatus(db, a, update.Status, update.Outcome, closing ? note : null, lead);
+            line.Text = ClipEvent(line.Text + over);
+        }
+        else
+        {
+            a.EditVersion = Guid.NewGuid();
+            db.ActionEvents.Add(Event(user, a.Id, lead));
+        }
+        if (reply is not null) db.ActionComments.Add(NewComment(a.Id, TeamUpdates.ReplyComment(team, reply)));
         await SaveEditAsync(db, ct);
     }
 
@@ -1128,7 +1218,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (attachments.Count > 0) await RequireWork(db, user, a, ct);
         else await RequireComment(db, a, ct);
         var written = await files.WriteAttachmentsAsync(attachments, ct);
-        var comment = new ActionComment { ActionId = id, Text = clean, AuthorId = user.UserId, AuthorName = user.DisplayName, AtUtc = DateTimeOffset.UtcNow };
+        var comment = NewComment(id, clean);
         foreach (var ((file, isImage), i) in written.Select((w, i) => (w, i)))
         {
             db.Files.Add(file);
@@ -1157,6 +1247,10 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             throw;
         }
     }
+
+    // A comment by whoever is signed in, now.
+    private ActionComment NewComment(Guid actionId, string text) =>
+        new() { ActionId = actionId, Text = text, AuthorId = user.UserId, AuthorName = user.DisplayName, AtUtc = DateTimeOffset.UtcNow };
 
     /// <summary>Changes a comment: only its author, on whichever team (or an administrator). The action's history says so, and the audit
     /// log keeps the text before and after. <paramref name="editVersion"/> is the comment's
