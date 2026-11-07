@@ -161,10 +161,10 @@ can't be reached to record the failure leaves it unrecorded; the source is tried
 
 | Step | Code | Rule |
 |---|---|---|
-| Parse | `FeedParser.ParseFeed`, `ParseKev`, `KevItems` | At most 200 items a fetch (`FeedParser.MaxItems`). DOCTYPE skipped unread, so a declared entity stays undeclared. A control character XML forbids becomes a space. Summaries are reduced to plain text: feed HTML is never rendered anywhere. The WordPress "The post … appeared first on …" footer is stripped. Each item keeps its own tags. |
+| Parse | `FeedParser.ParseFeed`, `ParseKev`, `KevItems` | At most 200 items a fetch (`FeedParser.MaxItems`). DOCTYPE skipped unread, so a declared entity stays undeclared. A control character XML forbids becomes a space. Summaries are reduced to plain text: feed HTML is never rendered anywhere. The WordPress "The post … appeared first on …" footer is stripped. Each item keeps its own tags. A date whose day name isn't its weekday ("Mon, 07 Nov 2026") is read without the day name; a date before 1995 (the epoch a feed writes for an undated item) is no date. |
 | Feed filter | `FeedFilter.For(source).Keeps` | Feeds only. With an "only" list, an item passes with an only-tag or an only-word in its title. A skip-tag or skip-word leaves it out. Tags match ignoring case; title words match as whole words. The tags the last read carried are kept in `SeenCategories` to choose from. |
 | Sponsored filter | `SponsoredFilter.For(options).Match` | While `Intake:SkipSponsored` is on (the default). See below. |
-| Retention cut | `IntakeService.StoreAsync` | An item published before the retention cutoff isn't taken in, so a feed that still lists a pruned item (the KEV catalog lists a year or more) doesn't bring it back as new. |
+| Retention cut | `IntakeService.StoreAsync` | An item published before the retention cutoff isn't taken in, so a feed that still lists a pruned item (the KEV catalog lists a year or more) doesn't bring it back as new. An item dated after the fetch is dated when it was fetched, so a wrong year can't hold it at the top of New. |
 | Canonical address | `UrlCanonicalizer.Canonicalize`, `Hash` | Tracking parameters (`utm_*`, `fbclid`, `gclid` and others) removed, the remaining query sorted, a trailing slash dropped. The SHA-256 of that is `FeedItem.UrlHash`, unique. The same story from two feeds, or polled twice, is one item. |
 | Repeat check | `TitleMatch.Key`, `Similarity` | The title reduced to its significant words (`TitleKey`), compared with items fetched in the last 7 days (`IntakeService.SimilarWindow`). A Jaccard similarity of 0.75 or more sets `SimilarToId` to the first match. Set once, at intake. |
 | CVEs | `FeedParser.CvesIn` | CVE ids in the title and summary, comma-separated in `FeedItem.Cves` (at most 40 when the list is long). |
@@ -546,6 +546,7 @@ shortlisted since it was read stays. Its `FeedItemText` and `TriageSplit` rows g
 | A redirect to an internal address | `AddressPolicy` is checked on every hop and connection. |
 | A long-dead feed | Interval doubles per failure, up to 16 times. |
 | A feed that still lists pruned items | Items published before the retention cutoff aren't taken in. |
+| A feed with impossible dates | A wrong day name is ignored, a date before 1995 is no date (so the item isn't dropped as old), and a date after the fetch becomes the fetch time. |
 | Two first proposals from one API caller at once | The unique source name; the loser reads the winner's source. |
 | The same address proposed twice at once | The unique `UrlHash`; the second returns null. |
 | An ETag longer than its column | Dropped rather than cut, so the next poll is a plain one. |

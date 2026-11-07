@@ -262,15 +262,39 @@ public static partial class FeedParser
         return m.Success ? text[..m.Index].TrimEnd() : text;
     }
 
+    /// <summary>
+    /// The earliest date taken as a post's own. A feed that has no date for an item often writes the Unix epoch
+    /// (1 January 1970) or the year 1 instead; read as given, every such item was older than the retention cutoff and
+    /// silently dropped, so it's read as no date at all.
+    /// </summary>
+    public static readonly DateTimeOffset EarliestDate = new(1995, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+    // RFC 822 with a named zone ("GMT", "EST") that .NET doesn't parse.
+    private static readonly Dictionary<string, string> Zones = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["GMT"] = "+0000", ["UT"] = "+0000", ["UTC"] = "+0000", ["EST"] = "-0500", ["EDT"] = "-0400",
+        ["CST"] = "-0600", ["CDT"] = "-0500", ["MST"] = "-0700", ["MDT"] = "-0600", ["PST"] = "-0800", ["PDT"] = "-0700",
+    };
+
+    // The day name an RFC 822 date may start with ("Mon, ").
+    [GeneratedRegex(@"^[A-Za-z]{3,9},\s*", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex DayName();
+
     private static DateTimeOffset? Date(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
         var t = text.Trim();
+        // .NET refuses a date whose day name isn't that date's weekday ("Mon, 07 Nov 2026", a Saturday), which hand-made
+        // and templated feeds often write: the item then had no date, and an old one came in as new. The day name says
+        // nothing the date doesn't, so it's tried without it.
+        var d = Parse(t) ?? (DayName().Match(t) is { Success: true } day ? Parse(t[day.Length..]) : null);
+        return d is { } at && at >= EarliestDate ? at : null;
+    }
+
+    private static DateTimeOffset? Parse(string t)
+    {
         if (DateTimeOffset.TryParse(t, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var d)) return d.ToUniversalTime();
-        // RFC 822 with a named zone ("GMT", "EST") that .NET doesn't parse.
-        var zones = new Dictionary<string, string> { ["GMT"] = "+0000", ["UT"] = "+0000", ["UTC"] = "+0000", ["EST"] = "-0500", ["EDT"] = "-0400",
-            ["CST"] = "-0600", ["CDT"] = "-0500", ["MST"] = "-0700", ["MDT"] = "-0600", ["PST"] = "-0800", ["PDT"] = "-0700" };
-        foreach (var (name, offset) in zones)
+        foreach (var (name, offset) in Zones)
             if (t.EndsWith(" " + name, StringComparison.OrdinalIgnoreCase)
                 && DateTimeOffset.TryParse(t[..^name.Length] + offset, CultureInfo.InvariantCulture, DateTimeStyles.None, out var z))
                 return z.ToUniversalTime();

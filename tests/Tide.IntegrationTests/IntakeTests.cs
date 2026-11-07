@@ -84,6 +84,26 @@ public class IntakeServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Poll_AnItemDatedAhead_IsDatedWhenFetched_AndOneDatedAtTheEpochIsKeptUndated()
+    {
+        var source = await Source();
+        _db.Http.Set(FeedUrl, "<rss version=\"2.0\"><channel><title>News</title>" +
+            "<item><title>Typo year</title><link>https://example.com/ahead</link><pubDate>Sat, 07 Nov 2099 10:00:00 GMT</pubDate></item>" +
+            "<item><title>No date known</title><link>https://example.com/epoch</link><pubDate>Thu, 01 Jan 1970 00:00:00 GMT</pubDate></item>" +
+            "</channel></rss>");
+        var before = DateTimeOffset.UtcNow;
+        var intake = _db.Intake();
+
+        (await intake.PollNowAsync(source)).New.Should().Be(2, "an epoch date is no date, not an item older than the retention cutoff");
+
+        var inbox = await intake.InboxAsync(new InboxFilter());
+        var ahead = inbox.Single(r => r.Item.Title == "Typo year").Item;
+        ahead.PublishedAtUtc.Should().NotBeNull();
+        ahead.PublishedAtUtc!.Value.Should().BeOnOrAfter(before).And.BeOnOrBefore(ahead.FetchedAtUtc, "a date after the fetch would hold it atop New for months");
+        inbox.Single(r => r.Item.Title == "No date known").Item.PublishedAtUtc.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Poll_AFailureIsRecorded_AndBacksTheSourceOff()
     {
         var source = await Source();
