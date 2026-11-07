@@ -781,6 +781,7 @@ else
 
         @* Inside the slides' root, so it shows in full screen too; present.js leaves the keys to it while it's open. *@
         <ConfirmDialog @ref="_confirm" />
+        <OverLimitDialog @ref="_overLimit" />
     </div>
 
     <Lightbox FileId="_zoom?.FileId" Caption="@_zoom?.Caption" OnClose="() => _zoom = null" />
@@ -1316,9 +1317,17 @@ else
         _actions = await BriefSvc.EditionActionsAsync(_brief);
     }
 
+    // A team that warns at its limit asks why first (OverLimitDialog), as the action page's create does.
+    private OverLimitDialog _overLimit = default!;
+
+    /// <summary>For tests: the dialog asking why an action goes over its team's limit.</summary>
+    internal OverLimitDialog OverLimit => _overLimit;
+
     internal Task QuickAdd(Guid articleId) => Run(async () =>
     {
-        var number = await ActionSvc.QuickAddAsync(articleId, _qaTitle ?? "", _qaKind, _qaTeam, _qaDue, _past ? _date : null);
+        var number = 0;
+        if (!await _overLimit.RunAsync(async reason =>
+                number = await ActionSvc.QuickAddAsync(articleId, _qaTitle ?? "", _qaKind, _qaTeam, _qaDue, _past ? _date : null, reason))) return;
         _qaTitle = null;
         _qaDue = null;
         await LoadActions();
@@ -1373,7 +1382,9 @@ else
         _raising = true;
         try
         {
-            var number = await ActionSvc.QuickAddAsync(articleId, line, draft.Kind, draft.Team, null, _past ? _date : null);
+            var number = 0;
+            if (!await _overLimit.RunAsync(async reason =>
+                    number = await ActionSvc.QuickAddAsync(articleId, line, draft.Kind, draft.Team, null, _past ? _date : null, reason))) return;
             await LoadActions();
             Toasts.Show($"{Ui.ActionLabel(number)} raised.{await NoOneToOwn(draft.Team)}");
         }

@@ -88,15 +88,20 @@ public sealed partial class ReminderService
             {
                 Id = a.Id, Number = a.Number, TeamId = a.TeamId, Title = a.Title, Description = a.Description, DueDate = a.DueDate,
                 TicketRef = a.TicketRef, TicketUrl = a.TicketUrl, ParentId = a.ParentId, AssigneeId = a.AssigneeId, CreatedBy = a.CreatedBy,
-                HandedFromTeamId = a.HandedFromTeamId, Article = a.Article == null ? null : new Article { Tlp = a.Article.Tlp },
+                HandedFromTeamId = a.HandedFromTeamId, HandedAtUtc = a.HandedAtUtc, Article = a.Article == null ? null : new Article { Tlp = a.Article.Tlp },
             })
             .ToListAsync(ct);
-        var due = open.Select(a => (Action: a, Key: Key(a, teams[a.TeamId], today))).Where(x => x.Key is not null).ToList();
+        var due = open.Select(a => (Action: a, Step: ExternalCadence.Step(today, a.DueDate!.Value, teams[a.TeamId].RemindBeforeDays,
+                teams[a.TeamId].RemindOverdueEveryDays, clock.Days)))
+            .Where(x => x.Step is not null).Select(x => (x.Action, Key: Key(x.Action, x.Step!), Unhanded: UnhandedKey(x.Action, x.Step!))).ToList();
         if (due.Count == 0) return 0;
-        var keys = due.Select(x => x.Key!).ToList();
-        var marked = (await db.NotificationMarks.AsNoTracking().Where(m => m.Kind == ExternalMark && keys.Contains(m.Key))
-            .Select(m => m.Key).ToListAsync(ct)).ToHashSet();
-        due = [.. due.Where(x => !marked.Contains(x.Key!))];
+        var keys = due.Select(x => x.Key).Concat(due.Where(x => x.Key != x.Unhanded).Select(x => x.Unhanded)).ToList();
+        var marked = await db.NotificationMarks.AsNoTracking().Where(m => m.Kind == ExternalMark && keys.Contains(m.Key))
+            .ToDictionaryAsync(m => m.Key, m => m.SentAtUtc, ct);
+        // A mark without the team (as they were written before the team was in them) is the current team's when it was
+        // written after the last hand-off.
+        due = [.. due.Where(x => !marked.ContainsKey(x.Key)
+                                 && !(x.Action.HandedAtUtc is { } handed && marked.TryGetValue(x.Unhanded, out var at) && at >= handed))];
         if (due.Count == 0) return 0;
 
         var replies = await ReplyToAsync(db, due.Select(x => x.Action).ToList(), ct);
@@ -109,7 +114,7 @@ public sealed partial class ReminderService
                 list, today, replies), ct);
             if (result.Status != EmailSendStatus.Sent) continue;
             sent++;
-            await MarkAsync(db, ExternalMark, batch.Select(x => x.Key!).ToList());
+            await MarkAsync(db, ExternalMark, batch.Select(x => x.Key).ToList());
         }
         return sent;
     }
@@ -133,11 +138,13 @@ public sealed partial class ReminderService
         return new OutgoingEmail([to], Marked(t.Subject, list), html, ToText(html), [], replyTo);
     }
 
-    // An action's mark for the reminder due now ("{action}:{due}:{step}"), or null when none is.
-    private string? Key(ActionItem a, Team team, DateOnly today) =>
-        ExternalCadence.Step(today, a.DueDate!.Value, team.RemindBeforeDays, team.RemindOverdueEveryDays, clock.Days) is { } step
-            ? $"{a.Id:N}:{a.DueDate:yyyy-MM-dd}:{step}"
-            : null;
+    // An action's mark for its reminder at a step: "{action}:{due}:{step}", and for one handed from another team, the team
+    // it's with now after that (":{team}"). The team it was handed to hears only through its reminders, so a step the
+    // team before it was sent is sent to it too; each team still gets each step once.
+    private static string Key(ActionItem a, string step) => UnhandedKey(a, step) + (a.HandedAtUtc is null ? "" : $":{a.TeamId:N}");
+
+    // The mark without the team, as every one was before the team was named in it.
+    private static string UnhandedKey(ActionItem a, string step) => $"{a.Id:N}:{a.DueDate:yyyy-MM-dd}:{step}";
 
     // Where replies about each action go, read for them all at once: their parents, the people's addresses
     // (RecipientResolver.AddressesAsync) and the team mailboxes.

@@ -269,6 +269,22 @@ public class EscalationTests : IDisposable
     }
 
     [Fact]
+    public async Task AClimbStoppedPartway_KeepsTheStepsWhoseEmailWent_AndDoesntEmailThemAgain()
+    {
+        var one = await _db.Teams().AddExternalAsync(new ExternalTeamForm { Name = "Network Engineering", ContactEmail = "network@network.example" });
+        var two = await _db.Teams().AddExternalAsync(new ExternalTeamForm { Name = "Hosting Provider", ContactEmail = "noc@hosting.example" });
+        await Due(one, "Block the domains", Tuesday);
+        await Due(two, "Rotate the keys", Tuesday);
+        var calls = 0;
+        _db.Email.Fault = _ => ++calls == 2 ? new InvalidOperationException("the relay dropped the connection") : null;
+
+        (await Climb(20, options: Ladder("before 2: remind"))).Should().Be(1, "the first team's reminder went; the second's send stopped the run");
+        _db.Email.Fault = null;
+        (await Climb(20, options: Ladder("before 2: remind"))).Should().Be(2, "the next poll sends only the one that didn't go");
+        _db.Email.Sent.Select(e => e.To.Single()).Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
     public async Task EveryEmailFailing_WaitsForTheNextPoll_ButEmailTurnedOff_StillClimbs()
     {
         var team = await Internal();

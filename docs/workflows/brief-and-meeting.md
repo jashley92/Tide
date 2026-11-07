@@ -231,7 +231,7 @@ What people in the meeting can do:
 |---|---|
 | Everyone in it | Follow the presenter's slide, browse off and come back (unless locked), show in the strip with the slide they're on, raise a hand on an article or the meeting (`Hand`). |
 | With `MeetingNotes` and the team edition (Analyst, Action owner, Viewer, Admin) | Take notes, each their own, against the article on screen or the meeting as a whole (`MeetingService.AddNoteAsync`, at most 2,000 characters). Edit or delete only their own. |
-| With `WorkActions` | Raise actions and take or assign them. |
+| With `WorkActions` | Raise actions and take or assign them (a team that warns at its limit asks why first, `OverLimitDialog`). |
 | The presenter | Bring everyone here (`Summon`), lock everyone to their slide (`Lock`), clear hands, open an action or card for the room, hand presenting to another analyst who's there (`HandTo`), add someone who was in the room by name (`MeetingService.AddAttendeeAsync`), mark articles discussed, end the meeting. |
 | An analyst, once the presenter has been gone 30 seconds | Take over (`TakeOver`, `LiveMeetings.Grace`). A lock doesn't outlast a presenter who dropped out. |
 

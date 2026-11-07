@@ -922,10 +922,11 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// <summary>
     /// A quick action from the meeting: a title, kind, team and (optional) due date, on an article, at the article's
     /// priority (see <see cref="QuickPriority"/>). A blank due date takes the SLA target's, a kind's own target first
-    /// (ADR 0008). <paramref name="raisedOn"/> is a past day's brief being presented after the fact.
+    /// (ADR 0008). <paramref name="raisedOn"/> is a past day's brief being presented after the fact;
+    /// <paramref name="overLimitReason"/> is why it goes ahead over a team's limit that warns (<see cref="ActiveLimits"/>).
     /// </summary>
     public async Task<int> QuickAddAsync(Guid articleId, string title, ActionKind kind, Guid teamId, DateOnly? due, DateOnly? raisedOn = null,
-        CancellationToken ct = default)
+        string? overLimitReason = null, CancellationToken ct = default)
     {
         Priority? articlePriority;
         await using (var db = await dbs.CreateAsync(ct))
@@ -933,7 +934,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         return await CreateAsync(new ActionForm
         {
             Title = title, Kind = kind, TeamId = teamId, DueDate = due, ArticleId = articleId, Priority = QuickPriority(articlePriority, kind),
-            RaisedOn = raisedOn,
+            RaisedOn = raisedOn, OverLimitReason = overLimitReason,
         }, ct);
     }
 

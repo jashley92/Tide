@@ -90,6 +90,44 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task AnActionAddedInTheMeeting_ToATeamThatWarnsAtItsLimit_AsksWhy_AndGoesAhead()
+    {
+        var (day, article) = await BriefWithRecommendations(17);
+        Guid team;
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+        {
+            var teams = scope.ServiceProvider.GetRequiredService<TeamService>();
+            team = await teams.AddAsync("Meeting limit team " + Guid.NewGuid().ToString("N")[..6], null, null);
+            await teams.SetLimitAsync(team, 1, ActiveLimitMode.Warn);
+            await scope.ServiceProvider.GetRequiredService<ActionService>().CreateAsync(new ActionForm { Title = "At the limit", TeamId = team });
+        }
+        await using var r = await RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" });
+        var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        typeof(Present).GetField("_qaTitle", flags)!.SetValue(r.Component, "Sweep the proxy logs");
+        typeof(Present).GetField("_qaTeam", flags)!.SetValue(r.Component, team);
+
+        await r.Press(p => p.QuickAdd(article));
+        System.Net.WebUtility.HtmlDecode(await r.HtmlOnce("Why go over the limit?")).Should().Contain("Over Meeting limit team", "the meeting asks why, as the action page does");
+        await r.Renderer.Dispatcher.InvokeAsync(() =>
+        {
+            r.Component.OverLimit.Reason = "Incident cover";
+            return r.Component.OverLimit.Confirm();
+        });
+        ActionRow? made = null;
+        for (var i = 0; i < 50 && made is null; i++)
+        {
+            await Task.Delay(100);
+            await using var scope = SignedIn(app, SignIn.Analyst);
+            made = (await scope.ServiceProvider.GetRequiredService<ActionService>().ListAsync(new ActionFilter(ActionView.Open, team)))
+                .FirstOrDefault(x => x.Title == "Sweep the proxy logs");
+        }
+        made.Should().NotBeNull("it goes ahead with the reason");
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            (await scope.ServiceProvider.GetRequiredService<ActionService>().GetAsync(made!.Number))!.Action.Events
+                .Should().Contain(e => e.Text.Contains("(2 of 1 active): Incident cover"));
+    }
+
+    [Fact]
     public async Task AnotherDayInTheAddress_StartsFromItsOwnFirstSlide_AndOneThatIsntADayShowsNoBrief()
     {
         var (first, _) = await BriefWithRecommendations(21);

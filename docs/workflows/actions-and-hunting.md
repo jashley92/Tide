@@ -621,7 +621,8 @@ apply, but not active, so it doesn't count toward its team's limit. It has a boa
 **Active limits.** An administrator may give a team a limit on its active actions (Open, In progress and Blocked,
 top-level or part) and choose what happens at it: *Show* the count only, *Warn* (going over asks why, and the reason
 goes in the history: "Over Network Engineering's limit (6 of 5 active): …") or *Refuse*. A team goes over when one of
-its actions is created, moved into an active status (from Tracking, or reopened), or handed or moved to it. The count
+its actions is created (on its page, in the meeting, or by a split), moved into an active status (from Tracking, or
+reopened), or handed or moved to it. The count
 ("4 of 5 active") shows on the Actions page when it's filtered to the team, and on the team's Workload card. A team with
 no limit sees no change.
 
@@ -646,8 +647,10 @@ on the action, its due date and how many business days late, and its ticket link
 number, nothing from an article that wasn't written into the action, and closes asking for a reply. Its Reply-To is
 whoever follows the work: a part's parent's assignee, else the parent's team mailbox; a top-level action's own
 assignee, else the mailbox of the team that handed it over, else its creator (`ExternalCadence.ReplyTo`). Each step
-(`before`, `late-0`, `late-1`…) is marked, so it goes once; moving the due date starts over. The internal reminders
-are unchanged.
+(`before`, `late-0`, `late-1`…) is marked, so it goes once; moving the due date starts over. An action handed from
+another team is marked for the team it's with now, so an external team it's handed to gets the step its last team
+was already sent (it hears only through its reminders), and each team still gets each step once. The internal
+reminders are unchanged.
 
 ## The escalation ladder
 
@@ -715,7 +718,7 @@ others. An administrator can run any scan now from Teams & SLA.
 | Brief not ready | its time on business days, before the meeting | the presenting analyst, else the fallback recipients | per day |
 | Presenting next | reminder time, the business day before a stretch | the analyst presenting next | per stretch |
 | Outreach follow-up | reminder time, N business days after an email was marked sent (1 to 30, default 5) | whoever marked it sent | `outreach-follow-up` per email |
-| External team reminders | reminder time, by each external team's cadence | the team's contact email, Reply-To whoever follows the work | `external-reminder` per action, due date and step |
+| External team reminders | reminder time, by each external team's cadence | the team's contact email, Reply-To whoever follows the work | `external-reminder` per action, due date and step (and, once handed over, the team it's with) |
 | Escalation ladder | reminder time on business days, by its steps ([above](#the-escalation-ladder)) | the owning team, its escalation contact | `escalation` per action, due date and step |
 
 Each scan is off until an administrator enables it (`Notifications` section, set on Teams & SLA), except the
@@ -818,7 +821,8 @@ Every one of these follows colleagues' saves live through the `actions` and `act
 | An outreach body still holding `[[…]]` | Mark sent is refused until it's filled or removed. |
 | An action's article deleted | Its hunts and outreach use the action's own indicators only. |
 | Reminder relay down | Recipients not reached aren't marked, so the next scan tries them; an action anyone got is marked whole. |
-| A team at its limit set to Warn | Creating, reopening, moving into an active status, or handing to it asks why; cancelled, nothing changes. |
+| A team at its limit set to Warn | Creating (the meeting's quick add and recommended lines too), reopening, moving into an active status, or handing to it asks why; cancelled, nothing changes. |
+| The ladder's run stopped partway (a shutdown, a send that threw) | The steps whose email went are kept (their marks, history and changes), so the next run doesn't email them again; the rest wait for it. |
 | Handing off to an external team | Its assignee is cleared (nobody is on the team); no email: its reminders tell it. |
 | An external team with no contact email | Its reminders have nowhere to go: none is sent until one is given. |
 | A split to a team twice, or from a part | Refused: each team once; parts split one level deep. |
