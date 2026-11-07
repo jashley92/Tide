@@ -180,7 +180,9 @@ the page a change with `OnChangedElsewhere` when it wants it heard.
   test that says the page hasn't heard a save yet makes it from the page's own origin (its scope's
   `IAppDbContextFactory`), which the feed skips, and hands the change over with `OnChangedElsewhere` when it means to;
   otherwise a slow run delivers it between the test's steps (`PresentMidMeetingTests.Unheard`).
-- A test of a time limit (a probe's timeout) runs the limit on a `ManualClock` and moves it on, rather than timing it with a stopwatch: a loaded CI machine's slow timers then can't fail it.
+- A test of a time limit (a probe's timeout, the typing pause) runs the limit on a `ManualClock` and moves it on, rather than timing it with a stopwatch: a loaded CI machine's slow timers then can't fail it. A test that something is done in one pass counts its SQL commands (`TestDb.Commands`) rather than timing it.
+- To wait for a rendered page to hear something, use `Rendered.Until(p => ...)`: it reads the page on the renderer's thread, so it never catches a reload halfway (one field re-read, the next not yet). To wait for another thread (a directory call's own thread, a late answer), use `Poll.Until` (`tests/Shared`) and then assert; never a fixed `Task.Delay`. `HtmlOnce` waits up to 15 seconds.
+- In `TideApp`, a confirmation toast stays until something dismisses it (its `ToastService` runs on a `ManualClock`), so a test can read it after a step that took more than its four seconds on a loaded machine. `ToastServiceTests` holds the four and ten seconds themselves.
 
 ## SQL Server tests
 

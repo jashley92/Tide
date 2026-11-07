@@ -45,13 +45,29 @@ public static class ComponentHarness
         /// <summary>The markup once it shows <paramref name="text"/> (a dialog opened after the page read the database).</summary>
         public async Task<string> HtmlOnce(string text)
         {
-            for (var i = 0; i < 50; i++)
+            // Up to 15 seconds: a page's live feed waits LiveChanges.Pause before it re-reads, and a loaded machine can
+            // take several seconds more. Only a failure waits that long.
+            for (var i = 0; i < 150; i++)
             {
                 var html = await Html();
                 if (html.Contains(text, StringComparison.Ordinal)) return html;
                 await Task.Delay(100);
             }
             return await Html();
+        }
+
+        /// <summary>Waits until <paramref name="done"/> holds, read on the renderer's thread, so it never sees a reload
+        /// halfway (a page that has set one field and not yet the next); gives up after <paramref name="seconds"/>, for
+        /// the assertion after to say what's wrong.</summary>
+        public async Task<bool> Until(Func<T, bool> done, int seconds = 15)
+        {
+            var until = DateTime.UtcNow.AddSeconds(seconds);
+            while (true)
+            {
+                if (await Renderer.Dispatcher.InvokeAsync(() => done(Component))) return true;
+                if (DateTime.UtcNow > until) return false;
+                await Task.Delay(50);
+            }
         }
 
         /// <summary>Does what a button would, on the renderer's thread, without waiting for the dialog it opens.</summary>
