@@ -162,7 +162,7 @@ public class DetectionServiceTests : IDisposable
         var form = ArticleForm.From((await _db.Articles().GetAsync(id))!);
         form.TechniqueIds = techniques.ToList();
         await _db.Articles().SaveAsync(form);
-        var brief = await _db.Briefs().GetOrStartAsync(_db.Clock.Today);
+        var brief = await _db.Briefs().GetOrStartAsync(_db.SendDay);
         await using var ctx = _db.Context();
         ctx.BriefItems.Add(new BriefItem { BriefId = brief.Id, ArticleId = id });
         await ctx.SaveChangesAsync();
