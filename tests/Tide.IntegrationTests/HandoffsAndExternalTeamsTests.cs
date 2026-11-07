@@ -441,6 +441,31 @@ public class HandoffsAndExternalTeamsTests : IDisposable
     }
 
     [Fact]
+    public async Task AnActionHandedToAnotherExternalTeam_RemindsThatTeam_ThoughTheFirstWasRemindedAlready()
+    {
+        var first = await _db.Teams().AddExternalAsync(new ExternalTeamForm { Name = "Network Engineering", ContactEmail = "network@example.org", RemindBeforeDays = 2 });
+        var second = await _db.Teams().AddExternalAsync(new ExternalTeamForm { Name = "Hosting Provider", ContactEmail = "noc@provider.example", RemindBeforeDays = 2 });
+        var a = await Due(first, "Block the domains", new DateOnly(2026, 11, 30));
+
+        (await Remind(24)).Should().Be(1, "Tuesday: two business days before Monday");
+        await _db.Handoffs().HandOffAsync(a.Id, second, "They host the resolvers");
+        (await Remind(25)).Should().Be(2, "the team it was handed to hears only through its reminders, so it's reminded too");
+        _db.Email.Sent[1].To.Should().Equal("noc@provider.example");
+        (await Remind(30)).Should().Be(2, "and once only");
+
+        // A mark written without the team (before it was in them), after the last hand-off, was that team's: not sent again.
+        var b = await Due(first, "Rotate the keys", new DateOnly(2026, 12, 3));
+        await _db.Handoffs().HandOffAsync(b.Id, second, "They hold the keys");
+        await using (var ctx = _db.Context())
+        {
+            ctx.NotificationMarks.Add(new NotificationMark { Kind = "external-reminder", Key = $"{b.Id:N}:2026-12-03:before", SentAtUtc = DateTimeOffset.UtcNow.AddMinutes(1) });
+            await ctx.SaveChangesAsync();
+        }
+        (await Remind(1, month: 12)).Should().Be(3, "the first action's overdue reminder");
+        _db.Email.Sent.Should().NotContain(e => e.Html.Contains("Rotate the keys"));
+    }
+
+    [Fact]
     public async Task WhileOverdue_ItsEveryNBusinessDays_OrOnce()
     {
         var every = await _db.Teams().AddExternalAsync(new ExternalTeamForm { Name = "Network Engineering", ContactEmail = "network@example.org", RemindBeforeDays = 0, RemindOverdueEveryDays = 2 });

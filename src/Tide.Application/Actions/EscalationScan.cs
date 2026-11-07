@@ -58,9 +58,20 @@ public sealed partial class ReminderService
 
         // Where replies go, read once for every email that names it.
         var replies = await ReplyToAsync(db, [.. climbs.Where(NeedsReplyTo).Select(c => c.Action)], ct);
-        var sent = await EscalationRemindAsync(db, [.. climbs.Where(c => c.Does.HasFlag(EscalationDoes.Remind))], replies, today, ct);
-        sent += await CopyContactsAsync([.. climbs.Where(c => c.Does.HasFlag(EscalationDoes.CopyContact))], replies, today, ct);
-        await ClimbAllAsync([.. climbs.Where(c => c.Reached || !c.Failed)], today);
+        var sent = 0;
+        var finished = false;
+        try
+        {
+            sent = await EscalationRemindAsync(db, [.. climbs.Where(c => c.Does.HasFlag(EscalationDoes.Remind))], replies, today, ct);
+            sent += await CopyContactsAsync([.. climbs.Where(c => c.Does.HasFlag(EscalationDoes.CopyContact))], replies, today, ct);
+            finished = true;
+        }
+        finally
+        {
+            // A run stopped partway (shutdown, a send that threw) still keeps the climbs an email reached, as a reminder
+            // keeps its marks, so the next run doesn't email them again; those not yet tried wait for it.
+            await ClimbAllAsync([.. climbs.Where(c => c.Reached || (finished && !c.Failed))], today);
+        }
         return sent;
     }
 
