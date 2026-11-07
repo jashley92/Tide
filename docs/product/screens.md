@@ -440,7 +440,7 @@ for the screen shrinks a little, then scrolls inside itself.
 **Start the meeting** and it's live for the team: a banner on every page, and a Join button on the brief. Invite
 everyone on the team edition in (or paste the copied link). People who join follow the presenter's slide, can browse
 off on their own and come back, and show in the strip with the slide they're on. They raise a hand on an article,
-take notes (each person's own, against the article on screen), raise actions and take or assign them. The presenter
+take notes (each person's own, against the article on screen as they began it), raise actions and take or assign them. The presenter
 can bring everyone back or lock everyone to their slide, clear hands and hand presenting to another analyst; if the
 presenter drops out, another analyst can take over. Attendance is recorded as people join, and the presenter can add
 people who were in the room. The brief's page keeps who attended and the notes, by article.

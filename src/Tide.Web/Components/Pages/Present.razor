@@ -754,7 +754,8 @@ else
                 @if (_canNote)
                 {
                     <div data-submit-scope>
-                        <textarea class="tide-autogrow tide-grow-3" aria-label="New note" maxlength="@MeetingService.MaxNote" placeholder="@NotePlaceholder" @bind="_noteText" @bind:event="oninput"></textarea>
+                        <textarea class="tide-autogrow tide-grow-3" aria-label="New note" maxlength="@MeetingService.MaxNote" placeholder="@NotePlaceholder" @bind:get="_noteText" @bind:set="TypeNote" @bind:event="oninput"></textarea>
+                        @if (NoteElsewhere is { } on) { <div class="tide-present-help">This note is on @on</div> }
                         <button class="btn btn-sm btn-primary mt-1" disabled="@(_busy || string.IsNullOrWhiteSpace(_noteText))" data-submit @onclick="AddNote">Add note</button>
                     </div>
                 }
@@ -829,7 +830,7 @@ else
             _day = day;
             (_brief, _loaded, _failed, _slide, _zoom, _actions, _record) = (null, false, false, 0, null, null, MeetingRecord.None);
             LeaveMeeting();
-            (_noteText, _addName, _editText, _editingNote, _showNotes) = (null, null, null, null, false);
+            (_noteText, _noteOn, _addName, _editText, _editingNote, _showNotes) = (null, null, null, null, null, false);
             (_actionDetail, _ownAction, _sharedSeen) = (null, false, null);
             DropCard(forget: true);
             _seen.Clear();
@@ -1324,11 +1325,15 @@ else
     /// <summary>For tests: the dialog asking why an action goes over its team's limit.</summary>
     internal OverLimitDialog OverLimit => _overLimit;
 
+    // The day an action raised here is raised for: the brief's once its day has gone, asked as it's raised rather than as
+    // the page opened, so a meeting run past midnight raises its actions for its own day; today's, by leaving it out.
+    private DateOnly? RaisedFor => BriefSvc.IsPast(_date) ? _date : null;
+
     internal Task QuickAdd(Guid articleId) => Run(async () =>
     {
         var number = 0;
         if (!await _overLimit.RunAsync(async reason =>
-                number = await ActionSvc.QuickAddAsync(articleId, _qaTitle ?? "", _qaKind, _qaTeam, _qaDue, _past ? _date : null, reason))) return;
+                number = await ActionSvc.QuickAddAsync(articleId, _qaTitle ?? "", _qaKind, _qaTeam, _qaDue, RaisedFor, reason))) return;
         _qaTitle = null;
         _qaDue = null;
         await LoadActions();
@@ -1385,7 +1390,7 @@ else
         {
             var number = 0;
             if (!await _overLimit.RunAsync(async reason =>
-                    number = await ActionSvc.QuickAddAsync(articleId, line, draft.Kind, draft.Team, null, _past ? _date : null, reason))) return;
+                    number = await ActionSvc.QuickAddAsync(articleId, line, draft.Kind, draft.Team, null, RaisedFor, reason))) return;
             await LoadActions();
             Toasts.Show($"{Ui.ActionLabel(number)} raised.{await NoOneToOwn(draft.Team)}");
         }
@@ -1426,8 +1431,9 @@ else
 
     internal Task EndMeeting() => Run(async () =>
     {
-        // A past day's meeting is recorded at the time chosen (that day's meeting time unless changed); today's, now.
-        DateTimeOffset? held = _past && _heldAt is { } h ? new DateTimeOffset(h, Clock.Zone.GetUtcOffset(h)) : null;
+        // A past day's meeting is recorded at the time chosen (that day's meeting time unless changed); today's, now, even
+        // once it has run past midnight (left to the service, a day gone by then would be put at that day's meeting time).
+        DateTimeOffset? held = !_past ? Clock.Now : _heldAt is { } h ? new DateTimeOffset(h, Clock.Zone.GetUtcOffset(h)) : null;
         var carry = Undiscussed(Cut(_brief!)).Select(i => i.ArticleId).Where(_carry.Contains).ToList();
         // Not this page's to end any more (the presenter came back from a drop): nothing is marked.
         Refresh();
@@ -2391,11 +2397,30 @@ else
 
     private string NotePlaceholder => ArticleTitle(ShownArticle()) is { } title ? "On " + title : "On the meeting";
 
+    // What a note being written is on: the article on screen (null, the meeting) as its first words were typed. The
+    // presenter moving the slide on meanwhile doesn't file it against the next article, whose title the box, hidden
+    // behind the words, no longer shows.
+    private sealed record NoteOn(Guid? ArticleId);
+    private NoteOn? _noteOn;
+
+    internal void TypeNote(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(_noteText) && !string.IsNullOrWhiteSpace(text)) _noteOn = new(ShownArticle());
+        _noteText = text;
+    }
+
+    // The note's article, while it's still on the brief; else (gone since, or never said) the one on screen.
+    private Guid? NoteArticle => _noteOn is { } on && (on.ArticleId is null || ItemFor(on.ArticleId.Value) is not null) ? on.ArticleId : ShownArticle();
+
+    // Said under the box once the slide has moved on from what the note is on.
+    private string? NoteElsewhere =>
+        NoteDirty && _noteOn is not null && NoteArticle != ShownArticle() ? ArticleTitle(NoteArticle) ?? "the meeting" : null;
+
     internal Task AddNote() => Run(async () =>
     {
         if (string.IsNullOrWhiteSpace(_noteText)) return;
-        await MeetingSvc.AddNoteAsync(_brief!.Id, ShownArticle(), _noteText);
-        _noteText = null;
+        await MeetingSvc.AddNoteAsync(_brief!.Id, NoteArticle, _noteText);
+        (_noteText, _noteOn) = (null, null);
         await ReloadRecord();
     });
 

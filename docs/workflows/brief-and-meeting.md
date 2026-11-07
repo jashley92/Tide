@@ -230,7 +230,7 @@ What people in the meeting can do:
 | Who | Can |
 |---|---|
 | Everyone in it | Follow the presenter's slide, browse off and come back (unless locked), show in the strip with the slide they're on, raise a hand on an article or the meeting (`Hand`). |
-| With `MeetingNotes` and the team edition (Analyst, Action owner, Viewer, Admin) | Take notes, each their own, against the article on screen or the meeting as a whole (`MeetingService.AddNoteAsync`, at most 2,000 characters). Edit or delete only their own. |
+| With `MeetingNotes` and the team edition (Analyst, Action owner, Viewer, Admin) | Take notes, each their own, against the article on screen as they began writing or the meeting as a whole (`MeetingService.AddNoteAsync`, at most 2,000 characters). A note begun on one article stays on it if the slide moves on before it's added, and the box says which article it's on. Edit or delete only their own. |
 | With `WorkActions` | Raise actions and take or assign them (a team that warns at its limit asks why first, `OverLimitDialog`). |
 | The presenter | Bring everyone here (`Summon`), lock everyone to their slide (`Lock`), clear hands, open an action or card for the room, hand presenting to another analyst who's there (`HandTo`), add someone who was in the room by name (`MeetingService.AddAttendeeAsync`), mark articles discussed, end the meeting. |
 | An analyst, once the presenter has been gone 30 seconds | Take over (`TakeOver`, `LiveMeetings.Grace`). A lock doesn't outlast a presenter who dropped out. |
@@ -263,7 +263,8 @@ What `MarkPresentedAsync` does, in one save:
 2. Works out the carry: the articles not ticked discussed whose carry tick is on.
 3. Refuses if the next working day's brief is already Sent: "nothing can be carried to it".
 4. Sets `Status = Presented`. Keeps two times, each only if not already set: `MeetingHeldAtUtc` (now, or for a past
-   day's brief that day's meeting time unless the presenter picks another) and `PresentedAtUtc` (the clock). The meeting
+   day's brief that day's meeting time unless the presenter picks another; a meeting opened on its own day and run
+   past midnight is still now, as present mode passes it) and `PresentedAtUtc` (the clock). The meeting
    can't be held before the brief's day ("can't be held before the brief's day") or more than 5 minutes in the future.
 5. Marks each article Presented, except carried ones and, when the meeting had already been ended, one also on a later
    unsent brief. It records the status before on the item (`BriefItem.StatusBeforeMeeting`), once.

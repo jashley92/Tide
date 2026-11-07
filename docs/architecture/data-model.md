@@ -855,7 +855,7 @@ by name (no `UserId`, no times). Written by `MeetingService`.
 
 ### `MeetingNotes` (A)
 
-One person's note at a meeting, made against the article on screen. Written by `MeetingService`.
+One person's note at a meeting, made against the article on screen as its author began it. Written by `MeetingService`.
 
 | Column | Type | Null | Meaning |
 |---|---|---|---|

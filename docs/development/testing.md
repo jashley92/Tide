@@ -176,6 +176,10 @@ the page a change with `OnChangedElsewhere` when it wants it heard.
 - A test of something only Windows has (robocopy, Task Scheduler, Windows paths) is a `[WindowsFact]`
   (`tests/Tide.UnitTests`), which is reported as skipped elsewhere. Don't `return` early: on CI's Linux runner that
   counts as a pass.
+- A rendered page hears a colleague's save by itself, through its live feed, once `LiveChanges.Pause` has passed. A
+  test that says the page hasn't heard a save yet makes it from the page's own origin (its scope's
+  `IAppDbContextFactory`), which the feed skips, and hands the change over with `OnChangedElsewhere` when it means to;
+  otherwise a slow run delivers it between the test's steps (`PresentMidMeetingTests.Unheard`).
 
 ## SQL Server tests
 
