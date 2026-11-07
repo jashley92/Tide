@@ -2181,7 +2181,7 @@ public class BusyGuardChallengeTests(TideApp app) : IClassFixture<TideApp>
         Set(r.Component, "_qaTitle", "");   // no title: the service refuses it
         await r.Click(p => p.QuickAdd(articleId));
         Field<bool>(r.Component, "_busy").Should().BeFalse();
-        r.Scope.ServiceProvider.GetRequiredService<Tide.Web.Services.ToastService>().Toasts.Should().Contain(t => t.IsError, "the add was refused");
+        r.Scope.ServiceProvider.GetRequiredService<Tide.Web.Services.ToastService>().Toasts.Should().Contain(t => t.IsError && t.Message.Contains("needs a title"), "the add was refused");
         Set(r.Component, "_qaTitle", "Quick add after a failure");
         await r.Click(p => p.QuickAdd(articleId));
         using var check = app.Services.CreateScope();
