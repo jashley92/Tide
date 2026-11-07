@@ -40,6 +40,7 @@ tests/
 tools/
   ci/                        Migration immutability check, Sonar gate, release notes
   upgrade-test/              Installs old releases on SQL Server and upgrades them to this tree
+  release/                   The release signing key script
 ```
 
 ## How the projects depend on each other
@@ -219,7 +220,8 @@ Windows PowerShell 5.1 scripts, ASCII only. [`deploy/README.md`](../../deploy/RE
 | `New-TideConfig.ps1`, `tide.config.template.psd1` | The install answers file and the script that writes it. |
 | `Install-Database.ps1`, `sql/01-Create-Database.sql`, `sql/02-Grant-Backup.sql` | Creating the database and the app pool's login, in AppMigrates or DbaApplies mode, and the backup grant. |
 | `Install-Tide.ps1`, `Verify-Install.ps1` | Publishing or copying the app, IIS site and pool, data root, `appsettings.Production.json`, and the checks afterwards. |
-| `Upgrade-Tide.ps1` | The in-place upgrade, with migration checks against `migrations-sqlserver.txt`, a backup, a file swap, warm-up and rollback. |
+| `Upgrade-Tide.ps1` | The in-place upgrade: the bundle's signature and SHA-256 checked first, then migration checks against `migrations-sqlserver.txt`, a backup, a file swap, warm-up and rollback. |
+| `Test-TideBundle.ps1`, `lib/TideReleaseKeys.ps1` | The upgrade's bundle checks on their own, and the release keys they trust. |
 | `Backup-Tide.ps1`, `Test-TideRestore.ps1` | A backup set (database, files, key ring, settings) and the restore drill. |
 | `appsettings.Production.template.json` | What the installer fills in. |
 | `lib/*.ps1` | Shared helpers for IIS, AD group names, SQL, settings, upgrade, backup, dates, JSON, paths and WebSockets. |
@@ -233,9 +235,10 @@ There's no DBA schema script yet (`deploy/README.md`, "Not yet here").
 | `tools/ci/check-migrations-immutable.sh` | Fails CI when a migration that shipped in a release tag was changed or removed. |
 | `tools/ci/check-sonar-quality-gate.sh` | Reads the SonarQube Cloud quality gate. |
 | `tools/ci/extract-release-notes.sh` | Release notes for the release workflow. |
+| `tools/signing/New-ReleaseSigningKey.ps1` | Makes the release signing key: sets the `RELEASE_SIGNING_KEY` secret and pins the public key ([releasing.md](../development/releasing.md)). |
 | `tools/upgrade-test/upgrade-path.sh` | Installs older releases into SQL Server, starts this tree against the same database, and checks it comes up healthy with data intact. |
 | `.github/workflows/ci.yml` | `build-test` (restore, build, test, Sonar, migration immutability, pending model changes for both providers, vulnerable packages) and `sql-server` (apply migrations twice, SQL Server tests, the upgrade path). |
-| `.github/workflows/release.yml` | Builds the bundle from `main`: the published app, the deploy scripts, `migrations-sqlserver.txt` and the `.sha256`. |
+| `.github/workflows/release.yml` | Builds the bundle from `main`: the published app, the deploy scripts, `migrations-sqlserver.txt`, the `.sha256`, and the `.sig` signed with the release key. |
 
 ## If you need to change X, start in Y
 

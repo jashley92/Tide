@@ -17,6 +17,7 @@ that touches sign-in, permissions, TLP, files or outbound traffic. TLP and the e
 - [Outbound requests](#outbound-requests)
 - [AI data handling](#ai-data-handling)
 - [The audit trail and secrets](#the-audit-trail-and-secrets)
+- [Release integrity and authenticity](#release-integrity-and-authenticity)
 - [Where it lives in code](#where-it-lives-in-code)
 
 ## Threat model in brief
@@ -36,6 +37,7 @@ team. What it protects, from whom, and the main control for each:
 | The server's own network | A feed or its redirect pointing at loopback, metadata or internal addresses (SSRF) | `AddressPolicy`, checked on each redirect hop and each connection |
 | Secrets (SMTP password, API keys, webhook secrets, tokens) | Anyone reading the audit log, the settings pages, logs or a config export | Hashes for tokens, Data Protection for webhook secrets, masking in the audit trail and on display |
 | The app itself | A misconfigured server signing everyone in as an administrator | `AuthModeGuard` refuses to start Production without Windows sign-in |
+| The server, through an upgrade | A changed or substitute release bundle (a tampered download, a copy on a file share) | Bundles signed with TIDE's release key; the installed upgrade script checks the signature against its pinned keys before it expands or runs anything ([below](#release-integrity-and-authenticity)) |
 
 Out of scope by design: TIDE doesn't defend against a Windows or SQL Server administrator on its own host, and it
 trusts its AD group mappings. Anyone mapped to the Action owner role reads every marking inside the app (see
@@ -612,6 +614,36 @@ flowchart LR
   No in-app setting is a secret today, so masking a setting is a guard for a row named like one. A source's address is
   stored as typed, any key in it included; only the trail and the screens mask it.
 
+## Release integrity and authenticity
+
+An upgrade runs a release's scripts as an administrator, so a bundle has to be the one TIDE published, unchanged
+(ADR [0022](../decisions/0022-releases-are-signed-with-a-pinned-key.md)).
+
+- **Signed by the release key.** The Release workflow signs each `tide-<v>.zip` with the private key in the
+  repository secret `RELEASE_SIGNING_KEY` (RSA-3072, RSA-PSS with SHA-256 and a 32-byte salt, by `openssl dgst`) and
+  publishes `tide-<v>.zip.sig` beside the zip and its `.sha256`. It refuses to release without the secret, or when
+  the secret's public key isn't one the repository pins, so no release since signing began is unsigned.
+- **Checked against pinned keys.** `deploy/lib/TideReleaseKeys.ps1` lists the trusted public keys (RSA XML, each with
+  an id: the first 16 hex characters of the SHA-256 of its SubjectPublicKeyInfo). The installed `Upgrade-Tide.ps1`,
+  the copy in `<site folder>-deploy` that only Administrators and SYSTEM may change, checks the new bundle before it
+  expands it or hands over to the bundle's own script: a bundle's script can't vouch for itself. The check is
+  `Invoke-TideBundleCheck` in `deploy/lib/TideUpgrade.ps1`: the file's SHA-256 is computed once, as a stream, and
+  verified with `RSA.VerifyHash` against each pinned key (RSACng on Windows PowerShell 5.1, `RSA.Create()` on
+  PowerShell 7).
+- **What's refused.** A `.sig` that doesn't verify against any pinned key, always. While a key is pinned, a bundle
+  with no `.sig`, unless `-AllowUnsigned` (a release from before signing, or a downgrade to one), and then with a
+  warning. A bundle whose SHA-256 doesn't match `-ExpectedSha256` or the `.sha256` beside it. With no key pinned
+  (v1.8.0 and earlier), the hash checks are all there is, and an unsigned bundle with no hash at hand is checked
+  against the release's `.sha256` on github.com when the host can reach it, or warned about when it can't.
+- **The SHA-256 alone** proves a bundle matches what the release page says, not who made it: whoever could change a
+  download could change its `.sha256` too. The signature is what ties the bundle to TIDE's key.
+- **Limits.** A first install can't be checked by the bundle it comes in: check it first with `Test-TideBundle.ps1`
+  from a deploy folder you already trust, or compare its SHA-256 with the release page
+  ([deploy/README.md](../../deploy/README.md#checking-a-bundle)). An install whose scripts pin no key (v1.8.0) can't
+  check the first signed release; the check starts with the upgrade after it. Anyone with the private key, or with
+  write access to an install's `<site folder>-deploy`, can get a bundle trusted. The key is kept only in the
+  repository secret and an offline backup ([releasing.md](../development/releasing.md)).
+
 ## Where it lives in code
 
 | Concern | Code | Tests |
@@ -630,6 +662,7 @@ flowchart LR
 | Outbound | `src/Tide.Infrastructure/Notifications/AddressPolicy.cs`, `OutboundHttp.cs`, `OutboundCircuit.cs` | `OutboundHttpTests.cs` (`Get_ALoopbackAddress_IsRefusedByDefault_BeforeAnyRequest`, `Get_ARedirectToARefusedAddress_IsNotFollowed`) |
 | AI | `src/Tide.Application/Assist/AssistService.cs`, `DraftChecks.cs`, `src/Tide.Infrastructure/Assist/AzureOpenAiAssistant.cs` | `AssistTests.cs` (`AboveTheLimit_NothingIsSent_NorCopied`, `OurNotes_GoOnlyWhenTheLimitAllowsAmber_AndThenTheInputCountsAsAmber`) |
 | Audit and secrets | `src/Tide.Infrastructure/Persistence/AuditInterceptor.cs`, `src/Tide.Application/Operations/SecretMask.cs`, `SettingsCatalog.cs` (`IsSecret`), `src/Tide.Application/History/AuditLogService.cs` | `AuditLogTests.cs` (`ASecret_ShowsOnlyAsSetOrChanged_OnThePageAndInTheCsv_AndIsntSearchable`), `Audit/SecurityAuditTests.cs` (`TheAuditTrail_NeverHoldsASettingNamedLikeASecret`) |
+| Release signing | `.github/workflows/release.yml` (Sign the bundle), `deploy/lib/TideUpgrade.ps1` (`Invoke-TideBundleCheck`, `Test-TideReleaseSignature`), `deploy/lib/TideReleaseKeys.ps1`, `deploy/Test-TideBundle.ps1`, `tools/signing/New-ReleaseSigningKey.ps1` | `tests/Tide.UnitTests/ReleaseSigningTests.cs` (`A_bundle_signed_by_a_pinned_key_is_accepted_and_one_changed_or_signed_by_another_key_is_refused`, `A_bundle_signed_by_the_Release_workflows_openssl_command_verifies_in_PowerShell`) |
 
 Related: [editions-and-tlp.md](editions-and-tlp.md), [business-rules.md](../reference/business-rules.md),
 [configuration.md](../operations/configuration.md), [API.md](../API.md).

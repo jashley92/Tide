@@ -25,6 +25,8 @@ public partial class DeployScriptTests
     // With line endings as LF, so a check that spans lines holds on a Windows checkout too (core.autocrlf writes CRLF).
     private static string Read(params string[] parts) => File.ReadAllText(Path.Combine([RepoRoot(), .. parts])).ReplaceLineEndings("\n");
 
+    internal static string ReadText(params string[] parts) => Read(parts);
+
     [Fact]
     public void The_deploy_scripts_are_plain_ascii()
     {
@@ -130,13 +132,16 @@ public partial class DeployScriptTests
     public void The_upgrade_checks_a_bundle_against_its_release_and_hands_over_before_expanding_it()
     {
         var script = Read("deploy", "Upgrade-Tide.ps1");
-        var check = script.IndexOf("/releases/download/$tag/tide-$tag.zip.sha256", StringComparison.Ordinal);
+        var check = script.IndexOf("$check = Invoke-TideBundleCheck -ZipPath $BundleZip", StringComparison.Ordinal);
         var handover = script.IndexOf("& $bundleScript @pass", StringComparison.Ordinal);
         var expand = script.IndexOf("ZipFile]::ExtractToDirectory($zipPath, $staging)", StringComparison.Ordinal);
         check.Should().BeGreaterThan(-1);
         handover.Should().BeGreaterThan(check);
         expand.Should().BeGreaterThan(handover, "the bundle's own script runs the upgrade, so the app isn't expanded twice");
         script.Should().Contain("ReleaseHashChecked", "the handover tells the bundle's script the check already ran");
+        script.Should().Contain("-Uri \"$base/$zipName.sig\" -OutFile \"$BundleZip.sig\"", "-Version downloads the signature with the bundle");
+        Read("deploy", "lib", "TideUpgrade.ps1").Should().Contain("/releases/download/$Tag/tide-$Tag.zip.sha256",
+            "an unsigned bundle with no hash beside it is still checked against its release");
         script.Should().NotContain("Expand-Archive -Path $BundleZip", "Expand-Archive is many times slower in Windows PowerShell 5.1");
     }
 
@@ -176,6 +181,9 @@ public partial class DeployScriptTests
         release.Should().Contain("cp -r deploy \"$root/deploy\"", "every deploy script, the upgrade's included, ships in the bundle");
         release.Should().Contain("\"$root/migrations-sqlserver.txt\"");
         release.Should().Contain("tide-${version}.zip.sha256");
+        release.Should().Contain("\"bundle/tide-${version}.zip.sig\" \"${args[@]}\"", "the signature is published with the bundle");
+        release.Should().Contain("RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}").And.Contain("The RELEASE_SIGNING_KEY secret isn't set");
+        release.IndexOf("- name: Sign the bundle", StringComparison.Ordinal).Should().BeLessThan(release.IndexOf("gh release create", StringComparison.Ordinal));
         var script = Read("deploy", "Upgrade-Tide.ps1");
         script.Should().Contain("-Filter 'migrations-sqlserver.txt'").And.Contain("tide-$Version.zip").And.Contain(@"src\Tide.Migrations.SqlServer\Migrations");
     }
@@ -330,7 +338,8 @@ public partial class DeployScriptPowerShellTests
         var upgrade = result.GetProperty("Upgrade-Tide.ps1");
         var names = upgrade.GetProperty("Params").EnumerateArray().Select(p => p.GetProperty("Name").GetString()).ToList();
         names.Should().Contain(["BundleZip", "Version", "Repository", "Proxy", "AppSource", "Build", "SiteName", "AppPath", "SitePath",
-            "AppPoolName", "SqlInstance", "DbName", "HealthUrl", "BackupRoot", "DataRoot", "SkipDbBackup", "Force", "ReleaseHashChecked"]);
+            "AppPoolName", "SqlInstance", "DbName", "HealthUrl", "BackupRoot", "DataRoot", "SkipDbBackup", "Force", "ReleaseHashChecked",
+            "ExpectedSha256", "AllowUnsigned", "TrustedKeysPath"]);
         string? Default(JsonElement s, string n) => s.GetProperty("Params").EnumerateArray().Single(p => p.GetProperty("Name").GetString() == n).GetProperty("Default").GetString();
         Default(upgrade, "Repository").Should().Be("'jashley92/Tide'");
         Default(upgrade, "SiteName").Should().Be("'TIDE'", "Install-Tide.ps1's default site");

@@ -201,8 +201,10 @@ Run this on the web server, elevated:
 For a non-gMSA account, add `-AppPoolCredential (Get-Credential)`. Run from the repository, it publishes the app,
 which needs the .NET 10 SDK and NuGet access. Run from the `deploy` folder of a release bundle (`tide-<version>.zip`
 from the [Releases](https://github.com/jashley92/Tide/releases) page), it copies the bundle's already-published app
-instead and needs neither ([UPGRADE.md](UPGRADE.md#installing-or-upgrading-from-a-bundle)). Otherwise, publish
-elsewhere and copy the output in:
+instead and needs neither ([UPGRADE.md](UPGRADE.md#installing-or-upgrading-from-a-bundle)). The installer comes
+inside the bundle, so it can't vouch for it: check the bundle first, with `Test-TideBundle.ps1` from an earlier
+release's deploy folder or against the SHA-256 on the release page
+([deploy/README.md](../deploy/README.md#checking-a-bundle)). Otherwise, publish elsewhere and copy the output in:
 
 ```bash
 dotnet publish src/Tide.Web -c Release -o out
