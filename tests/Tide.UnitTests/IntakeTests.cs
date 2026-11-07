@@ -68,6 +68,23 @@ public class FeedParserTests
         i.PublishedAtUtc.Should().Be(new DateTimeOffset(2026, 10, 26, 13, 30, 0, TimeSpan.Zero));
     }
 
+    private static DateTimeOffset? PubDate(string date) => FeedParser.ParseFeed(Text(
+        $"<rss version=\"2.0\"><channel><item><title>T</title><link>https://example.com/a</link><pubDate>{date}</pubDate></item></channel></rss>"))
+        .Single().PublishedAtUtc;
+
+    [Theory]
+    [InlineData("Mon, 07 Nov 2026 10:00:00 GMT")]
+    [InlineData("Mon, 07 Nov 2026 10:00:00 +0000")]
+    [InlineData("Monday, 07 Nov 2026 05:00:00 EST")]
+    public void Rss2_ADayNameThatIsntTheDatesWeekday_StillReadsTheDate(string date) =>
+        PubDate(date).Should().Be(new DateTimeOffset(2026, 11, 7, 10, 0, 0, TimeSpan.Zero), "7 November 2026 is a Saturday, whatever the feed calls it");
+
+    [Theory]
+    [InlineData("Thu, 01 Jan 1970 00:00:00 GMT")]
+    [InlineData("0001-01-01T00:00:00Z")]
+    public void Rss2_AnEpochOrYearOneDate_IsNoDate(string date) =>
+        PubDate(date).Should().BeNull("a feed writes it for an item it has no date for");
+
     [Fact]
     public void Atom_TakesTheAlternateLink()
     {

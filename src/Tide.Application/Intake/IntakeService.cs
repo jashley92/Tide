@@ -491,11 +491,15 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
 
     // Adds the items not seen before (by canonical address), flagging ones whose title matches a recent item's. An item
     // published before the retention cutoff isn't added: pruning forgets old items, and a feed still listing one (the KEV
-    // catalog lists a year or more) would otherwise bring it back as new, dismissals and all.
+    // catalog lists a year or more) would otherwise bring it back as new, dismissals and all. An item dated after the
+    // fetch (a wrong year, a time zone read the wrong way, a post scheduled ahead) is dated when it was fetched: the inbox
+    // is newest first, so a date in the future held it at the top of New until it was pruned, above everything that came
+    // in after it, and the article promoted from it said it was published on a day still to come.
     private static async Task<int> StoreAsync(IAppDbContext db, Guid sourceId, IReadOnlyList<ParsedItem> parsed, DateTimeOffset now,
         DateTimeOffset retentionCutoff, CancellationToken ct)
     {
         var candidates = parsed
+            .Select(p => p.PublishedAtUtc > now ? p with { PublishedAtUtc = now } : p)
             .Where(p => p.PublishedAtUtc is not { } published || published >= retentionCutoff)
             .Select(p => (Item: p, Url: UrlCanonicalizer.Canonicalize(p.Url)))
             .Where(x => x.Url is not null)
