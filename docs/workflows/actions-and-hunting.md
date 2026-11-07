@@ -461,7 +461,8 @@ are kept exactly as saved queries are: `WorkActions` adds, edits, retires and re
 administrator, deletes it; `ReadActions` reads; edits carry an `EditVersion`; writes are audited and published on
 `outreach-templates`. A template has a name, description, subject (300), body (8,000) with `{{placeholders}}`, an
 optional fixed To address and a TLP ceiling (CLEAR by default). `OutreachFill.Check` refuses an unknown placeholder or
-kind on save. The page sits under Team in the sidebar and shows 20 templates a page, as Saved queries does.
+kind on save, and double braces that don't parse as a placeholder at all (`{{today: +2}}`, `{{article_title}}`), which
+would otherwise go out in every email as typed. The page sits under Team in the sidebar and shows 20 templates a page, as Saved queries does.
 
 A new install, or an upgrade whose library is still empty, gets 5 starter templates saved by "TIDE"
 (`StarterOutreachTemplates`), none with a fixed To address: *Vendor: are we affected?*, *Internal: action required*,
@@ -488,7 +489,8 @@ marked by the setting `Data:StarterOutreachTemplates`, as the starter saved quer
    nothing to fill, which stay as `[[name: nothing to fill]]` markers.
 
 The analyst edits the subject and body, copies each (`clipboard.js`), sends from their own mail, and marks it sent to
-one or more checked addresses (at most 10). The To line offers the template's fixed address, then each product's
+one or more checked addresses (at most 10). Opening the writer again (a follow-up email) fills the template chosen last
+time, if it's still offered. The To line offers the template's fixed address, then each product's
 contact (`StackProduct.ContactName`, `ContactEmail`).
 
 ```mermaid
@@ -533,7 +535,8 @@ stateDiagram-v2
   (`OutreachState.Oldest`) and the day the follow-up reminder goes (`OutreachDates.FollowUpOn`).
 - **Replied.** *Record the reply* keeps the notes and optionally a file already on the action's files, and either
   closes the action Done with an outcome in the same save (`ActionService.ApplyStatus`) or leaves it open (another email
-  still waits). A reply already recorded is refused, naming who recorded it. The reply's file is referenced by
+  still waits). A file goes on the action's files before the reply is recorded; if recording is then refused (the
+  action was closed meanwhile), trying again names that same file rather than adding it twice or dropping it. A reply already recorded is refused, naming who recorded it. The reply's file is referenced by
   `OutreachMessage.ReplyFileId` without a foreign key (SQL Server refuses a second cascade path to `StoredFile`), so the
   service checks it's a live file on the same action.
 - **Not sent after all** (`WithdrawAsync`) removes an email marked by mistake while it still waits; the history keeps

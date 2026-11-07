@@ -86,6 +86,17 @@ public class OutreachFillTests
     public void Check_RefusesAnUnknownPlaceholderOrKind_SayingWhatItCanUse(string text, string message) =>
         FluentActions.Invoking(() => OutreachFill.Check(text)).Should().Throw<ArgumentException>().WithMessage(message);
 
+    // A typo that doesn't parse as a placeholder at all was saved, and every email from the template went out with the
+    // braces in it: nothing filled it, and no [[…]] marker held the send back.
+    [Theory]
+    [InlineData("Reply by {{today: +2}}", "{{today: +2}} isn't written as a placeholder TIDE fills*")]
+    [InlineData("Reply by {{today :+2}}", "{{today :+2}} isn't written as a placeholder TIDE fills*")]
+    [InlineData("{{article_title}}", "{{article_title}} isn't written as a placeholder TIDE fills*")]
+    [InlineData("{{product name}}", "{{product name}} isn't written as a placeholder TIDE fills*")]
+    [InlineData("{{sender.name}}, {{action.number!}}", "{{action.number!}} isn't written as a placeholder TIDE fills*")]
+    public void Check_RefusesBracesThatArentAPlaceholder_ThatWouldGoOutAsTyped(string text, string message) =>
+        FluentActions.Invoking(() => OutreachFill.Check(text)).Should().Throw<ArgumentException>().WithMessage(message);
+
     [Fact]
     public void EveryPlaceholderListed_IsOneTheCheckAccepts() =>
         OutreachFill.All.Should().AllSatisfy(p => FluentActions.Invoking(() => OutreachFill.Check(p.Written)).Should().NotThrow());

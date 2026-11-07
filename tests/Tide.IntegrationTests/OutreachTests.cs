@@ -621,6 +621,66 @@ public class OutreachPageTests(TideApp app) : IClassFixture<TideApp>
             .And.NotContain("Write the email", "the action is closed");
     }
 
+    // Closing failed (a colleague closed the action meanwhile), so the analyst records the reply without closing it: the
+    // file added on the first try is the reply's, not left on the action unnamed.
+    [Fact]
+    public async Task AReplyRecordedAgain_AfterARefusedClose_KeepsTheFileAddedTheFirstTime()
+    {
+        var tag = Guid.NewGuid().ToString("N")[..6];
+        var template = await Saved("Ask again " + tag, body: "Hello,\n\nDid you see it?", to: "isac@isac.example");
+        var number = await OutreachAction("Ask the ISAC once more " + tag);
+        var detail = await Read(number);
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            await scope.ServiceProvider.GetRequiredService<OutreachService>().MarkSentAsync(detail.Action.Id,
+                new OutreachSend { TemplateId = template, To = "isac@isac.example", Subject = "About it", Body = "Did you see it?" });
+        detail = await Read(number);
+
+        await using (var r = await RenderAsync<OutreachPanel>(app, "/actions/" + number, new() { ["Action"] = detail.Action, ["CanWork"] = true, ["Files"] = detail.Files }))
+        {
+            var m = r.Component.State.Messages.Single();
+            await r.Press(p => p.StartReply(m));
+            await r.HtmlOnce("Record the reply from isac@isac.example");
+            // Someone else closes it while the dialog is open.
+            await using (var scope = SignedIn(app, SignIn.Analyst))
+                await scope.ServiceProvider.GetRequiredService<ActionService>().SetStatusAsync(detail.Action.Id, ActionStatus.Done, ActionOutcome.Answered, null);
+            r.Component.Answer("Nothing seen.", close: true, ActionOutcome.Answered, new ActionFileUpload("reply.txt", Samples.Text("Nothing seen.")));
+            await r.Click(async p => (await p.RecordReply()).Should().BeFalse());
+            Toasts(r).Select(t => t.Message).Should().Contain($"A-{number} is already closed. Record the reply without closing it.");
+
+            // Unticks Close and records it again; the file picked is still the one shown.
+            r.Component.Answer("Nothing seen.", close: false, ActionOutcome.None);
+            await r.Click(async p => (await p.RecordReply()).Should().BeTrue());
+        }
+
+        detail = await Read(number);
+        var file = detail.Files.Live.Should().ContainSingle("the file went on the action once").Subject;
+        detail.Action.Outreach.Single().ReplyFileId.Should().Be(file.FileId, "the reply names the file kept with it");
+    }
+
+    // A second email (a follow-up) after the first is marked sent: the writer opens on the template last used, filled, not
+    // on that template's name with nothing under it (choosing it again changes nothing, so it couldn't be filled).
+    [Fact]
+    public async Task TheWriter_OpenedAgain_FillsTheTemplateItStillShows()
+    {
+        var tag = Guid.NewGuid().ToString("N")[..6];
+        var template = await Saved("Chase " + tag, body: "Hello,\n\nAny news on {{action.number}}?", to: "isac@isac.example");
+        await Saved("Another " + tag);
+        var number = await OutreachAction("Chase the ISAC " + tag);
+        var detail = await Read(number);
+
+        await using var r = await RenderAsync<OutreachPanel>(app, "/actions/" + number, new() { ["Action"] = detail.Action, ["CanWork"] = true, ["Files"] = detail.Files });
+        await r.Click(p => p.ToggleWriter());
+        await r.Click(p => p.Choose(template));
+        await r.Click(p => p.MarkSent());
+        Toasts(r).Select(t => t.Message).Should().Contain($"Marked sent to isac@isac.example. A-{number} is waiting for the reply.");
+        r.Component.Writing.Should().BeFalse();
+
+        await r.Click(p => p.ToggleWriter());
+        r.Component.Written.Should().NotBeNull("the picker still shows the template, so its email is under it");
+        r.Component.Written!.Template.Id.Should().Be(template);
+        (await r.Html()).Should().Contain($"Any news on A-{number}?").And.Contain("Mark sent</button>");
+    }
+
     [Fact]
     public async Task TheActionPage_ShowsTheCard_OnAnOutreachAction()
     {
