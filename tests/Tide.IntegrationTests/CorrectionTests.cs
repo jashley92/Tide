@@ -226,8 +226,7 @@ public class CorrectionTests : IDisposable
         var s = await Brief();
         await _db.Settings().SaveAsync(TlpLevel.Amber, TlpLevel.AmberStrict);   // set too high by mistake
         var send = await Send(Edition.Public);
-        Guid image;
-        await using (var ctx = _db.Context()) image = (await ctx.BriefSendImages.FirstAsync(i => i.SendId == send.Id)).FileId;
+        var image = await FirstImageAsync(send.Id);
         await _db.Settings().SaveAsync(TlpLevel.Green, TlpLevel.AmberStrict);
         (await _db.Distribution().PublishedBriefsAsync()).Should().ContainSingle();   // its words are in the filter's cache
         _db.Published.TryGet(send.Id, out _).Should().BeTrue();

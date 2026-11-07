@@ -166,9 +166,4 @@ public class TriageSourcesTabTests(PullApp app) : IClassFixture<PullApp>
         m.Success.Should().BeTrue();
         return int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
     }
-
-    private sealed class ActionOwnerApp : TideApp
-    {
-        protected override string? Role => "ActionOwner";
-    }
 }

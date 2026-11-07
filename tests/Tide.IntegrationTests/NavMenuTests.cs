@@ -118,12 +118,6 @@ public class NavMenuTests(TideApp app) : IClassFixture<TideApp>
     }
 }
 
-/// <summary>Signed in as an action owner: the team edition and actions, but no triage or administration.</summary>
-public sealed class ActionOwnerApp : TideApp
-{
-    protected override string? Role => "ActionOwner";
-}
-
 public class ActionOwnerNavTests(ActionOwnerApp app) : IClassFixture<ActionOwnerApp>
 {
     [Fact]

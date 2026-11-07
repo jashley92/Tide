@@ -150,8 +150,9 @@ The fakes, all in `TestDb.cs` unless noted:
 `TideApp` (`WebAppTests.cs`) is a `WebApplicationFactory<Program>` in the Development environment: the dev sign-in,
 a SQLite file in its own temp folder (`Pooling=False`), and `Files:RootPath` and `Email:PickupDirectory` in that folder
 too. So it runs `DatabaseInitializer`, migrations and the sample data exactly as `dotnet run` does. Subclasses change
-who is signed in by overriding `Role`: `ReaderApp` (Reader), and in `Audit/AdversarialTests.cs` `AnalystApp`,
-`ActionOwnerApp` and others. `PathBase` runs it under a sub-path. Use it as a class fixture
+who is signed in by overriding `Role`: `ReaderApp` (Reader) and `ActionOwnerApp` (ActionOwner) beside it, and in
+`Audit/AdversarialTests.cs` `AnalystApp` and others. Reuse one of these rather than declaring another with the same
+role. `PathBase` runs it under a sub-path. Use it as a class fixture
 (`IClassFixture<TideApp>`); `WebAppTests.Pages_Render_ForTheDevUser` reads every main page.
 
 `ComponentHarness` renders one component in the real app's services, signed in as someone (`SignIn`), and hands the
