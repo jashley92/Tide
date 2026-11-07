@@ -312,7 +312,7 @@ public class NotificationPreferenceTests : IDisposable
     {
         As(Kim, AppRole.ActionOwner);
         (await _db.NotificationPrefs(AllOn()).GetMineAsync()).Switches.Select(s => s.Name)
-            .Should().Equal(NotifyDueSoon, NotifyOverdue, NotifyTeamDigest, NotifyOutreachFollowUp);
+            .Should().Equal(NotifyDueSoon, NotifyOverdue, NotifyTeamDigest, NotifyOutreachFollowUp, NotifyHandoffs);
         var rotation = () => _db.NotificationPrefs(AllOn()).SetMineAsync(NotifyRotationRequests, Off);
         await rotation.Should().ThrowAsync<ForbiddenException>();
 

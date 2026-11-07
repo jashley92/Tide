@@ -125,6 +125,9 @@ public sealed class EmailSender(IOptionsMonitor<EmailOptions> options, ILogger<E
             }
             if (message.To.Count == 0) throw new FormatException("None of the recipient addresses is a valid email address.");
             if (bad > 0) log.LogWarning("Skipped {Bad} recipient address(es) that aren't valid; sending to {Good}.", bad, message.To.Count);
+            // Replies go to whoever follows the work, when the email says so (an address that doesn't parse is left out).
+            foreach (var addr in email.ReplyTo ?? [])
+                if (MailAddress.TryCreate(addr, out var reply)) message.ReplyToList.Add(reply);
             // Out-of-office and other automatic replies to a daily brief are noise.
             message.Headers.Add("X-Auto-Response-Suppress", "OOF, AutoReply");
             message.Headers.Add("Auto-Submitted", "auto-generated");

@@ -462,6 +462,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Name).HasMaxLength(100);
             e.Property(x => x.Description).HasMaxLength(500);
             e.Property(x => x.Email).HasMaxLength(256);
+            e.Property(x => x.ContactName).HasMaxLength(Team.MaxContactName);
+            e.Property(x => x.ContactEmail).HasMaxLength(256);
+            e.Property(x => x.Engage).HasMaxLength(Team.MaxEngage);
             e.HasMany(x => x.Members).WithOne().HasForeignKey(x => x.TeamId).OnDelete(DeleteBehavior.Cascade);
             Audited(e);
         });
@@ -494,6 +497,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasMany(x => x.Outreach).WithOne().HasForeignKey(x => x.ActionId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Files).WithOne().HasForeignKey(x => x.ActionId).OnDelete(DeleteBehavior.Cascade);
             e.Property(x => x.PlaybookName).HasMaxLength(100);
+            Person(e, x => x.HandedById, x => x.HandedByName);
+            e.Property(x => x.HandoffReason).HasMaxLength(ActionItem.MaxHandoffReason);
             e.HasOne<Playbook>().WithMany().HasForeignKey(x => x.PlaybookId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => new { x.Status, x.DueDate });
             e.HasIndex(x => x.TeamId);

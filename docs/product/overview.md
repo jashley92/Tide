@@ -108,7 +108,7 @@ code-defined permissions (`RoleDefinitions.SystemRoles` in `src/Tide.Application
 | Role | Code name | What it does | Permissions |
 |---|---|---|---|
 | Analyst | `Analyst` | The CTI team: triages, writes, presents and sends the brief, and works any action. | `ReadPublished`, `ReadTeamEdition`, `WriteArticles`, `PresentBriefs`, `WorkActions`, `EnterMetrics`, `ReadActions`, `MeetingNotes`, `JoinMeetings` |
-| Action owner | `ActionOwner` | Another team's member: reads the team edition and works the actions given to their team. | `ReadPublished`, `ReadTeamEdition`, `WorkActions`, `ReadActions`, `MeetingNotes`, `JoinMeetings` |
+| Action owner | `ActionOwner` | Another team's member: reads the team edition and works the actions given to their team. Hands them off, and keeps the external teams (those that work outside TIDE). | `ReadPublished`, `ReadTeamEdition`, `WorkActions`, `ReadActions`, `MeetingNotes`, `JoinMeetings` |
 | Reader | `Reader` | Anyone else in the company: reads the published, company-wide archive. | `ReadPublished` |
 | Administrator | `Admin` | Administers TIDE: sources, taxonomy, role mappings and settings. Holds every permission. | All of them, including any added later |
 | Viewer | `Viewer` | Reads everything the team does, every action included, and changes nothing. Joins meetings, raises a hand and adds notes. | `ReadPublished`, `ReadTeamEdition`, `ReadActions`, `MeetingNotes`, `JoinMeetings` |

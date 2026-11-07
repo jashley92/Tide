@@ -336,6 +336,8 @@ erDiagram
         uuid Id PK
         string Key UK
         bool IsRetired
+        bool IsExternal
+        int ActiveLimit
     }
     TeamMembers {
         uuid TeamId PK
@@ -938,7 +940,22 @@ row itself is kept. Written by `CorrectionService`; `DistributionService` reads 
 A team owns follow-up actions. `Key` is stable and **unique**. A team that has never owned an action and isn't named by
 a card rule is deleted; otherwise it's retired (`TeamService.SetRetiredAsync`). `Email` is the team's shared mailbox,
 used for its digest and for reminders about unassigned actions. Columns: `Name` nvarchar(100), `Description`
-nvarchar(500), `Email` nvarchar(256), `SortOrder`, `IsRetired`, and the stamps.
+nvarchar(500), `Email` nvarchar(256), `SortOrder`, `IsRetired`, and the stamps. A team that handed an action on
+(`Actions.HandedFromTeamId`) counts as having owned one, so it's retired too.
+
+The active limit and the external team's profile (EP-86):
+
+| Column | Type | Null | Meaning |
+|---|---|---|---|
+| `ActiveLimit` | int | yes | The most actions it may have active (Open, InProgress or Blocked) at once; null for none. Set by an administrator (`TeamService.SetLimitAsync`), 1 to 999. |
+| `LimitMode` | int | no | `ActiveLimitMode`: what happens when a change would take it over. Default 0 (Show). |
+| `IsExternal` | bit | no | Tracked here, working outside TIDE: no members, no assignees, reminded at `ContactEmail`. Kept by anyone with `WorkActions`. |
+| `ContactName` | nvarchar(200) | yes | An external team's contact. |
+| `ContactEmail` | nvarchar(256) | yes | Where an external team's reminders go. `Email` stays null for an external team, so no internal email reaches it. |
+| `Engage` | nvarchar(2000) | yes | How to engage an external team (its ticket queue, say). |
+| `RemindersOn` | bit | no | Whether an external team gets its reminder emails. Default 1. |
+| `RemindBeforeDays` | int | no | Business days before the due date its first reminder goes, 0 to 10 (0: the due day). Default 2. |
+| `RemindOverdueEveryDays` | int | yes | Business days between reminders while overdue, 1 to 20; null reminds once. The migration set existing rows to 3. |
 
 `TeamMembers` has key `(TeamId, UserId)` and is cascade-deleted with its team. Columns: `UserId`/`DisplayName`
 nvarchar(256) and `AddedAtUtc`. `UserId` is indexed. Members are the people who may work the team's actions, with
@@ -970,6 +987,11 @@ config change. A team owns it, it's due by a date the SLA targets suggest, and i
 | `ArticleId` | uniqueidentifier | yes | FK → `Articles`, **restrict**. Indexed. This is why an article with actions can't be deleted. |
 | `ParentId` | uniqueidentifier | yes | FK → `Actions`, **restrict**. The parent action of a remediation split across teams. Indexed. |
 | `PlaybookId`, `PlaybookName` | uniqueidentifier, nvarchar(100) | yes | FK → `Playbooks`, **restrict**. The playbook the checklist was copied from, and its name at the time. |
+| `NoReminders` | bit | no | Left out of its external team's reminder emails. Matters only while its team is external. |
+| `HandedFromTeamId` | uniqueidentifier | yes | The team it was last handed from. No foreign key: the name is looked up, and "another team" stands in if it's gone. |
+| `HandedById`, `HandedByName` | nvarchar(256) | yes | Who handed it on last. |
+| `HandedAtUtc` | datetimeoffset | yes | When. |
+| `HandoffReason` | nvarchar(500) | yes | Why, as they wrote it: shown on the action. Its history keeps every hand-off. |
 | `EditVersion` | uniqueidentifier | no | Concurrency token. |
 | stamps | | | **S** columns. |
 
@@ -991,7 +1013,8 @@ where noted. In practice actions aren't deleted.
 ### `NotificationMarks` (not audited)
 
 Records that a reminder or digest was sent, so each scan sends it once. Key `(Kind, Key)`, for example `due-soon` and
-`{action}:{due}`. `Kind` is nvarchar(32), `Key` nvarchar(200), and `SentAtUtc` is indexed. Written by `ReminderService`
+`{action}:{due}`. An external team's reminder is `external-reminder` and `{action}:{due}:{step}`, the step `before` or
+`late-0`, `late-1`… (`ExternalCadence.Step`). `Kind` is nvarchar(32), `Key` nvarchar(200), and `SentAtUtc` is indexed. Written by `ReminderService`
 (`Actions/Reminders.cs`).
 
 ## Hunting, outreach and playbooks
@@ -1412,7 +1435,8 @@ the stored values.
 | `BriefStatus` | 0 **Draft**. 1 **Ready**. 2 **Presented**: the meeting was ended. 3 **Sent**: emailed, distributed without email, or finished as not sent. |
 | `FeedItemStatus` | 0 **New**. 1 **Shortlisted**. 2 **Dismissed**. 3 **Duplicate**. 4 **Promoted**: became, or was attached to, an article. New, Dismissed and Duplicate items are pruned. |
 | `StoryStatus` | 0 **Active**. 1 **Monitoring**. 2 **Closed**. |
-| `ActionStatus` | 0 **Open**. 1 **InProgress**. 2 **Blocked**. 3 **Done**. 4 **Cancelled**. 5 **NotApplicable**. The first three are open (`ActionItem.IsOpen`) and the last three closed (`ActionItem.IsClosedStatus`). |
+| `ActionStatus` | 0 **Open**. 1 **InProgress**. 2 **Blocked**. 3 **Done**. 4 **Cancelled**. 5 **NotApplicable**. 6 **Tracking**: handed to others and followed. Open, InProgress, Blocked and Tracking are open (`ActionItem.IsOpen`); Done, Cancelled and NotApplicable closed (`ActionItem.IsClosedStatus`). Only the first three are active (`ActionItem.IsActiveStatus`), counted against a team's limit. People read them in `ActionItem.StatusOrder`, Tracking between Blocked and Done. |
+| `ActiveLimitMode` | 0 **Show**: the count only. 1 **Warn**: going over asks for a reason, kept in the action's history. 2 **Refuse**. |
 | `ActionOutcome` | 0 **None**. 1 **NoHits**. 2 **HitsEscalated**: hits found and handed on (an incident case, the SOC). 3 **Remediated**. 4 **Blocked**. 5 **RiskAccepted**. 6 **NotAffected**. 7 **Answered**. 8 **Other**. |
 | `HuntResult` | 0 **NotRun**. 1 **NoHits**. 2 **Hits**. |
 | `ReviewStatus` (in `Entities/Review.cs`) | 0 **Asked**: waiting for the reviewer. 1 **Approved**. 2 **ChangesAsked**. 3 **Withdrawn**: replaced by a later request or taken back by the author. |

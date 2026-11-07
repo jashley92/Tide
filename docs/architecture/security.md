@@ -273,6 +273,11 @@ as well as a claim:
 - **Working an action** (`ActionService.CanWork`): `WriteArticles`, or `WorkActions` and membership of the action's
   team (`TeamMembers`), per ADR [0008](../decisions/0008-teams-own-actions.md).
 - **Commenting on an action** (`ActionService.CanComment`): `ReadTeamEdition` plus `WriteArticles` or `WorkActions`.
+- **Keeping the teams** (`TeamService`): an external team (one that works outside TIDE, ADR
+  [0020](../decisions/0020-external-teams-are-emailed-without-tide.md)) with `WorkActions`; an internal team, its
+  members and every team's active limit with `Administer`. An external team can't have members, so adding one grants
+  nobody access.
+- **Handing an action off** (`HandoffService.HandOffAsync`): whoever can work it. **Splitting** one: `WriteArticles`.
 - **A Visitor's reads**: `MeetingAccess`, below.
 - **An API token**: its scope claim, and its TLP ceiling, below.
 

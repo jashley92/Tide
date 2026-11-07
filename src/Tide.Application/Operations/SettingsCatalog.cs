@@ -109,6 +109,7 @@ public static class SettingsCatalog
         new("Reminders", "Personal digest offered", OperationalSettings.PersonalDigest, EditedIn: TeamsPage),
         new("Reminders", "Outreach follow-up", OperationalSettings.OutreachFollowUp, EditedIn: TeamsPage),
         new("Reminders", "Outreach follow-up after (business days)", OperationalSettings.OutreachFollowUpDays, EditedIn: TeamsPage),
+        new("Reminders", "External team reminders", OperationalSettings.ExternalReminders, EditedIn: TeamsPage),
 
         new("Intake", "Polling", OperationalSettings.IntakeEnabled, EditedIn: SourcesPage),
         new("Intake", "Feed items kept (days)", OperationalSettings.RetentionDays, EditedIn: SourcesPage),

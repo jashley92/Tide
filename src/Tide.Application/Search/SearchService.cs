@@ -181,7 +181,7 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
                 || db.ActionComments.Any(c => c.ActionId == a.Id && EF.Functions.Like(c.Text, p, SearchText.Escape)), term, numbered));
         }
         var total = await q.CountAsync(ct);
-        var rows = await Lookups.ActionRows(db, q.OrderBy(a => a.Status >= ActionStatus.Done).ThenByDescending(a => a.Number).Skip(skip).Take(take), ct);
+        var rows = await Lookups.ActionRows(db, q.OrderBy(a => ActionItem.ClosedStatuses.Contains(a.Status)).ThenByDescending(a => a.Number).Skip(skip).Take(take), ct);
         var forms = SearchText.AllForms(terms);
         var comments = await CommentsAsync(db, rows.Select(r => r.Id).ToList(), ct);
         var hits = rows.Select(r => r.Hit(SearchText.Snippet(

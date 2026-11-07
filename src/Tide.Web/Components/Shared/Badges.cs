@@ -192,6 +192,7 @@ public sealed class ActionStatusBadge : ComponentBase
         {
             ActionStatus.InProgress => BadgeTone.Info,
             ActionStatus.Blocked => BadgeTone.Warn,
+            ActionStatus.Tracking => BadgeTone.Purple,
             ActionStatus.Done => BadgeTone.Ok,
             _ => BadgeTone.Neutral,
         }, false, Application.Actions.ActionService.StatusName(Status));

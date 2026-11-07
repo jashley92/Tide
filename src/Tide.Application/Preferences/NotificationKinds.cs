@@ -49,6 +49,11 @@ public static class NotificationKinds
         "A reminder when an email you marked sent on an Outreach action has had no reply recorded for a few business days.",
         [On, Off], Permission.WorkActions, [ReminderKind.OutreachFollowUp]);
 
+    // Sent when it happens, so no scan: on for everyone, as the rotation's requests are.
+    public static readonly NotificationKind Handoffs = new(NotifyHandoffs, "Hand-offs to your team",
+        "An action handed to a team you're on, when the team has no mailbox.",
+        [On, Off], Permission.ReadActions, []);
+
     // The rotation's are for analysts in it.
     public static readonly NotificationKind RotationReminders = new(NotifyRotationReminders, "Rotation reminders",
         "\"You're presenting\" before your brief days, and the nudge when today's brief isn't ready.",
@@ -63,7 +68,7 @@ public static class NotificationKinds
         [Off, Daily, Weekly], Permission.ReadActions, [ReminderKind.PersonalDigest]);
 
     /// <summary>All of them: the switches in the page's order, then the personal digest.</summary>
-    public static readonly IReadOnlyList<NotificationKind> All = [DueSoon, Overdue, TeamDigest, OutreachFollowUp, RotationReminders, RotationRequests, Digest];
+    public static readonly IReadOnlyList<NotificationKind> All = [DueSoon, Overdue, TeamDigest, OutreachFollowUp, Handoffs, RotationReminders, RotationRequests, Digest];
 
     /// <summary>The kind named <paramref name="name"/>, or null.</summary>
     public static NotificationKind? Find(string name) => All.FirstOrDefault(k => k.Name == name);
@@ -72,6 +77,7 @@ public static class NotificationKinds
     public static NotificationKind For(string name) =>
         Find(name) ?? throw new ArgumentException($"There's no notification named \"{name}\".", nameof(name));
 
-    /// <summary>The kind a reminder scan sends, whose choice leaves people out of it (or, for the personal digest, takes it).</summary>
-    public static NotificationKind For(ReminderKind scan) => All.First(k => k.Scans.Contains(scan));
+    /// <summary>The kind a reminder scan sends, whose choice leaves people out of it (or, for the personal digest, takes it);
+    /// null for a scan nobody in TIDE chooses about (an external team's reminders go to its contact).</summary>
+    public static NotificationKind? For(ReminderKind scan) => All.FirstOrDefault(k => k.Scans.Contains(scan));
 }

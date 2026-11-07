@@ -1,0 +1,52 @@
+@* Asks why a change goes ahead though it takes a team over its active limit, when the team warns rather than refuses
+   (ActiveLimits): the reason goes in the action's history. RunAsync tries the change, and on that refusal asks and tries
+   again with the reason; a team that refuses, or any other failure, is the caller's to show. *@
+
+<ConfirmDialog @ref="_dialog" Form="true" ConfirmDisabled="@string.IsNullOrWhiteSpace(_reason)">
+    <label class="tide-field-label" for="@_id">Why go over the limit?</label>
+    <textarea id="@_id" class="form-control form-control-sm" rows="2" maxlength="@ActiveLimits.MaxReason" @bind="_reason" @bind:event="oninput"></textarea>
+    <div class="form-text">Kept in the action's history.</div>
+</ConfirmDialog>
+
+@code {
+    private ConfirmDialog _dialog = default!;
+    private string? _reason;
+    private readonly string _id = "over-limit-" + Guid.NewGuid().ToString("N")[..8];
+
+    /// <summary>The reason as typed (a test types it here).</summary>
+    internal string? Reason { get => _reason; set => _reason = value; }
+
+    /// <summary>Whether it's asking now.</summary>
+    internal bool Asking { get; private set; }
+
+    /// <summary>
+    /// Runs <paramref name="change"/> with no reason; if the team asks for one, asks and runs it again with it. True when
+    /// it went ahead; false when the person cancelled.
+    /// </summary>
+    public async Task<bool> RunAsync(Func<string?, Task> change)
+    {
+        try
+        {
+            await change(null);
+            return true;
+        }
+        catch (ActiveLimitException ex) when (ex.NeedsReason)
+        {
+            if (await AskAsync(ex) is not { } reason) return false;
+            await change(reason);
+            return true;
+        }
+    }
+
+    /// <summary>Asks for the reason; null when cancelled.</summary>
+    public async Task<string?> AskAsync(ActiveLimitException ex)
+    {
+        _reason = null;
+        Asking = true;
+        try { return await _dialog.Ask($"Over {ex.Team}'s limit", ex.Message, "Go ahead", danger: false) ? _reason?.Trim() : null; }
+        finally { Asking = false; }
+    }
+
+    /// <summary>The dialog's Go ahead (a test presses it once the reason is typed).</summary>
+    internal Task Confirm() => _dialog.Confirm();
+}

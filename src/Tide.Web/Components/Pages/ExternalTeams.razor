@@ -1,0 +1,176 @@
+@page "/teams/external"
+@attribute [Authorize(Policy = Policies.ReadActions)]
+@inject TeamService TeamSvc
+@inject ICurrentUser CurrentUser
+@inject ToastService Toasts
+
+@* The teams tracked here that work outside TIDE (Team.IsExternal): their contact, how to engage them, and their reminder
+   emails' cadence. Whoever works actions adds, edits and retires them (the internal teams stay the administrators', on
+   Teams & SLA); everyone else who reads actions reads them. An administrator sets their active limits here too. Every
+   change is audited, as any team's is. *@
+
+<PageTitle>External teams · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <Breadcrumbs Items="@([new("Actions", "actions"), new("External teams")])" />
+        <h1>External teams</h1>
+        <div class="tide-sub">Tracked here, working elsewhere. Their actions are emailed to their contact when due soon or overdue, with no TIDE links.</div>
+    </div>
+    <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" id="ext-retired" @bind="_showRetired" @bind:after="Load" />
+        <label class="form-check-label" for="ext-retired">Show retired</label>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-xl-7">
+        @if (_teams.Count == 0)
+        {
+            <div class="tide-card"><EmptyState Icon="bi-building" Title="No external teams yet">Add one to hand work to a team that doesn't use TIDE.</EmptyState></div>
+        }
+        @foreach (var t in _teams)
+        {
+            <div class="tide-card @(t.IsRetired ? "tide-retired" : "")" @key="t.Id">
+                @if (_editing == t.Id)
+                {
+                    <h2 class="tide-card-title">Edit @t.Name</h2>
+                    @Fields(_form, "edit")
+                    @if (CurrentUser.Has(Permission.Administer)) { <div class="mt-2"><ActiveLimitFields Id="ext-limit" @bind-Limit="_limit" @bind-Mode="_mode" /></div> }
+                    <div class="d-flex gap-2 mt-2">
+                        <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="() => Save(t.Id)">Save</button>
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editing = null">Cancel</button>
+                    </div>
+                }
+                else
+                {
+                    <div class="d-flex gap-2 align-items-start">
+                        <div class="flex-grow-1">
+                            <h2 class="tide-card-title mb-0">@t.Name @if (t.IsRetired) { <Badge>Retired</Badge> }</h2>
+                            @if (t.Description is not null) { <div class="small">@t.Description</div> }
+                            <dl class="tide-meta-grid small mt-1 mb-0">
+                                <dt>Contact</dt><dd>@(t.ContactName ?? "None named") @if (t.ContactEmail is not null) { <span class="tide-data ms-1">@t.ContactEmail</span> }</dd>
+                                @if (t.Engage is not null) { <dt>How to engage</dt><dd class="tide-pre-line">@t.Engage</dd> }
+                                <dt>Reminders</dt><dd>@Cadence(t)</dd>
+                                @if (t.ActiveLimit is { } limit) { <dt>Limit</dt><dd>@limit active</dd> }
+                            </dl>
+                        </div>
+                        @if (TeamSvc.CanManageExternal)
+                        {
+                            <button class="btn btn-outline-secondary btn-sm" @onclick="() => Edit(t)">Edit</button>
+                            <button class="btn btn-outline-secondary btn-sm" title="A team that never owned an action is deleted; otherwise it's retired"
+                                    aria-label="@(t.IsRetired ? "Bring back" : "Retire") @t.Name" @onclick="() => Retire(t)">@(t.IsRetired ? "Bring back" : "Retire")</button>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </div>
+    @if (TeamSvc.CanManageExternal)
+    {
+        <div class="col-xl-5">
+            <div class="tide-card">
+                <h2>New external team</h2>
+                @Fields(_new, "new")
+                <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="Add">Add external team</button>
+            </div>
+        </div>
+    }
+</div>
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    private ConfirmDialog _confirm = default!;
+    private IReadOnlyList<Team> _teams = [];
+    private bool _showRetired, _busy;
+    private Guid? _editing;
+    private ExternalTeamForm _form = new(), _new = new();
+    private int? _limit;
+    private ActiveLimitMode _mode;
+
+    internal ExternalTeamForm NewForm => _new;
+    internal ExternalTeamForm EditForm => _form;
+    internal IReadOnlyList<Team> Shown => _teams;
+
+    protected override Task OnInitializedAsync() => Load();
+
+    private async Task Load() => _teams = (await TeamSvc.ListAsync(_showRetired)).Where(t => t.IsExternal).ToList();
+
+    /// <summary>"2 business days before, then every 3 while overdue", or "Off".</summary>
+    internal static string Cadence(Team t) => !t.RemindersOn ? "Off"
+        : (t.RemindBeforeDays == 0 ? "On the due day" : $"{Words.Plural(t.RemindBeforeDays, "business day")} before")
+          + (t.RemindOverdueEveryDays is { } every ? $", then every {every} while overdue" : ", then once when overdue")
+          + (t.ContactEmail is null ? " (no contact email: none sent)" : "");
+
+    // The profile's fields, for a new team and an edit (ids kept apart by prefix).
+    private RenderFragment Fields(ExternalTeamForm f, string p) => __builder =>
+    {
+        <div class="row g-2">
+            <div class="col-md-6"><label class="tide-field-label" for="@p-name">Name</label><input id="@p-name" class="form-control form-control-sm" maxlength="100" placeholder="Network Engineering" @bind="f.Name" /></div>
+            <div class="col-md-6"><label class="tide-field-label" for="@p-contact">Contact name</label><input id="@p-contact" class="form-control form-control-sm" maxlength="@Team.MaxContactName" @bind="f.ContactName" /></div>
+            <div class="col-12"><label class="tide-field-label" for="@p-email">Contact email</label><input id="@p-email" class="form-control form-control-sm" maxlength="256" placeholder="network-team@example.org" @bind="f.ContactEmail" /></div>
+            <div class="col-12"><label class="tide-field-label" for="@p-desc">What they do</label><input id="@p-desc" class="form-control form-control-sm" maxlength="500" @bind="f.Description" /></div>
+            <div class="col-12">
+                <label class="tide-field-label" for="@p-engage">How to engage them</label>
+                <textarea id="@p-engage" class="form-control form-control-sm" rows="2" maxlength="@Team.MaxEngage" placeholder="Raise a ticket in their queue; urgent: call their on-call line." @bind="f.Engage"></textarea>
+            </div>
+            <div class="col-12">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" role="switch" id="@p-remind" @bind="f.RemindersOn" />
+                    <label class="form-check-label" for="@p-remind">Email them about their actions due soon or overdue</label>
+                </div>
+            </div>
+            <div class="col-sm-6">
+                <label class="tide-field-label" for="@p-before">Business days before the due date</label>
+                <input id="@p-before" type="number" min="0" max="@Team.MaxRemindBefore" class="form-control form-control-sm tide-w-count" @bind="f.RemindBeforeDays" aria-describedby="@p-before-help" />
+                <div class="form-text" id="@p-before-help">0: on the due day only.</div>
+            </div>
+            <div class="col-sm-6">
+                <label class="tide-field-label" for="@p-every">While overdue, every (business days)</label>
+                <input id="@p-every" type="number" min="@Team.MinRemindEvery" max="@Team.MaxRemindEvery" class="form-control form-control-sm tide-w-count" placeholder="Once" @bind="f.RemindOverdueEveryDays" aria-describedby="@p-every-help" />
+                <div class="form-text" id="@p-every-help">Blank: once only.</div>
+            </div>
+        </div>
+    };
+
+    private void Edit(Team t)
+    {
+        _editing = t.Id;
+        _form = ExternalTeamForm.From(t);
+        (_limit, _mode) = (t.ActiveLimit, t.LimitMode);
+    }
+
+    internal Task Add() => Run(async () =>
+    {
+        await TeamSvc.AddExternalAsync(_new);
+        Toasts.Show($"{_new.Name.Trim()} added.");
+        _new = new();
+    });
+
+    internal Task Save(Guid id) => Run(async () =>
+    {
+        await TeamSvc.UpdateExternalAsync(id, _form);
+        if (CurrentUser.Has(Permission.Administer)) await TeamSvc.SetLimitAsync(id, _limit, _mode);
+        _editing = null;
+    });
+
+    private async Task Retire(Team t)
+    {
+        if (await Tide.Web.Components.Pages.Admin.Retiring.ConfirmAsync(_confirm, t.Name, t.IsRetired)) await Run(() => TeamSvc.SetRetiredAsync(t.Id, !t.IsRetired));
+    }
+
+    // One change at a time, as Teams & SLA does.
+    private async Task Run(Func<Task> action)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await action();
+            await Load();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+}

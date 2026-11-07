@@ -43,7 +43,7 @@ role holds it; an administrator also holds every other permission
 |---|---|---|---|---|
 | Overview | `/admin` | nothing: the checklist and the index | (reads several) | |
 | Organization › Organization settings | `/admin/organization` | team name, time zone, meeting time; holidays | `OperationalSettingsService`, `HolidayService` | `Settings`, `Holidays` |
-| Organization › Teams & SLA | `/admin/teams` | teams, members, team mailbox, retire; SLA targets by priority and kind; reminder and digest switches and times, brief-not-ready recipients, outreach follow-up days, run a scan now, last run, opt-out counts; which action files download zipped | `TeamService`, `SlaSettings`, `OperationalSettingsService`, `ReminderService`, `NotificationPreferenceService` | `Teams`, `TeamMembers`, `Settings` |
+| Organization › Teams & SLA | `/admin/teams` | internal teams, members, team mailbox, each team's active limit and what happens at it (show, warn, refuse), retire; a link to External teams; SLA targets by priority and kind; reminder and digest switches and times (external team reminders among them), brief-not-ready recipients, outreach follow-up days, run a scan now, last run, opt-out counts; which action files download zipped | `TeamService`, `SlaSettings`, `OperationalSettingsService`, `ReminderService`, `NotificationPreferenceService` | `Teams`, `TeamMembers`, `Settings` |
 | Organization › Brief rotation | `/admin/rotation` | roster, weekly rota, managers to notify | `RotationService` | rotation tables, `Settings` |
 | Actions › Playbooks | `/admin/playbooks` | checklists per kind of action; a new install, or an upgrade with none, starts with one for each kind but Other, added once (`Data:StarterPlaybooks`) | `PlaybookService` | `Playbooks` |
 | Actions › Card rules | `/admin/card-rules` | colours, labels and filter chips on the board and list | `CardRuleService` | `ActionCardRules` |
@@ -63,6 +63,11 @@ role holds it; an administrator also holds every other permission
 | System › Configuration bundle | `/admin/system/bundle` | imports another TIDE's setup; downloads this one's and the install answers file | `ConfigBundleService` | many |
 | System › Audit log | `/admin/system/audit` | nothing: every change saved, with a CSV export | `AuditLogService` | `AuditLog` |
 | System › Updates | `/admin/system/updates` | the update check's switch and interval | `UpdateCheckService`, `UpdateSettings` | `Settings` |
+
+**External teams** (`/teams/external`) isn't under Administration: anyone with `WorkActions` keeps the teams that work
+outside TIDE there (contact, how to engage them, their reminders' cadence), and an administrator also sets their active
+limits there. Internal teams stay on Teams & SLA, the administrators'. See
+[actions-and-hunting.md](actions-and-hunting.md#external-teams).
 
 The workflows behind several pages are on their own pages: teams, SLA and reminders in
 [actions-and-hunting.md](actions-and-hunting.md); the rotation in [rotation.md](rotation.md); metrics and imports in
@@ -134,6 +139,8 @@ template: it's written from the brief ([distribution.md](distribution.md)).
 | `digest` | Weekly team digest | `ReminderService` |
 | `personal-digest` | Personal digest | `ReminderService` |
 | `outreach-follow-up` | Outreach follow-up | `ReminderService` |
+| `handoff` | Action handed to a team | `HandoffService` |
+| `external-reminder` | External team reminder (to people without TIDE: no links) | `ReminderService` |
 | `brief-not-ready` | Brief not ready | `ReminderService` |
 | `presenting` | Presenting next | `ReminderService` |
 | `rotation-request` | Swap or cover request | `RotationService` |

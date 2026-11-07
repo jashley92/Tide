@@ -10,6 +10,12 @@ namespace Tide.Domain.Entities;
 /// </summary>
 public class Team : AuditableEntity
 {
+    public const int MaxContactName = 200;
+    public const int MaxEngage = 2000;
+
+    /// <summary>The reminder cadence's ranges and defaults, in business days.</summary>
+    public const int MaxRemindBefore = 10, DefaultRemindBefore = 2, MinRemindEvery = 1, MaxRemindEvery = 20, DefaultRemindEvery = 3;
+
     public string Key { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
@@ -21,6 +27,30 @@ public class Team : AuditableEntity
     public bool IsRetired { get; set; }
 
     public List<TeamMember> Members { get; set; } = [];
+
+    /// <summary>
+    /// The most actions it may have active (open, in progress or blocked) at once, or null for no limit; and what happens
+    /// when one would take it over. Set by an administrator.
+    /// </summary>
+    public int? ActiveLimit { get; set; }
+    public ActiveLimitMode LimitMode { get; set; } = ActiveLimitMode.Show;
+
+    /// <summary>
+    /// Tracked in TIDE but working elsewhere: no members, so no assignees, and reminded by email at its contact address
+    /// (never a TIDE link). Anyone who works actions keeps these; internal teams are the administrators'.
+    /// </summary>
+    public bool IsExternal { get; set; }
+
+    /// <summary>An external team's contact: who to ask, their mailbox, and how to engage them (their ticket queue, say).</summary>
+    public string? ContactName { get; set; }
+    public string? ContactEmail { get; set; }
+    public string? Engage { get; set; }
+
+    /// <summary>Whether an external team is emailed about its actions due soon or overdue, and how often: this many
+    /// business days before the due date (0: on the day only), then every so many while overdue (null: once).</summary>
+    public bool RemindersOn { get; set; } = true;
+    public int RemindBeforeDays { get; set; } = DefaultRemindBefore;
+    public int? RemindOverdueEveryDays { get; set; } = DefaultRemindEvery;
 }
 
 /// <summary>A person on a team, by user id (as mirrored from AD on sign-in).</summary>
@@ -108,9 +138,43 @@ public class ActionItem : AuditableEntity
     /// <summary>Files added to the action itself (removed ones included); its comments' files are on the comments.</summary>
     public List<ActionFile> Files { get; set; } = [];
 
-    public bool IsOpen => Status is ActionStatus.Open or ActionStatus.InProgress or ActionStatus.Blocked;
+    /// <summary>Not to be in its external team's reminder emails (it matters only while its team is external).</summary>
+    public bool NoReminders { get; set; }
 
-    public static bool IsClosedStatus(ActionStatus s) => s is ActionStatus.Done or ActionStatus.Cancelled or ActionStatus.NotApplicable;
+    public const int MaxHandoffReason = 500;
+
+    /// <summary>The last hand-off: the team it came from, who handed it over, when and why. Its history keeps every one.</summary>
+    public Guid? HandedFromTeamId { get; set; }
+    public string? HandedById { get; set; }
+    public string? HandedByName { get; set; }
+    public DateTimeOffset? HandedAtUtc { get; set; }
+    public string? HandoffReason { get; set; }
+
+    public bool IsOpen => !IsClosedStatus(Status);
+
+    /// <summary>The closed statuses: Done, Cancelled and Not applicable. The one list; the queries use it too
+    /// (<c>ActionQueries.WhereClosed</c>), so open and closed mean the same in C# and in the database.</summary>
+    public static readonly ActionStatus[] ClosedStatuses = [ActionStatus.Done, ActionStatus.Cancelled, ActionStatus.NotApplicable];
+
+    /// <summary>The statuses that count toward a team's active limit: Open, In progress and Blocked (not Tracking, which
+    /// others are doing).</summary>
+    public static readonly ActionStatus[] ActiveStatuses = [ActionStatus.Open, ActionStatus.InProgress, ActionStatus.Blocked];
+
+    /// <summary>The open statuses: the active ones and Tracking.</summary>
+    public static readonly ActionStatus[] OpenStatuses = [.. ActiveStatuses, ActionStatus.Tracking];
+
+    public static bool IsClosedStatus(ActionStatus s) => ClosedStatuses.Contains(s);
+
+    /// <summary>Whether an action at <paramref name="s"/> counts toward its team's active limit.</summary>
+    public static bool IsActiveStatus(ActionStatus s) => ActiveStatuses.Contains(s);
+
+    /// <summary>The statuses in the order people read them (the board's columns, the status buttons): the open ones, then
+    /// the closed. The enum's own order is its stored numbers, which put Tracking last.</summary>
+    public static readonly IReadOnlyList<ActionStatus> StatusOrder =
+    [
+        ActionStatus.Open, ActionStatus.InProgress, ActionStatus.Blocked, ActionStatus.Tracking,
+        ActionStatus.Done, ActionStatus.Cancelled, ActionStatus.NotApplicable,
+    ];
 }
 
 /// <summary>A comment on an action (Markdown), in order.</summary>

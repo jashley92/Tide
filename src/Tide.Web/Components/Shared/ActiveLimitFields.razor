@@ -1,0 +1,36 @@
+@* A team's active limit and what happens at it, for an administrator: on Teams & SLA for an internal team, on External
+   teams for an external one. TeamService.SetLimitAsync saves them. *@
+
+<div class="row g-2">
+    <div class="col-md-4">
+        <label class="tide-field-label" for="@Id">Active limit</label>
+        <input id="@Id" type="number" min="1" max="@TeamService.MaxActiveLimit" class="form-control form-control-sm" placeholder="None"
+               aria-describedby="@($"{Id}-help")" value="@Limit" @onchange="e => LimitChanged.InvokeAsync(int.TryParse(e.Value?.ToString(), out var v) ? v : null)" />
+    </div>
+    <div class="col-md-8">
+        <label class="tide-field-label" for="@($"{Id}-mode")">At the limit</label>
+        <select id="@($"{Id}-mode")" class="form-select form-select-sm" value="@Mode" @onchange="e => ModeChanged.InvokeAsync(Enum.Parse<ActiveLimitMode>(e.Value!.ToString()!))">
+            @foreach (var (mode, text) in Modes) { <option value="@mode">@text</option> }
+        </select>
+    </div>
+    <div class="col-12 form-text" id="@($"{Id}-help")">Its open, in progress and blocked actions, at once. Tracking doesn't count. Blank: no limit.</div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+    [Parameter] public int? Limit { get; set; }
+    [Parameter] public EventCallback<int?> LimitChanged { get; set; }
+    [Parameter] public ActiveLimitMode Mode { get; set; }
+    [Parameter] public EventCallback<ActiveLimitMode> ModeChanged { get; set; }
+
+    /// <summary>What happens at the limit, as the pages say it.</summary>
+    internal static readonly IReadOnlyList<(ActiveLimitMode Mode, string Text)> Modes =
+    [
+        (ActiveLimitMode.Show, "Show the count only"),
+        (ActiveLimitMode.Warn, "Warn, and ask why"),
+        (ActiveLimitMode.Refuse, "Refuse"),
+    ];
+
+    /// <summary>"Limit: 5 active, warn, and ask why", for a team's row.</summary>
+    internal static string Summary(int limit, ActiveLimitMode mode) => $"Limit: {limit} active, {Modes.First(m => m.Mode == mode).Text.ToLowerInvariant()}";
+}

@@ -31,7 +31,7 @@
             }
             @if (r.Children > 0)
             {
-                <div class="small tide-muted"><span class="bi bi-diagram-3" aria-hidden="true"></span> @r.Children part@(r.Children == 1 ? "" : "s")</div>
+                <div class="small tide-muted tide-rollup"><span class="bi bi-diagram-3" aria-hidden="true"></span> @r.Rollup</div>
             }
         </td>
         <td class="small text-nowrap">@ActionService.KindName(r.Kind) <PriorityBadge Priority="r.Priority" /></td>

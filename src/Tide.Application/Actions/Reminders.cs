@@ -10,6 +10,7 @@ using Tide.Application.Preferences;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 using static Tide.Application.Distribution.EmailComposer;
+using static Tide.Application.Actions.ActionEmails;
 
 namespace Tide.Application.Actions;
 
@@ -36,6 +37,10 @@ public sealed class ReminderOptions
     /// been recorded for <see cref="FollowUpOptions.Days"/> business days.</summary>
     public FollowUpOptions OutreachFollowUp { get; set; } = new();
 
+    /// <summary>At <see cref="ReminderTime"/>, email each external team (with its reminders on) about its actions due soon or
+    /// overdue, as its own cadence sets.</summary>
+    public Toggle ExternalReminders { get; set; } = new();
+
     /// <summary>Whether an administrator has the scan on.</summary>
     public bool IsEnabled(ReminderKind kind) => kind switch
     {
@@ -45,6 +50,7 @@ public sealed class ReminderOptions
         ReminderKind.Presenting => Presenting.Enabled,
         ReminderKind.PersonalDigest => PersonalDigest.Enabled,
         ReminderKind.OutreachFollowUp => OutreachFollowUp.Enabled,
+        ReminderKind.ExternalReminder => ExternalReminders.Enabled,
         _ => BriefNotReady.Enabled,
     };
 
@@ -101,6 +107,9 @@ public enum ReminderKind
 
     /// <summary>A reminder to follow up an Outreach action's email that has had no reply (ADR 0019).</summary>
     OutreachFollowUp = 6,
+
+    /// <summary>An external team's email about its actions due soon or overdue, at its own cadence (no TIDE links).</summary>
+    ExternalReminder = 7,
 }
 
 /// <summary>A scan's last run, for the administration page. <paramref name="Note"/> says who wasn't emailed because they
@@ -125,7 +134,7 @@ public sealed class ReminderLog
 /// that kind off in My notifications (<see cref="NotificationPreferenceService"/>); a team mailbox and the brief-not-ready
 /// fallback recipients are addresses, not people, so they never opt out.
 /// </summary>
-public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email, OrgClock clock, IOptionsMonitor<ReminderOptions> options,
+public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSender email, OrgClock clock, IOptionsMonitor<ReminderOptions> options,
     IOptions<AppOptions> app, ReminderLog log, ICurrentUser user, Rotation.IPresenterLookup? presenters = null, EmailTemplateStore? templates = null)
 {
     // The wording an administrator set in Administration › Email templates, or the defaults.
@@ -186,6 +195,7 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
                 ReminderKind.Presenting => await PresentingAsync(ct),
                 ReminderKind.PersonalDigest => await PersonalDigestAsync(scheduled, ct),
                 ReminderKind.OutreachFollowUp => await FollowUpAsync(ct),
+                ReminderKind.ExternalReminder => await ExternalAsync(ct),
                 _ => await BriefNotReadyAsync(ct),
             };
             // The poll comes round every few minutes after the scan's time, and most find nothing new to send (or only
@@ -282,7 +292,7 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
                 ["OverdueActions"] = $"{list.Count} overdue action{S(list.Count)}",
                 ["ActionList"] = Table(list, today),
             });
-            var html = Shell(t.Heading, clock.TeamName + " · " + DayText(today), MarkingLine(list) + t.BodyHtml, Footer);
+            var html = Shell(t.Heading, clock.TeamName + " · " + DayText(today), MarkingLine(list) + t.BodyHtml, t.Footer);
             var result = await email.SendAsync(new OutgoingEmail([to], Marked(t.Subject, list), html, ToText(html), []), ct);
             if (result.Status != EmailSendStatus.Sent) continue;
             sent++;
@@ -356,7 +366,7 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
                 ["OpenList"] = open.Count > 0 ? ListHeading("Open", top: 8) + Table(open, today) : "",
                 ["ClosedList"] = closed.Count > 0 ? ListHeading("Closed in the last week", top: 14) + Table(closed, today) : "",
             });
-            var html = Shell(t.Heading, clock.TeamName + " · week of " + weekStart.ToString("MMMM d", CultureInfo.InvariantCulture), MarkingLine(actions) + t.BodyHtml, Footer);
+            var html = Shell(t.Heading, clock.TeamName + " · week of " + weekStart.ToString("MMMM d", CultureInfo.InvariantCulture), MarkingLine(actions) + t.BodyHtml, t.Footer);
             var result = await email.SendAsync(new OutgoingEmail(to, Marked(t.Subject, actions), html, ToText(html), []), ct);
             if (result.Status != EmailSendStatus.Sent) continue;
             await MarkAsync(db, "digest", [key]);
@@ -396,7 +406,7 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
         {
             ["Status"] = what, ["BriefLink"] = link, ["MeetingTime"] = meeting,
         });
-        var html = Shell(t.Heading, $"{clock.TeamName} · the meeting is at {meeting}", t.BodyHtml, Footer);
+        var html = Shell(t.Heading, $"{clock.TeamName} · the meeting is at {meeting}", t.BodyHtml, t.Footer);
         var result = await email.SendAsync(new OutgoingEmail(to, t.Subject, html, ToText(html), []), ct);
         if (result.Status != EmailSendStatus.Sent) return 0;
         await MarkAsync(db, "brief-not-ready", [key]);
@@ -429,7 +439,7 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
             ["MeetingTime"] = clock.MeetingTime.ToString("h:mm tt", CultureInfo.InvariantCulture),
             ["RotationLink"] = link,
         });
-        var html = Shell(t.Heading, $"{clock.TeamName} · from {day}", t.BodyHtml, Footer);
+        var html = Shell(t.Heading, $"{clock.TeamName} · from {day}", t.BodyHtml, t.Footer);
         var result = await email.SendAsync(new OutgoingEmail([address], t.Subject, html, ToText(html), []), ct);
         if (result.Status != EmailSendStatus.Sent) return 0;
         await MarkAsync(db, "presenting", [key]);
@@ -522,7 +532,7 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
                 ["DueSoonList"] = Section("Due today or the next business day", dueSoon, 14),
                 ["NewList"] = Section(seen.Count == 0 ? "Your other open actions" : "New to you since your last digest", fresh, 14),
             });
-            var html = Shell(t.Heading, clock.TeamName + " · " + period, MarkingLine(listed) + t.BodyHtml, Footer);
+            var html = Shell(t.Heading, clock.TeamName + " · " + period, MarkingLine(listed) + t.BodyHtml, t.Footer);
             var result = await email.SendAsync(new OutgoingEmail([person.Email!], Marked(t.Subject, listed), html, ToText(html), []), ct);
             if (result.Status != EmailSendStatus.Sent) continue;
             sent++;
@@ -580,7 +590,7 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
                 ["ActionList"] = Table(list, today),
                 ["WaitingList"] = WaitingList(emails.Select(m => (open[m.ActionId].Number, m.To, OutreachDates.SentOn(m.SentAtUtc, clock)))),
             });
-            var html = Shell(t.Heading, clock.TeamName + " · " + DayText(today), MarkingLine(list) + t.BodyHtml, Footer);
+            var html = Shell(t.Heading, clock.TeamName + " · " + DayText(today), MarkingLine(list) + t.BodyHtml, t.Footer);
             var result = await email.SendAsync(new OutgoingEmail([to], Marked(t.Subject, list), html, ToText(html), []), ct);
             if (result.Status != EmailSendStatus.Sent) continue;
             sent++;
@@ -614,23 +624,7 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
 
     // --- shared -------------------------------------------------------------------------------------------------
 
-    private const string Footer = "An automatic message from TIDE. Replies aren't read.";
-
     private static string S(int n) => n == 1 ? "" : "s";
-
-    // An action carries the TLP of the article it was raised from (one raised on its own carries none). A reminder or
-    // digest is marked with the highest it lists, in its subject and at its top, as a brief's email is, since it may go
-    // to a team mailbox wider than TIDE's users.
-    private static TlpLevel? MarkingOf(IEnumerable<ActionItem> actions) => actions.Select(a => a.Article?.Tlp).Max();
-
-    private static string Marked(string subject, IEnumerable<ActionItem> actions) =>
-        MarkingOf(actions) is { } tlp ? $"{subject} [{Tlp.Label(tlp)}]" : subject;
-
-    private static string MarkingLine(IEnumerable<ActionItem> actions) => MarkingOf(actions) is { } tlp
-        ? $"<p style=\"margin:0 0 12px;font-size:13px;color:{Palette.Muted};\">{TlpLabel(tlp)} {Esc(Tlp.Meaning(tlp))}</p>"
-        : "";
-
-    private static string DayText(DateOnly d) => d.ToString("dddd, MMMM d", CultureInfo.InvariantCulture);
 
     /// <summary>The digest's overdue count: bold, and red when there are any.</summary>
     internal static string OverdueCount(int overdue) =>
@@ -640,28 +634,4 @@ public sealed class ReminderService(IAppDbContextFactory dbs, IEmailSender email
     internal static string ListHeading(string text, int top) => $"<div style=\"font-weight:700;margin:{top}px 0 4px;\">{Esc(text)}</div>";
 
     private string Table(IEnumerable<ActionItem> actions, DateOnly today) => ActionTable(actions, today, app.Value.BaseUrl, clock.Days);
-
-    /// <summary>The reminders' table of actions (the email templates' preview uses it too, with sample actions).</summary>
-    internal static string ActionTable(IEnumerable<ActionItem> actions, DateOnly today, string? appBaseUrl, WorkingDays? workingDays = null)
-    {
-        var baseUrl = appBaseUrl?.TrimEnd('/');
-        var sb = new StringBuilder("<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"font-size:14px;\">");
-        foreach (var a in actions)
-        {
-            var label = $"A-{a.Number}";
-            var number = string.IsNullOrWhiteSpace(baseUrl) ? Esc(label) : $"<a style=\"color:{Palette.Link};\" href=\"{Esc(baseUrl + "/actions/" + a.Number)}\">{Esc(label)}</a>";
-            var state = ActionSla.StateOf(a, today, workingDays);
-            var due = a.ClosedDate is { } c ? $"closed {c.ToString("MMM d", CultureInfo.InvariantCulture)} ({ActionService.OutcomeName(a.Outcome)})"
-                : a.DueDate is { } d ? "due " + d.ToString("ddd MMM d", CultureInfo.InvariantCulture) : "no due date";
-            var color = state == SlaState.Overdue || state == SlaState.Missed ? Palette.Threat : state == SlaState.DueSoon ? Palette.Warn : Palette.Muted;
-            sb.Append(CultureInfo.InvariantCulture, $"""
-                <tr>
-                  <td style="padding:6px 8px 6px 0;border-bottom:1px solid {Palette.Border};white-space:nowrap;vertical-align:top;">{number}</td>
-                  <td style="padding:6px 8px;border-bottom:1px solid {Palette.Border};vertical-align:top;">{(a.Article is { } from ? TlpLabel(from.Tlp, 10) + " " : "")}{Esc(a.Title)}<div style="font-size:12px;color:{Palette.Muted};">{Esc(ActionService.KindName(a.Kind))} &middot; {a.Priority}{(a.AssigneeName is { } who ? " &middot; " + Esc(who) : "")}</div></td>
-                  <td style="padding:6px 0 6px 8px;border-bottom:1px solid {Palette.Border};white-space:nowrap;vertical-align:top;color:{color};font-size:13px;">{Esc(due)}</td>
-                </tr>
-                """);
-        }
-        return sb.Append("</table>").ToString();
-    }
 }

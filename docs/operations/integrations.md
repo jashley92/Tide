@@ -137,10 +137,10 @@ shows "Role mappings: the last reload failed". See [troubleshooting.md](troubles
 | **Direction** | Outbound. |
 | **Protocol** | SMTP through `System.Net.Mail.SmtpClient`, STARTTLS when `Email:EnableSsl`; AUTH with a user name and password, or the app pool's Windows identity (`SmtpUseDefaultCredentials`), or none. `Email:PickupDirectory` writes `.eml` files instead. |
 | **Config** | `Email:*` ([configuration.md](configuration.md#email)); `App:BaseUrl` for links. |
-| **What leaves** | The brief's editions (HTML and plain text, screenshots as `cid:` linked resources), corrections, test copies, reminders, digests, rotation emails, and nothing else. Every message has `Auto-Submitted: auto-generated` and suppresses out-of-office replies. |
+| **What leaves** | The brief's editions (HTML and plain text, screenshots as `cid:` linked resources), corrections, test copies, reminders, digests, rotation emails, hand-off notices, and the external teams' reminders, and nothing else. The external teams' reminders go to addresses outside TIDE's users (a team's contact email, kept on External teams): each lists its open actions' titles, the details written on them, due dates and ticket links, with no TIDE link and nothing from an article, marked with the highest TLP of the articles they came from, and with a `Reply-To` of whoever follows the work. They're off until an administrator turns them on (`Notifications:ExternalReminders:Enabled`); review the *External team reminder* template first. Every message has `Auto-Submitted: auto-generated` and suppresses out-of-office replies. |
 
 **Who uses it.** `DistributionService` and `CorrectionService` (brief sends and corrections), `ReminderService`
-(reminders and digests), `RotationService` and `EmailTemplateService` (a test to the administrator).
+(reminders and digests, and external teams' reminders), `HandoffNotices` (hand-off notices), `RotationService` and `EmailTemplateService` (a test to the administrator).
 
 **Failure behaviour.** `EmailSender` never retries behind the analyst's back: a send's failure is returned and shown.
 

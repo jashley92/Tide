@@ -37,6 +37,7 @@
                         <div class="col-md-5"><input class="form-control form-control-sm" @bind="_name" aria-label="Team name" /></div>
                         <div class="col-md-7"><input class="form-control form-control-sm" @bind="_email" placeholder="Team mailbox (optional)" aria-label="Team mailbox" /></div>
                         <div class="col-12"><input class="form-control form-control-sm" @bind="_description" placeholder="What the team does (optional)" aria-label="Team description" /></div>
+                        <div class="col-12"><ActiveLimitFields Id="@($"limit-{t.Id}")" @bind-Limit="_limit" @bind-Mode="_mode" /></div>
                     </div>
                     <div class="d-flex gap-2 mb-2">
                         <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="() => Save(t.Id)">Save</button>
@@ -49,6 +50,7 @@
                         <div class="flex-grow-1">
                             <h2 class="tide-card-title mb-0">@t.Name @if (t.IsRetired) { <Badge>Retired</Badge> }</h2>
                             <div class="tide-muted small">@t.Description @if (t.Email is not null) { <span class="tide-data ms-1">@t.Email</span> }</div>
+                            @if (t.ActiveLimit is { } limit) { <div class="small">@ActiveLimitFields.Summary(limit, t.LimitMode)</div> }
                         </div>
                         <button class="tide-icon-btn" title="Move up" aria-label="Move @t.Name up" disabled="@(i == 0)" @onclick="() => Run(() => TeamSvc.MoveAsync(t.Id, -1))"><span class="bi bi-arrow-up" aria-hidden="true"></span></button>
                         <button class="tide-icon-btn" title="Move down" aria-label="Move @t.Name down" disabled="@(i == _teams.Count - 1)" @onclick="() => Run(() => TeamSvc.MoveAsync(t.Id, 1))"><span class="bi bi-arrow-down" aria-hidden="true"></span></button>
@@ -82,6 +84,12 @@
                 }
             </div>
         }
+
+        <div class="tide-card">
+            <h2>External teams</h2>
+            <p class="small tide-muted mb-2">Teams tracked here that work outside TIDE: no members, reminded by email at their contact address. Anyone who works actions keeps them; set their limits there too.</p>
+            <a class="btn btn-outline-secondary btn-sm" href="teams/external"><span class="bi bi-building" aria-hidden="true"></span> Manage external teams</a>
+        </div>
 
         <div class="tide-card">
             <h2>New team</h2>
@@ -142,11 +150,11 @@
                                     <label class="form-check-label" for="@id">@KindText(kind)</label>
                                 </div>
                                 <div class="small tide-muted">@KindAbout(kind)@(last is null ? "" : $" · last run {Ui.When(Clock, last.AtUtc)}: {(last.Error ?? $"{last.Sent} sent")}{(last.Note is { } note ? $" ({note})" : "")}")</div>
-                                @Count(PreferenceOf(kind), kind)
+                                @if (PreferenceOf(kind) is { } pref) { @Count(pref, kind) }
                             </td>
                             <td class="text-end"><button class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@_busy" aria-label="Run @KindText(kind) now" @onclick="() => RunNow(kind)">Run now</button></td>
                         </tr>
-                        @if (_showing == PreferenceOf(kind) && _owner == kind)
+                        @if (_showing is not null && _showing == PreferenceOf(kind) && _owner == kind)
                         {
                             <tr><td colspan="2" class="pt-0">@List(_showing, KindText(kind), kind)</td></tr>
                         }
@@ -224,6 +232,9 @@
     private bool _showRetired, _busy;
     private Guid? _editing;
     private string? _name, _email, _description, _newName, _newEmail;
+    private int? _limit;
+    private ActiveLimitMode _mode;
+
     private readonly Dictionary<Guid, string> _add = [];
     private readonly Dictionary<Priority, int?> _byPriority = [];
     private readonly Dictionary<ActionKind, int?> _byKind = [];
@@ -296,7 +307,8 @@
         await Load();
     }
 
-    private async Task Load() => _teams = await TeamSvc.ListAsync(_showRetired);
+    // The internal teams: the external ones are kept on their own page, by whoever works actions.
+    private async Task Load() => _teams = (await TeamSvc.ListAsync(_showRetired)).Where(t => !t.IsExternal).ToList();
 
     private static int? ParseDays(ChangeEventArgs e) => int.TryParse(e.Value?.ToString(), out var v) ? v : null;
 
@@ -308,6 +320,7 @@
         ReminderKind.Presenting => "Brief rotation reminder",
         ReminderKind.PersonalDigest => "Personal digest",
         ReminderKind.OutreachFollowUp => "Outreach follow-up",
+        ReminderKind.ExternalReminder => "External team reminders",
         _ => "Brief-not-ready nudge",
     };
 
@@ -319,11 +332,13 @@
         ReminderKind.Presenting => "To whoever presents the next business day",
         ReminderKind.PersonalDigest => "Offered in My notifications: each person's own actions, daily at the reminder time or weekly on the digest day",
         ReminderKind.OutreachFollowUp => "To whoever marked an Outreach action's email sent, when no reply is recorded after the days set below",
+        ReminderKind.ExternalReminder => "To each external team's contact email, with its reminders on: its actions due soon or overdue, at its own cadence. No TIDE links",
         _ => "To the presenting analyst, if today's brief isn't ready",
     };
 
     // The choice in My notifications that leaves people out of a kind (or, for the personal digest, takes it).
-    private static string PreferenceOf(ReminderKind k) => NotificationKinds.For(k).Name;
+    // None for the external teams' reminders: they go to no one in TIDE, so no one opts out.
+    private static string? PreferenceOf(ReminderKind k) => NotificationKinds.For(k)?.Name;
 
     private IReadOnlyDictionary<string, int> _counts = new Dictionary<string, int>();
     private string? _showing;
@@ -423,6 +438,7 @@
                 [OperationalSettings.PersonalDigest] = Switch(_rem.On[ReminderKind.PersonalDigest]),
                 [OperationalSettings.OutreachFollowUp] = Switch(_rem.On[ReminderKind.OutreachFollowUp]),
                 [OperationalSettings.OutreachFollowUpDays] = _rem.FollowUpDays.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                [OperationalSettings.ExternalReminders] = Switch(_rem.On[ReminderKind.ExternalReminder]),
             });
             _rem = ReminderForm.From(Reminders);
             Toasts.Show("Saved. Applies within five minutes.");
@@ -437,11 +453,13 @@
         _name = t.Name;
         _email = t.Email;
         _description = t.Description;
+        (_limit, _mode) = (t.ActiveLimit, t.LimitMode);
     }
 
     private Task Save(Guid id) => Run(async () =>
     {
         await TeamSvc.UpdateAsync(id, _name ?? "", _description, _email);
+        await TeamSvc.SetLimitAsync(id, _limit, _mode);
         _editing = null;
     });
 

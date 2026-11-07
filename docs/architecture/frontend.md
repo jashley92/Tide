@@ -122,9 +122,9 @@ sidebar requires. The services check permissions again, so a page that forgets c
 | `/articles` | `Articles` | `ReadTeamEdition` | The article list and New article. Filters in the address: `q`, `status`, `from`, `to`, `assess`, `tag`, `category`, `tactic`, `technique`, `withsubs`, `page`; `new` opens the form. |
 | `/articles/{Id:guid}` | `ArticleEdit` | `ReadTeamEdition` | The article editor (`ArticleEditorPanel`) and its reader preview (`ReaderPreview`). Read-only for someone without `WriteArticles`. `?edition=company` opens the preview on the company-wide edition. |
 | `/articles/{Id:guid}/review` | `ReviewPage` | `WriteArticles` | Reviewing an article: the editions, comments on parts, the checklist, Approve or Ask for changes. |
-| `/actions` | `ActionsBoard` | `ReadActions` | The Actions board or list (the list 50 a page). `?layout=board|list` (the person's saved choice otherwise). Filters in the address: `view`, `q`, `team`, `kind`, `priority`, `due` (`overdue`, `week`, `none`), `status`, `assignee`, `rule`, `group`, `page`. |
-| `/actions/new` | `ActionPage` | `ReadActions` | Raising a new action. Without `WriteArticles` the page says "Only analysts create actions." `?article=` and `?parent=` pre-fill it. |
-| `/actions/{Number:int}` | `ActionPage` | `ReadActions` | One action: status, facts, hunt queries, outreach, files, comments, history. |
+| `/actions` | `ActionsBoard` | `ReadActions` | The Actions board or list (the list 50 a page). `?layout=board|list` (the person's saved choice otherwise). Filters in the address: `view`, `q`, `team` (with "4 of 5 active" for a team with a limit), `kind`, `priority`, `due` (`overdue`, `week`, `none`), `status` (Tracking among the open ones), `parent` (`parent=12`: the parts of A-12, "Part of A-12"), `assignee`, `rule`, `group`, `page`. |
+| `/actions/new` | `ActionPage` | `ReadActions` | Raising a new action. Without `WriteArticles` the page says "Only analysts create actions." `?article=` and `?parent=` pre-fill it; no team is chosen until the person chooses one. |
+| `/actions/{Number:int}` | `ActionPage` | `ReadActions` | One action: status, facts, hunt queries, outreach, files, comments, history; the Hand off dialog, the Split to teams dialog (`SplitDialog`), a parent's rollup, and an external team's contact. |
 | `/search` | `Search` | `ReadTeamEdition` | Search and indicator or CVE lookup. `?q=`. |
 | `/present/{Day}` | `Present` | `JoinMeetings` | Present mode (`BlankLayout`). Starting, running and ending a meeting need `PresentBriefs`; a Visitor sees it only from a seat in the live meeting. |
 
@@ -143,6 +143,7 @@ sidebar requires. The services check permissions again, so a page that forgets c
 | `/workload` | `Workload` | `ReadActions` | Each team's open, late and held actions. |
 | `/hunts/saved` | `SavedQueriesPage` | `ReadActions` | The team's saved hunt queries, 20 a page (`?page=`). |
 | `/outreach/templates` | `OutreachTemplatesPage` | `ReadActions` | The team's outreach email templates, 20 a page (`?page=`). |
+| `/teams/external` | `ExternalTeams` | `ReadActions` | The teams that work outside TIDE: their contact and reminder cadence. Kept by `WorkActions`; an administrator also sets their limits. |
 | `/notifications` | `MyNotifications` | `ReadActions` | The person's own email choices (from the account menu). |
 | `/published`, `/published/{Day}` | `Published` | `ReadPublished` | The Reader archive of sent company-wide editions. `?q=`. |
 | `/briefs/{Day}/sharepoint` | `SharePointPage` | `ReadTeamEdition` | The company-wide edition as clean HTML to copy, and its images as a zip. |

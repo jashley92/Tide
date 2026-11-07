@@ -265,7 +265,10 @@ public class ActionServiceTests : IDisposable
         form.TeamId = other;
         form.Priority = Priority.P1;
         await svc.SaveAsync(form);
-        (await svc.GetAsync(n))!.Action.Events.First().Text.Should().Contain("priority: P3 → P1").And.Contain("team: Cyber Defense → Vulnerability Management");
+        // Another team in the editor is a hand-off (EP-86): its own line, beside the other changes'.
+        var history = (await svc.GetAsync(n))!.Action.Events.Select(e => e.Text).ToList();
+        history.Should().Contain(t => t.Contains("priority: P3 → P1"))
+            .And.Contain($"Handed from Cyber Defense to Vulnerability Management: {ActionService.EditorHandoffReason}");
 
         stale.Title = "Something else";
         var act = () => svc.SaveAsync(stale);

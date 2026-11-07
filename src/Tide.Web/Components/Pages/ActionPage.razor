@@ -2,6 +2,7 @@
 @page "/actions/{Number:int}"
 @attribute [Authorize(Policy = Policies.ReadActions)]
 @inject ActionService ActionSvc
+@inject HandoffService HandoffSvc
 @inject TeamService TeamSvc
 @inject ArticleService ArticleSvc
 @inject IUserDirectory Users
@@ -41,7 +42,7 @@
     else if (_loaded)
     {
         <div class="tide-card-form tide-card">
-            <ActionEditor @key="_form" Form="_form" Teams="_teams" People="_people" IsNew="true" />
+            <ActionEditor @key="_form" Form="_form" Teams="_teams" People="_people" IsNew="true" ParentDue="_parent?.DueDate" />
             <div class="mt-3">
                 <span class="tide-field-label">Files <span class="fw-normal">(optional)</span></span>
                 <FilePicker Files="_newFiles" ZoneId="new-files-zone" InputId="new-files-input" Label="Files for the new action" PickLabel="Attach files" Changed="StateHasChanged" />
@@ -75,14 +76,20 @@ else
                     <a class="tide-kcard-parent" href="@Ui.ActionUrl(parentRow.Number)"><span class="bi bi-arrow-return-right" aria-hidden="true"></span> Part of @Ui.ActionLabel(parentRow.Number)</a>
                 }
             </div>
+            @if (_detail.HandedFrom is { } handedFrom)
+            {
+                <div class="tide-handoff small mt-1"><span class="bi bi-box-arrow-in-right" aria-hidden="true"></span>
+                    Handed from @handedFrom by @a.HandedByName@(a.HandedAtUtc is { } at ? $" ({Ui.When(Clock, at)})" : ""): @a.HandoffReason</div>
+            }
         </div>
         @if (_detail.CanWork)
         {
             <div class="d-flex gap-2 flex-wrap">
-                @if (a.IsOpen && a.AssigneeId != CurrentUser.UserId)
+                @if (a.IsOpen && a.AssigneeId != CurrentUser.UserId && a.Team?.IsExternal != true)
                 {
                     <button class="btn btn-outline-secondary" disabled="@_busy" @onclick="Take"><span class="bi bi-person-check" aria-hidden="true"></span> Take it</button>
                 }
+                <button class="btn btn-outline-secondary" disabled="@_busy" @onclick="StartHandoff"><span class="bi bi-box-arrow-right" aria-hidden="true"></span> Hand off</button>
                 <button class="btn btn-outline-secondary" @onclick="StartEdit"><span class="bi bi-pencil" aria-hidden="true"></span> Edit</button>
             </div>
         }
@@ -90,7 +97,7 @@ else
 
     @if (_detail.CanWork)
     {
-        <ActionStatusControl @key="a.Id" @ref="_statusControl" Action="a" Changed="Reload" Prompting="OnPrompting" Stale="OnStatusStale" />
+        <ActionStatusControl @key="a.Id" @ref="_statusControl" Action="a" OpenParts="@_detail.Children.Count(c => c.IsOpen)" Changed="Reload" Prompting="OnPrompting" Stale="OnStatusStale" />
     }
 
     @* The facts someone opening an action looks for first, in one strip; the edit form changes them. *@
@@ -280,6 +287,27 @@ else
                 </dl>
             </div>
 
+            @if (a.Team is { IsExternal: true } external)
+            {
+                @* The team works outside TIDE: who to ask and how, and whether this action is in its reminder emails. *@
+                <div class="tide-card">
+                    <h2>@external.Name <Badge Class="ms-1">External</Badge></h2>
+                    <dl class="tide-meta-grid">
+                        @if (external.ContactName is not null) { <dt>Contact</dt><dd>@external.ContactName</dd> }
+                        @if (external.ContactEmail is not null) { <dt>Email</dt><dd class="tide-data">@external.ContactEmail</dd> }
+                        @if (external.Engage is not null) { <dt>How to engage</dt><dd class="tide-pre-line">@external.Engage</dd> }
+                    </dl>
+                    @if (_detail.CanWork)
+                    {
+                        <div class="form-check form-switch mt-2">
+                            <input class="form-check-input" type="checkbox" role="switch" id="no-remind" checked="@a.NoReminders" disabled="@_busy" @onchange="e => SetNoReminders(e.Value is true)" />
+                            <label class="form-check-label" for="no-remind">Don't remind @external.Name about this one</label>
+                        </div>
+                        @if (!external.RemindersOn) { <div class="form-text">The team's reminders are off.</div> }
+                    }
+                </div>
+            }
+
             @* Files sit in the side column under About, before Parts and History: they are the action's working material, so
                they come before its structure and its record. When the columns stack, this column follows the main one, so
                Files come after Comments. *@
@@ -288,11 +316,17 @@ else
             @if (a.ParentId is null && _detail.Children.Count == 0 && _detail.CanEditAll)
             {
                 <a class="tide-add-section" href="@($"actions/new?parent={a.Id}")"><span class="bi bi-plus-lg" aria-hidden="true"></span> Split off a part</a>
+                @if (a.IsOpen)
+                {
+                    <button type="button" class="tide-add-section" @onclick="OpenSplit"><span class="bi bi-diagram-3" aria-hidden="true"></span> Split to teams</button>
+                }
             }
             else if (a.ParentId is null && _detail.Children.Count > 0)
             {
                 <div class="tide-card">
                     <h2>Parts <span class="tide-count tide-muted fw-normal">(@_detail.Children.Count)</span></h2>
+                    <div class="small tide-rollup mb-1">@_detail.Rollup</div>
+                    <a class="small d-inline-block mb-2" href="@($"actions?view=open&layout=board&parent={a.Number}")">Open its @_detail.Children.Count action@(_detail.Children.Count == 1 ? "" : "s") on the board</a>
                     @foreach (var c in _detail.Children)
                     {
                         <div class="d-flex gap-2 align-items-center py-1 border-bottom small">
@@ -303,9 +337,19 @@ else
                     }
                     @if (_detail.CanEditAll)
                     {
-                        <a class="btn btn-outline-secondary btn-sm mt-2" href="@($"actions/new?parent={a.Id}")"><span class="bi bi-diagram-3" aria-hidden="true"></span> Split off a part for a team</a>
+                        <div class="d-flex gap-2 flex-wrap mt-2">
+                            <a class="btn btn-outline-secondary btn-sm" href="@($"actions/new?parent={a.Id}")"><span class="bi bi-plus-lg" aria-hidden="true"></span> Split off a part for a team</a>
+                            @if (a.IsOpen)
+                            {
+                                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="OpenSplit"><span class="bi bi-diagram-3" aria-hidden="true"></span> Split to teams</button>
+                            }
+                        </div>
                     }
                 </div>
+            }
+            @if (a.ParentId is null && a.IsOpen && _detail.CanEditAll)
+            {
+                <SplitDialog @ref="_split" Parent="a" Done="Reload" />
             }
 
             <div class="tide-card">
@@ -323,6 +367,27 @@ else
 
 <ConfirmDialog @ref="_confirm" />
 <ScreenshotDialog Set="_shotSet" @bind-Open="_shot" />
+<OverLimitDialog @ref="_overLimit" />
+
+@* Hand it to another team: which, and why (kept in its history and shown on it). *@
+<ConfirmDialog @ref="_handoffDialog" Form="true" Confirming="HandOff" ConfirmDisabled="@(_handTo == Guid.Empty || string.IsNullOrWhiteSpace(_handWhy))" ConfirmIcon="bi-box-arrow-right">
+    @if (_detail is { } d)
+    {
+        <label class="tide-field-label" for="handoff-team">Hand it to</label>
+        <select id="handoff-team" class="form-select form-select-sm" @bind="_handTo">
+            <option value="@Guid.Empty">Choose a team</option>
+            @foreach (var t in _teams.Where(t => !t.IsRetired && t.Id != d.Action.TeamId))
+            {
+                <option value="@t.Id">@t.Name@(t.IsExternal ? " (external)" : "")</option>
+            }
+        </select>
+        <label class="tide-field-label mt-2" for="handoff-why">Why</label>
+        <textarea id="handoff-why" class="form-control form-control-sm" rows="2" maxlength="@ActionItem.MaxHandoffReason" @bind="_handWhy" @bind:event="oninput"
+                  placeholder="The fix is theirs: a firewall change."></textarea>
+        <div class="form-text">Kept in its history and shown on it. Its assignee stays only if they're on that team.</div>
+        @if (_handError is not null) { <div class="text-danger small mt-2" role="alert">@_handError</div> }
+    }
+</ConfirmDialog>
 
 @code {
     private ConfirmDialog _confirm = default!;
@@ -400,17 +465,12 @@ else
         (_parent, _articleTitle) = (null, null);   // a new action from elsewhere isn't a part of the last one's parent
         _created = false;
         _newFiles.Clear();
-        _form = new ActionForm { TeamId = _teams.FirstOrDefault(t => !t.IsRetired)?.Id ?? Guid.Empty };
+        // No team to start with: the person chooses one (the first in the list was too easy to keep by mistake).
+        _form = new ActionForm();
         if (ParentParam is { } parentId)
         {
             _parent = await ActionSvc.RowAsync(parentId);
-            if (_parent is not null)
-            {
-                _form.ParentId = _parent.Id;
-                _form.ArticleId = _parent.ArticleId;
-                _form.Kind = _parent.Kind;
-                _form.Priority = _parent.Priority;
-            }
+            if (_parent is not null) await FromParent(_parent);
         }
         if (ArticleParam is { } articleId && await ArticleSvc.GetAsync(articleId) is { } article)
         {
@@ -422,6 +482,71 @@ else
             _form.Description = article.RecommendedActions;
         }
     }
+
+    // A part starts from its parent: its title (to edit), details, due date, article, kind and priority. Not its team (the
+    // point of a part is another team), and no assignee, ticket or checklist. The parent's own indicators go with it when
+    // the parent has no article (ActionService.CreateAsync copies them).
+    private async Task FromParent(ActionRow parent)
+    {
+        _form.ParentId = parent.Id;
+        _form.ArticleId = parent.ArticleId;
+        _form.Kind = parent.Kind;
+        _form.Priority = parent.Priority;
+        _form.Title = parent.Title;
+        _form.DueDate = parent.DueDate;
+        _form.Description = await ActionSvc.DescriptionAsync(parent.Id);
+    }
+
+    private OverLimitDialog _overLimit = default!;
+    private ConfirmDialog _handoffDialog = default!;
+    private SplitDialog? _split;
+    private Guid _handTo;
+    private string? _handWhy, _handError;
+
+    internal Guid HandTo { get => _handTo; set => _handTo = value; }
+    internal string? HandWhy { get => _handWhy; set => _handWhy = value; }
+    internal string? HandError => _handError;
+    internal ActionForm NewForm => _form;
+    internal OverLimitDialog OverLimit => _overLimit;
+    internal SplitDialog? Splitter => _split;
+
+    internal async Task StartHandoff()
+    {
+        (_handTo, _handWhy, _handError) = (Guid.Empty, null, null);
+        await _handoffDialog.Ask($"Hand {Ui.ActionLabel(_detail!.Action.Number)} off", null, "Hand off", danger: false);
+    }
+
+    // The dialog's Hand off: kept open, saying why, when it's refused.
+    internal async Task<bool> HandOff()
+    {
+        _handError = null;
+        try
+        {
+            var told = 0;
+            var to = _teams.First(t => t.Id == _handTo);
+            if (!await _overLimit.RunAsync(async reason => told = await HandoffSvc.HandOffAsync(_detail!.Action.Id, _handTo, _handWhy ?? "", reason))) return false;
+            await Reload();
+            Toasts.Show($"Handed to {to.Name}." + (to.IsExternal ? "" : told > 0 ? " They've been emailed." : ""));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _handError = UserFacingError.For(ex);
+            return false;
+        }
+    }
+
+    internal async Task OpenSplit()
+    {
+        if (_split is not null) await _split.OpenAsync();
+    }
+
+    private Task SetNoReminders(bool off) => Run(async () =>
+    {
+        await ActionSvc.SetNoRemindersAsync(_detail!.Action.Id, off);
+        await Reload();
+        Toasts.Show(off ? "It's left out of the team's reminders." : "It's back in the team's reminders.");
+    });
 
     /// <summary>The presence place for an action, shared by its page and its row on the list.</summary>
     public static string ActionPlace(int number) => $"action:{number}";
@@ -496,7 +621,12 @@ else
         if (_created) return;
         var uploads = _newFiles.Select(f => f.ToUpload()).ToList();
         FileSvc.Check(uploads);
-        var number = await ActionSvc.CreateAsync(_form);
+        var number = 0;
+        if (!await _overLimit.RunAsync(async reason =>
+            {
+                _form.OverLimitReason = reason;
+                number = await ActionSvc.CreateAsync(_form);
+            })) return;
         _created = true;
         var filesNote = "";
         if (uploads.Count > 0)
@@ -519,7 +649,12 @@ else
 
     private Task SaveEdit() => Run(async () =>
     {
-        await ActionSvc.SaveAsync(_editing!);
+        var editing = _editing!;
+        if (!await _overLimit.RunAsync(reason =>
+            {
+                editing.OverLimitReason = reason;
+                return ActionSvc.SaveAsync(editing);
+            })) return;
         _editing = null;
         await Reload();
         Toasts.Show("Saved.");
