@@ -41,6 +41,10 @@ public sealed class ReminderOptions
     /// overdue, as its own cadence sets.</summary>
     public Toggle ExternalReminders { get; set; } = new();
 
+    /// <summary>At <see cref="ReminderTime"/> on business days, climb the escalation ladder: each open action that has
+    /// reached a step gets what the step does (<see cref="EscalationLadder"/>).</summary>
+    public EscalationOptions Escalation { get; set; } = new();
+
     /// <summary>Whether an administrator has the scan on.</summary>
     public bool IsEnabled(ReminderKind kind) => kind switch
     {
@@ -51,6 +55,7 @@ public sealed class ReminderOptions
         ReminderKind.PersonalDigest => PersonalDigest.Enabled,
         ReminderKind.OutreachFollowUp => OutreachFollowUp.Enabled,
         ReminderKind.ExternalReminder => ExternalReminders.Enabled,
+        ReminderKind.Escalation => Escalation.Enabled,
         _ => BriefNotReady.Enabled,
     };
 
@@ -110,6 +115,9 @@ public enum ReminderKind
 
     /// <summary>An external team's email about its actions due soon or overdue, at its own cadence (no TIDE links).</summary>
     ExternalReminder = 7,
+
+    /// <summary>The escalation ladder: the step each open action has reached as it slips, once per due date.</summary>
+    Escalation = 8,
 }
 
 /// <summary>A scan's last run, for the administration page. <paramref name="Note"/> says who wasn't emailed because they
@@ -135,7 +143,8 @@ public sealed class ReminderLog
 /// fallback recipients are addresses, not people, so they never opt out.
 /// </summary>
 public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSender email, OrgClock clock, IOptionsMonitor<ReminderOptions> options,
-    IOptions<AppOptions> app, ReminderLog log, ICurrentUser user, Rotation.IPresenterLookup? presenters = null, EmailTemplateStore? templates = null)
+    IOptions<AppOptions> app, ReminderLog log, ICurrentUser user, Rotation.IPresenterLookup? presenters = null, EmailTemplateStore? templates = null,
+    Microsoft.Extensions.Logging.ILogger<ReminderService>? logger = null)
 {
     // The wording an administrator set in Administration › Email templates, or the defaults.
     private readonly EmailTemplateStore _templates = templates ?? EmailTemplateStore.Defaults;
@@ -172,12 +181,13 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
     /// <summary>Runs one scan now, whatever the time (marks still stop repeats). Returns how many emails went.</summary>
     public Task<int> RunAsync(ReminderKind kind, CancellationToken ct = default) => RunAsync(kind, rethrow: true, scheduled: false, ct);
 
-    // What a scan did: the emails that went, and the people left out because they opted out.
-    private readonly record struct Scan(int Sent, int OptedOut = 0)
+    // What a scan did: the emails that went, the people left out because they opted out, and what stopped it doing more
+    // (a setting that doesn't read).
+    private readonly record struct Scan(int Sent, int OptedOut = 0, string? Problem = null)
     {
         public static implicit operator Scan(int sent) => new(sent);
 
-        public string? Note => OptedOut == 0 ? null : Sent == 0 ? "all recipients opted out" : $"{OptedOut} opted out";
+        public string? Note => Problem ?? (OptedOut == 0 ? null : Sent == 0 ? "all recipients opted out" : $"{OptedOut} opted out");
     }
 
     // A failure is logged either way; the scheduled run doesn't rethrow it, so the next scan still runs. A scheduled
@@ -196,12 +206,13 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
                 ReminderKind.PersonalDigest => await PersonalDigestAsync(scheduled, ct),
                 ReminderKind.OutreachFollowUp => await FollowUpAsync(ct),
                 ReminderKind.ExternalReminder => await ExternalAsync(ct),
+                ReminderKind.Escalation => await EscalateAsync(ct),
                 _ => await BriefNotReadyAsync(ct),
             };
             // The poll comes round every few minutes after the scan's time, and most find nothing new to send (or only
             // people who opted out). That mustn't overwrite what the day's real run sent.
             var last = log.Last(kind);
-            var quiet = scheduled && scan.Sent == 0 && last is { Error: null, Sent: > 0 } && clock.ToLocal(last.AtUtc).Date == clock.Now.Date;
+            var quiet = scheduled && scan.Sent == 0 && scan.Problem is null && last is { Error: null, Sent: > 0 } && clock.ToLocal(last.AtUtc).Date == clock.Now.Date;
             if (!quiet) log.Record(new ReminderRun(kind, clock.Now.ToUniversalTime(), scan.Sent, null, scan.Note));
             return scan.Sent;
         }
@@ -286,14 +297,7 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
         var reached = new HashSet<Guid>();
         foreach (var (to, list) in byRecipient)
         {
-            var t = _templates.Render(overdue ? EmailTemplateCatalog.Overdue : EmailTemplateCatalog.DueSoon, new Dictionary<string, string>
-            {
-                ["Actions"] = $"{list.Count} action{S(list.Count)}",
-                ["OverdueActions"] = $"{list.Count} overdue action{S(list.Count)}",
-                ["ActionList"] = Table(list, today),
-            });
-            var html = Shell(t.Heading, clock.TeamName + " · " + DayText(today), MarkingLine(list) + t.BodyHtml, t.Footer);
-            var result = await email.SendAsync(new OutgoingEmail([to], Marked(t.Subject, list), html, ToText(html), []), ct);
+            var result = await email.SendAsync(DueEmail(to, list, overdue, today), ct);
             if (result.Status != EmailSendStatus.Sent) continue;
             sent++;
             reached.UnionWith(list.Select(a => a.Id));
@@ -301,6 +305,19 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
         }
         await MarkAsync(db, kind, pending.Where(a => reached.Contains(a.Id)).Select(MarkKey).ToList());
         return new Scan(sent, leftOut.Count);
+    }
+
+    // A due-soon or overdue reminder to one recipient about their actions (the escalation ladder's reminder too).
+    private OutgoingEmail DueEmail(string to, IReadOnlyList<ActionItem> list, bool overdue, DateOnly today)
+    {
+        var t = _templates.Render(overdue ? EmailTemplateCatalog.Overdue : EmailTemplateCatalog.DueSoon, new Dictionary<string, string>
+        {
+            ["Actions"] = $"{list.Count} action{S(list.Count)}",
+            ["OverdueActions"] = $"{list.Count} overdue action{S(list.Count)}",
+            ["ActionList"] = Table(list, today),
+        });
+        var html = Shell(t.Heading, clock.TeamName + " · " + DayText(today), MarkingLine(list) + t.BodyHtml, t.Footer);
+        return new OutgoingEmail([to], Marked(t.Subject, list), html, ToText(html), []);
     }
 
     // One recipient's reminder about an action (the address hashed: keys are short).

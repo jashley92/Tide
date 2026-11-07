@@ -1091,6 +1091,8 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-queue-row:last-of-type { border-bottom: 0; }
 .tide-queue-title { flex: 1 1 auto; min-width: 0; }
 .tide-queue-meta { display: block; color: var(--tide-text-muted); font-size: var(--tide-text-xs); }
+/* Today's Escalated card: the ladder's flagged actions, marked down the side as the badge is. */
+.tide-escalated { border-left: 3px solid var(--tide-threat); }
 .tide-queue-late { color: var(--tide-threat); font-weight: var(--tide-weight-semibold); }
 
 /* ---- Actions: SLA and status pills, board, detail ---- */

@@ -149,7 +149,7 @@ sidebar requires. The services check permissions again, so a page that forgets c
 | `/workload` | `Workload` | `ReadActions` | Each team's open, late and held actions. |
 | `/hunts/saved` | `SavedQueriesPage` | `ReadActions` | The team's saved hunt queries, 20 a page (`?page=`). |
 | `/outreach/templates` | `OutreachTemplatesPage` | `ReadActions` | The team's outreach email templates, 20 a page (`?page=`). |
-| `/teams/external` | `ExternalTeams` | `ReadActions` | The teams that work outside TIDE: their contact and reminder cadence. Kept by `WorkActions`; an administrator also sets their limits. |
+| `/teams/external` | `ExternalTeams` | `ReadActions` | The teams that work outside TIDE: their contact, reminder cadence and escalation contact. Kept by `WorkActions`; an administrator also sets their limits. |
 | `/notifications` | `MyNotifications` | `ReadActions` | The person's own email choices (from the account menu). |
 | `/published`, `/published/{Day}` | `Published` | `ReadPublished` | The Reader archive of sent company-wide editions. `?q=`. |
 | `/briefs/{Day}/sharepoint` | `SharePointPage` | `ReadTeamEdition` | The company-wide edition as clean HTML to copy, and its images as a zip. |
@@ -162,7 +162,7 @@ All use `AdminLayout` and the `Administer` policy.
 |---|---|---|
 | `/admin` | `AdminOverview` | Getting-started checklist from the live configuration, and an index of every setting page. |
 | `/admin/organization` | `OrganizationAdmin` | Team name, time zone, meeting time, holidays. |
-| `/admin/teams` | `TeamsAdmin` | Teams, members, SLA targets, reminders, file zip rule, opt-out counts. |
+| `/admin/teams` | `TeamsAdmin` | Teams, members, escalation contacts, SLA targets, reminders, the escalation ladder (`EscalationForm` in `EscalationForm.cs`: switch, scope, steps added, removed and reordered), file zip rule, opt-out counts. |
 | `/admin/rotation` | `RotationAdmin` | Roster, weekly rota, manager addresses. |
 | `/admin/playbooks` | `PlaybooksAdmin` | Checklists per action kind. |
 | `/admin/card-rules` | `CardRulesAdmin` | Card colours and labels, and the rules offered as filters. |
@@ -224,7 +224,9 @@ In `src/Tide.Web/Components/Shared`. Use these rather than drawing a new version
 | `ProfileMenu` | The account menu. |
 | `TimeBox` | A time input bound to a `TimeOnly` that can actually be typed into in Chromium browsers. |
 | `HistoryPanel` | Who changed what and when on an article or a brief, from the audit log (`HistoryService`). |
+| `EscalationContactFields` | A team's escalation contact, name and email, on Teams & SLA and External teams. |
 | `Badge`, `TlpBadge`, `StatusBadge` | Badges, the TLP 2.0 label (black ground, as FIRST specifies), and status chips (`Badges.cs`). |
+| `EscalatedBadge` | "Escalated", filled red, given when it was escalated while it still is (`ActionItem.EscalatedSince`, `ActionRow.EscalatedSince`); nothing otherwise. On the list row (`ActionTable`), the board card (`ActionKanban`), the action's page, the meeting's open-actions slide and the edition's list (`Badges.cs`). |
 | `EditionView`, `EditionArticleView`, `ReaderPreview` | A brief or an article as one edition carries it, built from the same cut as the email, so the preview is what readers get. |
 | `FilePicker` | Files waiting to be added to an action: picked, dropped or pasted (`paste-drop.js`). |
 | `AccessDenied` | The no-access card, drawn for `NotAuthorized` and on `/access-denied`. |

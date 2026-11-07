@@ -118,6 +118,25 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user)
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Sets who the escalation ladder copies about a team's slipping actions: a name and an email, both optional (blank
+    /// clears them). An internal team's is an administrator's to set; an external team's, whoever keeps the external
+    /// teams'. Audited like any change to a team.
+    /// </summary>
+    public async Task SetEscalationContactAsync(Guid id, string? name, string? email, CancellationToken ct = default)
+    {
+        await using var db = await dbs.CreateAsync(ct);
+        var team = await db.Teams.FirstOrDefaultAsync(t => t.Id == id, ct) ?? throw new KeyNotFoundException("That team no longer exists.");
+        if (team.IsExternal) RequireExternal();
+        else RequireAdmin();
+        (team.EscalationName, team.EscalationEmail) = EscalationContact(name, email);
+        await db.SaveChangesAsync(ct);
+    }
+
+    // An escalation contact as it's kept: the name tidied, the address checked.
+    internal static (string? Name, string? Email) EscalationContact(string? name, string? email) =>
+        (Articles.ArticleService.CleanOrNull(name, Team.MaxContactName), Email(email));
+
     /// <summary>Retires (or brings back) a team. One that never owned an action, and that no card rule names, is deleted
     /// instead (a rule's team can't be deleted from under it).</summary>
     public async Task SetRetiredAsync(Guid id, bool retired, CancellationToken ct = default)
@@ -229,10 +248,15 @@ public sealed class ExternalTeamForm
     /// <summary>Business days between reminders while overdue; null reminds once.</summary>
     public int? RemindOverdueEveryDays { get; set; } = Team.DefaultRemindEvery;
 
+    /// <summary>Who the escalation ladder copies when their actions slip (their manager, say).</summary>
+    public string? EscalationName { get; set; }
+    public string? EscalationEmail { get; set; }
+
     public static ExternalTeamForm From(Team t) => new()
     {
         Name = t.Name, Description = t.Description, ContactName = t.ContactName, ContactEmail = t.ContactEmail, Engage = t.Engage,
         RemindersOn = t.RemindersOn, RemindBeforeDays = t.RemindBeforeDays, RemindOverdueEveryDays = t.RemindOverdueEveryDays,
+        EscalationName = t.EscalationName, EscalationEmail = t.EscalationEmail,
     };
 
     /// <summary>Checks the form and copies it onto <paramref name="team"/>; throws <see cref="ArgumentException"/> saying what's wrong.</summary>
@@ -245,6 +269,7 @@ public sealed class ExternalTeamForm
         var contact = Articles.ArticleService.CleanOrNull(ContactName, Team.MaxContactName);
         // With no contact email, their reminders have nowhere to go: none is sent until one is given.
         var email = TeamService.Email(ContactEmail);
+        var escalation = TeamService.EscalationContact(EscalationName, EscalationEmail);
         team.Name = AdminLists.Name(Name);
         team.Description = AdminLists.Description(Description);
         team.ContactName = contact;
@@ -253,5 +278,6 @@ public sealed class ExternalTeamForm
         team.RemindersOn = RemindersOn;
         team.RemindBeforeDays = RemindBeforeDays;
         team.RemindOverdueEveryDays = RemindOverdueEveryDays;
+        (team.EscalationName, team.EscalationEmail) = escalation;
     }
 }

@@ -70,7 +70,9 @@ Readiness checks say what's missing on each article before the meeting. A threat
 reach the company-wide edition is flagged.
 
 Anyone who works actions also gets their **team's queue**: their teams' open actions that are theirs or nobody's,
-theirs first, by due date, with *Take it*. An action owner's Today leads with it.
+theirs first, by due date, with *Take it*. An action owner's Today leads with it. When the escalation ladder has
+flagged any of their actions (theirs, their teams', or a part of one of theirs), an **Escalated** card comes first:
+each one's priority, team, holder and how late it is.
 
 Any day's brief, today's included, has a **preview of both editions** for proofreading (`/briefs/{day}?tab=preview`),
 a tab beside the running order. A past day's brief opens at `/briefs/{day}`; today's address redirects to Today. A
@@ -340,6 +342,9 @@ that fits its kind.
   administrator to restore; deleting a comment keeps its files the same way. Lists, the board and the brief show a
   paperclip with the count.
 - **How late.** An overdue action says how late it is.
+- **Escalated.** An open action the escalation ladder flagged has a red *Escalated* badge on its list row, its board
+  card and its page (its title says when), is on Today's Escalated card, and leads the meeting's overdue list. The
+  badge goes when it closes or its due date moves.
 
 ![Action with a hunt query](../screenshots/action-hunt.png)
 
@@ -410,7 +415,9 @@ A full-screen, keyboard-driven slide deck, always dark because it's on a shared 
   previous brief);
 - the opening numbers, a slide per metric group;
 - one slide per article;
-- a wrap-up with every recommended action not yet raised.
+- a wrap-up with every recommended action not yet raised;
+- (team edition) the actions still open from earlier briefs, the escalated first, each marked *Escalated*, then the
+  overdue ones.
 
 Screenshots zoom, articles are ticked off as discussed, and the editions can be switched on screen. A slide too tall
 for the screen shrinks a little, then scrolls inside itself.
@@ -719,8 +726,9 @@ and *Internal inquiry: are we impacted?*.
 **Route:** `/teams/external` (linked from the Actions page and Teams & SLA) · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md#external-teams)
 
 The teams tracked here that work outside TIDE: each one's name, what they do, its contact (a name and an email), how
-to engage them, and its reminder emails (on or off, how many business days before the due date, and how often while
-overdue). Whoever works actions adds, edits and retires them; everyone else who reads actions reads them; an
+to engage them, its reminder emails (on or off, how many business days before the due date, and how often while
+overdue), and its escalation contact (who the escalation ladder copies when its actions slip). Whoever works actions
+adds, edits and retires them; everyone else who reads actions reads them; an
 administrator also sets their active limits. Teams & SLA lists the internal teams.
 
 ## My notifications
@@ -781,7 +789,7 @@ Every page, by tab (from `AdminLayout.Groups`):
 |---|---|---|---|
 | Overview | Overview | `/admin` | What's left to set up, and where everything is set. |
 | Organization | Organization settings | `/admin/organization` | The team's name, its time zone, when the brief meets, and its holidays. |
-| Organization | Teams & SLA | `/admin/teams` | The teams that own actions, their members, SLA targets, and when reminder emails go. |
+| Organization | Teams & SLA | `/admin/teams` | The teams that own actions, their members and escalation contacts, SLA targets, when reminder emails go, and the escalation ladder: the steps that run by themselves on an action as it slips. |
 | Organization | Brief rotation | `/admin/rotation` | Who presents the brief, the weekly rota, and who's told about swaps and cover. |
 | Actions | Playbooks | `/admin/playbooks` | Checklists for each kind of action, offered when one is created or worked. Starts with one for each kind but Other. |
 | Actions | Card rules | `/admin/card-rules` | Which actions are coloured and labelled on the board and list, and which rules the Actions filter bar offers. |

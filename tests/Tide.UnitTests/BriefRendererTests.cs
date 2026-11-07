@@ -233,6 +233,22 @@ public class BriefRendererTests
     }
 
     [Fact]
+    public void TheTeamEmail_MarksAnEscalatedAction_EvenOneNotYetDue()
+    {
+        var row = new Tide.Application.Actions.ActionRow(Guid.NewGuid(), 21, "Patch the VPN appliances", ActionKind.PatchRemediate, Priority.P2,
+            Guid.NewGuid(), "Network Engineering", null, null, new DateOnly(2026, 10, 30), ActionStatus.Tracking, ActionOutcome.None,
+            null, null, null, null, 0, DateTimeOffset.UtcNow, EscalatedForDue: new DateOnly(2026, 10, 30), EscalatedAtUtc: DateTimeOffset.UtcNow);
+        var open = new Tide.Application.Actions.OpenActionsReview([new(row, 0, false)], 1);
+        var context = new BriefRenderContext("CTI", Metrics(), "https://tide.example.org", img => "cid:" + img.ContentId, null, open);
+
+        var team = _renderer.Render(BriefEditions.Build(Brief(), Edition.Team, TlpLevel.AmberStrict), context);
+        team.EmailHtml.Should().Contain("Patch the VPN appliances <strong").And.Contain(">Escalated</strong>").And.Contain("not yet due");
+        var quiet = _renderer.Render(BriefEditions.Build(Brief(), Edition.Team, TlpLevel.AmberStrict),
+            context with { Open = new([new(row with { EscalatedForDue = null }, 3, false)], 1) });
+        quiet.EmailHtml.Should().NotContain("Escalated</strong>").And.Contain("3 days late");
+    }
+
+    [Fact]
     public void TheTeamEmail_NamesTheDayEachNumberIsComparedWith_AndAThresholdInWords()
     {
         var group = new MetricGroup { Name = "Alert queue" };

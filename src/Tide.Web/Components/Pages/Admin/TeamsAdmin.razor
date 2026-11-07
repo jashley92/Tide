@@ -37,6 +37,7 @@
                         <div class="col-md-5"><input class="form-control form-control-sm" @bind="_name" aria-label="Team name" /></div>
                         <div class="col-md-7"><input class="form-control form-control-sm" @bind="_email" placeholder="Team mailbox (optional)" aria-label="Team mailbox" /></div>
                         <div class="col-12"><input class="form-control form-control-sm" @bind="_description" placeholder="What the team does (optional)" aria-label="Team description" /></div>
+                        <div class="col-12"><EscalationContactFields Id="@($"esc-contact-{t.Id}")" @bind-Name="EscalationName" @bind-Email="EscalationEmail" /></div>
                         <div class="col-12"><ActiveLimitFields Id="@($"limit-{t.Id}")" @bind-Limit="_limit" @bind-Mode="_mode" /></div>
                     </div>
                     <div class="d-flex gap-2 mb-2">
@@ -51,6 +52,7 @@
                             <h2 class="tide-card-title mb-0">@t.Name @if (t.IsRetired) { <Badge>Retired</Badge> }</h2>
                             <div class="tide-muted small">@t.Description @if (t.Email is not null) { <span class="tide-data ms-1">@t.Email</span> }</div>
                             @if (t.ActiveLimit is { } limit) { <div class="small">@ActiveLimitFields.Summary(limit, t.LimitMode)</div> }
+                            @if (t.EscalationEmail is not null) { <div class="small">Escalation contact: @t.EscalationName <span class="tide-data">@t.EscalationEmail</span></div> }
                         </div>
                         <button class="tide-icon-btn" title="Move up" aria-label="Move @t.Name up" disabled="@(i == 0)" @onclick="() => Run(() => TeamSvc.MoveAsync(t.Id, -1))"><span class="bi bi-arrow-up" aria-hidden="true"></span></button>
                         <button class="tide-icon-btn" title="Move down" aria-label="Move @t.Name down" disabled="@(i == _teams.Count - 1)" @onclick="() => Run(() => TeamSvc.MoveAsync(t.Id, 1))"><span class="bi bi-arrow-down" aria-hidden="true"></span></button>
@@ -139,7 +141,7 @@
             </div>
             <table class="tide-table mb-2">
                 <tbody>
-                    @foreach (var kind in Enum.GetValues<ReminderKind>())
+                    @foreach (var kind in Enum.GetValues<ReminderKind>().Where(k => k != ReminderKind.Escalation))
                     {
                         var last = Reminders.LastRun(kind);
                         var id = "rem-on-" + kind;
@@ -201,6 +203,90 @@
             <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveReminders">Save reminders</button>
         </section>
 
+        <section class="tide-card" aria-labelledby="esc-title">
+            <h2 id="esc-title">Escalation</h2>
+            <p class="small tide-muted">Steps that run by themselves on an open action as it slips (Tracking included), at the reminder time on business days.
+                Each runs once per action and due date, and is kept in the action's history; a new due date starts the ladder again, and a closed action gets none.
+                Off until it's turned on here.</p>
+            <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" role="switch" id="esc-on" checked="@_esc.On" @onchange="e => _esc.On = e.Value is true" />
+                <label class="form-check-label" for="esc-on">Climb the escalation ladder</label>
+            </div>
+            <fieldset class="mb-2">
+                <legend class="tide-field-label">Which actions</legend>
+                @foreach (var (scope, text) in EscalationForm.Scopes)
+                {
+                    var id = "esc-scope-" + scope;
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="esc-scope" id="@id" checked="@(_esc.Scope == scope)" @onchange="() => _esc.Scope = scope" />
+                        <label class="form-check-label" for="@id">@text</label>
+                    </div>
+                }
+            </fieldset>
+            <table class="tide-table mb-2" aria-label="Escalation steps, in order">
+                <thead><tr><th scope="col">When</th><th scope="col">What it does</th><th scope="col"><span class="visually-hidden">Order</span></th></tr></thead>
+                <tbody>
+                    @foreach (var (s, i) in _esc.Steps.Select((s, i) => (s, i)))
+                    {
+                        var n = i + 1;
+                        <tr @key="s">
+                            <td>
+                                <div class="d-flex gap-1 align-items-center">
+                                    @if (s.When != StepWhen.Due)
+                                    {
+                                        <input id="@($"esc-days-{n}")" type="number" min="0" max="@EscalationLadder.MaxDays" class="form-control form-control-sm tide-w-count"
+                                               aria-label="@($"Step {n}: business days")" @bind="s.Days" />
+                                    }
+                                    <select id="@($"esc-when-{n}")" class="form-select form-select-sm" aria-label="@($"Step {n}: before, on or after the due date")" @bind="s.When">
+                                        <option value="@StepWhen.Before">business days before</option>
+                                        <option value="@StepWhen.Due">on the due day</option>
+                                        <option value="@StepWhen.After">business days after</option>
+                                    </select>
+                                </div>
+                            </td>
+                            <td>
+                                @foreach (var (does, word, name) in EscalationLadder.Menu)
+                                {
+                                    var box = $"esc-{n}-{word}";
+                                    <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="@box" checked="@s.Has(does)"
+                                        @onchange="e => s.Set(does, e.Value is true)" /><label class="form-check-label small" for="@box">@name</label></div>
+                                }
+                            </td>
+                            <td class="text-end text-nowrap">
+                                <button type="button" class="tide-icon-btn" title="Move up" aria-label="@($"Move step {n} up")" disabled="@(i == 0)" @onclick="() => _esc.Move(s, -1)"><span class="bi bi-arrow-up" aria-hidden="true"></span></button>
+                                <button type="button" class="tide-icon-btn" title="Move down" aria-label="@($"Move step {n} down")" disabled="@(i == _esc.Steps.Count - 1)" @onclick="() => _esc.Move(s, 1)"><span class="bi bi-arrow-down" aria-hidden="true"></span></button>
+                                <button type="button" class="tide-icon-btn" title="Remove" aria-label="@($"Remove step {n}")" @onclick="() => _esc.Remove(s)"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+                            </td>
+                        </tr>
+                    }
+                    @if (_esc.Steps.Count == 0)
+                    {
+                        <tr><td colspan="3" class="small tide-muted">No steps: the ladder does nothing.</td></tr>
+                    }
+                </tbody>
+            </table>
+            <div class="d-flex gap-2 mb-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(!_esc.CanAdd)" @onclick="_esc.Add"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add step</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="_esc.UseDefaults">Use the defaults</button>
+            </div>
+            <div class="form-text mb-2" id="esc-help">
+                At most @EscalationLadder.MaxSteps steps, 0 to @EscalationLadder.MaxDays business days (the organization's, holidays skipped).
+                <strong>Remind</strong> emails the team as its reminders do: an external team its reminder, an internal one the assignee, else its mailbox, else its members.
+                <strong>Copy contact</strong> emails the team's escalation contact, set on the team (no TIDE links for an external team).
+                <strong>Raise priority</strong> moves it up one, to P1 at most.
+                <strong>Flag</strong> marks it Escalated: a badge, Today's Escalated list for its team and assignee, and the meeting's overdue list, until it closes or its due date changes.
+                When several steps have come at once (the ladder just turned on), only the latest runs.
+            </div>
+            @if (Reminders.LastRun(ReminderKind.Escalation) is { } run)
+            {
+                <div class="small tide-muted mb-2">Last run @Ui.When(Clock, run.AtUtc): @(run.Error ?? $"{run.Sent} sent")@(run.Note is { } note ? $" ({note})" : "")</div>
+            }
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="SaveEscalation">Save escalation</button>
+                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" aria-label="Run the escalation ladder now" @onclick="() => RunNow(ReminderKind.Escalation)">Run now</button>
+            </div>
+        </section>
+
         <section class="tide-card" aria-labelledby="files-title">
             <h2 id="files-title">Action files</h2>
             <p class="small tide-muted">Which files on actions and their comments download in a zip with the password <span class="tide-data">infected</span>
@@ -239,6 +325,14 @@
     private readonly Dictionary<Priority, int?> _byPriority = [];
     private readonly Dictionary<ActionKind, int?> _byKind = [];
     private ReminderForm _rem = new();
+    private EscalationForm _esc = new();
+
+    /// <summary>The escalation ladder as the form holds it.</summary>
+    internal EscalationForm Escalation => _esc;
+
+    /// <summary>The escalation contact on the team being edited.</summary>
+    internal string? EscalationName { get; set; }
+    internal string? EscalationEmail { get; set; }
 
     internal static readonly IReadOnlyList<(ZipDownloads Mode, string Text)> ZipChoices =
     [
@@ -298,6 +392,7 @@
         // Before the first await: the page renders as soon as one yields (on SQL Server they do), and the reminder
         // switches read this form.
         _rem = ReminderForm.From(Reminders);
+        _esc = EscalationForm.From(Reminders.Options.Escalation);
         Zip = FileSvc.ZipMode;
         _counts = await NotifyPrefs.CountsAsync();
         _people = await Users.ListAsync();
@@ -321,6 +416,7 @@
         ReminderKind.PersonalDigest => "Personal digest",
         ReminderKind.OutreachFollowUp => "Outreach follow-up",
         ReminderKind.ExternalReminder => "External team reminders",
+        ReminderKind.Escalation => "Escalation ladder",
         _ => "Brief-not-ready nudge",
     };
 
@@ -333,6 +429,7 @@
         ReminderKind.PersonalDigest => "Offered in My notifications: each person's own actions, daily at the reminder time or weekly on the digest day",
         ReminderKind.OutreachFollowUp => "To whoever marked an Outreach action's email sent, when no reply is recorded after the days set below",
         ReminderKind.ExternalReminder => "To each external team's contact email, with its reminders on: its actions due soon or overdue, at its own cadence. No TIDE links",
+        ReminderKind.Escalation => "The steps each open action has reached as it slips",
         _ => "To the presenting analyst, if today's brief isn't ready",
     };
 
@@ -447,21 +544,46 @@
         finally { _busy = false; }
     }
 
-    private void Edit(Team t)
+    // Saves the ladder: on or off, its scope and its steps, together and each checked; refused whole, saying why.
+    internal async Task SaveEscalation()
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await Settings.SaveAsync(new Dictionary<string, string?>
+            {
+                [OperationalSettings.Escalation] = Switch(_esc.On),
+                [OperationalSettings.EscalationScope] = _esc.Scope.ToString(),
+                [OperationalSettings.EscalationSteps] = _esc.StepsText(),
+            });
+            _esc = EscalationForm.From(Reminders.Options.Escalation);
+            Toasts.Show("Escalation saved. Applies at the next reminder time.");
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    internal void Edit(Team t)
     {
         _editing = t.Id;
         _name = t.Name;
         _email = t.Email;
         _description = t.Description;
         (_limit, _mode) = (t.ActiveLimit, t.LimitMode);
+        (EscalationName, EscalationEmail) = (t.EscalationName, t.EscalationEmail);
     }
 
-    private Task Save(Guid id) => Run(async () =>
+    internal Task Save(Guid id) => Run(async () =>
     {
         await TeamSvc.UpdateAsync(id, _name ?? "", _description, _email);
         await TeamSvc.SetLimitAsync(id, _limit, _mode);
+        await TeamSvc.SetEscalationContactAsync(id, EscalationName, EscalationEmail);
         _editing = null;
     });
+
+    /// <summary>The internal teams listed.</summary>
+    internal IReadOnlyList<Team> Shown => _teams;
 
     private Task AddTeam() => Run(async () =>
     {

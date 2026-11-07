@@ -51,6 +51,7 @@
                             <dl class="tide-meta-grid small mt-1 mb-0">
                                 <dt>Contact</dt><dd>@(t.ContactName ?? "None named") @if (t.ContactEmail is not null) { <span class="tide-data ms-1">@t.ContactEmail</span> }</dd>
                                 @if (t.Engage is not null) { <dt>How to engage</dt><dd class="tide-pre-line">@t.Engage</dd> }
+                                @if (t.EscalationEmail is not null) { <dt>Escalation contact</dt><dd>@t.EscalationName <span class="tide-data ms-1">@t.EscalationEmail</span></dd> }
                                 <dt>Reminders</dt><dd>@Cadence(t)</dd>
                                 @if (t.ActiveLimit is { } limit) { <dt>Limit</dt><dd>@limit active</dd> }
                             </dl>
@@ -115,6 +116,7 @@
                 <label class="tide-field-label" for="@p-engage">How to engage them</label>
                 <textarea id="@p-engage" class="form-control form-control-sm" rows="2" maxlength="@Team.MaxEngage" placeholder="Raise a ticket in their queue; urgent: call their on-call line." @bind="f.Engage"></textarea>
             </div>
+            <div class="col-12"><EscalationContactFields Id="@($"{p}-esc")" External="true" @bind-Name="f.EscalationName" @bind-Email="f.EscalationEmail" /></div>
             <div class="col-12">
                 <div class="form-check form-switch">
                     <input class="form-check-input" type="checkbox" role="switch" id="@p-remind" @bind="f.RemindersOn" />

@@ -59,11 +59,17 @@ public sealed record ActionRow(Guid Id, int Number, string Title, ActionKind Kin
     Guid? ArticleId, string? ArticleTitle, Guid? ParentId, int Children, DateTimeOffset CreatedAtUtc,
     int? ParentNumber = null, string? PlaybookName = null, int ChecklistDone = 0, int ChecklistTotal = 0, DateOnly? RaisedOn = null,
     int Files = 0, bool TeamExternal = false, Guid? HandedFromTeamId = null, int ChildrenClosed = 0, int ChildrenOverdue = 0,
-    DateOnly? ChildrenNextDue = null)
+    DateOnly? ChildrenNextDue = null, DateOnly? EscalatedForDue = null, DateTimeOffset? EscalatedAtUtc = null)
 {
     public SlaState Sla(DateOnly today, WorkingDays? workingDays = null) => ActionSla.StateOf(Status, DueDate, ClosedDate, today, workingDays);
     public ActionUrgency Urgency(DateOnly today, WorkingDays? workingDays = null) => ActionSla.UrgencyOf(Status, DueDate, today, workingDays);
     public bool IsOpen => !ActionItem.IsClosedStatus(Status);
+
+    /// <summary>Whether it's escalated now (<see cref="ActionItem.EscalatedFor"/>).</summary>
+    public bool Escalated => ActionItem.EscalatedFor(Status, DueDate, EscalatedForDue);
+
+    /// <summary>When it was escalated, while it still is; null otherwise (the badge's).</summary>
+    public DateTimeOffset? EscalatedSince => Escalated ? EscalatedAtUtc : null;
 
     /// <summary>A parent's parts in a line: "3 of 5 done · 1 overdue · next due Nov 20" (empty with none).</summary>
     public string Rollup => ActionRollup.Text(Children, ChildrenClosed, ChildrenOverdue, ChildrenNextDue);
@@ -74,7 +80,11 @@ public sealed record ActionRow(Guid Id, int Number, string Title, ActionKind Kin
 
 /// <summary>An overdue action the meeting looks at again: how late it is, and whether its team has no members (so
 /// nobody sees it as theirs). <see cref="Tlp"/> is the TLP of the article it was raised from, if any: what it's marked at.</summary>
-public sealed record OutstandingAction(ActionRow Row, int DaysLate, bool NoOneToOwn, TlpLevel? Tlp = null);
+public sealed record OutstandingAction(ActionRow Row, int DaysLate, bool NoOneToOwn, TlpLevel? Tlp = null)
+{
+    /// <summary>"3 days late", or "not yet due" for an escalated one that isn't (the meeting's and the email's words).</summary>
+    public string Late => ActionSla.LateText(DaysLate) ?? "not yet due";
+}
 
 /// <summary>The overdue actions the meeting and the team email show (at most <see cref="ActionService.OutstandingSize"/>),
 /// and how many are overdue in all (those above the edition's ceiling counted, not named).</summary>
@@ -208,6 +218,9 @@ public sealed record TeamQueue(IReadOnlyList<ActionRow> Rows, int Mine, int Unas
 
     /// <summary>How many there are in all, shown or not.</summary>
     public int Total => Mine + Unassigned;
+
+    /// <summary>The escalated actions that are theirs to chase (<see cref="ActionService.EscalatedAsync"/>), when asked for.</summary>
+    public IReadOnlyList<ActionRow> Escalated { get; init; } = [];
 }
 
 /// <summary>
@@ -511,9 +524,10 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     public const int OutstandingSize = 8;
 
     /// <summary>
-    /// The overdue actions the meeting looks at again, as of <paramref name="asOf"/> (the brief's day): P1 and P2 first,
-    /// then those on a team with no members (nobody sees them as theirs), then the rest, longest overdue first. At most
-    /// <see cref="OutstandingSize"/>, with the full overdue count. Actions not yet due aren't listed. An action is held at
+    /// The overdue actions the meeting looks at again, as of <paramref name="asOf"/> (the brief's day), with any the
+    /// escalation ladder flagged, overdue or not: the escalated first, then P1 and P2, then those on a team with no members
+    /// (nobody sees them as theirs), then the rest, longest overdue first. At most <see cref="OutstandingSize"/>, with the
+    /// full count. Other actions not yet due aren't listed. An action is held at
     /// its article's TLP: one raised from an article above <paramref name="ceiling"/> (the team edition's) is counted but not
     /// listed, as the brief leaves that article out with its actions.
     /// </summary>
@@ -528,8 +542,10 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// <summary><see cref="OutstandingAsync"/> on a context the caller holds (the team email reads it when it is cut).</summary>
     internal static async Task<OpenActionsReview> Outstanding(IAppDbContext db, DateOnly asOf, TlpLevel ceiling, CancellationToken ct)
     {
-        var q = db.Actions.AsNoTracking().WhereOpen().Where(a => a.DueDate != null && a.DueDate < asOf);
-        var rows = await Rows(db, q).ToListAsync(ct);
+        // Two reads, each on its own index ((Status, DueDate), and the escalated one), rather than one OR that uses neither.
+        var overdue = await Rows(db, db.Actions.AsNoTracking().WhereOpen().Where(a => a.DueDate != null && a.DueDate < asOf)).ToListAsync(ct);
+        var escalated = await Rows(db, db.Actions.AsNoTracking().WhereEscalated()).ToListAsync(ct);
+        var rows = overdue.Concat(escalated).DistinctBy(r => r.Id).ToList();
         if (rows.Count == 0) return OpenActionsReview.None;
         var articleIds = rows.Select(r => r.ArticleId).OfType<Guid>().Distinct().ToList();
         var tlps = await db.Articles.AsNoTracking().Where(a => articleIds.Contains(a.Id)).Select(a => new { a.Id, a.Tlp })
@@ -538,7 +554,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var nobodys = (await db.Teams.AsNoTracking().Where(NoOneToOwn).Select(t => t.Id).ToListAsync(ct)).ToHashSet();
         var ranked = rows.Where(r => TlpOf(r) is not { } t || t <= ceiling)
             .Select(r => new OutstandingAction(r, ActionSla.DaysLate(r.DueDate, asOf), nobodys.Contains(r.TeamId), TlpOf(r)))
-            .OrderBy(o => o.Row.Priority <= Priority.P2 ? 0 : o.NoOneToOwn ? 1 : 2)
+            .OrderBy(o => o.Row.Escalated ? 0 : o.Row.Priority <= Priority.P2 ? 1 : o.NoOneToOwn ? 2 : 3)
             .ThenByDescending(o => o.DaysLate).ThenBy(o => o.Row.Number)
             .Take(OutstandingSize).ToList();
         return new OpenActionsReview(ranked, rows.Count);
@@ -558,16 +574,45 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// <summary>How many actions Today's team queue shows.</summary>
     public const int TeamQueueSize = 8;
 
-    /// <summary>Today's queue (<see cref="TeamQueue"/>): the current user's teams' open actions that are theirs or nobody's.</summary>
-    public async Task<TeamQueue> TeamQueueAsync(CancellationToken ct = default)
+    /// <summary>Today's queue (<see cref="TeamQueue"/>): the current user's teams' open actions that are theirs or nobody's.
+    /// Its <see cref="TeamQueue.Escalated"/> too, read on the same context, so Today's Escalated card opens none of its own.
+    /// With the ladder off (<paramref name="ladderOn"/> false) it's read only if anything is still flagged, a look at the
+    /// escalated index alone.</summary>
+    public async Task<TeamQueue> TeamQueueAsync(bool ladderOn = false, CancellationToken ct = default)
     {
         RequireRead(user);
         await using var db = await dbs.CreateAsync(ct);
+        IReadOnlyList<ActionRow> mineEscalated = ladderOn || await db.Actions.WhereEscalated().AnyAsync(ct) ? await EscalatedRowsAsync(db, ct) : [];
         var onATeam = await db.TeamMembers.AsNoTracking().AnyAsync(m => m.UserId == user.UserId, ct);
-        if (!onATeam) return new([], 0, 0, false);
+        if (!onATeam) return new([], 0, 0, false) { Escalated = mineEscalated };
         var q = Narrow(db, db.Actions.AsNoTracking(), new ActionFilter(ActionView.MyTeams)).WhereOpen()
             .Where(a => a.AssigneeId == null || a.AssigneeId == user.UserId);
-        return TeamQueue.From(await RowsAsync(db, q, ct), user.UserId, true, TeamQueueSize);
+        return TeamQueue.From(await RowsAsync(db, q, ct), user.UserId, true, TeamQueueSize) with { Escalated = mineEscalated };
+    }
+
+    /// <summary>How many escalated actions Today lists.</summary>
+    public const int EscalatedSize = 8;
+
+    /// <summary>
+    /// Today's Escalated list: the open actions the escalation ladder flagged that are the current user's to chase: assigned
+    /// to them, on a team of theirs, or a part of an action assigned to them. Soonest due first, at most
+    /// <see cref="EscalatedSize"/>.
+    /// </summary>
+    public async Task<IReadOnlyList<ActionRow>> EscalatedAsync(CancellationToken ct = default)
+    {
+        RequireRead(user);
+        await using var db = await dbs.CreateAsync(ct);
+        return await EscalatedRowsAsync(db, ct);
+    }
+
+    private async Task<IReadOnlyList<ActionRow>> EscalatedRowsAsync(IAppDbContext db, CancellationToken ct)
+    {
+        var me = user.UserId;
+        var q = db.Actions.AsNoTracking().WhereEscalated().Where(a => a.AssigneeId == me
+            || db.TeamMembers.Any(m => m.TeamId == a.TeamId && m.UserId == me)
+            || db.Actions.Any(p => p.Id == a.ParentId && p.AssigneeId == me));
+        return (await RowsAsync(db, q, ct)).OrderBy(r => r.DueDate ?? DateOnly.MaxValue).ThenBy(r => r.Priority).ThenBy(r => r.Number)
+            .Take(EscalatedSize).ToList();
     }
 
     /// <summary>One action's list row, or null.</summary>
@@ -631,7 +676,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         db.Actions.Where(p => p.Id == a.ParentId).Select(p => (int?)p.Number).FirstOrDefault(), a.PlaybookName,
         a.Checklist.Count(i => i.IsDone), a.Checklist.Count, a.RaisedOn,
         a.Files.Count(f => f.RemovedAtUtc == null) + a.Comments.SelectMany(c => c.Files).Count(f => f.RemovedAtUtc == null),
-        a.Team!.IsExternal, a.HandedFromTeamId));
+        a.Team!.IsExternal, a.HandedFromTeamId, 0, 0, null, a.EscalatedForDue, a.EscalatedAtUtc));
 
     // The rows, and each parent's rollup ("3 of 5 done · 1 overdue · next due Nov 20") from one grouped read of their parts.
     private async Task<List<ActionRow>> RowsAsync(IAppDbContext db, IQueryable<ActionItem> q, CancellationToken ct)

@@ -13,6 +13,7 @@
 @inject IntakeService Intake
 @inject ArticleService ArticleSvc
 @inject ActionService ActionSvc
+@inject Microsoft.Extensions.Options.IOptionsMonitor<ReminderOptions> ReminderOptions
 @inject MeetingService MeetingSvc
 @inject ChangeFeed Feed
 @inject ChangeOrigin Origin
@@ -586,7 +587,7 @@ else
     {
         var (mine, queue) = (_mine, _queue);
         _mine = await ActionSvc.ListAsync(new ActionFilter(ActionView.Mine));
-        _queue = await ActionSvc.TeamQueueAsync();
+        _queue = await ActionSvc.TeamQueueAsync(ladderOn: ReminderOptions.CurrentValue.Escalation.Enabled);
         if (!live || _actionMarks is null) return;
         if (mine is not null) _actionMarks.Apply(LiveDiff.Of(mine.Take(6), _mine.Take(6), r => r.Id, r => r));
         if (queue is not null) _actionMarks.Apply(LiveDiff.Of(queue.Rows, _queue.Rows, r => r.Id, r => r));
@@ -985,6 +986,7 @@ else
     {
         <div class="tide-today-grid">
             <div>
+                @Escalated()
                 @Queue()
                 @TeamNoteCard()
                 <section class="tide-card" aria-labelledby="todays-brief-h">
@@ -1034,28 +1036,7 @@ else
                 }
                 @foreach (var r in q.Rows)
                 {
-                    <div class="tide-queue-row @_actionMarks?.Css(r.Id)" @key="r.Id">
-                        <a class="tide-action-num" href="@Ui.ActionUrl(r.Number)">@Ui.ActionLabel(r.Number)</a>
-                        <span class="tide-queue-title">
-                            @r.Title <FileCount Count="r.Files" />
-                            <span class="tide-queue-meta">
-                                @ActionService.KindName(r.Kind) &middot; @r.TeamName &middot; @(r.AssigneeId is null ? "Unassigned" : "Yours")
-                                @if (ActionSla.LateText(r.DueDate, ActionSvc.Today) is { } late)
-                                {
-                                    <span>&middot; <span class="tide-queue-late">@late</span></span>
-                                }
-                            </span>
-                        </span>
-                        @if (r.AssigneeId is null)
-                        {
-                            <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@_busy" @onclick="() => Take(r)"
-                                    aria-label="@($"Take {Ui.ActionLabel(r.Number)} on: {r.Title}")">Take it</button>
-                        }
-                        else
-                        {
-                            <SlaBadge State="r.Sla(ActionSvc.Today, Clock.Days)" Due="r.DueDate" />
-                        }
-                    </div>
+                    @QueueRow(r, $"{ActionService.KindName(r.Kind)} · {r.TeamName} · {(r.AssigneeId is null ? "Unassigned" : "Yours")}", offerTake: true)
                 }
                 @if (q.Total > q.Rows.Count)
                 {
@@ -1063,6 +1044,52 @@ else
                 }
             </section>
         }
+    };
+
+    // The escalation ladder's flagged actions that are mine to chase: mine, my teams', or parts of mine. Only when there are any.
+    private RenderFragment Escalated() => __builder =>
+    {
+        @if (_queue?.Escalated is { Count: > 0 } rows)
+        {
+            <section class="tide-card tide-escalated" aria-labelledby="escalated-h">
+                <h2 id="escalated-h"><span class="bi bi-arrow-up-circle-fill text-danger" aria-hidden="true"></span> Escalated <span class="tide-count">(@rows.Count)</span>
+                    <a class="ms-auto small fw-normal" href="actions?view=overdue">Overdue</a></h2>
+                <p class="small tide-muted mb-1">Slipping long enough that the escalation ladder flagged them. Each stays until it closes or its due date moves.</p>
+                @foreach (var r in rows)
+                {
+                    @QueueRow(r, $"{r.Priority} · {r.TeamName} · {r.AssigneeName ?? "Unassigned"}"
+                                 + (r.ParentNumber is { } parent ? $" · part of {Ui.ActionLabel(parent)}" : ""), offerTake: false)
+                }
+            </section>
+        }
+    };
+
+    // One row of a Today action list (the queue, the team's unassigned, the escalated): its number, title and files, a
+    // line about it with how late it is, then Take it (when it's nobody's and offered) or its due-date badge.
+    private RenderFragment QueueRow(ActionRow r, string meta, bool offerTake) => __builder =>
+    {
+        <div class="tide-queue-row @_actionMarks?.Css(r.Id)" @key="r.Id">
+            <a class="tide-action-num" href="@Ui.ActionUrl(r.Number)">@Ui.ActionLabel(r.Number)</a>
+            <span class="tide-queue-title">
+                @r.Title <FileCount Count="r.Files" />
+                <span class="tide-queue-meta">
+                    @meta
+                    @if (ActionSla.LateText(r.DueDate, ActionSvc.Today) is { } late)
+                    {
+                        <span>&middot; <span class="tide-queue-late">@late</span></span>
+                    }
+                </span>
+            </span>
+            @if (offerTake && r.AssigneeId is null)
+            {
+                <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@_busy" @onclick="() => Take(r)"
+                        aria-label="@($"Take {Ui.ActionLabel(r.Number)} on: {r.Title}")">Take it</button>
+            }
+            else
+            {
+                <SlaBadge State="r.Sla(ActionSvc.Today, Clock.Days)" Due="r.DueDate" />
+            }
+        </div>
     };
 
     private RenderFragment MyActions() => __builder =>
@@ -1118,16 +1145,7 @@ else
                     @if (unassigned.Count == 0) { <EmptyState Icon="bi-check2-circle" Title="Nothing unassigned on your teams." Compact="true" /> }
                     @foreach (var r in unassigned)
                     {
-                        <div class="tide-queue-row @_actionMarks?.Css(r.Id)" @key="r.Id">
-                            <a class="tide-action-num" href="@Ui.ActionUrl(r.Number)">@Ui.ActionLabel(r.Number)</a>
-                            <span class="tide-queue-title">@r.Title <FileCount Count="r.Files" />
-                                <span class="tide-queue-meta">@ActionService.KindName(r.Kind) &middot; @r.TeamName
-                                    @if (ActionSla.LateText(r.DueDate, ActionSvc.Today) is { } late) { <span>&middot; <span class="tide-queue-late">@late</span></span> }
-                                </span>
-                            </span>
-                            <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@_busy" @onclick="() => Take(r)"
-                                    aria-label="@($"Take {Ui.ActionLabel(r.Number)} on: {r.Title}")">Take it</button>
-                        </div>
+                        @QueueRow(r, $"{ActionService.KindName(r.Kind)} · {r.TeamName}", offerTake: true)
                     }
                 }
             </section>
@@ -1146,6 +1164,7 @@ else
         @if (_canWrite)
         {
             <ReviewsForYou />
+            @Escalated()
             @if (_queue is { OnATeam: true }) { @ActionsCard() } else { @MyActions() }
         }
         <section class="tide-card" aria-labelledby="coming-up-h">

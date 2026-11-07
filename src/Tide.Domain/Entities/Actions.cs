@@ -51,6 +51,11 @@ public class Team : AuditableEntity
     public bool RemindersOn { get; set; } = true;
     public int RemindBeforeDays { get; set; } = DefaultRemindBefore;
     public int? RemindOverdueEveryDays { get; set; } = DefaultRemindEvery;
+
+    /// <summary>Who the escalation ladder copies when the team's actions slip (a manager, a duty lead), internal team or
+    /// external: their name and email. Optional; with no email, a step that copies them copies no one.</summary>
+    public string? EscalationName { get; set; }
+    public string? EscalationEmail { get; set; }
 }
 
 /// <summary>A person on a team, by user id (as mirrored from AD on sign-in).</summary>
@@ -150,7 +155,26 @@ public class ActionItem : AuditableEntity
     public DateTimeOffset? HandedAtUtc { get; set; }
     public string? HandoffReason { get; set; }
 
+    /// <summary>
+    /// The due date a step of the escalation ladder flagged it escalated for, and when. It stays escalated only while it's
+    /// open and still due then (<see cref="IsEscalated"/>): closing it, or moving its date either way, ends it, with
+    /// nothing to clear, as the ladder's marks are kept per due date too.
+    /// </summary>
+    public DateOnly? EscalatedForDue { get; set; }
+    public DateTimeOffset? EscalatedAtUtc { get; set; }
+
     public bool IsOpen => !IsClosedStatus(Status);
+
+    /// <summary>Whether it's escalated now (<see cref="EscalatedFor"/>).</summary>
+    public bool IsEscalated => EscalatedFor(Status, DueDate, EscalatedForDue);
+
+    /// <summary>When it was escalated, while it still is; null otherwise.</summary>
+    public DateTimeOffset? EscalatedSince => IsEscalated ? EscalatedAtUtc : null;
+
+    /// <summary>The one rule for escalated: open, and flagged for the due date it has. Its database twin is
+    /// <c>ActionQueries.WhereEscalated</c>.</summary>
+    public static bool EscalatedFor(ActionStatus status, DateOnly? due, DateOnly? escalatedForDue) =>
+        escalatedForDue is not null && escalatedForDue == due && !IsClosedStatus(status);
 
     /// <summary>The closed statuses: Done, Cancelled and Not applicable. The one list; the queries use it too
     /// (<c>ActionQueries.WhereClosed</c>), so open and closed mean the same in C# and in the database.</summary>

@@ -138,6 +138,30 @@ public class MigrationFillTests
         }
     }
 
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task EscalationLadder_LeavesExistingTeamsWithNoContact_AndExistingActionsNotEscalated(string provider)
+    {
+        using var database = new MigratedDatabase(provider);
+        await using (var ctx = database.Context())
+        {
+            var team = new Team { Key = "network-engineering", Name = "Network Engineering", IsExternal = true, ContactEmail = "network@example.org" };
+            ctx.Teams.Add(team);
+            ctx.Actions.Add(new ActionItem { Number = 7, Title = "Block the domains", TeamId = team.Id, DueDate = new DateOnly(2026, 11, 2) });
+            await ctx.SaveChangesAsync();
+        }
+
+        database.UpgradeAgainFrom("EscalationLadder");
+
+        await using (var ctx = database.Context())
+        {
+            var team = await ctx.Teams.SingleAsync();
+            (team.EscalationName, team.EscalationEmail, team.ContactEmail).Should().Be(((string?)null, (string?)null, "network@example.org"));
+            (await ctx.Actions.SingleAsync()).Should().Match<ActionItem>(a => a.EscalatedForDue == null && a.EscalatedAtUtc == null && !a.IsEscalated,
+                "nothing is escalated until the ladder, turned on, says so");
+        }
+    }
+
     // A database on one provider, migrated as the app migrates its own, and dropped afterwards.
     private sealed class MigratedDatabase : IDisposable
     {
