@@ -342,6 +342,7 @@ These rows live in the `Settings` table with no server default.
 | `EmailTemplate:{id}:{Subject\|Heading\|Body}` | A reworded notification email part. | **Email templates** | Yes |
 | `Cve:LastRun` | When CVE enrichment last ran (ISO 8601). | Written by `CveService` | No (bookkeeping) |
 | `Data:IndicatorsCanonical` | Marks a one-time pass over stored indicators as done (`DatabaseInitializer.CanonicalizeIndicatorsAsync`). | Written at start-up | No |
+| `Data:StarterSavedQueries`, `Data:StarterOutreachTemplates`, `Data:StarterPlaybooks` | Mark each library's starter set as offered, so it's added once, only to an empty library, and starters the team removes don't return (`DatabaseInitializer.SeedStarterLibrariesAsync`). | Written at start-up | No |
 
 `SettingsCatalog.IsInApp` decides which rows are an administrator's (and so travel in a bundle) and which are the
 app's own bookkeeping.

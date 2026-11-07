@@ -239,7 +239,9 @@ an action is never re-checked, so an action overdue for over a year can still be
   it). The meeting's assignee and due boxes change only what they say (`AssignAsync`, `SetDueAsync`), so a due date set
   in the meeting doesn't take the action back from someone a colleague just gave it to.
 - **Checklist.** Up to 50 items (`ActionChecklistItem`). A playbook (`Playbook`, administered) adds its steps that the
-  checklist doesn't already have, at the end (`ApplyPlaybookAsync`).
+  checklist doesn't already have, at the end (`ApplyPlaybookAsync`). A new install, or an upgrade with no playbooks,
+  starts with 7, one for each kind of action but Other (`StarterPlaybooks`), added once and marked by the setting
+  `Data:StarterPlaybooks`.
 - **Comments.** Text up to 8,000 characters, with screenshots or evidence files. Each comment has its own
   `EditVersion`: an edit from an older version is refused and names who changed it, and the page shows their text over
   the box while keeping what was typed. Deleting a comment keeps its files on the action as removed, with the reason
@@ -343,7 +345,16 @@ sequenceDiagram
 
 The team's library of hunt queries (`SavedQuery`, `SavedQueryService`, the Saved queries page at `/hunts/saved`): a
 name, a language, the text, an optional description, who saved it and last changed it, and whether it's retired. The
-list shows how many actions used each.
+page sits under Team in the sidebar, after Brief rotation and Workload. It lists the queries by language, with how
+many actions used each, 20 cards a page with the page in the address (`?page=`). A language that runs on to the next
+page is headed there too, its heading counting every match; a page that a delete or retire took away shows the last.
+
+- **Starters.** A new install, or an upgrade whose library is still empty, gets 13 starter queries saved by "TIDE"
+  (`StarterSavedQueries`): IP, domain, file hash, URL and every-indicator sweeps in KQL and in XQL, and IP, domain and
+  file hash sweeps for Falcon. Each is built on its dialect's own generation template and passes the same save
+  checks as any other. `DatabaseInitializer` adds the set once, only to an empty library, and writes the setting
+  `Data:StarterSavedQueries` with it; a library that already holds queries is only marked. So starters the team
+  deletes or retires don't come back.
 
 - **Saving.** On the page, or *Save for the team* on any hunt. For a hunt added from a saved query that still exists,
   that offers the saved query's own text with its placeholders (`DraftTextAsync`); for any other, the hunt's text
@@ -373,7 +384,12 @@ are kept exactly as saved queries are: `WorkActions` adds, edits, retires and re
 administrator, deletes it; `ReadActions` reads; edits carry an `EditVersion`; writes are audited and published on
 `outreach-templates`. A template has a name, description, subject (300), body (8,000) with `{{placeholders}}`, an
 optional fixed To address and a TLP ceiling (CLEAR by default). `OutreachFill.Check` refuses an unknown placeholder or
-kind on save.
+kind on save. The page sits under Team in the sidebar and shows 20 templates a page, as Saved queries does.
+
+A new install, or an upgrade whose library is still empty, gets 5 starter templates saved by "TIDE"
+(`StarterOutreachTemplates`), none with a fixed To address: *Vendor: are we affected?*, *Internal: action required*,
+*ISAC / partner: share and ask*, *Follow-up / chase* and *Internal inquiry: are we impacted?*. They're added once and
+marked by the setting `Data:StarterOutreachTemplates`, as the starter saved queries are.
 
 | Placeholder group | Placeholders (`OutreachFill.All`) |
 |---|---|
@@ -503,10 +519,19 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
 
 ## Lists, board, Today's queue and Workload
 
-- **Actions page** (`/actions`, `ActionsBoard.razor`). A board (a column per status, open actions and those closed in
-  the last 14 days, `BoardAsync`) or a list (`ListAsync`). Views: Mine, My teams, Open, Overdue, Closed (last 90 days).
-  Overdue and Closed are list-only. The layout is the `actions.layout` preference; a link's own `layout` wins for that
-  visit. Card rules (administered) colour and label cards and add filter chips.
+- **Actions page** (`/actions`, `ActionsBoard.razor`). A board (a column per status, `BoardAsync`) or a list
+  (`PageAsync`). Views: Mine, My teams, Open, Overdue, Closed (last 90 days). Overdue and Closed are list-only. The
+  layout is the `actions.layout` preference; a link's own `layout` wins for that visit. Card rules (administered)
+  colour and label cards and add filter chips.
+- **Filters.** One bar for the list and the board (`ActionFilter`): search (title, A-number or the article's title),
+  team, kind, priority, due (`ActionDue`: overdue, due from today to the end of the business week with its holidays, or
+  no due date) and status. They combine, and every filter, the view and the page are in the address. A filter change
+  goes back to the first page.
+- **The list** is sorted, grouped and paged in the database, 50 a page (`ActionService.ListPageSize`). Group headings
+  count every matching action in the group, and the rule chips are counted there too (`RuleCountsAsync`).
+- **The board** loads every open card and caps each column on screen: its first 20 cards, then *Show N more*, 20 at a
+  time. A card moved into a column (by you or a colleague) stays in view. The closed columns reach back 7 days
+  (`BoardClosedDays`); *Show older*, under Done, takes them to 30 days (`BoardOlderDays`) for that visit.
 - **Today's team queue** (`TeamQueueAsync`): the person's teams' open actions that are theirs or nobody's, theirs
   first, up to 8, with *Take it*. Without `WriteArticles` it leads Today in place of the producers' step strip.
 - **Workload** (`/workload`, `WorkloadAsync`): each team's open, overdue, due soon and blocked counts, closed and met
@@ -548,6 +573,7 @@ Every one of these follows colleagues' saves live through the `actions` and `act
 | Files | `src/Tide.Application/Actions/ActionFiles.cs` (`ActionFileService`), `src/Tide.Application/Files/FileRisk.cs` |
 | Meeting lines | `src/Tide.Application/Actions/RecommendedActions.cs` |
 | Playbooks, card rules | `src/Tide.Application/Actions/Playbooks.cs` |
+| Starter saved queries, templates and playbooks | `src/Tide.Application/Actions/StarterSavedQueries.cs`, `StarterOutreachTemplates.cs`, `StarterPlaybooks.cs`; added by `src/Tide.Infrastructure/Persistence/DatabaseInitializer.cs` (`SeedStarterLibrariesAsync`) |
 | Teams | `src/Tide.Application/Actions/TeamService.cs` |
 | Reminders | `src/Tide.Application/Actions/Reminders.cs` (`ReminderService`, `ReminderOptions`), `src/Tide.Web/Services/ReminderHostedService.cs` |
 | Notification choices | `src/Tide.Application/Preferences/` (`NotificationKinds`, `NotificationPreferenceService`, `RecipientResolver`, `UserPreferenceService`) |

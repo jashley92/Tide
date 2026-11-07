@@ -238,15 +238,24 @@ What triage does with it:
 ![The triage inbox with the reading pane open](../screenshots/doc-triage-reading.png)
 
 1. The tabs (New, Shortlisted, Promoted, Dismissed, Duplicates), each with its count.
-2. Filters: by source, by words in titles and CVEs, *Since the last brief*, and the *Newest* / *Likely used* order.
+2. Filters: by source, by words in titles and CVEs, *Since the last brief*, CVEs (any, or KEV-listed only),
+   *Names what we run*, and the *Newest* / *Likely used* order.
 3. The selected item: its source with its Admiralty grade, its TLP and its excerpt.
 4. CVE chips: the CVSS score, the EPSS percentage and, where it applies, KEV.
 5. The row's decisions: *Promote* (P), *Shortlist* (S), *Dismiss* (X) with a reason, *Attach to…* and *Add to what we run…*.
 6. The reading pane (V): the article's text, read once and kept for a week, with its CVEs and indicators marked.
 
 Triage (`/triage`, `Components/Pages/Triage.razor`) is a keyboard-driven inbox. Its tabs are the item states (New,
-Shortlisted, Dismissed, Duplicate, Promoted) and, set apart at the end, Sources. The tab, filters and selected row are
-kept in the address (`triage?tab=…&at=…`), so a reload or a copied link opens the same view.
+Shortlisted, Dismissed, Duplicate, Promoted) and, set apart at the end, Sources. The tab, filters, page and selected
+row are kept in the address (`triage?tab=…&cve=kev&named=true&page=2&at=…`), so a reload or a copied link opens the
+same view.
+
+**Pages.** Each tab shows 50 items a page (`InboxFilter.PageSize`), with numbered pages (`Pager`) and a count ("1–50
+of 213"). There's no hidden cap: every matching item is on some page. `IntakeService.InboxPageAsync` counts the matches
+and cuts the page in the database wherever it can. New, *Likely used*, *Names what we run* and the KEV filter depend on
+what only the app knows (ageing into Older, the Our stack matcher, the CVE records' KEV flag, the learned counts), so
+for those it reads every matching item light and pages that in memory. A page past the end shows the last page. Tab
+counts stay totals, and Older pages too.
 
 `IntakeService.InboxAsync(InboxFilter)` builds each row (`InboxRow`):
 
@@ -256,14 +265,15 @@ kept in the address (`triage?tab=…&at=…`), so a reload or a copied link open
 | Similar | "Looks like" a recent item | `SimilarToId`. |
 | Past coverage | Articles with the same CVE or link, the brief each was first on, and their open actions ("Follow-up to Thu Oct 22: A-13, A-14 open") | `CoverageAsync`: `ArticleCves`, and the canonical `SourceUrl` or `ArticleLink` of articles from the last 120 days. At most 5. `Coverage.Attachable` says whether a report can still be added. |
 | Same CVE | Other New items sharing a CVE: one story from several outlets | New tab only, read over every New item, not just the page shown. |
-| Group | "Looks like one event" | `TriageGroups.Find`, New and Shortlisted. See below. |
+| Group | "Looks like one event" | `TriageGroups.Find`, New and Shortlisted, over the page shown. See below. |
 | We run | A product on Our stack the item names | `StackService.Matcher`. Items naming one sort first in New and never age. |
 | Watching | A watched adversary profile the item names | `AdversaryService.WatchedAsync`. |
 | Likely | How often the team promoted items like it | Only when sorted that way. See [learning](#learning-from-the-teams-decisions). |
 
 Filters: source, words (matched with `LIKE` over title and CVEs, ADR
 [0011](../decisions/0011-search-with-portable-like-queries.md)), "since the last brief" (`LastBriefAtAsync`: the latest
-meeting held), and a page size of up to 500.
+meeting held), CVEs (`InboxCves`: `Any` keeps items naming a CVE, `Kev` those naming one that TIDE's CVE records mark
+KEV-listed), and *Names what we run* (`Named`: items naming a product on Our stack). They combine.
 
 **Older.** A New item untouched for `Intake:AgeDays` (7) folds into Older: kept and searchable, out of the way. Items
 naming a KEV-listed CVE, a CVE with EPSS ≥ 10%, or a product on Our stack never age. Older is a button under New, not a
@@ -276,7 +286,7 @@ while a confirmation is open or letter shortcuts are turned off (WCAG 2.1.4).
 
 | Key | Does |
 |---|---|
-| J / ↓, K / ↑ | Next, previous row |
+| J / ↓, K / ↑ | Next, previous row. J on a page's last row goes on to the next page's first; K on a page's first row goes back to the previous page's last. |
 | S | Shortlist |
 | X | Dismiss |
 | D | Mark duplicate (of the item it looks like) |

@@ -45,7 +45,7 @@ role holds it; an administrator also holds every other permission
 | Organization › Organization settings | `/admin/organization` | team name, time zone, meeting time; holidays | `OperationalSettingsService`, `HolidayService` | `Settings`, `Holidays` |
 | Organization › Teams & SLA | `/admin/teams` | teams, members, team mailbox, retire; SLA targets by priority and kind; reminder and digest switches and times, brief-not-ready recipients, outreach follow-up days, run a scan now, last run, opt-out counts; which action files download zipped | `TeamService`, `SlaSettings`, `OperationalSettingsService`, `ReminderService`, `NotificationPreferenceService` | `Teams`, `TeamMembers`, `Settings` |
 | Organization › Brief rotation | `/admin/rotation` | roster, weekly rota, managers to notify | `RotationService` | rotation tables, `Settings` |
-| Actions › Playbooks | `/admin/playbooks` | checklists per kind of action | `PlaybookService` | `Playbooks` |
+| Actions › Playbooks | `/admin/playbooks` | checklists per kind of action; a new install, or an upgrade with none, starts with one for each kind but Other, added once (`Data:StarterPlaybooks`) | `PlaybookService` | `Playbooks` |
 | Actions › Card rules | `/admin/card-rules` | colours, labels and filter chips on the board and list | `CardRuleService` | `ActionCardRules` |
 | Intelligence › Sources | `/admin/sources` | feeds and catalogs, polling on or off, sponsored-item markers, advert selectors, retention, triage grouping, CVE enrichment, Poll now | `IntakeService`, `CveService`, `OperationalSettingsService` | `Sources`, `Settings` |
 | Intelligence › Source health | `/admin/source-health` | nothing but *Pause polling* | `IntakeService.SourceHealthAsync` | |
