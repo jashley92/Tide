@@ -106,21 +106,20 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
         typeof(Present).GetField("_qaTitle", flags)!.SetValue(r.Component, "Sweep the proxy logs");
         typeof(Present).GetField("_qaTeam", flags)!.SetValue(r.Component, team);
 
-        await r.Press(p => p.QuickAdd(article));
+        // The add waits on the dialog: start it as a click would, and keep hold of it to wait for it once it's answered.
+        Task adding = Task.CompletedTask;
+        await r.Renderer.Dispatcher.InvokeAsync(() => { adding = r.Pressed(p => p.QuickAdd(article)); });
         System.Net.WebUtility.HtmlDecode(await r.HtmlOnce("Why go over the limit?")).Should().Contain("Over Meeting limit team", "the meeting asks why, as the action page does");
         await r.Renderer.Dispatcher.InvokeAsync(() =>
         {
             r.Component.OverLimit.Reason = "Incident cover";
             return r.Component.OverLimit.Confirm();
         });
-        ActionRow? made = null;
-        for (var i = 0; i < 50 && made is null; i++)
-        {
-            await Task.Delay(100);
-            await using var scope = SignedIn(app, SignIn.Analyst);
+        await adding.WaitAsync(TimeSpan.FromSeconds(30));
+        ActionRow? made;
+        await using (var scope = SignedIn(app, SignIn.Analyst))
             made = (await scope.ServiceProvider.GetRequiredService<ActionService>().ListAsync(new ActionFilter(ActionView.Open, team)))
                 .FirstOrDefault(x => x.Title == "Sweep the proxy logs");
-        }
         made.Should().NotBeNull("it goes ahead with the reason");
         await using (var scope = SignedIn(app, SignIn.Analyst))
             (await scope.ServiceProvider.GetRequiredService<ActionService>().GetAsync(made!.Number))!.Action.Events
