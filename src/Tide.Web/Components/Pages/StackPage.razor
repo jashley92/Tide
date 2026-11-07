@@ -104,7 +104,7 @@ else
     </div>
     <div class="tide-today-grid">
         <div>
-            <section class="tide-card" aria-labelledby="stack-about-h">
+            <section class="tide-card" aria-labelledby="stack-about-h" data-submit-scope>
                 <h2 id="stack-about-h">About it <TlpBadge Level="TlpLevel.Amber" /></h2>
                 @if (_canWrite && _form is { } f)
                 {
@@ -133,7 +133,7 @@ else
                             <textarea id="f-notes" class="form-control form-control-sm tide-autogrow" rows="5" maxlength="4000"
                                       placeholder="Where it runs, who to ask, change windows, past decisions" @bind="f.Notes"></textarea></div>
                     </div>
-                    <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="Save">Save</button>
+                    <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" data-submit @onclick="Save">Save</button>
                 }
                 else
                 {

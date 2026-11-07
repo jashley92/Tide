@@ -888,7 +888,7 @@ else
     {
         var editable = _canWrite && _brief!.Status != BriefStatus.Sent;
         if (!editable && string.IsNullOrWhiteSpace(_brief!.TeamNote)) return;
-        <section class="tide-card" aria-labelledby="team-note-h">
+        <section class="tide-card" aria-labelledby="team-note-h" data-submit-scope>
             <h2 id="team-note-h">Opening note <span class="ms-auto small fw-normal tide-muted">team edition only</span></h2>
             @if (editable)
             {
@@ -898,7 +898,7 @@ else
                           placeholder="Key items coming up, recent phishing trends: read at the start of the meeting." @bind="_teamNote" @bind:event="oninput"></textarea>
                 <div class="form-text" id="team-note-help">Markdown works: - bullets, indented two spaces for a sub-bullet, **bold**, _italic_, [text](https://link).
                     It's on its own slide before the numbers and near the top of the team email, never in the company-wide edition. The next brief starts with it.</div>
-                <button class="btn btn-outline-secondary btn-sm mt-2" disabled="@(_busy || !NoteDirty)" @onclick="SaveTeamNote">Save note</button>
+                <button class="btn btn-outline-secondary btn-sm mt-2" disabled="@(_busy || !NoteDirty)" data-submit @onclick="SaveTeamNote">Save note</button>
             }
             else
             {
@@ -910,7 +910,7 @@ else
     // The presenter, when it meets and the title slide line: editable by analysts, read by everyone else.
     private RenderFragment Meeting() => __builder =>
     {
-        <section class="tide-card" aria-labelledby="meeting-h">
+        <section class="tide-card" aria-labelledby="meeting-h" data-submit-scope>
             <h2 id="meeting-h">Meeting <span class="ms-auto small fw-normal tide-muted">@Ui.ShortDay(_date) &middot; @MeetsAt @ZoneLabel</span></h2>
             @if (_rotaDay is { AnalystName: { } rota } && !_past)
             {
@@ -936,7 +936,7 @@ else
                 <textarea id="intro" class="form-control form-control-sm tide-autogrow tide-grow-2" rows="2" maxlength="2000" @bind="_intro"
                           placeholder="Shown on the title slide: a quiet day, a theme, a reminder."></textarea>
                 <div class="small tide-muted mt-1">An edition whose ceiling is below its TLP leaves it out.</div>
-                <button class="btn btn-outline-secondary btn-sm mt-2" disabled="@_busy" @onclick="SaveDetails">Save</button>
+                <button class="btn btn-outline-secondary btn-sm mt-2" disabled="@_busy" data-submit @onclick="SaveDetails">Save</button>
             }
             else
             {

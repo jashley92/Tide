@@ -83,12 +83,14 @@
                         }
                         @if (_describing == f.FileId)
                         {
-                            <textarea class="form-control form-control-sm tide-autogrow tide-grow-2" rows="2" maxlength="@ActionFile.MaxDescription" aria-label="Description of @f.FileName"
-                                      @ref="_box" @bind="_description" @bind:event="oninput"></textarea>
-                            <div class="d-flex gap-2 align-items-center">
-                                <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="() => SaveDescription(f)">Save</button>
-                                <button class="btn btn-outline-secondary btn-sm" @onclick="() => Back(f)">Cancel</button>
-                                <span class="small tide-muted">@((_description ?? "").Length) of @ActionFile.MaxDescription</span>
+                            <div data-submit-scope>
+                                <textarea class="form-control form-control-sm tide-autogrow tide-grow-2" rows="2" maxlength="@ActionFile.MaxDescription" aria-label="Description of @f.FileName"
+                                          @ref="_box" @bind="_description" @bind:event="oninput"></textarea>
+                                <div class="d-flex gap-2 align-items-center">
+                                    <button class="btn btn-primary btn-sm" disabled="@_busy" data-submit @onclick="() => SaveDescription(f)">Save</button>
+                                    <button class="btn btn-outline-secondary btn-sm" @onclick="() => Back(f)">Cancel</button>
+                                    <span class="small tide-muted">@((_description ?? "").Length) of @ActionFile.MaxDescription</span>
+                                </div>
                             </div>
                         }
                         else if (f.Description is not null)
@@ -119,11 +121,11 @@
                         }
                         @if (_removing == f.FileId)
                         {
-                            <div class="tide-file-remove">
+                            <div class="tide-file-remove" data-submit-scope>
                                 <label class="form-label small mb-1" for="remove-reason">Why remove @f.FileName? The history keeps who removed it and why, and an administrator can restore it.</label>
                                 <textarea id="remove-reason" class="form-control form-control-sm tide-autogrow tide-grow-2" rows="2" maxlength="@ActionFile.MaxReason" @ref="_box" @bind="_reason" @bind:event="oninput"></textarea>
                                 <div class="d-flex gap-2 mt-1">
-                                    <button class="btn btn-danger btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_reason))" @onclick="() => Remove(f)">Remove file</button>
+                                    <button class="btn btn-danger btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_reason))" data-submit @onclick="() => Remove(f)">Remove file</button>
                                     <button class="btn btn-outline-secondary btn-sm" @onclick="() => Back(f)">Cancel</button>
                                 </div>
                             </div>

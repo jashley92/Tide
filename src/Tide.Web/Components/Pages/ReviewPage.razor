@@ -84,7 +84,7 @@ else
                             </li>
                         }
                     </ul>
-                    <div class="tide-review-new">
+                    <div class="tide-review-new" data-submit-scope>
                         <label class="tide-field-label" for="rv-field">On</label>
                         <select id="rv-field" class="form-select form-select-sm mb-1" @bind="_field">
                             @foreach (var (key, label) in ReviewService.Fields(_article)) { <option value="@key">@label</option> }
@@ -94,7 +94,7 @@ else
                             <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" @onclick="UseSelection">Use the selected words</button>
                         </div>
                         <textarea class="form-control form-control-sm mb-1 tide-autogrow tide-grow-3" rows="3" maxlength="@ReviewComment.MaxText" aria-label="Comment" placeholder="What should change, and why" @bind="_text" @bind:event="oninput"></textarea>
-                        <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_text))" @onclick="Comment">Add the comment</button>
+                        <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_text))" data-submit @onclick="Comment">Add the comment</button>
                     </div>
                 </section>
 

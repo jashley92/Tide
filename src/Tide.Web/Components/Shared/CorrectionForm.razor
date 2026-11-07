@@ -6,7 +6,7 @@
 @inject CorrectionService Corrections
 @inject OrgClock Clock
 
-<section class="tide-card tide-correction" aria-labelledby="correct-h">
+<section class="tide-card tide-correction" aria-labelledby="correct-h" data-submit-scope>
     <h3 class="tide-card-title" id="correct-h" tabindex="-1" @ref="_heading">
         @if (_start is null) { <span>Send a correction</span> }
         else { <span>Correct the @BriefRenderer.EditionName(_start.Send.Edition).ToLowerInvariant() sent @Ui.When(Clock, _start.Send.SentAtUtc)</span> <TlpBadge Level="_start.Send.Marking" /> }
@@ -90,7 +90,7 @@
         }
 
         <div class="d-flex gap-2 flex-wrap align-items-center">
-            <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(_busy || !CanPlan)" @onclick="Plan">
+            <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(_busy || !CanPlan)" data-submit @onclick="Plan">
                 <span class="bi bi-eye" aria-hidden="true"></span> Check the @(_slip ? "slip notice" : "correction")</button>
             <button type="button" class="btn btn-link btn-sm" disabled="@_busy" @onclick="Back">Back to the send</button>
         </div>

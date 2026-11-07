@@ -38,7 +38,7 @@ else
         @if (Selected is { } sel)
         {
             <div class="tide-etpl-main">
-                <section class="tide-card" aria-labelledby="etpl-title">
+                <section class="tide-card" aria-labelledby="etpl-title" data-submit-scope>
                     <h2 id="etpl-title">@sel.Template.Title @if (sel.IsCustomized) { <Badge Tone="BadgeTone.Ok">Customized</Badge> }</h2>
                     <p class="small tide-muted">@sel.Template.Description</p>
 
@@ -70,7 +70,7 @@ else
 
                     @if (_error is not null) { <p class="text-danger small mt-2 mb-0" role="alert">@_error</p> }
                     <div class="d-flex flex-wrap gap-2 align-items-center mt-3">
-                        <button class="btn btn-primary btn-sm" @onclick="Save" disabled="@(_busy || !Unsaved)">Save</button>
+                        <button class="btn btn-primary btn-sm" data-submit @onclick="Save" disabled="@(_busy || !Unsaved)">Save</button>
                         <button class="btn btn-outline-secondary btn-sm" @onclick="Revert" disabled="@(_busy || !Unsaved)">Discard changes</button>
                         <button class="btn btn-outline-secondary btn-sm" @onclick="Reset" disabled="@(_busy || !sel.IsCustomized)">Back to the default</button>
                         <span class="tide-etpl-sep" aria-hidden="true"></span>

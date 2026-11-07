@@ -71,10 +71,10 @@
         }
         @if (_writing)
         {
-            <div class="mb-3">
+            <div class="mb-3" data-submit-scope>
                 <textarea class="tide-query tide-autogrow" spellcheck="false" aria-label="Your query" placeholder="A behavioural hunt, for example: php-fpm spawning a shell" @bind="_ownText"></textarea>
                 <div class="d-flex gap-2 mt-2">
-                    <button class="btn btn-primary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_ownText))" @onclick="AddOwn">Add the query</button>
+                    <button class="btn btn-primary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_ownText))" data-submit @onclick="AddOwn">Add the query</button>
                     <button class="btn btn-outline-secondary btn-sm" @onclick="() => _writing = false">Cancel</button>
                 </div>
             </div>
@@ -133,10 +133,12 @@
             </div>
             @if (_editingHunt == h.Id)
             {
-                <textarea class="tide-query tide-autogrow" spellcheck="false" aria-label="Query" @bind="_huntText"></textarea>
-                <div class="d-flex gap-2 mt-2">
-                    <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="() => SaveText(h)">Save query</button>
-                    <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editingHunt = null">Cancel</button>
+                <div data-submit-scope>
+                    <textarea class="tide-query tide-autogrow" spellcheck="false" aria-label="Query" @bind="_huntText"></textarea>
+                    <div class="d-flex gap-2 mt-2">
+                        <button class="btn btn-primary btn-sm" disabled="@_busy" data-submit @onclick="() => SaveText(h)">Save query</button>
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editingHunt = null">Cancel</button>
+                    </div>
                 </div>
             }
             else

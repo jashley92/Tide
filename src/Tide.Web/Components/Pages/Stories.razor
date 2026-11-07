@@ -73,7 +73,7 @@ else
         <div class="col-lg-8">
             @if (_editing)
             {
-                <div class="tide-card">
+                <div class="tide-card" data-submit-scope>
                     <div class="row g-2">
                         <div class="col-md-8"><label class="tide-field-label" for="st-name">Name</label><input id="st-name" class="form-control form-control-sm" maxlength="200" @bind="_name" /></div>
                         <div class="col-md-4">
@@ -87,7 +87,7 @@ else
                             <textarea id="st-sum" class="form-control form-control-sm tide-autogrow tide-grow-3" rows="4" maxlength="4000" @bind="_summary"></textarea></div>
                     </div>
                     <div class="d-flex gap-2 mt-2">
-                        <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="Save">Save</button>
+                        <button class="btn btn-primary btn-sm" disabled="@_busy" data-submit @onclick="Save">Save</button>
                         <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editing = false">Cancel</button>
                         @if (_detail.Articles.Count == 0) { <button class="btn btn-link btn-sm ms-auto text-danger" disabled="@_busy" @onclick="Delete">Delete the story</button> }
                     </div>
