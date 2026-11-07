@@ -34,6 +34,15 @@
         @EditForm
     </section>
 }
+else if (EditingOffPage)
+{
+    @* The playbook being edited left this page (a colleague retired, deleted or renamed it, or a filter hides it): its
+       form stays here, so what's typed can be saved or cancelled. *@
+    <section class="tide-card tide-card-form" aria-labelledby="pb-edit-h">
+        <h2 id="pb-edit-h">Edit playbook</h2>
+        @EditForm
+    </section>
+}
 
 @* The filter bar: the words, a pill per kind of action (one at a time: those offered on that kind, its own and those for
    any), and Show retired as the switch it is on the other libraries. *@
@@ -100,8 +109,8 @@ else
                         {
                             @if (CanMove(p))
                             {
-                                <button class="btn btn-outline-secondary btn-sm" aria-label="Move @p.Name up" disabled="@(_busy || p.Id == _firstOffered)" @onclick="() => Move(p, -1)"><span class="bi bi-arrow-up" aria-hidden="true"></span></button>
-                                <button class="btn btn-outline-secondary btn-sm" aria-label="Move @p.Name down" disabled="@(_busy || p.Id == _lastOffered)" @onclick="() => Move(p, 1)"><span class="bi bi-arrow-down" aria-hidden="true"></span></button>
+                                <button class="btn btn-outline-secondary btn-sm" aria-label="Move @p.Name up" disabled="@(_busy || _form is not null || p.Id == _firstOffered)" @onclick="() => Move(p, -1)"><span class="bi bi-arrow-up" aria-hidden="true"></span></button>
+                                <button class="btn btn-outline-secondary btn-sm" aria-label="Move @p.Name down" disabled="@(_busy || _form is not null || p.Id == _lastOffered)" @onclick="() => Move(p, 1)"><span class="bi bi-arrow-down" aria-hidden="true"></span></button>
                             }
                             <button class="btn btn-outline-secondary btn-sm" disabled="@(_form is not null)" aria-label="Edit @p.Name" @onclick="() => Edit(p)"><span class="bi bi-pencil" aria-hidden="true"></span> Edit</button>
                             <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" aria-label="@((p.IsRetired ? "Restore " : "Retire ") + p.Name)" @onclick="() => Retire(p, !p.IsRetired)">@(p.IsRetired ? "Restore" : "Retire")</button>
@@ -142,6 +151,10 @@ else
         rows.Where(r => _kind is not { } k || PlaybookService.Suits(r.Playbook, k)).Where(r => PlaybookService.Matches(r.Playbook, words));
 
     protected override void ClearOwnFilters() => _kind = null;
+
+    protected override Guid IdOf(PlaybookRow row) => row.Playbook.Id;
+
+    protected override Guid? EditingId => _form?.Id;
 
     protected override void Filtering()
     {
@@ -224,7 +237,8 @@ else
         _form = null;
     });
 
-    internal Task Move(Playbook p, int by) => Run(() => PlaybookSvc.MoveAsync(p.Id, by));
+    // Not while a form is open: a move changes the two it swaps, so an edit open on either would be refused as stale.
+    internal Task Move(Playbook p, int by) => _form is not null ? Task.CompletedTask : Run(() => PlaybookSvc.MoveAsync(p.Id, by));
 
     internal Task Retire(Playbook p, bool retired) => Retiring(p.Name, retired, () => PlaybookSvc.SetRetiredAsync(p.Id, retired));
 

@@ -33,6 +33,15 @@
         @EditForm
     </section>
 }
+else if (EditingOffPage)
+{
+    @* The saved query being edited left this page (a colleague retired, deleted or renamed it, or a filter hides it): its
+       form stays here, so what's typed can be saved or cancelled. *@
+    <section class="tide-card tide-card-form" aria-labelledby="sq-edit-h">
+        <h2 id="sq-edit-h">Edit saved query</h2>
+        @EditForm
+    </section>
+}
 
 @* The filter bar: the words, a pill per language (one at a time), and Show retired as the switch it was: it widens the
    list rather than narrowing it, so it isn't a filter to clear. *@
@@ -132,6 +141,10 @@ else
     protected override (string One, string Many, string Library) Names => ("saved query", "saved queries", "saved queries");
 
     protected override async Task<IReadOnlyList<SavedQueryRow>> ReadAsync(bool includeRetired) => await SavedSvc.ListAsync(includeRetired);
+
+    protected override Guid IdOf(SavedQueryRow row) => row.Query.Id;
+
+    protected override Guid? EditingId => _form?.Id;
 
     // The language chosen (or all) and every word typed. Each language's queries together (the languages in the order they
     // first come, as their headings are), so the pages run through the headings in order.
