@@ -145,6 +145,22 @@ failure and counts, not content.
 - **Fix:** `Install-WindowsFeature Web-WebSockets` (or `Install-Tide.ps1 -InstallWebSockets`), and pass the headers
   through any proxy. See [INSTALL.md](../INSTALL.md#5-check-it).
 
+### Typing quickly in a search box drops letters, or the text jumps back (fixed)
+
+- **Symptom:** in a table's filter box, a search picker (adversaries, stories, tags) or the ATT&CK matrix picker's
+  filter, fast typing loses characters, or the box briefly shows an older word. Worse on a slow or distant connection.
+- **Cause:** the box was drawn as `value="@text"` with `@oninput`. Only `@bind` makes Blazor copy the browser's value
+  into its stored render as each keystroke arrives, so for these boxes Blazor's copy was the last value it drew. A
+  later render compared the server's text with that stale copy and sent it, and by the time it landed the person had
+  typed more, so it overwrote the newest keystrokes. Boxes that skip renders while typing pauses (the matrix picker)
+  widened the gap.
+- **Where to look:** search the `.razor` files for an input with `value="@` beside `@oninput`. The browser's Network
+  tab, throttled to Slow 4G, makes it easy to reproduce.
+- **Fix:** bind the box with `@bind:get`, `@bind:set` and `@bind:event="oninput"` (`DataTable`, `SearchCombobox`,
+  `AttackMatrixPicker`). A render carrying the typed text then sends nothing, while a clear or a new value from outside
+  still reaches the box. `SearchCombobox` keeps its own copy of the text and takes the parent's `Text` only when the
+  parent changes it, so a parent redrawing older text doesn't overwrite what's typed.
+
 ### The page goes grey with a reconnect message, or "Refused a circuit request … from origin …" in the log
 
 - **Cause:**
