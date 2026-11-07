@@ -34,6 +34,7 @@ public class FilterMenuKeysTests
             e.closest = sel => { for (let x = e; x; x = x.parentElement) if (x.matches(sel)) return x; return null; };
             e.querySelectorAll = sel => { const out = []; (function walk(x) { x.children.forEach(k => { if (k.matches(sel)) out.push(k); walk(k); }); })(e); return out; };
             e.querySelector = sel => e.querySelectorAll(sel)[0] || null;
+            e.contains = x => { for (; x; x = x.parentElement) if (x === e) return true; return false; };
             return e;
         }
         function attr(e, a) { const m = /^\[([\w-]+)(?:="([^"]*)")?\]$/.exec(a); return m[2] === undefined ? e.hasAttribute(m[1]) : e.getAttribute(m[1]) === m[2]; }
@@ -47,32 +48,43 @@ public class FilterMenuKeysTests
         global.window = global;
         window.tideRoving = () => null;
         vm.runInThisContext(fs.readFileSync(process.argv[2], 'utf8'));
-        function press(target, key, shift) {
+        // A key, then where the browser's own Tab puts focus (a date box keeps it while Tab steps through its month, day
+        // and year), then a turn of the event loop for anything filters.js left until focus had moved.
+        async function press(target, key, shift, landsOn) {
+            document.activeElement = target;
             const e = { key, shiftKey: !!shift, ctrlKey: false, metaKey: false, altKey: false, target, prevented: false, preventDefault() { this.prevented = true; } };
             listeners.forEach(f => f(e));
+            if (!e.prevented && landsOn !== undefined) document.activeElement = landsOn;
+            await new Promise(r => setTimeout(r, 5));
         }
         function bar(pop) {
             const backdrop = el('div', 'tide-popover-backdrop');
-            el('div', 'tide-filter-menu', {}, [el('button', 'tide-filter-add'), backdrop, pop]);
+            el('div', 'tide-filter-menu', {}, [add, backdrop, pop]);
             return backdrop;
         }
+        const add = el('button', 'tide-filter-add');
+        const outside = el('button', 'btn');
         const out = {};
+        (async () => {
         // A typed filter: the way back (not a tab stop), the box, Remove, Apply.
         const back = el('button', 'tide-filter-item tide-filter-back', { role: 'menuitem', tabindex: '-1' });
         const box = el('input', 'form-control', { type: 'date' });
         const remove = el('button', 'btn btn-link', { type: 'button' });
         const apply = el('button', 'btn btn-primary', { type: 'submit' });
         const typed = bar(el('div', 'tide-popover tide-filter-pop', {}, [el('form', '', { role: 'dialog' }, [back, box, remove, apply])]));
-        press(box, 'Tab'); out.tabFromBox = typed.clicks;
-        press(remove, 'Tab'); out.tabFromRemove = typed.clicks;
-        press(apply, 'Tab', true); out.shiftTabFromApply = typed.clicks;
-        press(apply, 'Tab'); out.tabPastApply = typed.clicks;
-        press(box, 'Tab', true); out.shiftTabBeforeBox = typed.clicks - out.tabPastApply;
+        await press(box, 'Tab', false, box); out.tabFromMonthToDay = typed.clicks;
+        await press(box, 'Tab', true, box); out.shiftTabFromDayToMonth = typed.clicks;
+        await press(box, 'Tab', false, remove); out.tabFromBox = typed.clicks;
+        await press(remove, 'Tab', false, apply); out.tabFromRemove = typed.clicks;
+        await press(apply, 'Tab', true, remove); out.shiftTabFromApply = typed.clicks;
+        await press(apply, 'Tab', false, outside); out.tabPastApply = typed.clicks;
+        await press(box, 'Tab', true, add); out.shiftTabBeforeBox = typed.clicks - out.tabPastApply;
         // A menu of choices: none is a tab stop, so Tab leaves it closed.
         const item = el('button', 'tide-filter-item', { role: 'menuitem', tabindex: '-1' });
         const menu = bar(el('div', 'tide-popover tide-filter-pop', {}, [el('div', '', { role: 'menu' }, [item])]));
-        press(item, 'Tab'); out.tabInMenu = menu.clicks;
+        await press(item, 'Tab'); out.tabInMenu = menu.clicks;
         console.log(JSON.stringify(out));
+        })();
         """;
 
     [Fact]
@@ -97,6 +109,8 @@ public class FilterMenuKeysTests
                 p.ExitCode.Should().Be(0, "the script ran: {0}", await stderr);
                 var said = System.Text.Json.JsonDocument.Parse(stdout).RootElement;
                 int Clicks(string name) => said.GetProperty(name).GetInt32();
+                Clicks("tabFromMonthToDay").Should().Be(0, "Tab inside a date box steps from its month to its day");
+                Clicks("shiftTabFromDayToMonth").Should().Be(0, "and Shift+Tab from its day back to its month, the box being the form's first stop");
                 Clicks("tabFromBox").Should().Be(0, "Tab from the box goes on to Remove, with the form still open");
                 Clicks("tabFromRemove").Should().Be(0, "and from Remove to Apply");
                 Clicks("shiftTabFromApply").Should().Be(0, "Shift+Tab goes back through it");

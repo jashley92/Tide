@@ -1606,6 +1606,8 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
     border-radius: var(--tide-radius-xl); box-shadow: 0 12px 32px var(--tide-shadow-strong); padding: 1.1rem 1.2rem 1rem;
     max-height: calc(100vh - 2rem); overflow-y: auto; }
 .tide-modal-wide { width: min(46rem, 100%); }
+/* A dialog takes focus itself when its text is clicked (tabindex="-1"), so its keys (Escape) still reach it; no ring. */
+.tide-modal[tabindex="-1"]:focus, .tide-atkm-panel[tabindex="-1"]:focus { outline: none; }
 .tide-modal-title { font-size: 1.05rem; font-weight: var(--tide-weight-semibold); margin: 0 0 .5rem; }
 .tide-modal-body { color: var(--tide-text-muted); margin: 0 0 1rem; font-size: .92rem; }
 .tide-modal-content { margin: 0 0 var(--tide-space-4); font-size: var(--tide-text-base); }

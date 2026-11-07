@@ -20,6 +20,9 @@ window.tideDialog = (function () {
             var f = modal.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), select, textarea, [tabindex="0"]');
             if (f.length === 0) return;
             var first = f[0], last = f[f.length - 1];
+            // The dialog itself has focus (its text was clicked: it takes focus then, so Escape still reaches it): Tab
+            // and Shift+Tab go to its first and last control, not out behind it.
+            if (document.activeElement === modal) { e.preventDefault(); (e.shiftKey ? last : first).focus(); return; }
             if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
             else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
             return;

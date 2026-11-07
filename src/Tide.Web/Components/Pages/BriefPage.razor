@@ -676,17 +676,19 @@ else
         }, picked.Count == 1 ? "Added to the end of the running order." : $"Added {picked.Count} articles to the end of the running order.");
     }
 
-    // Taken off with an Undo that puts it back where it was.
-    private Task Remove(BriefItem item)
+    // Taken off with an Undo that puts it back where it was: on the brief it came off, even if the page has moved on to
+    // another day's (the toast outlives the step to the next day), where it would have landed otherwise.
+    internal Task Remove(BriefItem item)
     {
         var at = Ordered().ToList().FindIndex(i => i.Id == item.Id);
         var title = item.Article?.Title ?? "The article";
-        return Run(() => BriefSvc.RemoveItemAsync(_brief!.Id, item.Id), null,
+        var briefId = _brief!.Id;
+        return Run(() => BriefSvc.RemoveItemAsync(briefId, item.Id), null,
             () => Toasts.Show($"Took “{title}” off the brief (the article is kept).",
                 async () =>
                 {
                     // From the toast: this page re-renders itself, as the click wasn't on it.
-                    await Run(() => BriefSvc.AddArticleAsync(_brief!.Id, item.ArticleId, at), $"Put “{title}” back at {at + 1}.");
+                    await Run(() => BriefSvc.AddArticleAsync(briefId, item.ArticleId, at), $"Put “{title}” back at {at + 1}.");
                     StateHasChanged();
                 }));
     }

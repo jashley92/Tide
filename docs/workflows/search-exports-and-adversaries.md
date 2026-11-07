@@ -31,7 +31,8 @@ every TLP, as the article pages do; Readers have the published archive's own fil
 **How a query matches** (`SearchService.SearchAsync`, `SearchText`):
 
 1. The query is split into terms (`SearchText.Terms`): words or "quoted phrases", at least two characters each, without
-   repeats. A lone digit is kept as the number of one of the first nine actions, and then only actions are searched.
+   repeats. A lone digit is kept as the number of one of the first nine actions, and then only actions are searched. A query
+   left with no terms (only one-letter words) searches nothing, and the page says words need two characters or more.
 2. Every term must match one of an entity's fields. Matching is `LIKE '%term%'` with `%`, `_`, `[` and `\` escaped, so
    it runs the same on SQLite and SQL Server with no full-text index to install
    ([ADR 0011](../decisions/0011-search-with-portable-like-queries.md)).

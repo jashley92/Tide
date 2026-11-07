@@ -87,7 +87,7 @@ with removal you can undo.
 | Action | Code | Rule |
 |---|---|---|
 | Add article (N available) | `BriefService.CandidatesAsync`, `AddArticleAsync` | Offers articles not on this brief: created in the last 14 days (`CandidateDays`), any Ready article, and a Draft that has been on a brief before. Ready first, then newest. An article that went out on a brief sent without a meeting shows as presented. Adding one already there does nothing. |
-| Remove | `RemoveItemAsync` | Undo re-adds it at its old position (`AddArticleAsync(…, at)`). |
+| Remove | `RemoveItemAsync` | Undo re-adds it at its old position (`AddArticleAsync(…, at)`), on the brief it came off even if the page has since moved to another day. |
 | Move, reorder | `MoveItemAsync`, `ReorderAsync` | Positions are renumbered from 0. |
 | Add to today's brief from the editor | `ArticleEditorPanel.AddToTodaysBrief` | Saves the article first if it has unsaved edits, then `GetOrStartAsync` and `AddArticleAsync`. |
 
