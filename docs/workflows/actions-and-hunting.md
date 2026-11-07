@@ -603,15 +603,27 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
   Open, In progress, Blocked, Tracking, Done, Cancelled, Not applicable; `BoardAsync`) or a list (`PageAsync`). Views:
   Mine, My teams, Open, Overdue, Closed (last 90 days). Overdue and Closed are list-only. The layout is the
   `actions.layout` preference; a link's own `layout` wins for that visit. Card rules (administered) colour and label
-  cards and add filter chips.
-- **Filters.** One bar for the list and the board (`ActionFilter`): search (title, A-number or the article's title),
-  team, kind, priority, due (`ActionDue`: overdue, due from today to the end of the business week with its holidays, or
-  no due date), status (Open, In progress, Blocked or Tracking), and parent (`parent=12`, "Part of A-12": the parts of
-  one action, from its page's link). They combine, and every filter, the view and the page are in the address. A filter
-  change goes back to the first page. Filtered to a team with an active limit, the bar shows "4 of 5 active"
-  (`TeamActiveAsync`).
+  cards, and those shown as filters are offered in the filter bar.
+- **Filters.** One bar for the list and the board (`FilterBar`; the filter is `ActionFilter`): the search box (title,
+  A-number or the article's title), then five pills:
+
+  | Pill | Address | Notes |
+  |---|---|---|
+  | Overdue | `due=overdue` | Takes turns with Due this week: `due` holds one value. |
+  | Due this week | `due=week` | From today to the end of the business week, with its holidays (`ActionDue.ThisWeek`). |
+  | P1–P2 | `priority=p1,p2` | On while the priority filter is exactly P1 and P2. |
+  | Blocked | `status=blocked` | Takes turns with Tracking: `status` holds one value. |
+  | Tracking | `status=tracking` | |
+
+  **+ Filter** holds team (`team`), kind (`kind`), priority (`priority`, any of P1 to P4: `priority=p1,p3`;
+  `ActionFilter.Priorities`), due (`due`, with `none` for no due date), status (`status`, the open ones) and, when an
+  administrator shows card rules as filters, the rule (`rule`, each with its count). Each is a chip while set, unless a
+  pill says it. A holder from Workload (`assignee`) and parent (`parent=12`, "Part of A-12": the parts of one action,
+  from its page's link) are chips only. They combine, and every filter, the view and the page are in the address.
+  A filter change goes back to the first page; **Clear** removes every filter and the words, and keeps the view and
+  layout. Filtered to a team with an active limit, the bar shows "4 of 5 active" (`TeamActiveAsync`).
 - **The list** is sorted, grouped and paged in the database, 50 a page (`ActionService.ListPageSize`). Group headings
-  count every matching action in the group, and the rule chips are counted there too (`RuleCountsAsync`).
+  count every matching action in the group, and each rule offered as a filter is counted there too (`RuleCountsAsync`); the board counts them from its cards, once each time it's read.
 - **The board** loads every open card and caps each column on screen: its first 20 cards, then *Show N more*, 20 at a
   time. A card moved into a column (by you or a colleague) stays in view. The closed columns reach back 7 days
   (`BoardClosedDays`); *Show older*, under Done, takes them to 30 days (`BoardOlderDays`) for that visit.

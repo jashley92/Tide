@@ -30,54 +30,16 @@
                ServerSide="true" Total="_total" PageSize="AuditLogService.PageSize" PageInAddress="true" Busy="_reading"
                Filtered="@(_filter.Narrowed || _since is not null)" OnQuery="Query">
         <Toolbar>
-            <select class="tide-maxw-xs form-select form-select-sm" aria-label="Who" value="@(_filter.Person ?? "")" @onchange="SetPerson">
-                <option value="">Anyone</option>
-                @foreach (var p in _people)
-                {
-                    <option value="@p.UserId">@p.Name</option>
-                }
-            </select>
-            <select class="tide-maxw-xs form-select form-select-sm" aria-label="Kind of record" value="@(_filter.Kind ?? "")" @onchange="SetKind">
-                <option value="">Any kind of record</option>
-                @foreach (var (type, name) in AuditKinds.All)
-                {
-                    <option value="@type">@name</option>
-                }
-            </select>
-            <select class="tide-maxw-xs form-select form-select-sm" aria-label="Action" value="@(_filter.Action?.ToString() ?? "")" @onchange="SetAction">
-                <option value="">Any action</option>
-                @foreach (var a in Enum.GetValues<AuditAction>())
-                {
-                    <option value="@a">@a</option>
-                }
-            </select>
+            @* The filter bar after the search box: Deleted as a pill, a chip for each other filter (a link to the log without
+               it) and + Filter for who, the kind of record, the action and the dates. *@
+            <FilterBar Pills="Pills" Filters="Defs" Chips="Chips" Active="_filter.Narrowed" ClearHref="@Href(_filter.Cleared())" />
         </Toolbar>
         <Filters>
-            <div class="tide-article-filters">
-                <div class="tide-article-filter">
-                    <label class="tide-field-label" for="al-from">From</label>
-                    <input id="al-from" type="date" class="form-control form-control-sm" value="@Day(_filter.From)" @onchange="e => Go(_filter with { From = Date(e) })" />
-                </div>
-                <div class="tide-article-filter">
-                    <label class="tide-field-label" for="al-to">to</label>
-                    <input id="al-to" type="date" class="form-control form-control-sm" value="@Day(_filter.To)" @onchange="e => Go(_filter with { To = Date(e) })" />
-                </div>
-                @if (_since is { } since)
-                {
-                    <p class="small tide-muted tide-article-filter-help" role="status">
-                        Action and word filters cover @AuditLogService.UnindexedDays days at a time: changes since @since.ToString("d MMM yyyy", CultureInfo.InvariantCulture). Set dates or a person to search further back.
-                    </p>
-                }
-            </div>
-            @if (_chips.Count > 0)
+            @if (_since is { } since)
             {
-                <div class="tide-filter-chips" role="group" aria-label="Filters in force">
-                    @foreach (var c in _chips)
-                    {
-                        <span class="tide-chip">@c.Label<a href="@Href(c.Without)" class="tide-chip-remove" aria-label="Remove the filter @c.Label" title="Remove"><span class="bi bi-x-lg" aria-hidden="true"></span></a></span>
-                    }
-                    <a href="@Href(_filter.Cleared())" class="small tide-filter-clear">Clear filters</a>
-                </div>
+                <p class="small tide-muted" role="status">
+                    Action and word filters cover @AuditLogService.UnindexedDays days at a time: changes since @since.ToString("d MMM yyyy", CultureInfo.InvariantCulture). Set dates or a person to search further back.
+                </p>
             }
         </Filters>
         <Empty>
@@ -159,7 +121,11 @@
 
     protected override async Task OnInitializedAsync()
     {
-        try { _people = await Audit.PeopleAsync(); }
+        try
+        {
+            _people = await Audit.PeopleAsync();
+            _peopleOptions = [.. _people.Select(p => new FilterOption(p.UserId, p.Name))];
+        }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
     }
 
@@ -180,24 +146,36 @@
 
     private string When(DateTimeOffset utc) => Clock.ToLocal(utc).ToString("MMM d, yyyy, h:mm tt", CultureInfo.InvariantCulture);
 
-    private static string Day(DateOnly? d) => d is { } day ? Ui.IsoDay(day) : "";
-
-    private static DateOnly? Date(ChangeEventArgs e) =>
-        Ui.TryParseDay(e.Value?.ToString(), out var d) ? d : null;
-
     private string Href(AuditFilter f) => Nav.GetUriWithQueryParameters(AdminLayout.AuditHref, f.ToQuery());
 
     private string ExportHref => Nav.GetUriWithQueryParameters("admin/system/audit.csv", _filter.ToQuery());
 
     private void Go(AuditFilter f, bool replace = false) => Nav.NavigateTo(Href(f), replace: replace);
 
-    private void SetPerson(ChangeEventArgs e) => Go(_filter with { Person = e.Value?.ToString() is { Length: > 0 } p ? p : null });
+    // The pill: deletions, what's asked of the log most, a preset of the action filter.
+    internal static readonly IReadOnlyList<FilterPill> Pills = [new("deleted", "Deleted", "action", [nameof(AuditAction.Deleted)])];
 
-    // Another kind drops the record chosen, which was one of the old kind.
-    private void SetKind(ChangeEventArgs e) => Go(_filter with { Kind = e.Value?.ToString() is { Length: > 0 } k ? k : null, Key = null });
+    // The chips, as the filter words them (the dates as one), each a link to the log without it.
+    internal IReadOnlyList<FilterChipView> Chips => [.. _chips.Select(c => new FilterChipView(c.Label, c.Key, Href(c.Without)))];
 
-    private void SetAction(ChangeEventArgs e) =>
-        Go(_filter with { Action = Enum.TryParse<AuditAction>(e.Value?.ToString(), out var a) && Enum.IsDefined(a) ? a : null });
+    // The options that don't change: built once. The people's when they're read.
+    private static readonly IReadOnlyList<FilterOption> KindOptions = [.. AuditKinds.All.Select(k => new FilterOption(k.Type, k.Name))];
+    private static readonly IReadOnlyList<FilterOption> ActionOptions = FilterOption.ForEnum<AuditAction>();
+    private IReadOnlyList<FilterOption> _peopleOptions = [];
+
+    // Every filter, under + Filter. Each sets the filter and goes to the log's address with it, at its first page.
+    internal IReadOnlyList<FilterDef> Defs =>
+    [
+        new("who", "Who", FilterKind.Single, v => Go(_filter with { Person = FilterValues.First(v) })) { Options = _peopleOptions, Values = FilterValues.Of(_filter.Person) },
+        // Another kind drops the record chosen, which was one of the old kind.
+        new("kind", "Kind of record", FilterKind.Single, v => Go(_filter with { Kind = FilterValues.First(v), Key = null })) { Options = KindOptions, Values = FilterValues.Of(_filter.Kind) },
+        new("action", "Action", FilterKind.Single, v => Go(_filter with { Action = FilterValues.Enum<AuditAction>(v) }))
+        {
+            Options = ActionOptions, Values = FilterValues.Of(_filter.Action?.ToString()),
+        },
+        new("from", "From", FilterKind.Text, v => Go(_filter with { From = Ui.ParseDay(FilterValues.First(v)) })) { InputType = "date", Values = FilterValues.Of(Ui.IsoDay(_filter.From)) },
+        new("to", "To", FilterKind.Text, v => Go(_filter with { To = Ui.ParseDay(FilterValues.First(v)) })) { InputType = "date", Values = FilterValues.Of(Ui.IsoDay(_filter.To)) },
+    ];
 
     private async Task Load()
     {

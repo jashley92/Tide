@@ -116,17 +116,10 @@ window.tideBoard = (function () {
             return;
         }
         const items = Array.prototype.slice.call(menu.querySelectorAll('[role="menuitem"]:not([disabled])'));
-        const at = items.indexOf(document.activeElement);
-        let to;
-        switch (e.key) {
-            case 'ArrowDown': case 'ArrowRight': to = (at + 1) % items.length; break;
-            case 'ArrowUp': case 'ArrowLeft': to = (at - 1 + items.length) % items.length; break;
-            case 'Home': to = 0; break;
-            case 'End': to = items.length - 1; break;
-            default: return;
-        }
+        const to = window.tideRoving(items, document.activeElement, e, 'both');
+        if (!to) return;
         e.preventDefault();
-        if (items[to]) items[to].focus();
+        to.focus();
     }
 
     return {

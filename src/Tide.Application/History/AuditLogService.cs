@@ -20,8 +20,8 @@ public enum AuditAction
     Deleted,
 }
 
-/// <summary>A filter in force on the audit log, and the filter without it (its chip's remove link).</summary>
-public sealed record AuditChip(string Label, AuditFilter Without);
+/// <summary>A filter in force on the audit log, the filter without it (its chip's remove link), and which filter it is (its address name).</summary>
+public sealed record AuditChip(string Label, AuditFilter Without, string Key);
 
 /// <summary>
 /// What the audit log narrows to, all of it in the address (<see cref="ToQuery"/>, <see cref="FromQuery"/>) so a view
@@ -99,13 +99,13 @@ public sealed record AuditFilter
     public IReadOnlyList<AuditChip> Chips(Func<string, string?> personName, string? recordName)
     {
         var chips = new List<AuditChip>();
-        if (Person is { } p) chips.Add(new("By: " + (personName(p) ?? p), this with { Person = null }));
+        if (Person is { } p) chips.Add(new("By: " + (personName(p) ?? p), this with { Person = null }, "who"));
         if (Kind is { } k)
         {
-            chips.Add(new("Kind: " + AuditKinds.Name(k), this with { Kind = null, Key = null }));
-            if (Key is { } key) chips.Add(new("Only: " + (recordName ?? key), this with { Key = null }));
+            chips.Add(new("Kind: " + AuditKinds.Name(k), this with { Kind = null, Key = null }, "kind"));
+            if (Key is { } key) chips.Add(new("Only: " + (recordName ?? key), this with { Key = null }, "key"));
         }
-        if (Action is { } a) chips.Add(new("Action: " + a.ToString().ToLowerInvariant(), this with { Action = null }));
+        if (Action is { } a) chips.Add(new("Action: " + a.ToString().ToLowerInvariant(), this with { Action = null }, "action"));
         if (From is not null || To is not null)
         {
             static string Long(DateOnly d) => d.ToString("d MMM yyyy", CultureInfo.InvariantCulture);
@@ -116,7 +116,7 @@ public sealed record AuditFilter
                 (null, { } t) => "Up to " + Long(t),
                 _ => "",
             };
-            chips.Add(new(label, this with { From = null, To = null }));
+            chips.Add(new(label, this with { From = null, To = null }, "from"));
         }
         return chips;
     }

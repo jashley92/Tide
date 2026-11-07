@@ -113,17 +113,22 @@ public partial class ListPagesTests(ListsApp app) : IClassFixture<ListsApp>
     public async Task Articles_OtherFilters_ShowAsChips_EachLinkingToTheListWithoutIt()
     {
         var html = await Page("/articles?q=lure&tactic=TA0001&from=2026-10-01&to=2026-10-31&tag=zzqx");
-        html.Should().Contain("role=\"group\" aria-label=\"Filters in force\"");
-        html.Should().Contain("Oct 2026<a href=\"articles?q=lure&tag=zzqx&tactic=TA0001\" class=\"tide-chip-remove\" aria-label=\"Remove the filter Oct 2026\"");
-        html.Should().Contain("Tactic: Initial Access<a href=\"articles?q=lure&from=2026-10-01&to=2026-10-31&tag=zzqx\"");
-        html.Should().Contain("Tag: zzqx<a href=\"articles?q=lure&from=2026-10-01&to=2026-10-31&tactic=TA0001\"", "a key no tag has is shown as it is");
-        html.Should().Contain("<a href=\"articles?q=lure\" class=\"small tide-filter-clear\">Clear filters</a>", "the words stay");
+        html.Should().Contain(">Oct 2026</button>").And.Contain("<a href=\"articles?q=lure&tag=zzqx&tactic=TA0001\" class=\"tide-chip-remove\" aria-label=\"Remove filter Oct 2026\"");
+        html.Should().Contain("<a href=\"articles?q=lure&from=2026-10-01&to=2026-10-31&tag=zzqx\" class=\"tide-chip-remove\" aria-label=\"Remove filter Tactic: Initial Access\"");
+        html.Should().Contain("<a href=\"articles?q=lure&from=2026-10-01&to=2026-10-31&tactic=TA0001\" class=\"tide-chip-remove\" aria-label=\"Remove filter Tag: zzqx\"",
+            "a key no tag has is shown as it is");
+        html.Should().Contain("<a href=\"articles?q=lure\" class=\"tide-filterbar-clear small\">Clear</a>", "the words stay");
         html.Should().Contain("value=\"lure\"", "the words are in the box");
         html.Should().Contain("No articles match ‘lure’");
         var none = await Page("/articles?tag=zzqx");
         none.Should().Contain("No articles match these filters").And.Contain("<a class=\"btn btn-outline-secondary btn-sm\" href=\"articles\">Clear filters</a>");
-        (await Page("/articles?q=Paging%20probe&status=draft")).Should().Contain($"1–50 of {ListsApp.Probes} matching articles").And.Contain("Status: Draft<a");
-        (await Page("/articles")).Should().NotContain("Filters in force").And.Contain("aria-controls=\"article-filters\"");
+        var draft = await Page("/articles?q=Paging%20probe&status=draft");
+        draft.Should().Contain($"1–50 of {ListsApp.Probes} matching articles").And.NotContain("Remove filter Status", "the Draft pill says it");
+        FilterBarHtml.Pressed(draft, "Draft").Should().BeTrue();
+        FilterBarHtml.Pressed(draft, "Ready").Should().BeFalse();
+        (await Page("/articles?q=Paging%20probe&status=presented")).Should().Contain("aria-label=\"Remove filter Status: Presented\"", "no pill says Presented");
+        var plain = await Page("/articles");
+        plain.Should().NotContain("tide-chip-remove").And.NotContain("tide-filterbar-clear").And.Contain("class=\"tide-filter-add\"");
     }
 
     [Fact]
@@ -141,22 +146,22 @@ public partial class ListPagesTests(ListsApp app) : IClassFixture<ListsApp>
             }
         }
 
-        // The Trends drill: a period and a tactic. The tactic is in the toolbar, chosen; More filters opens for the period.
+        // The Trends drill: a period and a tactic, each a chip in the filter bar.
         var drilled = await Page("/articles?q=Attack%20probe&from=2020-01-01&to=2100-12-31&tactic=TA0001");
-        drilled.Should().Contain("Attack probe").And.Contain("id=\"af-tactic\"").And.Contain("value=\"TA0001\"");
-        drilled.Should().Contain("aria-expanded=\"true\" aria-controls=\"article-filters\"").And.Contain("id=\"af-from\"");
+        drilled.Should().Contain("Attack probe").And.Contain(">Tactic: Initial Access</button>");
+        drilled.Should().Contain("aria-label=\"Remove filter Tactic: Initial Access\"").And.Contain("aria-label=\"Remove filter Jan 2020 – Dec 2100\"");
         drilled.Should().Contain("role=\"group\" aria-label=\"Matching techniques\"");
         drilled.Should().Contain("<span class=\"tide-chip tide-chip-technique\">T1190 Exploit Public-Facing Application</span>")
             .And.Contain("<span class=\"tide-chip tide-chip-technique\">T1566.001 Spearphishing Attachment</span>");
         drilled.Should().NotContain("T1059 Command and Scripting Interpreter", "Execution isn't the tactic asked for");
 
-        // A tactic alone needs no panel: it shows where it's set.
+        // A tactic alone: its chip.
         var tactic = await Page("/articles?q=Attack%20probe&tactic=TA0002");
-        tactic.Should().Contain("aria-expanded=\"false\" aria-controls=\"article-filters\"").And.Contain("value=\"TA0002\"");
+        tactic.Should().Contain(">Tactic: Execution</button>");
         tactic.Should().Contain("T1059 Command and Scripting Interpreter").And.NotContain("T1190 Exploit");
 
         var technique = await Page("/articles?q=Attack%20probe&technique=T1566&withsubs=true");
-        technique.Should().Contain("aria-expanded=\"true\"").And.Contain("T1566.001 Spearphishing Attachment").And.NotContain("T1190 Exploit");
+        technique.Should().Contain(">Technique: T1566 Phishing and sub-techniques</button>").And.Contain("T1566.001 Spearphishing Attachment").And.NotContain("T1190 Exploit");
     }
 
     [Fact]
@@ -164,7 +169,7 @@ public partial class ListPagesTests(ListsApp app) : IClassFixture<ListsApp>
     {
         var html = await Page("/articles");
         html.Should().NotContain("Matching techniques").And.NotContain("tide-chip-technique");
-        html.Should().Contain("aria-expanded=\"false\" aria-controls=\"article-filters\"", "nothing of More filters is in force");
+        html.Should().NotContain("tide-chip-remove", "no filter is in force");
         (await Page("/articles?technique=none")).Should().NotContain("Matching techniques", "no technique is no technique to show");
     }
 
@@ -191,7 +196,7 @@ public partial class ListPagesTests(ListsApp app) : IClassFixture<ListsApp>
         (await Page("/trends?p=2025-01&view=actions&line=actions:raised&at=2025-01")).Should().NotContain("in Articles</a>", "actions aren't articles");
 
         var list = await Page("/articles?from=2025-01-01&to=2025-01-31");
-        list.Should().Contain("Pivot probe").And.Contain("1 matching article").And.Contain("Jan 2025<a");
+        list.Should().Contain("Pivot probe").And.Contain("1 matching article").And.Contain(">Jan 2025</button>");
     }
 
     [Fact]

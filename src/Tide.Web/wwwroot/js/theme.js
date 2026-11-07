@@ -71,6 +71,23 @@ window.tideShortcuts = (function () {
     return { on: on, set: set, toggle: toggle, isLetter: isLetter, typing: typing, inMenu: inMenu };
 })();
 
+// Arrow keys, Home and End over a row or column of controls (a menu, a tablist, a toolbar), alike everywhere: the
+// control to move to from `current` for the key pressed, or null for another key. The arrows go round. `axis` says which
+// arrows count: 'x' (Left/Right), 'y' (Up/Down) or 'both'.
+window.tideRoving = function (items, current, e, axis) {
+    if (!items.length) return null;
+    const at = items.indexOf(current), x = axis !== 'y', y = axis !== 'x';
+    switch (e.key) {
+        case 'ArrowRight': return x ? items[(at + 1) % items.length] : null;
+        case 'ArrowDown': return y ? items[(at + 1) % items.length] : null;
+        case 'ArrowLeft': return x ? items[(at - 1 + items.length) % items.length] : null;
+        case 'ArrowUp': return y ? items[(at - 1 + items.length) % items.length] : null;
+        case 'Home': return items[0];
+        case 'End': return items[items.length - 1];
+        default: return null;
+    }
+};
+
 // Small choices remembered per browser, for .NET to read back (the hunt panel's last query language). A blocked or
 // private-mode store just forgets: get answers null.
 window.tidePrefs = (function () {

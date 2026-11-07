@@ -82,7 +82,7 @@ export const shots = [
       await page.waitForTimeout(500);
     },
     annotate: [
-      ['.tide-tabbar-page', 1, 'l'], ['.tide-filters', 2, 'l'], ['.tide-triage-row', 3, 'l'],
+      ['.tide-tabbar-page', 1, 'l'], ['.tide-filterbar', 2, 'l'], ['.tide-triage-row', 3, 'l'],
       ['.tide-triage-row .tide-cve', 4, 'tr'], ['.tide-triage-row button:has-text("Promote")', 5, 'l'], ['.tide-reading', 6, 'tr'],
     ] },
   { name: 'doc-article-editor', route: '/articles/{vpnArticle}', viewport: { width: 1440, height: 1300 },

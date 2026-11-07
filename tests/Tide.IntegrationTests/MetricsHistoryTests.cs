@@ -73,9 +73,9 @@ public class MetricsHistoryTests(TideApp app) : IClassFixture<TideApp>
         var head = Head(html);
 
         head.Should().NotContain(">Email triage<").And.Contain("<span>Cases</span>").And.Contain("<span>Vulnerabilities</span>");
-        var filter = html[html.IndexOf("tide-mh-filter", StringComparison.Ordinal)..html.IndexOf("tide-mh-scroll", StringComparison.Ordinal)];
+        var filter = html[html.IndexOf("tide-filterbar", StringComparison.Ordinal)..html.IndexOf("tide-mh-scroll", StringComparison.Ordinal)];
         filter.Should().Contain("Groups shown");
-        Pressed(filter, "All groups").Should().BeFalse();
+        filter.Should().Contain("tide-filterbar-clear", "Clear shows every group again");
         Pressed(filter, "Email triage").Should().BeFalse();
         Pressed(filter, "Cases").Should().BeTrue();
         Pressed(filter, "Vulnerabilities").Should().BeTrue();
@@ -90,8 +90,9 @@ public class MetricsHistoryTests(TideApp app) : IClassFixture<TideApp>
             await using var r = await ComponentHarness.RenderAsync<MetricsHistory>(app, path);
             var html = await r.HtmlOnce("<thead>");
             Head(html).Should().Contain("<span>Email triage</span>").And.Contain("<span>Cases</span>").And.Contain("<span>Vulnerabilities</span>");
-            var filter = html[html.IndexOf("tide-mh-filter", StringComparison.Ordinal)..];
-            Pressed(filter, "All groups").Should().BeTrue();
+            var filter = html[html.IndexOf("tide-filterbar", StringComparison.Ordinal)..];
+            Pressed(filter, "Cases").Should().BeFalse("no pill on is every group");
+            filter.Should().NotContain("tide-filterbar-clear");
         }
     }
 

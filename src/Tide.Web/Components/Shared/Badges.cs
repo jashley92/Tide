@@ -312,6 +312,12 @@ public static class Ui
         DateOnly.TryParseExact(text, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
             System.Globalization.DateTimeStyles.None, out day);
 
+    /// <summary>A day as a date box and the address hold it ("2026-10-01"); null for none.</summary>
+    public static string? IsoDay(DateOnly? d) => d is { } day ? IsoDay(day) : null;
+
+    /// <summary>A day from a date box or the address; null for none or anything else.</summary>
+    public static DateOnly? ParseDay(string? text) => TryParseDay(text, out var d) ? d : null;
+
     public static string IndicatorLabel(IndicatorType t) => Application.Indicators.IndicatorLabels.For(t);
 
     /// <summary>The indicator types an analyst picks from (the rest are for later imports).</summary>

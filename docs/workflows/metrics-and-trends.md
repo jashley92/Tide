@@ -163,7 +163,7 @@ semaphore), and one that loses a race with a typed value on the unique index ret
 |---|---|---|
 | Present mode | A slide per group, keyed `metrics:{group key}` so a follower lands on the same group: its numbers as tiles, the day's note, over the group's chart. A group whose every metric has a value of 0 gets no slide; the first metrics slide lists it in a line. | `MetricSlides`, `MetricCharts` |
 | The team email | A block at the top: each value, its change from the previous business day, and a sparkline of the last 20 business days. Never in the company-wide edition. | `MetricsService.GetDayAsync` (`SparkDays`) |
-| Metrics history (`/metrics`) | A table and chart over a range (up to three years), retired metrics included; the group filter is kept in the address (`?groups=`) and hides the days only hidden groups have. CSV at `/metrics/export.csv?from=&to=`, formulas neutralised. | `MetricsService.HistoryAsync`, `ToCsv`, `MetricHistoryColumns` |
+| Metrics history (`/metrics`) | A table and chart over a range (up to three years), retired metrics included; the group filter (a pill per group in the filter bar, Clear for every group) is kept in the address (`?groups=`) and hides the days only hidden groups have. CSV at `/metrics/export.csv?from=&to=`, formulas neutralised. | `MetricsService.HistoryAsync`, `ToCsv`, `MetricHistoryColumns` |
 | The API | `GET /api/v1/metrics` | [API.md](../API.md) |
 
 Missing days are gaps, never zeros. A group's trend chart plots its working days in the 30 days to the brief date, the

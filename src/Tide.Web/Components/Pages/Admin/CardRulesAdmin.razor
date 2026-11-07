@@ -12,7 +12,7 @@
 <div class="tide-page-head">
     <div>
         <h1 class="tide-admin-title">Card rules</h1>
-        <div class="tide-sub">An action matching all of a rule's conditions gets its label; the first matching rule sets its colour. Rules shown as filters appear as chips above the board and list.</div>
+        <div class="tide-sub">An action matching all of a rule's conditions gets its label; the first matching rule sets its colour. Rules shown as filters are offered under + Filter on the Actions page, with their counts.</div>
     </div>
     @if (_editing is null)
     {
@@ -94,7 +94,7 @@
             <div class="col-12 d-flex flex-wrap gap-3 mt-1">
                 <div class="form-check form-switch">
                     <input class="form-check-input" type="checkbox" id="cr-filter" @bind="_editing.ShowAsFilter" />
-                    <label class="form-check-label small" for="cr-filter">Show as a filter chip</label>
+                    <label class="form-check-label small" for="cr-filter">Offer as a filter</label>
                 </div>
                 <div class="form-check form-switch">
                     <input class="form-check-input" type="checkbox" id="cr-active" @bind="_editing.IsActive" />
@@ -182,7 +182,7 @@ else
 
     private async Task Delete(ActionCardRule r)
     {
-        if (!await _confirm.Ask($"Delete {r.Name}?", "Cards and rows lose its colour and label, and its filter chip goes.", "Delete rule")) return;
+        if (!await _confirm.Ask($"Delete {r.Name}?", "Cards and rows lose its colour and label, and it's no longer offered as a filter.", "Delete rule")) return;
         await Run(() => RuleSvc.DeleteAsync(r.Id));
     }
 

@@ -39,27 +39,20 @@
     </section>
 }
 
-<div class="tide-card">
-    <div class="row g-2 align-items-end">
-        <div class="col-md-6">
-            <label class="tide-field-label" for="sq-find">Find</label>
-            <input id="sq-find" type="search" class="form-control form-control-sm" placeholder="Name, description or query text" @bind="_words" @bind:event="oninput" @bind:after="Refilter" />
+@* The filter bar: the words, a pill per language (one at a time), and Show retired as the switch it was: it widens the
+   list rather than narrowing it, so it isn't a filter to clear. *@
+<FilterBar Pills="Pills" Filters="Defs" Active="@(_language.Length > 0 || !string.IsNullOrWhiteSpace(_words))" OnChanged="Refilter" OnClear="ClearFilters">
+    <Search>
+        <input id="sq-find" type="search" class="tide-maxw-md form-control form-control-sm" placeholder="Name, description or query text" aria-label="Find saved queries"
+               @bind="_words" @bind:event="oninput" @bind:after="Refilter" />
+    </Search>
+    <ChildContent>
+        <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" id="sq-retired" checked="@_showRetired" @onchange="ToggleRetired" />
+            <label class="form-check-label small" for="sq-retired">Show retired</label>
         </div>
-        <div class="col-md-4">
-            <label class="tide-field-label" for="sq-language">Language</label>
-            <select id="sq-language" class="form-select form-select-sm" @bind="_language" @bind:after="Refilter">
-                <option value="">All languages</option>
-                @foreach (var d in QueryDialects.All) { <option value="@d.Key">@d.Name</option> }
-            </select>
-        </div>
-        <div class="col-md-2">
-            <div class="form-check mb-1">
-                <input class="form-check-input" type="checkbox" id="sq-retired" checked="@_showRetired" @onchange="ToggleRetired" />
-                <label class="form-check-label small" for="sq-retired">Show retired</label>
-            </div>
-        </div>
-    </div>
-</div>
+    </ChildContent>
+</FilterBar>
 
 @if (_rows is null)
 {
@@ -202,8 +195,23 @@ else
 
     private string PageHref(int page) => Nav.GetUriWithQueryParameter("page", page == 1 ? null : page);
 
+    // A pill per language, by its short name: presets of the language filter, so one at a time.
+    internal static readonly IReadOnlyList<FilterPill> Pills = [.. QueryDialects.All.Select(d => new FilterPill(d.Key, PillName(d.Key), "language", [d.Key]))];
+
+    internal static string PillName(string key) => key == "fql" ? "Falcon" : key.ToUpperInvariant();
+
+    internal IReadOnlyList<FilterDef> Defs =>
+        [new("language", "Language", FilterKind.Single, v => _language = FilterValues.First(v) ?? "") { InMenu = false, Values = FilterValues.Of(_language) }];
+
+    // Clear: the words and the language; retired ones stay shown or hidden as chosen.
+    internal void ClearFilters()
+    {
+        (_words, _language) = (null, "");
+        Refilter();
+    }
+
     // A filter changed: the first page, and the address says so.
-    private void Refilter()
+    internal void Refilter()
     {
         _page = 1;
         Filter();

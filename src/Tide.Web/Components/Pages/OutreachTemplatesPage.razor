@@ -40,20 +40,19 @@
     </section>
 }
 
-<div class="tide-card">
-    <div class="row g-2 align-items-end">
-        <div class="col-md-10">
-            <label class="tide-field-label" for="ot-find">Find</label>
-            <input id="ot-find" type="search" class="form-control form-control-sm" placeholder="Name, description, subject or body" @bind="_words" @bind:event="oninput" @bind:after="Refilter" />
+@* The filter bar: the words, and Show retired as the switch it was, as on Saved queries. *@
+<FilterBar Active="@(!string.IsNullOrWhiteSpace(_words))" OnClear="ClearFilters">
+    <Search>
+        <input id="ot-find" type="search" class="tide-maxw-md form-control form-control-sm" placeholder="Name, description, subject or body" aria-label="Find templates"
+               @bind="_words" @bind:event="oninput" @bind:after="Refilter" />
+    </Search>
+    <ChildContent>
+        <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" id="ot-retired" checked="@_showRetired" @onchange="ToggleRetired" />
+            <label class="form-check-label small" for="ot-retired">Show retired</label>
         </div>
-        <div class="col-md-2">
-            <div class="form-check mb-1">
-                <input class="form-check-input" type="checkbox" id="ot-retired" checked="@_showRetired" @onchange="ToggleRetired" />
-                <label class="form-check-label small" for="ot-retired">Show retired</label>
-            </div>
-        </div>
-    </div>
-</div>
+    </ChildContent>
+</FilterBar>
 
 @if (_rows is null)
 {
@@ -181,6 +180,13 @@ else
     }
 
     private string PageHref(int page) => Nav.GetUriWithQueryParameter("page", page == 1 ? null : page);
+
+    // Clear: the words; retired ones stay shown or hidden as chosen.
+    internal void ClearFilters()
+    {
+        _words = null;
+        Refilter();
+    }
 
     // A filter changed: the first page, and the address says so.
     private void Refilter()

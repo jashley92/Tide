@@ -49,26 +49,15 @@
 else
 {
 <div class="tide-inbox-view">
-<div class="tide-filters">
-    <select class="tide-maxw-sm form-select form-select-sm" aria-label="Source" @bind="_sourceId" @bind:after="Refilter">
-        <option value="">All sources</option>
-        @foreach (var s in _sources) { <option value="@s.Id">@s.Name</option> }
-    </select>
-    <input class="tide-maxw-sm form-control form-control-sm" placeholder="Search titles and CVEs" aria-label="Search" @bind="_search" @bind:event="oninput" @bind:after="SearchChanged" />
-    <div class="form-check mb-0">
-        <input class="form-check-input" type="checkbox" id="since-last" @bind="_sinceLast" @bind:after="Refilter" disabled="@(_lastBriefAt is null)" />
-        <label class="form-check-label small" for="since-last">Since the last brief@(_lastBriefAt is { } at ? $" ({Ui.When(Clock, at)})" : "")</label>
-    </div>
-    @* What we'd act on first: items naming a CVE (or one on CISA's KEV list, as TIDE's CVE records say), or a product on Our stack. *@
-    <select class="tide-maxw-sm form-select form-select-sm w-auto" aria-label="CVEs" @bind="_cveFilter" @bind:after="Refilter">
-        <option value="@InboxCves.All">Any or no CVE</option>
-        <option value="@InboxCves.Any">Names a CVE</option>
-        <option value="@InboxCves.Kev">Names a KEV-listed CVE</option>
-    </select>
-    <div class="form-check mb-0">
-        <input class="form-check-input" type="checkbox" id="named-only" @bind="_named" @bind:after="Refilter" />
-        <label class="form-check-label small" for="named-only">Names what we run</label>
-    </div>
+@* The filter bar (FilterBar): the words, the pills, the source under + Filter. What we'd act on first: items naming a CVE
+   (or one on CISA's KEV list, as TIDE's CVE records say), or a product on Our stack. Names a CVE and KEV are one filter
+   (cve=), so they take turns. *@
+<FilterBar Pills="Pills" Filters="Defs" Active="Narrowed" OnChanged="Refilter" OnClear="ClearFilters"
+           Count="@(_loaded && _rows.Count > 0 ? CountText : null)">
+    <Search>
+        <input class="tide-maxw-sm form-control form-control-sm" placeholder="Search titles and CVEs" aria-label="Search" @bind="_search" @bind:event="oninput" @bind:after="SearchChanged" />
+    </Search>
+    <ChildContent>
     @if (_status is FeedItemStatus.New or FeedItemStatus.Shortlisted)
     {
         @* EP-81: newest first stays the default; "Likely used" is a choice this browser remembers. *@
@@ -83,10 +72,6 @@ else
     {
         <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="AskDismissAll">Dismiss all @_rows.Count shown…</button>
     }
-    @if (_loaded && _rows.Count > 0)
-    {
-        <span class="tide-muted small" role="status">@CountText</span>
-    }
     @* A colleague's change heard while a promote form or the attach picker is open waits, so the row being worked on
        doesn't move; it shows when the form closes, or now from here. *@
     @if (_waiting.Count > 0 && Deferring)
@@ -95,8 +80,12 @@ else
             <span class="tide-live-pill-dot" aria-hidden="true"></span> Updates waiting<span class="visually-hidden">: show them now</span>
         </button>
     }
-    <span class="tide-muted small ms-auto">@(_sources.Count == 0 ? "No sources yet: an administrator adds them under Administration > Sources." : "")</span>
-</div>
+    @if (_sources.Count == 0)
+    {
+        <span class="tide-muted small">No sources yet: an administrator adds them under Administration > Sources.</span>
+    }
+    </ChildContent>
+</FilterBar>
 
 @if (_status == FeedItemStatus.New && !_older && _missed.Count > 0 && !_missedHidden)
 {
@@ -565,6 +554,44 @@ else
     // A page of this tab, with its filters: the pager's links, and the address a filter change writes.
     private string PageHref(int page) => Address(_status, _sourceId, _search, _sinceLast, null, 0, page, _cveFilter, _named, _older && _status == FeedItemStatus.New);
 
+    // The filter bar's pills, each a preset of a filter: Names a CVE and KEV are both cve=, so they take turns. The
+    // source is under + Filter (a chip while one is chosen); its options are built as the sources are read.
+    internal IReadOnlyList<FilterPill> Pills =>
+    [
+        new("since", "Since last brief", "since", FilterValues.Of(true))
+        {
+            Disabled = _lastBriefAt is null, Title = _lastBriefAt is { } at ? $"Since the last brief ({Ui.When(Clock, at)})" : "No brief has been sent yet",
+        },
+        new("cve", "Names a CVE", "cve", [nameof(InboxCves.Any)]),
+        new("kev", "KEV", "cve", [nameof(InboxCves.Kev)]) { Title = "Names a CVE on CISA's Known Exploited Vulnerabilities list" },
+        new("named", "We run it", "named", FilterValues.Of(true)) { Title = "Names a product on Our stack" },
+    ];
+
+    private IReadOnlyList<FilterOption> _sourceOptions = [];
+
+    internal IReadOnlyList<FilterDef> Defs =>
+    [
+        new("source", "Source", FilterKind.Single, v => _sourceId = Guid.TryParse(FilterValues.First(v), out var id) && _sources.Any(s => s.Id == id) ? id : null)
+        {
+            Options = _sourceOptions, Values = FilterValues.Of(_sourceId?.ToString()),
+        },
+        new("since", "Since last brief", FilterKind.Single, v => _sinceLast = v.Count > 0 && _lastBriefAt is not null) { InMenu = false, Values = FilterValues.Of(_sinceLast) },
+        new("cve", "CVEs", FilterKind.Single, v => _cveFilter = FilterValues.Enum<InboxCves>(v) ?? InboxCves.All)
+        {
+            InMenu = false, Values = _cveFilter == InboxCves.All ? [] : [_cveFilter.ToString()],
+        },
+        new("named", "We run it", FilterKind.Single, v => _named = v.Count > 0) { InMenu = false, Values = FilterValues.Of(_named) },
+    ];
+
+    private bool Narrowed => _sourceId is not null || !string.IsNullOrWhiteSpace(_search) || _sinceLast || _cveFilter != InboxCves.All || _named;
+
+    // Clear: the words and every filter; the tab and the order stay.
+    internal Task ClearFilters()
+    {
+        (_sourceId, _search, _sinceLast, _cveFilter, _named) = (null, null, false, InboxCves.All, false);
+        return Refilter();
+    }
+
     /// <summary>A filter changed: its first page, and the address says so.</summary>
     internal async Task Refilter()
     {
@@ -976,6 +1003,7 @@ else
         if (read)
         {
             _sources = await Intake.SourcesAsync(includeRetired: true);
+            _sourceOptions = [.. _sources.Select(s => new FilterOption(s.Id.ToString(), s.Name))];
             _lastBriefAt = await Intake.LastBriefAtAsync();
         }
         if (string.Equals(TabParam, SourcesKey, StringComparison.OrdinalIgnoreCase)) _sourcesTab = true;
@@ -1016,6 +1044,7 @@ else
     // the first interactive draw is the prerendered page again.
     private void Adopt(Triage p)
     {
+        _sourceOptions = p._sourceOptions;
         (_sources, _lastBriefAt, _status, _sourcesTab, _sourceId, _search, _sinceLast) = (p._sources, p._lastBriefAt, p._status, p._sourcesTab, p._sourceId, p._search, p._sinceLast);
         (_rows, _lines, _missed, _counts, _cves, _polled) = (p._rows, p._lines, p._missed, p._counts, p._cves, p._polled);
         (_olderCount, _readAt, _selected) = (p._olderCount, p._readAt, p._selected);

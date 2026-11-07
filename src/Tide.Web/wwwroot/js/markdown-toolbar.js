@@ -499,7 +499,7 @@
         run(box, bar, btn.getAttribute('data-md'));
     });
 
-    // The toolbar is one Tab stop; arrow keys, Home and End move between its buttons.
+    // The toolbar is one Tab stop; arrow keys, Home and End move between its buttons (tideRoving, in theme.js).
     function rove(bar, to) {
         bar.querySelectorAll('button').forEach(function (b) { b.tabIndex = b === to ? 0 : -1; });
     }
@@ -507,11 +507,7 @@
         var btn = e.target.closest && e.target.closest('.tide-md-toolbar button');
         if (!btn || e.ctrlKey || e.metaKey || e.altKey) return;
         var bar = btn.closest('.tide-md-toolbar'), all = Array.prototype.slice.call(bar.querySelectorAll('button:not([disabled])'));
-        var i = all.indexOf(btn), to = null;
-        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') to = all[(i + 1) % all.length];
-        else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') to = all[(i - 1 + all.length) % all.length];
-        else if (e.key === 'Home') to = all[0];
-        else if (e.key === 'End') to = all[all.length - 1];
+        var to = root.tideRoving(all, btn, e, 'both');
         if (!to) return;
         e.preventDefault();
         rove(bar, to);

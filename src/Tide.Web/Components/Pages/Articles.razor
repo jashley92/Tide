@@ -61,100 +61,10 @@
                ServerSide="true" Total="_total" PageSize="PageSize" PageInAddress="true" Busy="_reading"
                Filtered="_filter.Narrowed" OnQuery="Query">
         <Toolbar>
-            <select class="tide-maxw-xs form-select form-select-sm" aria-label="Status" value="@(_filter.Status?.ToString() ?? "")" @onchange="SetStatus">
-                <option value="">Any status</option>
-                @foreach (var s in Enum.GetValues<ArticleStatus>())
-                {
-                    <option value="@s">@s</option>
-                }
-            </select>
-            @* The tactic is out here, beside the status: a list opened from a Trends tactic says so where it's seen. *@
-            <select id="af-tactic" class="tide-maxw-xs form-select form-select-sm" aria-label="ATT&CK tactic"
-                    value="@(_filter.Tactic is { } tactic ? AttackMatrix.TacticId(tactic) : "")" @onchange="SetTactic">
-                <option value="">Any ATT&amp;CK tactic</option>
-                @foreach (var t in AttackMatrix.Tactics)
-                {
-                    <option value="@AttackMatrix.TacticId(t)">@AttackMatrix.TacticName(t)</option>
-                }
-            </select>
-            <button type="button" class="btn btn-sm btn-outline-secondary" aria-expanded="@Ui.Aria(_showFilters)" aria-controls="article-filters"
-                    @onclick="ToggleFilters">
-                <span class="bi bi-funnel" aria-hidden="true"></span> More filters
-            </button>
+            @* The filter bar after the table's own search box: Draft and Ready as pills, a chip for each other filter (each a
+               link to the list without it) and + Filter for the rest. The filters are the address's, as before. *@
+            <FilterBar Pills="Pills" Filters="Defs" Chips="Chips" Active="_filter.Narrowed" ClearHref="@Href(_filter.Cleared())" />
         </Toolbar>
-        <Filters>
-            <fieldset id="article-filters" class="tide-article-filters" hidden="@(!_showFilters)">
-                <legend class="visually-hidden">More filters</legend>
-                @if (_showFilters)
-                {
-                    <div class="tide-article-filter">
-                        <label class="tide-field-label" for="af-from">Counted from</label>
-                        <input id="af-from" type="date" class="form-control form-control-sm" value="@Day(_filter.From)" @onchange="e => Go(_filter with { From = Date(e) })" aria-describedby="af-dates-help" />
-                    </div>
-                    <div class="tide-article-filter">
-                        <label class="tide-field-label" for="af-to">to</label>
-                        <input id="af-to" type="date" class="form-control form-control-sm" value="@Day(_filter.To)" @onchange="e => Go(_filter with { To = Date(e) })" aria-describedby="af-dates-help" />
-                    </div>
-                    <div class="tide-article-filter">
-                        <label class="tide-field-label" for="af-assess">Assessment</label>
-                        <select id="af-assess" class="form-select form-select-sm" value="@(_filter.Assessment?.ToString() ?? "")" @onchange="SetAssessment">
-                            <option value="">Any assessment</option>
-                            @foreach (var a in Enum.GetValues<ArticleAssessment>())
-                            {
-                                <option value="@a">@ArticleFilter.AssessmentName(a)</option>
-                            }
-                        </select>
-                    </div>
-                    <div class="tide-article-filter">
-                        <label class="tide-field-label" for="af-tag">Scorecard tag</label>
-                        <select id="af-tag" class="form-select form-select-sm" value="@TagValue" @onchange="SetTag">
-                            <option value="">Any tag</option>
-                            <option value="tag:@ArticleFilter.None">No scorecard tag</option>
-                            @foreach (var c in _categories)
-                            {
-                                <optgroup label="@c.Name">
-                                    <option value="category:@c.Key">Any in @c.Name</option>
-                                    @foreach (var t in c.Tags.OrderBy(t => t.SortOrder).ThenBy(t => t.Name))
-                                    {
-                                        <option value="tag:@t.Key">@t.Name</option>
-                                    }
-                                </optgroup>
-                            }
-                        </select>
-                    </div>
-                    <div class="tide-article-filter">
-                        <label class="tide-field-label" for="af-technique">Technique</label>
-                        <input id="af-technique" class="form-control form-control-sm tide-data" list="af-techniques" placeholder="T1566, or a name" autocomplete="off"
-                               value="@(_filter.Technique ?? "")" @onchange="SetTechnique" aria-describedby="af-technique-help" />
-                        <datalist id="af-techniques">
-                            <option value="@ArticleFilter.None">No technique</option>
-                            @foreach (var t in AttackCatalog.All)
-                            {
-                                <option value="@t.Id">@t.Name</option>
-                            }
-                        </datalist>
-                        <label class="form-check-label small mt-1 d-block">
-                            <input type="checkbox" class="form-check-input me-1" checked="@_filter.WithSubtechniques" disabled="@(!CanTakeSubs)"
-                                   @onchange="e => Go(_filter with { WithSubtechniques = e.Value is true })" /> and its sub-techniques
-                        </label>
-                    </div>
-                    <p class="small tide-muted tide-article-filter-help">
-                        <span id="af-dates-help">An article counts on the day it was first briefed, or the day it was written if it never went on a brief (drafts that never did are left out), as on Trends.</span>
-                        <span id="af-technique-help">With a tactic too, it's that technique under the tactic.</span>
-                    </p>
-                }
-            </fieldset>
-            @if (_chips.Count > 0)
-            {
-                <div class="tide-filter-chips" role="group" aria-label="Filters in force">
-                    @foreach (var c in _chips)
-                    {
-                        <span class="tide-chip">@c.Label<a href="@Href(c.Without)" class="tide-chip-remove" aria-label="Remove the filter @c.Label" title="Remove"><span class="bi bi-x-lg" aria-hidden="true"></span></a></span>
-                    }
-                    <a href="@Href(_filter.Cleared())" class="small tide-filter-clear">Clear filters</a>
-                </div>
-            }
-        </Filters>
         <Empty>
             @if (_filter.Narrowed)
             {
@@ -238,7 +148,6 @@
     private ArticleFilter? _loaded;
     private IReadOnlyList<FilterChip> _chips = [];
     private IReadOnlyList<ScorecardCategory> _categories = [];
-    private bool _showFilters, _filtersToggled;
     private static readonly TableSort Newest = new("written", true);
     private TableSort? _sort = Newest;
     private bool _showNew;
@@ -261,6 +170,7 @@
             StateHasChanged();
         });
         _categories = await Scorecard.ListAsync(includeRetired: true);
+        _tagOptions = TagOptions(_categories);
     }
 
     public void Dispose() => _live?.Dispose();
@@ -277,8 +187,6 @@
         };
         _filter = ArticleFilter.FromQuery(name => query.GetValueOrDefault(name));
         _chips = _filter.Chips(TagName, CategoryName);
-        // More filters opens on any of its own in force (a Trends link's period, say), until the user opens or closes it.
-        if (!_filtersToggled && PanelNarrowed) _showFilters = true;
         _page = TableView.PageFrom(PageParam);
         if (_filter != _loaded || _page != _loadedPage) await Load();
     }
@@ -287,55 +195,104 @@
 
     private string? CategoryName(string key) => _categories.FirstOrDefault(c => c.Key == key)?.Name;
 
-    private bool PanelNarrowed => _filter.From is not null || _filter.To is not null || _filter.Assessment is not null || _filter.Tag is not null
-                                  || _filter.Category is not null || _filter.Technique is not null;
+    // The pills: presets of the status filter, the statuses looked for most. It holds one value, so they take turns.
+    internal static readonly IReadOnlyList<FilterPill> Pills =
+    [
+        new("draft", "Draft", "status", [nameof(ArticleStatus.Draft)]),
+        new("ready", "Ready", "status", [nameof(ArticleStatus.Ready)]),
+    ];
 
-    private void ToggleFilters()
+    // The chips, as the filter words them (the dates as one period), each a link to the list without it.
+    internal IReadOnlyList<FilterChipView> Chips => [.. _chips.Select(c => new FilterChipView(c.Label, c.Key, Href(c.Without)))];
+
+    // The options that don't change: built once. The scorecard tags' when they're read.
+    private static readonly IReadOnlyList<FilterOption> StatusOptions = FilterOption.ForEnum<ArticleStatus>();
+    private static readonly IReadOnlyList<FilterOption> AssessmentOptions = FilterOption.ForEnum<ArticleAssessment>(ArticleFilter.AssessmentName);
+    private static readonly IReadOnlyList<FilterOption> TacticOptions = [.. AttackMatrix.Tactics.Select(t => new FilterOption(AttackMatrix.TacticId(t), AttackMatrix.TacticName(t)))];
+    private static readonly IReadOnlyList<FilterOption> SubtechniqueOptions = [new("true", "With its sub-techniques")];
+    private static readonly IReadOnlyList<FilterOption> TechniqueSuggestions =
+        [new(ArticleFilter.None, "No technique"), .. AttackCatalog.All.Select(t => new FilterOption(t.Id, t.Name))];
+    private IReadOnlyList<FilterOption> _tagOptions = [];
+
+    private const string DatesHint = "An article counts on the day it was first briefed, or the day it was written if it never went on a brief (drafts that never did are left out), as on Trends.";
+
+    // Every filter, under + Filter. Each sets the filter and goes to the list's address with it, at its first page. The
+    // tag filter picks a tag, a whole category ("Any in …"), or no tag; sub-techniques go with a technique that has them.
+    internal IReadOnlyList<FilterDef> Defs
     {
-        _filtersToggled = true;
-        _showFilters = !_showFilters;
+        get
+        {
+            var defs = new List<FilterDef>
+            {
+                new("status", "Status", FilterKind.Single, v => Go(_filter with { Status = FilterValues.Enum<ArticleStatus>(v) }))
+                {
+                    Options = StatusOptions, Values = FilterValues.Of(_filter.Status?.ToString()),
+                },
+                new("tactic", "ATT&CK tactic", FilterKind.Single, v => Go(_filter with { Tactic = ArticleFilter.ParseTactic(FilterValues.First(v)) }))
+                {
+                    Options = TacticOptions, Values = FilterValues.Of(_filter.Tactic is { } tactic ? AttackMatrix.TacticId(tactic) : null),
+                },
+                new("technique", "Technique", FilterKind.Text, SetTechnique)
+                {
+                    Values = FilterValues.Of(_filter.Technique), Placeholder = "T1566, or a name", Suggestions = TechniqueSuggestions,
+                    Hint = "With a tactic too, it's that technique under the tactic.",
+                },
+                new("assess", "Assessment", FilterKind.Single, v => Go(_filter with { Assessment = FilterValues.Enum<ArticleAssessment>(v) }))
+                {
+                    Options = AssessmentOptions, Values = FilterValues.Of(_filter.Assessment?.ToString()),
+                },
+                new("tag", "Scorecard tag", FilterKind.Single, SetTag) { Options = _tagOptions, Values = FilterValues.Of(TagValue) },
+                new("from", "Counted from", FilterKind.Text, v => Go(_filter with { From = Ui.ParseDay(FilterValues.First(v)) }))
+                {
+                    InputType = "date", Values = FilterValues.Of(Ui.IsoDay(_filter.From)), Hint = DatesHint,
+                },
+                new("to", "Counted to", FilterKind.Text, v => Go(_filter with { To = Ui.ParseDay(FilterValues.First(v)) }))
+                {
+                    InputType = "date", Values = FilterValues.Of(Ui.IsoDay(_filter.To)), Hint = DatesHint,
+                },
+            };
+            if (CanTakeSubs)
+                defs.Insert(3, new("withsubs", "Sub-techniques", FilterKind.Single, v => Go(_filter with { WithSubtechniques = v.Count > 0 }))
+                {
+                    Options = SubtechniqueOptions, Values = FilterValues.Of(_filter.WithSubtechniques),
+                });
+            return defs;
+        }
     }
 
-    private string TagValue => _filter.Tag is { } t ? "tag:" + t : _filter.Category is { } c ? "category:" + c : "";
+    private static IReadOnlyList<FilterOption> TagOptions(IEnumerable<ScorecardCategory> categories) =>
+    [
+        new("tag:" + ArticleFilter.None, "No scorecard tag"),
+        .. categories.SelectMany(c => new[] { new FilterOption("category:" + c.Key, "Any in " + c.Name, c.Name) }
+            .Concat(c.Tags.OrderBy(t => t.SortOrder).ThenBy(t => t.Name).Select(t => new FilterOption("tag:" + t.Key, t.Name, c.Name)))),
+    ];
+
+    private string? TagValue => _filter.Tag is { } t ? "tag:" + t : _filter.Category is { } c ? "category:" + c : null;
+
+    private void SetTag(IReadOnlyList<string> values)
+    {
+        var v = FilterValues.First(values);
+        Go(_filter with
+        {
+            Tag = v?.StartsWith("tag:", StringComparison.Ordinal) == true ? v[4..] : null,
+            Category = v?.StartsWith("category:", StringComparison.Ordinal) == true ? v[9..] : null,
+        });
+    }
+
+    // The box takes an id ("t1566", "T1566 Phishing"), or "none"; anything else is dropped, as the address would drop it.
+    private void SetTechnique(IReadOnlyList<string> values)
+    {
+        var typed = ArticleFilter.ParseTechnique(FilterValues.First(values)?.Split(' ', 2)[0]);
+        Go(_filter with { Technique = typed, WithSubtechniques = _filter.WithSubtechniques && typed is not null && typed != ArticleFilter.None && !typed.Contains('.') });
+    }
 
     // Sub-techniques go with a technique that has them: not "none", nor a sub-technique itself.
     private bool CanTakeSubs => _filter.Technique is { } t && t != ArticleFilter.None && !t.Contains('.');
 
-    private static string Day(DateOnly? d) => d is { } day ? Ui.IsoDay(day) : "";
-
-    private static DateOnly? Date(ChangeEventArgs e) =>
-        Ui.TryParseDay(e.Value?.ToString(), out var d) ? d : null;
-
-    // The list with this filter: a link's (a chip's remove, Clear filters), or where Go goes.
+    // The list with this filter: a link's (a chip's remove, Clear), or where Go goes.
     private string Href(ArticleFilter f) => Nav.GetUriWithQueryParameters("articles", f.ToQuery());
 
     private void Go(ArticleFilter f, bool replace = false) => Nav.NavigateTo(Href(f), replace: replace);
-
-    private void SetStatus(ChangeEventArgs e) =>
-        Go(_filter with { Status = Enum.TryParse<ArticleStatus>(e.Value?.ToString(), out var s) ? s : null });
-
-    private void SetAssessment(ChangeEventArgs e) =>
-        Go(_filter with { Assessment = Enum.TryParse<ArticleAssessment>(e.Value?.ToString(), out var a) ? a : null });
-
-    // One select picks a tag, a whole category ("Any in …"), or no tag.
-    private void SetTag(ChangeEventArgs e)
-    {
-        var v = e.Value?.ToString() ?? "";
-        Go(_filter with
-        {
-            Tag = v.StartsWith("tag:", StringComparison.Ordinal) ? v[4..] : null,
-            Category = v.StartsWith("category:", StringComparison.Ordinal) ? v[9..] : null,
-        });
-    }
-
-    private void SetTactic(ChangeEventArgs e) => Go(_filter with { Tactic = ArticleFilter.ParseTactic(e.Value?.ToString()) });
-
-    // The box takes an id ("t1566", "T1566 Phishing"), or "none"; anything else is dropped, as the address would drop it.
-    private void SetTechnique(ChangeEventArgs e)
-    {
-        var typed = ArticleFilter.FromQuery(name => name == "technique" ? e.Value?.ToString()?.Trim().Split(' ', 2)[0] : null).Technique;
-        Go(_filter with { Technique = typed, WithSubtechniques = _filter.WithSubtechniques && typed is not null && typed != ArticleFilter.None && !typed.Contains('.') });
-    }
 
     private async Task Load()
     {

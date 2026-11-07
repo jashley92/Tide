@@ -238,8 +238,10 @@ What triage does with it:
 ![The triage inbox with the reading pane open](../screenshots/doc-triage-reading.png)
 
 1. The tabs (New, Shortlisted, Promoted, Dismissed, Duplicates), each with its count.
-2. Filters: by source, by words in titles and CVEs, *Since the last brief*, CVEs (any, or KEV-listed only),
-   *Names what we run*, and the *Newest* / *Likely used* order.
+2. The filter bar (`FilterBar`): words in titles and CVEs, the pills *Since last brief* (`since=true`), *Names a CVE*
+   (`cve=any`), *KEV* (`cve=kev`) and *We run it* (`named=true`), the source under *+ Filter* (`source=`, a chip
+   while chosen), the *Newest* / *Likely used* order, and the count. *Names a CVE* and *KEV* are one filter, so they
+   take turns.
 3. The selected item: its source with its Admiralty grade, its TLP and its excerpt.
 4. CVE chips: the CVSS score, the EPSS percentage and, where it applies, KEV.
 5. The row's decisions: *Promote* (P), *Shortlist* (S), *Dismiss* (X) with a reason, *Attach to…* and *Add to what we run…*.
