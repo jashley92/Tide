@@ -210,8 +210,9 @@ failure and counts, not content.
   5. The relay is backed off: "The mail relay hasn't been answering; try again in N minute(s)." After three failures
      in two minutes (`OutboundCircuit`), sends fail fast for 1 minute, doubling to 10. Diagnostics shows the wait.
   6. A refusal: "refused the sign-in (SMTP 535)", "said to try again later (SMTP 4xx)", "refused the message".
-  7. `Email:PickupDirectory` set by mistake in production: messages go to `.eml` files, or fail with "The email pickup
-     folder (Email:PickupDirectory) can't be created or written to."
+  7. `Email:PickupDirectory` set by mistake in production, or a folder the app pool can't write to: messages go to
+     `.eml` files, or fail with "The email pickup folder (Email:PickupDirectory) can't be created or written to.", logged
+     as "The email pickup directory can't be written to". It's never backed off as a relay that isn't answering.
 - **Fix:** correct `Email:*` in `appsettings.Production.json`; it applies at the next send with no restart (the
   password, an environment variable, needs a recycle). Check the firewall to the relay, and that the relay lets TIDE
   send as `Email:From`. Send yourself a test copy from the brief's Send step.

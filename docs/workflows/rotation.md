@@ -87,13 +87,14 @@ the audit log) says which.
 | Undo | an administrator | `CancelAsync` on an Approved change | days still to come go back (below), status Cancelled | none |
 
 **Approved late.** If some days have passed when the partner approves, only the days still to come change hands; a past
-day stays with whoever the rota showed. A swap needs days to come on both sides, or it's refused ("One side of this
+day stays with whoever the rota showed. Today counts as passed once its meeting has been held (its brief presented, sent,
+or held and put back to ready): the brief already says who presented it. A swap needs days to come on both sides, or it's refused ("One side of this
 swap has passed"). A request whose days have all become holidays is refused too. Either way the partner is asked to
 decline and ask again.
 
 **Undo.** Each day the change still holds goes back to the latest other approved change that covers it (this one may
-have been layered on another), else the override is removed and the week's analyst presents. Past days stay. An
-approved change whose days have all passed can't be undone.
+have been layered on another), else the override is removed and the week's analyst presents. Past days stay, and so
+does today once its meeting has been held. An approved change whose days have all passed can't be undone.
 
 **One decision at a time.** Approve, decline, withdraw, undo and record-past-cover hold a static semaphore
 (`RotationService.Deciding`) so two decisions can't both read the calendar and both write it. That lock is per process
