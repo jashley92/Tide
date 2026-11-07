@@ -26,7 +26,7 @@
             <label class="form-check-label" for="show-retired">Show retired</label>
         </div>
         <button class="btn btn-outline-secondary" aria-expanded="@Ui.Aria(Starter is not null)" aria-controls="starter" @onclick="OpenStarter"><span class="bi bi-collection" aria-hidden="true"></span> Starter sources</button>
-        <button class="btn btn-primary" @onclick="() => _form = new SourceForm()"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add a source</button>
+        <button class="btn btn-primary" @onclick="() => Form = new SourceForm()"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add a source</button>
     </div>
 </div>
 
@@ -52,6 +52,7 @@
 {
     <div class="tide-card-form tide-card" data-submit-scope>
         <h2>@(_form.Id is null ? "New source" : "Edit source")</h2>
+        <ChangedElsewhere By="@_changedBy" What="source" OnReload="ReloadTheirs" />
         <div class="row g-2">
             <div class="col-md-5"><label class="tide-field-label" for="s-name">Name</label><input id="s-name" class="form-control form-control-sm" maxlength="100" @bind="_form.Name" /></div>
             <div class="col-md-3">
@@ -165,7 +166,7 @@
         </div>
         <div class="d-flex gap-2 mt-3">
             <button class="btn btn-primary btn-sm" disabled="@_busy" data-submit @onclick="Save">Save</button>
-            <button class="btn btn-outline-secondary btn-sm" @onclick="() => _form = null">Cancel</button>
+            <button class="btn btn-outline-secondary btn-sm" @onclick="() => Form = null">Cancel</button>
         </div>
     </div>
 }
@@ -216,7 +217,7 @@
                         </td>
                         <td class="text-end text-nowrap">
                             @if (s.Kind != SourceKind.Api) { <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Poll(s)">Poll now</button> }
-                            <button class="btn btn-outline-secondary btn-sm" @onclick="() => _form = SourceForm.From(s)">Edit</button>
+                            <button class="btn btn-outline-secondary btn-sm" @onclick="() => Form = SourceForm.From(s)">Edit</button>
                             <button class="btn btn-outline-secondary btn-sm" title="A source with no items is deleted; otherwise it's retired" aria-label="@(s.IsRetired ? "Bring back" : "Retire") @s.Name" @onclick="() => Retire(s.Name, s.IsRetired, () => Intake.SetSourceRetiredAsync(s.Id, !s.IsRetired))">@(s.IsRetired ? "Bring back" : "Retire")</button>
                         </td>
                     </tr>
@@ -536,6 +537,19 @@
     });
     private SourceForm? _form;
     private bool _showRetired, _busy;
+    private string? _changedBy;
+    internal SourceForm? Form { get => _form; set => (_form, _changedBy) = (value, null); }
+    internal string? ChangedBy => _changedBy;
+
+    // The banner's Reload, after a save refused as stale: the source as it is now (the list is read again by then), and
+    // what was typed goes.
+    internal async Task ReloadTheirs()
+    {
+        var id = _form?.Id;
+        await Load();
+        Form = (await Intake.SourcesAsync(includeRetired: true)).FirstOrDefault(s => s.Id == id) is { } now ? SourceForm.From(now) : null;
+        Toasts.Show(Form is null ? "That source no longer exists." : "Reloaded. Your unsaved changes were dropped.");
+    }
 
     // The starter list while it's open: the names ticked. The sources already here (by name or address, retired too)
     // show as added and can't be ticked.
@@ -627,13 +641,20 @@
 
     // A new source is polled straight away when polling is on (the poller would within the minute anyway), so its row
     // shows how that went instead of "Never" until the page is reloaded.
-    private Task Save() => Run(async () =>
+    internal Task Save() => Run(async () =>
     {
         if (_form!.Kind == SourceKind.CisaKev && string.IsNullOrWhiteSpace(_form.Url)) _form.Url = Cves.Options.KevUrl;
         var isNew = _form.Id is null;
         var pollNow = isNew && _form.Enabled && IntakeOptionsMonitor.CurrentValue.Enabled;
-        var id = await Intake.SaveSourceAsync(_form);
-        _form = null;
+        Guid id;
+        try { id = await Intake.SaveSourceAsync(_form); }
+        catch (Tide.Application.Articles.StaleEditException)
+        {
+            // Another administrator changed it since this form opened: the form stays to copy from, and Reload shows theirs.
+            _changedBy = "Someone";
+            throw;
+        }
+        (_form, _changedBy) = (null, null);
         if (!pollNow)
         {
             Toasts.Show("Source saved.");

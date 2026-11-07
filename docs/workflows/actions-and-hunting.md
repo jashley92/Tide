@@ -648,7 +648,9 @@ Anyone with `WorkActions` keeps them on **External teams** (`/teams/external`, l
 SLA): a name, what they do, a contact name and email, how to engage them (their ticket queue, say), and their
 reminders: on or off, how many business days before the due date (0 to 10, default 2; 0 is the due day), and while
 overdue every so many business days (1 to 20, default 3) or once. They can be retired like any team. Every change is
-audited. An action owned by an external team shows the team's contact and *Don't remind {team} about this one*.
+audited. An action owned by an external team shows the team's contact and *Don't remind {team} about this one*. The
+page follows the `teams` topic: a colleague's change re-reads the list, keeping what's typed in the add and edit
+forms; an edit of a team a colleague retired or removed closes and says so.
 
 **External reminders** (`ReminderKind.ExternalReminder`, `ReminderService.ExternalAsync`). At the reminder time on
 business days, when an administrator has *External team reminders* on, each external team with its reminders on and a

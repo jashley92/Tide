@@ -270,6 +270,7 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
             row.ArticleFetch = fetch;
             row.ArticleBodySelector = b.ArticleBodySelector;
             row.ArticleRemoveSelector = b.ArticleRemoveSelector;
+            row.EditVersion = Guid.NewGuid();   // a source form opened before the import can't save its old settings back
         }
     }
 

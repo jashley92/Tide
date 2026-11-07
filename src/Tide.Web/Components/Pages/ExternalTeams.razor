@@ -3,11 +3,15 @@
 @inject TeamService TeamSvc
 @inject ICurrentUser CurrentUser
 @inject ToastService Toasts
+@inject ChangeFeed Feed
+@inject ChangeOrigin Origin
+@implements IDisposable
 
 @* The teams tracked here that work outside TIDE (Team.IsExternal): their contact, how to engage them, and their reminder
    emails' cadence. Whoever works actions adds, edits and retires them (the internal teams stay the administrators', on
    Teams & SLA); everyone else who reads actions reads them. An administrator sets their active limits here too. Every
-   change is audited, as any team's is. *@
+   change is audited, as any team's is. A colleague's change re-reads the list in place; a form being typed in keeps
+   what's in it. *@
 
 <PageTitle>External teams · TIDE</PageTitle>
 
@@ -96,6 +100,36 @@
 
     protected override Task OnInitializedAsync() => Load();
 
+    // A colleague added, edited or retired a team: the list is read again. The add and edit forms are the page's own
+    // copies, so what's typed in them stays; a team being edited that's gone closes its form, and says so.
+    private LiveChanges? _live;
+
+    protected override void OnInitialized() =>
+        _live = new LiveChanges(Feed, Origin, c => c.Topic == ChangeFeed.Teams, InvokeAsync, OnChangedElsewhere);
+
+    public void Dispose() => _live?.Dispose();
+
+    internal async Task OnChangedElsewhere(IReadOnlyList<Change> heard)
+    {
+        if (_busy) return;   // a step is under way, and it reads theirs when it's done
+        var who = LiveChanges.Who(heard);
+        try
+        {
+            var before = _teams;
+            await Load();
+            if (_editing is { } id && !_teams.Any(t => t.Id == id) && before.Any(t => t.Id == id))
+            {
+                _editing = null;
+                Toasts.Show($"{who} retired or removed the team you were editing.");
+            }
+            else Toasts.Show($"{who} updated External teams.");
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        StateHasChanged();
+    }
+
+    internal Guid? Editing => _editing;
+
     private async Task Load() => _teams = (await TeamSvc.ListAsync(_showRetired)).Where(t => t.IsExternal).ToList();
 
     /// <summary>"2 business days before, then every 3 while overdue", or "Off".</summary>
@@ -136,7 +170,7 @@
         </div>
     };
 
-    private void Edit(Team t)
+    internal void Edit(Team t)
     {
         _editing = t.Id;
         _form = ExternalTeamForm.From(t);

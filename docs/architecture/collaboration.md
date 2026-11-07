@@ -58,7 +58,8 @@ Topics are published by `ChangeInterceptor.TopicsOf` for each added, modified or
 |---|---|
 | `Article` | `article:{id}`, `articles` |
 | `ArticleBullet`, `ArticleScreenshot`, `ArticleTag`, `ArticleTechnique`, `ArticleIndicator`, `ArticleLink`, `ArticleCve` | `article:{id}` |
-| `ArticleAdversary`, `ArticleProduct` | `article-tags:{id}` (not the article's topic: a tag doesn't move its edit version) |
+| `ArticleAdversary` | `article-tags:{id}` (not the article's topic: a tag doesn't move its edit version), `adversaries` |
+| `ArticleProduct` | `article-tags:{id}` |
 | `Brief` | `brief:{id}`, `brief-day:{yyyy-MM-dd}` |
 | `BriefItem`, `BriefSend`, `BriefCorrection` | `brief:{id}` |
 | `MeetingAttendee`, `MeetingNote` | `meeting:{briefId}` (not the brief's topic: a join or a note isn't an edit) |
@@ -69,6 +70,8 @@ Topics are published by `ChangeInterceptor.TopicsOf` for each added, modified or
 | `MetricValue` | `metrics-day:{yyyy-MM-dd}` |
 | `MetricDefinition`, `MetricGroup` | `metrics` |
 | `StackProduct` | `stack` |
+| `Adversary` | `adversaries` |
+| `Team`, `TeamMember` | `teams` |
 | `SavedQuery` | `saved-queries` |
 | `OutreachTemplate` | `outreach-templates` |
 | `Playbook`, `PlaybookStep` | `playbooks` |
@@ -136,7 +139,9 @@ sequenceDiagram
 `LiveChanges` (`src/Tide.Web/Services/Together.cs`) is one page's ear on the feed. The page gives it a filter
 (`wanted`: which topics it shows), a dispatcher (the component's `InvokeAsync`) and an apply callback. It skips its own
 circuit's changes (the page's own save already shows them), collects the rest, and 600 ms after the last one
-(`LiveChanges.Pause`) hands the page everything heard, on the page's circuit, so a burst is one reload.
+(`LiveChanges.Pause`) hands the page everything heard, on the page's circuit, so a burst is one reload. One reload
+runs at a time: a change heard while the page is still reading (a slow query) waits for that read to finish and is
+then handed over, so an older read can't finish last and leave the page behind.
 `LiveChanges.Who` turns the actors into "Robin", "Robin and Sam", or "Someone". Dispose it with the page. The pause
 runs on the `time` it's given (`TimeProvider.System` by default). Present mode passes the app's `TimeProvider`, so a
 test can hold its reloads (see [testing.md](../development/testing.md#the-integration-harness)).
@@ -155,6 +160,8 @@ What pages do with it:
 | Articles list | `articles` | re-reads the rows it shows, with its filters |
 | Rotation | `rotation` | re-reads, saying when a request now waits for you or yours was answered |
 | Stories, Our stack, Saved queries, Outreach templates, Playbooks | `stories`, `stack`, `saved-queries`, `outreach-templates`, `playbooks` | re-read; a product's edit form keeps what's typed and shows `ChangedElsewhere` when a colleague saved that product; a library's edit follows its card to the page it moved to, or keeps its form above the list when the card left it (`LibraryPage.OnChangedElsewhere`, `EditingOffPage`) |
+| Adversaries list and profile (`AdversariesPage`) | `adversaries` | re-read; a profile's edit form keeps what's typed and shows `ChangedElsewhere` with Reload when a colleague changed that profile (only a change to the one shown is told) |
+| External teams | `teams` | re-reads the list; the add and edit forms keep what's typed; an edit of a team that's gone closes, and says so |
 | We run and Threat actors cards (`TagCard`) | `article-tags:{id}` | re-read the tags |
 
 The rule across all of them: TIDE never reloads over a draft. A page with nothing unsaved re-reads in place and names
@@ -253,6 +260,10 @@ and `Adversary`.
 - A product's form on Our stack and an adversary profile's form carry the version they opened on. A merge into a
   profile, watching it and a MITRE import that adds its names move the profile's version, so a form opened before can't
   save them away.
+- A source's form (Sources) carries the version it opened on. Saving it, pausing the source from Source health,
+  retiring or bringing it back, and a configuration bundle that changes it move the version; a poll's bookkeeping
+  (written with `ExecuteUpdateAsync`) doesn't. A stale save is refused, and the form stays with `ChangedElsewhere`
+  and Reload.
 - Tags (`ArticleAdversary`, `ArticleProduct`) and meeting notes deliberately don't move the version, so they never make an
   open editor's save stale. Tagging, linking and merging profiles run in one serializable transaction each
   (`AdversaryService.Serialized`), so a tag added to a profile as it's merged waits for the merge and lands on the

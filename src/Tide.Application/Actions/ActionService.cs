@@ -832,7 +832,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         // A retired team is listed while it still has open actions (as on Team commitments): retiring one leaves its
         // actions on it, and they'd otherwise be on no team's card, overdue ones and all.
         var holding = rows.Where(r => !ActionItem.IsClosedStatus(r.Status)).Select(r => r.TeamId).ToHashSet();
-        var teams = (await db.Teams.AsNoTracking().OrderBy(t => t.SortOrder).ThenBy(t => t.Name).ToListAsync(ct))
+        var teams = (await db.Teams.AsNoTracking().ToListAsync(ct)).InOrder(t => t.SortOrder, t => t.Name)
             .Where(t => !t.IsRetired || holding.Contains(t.Id)).ToList();
         return teams.Select(t =>
         {

@@ -668,7 +668,7 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
 
     // The roster in its order (by name where two share a place).
     private static List<RotationMember> InOrder(IEnumerable<RotationMember> members) =>
-        members.OrderBy(m => m.SortOrder).ThenBy(m => m.DisplayName).ToList();
+        members.OrderBy(m => m.SortOrder).ThenBy(m => m.DisplayName).ThenBy(m => m.UserId, StringComparer.Ordinal).ToList();
 
     private static string Day(DateOnly d) => d.ToString("ddd MMM d", CultureInfo.InvariantCulture);
 

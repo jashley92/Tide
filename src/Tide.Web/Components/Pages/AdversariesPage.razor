@@ -9,11 +9,15 @@
 @inject NavigationManager Nav
 @inject ToastService Toasts
 @inject OrgClock Clock
+@inject ChangeFeed Feed
+@inject ChangeOrigin Origin
+@implements IDisposable
 
 @* Adversary profiles (EP-73): the threat actors and campaigns the team reports on, one profile for every name each goes
    by, built as Our stack is. A profile's page is its timeline (the articles tagged with it or naming it, and their
    actions), the ATT&CK techniques across them (a Navigator layer to download), and its indicators. Articles that name
-   it but aren't tagged are listed for an analyst to link; nothing is linked automatically. *@
+   it but aren't tagged are listed for an analyst to link; nothing is linked automatically. A colleague's change to a
+   profile, or to an article's tags, re-reads the page in place; the edit form keeps what's typed in it. *@
 
 <PageTitle>@(_detail?.Adversary.Name ?? "Adversaries") · TIDE</PageTitle>
 
@@ -161,6 +165,7 @@ else
                 <h2 id="adv-about-h">About it <TlpBadge Level="TlpLevel.Amber" /></h2>
                 @if (_canWrite && _form is { } f)
                 {
+                    <ChangedElsewhere By="@_changedBy" What="profile" OnReload="ReloadTheirs" />
                     <div class="row g-2">
                         <div class="col-md-6"><label class="tide-field-label" for="f-name">Name</label>
                             <input id="f-name" class="form-control form-control-sm" maxlength="100" @bind="f.Name" /></div>
@@ -242,27 +247,92 @@ else
     private static string HeatTitle(AdversaryTechnique t, Tide.Application.Detections.TechniqueRules? rules) =>
         $"{t.Id} {t.Name}: {t.Articles} article{(t.Articles == 1 ? "" : "s")}" + (rules is null ? "" : $"; {rules.Label} tagged");
 
+    // A colleague added, edited, watched, retired, merged or imported a profile, or tagged an article with one: re-read in
+    // place. The edit form keeps what's typed in it, and says who saved it meanwhile (saving it then is refused by the
+    // profile's edit version); one not touched takes their change.
+    private LiveChanges? _live;
+    private string? _changedBy;
+    internal string? ChangedBy => _changedBy;
+    internal AdversaryForm? Form => _form;
+    internal AdversaryDetail? Detail => _detail;
+
+    protected override void OnInitialized() =>
+        _live = new LiveChanges(Feed, Origin, c => c.Topic == ChangeFeed.Adversaries, InvokeAsync, OnChangedElsewhere);
+
+    public void Dispose() => _live?.Dispose();
+
+    internal async Task OnChangedElsewhere(IReadOnlyList<Change> heard)
+    {
+        if (_busy || !_loaded) return;   // a step is under way, and it reads theirs when it's done
+        var who = LiveChanges.Who(heard);
+        try
+        {
+            if (Id is { } id)
+            {
+                var before = _detail?.Adversary;
+                await Read(id);
+                var now = _detail?.Adversary;
+                if (now is null) _form = null;
+                else if (_form is null || before is null || Untouched(_form, before)) (_form, _changedBy) = (AdversaryForm.From(now), null);
+                else if (now.EditVersion != _form.EditVersion) _changedBy = who;
+                // The topic is every profile's: only a change to this one is told.
+                if (before is not null && (now is null || now.EditVersion != before.EditVersion || now.IsRetired != before.IsRetired))
+                    Toasts.Show($"{who} updated this profile.");
+            }
+            else
+            {
+                await ReadList();
+                Toasts.Show($"{who} updated Adversaries.");
+            }
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        StateHasChanged();
+    }
+
+    /// <summary>Whether the edit form still holds the profile as it was read (nothing typed in it).</summary>
+    internal static bool Untouched(AdversaryForm f, Adversary p) =>
+        Same(f.Name, p.Name) && f.Kind == p.Kind && Same(f.Aliases, p.Aliases) && Same(f.MitreId, p.MitreId) && Same(f.Motivation, p.Motivation)
+        && Same(f.Sectors, p.Sectors) && Same(f.Notes, p.Notes) && f.Watched == p.Watched;
+
+    private static bool Same(string? a, string? b) => string.Equals(a ?? "", b ?? "", StringComparison.Ordinal);
+
+    // The banner's Reload: their version, and what was typed goes.
+    internal async Task ReloadTheirs()
+    {
+        await Load();
+        Toasts.Show("Reloaded. Your unsaved changes were dropped.");
+    }
+
     private async Task Load()
     {
         try
         {
             if (Id is { } id)
             {
-                _detail = await Adversaries.GetAsync(id);
+                await Read(id);
                 _form = _detail is null ? null : AdversaryForm.From(_detail.Adversary);
-                // EP-79: each technique's rules, for analysts, once rules are imported.
-                _rules = _detail is { Techniques.Count: > 0 } d && CurrentUser.Has(Permission.WriteArticles)
-                    ? await Detections.ForTechniquesAsync(d.Techniques.Select(t => t.Id)) : null;
-                if (_canWrite) _others = (await Adversaries.ListAsync()).Where(r => r.Adversary.Id != id).OrderBy(r => r.Adversary.Name).ToList();
+                _changedBy = null;
             }
-            else
-            {
-                _list = await Adversaries.ListAsync(_showAll);
-                Shown = _showAll ? _list : _list.Where(r => r.Articles > 0 || r.Adversary.Watched).ToList();
-            }
+            else await ReadList();
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         _loaded = true;
+    }
+
+    // A profile, its techniques' rules and the profiles it could merge into; the form is the caller's.
+    private async Task Read(Guid id)
+    {
+        _detail = await Adversaries.GetAsync(id);
+        // EP-79: each technique's rules, for analysts, once rules are imported.
+        _rules = _detail is { Techniques.Count: > 0 } d && CurrentUser.Has(Permission.WriteArticles)
+            ? await Detections.ForTechniquesAsync(d.Techniques.Select(t => t.Id)) : null;
+        if (_canWrite) _others = (await Adversaries.ListAsync()).Where(r => r.Adversary.Id != id).OrderBy(r => r.Adversary.Name).ToList();
+    }
+
+    private async Task ReadList()
+    {
+        _list = await Adversaries.ListAsync(_showAll);
+        Shown = _showAll ? _list : _list.Where(r => r.Articles > 0 || r.Adversary.Watched).ToList();
     }
 
     // The list: the profiles reported on or watched, or (ticked) every one. DataTable filters, sorts and shows them 100 at a time.

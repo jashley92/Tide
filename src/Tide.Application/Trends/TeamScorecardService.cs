@@ -65,7 +65,7 @@ public sealed class TeamScorecardService(IAppDbContextFactory dbs, ICurrentUser 
         // Each late one's days, from its due date to its close, or to today while open (reopening clears the close).
         var late = (await due.WhereLate(today).Select(a => new { a.TeamId, a.DueDate, a.ClosedDate }).ToListAsync(ct))
             .ToLookup(a => a.TeamId, a => ActionSla.Late(a.DueDate, a.ClosedDate ?? today));
-        var teams = await db.Teams.AsNoTracking().Where(t => !externalOnly || t.IsExternal).OrderBy(t => t.SortOrder).ThenBy(t => t.Name).ToListAsync(ct);
+        var teams = (await db.Teams.AsNoTracking().Where(t => !externalOnly || t.IsExternal).ToListAsync(ct)).InOrder(t => t.SortOrder, t => t.Name).ToList();
 
         var rows = new List<TeamScore>();
         foreach (var t in teams)

@@ -39,11 +39,10 @@ public sealed class ScorecardService(IAppDbContextFactory dbs, ICurrentUser user
         if (!user.Has(Domain.Enums.Permission.ReadTeamEdition)) throw new ForbiddenException("You don't have access to the scorecard tags.");
         await using var db = await dbs.CreateAsync(ct);
         var cats = await db.ScorecardCategories.AsNoTracking().Include(c => c.Tags)
-            .Where(c => includeRetired || !c.IsRetired)
-            .OrderBy(c => c.SortOrder).ThenBy(c => c.Name).ToListAsync(ct);
+            .Where(c => includeRetired || !c.IsRetired).ToListAsync(ct);
         foreach (var c in cats)
-            c.Tags = c.Tags.Where(t => includeRetired || !t.IsRetired).OrderBy(t => t.SortOrder).ThenBy(t => t.Name).ToList();
-        return cats;
+            c.Tags = c.Tags.Where(t => includeRetired || !t.IsRetired).InOrder(t => t.SortOrder, t => t.Name).ToList();
+        return cats.InOrder(c => c.SortOrder, c => c.Name).ToList();
     }
 
     /// <summary>Adds the starter set when there are no categories at all (first run).</summary>
@@ -136,7 +135,7 @@ public sealed class ScorecardService(IAppDbContextFactory dbs, ICurrentUser user
     {
         RequireAdmin();
         await using var db = await dbs.CreateAsync(ct);
-        var all = await db.ScorecardCategories.OrderBy(c => c.SortOrder).ThenBy(c => c.Name).ToListAsync(ct);
+        var all = (await db.ScorecardCategories.ToListAsync(ct)).InOrder(c => c.SortOrder, c => c.Name).ToList();
         AdminLists.Move(all, all.FindIndex(c => c.Id == id), by, (c, i) => c.SortOrder = i);
         await db.SaveChangesAsync(ct);
     }
@@ -146,7 +145,7 @@ public sealed class ScorecardService(IAppDbContextFactory dbs, ICurrentUser user
         RequireAdmin();
         await using var db = await dbs.CreateAsync(ct);
         var tag = await db.ScorecardTags.FirstOrDefaultAsync(t => t.Id == id, ct) ?? throw new KeyNotFoundException("That tag no longer exists.");
-        var siblings = await db.ScorecardTags.Where(t => t.CategoryId == tag.CategoryId).OrderBy(t => t.SortOrder).ThenBy(t => t.Name).ToListAsync(ct);
+        var siblings = (await db.ScorecardTags.Where(t => t.CategoryId == tag.CategoryId).ToListAsync(ct)).InOrder(t => t.SortOrder, t => t.Name).ToList();
         AdminLists.Move(siblings, siblings.FindIndex(t => t.Id == id), by, (t, i) => t.SortOrder = i);
         await db.SaveChangesAsync(ct);
     }
