@@ -27,8 +27,8 @@ mocking library.
 
 | Project | References | Size | Covers |
 |---|---|---|---|
-| `tests/Tide.UnitTests` | Domain, Application, Infrastructure | About 600 test methods | Pure logic, no database and no host. |
-| `tests/Tide.IntegrationTests` | Every `src` project, `Microsoft.AspNetCore.Mvc.Testing` | About 1,600 test methods | Services against SQLite with the real migrations; the whole app over HTTP; components rendered in the app's services; a few on real SQL Server. |
+| `tests/Tide.UnitTests` | Domain, Application, Infrastructure | About 1,450 tests (about 20 s) | Pure logic, no database and no host. |
+| `tests/Tide.IntegrationTests` | Every `src` project, `Microsoft.AspNetCore.Mvc.Testing` | About 2,350 tests (about 3 minutes on a developer machine) | Services against SQLite with the real migrations; the whole app over HTTP; components rendered in the app's services; a few on real SQL Server. |
 
 ### What the unit tests cover
 
@@ -110,8 +110,10 @@ flowchart TD
 
 ### `TestDb`: services on SQLite
 
-`tests/Tide.IntegrationTests/TestDb.cs` builds an in-memory SQLite database and applies the real SQLite migrations
-(`Database.Migrate()`), so a test runs against the schema production's development twin has. It implements
+`tests/Tide.IntegrationTests/TestDb.cs` builds an in-memory SQLite database with the real SQLite migrations applied,
+so a test runs against the schema production's development twin has. The migrations run once per test run, into a
+template database (`Database.Migrate()`), and each `TestDb` copies the template with SQLite's backup API: the same
+tables, migrations history and seeded rows, without replaying 40-odd migrations for every test. It implements
 `IAppDbContextFactory`, so services get a short-lived context per operation exactly as in the app. Every context
 carries:
 
