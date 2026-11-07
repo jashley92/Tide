@@ -137,7 +137,9 @@ sequenceDiagram
 (`wanted`: which topics it shows), a dispatcher (the component's `InvokeAsync`) and an apply callback. It skips its own
 circuit's changes (the page's own save already shows them), collects the rest, and 600 ms after the last one
 (`LiveChanges.Pause`) hands the page everything heard, on the page's circuit, so a burst is one reload.
-`LiveChanges.Who` turns the actors into "Robin", "Robin and Sam", or "Someone". Dispose it with the page.
+`LiveChanges.Who` turns the actors into "Robin", "Robin and Sam", or "Someone". Dispose it with the page. The pause
+runs on the `time` it's given (`TimeProvider.System` by default). Present mode passes the app's `TimeProvider`, so a
+test can hold its reloads (see [testing.md](../development/testing.md#the-integration-harness)).
 
 What pages do with it:
 

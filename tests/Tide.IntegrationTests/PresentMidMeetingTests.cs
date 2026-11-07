@@ -17,7 +17,13 @@ using static Tide.IntegrationTests.PresentHarness;
 
 namespace Tide.IntegrationTests;
 
-/// <summary>The app, with its live meetings on a clock a test moves on (a presenter's grace period, without the wait).</summary>
+/// <summary>
+/// The app, with its live meetings on a clock a test moves on (a presenter's grace period, without the wait), and its
+/// timers held: present mode hears a change elsewhere only when a test hands it over (<c>OnChangedElsewhere</c>), never
+/// on its own after the reload pause, so "the page hasn't heard yet" holds however slow the run is. The hold is the
+/// whole app's <see cref="TimeProvider"/> timers (its time of day is still the system's): anything else here that waits
+/// on one, such as CVE enrichment's pacing or the triage page's tick, would wait for good, so test those elsewhere.
+/// </summary>
 public sealed class MeetingClockApp : TideApp
 {
     public TestClock Clock { get; } = new(DateTimeOffset.UtcNow);
@@ -25,7 +31,11 @@ public sealed class MeetingClockApp : TideApp
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         base.ConfigureWebHost(builder);
-        builder.ConfigureTestServices(s => s.AddSingleton(_ => new LiveMeetings(Clock)));
+        builder.ConfigureTestServices(s =>
+        {
+            s.AddSingleton(_ => new LiveMeetings(Clock));
+            s.AddSingleton<TimeProvider>(new ManualClock());
+        });
     }
 }
 

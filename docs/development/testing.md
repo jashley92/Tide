@@ -158,6 +158,11 @@ who is signed in by overriding `Role`: `ReaderApp` (Reader), and in `Audit/Adver
 component over so a test can do what a button would and read the markup after. It uses ASP.NET Core's own
 `HtmlRenderer`, not a third-party component-testing library. `PresentHarness` wraps it for present mode.
 
+A page that listens for changes elsewhere (`LiveChanges`) reloads 600 ms after it hears one, on a real timer. A test
+that needs a page *not* to have heard something yet mustn't race that timer. `MeetingClockApp`, the fixture of the
+present-mode tests, gives the app a `ManualClock`, so present mode's reloads never fire on their own: the test hands
+the page a change with `OnChangedElsewhere` when it wants it heard.
+
 ### Conventions for tests
 
 - Name tests `Method_State_Expectation`.
