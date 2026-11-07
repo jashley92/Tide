@@ -274,12 +274,11 @@
             await Task.WhenAll(templates, products);
             (_templates, _products) = (await templates, await products);
             _productId = _products.Count > 0 ? _products[0].Id : null;
-            // One template: it's the one.
-            if (_templates.Count == 1)
-            {
-                _templateId = _templates[0].Id;
-                await Fill();
-            }
+            // One template: it's the one. Otherwise the one chosen last time (a follow-up after an email marked sent), if
+            // it's still offered: the picker shows it, and choosing it again isn't a change, so it's filled here.
+            if (_templates.Count == 1) _templateId = _templates[0].Id;
+            else if (_templateId is { } last && !_templates.Any(t => t.Id == last)) _templateId = null;
+            if (_templateId is not null) await Fill();
         }
         catch (Exception ex)
         {
@@ -344,14 +343,16 @@
     private bool _replyClose;
     private ActionOutcome _replyOutcome;
     private ActionFileUpload? _replyFile;
+    // The file already added on an earlier try that was then refused: a retry names it rather than leaving it unnamed.
+    private Guid? _replyFileId;
 
     internal async Task StartReply(OutreachMessage m)
     {
-        (_replying, _replyNotes, _replyFile, _replyOutcome) = (m, null, null, ActionOutcome.None);
+        (_replying, _replyNotes, _replyFile, _replyFileId, _replyOutcome) = (m, null, null, null, ActionOutcome.None);
         _replyClose = Action.IsOpen;
         await _replyDialog.Ask($"Record the reply from {m.To}", null, "Record the reply", danger: false);
         // Recorded or cancelled, the dialog is closed: a file picked and not used isn't held on to.
-        (_replying, _replyFile) = (null, null);
+        (_replying, _replyFile, _replyFileId) = (null, null, null);
     }
 
     /// <summary>The dialog's answers, for a test to set.</summary>
@@ -378,13 +379,13 @@
     internal Task<bool> RecordReply() => Run(async () =>
     {
         var m = _replying ?? throw new InvalidOperationException("That email is no longer on the action.");
-        Guid? fileId = null;
         if (_replyFile is { } upload)
         {
             var added = await FileSvc.AddAsync(Action.Id, [upload with { Description = Ui.Clip($"Reply from {m.To}", ActionFile.MaxDescription) }]);
-            fileId = added[0].FileId;
-            _replyFile = null;   // added: a retry doesn't add it twice
+            // Added: a retry doesn't add it twice, and still names it as the reply's.
+            (_replyFileId, _replyFile) = (added[0].FileId, null);
         }
+        var fileId = _replyFileId;
         var close = _replyClose && Action.IsOpen;
         await OutreachSvc.RecordReplyAsync(m.Id, _replyNotes, close, close ? _replyOutcome : ActionOutcome.None, fileId);
         Toasts.Show(close ? $"Reply recorded; {Ui.ActionLabel(Action.Number)} is done." : "Reply recorded.");

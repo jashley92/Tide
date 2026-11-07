@@ -199,7 +199,15 @@ public static partial class OutreachFill
             if (HuntQueryBuilder.KindNamed(m.Groups[2].Value) is null)
                 throw new ArgumentException($"{{{{{IndicatorsName}:{m.Groups[2].Value}}}}} isn't a kind of indicator TIDE knows. Use {{{{{IndicatorsName}}}}}, or one of: {string.Join(", ", Enum.GetValues<HuntValueKind>().Select(IndicatorsOf))}.");
         }
+        // Braces round a name that doesn't parse ("{{today: +2}}", "{{article_title}}") would go out in every email as
+        // typed: Fill leaves them, and they aren't a marker that holds the send back.
+        if (LooksLikePlaceholder().Match(Pattern().Replace(text ?? "", "")) is { Success: true } typo)
+            throw new ArgumentException($"{typo.Value} isn't written as a placeholder TIDE fills: no spaces round the colon, and a name of letters, dots and hyphens, as in {{{{article.title}}}} or {{{{{TodayName}:+2}}}}.");
     }
+
+    // Double braces round something with a letter in it, on one line: what a placeholder with a typo looks like.
+    [GeneratedRegex(@"\{\{[^{}\r\n]*[A-Za-z][^{}\r\n]*\}\}", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex LooksLikePlaceholder();
 
     /// <summary>What's left in the text for a placeholder with nothing to fill, or whose part the ceiling held back.</summary>
     public static string Marker(string placeholder, TlpLevel? above = null) =>
