@@ -503,11 +503,47 @@ checklist. Someone who works actions can add an external team in the dialog with
 details, due date, article, kind and priority. The team is never chosen for you (the form says *Choose a team*), and
 the assignee, ticket and checklist start blank. A due date after the parent's is warned about.
 
-**Rollup.** A parent's Parts card, its list row and its board card read "3 of 5 done · 1 overdue · next due Nov 20"
-(`ActionRollup.Text`; a part closed in any way counts as done). The Parts card links to *Open its N actions on the
-board*: `actions?view=open&layout=board&parent=12`. The list and board take `parent=` as a filter ("Part of A-12"),
+**Rollup.** A parent's lineage (below), its list row and its board card read "3 of 5 done · 1 overdue · next due Nov 20"
+(`ActionRollup.Text`; a part closed in any way counts as done). Lists and the board count it in one grouped query; the
+action's page counts the parts it has read already (`ActionRollup.Of`), by the same rule. Under the parent's lineage
+is *Open its N actions on the board*: `actions?view=open&layout=board&parent=12`. The list and board take `parent=` as a filter ("Part of A-12"),
 with the others. Closing a parent while parts are still open asks first, with *Close anyway (2 open)*; the parts stay
 open.
+
+**Lineage.** An action that has parts, or is one, shows a *Lineage* card (`ActionLineageFlow`, read by
+`ActionService.GetAsync` into `ActionDetail.Lineage`, from the action and its parts as the page reads them, with one
+more read for a part's siblings): left to right, the article it came from (its title and CVEs),
+the parent (number, title, team, status, "From {team} → {team}" when it was handed over, and the rollup), and each
+part (number, team, marked *external* when it is, status, and its due date, how late it is ("3 days late",
+`ActionSla.LateText`), or when it closed). Every step links to its page. Each part's state is worked out once, as the
+lineage is read (`LineageRules.StateOf`): done or closed, overdue, tracking, due soon (today or the next business day,
+by the organization's calendar), on track, in that order, so an overdue part being tracked shows as overdue. It's
+tinted in the SLA badge's tones (`LineageTones`: on track green, due soon amber, overdue red, closed blue, tracking
+purple and dashed), and says its state on a badge; a legend shows the same badges. On the parent's page the lineage is
+its Parts card: the parts aren't listed again, and *Split off a part for a team* and *Split to teams* sit under it. A
+part's page shows its parent and every part, itself marked "(this action)". An action raised without an article
+starts at the parent.
+
+**Remediation timeline.** Under the lineage, on the parent only, *Remediation timeline* (`RemediationTimelineCard`,
+`RemediationTimeline.Build`) puts the parts on one date scale, from the first part's creation (a split part's is the
+split) to the latest due date, close or today. Each part has a bar from its creation to the end of its due day; an
+open part past due runs on to today, and one closed late runs on to its close, hatched in the danger colour; the day
+each closed is marked, so a part done early shows its close inside its bar; bars take the part's tone, and Tracking
+bars are striped. Today, from the organization's clock (`OrgClock`), is a dashed line across each bar's track (not
+the words under it), and the summary under the timeline says the date. Under each bar its dates are written out ("Started Nov 2 ·
+due Nov 20 · closed Nov 18, 2 days early"). It isn't shown when no part has a due date.
+
+**Record an update.** Whoever may work an action has *Record an update* beside *Hand off*, for what its team said
+outside TIDE, most often an external team's emailed reply (`RecordUpdateDialog`, `ActionService.RecordUpdateAsync`).
+In one dialog: paste their reply (optional), choose the status (any of them; a closing one asks for the
+outcome and its note, as the status buttons do), set a new due date (optional, with why it moves) and add a short
+note. It saves once, as one history line: "Update from Network Engineering: patched the edge routers. Due: Fri Nov 20
+→ Fri Dec 4 (their change window moved). Their reply is kept as a comment. Status: Open → Tracking." The reply is kept
+as a comment by the person who recorded it, headed "**Reply from Network Engineering**, recorded by email" and quoting
+it line by line; no table was added for it. The move follows a move's rules: the team's active limit (asked why, or
+refused, in the dialog), Done's outcome, and closing a parent with parts open asks first. A move made by someone else
+since the dialog opened is refused, as a board move is. The save publishes on the action's `ChangeFeed` topic like any
+other change to it.
 
 **Tracking.** A status for work handed to others and followed: open, so its due date, SLA and the overdue counts still
 apply, but not active, so it doesn't count toward its team's limit. It has a board column between Blocked and Done.
@@ -652,6 +688,8 @@ Every one of these follows colleagues' saves live through the `actions` and `act
 | A saved query placeholder with no values | Refused when it's added. |
 | A hunt's result recorded twice at once | The second is refused as stale (the action's version moved). |
 | Recording a reply on a closed action with "close" ticked | Refused: record it without closing. |
+| Record an update with nothing in it | Refused: "Paste their reply, write a note, or change its status or due date first." A new due date without a reason is refused too. |
+| A part due before it was raised | Its timeline bar starts at its due date and runs past due from there. |
 | An outreach body still holding `[[…]]` | Mark sent is refused until it's filled or removed. |
 | An action's article deleted | Its hunts and outreach use the action's own indicators only. |
 | Reminder relay down | Recipients not reached aren't marked, so the next scan tries them; an action anyone got is marked whole. |
@@ -677,8 +715,9 @@ Every one of these follows colleagues' saves live through the `actions` and `act
 | Starter saved queries, templates and playbooks | `src/Tide.Application/Actions/StarterSavedQueries.cs`, `StarterOutreachTemplates.cs`, `StarterPlaybooks.cs`; added by `src/Tide.Infrastructure/Persistence/DatabaseInitializer.cs` (`SeedStarterLibrariesAsync`) |
 | Teams | `src/Tide.Application/Actions/TeamService.cs` (`ExternalTeamForm`) |
 | Hand-offs, splits, limits, rollup | `src/Tide.Application/Actions/Handoffs.cs` (`HandoffService`), `ActiveLimits.cs`, `ActionRollup.cs` |
+| Lineage, remediation timeline, recorded updates | `src/Tide.Application/Actions/ActionLineage.cs` (`ActionLineage`, `LineageRules`, `RemediationTimeline`), `TeamUpdates.cs` (`TeamUpdate`, `TeamUpdates`), `ActionService.RecordUpdateAsync` |
 | External reminders | `src/Tide.Application/Actions/ExternalReminders.cs` (`ExternalCadence`, `ReminderService.ExternalAsync`) |
 | Reminders | `src/Tide.Application/Actions/Reminders.cs` (`ReminderService`, `ReminderOptions`), `src/Tide.Web/Services/ReminderHostedService.cs` |
 | Notification choices | `src/Tide.Application/Preferences/` (`NotificationKinds`, `NotificationPreferenceService`, `RecipientResolver`, `UserPreferenceService`) |
 | Pages | `src/Tide.Web/Components/Pages/ActionPage.razor`, `ActionsBoard.razor`, `Workload.razor`, `ExternalTeams.razor`, `SavedQueriesPage.razor`, `OutreachTemplatesPage.razor`, `MyNotifications.razor` |
-| Panels | `src/Tide.Web/Components/Shared/HuntPanel.razor`, `OutreachPanel.razor`, `ActionFilesPanel.razor`, `ActionStatusControl.razor`, `ActionKanban.razor`, `SplitDialog.razor`, `OverLimitDialog.razor` |
+| Panels | `src/Tide.Web/Components/Shared/HuntPanel.razor`, `OutreachPanel.razor`, `ActionFilesPanel.razor`, `ActionStatusControl.razor`, `ActionKanban.razor`, `SplitDialog.razor`, `OverLimitDialog.razor`, `ActionLineageFlow.razor`, `RemediationTimelineCard.razor`, `RecordUpdateDialog.razor` |

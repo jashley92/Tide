@@ -349,5 +349,5 @@ public static class MetricCharts
 
     private static string Pt(double x, double y) => string.Create(Invariant, $"{x:0.#},{y:0.#}");
 
-    private static string Day(DateOnly d) => d.ToString("MMM d", Invariant);
+    private static string Day(DateOnly d) => Content.Words.MonthDay(d);
 }

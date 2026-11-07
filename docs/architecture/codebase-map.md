@@ -259,6 +259,7 @@ There's no DBA schema script yet (`deploy/README.md`, "Not yet here").
 | An action's SLA or due date | `ActionSla` | `SlaSettings`, `WorkingDays`, `ReminderService` |
 | Reminders and digests | `ReminderService` (`Actions/Reminders.cs`) | `NotificationKinds`, `ReminderHostedService`, `NotificationMarks` |
 | Hand-offs, splits and external teams | `HandoffService` (`Actions/Handoffs.cs`), `TeamService` | `HandoffNotices`, `ActionEmails`, `ActiveLimits`, `ActionRollup`, `ExternalCadence`, `ExternalTeams.razor`, `SplitDialog.razor`, `OverLimitDialog.razor` |
+| Lineage, timeline and recorded updates | `ActionService` (`GetAsync`, `RecordUpdateAsync`) | `ActionLineage`, `LineageRules`, `RemediationTimeline` (`Actions/ActionLineage.cs`), `TeamUpdates`, `ActionLineageFlow.razor`, `RemediationTimelineCard.razor`, `RecordUpdateDialog.razor` |
 | A hunt query dialect | `QueryDialects` / `HuntQueryBuilder` (`Actions/HuntQueries.cs`) | Golden files in `tests/Tide.UnitTests/Golden`. [ADR 0006](../decisions/0006-query-dialects-are-templates.md) |
 | Outreach emails | `OutreachFill`, `OutreachService`, `OutreachTemplateService` | `OutreachPanel.razor` |
 | Metrics and their import | `MetricsService`, `MetricMath`, `MetricImportService`, `MetricCsv` | `MetricDropFolder`, `MetricImportHostedService` |

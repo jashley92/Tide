@@ -2125,3 +2125,60 @@ button.tide-chip-chosen:focus-visible { outline: 2px solid var(--tide-focus-ring
 .tide-pre-line { white-space: pre-line; }
 .tide-split-row { border-bottom: 1px solid var(--tide-border); padding: .35rem 0; }
 .tide-split-add { border-top: 1px solid var(--tide-border); padding-top: .5rem; }
+
+/* Lineage and the remediation timeline (EP-88): layout only. A part's tint comes from its badge tone's colours
+   (--tide-badge-fg, --tide-badge-bg, from Badge.ToneClass), the SLA badge's tones, so both themes follow. Tracking is
+   dashed or striped as well, and every state is written out, so none is told by colour alone. */
+.tide-lin-flow { display: flex; align-items: center; gap: 2.25rem; list-style: none; margin: 0; padding: 0; }
+.tide-lin-step { position: relative; flex: 0 1 15rem; min-width: 0; }
+.tide-lin-step[data-node="parts"] { flex: 1 1 16rem; }
+/* The arrow between steps: a line and a chevron, drawn so nothing is read aloud. */
+.tide-lin-step + .tide-lin-step::before { content: ""; position: absolute; left: -1.85rem; top: 50%; width: 1.4rem; border-top: 2px solid var(--tide-border-strong); }
+.tide-lin-step + .tide-lin-step::after { content: ""; position: absolute; left: -.85rem; top: calc(50% - .3rem); width: .6rem; height: .6rem;
+    border-top: 2px solid var(--tide-border-strong); border-right: 2px solid var(--tide-border-strong); transform: rotate(45deg); }
+.tide-lin-parts { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: .45rem; }
+.tide-lin-node { display: flex; flex-direction: column; align-items: flex-start; gap: .1rem; padding: .45rem .6rem; border: 1px solid var(--tide-border);
+    border-left: 4px solid var(--tide-badge-fg, var(--tide-border-strong)); border-radius: var(--tide-radius-md); background: var(--tide-surface);
+    color: var(--tide-text); text-decoration: none; font-size: var(--tide-text-sm); height: 100%; }
+.tide-lin-node:hover { background: var(--tide-badge-bg, var(--tide-surface-2)); color: var(--tide-text); }
+.tide-lin-node.is-current { box-shadow: 0 0 0 2px var(--tide-accent); background: var(--tide-badge-bg, var(--tide-accent-soft)); }
+[data-state="Tracking"] > .tide-lin-node { border-left-style: dashed; }
+.tide-lin-kicker { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
+.tide-lin-title { font-weight: var(--tide-weight-semibold); overflow-wrap: anywhere; }
+.tide-lin-meta { color: var(--tide-text-muted); overflow-wrap: anywhere; }
+.tide-lin-here { font-weight: var(--tide-weight-semibold); color: var(--tide-accent-text); }
+.tide-lin-ext { margin-left: .35rem; padding: 0 .4rem; border: 1px solid var(--tide-border-strong); border-radius: var(--tide-radius-pill);
+    font-size: var(--tide-text-xs); font-weight: var(--tide-weight-regular); color: var(--tide-text-muted); }
+.tide-lin-legend { list-style: none; display: flex; flex-wrap: wrap; gap: .35rem .5rem; margin: .75rem 0 0; padding: 0; }
+
+.tide-remtl-grid { --remtl-label: 12rem; --remtl-end: 1.5rem; }
+.tide-remtl-scale { position: relative; height: 2.4rem; margin: 0 var(--remtl-end) 0 var(--remtl-label); font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
+.tide-remtl-tick, .tide-remtl-nowlabel { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+.tide-remtl-nowlabel { top: 1.15rem; font-weight: var(--tide-weight-semibold); color: var(--tide-accent-text); }
+.tide-remtl-rows { list-style: none; margin: 0; padding: 0; }
+.tide-remtl-row { display: grid; grid-template-columns: var(--remtl-label) 1fr; align-items: center; }
+.tide-remtl-label { grid-row: span 2; padding-right: .75rem; font-size: var(--tide-text-sm); overflow-wrap: anywhere; }
+.tide-remtl-track { grid-column: 2; position: relative; height: 1.6rem; margin-right: var(--remtl-end);
+    background: linear-gradient(var(--tide-border), var(--tide-border)) center / 100% 1px no-repeat; }
+/* Today, on each bar's track only, so the line never runs through the words under it. */
+.tide-remtl-track::after { content: ""; position: absolute; top: 0; bottom: 0; left: var(--at); border-left: 2px dashed var(--tide-accent); pointer-events: none; }
+.tide-remtl-bar, .tide-remtl-over { position: absolute; top: .35rem; height: .9rem; min-width: 2px; }
+.tide-remtl-bar { background: var(--tide-badge-fg); border-radius: var(--tide-radius-xs); }
+[data-state="Tracking"] .tide-remtl-bar { background: repeating-linear-gradient(135deg, var(--tide-badge-fg) 0 4px, var(--tide-badge-bg) 4px 8px); box-shadow: inset 0 0 0 1px var(--tide-badge-fg); }
+.tide-remtl-over { background: repeating-linear-gradient(45deg, var(--tide-threat) 0 3px, var(--tide-threat-soft) 3px 6px); box-shadow: inset 0 0 0 1px var(--tide-threat); }
+.tide-remtl-closed { position: absolute; top: .1rem; height: 1.4rem; border-left: 3px solid var(--tide-text); transform: translateX(-1.5px); }
+.tide-remtl-words { grid-column: 2; margin-bottom: .45rem; font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
+.tide-remtl-range { margin-top: .25rem; }
+@media (forced-colors: active) {
+    .tide-remtl-bar, .tide-remtl-over { forced-color-adjust: none; }
+}
+@media (max-width: 640.98px) {
+    .tide-lin-flow { flex-direction: column; align-items: stretch; gap: 1.75rem; }
+    .tide-lin-step, .tide-lin-step[data-node="parts"] { flex: none; }
+    .tide-lin-step + .tide-lin-step::before { left: 1.25rem; top: -1.5rem; width: 0; height: 1.25rem; border-top: 0; border-left: 2px solid var(--tide-border-strong); }
+    .tide-lin-step + .tide-lin-step::after { left: calc(1.25rem - .25rem); top: -.75rem; transform: rotate(135deg); }
+    .tide-lin-parts { grid-template-columns: 1fr; }
+    .tide-remtl-grid { --remtl-label: .75rem; --remtl-end: .75rem; }
+    .tide-remtl-row { grid-template-columns: var(--remtl-label) 1fr; }
+    .tide-remtl-label { grid-row: auto; grid-column: 1 / -1; }
+}

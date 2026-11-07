@@ -1,0 +1,78 @@
+@* Where a split action came from and went, left to right: its article, the parent, then each part, tinted by how it
+   stands (LineageNode.State, in the SLA badge's tones: LineageTones) with a legend. The picture is itself a nested list
+   of links, so a screen reader hears the same steps in the same order, each part's state in words; the arrows and tints
+   are decoration. Under 640px the steps stack. On a part's page the parent and its siblings are shown, with this part
+   marked as the one you're on. On the parent's page it is the Parts card too: the page puts its controls (the board
+   link, splitting off more) in ChildContent, under the legend. *@
+
+<section class="tide-card tide-lineage" aria-labelledby="lineage-title">
+    <h2 id="lineage-title">Lineage <span class="tide-count tide-muted fw-normal">(@Lineage.Parts.Count part@(Lineage.Parts.Count == 1 ? "" : "s"))</span></h2>
+    <ol class="tide-lin-flow" data-lineage>
+        @if (Lineage.Article is { } article)
+        {
+            <li class="tide-lin-step" data-node="article">
+                <span class="visually-hidden">Raised from the article: </span>
+                <a class="tide-lin-node" href="articles/@article.Id">
+                    <span class="tide-lin-kicker" aria-hidden="true">Article</span>
+                    <span class="tide-lin-title">@article.Title</span>
+                    @if (article.Cves.Count > 0)
+                    {
+                        <span class="tide-lin-meta tide-data">@string.Join(", ", article.Cves)</span>
+                    }
+                </a>
+            </li>
+        }
+        <li class="tide-lin-step" data-node="parent">
+            @{ var p = Lineage.Parent; }
+            <span class="visually-hidden">@(Lineage.Article is null ? "The action" : "Then the action"): </span>
+            <a class="tide-lin-node tide-lin-parent @(IsCurrent(p) ? "is-current" : "")" href="@Ui.ActionUrl(p.Number)" aria-current="@(IsCurrent(p) ? "page" : null)">
+                <span class="tide-lin-kicker"><span class="tide-action-num">@Ui.ActionLabel(p.Number)</span> @ActionService.StatusName(p.Status)</span>
+                <span class="tide-lin-title">@p.Title</span>
+                <span class="tide-lin-meta">@p.Team</span>
+                @if (LineageRules.HandoffText(p) is { } handed) { <span class="tide-lin-meta">@handed</span> }
+                <span class="tide-lin-meta tide-rollup">@Lineage.Rollup</span>
+            </a>
+        </li>
+        <li class="tide-lin-step" data-node="parts">
+            <span class="visually-hidden">Split into @Lineage.Parts.Count part@(Lineage.Parts.Count == 1 ? "" : "s"):</span>
+            <ul class="tide-lin-parts">
+                @foreach (var part in Lineage.Parts)
+                {
+                    var tone = LineageTones.Of(part.State);
+                    var current = IsCurrent(part);
+                    <li @key="part.Id" data-part="@part.Number" data-state="@part.State">
+                        <a class="tide-lin-node @Badge.ToneClass(tone) @(current ? "is-current" : "")" href="@Ui.ActionUrl(part.Number)" aria-current="@(current ? "page" : null)">
+                            <span class="tide-lin-kicker">
+                                <span class="tide-action-num">@Ui.ActionLabel(part.Number)</span>
+                                @ActionService.StatusName(part.Status)
+                                @if (current) { <span class="tide-lin-here">(this action)</span> }
+                            </span>
+                            <span class="tide-lin-title">@part.Team@if (part.External) { <span class="tide-lin-ext">external</span> }</span>
+                            <span class="tide-lin-meta">@LineageRules.DueText(part, Today)</span>
+                            <span><Badge Tone="tone">@LineageRules.StateName(part.State)</Badge></span>
+                        </a>
+                    </li>
+                }
+            </ul>
+        </li>
+    </ol>
+    <ul class="tide-lin-legend" aria-label="Colours">
+        @foreach (var s in LineageRules.Legend)
+        {
+            <li><Badge Tone="LineageTones.Of(s)">@LineageRules.StateName(s)</Badge></li>
+        }
+    </ul>
+    @ChildContent
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ActionLineage Lineage { get; set; } = default!;
+
+    /// <summary>The organization's today (OrgClock), for how late a part is.</summary>
+    [Parameter, EditorRequired] public DateOnly Today { get; set; }
+
+    /// <summary>What goes under the legend: the parent page's controls for its parts.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool IsCurrent(LineageNode n) => n.Id == Lineage.Current;
+}

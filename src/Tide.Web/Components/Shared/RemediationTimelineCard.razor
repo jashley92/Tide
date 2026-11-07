@@ -1,0 +1,63 @@
+@* A parent's parts on one scale (RemediationTimeline): a bar per part from the day it was created to its due date, in
+   its state's tone (LineageTones), the run past due in the danger colour, a mark on the day it closed, and today's
+   line across each bar (drawn by the track itself, from --at on the grid, so it never crosses the words). Each row says
+   its dates in words under the bar, so nothing is told by the picture alone; the bars themselves are hidden from
+   screen readers. Under 640px the part's name goes above its bar. Not drawn when no part has a due date. *@
+
+@if (_timeline is { } t)
+{
+    <section class="tide-card tide-remtl" aria-labelledby="remtl-title" data-today-at="@At(t.Today)">
+        <h2 id="remtl-title">Remediation timeline</h2>
+        <div class="tide-remtl-grid" style="--at: @At(t.Today)%">
+            <div class="tide-remtl-scale" aria-hidden="true">
+                @foreach (var tick in t.Ticks)
+                {
+                    <span class="tide-remtl-tick" style="left: @At(tick.At)%">@Words.MonthDay(tick.Day)</span>
+                }
+                <span class="tide-remtl-nowlabel" style="left: @At(t.Today)%">Today</span>
+            </div>
+            <ol class="tide-remtl-rows">
+                @foreach (var row in t.Rows)
+                {
+                    var p = row.Part;
+                    <li @key="p.Id" class="tide-remtl-row @Badge.ToneClass(LineageTones.Of(p.State))" data-part="@p.Number" data-state="@p.State">
+                        <a class="tide-remtl-label" href="@Ui.ActionUrl(p.Number)">
+                            <span class="tide-action-num">@Ui.ActionLabel(p.Number)</span> @p.Team
+                        </a>
+                        <div class="tide-remtl-track" aria-hidden="true">
+                            @if (row.Width > 0)
+                            {
+                                <span class="tide-remtl-bar" style="left: @At(row.Start)%; width: @At(row.Width)%"></span>
+                            }
+                            @if (row.Over > 0)
+                            {
+                                <span class="tide-remtl-over" style="left: @At(row.Start + row.Width)%; width: @At(row.Over)%"></span>
+                            }
+                            @if (row.ClosedAt is { } closed)
+                            {
+                                <span class="tide-remtl-closed" style="left: @At(closed)%"></span>
+                            }
+                        </div>
+                        <div class="tide-remtl-words">@row.Text<span class="visually-hidden">. @LineageRules.StateName(p.State).</span></div>
+                    </li>
+                }
+            </ol>
+        </div>
+        <p class="tide-remtl-range small tide-muted mb-0">From @Words.MonthDay(t.From) to @Words.MonthDay(t.To); today is @Words.MonthDay(Today).</p>
+    </section>
+}
+
+@code {
+    /// <summary>The parent's parts, from its lineage (each with its state worked out).</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<LineageNode> Parts { get; set; } = [];
+
+    /// <summary>The organization's today (OrgClock).</summary>
+    [Parameter, EditorRequired] public DateOnly Today { get; set; }
+
+    private RemediationTimeline? _timeline;
+
+    protected override void OnParametersSet() => _timeline = RemediationTimeline.Build(Parts, Today);
+
+    // Invariant, so a server in a comma-decimal culture still writes CSS a browser reads.
+    private static string At(double percent) => percent.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+}
