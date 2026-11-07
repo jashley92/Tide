@@ -97,7 +97,7 @@ public sealed class PlaybookService(IAppDbContextFactory dbs, ICurrentUser user)
 
     // The pickers' order, then name.
     private static IOrderedEnumerable<Playbook> Ordered(IEnumerable<Playbook> playbooks) =>
-        playbooks.OrderBy(p => p.SortOrder).ThenBy(p => p.Name, StringComparer.OrdinalIgnoreCase);
+        playbooks.OrderBy(p => p.SortOrder).ThenBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ThenBy(p => p.Id);
 
     /// <summary>Adds a playbook, or changes one; its id. A change begun on a copy someone has since changed is refused.</summary>
     public async Task<Guid> SaveAsync(PlaybookForm form, CancellationToken ct = default)
@@ -202,7 +202,7 @@ public sealed class CardRuleService(IAppDbContextFactory dbs, ICurrentUser user)
         if (!user.Has(Permission.ReadActions) && !user.Has(Permission.ReadTeamEdition) && !user.Has(Permission.WorkActions)) throw new ForbiddenException("You don't have access to actions.");
         await using var db = await dbs.CreateAsync(ct);
         return (await db.ActionCardRules.AsNoTracking().Where(r => includeInactive || r.IsActive).ToListAsync(ct))
-            .OrderBy(r => r.SortOrder).ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase).ToList();
+            .OrderBy(r => r.SortOrder).ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase).ThenBy(r => r.Id).ToList();
     }
 
     /// <summary>Adds (a new id) or changes a rule from <paramref name="form"/>, a detached copy. Returns its id.</summary>
@@ -256,7 +256,7 @@ public sealed class CardRuleService(IAppDbContextFactory dbs, ICurrentUser user)
     {
         RequireAdmin();
         await using var db = await dbs.CreateAsync(ct);
-        var all = (await db.ActionCardRules.ToListAsync(ct)).OrderBy(r => r.SortOrder).ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        var all = (await db.ActionCardRules.ToListAsync(ct)).OrderBy(r => r.SortOrder).ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase).ThenBy(r => r.Id).ToList();
         AdminLists.Swap(all, all.FindIndex(r => r.Id == id), by, (r, i) => r.SortOrder = i);
         await db.SaveChangesAsync(ct);
     }

@@ -1,3 +1,6 @@
+using Tide.Application.Content;
+using Tide.Domain.Common;
+
 namespace Tide.Application.Abstractions;
 
 /// <summary>
@@ -30,6 +33,15 @@ internal static class AdminLists
         for (var n = 2; await taken(candidate); n++) candidate = $"{key}-{n}";
         return candidate;
     }
+
+    /// <summary>
+    /// A list in its order: by place, then name, then id. A place is the highest so far plus one when an item is added, so
+    /// two added at once can share one; the name, and the id where the names are the same too, then put them in the same
+    /// order on every read, and a move numbers the list in the order it was shown. Sorted here, never in the database:
+    /// SQL Server and .NET order Guids differently, and a move must see the order the page showed.
+    /// </summary>
+    public static IOrderedEnumerable<T> InOrder<T>(this IEnumerable<T> items, Func<T, int> place, Func<T, string> name) where T : Entity =>
+        items.OrderBy(place).ThenByName(name).ThenBy(x => x.Id);
 
     /// <summary>
     /// Moves the item at <paramref name="at"/> by <paramref name="by"/> places, stopping at either end, and numbers the

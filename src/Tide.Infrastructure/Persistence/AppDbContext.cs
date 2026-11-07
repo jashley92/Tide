@@ -698,6 +698,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.LastError).HasMaxLength(500);
             e.Property(x => x.ETag).HasMaxLength(200);
             e.Property(x => x.LastModified).HasMaxLength(100);
+            e.Property(x => x.EditVersion).IsConcurrencyToken();
             Audited(e);
         });
 

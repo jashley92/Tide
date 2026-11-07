@@ -37,6 +37,13 @@ public sealed class ChangeFeed
     /// <summary>Our stack's products: one added, edited or retired (present mode's "We run" chips and product cards).</summary>
     public const string Stack = "stack";
 
+    /// <summary>The adversary profiles: one added, edited, watched, retired, merged or imported, or an article tagged with
+    /// one or untagged (the list's counts, a profile's timeline).</summary>
+    public const string Adversaries = "adversaries";
+
+    /// <summary>The teams: one added, edited, moved or retired, or a member added or removed (External teams).</summary>
+    public const string Teams = "teams";
+
     /// <summary>The team's saved hunt queries: one saved, edited, retired, restored or deleted.</summary>
     public const string SavedQueries = "saved-queries";
 

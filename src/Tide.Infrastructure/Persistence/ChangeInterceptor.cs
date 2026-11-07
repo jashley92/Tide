@@ -81,7 +81,7 @@ public sealed class ChangeInterceptor(ChangeFeed feed, ICurrentUser user, Change
         ArticleIndicator x => [ChangeFeed.Article(x.ArticleId)],
         ArticleLink x => [ChangeFeed.Article(x.ArticleId)],
         ArticleCve x => [ChangeFeed.Article(x.ArticleId)],
-        ArticleAdversary x => [ChangeFeed.ArticleTags(x.ArticleId)],     // only the We run and Threat actors pickers: not the editor's form
+        ArticleAdversary x => [ChangeFeed.ArticleTags(x.ArticleId), ChangeFeed.Adversaries],   // the pickers and the profiles: not the editor's form
         ArticleProduct x => [ChangeFeed.ArticleTags(x.ArticleId)],
         Brief b => [ChangeFeed.Brief(b.Id), ChangeFeed.BriefDay(b.BriefDate)],
         BriefItem x => [ChangeFeed.Brief(x.BriefId)],
@@ -104,6 +104,8 @@ public sealed class ChangeInterceptor(ChangeFeed feed, ICurrentUser user, Change
         MetricValue x => [ChangeFeed.MetricsDay(x.BriefDate)],
         MetricDefinition or MetricGroup => [ChangeFeed.Metrics],
         StackProduct => [ChangeFeed.Stack],
+        Adversary => [ChangeFeed.Adversaries],
+        Team or TeamMember => [ChangeFeed.Teams],
         SavedQuery => [ChangeFeed.SavedQueries],
         OutreachTemplate => [ChangeFeed.OutreachTemplates],
         Playbook or PlaybookStep => [ChangeFeed.Playbooks],   // an edit replaces the steps, and its version moves with them

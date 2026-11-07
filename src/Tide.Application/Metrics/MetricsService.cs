@@ -118,11 +118,10 @@ public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, 
     {
         await using var db = await dbs.CreateAsync(ct);
         var groups = await db.MetricGroups.AsNoTracking().Include(g => g.Metrics)
-            .Where(g => includeRetired || !g.IsRetired)
-            .OrderBy(g => g.SortOrder).ThenBy(g => g.Name).ToListAsync(ct);
+            .Where(g => includeRetired || !g.IsRetired).ToListAsync(ct);
         foreach (var g in groups)
-            g.Metrics = g.Metrics.Where(m => includeRetired || !m.IsRetired).OrderBy(m => m.SortOrder).ThenBy(m => m.Name).ToList();
-        return groups;
+            g.Metrics = g.Metrics.Where(m => includeRetired || !m.IsRetired).InOrder(m => m.SortOrder, m => m.Name).ToList();
+        return groups.InOrder(g => g.SortOrder, g => g.Name).ToList();
     }
 
     /// <summary>The metrics for <paramref name="day"/>: each value, its comparison, threshold level and sparkline. A Visitor
@@ -171,7 +170,8 @@ public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, 
         if (to.DayNumber - from.DayNumber > MaxRangeDays) throw new ArgumentException("Choose a range of three years or less.");
         await using var db = await dbs.CreateAsync(ct);
         var metrics = await db.MetricDefinitions.AsNoTracking().Include(m => m.Group).ToListAsync(ct);
-        var ordered = metrics.OrderBy(m => m.Group!.SortOrder).ThenBy(m => m.Group!.Name).ThenBy(m => m.SortOrder).ThenBy(m => m.Name).ToList();
+        var groupOrder = metrics.Select(m => m.Group!).DistinctBy(g => g.Id).InOrder(g => g.SortOrder, g => g.Name).Select((g, i) => (g.Id, i)).ToDictionary();
+        var ordered = metrics.OrderBy(m => groupOrder[m.GroupId]).ThenBy(m => m.SortOrder).ThenByName(m => m.Name).ThenBy(m => m.Id).ToList();
         var values = await db.MetricValues.AsNoTracking().Where(v => v.BriefDate >= from && v.BriefDate <= to).ToListAsync(ct);
         return new MetricHistory(from, to, ordered, values.OrderBy(v => v.BriefDate).ToList());
     }
@@ -331,7 +331,7 @@ public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, 
     {
         RequireAdmin();
         await using var db = await dbs.CreateAsync(ct);
-        var all = await db.MetricGroups.OrderBy(g => g.SortOrder).ThenBy(g => g.Name).ToListAsync(ct);
+        var all = (await db.MetricGroups.ToListAsync(ct)).InOrder(g => g.SortOrder, g => g.Name).ToList();
         AdminLists.Move(all, all.FindIndex(g => g.Id == id), by, (g, i) => g.SortOrder = i);
         await db.SaveChangesAsync(ct);
     }
@@ -389,7 +389,7 @@ public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, 
         RequireAdmin();
         await using var db = await dbs.CreateAsync(ct);
         var metric = await db.MetricDefinitions.FirstOrDefaultAsync(m => m.Id == id, ct) ?? throw new KeyNotFoundException("That metric no longer exists.");
-        var siblings = await db.MetricDefinitions.Where(m => m.GroupId == metric.GroupId).OrderBy(m => m.SortOrder).ThenBy(m => m.Name).ToListAsync(ct);
+        var siblings = (await db.MetricDefinitions.Where(m => m.GroupId == metric.GroupId).ToListAsync(ct)).InOrder(m => m.SortOrder, m => m.Name).ToList();
         AdminLists.Move(siblings, siblings.FindIndex(m => m.Id == id), by, (m, i) => m.SortOrder = i);
         await db.SaveChangesAsync(ct);
     }

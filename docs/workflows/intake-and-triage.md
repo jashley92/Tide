@@ -66,6 +66,7 @@ Each source carries what triage and drafting need from it:
 | `OnlyCategories`, `SkipCategories`, `OnlyTitleWords`, `SkipTitleWords` | The feed filter (`FeedFilter`). |
 | `ArticleFetch`, `ArticleBodySelector`, `ArticleRemoveSelector` | Whether and how its article pages may be fetched, by the reading pane and by drafting. |
 | `LastPolledAtUtc`, `LastSuccessAtUtc`, `LastError`, `ConsecutiveFailures`, `LastNewItems`, `LastFilteredOut`, `ETag`, `LastModified`, `SeenCategories` | Poll bookkeeping. Written without the audit trail. |
+| `EditVersion` | The edit form's guard: a form opened before another administrator's save, a pause from Source health, a retirement or a bundle import is refused on save ("Someone else changed … since you opened it"), and stays on the page with Reload. A poll doesn't move it. |
 
 Administrators manage sources at Administration › Sources (`/admin/sources`), including starter sources
 (`StarterSources`), and see their record at Source health (`/admin/source-health`). See [administration.md](administration.md).

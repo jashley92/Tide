@@ -160,6 +160,11 @@ showing a merged profile goes there too. A profile's form opened before a collea
 or a MITRE import that added its names is refused on save ("Someone else changed … since you opened it"), so the merged
 names aren't saved away.
 
+**Live.** The list and a profile's page follow the `adversaries` topic (a profile changed, or an article tagged with
+one or untagged), and re-read in place. A profile's form keeps what's typed in it, and one not touched takes a
+colleague's change; when a colleague changes the profile someone has typed into, the form says who
+(`ChangedElsewhere`, with Reload), and saving it is refused by the profile's `EditVersion`.
+
 **The earlier actors note.** `Article.Actors` was a free-text box before the picker. It's kept and no longer written.
 `AdversaryService.ForArticleAsync` splits it on commas and semicolons: a name a live profile goes by is offered as a
 one-click tag (`FromNote`); a name of a profile the article is already tagged with is covered by that tag; the rest

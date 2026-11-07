@@ -16,6 +16,11 @@ namespace Tide.Application.Intake;
 public sealed class SourceForm
 {
     public Guid? Id { get; set; }
+
+    /// <summary>The source's <see cref="Source.EditVersion"/> when the form opened; a save over another administrator's
+    /// change made since is refused. Null skips the check (a new source, or a caller that means to overwrite).</summary>
+    public Guid? EditVersion { get; set; }
+
     public string Name { get; set; } = "";
     public SourceKind Kind { get; set; } = SourceKind.Feed;
     public string Url { get; set; } = "";
@@ -42,7 +47,7 @@ public sealed class SourceForm
 
     public static SourceForm From(Source s) => new()
     {
-        Id = s.Id, Name = s.Name, Kind = s.Kind, Url = s.Url, DefaultTlp = s.DefaultTlp, Reliability = s.Reliability, LicenseNote = s.LicenseNote,
+        Id = s.Id, EditVersion = s.EditVersion, Name = s.Name, Kind = s.Kind, Url = s.Url, DefaultTlp = s.DefaultTlp, Reliability = s.Reliability, LicenseNote = s.LicenseNote,
         PollMinutes = s.PollMinutes, Enabled = s.Enabled,
         OnlyCategories = CategoryFilter.Show(s.OnlyCategories), SkipCategories = CategoryFilter.Show(s.SkipCategories),
         OnlyTitleWords = CategoryFilter.Show(s.OnlyTitleWords), SkipTitleWords = CategoryFilter.Show(s.SkipTitleWords),
@@ -191,7 +196,12 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         if (await db.Sources.AnyAsync(s => EF.Functions.Like(s.Name, exact, Search.SearchText.Escape) && s.Id != form.Id, ct))
             throw new ArgumentException($"There's already a source called {name}.");
         Source source;
-        if (form.Id is { } id) source = await SourceAsync(db, id, ct);
+        if (form.Id is { } id)
+        {
+            source = await SourceAsync(db, id, ct);
+            // Another administrator's save, pause or retirement since the form opened: saving would put back what they changed.
+            if (form.EditVersion is { } began && began != source.EditVersion) throw new StaleEditException(StaleSource(source));
+        }
         else db.Sources.Add(source = new Source());
         // The filter applies to feeds (the KEV catalog is a list of CVEs, not news). A new address, or a changed filter,
         // forgets the feed's validators, so the next poll reads it whole and takes in what the old filter left out.
@@ -215,9 +225,14 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         source.ArticleFetch = form.ArticleFetch;
         source.ArticleBodySelector = selector;
         source.ArticleRemoveSelector = remove;
-        await db.SaveChangesAsync(ct);
+        source.EditVersion = Guid.NewGuid();
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException) { throw new StaleEditException(StaleSource(source)); }
         return source.Id;
     }
+
+    private static string StaleSource(Source s) =>
+        $"Someone else changed {s.Name} since you opened it (a save, a pause or a retirement). Reload to see their changes, then make yours again.";
 
     /// <summary>Switches a source's polling on or off (Source health's "Pause polling"); its items stay.</summary>
     public async Task SetSourceEnabledAsync(Guid id, bool enabled, CancellationToken ct = default)
@@ -225,7 +240,9 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         RequireAdmin();
         await using var db = await dbs.CreateAsync(ct);
         var source = await SourceAsync(db, id, ct);
+        if (source.Enabled == enabled) return;
         source.Enabled = enabled;
+        source.EditVersion = Guid.NewGuid();   // the form carries "Poll it": a form opened before can't turn it back on
         await db.SaveChangesAsync(ct);
     }
 
@@ -240,6 +257,7 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         {
             source.IsRetired = retired;
             if (retired) source.Enabled = false;
+            source.EditVersion = Guid.NewGuid();
         }
         await db.SaveChangesAsync(ct);
     }

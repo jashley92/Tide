@@ -162,7 +162,8 @@ public sealed class PresenceCircuit(Presence presence, BoardDrags? drags = null,
 /// <summary>
 /// One page's ear on the <see cref="ChangeFeed"/>: keeps the changes it cares about, skips its own circuit's (its own
 /// save already shows), and after a short pause hands the page everything heard, on the page's circuit, so a burst of
-/// saves is one reload. Dispose with the page.
+/// saves is one reload. One reload at a time: a change heard while the page is still reading waits for that read and
+/// is then read, so a slow read from before it can't finish last and leave the page on the older state. Dispose with the page.
 /// </summary>
 public sealed class LiveChanges : IDisposable
 {
@@ -178,7 +179,7 @@ public sealed class LiveChanges : IDisposable
     private readonly ITimer _timer;
     private readonly Lock _gate = new();
     private List<Change> _heard = [];
-    private bool _disposed;
+    private bool _disposed, _reloading, _dueMeanwhile;
 
     /// <param name="feed">The app's change feed.</param>
     /// <param name="origin">The page's own circuit, whose changes it skips.</param>
@@ -229,8 +230,11 @@ public sealed class LiveChanges : IDisposable
         lock (_gate)
         {
             if (_disposed || _heard.Count == 0) return;
+            // A reload is still reading: this one starts when it's done, with everything heard by then.
+            if (_reloading) { _dueMeanwhile = true; return; }
             heard = _heard;
             _heard = [];
+            _reloading = true;
         }
         _ = Run(heard);
     }
@@ -239,6 +243,14 @@ public sealed class LiveChanges : IDisposable
     {
         try { await _dispatch(() => _apply(heard)); }
         catch (Exception) { /* the page closed as it reloaded; nothing to tell */ }
+        bool again;
+        lock (_gate)
+        {
+            _reloading = false;
+            again = _dueMeanwhile;
+            _dueMeanwhile = false;
+        }
+        if (again) Fire();
     }
 
     public void Dispose()

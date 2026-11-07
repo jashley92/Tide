@@ -233,6 +233,38 @@ public class LiveChangesTests
         fire.Should().NotThrow();
     }
 
+    // Two colleagues' changes a pause apart: the second reload mustn't start while the first is still reading, or a slow
+    // first read (from before the second change) finishes last and leaves the page on the older state.
+    [Fact]
+    public async Task ASecondReload_WaitsForTheFirst_AndThenReadsWhatCameMeanwhile()
+    {
+        var first = new TaskCompletionSource();
+        var calls = new List<(string Who, bool Finished)>();
+        var running = 0;
+        var overlapped = false;
+        using var live = new LiveChanges(_feed, _mine, _ => true, work => work(), async heard =>
+        {
+            var at = calls.Count;
+            calls.Add((heard[0].ActorName, false));
+            if (Interlocked.Increment(ref running) > 1) overlapped = true;
+            if (at == 0) await first.Task;   // the first read is slow
+            Interlocked.Decrement(ref running);
+            calls[at] = (calls[at].Who, true);
+        }, TimeSpan.FromSeconds(1), _time);
+
+        _feed.Publish(From("Robin"));
+        _time.Fire();                    // Robin's reload starts, and waits on its read
+        _feed.Publish(From("Sam"));
+        _time.Fire();                    // Sam's change is heard while it reads
+
+        calls.Should().ContainSingle("Sam's reload waits for Robin's").Which.Who.Should().Be("Robin");
+        first.SetResult();
+        for (var i = 0; i < 50 && calls.Count < 2; i++) await Task.Delay(20);
+
+        overlapped.Should().BeFalse();
+        calls.Should().Equal(("Robin", true), ("Sam", true));
+    }
+
     [Theory]
     [InlineData(new string[0], "Someone")]
     [InlineData(new[] { "" }, "Someone")]
@@ -338,7 +370,9 @@ public class ChangeInterceptorTests : IDisposable
         await _db.Stack().TagArticleAsync(article, product);
         await _db.Adversaries().UntagArticleAsync(article, adversary);
 
-        _heard.Select(c => c.Topic).Should().OnlyContain(t => t == ChangeFeed.ArticleTags(article)).And.NotBeEmpty();
+        // The article's tags topic, and the profiles' (the Adversaries list's counts, a profile's timeline): never the article's own.
+        _heard.Select(c => c.Topic).Should().OnlyContain(t => t == ChangeFeed.ArticleTags(article) || t == ChangeFeed.Adversaries)
+            .And.Contain(ChangeFeed.ArticleTags(article)).And.NotContain(ChangeFeed.Article(article));
         BriefPage.Follow(await _db.Briefs().GetAsync(day), day).Should().NotContain(ChangeFeed.ArticleTags(article));
     }
 
@@ -433,7 +467,8 @@ public class ChangeInterceptorTests : IDisposable
         var team = new Team { Name = "Ops" };
         ctx.Teams.Add(team);
         ctx.SaveChanges();
-        _heard.Should().BeEmpty("no open page shows a team");
+        _heard.Select(c => c.Topic).Should().Equal(ChangeFeed.Teams);
+        _heard.Clear();
 
         var action = new ActionItem { Title = "Patch", TeamId = team.Id, Number = 1 };
         ctx.Actions.Add(action);
@@ -456,7 +491,7 @@ public class ChangeInterceptorTests : IDisposable
         Of(new ArticleIndicator { ArticleId = a }).Should().Equal(ChangeFeed.Article(a));
         Of(new ArticleLink { ArticleId = a }).Should().Equal(ChangeFeed.Article(a));
         Of(new ArticleCve { ArticleId = a }).Should().Equal(ChangeFeed.Article(a));
-        Of(new ArticleAdversary { ArticleId = a }).Should().Equal(ChangeFeed.ArticleTags(a));
+        Of(new ArticleAdversary { ArticleId = a }).Should().Equal(ChangeFeed.ArticleTags(a), ChangeFeed.Adversaries);
         Of(new ArticleProduct { ArticleId = a }).Should().Equal(ChangeFeed.ArticleTags(a));
         Of(new BriefItem { BriefId = b }).Should().Equal(ChangeFeed.Brief(b));
         Of(new BriefSend { BriefId = b }).Should().Equal(ChangeFeed.Brief(b));
@@ -474,6 +509,9 @@ public class ChangeInterceptorTests : IDisposable
         Of(new MetricDefinition()).Should().Equal(ChangeFeed.Metrics);
         Of(new MetricGroup()).Should().Equal(ChangeFeed.Metrics);
         Of(new StackProduct()).Should().Equal(ChangeFeed.Stack);
+        Of(new Adversary()).Should().Equal(ChangeFeed.Adversaries);
+        Of(new Team()).Should().Equal(ChangeFeed.Teams);
+        Of(new TeamMember()).Should().Equal(ChangeFeed.Teams);
         Of(new AuditLogEntry()).Should().BeEmpty();
     }
 }

@@ -26,6 +26,10 @@ public class Source : AuditableEntity
     public bool Enabled { get; set; } = true;
     public bool IsRetired { get; set; }
 
+    /// <summary>Moved by each save of its form, and by pausing, retiring or bringing it back (the form carries "Poll it"),
+    /// so a form opened before another administrator's change can't save over it. A poll's bookkeeping doesn't move it.</summary>
+    public Guid EditVersion { get; set; } = Guid.NewGuid();
+
     public const int MaxBodySelector = 200;
 
     /// <summary>Whether an article's page from this source may be fetched for drafting, and by whom.</summary>

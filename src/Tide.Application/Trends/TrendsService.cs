@@ -223,8 +223,7 @@ public sealed class TrendsService(IAppDbContextFactory dbs, ICurrentUser user, O
             .Select(t => new { t.ArticleId, t.TagId }).ToListAsync(ct);
         var techniqueLinks = await db.ArticleTechniques.AsNoTracking().Where(t => counted.Contains(t.ArticleId))
             .Select(t => new { t.ArticleId, t.TechniqueId }).ToListAsync(ct);
-        var categories = await db.ScorecardCategories.AsNoTracking().Include(c => c.Tags)
-            .OrderBy(c => c.SortOrder).ThenBy(c => c.Name).ToListAsync(ct);
+        var categories = (await db.ScorecardCategories.AsNoTracking().Include(c => c.Tags).ToListAsync(ct)).InOrder(c => c.SortOrder, c => c.Name).ToList();
 
         // Each line's ids, split by period.
         IReadOnlyList<IReadOnlyList<Guid>> Split(IEnumerable<Guid> ids)
@@ -246,7 +245,7 @@ public sealed class TrendsService(IAppDbContextFactory dbs, ICurrentUser user, O
         var tagRows = new List<TrendRow>();
         foreach (var c in categories)
         {
-            var tags = c.Tags.OrderBy(t => t.SortOrder).ThenBy(t => t.Name)
+            var tags = c.Tags.InOrder(t => t.SortOrder, t => t.Name)
                 .Select(t => (Tag: t, Row: new TrendRow("tag:" + t.Key, t.Name, c.Name, Split(byTag[t.Id]))))
                 .Where(x => x.Row.Any || !(c.IsRetired || x.Tag.IsRetired)).Select(x => x.Row).ToList();
             if (tags.Count == 0) continue;
@@ -297,7 +296,7 @@ public sealed class TrendsService(IAppDbContextFactory dbs, ICurrentUser user, O
             .Select(a => new { a.Id, a.CreatedAtUtc, a.RaisedOn, a.ClosedDate, a.DueDate, a.Kind, a.TeamId, a.Status, a.Outcome, a.Priority }).ToListAsync(ct);
         var hunts = await db.HuntQueries.AsNoTracking().Where(h => h.Result != HuntResult.NotRun && h.RunAtUtc != null)
             .Select(h => new { h.ActionId, h.RunAtUtc, h.Result }).ToListAsync(ct);
-        var teams = await db.Teams.AsNoTracking().OrderBy(t => t.SortOrder).ThenBy(t => t.Name).ToListAsync(ct);
+        var teams = (await db.Teams.AsNoTracking().ToListAsync(ct)).InOrder(t => t.SortOrder, t => t.Name).ToList();
         // An action raised for a past day's brief counts on that day, like the brief's articles (ADR 0013).
         var facts = actions.Select(a => new ActionFact(a.Id, a.RaisedOn ?? LocalDay(a.CreatedAtUtc), a.ClosedDate, a.DueDate, a.Kind, a.TeamId, a.Status, a.Outcome, a.Priority)).ToList();
         var huntFacts = hunts.Select(h => (h.ActionId, Day: LocalDay(h.RunAtUtc!.Value), h.Result)).ToList();

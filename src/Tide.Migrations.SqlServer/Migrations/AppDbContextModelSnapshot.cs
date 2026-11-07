@@ -2882,6 +2882,10 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<Guid>("EditVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<bool>("Enabled")
                         .HasColumnType("bit");
 

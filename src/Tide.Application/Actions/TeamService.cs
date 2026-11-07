@@ -23,7 +23,7 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user)
         var teams = await db.Teams.AsNoTracking().Include(t => t.Members)
             .Where(t => includeRetired || !t.IsRetired).ToListAsync(ct);
         foreach (var t in teams) t.Members = t.Members.OrderByName(m => m.DisplayName).ToList();
-        return teams.OrderBy(t => t.SortOrder).ThenByName(t => t.Name).ToList();
+        return teams.InOrder(t => t.SortOrder, t => t.Name).ToList();
     }
 
     /// <summary>The ids of the teams <paramref name="userId"/> is on.</summary>
@@ -156,7 +156,7 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user)
     {
         RequireAdmin();
         await using var db = await dbs.CreateAsync(ct);
-        var all = await db.Teams.OrderBy(t => t.SortOrder).ThenBy(t => t.Name).ToListAsync(ct);
+        var all = (await db.Teams.ToListAsync(ct)).InOrder(t => t.SortOrder, t => t.Name).ToList();
         AdminLists.Move(all, all.FindIndex(t => t.Id == id), by, (t, i) => t.SortOrder = i);
         await db.SaveChangesAsync(ct);
     }
