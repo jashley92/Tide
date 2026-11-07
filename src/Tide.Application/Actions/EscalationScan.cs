@@ -120,9 +120,11 @@ public sealed partial class ReminderService
     // "{action}:{due}:{step}": once per action, due date and step.
     private static string StepKey(Guid action, DateOnly due, EscalationStep s) => $"{action:N}:{due:yyyy-MM-dd}:{s.Key}";
 
-    // Notes one email's outcome on the actions it listed; 1 when it went. Email turned off isn't a failure to retry.
-    private static int Went(EmailSendResult result, IEnumerable<Climb> climbs, string said)
+    // Notes one email's outcome on the actions it listed; 1 when it went (or may have). Email turned off isn't a failure
+    // to retry; nor is one the relay may have taken (a timeout, a dropped connection), which its history line says to check.
+    private int Went(EmailSendResult result, IEnumerable<Climb> climbs, string said)
     {
+        if (result.Status == EmailSendStatus.Unknown) _unsure++;
         foreach (var c in climbs)
         {
             switch (result.Status)
@@ -130,6 +132,10 @@ public sealed partial class ReminderService
                 case EmailSendStatus.Sent:
                     c.Reached = true;
                     c.Say(said);
+                    break;
+                case EmailSendStatus.Unknown:
+                    c.Reached = true;
+                    c.Say(said + ", though it may not have arrived (the relay didn't answer in time or dropped the connection): check before sending again");
                     break;
                 case EmailSendStatus.Disabled:
                     c.Say("not emailed: email is off");
@@ -139,7 +145,7 @@ public sealed partial class ReminderService
                     break;
             }
         }
-        return result.Status == EmailSendStatus.Sent ? 1 : 0;
+        return result.MayHaveGone ? 1 : 0;
     }
 
     private static List<ActionItem> InOrder(IEnumerable<Climb> climbs) =>
@@ -177,7 +183,7 @@ public sealed partial class ReminderService
         if (list.Count == 0) return 0;
         var result = await email.SendAsync(RequestsEmail(EmailTemplateCatalog.ExternalReminder, team, team.ContactEmail!, team.ContactName ?? team.Name,
             InOrder(list), today, replies), ct);
-        if (result.Status == EmailSendStatus.Sent)
+        if (result.MayHaveGone)
         {
             AddMarks(db, ContactMark, list.Select(c => ContactKey(c.Action.Id, today, team.ContactEmail!)));
             await db.SaveChangesAsync(CancellationToken.None);

@@ -164,7 +164,7 @@ stateDiagram-v2
     [*] --> Sending: frozen before the relay is asked
     Sending --> Sent: the relay took it
     Sending --> Failed: the relay refused it
-    Sending --> Unknown: an exception, the relay may have it
+    Sending --> Unknown: a timeout, a dropped connection or an exception: the relay may have it
     Sending --> Unknown: still Sending after 15 minutes, read as Unknown
     Unknown --> Sent: someone checked, it went
     Unknown --> Failed: someone checked, it didn't
@@ -176,8 +176,8 @@ stateDiagram-v2
 |---|---|---|---|---|
 | `Sending` | Frozen and with the relay. | No | No | No |
 | `Sent` | The relay took it (some addresses may have been refused; `Error` says how many). | Yes | Company-wide, unless slipped | Yes |
-| `Failed` | The relay didn't take it; `Error` says why, without addresses or message text. | No | No | No |
-| `Unknown` | It failed in a way that doesn't say whether the relay took it. The next confirmation warns it may have gone. | No | No | No |
+| `Failed` | The relay clearly didn't take it (it refused a recipient, the sign-in or the sender before any data, or couldn't be reached at all); `Error` says why, without addresses or message text. | No | No | No |
+| `Unknown` | The relay may have taken it: it didn't answer within `Email:SmtpTimeoutSeconds`, the connection dropped once the session began, or the send failed in a way that doesn't say. `Error` says to check whether it arrived before sending again; nothing sends it again by itself. The next confirmation warns it may have gone. | No | No | No |
 
 A send left `Sending` past 15 minutes (the server stopped, or its outcome couldn't be saved) is read as `Unknown`
 (`SendOutcome.Seen`) with `SendOutcome.StaleError`. **Settling.** Once someone has checked with a recipient,

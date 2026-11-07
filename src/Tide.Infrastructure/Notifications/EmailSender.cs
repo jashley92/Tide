@@ -12,7 +12,10 @@ namespace Tide.Infrastructure.Notifications;
 /// and the HTML part carries the screenshots as linked resources (<c>cid:</c>), which Outlook shows inline without
 /// fetching anything. A send is watched by the analyst who made it, so nothing is held and retried behind their back:
 /// a failure is returned for them to see. A relay that stops answering is backed off (<see cref="OutboundCircuit"/>) so
-/// the next try fails fast. The log gets counts and SMTP status codes, never addresses, subjects or the relay's reply.
+/// the next try fails fast. A send the relay may have taken (it didn't answer in time, or the connection dropped once the
+/// session began) is <see cref="EmailSendStatus.Unknown"/>, not a failure: sent again, it could reach everyone twice. A
+/// clear refusal (a recipient, the sign-in, the sender before any data, a relay that can't be reached, the pickup folder)
+/// is a failure. The log gets counts and SMTP status codes, never addresses, subjects or the relay's reply.
 /// </summary>
 public sealed class EmailSender(IOptionsMonitor<EmailOptions> options, ILogger<EmailSender> log, OutboundCircuit circuit) : IEmailSender
 {
@@ -20,6 +23,13 @@ public sealed class EmailSender(IOptionsMonitor<EmailOptions> options, ILogger<E
 
     /// <summary>What a send is told when the pickup folder can't be made or written to.</summary>
     internal const string PickupUnusable = "The email pickup folder (Email:PickupDirectory) can't be created or written to.";
+
+    /// <summary>What a send is told when the relay may have taken it: it isn't sent again by itself.</summary>
+    internal const string CheckFirst = "so whether it took the message isn't known. Check whether it arrived before sending it again.";
+
+    internal static string TimedOut(TimeSpan timeout) => $"The mail relay didn't answer within {timeout.TotalSeconds:0} seconds, {CheckFirst}";
+
+    internal const string Dropped = "The connection to the mail relay dropped partway through, " + CheckFirst;
 
     public static string Target(EmailOptions o) => string.IsNullOrWhiteSpace(o.PickupDirectory) ? $"smtp:{o.SmtpHost}:{o.SmtpPort}" : "pickup";
 
@@ -77,9 +87,10 @@ public sealed class EmailSender(IOptionsMonitor<EmailOptions> options, ILogger<E
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
+                // It may have the message and be slow to say so: unknown, not failed.
                 circuit.Failed(target);
-                log.LogError("The mail relay didn't accept a message within {Seconds} seconds.", o.Timeout.TotalSeconds);
-                return new EmailSendResult(EmailSendStatus.Failed, $"The mail relay didn't accept the message within {o.Timeout.TotalSeconds:0} seconds.");
+                log.LogError("The mail relay didn't answer within {Seconds} seconds; whether it took the message isn't known.", o.Timeout.TotalSeconds);
+                return new EmailSendResult(EmailSendStatus.Unknown, TimedOut(o.Timeout));
             }
             catch (OperationCanceledException)
             {
@@ -115,6 +126,12 @@ public sealed class EmailSender(IOptionsMonitor<EmailOptions> options, ILogger<E
             {
                 if (Unreachable(ex)) circuit.Failed(target);
                 else circuit.Succeeded(target);   // it answered (with a refusal), so it isn't backed off
+                if (Outcome(ex) is var unknown and not EmailSendStatus.Failed)
+                {
+                    log.LogError("Sending an email to {RecipientCount} recipient(s) didn't finish; whether the relay took it isn't known: {Failure}.",
+                        valid, Failure(ex));
+                    return new EmailSendResult(unknown, IsTimeout(ex) ? TimedOut(o.Timeout) : Dropped);
+                }
                 log.LogError("Failed to send an email to {RecipientCount} recipient(s): {Failure}.", valid, Failure(ex));
                 return new EmailSendResult(EmailSendStatus.Failed, Explain(ex));
             }
@@ -165,6 +182,34 @@ public sealed class EmailSender(IOptionsMonitor<EmailOptions> options, ILogger<E
             throw;
         }
     }
+
+    /// <summary>
+    /// What a send that threw may have done: <see cref="EmailSendStatus.Unknown"/> when the relay may have the message (it
+    /// didn't answer in time, or the connection dropped once it was made: SmtpClient doesn't say how far it got), else
+    /// <see cref="EmailSendStatus.Failed"/> (a refusal it answered with, a connection never made, a TLS handshake that
+    /// failed before anything was sent).
+    /// </summary>
+    internal static EmailSendStatus Outcome(Exception ex)
+    {
+        if (IsTimeout(ex)) return EmailSendStatus.Unknown;
+        if (!Unreachable(ex)) return EmailSendStatus.Failed;   // it answered, with a refusal
+        var chain = new List<Exception>();
+        for (var e = ex; e is not null; e = e.InnerException) chain.Add(e);
+        if (chain.OfType<System.Security.Authentication.AuthenticationException>().Any()) return EmailSendStatus.Failed;
+        if (chain.OfType<System.Net.Sockets.SocketException>().FirstOrDefault() is { } s)
+            return NeverConnected(s.SocketErrorCode) ? EmailSendStatus.Failed : EmailSendStatus.Unknown;
+        return chain.OfType<IOException>().Any() ? EmailSendStatus.Unknown : EmailSendStatus.Failed;
+    }
+
+    /// <summary>SmtpClient's own time limit (<see cref="SmtpClient.Timeout"/>, which applies to an async send too): a general
+    /// failure with no cause beneath it.</summary>
+    internal static bool IsTimeout(Exception ex) => ex is SmtpException { StatusCode: SmtpStatusCode.GeneralFailure, InnerException: null };
+
+    // The connection was never made, so nothing reached the relay.
+    private static bool NeverConnected(System.Net.Sockets.SocketError e) => e is System.Net.Sockets.SocketError.ConnectionRefused
+        or System.Net.Sockets.SocketError.HostNotFound or System.Net.Sockets.SocketError.HostUnreachable or System.Net.Sockets.SocketError.NetworkUnreachable
+        or System.Net.Sockets.SocketError.NetworkDown or System.Net.Sockets.SocketError.TryAgain or System.Net.Sockets.SocketError.NoData
+        or System.Net.Sockets.SocketError.AddressNotAvailable or System.Net.Sockets.SocketError.AddressFamilyNotSupported;
 
     /// <summary>The relay couldn't be reached, or dropped the session (as opposed to answering with a refusal).</summary>
     internal static bool Unreachable(Exception ex) => ex switch

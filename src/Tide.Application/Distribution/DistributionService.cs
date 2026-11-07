@@ -433,7 +433,7 @@ public sealed class DistributionService(
         BriefId = cut.Brief.Id, BriefDate = cut.Brief.BriefDate, Edition = cut.Edition, IsTest = isTest, Ceiling = cut.Ceiling,
         Marking = cut.Marking, Subject = subject, Recipients = string.Join("; ", to), RecipientCount = to.Count,
         SentAtUtc = DateTimeOffset.UtcNow, SentById = user.UserId, SentByName = user.DisplayName,
-        Status = result is null ? SendStatus.Sending : result.Status == EmailSendStatus.Sent ? SendStatus.Sent : SendStatus.Failed,
+        Status = result is null ? SendStatus.Sending : SendOutcome.Status(result),
         Error = result is null ? null : SendOutcome.Error(result),
     };
 

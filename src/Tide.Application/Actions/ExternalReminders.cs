@@ -119,7 +119,7 @@ public sealed partial class ReminderService
             var list = go.Select(x => x.Action).OrderBy(a => a.DueDate).ThenBy(a => a.Number).ToList();
             var result = await email.SendAsync(RequestsEmail(EmailTemplateCatalog.ExternalReminder, team, team.ContactEmail!, team.ContactName ?? team.Name,
                 list, today, replies), ct);
-            if (result.Status != EmailSendStatus.Sent) continue;
+            if (!Gone(result)) continue;
             sent++;
             AddMarks(db, ContactMark, list.Select(a => ContactKey(a.Id, today, team.ContactEmail!)));
             await MarkAsync(db, ExternalMark, go.Select(x => x.Key).ToList());

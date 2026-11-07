@@ -201,6 +201,7 @@ else
         {
             var result = await Templates.SendTestAsync(_id, _subject, _heading, _body);
             if (result.Status == EmailSendStatus.Failed) _error = $"The test didn't send. {result.Error}";
+            else if (result.Status == EmailSendStatus.Unknown) _error = $"The test may not have gone. {result.Error}";
             else if (result.Status == EmailSendStatus.Disabled) Toasts.Show("Email is turned off on this server, so nothing was sent.");
             else Toasts.Show($"Test sent to {_to}. The draft isn't saved.");
         }

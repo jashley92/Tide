@@ -32,7 +32,9 @@ any screenshot at or under the public ceiling, whether or not it had ever been p
   edition's, or any other move of the brief, runs every check once more rather than refusing.) Sending again on purpose is
   allowed: the confirmation says when and by whom the edition already went, and a send made after someone confirmed
   refuses theirs. A send that fails without saying whether the relay took it is logged as `Unknown`: it isn't
-  published, and the next confirmation warns that it may already have gone. Recording a send's outcome is tried
+  published, and the next confirmation warns that it may already have gone. A timeout, or a connection dropped once
+  the session began, is one of those (the relay may have accepted it), not a failure: nothing sends an `Unknown`
+  email again by itself, as that could reach everyone twice. Only a clear refusal is `Failed`. Recording a send's outcome is tried
   again if the database refuses it, so a send the relay took doesn't stay "sending".
 - **Readers get only what was published.** For someone without the team edition, `/files/{id}/inline` serves only an
   image frozen in a sent company-wide edition: never a live screenshot, a team send's image, or a test send's.

@@ -1466,7 +1466,7 @@ the stored values.
 | `ActionOutcome` | 0 **None**. 1 **NoHits**. 2 **HitsEscalated**: hits found and handed on (an incident case, the SOC). 3 **Remediated**. 4 **Blocked**. 5 **RiskAccepted**. 6 **NotAffected**. 7 **Answered**. 8 **Other**. |
 | `HuntResult` | 0 **NotRun**. 1 **NoHits**. 2 **Hits**. |
 | `ReviewStatus` (in `Entities/Review.cs`) | 0 **Asked**: waiting for the reviewer. 1 **Approved**. 2 **ChangesAsked**. 3 **Withdrawn**: replaced by a later request or taken back by the author. |
-| `SendStatus` | 0 **Sending**: frozen and handed to the relay, outcome not yet known (or the app stopped meanwhile). 1 **Sent**: the relay accepted it. 2 **Failed**: the relay refused it, and `Error` says why. 3 **Unknown**: the connection dropped mid-send. The send isn't published and doesn't mark the brief sent, but the next confirmation warns that it may have gone. |
+| `SendStatus` | 0 **Sending**: frozen and handed to the relay, outcome not yet known (or the app stopped meanwhile). 1 **Sent**: the relay accepted it. 2 **Failed**: the relay refused it, and `Error` says why. 3 **Unknown**: the relay may have taken it: it didn't answer in time, the connection dropped once the session began, or the send threw. The send isn't published and doesn't mark the brief sent, but the next confirmation warns that it may have gone. |
 | `RotationChangeStatus` | 0 **Pending**: waiting for the partner. 1 **Approved**. 2 **Declined**. 3 **Cancelled**. |
 
 ### Classification and marking

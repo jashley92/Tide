@@ -149,8 +149,13 @@ shows "Role mappings: the last reload failed". See [troubleshooting.md](troubles
 - A refusal (an SMTP status) is reported by kind (sign-in refused, try later, refused), never with the relay's words,
   which can echo addresses. It doesn't back the relay off.
 - Some recipients refused while others accepted counts as sent, with the refused count noted.
-- A frozen send whose outcome can't be known (an unexpected exception, or still "sending" after 15 minutes) is marked
-  **Unknown**. Someone checks with a recipient and marks it sent or not sent. See
+- A send the relay may have taken is `EmailSendStatus.Unknown`, never Failed: it didn't answer within
+  `Email:SmtpTimeoutSeconds`, or the connection dropped once the session began (SmtpClient doesn't say how far it got).
+  Nothing sends it again by itself, since that could reach everyone twice: a frozen send or correction is logged
+  **Unknown**, as one is after an unexpected exception or still "sending" after 15 minutes, and someone checks with a
+  recipient and marks it sent or not sent; a reminder, digest or escalation email is marked as gone, and its scan's
+  note (Teams & SLA, and Diagnostics' *Reminder and digest emails* job) says to check it arrived. A connection never
+  made (refused, no such host) or a TLS handshake that failed is a plain failure: nothing reached the relay. See
   [troubleshooting.md](troubleshooting.md#a-send-says-its-outcome-isnt-known).
 - The log carries counts and SMTP status codes, never addresses, subjects or the relay's reply.
 

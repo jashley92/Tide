@@ -212,7 +212,7 @@ send. See [integrations.md](integrations.md#smtp-relay) for behaviour.
 | `Email:SmtpUsername` | blank | An account to sign in as. Goes with `SmtpPassword`: both or neither. | Server | Next send |
 | `Email:SmtpPassword` | blank | Secret. Set as `Email__SmtpPassword`. | Server (environment) | Recycle |
 | `Email:SmtpUseDefaultCredentials` | `false` | `true` signs in as the app-pool account (on-premises Exchange). Can't be used with a user name or password (`EmailOptions.SignInProblem`). | Server | Next send |
-| `Email:SmtpTimeoutSeconds` | `30` | Clamped to 5 to 300. | Server | Next send |
+| `Email:SmtpTimeoutSeconds` | `30` | Clamped to 5 to 300. A send the relay doesn't answer within it is recorded as outcome unknown (it may have gone), not failed, and isn't sent again by itself. | Server | Next send |
 | `Email:From` | `tide@localhost` | The sender address. The relay must let TIDE send as it. | Server | Next send |
 | `Email:FromName` | `TIDE` | The display name. | Server | Next send |
 | `Email:PickupDirectory` | blank (`App_Data/mail` in development) | A folder; messages are written there as `.eml` files instead of going to a relay. | Server | Next send |

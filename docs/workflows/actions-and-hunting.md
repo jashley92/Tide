@@ -842,6 +842,7 @@ Every one of these follows colleagues' saves live through the `actions` and `act
 | An outreach body still holding `[[…]]` | Mark sent is refused until it's filled or removed. |
 | An action's article deleted | Its hunts and outreach use the action's own indicators only. |
 | Reminder relay down | Recipients not reached aren't marked, so the next scan tries them; an action anyone got is marked whole. |
+| Reminder relay timed out or dropped the connection | The email may have gone, so it's marked as sent and not tried again; the run's note and Diagnostics say to check it arrived. An escalation step's history says so too. |
 | A team at its limit set to Warn | Creating (the meeting's quick add and recommended lines too), reopening, moving into an active status, or handing to it asks why; cancelled, nothing changes. |
 | The ladder's run stopped partway (a shutdown, a send that threw) | The steps whose email went are kept (their marks, history and changes), so the next run doesn't email them again; the rest wait for it. |
 | Handing off to an external team | Its assignee is cleared (nobody is on the team); no email: its reminders tell it. |

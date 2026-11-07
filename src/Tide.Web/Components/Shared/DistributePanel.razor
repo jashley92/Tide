@@ -490,14 +490,16 @@ else if (_canSend)
         try
         {
             var failed = new List<string>();
+            var unsure = false;
             foreach (var e in Editions)
             {
                 var result = await Distribution.SendTestAsync(Date, e);
+                unsure |= result.Status == EmailSendStatus.Unknown;
                 if (result.Status != EmailSendStatus.Sent) failed.Add($"{BriefRenderer.EditionName(e)}: {result.Error ?? "not sent"}.");
             }
             _testNote = failed.Count == 0
                 ? $"Test copies of both editions went to {await Distribution.TestAddressAsync()}."
-                : "A test copy wasn't sent. " + string.Join(" ", failed);
+                : (unsure ? "A test copy may not have gone. " : "A test copy wasn't sent. ") + string.Join(" ", failed);
             _sends = await Distribution.SendsAsync(Date);
         }
         catch (Exception ex) { _testNote = UserFacingError.For(ex); }

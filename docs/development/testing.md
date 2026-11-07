@@ -139,6 +139,7 @@ The fakes, all in `TestDb.cs` unless noted:
 | `FakeUser` | `ICurrentUser`, with the given roles' permissions. |
 | `FakeEmailSender`, `HeldEmailSender`, `ThrowingEmailSender` | `IEmailSender`: records each email; holds it until released; faults mid-send (unknown outcome). |
 | `FakeSmtpServer` (`SmtpTests.cs`) | A minimal SMTP server on loopback, for the real `EmailSender` (no TLS or sign-in). |
+| `MisbehavingSmtpServer` (`EmailOutcomeTests.cs`) | An SMTP server on loopback that fails one chosen way (never answers after the data, drops the connection after it, refuses the sender, refuses the session), for which sends are Unknown and which Failed. |
 | `FakeHttp` | `IOutboundHttp`: answers GETs from canned responses by address prefix, records what was asked. |
 | `FakeSecrets`, `FakeWebhookPoster` | Webhook secret protection and posting. |
 | `FakeAssistant` | `IThreatIntelAssistant` (the AI provider). |
