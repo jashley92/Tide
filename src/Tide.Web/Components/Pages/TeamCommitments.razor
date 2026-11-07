@@ -1,0 +1,164 @@
+@page "/reports/teams"
+@attribute [Authorize(Policy = Policies.ReadActions)]
+@using System.Globalization
+@inject TeamScorecardService ScorecardSvc
+@inject NavigationManager Nav
+@inject ToastService Toasts
+
+@* The team commitments scorecard (EP-88): each team against the due dates on the actions it owns, over the last 30, 90,
+   180 or 365 days. Open to whoever reads actions, so the teams that own them can see their own line. The address holds
+   the window (?days=) and the two filters (?parts=true, ?external=true), so a view can be bookmarked or sent. *@
+
+<PageTitle>Team commitments · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <Breadcrumbs Items="@([new("Reports", "reports"), new("Team commitments")])" />
+        <h1>Team commitments</h1>
+        <div class="tide-sub">How each team does against the due dates on its actions, counted by when they were due.</div>
+    </div>
+    @if (_card is not null)
+    {
+        <div class="d-flex gap-2 flex-wrap tide-noprint">
+            <a class="btn btn-outline-secondary" href="@CsvHref" download><span class="bi bi-filetype-csv" aria-hidden="true"></span> CSV</a>
+        </div>
+    }
+</div>
+
+<div class="tide-card tide-noprint">
+    <div class="d-flex gap-3 flex-wrap align-items-center">
+        <SegmentedButtons T="int" Label="Window" Items="@TeamScorecardService.Windows" Selected="@_days" OnPick="d => Go(d, _parts, _external)"
+                          Text="@(d => $"{d} days")" />
+        <FilterBar PillsLabel="Which actions and teams" Active="@(_parts || _external)" OnClear="() => Go(_days, false, false)"
+                   Pills="@Pills" Filters="@_filters" />
+    </div>
+</div>
+
+@if (_failed)
+{
+    <div class="tide-card"><EmptyState Icon="bi-exclamation-triangle" Title="Failed to load the scorecard" /></div>
+}
+else if (_card is not { } c)
+{
+    <LoadingBlock />
+}
+else
+{
+    <section class="tide-card" aria-labelledby="tc-title">
+        <h2 id="tc-title">@Range(c) <span class="tide-count tide-muted fw-normal">(@c.Teams.Count team@(c.Teams.Count == 1 ? "" : "s"))</span></h2>
+        @if (c.Teams.Count == 0)
+        {
+            <EmptyState Icon="bi-people" Title="@(c.ExternalOnly ? "No external teams" : "No teams yet")" Compact="true" />
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="tide-table tide-report-table">
+                    <caption class="visually-hidden">Each team's actions due @Range(c), and its open and overdue actions now</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Team</th>
+                            <th scope="col" class="tide-table-num" title="@(c.PartsOnly ? "Parts of splits" : "Actions") due in the window">@(c.PartsOnly ? "Parts" : "Actions") due</th>
+                            <th scope="col" class="tide-table-num" title="Done by the due date, of those done or past it">On time</th>
+                            <th scope="col" class="tide-table-num" title="Calendar days past the due date, done late or still open">Average days late</th>
+                            <th scope="col" class="tide-table-num">Open now</th>
+                            <th scope="col" class="tide-table-num">Overdue now</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var r in c.Teams)
+                        {
+                            <tr @key="r.Team.Id">
+                                <th scope="row">
+                                    <a href="@ActionsHref(r.Team, "open")">@r.Team.Name</a>
+                                    @if (r.Team.IsExternal) { <Badge Class="ms-1">External</Badge> }
+                                    @if (r.Team.IsRetired) { <span class="small tide-muted ms-1">(retired)</span> }
+                                </th>
+                                <td class="tide-table-num">@r.Parts</td>
+                                <td class="tide-table-num @(r.OnTimePercent < 100 ? "tide-report-bad" : "")">@OnTime(r)</td>
+                                <td class="tide-table-num">@(r.AverageDaysLate is { } late ? Words.Days(late) : "—")</td>
+                                <td class="tide-table-num"><a href="@ActionsHref(r.Team, "open")" aria-label="@($"{r.OpenNow} open for {r.Team.Name}")">@r.OpenNow</a></td>
+                                <td class="tide-table-num @(r.OverdueNow > 0 ? "tide-report-bad" : "")"><a href="@ActionsHref(r.Team, "overdue")" aria-label="@($"{r.OverdueNow} overdue for {r.Team.Name}")">@r.OverdueNow</a></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        <p class="small tide-muted mt-2 mb-0">
+            Counted by due date: an action due in the window is on time when it was done by that day, and late when it was
+            done after it or is still open past it. Cancelled and not applicable ones are neither, nor is one due today and
+            still open. Days late are calendar days. Open and overdue are as of today, whatever the window.
+            @if (c.PartsOnly) { <text>Only the parts a split made are counted, not the action that was split.</text> }
+        </p>
+    </section>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "days")] public int? DaysParam { get; set; }
+    [SupplyParameterFromQuery(Name = "parts")] public bool? PartsParam { get; set; }
+    [SupplyParameterFromQuery(Name = "external")] public bool? ExternalParam { get; set; }
+
+    private int _days = TeamScorecardService.DefaultDays;
+    private bool _parts, _external, _failed;
+    private TeamScorecard? _card;
+
+    // The two filters are pills only (never in the menu): their presets never change, and their own Apply is made once;
+    // only what each is set to follows the address.
+    private static readonly IReadOnlyList<FilterPill> Pills =
+    [
+        new("parts", "Parts of splits only", "parts", FilterValues.Of(true)) { Title = "Only the actions a split made, one per team" },
+        new("external", "External teams only", "external", FilterValues.Of(true)),
+    ];
+
+    private FilterDef _partsFilter = null!, _externalFilter = null!;
+    private IReadOnlyList<FilterDef> _filters = [];
+
+    protected override void OnInitialized()
+    {
+        _partsFilter = new("parts", "Parts of splits", FilterKind.Single, v => Go(_days, v.Count > 0, _external)) { InMenu = false };
+        _externalFilter = new("external", "External teams", FilterKind.Single, v => Go(_days, _parts, v.Count > 0)) { InMenu = false };
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _days = TeamScorecardService.WindowOrDefault(DaysParam);
+        _parts = PartsParam == true;
+        _external = ExternalParam == true;
+        _filters = [_partsFilter with { Values = FilterValues.Of(_parts) }, _externalFilter with { Values = FilterValues.Of(_external) }];
+        _card = null;
+        _failed = false;
+        try { _card = await ScorecardSvc.BuildAsync(_days, _parts, _external); }
+        catch (Exception ex)
+        {
+            _failed = true;
+            Toasts.Error(UserFacingError.For(ex));
+        }
+    }
+
+    /// <summary>This page's address for a window and filters: only what isn't the default is in it.</summary>
+    internal static string Href(int days, bool parts, bool external) =>
+        "reports/teams" + Query(days, parts, external);
+
+    private static string Query(int days, bool parts, bool external)
+    {
+        var q = new List<string>();
+        if (days != TeamScorecardService.DefaultDays) q.Add($"days={days}");
+        if (parts) q.Add("parts=true");
+        if (external) q.Add("external=true");
+        return q.Count == 0 ? "" : "?" + string.Join("&", q);
+    }
+
+    private string CsvHref => "reports/teams/export.csv" + Query(_days, _parts, _external);
+
+    private void Go(int days, bool parts, bool external) => Nav.NavigateTo(Href(days, parts, external));
+
+    // A team's actions on the Actions list, as a list (Overdue is the list's own view; Open opens as the list, not the board).
+    // With the parts filter on, the list shows the team's parts and the rest; it has no filter for parts alone.
+    internal static string ActionsHref(Team team, string view) => $"actions?view={view}&team={team.Id}&layout=list";
+
+    private static string Range(TeamScorecard c) =>
+        $"Due {c.From.ToString("MMM d, yyyy", CultureInfo.InvariantCulture)} to {c.To.ToString("MMM d, yyyy", CultureInfo.InvariantCulture)}";
+
+    private static string OnTime(TeamScore r) => r.OnTimePercent is { } p ? $"{Words.Num(p)}% ({r.OnTime} of {r.OnTime + r.Late})" : "—";
+}

@@ -2,7 +2,7 @@
 
 The numbers the brief opens with, and the counts the team reports month on month: defining and entering opening
 metrics, importing them from CSV (by upload or from a drop folder), locking a sent day, how they're charted in the
-meeting and the email, the metrics history, threat trends, the board scorecard and the period report. It's for
+meeting and the email, the metrics history, threat trends, the board scorecard, the period report and the team commitments scorecard. It's for
 developers and for the administrator who sets them up.
 
 **Contents**
@@ -15,6 +15,7 @@ developers and for the administrator who sets them up.
   - [Where the numbers appear](#where-the-numbers-appear)
 - [Threat trends and the board scorecard](#threat-trends-and-the-board-scorecard)
 - [Reports](#reports)
+  - [Team commitments](#team-commitments)
 - [Permissions](#permissions)
 - [Edge cases](#edge-cases)
 - [Where it lives in code](#where-it-lives-in-code)
@@ -193,7 +194,9 @@ first brief; one never briefed counts in the period it was written, unless it's 
 | Hunts | `hunted` (a result recorded), `hits`, `no-hits` |
 | Backlog | `open-at-end`, `overdue-at-end` (as of today for the period still under way) |
 
-The report also gives the share done on time and the median days to close P1 and P2 actions (`TrendOutcome`).
+Done on time and Done late are `ActionSla.StateOf`'s Met and Missed for a Done action (one with no due date is
+neither), the rule Workload and [Team commitments](#team-commitments) use. The report also gives the share done on time
+and the median days to close P1 and P2 actions (`TrendOutcome`).
 
 | Period kind | Key | Default span | Spans offered |
 |---|---|---|---|
@@ -225,12 +228,46 @@ metric over the period (last value, average, lowest, highest, days with no value
 and techniques briefed most, and the actions raised by team. Every number comes from `TrendsService` or `MetricsService`,
 so it can't disagree with Trends or Metrics. `GET /reports/export.csv?p=` downloads it as one CSV, a row per number.
 
+### Team commitments
+
+Team commitments (`/reports/teams`, `TeamScorecardService.BuildAsync`), linked from Reports and Workload, is how each
+team does against the due dates on the actions it owns: a row per team, internal and external (marked External), over
+the last 30, 90 (the default), 180 or 365 days, today included. The rules are
+[A20](../reference/business-rules.md#actions-and-sla).
+
+| Column | What it counts |
+|---|---|
+| Actions due (Parts due with the parts filter) | The team's actions due in the window. One with no due date isn't counted: it made no commitment. |
+| On time | Done on or before the due date, as a share of those on time or late, with the counts ("50% (2 of 4)"). Late is done after the due date, or still open past it. Cancelled and Not applicable are neither, nor is one due today and still open. "—" when nothing is either. |
+| Average days late | Calendar days from the due date to the close, or to today while still open, averaged over the late ones. Calendar days, as `ActionSla.Late` and an action's "3 days late" count them. |
+| Open now, Overdue now | The team's open actions (Tracking included) today, and those past their due date, whatever the window. |
+
+An action is in the window its due date falls in, not by when it was raised or closed, so a late action still open
+counts as late in the window it fell due in, and one closed long after counts once.
+
+- **Filters**, kept in the address (`?days=`, `?parts=true`, `?external=true`): *Parts of splits only* counts only the
+  parts a split made (actions with a parent), not the actions split or any other; *External teams only* lists only the
+  external teams.
+- **Each team** links to its open actions on the Actions list (`actions?view=open&team=&layout=list`), and its overdue
+  count to the Overdue view.
+- **Which teams.** Every team that isn't retired, in the teams' order; a retired team only while it has an action due in
+  the window or open now.
+- **CSV.** `GET /reports/teams/export.csv?days=&parts=&external=`, a row per team with the window's dates, formulas
+  neutralised (`TeamScorecardService.ToCsv`). Team names and counts carry no TLP, as the other reports' CSVs carry
+  none; the file name says the window and filters (`tide-team-commitments-2026-11-06-90d-parts.csv`).
+- **Counted in the database.** Counts by team (due in the window, met, open, overdue), each with the database's twin
+  of `ActionSla.StateOf` (`ActionQueries.WhereMet`, `WhereLate`, `WhereOverdue`), so a count in SQL and a state on a page
+  agree. Only the late actions come back, as their team and two dates, for `ActionSla.Late` to give their days late, so
+  neither provider is asked for a date difference, which SQLite and SQL Server write differently. The window starts at
+  `ActionQueries.LastDaysFrom(today, days)`.
+
 ## Permissions
 
 | Activity | Needs |
 |---|---|
 | Enter or clear the day's numbers | `EnterMetrics` (Analyst, Admin); on a sent day, `Administer` |
 | See the numbers, the history and its export, Trends, Reports and their exports | `ReadTeamEdition` (the sidebar lists Metrics and Reports only for those who also write articles; the pages stay open) |
+| Team commitments and its CSV | `ReadActions` (it's reached from Reports and Workload) |
 | Define groups and metrics, the example set | `Administer` |
 | Upload a CSV, see the imports, change the drop folder settings | `Administer` |
 | Read the drop folder | the background service only (a signed-in caller is refused) |
@@ -261,6 +298,7 @@ so it can't disagree with Trends or Metrics. `GET /reports/export.csv?p=` downlo
 | Drop folder | `src/Tide.Infrastructure/Storage/MetricDropFolder.cs`, `src/Tide.Web/Services/MetricImportHostedService.cs` |
 | Trends | `src/Tide.Application/Trends/TrendsService.cs`, `Period.cs`, `TrendChart.cs` |
 | Reports | `src/Tide.Application/Trends/ReportService.cs` |
+| Team commitments | `src/Tide.Application/Trends/TeamScorecardService.cs` (`BuildAsync`, `ToCsv`) |
 | Scorecard | `src/Tide.Application/Scorecard/ScorecardService.cs`, `ScorecardTagSearch.cs` |
-| Pages | `src/Tide.Web/Components/Shared/MetricEntry.razor`, `Pages/MetricsHistory.razor`, `Pages/Trends.razor`, `Pages/Reports.razor`, `Pages/Admin/MetricsAdmin.razor`, `Pages/Admin/MetricImportsAdmin.razor`, `Pages/Admin/ScorecardAdmin.razor` |
-| Export endpoints | `src/Tide.Web/Program.cs` (`/metrics/export.csv`, `/trends/export.csv`, `/trends/articles.csv`, `/reports/export.csv`) |
+| Pages | `src/Tide.Web/Components/Shared/MetricEntry.razor`, `Pages/MetricsHistory.razor`, `Pages/Trends.razor`, `Pages/Reports.razor`, `Pages/TeamCommitments.razor`, `Pages/Admin/MetricsAdmin.razor`, `Pages/Admin/MetricImportsAdmin.razor`, `Pages/Admin/ScorecardAdmin.razor` |
+| Export endpoints | `src/Tide.Web/Program.cs` (`/metrics/export.csv`, `/trends/export.csv`, `/trends/articles.csv`, `/reports/export.csv`, `/reports/teams/export.csv`) |

@@ -44,6 +44,7 @@ public class ViewerAppTests(ViewerApp app) : IClassFixture<ViewerApp>
     [InlineData("/search?q=vpn")]
     [InlineData("/metrics")]
     [InlineData("/reports")]
+    [InlineData("/reports/teams")]
     [InlineData("/trends")]
     [InlineData("/rotation")]
     [InlineData("/briefs/2026-10-26/sharepoint")]
@@ -121,6 +122,7 @@ public class VisitorAppTests(VisitorApp app) : IClassFixture<VisitorApp>
     [InlineData("/search?q=vpn")]
     [InlineData("/metrics")]
     [InlineData("/reports")]
+    [InlineData("/reports/teams")]
     [InlineData("/trends")]
     [InlineData("/triage")]
     [InlineData("/rotation")]
@@ -137,6 +139,7 @@ public class VisitorAppTests(VisitorApp app) : IClassFixture<VisitorApp>
     [Theory]
     [InlineData("/metrics/export.csv")]
     [InlineData("/trends/export.csv")]
+    [InlineData("/reports/teams/export.csv")]
     public async Task AVisitor_IsRefusedTheTeamsEndpoints(string path)
     {
         var client = app.CreateClient(new() { AllowAutoRedirect = false });

@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Tide.Application.Content;
 
 /// <summary>Small wording helpers shared by the pages and the views behind them.</summary>
@@ -13,4 +15,15 @@ public static class Words
 
     /// <summary><paramref name="text"/> cut to at most <paramref name="max"/> characters, unmarked: for a column's length.</summary>
     public static string Clip(string text, int max) => text.Length <= max ? text : text[..max];
+
+    /// <summary>A report's number: "7", "2.5", one decimal at most, whatever the server's culture; <paramref name="none"/>
+    /// when there's none.</summary>
+    public static string Num(double? n, string none = "") => n is { } v ? v.ToString("0.#", CultureInfo.InvariantCulture) : none;
+
+    /// <summary>"1 day", "2.5 days": the number as <see cref="Num"/> shows it decides, so no floating-point comparison.</summary>
+    public static string Days(double n)
+    {
+        var shown = Num(n);
+        return shown + (shown == "1" ? " day" : " days");
+    }
 }

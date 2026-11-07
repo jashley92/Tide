@@ -358,6 +358,15 @@ app.MapGet("/reports/export.csv", async (string? p, TrendsService trends, Report
     return CsvFile(ReportService.ToCsv(await reports.BuildAsync(period, ct)), $"tide-report-{period.Key}.csv");
 }).AsExport();
 
+// The team commitments scorecard (Reports > Team commitments) over the last ?days= (30, 90, 180 or 365; 90 otherwise),
+// ?parts=true for the parts of split actions only, ?external=true for external teams only, as CSV.
+app.MapGet("/reports/teams/export.csv", async (int? days, bool? parts, bool? external, TeamScorecardService scorecard, CancellationToken ct) =>
+{
+    var card = await scorecard.BuildAsync(days, parts == true, external == true, ct);
+    var stem = (card.PartsOnly ? "-parts" : "") + (card.ExternalOnly ? "-external" : "");
+    return CsvFile(TeamScorecardService.ToCsv(card), $"tide-team-commitments-{card.To:yyyy-MM-dd}-{card.Days}d{stem}.csv");
+}).AsExport(Policies.ReadActions);
+
 // The articles one trend line (?line=, default all) counted in period ?p=, for writing the report, as CSV. ?subs=true
 // counts sub-techniques separately, as Trends does with it, so a technique line is the one the page showed.
 app.MapGet("/trends/articles.csv", async (string? p, string? line, bool? subs, TrendsService trends, IOptions<AppOptions> appOptions, CancellationToken ct) =>

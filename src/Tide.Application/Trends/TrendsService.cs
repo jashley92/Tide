@@ -313,9 +313,9 @@ public sealed class TrendsService(IAppDbContextFactory dbs, ICurrentUser user, O
         static bool Raised(ActionFact f, Period p) => p.Contains(f.Raised);
         static bool Closed(ActionFact f, Period p) => f.Closed is { } d && p.Contains(d);
         static bool Done(ActionFact f, Period p) => f.Status == ActionStatus.Done && Closed(f, p);
-        // On time or late only with a due date: one with none is neither (as Workload's SLA reads it).
-        static bool OnTime(ActionFact f) => f.Due is { } due && f.Closed <= due;
-        static bool Late(ActionFact f) => f.Due is { } due && f.Closed > due;
+        // On time (Met) or late (Missed) as ActionSla.StateOf reads a Done action, as Workload and Team commitments do: one
+        // with no due date is neither.
+        SlaState Sla(ActionFact f) => ActionSla.StateOf(f.Status, f.Due, f.Closed, clock.Today, clock.Days);
         static bool OpenAt(ActionFact f, DateOnly day) => f.Raised <= day && (f.Closed is not { } c || c > day);
 
         var rows = new List<TrendRow> { Row("raised", "Raised", "Raised", Raised, rollup: true) };
@@ -325,8 +325,8 @@ public sealed class TrendsService(IAppDbContextFactory dbs, ICurrentUser user, O
 
         rows.Add(Row("closed", "Closed", "Closed", Closed, rollup: true));
         rows.Add(Row("done", "Done", "Closed", Done));
-        rows.Add(Row("on-time", "Done on time", "Closed", (f, p) => Done(f, p) && OnTime(f)));
-        rows.Add(Row("late", "Done late", "Closed", (f, p) => Done(f, p) && Late(f)));
+        rows.Add(Row("on-time", "Done on time", "Closed", (f, p) => Done(f, p) && Sla(f) == SlaState.Met));
+        rows.Add(Row("late", "Done late", "Closed", (f, p) => Done(f, p) && Sla(f) == SlaState.Missed));
         rows.Add(Row("no-due", "Done, no due date", "Closed", (f, p) => Done(f, p) && f.Due is null));
         rows.Add(Row("cancelled", "Cancelled or not applicable", "Closed", (f, p) => f.Status != ActionStatus.Done && Closed(f, p)));
         rows.AddRange(Enum.GetValues<ActionOutcome>().Where(o => o != ActionOutcome.None)

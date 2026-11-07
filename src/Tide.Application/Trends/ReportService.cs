@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Tide.Application.Content;
 using Tide.Application.Metrics;
 using Tide.Application.Org;
 using Tide.Domain.Entities;
@@ -102,7 +103,7 @@ public sealed class ReportService(TrendsService trends, MetricsService metrics, 
     private static string Num(object? v) => v switch
     {
         null => "",
-        double d => d.ToString("0.#", CultureInfo.InvariantCulture),
+        double d => Words.Num(d),
         decimal m => m.ToString("0.##", CultureInfo.InvariantCulture),
         IFormattable f => f.ToString(null, CultureInfo.InvariantCulture),
         _ => v.ToString() ?? "",

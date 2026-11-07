@@ -202,7 +202,7 @@ enums in `src/Tide.Domain/Enums/AppEnums.cs`.
 | 4 | `WorkActions` | Work action items (for an Action owner, only their own team's). |
 | 5 | `Administer` | Administer TIDE. |
 | 6 | `EnterMetrics` | Enter the day's opening metrics. |
-| 7 | `ReadActions` | Read every action (its page, the board, Workload, the lists) without working any. |
+| 7 | `ReadActions` | Read every action (its page, the board, Workload, the lists, Team commitments) without working any. |
 | 8 | `MeetingNotes` | Add notes to a meeting, and change or delete one's own. |
 | 9 | `JoinMeetings` | Join and follow a live meeting in present mode, and raise a hand. |
 

@@ -631,7 +631,8 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
   first, up to 8, with *Take it*. Without `WriteArticles` it leads Today in place of the producers' step strip.
 - **Workload** (`/workload`, `WorkloadAsync`): each team's open, overdue, due soon and blocked counts, closed and met
   last week, and who holds what with per-person and P1 counts (not for an external team, which has no holders), and
-  "4 of 5 active" for a team with a limit.
+  "4 of 5 active" for a team with a limit. Over longer windows, each team against its due dates is on
+  [Team commitments](metrics-and-trends.md#team-commitments).
 
 ![Workload](../screenshots/workload.png)
 

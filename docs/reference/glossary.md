@@ -212,6 +212,7 @@ the tables and columns are in [data model](../architecture/data-model.md).
 | Term | Meaning | Code name |
 |---|---|---|
 | **Team** | A group that owns actions, with members, an optional mailbox and SLA targets. Being on the team is what lets an Action owner work its actions. | `Team` (`Team.Email` is the mailbox), `TeamMember`, `TeamService`; [ADR 0008](../decisions/0008-teams-own-actions.md) |
+| **Team commitments** | The scorecard of each team against the due dates on its actions over the last 30, 90, 180 or 365 days: actions due, the share done on time, average days late, open and overdue now. An action counts in the window its due date falls in. | `TeamScorecardService`, `TeamScore`, `/reports/teams` |
 | **Team edition** | The edition for the security teams: everything up to its ceiling (AMBER+STRICT by default), with the day's numbers, the team note, indicators and the actions raised. | `Edition.Team` |
 | **Team note (opening note)** | The team's note at the start of the meeting (what's coming up, the week's phishing trends), in Markdown. Team edition only; a new brief starts with the previous one's. | `Brief.TeamNote`, `BriefService.SetTeamNoteAsync` |
 | **Team queue** | On Today, a person's teams' open actions that are theirs or nobody's, theirs first, by due date, with *Take it*. | `TeamQueue`, `ActionService.TeamQueueAsync` |

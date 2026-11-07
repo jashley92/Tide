@@ -143,6 +143,7 @@ sidebar requires. The services check permissions again, so a page that forgets c
 | `/coverage` | `CoveragePage` | `WriteArticles` | Detection coverage: briefed techniques against the SOC's rules. |
 | `/trends` | `Trends` | `ReadTeamEdition` | Threat trends and the board scorecard. State in the address: `p`, `view`, `line`, `at`, `subs`. |
 | `/reports` | `Reports` | `ReadTeamEdition` | The weekly, monthly or quarterly report. `?p=` (`2026-10`, `2026-Q4`, `2026-W44`). Sidebar also needs `WriteArticles`. |
+| `/reports/teams` | `TeamCommitments` | `ReadActions` | The team commitments scorecard: each team against its due dates. `?days=` (30, 90, 180, 365; 90 by default), `?parts=true`, `?external=true`. Not in the sidebar; linked from Reports and Workload. |
 | `/metrics` | `MetricsHistory` | `ReadTeamEdition` | Metric history: chart and table. Sidebar also needs `WriteArticles` (listed for those who make the brief). |
 | `/rotation` | `RotationPage` | `ReadTeamEdition` | The brief rotation calendar, swaps and cover. Sidebar also needs `WriteArticles`. |
 | `/workload` | `Workload` | `ReadActions` | Each team's open, late and held actions. |
@@ -201,6 +202,7 @@ In `src/Tide.Web/Components/Shared`. Use these rather than drawing a new version
 |---|---|
 | `ConfirmDialog` | "Are you sure?" before anything that can't be taken back. A modal that says what will happen, with Cancel and a button named for the action ("Delete draft"), not the browser's OK box. Optional body content and a way to hold the button until a required field is filled. Focus moves in, Tab stays inside (`dialog.js`), Escape or a click outside cancels, and focus returns to the button that asked. Usage: `if (!await _confirm.Ask("Delete draft?", "…", "Delete draft")) return;` |
 | `LeaveDialog` | Leaving a page with unsaved changes: Save and leave, Discard and leave, or Stay. Used from a `NavigationLock`'s `OnBeforeInternalNavigation` (the article editor). Focus starts on Stay. Leaving the site altogether (closing the tab, reloading) still gets the browser's own prompt, through `ConfirmExternalNavigation`. |
+| `SegmentedButtons<T>` | A row of buttons of which one is chosen (`btn-group`, the chosen one `btn-primary` and `aria-pressed`): Reports' and Trends' period kinds, Trends' range, the Team commitments window. `Items`, `Selected`, `Text` and `OnPick`; the page puts the choice in its address. |
 | `Breadcrumbs` | "You are here" and the way back on a detail page ("Actions › A-12"). On a phone only the way back stays ("‹ Actions"). |
 | `TabBar` | Page-level (underlined) or sub-level (segmented) tabs. It's one of three things by what its items do: links to other pages (a `<nav>`, `aria-current="page"`); tabs that switch one panel in place (a `tablist`, arrow keys through `tabs.js`); or toggle buttons that choose what a list shows (`aria-pressed`). Items can carry a count. |
 | `EmptyState` | Nothing to show: an icon, what's not here, why or what to do next, and the way forward. Says which kind of empty it is ("nothing matches these filters" against "nothing yet"). `Compact` for a panel inside a card. |
