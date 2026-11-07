@@ -165,6 +165,25 @@ public class PlaybookTests : IDisposable
     }
 
     [Fact]
+    public async Task APlaybook_WhoseNewStepsDontAllFit_IsRefused_NotAppliedInPart_NorSaidToBeThereAlready()
+    {
+        var team = await Team();
+        var svc = _db.Actions();
+        var playbook = await SweepPlaybook();
+        var a = (await svc.GetAsync(await svc.CreateAsync(new ActionForm { Title = "Sweep", Kind = ActionKind.IocSweep, TeamId = team })))!.Action;
+        for (var i = 0; i < ActionChecklistItem.MaxPerAction - 1; i++) await svc.AddChecklistItemAsync(a.Id, $"Item {i}");
+
+        await FluentActions.Invoking(() => svc.ApplyPlaybookAsync(a.Id, playbook)).Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*has room for 1 more item*3 steps*");
+        (await svc.ChecklistAsync(a.Id)).Should().HaveCount(ActionChecklistItem.MaxPerAction - 1, "none of its steps were added");
+
+        await svc.AddChecklistItemAsync(a.Id, "Sweep EDR");   // one of its steps, by hand: the checklist is full
+        await FluentActions.Invoking(() => svc.ApplyPlaybookAsync(a.Id, playbook)).Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*has room for no more items*2 steps*");
+        (await svc.GetAsync(a.Number))!.Action.Events.Should().NotContain(e => e.Text.Contains("all on the checklist already"));
+    }
+
+    [Fact]
     public async Task Checklist_ItemsAreTakenOff_ApplyingTwiceAddsNothing_AndEmptyItemsAreRefused()
     {
         var team = await Team();

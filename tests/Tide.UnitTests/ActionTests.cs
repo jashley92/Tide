@@ -187,6 +187,20 @@ public class HuntQueryTests
     }
 
     [Fact]
+    public void AnInternationalDomain_IsSearchedAsLogsRecordIt_InPunycode_AsWellAsAsWritten()
+    {
+        ArticleIndicator[] idn = [new() { Type = IndicatorType.Domain, Value = "bücher.example" }, new() { Type = IndicatorType.Domain, Value = "plain.example" }];
+        foreach (var d in QueryDialects.All)
+        {
+            var q = HuntQueryBuilder.Build(d, idn);
+            q.Should().Contain("\"bücher.example\", \"xn--bcher-kva.example\", \"plain.example\"", d.Key);
+            q.Should().Contain("from 2 indicator(s)", "the punycode form is the same indicator");
+        }
+        var saved = HuntQueryBuilder.FromSaved(QueryDialects.Find("kql")!, "Names", "x has_any ({{values:domain}})", 30, idn);
+        saved.Should().Contain("x has_any (\"bücher.example\", \"xn--bcher-kva.example\", \"plain.example\")").And.Contain("with 2 indicator(s)");
+    }
+
+    [Fact]
     public void Build_NamesTypesWithoutATemplate_AndUsesASavedTemplateFirst()
     {
         var fql = QueryDialects.Find("fql")!;

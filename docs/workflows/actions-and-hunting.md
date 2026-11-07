@@ -287,7 +287,8 @@ an action is never re-checked, so an action overdue for over a year can still be
   it). The meeting's assignee and due boxes change only what they say (`AssignAsync`, `SetDueAsync`), so a due date set
   in the meeting doesn't take the action back from someone a colleague just gave it to.
 - **Checklist.** Up to 50 items (`ActionChecklistItem`). A playbook (`Playbook`, the team's: see
-  [Playbooks](#playbooks)) adds its steps that the checklist doesn't already have, at the end (`ApplyPlaybookAsync`).
+  [Playbooks](#playbooks)) adds its steps that the checklist doesn't already have, at the end (`ApplyPlaybookAsync`),
+  all or none: when they don't all fit within the 50, it's refused, saying how much room is left.
 - **Comments.** Text up to 8,000 characters, with screenshots or evidence files. Each comment has its own
   `EditVersion`: an edit from an older version is refused and names who changed it, and the page shows their text over
   the box while keeping what was typed. Deleting a comment keeps its files on the action as removed, with the reason
@@ -327,7 +328,9 @@ a week before the earliest of those articles was published, at least 30 days and
 2. Each kind gets one block from the dialect's template: the administrator's `QueryTemplate` if saved, else the
    dialect's default. A saved empty template turns the kind off.
 3. A kind with no template, or turned off, isn't dropped silently: a comment names it and how many values it left out.
-4. Values are quoted and escaped as the dialect writes a list (`QueryDialects.Quote`). Past 500 values
+4. Values are quoted and escaped as the dialect writes a list (`QueryDialects.Quote`). An international domain name
+   ("bücher.example") is searched in its punycode form too ("xn--bcher-kva.example"), as DNS, proxy and endpoint logs
+   record it; it still counts as one indicator (a saved query's `{{values}}` gets both too). Past 500 values
    (`MaxValuesPerBlock`) a kind's block repeats.
 5. The first line says how many values it was built from and the window. A dialect whose templates don't all carry
    `{{days}}` (Falcon's default runs over the range picked in the console) says to set the range when it's run instead
@@ -352,6 +355,11 @@ Someone who can't is told so (`ActionService.OnTheArticle`). An action with no a
 optionally an evidence screenshot (`RecordHuntResultAsync`). A result, once recorded, stands: a second recording is
 refused, and recording moves the action's `EditVersion` so two at once can't both land. Editing a query after its
 result marks it "edited after the result" in its row and the history. A query with a result can't be removed.
+
+**How long a query is.** A person writes at most 20,000 characters (`HuntQuery.MaxWritten`): all of a hand-written
+query, or added to one TIDE wrote. A query TIDE fills (generated, or a saved one with the action's indicators) grows
+with the indicators, up to 200,000 (`HuntQuery.MaxText`), so a sweep over hundreds of hashes is added and its edits
+saved; past that it's refused as too many indicators for one query.
 
 ### Closing a clean sweep in one step
 

@@ -1840,7 +1840,7 @@ namespace Tide.Migrations.SqlServer.Migrations
 
                     b.Property<string>("GeneratedText")
                         .IsRequired()
-                        .HasMaxLength(20000)
+                        .HasMaxLength(200000)
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Notes")
@@ -1873,7 +1873,7 @@ namespace Tide.Migrations.SqlServer.Migrations
 
                     b.Property<string>("Text")
                         .IsRequired()
-                        .HasMaxLength(20000)
+                        .HasMaxLength(200000)
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");

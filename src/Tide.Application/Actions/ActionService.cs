@@ -1428,17 +1428,20 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         return playbook;
     }
 
-    // Copies the playbook's steps the action doesn't have yet onto its checklist (within the checklist's limit).
+    // Copies the playbook's steps the action doesn't have yet onto its checklist. All or none: when they don't all fit
+    // within the checklist's limit, it's refused, rather than some added and the rest dropped unsaid (or, on a full
+    // checklist, the history saying they were all there already).
     private static List<ActionChecklistItem> AddSteps(ActionItem a, Playbook playbook)
     {
         var have = new HashSet<string>(a.Checklist.Select(i => i.Text.Trim()), StringComparer.OrdinalIgnoreCase);
-        var added = new List<ActionChecklistItem>();
         var order = NextOrder(a);
-        foreach (var step in playbook.Steps.OrderBy(s => s.Order).Where(s => have.Add(s.Text.Trim())))
-        {
-            if (a.Checklist.Count + added.Count >= ActionChecklistItem.MaxPerAction) break;
-            added.Add(new ActionChecklistItem { ActionId = a.Id, Text = step.Text, SortOrder = order++ });
-        }
+        var added = playbook.Steps.OrderBy(s => s.Order).Where(s => have.Add(s.Text.Trim()))
+            .Select(step => new ActionChecklistItem { ActionId = a.Id, Text = step.Text, SortOrder = order++ }).ToList();
+        var room = Math.Max(0, ActionChecklistItem.MaxPerAction - a.Checklist.Count);
+        if (added.Count > room)
+            throw new ArgumentException($"A checklist can have at most {ActionChecklistItem.MaxPerAction} items, and this one has room for "
+                + (room == 0 ? "no more items" : $"{room} more item{(room == 1 ? "" : "s")}")
+                + $"; the {playbook.Name} playbook would add {added.Count} steps. Take some items off first.");
         a.PlaybookId ??= playbook.Id;
         a.PlaybookName ??= playbook.Name;
         return added;
@@ -1489,7 +1492,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             throw new InvalidOperationException(fromStory ? "No article in the story has indicators to hunt for."
                 : a.Article is null ? "The action has no indicators to hunt for. Add them on this card, or write a query by hand."
                 : "The action's article has no indicators to hunt for. Add them on the article first, or build it from the story.");
-        var text = await queries.BuildAsync(dialect, inputs.Indicators, inputs.Days, ct);
+        var text = Filled(await queries.BuildAsync(dialect, inputs.Indicators, inputs.Days, ct));
         var hunt = new HuntQuery
         {
             ActionId = a.Id, Dialect = dialect, GeneratedText = text, Text = text, CreatedAtUtc = DateTimeOffset.UtcNow, CreatedByName = user.DisplayName,
@@ -1536,7 +1539,9 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (saved.IsRetired) throw new InvalidOperationException($"{saved.Name} is retired. Restore it on Saved queries to use it.");
         var d = QueryDialects.Find(saved.Dialect) ?? throw new ArgumentException("That saved query's language isn't one TIDE knows.");
         var inputs = await HuntInputsAsync(db, a, fromStory: false, ct);
-        var text = HuntText(HuntQueryBuilder.FromSaved(d, saved.Name, saved.Text, inputs.Days, inputs.Indicators));
+        // TIDE wrote all of it (the saved query is held to its own limit), so however long the indicators make it, it's added.
+        var filled = HuntQueryBuilder.FromSaved(d, saved.Name, saved.Text, inputs.Days, inputs.Indicators);
+        var text = HuntText(Filled(filled), filled.Length);
         var hunt = new HuntQuery
         {
             ActionId = a.Id, Dialect = d.Key, GeneratedText = text, Text = text, CreatedAtUtc = DateTimeOffset.UtcNow, CreatedByName = user.DisplayName,
@@ -1646,13 +1651,21 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         return await db.Articles.AsNoTracking().Include(x => x.Indicators).Where(x => x.StoryId == storyId).ToListAsync(ct);
     }
 
-    private static string HuntText(string? text)
+    // A query's text as it's kept. What TIDE wrote (<paramref name="written"/> characters: a generated query, or a saved one
+    // filled in, both of which grow with the indicators) doesn't count against what a person may write
+    // (HuntQuery.MaxWritten), only what they add to it, so a sweep over hundreds of hashes is added and its edit saved,
+    // while a hand-written query is held to that. Nothing is longer than the column (HuntQuery.MaxText).
+    private static string HuntText(string? text, int written = 0)
     {
         var clean = (text ?? "").Trim();
         if (clean.Length == 0) throw new ArgumentException("The query is empty.");
-        if (clean.Length > 20000) throw new ArgumentException("That query is too long.");
+        if (clean.Length > Math.Min(HuntQuery.MaxText, HuntQuery.MaxWritten + written)) throw new ArgumentException("That query is too long.");
         return clean;
     }
+
+    // A query TIDE wrote, refused only past the column: one that long is too many indicators for one query.
+    private static string Filled(string text) => text.Length <= HuntQuery.MaxText ? text
+        : throw new InvalidOperationException("That's too many indicators for one query. Build it from the article rather than the story, or split the hunt.");
 
     /// <summary>
     /// Saves the query as the analyst edited it. After its result is recorded it can still be edited, but is marked as
@@ -1660,9 +1673,9 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// </summary>
     public async Task SaveHuntTextAsync(Guid huntId, string text, CancellationToken ct = default)
     {
-        var clean = HuntText(text);
         await using var db = await dbs.CreateAsync(ct);
         var (hunt, a) = await WorkableHuntAsync(db, huntId, ct);
+        var clean = HuntText(text, hunt.GeneratedText.Length);
         if (hunt.Text == clean) return;
         hunt.Text = clean;
         if (hunt.Result != HuntResult.NotRun)

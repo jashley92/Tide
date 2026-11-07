@@ -437,6 +437,12 @@ public class ActionEvent : Entity
 /// </summary>
 public class HuntQuery : Entity
 {
+    /// <summary>The longest a query is: one TIDE wrote grows with the indicators (a sweep over hundreds of hashes).</summary>
+    public const int MaxText = 200_000;
+
+    /// <summary>The most a person writes: all of a hand-written query, or added to what TIDE wrote.</summary>
+    public const int MaxWritten = 20_000;
+
     public Guid ActionId { get; set; }
 
     /// <summary>The dialect's key ("xql", "kql", "fql").</summary>
