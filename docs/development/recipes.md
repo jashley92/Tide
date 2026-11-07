@@ -433,7 +433,8 @@ committed save, so every save path through `SaveChangesAsync` is heard.
    (`src/Tide.Web/Components/Shared/ChangedElsewhere.razor`) with who saved, what, what saving now would do
    (`Consequence`: refused where an edit version guards it) and a Reload button, as `ActionPage.razor`,
    `BriefPage.razor` and `OutreachTemplatesPage.razor` do. A form open in a list keeps what's typed and re-reads only
-   the rest.
+   the rest; when its row leaves the page (retired, deleted or renamed away by a colleague), the team libraries
+   (`LibraryPage.EditingOffPage`) show the form above the list instead, so it can still be saved or cancelled.
 6. **Lists.** To mark rows that arrived, changed or left, use `LiveMarks` and `LiveDiff` (`src/Tide.Web/Services/LiveRows.cs`).
 7. **Tests:** a colleague's save reaches the page, and an open edit survives it (`LiveTests.cs`, `LivePagesTests.cs`,
    `LiveRowsTests.cs`).

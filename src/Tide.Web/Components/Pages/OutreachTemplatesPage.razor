@@ -34,6 +34,15 @@
         @EditForm
     </section>
 }
+else if (EditingOffPage)
+{
+    @* The template being edited left this page (a colleague retired, deleted or renamed it, or a filter hides it): its
+       form stays here, so what's typed can be saved or cancelled. *@
+    <section class="tide-card tide-card-form" aria-labelledby="ot-edit-h">
+        <h2 id="ot-edit-h">Edit template</h2>
+        @EditForm
+    </section>
+}
 
 @* The filter bar: the words, and Show retired as the switch it was, as on Saved queries. *@
 <FilterBar Active="@(!string.IsNullOrWhiteSpace(_words))" OnClear="ClearFilters">
@@ -127,6 +136,10 @@ else
     protected override (string One, string Many, string Library) Names => ("template", "templates", "outreach templates");
 
     protected override async Task<IReadOnlyList<OutreachTemplateRow>> ReadAsync(bool includeRetired) => await TemplateSvc.ListAsync(includeRetired);
+
+    protected override Guid IdOf(OutreachTemplateRow row) => row.Template.Id;
+
+    protected override Guid? EditingId => _form?.Id;
 
     // Every word typed.
     protected override IEnumerable<OutreachTemplateRow> Filtered(IReadOnlyList<OutreachTemplateRow> rows, IReadOnlyList<string> words) =>

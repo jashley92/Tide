@@ -56,6 +56,19 @@ public abstract class LibraryPage<TRow> : ComponentBase, IDisposable
     /// <summary>The rows the page's filters and <paramref name="words"/> leave, in the order they're shown.</summary>
     protected abstract IEnumerable<TRow> Filtered(IReadOnlyList<TRow> rows, IReadOnlyList<string> words);
 
+    /// <summary>A row's entry's id.</summary>
+    protected abstract Guid IdOf(TRow row);
+
+    /// <summary>The entry whose edit form is open, if one is.</summary>
+    protected abstract Guid? EditingId { get; }
+
+    /// <summary>
+    /// Whether the entry being edited isn't among this page's cards (a colleague retired, deleted or renamed it away, or a
+    /// filter now leaves it out): the page shows its form above the list instead, so what's typed can still be saved or
+    /// cancelled rather than vanishing with the card.
+    /// </summary>
+    internal bool EditingOffPage => EditingId is { } id && !_onPage.Any(r => IdOf(r) == id);
+
     /// <summary>Clears the page's own filters (a language, a kind), for Clear.</summary>
     protected virtual void ClearOwnFilters() { }
 

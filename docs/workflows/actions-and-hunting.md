@@ -438,9 +438,12 @@ The steps are copied, so a later edit doesn't change actions already started.
 - **The page.** 20 cards a page (`?page=`), each with its kind, steps, how many actions were started from it and
   "Saved by …, changed by …". The filter bar has the search box (name, description, kind or a step), a pill per kind
   of action (one at a time: those offered on that kind, its own and those for any) and **Show retired**. Moving up and
-  down is offered on the whole list, with no filter set: a playbook swaps places with the next one offered that way (a
-  retired one between them stays put), and a move is a change like any other, so it moves the version and names who
-  made it. The old address, `/admin/playbooks`, redirects here.
+  down is offered on the whole list, with no filter set and no form open: a playbook swaps places with the next one
+  offered that way (a retired one between them stays put), and a move is a change like any other, so it moves the
+  version and names who made it (an edit open on either would then be refused, so moving waits until it's saved or
+  cancelled). An edit whose playbook leaves the page (a colleague retires, deletes or renames it, or a filter hides it)
+  keeps its form above the list, with what's typed, as Saved queries and Outreach templates do. The old address,
+  `/admin/playbooks`, redirects here.
 - **Not in the configuration bundle**, as the other libraries aren't.
 
 ## Board rules
