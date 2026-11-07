@@ -62,6 +62,44 @@ public sealed partial class MarkdownService : IMarkdownService
     [System.Text.RegularExpressions.GeneratedRegex(@"^(?:[-*+•·‣▪]|\d{1,2}[.)])\s+")]
     private static partial System.Text.RegularExpressions.Regex ListMarker();
 
+    /// <summary>
+    /// <paramref name="markdown"/> with every link reduced to its text, in each form Markdown writes one: inline
+    /// (<c>[text](url)</c>), by reference (<c>[text][1]</c>, <c>[text][]</c> or <c>[text]</c> with a <c>[1]: url</c>
+    /// line, which goes), an angle-bracket autolink (<c>&lt;https://…&gt;</c>, left as the bare address, which isn't a
+    /// link) and an image. For text TIDE didn't write (an AI's suggestions), so a page it read can't plant a link.
+    /// </summary>
+    public static string WithoutLinks(string markdown)
+    {
+        var text = markdown;
+        // A link's text can hold an image ("[![x](a)](b)"), which is itself one: a few passes take both.
+        for (var pass = 0; pass < 4; pass++)
+        {
+            MarkdownDocument document;
+            try { document = Markdown.Parse(text, Pipeline); }
+            catch (ArgumentException) { return text; }   // too deeply nested to parse: it renders escaped (see Render)
+            var cuts = new List<(int Start, int End, string With)>();
+            foreach (var def in document.Descendants<LinkReferenceDefinition>())
+                cuts.Add((def.Span.Start, def.Span.End, ""));
+            foreach (var link in document.Descendants<LinkInline>())
+                cuts.Add((link.Span.Start, link.Span.End, link.FirstChild is { } first && link.LastChild is { } last
+                    ? text[first.Span.Start..(last.Span.End + 1)] : ""));
+            foreach (var auto in document.Descendants<AutolinkInline>())
+                cuts.Add((auto.Span.Start, auto.Span.End, auto.Url));
+            // Outermost first, inner ones (an image in a link's text) are taken on the next pass.
+            var kept = new List<(int Start, int End, string With)>();
+            foreach (var c in cuts.Where(c => c.Start >= 0 && c.End < text.Length && c.End >= c.Start).OrderBy(c => c.Start).ThenByDescending(c => c.End))
+                if (kept.Count == 0 || c.Start > kept[^1].End) kept.Add(c);
+            if (kept.Count == 0) break;
+            var sb = new System.Text.StringBuilder(text);
+            foreach (var (start, end, with) in Enumerable.Reverse(kept)) sb.Remove(start, end - start + 1).Insert(start, with);
+            text = sb.ToString();
+        }
+        return BlankLines().Replace(text, "\n\n").Trim();
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"\n[ \t]*(?:\n[ \t]*)+")]
+    private static partial System.Text.RegularExpressions.Regex BlankLines();
+
     public string ToHtml(string? markdown) =>
         string.IsNullOrWhiteSpace(markdown) ? string.Empty : Render(markdown, Pipeline);
 
@@ -113,6 +151,7 @@ public sealed partial class MarkdownService : IMarkdownService
         var renderer = new HtmlRenderer(writer);
         pipeline.Setup(renderer);
         renderer.ObjectRenderers.Replace<LinkInlineRenderer>(new SafeLinkRenderer());
+        renderer.ObjectRenderers.Replace<AutolinkInlineRenderer>(new SafeAutolinkRenderer());
         renderer.Render(document);
         writer.Flush();
         return writer.ToString();
@@ -135,6 +174,19 @@ public sealed partial class MarkdownService : IMarkdownService
             }
             renderer.Write("<a href=\"").WriteEscapeUrl(link.Url ?? "#").Write("\" target=\"_blank\" rel=\"noopener noreferrer\">");
             renderer.WriteChildren(link);
+            renderer.Write("</a>");
+        }
+    }
+
+    /// <summary>An angle-bracket web address (<c>&lt;https://…&gt;</c>) opens like any other link: in a new tab, without a
+    /// referrer or opener. An email address (<c>&lt;team@example&gt;</c>) is a plain mailto link.</summary>
+    private sealed class SafeAutolinkRenderer : AutolinkInlineRenderer
+    {
+        protected override void Write(HtmlRenderer renderer, AutolinkInline link)
+        {
+            if (link.IsEmail) { base.Write(renderer, link); return; }
+            renderer.Write("<a href=\"").WriteEscapeUrl(link.Url).Write("\" target=\"_blank\" rel=\"noopener noreferrer\">");
+            renderer.WriteEscape(link.Url);
             renderer.Write("</a>");
         }
     }

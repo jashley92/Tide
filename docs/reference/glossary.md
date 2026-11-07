@@ -66,7 +66,7 @@ the tables and columns are in [data model](../architecture/data-model.md).
 
 | Term | Meaning | Code name |
 |---|---|---|
-| **Defang / refang** | Writing an indicator so it can't be clicked (`hxxp://evil[.]com`) / turning it back. TIDE stores indicators live and shows them defanged. | `IocObservable` (`src/Tide.Domain/Observables/`) |
+| **Defang / refang** | Writing an indicator so it can't be clicked (`hxxp://evil[.]com`) / turning it back. TIDE stores indicators live and shows them defanged: an address, domain, URL or email address fully; any other kind (a command line, a file name) as typed except for a web address inside it (`iwr hxxps://…`). | `IocObservable` (`src/Tide.Domain/Observables/`) |
 | **Detection rule** | A reference to one of the SOC's rules: name, id, technique tags, platform, enabled. Imported from Sentinel, Sigma or CSV, or pushed through the API. Its query is never read, stored or run. | `DetectionRule`, `DetectionSource` (`Sentinel`, `Sigma`, `Csv`) |
 | **Dialect** | One SIEM's hunt query language and how TIDE writes a query in it: XQL (Cortex XSIAM), KQL (Sentinel / Defender), CrowdStrike. An administrator's *query template* can override a block. | `IQueryDialect`, `HuntQueryBuilder`, `QueryTemplate`; [ADR 0006](../decisions/0006-query-dialects-are-templates.md) |
 | **Discussed** | A brief item ticked off in the meeting. Items not discussed are *carried over*. | `BriefItem.Discussed` |

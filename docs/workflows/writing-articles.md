@@ -407,7 +407,7 @@ A Viewer and an Action owner read articles at every marking inside TIDE, as anal
 | A retired scorecard tag or ATT&CK technique | Refused on save, naming the replacement for a technique. |
 | AI input above the limit | `AssistService.Status` blocks; nothing is sent. |
 | A draft citing a source that doesn't say it | `DraftChecks` flags the bullet; Add anyway only. |
-| A web page planting a link in the brief | Markdown links in suggestions are reduced to text; Markdig renders with raw HTML off and no autolinks. |
+| A web page planting a link in the brief | Every Markdown link in a suggestion (inline, by reference, `<https://…>`, an image) is reduced to its text (`MarkdownService.WithoutLinks`); Markdig renders with raw HTML off and no autolinks. |
 | Deleting a draft that a brief just took | The foreign key refuses; the message says it's on a brief. |
 
 ## Where it lives in code

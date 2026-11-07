@@ -213,7 +213,7 @@ public static partial class DraftChecks
     private static string? Text(string? text, int max)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
-        var clean = MarkdownLinkRegex().Replace(text.Replace("\r\n", "\n").Trim(), "$1").Trim();
+        var clean = Content.MarkdownService.WithoutLinks(text.Replace("\r\n", "\n").Trim());
         return clean.Length == 0 ? null : clean.Length > max ? clean[..(max - 1)].TrimEnd() + "…" : clean;
     }
 
@@ -227,7 +227,4 @@ public static partial class DraftChecks
         var end = s.LastIndexOf('}');
         return start >= 0 && end > start ? s[start..(end + 1)] : s;
     }
-
-    [GeneratedRegex(@"!?\[([^\]]*)\]\([^)]*\)")]
-    private static partial Regex MarkdownLinkRegex();
 }

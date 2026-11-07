@@ -74,6 +74,19 @@ public class SecurityAuditTests
         _md.ToHtml("<javascript:alert(1)>").Should().NotContain("<a ").And.Contain("javascript:alert(1)");
     }
 
+    [Fact]
+    public void AnAngleBracketAutolink_OpensInANewTab_WithoutAReferrerOrOpener_LikeAnyOtherLink()
+    {
+        // Clicked on a published brief or an action, it mustn't take the reader's tab away from TIDE, or tell the site
+        // it links to the TIDE page it was clicked on.
+        _md.ToHtml("<https://vendor.example/advisory>").Should()
+            .Contain("<a href=\"https://vendor.example/advisory\" target=\"_blank\" rel=\"noopener noreferrer\">https://vendor.example/advisory</a>");
+        _md.ToInlineHtml("see <https://vendor.example/a>").Should().Contain("target=\"_blank\" rel=\"noopener noreferrer\"");
+        _md.ToHtml("<team@vendor.example>").Should().Contain("<a href=\"mailto:team@vendor.example\">team@vendor.example</a>", "an email address opens the mail app");
+        // The email drops both, as it does for a [text](url) link.
+        Tide.Application.Distribution.EmailComposer.InlineStyles(_md.ToHtml("<https://vendor.example/a>")).Should().NotContain("target=");
+    }
+
     // A5-4 (Agent 5's acceptance test): text well within a field's limit that nests deeper than Markdig allows.
     private static string Shape(string shape) => shape switch
     {

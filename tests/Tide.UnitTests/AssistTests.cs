@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using FluentAssertions;
 using Tide.Application.Assist;
+using Tide.Application.Content;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 
@@ -426,6 +427,36 @@ public class DraftChecksTests
         s.Count.Should().Be(1 + 3 + 1 + 1 + 2);
 
         DraftChecks.Check(json, Context(ours: false)).WhyItMatters.Should().BeNull("our context wasn't sent, so there's nothing to base it on");
+    }
+
+    [Fact]
+    public void ALinkPlantedInASuggestion_InAnyMarkdownForm_IsReducedToText_SoTheBriefCarriesNoLiveLink()
+    {
+        // A web page sent to the AI can steer it into writing a link. Besides [text](url), Markdown links by reference
+        // ([text][1] with "[1]: url" below, or a bare [text] that a definition names) and by angle brackets (<url>).
+        var json = """
+            {
+              "bottomLine": "Patch now: <https://evil.example/patch> or <help@evil.example>.",
+              "bullets": [ "See [the fix][1].", "[1]: https://evil.example/fix", "Get it at <HTTPS://evil.example/a>" ],
+              "whyItMatters": "Read [the fix][1] and [notes].\n\n[1]: https://evil.example/fix\n[notes]: <https://evil.example/notes> \"Notes\"",
+              "recommendedActions": "- Download [the patch](<https://evil.example/p a>)\n- ![x](https://evil.example/pixel.png)"
+            }
+            """;
+
+        var s = DraftChecks.Check(json, Context());
+        var md = new MarkdownService();
+        // Bullets are one line each, but an outreach email joins them into one list, where a definition in one would serve another.
+        var joined = string.Join("\n", s.Bullets.Select(b => "- " + b.Text));
+        foreach (var text in new[] { s.Bluf, s.WhyItMatters, s.RecommendedActions, joined }.Concat(s.Bullets.Select(b => b.Text)))
+        {
+            md.ToHtml(text).Should().NotContain("<a ", "a suggestion is reduced to text: {0}", text);
+            md.ToInlineHtml(text).Should().NotContain("<a ");
+            text.Should().NotContain("evil.example/fix").And.NotContain("evil.example/notes");
+        }
+        s.Bluf.Should().Be("Patch now: https://evil.example/patch or help@evil.example.");
+        s.WhyItMatters.Should().Be("Read the fix and notes.");
+        s.Bullets.Select(b => b.Text).Should().Equal("See [the fix][1].", "Get it at HTTPS://evil.example/a");
+        s.RecommendedActions.Should().Be("- Download the patch\n- x");
     }
 
     [Fact]

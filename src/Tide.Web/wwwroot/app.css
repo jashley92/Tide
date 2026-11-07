@@ -644,6 +644,10 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 .tide-edition ul { margin: .4rem 0; }
 .tide-edition img { max-width: 100%; max-height: 300px; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-md); margin: .3rem .4rem .3rem 0; }
 .tide-withheld { font-size: .86rem; color: var(--tide-text-muted); font-style: italic; }
+/* Written text can hold a word longer than its card is wide (a pasted URL, a hash): it breaks rather than run out of the
+   card and make the page scroll sideways. A code block keeps its lines and scrolls in itself. */
+.tide-md { overflow-wrap: anywhere; }
+.tide-md pre { max-width: 100%; overflow-x: auto; }
 .tide-md p:last-child { margin-bottom: 0; }
 
 /* ---- Toasts, reconnect ---- */
