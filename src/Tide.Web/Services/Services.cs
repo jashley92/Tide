@@ -5,8 +5,11 @@ using Tide.Application.Abstractions;
 namespace Tide.Web.Services;
 
 /// <summary>A message shown briefly in the corner. Scoped: one queue per circuit.</summary>
-public sealed class ToastService
+/// <param name="time">The clock a confirmation's few seconds run on (the system's unless a test holds them).</param>
+public sealed class ToastService(TimeProvider? time = null)
 {
+    private readonly TimeProvider _time = time ?? TimeProvider.System;
+
     /// <summary>A message; <see cref="Undo"/>, when there is one, takes back what it reports (a button on the toast).</summary>
     public sealed record Toast(Guid Id, string Message, bool IsError, Func<Task>? Undo = null);
 
@@ -58,7 +61,7 @@ public sealed class ToastService
         }
         Changed?.Invoke();
         // Errors stay until dismissed or a later confirmation; confirmations go by themselves.
-        if (!isError) _ = Task.Delay(TimeSpan.FromSeconds(undo is null ? 4 : 10)).ContinueWith(_ => Dismiss(toast.Id), TaskScheduler.Default);
+        if (!isError) _ = Task.Delay(TimeSpan.FromSeconds(undo is null ? 4 : 10), _time).ContinueWith(_ => Dismiss(toast.Id), TaskScheduler.Default);
     }
 }
 

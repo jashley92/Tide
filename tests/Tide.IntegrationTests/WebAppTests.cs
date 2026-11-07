@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Org;
@@ -42,6 +43,10 @@ public class TideApp : WebApplicationFactory<Program>
             builder.UseSetting("DevAuth:Roles:1", role);
         }
         if (PathBase is { } pathBase) builder.UseSetting("App:PathBase", pathBase);
+        // A confirmation toast stays until something dismisses it, instead of going after a few real seconds: a test
+        // that reads it after a step that took longer on a loaded machine still finds it (ToastServiceTests holds
+        // the few seconds themselves).
+        builder.ConfigureTestServices(s => s.AddScoped(_ => new Tide.Web.Services.ToastService(new ManualClock())));
     }
 
     protected override void Dispose(bool disposing)

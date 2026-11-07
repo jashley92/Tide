@@ -232,22 +232,24 @@ public class CommentsAndStackDecisionPageTests(TideApp app) : IClassFixture<Tide
             await svc.SaveAsync(new StackForm { Name = "Live Decision Firewall" });
         }
 
-        (await list.HtmlOnce("Live Decision Firewall")).Should().Contain("Live Decision Firewall");
-        for (var i = 0; i < 50 && !Toasts(list).Any(t => t.Message == "Robin updated Our stack."); i++) await Task.Delay(100);
+        // Each page hears both saves through its live feed, once its pause has passed. The waits read the page on its
+        // own thread, so they never catch a reload halfway (the product re-read, the form not yet).
+        await list.Until(p => p.List?.Any(r => r.Product.Name == "Live Decision Firewall") == true);
+        (await list.Html()).Should().Contain("Live Decision Firewall");
         Toasts(list).Select(t => t.Message).Should().Contain("Robin updated Our stack.");
 
-        for (var i = 0; i < 50 && page.Component.Detail?.Product.Versions != "1.1"; i++) await Task.Delay(100);
+        await page.Until(p => p.Detail?.Product.Versions == "1.1");
         page.Component.Detail!.Product.Versions.Should().Be("1.1");
         page.Component.Form!.Versions.Should().Be("1.1", "an untouched form takes their change");
         Toasts(page).Select(t => t.Message).Should().Contain("Robin updated this product.");
 
-        for (var i = 0; i < 50 && typed.Component.Detail?.Product.Versions != "1.1"; i++) await Task.Delay(100);
+        await typed.Until(p => p.Detail?.Product.Versions == "1.1");
         typed.Component.Form!.Notes.Should().Be("Typed, not saved", "what's typed stays");
 
         // Another product's change re-reads quietly: this one didn't change.
-        var toasts = Toasts(page).Count;
+        var shown = Toasts(page).Select(t => t.Id).ToHashSet();
         await page.Click(p => p.OnChangedElsewhere([new Change(ChangeFeed.Stack, Colleague.UserId, Colleague.Name, Guid.NewGuid())]));
-        Toasts(page).Count.Should().Be(toasts);
+        Toasts(page).Where(t => !shown.Contains(t.Id)).Should().BeEmpty();
     }
 
     [Fact]

@@ -112,7 +112,7 @@ public class DirectoryEmailTests
         names.Resolve(Account).Should().Be("jdoe");
 
         release.Set();
-        var deadline = DateTime.UtcNow.AddSeconds(5);
+        var deadline = DateTime.UtcNow.AddSeconds(15);
         string? email = null;
         while (email is null && DateTime.UtcNow < deadline)
         {
@@ -174,7 +174,7 @@ public class DirectoryEmailTests
         (await names.EmailAsync(Account)).Should().Be("jordan.rivera@contoso.com");
 
         release.Set();
-        var deadline = DateTime.UtcNow.AddSeconds(5);
+        var deadline = DateTime.UtcNow.AddSeconds(15);
         string? name = null;
         while (name != "Jordan Rivera-Lee" && DateTime.UtcNow < deadline)
         {

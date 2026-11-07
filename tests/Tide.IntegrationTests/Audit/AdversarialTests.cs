@@ -2972,9 +2972,16 @@ public class IndicatorBackfillChallengeTests : IDisposable
         }
         int auditBefore;
         await using (var ctx = _db.Context()) auditBefore = ctx.AuditLog.Count();
+        // One pass is one read of the table, whatever its size: counted in commands, not timed, since a loaded
+        // machine's clock says nothing about how the pass is built. The stopwatch only catches a pass that hangs.
+        _db.Commands.Reset();
+        _db.Commands.Record = true;
         var sw = Stopwatch.StartNew();
         (await Run()).Should().Be(articles * perArticle);
-        sw.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(30));
+        sw.Elapsed.Should().BeLessThan(TimeSpan.FromMinutes(3));
+        _db.Commands.Record = false;
+        _db.Commands.Sql.Where(c => c.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase) && c.Contains("\"ArticleIndicators\"", StringComparison.Ordinal))
+            .Should().ContainSingle("the rows are read in one query, not one per article");
         await using var check = _db.Context();
         check.ArticleIndicators.AsEnumerable().Count(i => !string.Equals(i.Value, i.Value.ToLowerInvariant(), StringComparison.Ordinal)).Should().Be(0);
         // Observed, not asserted as a defect: the pass goes through the audit interceptor, so each rewritten row is also
@@ -3092,6 +3099,7 @@ public class BoundedDirectoryCallsWriteOffTests
                 await calls.WaitAsync([$"S-1-5-21-1-2-3-{episode}"], timeout);
                 time.Now += timeout * (Tide.Web.Security.BoundedDirectoryCalls<string>.HungExpiryFactor + 1);
             }
+            await Poll.Until(() => Volatile.Read(ref started) >= 2);   // the second call's thread may start late on a busy machine
             Volatile.Read(ref started).Should().Be(2, "a written-off call still holds its thread, and the domain never gets a third");
         }
         finally { block.Set(); }
@@ -3113,22 +3121,29 @@ public class BoundedDirectoryCallsWriteOffTests
             },
             (keys, answers) => { lock (landed) landed.Add((keys, answers)); }, _ => "corp", maxInFlight: 4, maxHung: 1, time);
         var timeout = TimeSpan.FromMilliseconds(20);
+        // Each call runs on its own thread, which a loaded machine may start after the caller's 20 ms are up: the test
+        // waits for the thread to reach the directory rather than assume it has.
+        int Gates() { lock (gates) return gates.Count; }
+        int Landed() { lock (landed) return landed.Count; }
         await calls.WaitAsync(["S-1"], timeout);                       // call 1 starts, times out, is hung
-        lock (gates) gates.Should().HaveCount(1);
+        await Poll.Until(() => Gates() == 1);
+        Gates().Should().Be(1);
         await calls.WaitAsync(["S-1"], timeout);                       // still hung: not waited on, no new call
-        lock (gates) gates.Should().HaveCount(1);
+        Gates().Should().Be(1);
         time.Now += timeout * (Tide.Web.Security.BoundedDirectoryCalls<string>.HungExpiryFactor + 1);
         await calls.WaitAsync(["S-1"], timeout);                       // written off: a new call for the same key starts
-        lock (gates) gates.Should().HaveCount(2);
+        await Poll.Until(() => Gates() == 2);
+        Gates().Should().Be(2);
         gates[0].Set();                                                // the old one returns late
-        await Task.Delay(100);
+        await Poll.Until(() => Landed() == 1);
         lock (landed) landed.Should().ContainSingle().Which.Answers["S-1"].Should().Be("answer-2", "the late answer is still handed over");
         gates[1].Set();
-        await Task.Delay(100);
-        lock (landed) landed.Should().HaveCount(2);
+        await Poll.Until(() => Landed() == 2);
+        Landed().Should().Be(2);
         // The domain is healthy again: a fresh key gets a fresh call at once.
-        await calls.WaitAsync(["S-2"], TimeSpan.FromSeconds(2));
-        lock (gates) gates.Should().HaveCount(3);
+        await calls.WaitAsync(["S-2"], timeout);
+        await Poll.Until(() => Gates() == 3);
+        Gates().Should().Be(3);
         gates[2].Set();
     }
 }

@@ -21,6 +21,29 @@ public class ToastServiceTests
     }
 
     [Fact]
+    public void AConfirmation_GoesAfterFourSeconds_OneWithUndoAfterTen_AndAnErrorStays()
+    {
+        var clock = new ManualClock();
+        var toasts = new ToastService(clock);
+        toasts.Error("It failed.");
+        toasts.Error("It failed again.");
+        toasts.Show("Saved.");                                      // clears the errors
+        toasts.Show("Took it off.", () => Task.CompletedTask);
+        clock.Advance(TimeSpan.FromSeconds(4) - TimeSpan.FromTicks(1));
+        toasts.Toasts.Select(t => t.Message).Should().Equal("Saved.", "Took it off.");
+        clock.Advance(TimeSpan.FromTicks(1));
+        Poll(() => toasts.Toasts.Count == 1);
+        toasts.Toasts.Select(t => t.Message).Should().Equal("Took it off.");
+        toasts.Error("It failed.");
+        clock.Advance(TimeSpan.FromSeconds(6));
+        Poll(() => toasts.Toasts.Count == 1);
+        toasts.Toasts.Should().ContainSingle().Which.Message.Should().Be("It failed.", "an error stays until dismissed");
+
+        // The dismissal is a continuation of the timer's task, so it lands just after the clock moves.
+        static void Poll(Func<bool> done) => SpinWait.SpinUntil(done, TimeSpan.FromSeconds(15)).Should().BeTrue();
+    }
+
+    [Fact]
     public async Task AnUndo_RunsOnce_AndTakesItsToastAway()
     {
         var toasts = new ToastService();

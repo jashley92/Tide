@@ -9,7 +9,9 @@ namespace Tide.Web.Services;
 /// story picker at <see cref="SearchMs"/>; a table's filter and triage's search at their own longer pauses. (The command
 /// palette keeps its own: its pause also cancels the search it started.)
 /// </summary>
-public sealed class TypingPause(int delayMs = TypingPause.SearchMs)
+/// <param name="delayMs">How long typing must stop; <see cref="SearchMs"/> unless the caller says otherwise.</param>
+/// <param name="time">The clock the pause runs on (a test moves its own on).</param>
+public sealed class TypingPause(int delayMs = TypingPause.SearchMs, TimeProvider? time = null)
 {
     /// <summary>How long a picker waits after a keystroke before it searches.</summary>
     public const int SearchMs = 200;
@@ -23,7 +25,7 @@ public sealed class TypingPause(int delayMs = TypingPause.SearchMs)
     public async Task<bool> Settled()
     {
         var mine = ++_latest;
-        await Task.Delay(delayMs);
+        await Task.Delay(TimeSpan.FromMilliseconds(delayMs), time ?? TimeProvider.System);
         return mine == _latest;
     }
 
