@@ -18,6 +18,9 @@ public sealed class EmailSender(IOptionsMonitor<EmailOptions> options, ILogger<E
 {
     public bool Enabled => options.CurrentValue.Enabled;
 
+    /// <summary>What a send is told when the pickup folder can't be made or written to.</summary>
+    internal const string PickupUnusable = "The email pickup folder (Email:PickupDirectory) can't be created or written to.";
+
     public static string Target(EmailOptions o) => string.IsNullOrWhiteSpace(o.PickupDirectory) ? $"smtp:{o.SmtpHost}:{o.SmtpPort}" : "pickup";
 
     public async Task<EmailSendResult> SendAsync(OutgoingEmail email, CancellationToken ct = default)
@@ -57,7 +60,7 @@ public sealed class EmailSender(IOptionsMonitor<EmailOptions> options, ILogger<E
             message.Dispose();
             circuit.Release(target);
             log.LogError("The email pickup directory can't be used: {Failure}.", ex.GetType().Name);
-            return new EmailSendResult(EmailSendStatus.Failed, "The email pickup folder (Email:PickupDirectory) can't be created or written to.");
+            return new EmailSendResult(EmailSendStatus.Failed, PickupUnusable);
         }
 
         using (message)
@@ -98,6 +101,15 @@ public sealed class EmailSender(IOptionsMonitor<EmailOptions> options, ILogger<E
                 circuit.Succeeded(target);
                 log.LogWarning("An email reached {Delivered} of {RecipientCount} recipient(s); 1 was refused ({Failure}).", valid - 1, valid, Failure(ex));
                 return new EmailSendResult(EmailSendStatus.Sent, Refused: 1);
+            }
+            catch (Exception ex) when (ex is SmtpException or IOException or InvalidOperationException or System.Net.Sockets.SocketException
+                                       && !string.IsNullOrWhiteSpace(o.PickupDirectory))
+            {
+                // The folder is there but the .eml couldn't be written (no write permission, a full disk): no relay was
+                // asked, so it isn't one that doesn't answer, and nothing was handed to anyone.
+                circuit.Release(target);
+                log.LogError("The email pickup directory can't be written to: {Failure}.", Failure(ex));
+                return new EmailSendResult(EmailSendStatus.Failed, PickupUnusable);
             }
             catch (Exception ex) when (ex is SmtpException or IOException or InvalidOperationException or System.Net.Sockets.SocketException)
             {

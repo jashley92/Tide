@@ -339,9 +339,11 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
             if (allGive.Count == 0 || (change.TakeFrom is not null && allTake.Count == 0))
                 throw new InvalidOperationException("The days in this request are now holidays, so there's nothing to hand over. Decline it, and ask again for other days if needed.");
             // Approved late, only the days still to come change hands; a past day stays with whoever the rota shows (its
-            // brief's presenter is recorded from the brief). A swap needs days to come on both sides, or it's a gift.
-            var give = allGive.Where(d => d >= clock.Today).ToList();
-            var take = allTake.Where(d => d >= clock.Today).ToList();
+            // brief's presenter is recorded from the brief). Today is past once its meeting has been held. A swap needs
+            // days to come on both sides, or it's a gift.
+            var first = await FirstDayToComeAsync(db, ct);
+            var give = allGive.Where(d => d >= first).ToList();
+            var take = allTake.Where(d => d >= first).ToList();
             if (give.Count == 0 || (change.TakeFrom is not null && take.Count == 0))
                 throw new InvalidOperationException(change.TakeFrom is not null && (give.Count > 0 || take.Count > 0)
                     ? "One side of this swap has passed, so it can't be a swap any more. Decline it, and ask again if needed."
@@ -476,7 +478,8 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
         else if (change.Status == RotationChangeStatus.Approved)
         {
             if (!user.Has(Permission.Administer)) throw new ForbiddenException("Only an administrator can undo an approved change.");
-            if (change.GiveTo < clock.Today && (change.TakeTo ?? DateOnly.MinValue) < clock.Today)
+            var first = await FirstDayToComeAsync(db, ct);
+            if (change.GiveTo < first && (change.TakeTo ?? DateOnly.MinValue) < first)
                 throw new InvalidOperationException("Every day in this change has passed, so there's nothing to undo.");
             await RestoreDaysAsync(db, change, ct);
         }
@@ -486,11 +489,12 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
     }
 
     // The days an approved change held go back to what they were: the latest other approved change that still covers the
-    // day (this one may have been layered on it), else the weekly rota. A day that has passed stays with whoever had it.
+    // day (this one may have been layered on it), else the weekly rota. A day that has passed (today, once its meeting
+    // was held) stays with whoever had it.
     private async Task RestoreDaysAsync(IAppDbContext db, RotationChange change, CancellationToken ct)
     {
-        var today = clock.Today;
-        var held = await db.RotationOverrides.Where(o => o.ChangeId == change.Id && o.Date >= today).ToListAsync(ct);
+        var toCome = await FirstDayToComeAsync(db, ct);
+        var held = await db.RotationOverrides.Where(o => o.ChangeId == change.Id && o.Date >= toCome).ToListAsync(ct);
         if (held.Count == 0) return;
         var first = held.Min(o => o.Date);
         var last = held.Max(o => o.Date);
@@ -538,6 +542,17 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
             b.AnalystName = m.ToName;
             b.EditVersion = Guid.NewGuid();
         }
+    }
+
+    // The first day whose presenter can still change: today, unless today's meeting has been held (its brief presented,
+    // sent, or held and put back to ready), when today is as past as yesterday and its brief says who presented it.
+    private async Task<DateOnly> FirstDayToComeAsync(IAppDbContext db, CancellationToken ct)
+    {
+        var today = clock.Today;
+        var brief = await db.Briefs.AsNoTracking().FirstOrDefaultAsync(b => b.BriefDate == today, ct);
+        if (brief is null) return today;
+        if (brief.Status is BriefStatus.Presented or BriefStatus.Sent) return today.AddDays(1);
+        return (await HeldAsync(db, [brief], ct)).Contains(brief.Id) ? today.AddDays(1) : today;
     }
 
     // The briefs among these whose meeting was held, though Back to ready (BriefService.ReopenAsync) took them back to

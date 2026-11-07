@@ -317,7 +317,9 @@ email path: brief sends, corrections, test copies, reminders, digests and rotati
   queued. A relay that refused some recipients but took the rest is a partial `Sent`, since sending again would
   repeat it to everyone.
 - **Back-off.** `OutboundCircuit` per relay (`smtp:<host>:<port>`, or `pickup`). A relay that couldn't be reached or
-  dropped the session counts as a failure; a relay that answered with a refusal doesn't.
+  dropped the session counts as a failure; a relay that answered with a refusal doesn't, nor does a pickup folder that
+  can't be made or written to (it fails with "The email pickup folder (Email:PickupDirectory) can't be created or
+  written to.", never "couldn't be reached").
 - **Logging.** Counts and SMTP status codes only, never addresses, subjects or the relay's own reply, which can echo
   addresses. The analyst is told the kind of failure ("refused the sign-in (SMTP 535)").
 
