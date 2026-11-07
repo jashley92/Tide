@@ -56,7 +56,7 @@ public class EmailTemplateTests
                 ["Change"] = "Robin covers <img src=x onerror=alert(1)>",
                 ["Note"] = "<p style=\"margin:0;\">quoted</p>",
                 ["RotationLink"] = " (<a href=\"https://tide.example/rotation\">open it</a>)",
-            });
+            }, appUrl: null);
 
         r.Subject.Should().Be("TIDE: Sam <script> asks", "the subject is text (the mail library encodes it), and HTML values don't go in it");
         r.Heading.Should().Be("Robin, please");
@@ -71,7 +71,7 @@ public class EmailTemplateTests
     [Fact]
     public void TheStore_UsesTheDefaults_UntilOneIsSaved()
     {
-        var store = new EmailTemplateStore();
+        var store = new EmailTemplateStore(null);
         store.Text(EmailTemplateCatalog.Digest, EmailPart.Subject).Should().Be(EmailTemplateCatalog.Digest.DefaultSubject);
         store.IsCustomized(EmailTemplateCatalog.Digest).Should().BeFalse();
         store.Render(EmailTemplateCatalog.Digest, new Dictionary<string, string> { ["Team"] = "Blue", ["WeekOf"] = "Nov 2" })

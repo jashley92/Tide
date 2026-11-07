@@ -123,7 +123,7 @@ public class RootRelativeLinkTests
         var html = EmailTemplateRenderer.Render(t, "s", "h", body, new Dictionary<string, string>(), "https://intranet.example.org/tide").BodyHtml;
         html.Should().Contain("href=\"https://intranet.example.org/tide/rotation\"");
 
-        EmailTemplateRenderer.Render(t, "s", "h", body, new Dictionary<string, string>()).BodyHtml
+        EmailTemplateRenderer.Render(t, "s", "h", body, new Dictionary<string, string>(), appUrl: null).BodyHtml
             .Should().Contain("the rotation").And.NotContain("href=\"/rotation\"");
     }
 }

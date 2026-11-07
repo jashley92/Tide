@@ -134,10 +134,13 @@ public sealed class Md : ComponentBase
     [Parameter] public string? Text { get; set; }
     [Parameter] public bool Inline { get; set; }
 
+    // The app's sub-path doesn't change while the page is open: worked out on the first render.
+    private LinkRoot? _links;
+
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         if (string.IsNullOrWhiteSpace(Text)) return;
-        var links = LinkRoot.FromBaseUri(Nav.BaseUri);
+        var links = _links ??= LinkRoot.FromBaseUri(Nav.BaseUri);
         b.OpenElement(0, Inline ? "span" : "div");
         b.AddAttribute(1, "class", "tide-md");
         b.AddMarkupContent(2, Inline ? Markdown.ToInlineHtml(Text, links) : Markdown.ToHtml(Text, links));

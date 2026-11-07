@@ -112,7 +112,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
         var to = await Team("Layout receiving team");
         var number = await Raise(from, "Layout handed over");
         var id = (await Detail(number)).Action.Id;
-        await As(sp => sp.GetRequiredService<HandoffService>().HandOffAsync(id, to, "The fix is theirs", keepRemindersOff: true));
+        await As(sp => sp.GetRequiredService<HandoffService>().HandOffAsync(id, to, "The fix is theirs"));
 
         await using var page = await Open(number);
         var who = Section(WebUtility.HtmlDecode(await page.Html()), "<div class=\"tide-sub tide-action-who\">", "</div>");

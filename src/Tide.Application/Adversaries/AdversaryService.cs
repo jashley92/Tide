@@ -542,27 +542,12 @@ public sealed class AdversaryService(IAppDbContextFactory dbs, ICurrentUser user
         return id;
     }
 
-    // The reads and the save in one serializable transaction, so a merge and a tag (or link) of the profile it retires
-    // can't interleave: a tag added to the old profile after the merge read its tags, and before it saved, stayed on the
-    // retired profile. SQLite takes the write lock at the start, so the second waits for the first; SQL Server holds the
-    // rows read, and picks a deadlock victim that the execution strategy retries. Inside the strategy (a retrying
-    // strategy refuses a transaction opened outside it), each try on a context of its own.
-    private async Task<T> Serialized<T>(Func<IAppDbContext, Task<T>> change, CancellationToken ct)
-    {
-        await using var outer = await dbs.CreateAsync(ct);
-        return await outer.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
-        {
-            await using var db = await dbs.CreateAsync(ct);
-            await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
-            var result = await change(db);
-            await db.SaveChangesAsync(ct);
-            await tx.CommitAsync(ct);
-            return result;
-        });
-    }
+    // The reads and the save in one serializable transaction (SerializedAsync), so a merge and a tag (or link) of the
+    // profile it retires can't interleave: a tag added to the old profile after the merge read its tags, and before it
+    // saved, stayed on the retired profile.
+    private Task<T> Serialized<T>(Func<IAppDbContext, Task<T>> change, CancellationToken ct) => dbs.SerializedAsync(change, ct);
 
-    private Task Serialized(Func<IAppDbContext, Task> change, CancellationToken ct) =>
-        Serialized(async db => { await change(db); return true; }, ct);
+    private Task Serialized(Func<IAppDbContext, Task> change, CancellationToken ct) => dbs.SerializedAsync(change, ct);
 
     /// <summary>Untags a profile from an article; nothing else changes, and one already untagged is fine.</summary>
     public async Task UntagArticleAsync(Guid articleId, Guid id, CancellationToken ct = default)

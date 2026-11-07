@@ -370,8 +370,10 @@ public class ChangeInterceptorTests : IDisposable
         await _db.Stack().TagArticleAsync(article, product);
         await _db.Adversaries().UntagArticleAsync(article, adversary);
 
-        // The article's tags topic, and the profiles' (the Adversaries list's counts, a profile's timeline): never the article's own.
-        _heard.Select(c => c.Topic).Should().OnlyContain(t => t == ChangeFeed.ArticleTags(article) || t == ChangeFeed.Adversaries)
+        // The article's tags topic, the profiles' (the Adversaries list's counts, a profile's timeline) and its summary (a
+        // story's page): never the article's own.
+        _heard.Select(c => c.Topic).Should()
+            .OnlyContain(t => t == ChangeFeed.ArticleTags(article) || t == ChangeFeed.Adversaries || t == ChangeFeed.ArticleSummary(article))
             .And.Contain(ChangeFeed.ArticleTags(article)).And.NotContain(ChangeFeed.Article(article));
         BriefPage.Follow(await _db.Briefs().GetAsync(day), day).Should().NotContain(ChangeFeed.ArticleTags(article));
     }
@@ -487,11 +489,11 @@ public class ChangeInterceptorTests : IDisposable
         Of(new ArticleBullet { ArticleId = a }).Should().Equal(ChangeFeed.Article(a));
         Of(new ArticleScreenshot { ArticleId = a }).Should().Equal(ChangeFeed.Article(a));
         Of(new ArticleTag { ArticleId = a }).Should().Equal(ChangeFeed.Article(a));
-        Of(new ArticleTechnique { ArticleId = a }).Should().Equal(ChangeFeed.Article(a));
+        Of(new ArticleTechnique { ArticleId = a }).Should().Equal(ChangeFeed.Article(a), ChangeFeed.ArticleSummary(a));
         Of(new ArticleIndicator { ArticleId = a }).Should().Equal(ChangeFeed.Article(a));
         Of(new ArticleLink { ArticleId = a }).Should().Equal(ChangeFeed.Article(a));
-        Of(new ArticleCve { ArticleId = a }).Should().Equal(ChangeFeed.Article(a));
-        Of(new ArticleAdversary { ArticleId = a }).Should().Equal(ChangeFeed.ArticleTags(a), ChangeFeed.Adversaries);
+        Of(new ArticleCve { ArticleId = a }).Should().Equal(ChangeFeed.Article(a), ChangeFeed.ArticleSummary(a));
+        Of(new ArticleAdversary { ArticleId = a }).Should().Equal(ChangeFeed.ArticleTags(a), ChangeFeed.Adversaries, ChangeFeed.ArticleSummary(a));
         Of(new ArticleProduct { ArticleId = a }).Should().Equal(ChangeFeed.ArticleTags(a));
         Of(new BriefItem { BriefId = b }).Should().Equal(ChangeFeed.Brief(b));
         Of(new BriefSend { BriefId = b }).Should().Equal(ChangeFeed.Brief(b));

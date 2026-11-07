@@ -103,7 +103,7 @@ unless marked singleton. "Checks" lists the permissions the service itself tests
 | `OutreachService` | `Actions/Outreach.cs` | Writing an Outreach action's email, marking it sent, recording the reply (ADR [0019](../decisions/0019-outreach-emails-are-written-never-sent.md)) | `WriteAsync`, `MarkSentAsync`, `RecordReplyAsync`, `WithdrawAsync`, `ForActionAsync` | reading actions; working the action |
 | `PlaybookService` | `Actions/Playbooks.cs` | The team's checklist playbooks per action kind, kept as the saved queries are (`TeamLibrary` in `TeamLibrary.cs` holds the rules the three libraries share) | `ListAsync`, `RowsAsync`, `ForKindAsync`, `SaveAsync`, `MoveAsync`, `SetRetiredAsync`, `DeleteAsync` | ReadTeamEdition or WorkActions to read; WorkActions to change; the maker or Administer to delete |
 | `CardRuleService` | `Actions/Playbooks.cs` | Which actions stand out on the board, and the rules offered as filters | `ListAsync`, `SaveAsync`, `MoveAsync`, `DeleteAsync` | ReadActions, ReadTeamEdition or WorkActions to read; Administer to change |
-| `TeamService` | `Actions/TeamService.cs` | Teams that own actions, and their members; external teams (ADR 0020), active limits and escalation contacts | `ListAsync`, `AddAsync`, `UpdateAsync`, `AddMemberAsync`, `RemoveMemberAsync`, `SetRetiredAsync`, `TeamsOfAsync`, `AddExternalAsync`, `UpdateExternalAsync`, `SetLimitAsync`, `SetEscalationContactAsync` | ReadTeamEdition or WorkActions to read; WorkActions for an external team; Administer for an internal one, members and limits |
+| `TeamService` | `Actions/TeamService.cs` | Teams that own actions, and their members; external teams (ADR 0020), active limits and escalation contacts | `ListAsync`, `AddAsync`, `UpdateAsync`, `AddMemberAsync`, `RemoveMemberAsync`, `SetRetiredAsync`, `TeamsOfAsync`, `AddExternalAsync`, `UpdateExternalAsync`, `SetLimitAsync`, `SetEscalationContactAsync` (a team's form saves through `UpdateAsync(id, TeamForm)` or `UpdateExternalAsync`, in one save) | ReadTeamEdition or WorkActions to read; WorkActions for an external team; Administer for an internal one, members and limits |
 | `HandoffService` | `Actions/Handoffs.cs` | Hand-offs to another team (with a reason, emailing the receiving team unless it's external), the same hand-off for a team changed in the editor (`HandOverAsync`, which `ActionService.SaveAsync` calls; `HandoffNotices` sends the email), and splits to several teams at once | `HandOffAsync`, `SplitAsync` | whoever can work the action to hand it off; WriteArticles to split |
 | `SlaSettings` | `Actions/ActionSla.cs` | SLA targets per priority and kind | `GetAsync`, `SaveAsync` | Administer to save |
 | `ReminderService` | `Actions/Reminders.cs` | Reminder and digest emails, and the brief-not-ready nudge; external teams' reminders, at their cadence, with no TIDE links (`ExternalReminders.cs`); the escalation ladder's steps: remind, copy the escalation contact, raise priority, flag (`EscalationScan.cs`, rules in `EscalationLadder`, ADR [0021](../decisions/0021-escalation-is-an-administered-ladder.md)) | `RunDueAsync`, `RunAsync`, `RunNowAsync` | none for the scans; Administer for Run now |
@@ -340,6 +340,7 @@ pause briefly so a burst is one reload. How pages subscribe is in [collaboration
 | Topic | Published when this is saved |
 |---|---|
 | `article:{id}` | The article, its bullets, screenshots, tags, techniques, indicators, links or CVEs |
+| `article-summary:{id}` | An article's techniques, CVEs or adversary tags (its story's page listens) |
 | `articles` | Any article (the lists, and the brief's Add article picker) |
 | `article-tags:{id}` | An article's adversary or product tags (only the editor's pickers listen) |
 | `brief:{id}` | The brief, its items, sends or corrections |
@@ -351,6 +352,7 @@ pause briefly so a burst is one reload. How pages subscribe is in [collaboration
 | `metrics-day:{yyyy-MM-dd}` | A day's metric value |
 | `rotation` | A rotation week, member, override or change request |
 | `stories` | Any story |
+| `story:{id}` | The story, or an article on it, linked to it or taken off it |
 | `stack` | A product in Our stack |
 | `saved-queries` | A saved hunt query |
 | `outreach-templates` | An outreach template |

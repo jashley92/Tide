@@ -17,20 +17,15 @@ namespace Tide.Application.Content;
 /// </summary>
 public interface IMarkdownService
 {
-    /// <summary>Markdown to sanitised HTML (raw HTML escaped, unsafe link schemes dropped).</summary>
-    string ToHtml(string? markdown);
-
-    /// <summary>As <see cref="ToHtml(string?)"/>, with a link or image that starts at the server's root
-    /// (<c>[x](/actions/12)</c>) pointed where <paramref name="links"/> says: under the app's sub-path on a page, or at
-    /// the app's address in an email.</summary>
-    string ToHtml(string? markdown, LinkRoot links);
+    /// <summary>Markdown to sanitised HTML (raw HTML escaped, unsafe link schemes dropped). A link or image that starts
+    /// at the server's root (<c>[x](/actions/12)</c>) is pointed where <paramref name="links"/> says: under the app's
+    /// sub-path on a page, or at the app's address in an email; with none, as it was typed.</summary>
+    string ToHtml(string? markdown, LinkRoot? links = null);
 
     /// <summary>One line of Markdown to sanitised inline HTML with no wrapping paragraph: bold, italics, code and
-    /// links. Block syntax (lists, headings) isn't parsed and shows as typed.</summary>
-    string ToInlineHtml(string? markdown);
-
-    /// <summary>As <see cref="ToInlineHtml(string?)"/>, with root-relative links pointed where <paramref name="links"/> says.</summary>
-    string ToInlineHtml(string? markdown, LinkRoot links);
+    /// links. Block syntax (lists, headings) isn't parsed and shows as typed. Root-relative links as
+    /// <see cref="ToHtml"/> points them.</summary>
+    string ToInlineHtml(string? markdown, LinkRoot? links = null);
 
     /// <summary>Markdown to readable plain text (formatting stripped).</summary>
     string ToPlainText(string? markdown);
@@ -108,17 +103,13 @@ public sealed partial class MarkdownService : IMarkdownService
     [System.Text.RegularExpressions.GeneratedRegex(@"\n[ \t]*(?:\n[ \t]*)+")]
     private static partial System.Text.RegularExpressions.Regex BlankLines();
 
-    public string ToHtml(string? markdown) => ToHtml(markdown, LinkRoot.None);
+    public string ToHtml(string? markdown, LinkRoot? links = null) =>
+        string.IsNullOrWhiteSpace(markdown) ? string.Empty : Render(markdown, Pipeline, links ?? LinkRoot.None);
 
-    public string ToHtml(string? markdown, LinkRoot links) =>
-        string.IsNullOrWhiteSpace(markdown) ? string.Empty : Render(markdown, Pipeline, links);
-
-    public string ToInlineHtml(string? markdown) => ToInlineHtml(markdown, LinkRoot.None);
-
-    public string ToInlineHtml(string? markdown, LinkRoot links)
+    public string ToInlineHtml(string? markdown, LinkRoot? links = null)
     {
         if (string.IsNullOrWhiteSpace(markdown)) return string.Empty;
-        var html = Render(OneLine(markdown), InlinePipeline, links).Trim();
+        var html = Render(OneLine(markdown), InlinePipeline, links ?? LinkRoot.None).Trim();
         return html.StartsWith("<p>", StringComparison.Ordinal) && html.EndsWith("</p>", StringComparison.Ordinal) ? html[3..^4] : html;
     }
 

@@ -45,7 +45,7 @@ public class HandoffKeepsRemindersOffTests : IDisposable
     {
         var (a, to) = await Quiet();
 
-        await _db.Handoffs().HandOffAsync(a.Id, to, "They host the resolvers", keepRemindersOff: false);
+        await _db.Handoffs().HandOffAsync(a.Id, to, "They host the resolvers", turnRemindersOn: true);
 
         var (after, history) = await Read(a);
         after.NoReminders.Should().BeFalse("the new team is reminded about it");
@@ -56,14 +56,14 @@ public class HandoffKeepsRemindersOffTests : IDisposable
     public async Task HandingOff_WithKeepRemindersOffTicked_KeepsThemOff_AndWhileTheyreOn_TheChoiceChangesNothing()
     {
         var (a, to) = await Quiet();
-        await _db.Handoffs().HandOffAsync(a.Id, to, "They host the resolvers", keepRemindersOff: true);
+        await _db.Handoffs().HandOffAsync(a.Id, to, "They host the resolvers");
         var (kept, history) = await Read(a);
         kept.NoReminders.Should().BeTrue();
         history.Last().Should().Be("Handed from Network Engineering to Hosting Provider: They host the resolvers");
 
         var other = await _db.Teams().AddExternalAsync("Registrar", "abuse@registrar.example");
         await _db.Actions().SetNoRemindersAsync(a.Id, off: false);
-        await _db.Handoffs().HandOffAsync(a.Id, other, "They hold the domain", keepRemindersOff: true);
+        await _db.Handoffs().HandOffAsync(a.Id, other, "They hold the domain");
         (await Read(a)).Action.NoReminders.Should().BeFalse("keeping them off never turns them off");
     }
 
@@ -72,15 +72,14 @@ public class HandoffKeepsRemindersOffTests : IDisposable
     {
         var (a, to) = await Quiet();
         var form = ActionForm.From(a);
-        form.RemindersOff.Should().BeTrue("the editor shows the choice only while they're off");
-        form.KeepRemindersOff.Should().BeTrue("as they are, by default");
+        form.TurnRemindersOn.Should().BeFalse("they stay as they are, by default");
         form.TeamId = to;
         await _db.Actions().SaveAsync(form);
         (await Read(a)).Action.NoReminders.Should().BeTrue();
 
         var back = ActionForm.From((await Read(a)).Action);
         back.TeamId = (await _db.Teams().AddExternalAsync("Registrar", "abuse@registrar.example"));
-        back.KeepRemindersOff = false;
+        back.TurnRemindersOn = true;
         await _db.Actions().SaveAsync(back);
         var (after, history) = await Read(a);
         after.NoReminders.Should().BeFalse();

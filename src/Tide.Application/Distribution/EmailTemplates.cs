@@ -292,7 +292,7 @@ public static partial class EmailTemplateRenderer
     private static readonly MarkdownService Md = new();
 
     public static RenderedTemplate Render(EmailTemplate t, string subject, string heading, string body, IReadOnlyDictionary<string, string> values,
-        string? appUrl = null)
+        string? appUrl)
     {
         string Value(string name, out EmailToken? token)
         {
@@ -335,11 +335,11 @@ public static partial class EmailTemplateRenderer
 /// saved, for a service built without one (tests). A root-relative link a template's body has ("/rotation") is pointed at
 /// the app's address (<c>App:BaseUrl</c>), or left as its text when that isn't set (see <see cref="LinkRoot.Email"/>).
 /// </summary>
-public sealed class EmailTemplateStore(Microsoft.Extensions.Options.IOptions<AppOptions>? app = null)
+public sealed class EmailTemplateStore(Microsoft.Extensions.Options.IOptions<AppOptions>? app)
 {
     private IReadOnlyDictionary<string, string> _values = new Dictionary<string, string>();
 
-    public static EmailTemplateStore Defaults { get; } = new();
+    public static EmailTemplateStore Defaults { get; } = new(null);
 
     /// <summary>The part as it's used: the saved text, or the default.</summary>
     public string Text(EmailTemplate t, EmailPart part) =>

@@ -90,6 +90,35 @@ public interface IAppDbContextFactory
     Task<IAppDbContext> CreateAsync(CancellationToken ct = default);
 }
 
+/// <summary>Running a read-then-write as one serializable transaction.</summary>
+public static class SerializedChanges
+{
+    /// <summary>
+    /// Runs <paramref name="change"/>, saves and commits, in one serializable transaction, so a check and the save it
+    /// guards can't interleave with a colleague's: the second waits and reads what the first saved. SQLite takes the write
+    /// lock at the start; SQL Server holds the rows read and picks a deadlock victim, which the execution strategy retries.
+    /// Inside the strategy (a retrying strategy refuses a transaction opened outside it), each try on a context of its
+    /// own, so a failed try's changes aren't saved again with the next.
+    /// </summary>
+    public static async Task<T> SerializedAsync<T>(this IAppDbContextFactory dbs, Func<IAppDbContext, Task<T>> change, CancellationToken ct = default)
+    {
+        await using var outer = await dbs.CreateAsync(ct);
+        return await outer.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        {
+            await using var db = await dbs.CreateAsync(ct);
+            await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+            var result = await change(db);
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return result;
+        });
+    }
+
+    /// <inheritdoc cref="SerializedAsync{T}"/>
+    public static Task SerializedAsync(this IAppDbContextFactory dbs, Func<IAppDbContext, Task> change, CancellationToken ct = default) =>
+        dbs.SerializedAsync(async db => { await change(db); return true; }, ct);
+}
+
 /// <summary>The signed-in user, for plain requests and Blazor circuits alike.</summary>
 public interface ICurrentUser
 {

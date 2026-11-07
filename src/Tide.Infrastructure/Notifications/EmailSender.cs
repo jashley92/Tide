@@ -124,13 +124,14 @@ public sealed class EmailSender(IOptionsMonitor<EmailOptions> options, ILogger<E
             }
             catch (Exception ex) when (ex is SmtpException or IOException or InvalidOperationException or System.Net.Sockets.SocketException)
             {
-                if (Unreachable(ex)) circuit.Failed(target);
+                var unreachable = Unreachable(ex);
+                if (unreachable) circuit.Failed(target);
                 else circuit.Succeeded(target);   // it answered (with a refusal), so it isn't backed off
-                if (Outcome(ex) is var unknown and not EmailSendStatus.Failed)
+                if (unreachable && MayHaveTaken(ex))
                 {
                     log.LogError("Sending an email to {RecipientCount} recipient(s) didn't finish; whether the relay took it isn't known: {Failure}.",
                         valid, Failure(ex));
-                    return new EmailSendResult(unknown, IsTimeout(ex) ? TimedOut(o.Timeout) : Dropped);
+                    return new EmailSendResult(EmailSendStatus.Unknown, IsTimeout(ex) ? TimedOut(o.Timeout) : Dropped);
                 }
                 log.LogError("Failed to send an email to {RecipientCount} recipient(s): {Failure}.", valid, Failure(ex));
                 return new EmailSendResult(EmailSendStatus.Failed, Explain(ex));
@@ -184,21 +185,24 @@ public sealed class EmailSender(IOptionsMonitor<EmailOptions> options, ILogger<E
     }
 
     /// <summary>
-    /// What a send that threw may have done: <see cref="EmailSendStatus.Unknown"/> when the relay may have the message (it
-    /// didn't answer in time, or the connection dropped once it was made: SmtpClient doesn't say how far it got), else
-    /// <see cref="EmailSendStatus.Failed"/> (a refusal it answered with, a connection never made, a TLS handshake that
-    /// failed before anything was sent).
+    /// Whether a send that threw with the relay unreachable or gone (<see cref="Unreachable"/>) may still have left it the
+    /// message (<see cref="EmailSendStatus.Unknown"/>): it didn't answer in time, or the connection dropped once it was
+    /// made (SmtpClient doesn't say how far it got). Not when the connection was never made, or a TLS handshake failed
+    /// before anything was sent. A refusal the relay answered with isn't unreachable, so isn't asked.
     /// </summary>
-    internal static EmailSendStatus Outcome(Exception ex)
+    internal static bool MayHaveTaken(Exception ex)
     {
-        if (IsTimeout(ex)) return EmailSendStatus.Unknown;
-        if (!Unreachable(ex)) return EmailSendStatus.Failed;   // it answered, with a refusal
-        var chain = new List<Exception>();
-        for (var e = ex; e is not null; e = e.InnerException) chain.Add(e);
-        if (chain.OfType<System.Security.Authentication.AuthenticationException>().Any()) return EmailSendStatus.Failed;
-        if (chain.OfType<System.Net.Sockets.SocketException>().FirstOrDefault() is { } s)
-            return NeverConnected(s.SocketErrorCode) ? EmailSendStatus.Failed : EmailSendStatus.Unknown;
-        return chain.OfType<IOException>().Any() ? EmailSendStatus.Unknown : EmailSendStatus.Failed;
+        if (IsTimeout(ex)) return true;
+        System.Net.Sockets.SocketException? socket = null;
+        bool tls = false, io = false;
+        for (var e = ex; e is not null; e = e.InnerException)
+        {
+            tls |= e is System.Security.Authentication.AuthenticationException;
+            io |= e is IOException;
+            socket ??= e as System.Net.Sockets.SocketException;
+        }
+        if (tls) return false;
+        return socket is not null ? !NeverConnected(socket.SocketErrorCode) : io;
     }
 
     /// <summary>SmtpClient's own time limit (<see cref="SmtpClient.Timeout"/>, which applies to an async send too): a general

@@ -132,23 +132,10 @@ public sealed class StoryService(IAppDbContextFactory dbs, ICurrentUser user)
         }, ct);
     }
 
-    // The check and the save in one serializable transaction: an article linked to a story as it was deleted, after the
-    // delete found none, lost its link to the foreign key (set to null), unsaid. Now the one waits for the other and
-    // checks again: the delete refuses a story that has an article, and a link to a story gone is refused. SQLite takes
-    // the write lock at the start; SQL Server picks a deadlock victim, retried by the execution strategy. Inside the
-    // strategy (a retrying strategy refuses a transaction opened outside it), each try on a context of its own.
-    private async Task Serialized(Func<IAppDbContext, Task> change, CancellationToken ct)
-    {
-        await using var outer = await dbs.CreateAsync(ct);
-        await outer.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
-        {
-            await using var db = await dbs.CreateAsync(ct);
-            await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
-            await change(db);
-            await db.SaveChangesAsync(ct);
-            await tx.CommitAsync(ct);
-        });
-    }
+    // The check and the save in one serializable transaction (SerializedAsync): an article linked to a story as it was
+    // deleted, after the delete found none, lost its link to the foreign key (set to null), unsaid. Now the one waits for
+    // the other and checks again: the delete refuses a story that has an article, and a link to a story gone is refused.
+    private Task Serialized(Func<IAppDbContext, Task> change, CancellationToken ct) => dbs.SerializedAsync(change, ct);
 
     private static string Name(string? name)
     {

@@ -290,6 +290,18 @@ public class EmailOutcomeTests : IDisposable
             .And.Contain("check before sending again");
     }
 
+    [Fact]
+    public async Task AHandOffEmailThatMayHaveGone_CountsAsEmailed()
+    {
+        var from = await _db.Teams().AddAsync("Applications", null, null);
+        var to = await _db.Teams().AddAsync("Network", null, "network@example.org");
+        var number = await _db.Actions().CreateAsync(new ActionForm { Title = "Open the port", TeamId = from });
+        _db.Email.Result = MayHaveGone;
+
+        (await _db.Handoffs().HandOffAsync((await _db.Actions().GetAsync(number))!.Action.Id, to, "Theirs"))
+            .Should().Be(1, "the relay most likely took it: the page says they've been emailed, not that they weren't");
+    }
+
     // An external team's action due Tuesday Nov 24 2026: Friday Nov 20 is two business days before it.
     private async Task<ActionItem> DueTuesday()
     {

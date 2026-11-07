@@ -46,8 +46,9 @@ public sealed record BriefRenderContext(
     Actions.OpenActionsReview? Open = null)
 {
     /// <summary>Where a root-relative link in the brief's Markdown ("/actions/12") points: at <see cref="AppUrl"/>, or
-    /// nowhere (its text kept) when that isn't set. The copy leaves TIDE, so it has no page to be relative to.</summary>
-    public LinkRoot Links => LinkRoot.Email(AppUrl);
+    /// nowhere (its text kept) when that isn't set. The copy leaves TIDE, so it has no page to be relative to. Worked out
+    /// once, from the AppUrl the context is made with.</summary>
+    public LinkRoot Links { get; } = LinkRoot.Email(AppUrl);
 }
 
 /// <summary>A brief edition rendered for sending: the subject, the email (HTML and text), and the plain web copy.</summary>
@@ -279,8 +280,8 @@ public sealed class BriefRenderer(IMarkdownService markdown)
             }
             sb.Append("</ul>");
         }
-        if (ea.ShowWhy) Section(sb, ctx.Links, "Why it matters to us", a.WhyItMatters, RaisedMark(a, a.WhyItMattersTlp));
-        Section(sb, ctx.Links, "Recommended actions", a.RecommendedActions);
+        if (ea.ShowWhy) Section("Why it matters to us", a.WhyItMatters, RaisedMark(a, a.WhyItMattersTlp));
+        Section("Recommended actions", a.RecommendedActions);
         foreach (var s in ea.Screenshots)
         {
             if (!imageFor.TryGetValue(s.Id, out var img)) continue;
@@ -326,13 +327,13 @@ public sealed class BriefRenderer(IMarkdownService markdown)
             sb.Append(Invariant, $"<p style=\"margin:6px 0 0;font-size:13px;font-style:italic;color:{Palette.Muted};\">{WithheldParts(ea.WithheldParts)}</p>");
         sb.Append("</td></tr>");
         return sb.ToString();
-    }
 
-    private void Section(StringBuilder sb, LinkRoot links, string label, string? md, string mark = "")
-    {
-        if (string.IsNullOrWhiteSpace(md)) return;
-        sb.Append(Invariant, $"<div style=\"margin:10px 0 4px;font-size:13px;font-weight:700;color:{Palette.Text};\">{Esc(label)}{mark}</div>");
-        sb.Append(InlineStyles(markdown.ToHtml(md, links)));
+        void Section(string label, string? md, string mark = "")
+        {
+            if (string.IsNullOrWhiteSpace(md)) return;
+            sb.Append(Invariant, $"<div style=\"margin:10px 0 4px;font-size:13px;font-weight:700;color:{Palette.Text};\">{Esc(label)}{mark}</div>");
+            sb.Append(InlineStyles(markdown.ToHtml(md, ctx.Links)));
+        }
     }
 
     // A part's TLP label, when it's raised above its article's.

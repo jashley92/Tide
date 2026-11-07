@@ -36,18 +36,18 @@ public sealed class HandoffService(IAppDbContextFactory dbs, ICurrentUser user, 
     /// <summary>
     /// Hands an action to <paramref name="toTeamId"/>, for whoever may work it, with a short reason (required) kept in its
     /// history and shown on it. Its assignee stays only if they're on the receiving team. When its reminders are off
-    /// ("Don't remind"), <paramref name="keepRemindersOff"/> says whether they stay off for the new team or come back on
-    /// (the hand-off's history line says so); while they're on it changes nothing. Returns how many emails told the team
-    /// (none for an external team, or when email is off).
+    /// ("Don't remind"), they stay off for the new team unless <paramref name="turnRemindersOn"/> (the hand-off's history
+    /// line then says so); while they're on it changes nothing. Returns how many emails told the team (none for an
+    /// external team, or when email is off).
     /// </summary>
-    public async Task<int> HandOffAsync(Guid actionId, Guid toTeamId, string reason, bool keepRemindersOff, string? overLimitReason = null,
+    public async Task<int> HandOffAsync(Guid actionId, Guid toTeamId, string reason, string? overLimitReason = null, bool turnRemindersOn = false,
         CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
         var a = await ActionService.FindAsync(db, actionId, ct);
         await ActionService.RequireWork(db, user, a, ct, "Only analysts and members of the owning team can hand this action off.");
         if (toTeamId == a.TeamId) throw new ArgumentException("It's that team's already: choose another.");
-        var handover = await HandOverAsync(db, user, a, await ReceivingTeamAsync(db, toTeamId, ct), reason, overLimitReason, keepRemindersOff, ct);
+        var handover = await HandOverAsync(db, user, a, await ReceivingTeamAsync(db, toTeamId, ct), reason, overLimitReason, turnRemindersOn, ct);
         await ActionService.SaveEditAsync(db, ct);
         return await notices.SendAsync(db, a, handover, user.DisplayName, ct);
     }
@@ -63,11 +63,11 @@ public sealed class HandoffService(IAppDbContextFactory dbs, ICurrentUser user, 
     /// <summary>
     /// The hand-off itself, on a tracked action the caller may work, before the save: the receiving team's limit holds, an
     /// assignee not on that team goes, who handed it and why are recorded, reminders that were off stay off unless
-    /// <paramref name="keepRemindersOff"/> is false, and its history says so. The Hand off button and a team changed in
+    /// <paramref name="turnRemindersOn"/>, and its history says so. The Hand off button and a team changed in
     /// the editor both come here.
     /// </summary>
     internal static async Task<Handover> HandOverAsync(IAppDbContext db, ICurrentUser user, ActionItem a, Team to, string reason,
-        string? overLimitReason, bool keepRemindersOff, CancellationToken ct)
+        string? overLimitReason, bool turnRemindersOn, CancellationToken ct)
     {
         var why = ArticleService.CleanOrNull(reason, ActionItem.MaxHandoffReason) ?? throw new ArgumentException("Say why you're handing it off.");
         var over = await ActiveLimits.CheckChangeAsync(db, (a.TeamId, a.Status), (to.Id, a.Status), a.Id, overLimitReason, to, ct);
@@ -79,7 +79,7 @@ public sealed class HandoffService(IAppDbContextFactory dbs, ICurrentUser user, 
         (a.HandedFromTeamId, a.TeamId) = (a.TeamId, to.Id);
         (a.HandedById, a.HandedByName, a.HandedAtUtc, a.HandoffReason) = (user.UserId, user.DisplayName, DateTimeOffset.UtcNow, why);
         // "Don't remind" was chosen for the team it's leaving: whoever hands it says whether it holds for the next one.
-        var remindersOn = a.NoReminders && !keepRemindersOff;
+        var remindersOn = a.NoReminders && turnRemindersOn;
         if (remindersOn) a.NoReminders = false;
         a.EditVersion = Guid.NewGuid();
         db.ActionEvents.Add(ActionService.Event(user, a.Id, $"Handed from {from} to {to.Name}: {why}"
@@ -149,7 +149,8 @@ public sealed class HandoffNotices(OrgClock clock, IEmailSender email, IOptions<
 {
     private readonly EmailTemplateStore _templates = templates ?? EmailTemplateStore.Defaults;
 
-    /// <summary>Emails the receiving team about <paramref name="a"/>, handed by <paramref name="by"/>; how many emails went.</summary>
+    /// <summary>Emails the receiving team about <paramref name="a"/>, handed by <paramref name="by"/>; how many emails went
+    /// (or may have: the relay didn't answer in time, and it most likely arrived).</summary>
     internal async Task<int> SendAsync(IAppDbContext db, ActionItem a, HandoffService.Handover handover, string by, CancellationToken ct)
     {
         var to = handover.To;
@@ -175,6 +176,6 @@ public sealed class HandoffNotices(OrgClock clock, IEmailSender email, IOptions<
         });
         var html = Shell(t.Heading, clock.TeamName + " · " + DayText(today), MarkingLine(shown) + t.BodyHtml, t.Footer);
         var result = await email.SendAsync(new OutgoingEmail(recipients, Marked(t.Subject, shown), html, ToText(html), []), ct);
-        return result.Status == EmailSendStatus.Sent ? 1 : 0;
+        return result.MayHaveGone ? 1 : 0;
     }
 }

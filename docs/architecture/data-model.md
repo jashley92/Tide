@@ -960,7 +960,7 @@ The active limit and the external team's profile (EP-86):
 
 | Column | Type | Null | Meaning |
 |---|---|---|---|
-| `ActiveLimit` | int | yes | The most actions it may have active (Open, InProgress or Blocked) at once; null for none. Set by an administrator (`TeamService.SetLimitAsync`), 1 to 999. |
+| `ActiveLimit` | int | yes | The most actions it may have active (Open, InProgress or Blocked) at once; null for none. Set by an administrator with the team's form (`TeamService.UpdateAsync`, `UpdateExternalAsync`) or `SetLimitAsync`, 1 to 999. |
 | `LimitMode` | int | no | `ActiveLimitMode`: what happens when a change would take it over. Default 0 (Show). |
 | `IsExternal` | bit | no | Tracked here, working outside TIDE: no members, no assignees, reminded at `ContactEmail`. Kept by anyone with `WorkActions`. |
 | `ContactName` | nvarchar(200) | yes | An external team's contact. |

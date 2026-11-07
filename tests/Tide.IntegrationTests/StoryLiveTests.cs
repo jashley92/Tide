@@ -136,14 +136,15 @@ public class StoryLivePageTests(TideApp app) : IClassFixture<TideApp>
         bool Wants(string topic) => page.Renderer.Dispatcher.InvokeAsync(() => page.Component.Wanted(ByRobin(topic)[0])).GetAwaiter().GetResult();
 
         Wants(ChangeFeed.Story(story)).Should().BeTrue("the story, or an article linked to it or taken off it");
-        Wants(ChangeFeed.Article(mine)).Should().BeTrue("one of its articles changed (its CVEs and techniques too)");
-        Wants(ChangeFeed.ArticleTags(mine)).Should().BeTrue("one of its articles' adversary tags, its Actors");
+        Wants(ChangeFeed.ArticleSummary(mine)).Should().BeTrue("one of its articles' CVEs, techniques or threat actors");
+        Wants(ChangeFeed.Article(mine)).Should().BeFalse("its bullets, screenshots, indicators and links aren't shown (its row is heard on the story's topic)");
+        Wants(ChangeFeed.ArticleTags(mine)).Should().BeFalse("its tags are heard on its summary topic");
         Wants(ChangeFeed.Article(theirs)).Should().BeFalse("another story's article");
         Wants(ChangeFeed.Articles).Should().BeFalse("any article: only the list's counts");
         Wants(ChangeFeed.Story(other)).Should().BeFalse("another story");
         Wants(ChangeFeed.Stories).Should().BeFalse("any story: the list");
 
-        // A change to its article is shown, and told.
+        // A change to its article (heard on the story's topic) is shown, and told.
         await using (var robin = SignedIn(app, Colleague))
         {
             var articles = ActivatorUtilities.CreateInstance<ArticleService>(robin.ServiceProvider, page.Scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>());
@@ -151,7 +152,7 @@ public class StoryLivePageTests(TideApp app) : IClassFixture<TideApp>
             form.Title = "Live follow, retitled";
             await articles.SaveAsync(form);
         }
-        await page.Click(p => p.OnChangedElsewhere(ByRobin(ChangeFeed.Article(mine))));
+        await page.Click(p => p.OnChangedElsewhere(ByRobin(ChangeFeed.Story(story))));
         page.Component.Detail!.Articles.Single().Title.Should().Be("Live follow, retitled");
     }
 }

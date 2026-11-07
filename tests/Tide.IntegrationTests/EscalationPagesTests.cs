@@ -136,8 +136,7 @@ public class EscalationPagesTests(TideApp app) : IClassFixture<TideApp>
             c.Edit(c.Shown.Single(t => t.Id == team.Id));
             return Task.CompletedTask;
         });
-        r.Component.EscalationName = "Pat Lee";
-        r.Component.EscalationEmail = "pat.lee@example.org";
+        (r.Component.EditForm.EscalationName, r.Component.EditForm.EscalationEmail) = ("Pat Lee", "pat.lee@example.org");
         await r.Click(c => c.Save(team.Id));
 
         (await TeamNamed("Escalation Page Team")).Should().Match<Team>(t => t.EscalationName == "Pat Lee" && t.EscalationEmail == "pat.lee@example.org");

@@ -251,26 +251,31 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
         var days = BusinessDays(start, end, clock.Days).ToList();
         var briefs = await db.Briefs.AsNoTracking().Where(b => b.BriefDate >= start && b.BriefDate <= end).ToListAsync(ct);
         var held = await HeldAsync(db, briefs, ct);
-        var heldDays = briefs.Where(b => b.Status is BriefStatus.Presented or BriefStatus.Sent || held.Contains(b.Id)).Select(b => b.BriefDate).ToHashSet();
+        var heldDays = briefs.Where(b => held.Contains(b.Id)).Select(b => b.BriefDate).ToHashSet();
         var kept = new List<(DateOnly, string)>();
         var corrected = new List<DateOnly>();
         foreach (var d in days.Where(heldDays.Contains))
         {
             var o = overrides.FirstOrDefault(x => x.Date == d);
             if (o?.ChangeId is not null) continue;   // an approved change moved it: not the week's to give
+            var presenter = o?.AnalystId ?? was;
             if (correctPastDays)
             {
                 // The day follows the week again, kept or not before.
                 if (o is not null) db.RotationOverrides.Remove(o);
-                if ((o?.AnalystId ?? was) != m?.UserId) corrected.Add(d);
+                if (presenter != m?.UserId) corrected.Add(d);
             }
-            else if (o is null && was is not null)
+            else if (presenter == m?.UserId)
             {
-                db.RotationOverrides.Add(new RotationOverride { Date = d, AnalystId = was, AnalystName = wasName!, ChangeId = null });
-                kept.Add((d, wasName!));
+                // Kept for the analyst the week goes back to: the week says so again.
+                if (o is not null) db.RotationOverrides.Remove(o);
             }
-            else if (o is not null && o.AnalystId != m?.UserId) kept.Add((d, o.AnalystName));
-            else if (o is not null) db.RotationOverrides.Remove(o);   // kept for the analyst the week goes back to: the week says so again
+            else if (presenter is not null)
+            {
+                // Kept for whoever presented it.
+                if (o is null) db.RotationOverrides.Add(new RotationOverride { Date = d, AnalystId = presenter, AnalystName = wasName!, ChangeId = null });
+                kept.Add((d, o?.AnalystName ?? wasName!));
+            }
         }
 
         if (m is null)
@@ -298,7 +303,7 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
                 EntityKey = start.ToString(CultureInfo.InvariantCulture),
                 ChangesJson = System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, string?[]>
                 {
-                    ["Correction"] = [null, "Presented days corrected: " + string.Join(", ", corrected.Select(d => d.ToString("ddd MMM d", CultureInfo.InvariantCulture)))],
+                    ["Correction"] = [null, "Presented days corrected: " + string.Join(", ", corrected.Select(Day))],
                     ["AnalystName"] = [wasName, m?.DisplayName],
                 }),
             });
@@ -619,24 +624,24 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
     // Whether a change still moves a day from first on: either half of a swap.
     private static bool HasDaysFrom(RotationChange c, DateOnly first) => c.GiveTo >= first || (c.TakeTo is { } takeTo && takeTo >= first);
 
-    // The first day whose presenter can still change: today, unless today's meeting has been held (its brief presented,
-    // sent, or held and put back to ready), when today is as past as yesterday and its brief says who presented it.
+    // The first day whose presenter can still change: today, unless today's meeting has been held (HeldAsync), when today
+    // is as past as yesterday and its brief says who presented it.
     private async Task<DateOnly> FirstDayToComeAsync(IAppDbContext db, CancellationToken ct)
     {
         var today = clock.Today;
         var brief = await db.Briefs.AsNoTracking().FirstOrDefaultAsync(b => b.BriefDate == today, ct);
-        if (brief is null) return today;
-        if (brief.Status is BriefStatus.Presented or BriefStatus.Sent) return today.AddDays(1);
-        return (await HeldAsync(db, [brief], ct)).Contains(brief.Id) ? today.AddDays(1) : today;
+        return brief is not null && (await HeldAsync(db, [brief], ct)).Contains(brief.Id) ? today.AddDays(1) : today;
     }
 
-    // The briefs among these whose meeting was held, though Back to ready (BriefService.ReopenAsync) took them back to
-    // Ready and cleared MeetingHeldAtUtc and PresentedAtUtc. What a reopen keeps says so: anyone recorded as attending, a
-    // meeting note (or the notes kept on the brief before they were per person), and, for a meeting ended with neither,
-    // the times in the brief's audit trail. A discussed tick isn't a sign: it can be set before the meeting.
+    // The briefs among these whose meeting was held: presented or sent, or held though Back to ready
+    // (BriefService.ReopenAsync) took them back to Ready and cleared MeetingHeldAtUtc and PresentedAtUtc. What a reopen
+    // keeps says so: anyone recorded as attending, a meeting note (or the notes kept on the brief before they were per
+    // person), and, for a meeting ended with neither, the times in the brief's audit trail. A discussed tick isn't a
+    // sign: it can be set before the meeting.
     private static async Task<HashSet<Guid>> HeldAsync(IAppDbContext db, IReadOnlyCollection<Brief> briefs, CancellationToken ct)
     {
-        var held = briefs.Where(b => b.MeetingHeldAtUtc is not null || b.PresentedAtUtc is not null || !string.IsNullOrWhiteSpace(b.MeetingNotes))
+        var held = briefs.Where(b => b.Status is BriefStatus.Presented or BriefStatus.Sent
+                                     || b.MeetingHeldAtUtc is not null || b.PresentedAtUtc is not null || !string.IsNullOrWhiteSpace(b.MeetingNotes))
             .Select(b => b.Id).ToHashSet();
         var ids = briefs.Select(b => b.Id).Where(id => !held.Contains(id)).ToList();
         if (ids.Count == 0) return held;

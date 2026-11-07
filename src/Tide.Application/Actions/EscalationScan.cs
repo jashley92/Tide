@@ -122,9 +122,8 @@ public sealed partial class ReminderService
 
     // Notes one email's outcome on the actions it listed; 1 when it went (or may have). Email turned off isn't a failure
     // to retry; nor is one the relay may have taken (a timeout, a dropped connection), which its history line says to check.
-    private int Went(EmailSendResult result, IEnumerable<Climb> climbs, string said)
+    private static int Went(EmailSendResult result, IEnumerable<Climb> climbs, string said)
     {
-        if (result.Status == EmailSendStatus.Unknown) _unsure++;
         foreach (var c in climbs)
         {
             switch (result.Status)
@@ -160,16 +159,19 @@ public sealed partial class ReminderService
         CancellationToken ct)
     {
         var sent = 0;
+        var external = climbs.Where(c => c.Team.IsExternal && c.Team.RemindersOn && !string.IsNullOrWhiteSpace(c.Team.ContactEmail)).ToList();
+        // The contacts' marks for today, read once: which the cadence already reminded about what.
+        var remindedToday = await ContactMarksAsync(db, [.. external.Select(c => ContactKey(c.Action.Id, today, Hash(c.Team.ContactEmail!)))], ct);
         foreach (var team in climbs.Where(c => c.Team.IsExternal).GroupBy(c => c.Action.TeamId))
-            sent += await RemindExternalAsync(db, [.. team], replies, today, ct);
+            sent += await RemindExternalAsync(db, [.. team], remindedToday, replies, today, ct);
         var inside = climbs.Where(c => !c.Team.IsExternal).ToList();
         return inside.Count == 0 ? sent : sent + await RemindInternalAsync(db, inside, today, ct);
     }
 
     // The contact has one reminder about an action a day: one its cadence already sent today is skipped, saying so, and
     // the step is done all the same.
-    private async Task<int> RemindExternalAsync(IAppDbContext db, List<Climb> climbs, IReadOnlyDictionary<Guid, string?> replies, DateOnly today,
-        CancellationToken ct)
+    private async Task<int> RemindExternalAsync(IAppDbContext db, List<Climb> climbs, IReadOnlySet<string> remindedToday,
+        IReadOnlyDictionary<Guid, string?> replies, DateOnly today, CancellationToken ct)
     {
         var team = climbs[0].Team;
         var why = !team.RemindersOn ? $"not reminded: {team.Name}'s reminders are off"
@@ -177,18 +179,11 @@ public sealed partial class ReminderService
         foreach (var c in climbs.Where(c => why is not null || c.Action.NoReminders)) c.Say(why ?? "not reminded: its reminders are off");
         var list = climbs.Where(c => why is null && !c.Action.NoReminders).ToList();
         if (list.Count == 0) return 0;
-        var reminded = await RemindedTodayAsync(db, list.Select(c => c.Action.Id), today, team.ContactEmail!, ct);
-        foreach (var c in list.Where(c => reminded.Contains(c.Action.Id))) c.Say($"reminder skipped: {team.ContactEmail} was already reminded today");
-        list = [.. list.Where(c => !reminded.Contains(c.Action.Id))];
-        if (list.Count == 0) return 0;
-        var result = await email.SendAsync(RequestsEmail(EmailTemplateCatalog.ExternalReminder, team, team.ContactEmail!, team.ContactName ?? team.Name,
-            InOrder(list), today, replies), ct);
-        if (result.MayHaveGone)
-        {
-            AddMarks(db, ContactMark, list.Select(c => ContactKey(c.Action.Id, today, team.ContactEmail!)));
-            await db.SaveChangesAsync(CancellationToken.None);
-        }
-        return Went(result, list, $"reminded {team.Name} at {team.ContactEmail}");
+        var byAction = list.ToDictionary(c => c.Action.Id);
+        var (result, went, skipped) = await SendExternalReminderAsync(db, team, list.Select(c => c.Action), Hash(team.ContactEmail!), remindedToday,
+            replies, today, ct);
+        foreach (var a in skipped) byAction[a.Id].Say(SkippedReminder(team.ContactEmail!));
+        return result is null ? 0 : Went(result, went.Select(a => byAction[a.Id]), $"reminded {team.Name} at {team.ContactEmail}");
     }
 
     private async Task<int> RemindInternalAsync(IAppDbContext db, List<Climb> climbs, DateOnly today, CancellationToken ct)
@@ -211,7 +206,7 @@ public sealed partial class ReminderService
         var sent = 0;
         foreach (var ((to, isLate), list) in byRecipient)
         {
-            var result = await email.SendAsync(DueEmail(to, InOrder(list), isLate, today), ct);
+            var result = await SendAsync(DueEmail(to, InOrder(list), isLate, today), ct);
             sent += Went(result, list, "reminded " + to);
         }
         return sent;
@@ -233,7 +228,7 @@ public sealed partial class ReminderService
                 foreach (var c in list) c.Say($"no escalation contact to copy for {team.Name}");
                 continue;
             }
-            var result = await email.SendAsync(RequestsEmail(EmailTemplateCatalog.Escalation, team, team.EscalationEmail, team.EscalationName ?? "there",
+            var result = await SendAsync(RequestsEmail(EmailTemplateCatalog.Escalation, team, team.EscalationEmail, team.EscalationName ?? "there",
                 InOrder(list), today, replies, team.IsExternal ? null : app.Value.BaseUrl), ct);
             sent += Went(result, list, $"copied {team.EscalationName ?? team.EscalationEmail}, the escalation contact for {team.Name}");
         }

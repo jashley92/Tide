@@ -75,33 +75,60 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user)
         AddExternalAsync(new ExternalTeamForm { Name = name, ContactEmail = contactEmail }, ct);
 
     /// <summary>
-    /// Changes an external team's profile and reminders. Refused for an internal team (an administrator's), and when
-    /// someone else changed the team since <paramref name="form"/> opened (its <see cref="ExternalTeamForm.EditVersion"/>).
-    /// Returns the team's new edit version, for the rest of the same save (its limit).
+    /// Saves an external team's form: its profile, reminders and escalation contact, and, when the caller administers,
+    /// its limit. Refused for an internal team (an administrator's), and when someone else changed the team since
+    /// <paramref name="form"/> opened (its <see cref="ExternalTeamForm.EditVersion"/>). One save: all or none, one audit
+    /// entry, one change heard.
     /// </summary>
-    public async Task<Guid> UpdateExternalAsync(Guid id, ExternalTeamForm form, CancellationToken ct = default)
+    public async Task UpdateExternalAsync(Guid id, ExternalTeamForm form, CancellationToken ct = default)
     {
         RequireExternal();
+        var admin = user.Has(Permission.Administer);
+        if (admin) CheckLimit(form.ActiveLimit, form.LimitMode);
         await using var db = await dbs.CreateAsync(ct);
         var team = await TeamAsync(db, id, ct);
         if (!team.IsExternal) throw new ForbiddenException("Only an administrator can change an internal team.");
         NotStale(team, form.EditVersion);
         form.ApplyTo(team);
-        return await SaveMovedAsync(db, team, ct);
+        if (admin) (team.ActiveLimit, team.LimitMode) = (form.ActiveLimit, form.LimitMode);
+        await SaveMovedAsync(db, team, ct);
     }
 
-    /// <summary>Sets a team's active limit (null: none) and what happens at it. Administrators only, for any team.
-    /// Refused when <paramref name="editVersion"/> is given and someone else changed the team since; returns the new one.</summary>
-    public async Task<Guid> SetLimitAsync(Guid id, int? limit, ActiveLimitMode mode, Guid? editVersion = null, CancellationToken ct = default)
+    /// <summary>
+    /// Saves an internal team's form (Teams &amp; SLA): its name, description, mailbox, limit and escalation contact.
+    /// Refused when someone else changed the team since <paramref name="form"/> opened (its
+    /// <see cref="TeamForm.EditVersion"/>). One save: all or none, one audit entry, one change heard.
+    /// </summary>
+    public async Task UpdateAsync(Guid id, TeamForm form, CancellationToken ct = default)
     {
         RequireAdmin();
-        if (limit is < 1 or > MaxActiveLimit) throw new ArgumentException($"A limit is 1 to {MaxActiveLimit} active actions, or blank for none.");
-        if (!Enum.IsDefined(mode)) throw new ArgumentException("Choose what happens at the limit.");
+        CheckLimit(form.ActiveLimit, form.LimitMode);
+        var (name, description, email) = (AdminLists.Name(form.Name), AdminLists.Description(form.Description), Email(form.Email));
+        var escalation = EscalationContact(form.EscalationName, form.EscalationEmail);
         await using var db = await dbs.CreateAsync(ct);
         var team = await TeamAsync(db, id, ct);
-        NotStale(team, editVersion);
+        NotStale(team, form.EditVersion);
+        (team.Name, team.Description, team.Email) = (name, description, email);
+        (team.ActiveLimit, team.LimitMode) = (form.ActiveLimit, form.LimitMode);
+        (team.EscalationName, team.EscalationEmail) = escalation;
+        await SaveMovedAsync(db, team, ct);
+    }
+
+    /// <summary>Sets a team's active limit (null: none) and what happens at it. Administrators only, for any team.</summary>
+    public async Task SetLimitAsync(Guid id, int? limit, ActiveLimitMode mode, CancellationToken ct = default)
+    {
+        RequireAdmin();
+        CheckLimit(limit, mode);
+        await using var db = await dbs.CreateAsync(ct);
+        var team = await TeamAsync(db, id, ct);
         (team.ActiveLimit, team.LimitMode) = (limit, mode);
-        return await SaveMovedAsync(db, team, ct);
+        await SaveMovedAsync(db, team, ct);
+    }
+
+    private static void CheckLimit(int? limit, ActiveLimitMode mode)
+    {
+        if (limit is < 1 or > MaxActiveLimit) throw new ArgumentException($"A limit is 1 to {MaxActiveLimit} active actions, or blank for none.");
+        if (!Enum.IsDefined(mode)) throw new ArgumentException("Choose what happens at the limit.");
     }
 
     /// <summary>The highest active limit accepted.</summary>
@@ -115,35 +142,31 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user)
         if (!CanManageExternal) throw new ForbiddenException("Only someone who works actions can change the external teams.");
     }
 
-    /// <summary>Changes an internal team's name, description and mailbox (Teams &amp; SLA). Refused when
-    /// <paramref name="editVersion"/> is given and someone else changed the team since; returns the new one.</summary>
-    public async Task<Guid> UpdateAsync(Guid id, string name, string? description, string? email, Guid? editVersion = null, CancellationToken ct = default)
+    /// <summary>Changes an internal team's name, description and mailbox.</summary>
+    public async Task UpdateAsync(Guid id, string name, string? description, string? email, CancellationToken ct = default)
     {
         RequireAdmin();
         await using var db = await dbs.CreateAsync(ct);
         var team = await TeamAsync(db, id, ct);
-        NotStale(team, editVersion);
         team.Name = AdminLists.Name(name);
         team.Description = AdminLists.Description(description);
         team.Email = Email(email);
-        return await SaveMovedAsync(db, team, ct);
+        await SaveMovedAsync(db, team, ct);
     }
 
     /// <summary>
     /// Sets who the escalation ladder copies about a team's slipping actions: a name and an email, both optional (blank
     /// clears them). An internal team's is an administrator's to set; an external team's, whoever keeps the external
-    /// teams'. Audited like any change to a team. Refused when <paramref name="editVersion"/> is given and someone else
-    /// changed the team since; returns the new one.
+    /// teams'. Audited like any change to a team.
     /// </summary>
-    public async Task<Guid> SetEscalationContactAsync(Guid id, string? name, string? email, Guid? editVersion = null, CancellationToken ct = default)
+    public async Task SetEscalationContactAsync(Guid id, string? name, string? email, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
         var team = await TeamAsync(db, id, ct);
         if (team.IsExternal) RequireExternal();
         else RequireAdmin();
-        NotStale(team, editVersion);
         (team.EscalationName, team.EscalationEmail) = EscalationContact(name, email);
-        return await SaveMovedAsync(db, team, ct);
+        await SaveMovedAsync(db, team, ct);
     }
 
     // An escalation contact as it's kept: the name tidied, the address checked.
@@ -182,7 +205,7 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user)
         await db.Teams.FirstOrDefaultAsync(t => t.Id == id, ct) ?? throw new KeyNotFoundException("That team no longer exists.");
 
     // Another person's save, limit or retirement since the form opened: saving would put back what they changed. Null
-    // skips the check (a caller that means to overwrite).
+    // skips the check (a form not opened on the team).
     private static void NotStale(Team team, Guid? began)
     {
         if (began is { } v && v != team.EditVersion) throw new StaleEditException(Stale(team));
@@ -190,12 +213,11 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user)
 
     // Every change to the team's own fields moves its version, so EF's UPDATE ... WHERE EditVersion = @old also refuses
     // a save that lost a race the read didn't see.
-    private static async Task<Guid> SaveMovedAsync(IAppDbContext db, Team team, CancellationToken ct)
+    private static async Task SaveMovedAsync(IAppDbContext db, Team team, CancellationToken ct)
     {
         team.EditVersion = Guid.NewGuid();
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateConcurrencyException) { throw new StaleEditException(Stale(team)); }
-        return team.EditVersion;
     }
 
     private static string Stale(Team t) =>
@@ -268,7 +290,35 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user)
     }
 }
 
-/// <summary>An external team's profile and reminders, as its form edits them.</summary>
+/// <summary>An internal team's form on Teams &amp; SLA, saved whole by <see cref="TeamService.UpdateAsync(Guid, TeamForm, CancellationToken)"/>.</summary>
+public sealed class TeamForm
+{
+    /// <summary>The team's <see cref="Team.EditVersion"/> when the form opened; a save over someone else's change made
+    /// since is refused. Null skips the check.</summary>
+    public Guid? EditVersion { get; set; }
+
+    public string Name { get; set; } = "";
+    public string? Description { get; set; }
+
+    /// <summary>The team's mailbox.</summary>
+    public string? Email { get; set; }
+
+    /// <summary>The most actions it may have active at once (null: none), and what happens at it.</summary>
+    public int? ActiveLimit { get; set; }
+    public ActiveLimitMode LimitMode { get; set; } = ActiveLimitMode.Show;
+
+    /// <summary>Who the escalation ladder copies when its actions slip.</summary>
+    public string? EscalationName { get; set; }
+    public string? EscalationEmail { get; set; }
+
+    public static TeamForm From(Team t) => new()
+    {
+        EditVersion = t.EditVersion, Name = t.Name, Description = t.Description, Email = t.Email, ActiveLimit = t.ActiveLimit, LimitMode = t.LimitMode,
+        EscalationName = t.EscalationName, EscalationEmail = t.EscalationEmail,
+    };
+}
+
+/// <summary>An external team's profile, reminders and limit, as its form edits them (the limit is an administrator's).</summary>
 public sealed class ExternalTeamForm
 {
     /// <summary>The team's <see cref="Team.EditVersion"/> when the form opened; a save over someone else's change made
@@ -296,11 +346,16 @@ public sealed class ExternalTeamForm
     public string? EscalationName { get; set; }
     public string? EscalationEmail { get; set; }
 
+    /// <summary>The most actions it may have active at once (null: none), and what happens at it. Saved only when an
+    /// administrator saves the form; a new team has none.</summary>
+    public int? ActiveLimit { get; set; }
+    public ActiveLimitMode LimitMode { get; set; } = ActiveLimitMode.Show;
+
     public static ExternalTeamForm From(Team t) => new()
     {
         EditVersion = t.EditVersion, Name = t.Name, Description = t.Description, ContactName = t.ContactName, ContactEmail = t.ContactEmail, Engage = t.Engage,
         RemindersOn = t.RemindersOn, RemindBeforeDays = t.RemindBeforeDays, RemindOverdueEveryDays = t.RemindOverdueEveryDays,
-        EscalationName = t.EscalationName, EscalationEmail = t.EscalationEmail,
+        EscalationName = t.EscalationName, EscalationEmail = t.EscalationEmail, ActiveLimit = t.ActiveLimit, LimitMode = t.LimitMode,
     };
 
     /// <summary>Checks the form and copies it onto <paramref name="team"/>; throws <see cref="ArgumentException"/> saying what's wrong.</summary>

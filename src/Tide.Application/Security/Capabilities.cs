@@ -84,7 +84,7 @@ public static class Capabilities
         new(Actions, "Split an action to several teams", "HandoffService.SplitAsync", [G(Permission.WriteArticles)]),
         new(Actions, "Add, edit and retire external teams (teams that work outside TIDE)", "TeamService.RequireExternal",
             [G(Permission.WorkActions), G(Permission.Administer)]),
-        new(Actions, "Set a team's active limit", "TeamService.SetLimitAsync", [G(Permission.Administer)]),
+        new(Actions, "Set a team's active limit", "TeamService.UpdateAsync (a team's form), UpdateExternalAsync, SetLimitAsync", [G(Permission.Administer)]),
         new(Actions, "Read the saved hunt queries", "Policies.ReadActions; SavedQueryService.RequireRead", [G(Permission.ReadActions)]),
         new(Actions, "Save, edit, retire and restore saved hunt queries", "SavedQueryService.RequireWrite", [G(Permission.WorkActions)]),
         new(Actions, "Delete saved hunt queries", "SavedQueryService.CanDelete", [G(Permission.Administer), Q("own ones", Permission.WorkActions)]),

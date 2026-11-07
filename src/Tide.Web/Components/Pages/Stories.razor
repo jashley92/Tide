@@ -173,19 +173,21 @@ else
     private Guid? _shownId;
 
     // Re-read in place when a colleague changes what's shown. The list: any story, or any article (its counts). A story's
-    // page: the story itself, an article linked to it or taken off it, or a change to one of its articles (its row, its
-    // CVEs and techniques, its adversary tags); other articles stay silent. An open Edit form keeps what's typed in it.
+    // page: the story itself, an article linked to it, taken off it or saved while on it (Story), or its articles' CVEs,
+    // techniques and threat actors (ArticleSummary); their bullets, screenshots, indicators and links, which it doesn't
+    // show, and other articles stay silent. An open Edit form keeps what's typed in it.
     private LiveChanges? _live;
 
-    // The topics of the shown story's articles, swapped whole when the story is read: the feed's filter reads it on the
-    // publisher's thread.
+    // The shown story's topic, set with Id, and its articles' summary topics, swapped whole when the story is read: the
+    // feed's filter reads them on the publisher's thread.
+    private volatile string? _storyTopic;
     private volatile IReadOnlySet<string> _articleTopics = new HashSet<string>();
 
     protected override void OnInitialized() =>
         _live = new LiveChanges(Feed, Origin, Wanted, InvokeAsync, OnChangedElsewhere);
 
-    internal bool Wanted(Change c) => Id is { } id
-        ? c.Topic == ChangeFeed.Story(id) || _articleTopics.Contains(c.Topic)
+    internal bool Wanted(Change c) => _storyTopic is { } story
+        ? c.Topic == story || _articleTopics.Contains(c.Topic)
         : c.Topic == ChangeFeed.Stories || c.Topic == ChangeFeed.Articles;
 
     internal async Task OnChangedElsewhere(IReadOnlyList<Change> heard)
@@ -214,6 +216,7 @@ else
         {
             (_shownId, _editing, _name, _summary) = (Id, false, null, null);
             _detail = null;
+            _storyTopic = Id is { } shown ? ChangeFeed.Story(shown) : null;
             _articleTopics = new HashSet<string>();
         }
         var id = Id;
@@ -243,7 +246,7 @@ else
         var byArticle = await ActionSvc.ForArticlesAsync(detail.Articles.Select(a => a.Id).ToList());
         if (Id != id) return;
         (_detail, _cveRecords, _actions) = (detail, cves, detail.Articles.SelectMany(a => byArticle[a.Id]).ToList());
-        _articleTopics = detail.Articles.SelectMany(a => new[] { ChangeFeed.Article(a.Id), ChangeFeed.ArticleTags(a.Id) }).ToHashSet(StringComparer.Ordinal);
+        _articleTopics = detail.Articles.Select(a => ChangeFeed.ArticleSummary(a.Id)).ToHashSet(StringComparer.Ordinal);
     }
 
     internal void StartEdit()

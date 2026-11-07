@@ -62,6 +62,11 @@ public sealed class ChangeFeed
     /// <summary>One story: it was edited or deleted, or an article was linked to it, taken off it, or saved while on it.</summary>
     public static string Story(Guid id) => $"story:{id}";
 
+    /// <summary>What a story's page shows of one of its articles beyond the article's row: its CVEs, techniques and
+    /// threat actors. Apart from <see cref="Article"/>, so the story's page doesn't hear its bullets, screenshots,
+    /// indicators and links.</summary>
+    public static string ArticleSummary(Guid id) => $"article-summary:{id}";
+
     public static string Brief(Guid id) => $"brief:{id}";
 
     /// <summary>A brief's meeting: who attended, and the notes taken.</summary>

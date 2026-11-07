@@ -32,19 +32,30 @@ public class OwnerDecisionsTeamsTests : IDisposable
     {
         var teams = _db.Teams();
         var id = await teams.AddAsync("Network", null, "network@example.org");
-        var opened = (await Get(id)).EditVersion;
-        await teams.UpdateAsync(id, "Network Engineering", null, "neteng@example.org", (await Get(id)).EditVersion);   // a colleague
+        var opened = TeamForm.From(await Get(id));
+        var theirs = TeamForm.From(await Get(id));   // a colleague's
+        (theirs.Name, theirs.Email) = ("Network Engineering", "neteng@example.org");
+        await teams.UpdateAsync(id, theirs);
 
-        await FluentActions.Invoking(() => teams.UpdateAsync(id, "Network", "Routers and firewalls", "network@example.org", opened))
+        (opened.Description, opened.ActiveLimit, opened.EscalationEmail) = ("Routers and firewalls", 5, "dana@example.org");
+        await FluentActions.Invoking(() => teams.UpdateAsync(id, opened))
             .Should().ThrowAsync<StaleEditException>().WithMessage("Someone else changed Network Engineering since you opened it*");
         var now = await Get(id);
-        (now.Name, now.Email, now.Description).Should().Be(("Network Engineering", "neteng@example.org", null));
+        (now.Name, now.Email, now.Description, now.ActiveLimit, now.EscalationEmail).Should().Be(("Network Engineering", "neteng@example.org", null, (int?)null, (string?)null),
+            "a refused save changes none of its fields");
 
-        // Opened again, on top of theirs, it saves, and the save's later parts go on the version it left.
-        var version = await teams.UpdateAsync(id, "Network Engineering", "Routers and firewalls", "neteng@example.org", now.EditVersion);
-        version = await teams.SetLimitAsync(id, 5, ActiveLimitMode.Show, version);
-        await teams.SetEscalationContactAsync(id, "Dana", "dana@example.org", version);
-        (await Get(id)).Description.Should().Be("Routers and firewalls");
+        // Opened again, on top of theirs, it saves whole: one save, one audit entry.
+        var again = TeamForm.From(now);
+        (again.Description, again.ActiveLimit, again.LimitMode, again.EscalationName, again.EscalationEmail) =
+            ("Routers and firewalls", 5, ActiveLimitMode.Warn, "Dana", "dana@example.org");
+        await using (var ctx = _db.Context())
+        {
+            var before = ctx.AuditLog.Count(e => e.EntityType == nameof(Team));
+            await teams.UpdateAsync(id, again);
+            ctx.AuditLog.Count(e => e.EntityType == nameof(Team)).Should().Be(before + 1);
+        }
+        (await Get(id)).Should().Match<Team>(t => t.Description == "Routers and firewalls" && t.ActiveLimit == 5 && t.LimitMode == ActiveLimitMode.Warn
+            && t.EscalationName == "Dana" && t.EscalationEmail == "dana@example.org");
     }
 
     [Fact]
@@ -61,13 +72,14 @@ public class OwnerDecisionsTeamsTests : IDisposable
         await FluentActions.Invoking(() => teams.UpdateExternalAsync(id, contacted)).Should().ThrowAsync<StaleEditException>();
         (await Get(id)).EscalationEmail.Should().Be("lee@example.org", "the form opened before can't clear it");
 
-        // The internal form's other parts are checked too: a limit saved from a form opened before a retirement.
+        // The internal form's limit too: saved from a form opened before a retirement.
         var internalId = await teams.AddAsync("Applications", null, null);
         await _db.Actions().CreateAsync(new ActionForm { Title = "Patch", Kind = ActionKind.PatchRemediate, TeamId = internalId });   // so it's retired, not deleted
-        var opened = (await Get(internalId)).EditVersion;
+        var opened = TeamForm.From(await Get(internalId));
         await teams.SetRetiredAsync(internalId, true);
         await teams.SetRetiredAsync(internalId, false);
-        await FluentActions.Invoking(() => teams.SetLimitAsync(internalId, 10, ActiveLimitMode.Show, opened)).Should().ThrowAsync<StaleEditException>();
+        opened.ActiveLimit = 10;
+        await FluentActions.Invoking(() => teams.UpdateAsync(internalId, opened)).Should().ThrowAsync<StaleEditException>();
         (await Get(internalId)).ActiveLimit.Should().BeNull();
     }
 
@@ -77,14 +89,15 @@ public class OwnerDecisionsTeamsTests : IDisposable
         var teams = _db.Teams();
         var id = await teams.AddAsync("Identity", null, null);
         await teams.AddAsync("Fraud", null, null);
-        var opened = (await Get(id)).EditVersion;
+        var opened = TeamForm.From(await Get(id));
 
         await teams.AddMemberAsync(id, "dev:sam", "Sam");
         await teams.RemoveMemberAsync(id, "dev:sam");
         await teams.MoveAsync(id, 1);
 
-        (await Get(id)).EditVersion.Should().Be(opened);
-        await teams.UpdateAsync(id, "Identity and access", null, null, opened);
+        (await Get(id)).EditVersion.Should().Be(opened.EditVersion!.Value);
+        opened.Name = "Identity and access";
+        await teams.UpdateAsync(id, opened);
         (await Get(id)).Name.Should().Be("Identity and access");
     }
 }
@@ -111,7 +124,7 @@ public class OwnerDecisionsTeamsPageTests(TideApp app) : IClassFixture<TideApp>
         await using (var scope = SignedIn(app, SignIn.Analyst))
             id = await scope.ServiceProvider.GetRequiredService<TeamService>().AddAsync(name, null, null);
         await using var page = await RenderAsync<TeamsAdmin>(app, "/admin/teams");
-        await page.Click(p => { p.Edit(p.Shown.Single(t => t.Id == id)); p.EditName = name + " (typed)"; return Task.CompletedTask; });
+        await page.Click(p => { p.Edit(p.Shown.Single(t => t.Id == id)); p.EditForm.Name = name + " (typed)"; return Task.CompletedTask; });
 
         await using (var robin = SignedIn(app, Colleague))
             await Unheard(robin, page).UpdateAsync(id, name, "Robin's description", null);
@@ -119,13 +132,13 @@ public class OwnerDecisionsTeamsPageTests(TideApp app) : IClassFixture<TideApp>
 
         Toasts(page).Should().Contain(t => t.IsError && t.Message.StartsWith($"Someone else changed {name} since you opened it"));
         page.Component.ChangedBy.Should().Be("Someone");
-        page.Component.EditName.Should().Be(name + " (typed)", "the form stays to copy from");
+        page.Component.EditForm.Name.Should().Be(name + " (typed)", "the form stays to copy from");
         await using (var check = SignedIn(app, SignIn.Analyst))
             (await check.ServiceProvider.GetRequiredService<TeamService>().ListAsync()).Single(t => t.Id == id).Description.Should().Be("Robin's description");
 
         await page.Click(p => p.ReloadTheirs());
         page.Component.ChangedBy.Should().BeNull();
-        (page.Component.EditName, page.Component.EditDescription).Should().Be((name, "Robin's description"));
+        (page.Component.EditForm.Name, page.Component.EditForm.Description).Should().Be((name, "Robin's description"));
     }
 
     [Fact]

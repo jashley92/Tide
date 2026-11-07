@@ -79,11 +79,12 @@ public sealed class ChangeInterceptor(ChangeFeed feed, ICurrentUser user, Change
         ArticleBullet x => [ChangeFeed.Article(x.ArticleId)],
         ArticleScreenshot x => [ChangeFeed.Article(x.ArticleId)],
         ArticleTag x => [ChangeFeed.Article(x.ArticleId)],
-        ArticleTechnique x => [ChangeFeed.Article(x.ArticleId)],
+        ArticleTechnique x => [ChangeFeed.Article(x.ArticleId), ChangeFeed.ArticleSummary(x.ArticleId)],
         ArticleIndicator x => [ChangeFeed.Article(x.ArticleId)],
         ArticleLink x => [ChangeFeed.Article(x.ArticleId)],
-        ArticleCve x => [ChangeFeed.Article(x.ArticleId)],
-        ArticleAdversary x => [ChangeFeed.ArticleTags(x.ArticleId), ChangeFeed.Adversaries],   // the pickers and the profiles: not the editor's form
+        ArticleCve x => [ChangeFeed.Article(x.ArticleId), ChangeFeed.ArticleSummary(x.ArticleId)],
+        // The pickers, the profiles and its story's page: not the editor's form.
+        ArticleAdversary x => [ChangeFeed.ArticleTags(x.ArticleId), ChangeFeed.Adversaries, ChangeFeed.ArticleSummary(x.ArticleId)],
         ArticleProduct x => [ChangeFeed.ArticleTags(x.ArticleId)],
         Brief b => [ChangeFeed.Brief(b.Id), ChangeFeed.BriefDay(b.BriefDate)],
         BriefItem x => [ChangeFeed.Brief(x.BriefId)],

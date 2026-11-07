@@ -128,7 +128,7 @@ public sealed record ReminderRun(ReminderKind Kind, DateTimeOffset AtUtc, int Se
 
 /// <summary>What one pass of the due scans did: the emails sent, each scan that failed (its run, with its error), and each
 /// whose emails may not have arrived (<see cref="ReminderRun.Unsure"/>).</summary>
-public sealed record ReminderPass(int Sent, IReadOnlyList<ReminderRun> Failed, IReadOnlyList<ReminderRun>? Unsure = null);
+public sealed record ReminderPass(int Sent, IReadOnlyList<ReminderRun> Failed, IReadOnlyList<ReminderRun> Unsure);
 
 /// <summary>The scans' last runs, kept in memory (a restart clears it). Singleton.</summary>
 public sealed class ReminderLog
@@ -214,11 +214,13 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
     public static string UnsureNote(int n) =>
         $"{n} email{(n == 1 ? "" : "s")} may not have arrived (the relay didn't answer in time or dropped the connection): check with the recipients before sending again";
 
-    // Whether an email went, or may have: either way it's marked, so it isn't sent again by itself.
-    private bool Gone(EmailSendResult result)
+    // Every scan's emails go through here, so one the relay may not have taken is counted for the run's note wherever
+    // it's sent. Its MayHaveGone is what the scan marks by: gone or maybe gone, it isn't sent again by itself.
+    private async Task<EmailSendResult> SendAsync(OutgoingEmail message, CancellationToken ct)
     {
+        var result = await email.SendAsync(message, ct);
         if (result.Status == EmailSendStatus.Unknown) _unsure++;
-        return result.MayHaveGone;
+        return result;
     }
 
     // A failure is logged either way; the scheduled run doesn't rethrow it, so the next scan still runs. A scheduled
@@ -331,8 +333,8 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
         var reached = new HashSet<Guid>();
         foreach (var (to, list) in byRecipient)
         {
-            var result = await email.SendAsync(DueEmail(to, list, overdue, today), ct);
-            if (!Gone(result)) continue;
+            var result = await SendAsync(DueEmail(to, list, overdue, today), ct);
+            if (!result.MayHaveGone) continue;
             sent++;
             reached.UnionWith(list.Select(a => a.Id));
             await MarkAsync(db, kind, list.Select(a => RecipientKey(a, to)).ToList());
@@ -418,8 +420,8 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
                 ["ClosedList"] = closed.Count > 0 ? ListHeading("Closed in the last week", top: 14) + Table(closed, today) : "",
             });
             var html = Shell(t.Heading, clock.TeamName + " · week of " + weekStart.ToString("MMMM d", CultureInfo.InvariantCulture), MarkingLine(actions) + t.BodyHtml, t.Footer);
-            var result = await email.SendAsync(new OutgoingEmail(to, Marked(t.Subject, actions), html, ToText(html), []), ct);
-            if (!Gone(result)) continue;
+            var result = await SendAsync(new OutgoingEmail(to, Marked(t.Subject, actions), html, ToText(html), []), ct);
+            if (!result.MayHaveGone) continue;
             await MarkAsync(db, "digest", [key]);
             sent++;
         }
@@ -458,8 +460,8 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
             ["Status"] = what, ["BriefLink"] = link, ["MeetingTime"] = meeting,
         });
         var html = Shell(t.Heading, $"{clock.TeamName} · the meeting is at {meeting}", t.BodyHtml, t.Footer);
-        var result = await email.SendAsync(new OutgoingEmail(to, t.Subject, html, ToText(html), []), ct);
-        if (!Gone(result)) return 0;
+        var result = await SendAsync(new OutgoingEmail(to, t.Subject, html, ToText(html), []), ct);
+        if (!result.MayHaveGone) return 0;
         await MarkAsync(db, "brief-not-ready", [key]);
         return new Scan(1, optedOut ? 1 : 0);
     }
@@ -491,8 +493,8 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
             ["RotationLink"] = link,
         });
         var html = Shell(t.Heading, $"{clock.TeamName} · from {day}", t.BodyHtml, t.Footer);
-        var result = await email.SendAsync(new OutgoingEmail([address], t.Subject, html, ToText(html), []), ct);
-        if (!Gone(result)) return 0;
+        var result = await SendAsync(new OutgoingEmail([address], t.Subject, html, ToText(html), []), ct);
+        if (!result.MayHaveGone) return 0;
         await MarkAsync(db, "presenting", [key]);
         return 1;
     }
@@ -584,8 +586,8 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
                 ["NewList"] = Section(seen.Count == 0 ? "Your other open actions" : "New to you since your last digest", fresh, 14),
             });
             var html = Shell(t.Heading, clock.TeamName + " · " + period, MarkingLine(listed) + t.BodyHtml, t.Footer);
-            var result = await email.SendAsync(new OutgoingEmail([person.Email!], Marked(t.Subject, listed), html, ToText(html), []), ct);
-            if (!Gone(result)) continue;
+            var result = await SendAsync(new OutgoingEmail([person.Email!], Marked(t.Subject, listed), html, ToText(html), []), ct);
+            if (!result.MayHaveGone) continue;
             sent++;
             await MarkAsync(db, "personal-digest", [key]);
             done.Add(key);
@@ -642,8 +644,8 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
                 ["WaitingList"] = WaitingList(emails.Select(m => (open[m.ActionId].Number, m.To, OutreachDates.SentOn(m.SentAtUtc, clock)))),
             });
             var html = Shell(t.Heading, clock.TeamName + " · " + DayText(today), MarkingLine(list) + t.BodyHtml, t.Footer);
-            var result = await email.SendAsync(new OutgoingEmail([to], Marked(t.Subject, list), html, ToText(html), []), ct);
-            if (!Gone(result)) continue;
+            var result = await SendAsync(new OutgoingEmail([to], Marked(t.Subject, list), html, ToText(html), []), ct);
+            if (!result.MayHaveGone) continue;
             sent++;
             await MarkAsync(db, FollowUpMark, emails.Select(m => m.Key).ToList());
         }

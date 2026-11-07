@@ -42,7 +42,7 @@
                     <h2 class="tide-card-title">Edit @t.Name</h2>
                     <ChangedElsewhere By="@_changedBy" What="team" OnReload="ReloadTheirs" />
                     @Fields(_form, "edit")
-                    @if (CurrentUser.Has(Permission.Administer)) { <div class="mt-2"><ActiveLimitFields Id="ext-limit" @bind-Limit="_limit" @bind-Mode="_mode" /></div> }
+                    @if (CurrentUser.Has(Permission.Administer)) { <div class="mt-2"><ActiveLimitFields Id="ext-limit" @bind-Limit="_form.ActiveLimit" @bind-Mode="_form.LimitMode" /></div> }
                     <div class="d-flex gap-2 mt-2">
                         <button class="btn btn-primary btn-sm" disabled="@_busy" data-submit @onclick="() => Save(t.Id)">Save</button>
                         <button class="btn btn-outline-secondary btn-sm" @onclick="() => (_editing, _changedBy) = (null, null)">Cancel</button>
@@ -93,8 +93,6 @@
     private bool _showRetired, _busy;
     private Guid? _editing;
     private ExternalTeamForm _form = new(), _new = new();
-    private int? _limit;
-    private ActiveLimitMode _mode;
 
     internal ExternalTeamForm NewForm => _new;
     internal ExternalTeamForm EditForm => _form;
@@ -204,7 +202,6 @@
     {
         (_editing, _changedBy) = (t.Id, null);
         _form = ExternalTeamForm.From(t);
-        (_limit, _mode) = (t.ActiveLimit, t.LimitMode);
     }
 
     internal Task Add() => Run(async () =>
@@ -214,15 +211,11 @@
         _new = new();
     });
 
-    // The form carries the version it opened on, and the limit is saved on the version the profile's save left, so a
-    // colleague's change to either since is refused rather than overwritten.
+    // One save, on the version the form opened on (the limit with it, for an administrator): a colleague's change since
+    // is refused, not overwritten.
     internal Task Save(Guid id) => Run(async () =>
     {
-        try
-        {
-            var version = await TeamSvc.UpdateExternalAsync(id, _form);
-            if (CurrentUser.Has(Permission.Administer)) await TeamSvc.SetLimitAsync(id, _limit, _mode, version);
-        }
+        try { await TeamSvc.UpdateExternalAsync(id, _form); }
         catch (StaleEditException)
         {
             // The form stays to copy from, and Reload shows theirs.

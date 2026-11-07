@@ -85,7 +85,7 @@ policy, and the services check again, so a page that forgets can't write.
 | Turn an action's external reminders off | whoever can work it | `ActionService.SetNoRemindersAsync` |
 | Add, edit, reorder, retire and restore playbooks; delete one you made (an administrator, any) | `WorkActions` | `PlaybookService` |
 | Teams, members, SLA targets, reminder and escalation settings, card rules, query templates | `Administer` | `TeamService`, `SlaSettings`, `CardRuleService`, `HuntQueryBuilder` |
-| A team's active limit | `Administer` | `TeamService.SetLimitAsync` |
+| A team's active limit | `Administer` | `TeamService.UpdateAsync` (Teams & SLA), `UpdateExternalAsync` (External teams), `SetLimitAsync` |
 | Run a reminder scan now | `Administer` | `ReminderService.RunNowAsync` |
 
 An analyst (and an administrator, who holds every permission) works any action. An Action owner works only their
@@ -571,13 +571,13 @@ receiving team. The receiving team is emailed (the *Action handed to a team* tem
 haven't turned *Hand-offs to your team* off in My notifications. An external team isn't emailed; its reminders tell it.
 When the action's reminders are off (*Don't remind*), the dialog asks *Keep reminders off*, ticked: that was chosen for
 the team it's leaving, so it isn't carried over unseen. Unticked, the hand-off turns them back on and its history line
-ends "Its reminders are back on." The service takes the choice explicitly (`keepRemindersOff`); while the reminders are
-on, it changes nothing.
+ends "Its reminders are back on." The service keeps them as they are unless told to turn them on (`turnRemindersOn`,
+false by default); while the reminders are on, it changes nothing.
 
 Choosing another team in an action's editor is the same hand-off (`HandoffService.HandOverAsync`, from
 `ActionService.SaveAsync`): the editor then offers *Why hand it to {team}?*, optional, and records "Changed the team
 in the editor" when it's left blank. With the reminders off it offers *Keep reminders off* too, ticked
-(`ActionForm.KeepRemindersOff`, true unless unticked, so a caller that doesn't say keeps them as they are). Either way the lineage, the history line, the receiving team's limit and its email
+(`ActionForm.TurnRemindersOn`, false unless unticked, so a caller that doesn't say keeps them as they are). Either way the lineage, the history line, the receiving team's limit and its email
 are the same, so an external team's Reply-To doesn't depend on which was used.
 
 **Split to teams.** On an open top-level action, an analyst's *Split to teams* (under *More*, and under a parent's lineage) opens a dialog: tick the teams, give each

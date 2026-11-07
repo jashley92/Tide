@@ -146,6 +146,10 @@ The fakes, all in `TestDb.cs` unless noted:
 | `MemoryFileStore` | `IFileStore`. |
 | `TestHostEnvironment` | A host whose content root is the temp folder. |
 
+An email template's root-relative links ("/rotation") need the app's address, so `EmailTemplateRenderer.Render` and
+`EmailTemplateStore` take it explicitly: a test passes one, or says it has none (`appUrl: null`,
+`new EmailTemplateStore(null)`). `TestDb.EmailTemplates` uses `https://tide.example.org`.
+
 ### `TideApp`: the whole app over HTTP
 
 `TideApp` (`WebAppTests.cs`) is a `WebApplicationFactory<Program>` in the Development environment: the dev sign-in,
