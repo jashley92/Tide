@@ -332,6 +332,13 @@ public class ActionOwnerOverHttpTests(ActionOwnerApp app) : IClassFixture<Action
         (await app.CreateClient().GetAsync(path)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
     [Fact]
+    public async Task TheAccessDeniedPage_NamesTheRoleAsPeopleReadIt()
+    {
+        var html = await app.CreateClient().GetStringAsync("/access-denied?from=/admin");
+        html.Should().Contain("as Action owner.").And.NotContain("ActionOwner");
+    }
+
+    [Fact]
     public async Task AnActionOwner_ReadsTheTeamEdition_AsTheRoleGrants()
     {
         // ActionOwner holds ReadPublished, ReadTeamEdition and WorkActions (RoleDefinitions): the team's reads are open.
@@ -2136,11 +2143,11 @@ public class BusyGuardChallengeTests(TideApp app) : IClassFixture<TideApp>
         await using var r = await ComponentHarness.RenderAsync<Tide.Web.Components.Pages.Present>(app, "/present/" + day, new() { ["Day"] = day });
         Guid articleId;
         using (var scope = app.Services.CreateScope()) articleId = scope.ServiceProvider.GetRequiredService<AppDbContext>().Articles.First().Id;
-        Set(r.Component, "_qaTitle", "");   // no title: the service refuses it
+        r.Component.TypeQuickAddTitle(articleId, "");   // no title: the service refuses it
         await r.Click(p => p.QuickAdd(articleId));
         Field<bool>(r.Component, "_busy").Should().BeFalse();
         r.Scope.ServiceProvider.GetRequiredService<Tide.Web.Services.ToastService>().Toasts.Should().Contain(t => t.IsError && t.Message.Contains("needs a title"), "the add was refused");
-        Set(r.Component, "_qaTitle", "Quick add after a failure");
+        r.Component.TypeQuickAddTitle(articleId, "Quick add after a failure");
         await r.Click(p => p.QuickAdd(articleId));
         using var check = app.Services.CreateScope();
         check.ServiceProvider.GetRequiredService<AppDbContext>().Actions.Count(a => a.Title == "Quick add after a failure").Should().Be(1, "the next add works");

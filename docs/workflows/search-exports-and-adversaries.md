@@ -79,7 +79,8 @@ sequenceDiagram
 ![Indicator lookup](../screenshots/search-lookup.png)
 
 **Go to** (`Ctrl+K`, `CommandPalette.razor`) is separate: it jumps to a page, starts an article or action, or opens one
-by title or number. `?` lists the page's keyboard shortcuts.
+by title or number. It lists an action it found only for someone who may read actions (`ReadActions`), as the search
+page links them (`PaletteEntries.FromSearch`). `?` lists the page's keyboard shortcuts.
 
 ## Similar articles
 

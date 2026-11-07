@@ -478,8 +478,7 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
         else if (change.Status == RotationChangeStatus.Approved)
         {
             if (!user.Has(Permission.Administer)) throw new ForbiddenException("Only an administrator can undo an approved change.");
-            var first = await FirstDayToComeAsync(db, ct);
-            if (change.GiveTo < first && (change.TakeTo ?? DateOnly.MinValue) < first)
+            if (!HasDaysFrom(change, await FirstDayToComeAsync(db, ct)))
                 throw new InvalidOperationException("Every day in this change has passed, so there's nothing to undo.");
             await RestoreDaysAsync(db, change, ct);
         }
@@ -543,6 +542,24 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
             b.EditVersion = Guid.NewGuid();
         }
     }
+
+    /// <summary>
+    /// The approved changes among <paramref name="changes"/> that an Undo would still change (<see cref="CancelAsync"/>
+    /// refuses the rest): a day of either half still to come, today not once its meeting has been held. The rotation
+    /// page offers Undo for these only.
+    /// </summary>
+    public async Task<IReadOnlySet<Guid>> UndoableAsync(IEnumerable<RotationChange> changes, CancellationToken ct = default)
+    {
+        RequireRead();
+        var approved = changes.Where(c => c.Status == RotationChangeStatus.Approved).ToList();
+        if (approved.Count == 0) return new HashSet<Guid>();
+        await using var db = await dbs.CreateAsync(ct);
+        var first = await FirstDayToComeAsync(db, ct);
+        return approved.Where(c => HasDaysFrom(c, first)).Select(c => c.Id).ToHashSet();
+    }
+
+    // Whether a change still moves a day from first on: either half of a swap.
+    private static bool HasDaysFrom(RotationChange c, DateOnly first) => c.GiveTo >= first || (c.TakeTo is { } takeTo && takeTo >= first);
 
     // The first day whose presenter can still change: today, unless today's meeting has been held (its brief presented,
     // sent, or held and put back to ready), when today is as past as yesterday and its brief says who presented it.

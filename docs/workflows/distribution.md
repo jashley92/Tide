@@ -82,6 +82,7 @@ The subject is `BriefRenderer.Subject(cut, teamName)`.
 |---|---|
 | Not before the brief's own day | "The brief for … can be sent from that day. Prepare it now and send it after the meeting." |
 | The meeting has been ended (`MeetingHeldAtUtc` or `PresentedAtUtc` set), or the brief is Sent already, or "Sent without a meeting" is ticked | "End the meeting first, or tick "Sent without a meeting" if there wasn't one." |
+| "Sent without a meeting" only while the brief's meeting isn't running in present mode (`MeetingLive`; the dialog greys the box out and says so) | "This brief's meeting is running in present mode. End the meeting first." |
 
 Once one edition has gone, the brief is Sent, so the other follows on the same terms.
 

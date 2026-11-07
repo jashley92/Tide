@@ -203,7 +203,7 @@ public class FrontendAuditTests(TideApp app) : IClassFixture<TideApp>
             day = briefs.CurrentDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
         }
         await using var r = await RenderAsync<Present>(app, "/present/" + day, new() { ["Day"] = day });
-        SetField(r.Component, "_qaTitle", "Audit quick action");
+        r.Component.TypeQuickAddTitle(articleId, "Audit quick action");
         SetField(r.Component, "_busy", true);   // the first click's add still running
         await r.Click(p => p.QuickAdd(articleId));
 

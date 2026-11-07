@@ -56,7 +56,7 @@ state beyond what's on screen.
   each keystroke arrives. Without it, Blazor's copy is the last value it drew, so a later render sends the server's
   text, older than what's typed by then under any latency, over the newest keystrokes. Bound, a render carrying the
   typed text sends nothing, and a clear or a value set from outside still reaches the box.
-- **Every multi-line text box (`<textarea>`) carries `tide-autogrow`**, so it grows with its text, up to `min(60vh, 32rem)` (30vh in present mode's notes panel), then scrolls. `tide-grow-2` / `tide-grow-3` keep its starting height at two or three rows; boxes with their own starting height (`tide-query`, `tide-email-body`, `tide-etpl-body`) keep it. The browser sizes them where it supports CSS `field-sizing: content`; `autogrow.js` does elsewhere.
+- **Every multi-line text box (`<textarea>`) carries `tide-autogrow`**, so it grows with its text, up to `min(60vh, 32rem)` (30vh in present mode's notes panel), then scrolls. `tide-grow-2` / `tide-grow-3` keep its starting height at two or three rows; boxes with their own starting height (`tide-query`, `tide-email-body`, `tide-etpl-body`) keep it. The browser sizes them where it supports CSS `field-sizing: content`; `autogrow.js` does elsewhere: it fits a box as it's typed in, when Blazor draws or changes it (only a box whose text or width changed, keeping the page's scroll), and when it comes into view (a `<details>` opening, a hidden tab shown: a `ResizeObserver`).
 - **A form with one main action marks its container `data-submit-scope` and the button `data-submit`**, so Ctrl+Enter
   (`⌘ Enter`) in one of its text boxes presses it (`submitkeys.js`, EP-90): `<div data-submit-scope>`, then
   `<button … data-submit @onclick="Save">`. One `data-submit` to a scope, and scopes don't nest. A dialog with one
@@ -195,7 +195,7 @@ All use `AdminLayout` and the `Administer` policy.
 
 | Route | Component | Policy | Purpose |
 |---|---|---|---|
-| `/access-denied` | `SystemPages` | anonymous | Friendly 403: who you are, your roles, where roles come from, and the page refused (`?from=`). |
+| `/access-denied` | `SystemPages` | anonymous | Friendly 403: who you are, your roles (as people read them, `RoleDefinitions.Label`: "Action owner"), where roles come from, and the page refused (`?from=`). |
 | `/not-found` | `NotFoundPage` | anonymous | Friendly 404. Also the router's `NotFoundPage`. |
 | `/error` | `ErrorPage` | anonymous | The exception handler's page outside Development. |
 

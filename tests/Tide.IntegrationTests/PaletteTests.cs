@@ -93,7 +93,7 @@ public class PaletteEntryTests
             new HitList<ActionHit>([new ActionHit(Guid.NewGuid(), 12, "Block the domain", ActionStatus.InProgress, Priority.P1, "SOC", null, null, null, null)], 1),
             new HitList<StoryHit>([new StoryHit(story, "Qakbot", StoryStatus.Active, 3, null)], 1));
 
-        var entries = PaletteEntries.FromSearch(results);
+        var entries = PaletteEntries.FromSearch(results, new FakeUser(AppRole.Analyst));
 
         entries.Select(e => (e.Label, e.Href, e.Kind)).Should().Equal(
             ("A-12 Block the domain", "actions/12", PaletteKind.Action),
@@ -105,11 +105,22 @@ public class PaletteEntryTests
     }
 
     [Fact]
+    public void FromSearch_LeavesOutActions_ForSomeoneWhoMayNotReadThem()
+    {
+        // Defence in depth, as the search page does (Search.razor's _canOpenActions): no role that may search lacks
+        // ReadActions today, but a hit the person couldn't open isn't offered.
+        var hits = new HitList<ActionHit>([new ActionHit(Guid.NewGuid(), 12, "Block the domain", ActionStatus.Open, Priority.P1, "SOC", null, null, null, null)], 1);
+        var results = new SearchResults("block", ["block"], null, null, HitList<ArticleHit>.None, hits, HitList<StoryHit>.None);
+        PaletteEntries.FromSearch(results, new FakeUser(AppRole.Reader)).Should().NotContain(e => e.Kind == PaletteKind.Action);
+        PaletteEntries.FromSearch(results, new FakeUser(AppRole.Viewer)).Should().Contain(e => e.Kind == PaletteKind.Action);
+    }
+
+    [Fact]
     public void FromSearch_ShowsAFewOfEachKind()
     {
         var hits = Enumerable.Range(1, 9).Select(n => new ActionHit(Guid.NewGuid(), n, "Act " + n, ActionStatus.Open, Priority.P4, "SOC", null, null, null, null)).ToList();
         var results = new SearchResults("act", ["act"], null, null, HitList<ArticleHit>.None, new HitList<ActionHit>(hits, hits.Count), HitList<StoryHit>.None);
-        PaletteEntries.FromSearch(results).Count(e => e.Kind == PaletteKind.Action).Should().Be(PaletteEntries.HitsPerKind);
+        PaletteEntries.FromSearch(results, new FakeUser(AppRole.Analyst)).Count(e => e.Kind == PaletteKind.Action).Should().Be(PaletteEntries.HitsPerKind);
     }
 
     [Theory]

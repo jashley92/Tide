@@ -103,7 +103,7 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
         }
         await using var r = await RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" });
         var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
-        typeof(Present).GetField("_qaTitle", flags)!.SetValue(r.Component, "Sweep the proxy logs");
+        r.Component.TypeQuickAddTitle(article, "Sweep the proxy logs");
         typeof(Present).GetField("_qaTeam", flags)!.SetValue(r.Component, team);
 
         // The add waits on the dialog: start it as a click would, and keep hold of it to wait for it once it's answered.

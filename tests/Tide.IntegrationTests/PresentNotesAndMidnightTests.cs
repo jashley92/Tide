@@ -49,7 +49,7 @@ public class PresentPastMidnightTests(LateMeetingApp app) : IClassFixture<LateMe
         app.Clock.Now += TimeSpan.FromMinutes(20);   // ten past midnight: Thursday
         await Do(pat, p =>
         {
-            typeof(Present).GetField("_qaTitle", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(p, "Sweep the proxy logs");
+            p.TypeQuickAddTitle(article, "Sweep the proxy logs");
             return p.QuickAdd(article);
         });
         await Do(pat, p => p.EndMeeting());

@@ -583,7 +583,7 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public DistributionService Distribution(IEmailSender? sender = null, ICurrentUser? user = null) => new(this, user ?? User, Store, sender ?? Email, Settings(), Metrics(),
         new BriefRenderer(new MarkdownService()), Clock, Options.Create(new AppOptions { BaseUrl = "https://tide.example.org" }), Published,
-        new StaticOptionsMonitor<DistributionOptions>(DistributionOptions));
+        new StaticOptionsMonitor<DistributionOptions>(DistributionOptions), Live);
 
     /// <summary>What the published list has parsed of each send, shared as the app's singleton is.</summary>
     public PublishedContentCache Published { get; } = new();

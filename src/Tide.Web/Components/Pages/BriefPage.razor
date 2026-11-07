@@ -502,7 +502,10 @@ else
                 var before = _upcoming;
                 _upcoming = await Rotation.UpcomingAsync();
                 _rotaDay = (await Rotation.CalendarAsync(_date, _date)).FirstOrDefault();
-                if (RotationPage.Heard(before, _upcoming, [], LiveChanges.Who(changes)) is { } news) Toasts.Show(news);
+                // One of their own requests is no longer waiting: the changes say whether it was approved or declined.
+                var still = _upcoming.MyRequests.Select(c => c.Id).ToHashSet();
+                var decided = before?.MyRequests.Any(c => !still.Contains(c.Id)) == true ? await Rotation.ChangesAsync() : [];
+                if (RotationPage.Heard(before, _upcoming, decided, LiveChanges.Who(changes)) is { } news) Toasts.Show(news);
             }
             if (changes.Any(c => c.Topic == ChangeFeed.Articles))
             {

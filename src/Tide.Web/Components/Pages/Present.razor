@@ -445,7 +445,8 @@ else
                                                             {
                                                                 <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="() => Take(r)">Take it</button>
                                                             }
-                                                            <select class="form-select form-select-sm" aria-label="Assign @Ui.ActionLabel(r.Number)" value="@(r.AssigneeId ?? "")" disabled="@_busy" @onchange="e => Assign(r, e.Value as string)">
+                                                            <select class="form-select form-select-sm" aria-label="Assign @Ui.ActionLabel(r.Number)" value="@(r.AssigneeId ?? "")" disabled="@_busy"
+                                                                    @key="AssignKey(r.Id)" @onchange="e => Assign(r, e.Value as string)">
                                                                 <option value="">Nobody</option>
                                                                 @foreach (var member in MembersOf(r.TeamId)) { <option value="@member.UserId">@member.DisplayName</option> }
                                                                 @if (r.AssigneeId is { } held && MembersOf(r.TeamId).All(member => member.UserId != held)) { <option value="@held">@r.AssigneeName</option> }
@@ -461,7 +462,8 @@ else
                                     @if (_canCreate && _teams.Count > 0)
                                     {
                                         <div class="tide-quick-add">
-                                            <input class="form-control form-control-sm" placeholder="Another action: what needs doing" aria-label="New action title" maxlength="300" @bind="_qaTitle" />
+                                            <input class="form-control form-control-sm" placeholder="Another action: what needs doing" aria-label="New action title" maxlength="300"
+                                                   @bind:get="QuickAddTitle(a.Id)" @bind:set="v => TypeQuickAddTitle(a.Id, v)" @bind:event="oninput" />
                                             <select class="form-select form-select-sm" aria-label="Kind" @bind="_qaKind">
                                                 @foreach (var k in Enum.GetValues<ActionKind>()) { <option value="@k">@ActionService.KindName(k)</option> }
                                             </select>
@@ -473,7 +475,7 @@ else
                                             {
                                                 <span class="tide-present-help" role="status">That date has passed: it'll be overdue at once.</span>
                                             }
-                                            <button class="btn btn-sm btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(_qaTitle))" @onclick="() => QuickAdd(a.Id)"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add</button>
+                                            <button class="btn btn-sm btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(QuickAddTitle(a.Id)))" @onclick="() => QuickAdd(a.Id)"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add</button>
                                         </div>
                                     }
                                     else if (raised.Count == 0)
@@ -694,7 +696,7 @@ else
                     </button>
                     @if (meeting.People.Any(p => p.CanPresent && !meeting.IsPresenter(p.UserId)))
                     {
-                        <select class="form-select form-select-sm w-auto" aria-label="Hand presenting to" value="" @onchange="HandOff">
+                        <select class="form-select form-select-sm w-auto" aria-label="Hand presenting to" value="" @key="HandOffResets" @onchange="HandOff">
                             <option value="">Hand off to…</option>
                             @foreach (var p in meeting.People.Where(p => p.CanPresent && !meeting.IsPresenter(p.UserId))) { <option value="@p.UserId">@p.Name</option> }
                         </select>
@@ -799,7 +801,9 @@ else
     private IReadOnlyDictionary<string, CveRecord> _cves = new Dictionary<string, CveRecord>();
     private IReadOnlyList<Team> _teams = [];
     private bool _canCreate;
-    private string? _qaTitle;
+    // The quick-add title per article, kept as it's typed: a follower's slide can move before the box loses focus, and
+    // what was typed stays with the article it was typed for.
+    private readonly Dictionary<Guid, string?> _qaTitles = [];
     private ActionKind _qaKind = ActionKind.IocSweep;
     private Guid _qaTeam;
     private DateOnly? _qaDue;
@@ -1329,12 +1333,18 @@ else
     // the page opened, so a meeting run past midnight raises its actions for its own day; today's, by leaving it out.
     private DateOnly? RaisedFor => BriefSvc.IsPast(_date) ? _date : null;
 
+    /// <summary>The quick-add title typed for an article's slide, not yet added.</summary>
+    internal string? QuickAddTitle(Guid articleId) => _qaTitles.GetValueOrDefault(articleId);
+
+    /// <summary>The quick-add box, as typed (each keystroke).</summary>
+    internal void TypeQuickAddTitle(Guid articleId, string? title) => _qaTitles[articleId] = title;
+
     internal Task QuickAdd(Guid articleId) => Run(async () =>
     {
         var number = 0;
         if (!await _overLimit.RunAsync(async reason =>
-                number = await ActionSvc.QuickAddAsync(articleId, _qaTitle ?? "", _qaKind, _qaTeam, _qaDue, RaisedFor, reason))) return;
-        _qaTitle = null;
+                number = await ActionSvc.QuickAddAsync(articleId, QuickAddTitle(articleId) ?? "", _qaKind, _qaTeam, _qaDue, RaisedFor, reason))) return;
+        _qaTitles.Remove(articleId);
         _qaDue = null;
         await LoadActions();
         Toasts.Show($"{Ui.ActionLabel(number)} added.{await NoOneToOwn(_qaTeam)}");
@@ -1987,7 +1997,14 @@ else
     {
         if (_seat is null || e.Value is not string to || to.Length == 0) return;
         var name = _view?.People.FirstOrDefault(p => p.UserId == to)?.Name;
-        if (!Meetings.HandTo(_seat, to)) return;
+        if (!Meetings.HandTo(_seat, to))
+        {
+            // Refused (they left a moment ago): the list is drawn afresh, back on "Hand off to…", not left on their name.
+            HandOffResets++;
+            Toasts.Error($"{name ?? "They"} couldn't be handed the meeting: they may have left it.");
+            Refresh();
+            return;
+        }
         Refresh();
         CloseHandedOn();
         // Following the new presenter now, from their slide (this page doesn't hear its own change).
@@ -2318,11 +2335,30 @@ else
 
     // Only the holder changes: the due date is left as it is now (null), not set back to what this page last read, which a
     // colleague may have moved since this page last heard.
-    internal Task Assign(EditionAction r, string? assigneeId) => Run(async () =>
+    // A choice the service turns away (the person left the team a moment ago) redraws that row's list, as the due box
+    // does: the value drawn hasn't changed, so the browser's wouldn't be put back.
+    internal async Task Assign(EditionAction r, string? assigneeId)
     {
-        await ActionSvc.AssignAsync(r.Id, string.IsNullOrEmpty(assigneeId) ? null : assigneeId, null);
-        await LoadActions();
-    });
+        var kept = false;
+        await Run(async () =>
+        {
+            await ActionSvc.AssignAsync(r.Id, string.IsNullOrEmpty(assigneeId) ? null : assigneeId, null);
+            kept = true;
+            await LoadActions();
+        });
+        if (!kept) _assignResets[r.Id] = AssignResets(r.Id) + 1;
+    }
+
+    private readonly Dictionary<Guid, int> _assignResets = [];
+
+    /// <summary>How many times an action's Assign list has been drawn afresh after a refused choice.</summary>
+    internal int AssignResets(Guid actionId) => _assignResets.GetValueOrDefault(actionId);
+
+    // The Assign list's key, unlike the due box's beside it (siblings' keys must differ).
+    private (string, Guid, int) AssignKey(Guid actionId) => ("assign", actionId, AssignResets(actionId));
+
+    /// <summary>How many times the "Hand off to…" list has been drawn afresh after a refused hand-off.</summary>
+    internal int HandOffResets { get; private set; }
 
     private static DateOnly? DateInput(object? value) => Ui.TryParseDay(value as string, out var d) ? d : null;
 
