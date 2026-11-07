@@ -180,6 +180,7 @@ the page a change with `OnChangedElsewhere` when it wants it heard.
   test that says the page hasn't heard a save yet makes it from the page's own origin (its scope's
   `IAppDbContextFactory`), which the feed skips, and hands the change over with `OnChangedElsewhere` when it means to;
   otherwise a slow run delivers it between the test's steps (`PresentMidMeetingTests.Unheard`).
+- A test of a time limit (a probe's timeout) runs the limit on a `ManualClock` and moves it on, rather than timing it with a stopwatch: a loaded CI machine's slow timers then can't fail it.
 
 ## SQL Server tests
 

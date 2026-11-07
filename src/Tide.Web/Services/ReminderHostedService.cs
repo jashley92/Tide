@@ -16,23 +16,34 @@ public sealed class ReminderHostedService(IServiceScopeFactory scopes, JobMonito
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            try
-            {
-                await jobs.RunAsync(JobMonitor.Reminders, async () =>
-                {
-                    await using var scope = scopes.CreateAsyncScope();
-                    await scope.ServiceProvider.GetRequiredService<ReminderService>().RunDueAsync(stoppingToken);
-                    return null;
-                });
-            }
+            try { await PassAsync(stoppingToken); }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
-            catch (Exception ex)
-            {
-                log.LogError(ex, "A reminder scan failed; it's tried again at the next poll.");
-            }
-            jobs.Scheduled(JobMonitor.Reminders, true, time.GetUtcNow() + PollInterval);
             try { await Task.Delay(PollInterval, stoppingToken); }
             catch (OperationCanceledException) { return; }
         }
+    }
+
+    /// <summary>One poll: the scans that are due, recorded as one run of the job. A scan that failed (the relay down)
+    /// makes the run a failure on Diagnostics, naming it, though the other scans still ran: it was shown as a success.
+    /// A failure is logged, never thrown (except for shutting down).</summary>
+    internal async Task PassAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            await jobs.RunAsync(JobMonitor.Reminders, async () =>
+            {
+                await using var scope = scopes.CreateAsyncScope();
+                var pass = await scope.ServiceProvider.GetRequiredService<ReminderService>().RunDueAsync(stoppingToken);
+                if (pass.Failed.Count > 0)
+                    throw new JobProblemException(string.Join("; ", pass.Failed.Select(f => $"{f.Kind}: {f.Error}")));
+                return pass.Sent > 0 ? $"{pass.Sent} email{(pass.Sent == 1 ? "" : "s")}" : null;
+            });
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            log.LogError(ex, "A reminder scan failed; it's tried again at the next poll.");
+        }
+        jobs.Scheduled(JobMonitor.Reminders, true, time.GetUtcNow() + PollInterval);
     }
 }

@@ -826,10 +826,14 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         await using var db = await dbs.CreateAsync(ct);
         var today = clock.Today;
         var weekAgo = ActionQueries.LastSevenDaysFrom(today);
-        var teams = await db.Teams.AsNoTracking().Where(t => !t.IsRetired).OrderBy(t => t.SortOrder).ThenBy(t => t.Name).ToListAsync(ct);
         var rows = await db.Actions.AsNoTracking().WhereOpenOrClosedSince(weekAgo)
             .Select(a => new { a.TeamId, a.Status, a.DueDate, a.ClosedDate, a.AssigneeId, a.AssigneeName, a.Priority })
             .ToListAsync(ct);
+        // A retired team is listed while it still has open actions (as on Team commitments): retiring one leaves its
+        // actions on it, and they'd otherwise be on no team's card, overdue ones and all.
+        var holding = rows.Where(r => !ActionItem.IsClosedStatus(r.Status)).Select(r => r.TeamId).ToHashSet();
+        var teams = (await db.Teams.AsNoTracking().OrderBy(t => t.SortOrder).ThenBy(t => t.Name).ToListAsync(ct))
+            .Where(t => !t.IsRetired || holding.Contains(t.Id)).ToList();
         return teams.Select(t =>
         {
             var mine = rows.Where(r => r.TeamId == t.Id).ToList();

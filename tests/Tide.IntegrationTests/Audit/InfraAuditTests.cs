@@ -436,16 +436,23 @@ public sealed class DatabaseHealthCheckTests
         }
     }
 
+    // The limit runs on a clock the test moves, so a loaded machine's slow timers can't fail it: the probe is still
+    // waiting just short of the limit, and is unhealthy as soon as the limit passes.
     [Fact]
     public async Task Check_AHangingDatabase_IsUnhealthyWithinTheTimeLimit()
     {
-        var check = new DatabaseHealthCheck(new HangingDb());
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var clock = new Tide.TestSupport.ManualClock();
+        var check = new DatabaseHealthCheck(new HangingDb(), clock);
 
-        var result = await check.CheckHealthAsync(new Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext()).WaitAsync(TimeSpan.FromSeconds(30));
+        var probe = check.CheckHealthAsync(new Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext());
+        clock.Advance(DatabaseHealthCheck.TimeLimit - TimeSpan.FromMilliseconds(1));
+        await Task.Delay(50);
+        probe.IsCompleted.Should().BeFalse("the database still has time to answer");
+        clock.Advance(TimeSpan.FromMilliseconds(1));
+        var result = await probe.WaitAsync(TimeSpan.FromSeconds(30));
 
         result.Status.Should().Be(Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy);
-        stopwatch.Elapsed.Should().BeLessThan(DatabaseHealthCheck.TimeLimit + TimeSpan.FromSeconds(3));
+        result.Description.Should().Contain("didn't answer within");
     }
 }
 

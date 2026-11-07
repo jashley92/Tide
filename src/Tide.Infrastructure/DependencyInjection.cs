@@ -20,7 +20,7 @@ public static class DependencyInjection
     {
         services.Configure<RoleMappingOptions>(config.GetSection("RoleMapping"));
 
-        var provider = config.GetValue<string>("Database:Provider") ?? "Sqlite";
+        var provider = DatabaseProvider(config["Database:Provider"]);
         var connectionString = config.GetConnectionString("Default");
 
         // A context FACTORY, not a shared context: Blazor Server keeps one DI scope for a whole circuit, so a held
@@ -29,7 +29,7 @@ public static class DependencyInjection
         // the current user).
         void ConfigureProvider(IServiceProvider sp, DbContextOptionsBuilder options)
         {
-            if (provider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
+            if (provider == SqlServer)
                 options.UseSqlServer(
                     connectionString ?? throw new InvalidOperationException("ConnectionStrings:Default is required for SqlServer."),
                     // Production migrations live in their own assembly, so startup applies the SQL Server set.
@@ -60,5 +60,22 @@ public static class DependencyInjection
         services.AddSingleton<IThreatIntelAssistant, AzureOpenAiAssistant>();
         services.AddScoped<DatabaseInitializer>();
         return services;
+    }
+
+    private const string SqlServer = "SqlServer", Sqlite = "Sqlite";
+
+    /// <summary>
+    /// <c>Database:Provider</c> as it's used: SqlServer, or Sqlite (blank, in development). Anything else stops start-up
+    /// saying so: a mistyped "SQL Server" was taken for SQLite, so start-up failed reading the SQL Server connection
+    /// string as a SQLite one ("keyword not supported: 'server'"), or, with none, ran on an empty SQLite file.
+    /// </summary>
+    public static string DatabaseProvider(string? configured)
+    {
+        // Not trimmed: the deploy scripts and Diagnostics read the value as written, so " SqlServer" would be SQL Server
+        // here and not there.
+        var value = configured ?? "";
+        if (string.IsNullOrWhiteSpace(value) || value.Equals(Sqlite, StringComparison.OrdinalIgnoreCase)) return Sqlite;
+        if (value.Equals(SqlServer, StringComparison.OrdinalIgnoreCase)) return SqlServer;
+        throw new InvalidOperationException($"Database:Provider is '{value}'; it must be SqlServer (production) or Sqlite (development).");
     }
 }

@@ -49,6 +49,7 @@ failure and counts, not content.
   - `App:PathBase` isn't a path like `/tide` (`PathBaseSetting`);
   - `Files:RootPath` is blank, or the pool can't create it;
   - `Database:ApplyMigrations=false` and migrations are pending (next entry);
+  - `Database:Provider` is neither `SqlServer` nor `Sqlite` ("Database:Provider is 'SQL Server'…");
   - `ConnectionStrings:Default` is missing for SQL Server, wrong, or the pool account has no login;
   - the server's `Org:TimeZone` isn't a zone this server knows.
 - **Where to look:** the Application event log, or `stdout` logging. The message names the setting.
