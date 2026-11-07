@@ -130,7 +130,7 @@ public class AdversaryPickSearchTests : IDisposable
 
         var elsewhere = await Article("Another report");
         await adversaries.TagArticleAsync(elsewhere, older);
-        await Task.Delay(20);
+        await TaggedEarlierAsync(nameof(Tide.Domain.Entities.ArticleAdversary), older);
         await adversaries.TagArticleAsync(elsewhere, newer);
         await adversaries.TagArticleAsync(elsewhere, watched);
         await adversaries.TagArticleAsync(elsewhere, retired);
@@ -182,6 +182,17 @@ public class AdversaryPickSearchTests : IDisposable
         AdversaryService.Matching(a, "g0016").Should().Be((0, null));
         AdversaryService.Matching(a, "pt2").Should().Be((2, "APT29"));
         AdversaryService.Matching(a, "Cozy").Rank.Should().Be(3);
+    }
+
+    // The "recently tagged" order reads the audit trail's times, and a tie there falls either way: move a tag back a
+    // minute, rather than wait for the clock to tick between two tags.
+    private async Task TaggedEarlierAsync(string entityType, Guid id)
+    {
+        await using var ctx = _db.PlainContext();
+        var key = id.ToString();
+        var added = await ctx.AuditLog.Where(e => e.EntityType == entityType && e.Action == "Added" && e.EntityKey.EndsWith(key)).SingleAsync();
+        added.AtUtc = added.AtUtc.AddMinutes(-1);
+        await ctx.SaveChangesAsync();
     }
 }
 

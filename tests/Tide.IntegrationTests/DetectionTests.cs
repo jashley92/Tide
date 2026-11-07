@@ -152,7 +152,11 @@ public class DetectionServiceTests : IDisposable
 
     public void Dispose() => _db.Dispose();
 
-    private DetectionService Detections() => new(_db, _db.User, _db.Clock, _db.Actions(), TimeProvider.System);
+    // The service's clock, which a test moves on between two imports or pushes ("the latest one") instead of waiting for
+    // the system clock to tick: a tie would fall either way.
+    private readonly TestClock _time = new(DateTimeOffset.UtcNow);
+
+    private DetectionService Detections() => new(_db, _db.User, _db.Clock, _db.Actions(), _time);
 
     private static byte[] Csv(params string[] rows) => Encoding.UTF8.GetBytes("name,techniques,enabled,id\n" + string.Join('\n', rows));
 
@@ -175,7 +179,7 @@ public class DetectionServiceTests : IDisposable
     {
         _db = _db.On(provider);
         var first = await Detections().ImportAsync(DetectionSource.Csv, "rules.csv", Csv("MFA push,T1621,yes,r1", "VPN,T1133,no,r2", "Old,T1078,yes,r3"));
-        await Task.Delay(5);
+        _time.Now += TimeSpan.FromSeconds(1);
         var second = await Detections().ImportAsync(DetectionSource.Csv, "rules.csv", Csv("MFA push,T1621,yes,r1", "VPN,T1133,yes,r2", "New,T1219,yes,r4"));
 
         first.Should().BeEquivalentTo(new DetectionImport(3, 0, 0, 0, []));
@@ -314,10 +318,10 @@ public class DetectionServiceTests : IDisposable
         void As(string id, string name) => (_db.User.UserId, _db.User.DisplayName) = (id, name);
         As("api:0a1b2c3d4e5f4a6b8c7d9e0f1a2b3c4d", "Sentinel sync");
         await Detections().PushAsync([new ParsedRule("1001", "Sentinel MFA", ["T1621"], null, true), new ParsedRule("1002", "Sentinel VPN", ["T1133"], null, true)]);
-        await Task.Delay(5);
+        _time.Now += TimeSpan.FromSeconds(1);
         As("api:ffffffffffffffffffffffffffffffff", "Splunk sync");
         var splunk = await Detections().PushAsync([new ParsedRule("1001", "Splunk accounts", ["T1078"], null, true)]);
-        await Task.Delay(5);
+        _time.Now += TimeSpan.FromSeconds(1);
         As("S-1-5-21-TEST-7", "SOAR gMSA");
         await Detections().PushAsync([new ParsedRule("x", "SOAR rule", ["T1110"], null, true)]);
 
@@ -328,7 +332,7 @@ public class DetectionServiceTests : IDisposable
 
         // A token issued again under the same name carries on its caller's set.
         As("api:11111111111111111111111111111111", "Sentinel sync");
-        await Task.Delay(5);
+        _time.Now += TimeSpan.FromSeconds(1);
         var again = await Detections().PushAsync([new ParsedRule("1001", "Sentinel MFA", ["T1621"], null, true)]);
         again.Should().BeEquivalentTo(new DetectionImport(0, 0, 1, 1, []));
         (await Detections().ListAsync()).Rules.Select(r => (r.Rule.Name, r.Current)).Should().BeEquivalentTo(

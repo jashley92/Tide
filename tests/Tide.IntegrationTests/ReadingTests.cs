@@ -193,9 +193,9 @@ public class CitedDraftServiceTests : IDisposable
 
         var others = await _db.Assist().OtherSourcesAsync(article);
 
-        others.Select(o => o.Url).Should().Equal(form.SourceUrl == First ? Second : First);
-        var other = others.Single();
-        if (other.Url == Second) other.Text.Should().Contain("More than 20 victims.").And.Contain("gateway 5");
+        form.SourceUrl.Should().Be(First, "the newest report makes the article");
+        others.Select(o => o.Url).Should().Equal(Second);
+        others.Single().Text.Should().Contain("More than 20 victims.").And.Contain("gateway 5");
     }
 
     [Fact]
