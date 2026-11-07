@@ -29,6 +29,11 @@
 {
     <p class="tide-muted">Searching&hellip;</p>
 }
+else if (_results is { Terms.Count: 0 } none && none.Query.Length > 0)
+{
+    @* Only one-letter words (or quotes and spaces): nothing is searched for, which would otherwise show nothing at all. *@
+    <div class="tide-card"><EmptyState Icon="bi-search" Title="Nothing to search for">Search words need two characters or more.</EmptyState></div>
+}
 else if (_results is { Terms.Count: > 0 } r)
 {
     @if (r.Indicator is { } ind)

@@ -14,7 +14,7 @@
 @if (_open)
 {
     <div class="tide-modal-scrim" @onclick="Cancel">
-        <div class="tide-modal @(Wide ? "tide-modal-wide" : "")" role="@(Form || CloseOnly ? "dialog" : "alertdialog")" aria-modal="true" aria-labelledby="@_titleId"
+        <div class="tide-modal @(Wide ? "tide-modal-wide" : "")" tabindex="-1" role="@(Form || CloseOnly ? "dialog" : "alertdialog")" aria-modal="true" aria-labelledby="@_titleId"
              aria-describedby="@DescribedBy" @onclick:stopPropagation="true" @onkeydown="OnKey">
             <h2 class="tide-modal-title" id="@_titleId">@(Title ?? _title)</h2>
             @if (!string.IsNullOrEmpty(_message))

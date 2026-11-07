@@ -17,7 +17,7 @@
 @if (_open)
 {
     <div class="tide-modal-scrim" @onclick="Close">
-        <div class="tide-modal tide-shortcuts" role="dialog" aria-modal="true" aria-labelledby="@(_id)-title" @onclick:stopPropagation="true" @onkeydown="OnKey">
+        <div class="tide-modal tide-shortcuts" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="@(_id)-title" @onclick:stopPropagation="true" @onkeydown="OnKey">
             <div class="tide-shortcuts-head">
                 <h2 class="tide-modal-title" id="@(_id)-title">Keyboard shortcuts</h2>
                 <button type="button" class="btn-close" aria-label="Close" @ref="_closeBtn" @onclick="Close"></button>
