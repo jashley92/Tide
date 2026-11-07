@@ -16,6 +16,11 @@ namespace Tide.Application.Adversaries;
 public sealed class AdversaryForm
 {
     public Guid? Id { get; set; }
+
+    /// <summary>The profile's <see cref="Adversary.EditVersion"/> when the form opened; a save over a change made since is
+    /// refused. Null skips the check (a new profile, or a caller that means to overwrite).</summary>
+    public Guid? EditVersion { get; set; }
+
     public string Name { get; set; } = "";
     public AdversaryKind Kind { get; set; }
     public string? Aliases { get; set; }
@@ -27,7 +32,7 @@ public sealed class AdversaryForm
 
     public static AdversaryForm From(Adversary a) => new()
     {
-        Id = a.Id, Name = a.Name, Kind = a.Kind, Aliases = a.Aliases, MitreId = a.MitreId, Motivation = a.Motivation, Sectors = a.Sectors,
+        Id = a.Id, EditVersion = a.EditVersion, Name = a.Name, Kind = a.Kind, Aliases = a.Aliases, MitreId = a.MitreId, Motivation = a.Motivation, Sectors = a.Sectors,
         Notes = a.Notes, Watched = a.Watched,
     };
 }
@@ -417,7 +422,13 @@ public sealed class AdversaryService(IAppDbContextFactory dbs, ICurrentUser user
         var taken = await db.Adversaries.Where(a => a.Id != form.Id && !a.IsRetired).Select(a => a.Name).ToListAsync(ct);
         if (taken.Exists(n => string.Equals(n, name, StringComparison.OrdinalIgnoreCase))) throw new ArgumentException($"{name} already has a profile.");
         Adversary p;
-        if (form.Id is { } id) p = await db.Adversaries.FirstOrDefaultAsync(x => x.Id == id, ct) ?? throw new KeyNotFoundException("That profile no longer exists.");
+        if (form.Id is { } id)
+        {
+            p = await db.Adversaries.FirstOrDefaultAsync(x => x.Id == id, ct) ?? throw new KeyNotFoundException("That profile no longer exists.");
+            // A colleague's save, a merge into it or a MITRE import since the form opened: saving would put back what they
+            // changed (a merged profile's names among them).
+            if (form.EditVersion is { } began && began != p.EditVersion) throw new StaleEditException(Stale(p));
+        }
         else db.Adversaries.Add(p = new Adversary());
         p.Name = name;
         p.Kind = form.Kind;
@@ -427,9 +438,14 @@ public sealed class AdversaryService(IAppDbContextFactory dbs, ICurrentUser user
         p.Sectors = ArticleService.CleanOrNull(form.Sectors, Adversary.MaxSectors);
         p.Notes = ArticleService.CleanOrNull(form.Notes, Adversary.MaxNotes, multiline: true);
         p.Watched = form.Watched;
-        await db.SaveChangesAsync(ct);
+        p.EditVersion = Guid.NewGuid();
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException) { throw new StaleEditException(Stale(p)); }
         return p.Id;
     }
+
+    private static string Stale(Adversary p) =>
+        $"Someone else changed {p.Name} since you opened it (a save, a merge into it or an import). Reload to see their changes.";
 
     /// <summary>Finds the live profile with this name or alias, or adds one by name alone; its id.</summary>
     public async Task<Guid> AddByNameAsync(string name, CancellationToken ct = default)
@@ -465,7 +481,12 @@ public sealed class AdversaryService(IAppDbContextFactory dbs, ICurrentUser user
         await db.SaveChangesAsync(ct);
     }
 
-    public async Task SetWatchedAsync(Guid id, bool watched, CancellationToken ct = default) => await ChangeAsync(id, a => a.Watched = watched, ct);
+    public async Task SetWatchedAsync(Guid id, bool watched, CancellationToken ct = default) => await ChangeAsync(id, a =>
+    {
+        if (a.Watched == watched) return;
+        a.Watched = watched;
+        a.EditVersion = Guid.NewGuid();   // the form carries Watched too: a form opened before can't turn it back
+    }, ct);
 
     private async Task ChangeAsync(Guid id, Action<Adversary> change, CancellationToken ct)
     {
@@ -478,26 +499,70 @@ public sealed class AdversaryService(IAppDbContextFactory dbs, ICurrentUser user
 
     /// <summary>
     /// Tags an article with a profile. Only that tag changes, so a colleague's tags made since the page loaded stay, and
-    /// tagging one it already has (two people at once) does nothing.
+    /// tagging one it already has (two people at once) does nothing. A profile merged into another since the page loaded
+    /// tags the one it was merged into.
     /// </summary>
     public async Task TagArticleAsync(Guid articleId, Guid id, CancellationToken ct = default)
     {
         RequireWrite();
-        await using var db = await dbs.CreateAsync(ct);
-        if (!await db.Articles.AnyAsync(a => a.Id == articleId, ct)) throw new KeyNotFoundException("That article no longer exists.");
-        if (!await db.Adversaries.AnyAsync(a => a.Id == id, ct)) throw new ArgumentException("That profile no longer exists.");
-        if (await db.ArticleAdversaries.AnyAsync(t => t.ArticleId == articleId && t.AdversaryId == id, ct)) return;
-        db.ArticleAdversaries.Add(new ArticleAdversary { ArticleId = articleId, AdversaryId = id });
-        try { await db.SaveChangesAsync(ct); }
-        // Someone tagged it between the check and the save: it's tagged, as asked.
-        catch (DbUpdateException) { if (!await TaggedAsync(articleId, id, ct)) throw; }
+        try
+        {
+            await Serialized(async db =>
+            {
+                if (!await db.Articles.AnyAsync(a => a.Id == articleId, ct)) throw new KeyNotFoundException("That article no longer exists.");
+                var target = await LiveTargetAsync(db, id, ct) ?? throw new ArgumentException("That profile no longer exists.");
+                if (await db.ArticleAdversaries.AnyAsync(t => t.ArticleId == articleId && t.AdversaryId == target, ct)) return;
+                db.ArticleAdversaries.Add(new ArticleAdversary { ArticleId = articleId, AdversaryId = target });
+            }, ct);
+        }
+        // Someone tagged it between the check and the save all the same: it's tagged, as asked.
+        catch (DbUpdateException ex) when (ex is not DbUpdateConcurrencyException)
+        {
+            if (!await TaggedAnywhereAsync(articleId, id, ct)) throw;
+        }
     }
 
-    private async Task<bool> TaggedAsync(Guid articleId, Guid id, CancellationToken ct)
+    private async Task<bool> TaggedAnywhereAsync(Guid articleId, Guid id, CancellationToken ct)
     {
         await using var db = await dbs.CreateAsync(ct);
-        return await db.ArticleAdversaries.AnyAsync(t => t.ArticleId == articleId && t.AdversaryId == id, ct);
+        return await LiveTargetAsync(db, id, ct) is { } target && await db.ArticleAdversaries.AnyAsync(t => t.ArticleId == articleId && t.AdversaryId == target, ct);
     }
+
+    // The profile a tag for this one goes on: itself, or, when it was merged, the one it was merged into (and so on, should
+    // that have been merged since). Null when it's gone.
+    private static async Task<Guid?> LiveTargetAsync(IAppDbContext db, Guid id, CancellationToken ct)
+    {
+        for (var hops = 0; hops < 10; hops++)
+        {
+            var p = await db.Adversaries.AsNoTracking().Where(a => a.Id == id).Select(a => new { a.IsRetired, a.MergedIntoId }).FirstOrDefaultAsync(ct);
+            if (p is null) return null;
+            if (!p.IsRetired || p.MergedIntoId is not { } into) return id;
+            id = into;
+        }
+        return id;
+    }
+
+    // The reads and the save in one serializable transaction, so a merge and a tag (or link) of the profile it retires
+    // can't interleave: a tag added to the old profile after the merge read its tags, and before it saved, stayed on the
+    // retired profile. SQLite takes the write lock at the start, so the second waits for the first; SQL Server holds the
+    // rows read, and picks a deadlock victim that the execution strategy retries. Inside the strategy (a retrying
+    // strategy refuses a transaction opened outside it), each try on a context of its own.
+    private async Task<T> Serialized<T>(Func<IAppDbContext, Task<T>> change, CancellationToken ct)
+    {
+        await using var outer = await dbs.CreateAsync(ct);
+        return await outer.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        {
+            await using var db = await dbs.CreateAsync(ct);
+            await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+            var result = await change(db);
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return result;
+        });
+    }
+
+    private Task Serialized(Func<IAppDbContext, Task> change, CancellationToken ct) =>
+        Serialized(async db => { await change(db); return true; }, ct);
 
     /// <summary>Untags a profile from an article; nothing else changes, and one already untagged is fine.</summary>
     public async Task UntagArticleAsync(Guid articleId, Guid id, CancellationToken ct = default)
@@ -511,26 +576,29 @@ public sealed class AdversaryService(IAppDbContextFactory dbs, ICurrentUser user
         catch (DbUpdateConcurrencyException) { }
     }
 
-    /// <summary>Tags these articles (ones that name it, an analyst checked them) with the profile. Returns how many were tagged.</summary>
+    /// <summary>Tags these articles (ones that name it, an analyst checked them) with the profile. Returns how many were
+    /// tagged. A profile merged into another since the page loaded links them to that one.</summary>
     public async Task<int> LinkAsync(Guid id, IReadOnlyCollection<Guid> articleIds, CancellationToken ct = default)
     {
         RequireWrite();
+        // Serialized, as a tag is: the read of what's there and the save can't interleave with a colleague's tag or merge.
         for (var attempt = 0; ; attempt++)
         {
-            await using var db = await dbs.CreateAsync(ct);
-            if (!await db.Adversaries.AnyAsync(a => a.Id == id, ct)) throw new KeyNotFoundException("That profile no longer exists.");
-            var have = (await db.ArticleAdversaries.Where(t => t.AdversaryId == id).Select(t => t.ArticleId).ToListAsync(ct)).ToHashSet();
-            var add = await db.Articles.Where(a => articleIds.Contains(a.Id)).Select(a => a.Id).ToListAsync(ct);
-            var adding = add.Where(a => !have.Contains(a)).ToList();
-            db.ArticleAdversaries.AddRange(adding.Select(a => new ArticleAdversary { ArticleId = a, AdversaryId = id }));
             try
             {
-                await db.SaveChangesAsync(ct);
-                return adding.Count;
+                return await Serialized(async db =>
+                {
+                    var target = await LiveTargetAsync(db, id, ct) ?? throw new KeyNotFoundException("That profile no longer exists.");
+                    var have = (await db.ArticleAdversaries.Where(t => t.AdversaryId == target).Select(t => t.ArticleId).ToListAsync(ct)).ToHashSet();
+                    var add = await db.Articles.Where(a => articleIds.Contains(a.Id)).Select(a => a.Id).ToListAsync(ct);
+                    var adding = add.Where(a => !have.Contains(a)).ToList();
+                    db.ArticleAdversaries.AddRange(adding.Select(a => new ArticleAdversary { ArticleId = a, AdversaryId = target }));
+                    return adding.Count;
+                }, ct);
             }
-            // A colleague tagged one of them (or linked them all) between the read and the save: read again and tag the
-            // rest, rather than failing the whole link on the tag that's already there.
-            catch (DbUpdateException) when (attempt == 0) { }
+            // A colleague's tag on one of them got in all the same (a write the transaction didn't hold off): read again
+            // and tag the rest, rather than failing the whole link on the tag that's already there.
+            catch (DbUpdateException ex) when (attempt == 0 && ex is not DbUpdateConcurrencyException) { }
         }
     }
 
@@ -542,7 +610,13 @@ public sealed class AdversaryService(IAppDbContextFactory dbs, ICurrentUser user
     {
         RequireWrite();
         if (fromId == intoId) throw new ArgumentException("Choose another profile to merge into.");
-        await using var db = await dbs.CreateAsync(ct);
+        // One serializable transaction: a colleague tagging an article with the old profile while it merges waits for the
+        // merge and then tags the profile it was merged into, rather than landing on the retired one.
+        await Serialized(db => MergeAsync(db, fromId, intoId, ct), ct);
+    }
+
+    private static async Task MergeAsync(IAppDbContext db, Guid fromId, Guid intoId, CancellationToken ct)
+    {
         var from = await db.Adversaries.FirstOrDefaultAsync(a => a.Id == fromId, ct) ?? throw new KeyNotFoundException("That profile no longer exists.");
         var into = await db.Adversaries.FirstOrDefaultAsync(a => a.Id == intoId, ct) ?? throw new KeyNotFoundException("The profile to merge into no longer exists.");
         // The page offered both as live: a colleague retiring or merging either since would otherwise move the tags onto a
@@ -556,6 +630,8 @@ public sealed class AdversaryService(IAppDbContextFactory dbs, ICurrentUser user
         into.Aliases = Fit(names);
         into.MitreId ??= from.MitreId;
         into.Watched |= from.Watched;
+        // Its names changed: a form open on it from before the merge can't save them away.
+        into.EditVersion = Guid.NewGuid();
         var moving = await db.ArticleAdversaries.Where(t => t.AdversaryId == fromId).ToListAsync(ct);
         var already = (await db.ArticleAdversaries.Where(t => t.AdversaryId == intoId).Select(t => t.ArticleId).ToListAsync(ct)).ToHashSet();
         db.ArticleAdversaries.RemoveRange(moving);
@@ -563,7 +639,7 @@ public sealed class AdversaryService(IAppDbContextFactory dbs, ICurrentUser user
         from.IsRetired = true;
         from.Watched = false;
         from.MergedIntoId = intoId;
-        await db.SaveChangesAsync(ct);
+        from.EditVersion = Guid.NewGuid();
     }
 
     /// <summary>
@@ -633,6 +709,7 @@ public sealed class AdversaryService(IAppDbContextFactory dbs, ICurrentUser user
                 if (missing.Count == 0 && (match.MitreId is not null || mitre is null)) continue;
                 match.Aliases = Fit(StackService.SplitNames(match.Aliases).Concat(missing).ToList());
                 match.MitreId ??= mitre;
+                match.EditVersion = Guid.NewGuid();
                 updated++;
             }
             await db.SaveChangesAsync(ct);

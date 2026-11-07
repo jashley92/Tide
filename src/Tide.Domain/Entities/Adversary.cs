@@ -47,6 +47,10 @@ public class Adversary : AuditableEntity
 
     /// <summary>The profile this one was merged into, when it was.</summary>
     public Guid? MergedIntoId { get; set; }
+
+    /// <summary>Moved by every change to what the profile's form edits (a save, watching, a merge into it, a MITRE import's
+    /// names), so a form opened before one of those can't save over it.</summary>
+    public Guid EditVersion { get; set; } = Guid.NewGuid();
 }
 
 /// <summary>An article tagged with an adversary profile (optional, any number).</summary>

@@ -108,6 +108,7 @@ else
                 <h2 id="stack-about-h">About it <TlpBadge Level="TlpLevel.Amber" /></h2>
                 @if (_canWrite && _form is { } f)
                 {
+                    <ChangedElsewhere By="@_changedBy" What="product" OnReload="ReloadTheirs" />
                     <div class="row g-2">
                         <div class="col-md-6"><label class="tide-field-label" for="f-name">Product</label>
                             <input id="f-name" class="form-control form-control-sm" maxlength="100" @bind="f.Name" /></div>
@@ -202,9 +203,11 @@ else
     internal static string AboveLine(int count, string noun, TlpLevel ceiling, string via = "") =>
         $"{count} {noun}{(count == 1 ? "" : "s")} {via}above {Tlp.Label(ceiling)}";
 
-    // A colleague added, edited or retired a product: re-read in place. The edit form keeps what's typed in it; one not
-    // touched takes their change.
+    // A colleague added, edited or retired a product: re-read in place. The edit form keeps what's typed in it, and says
+    // who saved it meanwhile (saving it then is refused by the product's edit version); one not touched takes their change.
     private LiveChanges? _live;
+    private string? _changedBy;
+    internal string? ChangedBy => _changedBy;
 
     protected override void OnInitialized() =>
         _live = new LiveChanges(Feed, Origin, c => c.Topic == ChangeFeed.Stack, InvokeAsync, OnChangedElsewhere);
@@ -223,7 +226,8 @@ else
                 _detail = await Stack.GetAsync(id);
                 var now = _detail?.Product;
                 if (now is null) _form = null;
-                else if (_form is null || before is null || Untouched(_form, before)) _form = StackForm.From(now);
+                else if (_form is null || before is null || Untouched(_form, before)) (_form, _changedBy) = (StackForm.From(now), null);
+                else if (now.EditVersion != _form.EditVersion) _changedBy = who;
                 // The topic is every product's: only a change to this one is told.
                 if (before is not null && (now is null || now.ModifiedAtUtc != before.ModifiedAtUtc || now.IsRetired != before.IsRetired))
                     Toasts.Show($"{who} updated this product.");
@@ -261,6 +265,7 @@ else
             {
                 _detail = await Stack.GetAsync(id);
                 _form = _detail is null ? null : StackForm.From(_detail.Product);
+                _changedBy = null;
                 if (_canWrite && _teams.Count == 0) _teams = await TeamSvc.ListAsync();
             }
             else _list = await Stack.ListAsync(_showRetired);
@@ -298,6 +303,13 @@ else
         Toasts.Show("Saved.");
         await Load();
     });
+
+    // The banner's Reload: their version, and what was typed goes.
+    internal async Task ReloadTheirs()
+    {
+        await Load();
+        Toasts.Show("Reloaded. Your unsaved changes were dropped.");
+    }
 
     private Task Retire(bool retired) => Run(async () =>
     {

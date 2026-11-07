@@ -595,6 +595,10 @@ public class OutreachMessage : Entity
     public string? ReplyNotes { get; set; }
     public Guid? ReplyFileId { get; set; }
 
+    /// <summary>Moved when its reply is recorded: of two people recording the reply at once, the second is refused rather
+    /// than writing over the first one's notes.</summary>
+    public Guid EditVersion { get; set; } = Guid.NewGuid();
+
     public bool IsWaiting => RepliedAtUtc is null;
 }
 

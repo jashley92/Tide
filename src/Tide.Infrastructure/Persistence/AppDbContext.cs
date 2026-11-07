@@ -210,6 +210,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.ContactName).HasMaxLength(StackProduct.MaxContactName);
             e.Property(x => x.ContactEmail).HasMaxLength(StackProduct.MaxContactEmail);
             e.HasOne(x => x.Team).WithMany().HasForeignKey(x => x.TeamId).OnDelete(DeleteBehavior.SetNull);
+            e.Property(x => x.EditVersion).IsConcurrencyToken();
             Audited(e);
         });
 
@@ -231,6 +232,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Motivation).HasMaxLength(Adversary.MaxMotivation);
             e.Property(x => x.Sectors).HasMaxLength(Adversary.MaxSectors);
             e.Property(x => x.Notes).HasMaxLength(Adversary.MaxNotes);
+            e.Property(x => x.EditVersion).IsConcurrencyToken();
             Audited(e);
         });
 
@@ -654,6 +656,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.SentByName).HasMaxLength(256);
             e.Property(x => x.ReplyRecordedByName).HasMaxLength(256);
             e.Property(x => x.ReplyNotes).HasMaxLength(OutreachMessage.MaxNotes);
+            e.Property(x => x.EditVersion).IsConcurrencyToken();
             // The reply's file is an ActionFile on the same action, and those are never deleted while the action stands
             // (removing one keeps its row), so it's held by id alone: a second cascade path to the action would be
             // refused by SQL Server.

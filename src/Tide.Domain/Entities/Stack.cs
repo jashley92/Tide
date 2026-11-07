@@ -39,6 +39,9 @@ public class StackProduct : AuditableEntity
     public DateOnly? CheckedOn { get; set; }
 
     public bool IsRetired { get; set; }
+
+    /// <summary>Moved by each save of its form, so a form opened before a colleague's save can't save over it.</summary>
+    public Guid EditVersion { get; set; } = Guid.NewGuid();
 }
 
 /// <summary>An article tagged with a product from Our stack (optional, any number).</summary>

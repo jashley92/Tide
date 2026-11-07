@@ -250,6 +250,9 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
         m.ReplyRecordedByName = user.DisplayName;
         m.ReplyNotes = clean;
         m.ReplyFileId = fileId;
+        // Moved, so a colleague recording the same reply at the same moment (both read it waiting) is refused at the save
+        // rather than writing their notes over these.
+        m.EditVersion = Guid.NewGuid();
         var lead = $"Reply from {m.To} recorded{(file is null ? "" : $" (with {file})")}.";
         if (close)
         {
@@ -257,7 +260,24 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
             actions.ApplyStatus(db, a, ActionStatus.Done, outcome, clean, lead);
         }
         else db.ActionEvents.Add(ActionService.Event(user, a.Id, lead[..^1] + (clean is null ? "." : $": {clean}")));
-        await ActionService.SaveEditAsync(db, ct);
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Said by what happened: the reply recorded by someone else, the email taken back, or the action changed.
+            var now = await RecordedAsync(messageId, ct);
+            throw new StaleEditException(now switch
+            {
+                null => "Someone took this email back at the same moment, so there's no reply to record.",
+                { IsWaiting: false } r => $"{r.ReplyRecordedByName ?? "Someone else"} recorded the reply to this email at the same moment. Reload to see what they recorded.",
+                _ => "Someone else changed this action at the same moment. Reload to see their change, then try again.",
+            });
+        }
+    }
+
+    private async Task<OutreachMessage?> RecordedAsync(Guid messageId, CancellationToken ct)
+    {
+        await using var db = await dbs.CreateAsync(ct);
+        return await db.OutreachMessages.AsNoTracking().FirstOrDefaultAsync(x => x.Id == messageId, ct);
     }
 
     /// <summary>Takes back an email marked sent by mistake, while it's still waiting for its reply; the history keeps that it was.</summary>
@@ -270,8 +290,12 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
         db.OutreachMessages.Remove(m);
         db.ActionEvents.Add(ActionService.Event(user, a.Id, $"Took back the email to {m.To} (\"{m.Subject}\"): not sent after all."));
         try { await db.SaveChangesAsync(ct); }
-        // Someone took it back first.
-        catch (DbUpdateConcurrencyException) { }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Someone took it back first: it's gone, as asked. A reply recorded meanwhile keeps it.
+            if (await RecordedAsync(messageId, ct) is { IsWaiting: false } r)
+                throw new InvalidOperationException($"{r.ReplyRecordedByName ?? "Someone"} recorded its reply at the same moment, so it stays.");
+        }
     }
 
     // The action, tracked, for whoever works it, and only an Outreach one: the others don't track emails.
