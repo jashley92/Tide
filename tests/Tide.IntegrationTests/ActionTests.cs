@@ -164,6 +164,18 @@ public class ActionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task TheTestDatabase_IsTheMigratedOne_AndRefusesARowWhoseParentIsMissing()
+    {
+        // Each test's database is a copy of one migrated once per run (TestDb): it must be as if migrated here, foreign
+        // keys enforced (a per-connection setting in SQLite, not one the copy carries) as SQL Server enforces them.
+        await using var db = _db.Context();
+        (await db.Database.GetPendingMigrationsAsync()).Should().BeEmpty();
+        (await db.Database.GetAppliedMigrationsAsync()).Should().Equal(db.Database.GetMigrations());
+        db.ActionEvents.Add(new ActionEvent { ActionId = Guid.NewGuid(), ByName = "x", Text = "x" });
+        (await FluentActions.Invoking(() => db.SaveChangesAsync()).Should().ThrowAsync<DbUpdateException>()).WithInnerException<Microsoft.Data.Sqlite.SqliteException>().WithMessage("*FOREIGN KEY*");
+    }
+
+    [Fact]
     public async Task Permissions_TeamMembersWorkTheirTeamsActions_OthersCant()
     {
         var team = await Team();
