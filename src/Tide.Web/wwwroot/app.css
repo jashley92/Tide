@@ -329,6 +329,8 @@ mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); p
 .tide-stat-label { font-size: .78rem; color: var(--tide-text-muted); text-transform: uppercase; letter-spacing: .05em; }
 .tide-stat-value { font-size: 1.6rem; font-weight: var(--tide-weight-semibold); font-variant-numeric: tabular-nums; }
 .tide-table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+/* A wide table scrolls sideways; a sub-pixel rounding at its foot mustn't add a vertical scrollbar beside a short one. */
+.table-responsive { overflow-y: hidden; }
 .tide-table th { font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; color: var(--tide-text-muted); font-weight: var(--tide-weight-semibold); padding: .5rem .6rem; border-bottom: 1px solid var(--tide-border); text-align: left; white-space: nowrap; }
 .tide-table td { padding: .6rem; border-bottom: 1px solid var(--tide-border); vertical-align: top; }
 /* What each role can do (Role mappings): the activities read as text, not as column headings. */
