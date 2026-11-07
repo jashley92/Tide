@@ -171,6 +171,75 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
+### v1.8.0
+
+Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds seven migrations: `PlaybooksTeamLibrary`,
+`LongerHuntQueries`, `EditVersionsForRepliesProfilesProducts`, `SourceEditVersion`, `KeptRotationDays`,
+`ChecklistItemAddedAt` and `TeamEditVersion`. None of the earlier ones change. On a DbaApplies install, the DBA
+applies them first, as for any release that carries one.
+
+**Changes to check before upgrading**
+- **`Database:Provider` is checked at start-up.** It must be `SqlServer` or `Sqlite` (any case), or blank for SQLite.
+  A mistyped value such as "SQL Server" used to be quietly read as SQLite. It now stops start-up with a message
+  naming the setting. Check yours if it was ever hand-edited.
+- **Playbooks moved.** They're now at Team › Playbooks (`/playbooks`), kept by anyone who works actions, like Saved
+  queries and Outreach templates. The old `/admin/playbooks` address redirects. Existing playbooks keep their steps and
+  order; one that was inactive is now *retired*.
+- **An email whose delivery isn't known is Unknown, not Failed.** A send that times out, or whose connection drops
+  after the relay may have taken it, is recorded as Unknown and never retried by itself. Diagnostics, the reminder
+  runs, an escalation's history and the brief's next send confirmation say to check whether it arrived before sending
+  again. A clear refusal (a bad recipient, sign-in, relay unreachable, pickup folder unusable) is still Failed.
+- **One reminder a day per external contact.** When the escalation ladder's remind step and an external team's own
+  reminder fall on the same day for the same action, the second is skipped, and its history says so.
+
+**For administrators**
+- **Brief rotation keeps who presented.** Changing a week on Administration › Brief rotation now leaves days whose
+  brief was already presented (or sent, or held) with the person who presented them. **Correct past days** is a
+  separate, deliberate step to change those too, recorded in the audit log as a correction.
+- **Two administrators editing the same team, source or product** no longer overwrite each other. A form opened
+  before someone else's save is refused with who changed it, and stays open with a Reload button. The same applies to
+  adversary profiles and to recording an outreach reply.
+- **Diagnostics shows a failing reminder scan** as a failed job, naming the scan, not "No failures".
+- **A retired team stays on Workload** while it still has open actions, marked Retired.
+- **Links written from the site root** (`[x](/actions/12)`) now work when TIDE runs under a sub-path such as /tide,
+  and in email they point at `App:BaseUrl`.
+
+**For everyone**
+- **The action page is laid out around the next step.**
+  - One main button for what the action needs now: take it, record the reply, write the email, record an update, or
+    close it. Everything else is under **More**.
+  - A **Next** line says what the action is waiting on.
+  - **What's happened** is one feed of comments and history.
+  - The checklist, timeline, hunt queries and outreach sit in a drawer beside it.
+- **Board rules** (Team › Board rules): everyone can see the card rules; administrators still edit them in Settings.
+- **Text boxes grow** with what you type, up to a limit, then scroll.
+- **Ctrl+Enter** (Cmd+Enter on a Mac) posts or saves the text box you're in.
+- **Hand-offs ask about reminders.** Handing off an action whose reminders are off asks whether to keep them off.
+- **A story's page updates live** when a colleague links an article to it, takes one off, or changes one of its
+  articles.
+- **Checklists keep one order**, and a playbook applied by two people at once adds its steps once. A playbook that
+  doesn't fit on the checklist is refused whole, saying how much room is left, rather than added in part.
+- **Hunt queries** search an international domain in both forms (as written and as logs record it), and a query TIDE
+  fills with hundreds of indicators is no longer refused for its length.
+- **Pages keep up with colleagues.** Adversary profiles, external teams and a story's page update as others change
+  them, without losing what you've typed. Two quick changes can no longer leave a page showing the older one.
+- **Safer text.**
+  - A link a web page planted in a drafting suggestion, in any Markdown form, reaches the brief as plain text.
+  - Angle-bracket links open in a new tab without telling the site where you came from.
+  - A web address inside a command-line, registry or other indicator is defanged.
+  - Long URLs and hashes wrap instead of running off their card.
+- **Fixes**, among about 45:
+  - Feed items with a wrong weekday, a placeholder date or a future date keep a sensible date.
+  - A meeting note stays on the article it was begun on, and a meeting that runs past midnight keeps its day.
+  - Escalation emails aren't sent twice after a run is interrupted.
+  - An external team an action is handed to gets its own reminder.
+  - The meeting, the action page and Coverage all ask for a reason when a team is at its "Warn" limit.
+  - A garbled link no longer breaks a list page.
+  - Tab and Shift+Tab move through a filter's form.
+  - Escape closes a dialog after its text was clicked.
+  - Undo puts an article back on the brief it came off.
+  - An outreach placeholder typed wrongly is refused on save, not sent as typed.
+
 ### v1.7.0
 
 Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds two migrations, `HandoffsTrackingAndExternalTeams` and
