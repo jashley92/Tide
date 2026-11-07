@@ -17,6 +17,7 @@
 @inject ICurrentUser CurrentUser
 @inject ChangeFeed Feed
 @inject ChangeOrigin Origin
+@inject TimeProvider Time
 @inject MeetingService MeetingSvc
 @inject LiveMeetings Meetings
 @inject PresenceCircuit Circuit
@@ -1147,7 +1148,7 @@ else
 
     protected override void OnInitialized()
     {
-        _live = new LiveChanges(Feed, Origin, c => _follow.Contains(c.Topic), InvokeAsync, OnChangedElsewhere);
+        _live = new LiveChanges(Feed, Origin, c => _follow.Contains(c.Topic), InvokeAsync, OnChangedElsewhere, time: Time);
         (_me, _meName) = (CurrentUser.UserId, CurrentUser.DisplayName);
         _visitor = MeetingAccess.MeetingOnly(CurrentUser);
         _readsTeam = CurrentUser.Has(Permission.ReadTeamEdition);
