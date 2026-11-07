@@ -162,7 +162,8 @@ narrowest existing permission when one fits.
 4. **States.** `LoadingBlock` while loading; `EmptyState` saying what would be there and what to do; errors through
    `Toasts.Error(UserFacingError.For(ex))`, which logs the unexpected ones with a reference.
 5. **URL state.** Filters and views go in the query string (`[SupplyParameterFromQuery]`), so a view is bookmarkable.
-   Never put an indicator value in a URL.
+   Read each parameter as `string?` and parse it (`FilterValues.Id`, `Number`, `Flag`, `TableView.PageFrom`): a typed
+   one (`Guid?`, `int?`, `bool?`) whose value doesn't parse fails the whole page. Never put an indicator value in a URL.
 6. **Live.** If colleagues change what it shows, listen with `LiveChanges` (see
    [Make a page live](#make-a-page-live)) and dispose it with the page.
 7. **Navigation.** Add a `NavPage` to `NavPages.All()` (`src/Tide.Web/Components/Layout/NavPages.cs`): key, label,

@@ -152,7 +152,7 @@ What pages do with it:
 | Triage | `triage` | re-reads, with LiveMarks, ghosts, tab counts and one toast (`TriageNews`); under an open promote form or attach picker it holds the changes behind an "Updates waiting" pill |
 | Articles list | `articles` | re-reads the rows it shows, with its filters |
 | Rotation | `rotation` | re-reads, saying when a request now waits for you or yours was answered |
-| Stories, Our stack, Saved queries, Outreach templates, Playbooks | `stories`, `stack`, `saved-queries`, `outreach-templates`, `playbooks` | re-read; a product's edit form keeps what's typed |
+| Stories, Our stack, Saved queries, Outreach templates, Playbooks | `stories`, `stack`, `saved-queries`, `outreach-templates`, `playbooks` | re-read; a product's edit form keeps what's typed; a library's edit follows its card to the page it moved to, or keeps its form above the list when the card left it (`LibraryPage.OnChangedElsewhere`, `EditingOffPage`) |
 | We run and Threat actors cards (`TagCard`) | `article-tags:{id}` | re-read the tags |
 
 The rule across all of them: TIDE never reloads over a draft. A page with nothing unsaved re-reads in place and names

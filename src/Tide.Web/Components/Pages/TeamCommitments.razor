@@ -95,9 +95,10 @@ else
 }
 
 @code {
-    [SupplyParameterFromQuery(Name = "days")] public int? DaysParam { get; set; }
-    [SupplyParameterFromQuery(Name = "parts")] public bool? PartsParam { get; set; }
-    [SupplyParameterFromQuery(Name = "external")] public bool? ExternalParam { get; set; }
+    // Text, parsed here (FilterValues), so a value that isn't one ("?days=thirty") is ignored rather than failing the page.
+    [SupplyParameterFromQuery(Name = "days")] public string? DaysParam { get; set; }
+    [SupplyParameterFromQuery(Name = "parts")] public string? PartsParam { get; set; }
+    [SupplyParameterFromQuery(Name = "external")] public string? ExternalParam { get; set; }
 
     private int _days = TeamScorecardService.DefaultDays;
     private bool _parts, _external, _failed;
@@ -122,9 +123,9 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
-        _days = TeamScorecardService.WindowOrDefault(DaysParam);
-        _parts = PartsParam == true;
-        _external = ExternalParam == true;
+        _days = TeamScorecardService.WindowOrDefault(FilterValues.Number(DaysParam));
+        _parts = FilterValues.Flag(PartsParam);
+        _external = FilterValues.Flag(ExternalParam);
         _filters = [_partsFilter with { Values = FilterValues.Of(_parts) }, _externalFilter with { Values = FilterValues.Of(_external) }];
         _card = null;
         _failed = false;

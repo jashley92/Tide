@@ -91,17 +91,17 @@ else
 
 @code {
     [SupplyParameterFromQuery(Name = "view")] public string? ViewParam { get; set; }
-    [SupplyParameterFromQuery(Name = "team")] public Guid? TeamParam { get; set; }
+    [SupplyParameterFromQuery(Name = "team")] public string? TeamParam { get; set; }
     [SupplyParameterFromQuery(Name = "assignee")] public string? AssigneeParam { get; set; }
     [SupplyParameterFromQuery(Name = "layout")] public string? LayoutParam { get; set; }
-    [SupplyParameterFromQuery(Name = "rule")] public Guid? RuleParam { get; set; }
+    [SupplyParameterFromQuery(Name = "rule")] public string? RuleParam { get; set; }
     [SupplyParameterFromQuery(Name = "group")] public string? GroupParam { get; set; }
     [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
     [SupplyParameterFromQuery(Name = "kind")] public string? KindParam { get; set; }
     [SupplyParameterFromQuery(Name = "priority")] public string? PriorityParam { get; set; }
     [SupplyParameterFromQuery(Name = "due")] public string? DueParam { get; set; }
     [SupplyParameterFromQuery(Name = "status")] public string? StatusParam { get; set; }
-    [SupplyParameterFromQuery(Name = "parent")] public int? ParentParam { get; set; }
+    [SupplyParameterFromQuery(Name = "parent")] public string? ParentParam { get; set; }
 
     /// <summary>The list's page, from 1 (text, so "?page=abc" is the first page, not a broken one).</summary>
     [SupplyParameterFromQuery(Name = DataTable<ActionRow>.PageParameter)] public string? PageParam { get; set; }
@@ -230,12 +230,14 @@ else
         SavedLayout ??= await Prefs.GetAsync(UserPreferences.ActionsLayout);
     }
 
-    // What the address says, as it says it: compared, not parsed, so the page knows when a link has changed it.
+    // What the address says: compared, so the page knows when a link has changed it. The team, rule and parent are read as
+    // text and parsed here (FilterValues), so a value that isn't one ("?team=network") is ignored rather than failing the page.
     private sealed record Address(string? View, Guid? Team, string? Assignee, string? Layout, Guid? Rule, string? Group,
         string? Q, string? Kind, string? Priority, string? Due, string? Status, string? Page, int? Parent = null);
 
     private Address FromAddress() =>
-        new(ViewParam, TeamParam, AssigneeParam, LayoutParam, RuleParam, GroupParam, Q, KindParam, PriorityParam, DueParam, StatusParam, PageParam, ParentParam);
+        new(ViewParam, FilterValues.Id(TeamParam), AssigneeParam, LayoutParam, FilterValues.Id(RuleParam), GroupParam, Q, KindParam, PriorityParam, DueParam, StatusParam, PageParam,
+            FilterValues.Number(ParentParam));
 
     // The address as last applied. The page stays open when a link changes only the query (the sidebar's Actions from
     // ?view=closed, a link to ?view=overdue, a pager link), so the address is read whenever it changes, not only when the
@@ -256,8 +258,8 @@ else
             : SavedBoard && OnBoard(_view) && !_groupByKind;
         _sayLayout = LayoutParam is null;
         if (_asBoard && !OnBoard(_view)) _view = ActionView.Open;
-        _ruleId = _rules.Any(r => r.Id == RuleParam && r.ShowAsFilter) ? RuleParam : null;
-        _teamId = TeamParam;
+        _ruleId = _rules.Any(r => r.Id == query.Rule && r.ShowAsFilter) ? query.Rule : null;
+        _teamId = query.Team;
         _assignee = string.IsNullOrWhiteSpace(AssigneeParam) ? null : AssigneeParam;
         _search = string.IsNullOrWhiteSpace(Q) ? null : Q.Trim();
         _kind = EnumNames.OrNull<ActionKind>(KindParam, ignoreCase: true);
@@ -265,7 +267,7 @@ else
         _due = DueFrom(DueParam);
         _status = EnumNames.OrNull<ActionStatus>(StatusParam, ignoreCase: true) is { } st && OpenStatuses.Contains(st) ? st : null;
         _page = TableView.PageFrom(PageParam);
-        _parentNumber = ParentParam is > 0 ? ParentParam : null;
+        _parentNumber = query.Parent is > 0 ? query.Parent : null;
         // Only another view resets the sort: another page (or filter) keeps the one chosen.
         if (was is null || !string.Equals(was.View, query.View, StringComparison.OrdinalIgnoreCase)) _sort = DefaultSort(_view);
         var quiet = _adopted;
@@ -500,8 +502,15 @@ else
         await Task.WhenAll(active, read);
         var page = read.Result;
         _active = active.Result;
-        // A page past the end (an old link, or the list shrank) shows the last one; the pager says which.
+        // A page past the end (an old link, or the list shrank) shows the last one; the pager says which, and so does the
+        // address (in place, recorded first so it isn't read again; a prerender can't move it, and the live page does).
+        var asked = _page;
         (_rows, _total, _page, _groups) = (page.Rows, page.Total, page.Page, page.Groups);
+        if (_page != asked && _applied is { } applied)
+        {
+            _applied = applied with { Page = _page > 1 ? _page.ToString(System.Globalization.CultureInfo.InvariantCulture) : null };
+            TableView.SayPage(Nav, RendererInfo, _page);
+        }
         _ruleCounts = _rules.Any(r => r.ShowAsFilter) ? await ActionSvc.RuleCountsAsync(filter, _rules.Where(r => r.ShowAsFilter)) : new Dictionary<Guid, int>();
     }
 

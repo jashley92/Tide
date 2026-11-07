@@ -111,7 +111,7 @@
 </div>
 
 @code {
-    [SupplyParameterFromQuery(Name = "new")] public int? New { get; set; }
+    [SupplyParameterFromQuery(Name = "new")] public string? New { get; set; }
 
     // The filters are the address's (ArticleFilter.ToQuery), so a link opens the list narrowed and Back undoes a change.
     [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
@@ -179,7 +179,7 @@
     // page in the address (a chip removed, the pager, Back) lists afresh.
     protected override async Task OnParametersSetAsync()
     {
-        if (New == 1 && CurrentUser.Has(Permission.WriteArticles)) _showNew = true;
+        if (FilterValues.Number(New) == 1 && CurrentUser.Has(Permission.WriteArticles)) _showNew = true;
         var query = new Dictionary<string, string?>
         {
             ["q"] = Q, ["status"] = StatusParam, ["from"] = FromParam, ["to"] = ToParam, ["assess"] = AssessParam, ["tag"] = TagParam,

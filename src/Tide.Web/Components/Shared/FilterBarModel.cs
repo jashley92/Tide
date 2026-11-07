@@ -105,6 +105,23 @@ public static class FilterValues
     public static T? Enum<T>(IReadOnlyList<string> values) where T : struct, Enum =>
         Tide.Domain.Common.EnumNames.OrNull<T>(First(values), ignoreCase: true);
 
+    // An address's parameters are read as text and parsed here: Blazor fails the whole page on a typed parameter
+    // ([SupplyParameterFromQuery] Guid?, int?, bool?) whose value doesn't parse ("?named=1", a link cut short), where a
+    // value that isn't one should be ignored, as an unknown ?status= is.
+
+    /// <summary>An address parameter as an id; null for none or a value that isn't one.</summary>
+    public static Guid? Id(string? text) => Guid.TryParse(text, out var id) ? id : null;
+
+    /// <summary>An address parameter as a whole number; null for none or a value that isn't one (or too big).</summary>
+    public static int? Number(string? text) =>
+        int.TryParse(text, System.Globalization.NumberStyles.AllowLeadingSign, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : null;
+
+    /// <summary>An address parameter as a switch: on only for "true" (any case), as the pages write it.</summary>
+    public static bool Flag(string? text) => bool.TryParse(text, out var on) && on;
+
+    /// <summary>A switch the address may leave out: null for none or a value that isn't one.</summary>
+    public static bool? FlagOrNull(string? text) => bool.TryParse(text, out var on) ? on : null;
+
     /// <summary>A chip for each filter that's set.</summary>
     public static IReadOnlyList<FilterChipView> Chips(IEnumerable<FilterDef> filters) =>
         filters.Where(f => f.IsSet).Select(f => new FilterChipView(f.Text, f.Key)).ToList();
