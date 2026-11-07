@@ -27,8 +27,8 @@ mocking library.
 
 | Project | References | Size | Covers |
 |---|---|---|---|
-| `tests/Tide.UnitTests` | Domain, Application, Infrastructure | About 600 test methods | Pure logic, no database and no host. |
-| `tests/Tide.IntegrationTests` | Every `src` project, `Microsoft.AspNetCore.Mvc.Testing` | About 1,600 test methods | Services against SQLite with the real migrations; the whole app over HTTP; components rendered in the app's services; a few on real SQL Server. |
+| `tests/Tide.UnitTests` | Domain, Application, Infrastructure | About 1,450 tests (about 20 s) | Pure logic, no database and no host. |
+| `tests/Tide.IntegrationTests` | Every `src` project, `Microsoft.AspNetCore.Mvc.Testing` | About 2,350 tests (about 3 minutes on a developer machine) | Services against SQLite with the real migrations; the whole app over HTTP; components rendered in the app's services; a few on real SQL Server. |
 
 ### What the unit tests cover
 
