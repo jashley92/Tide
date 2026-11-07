@@ -274,7 +274,7 @@
                 <strong>Remind</strong> emails the team as its reminders do: an external team its reminder, an internal one the assignee, else its mailbox, else its members.
                 <strong>Copy contact</strong> emails the team's escalation contact, set on the team (no TIDE links for an external team).
                 <strong>Raise priority</strong> moves it up one, to P1 at most.
-                <strong>Flag</strong> marks it Escalated: a badge, Today's Escalated list for its team and assignee, and the meeting's overdue list, until it closes or its due date moves past today.
+                <strong>Flag</strong> marks it Escalated: a badge, Today's Escalated list for its team and assignee, and the meeting's overdue list, until it closes or its due date changes.
                 When several steps have come at once (the ladder just turned on), only the latest runs.
             </div>
             @if (Reminders.LastRun(ReminderKind.Escalation) is { } run)
