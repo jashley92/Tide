@@ -23,7 +23,7 @@ Every route, its component and the permission it needs are in the [route table](
   [Indicator exports](#indicator-exports) · [Threat trends and the board scorecard](#threat-trends-and-the-board-scorecard) ·
   [Reports](#reports) · [Opening metrics](#opening-metrics)
 - Team: [Brief rotation](#brief-rotation) · [Workload](#workload) · [Saved queries](#saved-queries) ·
-  [Outreach templates](#outreach-templates) · [My notifications](#my-notifications)
+  [Outreach templates](#outreach-templates) · [External teams](#external-teams) · [My notifications](#my-notifications)
 - [The API, for the SOC's other tools](#the-api-for-the-socs-other-tools)
 - [Administration](#administration)
 - [When something's wrong](#when-somethings-wrong)
@@ -286,14 +286,26 @@ that fits its kind.
 
 - **Board or list.** The Actions page opens as a board until someone picks the list, and then remembers their
   choice on any computer. A link that names a layout opens that one. On the board, a card is dragged to another
-  column, or moved from its Move menu by keyboard.
+  column, or moved from its Move menu by keyboard. Its columns are Open, In progress, Blocked, Tracking, Done, Cancelled
+  and Not applicable.
 - **Filters.** One bar serves the list and the board: search (title, A-number or the article's title), team, kind,
-  priority, due date (overdue, due this week, no due date) and status. They combine and stay in the address.
+  priority, due date (overdue, due this week, no due date), status (Open, In progress, Blocked or Tracking) and, from a
+  parent action's link, "Part of A-12" (its parts). They combine and stay in the address. Filtered to a team with an
+  active limit, the bar says "4 of 5 active".
 - **Long lists.** The list shows 50 actions a page, with numbered pages and the page in the address; group headings
   count every action in the group, not only this page's. Each board column shows its first 20 cards, then *Show N
   more*. The closed columns show the last 7 days; *Show older*, under Done, takes them back 30 days.
 - **Raising.** Raise one from an article, from the board, or in the meeting without leaving the slide.
-- **Splitting.** A long remediation splits into parts, one per team.
+- **Splitting.** A long remediation splits into parts, one per team: one at a time (*Split off a part*, prefilled from
+  the parent, with no team chosen), or several at once (*Split to teams*: tick the teams, give each a due date and a
+  ticket link). A parent shows its parts' progress ("3 of 5 done · 1 overdue · next due Nov 20") and links to them on
+  the board; closing it with parts open asks first.
+- **Handing off.** *Hand off* gives an action to another team with a short reason, shown on it. The receiving team is
+  emailed, unless it works outside TIDE.
+- **Tracking.** A status, and a board column between Blocked and Done, for work handed to others and followed: still
+  open and due, but not counted against the team's limit.
+- **Limits.** A team may have a limit on its active actions; the list and board filtered to it say "4 of 5 active",
+  and going over is counted, asked about or refused, as an administrator set it.
 - **Around it.** An action can have an external ticket link, comments (from any team) and a readable history.
 - **Files.** Files can be added to an action itself (picked, dropped or pasted, or while raising it) as well as to
   its comments. Its Files section, in the side column under About, lists both, newest first: a compact row each, with
@@ -622,7 +634,8 @@ on-call schedule.)
 
 **Route:** `/workload` · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md)
 
-Each team's open actions, what's late, and who holds what, with per-person and P1 counts. A team's name opens its
+Each team's open actions, what's late, and who holds what, with per-person and P1 counts. A team with a limit shows
+"4 of 5 active"; an external team has no holders. A team's name opens its
 open actions on the Actions list. The numbers update live as actions change.
 
 ![Workload](../screenshots/workload.png)
@@ -655,6 +668,15 @@ shows how many emails were written from it.
 A new install, or an upgrade whose library is still empty, starts with 5 starter templates saved by "TIDE", added
 once: *Vendor: are we affected?*, *Internal: action required*, *ISAC / partner: share and ask*, *Follow-up / chase*
 and *Internal inquiry: are we impacted?*.
+
+## External teams
+
+**Route:** `/teams/external` (linked from the Actions page and Teams & SLA) · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md#external-teams)
+
+The teams tracked here that work outside TIDE: each one's name, what they do, its contact (a name and an email), how
+to engage them, and its reminder emails (on or off, how many business days before the due date, and how often while
+overdue). Whoever works actions adds, edits and retires them; everyone else who reads actions reads them; an
+administrator also sets their active limits. Teams & SLA lists the internal teams.
 
 ## My notifications
 

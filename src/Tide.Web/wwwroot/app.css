@@ -440,6 +440,8 @@ li > .tide-tlp, .tide-md + .tide-tlp { margin-left: .4rem; }
 @media (prefers-reduced-motion: reduce) { .tide-presence-dot { animation: none; } }
 .tide-discussed-yes { color: var(--tide-ok); }
 .tide-chip { display: inline-flex; align-items: center; gap: .3rem; background: var(--tide-chip-bg); color: var(--tide-chip-text); font-size: .8rem; padding: .16rem .55rem; border-radius: var(--tide-radius-pill); margin: 0 .3rem .3rem 0; border: 1px solid transparent; }
+/* A team over its active limit ("6 of 5 active"). */
+.tide-chip-over { border-color: var(--tide-threat); color: var(--tide-threat); background: var(--tide-threat-soft); }
 .tide-chip button { border: 0; background: none; padding: 0; color: inherit; opacity: .6; line-height: 1; }
 .tide-chip button:hover { opacity: 1; }
 .tide-chip-technique { font-family: var(--tide-font-data); }
@@ -1102,7 +1104,7 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-filters { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-bottom: .9rem; }
 /* On a phone a filter bar's boxes and selects share the rows, two or so to a row, rather than each its own width. */
 @media (max-width: 640px) { .tide-filters > .form-select, .tide-filters > .form-control { flex: 1 1 9rem; max-width: none; width: auto; } }
-.tide-kanban { display: grid; grid-template-columns: repeat(6, minmax(15rem, 1fr)); gap: .75rem; overflow-x: auto; padding-bottom: .5rem; align-items: start; }
+.tide-kanban { display: grid; grid-template-columns: repeat(7, minmax(15rem, 1fr)); gap: .75rem; overflow-x: auto; padding-bottom: .5rem; align-items: start; }
 .tide-kcol { background: var(--tide-surface-2); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl); padding: .6rem; min-height: 12rem; }
 .tide-kcol.over { border-color: var(--tide-accent); background: var(--tide-drop); box-shadow: inset 0 0 0 1px var(--tide-accent); }
 .tide-kcol-head { font-size: .9rem; font-weight: var(--tide-weight-semibold); margin: 0 0 .5rem; display: flex; align-items: center; gap: .4rem; }
@@ -2092,3 +2094,9 @@ button.tide-chip-chosen:focus-visible { outline: 2px solid var(--tide-focus-ring
 .tide-optlist { margin: .4rem 0 0; font-size: var(--tide-text-sm); }
 .tide-optlist td, .tide-optlist th { padding: .3rem .4rem; }
 .tide-optlist td.tide-data { overflow-wrap: anywhere; }
+
+/* Hand-offs, splits and external teams (EP-86). */
+.tide-handoff { color: var(--tide-text-muted); }
+.tide-pre-line { white-space: pre-line; }
+.tide-split-row { border-bottom: 1px solid var(--tide-border); padding: .35rem 0; }
+.tide-split-add { border-top: 1px solid var(--tide-border); padding-top: .5rem; }

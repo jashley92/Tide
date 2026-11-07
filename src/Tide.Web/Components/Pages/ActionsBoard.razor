@@ -22,6 +22,10 @@
     </div>
     <div class="d-flex gap-2">
         <a class="btn btn-outline-secondary" href="workload"><span class="bi bi-people" aria-hidden="true"></span> Workload</a>
+        @if (Teams.CanManageExternal)
+        {
+            <a class="btn btn-outline-secondary" href="teams/external"><span class="bi bi-building" aria-hidden="true"></span> External teams</a>
+        }
         @if (CurrentUser.Has(Permission.WriteArticles))
         {
             <a class="btn btn-primary" href="actions/new"><span class="bi bi-plus-lg" aria-hidden="true"></span> New action</a>
@@ -76,6 +80,17 @@
             <option value="@st">@ActionService.StatusName(st)</option>
         }
     </select>
+    @if (_parentNumber is { } partOf)
+    {
+        <span class="tide-chip">
+            Part of @Ui.ActionLabel(partOf)
+            <button type="button" aria-label="Show every action, not only the parts of @Ui.ActionLabel(partOf)" @onclick="ClearParent"><span class="bi bi-x" aria-hidden="true"></span></button>
+        </span>
+    }
+    @if (_active is { } active)
+    {
+        <span class="tide-chip @(active.Over ? "tide-chip-over" : "")" title="Open, in progress and blocked actions owned by @active.Team, against its limit">@active.Text</span>
+    }
     @if (_assignee is not null)
     {
         <span class="tide-chip">
@@ -144,6 +159,7 @@ else
     [SupplyParameterFromQuery(Name = "priority")] public string? PriorityParam { get; set; }
     [SupplyParameterFromQuery(Name = "due")] public string? DueParam { get; set; }
     [SupplyParameterFromQuery(Name = "status")] public string? StatusParam { get; set; }
+    [SupplyParameterFromQuery(Name = "parent")] public int? ParentParam { get; set; }
 
     /// <summary>The list's page, from 1 (text, so "?page=abc" is the first page, not a broken one).</summary>
     [SupplyParameterFromQuery(Name = DataTable<ActionRow>.PageParameter)] public string? PageParam { get; set; }
@@ -175,7 +191,7 @@ else
     ];
 
     // The status filter's choices: the open columns (closed actions are the Recently closed view's).
-    private static readonly ActionStatus[] OpenStatuses = [ActionStatus.Open, ActionStatus.InProgress, ActionStatus.Blocked];
+    private static readonly ActionStatus[] OpenStatuses = [.. ActionItem.StatusOrder.Where(s => !ActionItem.IsClosedStatus(s))];
 
     private bool _loading = true, _groupByKind, _asBoard;
     private ActionBoard? _board;
@@ -209,6 +225,10 @@ else
     private Priority? _priority;
     private ActionDue? _due;
     private ActionStatus? _status;
+
+    // The parts of one action (?parent=12), and the team filtered to's active count against its limit, if it has one.
+    private int? _parentNumber;
+    private TeamActive? _active;
     private IReadOnlyList<Team> _teams = [];
 
     // The list: this page's rows, how many match in all, and in each group; its page and sort. The board: how far back
@@ -221,11 +241,11 @@ else
     // How long typing in the search box pauses before the actions are searched.
     private readonly TypingPause _typing = new(300);
 
-    private bool Filtered => _search is not null || _priority is not null || _due is not null || _status is not null || _ruleId is not null;
+    private bool Filtered => _search is not null || _priority is not null || _due is not null || _status is not null || _ruleId is not null || _parentNumber is not null;
 
     private string Empty => _view switch
     {
-        _ when _priority is not null || _due is not null || _status is not null || (_ruleId is not null && !_asBoard) => "No actions match these filters.",
+        _ when _priority is not null || _due is not null || _status is not null || _parentNumber is not null || (_ruleId is not null && !_asBoard) => "No actions match these filters.",
         ActionView.Mine => "Nothing assigned to you.",
         ActionView.MyTeams => "Your teams have no open actions (or you're on no team).",
         ActionView.Overdue => "Nothing is overdue.",
@@ -273,10 +293,10 @@ else
 
     // What the address says, as it says it: compared, not parsed, so the page knows when a link has changed it.
     private sealed record Address(string? View, Guid? Team, string? Assignee, string? Layout, Guid? Rule, string? Group,
-        string? Q, string? Kind, string? Priority, string? Due, string? Status, string? Page);
+        string? Q, string? Kind, string? Priority, string? Due, string? Status, string? Page, int? Parent = null);
 
     private Address FromAddress() =>
-        new(ViewParam, TeamParam, AssigneeParam, LayoutParam, RuleParam, GroupParam, Q, KindParam, PriorityParam, DueParam, StatusParam, PageParam);
+        new(ViewParam, TeamParam, AssigneeParam, LayoutParam, RuleParam, GroupParam, Q, KindParam, PriorityParam, DueParam, StatusParam, PageParam, ParentParam);
 
     // The address as last applied. The page stays open when a link changes only the query (the sidebar's Actions from
     // ?view=closed, a link to ?view=overdue, a pager link), so the address is read whenever it changes, not only when the
@@ -306,6 +326,7 @@ else
         _due = DueFrom(DueParam);
         _status = EnumNames.OrNull<ActionStatus>(StatusParam, ignoreCase: true) is { } st && OpenStatuses.Contains(st) ? st : null;
         _page = TableView.PageFrom(PageParam);
+        _parentNumber = ParentParam is > 0 ? ParentParam : null;
         // Only another view resets the sort: another page (or filter) keeps the one chosen.
         if (was is null || !string.Equals(was.View, query.View, StringComparison.OrdinalIgnoreCase)) _sort = DefaultSort(_view);
         var quiet = _adopted;
@@ -335,8 +356,15 @@ else
         (_teams, _rules, _board, _rows) = (p._teams, p._rules, p._board, p._rows);
         (_view, _asBoard, _groupByKind, _ruleId, _teamId, _assignee) = (p._view, p._asBoard, p._groupByKind, p._ruleId, p._teamId, p._assignee);
         (_search, _kind, _priority, _due, _status) = (p._search, p._kind, p._priority, p._due, p._status);
+        (_parentNumber, _active) = (p._parentNumber, p._active);
         (_total, _page, _groups, _sort, _ruleCounts) = (p._total, p._page, p._groups, p._sort, p._ruleCounts);
         (_loading, _adopted) = (false, true);
+    }
+
+    private Task ClearParent()
+    {
+        _parentNumber = null;
+        return Refilter();
     }
 
     private Task ClearAssignee()
@@ -405,11 +433,11 @@ else
         var group = !_asBoard && _groupByKind ? "kind" : null;
         var (kind, priority, status) = (_kind?.ToString().ToLowerInvariant(), _priority?.ToString().ToLowerInvariant(), _status?.ToString().ToLowerInvariant());
         var page = !_asBoard && _page > 1 ? _page.ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
-        _applied = new Address(view, _teamId, _assignee, layout, _ruleId, group, _search, kind, priority, DueKey(_due), status, page);
+        _applied = new Address(view, _teamId, _assignee, layout, _ruleId, group, _search, kind, priority, DueKey(_due), status, page, _parentNumber);
         Nav.NavigateTo(Nav.GetUriWithQueryParameters("actions", new Dictionary<string, object?>
         {
             ["view"] = view, ["layout"] = layout, ["group"] = group, ["rule"] = _ruleId, ["team"] = _teamId, ["assignee"] = _assignee,
-            ["q"] = _search, ["kind"] = kind, ["priority"] = priority, ["due"] = DueKey(_due), ["status"] = status, ["page"] = page,
+            ["q"] = _search, ["kind"] = kind, ["priority"] = priority, ["due"] = DueKey(_due), ["status"] = status, ["page"] = page, ["parent"] = _parentNumber,
         }), replace: true);
     }
 
@@ -443,7 +471,7 @@ else
 
     private ActionFilter Filter() => new ActionFilter(_view, _teamId, _kind, AssigneeId: _assignee)
     {
-        Search = _search, Priority = _priority, Due = _due, Status = _status,
+        Search = _search, Priority = _priority, Due = _due, Status = _status, ParentNumber = _parentNumber,
     };
 
     private ActionSort SortOf(TableSort? sort) => sort?.Key switch
@@ -461,13 +489,20 @@ else
     private async Task Fetch()
     {
         var filter = Filter();
+        // The team's count against its limit is read alongside, on its own context.
+        var active = _teamId is { } team ? ActionSvc.TeamActiveAsync(team) : Task.FromResult<TeamActive?>(null);
         if (_asBoard)
         {
-            _board = await ActionSvc.BoardAsync(filter, _closedDays);
+            var board = ActionSvc.BoardAsync(filter, _closedDays);
+            await Task.WhenAll(active, board);
+            (_board, _active) = (board.Result, active.Result);
             return;
         }
         var grouping = _groupByKind ? ActionGrouping.Kind : ByUrgency ? ActionGrouping.Urgency : ActionGrouping.None;
-        var page = await ActionSvc.PageAsync(filter with { RuleId = _ruleId }, SortOf(_sort), _sort?.Descending ?? false, grouping, _page);
+        var read = ActionSvc.PageAsync(filter with { RuleId = _ruleId }, SortOf(_sort), _sort?.Descending ?? false, grouping, _page);
+        await Task.WhenAll(active, read);
+        var page = read.Result;
+        _active = active.Result;
         // A page past the end (an old link, or the list shrank) shows the last one; the pager says which.
         (_rows, _total, _page, _groups) = (page.Rows, page.Total, page.Page, page.Groups);
         _ruleCounts = _rules.Any(r => r.ShowAsFilter) ? await ActionSvc.RuleCountsAsync(filter, _rules.Where(r => r.ShowAsFilter)) : new Dictionary<Guid, int>();

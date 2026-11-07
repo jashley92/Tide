@@ -28,7 +28,7 @@ public enum EmailPart
 /// </summary>
 public sealed record EmailTemplate(
     string Id, string Title, string Description, string DefaultSubject, string DefaultHeading, string DefaultBody,
-    IReadOnlyList<EmailToken> Tokens)
+    IReadOnlyList<EmailToken> Tokens, string Footer = EmailTemplateCatalog.DefaultFooter)
 {
     public string Default(EmailPart part) => part switch
     {
@@ -48,6 +48,10 @@ public sealed record EmailTemplate(
 public static partial class EmailTemplateCatalog
 {
     public const string KeyPrefix = "EmailTemplate:";
+
+    /// <summary>The footer under every notification email but one written for people outside TIDE (its own, by template).
+    /// It's TIDE's, not an administrator's to reword; it may name the template's plain values.</summary>
+    public const string DefaultFooter = "An automatic message from TIDE. Replies aren't read.";
     public const int MaxLine = 200;
     public const int MaxBody = 4000;   // the Settings table's value column
 
@@ -119,6 +123,33 @@ public static partial class EmailTemplateCatalog
             ActionList,
         ]);
 
+    public static readonly EmailTemplate Handoff = new(
+        "handoff", "Action handed to a team",
+        "Sent when an action is handed to a team: to its mailbox, or to its members when it has none (each may turn it off in My notifications). Not sent to an external team.",
+        "TIDE: an action handed to {{Team}}", "Handed to {{Team}}",
+        "{{By}} handed this action from {{FromTeam}} to {{Team}}: “{{Reason}}”\n\n{{ActionList}}",
+        [
+            new("Team", "The team it was handed to."),
+            new("FromTeam", "The team it was handed from."),
+            new("By", "Who handed it over."),
+            new("Reason", "Why, as they wrote it."),
+            ActionList,
+        ]);
+
+    // An external team doesn't use TIDE: its email names no TIDE page and says nothing only TIDE's users would follow.
+    public static readonly EmailTemplate ExternalReminder = new(
+        "external-reminder", "External team reminder",
+        "Sent at the reminder time to an external team's contact email: its requests due soon or overdue, as its own reminder cadence sets. It goes outside TIDE, so it has no TIDE links, and replies go to whoever follows the work. Needs external team reminders on (Teams & SLA), and the team's reminders on.",
+        "{{From}}: {{Requests}} due soon or overdue", "Requests due soon or overdue",
+        "Hello {{Contact}},\n\n{{From}} is following these requests with {{Team}}. Each is due soon or past its due date.\n\n{{RequestList}}\n\nPlease reply to this email with an update on each: where it stands, and when you expect it to be done.",
+        [
+            new("Team", "The external team's name."),
+            new("Contact", "Their contact's name, or the team's name when none is set."),
+            new("From", "Who is asking: this server's team name (Organization settings)."),
+            new("Requests", "How many, in words: \"2 requests\"."),
+            new("RequestList", "Each request: its title, what's asked (its details), when it's due and how overdue, and its ticket link. Written by TIDE, with no TIDE links.", Html: true, Required: true),
+        ], Footer: "Sent by {{From}} to follow up its requests to {{Team}}. Reply to this email to answer.");
+
     public static readonly EmailTemplate BriefNotReady = new(
         "brief-not-ready", "Brief not ready",
         "Sent on a business day, at the brief-not-ready time, to the presenting analyst (or the listed recipients) when today's brief isn't marked ready. Needs it on (Teams & SLA).",
@@ -181,7 +212,8 @@ public static partial class EmailTemplateCatalog
         [Requester, Partner, Change, new("DecisionNote", "\" “the note”\" when they wrote one, else blank.")]);
 
     public static readonly IReadOnlyList<EmailTemplate> All =
-        [DueSoon, Overdue, Digest, PersonalDigest, OutreachFollowUp, BriefNotReady, Presenting, RotationRequest, RotationApproved, RotationRecorded, RotationDeclined];
+        [DueSoon, Overdue, Digest, PersonalDigest, OutreachFollowUp, Handoff, ExternalReminder, BriefNotReady, Presenting, RotationRequest, RotationApproved,
+            RotationRecorded, RotationDeclined];
 
     public static EmailTemplate? ById(string? id) => All.FirstOrDefault(t => string.Equals(t.Id, id, StringComparison.OrdinalIgnoreCase));
 
@@ -231,8 +263,8 @@ public static partial class EmailTemplateCatalog
         Parse(key) is { } p ? Problem(p.Template, p.Part, value) : "not an email template";
 }
 
-/// <summary>A template filled in: the subject, the heading and the body's HTML (the shell goes round it).</summary>
-public sealed record RenderedTemplate(string Subject, string Heading, string BodyHtml);
+/// <summary>A template filled in: the subject, the heading and the body's HTML (the shell goes round it), and its footer.</summary>
+public sealed record RenderedTemplate(string Subject, string Heading, string BodyHtml, string Footer = EmailTemplateCatalog.DefaultFooter);
 
 /// <summary>
 /// Fills a template in. Plain values are HTML-encoded in the body (and left as text in the subject and heading, which
@@ -260,7 +292,7 @@ public static partial class EmailTemplateRenderer
             t.Token(m.Groups[1].Value) is { Html: true } ? Value(m.Groups[1].Value, out _) : m.Value);
         html = EmailTemplateCatalog.TokenRegex().Replace(Style(html), m =>
             Value(m.Groups[1].Value, out var token) is var v && token is { Html: true } ? v : Esc(v));
-        return new RenderedTemplate(Line(subject), Line(heading), html);
+        return new RenderedTemplate(Line(subject), Line(heading), html, Line(t.Footer));
     }
 
     [GeneratedRegex(@"<p>\s*\{\{\s*([A-Za-z][A-Za-z0-9]*)\s*\}\}\s*</p>\n?", RegexOptions.None, matchTimeoutMilliseconds: 1000)]

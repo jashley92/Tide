@@ -98,6 +98,10 @@ brief's live meeting.
 | Remove files | Yes | Yes | own files | No | No | No |
 | Restore removed files | Yes | No | No | No | No | No |
 | Add indicators for an action's hunts | Yes | Yes | own team's, with no article | No | No | No |
+| Hand an action off to another team | Yes | Yes | own team's | No | No | No |
+| Split an action to several teams | Yes | Yes | No | No | No | No |
+| Add, edit and retire external teams (teams that work outside TIDE) | Yes | Yes | Yes | No | No | No |
+| Set a team's active limit | Yes | No | No | No | No | No |
 | Read the saved hunt queries | Yes | Yes | Yes | Yes | No | No |
 | Save, edit, retire and restore saved hunt queries | Yes | Yes | Yes | No | No | No |
 | Delete saved hunt queries | Yes | own ones | own ones | No | No | No |

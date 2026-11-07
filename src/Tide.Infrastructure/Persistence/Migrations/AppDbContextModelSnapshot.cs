@@ -411,6 +411,24 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .IsConcurrencyToken()
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("HandedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("HandedById")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("HandedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("HandedFromTeamId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("HandoffReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("Kind")
                         .HasColumnType("INTEGER");
 
@@ -420,6 +438,9 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<string>("ModifiedBy")
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("NoReminders")
+                        .HasColumnType("INTEGER");
 
                     b.Property<int>("Number")
                         .HasColumnType("INTEGER");
@@ -3061,6 +3082,17 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("ActiveLimit")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ContactEmail")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ContactName")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
                     b.Property<long>("CreatedAtUtc")
                         .HasColumnType("INTEGER");
 
@@ -3077,6 +3109,13 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Engage")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsExternal")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("IsRetired")
                         .HasColumnType("INTEGER");
 
@@ -3084,6 +3123,9 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
+
+                    b.Property<int>("LimitMode")
+                        .HasColumnType("INTEGER");
 
                     b.Property<long?>("ModifiedAtUtc")
                         .HasColumnType("INTEGER");
@@ -3096,6 +3138,15 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("TEXT");
+
+                    b.Property<int>("RemindBeforeDays")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("RemindOverdueEveryDays")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("RemindersOn")
+                        .HasColumnType("INTEGER");
 
                     b.Property<int>("SortOrder")
                         .HasColumnType("INTEGER");

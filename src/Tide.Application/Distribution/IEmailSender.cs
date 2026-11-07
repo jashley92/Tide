@@ -3,8 +3,10 @@ namespace Tide.Application.Distribution;
 /// <summary>An image carried inside an email and referenced from its HTML as <c>cid:{ContentId}</c>.</summary>
 public sealed record InlineImage(string ContentId, string FileName, string ContentType, byte[] Bytes);
 
-/// <summary>One email to send: an HTML body with a plain-text alternative, and its inline images.</summary>
-public sealed record OutgoingEmail(IReadOnlyList<string> To, string Subject, string Html, string Text, IReadOnlyList<InlineImage> Images);
+/// <summary>One email to send: an HTML body with a plain-text alternative, and its inline images. <paramref name="ReplyTo"/>, when
+/// given, is where a reply goes instead of the sender (an external team's reminder, answered by whoever follows its work).</summary>
+public sealed record OutgoingEmail(IReadOnlyList<string> To, string Subject, string Html, string Text, IReadOnlyList<InlineImage> Images,
+    IReadOnlyList<string>? ReplyTo = null);
 
 public enum EmailSendStatus
 {

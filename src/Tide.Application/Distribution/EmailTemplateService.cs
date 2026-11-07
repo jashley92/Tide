@@ -103,8 +103,7 @@ public sealed class EmailTemplateService(IAppDbContextFactory dbs, ICurrentUser 
         var t = EmailTemplateCatalog.ById(id) ?? throw new KeyNotFoundException("There's no such email template.");
         var r = EmailTemplateRenderer.Render(t, EmailTemplateCatalog.Normalize(EmailPart.Subject, subject),
             EmailTemplateCatalog.Normalize(EmailPart.Heading, heading), EmailTemplateCatalog.Normalize(EmailPart.Body, body), Samples(t));
-        var footer = "An automatic message from TIDE. Replies aren't read.";
-        return new EmailPreview(r.Subject, Shell(r.Heading, Subtitle(t), r.BodyHtml, footer));
+        return new EmailPreview(r.Subject, Shell(r.Heading, Subtitle(t), r.BodyHtml, r.Footer));
     }
 
     /// <summary>Where <see cref="SendTestAsync"/> sends: the administrator's address (see <see cref="OwnAddress"/>), or null.</summary>
@@ -180,14 +179,14 @@ public sealed class EmailTemplateService(IAppDbContextFactory dbs, ICurrentUser 
         {
             ["Actions"] = "2 actions",
             ["OverdueActions"] = "2 overdue actions",
-            ["ActionList"] = ReminderService.ActionTable(sample, today, baseUrl, clock.Days),
+            ["ActionList"] = ActionEmails.ActionTable(sample, today, baseUrl, clock.Days),
             ["Team"] = "Detection engineering",
             ["WeekOf"] = SampleMonday.ToString("MMM d", CultureInfo.InvariantCulture),
             ["OpenCount"] = "2",
             ["OverdueCount"] = ReminderService.OverdueCount(1),
             ["ClosedCount"] = "1",
-            ["OpenList"] = ReminderService.ListHeading("Open", top: 8) + ReminderService.ActionTable(sample, today, baseUrl, clock.Days),
-            ["ClosedList"] = ReminderService.ListHeading("Closed in the last week", top: 14) + ReminderService.ActionTable(SampleClosed(today), today, baseUrl, clock.Days),
+            ["OpenList"] = ReminderService.ListHeading("Open", top: 8) + ActionEmails.ActionTable(sample, today, baseUrl, clock.Days),
+            ["ClosedList"] = ReminderService.ListHeading("Closed in the last week", top: 14) + ActionEmails.ActionTable(SampleClosed(today), today, baseUrl, clock.Days),
             ["Status"] = "Today's brief has 4 articles and isn't marked ready.",
             ["BriefLink"] = " " + Link("Open it in TIDE", "briefs/" + today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)) + ".",
             ["MeetingTime"] = clock.MeetingTime.ToString("h:mm tt", CultureInfo.InvariantCulture),
@@ -207,9 +206,16 @@ public sealed class EmailTemplateService(IAppDbContextFactory dbs, ICurrentUser 
             ["Cadence"] = "daily",
             ["DueSoonCount"] = "1",
             ["NewCount"] = "1",
-            ["OverdueList"] = ReminderService.ListHeading("Overdue", top: 8) + ReminderService.ActionTable(sample.Skip(1), today, baseUrl, clock.Days),
-            ["DueSoonList"] = ReminderService.ListHeading("Due today or the next business day", top: 14) + ReminderService.ActionTable(sample.Take(1), today, baseUrl, clock.Days),
-            ["NewList"] = ReminderService.ListHeading("New to you since your last digest", top: 14) + ReminderService.ActionTable(SampleNew(today), today, baseUrl, clock.Days),
+            ["OverdueList"] = ReminderService.ListHeading("Overdue", top: 8) + ActionEmails.ActionTable(sample.Skip(1), today, baseUrl, clock.Days),
+            ["DueSoonList"] = ReminderService.ListHeading("Due today or the next business day", top: 14) + ActionEmails.ActionTable(sample.Take(1), today, baseUrl, clock.Days),
+            ["NewList"] = ReminderService.ListHeading("New to you since your last digest", top: 14) + ActionEmails.ActionTable(SampleNew(today), today, baseUrl, clock.Days),
+            ["FromTeam"] = "Vulnerability management",
+            ["By"] = "Robin",
+            ["Reason"] = "The fix is a firewall change, which is theirs.",
+            ["Contact"] = "Alex",
+            ["From"] = clock.TeamName,
+            ["Requests"] = "2 requests",
+            ["RequestList"] = ReminderService.RequestList(SampleExternal(today), today, clock.Days),
             ["Days"] = "5 business days",
             ["WaitingList"] = ReminderService.WaitingList([(44, "psirt@vendor.example", today.AddDays(-7))]),
         };
@@ -225,6 +231,12 @@ public sealed class EmailTemplateService(IAppDbContextFactory dbs, ICurrentUser 
     private static List<ActionItem> SampleOutreach(DateOnly today) =>
     [
         new() { Number = 44, Title = "Ask the VPN vendor whether our version is affected", Kind = ActionKind.Outreach, Priority = Priority.P2, AssigneeName = "Robin", DueDate = today.AddDays(2), Status = ActionStatus.InProgress },
+    ];
+
+    private static List<ActionItem> SampleExternal(DateOnly today) =>
+    [
+        new() { Number = 45, Title = "Block the phishing domains at the network edge", Description = "Add the three domains in the attached list to the outbound block list.", Kind = ActionKind.Block, Priority = Priority.P2, DueDate = today.AddDays(-3), Status = ActionStatus.Tracking, TicketUrl = "https://tickets.example.org/NET-1042" },
+        new() { Number = 46, Title = "Confirm the VPN appliances run the fixed version", Kind = ActionKind.PatchRemediate, Priority = Priority.P1, DueDate = today.AddDays(1), Status = ActionStatus.Tracking },
     ];
 
     private static List<ActionItem> SampleNew(DateOnly today) =>

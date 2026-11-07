@@ -78,7 +78,7 @@ public static class OpenApi
               "ActionUpdate": {
                 "type": "object", "required": ["status"],
                 "properties": {
-                  "status": { "type": "string", "enum": ["Open", "InProgress", "Blocked", "Done", "Cancelled", "NotApplicable"] },
+                  "status": { "type": "string", "enum": ["Open", "InProgress", "Blocked", "Tracking", "Done", "Cancelled", "NotApplicable"] },
                   "outcome": { "type": "string", "description": "Needed to close it Done: one of its kind's outcomes." },
                   "note": { "type": "string", "maxLength": 2000 }
                 }

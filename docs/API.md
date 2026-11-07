@@ -219,7 +219,7 @@ There is none. Each list is bounded instead:
 
 | Endpoint | Bound |
 |---|---|
-| `GET /actions?view=open` and `overdue` | The actions open now (Open, InProgress, Blocked) |
+| `GET /actions?view=open` and `overdue` | The actions open now (Open, InProgress, Blocked, Tracking) |
 | `GET /actions?view=closed` | Closed in the last 90 days |
 | `GET /metrics` | At most three years (`MetricsService.MaxRangeDays`, 1,098 days) between `from` and `to` |
 | `GET /stack` | The products that aren't retired |
@@ -345,7 +345,7 @@ with 400.
 |---|---|
 | `kind` | `IocSweep`, `ThreatHunt`, `Block`, `PatchRemediate`, `ConfigChange`, `Awareness`, `Outreach`, `Other` |
 | `priority` | `P1` to `P4` |
-| `status` | `Open`, `InProgress`, `Blocked`, `Done`, `Cancelled`, `NotApplicable` |
+| `status` | `Open`, `InProgress`, `Blocked`, `Tracking` (handed to others and followed: still open), `Done`, `Cancelled`, `NotApplicable` |
 | `outcome` | Null while open or closed without one; otherwise `NoHits`, `HitsEscalated`, `Remediated`, `Blocked`, `RiskAccepted`, `NotAffected`, `Answered`, `Other` |
 | `assignee` | The assignee's display name, or null |
 | `articleId` | The article it was raised from, or null |
@@ -440,7 +440,7 @@ its title, team, assignee or due date (`ApiService.UpdateActionAsync`, then `Act
 
 | Field | Required | Rules |
 |---|---|---|
-| `status` | Yes | `Open`, `InProgress`, `Blocked`, `Done`, `Cancelled` or `NotApplicable`. |
+| `status` | Yes | `Open`, `InProgress`, `Blocked`, `Tracking`, `Done`, `Cancelled` or `NotApplicable`. Moving to `Open`, `InProgress` or `Blocked` when that takes the team over an active limit set to refuse is answered 400; a team that warns takes the `note` as the reason. |
 | `outcome` | To close it `Done` | One of the outcomes for the action's kind (below). Optional for `Cancelled` and `NotApplicable`; ignored for an open status. |
 | `note` | No | At most 2,000 characters. Kept with the closure, and in the action's history. |
 

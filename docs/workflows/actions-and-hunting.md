@@ -2,7 +2,7 @@
 
 How follow-up work leaves the brief and is tracked to the end: raising an action, who works it, its SLA, its files,
 hunt queries and their dialects, the team's saved queries, outreach emails, reminders, people's own notification
-choices and the personal digest. It's for developers changing this code, and for anyone who needs to know exactly
+choices and the personal digest. Also hand-offs, splits and parts, Tracking, active limits, and the teams that work outside TIDE. It's for developers changing this code, and for anyone who needs to know exactly
 what a button does underneath.
 
 **Contents**
@@ -15,6 +15,8 @@ what a button does underneath.
 - [Hunt queries](#hunt-queries)
 - [Saved queries](#saved-queries)
 - [Outreach](#outreach)
+- [Hand-offs, splits, parts and tracking](#hand-offs-splits-parts-and-tracking)
+- [External teams](#external-teams)
 - [Reminders and digests](#reminders-and-digests)
 - [My notifications and the personal digest](#my-notifications-and-the-personal-digest)
 - [Lists, board, Today's queue and Workload](#lists-board-todays-queue-and-workload)
@@ -23,7 +25,8 @@ what a button does underneath.
 
 Related: [ADR 0006](../decisions/0006-query-dialects-are-templates.md) (hunt queries are generated text),
 [ADR 0008](../decisions/0008-teams-own-actions.md) (teams own actions),
-[ADR 0019](../decisions/0019-outreach-emails-are-written-never-sent.md) (outreach emails are written, never sent).
+[ADR 0019](../decisions/0019-outreach-emails-are-written-never-sent.md) (outreach emails are written, never sent),
+[ADR 0020](../decisions/0020-external-teams-are-emailed-without-tide.md) (external teams, Tracking and active limits).
 The tables behind all of this are in [data-model.md](../architecture/data-model.md); the API's action endpoints are in
 [API.md](../API.md).
 
@@ -73,7 +76,12 @@ policy, and the services check again, so a page that forgets can't write.
 | Save, edit, retire, restore saved queries and outreach templates | `WorkActions` | `SavedQueryService.CanWrite`, `OutreachTemplateService` |
 | Delete a saved query or outreach template | whoever saved it, or `Administer` | `CanDelete` |
 | Remove a file | who added it, an analyst, or an administrator; restore: administrator | `ActionFileService.RemoveAsync`, `RestoreAsync` |
+| Hand an action off (the button, or another team in the editor) | whoever can work it | `HandoffService.HandOffAsync`, `ActionService.SaveAsync` |
+| Split an action to teams | `WriteArticles` | `HandoffService.SplitAsync` |
+| Add, edit, retire external teams | `WorkActions` | `TeamService.AddExternalAsync`, `UpdateExternalAsync`, `SetRetiredAsync` |
+| Turn an action's external reminders off | whoever can work it | `ActionService.SetNoRemindersAsync` |
 | Teams, members, SLA targets, reminder settings, playbooks, card rules, query templates | `Administer` | `TeamService`, `SlaSettings`, `PlaybookService`, `CardRuleService`, `HuntQueryBuilder` |
+| A team's active limit | `Administer` | `TeamService.SetLimitAsync` |
 | Run a reminder scan now | `Administer` | `ReminderService.RunNowAsync` |
 
 An analyst (and an administrator, who holds every permission) works any action. An Action owner works only their
@@ -128,7 +136,7 @@ sequenceDiagram
 
 ## Status and outcomes
 
-An action is open while it's Open, In progress or Blocked, and closed when it's Done, Cancelled or Not applicable
+An action is open while it's Open, In progress, Blocked or Tracking, and closed when it's Done, Cancelled or Not applicable
 (`ActionItem.IsOpen`, `IsClosedStatus`). Any status can move to any other through the status control or the board
 (`SetStatusAsync`, `MoveAsync`); both go through `ApplyStatus`, which enforces the rules:
 
@@ -148,6 +156,9 @@ stateDiagram-v2
     Open --> Blocked
     InProgress --> Blocked
     Blocked --> InProgress
+    InProgress --> Tracking: handed to others
+    Tracking --> InProgress: limit checked
+    Tracking --> Done: outcome required
     InProgress --> Open
     Open --> Done: outcome required
     InProgress --> Done: outcome required
@@ -464,6 +475,74 @@ stateDiagram-v2
 
 Only an Outreach action keeps emails; on another kind the service refuses ("Change its kind first").
 
+## Hand-offs, splits, parts and tracking
+
+A team takes over work from another, splits it among the responsible teams, each with its own due date, and follows
+it until it's done. Some of those teams work outside TIDE ([external teams](#external-teams)). ADR
+[0020](../decisions/0020-external-teams-are-emailed-without-tide.md).
+
+**Hand off.** *Hand off* on an action's page (anyone who may work it): choose the team and say why.
+`HandoffService.HandOffAsync` changes the owning team, records who handed it, when and why (`HandedFromTeamId`,
+`HandedByName`, `HandedAtUtc`, `HandoffReason`), writes "Handed from {team} to {team}: {reason}" in its history, and
+shows "Handed from {team} by {name}: {reason}" under the action's title. Its assignee stays only if they're on the
+receiving team. The receiving team is emailed (the *Action handed to a team* template): its mailbox, or its members who
+haven't turned *Hand-offs to your team* off in My notifications. An external team isn't emailed; its reminders tell it.
+
+Choosing another team in an action's editor is the same hand-off (`HandoffService.HandOverAsync`, from
+`ActionService.SaveAsync`): the editor then offers *Why hand it to {team}?*, optional, and records "Changed the team
+in the editor" when it's left blank. Either way the lineage, the history line, the receiving team's limit and its email
+are the same, so an external team's Reply-To doesn't depend on which was used.
+
+**Split to teams.** On an open top-level action, an analyst's *Split to teams* opens a dialog: tick the teams, give each
+a due date (the parent's to start with; a later one is warned about) and an optional ticket link, and *Split* raises a
+part for each, together (`HandoffService.SplitAsync`). Each is titled "{parent} – {team}" and takes the parent's
+details, kind, priority and article, and the parent's own indicators when it has no article. None has an assignee or a
+checklist. Someone who works actions can add an external team in the dialog with just a name and a contact email.
+
+**A part one at a time.** *Split off a part* opens the new-action form prefilled from the parent: its title (to edit),
+details, due date, article, kind and priority. The team is never chosen for you (the form says *Choose a team*), and
+the assignee, ticket and checklist start blank. A due date after the parent's is warned about.
+
+**Rollup.** A parent's Parts card, its list row and its board card read "3 of 5 done · 1 overdue · next due Nov 20"
+(`ActionRollup.Text`; a part closed in any way counts as done). The Parts card links to *Open its N actions on the
+board*: `actions?view=open&layout=board&parent=12`. The list and board take `parent=` as a filter ("Part of A-12"),
+with the others. Closing a parent while parts are still open asks first, with *Close anyway (2 open)*; the parts stay
+open.
+
+**Tracking.** A status for work handed to others and followed: open, so its due date, SLA and the overdue counts still
+apply, but not active, so it doesn't count toward its team's limit. It has a board column between Blocked and Done.
+
+**Active limits.** An administrator may give a team a limit on its active actions (Open, In progress and Blocked,
+top-level or part) and choose what happens at it: *Show* the count only, *Warn* (going over asks why, and the reason
+goes in the history: "Over Network Engineering's limit (6 of 5 active): …") or *Refuse*. A team goes over when one of
+its actions is created, moved into an active status (from Tracking, or reopened), or handed or moved to it. The count
+("4 of 5 active") shows on the Actions page when it's filtered to the team, and on the team's Workload card. A team with
+no limit sees no change.
+
+## External teams
+
+A team marked external (`Team.IsExternal`) is tracked in TIDE and works elsewhere. It has no members, so no assignee,
+and it's left out wherever TIDE users are assumed: My teams, Workload's holders, the member digests, the meeting's "no
+one to own". It's kept wherever a team is chosen or counted: the team pickers and filters, hand-offs, splits, trends
+and the overdue counts.
+
+Anyone with `WorkActions` keeps them on **External teams** (`/teams/external`, linked from the Actions page and Teams &
+SLA): a name, what they do, a contact name and email, how to engage them (their ticket queue, say), and their
+reminders: on or off, how many business days before the due date (0 to 10, default 2; 0 is the due day), and while
+overdue every so many business days (1 to 20, default 3) or once. They can be retired like any team. Every change is
+audited. An action owned by an external team shows the team's contact and *Don't remind {team} about this one*.
+
+**External reminders** (`ReminderKind.ExternalReminder`, `ReminderService.ExternalAsync`). At the reminder time on
+business days, when an administrator has *External team reminders* on, each external team with its reminders on and a
+contact email gets one email listing its open actions whose reminder is due by its cadence (`ExternalCadence.Step`,
+counted in the organization's working days, holidays included). Each is listed with its title, its details as written
+on the action, its due date and how many business days late, and its ticket link. The email has no TIDE link or
+number, nothing from an article that wasn't written into the action, and closes asking for a reply. Its Reply-To is
+whoever follows the work: a part's parent's assignee, else the parent's team mailbox; a top-level action's own
+assignee, else the mailbox of the team that handed it over, else its creator (`ExternalCadence.ReplyTo`). Each step
+(`before`, `late-0`, `late-1`…) is marked, so it goes once; moving the due date starts over. The internal reminders
+are unchanged.
+
 ## Reminders and digests
 
 `ReminderService` (`src/Tide.Application/Actions/Reminders.cs`) holds the scans. `ReminderHostedService` calls
@@ -480,6 +559,7 @@ others. An administrator can run any scan now from Teams & SLA.
 | Brief not ready | its time on business days, before the meeting | the presenting analyst, else the fallback recipients | per day |
 | Presenting next | reminder time, the business day before a stretch | the analyst presenting next | per stretch |
 | Outreach follow-up | reminder time, N business days after an email was marked sent (1 to 30, default 5) | whoever marked it sent | `outreach-follow-up` per email |
+| External team reminders | reminder time, by each external team's cadence | the team's contact email, Reply-To whoever follows the work | `external-reminder` per action, due date and step |
 
 Each scan is off until an administrator enables it (`Notifications` section, set on Teams & SLA), except the
 personal digest's offer, which is on and sends nothing until someone chooses a digest. Each batches one email per
@@ -519,14 +599,17 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
 
 ## Lists, board, Today's queue and Workload
 
-- **Actions page** (`/actions`, `ActionsBoard.razor`). A board (a column per status, `BoardAsync`) or a list
-  (`PageAsync`). Views: Mine, My teams, Open, Overdue, Closed (last 90 days). Overdue and Closed are list-only. The
-  layout is the `actions.layout` preference; a link's own `layout` wins for that visit. Card rules (administered)
-  colour and label cards and add filter chips.
+- **Actions page** (`/actions`, `ActionsBoard.razor`). A board (a column per status in `ActionItem.StatusOrder`:
+  Open, In progress, Blocked, Tracking, Done, Cancelled, Not applicable; `BoardAsync`) or a list (`PageAsync`). Views:
+  Mine, My teams, Open, Overdue, Closed (last 90 days). Overdue and Closed are list-only. The layout is the
+  `actions.layout` preference; a link's own `layout` wins for that visit. Card rules (administered) colour and label
+  cards and add filter chips.
 - **Filters.** One bar for the list and the board (`ActionFilter`): search (title, A-number or the article's title),
   team, kind, priority, due (`ActionDue`: overdue, due from today to the end of the business week with its holidays, or
-  no due date) and status. They combine, and every filter, the view and the page are in the address. A filter change
-  goes back to the first page.
+  no due date), status (Open, In progress, Blocked or Tracking), and parent (`parent=12`, "Part of A-12": the parts of
+  one action, from its page's link). They combine, and every filter, the view and the page are in the address. A filter
+  change goes back to the first page. Filtered to a team with an active limit, the bar shows "4 of 5 active"
+  (`TeamActiveAsync`).
 - **The list** is sorted, grouped and paged in the database, 50 a page (`ActionService.ListPageSize`). Group headings
   count every matching action in the group, and the rule chips are counted there too (`RuleCountsAsync`).
 - **The board** loads every open card and caps each column on screen: its first 20 cards, then *Show N more*, 20 at a
@@ -535,7 +618,8 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
 - **Today's team queue** (`TeamQueueAsync`): the person's teams' open actions that are theirs or nobody's, theirs
   first, up to 8, with *Take it*. Without `WriteArticles` it leads Today in place of the producers' step strip.
 - **Workload** (`/workload`, `WorkloadAsync`): each team's open, overdue, due soon and blocked counts, closed and met
-  last week, and who holds what with per-person and P1 counts.
+  last week, and who holds what with per-person and P1 counts (not for an external team, which has no holders), and
+  "4 of 5 active" for a team with a limit.
 
 ![Workload](../screenshots/workload.png)
 
@@ -558,6 +642,10 @@ Every one of these follows colleagues' saves live through the `actions` and `act
 | An outreach body still holding `[[…]]` | Mark sent is refused until it's filled or removed. |
 | An action's article deleted | Its hunts and outreach use the action's own indicators only. |
 | Reminder relay down | Recipients not reached aren't marked, so the next scan tries them; an action anyone got is marked whole. |
+| A team at its limit set to Warn | Creating, reopening, moving into an active status, or handing to it asks why; cancelled, nothing changes. |
+| Handing off to an external team | Its assignee is cleared (nobody is on the team); no email: its reminders tell it. |
+| An external team with no contact email | Its reminders have nowhere to go: none is sent until one is given. |
+| A split to a team twice, or from a part | Refused: each team once; parts split one level deep. |
 
 ## Where it lives in code
 
@@ -574,8 +662,10 @@ Every one of these follows colleagues' saves live through the `actions` and `act
 | Meeting lines | `src/Tide.Application/Actions/RecommendedActions.cs` |
 | Playbooks, card rules | `src/Tide.Application/Actions/Playbooks.cs` |
 | Starter saved queries, templates and playbooks | `src/Tide.Application/Actions/StarterSavedQueries.cs`, `StarterOutreachTemplates.cs`, `StarterPlaybooks.cs`; added by `src/Tide.Infrastructure/Persistence/DatabaseInitializer.cs` (`SeedStarterLibrariesAsync`) |
-| Teams | `src/Tide.Application/Actions/TeamService.cs` |
+| Teams | `src/Tide.Application/Actions/TeamService.cs` (`ExternalTeamForm`) |
+| Hand-offs, splits, limits, rollup | `src/Tide.Application/Actions/Handoffs.cs` (`HandoffService`), `ActiveLimits.cs`, `ActionRollup.cs` |
+| External reminders | `src/Tide.Application/Actions/ExternalReminders.cs` (`ExternalCadence`, `ReminderService.ExternalAsync`) |
 | Reminders | `src/Tide.Application/Actions/Reminders.cs` (`ReminderService`, `ReminderOptions`), `src/Tide.Web/Services/ReminderHostedService.cs` |
 | Notification choices | `src/Tide.Application/Preferences/` (`NotificationKinds`, `NotificationPreferenceService`, `RecipientResolver`, `UserPreferenceService`) |
-| Pages | `src/Tide.Web/Components/Pages/ActionPage.razor`, `ActionsBoard.razor`, `Workload.razor`, `SavedQueriesPage.razor`, `OutreachTemplatesPage.razor`, `MyNotifications.razor` |
-| Panels | `src/Tide.Web/Components/Shared/HuntPanel.razor`, `OutreachPanel.razor`, `ActionFilesPanel.razor`, `ActionStatusControl.razor`, `ActionKanban.razor` |
+| Pages | `src/Tide.Web/Components/Pages/ActionPage.razor`, `ActionsBoard.razor`, `Workload.razor`, `ExternalTeams.razor`, `SavedQueriesPage.razor`, `OutreachTemplatesPage.razor`, `MyNotifications.razor` |
+| Panels | `src/Tide.Web/Components/Shared/HuntPanel.razor`, `OutreachPanel.razor`, `ActionFilesPanel.razor`, `ActionStatusControl.razor`, `ActionKanban.razor`, `SplitDialog.razor`, `OverLimitDialog.razor` |

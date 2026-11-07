@@ -28,6 +28,15 @@
             @foreach (var t in Teams.Where(t => !t.IsRetired || t.Id == Form.TeamId)) { <option value="@t.Id">@t.Name</option> }
         </select>
     </div>
+    @if (!IsNew && Form.TeamId != Form.FromTeamId)
+    {
+        @* Another team on a saved action is a hand-off: recorded, and the team is told. *@
+        <div class="col-12">
+            <label class="tide-field-label" for="a-handoff">Why hand it to @TeamName? <span class="fw-normal">(optional)</span></label>
+            <input id="a-handoff" class="form-control form-control-sm" maxlength="@ActionItem.MaxHandoffReason" @bind="Form.HandoffReason"
+                   placeholder="@ActionService.EditorHandoffReason" />
+        </div>
+    }
     @if (_duplicates.Count > 0)
     {
         <div class="col-12">
@@ -45,6 +54,10 @@
         {
             <div class="form-text text-danger">That date has passed: the action will be overdue at once, and closing it will count as missed.</div>
         }
+        else if (ActionRollup.LaterThanParent(ParentDue, Form.DueDate))
+        {
+            <div class="form-text text-warning-emphasis" role="status">@ActionRollup.LaterText(ParentDue!.Value)</div>
+        }
         else if (IsNew && !_dueTouched && Form.DueDate is not null)
         {
             <div class="form-text">From the SLA target.</div>
@@ -60,8 +73,9 @@
     </div>
     <div class="col-md-4">
         <label class="tide-field-label" for="a-assignee">Assignee</label>
-        <select id="a-assignee" class="form-select form-select-sm" @bind="Form.AssigneeId" @bind:after="AssigneeChanged">
-            <option value="">Unassigned (the team's)</option>
+        <select id="a-assignee" class="form-select form-select-sm" disabled="@External" aria-describedby="@(External ? "a-assignee-help" : null)"
+                @bind="Form.AssigneeId" @bind:after="AssigneeChanged">
+            <option value="">@(External ? "None: an external team" : "Unassigned (the team's)")</option>
             @if (!string.IsNullOrEmpty(Form.AssigneeId) && Candidates.All(c => c.Id != Form.AssigneeId))
             {
                 <option value="@Form.AssigneeId">@Form.AssigneeName</option>
@@ -73,13 +87,14 @@
                     @foreach (var c in Members) { <option value="@c.Id">@c.Name</option> }
                 </optgroup>
             }
-            @if (Others.Any())
+            @if (!External && Others.Any())
             {
                 <optgroup label="@(Members.Any() ? "Everyone else" : "People")">
                     @foreach (var c in Others) { <option value="@c.Id">@c.Name</option> }
                 </optgroup>
             }
         </select>
+        @if (External) { <div class="form-text" id="a-assignee-help">It works outside TIDE, so no one here is assigned.</div> }
     </div>
     @if (IsNew)
     {
@@ -132,6 +147,12 @@
     /// <summary>Everyone known (for an analyst, who may assign anyone); null limits the choice to the team's members.</summary>
     [Parameter] public IReadOnlyList<AppUser>? People { get; set; }
     [Parameter] public bool IsNew { get; set; }
+
+    /// <summary>A part's parent's due date: a later one is warned about (it's allowed).</summary>
+    [Parameter] public DateOnly? ParentDue { get; set; }
+
+    // An external team has no members in TIDE, so no one is offered as its assignee.
+    private bool External => Teams.FirstOrDefault(t => t.Id == Form.TeamId)?.IsExternal == true;
 
     private bool _dueTouched;
 
@@ -216,6 +237,7 @@
 
     private void TeamChanged()
     {
+        if (External) (Form.AssigneeId, Form.AssigneeName) = (null, null);
         // An assignee who isn't on the new team (and isn't offered otherwise) is cleared.
         if (!string.IsNullOrEmpty(Form.AssigneeId) && Candidates.All(c => c.Id != Form.AssigneeId))
         {

@@ -117,6 +117,27 @@ public class MigrationFillTests
         AtUtc = at, UserId = "x", UserName = "X", Action = action, EntityType = type, EntityKey = key.ToString(), ChangesJson = changes,
     };
 
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task HandoffsTrackingAndExternalTeams_GivesExistingTeamsTheReminderDefaults_AndLeavesThemInternalWithNoLimit(string provider)
+    {
+        using var database = new MigratedDatabase(provider);
+        await using (var ctx = database.Context())
+        {
+            ctx.Teams.Add(new Team { Key = "network-engineering", Name = "Network Engineering" });
+            await ctx.SaveChangesAsync();
+        }
+
+        database.UpgradeAgainFrom("HandoffsTrackingAndExternalTeams");
+
+        await using (var ctx = database.Context())
+        {
+            var team = await ctx.Teams.SingleAsync();
+            (team.IsExternal, team.ActiveLimit, team.LimitMode).Should().Be((false, (int?)null, ActiveLimitMode.Show));
+            (team.RemindersOn, team.RemindBeforeDays, team.RemindOverdueEveryDays).Should().Be((true, 2, (int?)3));
+        }
+    }
+
     // A database on one provider, migrated as the app migrates its own, and dropped afterwards.
     private sealed class MigratedDatabase : IDisposable
     {

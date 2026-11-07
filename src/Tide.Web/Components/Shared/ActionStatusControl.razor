@@ -9,7 +9,7 @@
 <div class="tide-status-row">
     <span class="tide-field-label mb-0" id="status-label">Status</span>
     <div class="tide-status-seg" role="group" aria-labelledby="status-label">
-        @foreach (var s in Enum.GetValues<ActionStatus>())
+        @foreach (var s in ActionItem.StatusOrder)
         {
             var on = Shown == s;
             <button type="button" @key="s" class="tide-status-opt @(on ? "on" : "")" aria-pressed="@(on ? "true" : "false")" data-status="@s"
@@ -39,8 +39,17 @@
     </div>
 }
 
+<ConfirmDialog @ref="_confirm" />
+<OverLimitDialog @ref="_overLimit" />
+
 @code {
     [Parameter, EditorRequired] public ActionItem Action { get; set; } = default!;
+
+    /// <summary>How many of its parts are still open: closing it with any asks first.</summary>
+    [Parameter] public int OpenParts { get; set; }
+
+    private ConfirmDialog _confirm = default!;
+    private OverLimitDialog _overLimit = default!;
 
     /// <summary>After a move: the page reloads the action.</summary>
     [Parameter] public EventCallback Changed { get; set; }
@@ -77,6 +86,7 @@
     public async Task Pick(ActionStatus to)
     {
         if (_busy || to == Shown) return;
+        if (ActionItem.IsClosedStatus(to) && _closing is null && OpenParts > 0 && !await ActionPrompts.ConfirmCloseParent(_confirm, Action.Number, OpenParts)) return;
         if (ActionItem.IsClosedStatus(to))
         {
             await Open(new PendingClose(_closing?.From ?? Action.Status, to), ActionOutcome.None, null);
@@ -142,7 +152,7 @@
         try
         {
             if (from == to) await ActionSvc.ChangeOutcomeAsync(Action.Id, to, outcome, note);
-            else await ActionSvc.MoveAsync(Action.Id, from, to, outcome, note);
+            else if (!await _overLimit.RunAsync(reason => ActionSvc.MoveAsync(Action.Id, from, to, outcome, note, reason))) return false;
             _focus = to;
             Toasts.Show(from == to ? "Outcome saved." : $"{Ui.ActionLabel(Action.Number)} moved to {ActionService.StatusName(to)}.");
             await Changed.InvokeAsync();

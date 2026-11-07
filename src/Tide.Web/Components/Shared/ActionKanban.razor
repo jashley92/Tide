@@ -18,7 +18,7 @@
 
 @{ var drags = Drags.Others(CurrentUser.UserId); }
 <div class="tide-kanban" @ref="_root" aria-label="Actions board">
-    @foreach (var status in Enum.GetValues<ActionStatus>())
+    @foreach (var status in ActionItem.StatusOrder)
     {
         var cards = Board.In(status);
         var shown = Shown(status, cards);
@@ -72,7 +72,7 @@
                         }
                         @if (r.Children > 0)
                         {
-                            <div class="small tide-muted"><span class="bi bi-diagram-3" aria-hidden="true"></span> @r.Children part@(r.Children == 1 ? "" : "s")</div>
+                            <div class="small tide-muted tide-rollup"><span class="bi bi-diagram-3" aria-hidden="true"></span> @r.Rollup</div>
                         }
                         @if (r.ChecklistTotal > 0)
                         {
@@ -120,7 +120,7 @@
                             @* A menu: opening it focuses its first option, the arrows move between them, Esc closes it and
                                focus goes back to Move (board.js), and Tab leaves it closed. *@
                             <div class="tide-kcard-menu" id="move-menu-@r.Id" role="menu" aria-label="Move @Ui.ActionLabel(r.Number) to" @onkeydown="OnMenuKey">
-                                @foreach (var to in Enum.GetValues<ActionStatus>().Where(s => s != r.Status))
+                                @foreach (var to in ActionItem.StatusOrder.Where(s => s != r.Status))
                                 {
                                     <button type="button" role="menuitem" tabindex="-1" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => MoveFromMenu(r, to)">@ActionService.StatusName(to)</button>
                                 }
@@ -156,6 +156,10 @@
         <ActionCloseFields Kind="pending.Card.Kind" Current="pending.Card.Outcome" To="pending.To" Id="kclose" @bind-Outcome="_outcome" @bind-Note="_note" />
     }
 </ConfirmDialog>
+
+@* A parent closed while parts are open is asked about first; a move over a team's limit, when it warns, asks why. *@
+<ConfirmDialog @ref="_confirm" />
+<OverLimitDialog @ref="_overLimit" />
 
 @code {
     [Parameter, EditorRequired] public ActionBoard Board { get; set; } = default!;
@@ -202,6 +206,8 @@
 
     private ElementReference _root;
     private ConfirmDialog _closeDialog = default!;
+    private ConfirmDialog _confirm = default!;
+    private OverLimitDialog _overLimit = default!;
     private DotNetObjectReference<ActionKanban>? _self;
     private Guid? _menuFor;
     // The card whose Move menu just opened (focus goes to its first option), or that the menu just moved (focus goes
@@ -340,6 +346,7 @@
     private async Task Move(ActionRow card, ActionStatus to)
     {
         _menuFor = null;
+        if (ActionItem.IsClosedStatus(to) && card.ChildrenOpen > 0 && !await ActionPrompts.ConfirmCloseParent(_confirm, card.Number, card.ChildrenOpen)) return;
         if (ActionItem.IsClosedStatus(to))
         {
             _closing = new PendingClose(card, to);
@@ -365,7 +372,11 @@
         {
             _mine.Add(card.Id);
             _pinned.Add(card.Id);
-            await ActionSvc.MoveAsync(card.Id, card.Status, to, outcome, note);
+            if (!await _overLimit.RunAsync(reason => ActionSvc.MoveAsync(card.Id, card.Status, to, outcome, note, reason)))
+            {
+                _mine.Remove(card.Id);
+                return false;
+            }
             Toasts.Show($"{Ui.ActionLabel(card.Number)} moved to {ActionService.StatusName(to)}.");
             await OnChanged.InvokeAsync();
             return true;

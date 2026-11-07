@@ -37,6 +37,7 @@ public static class OperationalSettings
     /// <summary>The reminder to follow up an Outreach action's unanswered email, and after how many business days.</summary>
     public const string OutreachFollowUp = "Notifications:OutreachFollowUp:Enabled";
     public const string OutreachFollowUpDays = "Notifications:OutreachFollowUp:Days";
+    public const string ExternalReminders = "Notifications:ExternalReminders:Enabled";
 
     public const string IntakeEnabled = "Intake:Enabled";
     public const string RetentionDays = "Intake:RetentionDays";
@@ -97,6 +98,7 @@ public static class OperationalSettings
         [PersonalDigest] = Switch,
         [OutreachFollowUp] = Switch,
         [OutreachFollowUpDays] = Number("The follow-up wait", ReminderOptions.FollowUpOptions.MinDays, ReminderOptions.FollowUpOptions.MaxDays),
+        [ExternalReminders] = Switch,
         [IntakeEnabled] = Switch,
         [RetentionDays] = Number("Days feed items are kept", 7, 3650),
         [MinPollMinutes] = Number("The shortest poll", 5, 24 * 60),
@@ -185,6 +187,7 @@ public static class OperationalSettings
         s.Use(PersonalDigest, v => o.PersonalDigest.Enabled = bool.Parse(v));
         s.Use(OutreachFollowUp, v => o.OutreachFollowUp.Enabled = bool.Parse(v));
         s.Use(OutreachFollowUpDays, v => o.OutreachFollowUp.Days = int.Parse(v, Invariant));
+        s.Use(ExternalReminders, v => o.ExternalReminders.Enabled = bool.Parse(v));
     }
 
     internal static void Apply(SavedSettings s, IntakeOptions o)

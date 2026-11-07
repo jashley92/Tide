@@ -19,15 +19,23 @@ internal sealed record Recipients(IReadOnlyDictionary<string, string> Addresses,
 /// </summary>
 internal static class RecipientResolver
 {
-    public static async Task<Recipients> ResolveAsync(IAppDbContext db, NotificationKind kind, IEnumerable<string> userIds, CancellationToken ct)
+    /// <summary>The people's addresses and who opted out of <paramref name="kind"/> (none can, for a null kind: a scan nobody
+    /// chooses about).</summary>
+    public static async Task<Recipients> ResolveAsync(IAppDbContext db, NotificationKind? kind, IEnumerable<string> userIds, CancellationToken ct)
     {
         var ids = userIds.Distinct().ToList();
-        var addresses = await db.Users.AsNoTracking().Where(u => ids.Contains(u.Sid) && u.Email != null && u.Email != "")
-            .ToDictionaryAsync(u => u.Sid, u => u.Email!, ct);
-        if (ids.Count == 0) return new Recipients(addresses, new HashSet<string>());
+        var addresses = await AddressesAsync(db, ids, ct);
+        if (ids.Count == 0 || kind is null) return new Recipients(addresses, new HashSet<string>());
         var off = await db.UserPreferences.AsNoTracking()
             .Where(p => p.Name == kind.Name && p.Value == UserPreferences.Off && ids.Contains(p.UserId))
             .Select(p => p.UserId).ToListAsync(ct);
         return new Recipients(addresses, off.ToHashSet());
+    }
+
+    /// <summary>The address of each of these people who has one (the user mirror, as signed in from the directory).</summary>
+    public static Task<Dictionary<string, string>> AddressesAsync(IAppDbContext db, IEnumerable<string> userIds, CancellationToken ct)
+    {
+        var ids = userIds.Distinct().ToList();
+        return db.Users.AsNoTracking().Where(u => ids.Contains(u.Sid) && u.Email != null && u.Email != "").ToDictionaryAsync(u => u.Sid, u => u.Email!, ct);
     }
 }

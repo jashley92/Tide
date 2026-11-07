@@ -3,6 +3,7 @@ using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Tide.Application.Abstractions;
+using Tide.Application.Actions;
 using Tide.Application.Articles;
 using Tide.Application.Operations;
 using Tide.Application.Security;
@@ -879,7 +880,8 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         var articleIds = byCve.Select(x => x.Id).Concat(recentLinks.Select(x => x.Id)).Distinct().ToList();
         var briefs = await ArticleDates.FirstBriefedAsync(db, ct, articleIds);
         var open = (await db.Actions.AsNoTracking()
-                .Where(a => a.ArticleId != null && articleIds.Contains(a.ArticleId.Value) && a.Status < ActionStatus.Done)
+                .Where(a => a.ArticleId != null && articleIds.Contains(a.ArticleId.Value))
+                .WhereOpen()
                 .Select(a => new { ArticleId = a.ArticleId!.Value, a.Number }).ToListAsync(ct))
             .GroupBy(a => a.ArticleId).ToDictionary(g => g.Key, g => (IReadOnlyList<int>)g.Select(a => a.Number).Order().ToList());
         var attachable = (await db.Articles.AsNoTracking().Where(a => articleIds.Contains(a.Id)).Where(Unfrozen(db)).Select(a => a.Id).ToListAsync(ct)).ToHashSet();

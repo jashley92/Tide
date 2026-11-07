@@ -110,7 +110,8 @@ public sealed class RelatedService(IAppDbContextFactory dbs, ICurrentUser user, 
         var dates = await Lookups.BriefDatesAsync(db, shown, ct);
         var today = clock.Today;
         var open = (await Lookups.ActionRows(db, db.Actions.AsNoTracking()
-                .Where(a => a.ArticleId != null && shown.Contains(a.ArticleId.Value) && a.Status < ActionStatus.Done)
+                .Where(a => a.ArticleId != null && shown.Contains(a.ArticleId.Value))
+                .WhereOpen()
                 .OrderByDescending(a => a.Number), ct))
             .GroupBy(a => a.ArticleId!.Value)
             .ToDictionary(g => g.Key, g => (IReadOnlyList<RelatedAction>)g

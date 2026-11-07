@@ -235,7 +235,7 @@ except the personal digest's offer. What each sends is in [INSTALL.md](../INSTAL
 
 | Key | Default | Allowed values |
 |---|---|---|
-| `Notifications:ReminderTime` | `08:00` | `HH:mm`. Due soon, overdue, presenting, outreach follow-up and the daily personal digest go at or after it on business days. |
+| `Notifications:ReminderTime` | `08:00` | `HH:mm`. Due soon, overdue, presenting, outreach follow-up, the external teams' reminders and the daily personal digest go at or after it on business days. |
 | `Notifications:DueSoon:Enabled` | `false` | `true`/`false` |
 | `Notifications:Overdue:Enabled` | `false` | `true`/`false` |
 | `Notifications:Presenting:Enabled` | `false` | `true`/`false` |
@@ -248,6 +248,7 @@ except the personal digest's offer. What each sends is in [INSTALL.md](../INSTAL
 | `Notifications:PersonalDigest:Enabled` | `true` | `true`/`false`. Lets people choose a digest in My notifications. |
 | `Notifications:OutreachFollowUp:Enabled` | `false` | `true`/`false` |
 | `Notifications:OutreachFollowUp:Days` | `5` | 1 to 30 business days. |
+| `Notifications:ExternalReminders:Enabled` | `false` | `true`/`false`. Emails each external team, with its own reminders on, about its actions due soon or overdue at the reminder time, at the team's own cadence (set on External teams). Goes outside TIDE's users. |
 
 ### Intake
 
@@ -350,8 +351,8 @@ app's own bookkeeping.
 ## Email templates
 
 **Administration › Email templates** rewords the notification emails: due soon (`due-soon`), overdue (`overdue`), the
-weekly team digest (`digest`), the personal digest (`personal-digest`), outreach follow-up (`outreach-follow-up`), brief
-not ready (`brief-not-ready`), presenting next (`presenting`), and the rotation's request, approved, recorded and
+weekly team digest (`digest`), the personal digest (`personal-digest`), outreach follow-up (`outreach-follow-up`), a hand-off
+(`handoff`), the external team reminder (`external-reminder`), brief not ready (`brief-not-ready`), presenting next (`presenting`), and the rotation's request, approved, recorded and
 declined emails (`rotation-request`, `rotation-approved`, `rotation-recorded`, `rotation-declined`).
 `EmailTemplateCatalog` holds each one's default subject, heading and Markdown body and the `{{Name}}` values it fills.
 

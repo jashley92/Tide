@@ -95,6 +95,8 @@ public static class DependencyInjection
         services.AddScoped<SlaSettings>();
         services.AddScoped<HuntQueryBuilder>();
         services.AddScoped<ActionService>();
+        services.AddScoped<HandoffService>();
+        services.AddScoped<HandoffNotices>();
         services.AddScoped<PlaybookService>();
         services.AddScoped<SavedQueryService>();
         services.AddScoped<OutreachTemplateService>();

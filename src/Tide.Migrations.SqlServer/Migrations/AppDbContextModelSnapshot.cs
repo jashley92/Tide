@@ -416,6 +416,24 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .IsConcurrencyToken()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTimeOffset?>("HandedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("HandedById")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("HandedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid?>("HandedFromTeamId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("HandoffReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<int>("Kind")
                         .HasColumnType("int");
 
@@ -425,6 +443,9 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<string>("ModifiedBy")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
+
+                    b.Property<bool>("NoReminders")
+                        .HasColumnType("bit");
 
                     b.Property<int>("Number")
                         .HasColumnType("int");
@@ -3066,6 +3087,17 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int?>("ActiveLimit")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ContactEmail")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("ContactName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -3082,6 +3114,13 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<string>("Engage")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<bool>("IsExternal")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("IsRetired")
                         .HasColumnType("bit");
 
@@ -3089,6 +3128,9 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("LimitMode")
+                        .HasColumnType("int");
 
                     b.Property<DateTimeOffset?>("ModifiedAtUtc")
                         .HasColumnType("datetimeoffset");
@@ -3101,6 +3143,15 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("RemindBeforeDays")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("RemindOverdueEveryDays")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("RemindersOn")
+                        .HasColumnType("bit");
 
                     b.Property<int>("SortOrder")
                         .HasColumnType("int");

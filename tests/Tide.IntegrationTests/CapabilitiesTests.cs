@@ -48,6 +48,11 @@ public class CapabilitiesTests : IDisposable
         ["Work actions: status, outcome, assignee, checklist, hunts"] = (db, s) => db.Actions().TakeAsync(s.ActionId),
         ["Add and describe files"] = (db, s) => db.ActionFiles().AddAsync(s.ActionId, [new ActionFileUpload("a.log", Samples.Text("log"), "text/plain")]),
         ["Restore removed files"] = (db, s) => db.ActionFiles().RestoreAsync(s.RemovedFile),
+        ["Hand an action off to another team"] = (db, s) => db.Handoffs().HandOffAsync(s.ActionId, Guid.NewGuid(), "Probe"),
+        ["Split an action to several teams"] = (db, s) => db.Handoffs().SplitAsync(s.ActionId, [new SplitPart(s.Team)]),
+        ["Add, edit and retire external teams (teams that work outside TIDE)"] = (db, _) =>
+            db.Teams().AddExternalAsync("Probe " + Guid.NewGuid().ToString("N")[..6], null),
+        ["Set a team's active limit"] = (db, s) => db.Teams().SetLimitAsync(s.Team, null, ActiveLimitMode.Show),
         ["Read the saved hunt queries"] = (db, _) => db.SavedQueries().ListAsync(),
         ["Add indicators for an action's hunts"] = (db, s) => db.Actions().AddIndicatorsAsync(s.ActionId, [new IndicatorForm { Type = IndicatorType.Domain, Value = "evil.example" }]),
         ["Save, edit, retire and restore saved hunt queries"] = (db, _) => db.SavedQueries().SaveAsync(new SavedQueryForm

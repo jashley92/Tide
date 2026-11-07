@@ -479,7 +479,12 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public HuntQueryBuilder Queries() => new(this, User);
 
-    public ActionService Actions() => new(this, User, Sla(), Clock, Queries(), Screenshots(), Articles(), Live);
+    public ActionService Actions() => new(this, User, Sla(), Clock, Queries(), Screenshots(), Articles(), Live, Notices());
+
+    /// <summary>Hand-offs and splits, telling teams by <see cref="Email"/> with links to tide.example.org.</summary>
+    public HandoffService Handoffs() => new(this, User, Clock, Notices());
+
+    public HandoffNotices Notices() => new(Clock, Email, Options.Create(new AppOptions { BaseUrl = "https://tide.example.org" }), EmailTemplates);
 
     public PlaybookService Playbooks() => new(this, User);
     public SavedQueryService SavedQueries() => new(this, User);

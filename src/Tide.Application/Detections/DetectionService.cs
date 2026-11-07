@@ -41,7 +41,7 @@ public sealed record CoverageRow(string TechniqueId, string Name, int Briefed, I
     public bool Gap => Rules.Enabled == 0;
 
     /// <summary>Whether its gap action is still open (a closed one can be raised again).</summary>
-    public bool ActionOpen => ActionNumber is not null && ActionStatus is < Domain.Enums.ActionStatus.Done;
+    public bool ActionOpen => ActionNumber is not null && ActionStatus is { } s && !ActionItem.IsClosedStatus(s);
 }
 
 /// <summary>Reports › Coverage: what was briefed in the window against the SOC's current rules.</summary>

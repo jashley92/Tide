@@ -245,6 +245,23 @@ public enum ActionStatus
     Done = 3,
     Cancelled = 4,
     NotApplicable = 5,
+
+    /// <summary>Handed to others (another team, or one outside TIDE) and followed until it's done. Still open: its due
+    /// date and SLA apply, but it doesn't count toward its team's active limit.</summary>
+    Tracking = 6,
+}
+
+/// <summary>What happens when an action would take its team over its active limit. Stored; append, never renumber.</summary>
+public enum ActiveLimitMode
+{
+    /// <summary>Only show the count ("4 of 5 active").</summary>
+    Show = 0,
+
+    /// <summary>Ask for a reason, kept in the action's history.</summary>
+    Warn = 1,
+
+    /// <summary>Refuse it.</summary>
+    Refuse = 2,
 }
 
 /// <summary>What an action found or achieved. Stored; append, never renumber.</summary>

@@ -1,0 +1,130 @@
+@* Split a top-level action to several teams at once: tick the teams, give each its due date (the parent's to start
+   with; a later one is warned about) and an optional ticket link, and HandoffService.SplitAsync raises a part for each,
+   together. Someone who may keep the external teams can add one here with just a name and a contact email. *@
+@inject HandoffService HandoffSvc
+@inject TeamService TeamSvc
+@inject ToastService Toasts
+
+<ConfirmDialog @ref="_dialog" Form="true" Wide="true" Confirming="Split" ConfirmDisabled="@(_parts.Count == 0)" ConfirmIcon="bi-diagram-3">
+    <fieldset>
+        <legend class="tide-field-label">Teams</legend>
+        @foreach (var t in _teams)
+        {
+            var id = $"split-team-{t.Id:N}";
+            var part = _parts.FirstOrDefault(p => p.TeamId == t.Id);
+            <div class="tide-split-row" @key="t.Id">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="@id" checked="@(part is not null)" @onchange="e => Toggle(t.Id, e.Value is true)" />
+                    <label class="form-check-label" for="@id">@t.Name @if (t.IsExternal) { <Badge Class="ms-1">External</Badge> }</label>
+                </div>
+                @if (part is not null)
+                {
+                    <div class="row g-2 mb-2 ms-3">
+                        <div class="col-sm-4">
+                            <label class="tide-field-label" for="@($"{id}-due")">Due</label>
+                            <input id="@($"{id}-due")" type="date" class="form-control form-control-sm" @bind="part.DueDate" />
+                        </div>
+                        <div class="col-sm-8">
+                            <label class="tide-field-label" for="@($"{id}-ticket")">Ticket link <span class="fw-normal">(optional)</span></label>
+                            <input id="@($"{id}-ticket")" class="form-control form-control-sm" maxlength="2000" placeholder="https://tickets.example.org/…" @bind="part.TicketUrl" />
+                        </div>
+                        @if (ActionRollup.LaterThanParent(Parent.DueDate, part.DueDate))
+                        {
+                            <div class="col-12 form-text text-warning-emphasis" role="status">@ActionRollup.LaterText(Parent.DueDate!.Value)</div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </fieldset>
+    @if (TeamSvc.CanManageExternal)
+    {
+        <div class="tide-split-add mt-2">
+            <span class="tide-field-label">Add an external team</span>
+            <div class="row g-2">
+                <div class="col-sm-5"><input class="form-control form-control-sm" maxlength="100" placeholder="Name (e.g. Network Engineering)" aria-label="New external team's name" @bind="_newName" /></div>
+                <div class="col-sm-5"><input class="form-control form-control-sm" maxlength="256" placeholder="Contact email (optional)" aria-label="New external team's contact email" @bind="_newEmail" /></div>
+                <div class="col-sm-2"><button type="button" class="btn btn-outline-secondary btn-sm w-100" disabled="@string.IsNullOrWhiteSpace(_newName)" @onclick="AddExternal">Add</button></div>
+            </div>
+        </div>
+    }
+    @if (_error is not null) { <div class="text-danger small mt-2" role="alert">@_error</div> }
+</ConfirmDialog>
+<OverLimitDialog @ref="_overLimit" />
+
+@code {
+    /// <summary>The action being split: top-level and open.</summary>
+    [Parameter, EditorRequired] public ActionItem Parent { get; set; } = default!;
+
+    /// <summary>After the parts are raised: the page reloads.</summary>
+    [Parameter] public EventCallback Done { get; set; }
+
+    /// <summary>One team's part as the dialog edits it.</summary>
+    internal sealed class Part(Guid teamId, DateOnly? due)
+    {
+        public Guid TeamId { get; } = teamId;
+        public DateOnly? DueDate { get; set; } = due;
+        public string? TicketUrl { get; set; }
+    }
+
+    private ConfirmDialog _dialog = default!;
+    private OverLimitDialog _overLimit = default!;
+    private IReadOnlyList<Team> _teams = [];
+    private readonly List<Part> _parts = [];
+    private string? _newName, _newEmail, _error;
+
+    internal List<Part> Parts => _parts;
+    internal IReadOnlyList<Team> Teams => _teams;
+    internal string? NewName { get => _newName; set => _newName = value; }
+    internal string? NewEmail { get => _newEmail; set => _newEmail = value; }
+    internal string? Error => _error;
+    internal OverLimitDialog OverLimit => _overLimit;
+
+    /// <summary>Opens the dialog with no team chosen; true once the parts are raised.</summary>
+    public async Task<bool> OpenAsync()
+    {
+        _parts.Clear();
+        (_newName, _newEmail, _error) = (null, null, null);
+        _teams = (await TeamSvc.ListAsync()).Where(t => t.Id != Parent.TeamId).ToList();
+        return await _dialog.Ask($"Split {Ui.ActionLabel(Parent.Number)} to teams",
+            "Each team gets its own part, titled for it, with this action's details. Each starts unassigned.", "Split", danger: false);
+    }
+
+    internal void Toggle(Guid teamId, bool on)
+    {
+        _parts.RemoveAll(p => p.TeamId == teamId);
+        if (on) _parts.Add(new Part(teamId, Parent.DueDate));
+    }
+
+    internal async Task AddExternal()
+    {
+        try
+        {
+            var id = await TeamSvc.AddExternalAsync(_newName ?? "", _newEmail);
+            _teams = (await TeamSvc.ListAsync()).Where(t => t.Id != Parent.TeamId).ToList();
+            Toggle(id, true);
+            (_newName, _newEmail, _error) = (null, null, null);
+        }
+        catch (Exception ex) { _error = UserFacingError.For(ex); }
+    }
+
+    // The dialog's Split: kept open, saying why, when it's refused.
+    internal async Task<bool> Split()
+    {
+        _error = null;
+        try
+        {
+            IReadOnlyList<int> made = [];
+            var parts = _parts.Select(p => new SplitPart(p.TeamId, p.DueDate, p.TicketUrl)).ToList();
+            if (!await _overLimit.RunAsync(async reason => made = await HandoffSvc.SplitAsync(Parent.Id, parts, reason))) return false;
+            Toasts.Show($"Split into {string.Join(", ", made.Select(Ui.ActionLabel))}.");
+            await Done.InvokeAsync();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _error = UserFacingError.For(ex);
+            return false;
+        }
+    }
+}

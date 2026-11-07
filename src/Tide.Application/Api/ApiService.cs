@@ -133,7 +133,8 @@ public sealed class ApiService(IAppDbContextFactory dbs, ICurrentUser user, Dist
             throw new ArgumentException("Give an outcome: " + string.Join(", ", ActionService.OutcomesFor(d.Action.Kind, status)) + ".");
         var note = string.IsNullOrWhiteSpace(update.Note) ? null : update.Note.Trim();
         if (note is { Length: > 2000 }) throw new ArgumentException("A note is at most 2,000 characters.");
-        await actions.SetStatusAsync(d.Action.Id, status, outcome, note, ct);
+        // The note is the reason too, when the move takes a team that warns over its limit.
+        await actions.SetStatusAsync(d.Action.Id, status, outcome, note, note, ct);
         return await ActionAsync(number, callerCeiling, apiBase, ct);
     }
 
