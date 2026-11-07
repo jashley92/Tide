@@ -39,12 +39,6 @@ public sealed class AnalystApp : TideApp
     protected override string? Role => "Analyst";
 }
 
-/// <summary>The app with the dev sign-in holding only the ActionOwner role.</summary>
-public sealed class ActionOwnerApp : TideApp
-{
-    protected override string? Role => "ActionOwner";
-}
-
 /// <summary>Rows an attacker would try to reach by guessing ids, inserted straight into the app's database.</summary>
 internal static class WebSeed
 {

@@ -296,6 +296,13 @@ public sealed class ReaderApp : TideApp
     protected override string? Role => "Reader";
 }
 
+/// <summary>The app with the dev sign-in holding only the ActionOwner role: the team edition and actions, but no triage or
+/// administration.</summary>
+public sealed class ActionOwnerApp : TideApp
+{
+    protected override string? Role => "ActionOwner";
+}
+
 public class ReaderTests(ReaderApp app) : IClassFixture<ReaderApp>
 {
     [Fact]
