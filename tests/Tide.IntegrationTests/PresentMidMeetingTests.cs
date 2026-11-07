@@ -84,6 +84,15 @@ public class PresentMidMeetingTests(MeetingClockApp app) : IClassFixture<Meeting
 
     private static Change Heard(string topic) => new(topic, Robin.UserId, Robin.Name, Guid.NewGuid());
 
+    // A brief service whose saves come from the page's own origin, which its live feed skips: the page hears them only
+    // when a test hands them to it (OnChangedElsewhere). Saved from anywhere else, the feed passes them on by itself after
+    // its pause (LiveChanges.Pause), which on a slow run lands between a test's steps, and the page knows what the test
+    // says it hasn't heard yet.
+    private static BriefService Unheard(AsyncServiceScope scope, Rendered<Present> page, IMeetingsInProgress? meetings = null) =>
+        ActivatorUtilities.CreateInstance<BriefService>(scope.ServiceProvider,
+            page.Scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>(),
+            meetings ?? scope.ServiceProvider.GetRequiredService<IMeetingsInProgress>());
+
     [Fact]
     public async Task HandingOff_WithACardOpenUnderALock_ClosesItOnTheOldPresentersPage()
     {
@@ -201,7 +210,7 @@ public class PresentMidMeetingTests(MeetingClockApp app) : IClassFixture<Meeting
         await using var pat = await Open(app, s.Day);
         await Do(pat, p => p.StartMeeting());
         await using (var scope = SignedIn(app, SignIn.Analyst))
-            await scope.ServiceProvider.GetRequiredService<BriefService>().MarkPresentedAsync(s.Brief);
+            await Unheard(scope, pat).MarkPresentedAsync(s.Brief);
         await pat.Click(p => p.OnPresentKey("last"));
         await Do(pat, p => p.OnChangedElsewhere([Heard(ChangeFeed.Brief(s.Brief))]));
 
@@ -212,8 +221,9 @@ public class PresentMidMeetingTests(MeetingClockApp app) : IClassFixture<Meeting
         {
             var refused = () => scope.ServiceProvider.GetRequiredService<BriefService>().ReopenAsync(s.Brief);
             await refused.Should().ThrowAsync<InvalidOperationException>().WithMessage(BriefService.MeetingLive);
-            await ActivatorUtilities.CreateInstance<BriefService>(scope.ServiceProvider, NoMeetingsInProgress.Instance).ReopenAsync(s.Brief);
+            await Unheard(scope, pat, NoMeetingsInProgress.Instance).ReopenAsync(s.Brief);
         }
+        await Task.Delay(LiveChanges.Pause * 2);   // what a slow run's page would have heard by now, had it been told
         await Do(pat, p => p.EndMeeting());
         Meetings.Get(s.Day).Should().NotBeNull("it isn't ended as if the brief were still presented");
         pat.Scope.ServiceProvider.GetRequiredService<ToastService>().Toasts.Should().Contain(t => t.IsError && t.Message.Contains("put back to ready"));

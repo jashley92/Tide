@@ -143,7 +143,7 @@ the tables and columns are in [data model](../architecture/data-model.md).
 
 | Term | Meaning | Code name |
 |---|---|---|
-| **Meeting note** | A note taken in the meeting by one person, against the article on screen. Each is its author's own. | `MeetingNote`, `MeetingService` |
+| **Meeting note** | A note taken in the meeting by one person, against the article on screen as they began it. Each is its author's own. | `MeetingNote`, `MeetingService` |
 | **Metric** | One opening number, with whether higher is better, worse or neutral, a format, and optional warning and critical thresholds. One value per metric per brief date. | `MetricDefinition`, `MetricValue`, `MetricDirection`, `MetricFormat`, `MetricLevel` (`Normal`, `Warn`, `Critical`) |
 | **Metric group** | A set of metrics shown together: one slide in the meeting, with the chart an administrator picks for it. | `MetricGroup`, `MetricChart` |
 | **Metric import** | One read of a CSV of metric values, by upload or from the *drop folder*. Never replaces a typed value or touches a sent day. | `MetricImport`, `MetricImportService`, `MetricCsv`; [ADR 0014](../decisions/0014-metric-values-from-csv.md) |

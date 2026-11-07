@@ -114,7 +114,7 @@ the team that last had an action of that kind (`ActionService.TeamsByKindAsync`)
 action on the article has its title (`RecommendedActions.Raised`). The priority is the article's, except that
 Awareness, Outreach and Other are never above P2; an article with no priority gives a sweep or a block P2 and the rest P3
 (`ActionService.QuickPriority`). An action raised for a past day's brief records that day in `RaisedOn`, which reports
-count it on; its SLA still runs from when it was recorded.
+count it on (present mode asks as each one is raised, so a meeting run past midnight raises its actions for its own day); its SLA still runs from when it was recorded.
 
 ```mermaid
 sequenceDiagram
