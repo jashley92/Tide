@@ -2181,6 +2181,11 @@ public class BusyGuardChallengeTests(TideApp app) : IClassFixture<TideApp>
         Set(r.Component, "_qaTitle", "");   // no title: the service refuses it
         await r.Click(p => p.QuickAdd(articleId));
         Field<bool>(r.Component, "_busy").Should().BeFalse();
+        r.Scope.ServiceProvider.GetRequiredService<Tide.Web.Services.ToastService>().Toasts.Should().Contain(t => t.IsError, "the add was refused");
+        Set(r.Component, "_qaTitle", "Quick add after a failure");
+        await r.Click(p => p.QuickAdd(articleId));
+        using var check = app.Services.CreateScope();
+        check.ServiceProvider.GetRequiredService<AppDbContext>().Actions.Count(a => a.Title == "Quick add after a failure").Should().Be(1, "the next add works");
     }
 
     [Fact]
@@ -2193,6 +2198,11 @@ public class BusyGuardChallengeTests(TideApp app) : IClassFixture<TideApp>
         Set(r.Component, "_text", "");
         await r.Click(c => c.StartStory());
         Field<bool>(r.Component, "_busy").Should().BeFalse();
+        Set(r.Component, "_text", "Story started after a failure");
+        await r.Click(c => c.StartStory());
+        using var check = app.Services.CreateScope();
+        var story = check.ServiceProvider.GetRequiredService<AppDbContext>().Stories.Single(s => s.Name == "Story started after a failure");
+        check.ServiceProvider.GetRequiredService<AppDbContext>().Articles.Single(a => a.Id == articleId).StoryId.Should().Be(story.Id, "the next start works");
     }
 }
 

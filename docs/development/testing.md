@@ -162,6 +162,12 @@ component over so a test can do what a button would and read the markup after. I
 - Order what you assert on: SQL Server returns rows in no particular order, and ties fall either way. Don't rely on
   case.
 - A test of a rule that counts days takes a clock (`TestClock`, `ManualClock`), never `DateTime.Now`.
+- Don't wait real time to put two things in order (`Task.Delay` between two saves so that one is "later"): the clock
+  ticks in about 15 ms steps on Windows, and a tie falls either way. Move the service's `TestClock` on, or set the
+  stamps explicitly.
+- A test of something only Windows has (robocopy, Task Scheduler, Windows paths) is a `[WindowsFact]`
+  (`tests/Tide.UnitTests`), which is reported as skipped elsewhere. Don't `return` early: on CI's Linux runner that
+  counts as a pass.
 
 ## SQL Server tests
 

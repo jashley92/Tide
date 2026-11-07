@@ -755,13 +755,12 @@ public partial class DeployScriptPowerShellTests
         }
     }
 
-    [Fact]
+    [WindowsFact]
     public void A_path_with_a_space_and_a_trailing_backslash_reaches_robocopy_and_a_scheduled_task_whole()
     {
         // Windows PowerShell 5.1 quoted "D:\TIDE drop\" with the backslash escaping the closing quote: robocopy exited 16,
         // and a task's -Destination took the rest of its command line. The task's line is read here by powershell.exe
         // -File, as Task Scheduler starts it. robocopy and Task Scheduler are Windows only.
-        if (!OperatingSystem.IsWindows()) return;
         foreach (var shell in Shells())
         {
             var r = Run("""
@@ -862,13 +861,12 @@ public partial class DeployScriptPowerShellTests
         }
     }
 
-    [Fact]
+    [WindowsFact]
     public void An_upgrade_points_this_sites_scheduled_tasks_at_the_kept_scripts_and_leaves_another_sites_alone()
     {
         // Stand-ins for the ScheduledTasks cmdlets: the tasks as Backup-Tide.ps1 -Register writes them, with the site
         // path quoted with and without a trailing backslash, another site's task, and one already on the kept copy.
         // Scheduled tasks and their Windows paths are Windows only.
-        if (!OperatingSystem.IsWindows()) return;
         foreach (var shell in Shells())
         {
             var r = Run("""
