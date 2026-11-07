@@ -155,12 +155,15 @@ public sealed partial class ReminderService
     {
         var sent = 0;
         foreach (var team in climbs.Where(c => c.Team.IsExternal).GroupBy(c => c.Action.TeamId))
-            sent += await RemindExternalAsync([.. team], replies, today, ct);
+            sent += await RemindExternalAsync(db, [.. team], replies, today, ct);
         var inside = climbs.Where(c => !c.Team.IsExternal).ToList();
         return inside.Count == 0 ? sent : sent + await RemindInternalAsync(db, inside, today, ct);
     }
 
-    private async Task<int> RemindExternalAsync(List<Climb> climbs, IReadOnlyDictionary<Guid, string?> replies, DateOnly today, CancellationToken ct)
+    // The contact has one reminder about an action a day: one its cadence already sent today is skipped, saying so, and
+    // the step is done all the same.
+    private async Task<int> RemindExternalAsync(IAppDbContext db, List<Climb> climbs, IReadOnlyDictionary<Guid, string?> replies, DateOnly today,
+        CancellationToken ct)
     {
         var team = climbs[0].Team;
         var why = !team.RemindersOn ? $"not reminded: {team.Name}'s reminders are off"
@@ -168,8 +171,17 @@ public sealed partial class ReminderService
         foreach (var c in climbs.Where(c => why is not null || c.Action.NoReminders)) c.Say(why ?? "not reminded: its reminders are off");
         var list = climbs.Where(c => why is null && !c.Action.NoReminders).ToList();
         if (list.Count == 0) return 0;
+        var reminded = await RemindedTodayAsync(db, list.Select(c => c.Action.Id), today, team.ContactEmail!, ct);
+        foreach (var c in list.Where(c => reminded.Contains(c.Action.Id))) c.Say($"reminder skipped: {team.ContactEmail} was already reminded today");
+        list = [.. list.Where(c => !reminded.Contains(c.Action.Id))];
+        if (list.Count == 0) return 0;
         var result = await email.SendAsync(RequestsEmail(EmailTemplateCatalog.ExternalReminder, team, team.ContactEmail!, team.ContactName ?? team.Name,
             InOrder(list), today, replies), ct);
+        if (result.Status == EmailSendStatus.Sent)
+        {
+            AddMarks(db, ContactMark, list.Select(c => ContactKey(c.Action.Id, today, team.ContactEmail!)));
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
         return Went(result, list, $"reminded {team.Name} at {team.ContactEmail}");
     }
 

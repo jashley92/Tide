@@ -1031,7 +1031,9 @@ Records that a reminder or digest was sent, so each scan sends it once. Key `(Ki
 `{action}:{due}`. An external team's reminder is `external-reminder` and `{action}:{due}:{step}`, the step `before` or
 `late-0`, `late-1`… (`ExternalCadence.Step`). A step of the escalation ladder is `escalation` and
 `{action}:{due}:{step}`, the step its offset and what it does (`+7.12`: seven business days after, raise and flag), so
-reordering the steps doesn't run one again. Only a step that ran is marked: one passed over can't be the latest again. `Kind` is nvarchar(32), `Key`
+reordering the steps doesn't run one again. Only a step that ran is marked: one passed over can't be the latest again.
+That an external team's contact was reminded about an action today, by either, is `contact-reminded` and
+`{action}:{day}:{contact}` (the address as a short hash), so the other is skipped that day. `Kind` is nvarchar(32), `Key`
 nvarchar(200), and `SentAtUtc` is indexed. Written by `ReminderService` (`Actions/Reminders.cs`, `EscalationScan.cs`).
 
 ## Hunting, outreach and playbooks

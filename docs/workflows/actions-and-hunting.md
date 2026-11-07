@@ -662,8 +662,11 @@ whoever follows the work: a part's parent's assignee, else the parent's team mai
 assignee, else the mailbox of the team that handed it over, else its creator (`ExternalCadence.ReplyTo`). Each step
 (`before`, `late-0`, `late-1`…) is marked, so it goes once; moving the due date starts over. An action handed from
 another team is marked for the team it's with now, so an external team it's handed to gets the step its last team
-was already sent (it hears only through its reminders), and each team still gets each step once. The internal
-reminders are unchanged.
+was already sent (it hears only through its reminders), and each team still gets each step once. The contact gets one
+reminder about an action a day: when the escalation ladder's *Remind* step already reminded them about it today (the
+organization's day), the cadence's step is skipped, marked done all the same (so it doesn't go the next day instead),
+and the action's history says *Reminder skipped: {contact} was already reminded today.* The internal reminders are
+unchanged.
 
 ## The escalation ladder
 
@@ -679,7 +682,7 @@ reminder does). What it does, from a fixed menu (`EscalationDoes`), any of:
 
 | Does | What happens |
 |---|---|
-| Remind | The owning team is emailed as its reminders go. An external team gets its own reminder email (the *External team reminder* template), unless its reminders or the action's are off or it has no contact email. An internal one: the assignee, else the team mailbox, else its members, with the *Actions due soon* template before the due date and *Overdue actions* after it, leaving out whoever turned that kind off in My notifications. |
+| Remind | The owning team is emailed as its reminders go. An external team gets its own reminder email (the *External team reminder* template), unless its reminders or the action's are off or it has no contact email, or its cadence already reminded the contact about that action today: then the step is skipped and done, its history line saying *reminder skipped: {contact} was already reminded today*. An internal one: the assignee, else the team mailbox, else its members, with the *Actions due soon* template before the due date and *Overdue actions* after it, leaving out whoever turned that kind off in My notifications. |
 | Copy the escalation contact | The team's escalation contact (a name and email on the team, internal or external: Teams & SLA, External teams) gets the *Escalation contact* template listing the team's actions at the step, one email per team. For an external team it has no TIDE link or number; for an internal one each request links to its page. Reply-To is whoever follows the work (`ExternalCadence.ReplyTo`). A team with no escalation contact copies no one, said in the history. |
 | Raise priority | Up one (P3 → P2), never above P1. |
 | Flag | `ActionItem.EscalatedForDue` is set to its due date (and `EscalatedAtUtc` to now): an *Escalated* badge on its row, card and page, the *Escalated* card on Today for its team, its assignee and (for a part) its parent's assignee, and the meeting's overdue list. Flagging one already escalated changes nothing. |
@@ -731,8 +734,8 @@ others. An administrator can run any scan now from Teams & SLA.
 | Brief not ready | its time on business days, before the meeting | the presenting analyst, else the fallback recipients | per day |
 | Presenting next | reminder time, the business day before a stretch | the analyst presenting next | per stretch |
 | Outreach follow-up | reminder time, N business days after an email was marked sent (1 to 30, default 5) | whoever marked it sent | `outreach-follow-up` per email |
-| External team reminders | reminder time, by each external team's cadence | the team's contact email, Reply-To whoever follows the work | `external-reminder` per action, due date and step (and, once handed over, the team it's with) |
-| Escalation ladder | reminder time on business days, by its steps ([above](#the-escalation-ladder)) | the owning team, its escalation contact | `escalation` per action, due date and step |
+| External team reminders | reminder time, by each external team's cadence | the team's contact email, Reply-To whoever follows the work | `external-reminder` per action, due date and step (and, once handed over, the team it's with); `contact-reminded` per action, day and contact |
+| Escalation ladder | reminder time on business days, by its steps ([above](#the-escalation-ladder)) | the owning team, its escalation contact | `escalation` per action, due date and step; `contact-reminded` as above |
 
 Each scan is off until an administrator enables it (`Notifications` section, set on Teams & SLA), except the
 personal digest's offer, which is on and sends nothing until someone chooses a digest. Each batches one email per
@@ -838,6 +841,7 @@ Every one of these follows colleagues' saves live through the `actions` and `act
 | The ladder's run stopped partway (a shutdown, a send that threw) | The steps whose email went are kept (their marks, history and changes), so the next run doesn't email them again; the rest wait for it. |
 | Handing off to an external team | Its assignee is cleared (nobody is on the team); no email: its reminders tell it. |
 | An external team with no contact email | Its reminders have nowhere to go: none is sent until one is given. |
+| The ladder's *Remind* and the team's cadence fall on the same day (by default, two business days before the due date) | The contact gets one email. Whichever runs second is skipped, says so in the history, and is marked done, so it doesn't go the next day. |
 | A split to a team twice, or from a part | Refused: each team once; parts split one level deep. |
 | The escalation ladder turned on with actions already weeks late | Each runs only its latest step that has come (flag, by the defaults); the earlier ones never run. |
 | An escalated action's date moved, even to one still before today | It's no longer escalated; its ladder starts again for the new date at that date's latest step, which may flag it again. |

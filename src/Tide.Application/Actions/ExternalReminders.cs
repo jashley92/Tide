@@ -109,14 +109,60 @@ public sealed partial class ReminderService
         foreach (var batch in due.GroupBy(x => x.Action.TeamId))
         {
             var team = teams[batch.Key];
-            var list = batch.Select(x => x.Action).OrderBy(a => a.DueDate).ThenBy(a => a.Number).ToList();
+            // The escalation ladder's remind step reached the contact about some of them today: those are skipped, and
+            // marked, so the step doesn't go the next day instead.
+            var reminded = await RemindedTodayAsync(db, batch.Select(x => x.Action.Id), today, team.ContactEmail!, ct);
+            var skipped = batch.Where(x => reminded.Contains(x.Action.Id)).ToList();
+            if (skipped.Count > 0) await SkipAsync(db, skipped, team.ContactEmail!);
+            var go = batch.Where(x => !reminded.Contains(x.Action.Id)).ToList();
+            if (go.Count == 0) continue;
+            var list = go.Select(x => x.Action).OrderBy(a => a.DueDate).ThenBy(a => a.Number).ToList();
             var result = await email.SendAsync(RequestsEmail(EmailTemplateCatalog.ExternalReminder, team, team.ContactEmail!, team.ContactName ?? team.Name,
                 list, today, replies), ct);
             if (result.Status != EmailSendStatus.Sent) continue;
             sent++;
-            await MarkAsync(db, ExternalMark, batch.Select(x => x.Key).ToList());
+            AddMarks(db, ContactMark, list.Select(a => ContactKey(a.Id, today, team.ContactEmail!)));
+            await MarkAsync(db, ExternalMark, go.Select(x => x.Key).ToList());
         }
         return sent;
+    }
+
+    // --- one reminder per contact per action per day ------------------------------------------------------------
+
+    // That an external team's contact was reminded about an action today, by its cadence or by the ladder's remind step:
+    // the other is then skipped that day.
+    private const string ContactMark = "contact-reminded";
+
+    // "{action}:{day}:{contact}", the contact's address as a short hash so a long one fits the key.
+    private static string ContactKey(Guid action, DateOnly day, string contact) =>
+        $"{action:N}:{day:yyyy-MM-dd}:{SendOutcome.Fingerprint(contact.Trim().ToLowerInvariant())[..16]}";
+
+    // Which of these actions the contact was reminded about today (the organization's day).
+    private static async Task<HashSet<Guid>> RemindedTodayAsync(IAppDbContext db, IEnumerable<Guid> actions, DateOnly today, string contact,
+        CancellationToken ct)
+    {
+        var keys = actions.Distinct().ToDictionary(id => ContactKey(id, today, contact));
+        var wanted = keys.Keys.ToList();
+        var found = await db.NotificationMarks.AsNoTracking().Where(m => m.Kind == ContactMark && wanted.Contains(m.Key))
+            .Select(m => m.Key).ToListAsync(ct);
+        return [.. found.Select(k => keys[k])];
+    }
+
+    /// <summary>The history line of a reminder skipped because the contact already had one about the action that day.</summary>
+    internal static string SkippedReminder(string contact) => $"Reminder skipped: {contact} was already reminded today.";
+
+    // The cadence's step for these is done though nothing went: marked, with a history line saying why.
+    private static async Task SkipAsync(IAppDbContext db, IReadOnlyList<(ActionItem Action, string Key, string Unhanded)> skipped, string contact)
+    {
+        foreach (var x in skipped)
+            db.ActionEvents.Add(new ActionEvent { ActionId = x.Action.Id, AtUtc = DateTimeOffset.UtcNow, ByName = EscalatedBy, Text = SkippedReminder(contact) });
+        await MarkAsync(db, ExternalMark, skipped.Select(x => x.Key).ToList());
+    }
+
+    // Marks added to the context, saved with its next save.
+    private static void AddMarks(IAppDbContext db, string kind, IEnumerable<string> keys)
+    {
+        foreach (var key in keys) db.NotificationMarks.Add(new NotificationMark { Kind = kind, Key = key, SentAtUtc = DateTimeOffset.UtcNow });
     }
 
     // An email about a team's requests, to someone who may not use TIDE (the external reminder template, and the escalation
