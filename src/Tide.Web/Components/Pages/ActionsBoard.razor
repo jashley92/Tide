@@ -40,89 +40,30 @@
             Items="@([new TabBarItem("List", "", "bi-list-ul", "list"), new TabBarItem("Board", "", "bi-kanban", "board")])" />
 </div>
 
-@* One bar for the list and the board: the words, then a select per filter. They combine, go in the address, and a change
-   starts the list again from its first page. On a phone each takes a share of a row and they wrap. *@
-<div class="tide-filters tide-action-filters">
-    <input type="search" class="tide-maxw-sm form-control form-control-sm" placeholder="Title, A-number or article" aria-label="Search actions" maxlength="200"
-           @bind="_search" @bind:event="oninput" @bind:after="SearchChanged" />
-    <select class="tide-maxw-sm form-select form-select-sm" aria-label="Team" @bind="_teamId" @bind:after="Refilter">
-        <option value="">All teams</option>
-        @foreach (var t in _teams)
+@* One bar for the list and the board (FilterBar): the words, the pills used most, a chip for each other filter and
+   + Filter for the rest. They combine, go in the address as before, and a change starts the list again from its first
+   page. Two pills on one parameter take turns (Overdue or Due this week, Blocked or Tracking); P1–P2 is the priority
+   filter holding exactly those two. The board counts its cards here; the list counts its rows under its search. *@
+<FilterBar Pills="Pills" Filters="Defs" Active="AnyFilter" OnChanged="Refilter" OnClear="ClearFilters"
+           Count="@(_asBoard ? $"{Count} action{(Count == 1 ? "" : "s")}" : null)">
+    <Search>
+        <input type="search" class="tide-maxw-sm form-control form-control-sm" placeholder="Title, A-number or article" aria-label="Search actions" maxlength="200"
+               @bind="_search" @bind:event="oninput" @bind:after="SearchChanged" />
+    </Search>
+    <ChildContent>
+        @if (_active is { } active)
         {
-            <option value="@t.Id">@t.Name</option>
+            <span class="tide-chip @(active.Over ? "tide-chip-over" : "")" title="Open, in progress and blocked actions owned by @active.Team, against its limit">@active.Text</span>
         }
-    </select>
-    <select class="tide-maxw-sm form-select form-select-sm" aria-label="Kind" @bind="_kind" @bind:after="Refilter">
-        <option value="">All kinds</option>
-        @foreach (var k in Enum.GetValues<ActionKind>())
+        @if (!_asBoard)
         {
-            <option value="@k">@ActionService.KindName(k)</option>
+            <div class="form-check form-switch ms-2 mb-0">
+                <input class="form-check-input" type="checkbox" id="group-kind" @bind="_groupByKind" @bind:after="Regroup" />
+                <label class="form-check-label small" for="group-kind">Group by kind</label>
+            </div>
         }
-    </select>
-    <select class="tide-maxw-sm form-select form-select-sm" aria-label="Priority" @bind="_priority" @bind:after="Refilter">
-        <option value="">Any priority</option>
-        @foreach (var p in Enum.GetValues<Priority>())
-        {
-            <option value="@p">@p</option>
-        }
-    </select>
-    @* This week is the organization's business week, its holidays included: today to its last working day. *@
-    <select class="tide-maxw-sm form-select form-select-sm" aria-label="Due" @bind="_due" @bind:after="Refilter">
-        <option value="">Any due date</option>
-        <option value="@ActionDue.Overdue">Overdue</option>
-        <option value="@ActionDue.ThisWeek">Due this week</option>
-        <option value="@ActionDue.None">No due date</option>
-    </select>
-    <select class="tide-maxw-sm form-select form-select-sm" aria-label="Status" @bind="_status" @bind:after="Refilter">
-        <option value="">Any status</option>
-        @foreach (var st in OpenStatuses)
-        {
-            <option value="@st">@ActionService.StatusName(st)</option>
-        }
-    </select>
-    @if (_parentNumber is { } partOf)
-    {
-        <span class="tide-chip">
-            Part of @Ui.ActionLabel(partOf)
-            <button type="button" aria-label="Show every action, not only the parts of @Ui.ActionLabel(partOf)" @onclick="ClearParent"><span class="bi bi-x" aria-hidden="true"></span></button>
-        </span>
-    }
-    @if (_active is { } active)
-    {
-        <span class="tide-chip @(active.Over ? "tide-chip-over" : "")" title="Open, in progress and blocked actions owned by @active.Team, against its limit">@active.Text</span>
-    }
-    @if (_assignee is not null)
-    {
-        <span class="tide-chip">
-            Held by @(_assignee == ActionFilter.Unassigned ? "nobody (the team's)" : Shown.FirstOrDefault()?.AssigneeName ?? "one person")
-            <button type="button" aria-label="Show every holder's" @onclick="ClearAssignee"><span class="bi bi-x" aria-hidden="true"></span></button>
-        </span>
-    }
-    @if (!_asBoard)
-    {
-        <div class="form-check form-switch ms-2">
-            <input class="form-check-input" type="checkbox" id="group-kind" @bind="_groupByKind" @bind:after="Regroup" />
-            <label class="form-check-label small" for="group-kind">Group by kind</label>
-        </div>
-    }
-    @if (_asBoard)
-    {
-        <span class="tide-muted small ms-auto">@Count action@(Count == 1 ? "" : "s")</span>
-    }
-</div>
-
-@if (_rules.Any(r => r.ShowAsFilter))
-{
-    <div class="tide-rule-filters" role="group" aria-label="Filter by rule">
-        @foreach (var r in _rules.Where(r => r.ShowAsFilter))
-        {
-            var on = _ruleId == r.Id;
-            <button type="button" class="tide-rule-chip @Ui.RuleClass(r.Colour) @(on ? "on" : "")" aria-pressed="@Ui.Aria(on)" @onclick="() => SetRule(on ? null : r.Id)">
-                @r.Name <span class="tide-rule-chip-n">@RuleCount(r)</span>
-            </button>
-        }
-    </div>
-}
+    </ChildContent>
+</FilterBar>
 
 @if (_asBoard)
 {
@@ -205,15 +146,11 @@ else
     private bool ByUrgency => _view == ActionView.Mine && !_groupByKind;
     private string ViewName => Views.First(v => v.Item1 == _view).Item2 + " actions";
 
-    // The administrators' card rules, and the one chosen as a filter (?rule=). The list's server filters by it and counts
-    // each rule's matches; the board has every card, so it matches and counts them itself.
+    // The administrators' card rules, and the one chosen as a filter (?rule=), with how many each matches: the list's are
+    // counted by the server, the board's from its cards, once each time it's read.
     private IReadOnlyList<ActionCardRule> _rules = [];
     private Guid? _ruleId;
     private IReadOnlyDictionary<Guid, int> _ruleCounts = new Dictionary<Guid, int>();
-
-    private int RuleCount(ActionCardRule r) => _asBoard
-        ? Unfiltered.Count(c => ActionRules.Matches(r, c, ActionSvc.Today, ActionSvc.Days))
-        : _ruleCounts.GetValueOrDefault(r.Id);
 
     private IReadOnlyList<ActionRow> Matching(IReadOnlyList<ActionRow> rows) =>
         _rules.FirstOrDefault(r => r.Id == _ruleId) is { } rule ? rows.Where(c => ActionRules.Matches(rule, c, ActionSvc.Today, ActionSvc.Days)).ToList() : rows;
@@ -222,7 +159,7 @@ else
     private ActionKind? _kind;
     private string? _assignee;   // from Workload: one holder's open actions
     private string? _search;
-    private Priority? _priority;
+    private IReadOnlyList<Priority> _priorities = [];
     private ActionDue? _due;
     private ActionStatus? _status;
 
@@ -241,11 +178,11 @@ else
     // How long typing in the search box pauses before the actions are searched.
     private readonly TypingPause _typing = new(300);
 
-    private bool Filtered => _search is not null || _priority is not null || _due is not null || _status is not null || _ruleId is not null || _parentNumber is not null;
+    private bool Filtered => _search is not null || _priorities.Count > 0 || _due is not null || _status is not null || _ruleId is not null || _parentNumber is not null;
 
     private string Empty => _view switch
     {
-        _ when _priority is not null || _due is not null || _status is not null || _parentNumber is not null || (_ruleId is not null && !_asBoard) => "No actions match these filters.",
+        _ when _priorities.Count > 0 || _due is not null || _status is not null || _parentNumber is not null || (_ruleId is not null && !_asBoard) => "No actions match these filters.",
         ActionView.Mine => "Nothing assigned to you.",
         ActionView.MyTeams => "Your teams have no open actions (or you're on no team).",
         ActionView.Overdue => "Nothing is overdue.",
@@ -287,6 +224,7 @@ else
         if (Handoff.Take<ActionsBoard>(RendererInfo, PrerenderedState) is { } prerendered && prerendered._applied == FromAddress())
             Adopt(prerendered);
         _teams = await Teams.ListAsync();
+        _teamOptions = TeamOptions(_teams);
         _rules = await RuleSvc.ListAsync();
         SavedLayout ??= await Prefs.GetAsync(UserPreferences.ActionsLayout);
     }
@@ -322,7 +260,7 @@ else
         _assignee = string.IsNullOrWhiteSpace(AssigneeParam) ? null : AssigneeParam;
         _search = string.IsNullOrWhiteSpace(Q) ? null : Q.Trim();
         _kind = EnumNames.OrNull<ActionKind>(KindParam, ignoreCase: true);
-        _priority = EnumNames.OrNull<Priority>(PriorityParam, ignoreCase: true);
+        _priorities = PrioritiesOf(FilterValues.Split(PriorityParam));
         _due = DueFrom(DueParam);
         _status = EnumNames.OrNull<ActionStatus>(StatusParam, ignoreCase: true) is { } st && OpenStatuses.Contains(st) ? st : null;
         _page = TableView.PageFrom(PageParam);
@@ -353,28 +291,94 @@ else
     // Takes what the prerendered page read and chose from its address, so the first interactive draw is the same page.
     private void Adopt(ActionsBoard p)
     {
-        (_teams, _rules, _board, _rows) = (p._teams, p._rules, p._board, p._rows);
+        (_teams, _teamOptions, _rules, _board, _rows) = (p._teams, p._teamOptions, p._rules, p._board, p._rows);
         (_view, _asBoard, _groupByKind, _ruleId, _teamId, _assignee) = (p._view, p._asBoard, p._groupByKind, p._ruleId, p._teamId, p._assignee);
-        (_search, _kind, _priority, _due, _status) = (p._search, p._kind, p._priority, p._due, p._status);
+        (_search, _kind, _priorities, _due, _status) = (p._search, p._kind, p._priorities, p._due, p._status);
         (_parentNumber, _active) = (p._parentNumber, p._active);
         (_total, _page, _groups, _sort, _ruleCounts) = (p._total, p._page, p._groups, p._sort, p._ruleCounts);
         (_loading, _adopted) = (false, true);
     }
 
-    private Task ClearParent()
+    // The priorities in the address ("p1,p2"), each once, in order; a name that isn't one is dropped.
+    private static IReadOnlyList<Priority> PrioritiesOf(IEnumerable<string> values) =>
+        [.. values.Select(v => EnumNames.OrNull<Priority>(v, ignoreCase: true)).OfType<Priority>().Distinct().Order()];
+
+    // The options that don't change: built once. The teams' when they're read.
+    private static readonly IReadOnlyList<FilterOption> KindOptions = FilterOption.ForEnum<ActionKind>(ActionService.KindName);
+    private static readonly IReadOnlyList<FilterOption> PriorityOptions = FilterOption.ForEnum<Priority>();
+    private static readonly IReadOnlyList<FilterOption> DueOptions =
+        [new(nameof(ActionDue.Overdue), "Overdue"), new(nameof(ActionDue.ThisWeek), "This week"), new(nameof(ActionDue.None), "No due date")];
+    private static readonly IReadOnlyList<FilterOption> StatusOptions = [.. OpenStatuses.Select(s => new FilterOption(s.ToString(), ActionService.StatusName(s)))];
+    private IReadOnlyList<FilterOption> _teamOptions = [];
+
+    private static IReadOnlyList<FilterOption> TeamOptions(IEnumerable<Team> teams) => [.. teams.Select(t => new FilterOption(t.Id.ToString(), t.Name))];
+
+    // The pills: presets of the filters used most. Overdue and Due this week are both due=, so they take turns, as do
+    // Blocked and Tracking; P1–P2 is the priority filter holding exactly those two.
+    internal static readonly IReadOnlyList<FilterPill> Pills =
+    [
+        new("overdue", "Overdue", "due", [nameof(ActionDue.Overdue)]),
+        // This week is the organization's business week, its holidays included: today to its last working day.
+        new("week", "Due this week", "due", [nameof(ActionDue.ThisWeek)]) { Title = "Due from today to the last working day of this week" },
+        new("p1p2", "P1–P2", "priority", [nameof(Priority.P1), nameof(Priority.P2)]),
+        new("blocked", "Blocked", "status", [nameof(ActionStatus.Blocked)]),
+        new("tracking", "Tracking", "status", [nameof(ActionStatus.Tracking)]) { Title = "Handed to others and followed until it's done" },
+    ];
+
+    // Every filter, under + Filter. A holder (from Workload) and the parts of one action (from its page) are set by
+    // links, so they're chips to remove, not in the menu.
+    internal IReadOnlyList<FilterDef> Defs
     {
-        _parentNumber = null;
+        get
+        {
+            var defs = new List<FilterDef>
+            {
+                new("team", "Team", FilterKind.Single, v => _teamId = Guid.TryParse(FilterValues.First(v), out var team) ? team : null)
+                {
+                    Options = _teamOptions, Values = FilterValues.Of(_teamId?.ToString()),
+                },
+                new("kind", "Kind", FilterKind.Single, v => _kind = FilterValues.Enum<ActionKind>(v)) { Options = KindOptions, Values = FilterValues.Of(_kind?.ToString()) },
+                new("priority", "Priority", FilterKind.Multi, v => _priorities = PrioritiesOf(v)) { Options = PriorityOptions, Values = [.. _priorities.Select(p => p.ToString())] },
+                new("due", "Due", FilterKind.Single, v => _due = FilterValues.Enum<ActionDue>(v)) { Options = DueOptions, Values = FilterValues.Of(_due?.ToString()) },
+                new("status", "Status", FilterKind.Single, v => _status = FilterValues.Enum<ActionStatus>(v) is { } st && OpenStatuses.Contains(st) ? st : null)
+                {
+                    Options = StatusOptions, Values = FilterValues.Of(_status?.ToString()),
+                },
+            };
+            // An administrator's card rules shown as filters, each with how many it matches (counted as the list or board is read).
+            var rules = _rules.Where(r => r.ShowAsFilter).ToList();
+            if (rules.Count > 0)
+                defs.Add(new("rule", "Rule", FilterKind.Single, v => _ruleId = Guid.TryParse(FilterValues.First(v), out var id) && rules.Any(r => r.Id == id) ? id : null)
+                {
+                    Options = [.. rules.Select(r => new FilterOption(r.Id.ToString(), $"{r.Name} ({_ruleCounts.GetValueOrDefault(r.Id)})"))],
+                    Values = FilterValues.Of(_ruleId?.ToString()),
+                    ChipText = rules.FirstOrDefault(r => r.Id == _ruleId) is { } rule ? "Rule: " + rule.Name : null,
+                });
+            if (_assignee is { } holder)
+                defs.Add(new("assignee", "Held by", FilterKind.Single, _ => _assignee = null)
+                {
+                    InMenu = false, Values = [holder],
+                    ChipText = "Held by " + (holder == ActionFilter.Unassigned ? "nobody (the team's)" : Shown.FirstOrDefault()?.AssigneeName ?? "one person"),
+                });
+            if (_parentNumber is { } parent)
+                defs.Add(new("parent", "Part of", FilterKind.Single, _ => _parentNumber = null) { InMenu = false, Values = [parent.ToString()], ChipText = "Part of " + Ui.ActionLabel(parent) });
+            return defs;
+        }
+    }
+
+    // Clear shows while anything narrows the list: a pill, a filter, the words.
+    private bool AnyFilter => Filtered || _teamId is not null || _kind is not null || _assignee is not null;
+
+    // Clear: every filter and the words; the view, layout and grouping stay.
+    internal Task ClearFilters()
+    {
+        (_search, _teamId, _kind, _assignee, _due, _status, _ruleId, _parentNumber) = (null, null, null, null, null, null, null, null);
+        _priorities = [];
         return Refilter();
     }
 
-    private Task ClearAssignee()
-    {
-        _assignee = null;
-        return Refilter();
-    }
-
-    // Another team, kind, priority, due date, status or holder: read from the list's first page, and the address says so.
-    private async Task Refilter()
+    // A filter changed (the bar, Clear, the words): read from the list's first page, and the address says so.
+    internal async Task Refilter()
     {
         _page = 1;
         await Load();
@@ -431,7 +435,7 @@ else
         var layout = _asBoard ? UserPreferences.Board : UserPreferences.List;
         var view = _view.ToString().ToLowerInvariant();
         var group = !_asBoard && _groupByKind ? "kind" : null;
-        var (kind, priority, status) = (_kind?.ToString().ToLowerInvariant(), _priority?.ToString().ToLowerInvariant(), _status?.ToString().ToLowerInvariant());
+        var (kind, priority, status) = (_kind?.ToString().ToLowerInvariant(), FilterValues.Join(_priorities.Select(p => p.ToString().ToLowerInvariant())), _status?.ToString().ToLowerInvariant());
         var page = !_asBoard && _page > 1 ? _page.ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
         _applied = new Address(view, _teamId, _assignee, layout, _ruleId, group, _search, kind, priority, DueKey(_due), status, page, _parentNumber);
         Nav.NavigateTo(Nav.GetUriWithQueryParameters("actions", new Dictionary<string, object?>
@@ -439,15 +443,6 @@ else
             ["view"] = view, ["layout"] = layout, ["group"] = group, ["rule"] = _ruleId, ["team"] = _teamId, ["assignee"] = _assignee,
             ["q"] = _search, ["kind"] = kind, ["priority"] = priority, ["due"] = DueKey(_due), ["status"] = status, ["page"] = page, ["parent"] = _parentNumber,
         }), replace: true);
-    }
-
-    private async Task SetRule(Guid? id)
-    {
-        _ruleId = id;
-        _page = 1;
-        // The board matches its cards itself; the list asks the server for the rule's actions.
-        if (!_asBoard) await Load();
-        Remember();
     }
 
     // A new sort from the list's headings, or "Clear the filter" from its empty state: from the first page.
@@ -471,7 +466,7 @@ else
 
     private ActionFilter Filter() => new ActionFilter(_view, _teamId, _kind, AssigneeId: _assignee)
     {
-        Search = _search, Priority = _priority, Due = _due, Status = _status, ParentNumber = _parentNumber,
+        Search = _search, Priorities = _priorities, Due = _due, Status = _status, ParentNumber = _parentNumber,
     };
 
     private ActionSort SortOf(TableSort? sort) => sort?.Key switch
@@ -485,7 +480,7 @@ else
         _ => _view == ActionView.Closed ? ActionSort.Closed : ActionSort.Due,
     };
 
-    // Reads the board, or the list's page (with the rule chips' counts).
+    // Reads the board, or the list's page (with each rule filter's count).
     private async Task Fetch()
     {
         var filter = Filter();
@@ -496,6 +491,7 @@ else
             var board = ActionSvc.BoardAsync(filter, _closedDays);
             await Task.WhenAll(active, board);
             (_board, _active) = (board.Result, active.Result);
+            _ruleCounts = _rules.Where(r => r.ShowAsFilter).ToDictionary(r => r.Id, r => _board.Cards.Count(c => ActionRules.Matches(r, c, ActionSvc.Today, ActionSvc.Days)));
             return;
         }
         var grouping = _groupByKind ? ActionGrouping.Kind : ByUrgency ? ActionGrouping.Urgency : ActionGrouping.None;

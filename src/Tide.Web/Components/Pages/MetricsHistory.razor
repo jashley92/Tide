@@ -83,15 +83,11 @@ else
         <h2>Values <span class="tide-count tide-muted fw-normal">(@shownValues.Count)</span></h2>
         @if (columns.Count > 1)
         {
-            @* Which groups' columns show; kept in the address, so a reload or a shared link shows the same ones. *@
-            <div class="tide-mh-filter" role="group" aria-label="Groups shown">
-                <button type="button" class="tide-chip tide-chip-pick @(shown.Count == columns.Count ? "selected" : "")" aria-pressed="@Ui.Aria(shown.Count == columns.Count)" @onclick="ShowAll">All groups</button>
-                @foreach (var g in columns)
-                {
-                    var on = shown.Count != columns.Count && shown.Contains(g);
-                    <button type="button" class="tide-chip tide-chip-pick @(on ? "selected" : "")" aria-pressed="@Ui.Aria(on)" @onclick="() => Pick(columns, g.Key)">@g.Name <span class="tide-muted">@g.Metrics.Count</span></button>
-                }
-            </div>
+            @* Which groups' columns show: a pill per group (none on is every group), Clear for all of them again. Kept in the
+               address, so a reload or a shared link shows the same ones. *@
+            <FilterBar PillsLabel="Groups shown" Active="@(shown.Count != columns.Count)" OnChanged="StateHasChanged" OnClear="ShowAll"
+                       Pills="@([.. columns.Select(g => new FilterPill(g.Key, $"{g.Name} ({g.Metrics.Count})", g.Key, FilterValues.Of(true)))])"
+                       Filters="@([.. columns.Select(g => new FilterDef(g.Key, g.Name, FilterKind.Single, _ => Pick(columns, g.Key)) { InMenu = false, Values = FilterValues.Of(shown.Count != columns.Count && shown.Contains(g)) })])" />
         }
         @{ var byDay = shownValues.ToLookup(v => v.BriefDate); var dates = byDay.Select(g => g.Key).OrderDescending().ToList(); }
         @if (dates.Count == 0)

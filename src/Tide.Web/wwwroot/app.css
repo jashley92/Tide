@@ -351,20 +351,12 @@ mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); p
 .tide-dt-clear:hover { color: var(--tide-text); background: var(--tide-surface-2); }
 .tide-dt-clear:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 0; }
 .tide-dt-count { margin-left: auto; color: var(--tide-text-muted); font-size: var(--tide-text-sm); }
-/* The article list's further filters (dates, assessment, tag, ATT&CK), and a chip for each one in force. */
-.tide-article-filters { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--tide-width-xs), 1fr)); gap: var(--tide-space-2) var(--tide-space-3);
-    margin: 0 0 var(--tide-space-3); padding: var(--tide-space-3); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-md); min-width: 0; }
-.tide-article-filters[hidden] { display: none; }
-.tide-article-filter-help { grid-column: 1 / -1; margin: 0; }
 /* Under a row's title, with an ATT&CK filter: the article's techniques it matched. */
 .tide-row-techniques { margin-top: var(--tide-space-1); }
 .tide-row-techniques .tide-chip { font-size: var(--tide-text-xs); margin-bottom: 0; border-radius: var(--tide-radius-sm); }
-.tide-filter-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--tide-space-2); margin-bottom: var(--tide-space-3); }
-.tide-filter-chips .tide-chip { margin: 0 0 var(--tide-space-1); }
 .tide-chip-remove { display: inline-flex; padding: 0 var(--tide-space-1); margin-right: calc(-1 * var(--tide-space-1)); color: inherit; border-radius: var(--tide-radius-pill); font-size: .7rem; text-decoration: none; }
 .tide-chip-remove:hover { background: var(--tide-surface-2); color: var(--tide-text); }
 .tide-chip-remove:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
-.tide-filter-clear { margin-bottom: var(--tide-space-1); }
 .tide-dt-scroll { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch;
     background: linear-gradient(to right, var(--tide-surface) 30%, transparent) left center / 2rem 100% no-repeat local,
         linear-gradient(to left, var(--tide-surface) 30%, transparent) right center / 2rem 100% no-repeat local,
@@ -1101,9 +1093,42 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 
 /* ---- Actions: SLA and status pills, board, detail ---- */
 .tide-action-num { font-family: var(--tide-font-data); font-weight: var(--tide-weight-semibold); color: var(--tide-text-muted); white-space: nowrap; }
-.tide-filters { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-bottom: .9rem; }
-/* On a phone a filter bar's boxes and selects share the rows, two or so to a row, rather than each its own width. */
-@media (max-width: 640px) { .tide-filters > .form-select, .tide-filters > .form-control { flex: 1 1 9rem; max-width: none; width: auto; } }
+/* The filter bar (FilterBar): the words, quick pills (pickable chips, the accent tint while on), a chip per other filter,
+   + Filter (a popover, as the account menu is), the count and Clear. */
+.tide-filterbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); min-width: 0; margin-bottom: var(--tide-space-3); }
+.tide-dt-bar .tide-filterbar { flex: 1 1 auto; margin-bottom: 0; }
+.tide-filterbar-pills { display: flex; flex-wrap: wrap; gap: var(--tide-space-1); min-width: 0; }
+.tide-filterbar .tide-chip { margin: 0; white-space: nowrap; }
+.tide-chip-pick:focus-visible, .tide-filter-add:focus-visible, .tide-chip-edit:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
+.tide-chip-pick:disabled { opacity: .55; cursor: not-allowed; }
+.tide-chip .tide-chip-edit { opacity: 1; font: inherit; border-radius: var(--tide-radius-pill); }
+.tide-chip .tide-chip-edit:hover { text-decoration: underline; }
+.tide-chip button.tide-chip-remove { opacity: 1; }
+.tide-filter-menu { position: relative; }
+.tide-filter-add { display: inline-flex; align-items: center; gap: .25rem; padding: .16rem .55rem; border: 1px dashed var(--tide-border-strong); border-radius: var(--tide-radius-pill);
+    background: transparent; color: var(--tide-text-muted); font-size: .8rem; white-space: nowrap; }
+.tide-filter-add:hover, .tide-filter-add[aria-expanded="true"] { color: var(--tide-text); border-color: var(--tide-accent); }
+.tide-filter-item { display: flex; align-items: center; gap: .5rem; width: 100%; padding: .4rem .55rem; border: 0; border-radius: var(--tide-radius-md);
+    background: transparent; color: var(--tide-text); font-size: .88rem; text-align: left; }
+.tide-filter-item:hover, .tide-filter-item:focus-visible { background: var(--tide-surface-2); outline: none; box-shadow: inset 2px 0 0 var(--tide-accent); }
+.tide-filter-item-now { margin-left: auto; max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tide-text-muted); font-size: .78rem; }
+.tide-filter-item-go { margin-left: auto; color: var(--tide-text-muted); font-size: .75rem; }
+.tide-filter-item-now + .tide-filter-item-go { margin-left: 0; }
+.tide-filter-back { color: var(--tide-text-muted); font-weight: var(--tide-weight-semibold); border-bottom: 1px solid var(--tide-border); border-radius: var(--tide-radius-md) var(--tide-radius-md) 0 0; margin-bottom: .2rem; }
+.tide-filter-tick { width: 1rem; flex: 0 0 auto; color: var(--tide-accent-text); }
+.tide-filter-group { padding: .45rem .55rem .15rem; color: var(--tide-text-muted); font-size: var(--tide-text-xs); font-weight: var(--tide-weight-semibold); }
+.tide-filter-remove { color: var(--tide-text-muted); }
+.tide-filter-pop { max-height: min(26rem, 70vh); overflow-y: auto; }
+.tide-filter-pop form { display: grid; gap: var(--tide-space-2); }
+.tide-filter-hint { margin: 0; color: var(--tide-text-muted); font-size: var(--tide-text-xs); }
+.tide-filter-foot { display: flex; justify-content: flex-end; align-items: center; gap: var(--tide-space-2); padding: .3rem .2rem .1rem; }
+.tide-filterbar-clear { padding: 0; font-size: var(--tide-text-sm); }
+/* On a phone the search box takes its own row, the pills scroll sideways in one, and the menu rises from the bottom. */
+@media (max-width: 640px) {
+    .tide-filterbar > .form-control, .tide-filterbar > .form-select { flex: 1 1 100%; max-width: none; }
+    .tide-filterbar-pills { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; padding-bottom: 2px; scrollbar-width: thin; }
+    .tide-popover.tide-filter-pop { position: fixed; top: auto; left: .75rem; right: .75rem; bottom: .75rem; width: auto; max-height: 70vh; }
+}
 .tide-kanban { display: grid; grid-template-columns: repeat(7, minmax(15rem, 1fr)); gap: .75rem; overflow-x: auto; padding-bottom: .5rem; align-items: start; }
 .tide-kcol { background: var(--tide-surface-2); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl); padding: .6rem; min-height: 12rem; }
 .tide-kcol.over { border-color: var(--tide-accent); background: var(--tide-drop); box-shadow: inset 0 0 0 1px var(--tide-accent); }
@@ -1188,10 +1213,6 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-kcard.tide-ruled { border-left: 4px solid var(--rule); }
 .tide-table tr.tide-ruled > td:first-child { box-shadow: inset 4px 0 0 var(--rule); }
 .tide-rule-label { font-size: .72rem; font-weight: var(--tide-weight-semibold); padding: .08rem .45rem; border-radius: var(--tide-radius-pill); background: var(--rule-soft); color: var(--rule); white-space: nowrap; }
-.tide-rule-filters { display: flex; flex-wrap: wrap; gap: .4rem; margin: -.4rem 0 .9rem; }
-.tide-rule-chip { display: inline-flex; align-items: center; gap: .35rem; font-size: .8rem; padding: .18rem .6rem; border-radius: var(--tide-radius-pill); border: 1px solid var(--rule); background: var(--tide-surface); color: var(--rule); font-weight: var(--tide-weight-semibold); }
-.tide-rule-chip.on { background: var(--rule); color: var(--tide-surface); }
-.tide-rule-chip-n { font-weight: var(--tide-weight-regular); opacity: .85; }
 .tide-meta-grid { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: .45rem .8rem; font-size: .9rem; }
 .tide-meta-grid dt { color: var(--tide-text-muted); font-weight: var(--tide-weight-medium); }
 .tide-meta-grid dd { margin: 0; }
@@ -1421,10 +1442,14 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-profile-btn:hover .tide-avatar { box-shadow: 0 0 0 3px var(--tide-focus); }
 .tide-profile-btn:focus-visible { outline: 2px solid var(--tide-accent); outline-offset: 2px; }
 .tide-avatar-lg { width: 2.6rem; height: 2.6rem; font-size: .95rem; flex: 0 0 auto; }
-.tide-profile-backdrop { position: fixed; inset: 0; z-index: 1090; }
-.tide-profile-panel { position: absolute; top: calc(100% + .5rem); right: 0; z-index: 1091; width: min(19rem, calc(100vw - 1.5rem));
+/* A popover panel under its button, over a backdrop that closes it on a click: the account menu and the filter bar's
+   + Filter. The placement says which edge it lines up with. */
+.tide-popover-backdrop { position: fixed; inset: 0; z-index: 1090; }
+.tide-popover { position: absolute; top: calc(100% + .5rem); z-index: 1091; width: min(19rem, calc(100vw - 1.5rem));
     background: var(--tide-surface); color: var(--tide-text); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl);
     box-shadow: 0 8px 24px var(--tide-shadow); padding: .4rem; }
+.tide-popover-end { right: 0; }
+.tide-popover-start { left: 0; }
 .tide-profile-id { display: flex; align-items: center; gap: .7rem; padding: .5rem .55rem .6rem; }
 .tide-profile-id-text { min-width: 0; }
 .tide-profile-name { font-weight: var(--tide-weight-semibold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1921,8 +1946,6 @@ button.tide-mentry-chip:focus-visible { outline: 2px solid var(--tide-focus-ring
 
 /* The metric history table with many metrics (MetricsHistory): groups over their columns, a line between groups, and
    the headings and the Day column kept in view while the table scrolls inside its own box. */
-.tide-mh-filter { display: flex; flex-wrap: wrap; gap: var(--tide-space-1); margin-bottom: var(--tide-space-3); }
-.tide-mh-filter .tide-chip { margin: 0; font: inherit; font-size: var(--tide-text-sm); }
 .tide-mh-scroll { overflow: auto; max-height: calc(100vh - 10rem); position: relative; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-md); }
 .tide-mh-scroll:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
 .tide-mh-scroll .tide-mh-table { display: table; width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; }

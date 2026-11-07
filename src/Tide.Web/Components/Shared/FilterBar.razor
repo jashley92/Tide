@@ -1,0 +1,268 @@
+@inject IJSRuntime JS
+@* Every filtered list's one filter bar (EP-87): the list's search box, its quick pills (presets of its filters, one click
+   on or off), a chip for each other filter in force (choose it to change it, ✕ to remove it), "+ Filter" for the rest,
+   then the count and Clear. The page keeps its filters and its address as before: each filter says what it's set to and
+   how to set it (FilterDef.Apply), and the bar calls the page's OnChanged after. A pill that's on stands for its
+   filter, so that filter's chip isn't shown. On a page whose filters are links (Articles, the audit log) the chips and
+   Clear are links.
+   The menu from the keyboard: Enter, Space or the down arrow on + Filter opens it with focus on its first choice, the
+   arrows and Home/End move (filters.js), Esc closes it and focus goes back to + Filter, and Tab leaves it closed. *@
+<div class="tide-filterbar">
+    @Search
+    @if (Pills.Count > 0)
+    {
+        <div class="tide-filterbar-pills" role="group" aria-label="@PillsLabel">
+            @foreach (var p in Pills)
+            {
+                var on = p.OnFor(Filter(p.FilterKey));
+                <button type="button" class="tide-chip tide-chip-pick @(on ? "selected" : "")" aria-pressed="@Ui.Aria(on)" title="@p.Title" disabled="@p.Disabled"
+                        @onclick="() => Press(p)">@if (on) { <span class="bi bi-check2" aria-hidden="true"></span> }@p.Label</button>
+            }
+        </div>
+    }
+    @foreach (var c in ChipsShown)
+    {
+        <span class="tide-chip">
+            @if (Filter(c.Key) is { InMenu: true } def)
+            {
+                <button type="button" class="tide-chip-edit" title="Change this filter" aria-haspopup="menu" @onclick="() => Open(def)">@c.Text</button>
+            }
+            else
+            {
+                <span>@c.Text</span>
+            }
+            @if (c.RemoveHref is { } href)
+            {
+                <a href="@href" class="tide-chip-remove" aria-label="@($"Remove filter {c.Text}")" title="Remove"><span class="bi bi-x-lg" aria-hidden="true"></span></a>
+            }
+            else
+            {
+                <button type="button" class="tide-chip-remove" aria-label="@($"Remove filter {c.Text}")" title="Remove" @onclick="() => Remove(c.Key)"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+            }
+        </span>
+    }
+    @if (InMenu.Count > 0)
+    {
+        <div class="tide-filter-menu">
+            <button type="button" class="tide-filter-add" aria-haspopup="menu" aria-expanded="@Ui.Aria(_open)" aria-controls="@(_open ? _id : null)"
+                    @ref="_trigger" @onclick="Toggle"><span class="bi bi-plus-lg" aria-hidden="true"></span> @MenuLabel</button>
+            @if (_open)
+            {
+                <div class="tide-popover-backdrop" @onclick="() => Close(false)"></div>
+                <div class="tide-popover tide-popover-start tide-filter-pop" id="@_id" @ref="_pop" @onkeydown="Key">
+                    @if (_step is null)
+                    {
+                        <div role="menu" aria-label="Add a filter">
+                            @foreach (var f in InMenu)
+                            {
+                                <button type="button" role="menuitem" tabindex="-1" class="tide-filter-item" @onclick="() => Show(f)">
+                                    <span>@f.Label</span>
+                                    @if (f.IsSet) { <span class="tide-filter-item-now">@f.Shown</span> }
+                                    <span class="bi bi-chevron-right tide-filter-item-go" aria-hidden="true"></span>
+                                </button>
+                            }
+                        </div>
+                    }
+                    else if (_step.Kind == FilterKind.Text)
+                    {
+                        <form role="dialog" aria-label="@_step.Label" @onsubmit="ApplyText" @onsubmit:preventDefault="true">
+                            @Back
+                            <label class="visually-hidden" for="@(_id)-text">@_step.Label</label>
+                            <input id="@(_id)-text" class="form-control form-control-sm" type="@_step.InputType" maxlength="200" autocomplete="off"
+                                   placeholder="@_step.Placeholder" list="@(_step.Suggestions.Count > 0 ? _id + "-list" : null)"
+                                   aria-describedby="@(_step.Hint is null ? null : _id + "-hint")" @bind="_text" />
+                            @if (_step.Suggestions.Count > 0)
+                            {
+                                <datalist id="@(_id)-list">
+                                    @foreach (var s in _step.Suggestions) { <option value="@s.Value">@s.Label</option> }
+                                </datalist>
+                            }
+                            @if (_step.Hint is { } hint) { <p id="@(_id)-hint" class="tide-filter-hint">@hint</p> }
+                            <div class="tide-filter-foot">
+                                @if (_step.IsSet) { <button type="button" class="btn btn-link btn-sm" @onclick="() => Set(_step, [])">Remove</button> }
+                                <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+                            </div>
+                        </form>
+                    }
+                    else
+                    {
+                        <div role="menu" aria-label="@_step.Label">
+                            @Back
+                            @foreach (var g in _step.Options.GroupBy(o => o.Group))
+                            {
+                                @if (g.Key is { } group) { <div class="tide-filter-group" role="presentation">@group</div> }
+                                @foreach (var o in g)
+                                {
+                                    var on = _step.Kind == FilterKind.Multi ? _draft.Contains(o.Value) : _step.Values.Contains(o.Value);
+                                    <button type="button" role="@(_step.Kind == FilterKind.Multi ? "menuitemcheckbox" : "menuitemradio")" tabindex="-1" aria-checked="@Ui.Aria(on)"
+                                            class="tide-filter-item tide-filter-opt" @onclick="() => Pick(o.Value)">
+                                        <span class="bi @(on ? "bi-check2" : "") tide-filter-tick" aria-hidden="true"></span><span>@o.Label</span>
+                                    </button>
+                                }
+                            }
+                            @if (_step.Kind == FilterKind.Multi)
+                            {
+                                <div class="tide-filter-foot" role="presentation">
+                                    <button type="button" role="menuitem" tabindex="-1" class="btn btn-primary btn-sm" @onclick="ApplyDraft">Apply</button>
+                                </div>
+                            }
+                            else if (_step.IsSet)
+                            {
+                                <button type="button" role="menuitem" tabindex="-1" class="tide-filter-item tide-filter-remove" @onclick="() => Set(_step, [])">Remove this filter</button>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+    @ChildContent
+    @if (Count is not null)
+    {
+        <span class="tide-dt-count" role="status">@Count</span>
+    }
+    @if (Active)
+    {
+        @if (ClearHref is { } clear)
+        {
+            <a href="@clear" class="tide-filterbar-clear small">Clear</a>
+        }
+        else
+        {
+            <button type="button" class="btn btn-link btn-sm tide-filterbar-clear" @onclick="() => OnClear.InvokeAsync()">Clear</button>
+        }
+    }
+</div>
+
+@code {
+    /// <summary>The list's search box, first in the bar (the page's own, so it searches as it always has).</summary>
+    [Parameter] public RenderFragment? Search { get; set; }
+
+    /// <summary>Presets of <see cref="Filters"/>, a click each.</summary>
+    [Parameter] public IReadOnlyList<FilterPill> Pills { get; set; } = [];
+
+    /// <summary>Every filter: under + Filter (unless <see cref="FilterDef.InMenu"/> is false), a chip while set.</summary>
+    [Parameter] public IReadOnlyList<FilterDef> Filters { get; set; } = [];
+
+    /// <summary>The chips, when the page words them itself (with links to remove them); otherwise one per filter set.</summary>
+    [Parameter] public IReadOnlyList<FilterChipView>? Chips { get; set; }
+
+    /// <summary>The list's own controls that aren't filters (an order, a switch), after the filters.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>How many the list holds ("8 actions"), said to screen readers as it changes. None when the list counts itself.</summary>
+    [Parameter] public string? Count { get; set; }
+
+    /// <summary>Whether anything narrows the list, so Clear shows.</summary>
+    [Parameter] public bool Active { get; set; }
+
+    /// <summary>Clear as a link to the list without its filters; otherwise a button that calls <see cref="OnClear"/>.</summary>
+    [Parameter] public string? ClearHref { get; set; }
+
+    [Parameter] public string PillsLabel { get; set; } = "Quick filters";
+    [Parameter] public string MenuLabel { get; set; } = "Filter";
+
+    /// <summary>After a filter was applied: the page's one refilter step (back to page 1, read again, the address). A
+    /// page whose filters navigate needs none.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    [Parameter] public EventCallback OnClear { get; set; }
+
+    private readonly string _id = "filters-" + Guid.NewGuid().ToString("N")[..8];
+    private ElementReference _trigger, _pop;
+    private bool _open, _focusPop, _focusTrigger;
+    private FilterDef? _step;               // the filter whose options are shown; null for the list of filters
+    private HashSet<string> _draft = [];    // a multi filter's ticks, applied together
+    private string? _text;
+
+    private List<FilterDef> InMenu => Filters.Where(f => f.InMenu).ToList();
+
+    private FilterDef? Filter(string key) => Filters.FirstOrDefault(f => f.Key == key);
+
+    // A pill that's on says what its filter is set to, so that filter's chip isn't shown too.
+    private IReadOnlyList<FilterChipView> ChipsShown =>
+        (Chips ?? FilterValues.Chips(Filters)).Where(c => !Pills.Any(p => p.FilterKey == c.Key && p.OnFor(Filter(c.Key)))).ToList();
+
+    private RenderFragment Back => @<button type="button" role="menuitem" tabindex="-1" class="tide-filter-item tide-filter-back" @onclick="() => Show(null)">
+        <span class="bi bi-chevron-left" aria-hidden="true"></span><span>@_step?.Label</span></button>;
+
+    internal bool IsOpen => _open;
+    internal FilterDef? Step => _step;
+
+    internal void Toggle()
+    {
+        if (_open) Close(true);
+        else Open(null);
+    }
+
+    /// <summary>Opens the menu: at the list of filters, or at one filter's options (its chip was chosen).</summary>
+    internal void Open(FilterDef? step)
+    {
+        _open = true;
+        Show(step);
+    }
+
+    /// <summary>Shows a filter's options, or with none the list of filters.</summary>
+    internal void Show(FilterDef? step)
+    {
+        _step = step;
+        _draft = step is null ? [] : [.. step.Values];
+        _text = step?.Kind == FilterKind.Text ? step.Values.FirstOrDefault() : null;
+        _focusPop = true;
+    }
+
+    internal Task Press(FilterPill p) => Filter(p.FilterKey) is { } f ? Set(f, p.Pressed(f)) : Task.CompletedTask;
+
+    internal Task Remove(string key) => Filter(key) is { } f ? Set(f, []) : Task.CompletedTask;
+
+    // One of a single filter's options applies it; a multi filter's ticks wait for Apply.
+    internal Task Pick(string value)
+    {
+        if (_step is not { } f) return Task.CompletedTask;
+        if (f.Kind != FilterKind.Multi) return Set(f, [value]);
+        if (!_draft.Remove(value)) _draft.Add(value);
+        return Task.CompletedTask;
+    }
+
+    // Applied in the options' order, so the chip and the address read the same each time.
+    internal Task ApplyDraft() =>
+        _step is { } f ? Set(f, f.Options.Select(o => o.Value).Where(_draft.Contains).ToList()) : Task.CompletedTask;
+
+    internal Task ApplyText() =>
+        _step is { } f ? Set(f, string.IsNullOrWhiteSpace(_text) ? [] : [_text.Trim()]) : Task.CompletedTask;
+
+    private Task Set(FilterDef f, IReadOnlyList<string> values)
+    {
+        if (_open) Close(true);
+        f.Apply(values);
+        return OnChanged.InvokeAsync();
+    }
+
+    private void Close(bool refocus)
+    {
+        _open = false;
+        _step = null;
+        _focusTrigger = refocus;
+    }
+
+    internal void Key(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") Close(true);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusPop && _open)
+        {
+            _focusPop = false;
+            try { await JS.InvokeVoidAsync("tideFilters.focusIn", _pop); }
+            catch (JSDisconnectedException) { }
+            catch (JSException) { /* closed meanwhile */ }
+        }
+        if (_focusTrigger)
+        {
+            _focusTrigger = false;
+            await _trigger.TryFocusAsync(orGone: true);
+        }
+    }
+}

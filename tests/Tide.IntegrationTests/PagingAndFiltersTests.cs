@@ -136,15 +136,15 @@ public class PagingAndFiltersServiceTests : IDisposable
         async Task<IEnumerable<string>> Board(ActionFilter f) => (await svc.BoardAsync(f)).Cards.Select(r => r.Title);
         var open = new ActionFilter(ActionView.Open);
 
-        (await List(open with { Priority = Priority.P2 })).Should().BeEquivalentTo("today P2", "next month P2");
+        (await List(open with { Priorities = [Priority.P2] })).Should().BeEquivalentTo("today P2", "next month P2");
         (await List(open with { Status = ActionStatus.Blocked })).Should().Equal("week end P3");
         (await List(open with { Due = ActionDue.Overdue })).Should().Equal("late P1");
         (await List(open with { Due = ActionDue.ThisWeek })).Should().BeEquivalentTo(["today P2", "week end P3"], "today to the business week's last working day");
         (await List(open with { Due = ActionDue.None })).Should().Equal("undated P4");
-        (await List(open with { Priority = Priority.P2, Due = ActionDue.ThisWeek })).Should().Equal("today P2");
-        (await List(open with { Priority = Priority.P2, Status = ActionStatus.Blocked })).Should().BeEmpty();
+        (await List(open with { Priorities = [Priority.P2], Due = ActionDue.ThisWeek })).Should().Equal("today P2");
+        (await List(open with { Priorities = [Priority.P2], Status = ActionStatus.Blocked })).Should().BeEmpty();
 
-        (await Board(open with { Priority = Priority.P1 })).Should().BeEquivalentTo(["late P1", "closed late"], "the board's Done column is filtered too");
+        (await Board(open with { Priorities = [Priority.P1] })).Should().BeEquivalentTo(["late P1", "closed late"], "the board's Done column is filtered too");
         (await Board(open with { Due = ActionDue.Overdue })).Should().Equal(["late P1"], "a closed action is never overdue");
         (await Board(open with { Search = "week end" })).Should().Equal("week end P3");
     }
@@ -471,12 +471,13 @@ public partial class PagingAndFiltersPageTests(TideApp app) : IClassFixture<Tide
 
         var kev = await Page("&cve=kev");
         kev.Should().Contain("Kev story c").And.Contain("Zorbulon exploited c").And.NotContain("Plain cve story c").And.Contain("2 items");
-        kev.Should().Contain("<option value=\"Kev\" selected>", "the select shows the filter the address holds");
+        FilterBarHtml.Pressed(kev, "KEV").Should().BeTrue("the pill shows the filter the address holds");
+        FilterBarHtml.Pressed(kev, "Names a CVE").Should().BeFalse("KEV and Names a CVE are one filter, so they take turns");
         var any = await Page("&cve=any");
         any.Should().Contain("Plain cve story c").And.NotContain("No cve story c").And.Contain("3 items");
         var named = await Page("&named=true");
         named.Should().Contain("Zorbulon flaw c").And.Contain("Zorbulon exploited c").And.NotContain("Kev story c");
-        named.Should().Contain("id=\"named-only\" checked");
+        FilterBarHtml.Pressed(named, "We run it").Should().BeTrue();
         var both = await Page("&cve=kev&named=true");
         both.Should().Contain("Zorbulon exploited c").And.NotContain("Zorbulon flaw c").And.Contain("1 item");
         Triage.Address(FeedItemStatus.New, null, null, false, null, 0, page: 3, cves: InboxCves.Kev, named: true, older: true)
@@ -585,7 +586,7 @@ public partial class PagingAndFiltersPageTests(TideApp app) : IClassFixture<Tide
         html.Should().NotContain("Filter actions", "one search box serves the list and the board");
 
         (WebUtility.HtmlDecode(await (await ComponentHarness.RenderAsync<ActionsBoard>(app, "/actions?view=open&layout=list&q=Pagerprobe&priority=p1")).HtmlOnce("matching")))
-            .Should().Contain("20 matching actions").And.Contain("<option value=\"P1\" selected>");
+            .Should().Contain("20 matching actions").And.Contain("Priority: P1", "a priority no pill says is a chip");
         (WebUtility.HtmlDecode(await (await ComponentHarness.RenderAsync<ActionsBoard>(app, "/actions?view=open&layout=list&q=Pagerprobe&status=blocked")).HtmlOnce("matching")))
             .Should().Contain("12 matching actions");
         (WebUtility.HtmlDecode(await (await ComponentHarness.RenderAsync<ActionsBoard>(app, "/actions?view=open&layout=list&q=Pagerprobe&due=none&priority=p1")).HtmlOnce("matching")))
@@ -594,7 +595,7 @@ public partial class PagingAndFiltersPageTests(TideApp app) : IClassFixture<Tide
             .Should().Contain("No actions match");
 
         // Another priority: the first page again (the address is written too, which a page outside a circuit can't do).
-        typeof(ActionsBoard).GetField("_priority", Private)!.SetValue(r.Component, Priority.P3);
+        typeof(ActionsBoard).GetField("_priorities", Private)!.SetValue(r.Component, new[] { Priority.P3 });
         try { await r.Click(c => (Task)typeof(ActionsBoard).GetMethod("Refilter", Private)!.Invoke(c, null)!); }
         catch (NavigationException) { }
         ((int)typeof(ActionsBoard).GetField("_page", Private)!.GetValue(r.Component)!).Should().Be(1);
@@ -609,6 +610,7 @@ public partial class PagingAndFiltersPageTests(TideApp app) : IClassFixture<Tide
         await using var r = await ComponentHarness.RenderAsync<ActionsBoard>(app, "/actions?view=open&layout=board&q=Pagerprobe&status=blocked&priority=p1");
         var html = WebUtility.HtmlDecode(await r.HtmlOnce("action"));
         html.Should().Contain("4 actions", "blocked and P1: every fifteenth");
-        html.Should().Contain("<option value=\"Blocked\" selected>");
+        FilterBarHtml.Pressed(html, "Blocked").Should().BeTrue();
+        FilterBarHtml.Pressed(html, "Tracking").Should().BeFalse();
     }
 }

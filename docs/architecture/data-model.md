@@ -1094,7 +1094,7 @@ nvarchar(1000), `Kind`, `IsActive`, `SortOrder` and the stamps. `PlaybookSteps` 
 ### `ActionCardRules` (S, A)
 
 An administrator's rule for colouring action cards. A card that matches every condition set gets the rule's colour
-(the first matching rule, in `SortOrder`) and label. A rule shown as a filter is also a chip on the board. Columns:
+(the first matching rule, in `SortOrder`) and label. A rule shown as a filter is offered under + Filter on the Actions page, with its count. Columns:
 `Name` nvarchar(60), `Colour` (`CardColour`), `IsActive`, `ShowAsFilter`, `SortOrder`, `Kind` null, `PriorityAtLeast`
 null, `TeamId` (FK → `Teams`, **restrict**, null), `Status` null, `Sla` (`CardRuleSla`), `Unassigned`,
 `HasChecklist`, `IsPart` and the stamps. A null or false condition matches everything. Written by `CardRuleService`

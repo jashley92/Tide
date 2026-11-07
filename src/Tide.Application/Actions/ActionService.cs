@@ -114,7 +114,9 @@ public sealed record ActionFilter(ActionView View = ActionView.Open, Guid? TeamI
     /// <summary>Words in the title or the article's title, or an action's number ("A-12", "12").</summary>
     public string? Search { get; init; }
 
-    public Priority? Priority { get; init; }
+    /// <summary>Any of these priorities ("P1 or P2", <c>priority=p1,p2</c> in the address); none for any priority.</summary>
+    public IReadOnlyList<Priority>? Priorities { get; init; }
+
     public ActionDue? Due { get; init; }
 
     /// <summary>One status (the Actions page offers the open ones: Open, In progress, Blocked).</summary>
@@ -307,7 +309,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     }
 
     /// <summary>How many of the list's actions for <paramref name="filter"/> each rule matches (its own rule left out): the
-    /// counts on the rule chips.</summary>
+    /// counts beside the rules offered as filters.</summary>
     public async Task<IReadOnlyDictionary<Guid, int>> RuleCountsAsync(ActionFilter filter, IEnumerable<ActionCardRule> rules, CancellationToken ct = default)
     {
         RequireRead(user);
@@ -470,7 +472,11 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             q = q.Where(a => a.Number == number || EF.Functions.Like(a.Title, like, Search.SearchText.Escape)
                              || (a.Article != null && EF.Functions.Like(a.Article.Title, like, Search.SearchText.Escape)));
         }
-        if (filter.Priority is { } priority) q = q.Where(a => a.Priority == priority);
+        if (filter.Priorities is { Count: > 0 } priorities)
+        {
+            var any = priorities.ToArray();
+            q = q.Where(a => any.Contains(a.Priority));
+        }
         if (filter.Status is { } status) q = q.Where(a => a.Status == status);
         switch (filter.Due)
         {

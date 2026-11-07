@@ -46,7 +46,7 @@ role holds it; an administrator also holds every other permission
 | Organization › Teams & SLA | `/admin/teams` | internal teams, members, team mailbox, each team's active limit and what happens at it (show, warn, refuse), retire; a link to External teams; SLA targets by priority and kind; reminder and digest switches and times (external team reminders among them), brief-not-ready recipients, outreach follow-up days, run a scan now, last run, opt-out counts; which action files download zipped | `TeamService`, `SlaSettings`, `OperationalSettingsService`, `ReminderService`, `NotificationPreferenceService` | `Teams`, `TeamMembers`, `Settings` |
 | Organization › Brief rotation | `/admin/rotation` | roster, weekly rota, managers to notify | `RotationService` | rotation tables, `Settings` |
 | Actions › Playbooks | `/admin/playbooks` | checklists per kind of action; a new install, or an upgrade with none, starts with one for each kind but Other, added once (`Data:StarterPlaybooks`) | `PlaybookService` | `Playbooks` |
-| Actions › Card rules | `/admin/card-rules` | colours, labels and filter chips on the board and list | `CardRuleService` | `ActionCardRules` |
+| Actions › Card rules | `/admin/card-rules` | colours and labels on the board and list, and the rules offered as filters | `CardRuleService` | `ActionCardRules` |
 | Intelligence › Sources | `/admin/sources` | feeds and catalogs, polling on or off, sponsored-item markers, advert selectors, retention, triage grouping, CVE enrichment, Poll now | `IntakeService`, `CveService`, `OperationalSettingsService` | `Sources`, `Settings` |
 | Intelligence › Source health | `/admin/source-health` | nothing but *Pause polling* | `IntakeService.SourceHealthAsync` | |
 | Intelligence › Scorecard tags | `/admin/scorecard` | the board scorecard's categories and tags | `ScorecardService` | scorecard tables |
@@ -234,7 +234,9 @@ kind of record, the record, the action (created, changed, deleted) and each fiel
 (`HistoryFormatter.AuditChanges`, which leaves out stamps and noise).
 
 - **Filters**, all kept in the address: person, kind of record, one record ("Only this record"), dates (organization
-  time zone), action, and words over the changed values. Newest first, 50 a page (`?page=`).
+  time zone), action, and words over the changed values. In the filter bar (`FilterBar`), *Deleted* is a pill
+  (`action=deleted`); person (`who`), kind (`kind`), action (`action`) and dates (`from`, `to`) are under *+ Filter*;
+  each filter in force is a chip that links to the log without it. Newest first, 50 a page (`?page=`).
 - **Records named.** `AuditRecords` names each row's record (its title, or what it's part of) in one query per kind on
   the page, and links articles, briefs, actions, stories, sources, teams and other admin records.
 - **Indexes and bounds.** `AuditLog` is indexed on `AtUtc`, `(EntityType, EntityKey)` and `(UserId, AtUtc)`. Filtering by

@@ -43,6 +43,14 @@ Every route, its component and the permission it needs are in the [route table](
   many are in it.
 - **On a phone** (640px or narrower) the sidebar becomes a bar across the top with a menu button, and wide tables
   scroll inside their card.
+- **Filter bars.** Every filtered list has the same bar: its search box on the left, then **pills** for the filters
+  used most (one click turns one on, and it shows the accent tint while it's on), a **chip** for each other filter in
+  force ("Team: Network Engineering ✕": choose the chip to change it, ✕ to remove it), and **+ Filter**, a small menu
+  of the rest. Choosing one there shows its options, one or several as the filter allows, and applying it adds its
+  chip. The bar ends with the count ("8 actions") and **Clear**, which removes every filter. The filters stay in the
+  address, so a bookmark, a shared link, a reload and Back show the same list, and a change goes back to its first
+  page. On a phone the search box takes a row of its own, the pills scroll sideways, and the menu rises from the
+  bottom of the screen.
 
 What sits behind this is in [frontend](../architecture/frontend.md#layout-and-navigation).
 
@@ -79,10 +87,11 @@ default TLP, an Admiralty reliability grade, a polling interval and a handling n
 shortlisted, dismissed with a reason, marked a duplicate or promoted to a draft article.
 
 Each tab shows 50 items a page, with numbered pages and a count ("1–50 of 213"); the page is in the address, so a
-reload or a copied link opens the same one. Nothing is cut off: every matching item is on some page. Besides the
-source, words and *Since the last brief*, two filters pick out what to act on first: **CVEs** (items naming any CVE,
-or only a KEV-listed one) and **Names what we run** (items naming a product on Our stack). They combine, and they're
-kept in the address too.
+reload or a copied link opens the same one. Nothing is cut off: every matching item is on some page. The filter bar
+has the search box (titles and CVEs) and four pills: **Since last brief**, **Names a CVE**, **KEV** (a CVE on CISA's
+KEV list) and **We run it** (a product on Our stack). Names a CVE and KEV are one filter, so turning one on turns the
+other off. The source is under **+ Filter**, and shows as a chip while one is chosen. They combine, and they're kept
+in the address too. The tabs and the order (Newest, Likely used) sit apart from the filters.
 
 A feed can be filtered by its own tags and by title words. Sponsored items are skipped too, on by default: a list of
 marker phrases ("Sponsored by", "Partner content", "Advertorial") is looked for as whole words in each item's author,
@@ -166,8 +175,11 @@ The triage keys are listed under [keyboard shortcuts](../architecture/frontend.m
 **Route:** `/articles` · **Workflow:** [writing articles](../workflows/writing-articles.md)
 
 Every article, as a list that filters as you type, sorts by any heading, and pages rather than cutting off. The
-filters (words, status, dates, assessment: threat, P1 or P2, or informational; scorecard tag or category, ATT&CK tactic or technique, with or
-without sub-techniques) live in the address, so a filtered list can be bookmarked or sent. Trends opens this list
+filter bar has **Draft** and **Ready** as pills; **+ Filter** holds the rest: status, ATT&CK tactic, technique (with
+or without its sub-techniques), assessment (threat, P1 or P2, or informational), scorecard tag or category, and the
+dates counted from and to. Each filter in force is a chip that links to the list without it (the dates are one chip,
+"Oct 2026"), and **Clear** keeps the words. The filters live in the address, so a filtered list can be bookmarked or
+sent. Trends opens this list
 pre-filtered when you click a count; opened from a tactic or technique, each row shows the techniques it was counted
 for. An analyst starts an article here with **New article**: a title, a source, a link and a TLP, which is set first
 because screenshots take the article's marking.
@@ -288,10 +300,13 @@ that fits its kind.
   choice on any computer. A link that names a layout opens that one. On the board, a card is dragged to another
   column, or moved from its Move menu by keyboard. Its columns are Open, In progress, Blocked, Tracking, Done, Cancelled
   and Not applicable.
-- **Filters.** One bar serves the list and the board: search (title, A-number or the article's title), team, kind,
-  priority, due date (overdue, due this week, no due date), status (Open, In progress, Blocked or Tracking) and, from a
-  parent action's link, "Part of A-12" (its parts). They combine and stay in the address. Filtered to a team with an
-  active limit, the bar says "4 of 5 active".
+- **Filters.** One bar serves the list and the board: the search box (title, A-number or the article's title), then
+  the pills **Overdue**, **Due this week**, **P1–P2**, **Blocked** and **Tracking**. Overdue and Due this week take
+  turns, as do Blocked and Tracking (each pair is one filter). **+ Filter** holds team, kind, priority (any of P1 to
+  P4), due date (including no due date), status and, when an administrator shows card rules as filters, the rule, each
+  with its count. A holder chosen on Workload and "Part of A-12" (from a parent action's link) show as chips. They
+  combine and stay in the address. Filtered to a team with an active limit, the bar says "4 of 5 active". The view
+  tabs (Mine, My teams, All open…) stay tabs.
 - **Long lists.** The list shows 50 actions a page, with numbered pages and the page in the address; group headings
   count every action in the group, not only this page's. Each board column shows its first 20 cards, then *Show N
   more*. The closed columns show the last 7 days; *Show older*, under Done, takes them back 30 days.
@@ -610,7 +625,8 @@ generic example set can be imported.
   first metrics slide instead of a slide of its own.
 - **The team email.** A block at the top: each value with its change from the previous business day, and a
   four-week sparkline.
-- **History.** The Metric history page has a chart and a CSV export, retired metrics included.
+- **History.** The Metric history page has a chart and a CSV export, retired metrics included. A pill per group
+  narrows its table to those groups' columns (kept in the address); **Clear** shows every group again.
 
 ![Metrics history](../screenshots/metrics-history.png)
 
@@ -649,7 +665,9 @@ action. The page lists them by language, with how many actions used each, 20 to 
 A language that runs on to the next page is headed there too ("continued"). Whoever works actions saves, edits,
 retires and restores them; whoever saved one, or an administrator, deletes it. Everyone else who reads actions reads
 them. A colleague's change re-reads the list in place; an edit under way keeps what's typed, and its save is refused
-if the query changed since it began.
+if the query changed since it began. The filter bar has the search box and a pill per language (**XQL**, **KQL**,
+**Falcon**), one at a time; **Show retired** stays a switch beside them, since it widens the list rather than
+narrowing it.
 
 A new install, or an upgrade whose library is still empty, starts with 13 starter sweeps saved by "TIDE": IP,
 domain, file hash, URL and every-indicator sweeps in KQL and XQL, and IP, domain and file hash sweeps for Falcon.
@@ -663,7 +681,8 @@ The team's outreach emails, kept beside Saved queries and in the same way, 20 to
 with placeholders, an optional fixed To address, and a TLP ceiling. `{{article.title}}`, `{{article.cves}}` (with KEV
 and EPSS), `{{indicators}}` (defanged; `{{indicators:domain}}` and the like take one kind), `{{product.versions}}`,
 `{{action.link}}`, `{{sender.name}}` and the rest are filled from the action. Whoever works actions keeps them. Each
-shows how many emails were written from it.
+shows how many emails were written from it. Its filter bar is the search box with **Show retired** as a switch, as on
+Saved queries.
 
 A new install, or an upgrade whose library is still empty, starts with 5 starter templates saved by "TIDE", added
 once: *Vendor: are we affected?*, *Internal: action required*, *ISAC / partner: share and ask*, *Follow-up / chase*
@@ -725,8 +744,9 @@ checklist read from the live configuration. It covers:
 - the wording of the reminder and rotation emails, with a live preview and a test send;
 - diagnostics, the server configuration, and a check for newer releases;
 - the audit log: every change saved across TIDE (settings, role mappings, teams, sources, recipients, ceilings,
-  articles and the rest), who made it, when, and each field before and after. It filters by person, kind of record,
-  one record, dates, action and words, keeps the filters in the address, and exports to CSV. Secrets show only as
+  articles and the rest), who made it, when, and each field before and after. Its filter bar has a **Deleted** pill,
+  and person, kind of record, action and dates under **+ Filter**; "Only this record" and words narrow it too. It keeps
+  the filters in the address, and exports to CSV. Secrets show only as
   set or changed. Administrators only, since it holds text at every TLP marking.
 
 Every page, by tab (from `AdminLayout.Groups`):
@@ -738,7 +758,7 @@ Every page, by tab (from `AdminLayout.Groups`):
 | Organization | Teams & SLA | `/admin/teams` | The teams that own actions, their members, SLA targets, and when reminder emails go. |
 | Organization | Brief rotation | `/admin/rotation` | Who presents the brief, the weekly rota, and who's told about swaps and cover. |
 | Actions | Playbooks | `/admin/playbooks` | Checklists for each kind of action, offered when one is created or worked. Starts with one for each kind but Other. |
-| Actions | Card rules | `/admin/card-rules` | Which actions are coloured and labelled on the board and list, and the filter chips. |
+| Actions | Card rules | `/admin/card-rules` | Which actions are coloured and labelled on the board and list, and which rules the Actions filter bar offers. |
 | Intelligence | Sources | `/admin/sources` | The feeds and catalogs triage takes items from, and CVE enrichment. |
 | Intelligence | Source health | `/admin/source-health` | How much each source sends and how much of it the team uses, with feeds worth pausing. |
 | Intelligence | Scorecard tags | `/admin/scorecard` | The categories and tags articles are counted by on the board scorecard. |

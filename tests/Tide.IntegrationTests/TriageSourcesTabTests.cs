@@ -60,7 +60,7 @@ public class TriageSourcesTabTests(PullApp app) : IClassFixture<PullApp>
         await using var r = await ComponentHarness.RenderAsync<Triage>(app, "/triage?tab=sources", @as: Analyst);
         var html = await r.HtmlOnce($"{key} fresh news");
 
-        html.Should().Contain("tide-pull-table").And.NotContain("tide-filters", "the table takes the item list's place")
+        html.Should().Contain("tide-pull-table").And.NotContain("tide-filterbar", "the table takes the item list's place")
             .And.NotContain($"{key} paused news", "paused sources aren't polled, so aren't listed");
         html.Should().MatchRegex("class=\"tide-tabbar-item active tide-tabbar-apart\" aria-pressed=\"true\"[^>]*>\\s*<span class=\"bi bi-rss\"[^>]*></span>\\s*<span>Sources</span>\\s*"
             + "<span class=\"tide-tabbar-count tide-tabbar-warn\"><span class=\"bi bi-exclamation-triangle-fill\" aria-hidden=\"true\"></span>\\d+<span class=\"visually-hidden\"> failing</span></span>");
@@ -135,7 +135,7 @@ public class TriageSourcesTabTests(PullApp app) : IClassFixture<PullApp>
             await t.OnTriageKey("prev");
         });
         var html = await r.Html();
-        html.Should().Contain("tide-filters").And.NotContain("tide-pull-table");
+        html.Should().Contain("tide-filterbar").And.NotContain("tide-pull-table");
         html.Should().MatchRegex("class=\"tide-tabbar-item active\" aria-pressed=\"true\"[^>]*>\\s*<span>Dismissed</span>");
     }
 

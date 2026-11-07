@@ -49,7 +49,7 @@ the tables and columns are in [data model](../architecture/data-model.md).
 
 | Term | Meaning | Code name |
 |---|---|---|
-| **Card rule** | An administrator's rule that colours and labels actions on the board and list, and adds filter chips. | `ActionCardRule`, `CardColour`, `CardRuleSla` |
+| **Card rule** | An administrator's rule that colours and labels actions on the board and list, and may be offered as a filter on the Actions page. | `ActionCardRule`, `CardColour`, `CardRuleSla` |
 | **Carry-over** | Articles on a brief that weren't discussed at the meeting go on the next business day's brief when the meeting ends. Reopening the meeting takes them back. | `BriefService.MarkPresentedAsync` (`carry`), `BriefItem.CarriedFromBriefId` |
 | **Ceiling** | The highest TLP an edition, an API token, an export, an outreach template or the AI provider may carry. Anything above it is left out whole, never hidden. The defaults are AMBER+STRICT for the team edition and GREEN for the company-wide edition. A ceiling governs what leaves TIDE, not what people see in it. | `DistributionSettings` (`Distribution:TeamMaxTlp`, `PublicMaxTlp`), `BriefSend.Ceiling`, `Ai:MaxTlp` |
 | **Change feed** | The in-memory notice board that tells open pages something they show was saved, so they update live. | `ChangeFeed`, `ChangeInterceptor`, `LiveChanges` |
@@ -92,6 +92,7 @@ the tables and columns are in [data model](../architecture/data-model.md).
 |---|---|---|
 | **Feed item** | See *triage item*. | `FeedItem` |
 | **File risk** | TIDE's judgement of an uploaded file from its name, declared type and first bytes. A file that can run downloads in a zip with the password `infected`; an image whose bytes don't match isn't shown inline. | `FileRisk`, `ActionFile.RiskReason`, `TypeNote`; setting `Files:ZipDownloads` |
+| **Filter bar** | The bar above every filtered list: its search box, *pills* (one-click filters, on or off), a *chip* for each other filter in force (choose it to change it, ✕ to remove it), the **+ Filter** menu for the rest, the count and Clear. The filters stay in the address. | `FilterBar`, `FilterPill`, `FilterDef`, `FilterValues` |
 | **Freeze** | What a *send* does before the relay is asked: keep a copy of exactly what went (the email HTML, a semantic web copy, and copies of its images), so the record never changes when the article does. | `BriefSend.EmailHtml`, `WebHtml`, `BriefSendImage`; [ADR 0007](../decisions/0007-frozen-sends-and-cid-email.md) |
 
 ## G

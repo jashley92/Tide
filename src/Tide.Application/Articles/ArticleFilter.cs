@@ -13,8 +13,8 @@ public enum ArticleAssessment
     Informational,
 }
 
-/// <summary>A filter chip: what it says, and the filter without it.</summary>
-public sealed record FilterChip(string Label, ArticleFilter Without);
+/// <summary>A filter chip: what it says, the filter without it, and which filter it is (its address name; the dates are "from").</summary>
+public sealed record FilterChip(string Label, ArticleFilter Without, string Key);
 
 /// <summary>
 /// What the article list narrows to, all of it in the address (<see cref="ToQuery"/>, <see cref="FromQuery"/>) so a link
@@ -186,15 +186,15 @@ public sealed record ArticleFilter
     public IReadOnlyList<FilterChip> Chips(Func<string, string?> tagName, Func<string, string?> categoryName)
     {
         var chips = new List<FilterChip>();
-        if (DatesLabel is { } dates) chips.Add(new(dates, this with { From = null, To = null }));
-        if (Status is { } s) chips.Add(new("Status: " + s, this with { Status = null }));
-        if (Assessment is { } a) chips.Add(new("Assessment: " + AssessmentName(a), this with { Assessment = null }));
-        if (Category is { } c) chips.Add(new("Category: " + (categoryName(c) ?? c), this with { Category = null }));
-        if (Tag is { } tag) chips.Add(new(tag == None ? "No scorecard tag" : "Tag: " + (tagName(tag) ?? tag), this with { Tag = null }));
-        if (Tactic is { } tactic) chips.Add(new("Tactic: " + AttackMatrix.TacticName(tactic), this with { Tactic = null }));
+        if (DatesLabel is { } dates) chips.Add(new(dates, this with { From = null, To = null }, "from"));
+        if (Status is { } s) chips.Add(new("Status: " + s, this with { Status = null }, "status"));
+        if (Assessment is { } a) chips.Add(new("Assessment: " + AssessmentName(a), this with { Assessment = null }, "assess"));
+        if (Category is { } c) chips.Add(new("Category: " + (categoryName(c) ?? c), this with { Category = null }, "tag"));
+        if (Tag is { } tag) chips.Add(new(tag == None ? "No scorecard tag" : "Tag: " + (tagName(tag) ?? tag), this with { Tag = null }, "tag"));
+        if (Tactic is { } tactic) chips.Add(new("Tactic: " + AttackMatrix.TacticName(tactic), this with { Tactic = null }, "tactic"));
         if (Technique is { } t)
             chips.Add(new(t == None ? "No technique" : "Technique: " + TechniqueName(t) + (WithSubtechniques ? " and sub-techniques" : ""),
-                this with { Technique = null, WithSubtechniques = false }));
+                this with { Technique = null, WithSubtechniques = false }, "technique"));
         return chips;
     }
 }

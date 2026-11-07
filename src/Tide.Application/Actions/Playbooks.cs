@@ -122,7 +122,7 @@ public sealed class PlaybookService(IAppDbContextFactory dbs, ICurrentUser user)
 
 /// <summary>
 /// Card rules: administrators say which actions stand out on the board and list (a colour and a label), and which of
-/// those are a filter chip. Matching is <see cref="ActionRules"/>; the rules themselves are read by everyone who reads
+/// those are offered as a filter. Matching is <see cref="ActionRules"/>; the rules themselves are read by everyone who reads
 /// actions.
 /// </summary>
 public sealed class CardRuleService(IAppDbContextFactory dbs, ICurrentUser user)
