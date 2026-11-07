@@ -11,7 +11,8 @@
    emails' cadence. Whoever works actions adds, edits and retires them (the internal teams stay the administrators', on
    Teams & SLA); everyone else who reads actions reads them. An administrator sets their active limits here too. Every
    change is audited, as any team's is. A colleague's change re-reads the list in place; a form being typed in keeps
-   what's in it. *@
+   what's in it. An edit carries the team's EditVersion: a colleague's change to that team shows ChangedElsewhere, and a
+   save over it is refused, the form kept, with Reload to take theirs. *@
 
 <PageTitle>External teams · TIDE</PageTitle>
 
@@ -39,11 +40,12 @@
                 @if (_editing == t.Id)
                 {
                     <h2 class="tide-card-title">Edit @t.Name</h2>
+                    <ChangedElsewhere By="@_changedBy" What="team" OnReload="ReloadTheirs" />
                     @Fields(_form, "edit")
                     @if (CurrentUser.Has(Permission.Administer)) { <div class="mt-2"><ActiveLimitFields Id="ext-limit" @bind-Limit="_limit" @bind-Mode="_mode" /></div> }
                     <div class="d-flex gap-2 mt-2">
                         <button class="btn btn-primary btn-sm" disabled="@_busy" data-submit @onclick="() => Save(t.Id)">Save</button>
-                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editing = null">Cancel</button>
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => (_editing, _changedBy) = (null, null)">Cancel</button>
                     </div>
                 }
                 else
@@ -119,16 +121,44 @@
             await Load();
             if (_editing is { } id && !_teams.Any(t => t.Id == id) && before.Any(t => t.Id == id))
             {
-                _editing = null;
+                (_editing, _changedBy) = (null, null);
                 Toasts.Show($"{who} retired or removed the team you were editing.");
             }
-            else Toasts.Show($"{who} updated External teams.");
+            else
+            {
+                // The team being edited changed under the form: it stays as typed, saying who, and its save is refused.
+                if (_editing is { } editing && _teams.FirstOrDefault(t => t.Id == editing) is { } now && now.EditVersion != _form.EditVersion)
+                    _changedBy = who;
+                Toasts.Show($"{who} updated External teams.");
+            }
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         StateHasChanged();
     }
 
     internal Guid? Editing => _editing;
+
+    // Who changed the team being edited since its form opened (a live change, or "Someone" when a save was refused as
+    // stale); null when no one has.
+    private string? _changedBy;
+    internal string? ChangedBy => _changedBy;
+
+    // The banner's Reload: the team as it is now, and what was typed goes.
+    internal async Task ReloadTheirs()
+    {
+        var id = _editing;
+        await Load();
+        if (_teams.FirstOrDefault(t => t.Id == id) is { } now)
+        {
+            Edit(now);
+            Toasts.Show("Reloaded. Your unsaved changes were dropped.");
+        }
+        else
+        {
+            (_editing, _changedBy) = (null, null);
+            Toasts.Show("That team no longer exists.");
+        }
+    }
 
     private async Task Load() => _teams = (await TeamSvc.ListAsync(_showRetired)).Where(t => t.IsExternal).ToList();
 
@@ -172,7 +202,7 @@
 
     internal void Edit(Team t)
     {
-        _editing = t.Id;
+        (_editing, _changedBy) = (t.Id, null);
         _form = ExternalTeamForm.From(t);
         (_limit, _mode) = (t.ActiveLimit, t.LimitMode);
     }
@@ -184,11 +214,22 @@
         _new = new();
     });
 
+    // The form carries the version it opened on, and the limit is saved on the version the profile's save left, so a
+    // colleague's change to either since is refused rather than overwritten.
     internal Task Save(Guid id) => Run(async () =>
     {
-        await TeamSvc.UpdateExternalAsync(id, _form);
-        if (CurrentUser.Has(Permission.Administer)) await TeamSvc.SetLimitAsync(id, _limit, _mode);
-        _editing = null;
+        try
+        {
+            var version = await TeamSvc.UpdateExternalAsync(id, _form);
+            if (CurrentUser.Has(Permission.Administer)) await TeamSvc.SetLimitAsync(id, _limit, _mode, version);
+        }
+        catch (StaleEditException)
+        {
+            // The form stays to copy from, and Reload shows theirs.
+            _changedBy ??= "Someone";
+            throw;
+        }
+        (_editing, _changedBy) = (null, null);
     });
 
     private async Task Retire(Team t)

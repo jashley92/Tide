@@ -469,6 +469,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Engage).HasMaxLength(Team.MaxEngage);
             e.Property(x => x.EscalationName).HasMaxLength(Team.MaxContactName);
             e.Property(x => x.EscalationEmail).HasMaxLength(256);
+            e.Property(x => x.EditVersion).IsConcurrencyToken();
             e.HasMany(x => x.Members).WithOne().HasForeignKey(x => x.TeamId).OnDelete(DeleteBehavior.Cascade);
             Audited(e);
         });

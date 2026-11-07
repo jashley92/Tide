@@ -54,7 +54,7 @@ snapshot is right.
 | **Times are UTC** | Every moment is a `DateTimeOffset` named `…AtUtc`. It's `datetimeoffset` on SQL Server. SQLite can't order or compare `DateTimeOffset`, so on SQLite `OnModelCreating` stores UTC ticks (`long`) and the offset is lost. Code writes UTC from `TimeProvider` or `DateTimeOffset.UtcNow`. |
 | **Org dates are `date`** | Business days are `DateOnly` (`date`) in the organization's time zone, never UTC: `Briefs.BriefDate`, `MetricValues.BriefDate`, `Actions.DueDate`/`RaisedOn`/`ClosedDate`, `Holidays.Date`, `RotationWeeks.WeekStart`, `RotationOverrides.Date`, `RotationChanges.GiveFrom`/`GiveTo`/`TakeFrom`/`TakeTo`, `StackProducts.CheckedOn`, `Webhooks.OverdueSentFor`, and the KEV dates on `CveRecords`. `OrgClock` (`src/Tide.Application/Org/OrgClock.cs`) works out "today" from `Org:TimeZone`, so the brief for "today" doesn't change at UTC midnight. |
 | **Stamps** | `AuditInterceptor` stamps **S** tables on every save. An insert sets `CreatedAtUtc` and `CreatedBy`; an update sets `ModifiedAtUtc` and `ModifiedBy`. Services don't set these columns. Tables that aren't **S** keep their own "who and when" columns, set by the service (`UpdatedAtUtc`/`UpdatedBy`, `AddedAtUtc`/`AddedByName`, `SentAtUtc`…). Some **S** tables also keep the person's display name (`SavedQueries.CreatedByName`), because `CreatedBy` holds only the id. |
-| **Concurrency** | These tables carry `EditVersion uniqueidentifier`, mapped with `IsConcurrencyToken()`: `Articles`, `Briefs`, `Actions`, `ActionComments`, `SavedQueries`, `OutreachTemplates`, `Playbooks`, `OutreachMessages`, `StackProducts`, `Adversaries` and `Sources`. The service gives it a new Guid on each save, and EF adds `WHERE EditVersion = @original` to the update. A save from an older copy fails with `DbUpdateConcurrencyException`, and the service rethrows it as `StaleEditException` (`src/Tide.Application/Articles/ArticleService.cs`), which the page shows. Nothing uses `rowversion`. |
+| **Concurrency** | These tables carry `EditVersion uniqueidentifier`, mapped with `IsConcurrencyToken()`: `Articles`, `Briefs`, `Actions`, `ActionComments`, `SavedQueries`, `OutreachTemplates`, `Playbooks`, `OutreachMessages`, `StackProducts`, `Adversaries`, `Sources` and `Teams`. The service gives it a new Guid on each save, and EF adds `WHERE EditVersion = @original` to the update. A save from an older copy fails with `DbUpdateConcurrencyException`, and the service rethrows it as `StaleEditException` (`src/Tide.Application/Articles/ArticleService.cs`), which the page shows. Nothing uses `rowversion`. |
 | **Retire, don't delete** | No table has an `IsDeleted` column, and there are no global query filters. Admin-managed lists use one rule: **delete a record nothing uses yet, otherwise retire it**. Retired records are marked with `IsRetired` (`Sources`, `Teams`, `ScorecardCategories`, `ScorecardTags`, `MetricGroups`, `MetricDefinitions`, `Adversaries`, `StackProducts`, `SavedQueries`, `OutreachTemplates`, `Playbooks`) or `IsActive = false` (`ActionCardRules`, `RotationMembers`). Examples: `TeamService.SetRetiredAsync`, `PlaybookService.DeleteAsync` (refused for one an action was started from) and `IntakeService` for sources. Retired records are hidden from pickers but stay readable in history. |
 | **Kept for the record** | An article that was briefed or had an action raised from it can't be deleted (`ArticleService.DeleteAsync`). Only a draft on no brief can. A story with articles is closed, not deleted (`StoryService.DeleteAsync`). Files on actions and comments are "removed": the record is hidden but its bytes, hash and row stay (`IRemovableFile` in `src/Tide.Domain/Entities/Actions.cs`). Sends, corrections, audit rows and action events are never deleted. |
 | **Pruned** | Two kinds of rows are deleted on a schedule by `IntakeHostedService`'s daily prune. `FeedItems` older than `Intake:RetentionDays` (minimum 7) are deleted if they're still New, Dismissed or Duplicate (`IntakeService.PruneAsync`). `FeedItemTexts` older than `Intake:ReadingDays` (1 to 30) are deleted by `ReadingService.PruneAsync`. Their `TriageSplits` rows and kept text go with them by cascade. |
@@ -338,6 +338,7 @@ erDiagram
         uuid Id PK
         string Key UK
         bool IsRetired
+        uuid EditVersion "concurrency"
         bool IsExternal
         int ActiveLimit
         string EscalationEmail
@@ -941,13 +942,19 @@ row itself is kept. Written by `CorrectionService`; `DistributionService` reads 
 [ADR 0008](../decisions/0008-teams-own-actions.md) covers team ownership.
 [../workflows/actions-and-hunting.md](../workflows/actions-and-hunting.md) describes the flow.
 
-### `Teams` (S, A) and `TeamMembers` (A)
+### `Teams` (S, A, V) and `TeamMembers` (A)
 
 A team owns follow-up actions. `Key` is stable and **unique**. A team that has never owned an action and isn't named by
 a card rule is deleted; otherwise it's retired (`TeamService.SetRetiredAsync`). `Email` is the team's shared mailbox,
 used for its digest and for reminders about unassigned actions. Columns: `Name` nvarchar(100), `Description`
-nvarchar(500), `Email` nvarchar(256), `SortOrder`, `IsRetired`, and the stamps. A team that handed an action on
-(`Actions.HandedFromTeamId`) counts as having owned one, so it's retired too.
+nvarchar(500), `Email` nvarchar(256), `SortOrder`, `IsRetired`, `EditVersion`, and the stamps. A team that handed an
+action on (`Actions.HandedFromTeamId`) counts as having owned one, so it's retired too.
+
+`EditVersion` (uniqueidentifier, concurrency token, from `TeamEditVersion`) moves on every change someone makes to the
+team's own fields: its name, description and mailbox, an external team's profile and reminders, its limit, its
+escalation contact, and retiring or bringing it back. Moving it in the list (`SortOrder`) and adding or taking off
+members don't, since no form saves them; nothing in the background writes a team. A form opened before any of those
+changes is refused. Rows from before the column have the empty Guid.
 
 The active limit and the external team's profile (EP-86):
 

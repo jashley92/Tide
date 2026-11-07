@@ -33,6 +33,7 @@
             <div class="tide-card @(t.IsRetired ? "tide-retired" : "")" @key="t.Id" data-submit-scope>
                 @if (_editing == t.Id)
                 {
+                    <ChangedElsewhere By="@_changedBy" What="team" OnReload="ReloadTheirs" />
                     <div class="row g-2 mb-2">
                         <div class="col-md-5"><input class="form-control form-control-sm" @bind="_name" aria-label="Team name" /></div>
                         <div class="col-md-7"><input class="form-control form-control-sm" @bind="_email" placeholder="Team mailbox (optional)" aria-label="Team mailbox" /></div>
@@ -42,7 +43,7 @@
                     </div>
                     <div class="d-flex gap-2 mb-2">
                         <button class="btn btn-primary btn-sm" disabled="@_busy" data-submit @onclick="() => Save(t.Id)">Save</button>
-                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editing = null">Cancel</button>
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => (_editing, _changedBy) = (null, null)">Cancel</button>
                     </div>
                 }
                 else
@@ -566,7 +567,7 @@
 
     internal void Edit(Team t)
     {
-        _editing = t.Id;
+        (_editing, _version, _changedBy) = (t.Id, t.EditVersion, null);
         _name = t.Name;
         _email = t.Email;
         _description = t.Description;
@@ -574,13 +575,48 @@
         (EscalationName, EscalationEmail) = (t.EscalationName, t.EscalationEmail);
     }
 
+    // The team's EditVersion when its form opened, and who changed it since ("Someone", once a save was refused as stale).
+    private Guid? _version;
+    private string? _changedBy;
+    internal string? ChangedBy => _changedBy;
+    internal string? EditName { get => _name; set => _name = value; }
+    internal string? EditDescription => _description;
+
+    // Each part of the save goes on the version the one before left, so another administrator's change since the form
+    // opened, or between the parts, is refused rather than overwritten.
     internal Task Save(Guid id) => Run(async () =>
     {
-        await TeamSvc.UpdateAsync(id, _name ?? "", _description, _email);
-        await TeamSvc.SetLimitAsync(id, _limit, _mode);
-        await TeamSvc.SetEscalationContactAsync(id, EscalationName, EscalationEmail);
-        _editing = null;
+        try
+        {
+            var version = await TeamSvc.UpdateAsync(id, _name ?? "", _description, _email, _version);
+            version = await TeamSvc.SetLimitAsync(id, _limit, _mode, version);
+            await TeamSvc.SetEscalationContactAsync(id, EscalationName, EscalationEmail, version);
+        }
+        catch (Tide.Application.Articles.StaleEditException)
+        {
+            // The form stays to copy from, and Reload shows theirs.
+            _changedBy = "Someone";
+            throw;
+        }
+        (_editing, _changedBy) = (null, null);
     });
+
+    // The banner's Reload: the team as it is now (the list is read again), and what was typed goes.
+    internal async Task ReloadTheirs()
+    {
+        var id = _editing;
+        await Load();
+        if (_teams.FirstOrDefault(t => t.Id == id) is { } now)
+        {
+            Edit(now);
+            Toasts.Show("Reloaded. Your unsaved changes were dropped.");
+        }
+        else
+        {
+            (_editing, _changedBy) = (null, null);
+            Toasts.Show("That team no longer exists.");
+        }
+    }
 
     /// <summary>The internal teams listed.</summary>
     internal IReadOnlyList<Team> Shown => _teams;

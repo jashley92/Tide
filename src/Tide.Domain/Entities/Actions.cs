@@ -26,6 +26,11 @@ public class Team : AuditableEntity
     public int SortOrder { get; set; }
     public bool IsRetired { get; set; }
 
+    /// <summary>Moved by each change someone makes to the team's own fields (its profile, mailbox, escalation contact,
+    /// limit, reminders, retiring or bringing it back), so a form opened before a colleague's change can't save over it.
+    /// Its place in the list and its members don't move it: no form saves them. Nothing in the background writes a team.</summary>
+    public Guid EditVersion { get; set; } = Guid.NewGuid();
+
     public List<TeamMember> Members { get; set; } = [];
 
     /// <summary>

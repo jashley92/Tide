@@ -657,7 +657,9 @@ reminders: on or off, how many business days before the due date (0 to 10, defau
 overdue every so many business days (1 to 20, default 3) or once. They can be retired like any team. Every change is
 audited. An action owned by an external team shows the team's contact and *Don't remind {team} about this one*. The
 page follows the `teams` topic: a colleague's change re-reads the list, keeping what's typed in the add and edit
-forms; an edit of a team a colleague retired or removed closes and says so.
+forms; an edit of a team a colleague retired or removed closes and says so. An edit opened before a colleague's change
+to that team (a save, its limit, retiring or bringing it back) shows the *changed elsewhere* banner, and its save is
+refused ("Someone else changed Facilities since you opened it…"): the form stays to copy from, and Reload shows theirs.
 
 **External reminders** (`ReminderKind.ExternalReminder`, `ReminderService.ExternalAsync`). At the reminder time on
 business days, when an administrator has *External team reminders* on, each external team with its reminders on and a

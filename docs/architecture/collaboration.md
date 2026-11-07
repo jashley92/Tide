@@ -162,7 +162,7 @@ What pages do with it:
 | A story's page (`Stories`, `/stories/{id}`) | `story:{id}`, and `article:{id}` and `article-tags:{id}` for each article on it | re-reads the story and says "… updated this story": an article linked to it or taken off it, a change to one of its articles (row, CVEs, techniques, adversary tags), or the story itself. Other articles and stories are silent. The Edit form keeps what's typed (`Stories.OnChangedElsewhere`) |
 | Stories list, Our stack, Saved queries, Outreach templates, Playbooks | `stories` and `articles` (the counts), `stack`, `saved-queries`, `outreach-templates`, `playbooks` | re-read; a product's edit form keeps what's typed and shows `ChangedElsewhere` when a colleague saved that product; a library's edit follows its card to the page it moved to, or keeps its form above the list when the card left it (`LibraryPage.OnChangedElsewhere`, `EditingOffPage`) |
 | Adversaries list and profile (`AdversariesPage`) | `adversaries` | re-read; a profile's edit form keeps what's typed and shows `ChangedElsewhere` with Reload when a colleague changed that profile (only a change to the one shown is told) |
-| External teams | `teams` | re-reads the list; the add and edit forms keep what's typed; an edit of a team that's gone closes, and says so |
+| External teams | `teams` | re-reads the list; the add and edit forms keep what's typed; an edit of a team a colleague changed shows `ChangedElsewhere` (its save is refused until Reload); an edit of a team that's gone closes, and says so |
 | We run and Threat actors cards (`TagCard`) | `article-tags:{id}` | re-read the tags |
 
 The rule across all of them: TIDE never reloads over a draft. A page with nothing unsaved re-reads in place and names
@@ -243,8 +243,8 @@ column the card was in and is refused if it moved.
 ## Concurrency: the edit version
 
 These entities carry `EditVersion`, a `Guid` configured as an EF Core concurrency token in `AppDbContext`: `Article`,
-`Brief`, `ActionItem`, `ActionComment`, `SavedQuery`, `OutreachTemplate`, `Playbook`, `OutreachMessage`, `StackProduct`
-and `Adversary`.
+`Brief`, `ActionItem`, `ActionComment`, `SavedQuery`, `OutreachTemplate`, `Playbook`, `OutreachMessage`, `StackProduct`,
+`Adversary`, `Source` and `Team`.
 
 - The form carries the version it was opened on. The service compares it with the row's and refuses a mismatch with
   `StaleEditException` (`src/Tide.Application/Articles/ArticleService.cs`), naming who changed it where it can.
@@ -265,6 +265,13 @@ and `Adversary`.
   retiring or bringing it back, and a configuration bundle that changes it move the version; a poll's bookkeeping
   (written with `ExecuteUpdateAsync`) doesn't. A stale save is refused, and the form stays with `ChangedElsewhere`
   and Reload.
+- A team's form (Teams & SLA for an internal team, External teams for an external one) carries the version it opened
+  on. Saving the team's profile, mailbox, reminders, limit or escalation contact, and retiring or bringing it back,
+  move the version; the form's save goes in parts (`TeamService.UpdateAsync` or `UpdateExternalAsync`, then
+  `SetLimitAsync`, then `SetEscalationContactAsync`), each on the version the part before left. Its place in the list
+  and its members don't move it. A stale save is refused ("Someone else changed Network since you opened it…"), and
+  the form stays with `ChangedElsewhere` and Reload; External teams, which follows `teams`, also shows the banner as
+  soon as it hears a colleague changed the team being edited.
 - Tags (`ArticleAdversary`, `ArticleProduct`) and meeting notes deliberately don't move the version, so they never make an
   open editor's save stale. Tagging, linking and merging profiles run in one serializable transaction each
   (`AdversaryService.Serialized`), so a tag added to a profile as it's merged waits for the merge and lands on the
