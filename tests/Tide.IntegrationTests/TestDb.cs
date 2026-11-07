@@ -261,10 +261,27 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
         _options = Configure(new DbContextOptionsBuilder<AppDbContext>(), retrying)
             .AddInterceptors(new AuditInterceptor(User, TimeProvider.System), new ChangeInterceptor(Feed, User, Origin), new HookInterceptor(this), new ColumnLengthCheck(), Commands)
             .Options;
+        if (_connection is not null)
+        {
+            lock (MigratedSqlite) MigratedSqlite.Value.BackupDatabase(_connection);
+            return;
+        }
         using var db = new AppDbContext(_options);
-        if (_sqlServer is null) db.Database.Migrate();
-        else db.Database.EnsureCreated();
+        db.Database.EnsureCreated();
     }
+
+    // The SQLite schema, migrated once per run and copied into each test's database (SQLite's backup API copies the
+    // tables, the migrations history and any rows the migrations insert). Replaying every migration for each test was
+    // most of what a service test cost. The copy is the migrated database itself, so a test still runs on exactly the
+    // schema the real migrations make. Locked, because a SqliteConnection isn't safe to use from two threads.
+    private static readonly Lazy<SqliteConnection> MigratedSqlite = new(() =>
+    {
+        var connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+        using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+        db.Database.Migrate();
+        return connection;
+    });
 
     /// <summary>
     /// The database for a provider theory's row, in place of a test class's default (SQLite) one: on <see cref="Sqlite"/>

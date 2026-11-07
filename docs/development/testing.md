@@ -110,8 +110,10 @@ flowchart TD
 
 ### `TestDb`: services on SQLite
 
-`tests/Tide.IntegrationTests/TestDb.cs` builds an in-memory SQLite database and applies the real SQLite migrations
-(`Database.Migrate()`), so a test runs against the schema production's development twin has. It implements
+`tests/Tide.IntegrationTests/TestDb.cs` builds an in-memory SQLite database with the real SQLite migrations applied,
+so a test runs against the schema production's development twin has. The migrations run once per test run, into a
+template database (`Database.Migrate()`), and each `TestDb` copies the template with SQLite's backup API: the same
+tables, migrations history and seeded rows, without replaying 40-odd migrations for every test. It implements
 `IAppDbContextFactory`, so services get a short-lived context per operation exactly as in the app. Every context
 carries:
 
