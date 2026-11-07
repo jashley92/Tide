@@ -33,12 +33,9 @@ public sealed class ManualClock : TimeProvider
         {
             _now += by;
             due = _timers.Where(t => t.Due <= _now).ToList();
+            foreach (var t in due) t.Due = null;
         }
-        foreach (var t in due)
-        {
-            t.Due = null;
-            t.Callback(t.State);
-        }
+        foreach (var t in due) t.Callback(t.State);
     }
 
     public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
