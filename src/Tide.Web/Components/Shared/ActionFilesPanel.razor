@@ -58,7 +58,8 @@
                     <div class="tide-file-sub">
                         @if (f.CommentId is { } commentId)
                         {
-                            <a class="tide-file-source" href="@($"{Ui.ActionUrl(Number)}#comment-{commentId}")">On a comment by @f.AddedByName</a>
+                            <a class="tide-file-source" href="@($"{Ui.ActionUrl(Number)}#comment-{commentId}")" @onclick="() => OnComment.InvokeAsync(commentId)"
+                               @onclick:preventDefault="OnComment.HasDelegate">On a comment by @f.AddedByName</a>
                         }
                         else if (f.FromComment)
                         {
@@ -170,6 +171,9 @@
     [Parameter, EditorRequired] public int Number { get; set; }
     [Parameter] public bool CanWork { get; set; }
     [Parameter] public EventCallback Changed { get; set; }
+
+    /// <summary>A file's "On a comment" link: the page shows that comment (it may be folded away in the feed) and goes to it.</summary>
+    [Parameter] public EventCallback<Guid> OnComment { get; set; }
 
     private readonly List<FilePicker.PendingFile> _pending = [];
     private Guid? _describing, _removing;

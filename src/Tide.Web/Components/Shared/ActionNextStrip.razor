@@ -1,0 +1,28 @@
+@* The action page's Next line (ActionGuide.Next): the one thing that most needs doing, in words, and links that do it.
+   A late part's links go to the part (its page, or its page with Record an update open: ?do=update); the rest are
+   the page's own flows, which it runs (Do). Drawn only when there's something to do. *@
+
+<div class="tide-next" role="note" aria-label="Next" data-next="@Step.Kind">
+    <strong>Next:</strong>
+    <span>@Step.Text</span>
+    <span class="tide-next-links">
+        @foreach (var (link, label) in Step.Links)
+        {
+            @if (Step.Part is { } part && link is NextLink.ChasePart or NextLink.PartReply)
+            {
+                <a href="@(link == NextLink.PartReply ? Ui.ActionUrl(part) + "?do=update" : Ui.ActionUrl(part))">@label</a>
+            }
+            else
+            {
+                <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => Do.InvokeAsync(link)">@label</button>
+            }
+        }
+    </span>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public NextStep Step { get; set; } = default!;
+
+    /// <summary>A link that's one of the page's own flows: the page runs it.</summary>
+    [Parameter] public EventCallback<NextLink> Do { get; set; }
+}

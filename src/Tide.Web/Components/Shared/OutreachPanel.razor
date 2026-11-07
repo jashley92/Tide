@@ -204,6 +204,7 @@
     private bool _busy, _writing;
 
     internal OutreachState State => _state;
+    internal bool Writing => _writing;
     internal OutreachWritten? Written => _written;
 
     // Read when the action is read (the page hands over a new one after each save), not on every redraw around it.

@@ -1,0 +1,95 @@
+@* A menu button: a button (aria-haspopup, aria-expanded) that opens a short menu of commands in the popover the filter bar's
+   + Filter uses, over a backdrop that closes it. Each item runs something or goes somewhere. From the keyboard it works as
+   + Filter does (filters.js): the down arrow on the button opens it, the first item takes focus, the arrows, Home and End
+   move between items (tideRoving), Tab leaves it closed, and Esc closes it with focus back on the button. Choosing an item
+   closes it first, so a dialog the item opens takes focus from there. *@
+@inject IJSRuntime JS
+
+<div class="tide-menubutton">
+    <button type="button" class="@ButtonClass tide-menubutton-btn" aria-haspopup="menu" aria-expanded="@Ui.Aria(_open)" aria-controls="@(_open ? _id : null)"
+            disabled="@Disabled" @ref="_trigger" @onclick="Toggle">
+        @if (Icon is not null) { <span class="bi @Icon" aria-hidden="true"></span> }
+        @Label <span class="bi bi-chevron-down tide-menubutton-caret" aria-hidden="true"></span>
+    </button>
+    @if (_open)
+    {
+        <div class="tide-popover-backdrop" @onclick="() => Close(false)"></div>
+        <div class="tide-popover tide-popover-end tide-menubutton-pop" id="@_id" role="menu" aria-label="@Label" @ref="_pop" @onkeydown="Key">
+            @foreach (var i in Items)
+            {
+                @if (i.Href is not null)
+                {
+                    <a role="menuitem" tabindex="-1" class="tide-filter-item" href="@i.Href" @onclick="() => Close(false)">@Inner(i)</a>
+                }
+                else
+                {
+                    <button type="button" role="menuitem" tabindex="-1" class="tide-filter-item" @onclick="() => Choose(i)">@Inner(i)</button>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>One command on the menu: a <see cref="Run"/> or an <see cref="Href"/>.</summary>
+    public sealed record Item(string Label, string? Icon = null, Func<Task>? Run = null, string? Href = null);
+
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter, EditorRequired] public IReadOnlyList<Item> Items { get; set; } = [];
+    [Parameter] public string? Icon { get; set; }
+    [Parameter] public string ButtonClass { get; set; } = "btn btn-outline-secondary";
+    [Parameter] public bool Disabled { get; set; }
+
+    private readonly string _id = "menu-" + Guid.NewGuid().ToString("N")[..8];
+    private ElementReference _trigger, _pop;
+    private bool _open, _focusPop, _focusTrigger;
+
+    internal bool IsOpen => _open;
+
+    internal void Toggle()
+    {
+        if (_open) Close(true);
+        else (_open, _focusPop) = (true, true);
+        StateHasChanged();
+    }
+
+    /// <summary>Runs an item, as a click on it does: the menu closes first.</summary>
+    internal async Task Choose(Item i)
+    {
+        Close(false);
+        StateHasChanged();
+        if (i.Run is not null) await i.Run();
+    }
+
+    private void Close(bool refocus)
+    {
+        _open = false;
+        _focusTrigger = refocus;
+    }
+
+    private void Key(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") Close(true);
+    }
+
+    private static RenderFragment Inner(Item i) => @<text>
+        @if (i.Icon is not null) { <span class="bi @i.Icon" aria-hidden="true"></span> }
+        <span>@i.Label</span>
+    </text>;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusPop && _open)
+        {
+            _focusPop = false;
+            try { await JS.InvokeVoidAsync("tideFilters.focusIn", _pop); }
+            catch (JSDisconnectedException) { }
+            catch (JSException) { /* closed meanwhile */ }
+        }
+        if (_focusTrigger)
+        {
+            _focusTrigger = false;
+            await _trigger.TryFocusAsync(orGone: true);
+        }
+    }
+}

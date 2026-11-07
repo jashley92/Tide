@@ -99,8 +99,8 @@ export const shots = [
     ] },
   { name: 'doc-action-detail', route: '/actions/{detailAction}', viewport: desktop,
     annotate: [
-      ['.tide-status-row', 1, 'l'], ['.tide-facts', 2, 'l'], ['.tide-checklist', 3, 'l'],
-      ['.tide-comment', 4, 'l'], ['.tide-card:has(h2:text-is("About"))', 5, 'l'], ['.tide-files-side', 6, 'l'],
+      ['.tide-action-head', 1, 'l'], ['.tide-facts-side', 2, 'l'], ['.tide-drawer', 3, 'l'],
+      ['.tide-feed', 4, 'l'], ['.tide-card:has(h2:text-is("From the article"))', 5, 'l'], ['.tide-files-side', 6, 'l'],
     ] },
   { name: 'doc-admin-settings', route: '/admin/organization', viewport: desktop,
     annotate: [
