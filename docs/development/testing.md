@@ -46,7 +46,7 @@ mocking library.
 | AI assist and article cleanup | `AssistTests.cs`, `ArticleCleanupTests.cs` |
 | Markdown safety and the toolbar's output; root-relative links under a sub-path and in email | `MarkdownToolbarOutputTests.cs`, `Audit/AdversarialTests.cs` (`MarkdownInjectionTests`), `RootRelativeLinkTests.cs` (the page side in `Tide.IntegrationTests/RootRelativeLinkPageTests.cs`) |
 | Hostile input: CSV injection, extraction timing on hostile text, hostile XML | `Audit/AdversarialTests.cs`, `Audit/SecurityAuditTests.cs`, `Audit/BackendAuditTests.cs` |
-| The deploy scripts, run in PowerShell; the install answers file; release versions | `DeployScriptTests.cs`, `DeployWebSocketTests.cs`, `InstallAnswersTemplateTests.cs`, `UpgradeCommandTests.cs`, `Audit/InfraAuditTests.cs` |
+| The deploy scripts, run in PowerShell; the install answers file; release versions; release signing and the bundle checks | `DeployScriptTests.cs`, `ReleaseSigningTests.cs`, `DeployWebSocketTests.cs`, `InstallAnswersTemplateTests.cs`, `UpgradeCommandTests.cs`, `Audit/InfraAuditTests.cs` |
 | Source hygiene: every `--tide-*` token used is defined; no HTML entity in a Razor attribute | `StyleTokenTests.cs`, `RazorAttributeTests.cs` |
 
 ### What the integration tests cover
@@ -341,8 +341,10 @@ such as a docs-only one). The `release` job then requires the tag to be on `main
 quality gate passed for that commit on `main` (`tools/ci/check-sonar-quality-gate.sh`, because CI skips Sonar on
 tags), checks the migrations again, extracts the release notes from `docs/UPGRADE.md`
 (`tools/ci/extract-release-notes.sh`), builds and publishes with the tag's version, assembles the bundle (the app, the
-`deploy` folder, `migrations-sqlserver.txt`, `VERSION.txt`), zips it with a SHA-256, and creates the GitHub Release
-(a pre-release for `-alpha`, `-beta` or `-rc` tags). How releases are cut is in [UPGRADE.md](../UPGRADE.md).
+`deploy` folder, `migrations-sqlserver.txt`, `VERSION.txt`), zips it with a SHA-256, signs it with the
+`RELEASE_SIGNING_KEY` secret (and fails without it, or when the repository doesn't pin its key), checks the signature
+with `deploy/Test-TideBundle.ps1`, and creates the GitHub Release with the zip, the `.sha256` and the `.sig` (a
+pre-release for `-alpha`, `-beta` or `-rc` tags). The key and the signing are in [releasing.md](releasing.md). How releases are cut is in [UPGRADE.md](../UPGRADE.md).
 
 ### Other checks
 
@@ -389,7 +391,7 @@ On Windows, if the app can't listen ("access permissions" on bind), its port is 
 | Not covered automatically | Why, and what does cover it |
 |---|---|
 | Windows (Negotiate) sign-in against a real domain | Tests build Windows-style principals and stub the role directory (`Audit/SecurityAuditTests.cs`). After install, `deploy/Verify-Install.ps1` checks the site refuses an anonymous request (401); a real sign-in is checked by hand ([INSTALL.md](../INSTALL.md#5-check-it)). |
-| IIS hosting, the installer and the upgrader end to end | `DeployScriptTests` parses every script and runs the pure functions in PowerShell; the IIS and SQL steps aren't run. |
+| IIS hosting, the installer and the upgrader end to end | `DeployScriptTests` parses every script and runs the pure functions in PowerShell; the IIS and SQL steps aren't run. `ReleaseSigningTests` runs the bundle checks and `Test-TideBundle.ps1` with throwaway keys, on Windows PowerShell 5.1 and PowerShell 7 where each is installed, and signs with openssl when it's on PATH; `Upgrade-Tide.ps1` itself is checked only for the order it does things in. |
 | A real SMTP relay with TLS or sign-in | `FakeSmtpServer` speaks plain SMTP on loopback; the relay is checked from Diagnostics after install. |
 | Real feeds, CVE services, GitHub releases, Azure OpenAI | `FakeHttp` and `FakeAssistant` answer from canned responses. |
 | Browser behaviour: the JavaScript in `wwwroot/js`, layout, focus, keyboard, drag and drop | No browser runs in CI. Component tests check markup and semantics (`AccessibilityTests`, `MarkdownToolbarTests`), not script behaviour. Two scripts' logic runs in Node over a small stand-in for the page (`FilterMenuKeysTests` for `filters.js`, `AutogrowTests` for `autogrow.js`; Node must be on the PATH); the rest of the JavaScript has no tests, and none has coverage. |

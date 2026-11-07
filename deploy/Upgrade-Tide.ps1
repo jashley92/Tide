@@ -35,15 +35,29 @@
 
 .PARAMETER BundleZip
     A release bundle the Release workflow built (tide-<version>.zip: app\, deploy\, migrations-sqlserver.txt,
-    VERSION.txt). When this host can reach github.com (or -Proxy), the bundle is checked against the .sha256 of the
-    release its VERSION.txt names, and refused if it doesn't match, before it's expanded. When it can't, it warns and
-    carries on.
+    VERSION.txt). Before anything in it is expanded or run, this script checks it:
+      - its signature, tide-<version>.zip.sig beside it, against the release keys this script pins
+        (lib\TideReleaseKeys.ps1). A signature that doesn't verify is refused. While keys are pinned, a bundle without
+        one is refused unless -AllowUnsigned;
+      - its SHA-256: -ExpectedSha256, else tide-<version>.zip.sha256 beside it (sha256sum's format, or the hash alone).
+        A mismatch is refused. With neither, and no valid signature, it's checked against the .sha256 of the release its
+        VERSION.txt names on github.com (or through -Proxy); when that can't be fetched, it warns and carries on.
+    On a host that can't reach github.com, copy the zip's .sig and .sha256 from the release page next to it.
 
 .PARAMETER Version
     A release to download from GitHub and upgrade to, such as v0.2.0 or v0.2.0-alpha.3, or 'latest' (the newest
-    release, else the newest pre-release). Downloads tide-<version>.zip and its .sha256, checks the hash, and carries on
-    as with -BundleZip. Needs outbound HTTPS to github.com (or -Proxy); a host without it downloads the bundle elsewhere
-    and uses -BundleZip. Administration > System > Updates shows this command with the newest version filled in.
+    release, else the newest pre-release). Downloads tide-<version>.zip, its .sha256 and its .sig, checks them as for
+    -BundleZip, and carries on as with -BundleZip. Needs outbound HTTPS to github.com (or -Proxy); a host without it
+    downloads the bundle elsewhere and uses -BundleZip. Administration > System > Updates shows this command with the
+    newest version filled in.
+
+.PARAMETER ExpectedSha256
+    The bundle's SHA-256 (64 hex characters, from the release page), when you have the hash but not the .sha256 file.
+    The bundle is refused if it doesn't match. Used in place of a .sha256 beside the zip.
+
+.PARAMETER AllowUnsigned
+    Accept a bundle with no .sig (a release from before signing: v1.8.0 and earlier) although this script pins a
+    release key. It's then checked by its SHA-256 only, with a warning. A .sig that doesn't verify is still refused.
 
 .PARAMETER Repository
     The GitHub repository releases come from (default 'jashley92/Tide').
@@ -91,6 +105,9 @@
 
 .EXAMPLE
     .\Upgrade-Tide.ps1 -Version latest -SiteName Intranet -AppPath tide
+
+.EXAMPLE
+    .\Upgrade-Tide.ps1 -BundleZip D:\drop\tide-v0.2.0.zip -ExpectedSha256 <the SHA-256 from the release page>
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
@@ -98,6 +115,8 @@ param(
     [string] $Version,
     [string] $Repository = 'jashley92/Tide',
     [string] $Proxy,
+    [string] $ExpectedSha256,
+    [switch] $AllowUnsigned,
     [string] $AppSource,
     [switch] $Build,
 
@@ -116,7 +135,9 @@ param(
     [switch] $Force,
 
     # Set by the handover below: the script that handed over has already checked the bundle against its release.
-    [Parameter(DontShow)] [switch] $ReleaseHashChecked
+    [Parameter(DontShow)] [switch] $ReleaseHashChecked,
+    # For tests only: a TideReleaseKeys.ps1 to trust instead of the lib\TideReleaseKeys.ps1 beside this script.
+    [Parameter(DontShow)] [string] $TrustedKeysPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -334,71 +355,37 @@ if ($Version) {
     $base = "https://github.com/$Repository/releases/download/$Version"
     Write-Step "Downloading $zipName from $Repository"
     $BundleZip = Join-Path $download $zipName
-    $shaFile = "$BundleZip.sha256"
     try {
-        Invoke-WebRequest @web -Uri "$base/$zipName.sha256" -OutFile $shaFile
+        Invoke-WebRequest @web -Uri "$base/$zipName.sha256" -OutFile "$BundleZip.sha256"
         Invoke-WebRequest @web -Uri "$base/$zipName" -OutFile $BundleZip
     } catch {
         throw ("Couldn't download $Version from github.com/$Repository ($($_.Exception.Message)). Check the version exists " +
                "and this host can reach github.com (or pass -Proxy); otherwise download the bundle elsewhere and use -BundleZip.")
     }
-    $expected = ConvertFrom-TideSha256File (Get-Content $shaFile -Raw)
-    $actual = (Get-FileHash -Path $BundleZip -Algorithm SHA256).Hash
-    if (-not $expected -or -not (Test-TideFileHash $BundleZip $expected)) {
-        throw "The downloaded bundle's SHA-256 ($actual) doesn't match the release's ($expected). Nothing was changed."
+    # And its signature. A release from before signing has none (404); the check below decides what that means.
+    try { Invoke-WebRequest @web -Uri "$base/$zipName.sig" -OutFile "$BundleZip.sig" }
+    catch {
+        Remove-Item -LiteralPath "$BundleZip.sig" -ErrorAction SilentlyContinue
+        Write-Info "No $zipName.sig downloaded ($($_.Exception.Message))."
     }
-    Write-Info "SHA-256 matches the release: $actual"
-    $hashChecked = $true
     $tag = $Version
 }
-elseif ($BundleZip -and -not $hashChecked) {
-    # A bundle copied onto the host is checked against the release it says it is (its VERSION.txt), when this host can
-    # reach github.com: a bundle whose hash doesn't match the release's .sha256 is refused before it's expanded. A host
-    # that can't reach it, or a bundle that isn't a release of -Repository, gets a warning and carries on.
+if ($BundleZip -and -not $hashChecked) {
+    # This script, the installed one, checks the bundle before it's expanded or its own script is handed over to, since a
+    # bundle's script can't vouch for itself: its signature against the release keys this script pins, and its SHA-256
+    # against -ExpectedSha256, a .sha256 beside it, or (unsigned, with neither) its release's on github.com
+    # (lib\TideUpgrade.ps1, Invoke-TideBundleCheck). A bundle that fails is refused here, with nothing changed.
     if (-not (Test-Path $BundleZip -PathType Leaf)) { throw "Bundle not found: $BundleZip" }
-    try {
-        Add-Type -AssemblyName System.IO.Compression.FileSystem
-        $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path $BundleZip).Path)
-        try {
-            $entry = $zip.Entries | Where-Object { $_.FullName -match '^[^/\\]+[/\\]VERSION\.txt$' -and $_.Length -lt 4096 } |
-                Select-Object -First 1
-            if ($entry) {
-                $reader = New-Object System.IO.StreamReader($entry.Open())
-                try { $tag = Get-TideVersionFromText $reader.ReadToEnd() }
-                finally { $reader.Dispose() }
-            }
-        } finally { $zip.Dispose() }
-    } catch { Write-Warn2 "Couldn't read VERSION.txt from the bundle ($($_.Exception.Message))." }
-
-    if (-not $tag) {
-        Write-Warn2 "The bundle doesn't name a release version, so its SHA-256 can't be checked against a release."
-    } else {
-        Write-Step "Checking the bundle's SHA-256 against the $tag release of $Repository"
-        $shaFile = Join-Path $staging "tide-$tag.zip.sha256"
-        $shaWeb = $web.Clone(); $shaWeb.TimeoutSec = 30   # a host without github.com shouldn't wait long to find out
-        $expected = $null; $why = $null
-        try {
-            Invoke-WebRequest @shaWeb -Uri "https://github.com/$Repository/releases/download/$tag/tide-$tag.zip.sha256" -OutFile $shaFile
-            $expected = ConvertFrom-TideSha256File (Get-Content $shaFile -Raw)
-            if (-not $expected) { $why = "the answer wasn't a .sha256" }
-        } catch {
-            $status = 0
-            try { $status = [int]$_.Exception.Response.StatusCode } catch { }
-            $why = if ($status -eq 404) { "github.com/$Repository has no $tag release with a .sha256" } else { "couldn't fetch it: $($_.Exception.Message)" }
-        }
-        if ($expected) {
-            $actual = (Get-FileHash -Path $BundleZip -Algorithm SHA256).Hash
-            if (-not (Test-TideFileHash $BundleZip $expected)) {
-                throw ("The bundle's SHA-256 ($actual) doesn't match the $tag release's ($expected) on github.com/$Repository. " +
-                       "Nothing was changed. Download the bundle from the release again.")
-            }
-            Write-Info "SHA-256 matches the release: $actual"
-        } else {
-            Write-Warn2 ("Not checked against the release ($why). Carrying on; to check it yourself, compare " +
-                         "Get-FileHash <zip> -Algorithm SHA256 with the release's tide-$tag.zip.sha256.")
-        }
-        $hashChecked = $true   # tried: the bundle's own script, handed over to below, doesn't fetch it again
-    }
+    $keysFile = if ($TrustedKeysPath) { $TrustedKeysPath } else { Join-Path $deployDir 'lib\TideReleaseKeys.ps1' }
+    if ($TrustedKeysPath -and -not (Test-Path -LiteralPath $TrustedKeysPath -PathType Leaf)) { throw "-TrustedKeysPath not found: $TrustedKeysPath" }
+    $trustedKeys = @(Get-TideTrustedKeys $keysFile)
+    Write-Step "Checking the bundle's signature and SHA-256"
+    $check = Invoke-TideBundleCheck -ZipPath $BundleZip -Keys $trustedKeys -AllowUnsigned:$AllowUnsigned -ExpectedSha256 $ExpectedSha256 `
+        -Tag $tag -Repository $Repository -Web $web -WorkDir $staging
+    foreach ($n in $check.Notes) { Write-Info $n }
+    foreach ($w in $check.Warnings) { Write-Warn2 $w }
+    $tag = $check.Tag
+    $hashChecked = $true   # the bundle's own script, handed over to below, doesn't check it again
 }
 
 if ($BundleZip) {

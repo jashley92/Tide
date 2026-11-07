@@ -385,6 +385,30 @@ failure and counts, not content.
 - **Where to look:** **Setting sources** shows the value in force and its source.
 - **Fix:** change it where it's in force, or recycle. See [configuration.md](configuration.md#when-a-change-takes-effect).
 
+### The upgrade refuses the bundle: its signature or SHA-256
+
+- **Cause:** `Upgrade-Tide.ps1` checks a bundle before it expands it
+  ([deploy/README.md](../../deploy/README.md#checking-a-bundle)), and stops with "Nothing was changed." when:
+  - "… .sig isn't a valid signature of this bundle by TIDE's release key …": the zip was changed or damaged after it
+    was signed (a partial download, a copy that altered it), or the `.sig` belongs to another release;
+  - "The bundle isn't signed: there's no … .sig beside it": only the zip was copied, or it's a release from before
+    signing (v1.8.0 or earlier), such as a downgrade;
+  - "The bundle's SHA-256 (…) doesn't match …": the zip differs from the `.sha256` beside it, from `-ExpectedSha256`,
+    or from the release's `.sha256` on github.com.
+- **Where to look:** the upgrade's console output; `Get-FileHash <zip> -Algorithm SHA256` against the hash on the
+  release page; `Test-TideBundle.ps1 <zip>` from the installed `<site folder>-deploy` for the same checks without
+  upgrading.
+- **Fix:** download the zip, its `.sig` and its `.sha256` from the release page again and put them in one folder. For
+  a release from before signing, pass `-AllowUnsigned` (and the hash, with the `.sha256` beside it or
+  `-ExpectedSha256`). `-AllowUnsigned` doesn't help with a `.sig` that doesn't verify: that is always refused.
+
+### The upgrade warns "Not checked against the release"
+
+- **Cause:** the bundle isn't signature-checked (no key is pinned yet, or `-AllowUnsigned`), no hash was at hand, and
+  the server can't reach github.com to fetch the release's `.sha256`. The upgrade carries on.
+- **Fix:** copy `tide-<v>.zip.sha256` from the release page beside the zip, or pass `-ExpectedSha256 <hash>`; either
+  is used without asking github.com.
+
 ### The update check says it couldn't check
 
 - **Cause:** no route to `api.github.com` (no proxy set, or blocked), or GitHub answered 404 (a private repository

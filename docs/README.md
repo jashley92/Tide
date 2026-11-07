@@ -26,6 +26,7 @@ Start with the question you have.
 | How to get it running on my machine | [development/getting-started.md](development/getting-started.md) |
 | How to add a field, page, permission, setting, API endpoint… | [development/recipes.md](development/recipes.md) |
 | How tests and CI work, and what isn't covered | [development/testing.md](development/testing.md) |
+| How releases are signed, and the signing key | [development/releasing.md](development/releasing.md) |
 | How to install a production instance | [INSTALL.md](INSTALL.md) |
 | How to upgrade one | [UPGRADE.md](UPGRADE.md) |
 | Every configuration setting, and which are changed in the app | [operations/configuration.md](operations/configuration.md) |
@@ -62,7 +63,7 @@ docs/
   architecture/           how it's built: overview, code map, data model, editions and TLP, security,
                           collaboration, frontend, backend
   workflows/              what users do and what happens underneath
-  development/            getting started, recipes, testing
+  development/            getting started, recipes, testing, releasing
   operations/             configuration, integrations, backup and recovery, troubleshooting
   reference/              business rules, glossary, known issues, performance
   decisions/              architecture decision records

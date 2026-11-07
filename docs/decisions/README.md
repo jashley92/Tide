@@ -26,3 +26,4 @@ contributor; supersede one rather than editing it once it's accepted.
 | [0019](0019-outreach-emails-are-written-never-sent.md) | Outreach emails are written by TIDE and sent by the analyst, held to the template's TLP |
 | [0020](0020-external-teams-are-emailed-without-tide.md) | External teams are tracked in TIDE and emailed as people without it; Tracking and per-team active limits |
 | [0021](0021-escalation-is-an-administered-ladder.md) | Escalation is an administered ladder of steps from a fixed menu, run by the reminder sweep once per due date |
+| [0022](0022-releases-are-signed-with-a-pinned-key.md) | Releases are signed with a pinned key, checked by the installed upgrade script, and a bundle's hash can be checked offline |
