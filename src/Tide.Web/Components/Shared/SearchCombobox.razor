@@ -14,7 +14,7 @@
            maxlength="@MaxLength" placeholder="@Placeholder" aria-describedby="@(Id)-help"
            aria-expanded="@Ui.Aria(Expanded)" aria-controls="@(Id)-list" aria-autocomplete="list"
            aria-activedescendant="@(Expanded && _active < Count ? OptionId(_active) : null)"
-           value="@Text" @oninput="Typed" @onkeydown="OnKey" @onfocus="Opened" @onblur="Closed" />
+           @bind:get="_text" @bind:set="Typed" @bind:event="oninput" @onkeydown="OnKey" @onfocus="Opened" @onblur="Closed" />
     <div id="@(Id)-help" class="visually-hidden">@Help</div>
     @if (Shown)
     {
@@ -98,6 +98,13 @@
 
     private ElementReference _input;
     private IReadOnlyList<TItem>? _seen;
+    // The box's text. Bound with @bind:get/@bind:set (not value= with @oninput), so Blazor keeps its copy of the box's
+    // value in step with what's typed and a render never sends older text over newer keystrokes. Text from the parent
+    // replaces it only when the parent changes it (a clear after a pick): a parent re-rendering with the text it last
+    // passed, older than what's typed since, leaves the box alone.
+    private string _text = "";
+    private string? _given;
+    private bool _started;
     internal bool _focused;
     internal int _active;
     // The highlight moved by a key: once drawn, its option is scrolled into view.
@@ -110,18 +117,25 @@
     private string OptionId(int i) => $"{Id}-opt-{i}";
     private string Option(int i) => i == _active && Expanded ? "tide-story-result tide-combo-opt is-active" : "tide-story-result tide-combo-opt";
 
-    // New results put the highlight back on the first.
+    // A Text the parent changed goes in the box; new results put the highlight back on the first.
     protected override void OnParametersSet()
     {
+        if (!_started || Text != _given)
+        {
+            _started = true;
+            _given = Text;
+            _text = Text ?? "";
+        }
         if (ReferenceEquals(_seen, Items)) return;
         _seen = Items;
         _active = 0;
     }
 
-    private async Task Typed(ChangeEventArgs e)
+    private async Task Typed(string? text)
     {
         _focused = true;
-        await TextChanged.InvokeAsync(e.Value?.ToString());
+        _text = text ?? "";
+        await TextChanged.InvokeAsync(text);
     }
 
     private void Opened() => _focused = true;

@@ -51,6 +51,11 @@ state beyond what's on screen.
 - **Routing and focus.** `Routes.razor` uses `AuthorizeRouteView` with `MainLayout` as the default layout,
   `AccessDenied` for `NotAuthorized`, `NotFoundPage` as the not-found page, and `FocusOnNavigate` with selector `h1`,
   so focus lands on each page's heading after navigation.
+- **A text box that updates as you type binds with `@bind:get`/`@bind:set` and `@bind:event="oninput"`, never
+  `value="@x"` with `@oninput`.** Only `@bind` tells Blazor to copy the browser's value into its own copy of the box as
+  each keystroke arrives. Without it, Blazor's copy is the last value it drew, so a later render sends the server's
+  text, older than what's typed by then under any latency, over the newest keystrokes. Bound, a render carrying the
+  typed text sends nothing, and a clear or a value set from outside still reaches the box.
 - **Every script is an external file**, versioned with `?v=` in `App.razor` because browsers cache by URL. Bump the
   version when a file changes.
 

@@ -1,68 +1,53 @@
 using FluentAssertions;
-using Microsoft.AspNetCore.Components;
 using Tide.Web.Components.Shared;
-using static Tide.IntegrationTests.ComponentHarness;
 
 namespace Tide.IntegrationTests;
 
 /// <summary>
 /// The ATT&amp;CK matrix picker's filter box: a keystroke waits out the typing pause before the matrix changes, and until
 /// then the picker doesn't render at all (the box already shows what's typed), so the matrix isn't diffed per letter.
+/// When it does render, what was typed isn't written back to the box, so newer keystrokes aren't lost; a clear is.
 /// </summary>
-public class AttackMatrixPickerTypingTests(TideApp app) : IClassFixture<TideApp>
+public class AttackMatrixPickerTypingTests
 {
-    // As Blazor delivers an @oninput: through the component's own event handling, which renders as the handler first
-    // waits and again when it's done. Hands back the handler's task, still waiting out its pause.
-    private static async Task<Task> Type(Rendered<AttackMatrixPicker> r, string text)
-    {
-        Task pending = Task.CompletedTask;
-        await r.Renderer.Dispatcher.InvokeAsync(() =>
-        {
-            pending = ((IHandleEvent)r.Component).HandleEventAsync(
-                new EventCallbackWorkItem((Func<ChangeEventArgs, Task>)r.Component.OnFilter), new ChangeEventArgs { Value = text });
-        });
-        return pending;
-    }
-
     [Fact]
-    public async Task AKeystroke_DoesNotRenderTheMatrix_UntilTypingPauses()
+    public async Task AKeystroke_DoesNotRenderTheMatrix_UntilTypingPauses_AndIsNeverWrittenBack()
     {
-        var r = await RenderAsync<AttackMatrixPicker>(app, "/articles", new() { ["Current"] = (IReadOnlyCollection<string>)[] });
-        try
-        {
-            await TypeAndWatch(r);
-        }
-        finally
-        {
-            // Closing hands focus back through dialog.js, which a statically rendered picker can't call.
-            try { await r.DisposeAsync(); }
-            catch (InvalidOperationException) { }
-        }
-    }
-
-    private static async Task TypeAndWatch(Rendered<AttackMatrixPicker> r)
-    {
-        (await r.Html()).Should().NotContain("tide-atkm-col-hidden", "with nothing typed every tactic shows");
+        await using var r = RecordingRenderer.Create();
+        await r.Mount<AttackMatrixPicker>(new() { ["Current"] = (IReadOnlyCollection<string>)[] });
+        r.Shows("tide-atkm-col-hidden").Should().BeFalse("with nothing typed every tactic shows");
 
         // The first letter brings the Clear button, so it draws at once; the matrix filters once typing pauses.
-        var first = await Type(r, "phish");
-        (await r.Html()).Should().Contain(">Clear</button>").And.NotContain("tide-atkm-filterline");
+        var first = await r.Type("phish");
+        r.Shows("Clear").Should().BeTrue();
+        r.Shows("tide-atkm-filterline").Should().BeFalse();
         await first;
-        var filtered = await r.Html();
-        filtered.Should().Contain("value=\"phish\"").And.Contain("tide-atkm-filterline").And.Contain("tide-atkm-col-hidden");
+        r.Shows("tide-atkm-filterline").Should().BeTrue();
+        r.Shows("tide-atkm-col-hidden").Should().BeTrue();
+        r.ValuesSent.Should().BeEmpty("what's typed isn't written back to the box");
+        r.Drawn.Should().Be("phish", "Blazor's copy of the box follows the typing");
 
         // A later keystroke: nothing renders while it pauses, not the box's value and not the matrix.
-        var second = await Type(r, "phishing");
-        (await r.Html()).Should().Be(filtered, "the keystroke doesn't re-render the picker before the pause");
+        var redraws = r.Redraws;
+        var second = await r.Type("phishing");
+        r.Redraws.Should().Be(redraws, "the keystroke doesn't re-render the picker before the pause");
         await second;
-        (await r.Html()).Should().Contain("value=\"phishing\"");
 
         // Two quick keystrokes: the first is superseded and draws nothing; the second filters.
-        var a = await Type(r, "T1566");
-        var b = await Type(r, "T1566.001");
-        var mid = await r.Html();
-        mid.Should().Contain("value=\"phishing\"").And.NotContain("value=\"T1566");
+        var a = await r.Type("T1566");
+        var b = await r.Type("T1566.001");
         await Task.WhenAll(a, b);
-        (await r.Html()).Should().Contain("value=\"T1566.001\"").And.Contain("T1566.001");
+        r.Shows("T1566.001").Should().BeTrue();
+        r.ValuesSent.Should().BeEmpty("still nothing typed is sent back");
+
+        // Clear empties the box: a change Blazor sends.
+        await r.Click("Clear");
+        r.ValuesSent.Should().Equal("");
+        r.Shows("tide-atkm-filterline").Should().BeFalse();
+
+        // Typed again and cleared again: the second clear reaches the box too.
+        await await r.Type("lure");
+        await r.Click("Clear");
+        r.ValuesSent.Should().Equal("", "");
     }
 }

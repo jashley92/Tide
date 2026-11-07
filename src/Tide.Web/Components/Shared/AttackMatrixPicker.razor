@@ -17,8 +17,9 @@
         </h2>
         <div class="tide-atkm-search">
             <span class="bi bi-search" aria-hidden="true"></span>
+            @* Bound (not value= with @oninput) so a render never sends older text over newer keystrokes; see OnFilter. *@
             <input @ref="_filterBox" class="form-control form-control-sm" placeholder="Filter by id or name: T1566, phishing"
-                   value="@_text" @oninput="OnFilter" @onkeydown="OnFilterKey" aria-label="Filter techniques" />
+                   @bind:get="_text" @bind:set="OnFilter" @bind:event="oninput" @onkeydown="OnFilterKey" aria-label="Filter techniques" />
             @if (_text.Length > 0)
             {
                 <button type="button" class="btn btn-sm btn-link p-0" @onclick="ClearFilter">Clear</button>
@@ -176,10 +177,12 @@
     // adversary picker's search does), so a word typed is one change, not one a letter. A later keystroke supersedes it.
     // Until then only the box has changed, and the browser already shows it, so the render Blazor makes as the handler
     // first waits is skipped (unless the Clear button comes or goes): a keystroke doesn't re-render the matrix.
-    internal async Task OnFilter(ChangeEventArgs e)
+    // The box is bound with @bind:get/@bind:set, so Blazor keeps its copy of the box's value in step with the browser
+    // as each keystroke arrives: a later render carrying the typed text sends nothing, and only a clear changes the box.
+    internal async Task OnFilter(string? text)
     {
         var had = _text.Length > 0;
-        _text = e.Value?.ToString() ?? "";
+        _text = text ?? "";
         _quiet = had == (_text.Length > 0);
         if (await _pause.Settled()) SetFilter(_text);
         else _quiet = true; // superseded: nothing new to draw
@@ -207,7 +210,7 @@
         _text = "";
         SetFilter("");
         // The Clear button goes with the filter: focus goes back to the box rather than dropping to the page.
-        await _filterBox.FocusAsync();
+        await _filterBox.TryFocusAsync();
     }
 
     private void SetFilter(string? value)

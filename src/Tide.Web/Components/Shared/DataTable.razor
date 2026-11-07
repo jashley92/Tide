@@ -17,7 +17,7 @@
                 <span class="bi bi-search" aria-hidden="true"></span>
                 <label class="visually-hidden" for="@_id">@FilterLabel</label>
                 <input id="@_id" type="search" class="form-control form-control-sm" maxlength="200" autocomplete="off"
-                       placeholder="@FilterPlaceholder" value="@_typed" @oninput="Typed" @onkeydown="FilterKey" />
+                       placeholder="@FilterPlaceholder" @bind:get="_typed" @bind:set="Typed" @bind:event="oninput" @onkeydown="FilterKey" />
                 @if (_typed.Length > 0)
                 {
                     <button type="button" class="tide-dt-clear" aria-label="Clear the filter" title="Clear the filter" @onclick="ClearFilter"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
@@ -274,9 +274,12 @@
 
     private RenderFragment Row(TItem r) => @<tr @key="Key is null ? r : Key(r)" class="@RowClass?.Invoke(r)">@RowTemplate(r)</tr>;
 
-    private async Task Typed(ChangeEventArgs e)
+    // Bound with @bind:get/@bind:set rather than value= with @oninput: Blazor then keeps its copy of the box's value in
+    // step with what's typed, so a render after a keystroke never sends older text over newer typing, while a clear or a
+    // new Filter from outside still reaches the box.
+    private async Task Typed(string? text)
     {
-        _typed = e.Value?.ToString() ?? "";
+        _typed = text ?? "";
         if (await _pause.Settled()) await Apply(_typed);
     }
 
