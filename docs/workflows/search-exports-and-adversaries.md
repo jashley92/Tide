@@ -194,7 +194,8 @@ quiet but still counts until its token can't push again. An administrator can re
 articles showed it. *Raise action* (`DetectionService.RaiseAsync`) opens a Config change action titled "Detection gap:
 {technique}" for the chosen team, P2 when a watched adversary uses it and P3 otherwise, linked to the latest article that
 shows it, and remembers it on the row (`DetectionGap`) until it's closed. A second one is refused while the first is
-open. The editor's technique chips and a profile's techniques say "2 rules", "1 disabled" or "no rule". Rule names and
+open. A team at its active limit that warns asks why first (`OverLimitDialog`, the reason going in the action's
+history), as raising any action does; one that refuses refuses. The editor's technique chips and a profile's techniques say "2 rules", "1 disabled" or "no rule". Rule names and
 counts never reach an edition, an export or a webhook.
 
 ## Our stack
