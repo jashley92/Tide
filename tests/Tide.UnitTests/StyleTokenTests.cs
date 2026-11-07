@@ -18,6 +18,15 @@ public partial class StyleTokenTests
         Used().Matches(text).Select(m => m.Groups[1].Value).Distinct().Where(t => !defined.Contains(t)).Should().BeEmpty();
     }
 
+    [Fact]
+    public void RenderedMarkdown_BreaksAWordLongerThanItsCard()
+    {
+        // A comment or an action's details quoting a long URL or a SHA-256 ran out of its card and scrolled the page
+        // sideways on a narrow window: .tide-md (the Md component's wrapper) set no wrapping.
+        var css = File.ReadAllText(Path.Combine(DeployScriptTests.RepoRoot(), "src", "Tide.Web", "wwwroot", "app.css"));
+        Regex.Match(css, @"(?m)^\.tide-md\s*\{([^}]*)\}").Groups[1].Value.Should().MatchRegex(@"overflow-wrap:\s*anywhere");
+    }
+
     [GeneratedRegex(@"(--tide-[a-z0-9-]+)\s*:")]
     private static partial Regex Defined();
 

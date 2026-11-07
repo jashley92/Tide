@@ -435,8 +435,15 @@ Markdown; `MarkdownService` (`src/Tide.Application/Content/MarkdownService.cs`) 
 - **Links:** only `http://`, `https://` and `mailto:` schemes (or a relative anchor) survive; anything else
   (`javascript:`, `data:`, `vbscript:`, `file:`) becomes an inert anchor. A protocol-relative address (`//host`) and any
   address with a backslash are refused too, checked on the destination as it was typed. An angle-bracket autolink
-  with an unsafe scheme stays text. Links open in a new tab with no referrer or opener.
+  with an unsafe scheme stays text. Links, an angle-bracket `<https://…>` among them, open in a new tab with no
+  referrer or opener.
 - **No autolinks:** a bare URL or domain is never made clickable, because bullets quote malicious addresses.
+- **AI suggestions carry no links:** `DraftChecks` reduces every link in a suggestion to its text with
+  `MarkdownService.WithoutLinks`, in each form Markdown writes one (`[text](url)`, `[text][1]` with its `[1]: url`
+  line, `<https://…>`, an image), so a web page the AI read can't plant a link in the brief.
+- **Indicators are shown defanged** (`IocObservable.Defang`): an address, domain, URL or email address fully, and any
+  other kind (a command line, a registry value) has a web address inside it defanged (`hxxps://`), so a mail client
+  can't make it a live link.
 - **No inline images:** an image is rendered as a link, so no reader's browser fetches a tracking pixel or a hostile
   host's file.
 - **Deep nesting:** text nested deeper than Markdig allows is shown escaped instead of failing every render of the brief.

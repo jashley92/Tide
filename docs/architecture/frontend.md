@@ -417,7 +417,9 @@ Markdown; it's rendered at the edges by `MarkdownService` (`src/Tide.Application
   `data:`, `vbscript:`, `file:`) becomes an inert anchor, including an angle-bracket autolink.
 - **No autolinks.** Bare addresses are never turned into links, because bullets quote malicious URLs and domains.
   Only a link the analyst wrote as `[text](url)` is one.
-- **Links open in a new tab** with `rel="noopener noreferrer"`.
+- **Links open in a new tab** with `rel="noopener noreferrer"`, an angle-bracket `<https://…>` too.
+- **Long words wrap.** `.tide-md` sets `overflow-wrap: anywhere`, so a pasted URL or hash breaks inside its card
+  rather than scrolling the page sideways; a code block scrolls in itself.
 - **No inline images.** An image in Markdown is drawn as a placeholder ("Images aren't shown inline. Add it as a
   screenshot.") and its URL is never loaded.
 - **One-line fields** (`ToInlineHtml`) parse inline syntax only, so "- x" or "# x" stays literal.

@@ -235,9 +235,13 @@ public static partial class IocObservable
 
     /// <summary>
     /// <paramref name="value"/> defanged when it's a kind that carries defang notation (an address, domain, URL or
-    /// email); anything else (a file name, a hash, a host name) as it was typed, since "cook.pth" isn't a link.
+    /// email); anything else (a file name, a hash, a host name) as it was typed, since "cook.pth" isn't a link, except
+    /// that a web address inside it (a command line's download, "iwr https://…") has its scheme defanged: a mail client
+    /// would otherwise make it a live link.
     /// </summary>
-    public static string Defang(IndicatorType type, string? value) => IsRefangable(type) ? Defang(value) : (value ?? "").Trim();
+    public static string Defang(IndicatorType type, string? value) => IsRefangable(type)
+        ? Defang(value)
+        : HttpSchemeRx().Replace((value ?? "").Trim(), m => m.Value.Length == 5 ? "hxxps" : "hxxp");
 
     // Refang patterns. \b avoids rewriting the middle of an unrelated token.
     [GeneratedRegex(@"\bhxxps\b", RegexOptions.IgnoreCase)] private static partial Regex HxxpsRx();
