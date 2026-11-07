@@ -53,7 +53,7 @@ else
 
                     <label class="tide-field-label mt-2" for="etpl-body">Body</label>
                     <MarkdownToolbar For="etpl-body" Label="Body" />
-                    <textarea id="etpl-body" class="tide-query tide-etpl-body" spellcheck="true" maxlength="@EmailTemplateCatalog.MaxBody"
+                    <textarea id="etpl-body" class="tide-query tide-etpl-body tide-autogrow" spellcheck="true" maxlength="@EmailTemplateCatalog.MaxBody"
                               @bind="_body" @bind:event="oninput" @bind:after="UpdatePreview" aria-describedby="etpl-body-help"></textarea>
                     <div class="form-text" id="etpl-body-help">Markdown: <span class="tide-data">**bold**</span>, <span class="tide-data">*italic*</span>,
                         <span class="tide-data">- a list</span>, a blank line between paragraphs. HTML is shown as typed.</div>

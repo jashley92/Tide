@@ -14,7 +14,7 @@
     }
 </select>
 <label class="tide-field-label" for="@Id-note">Note (optional)</label>
-<textarea class="form-control form-control-sm" id="@Id-note" rows="2" maxlength="2000" @bind:get="Note" @bind:set="NoteChanged.InvokeAsync"></textarea>
+<textarea class="form-control form-control-sm tide-autogrow tide-grow-2" id="@Id-note" rows="2" maxlength="2000" @bind:get="Note" @bind:set="NoteChanged.InvokeAsync"></textarea>
 
 @code {
     [Parameter, EditorRequired] public ActionKind Kind { get; set; }

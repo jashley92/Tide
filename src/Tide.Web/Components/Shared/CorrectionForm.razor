@@ -78,7 +78,7 @@
             <p class="small text-danger mb-1" id="correct-note-warn"><span class="bi bi-exclamation-triangle" aria-hidden="true"></span>
                 Don't repeat, quote or summarize what slipped: the notice already says what to do.</p>
         }
-        <textarea class="form-control form-control-sm" id="correct-note" rows="3" maxlength="@CorrectionService.MaxNote" disabled="@_busy"
+        <textarea class="form-control form-control-sm tide-autogrow tide-grow-3" id="correct-note" rows="3" maxlength="@CorrectionService.MaxNote" disabled="@_busy"
                   aria-describedby="@(_slip ? "correct-note-warn" : null)" @bind="Note" @bind:event="oninput"></textarea>
         <div class="d-flex gap-2 align-items-center flex-wrap mt-1 mb-2">
             <span class="small">The note is marked</span>

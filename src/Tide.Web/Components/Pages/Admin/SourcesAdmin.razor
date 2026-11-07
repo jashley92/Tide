@@ -274,11 +274,11 @@
     <div class="row g-3">
         <div class="col-md-4">
             <label class="tide-field-label" for="sponsored-markers">Markers</label>
-            <textarea id="sponsored-markers" class="form-control form-control-sm" rows="6" @bind="Markers" @bind:event="oninput"></textarea>
+            <textarea id="sponsored-markers" class="form-control form-control-sm tide-autogrow tide-grow-3" rows="6" @bind="Markers" @bind:event="oninput"></textarea>
         </div>
         <div class="col-md-4">
             <label class="tide-field-label" for="sponsored-exceptions">Exceptions (not sponsorship)</label>
-            <textarea id="sponsored-exceptions" class="form-control form-control-sm" rows="6" @bind="Exceptions" @bind:event="oninput"></textarea>
+            <textarea id="sponsored-exceptions" class="form-control form-control-sm tide-autogrow tide-grow-3" rows="6" @bind="Exceptions" @bind:event="oninput"></textarea>
         </div>
         <div class="col-md-4">
             <label class="tide-field-label" for="sponsored-test">Test a title, author or tag</label>
@@ -302,11 +302,11 @@
     <div class="row g-3">
         <div class="col-md-6">
             <label class="tide-field-label" for="ad-selectors">Selectors to remove</label>
-            <textarea id="ad-selectors" class="form-control form-control-sm tide-data" rows="6" @bind="AdSelectors" @bind:event="oninput"></textarea>
+            <textarea id="ad-selectors" class="form-control form-control-sm tide-data tide-autogrow tide-grow-3" rows="6" @bind="AdSelectors" @bind:event="oninput"></textarea>
         </div>
         <div class="col-md-6">
             <label class="tide-field-label" for="ad-labels">Label lines to remove</label>
-            <textarea id="ad-labels" class="form-control form-control-sm" rows="6" @bind="AdLabels" @bind:event="oninput"></textarea>
+            <textarea id="ad-labels" class="form-control form-control-sm tide-autogrow tide-grow-3" rows="6" @bind="AdLabels" @bind:event="oninput"></textarea>
         </div>
     </div>
     <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveAds">Save adverts</button>
@@ -339,7 +339,7 @@
         </div>
         <div class="col-md-8">
             <label class="tide-field-label" for="group-words">Extra words to ignore</label>
-            <textarea id="group-words" class="form-control form-control-sm" rows="5" @bind="IgnoredWords" @bind:event="oninput" aria-describedby="group-words-help group-words-built-in"></textarea>
+            <textarea id="group-words" class="form-control form-control-sm tide-autogrow tide-grow-3" rows="5" @bind="IgnoredWords" @bind:event="oninput" aria-describedby="group-words-help group-words-built-in"></textarea>
             <div class="form-text" id="group-words-help">One word per line: letters, digits and hyphens, up to @TriageGroups.MaxWordLength characters, at most @TriageGroups.MaxWords.
                 Endings are trimmed as they are for the built-in words, so "webinar" also ignores "webinars". A hyphenated word is ignored as each of its parts.</div>
             <div class="small tide-muted" id="group-words-built-in" role="status">

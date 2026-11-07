@@ -72,11 +72,11 @@
     <div class="row g-3">
         <div class="col-md-6">
             <label class="tide-field-label" for="team-recipients">Security team edition</label>
-            <textarea id="team-recipients" class="form-control form-control-sm tide-data" rows="4" @bind="_teamRecipients" placeholder="cti-team@example.org"></textarea>
+            <textarea id="team-recipients" class="form-control form-control-sm tide-data tide-autogrow tide-grow-3" rows="4" @bind="_teamRecipients" placeholder="cti-team@example.org"></textarea>
         </div>
         <div class="col-md-6">
             <label class="tide-field-label" for="public-recipients">Company-wide edition</label>
-            <textarea id="public-recipients" class="form-control form-control-sm tide-data" rows="4" @bind="_publicRecipients" placeholder="all-staff@example.org"></textarea>
+            <textarea id="public-recipients" class="form-control form-control-sm tide-data tide-autogrow tide-grow-3" rows="4" @bind="_publicRecipients" placeholder="all-staff@example.org"></textarea>
         </div>
     </div>
     <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveRecipients">Save recipients</button>

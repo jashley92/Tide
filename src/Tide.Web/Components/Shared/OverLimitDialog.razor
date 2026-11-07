@@ -4,7 +4,7 @@
 
 <ConfirmDialog @ref="_dialog" Form="true" ConfirmDisabled="@string.IsNullOrWhiteSpace(_reason)">
     <label class="tide-field-label" for="@_id">Why go over the limit?</label>
-    <textarea id="@_id" class="form-control form-control-sm" rows="2" maxlength="@ActiveLimits.MaxReason" @bind="_reason" @bind:event="oninput"></textarea>
+    <textarea id="@_id" class="form-control form-control-sm tide-autogrow tide-grow-2" rows="2" maxlength="@ActiveLimits.MaxReason" @bind="_reason" @bind:event="oninput"></textarea>
     <div class="form-text">Kept in the action's history.</div>
 </ConfirmDialog>
 

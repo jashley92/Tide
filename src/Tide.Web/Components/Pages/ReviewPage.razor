@@ -93,7 +93,7 @@ else
                             <input class="form-control form-control-sm" maxlength="@ReviewComment.MaxQuote" placeholder="The words it's about (optional)" aria-label="The words it's about" @bind="_quote" />
                             <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" @onclick="UseSelection">Use the selected words</button>
                         </div>
-                        <textarea class="form-control form-control-sm mb-1" rows="3" maxlength="@ReviewComment.MaxText" aria-label="Comment" placeholder="What should change, and why" @bind="_text" @bind:event="oninput"></textarea>
+                        <textarea class="form-control form-control-sm mb-1 tide-autogrow tide-grow-3" rows="3" maxlength="@ReviewComment.MaxText" aria-label="Comment" placeholder="What should change, and why" @bind="_text" @bind:event="oninput"></textarea>
                         <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_text))" @onclick="Comment">Add the comment</button>
                     </div>
                 </section>
