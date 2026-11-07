@@ -125,19 +125,22 @@ public sealed class StatusBadge : ComponentBase
     };
 }
 
-/// <summary>Analyst-written Markdown, rendered safe (see <see cref="Application.Content.IMarkdownService"/>).</summary>
+/// <summary>Analyst-written Markdown, rendered safe (see <see cref="Application.Content.IMarkdownService"/>). A link
+/// from the server's root (<c>[x](/actions/12)</c>) is given the app's sub-path, so it reaches TIDE under <c>/tide</c>.</summary>
 public sealed class Md : ComponentBase
 {
     [Inject] private Application.Content.IMarkdownService Markdown { get; set; } = default!;
+    [Inject] private NavigationManager Nav { get; set; } = default!;
     [Parameter] public string? Text { get; set; }
     [Parameter] public bool Inline { get; set; }
 
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         if (string.IsNullOrWhiteSpace(Text)) return;
+        var links = LinkRoot.FromBaseUri(Nav.BaseUri);
         b.OpenElement(0, Inline ? "span" : "div");
         b.AddAttribute(1, "class", "tide-md");
-        b.AddMarkupContent(2, Inline ? Markdown.ToInlineHtml(Text) : Markdown.ToHtml(Text));
+        b.AddMarkupContent(2, Inline ? Markdown.ToInlineHtml(Text, links) : Markdown.ToHtml(Text, links));
         b.CloseElement();
     }
 }

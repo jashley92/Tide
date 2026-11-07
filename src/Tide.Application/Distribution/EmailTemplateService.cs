@@ -102,7 +102,7 @@ public sealed class EmailTemplateService(IAppDbContextFactory dbs, ICurrentUser 
         RequireAdmin();
         var t = EmailTemplateCatalog.ById(id) ?? throw new KeyNotFoundException("There's no such email template.");
         var r = EmailTemplateRenderer.Render(t, EmailTemplateCatalog.Normalize(EmailPart.Subject, subject),
-            EmailTemplateCatalog.Normalize(EmailPart.Heading, heading), EmailTemplateCatalog.Normalize(EmailPart.Body, body), Samples(t));
+            EmailTemplateCatalog.Normalize(EmailPart.Heading, heading), EmailTemplateCatalog.Normalize(EmailPart.Body, body), Samples(t), app.Value.BaseUrl);
         return new EmailPreview(r.Subject, Shell(r.Heading, Subtitle(t), r.BodyHtml, r.Footer));
     }
 

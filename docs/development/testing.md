@@ -44,7 +44,7 @@ mocking library.
 | Exports (STIX and CSV golden files) | `ExportTests.cs` |
 | Search text, history formatting, audit log kinds, email templates | `SearchTextTests.cs`, `HistoryFormatterTests.cs`, `AuditLogTests.cs`, `EmailTemplateTests.cs` |
 | AI assist and article cleanup | `AssistTests.cs`, `ArticleCleanupTests.cs` |
-| Markdown safety and the toolbar's output | `MarkdownToolbarOutputTests.cs`, `Audit/AdversarialTests.cs` (`MarkdownInjectionTests`) |
+| Markdown safety and the toolbar's output; root-relative links under a sub-path and in email | `MarkdownToolbarOutputTests.cs`, `Audit/AdversarialTests.cs` (`MarkdownInjectionTests`), `RootRelativeLinkTests.cs` (the page side in `Tide.IntegrationTests/RootRelativeLinkPageTests.cs`) |
 | Hostile input: CSV injection, extraction timing on hostile text, hostile XML | `Audit/AdversarialTests.cs`, `Audit/SecurityAuditTests.cs`, `Audit/BackendAuditTests.cs` |
 | The deploy scripts, run in PowerShell; the install answers file; release versions | `DeployScriptTests.cs`, `DeployWebSocketTests.cs`, `InstallAnswersTemplateTests.cs`, `UpgradeCommandTests.cs`, `Audit/InfraAuditTests.cs` |
 | Source hygiene: every `--tide-*` token used is defined; no HTML entity in a Razor attribute | `StyleTokenTests.cs`, `RazorAttributeTests.cs` |
@@ -157,7 +157,8 @@ role. `PathBase` runs it under a sub-path. Use it as a class fixture
 
 `ComponentHarness` renders one component in the real app's services, signed in as someone (`SignIn`), and hands the
 component over so a test can do what a button would and read the markup after. It uses ASP.NET Core's own
-`HtmlRenderer`, not a third-party component-testing library. `PresentHarness` wraps it for present mode.
+`HtmlRenderer`, not a third-party component-testing library. `PresentHarness` wraps it for present mode. Its
+`baseUri` argument (`http://localhost/tide/`) renders the component as if TIDE ran under a sub-path.
 
 A page that listens for changes elsewhere (`LiveChanges`) reloads 600 ms after it hears one, on a real timer. A test
 that needs a page *not* to have heard something yet mustn't race that timer. `MeetingClockApp`, the fixture of the

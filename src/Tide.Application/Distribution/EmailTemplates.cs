@@ -291,7 +291,8 @@ public static partial class EmailTemplateRenderer
 {
     private static readonly MarkdownService Md = new();
 
-    public static RenderedTemplate Render(EmailTemplate t, string subject, string heading, string body, IReadOnlyDictionary<string, string> values)
+    public static RenderedTemplate Render(EmailTemplate t, string subject, string heading, string body, IReadOnlyDictionary<string, string> values,
+        string? appUrl = null)
     {
         string Value(string name, out EmailToken? token)
         {
@@ -303,7 +304,7 @@ public static partial class EmailTemplateRenderer
             Value(m.Groups[1].Value, out var token) is var v && token is { Html: false } ? v : ""));
 
         // An HTML value alone in its paragraph (a table) replaces the paragraph, so a table isn't put inside a <p>.
-        var html = BlockToken().Replace(Md.ToHtml(body), m =>
+        var html = BlockToken().Replace(Md.ToHtml(body, LinkRoot.Email(appUrl)), m =>
             t.Token(m.Groups[1].Value) is { Html: true } ? Value(m.Groups[1].Value, out _) : m.Value);
         html = EmailTemplateCatalog.TokenRegex().Replace(Style(html), m =>
             Value(m.Groups[1].Value, out var token) is var v && token is { Html: true } ? v : Esc(v));
@@ -331,9 +332,10 @@ public static partial class EmailTemplateRenderer
 /// <summary>
 /// The saved templates, kept in memory: read at start-up and again whenever one is saved, reset or imported. A row that
 /// no longer passes its check is ignored, so the default holds. Singleton; <see cref="Defaults"/> is one with nothing
-/// saved, for a service built without one (tests).
+/// saved, for a service built without one (tests). A root-relative link a template's body has ("/rotation") is pointed at
+/// the app's address (<c>App:BaseUrl</c>), or left as its text when that isn't set (see <see cref="LinkRoot.Email"/>).
 /// </summary>
-public sealed class EmailTemplateStore
+public sealed class EmailTemplateStore(Microsoft.Extensions.Options.IOptions<AppOptions>? app = null)
 {
     private IReadOnlyDictionary<string, string> _values = new Dictionary<string, string>();
 
@@ -347,7 +349,7 @@ public sealed class EmailTemplateStore
 
     /// <summary>The template as it's used, filled in with <paramref name="values"/>.</summary>
     public RenderedTemplate Render(EmailTemplate t, IReadOnlyDictionary<string, string> values) =>
-        EmailTemplateRenderer.Render(t, Text(t, EmailPart.Subject), Text(t, EmailPart.Heading), Text(t, EmailPart.Body), values);
+        EmailTemplateRenderer.Render(t, Text(t, EmailPart.Subject), Text(t, EmailPart.Heading), Text(t, EmailPart.Body), values, app?.Value.BaseUrl);
 
     public async Task RefreshAsync(IAppDbContextFactory dbs, CancellationToken ct = default)
     {

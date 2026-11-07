@@ -437,6 +437,10 @@ Markdown; `MarkdownService` (`src/Tide.Application/Content/MarkdownService.cs`) 
   address with a backslash are refused too, checked on the destination as it was typed. An angle-bracket autolink
   with an unsafe scheme stays text. Links, an angle-bracket `<https://…>` among them, open in a new tab with no
   referrer or opener.
+- **Root-relative links** (`[x](/actions/12)`, and images) are pointed at TIDE after those checks (`LinkRoot`): on a
+  page the base path goes in front unless the link already starts with it; in email and the SharePoint copy the
+  `App:BaseUrl` address does, and with none set the link is left as its text. Only a single leading `/` counts, so
+  `//host` and `/\host` are still refused, never given a prefix. The scheme check, `rel` and `target` are unchanged.
 - **No autolinks:** a bare URL or domain is never made clickable, because bullets quote malicious addresses.
 - **AI suggestions carry no links:** `DraftChecks` reduces every link in a suggestion to its text with
   `MarkdownService.WithoutLinks`, in each form Markdown writes one (`[text](url)`, `[text][1]` with its `[1]: url`
