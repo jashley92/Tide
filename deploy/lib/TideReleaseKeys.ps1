@@ -12,5 +12,6 @@
 #
 # Dot-source this file. ASCII only.
 $TideReleaseKeys = @(
+    @{ Id = 'f30ac4d151c58d32'; Added = '2026-11-07'; Xml = '<RSAKeyValue><Modulus>scjw4FaRE5IDDoLvUz1qp9cQ3H+Nu49HyCtVqWzt53KX7XfemLkOsteF4Agwns93VBXGYbkMNj9lDctiIVcQSYNZ/MBZHfnCTENG/SbawH5NTF1rpr3vbKHXY5cyzWIssf/RbVROEkhL3tTzcz8ui61o8qH9zZMgvkyjKVmYRhighLZ4CBxa537yTnWbC7wEQ5TYCrs7wfjgJjCXG3kFExASzBQ8+nVQGTj91hNkcunB0KqoeSxJYYuXgOKiTwO71XMTOS2ADfvuhtXGjc02qfVwy5Ww6hQPLFizuDU92C2Aj03UMRB+AwVTnRlEzh8FW1woB5mmmKjGanOMi+U/vH+RVsp7cN5gcFgytuOVkzaA4py+NW1Lz20PszyVuMhoXoVIC9g9Gy7MgPPflDOEBsImUrMS0yOCXuYnP21BKng+n2m/sXTLPObBidJJCIrEfZ4wXAyh1YpUD38fDDgZIWc3WdJWIXBw/asFA78VmzutXDn2CxGeaqt3EszZd47Z</Modulus><Exponent>AQAB</Exponent></RSAKeyValue>' }
     # --- New-ReleaseSigningKey.ps1 adds each key above this line ---
 )
