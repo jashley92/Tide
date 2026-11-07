@@ -348,6 +348,11 @@ public class ActionChecklistItem : Entity
 
     public Guid ActionId { get; set; }
     public int SortOrder { get; set; }
+
+    /// <summary>When it was put on the checklist. Two added at the same moment take the same place (the highest plus
+    /// one); this, then the id, puts them in the same order on every read (<c>ActionService.InOrder</c>).</summary>
+    public DateTimeOffset AddedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+
     public string Text { get; set; } = string.Empty;
     public bool IsDone { get; set; }
     public string? DoneByName { get; set; }

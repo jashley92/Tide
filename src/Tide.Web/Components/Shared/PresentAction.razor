@@ -58,7 +58,7 @@
                     {
                         @* As the room sees it, from the action as read: nothing more is asked of the server. *@
                         <ul class="list-unstyled mb-0">
-                            @foreach (var i in a.Checklist.OrderBy(i => i.SortOrder))
+                            @foreach (var i in ActionService.InOrder(a.Checklist))
                             {
                                 <li @key="i.Id"><span class="bi @(i.IsDone ? "bi-check2-square" : "bi-square")" aria-hidden="true"></span> @i.Text<span class="visually-hidden">@(i.IsDone ? " (done)" : " (not done)")</span></li>
                             }

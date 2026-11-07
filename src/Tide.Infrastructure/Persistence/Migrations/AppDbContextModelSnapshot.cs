@@ -93,6 +93,9 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("ActionId")
                         .HasColumnType("TEXT");
 
+                    b.Property<long>("AddedAtUtc")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long?>("DoneAtUtc")
                         .HasColumnType("INTEGER");
 

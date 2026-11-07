@@ -269,6 +269,11 @@ and `Adversary`.
   open editor's save stale. Tagging, linking and merging profiles run in one serializable transaction each
   (`AdversaryService.Serialized`), so a tag added to a profile as it's merged waits for the merge and lands on the
   profile it was merged into.
+- An action's checklist doesn't move the action's version either: ticking, adding or removing an item, or applying a
+  playbook, never makes an open edit form stale. Applying a playbook runs its read of the checklist and its save in one
+  serializable transaction inside the execution strategy (`ActionService.ApplyPlaybookAsync`), so of two people applying
+  the same playbook at once, the second waits and finds its steps already there. Two items added at the same moment
+  share a place; `ActionService.InOrder` breaks the tie by `AddedAtUtc`, then id, so they keep one order on every load.
 
 Email templates use a stamp of the saved parts instead of a column, with the same effect
 ([administration.md](../workflows/administration.md#email-templates)).

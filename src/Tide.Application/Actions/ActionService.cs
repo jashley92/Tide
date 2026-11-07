@@ -729,6 +729,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         a.Events = a.Events.OrderByDescending(e => e.AtUtc).ToList();
         a.Hunts = a.Hunts.OrderByDescending(h => h.CreatedAtUtc).ToList();
         a.Outreach = a.Outreach.OrderByDescending(m => m.SentAtUtc).ToList();
+        a.Checklist = InOrder(a.Checklist);
         a.Indicators = a.Indicators.OrderBy(i => i.AddedAtUtc).ThenBy(i => i.Value, StringComparer.OrdinalIgnoreCase).ToList();
         var parent = a.ParentId is { } pid ? await Rows(db, db.Actions.AsNoTracking().Where(x => x.Id == pid)).FirstOrDefaultAsync(ct) : null;
         var children = (await Rows(db, db.Actions.AsNoTracking().Where(x => x.ParentId == a.Id)).ToListAsync(ct)).OrderBy(c => c.Number).ToList();
@@ -1364,8 +1365,16 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     {
         RequireRead(user);
         await using var db = await dbs.CreateAsync(ct);
-        return await db.ActionChecklistItems.AsNoTracking().Where(i => i.ActionId == actionId).OrderBy(i => i.SortOrder).ToListAsync(ct);
+        return InOrder(await db.ActionChecklistItems.AsNoTracking().Where(i => i.ActionId == actionId).ToListAsync(ct));
     }
+
+    /// <summary>
+    /// A checklist in its order: by place, then when each was added, then id. A place is the highest so far plus one, so
+    /// two items added at the same moment share one; without the rest they could swap between loads. Sorted here, as
+    /// <c>AdminLists.InOrder</c> is: SQL Server and .NET order Guids differently.
+    /// </summary>
+    public static List<ActionChecklistItem> InOrder(IEnumerable<ActionChecklistItem> items) =>
+        items.OrderBy(i => i.SortOrder).ThenBy(i => i.AddedAtUtc).ThenBy(i => i.Id).ToList();
 
     /// <summary>Ticks or unticks a checklist item, for whoever works the action. The history says who did it.</summary>
     public async Task SetChecklistItemAsync(Guid itemId, bool done, CancellationToken ct = default)
@@ -1412,20 +1421,34 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// <summary>
     /// Adds a playbook's steps to an action's checklist: only the steps it doesn't already have (by text,
     /// ignoring case), at the end. The action takes the playbook's name if it had none. Returns how many were added.
+    /// The action's edit version doesn't move: a checklist change isn't a change to the form someone may have open.
     /// </summary>
+    /// <remarks>
+    /// The read of what's there and the save run in one serializable transaction, so two people applying the same
+    /// playbook at the same moment don't both find its steps missing and add each one twice: the second waits and finds
+    /// them there. SQLite takes the write lock at the start; SQL Server picks a deadlock victim, retried by the execution
+    /// strategy. Inside the strategy (a retrying strategy refuses a transaction opened outside it), each try on a context
+    /// of its own, as <c>StoryService</c> and <c>AdversaryService</c> do.
+    /// </remarks>
     public async Task<int> ApplyPlaybookAsync(Guid actionId, Guid playbookId, CancellationToken ct = default)
     {
-        await using var db = await dbs.CreateAsync(ct);
-        var a = await db.Actions.Include(x => x.Checklist).FirstOrDefaultAsync(x => x.Id == actionId, ct) ?? throw new KeyNotFoundException("That action no longer exists.");
-        await RequireWork(db, user, a, ct);
-        var playbook = await PlaybookFor(db, playbookId, a.Kind, ct);
-        var added = AddSteps(a, playbook);
-        db.ActionChecklistItems.AddRange(added);
-        db.ActionEvents.Add(Event(user, a.Id, added.Count == 0
-            ? $"Applied the {playbook.Name} playbook: its steps were all on the checklist already."
-            : $"Applied the {playbook.Name} playbook: {added.Count} step{(added.Count == 1 ? "" : "s")} added to the checklist."));
-        await db.SaveChangesAsync(ct);
-        return added.Count;
+        await using var outer = await dbs.CreateAsync(ct);
+        return await outer.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        {
+            await using var db = await dbs.CreateAsync(ct);
+            await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+            var a = await db.Actions.Include(x => x.Checklist).FirstOrDefaultAsync(x => x.Id == actionId, ct) ?? throw new KeyNotFoundException("That action no longer exists.");
+            await RequireWork(db, user, a, ct);
+            var playbook = await PlaybookFor(db, playbookId, a.Kind, ct);
+            var added = AddSteps(a, playbook);
+            db.ActionChecklistItems.AddRange(added);
+            db.ActionEvents.Add(Event(user, a.Id, added.Count == 0
+                ? $"Applied the {playbook.Name} playbook: its steps were all on the checklist already."
+                : $"Applied the {playbook.Name} playbook: {added.Count} step{(added.Count == 1 ? "" : "s")} added to the checklist."));
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return added.Count;
+        });
     }
 
     private static async Task<Playbook> PlaybookFor(IAppDbContext db, Guid playbookId, ActionKind kind, CancellationToken ct)

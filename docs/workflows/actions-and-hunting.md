@@ -288,7 +288,9 @@ an action is never re-checked, so an action overdue for over a year can still be
   in the meeting doesn't take the action back from someone a colleague just gave it to.
 - **Checklist.** Up to 50 items (`ActionChecklistItem`). A playbook (`Playbook`, the team's: see
   [Playbooks](#playbooks)) adds its steps that the checklist doesn't already have, at the end (`ApplyPlaybookAsync`),
-  all or none: when they don't all fit within the 50, it's refused, saying how much room is left.
+  all or none: when they don't all fit within the 50, it's refused, saying how much room is left. Two people applying
+  the same playbook at the same moment add its steps once. Items keep their order, by place and then by when each was
+  added, so two added at once don't swap between loads. No checklist change makes the action's edit form stale.
 - **Comments.** Text up to 8,000 characters, with screenshots or evidence files. Each comment has its own
   `EditVersion`: an edit from an older version is refused and names who changed it, and the page shows their text over
   the box while keeping what was typed. Deleting a comment keeps its files on the action as removed, with the reason

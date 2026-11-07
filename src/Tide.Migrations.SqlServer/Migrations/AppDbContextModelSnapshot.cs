@@ -98,6 +98,9 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<Guid>("ActionId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTimeOffset>("AddedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<DateTimeOffset?>("DoneAtUtc")
                         .HasColumnType("datetimeoffset");
 
