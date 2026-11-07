@@ -567,10 +567,15 @@ it until it's done. Some of those teams work outside TIDE ([external teams](#ext
 shows "handed from {team} by {name}: {reason}" on the line under the action's badges. Its assignee stays only if they're on the
 receiving team. The receiving team is emailed (the *Action handed to a team* template): its mailbox, or its members who
 haven't turned *Hand-offs to your team* off in My notifications. An external team isn't emailed; its reminders tell it.
+When the action's reminders are off (*Don't remind*), the dialog asks *Keep reminders off*, ticked: that was chosen for
+the team it's leaving, so it isn't carried over unseen. Unticked, the hand-off turns them back on and its history line
+ends "Its reminders are back on." The service takes the choice explicitly (`keepRemindersOff`); while the reminders are
+on, it changes nothing.
 
 Choosing another team in an action's editor is the same hand-off (`HandoffService.HandOverAsync`, from
 `ActionService.SaveAsync`): the editor then offers *Why hand it to {team}?*, optional, and records "Changed the team
-in the editor" when it's left blank. Either way the lineage, the history line, the receiving team's limit and its email
+in the editor" when it's left blank. With the reminders off it offers *Keep reminders off* too, ticked
+(`ActionForm.KeepRemindersOff`, true unless unticked, so a caller that doesn't say keeps them as they are). Either way the lineage, the history line, the receiving team's limit and its email
 are the same, so an external team's Reply-To doesn't depend on which was used.
 
 **Split to teams.** On an open top-level action, an analyst's *Split to teams* (under *More*, and under a parent's lineage) opens a dialog: tick the teams, give each
@@ -840,6 +845,7 @@ Every one of these follows colleagues' saves live through the `actions` and `act
 | A team at its limit set to Warn | Creating (the meeting's quick add and recommended lines too), reopening, moving into an active status, or handing to it asks why; cancelled, nothing changes. |
 | The ladder's run stopped partway (a shutdown, a send that threw) | The steps whose email went are kept (their marks, history and changes), so the next run doesn't email them again; the rest wait for it. |
 | Handing off to an external team | Its assignee is cleared (nobody is on the team); no email: its reminders tell it. |
+| Handing off an action whose reminders are off | Asked: *Keep reminders off*, ticked. Unticked, they're back on for the new team, said in the hand-off's history line. |
 | An external team with no contact email | Its reminders have nowhere to go: none is sent until one is given. |
 | The ladder's *Remind* and the team's cadence fall on the same day (by default, two business days before the due date) | The contact gets one email. Whichever runs second is skipped, says so in the history, and is marked done, so it doesn't go the next day. |
 | A split to a team twice, or from a part | Refused: each team once; parts split one level deep. |

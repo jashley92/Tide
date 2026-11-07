@@ -27,21 +27,27 @@ public sealed class HandoffService(IAppDbContextFactory dbs, ICurrentUser user, 
     /// <summary>The most teams one split makes parts for.</summary>
     public const int MaxParts = 20;
 
+    /// <summary>What a hand-off's history line adds when it turned the action's reminders back on.</summary>
+    public const string RemindersBackOn = "Its reminders are back on.";
+
     /// <summary>A hand-off made: the team it came from (by name), the team it went to, with its members, and why.</summary>
     internal sealed record Handover(string From, Team To, string Why);
 
     /// <summary>
     /// Hands an action to <paramref name="toTeamId"/>, for whoever may work it, with a short reason (required) kept in its
-    /// history and shown on it. Its assignee stays only if they're on the receiving team. Returns how many emails told the
-    /// team (none for an external team, or when email is off).
+    /// history and shown on it. Its assignee stays only if they're on the receiving team. When its reminders are off
+    /// ("Don't remind"), <paramref name="keepRemindersOff"/> says whether they stay off for the new team or come back on
+    /// (the hand-off's history line says so); while they're on it changes nothing. Returns how many emails told the team
+    /// (none for an external team, or when email is off).
     /// </summary>
-    public async Task<int> HandOffAsync(Guid actionId, Guid toTeamId, string reason, string? overLimitReason = null, CancellationToken ct = default)
+    public async Task<int> HandOffAsync(Guid actionId, Guid toTeamId, string reason, bool keepRemindersOff, string? overLimitReason = null,
+        CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
         var a = await ActionService.FindAsync(db, actionId, ct);
         await ActionService.RequireWork(db, user, a, ct, "Only analysts and members of the owning team can hand this action off.");
         if (toTeamId == a.TeamId) throw new ArgumentException("It's that team's already: choose another.");
-        var handover = await HandOverAsync(db, user, a, await ReceivingTeamAsync(db, toTeamId, ct), reason, overLimitReason, ct);
+        var handover = await HandOverAsync(db, user, a, await ReceivingTeamAsync(db, toTeamId, ct), reason, overLimitReason, keepRemindersOff, ct);
         await ActionService.SaveEditAsync(db, ct);
         return await notices.SendAsync(db, a, handover, user.DisplayName, ct);
     }
@@ -56,11 +62,12 @@ public sealed class HandoffService(IAppDbContextFactory dbs, ICurrentUser user, 
 
     /// <summary>
     /// The hand-off itself, on a tracked action the caller may work, before the save: the receiving team's limit holds, an
-    /// assignee not on that team goes, who handed it and why are recorded, and its history says so. The Hand off button
-    /// and a team changed in the editor both come here.
+    /// assignee not on that team goes, who handed it and why are recorded, reminders that were off stay off unless
+    /// <paramref name="keepRemindersOff"/> is false, and its history says so. The Hand off button and a team changed in
+    /// the editor both come here.
     /// </summary>
     internal static async Task<Handover> HandOverAsync(IAppDbContext db, ICurrentUser user, ActionItem a, Team to, string reason,
-        string? overLimitReason, CancellationToken ct)
+        string? overLimitReason, bool keepRemindersOff, CancellationToken ct)
     {
         var why = ArticleService.CleanOrNull(reason, ActionItem.MaxHandoffReason) ?? throw new ArgumentException("Say why you're handing it off.");
         var over = await ActiveLimits.CheckChangeAsync(db, (a.TeamId, a.Status), (to.Id, a.Status), a.Id, overLimitReason, to, ct);
@@ -71,9 +78,12 @@ public sealed class HandoffService(IAppDbContextFactory dbs, ICurrentUser user, 
         if (dropped is not null) (a.AssigneeId, a.AssigneeName) = (null, null);
         (a.HandedFromTeamId, a.TeamId) = (a.TeamId, to.Id);
         (a.HandedById, a.HandedByName, a.HandedAtUtc, a.HandoffReason) = (user.UserId, user.DisplayName, DateTimeOffset.UtcNow, why);
+        // "Don't remind" was chosen for the team it's leaving: whoever hands it says whether it holds for the next one.
+        var remindersOn = a.NoReminders && !keepRemindersOff;
+        if (remindersOn) a.NoReminders = false;
         a.EditVersion = Guid.NewGuid();
         db.ActionEvents.Add(ActionService.Event(user, a.Id, $"Handed from {from} to {to.Name}: {why}"
-            + (dropped is null ? "" : $" {dropped} is no longer its assignee.") + over));
+            + (dropped is null ? "" : $" {dropped} is no longer its assignee.") + (remindersOn ? " " + RemindersBackOn : "") + over));
         return new Handover(from, to, why);
     }
 

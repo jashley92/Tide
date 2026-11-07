@@ -339,7 +339,8 @@ that fits its kind.
 - **Recording an update.** *Record an update* puts what a team said by email on its action in one step: their reply
   (kept as a comment headed as theirs), the status, a new due date and why, and a note, as one line in its history.
 - **Handing off.** *Hand off* gives an action to another team with a short reason, shown on it. The receiving team is
-  emailed, unless it works outside TIDE.
+  emailed, unless it works outside TIDE. When the action's reminders are off, the dialog asks *Keep reminders off*
+  (ticked); untick it to turn them back on for the new team.
 - **Tracking.** A status, and a board column between Blocked and Done, for work handed to others and followed: still
   open and due, but not counted against the team's limit.
 - **Limits.** A team may have a limit on its active actions; the list and board filtered to it say "4 of 5 active",

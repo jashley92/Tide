@@ -1000,7 +1000,7 @@ config change. A team owns it, it's due by a date the SLA targets suggest, and i
 | `ArticleId` | uniqueidentifier | yes | FK → `Articles`, **restrict**. Indexed. This is why an article with actions can't be deleted. |
 | `ParentId` | uniqueidentifier | yes | FK → `Actions`, **restrict**. The parent action of a remediation split across teams. Indexed. |
 | `PlaybookId`, `PlaybookName` | uniqueidentifier, nvarchar(100) | yes | FK → `Playbooks`, **restrict**. The playbook the checklist was copied from, and its name at the time. |
-| `NoReminders` | bit | no | Left out of its external team's reminder emails. Matters only while its team is external. |
+| `NoReminders` | bit | no | Left out of its external team's reminder emails. Matters only while its team is external. A hand-off keeps it only when whoever hands it off leaves *Keep reminders off* ticked. |
 | `HandedFromTeamId` | uniqueidentifier | yes | The team it was last handed from. No foreign key: the name is looked up, and "another team" stands in if it's gone. |
 | `HandedById`, `HandedByName` | nvarchar(256) | yes | Who handed it on last. |
 | `HandedAtUtc` | datetimeoffset | yes | When. |

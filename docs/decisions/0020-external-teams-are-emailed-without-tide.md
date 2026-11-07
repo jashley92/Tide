@@ -26,7 +26,8 @@ it has active at once, without the work it only follows counting toward it.
   date and how late, and ticket link. It has no TIDE link, number or wording only TIDE's users would follow, and
   nothing from an article that wasn't written into the action. Replies go, by Reply-To, to whoever follows the work. It
   is an email template an administrator can reword, off until an administrator turns it on, and each team and action
-  can be left out.
+  can be left out. An action left out stays left out when it's handed to another team only if whoever hands it off
+  leaves *Keep reminders off* ticked: the hand-off asks, rather than carrying the choice over unseen.
 - **Tracking.** A new status, Tracking (stored as 6), means "handed to others, being followed". It's open (due dates,
   SLA and overdue apply) but not active, so it doesn't count toward a limit.
 - **An active limit per team**, optional, with three modes: show the count, warn and ask why (kept in the history), or

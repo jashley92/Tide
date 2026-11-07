@@ -82,7 +82,7 @@ public class HandoffsAndExternalTeamsTests : IDisposable
         (await History(made.Number)).Should().Contain(t => t.EndsWith("Over Network Engineering's limit (2 of 1 active): Outage cover", StringComparison.Ordinal));
 
         var tracked = await New(await Team("Elsewhere"), "Tracked elsewhere", ActionStatus.Tracking);
-        var handOff = () => _db.Handoffs().HandOffAsync(tracked.Id, team, "Theirs now");
+        var handOff = () => _db.Handoffs().HandOffAsync(tracked.Id, team, "Theirs now", keepRemindersOff: true);
         await handOff.Should().NotThrowAsync("a tracked action isn't active, so it doesn't count");
         var move = () => _db.Actions().MoveAsync(tracked.Id, ActionStatus.Tracking, ActionStatus.InProgress);
         (await move.Should().ThrowAsync<ActiveLimitException>()).Which.NeedsReason.Should().BeTrue("moving into an active status adds to the count");
@@ -90,9 +90,9 @@ public class HandoffsAndExternalTeamsTests : IDisposable
         (await History(tracked.Number)).Should().Contain(t => t.Contains("Status: Tracking → In progress.") && t.Contains("(3 of 1 active): Escalated"));
 
         var active = await New(await Team("Sender"), "Active elsewhere");
-        var hand = () => _db.Handoffs().HandOffAsync(active.Id, team, "Their fix");
+        var hand = () => _db.Handoffs().HandOffAsync(active.Id, team, "Their fix", keepRemindersOff: true);
         (await hand.Should().ThrowAsync<ActiveLimitException>()).Which.NeedsReason.Should().BeTrue();
-        await _db.Handoffs().HandOffAsync(active.Id, team, "Their fix", "Agreed with their lead");
+        await _db.Handoffs().HandOffAsync(active.Id, team, "Their fix", keepRemindersOff: true, "Agreed with their lead");
         (await History(active.Number)).Should().Contain(t => t.Contains("Handed from Sender to Network Engineering: Their fix") && t.Contains("Agreed with their lead"));
     }
 
@@ -110,7 +110,7 @@ public class HandoffsAndExternalTeamsTests : IDisposable
         (await reopen.Should().ThrowAsync<ActiveLimitException>()).Which.NeedsReason.Should().BeFalse();
 
         var elsewhere = await New(await Team("Sender"));
-        var hand = () => _db.Handoffs().HandOffAsync(elsewhere.Id, team, "Theirs");
+        var hand = () => _db.Handoffs().HandOffAsync(elsewhere.Id, team, "Theirs", keepRemindersOff: true);
         await hand.Should().ThrowAsync<ActiveLimitException>();
         (await _db.Actions().GetAsync(elsewhere.Number))!.Action.TeamId.Should().NotBe(team);
         var edit = ActionForm.From((await _db.Actions().GetAsync(elsewhere.Number))!.Action);
@@ -162,7 +162,7 @@ public class HandoffsAndExternalTeamsTests : IDisposable
         var a = await New(from);
         await _db.Actions().AssignAsync(a.Id, "S-1-5-21-ROBIN", null);
 
-        var told = await _db.Handoffs().HandOffAsync(a.Id, to, "  The fix is a firewall change. ");
+        var told = await _db.Handoffs().HandOffAsync(a.Id, to, "  The fix is a firewall change. ", keepRemindersOff: true);
         told.Should().Be(1);
         var d = (await _db.Actions().GetAsync(a.Number))!;
         d.Action.TeamId.Should().Be(to);
@@ -188,20 +188,20 @@ public class HandoffsAndExternalTeamsTests : IDisposable
         var a = await New(from);
         await _db.Actions().AssignAsync(a.Id, "S-1-5-21-SAM", null);
 
-        var blank = () => _db.Handoffs().HandOffAsync(a.Id, to, "  ");
+        var blank = () => _db.Handoffs().HandOffAsync(a.Id, to, "  ", keepRemindersOff: true);
         await blank.Should().ThrowAsync<ArgumentException>().WithMessage("*why*");
-        var same = () => _db.Handoffs().HandOffAsync(a.Id, from, "Nothing");
+        var same = () => _db.Handoffs().HandOffAsync(a.Id, from, "Nothing", keepRemindersOff: true);
         await same.Should().ThrowAsync<ArgumentException>();
 
         As("S-1-5-21-ALEX", "Alex", AppRole.ActionOwner);
         await _db.NotificationPrefs().SetMineAsync(UserPreferences.NotifyHandoffs, UserPreferences.Off);
         As("S-1-5-21-SAM", "Sam", AppRole.ActionOwner);
-        (await _db.Handoffs().HandOffAsync(a.Id, to, "Theirs")).Should().Be(1);
+        (await _db.Handoffs().HandOffAsync(a.Id, to, "Theirs", keepRemindersOff: true)).Should().Be(1);
         (await _db.Actions().GetAsync(a.Number))!.Action.AssigneeName.Should().Be("Sam", "Sam is on the receiving team");
         _db.Email.Sent.Single().To.Should().Equal(["sam@example.org"], "Alex turned hand-offs off");
 
         As("S-1-5-21-NOBODY", "Nobody", AppRole.ActionOwner);
-        var refused = () => _db.Handoffs().HandOffAsync(a.Id, from, "Back");
+        var refused = () => _db.Handoffs().HandOffAsync(a.Id, from, "Back", keepRemindersOff: true);
         await refused.Should().ThrowAsync<ForbiddenException>("only whoever may work it hands it off");
     }
 
@@ -257,7 +257,7 @@ public class HandoffsAndExternalTeamsTests : IDisposable
     {
         var a = await New(await Team("Cyber Response"));
         var external = await _db.Teams().AddExternalAsync(new ExternalTeamForm { Name = "Hosting Provider", ContactEmail = "noc@provider.example" });
-        (await _db.Handoffs().HandOffAsync(a.Id, external, "They host it")).Should().Be(0);
+        (await _db.Handoffs().HandOffAsync(a.Id, external, "They host it", keepRemindersOff: true)).Should().Be(0);
         _db.Email.Sent.Should().BeEmpty("an external team hears only through its reminders");
     }
 
@@ -448,14 +448,14 @@ public class HandoffsAndExternalTeamsTests : IDisposable
         var a = await Due(first, "Block the domains", new DateOnly(2026, 11, 30));
 
         (await Remind(24)).Should().Be(1, "Tuesday: two business days before Monday");
-        await _db.Handoffs().HandOffAsync(a.Id, second, "They host the resolvers");
+        await _db.Handoffs().HandOffAsync(a.Id, second, "They host the resolvers", keepRemindersOff: true);
         (await Remind(25)).Should().Be(2, "the team it was handed to hears only through its reminders, so it's reminded too");
         _db.Email.Sent[1].To.Should().Equal("noc@provider.example");
         (await Remind(30)).Should().Be(2, "and once only");
 
         // A mark written without the team (before it was in them), after the last hand-off, was that team's: not sent again.
         var b = await Due(first, "Rotate the keys", new DateOnly(2026, 12, 3));
-        await _db.Handoffs().HandOffAsync(b.Id, second, "They hold the keys");
+        await _db.Handoffs().HandOffAsync(b.Id, second, "They hold the keys", keepRemindersOff: true);
         await using (var ctx = _db.Context())
         {
             ctx.NotificationMarks.Add(new NotificationMark { Kind = "external-reminder", Key = $"{b.Id:N}:2026-12-03:before", SentAtUtc = DateTimeOffset.UtcNow.AddMinutes(1) });
@@ -511,7 +511,7 @@ public class HandoffsAndExternalTeamsTests : IDisposable
         var parent = (await _db.Actions().GetAsync(parentNumber))!.Action;
         var made = await _db.Handoffs().SplitAsync(parent.Id, [new SplitPart(team, new DateOnly(2026, 11, 24))]);
         var handed = await Due(owner, "Handed over", new DateOnly(2026, 11, 24));
-        await _db.Handoffs().HandOffAsync(handed.Id, team, "Theirs");
+        await _db.Handoffs().HandOffAsync(handed.Id, team, "Theirs", keepRemindersOff: true);
         _db.Email.Sent.Clear();
 
         (await Remind(24)).Should().Be(1);

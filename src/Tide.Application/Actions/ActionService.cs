@@ -45,11 +45,16 @@ public sealed class ActionForm
     public Guid FromTeamId { get; set; }
     public string? HandoffReason { get; set; }
 
+    /// <summary>On an edit: whether its reminders were off ("Don't remind") when the edit opened, and, for a team change,
+    /// whether they stay off for the new team (the default: as they are) or come back on.</summary>
+    public bool RemindersOff { get; set; }
+    public bool KeepRemindersOff { get; set; } = true;
+
     public static ActionForm From(ActionItem a) => new()
     {
         Id = a.Id, EditVersion = a.EditVersion, Title = a.Title, Description = a.Description, Kind = a.Kind, Priority = a.Priority,
         TeamId = a.TeamId, FromTeamId = a.TeamId, AssigneeId = a.AssigneeId, AssigneeName = a.AssigneeName, DueDate = a.DueDate, TicketRef = a.TicketRef,
-        TicketUrl = a.TicketUrl, ArticleId = a.ArticleId, ParentId = a.ParentId,
+        TicketUrl = a.TicketUrl, ArticleId = a.ArticleId, ParentId = a.ParentId, RemindersOff = a.NoReminders,
     };
 }
 
@@ -989,7 +994,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             var to = await HandoffService.ReceivingTeamAsync(db, form.TeamId, ct);
             if (form.AssigneeId is { } held && to.Members.All(m => m.UserId != held)) (form.AssigneeId, form.AssigneeName) = (null, null);
             handover = await HandoffService.HandOverAsync(db, user, a, to,
-                string.IsNullOrWhiteSpace(form.HandoffReason) ? EditorHandoffReason : form.HandoffReason, form.OverLimitReason, ct);
+                string.IsNullOrWhiteSpace(form.HandoffReason) ? EditorHandoffReason : form.HandoffReason, form.OverLimitReason, form.KeepRemindersOff, ct);
         }
         var before = (a.Title, a.Kind, a.Priority, a.AssigneeName, a.DueDate, a.TicketRef);
         await Apply(db, a, form, ct);
