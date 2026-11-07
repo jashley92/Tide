@@ -54,7 +54,8 @@ public sealed class DistributionService(
     OrgClock clock,
     IOptions<AppOptions> app,
     PublishedContentCache published,
-    IOptionsMonitor<DistributionOptions> options)
+    IOptionsMonitor<DistributionOptions> options,
+    IMeetingsInProgress? meetings = null)
 {
     /// <summary>The longest reason a brief finished as not sent can give.</summary>
     public const int NotSentReasonMax = 500;
@@ -203,8 +204,14 @@ public sealed class DistributionService(
         if (clock.Today < day)
             return $"The brief for {day.ToString("ddd MMM d", CultureInfo.InvariantCulture)} can be sent from that day. Prepare it now and send it after the meeting.";
         var held = brief.MeetingHeldAtUtc is not null || brief.PresentedAtUtc is not null || brief.Status == BriefStatus.Sent;
-        return held || withoutMeeting ? null : "End the meeting first, or tick \"Sent without a meeting\" if there wasn't one.";
+        if (held) return null;
+        // There is a meeting: it's running in present mode. Sent "without" one, the brief would record no meeting time.
+        if (withoutMeeting && MeetingLive(brief.Id)) return BriefService.MeetingLive;
+        return withoutMeeting ? null : "End the meeting first, or tick \"Sent without a meeting\" if there wasn't one.";
     }
+
+    /// <summary>Whether the brief's meeting is running in present mode now, when it can't be sent without a meeting.</summary>
+    public bool MeetingLive(Guid briefId) => (meetings ?? NoMeetingsInProgress.Instance).IsLive(briefId);
 
     private async Task<BriefSend> SendAsync(SendPlan confirmed, bool withoutMeeting, bool retried, CancellationToken ct)
     {

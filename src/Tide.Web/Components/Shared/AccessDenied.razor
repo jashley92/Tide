@@ -8,7 +8,7 @@
     }
     else
     {
-        <p>You're signed in as <strong>@CurrentUser.DisplayName</strong>@(CurrentUser.Roles.Count == 0 ? ", with no TIDE role." : $", as {string.Join(", ", CurrentUser.Roles)}.")</p>
+        <p>You're signed in as <strong>@CurrentUser.DisplayName</strong>@(CurrentUser.Roles.Count == 0 ? ", with no TIDE role." : $", as {string.Join(", ", CurrentUser.Roles.Order().Select(RoleDefinitions.Label))}.")</p>
         <p class="tide-muted">TIDE roles come from Active Directory groups. Ask a TIDE administrator to add a group you're in,
             or to add you to one of the groups they've mapped.</p>
         @if (!string.IsNullOrEmpty(Path))

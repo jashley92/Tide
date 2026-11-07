@@ -49,13 +49,15 @@ public static class PaletteEntries
 
     /// <summary>
     /// What a search found, a few of each kind: actions first (a number typed is usually one), then articles and stories,
-    /// and a last entry that opens the search page with everything.
+    /// and a last entry that opens the search page with everything. Actions only for someone who may read them, as the
+    /// search page links them (defence in depth: the action page checks too).
     /// </summary>
-    public static IReadOnlyList<PaletteEntry> FromSearch(SearchResults results)
+    public static IReadOnlyList<PaletteEntry> FromSearch(SearchResults results, ICurrentUser user)
     {
         var list = new List<PaletteEntry>();
-        list.AddRange(results.Actions.Items.Take(HitsPerKind).Select(a => new PaletteEntry(
-            $"{Ui.ActionLabel(a.Number)} {a.Title}", $"actions/{a.Number}", "bi-list-check", PaletteKind.Action, "Action · " + ActionService.StatusName(a.Status))));
+        if (user.Has(Permission.ReadActions))
+            list.AddRange(results.Actions.Items.Take(HitsPerKind).Select(a => new PaletteEntry(
+                $"{Ui.ActionLabel(a.Number)} {a.Title}", $"actions/{a.Number}", "bi-list-check", PaletteKind.Action, "Action · " + ActionService.StatusName(a.Status))));
         list.AddRange(results.Articles.Items.Take(HitsPerKind).Select(a => new PaletteEntry(
             a.Title, $"articles/{a.Id}", "bi-newspaper", PaletteKind.Article, "Article · " + a.Status)));
         list.AddRange(results.Stories.Items.Take(HitsPerKind).Select(s => new PaletteEntry(

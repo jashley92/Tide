@@ -58,7 +58,9 @@ given, for a swap the days taken in return, and an optional note (500 characters
   (`CheckHolds`, against the current calendar, overrides included).
 
 The change is saved as Pending and the partner is emailed the "Swap or cover request" template. The request shows at
-once for the colleague (the page and Today's "Coming up for you" follow the `rotation` topic).
+once for the colleague (the page and Today's "Coming up for you" follow the `rotation` topic). When the colleague
+answers, the requester's open rotation page or Today says so in a toast: "… approved your request" or "… declined your
+request".
 
 An administrator can name another analyst as the requester ("arrange cover"); the colleague still approves.
 
@@ -94,7 +96,8 @@ decline and ask again.
 
 **Undo.** Each day the change still holds goes back to the latest other approved change that covers it (this one may
 have been layered on another), else the override is removed and the week's analyst presents. Past days stay, and so
-does today once its meeting has been held. An approved change whose days have all passed can't be undone.
+does today once its meeting has been held. An approved change whose days have all passed can't be undone, and the
+rotation page offers Undo only for a change the service would still undo (`RotationService.UndoableAsync`).
 
 **One decision at a time.** Approve, decline, withdraw, undo and record-past-cover hold a static semaphore
 (`RotationService.Deciding`) so two decisions can't both read the calendar and both write it. That lock is per process

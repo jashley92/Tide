@@ -82,6 +82,33 @@ public class BriefCompletionTests : IDisposable
         brief.Items.Single(i => i.ArticleId == article).Article!.Status.Should().Be(ArticleStatus.Presented);
     }
 
+    private sealed class LiveMeeting(Guid brief) : IMeetingsInProgress
+    {
+        public bool IsLive(Guid briefId) => briefId == brief;
+    }
+
+    [Fact]
+    public async Task WithoutAMeeting_IsRefused_WhileTheMeetingRunsInPresentMode()
+    {
+        // Ticked during a live meeting, the brief was finished with no meeting time and its articles marked as if none
+        // was held, while the meeting went on.
+        var (brief, _) = await Brief(ended: false);
+        _db.Live = new LiveMeeting(brief);
+
+        var distributed = () => _db.Distribution().MarkDistributedAsync(Day, withoutMeeting: true);
+        await distributed.Should().ThrowAsync<InvalidOperationException>().WithMessage(BriefService.MeetingLive);
+        _db.Email.Enabled = true;   // Not sent is for email on
+        var notSent = () => _db.Distribution().FinishNotSentAsync(Day, "The relay is down.", withoutMeeting: true);
+        await notSent.Should().ThrowAsync<InvalidOperationException>().WithMessage(BriefService.MeetingLive);
+        _db.Email.Enabled = false;
+        (await Read()).Status.Should().NotBe(BriefStatus.Sent);
+        _db.Distribution().MeetingLive(brief).Should().BeTrue("the dialog greys the box out");
+
+        _db.Live = new LiveMeeting(Guid.NewGuid());
+        await _db.Distribution().MarkDistributedAsync(Day, withoutMeeting: true);
+        (await Read()).Status.Should().Be(BriefStatus.Sent, "another brief's meeting doesn't hold this one");
+    }
+
     [Fact]
     public async Task MarkDistributed_IsRefused_WithEmailOn_OnceDone_AndWhileReviewIsRequired()
     {

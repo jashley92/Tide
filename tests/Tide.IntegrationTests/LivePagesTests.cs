@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Articles;
+using Tide.Application.Org;
 using Tide.Application.Rotation;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
@@ -58,6 +59,39 @@ public class LivePagesTests(TideApp app) : IClassFixture<TideApp>
 
         (await ToastsOnce(robins, "Sam approved your request.")).Should().Contain("Sam approved your request.");
         (await robins.Html()).Should().NotContain("Waiting for Sam");
+    }
+
+    [Fact]
+    public async Task TheTodayPage_SaysARequestWasApprovedOrDeclined_NotJustAnswered()
+    {
+        var asker = new ComponentHarness.SignIn("dev:today-asker", "Asker", "Analyst");
+        var partner = new ComponentHarness.SignIn("dev:today-partner", "Partner", "Analyst");
+        DateOnly week;
+        await using (var admin = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+        {
+            var rotation = admin.ServiceProvider.GetRequiredService<RotationService>();
+            await rotation.AddMemberAsync(asker.UserId, asker.Name);
+            await rotation.AddMemberAsync(partner.UserId, partner.Name);
+            week = RotationService.WeekStart(rotation.Today).AddDays(49);
+            await rotation.SetWeekAsync(week, asker.UserId);
+        }
+        RotationChange first, second;
+        await using (var a = ComponentHarness.SignedIn(app, asker))
+        {
+            var rotation = a.ServiceProvider.GetRequiredService<RotationService>();
+            first = await rotation.RequestAsync(new RotationRequest { PartnerId = partner.UserId, GiveFrom = week, GiveTo = week });
+            second = await rotation.RequestAsync(new RotationRequest { PartnerId = partner.UserId, GiveFrom = week.AddDays(1), GiveTo = week.AddDays(1) });
+        }
+        await using var today = await ComponentHarness.RenderAsync<BriefPage>(app, "/",
+            new() { ["Day"] = $"{app.Services.GetRequiredService<OrgClock>().CurrentBriefDate:yyyy-MM-dd}", ["AsToday"] = true }, asker);
+
+        await using (var p = ComponentHarness.SignedIn(app, partner))
+            await p.ServiceProvider.GetRequiredService<RotationService>().ApproveAsync(first.Id);
+        (await ToastsOnce(today, "Partner approved your request.")).Should().Contain("Partner approved your request.").And.NotContain("Partner answered your request.");
+
+        await using (var p = ComponentHarness.SignedIn(app, partner))
+            await p.ServiceProvider.GetRequiredService<RotationService>().DeclineAsync(second.Id);
+        (await ToastsOnce(today, "Partner declined your request.")).Should().Contain("Partner declined your request.");
     }
 
     [Fact]
@@ -130,6 +164,6 @@ public class RotationHeardTests
         var decided = new RotationChange { Id = mine.Id, Status = status };
 
         RotationPage.Heard(With(mine: [mine]), With(), [decided], "Sam").Should().Be(said);
-        RotationPage.Heard(With(mine: [mine]), With(), [], "Sam").Should().Be("Sam answered your request.", "Today doesn't read the changes");
+        RotationPage.Heard(With(mine: [mine]), With(), [], "Sam").Should().Be("Sam answered your request.", "without the change, its status isn't known");
     }
 }

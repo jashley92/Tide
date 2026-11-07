@@ -184,6 +184,26 @@ public class RotationHeldTodayBugTests : IDisposable
     }
 
     [Fact]
+    public async Task UndoForAChangeHoldingOnlyToday_IsOfferedUntilTodaysMeeting_AndNotAfter_AsTheServiceDecides()
+    {
+        // The rotation page offered Undo while the change's day was today or later; after today's meeting the service
+        // refused it ("nothing to undo"). The page now asks the service's rule.
+        await Roster();
+        As(Me);
+        var change = await _db.Rotation().RequestAsync(new RotationRequest { PartnerId = Robin, GiveFrom = _week1, GiveTo = _week1 });
+        As(Robin);
+        await _db.Rotation(Monday(8)).ApproveAsync(change.Id);
+        As(Me, AppRole.Admin);
+        change = (await _db.Rotation().ChangesAsync()).Single(c => c.Id == change.Id);
+
+        (await _db.Rotation(Monday(8)).UndoableAsync([change])).Should().Contain(change.Id, "before the meeting today is still to come");
+        await HeldMonday(Robin, "Robin");
+        (await _db.Rotation(Monday(15)).UndoableAsync([change])).Should().BeEmpty("today's meeting was held: the change's only day has passed");
+        var undo = () => _db.Rotation(Monday(15)).CancelAsync(change.Id);
+        await undo.Should().ThrowAsync<InvalidOperationException>().WithMessage("*nothing to undo*");
+    }
+
+    [Fact]
     public async Task BeforeTodaysMeeting_TodayStillChangesHands()
     {
         await Roster();

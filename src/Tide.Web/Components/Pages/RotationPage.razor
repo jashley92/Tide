@@ -204,6 +204,7 @@
     private string? _week;
     private Upcoming? _upcoming;
     private IReadOnlyList<RotationChange> _changes = [];
+    private IReadOnlySet<Guid> _undoable = new HashSet<Guid>();
     private IReadOnlyList<RotationMember> _members = [];
     private RotationRequest? _form;
     private bool _busy, _canRequest;
@@ -247,15 +248,16 @@
             _week = today?.RegularName;
             _upcoming = await Rotation.UpcomingAsync();
             _changes = await Rotation.ChangesAsync();
+            _undoable = await Rotation.UndoableAsync(_changes);
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
     }
 
     public void Dispose() => _live?.Dispose();
 
-    /// <summary>Whether a change still moves a day to come, so undoing it changes who presents: either half of a swap.</summary>
-    internal bool HasDaysToCome(RotationChange c) =>
-        c.GiveTo >= Rotation.Today || (c.TakeTo is { } takeTo && takeTo >= Rotation.Today);
+    /// <summary>Whether a change still moves a day to come, so undoing it changes who presents: either half of a swap,
+    /// and today only until its meeting has been held (the service's rule, <see cref="RotationService.UndoableAsync"/>).</summary>
+    internal bool HasDaysToCome(RotationChange c) => _undoable.Contains(c.Id);
 
     /// <summary>What a colleague's change to the rotation means for this person: a request now waiting for them, or an
     /// answer to one of theirs (its status read from <paramref name="changes"/>); null when it's neither.</summary>
