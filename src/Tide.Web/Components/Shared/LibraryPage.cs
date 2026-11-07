@@ -142,11 +142,21 @@ public abstract class LibraryPage<TRow> : ComponentBase, IDisposable
     }
 
     // A colleague saved, changed, retired or deleted one: re-read in place. An edit under way keeps what's typed; its save
-    // is refused as stale if that one was the one changed.
+    // is refused as stale if that one was the one changed. When the card being edited was on the page and a change moved
+    // it to another (one added before it pushed it on), the page goes with it; a card that's gone, or that a filter now
+    // leaves out, keeps its form above the list (EditingOffPage).
     internal async Task OnChangedElsewhere(IReadOnlyList<Change> heard)
     {
         if (_busy) return;   // a step is under way, and it reads theirs when it's done
+        var editing = EditingId;
+        var wasOnPage = editing is not null && !EditingOffPage;
         await Load();
+        if (wasOnPage && EditingOffPage && _shown.Select(IdOf).ToList().IndexOf(editing!.Value) is var at and >= 0)
+        {
+            _page = at / PageSize + 1;
+            Slice();
+            TableView.SayPage(Nav, RendererInfo, _page);
+        }
         Toasts.Show($"{LiveChanges.Who(heard)} updated the {Names.Library}.");
         StateHasChanged();
     }

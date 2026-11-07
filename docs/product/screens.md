@@ -713,7 +713,8 @@ action. The page lists them by language, with how many actions used each, 20 to 
 A language that runs on to the next page is headed there too ("continued"). Whoever works actions saves, edits,
 retires and restores them; whoever saved one, or an administrator, deletes it. Everyone else who reads actions reads
 them. A colleague's change re-reads the list in place; an edit under way keeps what's typed, and its save is refused
-if the query changed since it began. The filter bar has the search box and a pill per language (**XQL**, **KQL**,
+if the query changed since it began. When a colleague's change moves the card being edited to another page (one added
+before it pushes it on), the page goes with it; when the card leaves the list altogether, its form stays above the list. The filter bar has the search box and a pill per language (**XQL**, **KQL**,
 **Falcon**), one at a time; **Show retired** stays a switch beside them, since it widens the list rather than
 narrowing it.
 

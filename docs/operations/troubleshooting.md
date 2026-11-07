@@ -161,6 +161,17 @@ failure and counts, not content.
   still reaches the box. `SearchCombobox` keeps its own copy of the text and takes the parent's `Text` only when the
   parent changes it, so a parent redrawing older text doesn't overwrite what's typed.
 
+### A list opens as "Something went wrong on this page" from a link (fixed)
+
+- **Symptom:** a typed or edited address, or a link an email client cut short, opens Triage, Actions, an action's page,
+  Articles, Trends or Team commitments as "Something went wrong on this page", for example `triage?named=1`,
+  `actions?team=network` or `trends?subs=1`.
+- **Cause:** the page read that query parameter as a `Guid?`, `int?` or `bool?` (`[SupplyParameterFromQuery]`), and
+  Blazor fails the whole page when the value doesn't parse as that type.
+- **Where to look:** search the `.razor` files for `[SupplyParameterFromQuery` on a property that isn't `string?`.
+- **Fix:** read it as `string?` and parse it where it's used (`FilterValues.Id`, `Number`, `Flag`), so a value that
+  isn't one is ignored, as an unknown `?status=` or `?page=` already was.
+
 ### The page goes grey with a reconnect message, or "Refused a circuit request … from origin …" in the log
 
 - **Cause:**

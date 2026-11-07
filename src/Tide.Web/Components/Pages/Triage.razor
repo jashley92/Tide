@@ -953,19 +953,21 @@ else
 
     // The address Back returns to after "Promote and write" (Address), and the brief's "Promote" on a shortlisted item:
     // the tab, the filters, the row (by id, or by place when the item has left the tab), and whether its promote form opens.
+    // All text, parsed where they're read (FilterValues), so a value that isn't one ("?named=1", an id cut short) is
+    // ignored rather than failing the page.
     [SupplyParameterFromQuery(Name = "tab")] public string? TabParam { get; set; }
-    [SupplyParameterFromQuery(Name = "source")] public Guid? SourceParam { get; set; }
+    [SupplyParameterFromQuery(Name = "source")] public string? SourceParam { get; set; }
     [SupplyParameterFromQuery(Name = "q")] public string? SearchParam { get; set; }
-    [SupplyParameterFromQuery(Name = "since")] public bool? SinceParam { get; set; }
-    [SupplyParameterFromQuery(Name = "at")] public Guid? AtParam { get; set; }
-    [SupplyParameterFromQuery(Name = "row")] public int? RowParam { get; set; }
-    [SupplyParameterFromQuery(Name = "promote")] public bool? PromoteParam { get; set; }
+    [SupplyParameterFromQuery(Name = "since")] public string? SinceParam { get; set; }
+    [SupplyParameterFromQuery(Name = "at")] public string? AtParam { get; set; }
+    [SupplyParameterFromQuery(Name = "row")] public string? RowParam { get; set; }
+    [SupplyParameterFromQuery(Name = "promote")] public string? PromoteParam { get; set; }
 
     // The page (text, so "?page=abc" is the first page, not a broken one), the CVE and Our stack filters, and New's Older view.
     [SupplyParameterFromQuery(Name = "page")] public string? PageParam { get; set; }
     [SupplyParameterFromQuery(Name = "cve")] public string? CveParam { get; set; }
-    [SupplyParameterFromQuery(Name = "named")] public bool? NamedParam { get; set; }
-    [SupplyParameterFromQuery(Name = "older")] public bool? OlderParam { get; set; }
+    [SupplyParameterFromQuery(Name = "named")] public string? NamedParam { get; set; }
+    [SupplyParameterFromQuery(Name = "older")] public string? OlderParam { get; set; }
 
     /// <summary>Triage's address at a tab, filters, page and row, for Back to return to. Relative, so it holds under the
     /// app's path base.</summary>
@@ -1006,26 +1008,56 @@ else
             _sourceOptions = [.. _sources.Select(s => new FilterOption(s.Id.ToString(), s.Name))];
             _lastBriefAt = await Intake.LastBriefAtAsync();
         }
-        if (string.Equals(TabParam, SourcesKey, StringComparison.OrdinalIgnoreCase)) _sourcesTab = true;
-        else if (Enum.TryParse<FeedItemStatus>(TabParam, ignoreCase: true, out var tab) && Enum.IsDefined(tab)) _status = tab;
+        Use(Asked());
         _ticking = Time.CreateTimer(_ => { if (_sourcesTab && !_disposed) _ = InvokeAsync(StateHasChanged); }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
-        _sourceId = SourceParam is { } sid && _sources.Any(s => s.Id == sid) ? sid : null;
-        _search = string.IsNullOrWhiteSpace(SearchParam) ? null : SearchParam.Trim();
-        _sinceLast = SinceParam == true && _lastBriefAt is not null;
-        _cveFilter = Enum.TryParse<InboxCves>(CveParam, ignoreCase: true, out var cves) && Enum.IsDefined(cves) ? cves : InboxCves.All;
-        _named = NamedParam == true;
-        _older = OlderParam == true && _status == FeedItemStatus.New && !_sourcesTab;
         _page = _addressPage = TableView.PageFrom(PageParam);
-        if (!adopted) _selected = Math.Max(0, RowParam ?? 0);   // adopted, the row Arrive selected stays while it's read again
+        if (!adopted) _selected = Math.Max(0, FilterValues.Number(RowParam) ?? 0);   // adopted, the row Arrive selected stays while it's read again
         if (read) await Load();
         Arrive();
         if (!_failed) PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
     }
 
-    // The page stays open when a link changes only the query: a pager link, or Back to another page, shows that page.
+    // The tab and filters an address asks for, as they're shown: what the list is of.
+    private sealed record View(bool SourcesTab, FeedItemStatus Status, Guid? Source, string? Search, bool Since, InboxCves Cves, bool Named, bool Older);
+
+    // What the address asks for: a tab or source it doesn't know, or "since" before any brief, is left out.
+    private View Asked()
+    {
+        var sourcesTab = string.Equals(TabParam, SourcesKey, StringComparison.OrdinalIgnoreCase);
+        var status = !sourcesTab && Enum.TryParse<FeedItemStatus>(TabParam, ignoreCase: true, out var tab) && Enum.IsDefined(tab) ? tab : FeedItemStatus.New;
+        return new View(sourcesTab, status,
+            FilterValues.Id(SourceParam) is { } sid && _sources.Any(s => s.Id == sid) ? sid : null,
+            string.IsNullOrWhiteSpace(SearchParam) ? null : SearchParam.Trim(),
+            FilterValues.Flag(SinceParam) && _lastBriefAt is not null,
+            Enum.TryParse<InboxCves>(CveParam, ignoreCase: true, out var cves) && Enum.IsDefined(cves) ? cves : InboxCves.All,
+            FilterValues.Flag(NamedParam),
+            FilterValues.Flag(OlderParam) && status == FeedItemStatus.New && !sourcesTab);
+    }
+
+    // What's shown now (the address the page last wrote, or would write). The Sources tab is the same whichever tab was
+    // open before it.
+    private View Shown => new(_sourcesTab, _sourcesTab ? FeedItemStatus.New : _status, _sourceId, string.IsNullOrWhiteSpace(_search) ? null : _search.Trim(), _sinceLast, _cveFilter, _named,
+        _older && _status == FeedItemStatus.New && !_sourcesTab);
+
+    private void Use(View v) =>
+        (_sourcesTab, _status, _sourceId, _search, _sinceLast, _cveFilter, _named, _older) = (v.SourcesTab, v.Status, v.Source, v.Search, v.Since, v.Cves, v.Named, v.Older);
+
+    // The page stays open when a link changes only the query. A pager link, or Back to another page, shows that page; a
+    // link to another tab or filters (the sidebar's Triage from Dismissed, Back to before a tab was chosen) shows those,
+    // from the page and row it names. The page's own moves write the address as they go, so they match what's shown.
     protected override async Task OnParametersSetAsync()
     {
         var page = TableView.PageFrom(PageParam);
+        if (Asked() is var asked && asked != Shown)
+        {
+            Use(asked);
+            (_page, _addressPage, _selected) = (page, page, Math.Max(0, FilterValues.Number(RowParam) ?? 0));
+            (_promoting, _promotingGroup, _attaching) = (null, null, false);
+            _marks.Clear();
+            await Load();
+            Arrive();
+            return;
+        }
         if (page == _addressPage || _sourcesTab) return;
         _addressPage = page;
         await GoToPage(page);
@@ -1058,14 +1090,14 @@ else
     // into view, with its promote form open when asked for. A report in a group opens the group to it.
     private void Arrive()
     {
-        if (AtParam is not { } at || _lines.Count == 0) return;
+        if (FilterValues.Id(AtParam) is not { } at || _lines.Count == 0) return;
         if (_rows.FirstOrDefault(r => r.Item.Id == at)?.Group is { } group && !IsOpen(group))
         {
             _open.UnionWith(group.Ids);
             BuildLines();
         }
         SelectItem(at);
-        if (PromoteParam == true && Current?.Row is { } row && row.Item.Id == at && Promotable(row.Item.Status)) OpenPromote(row);
+        if (FilterValues.Flag(PromoteParam) && Current?.Row is { } row && row.Item.Id == at && Promotable(row.Item.Status)) OpenPromote(row);
         else _focus = "tideTriage.focusSelected";
     }
 
@@ -1236,8 +1268,10 @@ else
             var keep = Current is { } current ? KeyOf(current) : ((Guid Id, bool Head)?)null;
             var (rowsWere, linesWere, selectedWas, countsWere, readWas) = (_rows, _lines, _selected, _counts, _readAt);
             (_rows, _missed, _counts, _cves, _polled) = (rows, missed, counts, cves, polled);
-            // A page past the end (an old link, or the list shrank under it) is the last one.
+            // A page past the end (an old link, or the list shrank under it) is the last one, and the address says so.
+            var askedPage = _page;
             (_total, _page) = (page.Total, page.Page);
+            if (!sourcesTab && _page != askedPage) await RememberTab();
             _olderCount = !sourcesTab && status == FeedItemStatus.New ? older : 0;
             _readAt = reading;
             BuildLines();

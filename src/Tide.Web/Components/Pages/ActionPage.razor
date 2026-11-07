@@ -426,8 +426,9 @@ else
 @code {
     private ConfirmDialog _confirm = default!;
     [Parameter] public int? Number { get; set; }
-    [SupplyParameterFromQuery(Name = "article")] public Guid? ArticleParam { get; set; }
-    [SupplyParameterFromQuery(Name = "parent")] public Guid? ParentParam { get; set; }
+    // Text, parsed (FilterValues), so an id cut short ("?article=12ab") is ignored rather than failing the page.
+    [SupplyParameterFromQuery(Name = "article")] public string? ArticleParam { get; set; }
+    [SupplyParameterFromQuery(Name = "parent")] public string? ParentParam { get; set; }
 
     /// <summary>The drawer's tool to open (<c>?tool=hunt</c>), so a link can open it.</summary>
     [SupplyParameterFromQuery(Name = "tool")] public string? ToolParam { get; set; }
@@ -526,12 +527,12 @@ else
         _newFiles.Clear();
         // No team to start with: the person chooses one (the first in the list was too easy to keep by mistake).
         _form = new ActionForm();
-        if (ParentParam is { } parentId)
+        if (FilterValues.Id(ParentParam) is { } parentId)
         {
             _parent = await ActionSvc.RowAsync(parentId);
             if (_parent is not null) await FromParent(_parent);
         }
-        if (ArticleParam is { } articleId && await ArticleSvc.GetAsync(articleId) is { } article)
+        if (FilterValues.Id(ArticleParam) is { } articleId && await ArticleSvc.GetAsync(articleId) is { } article)
         {
             _form.ArticleId = article.Id;
             _articleTitle = article.Title;

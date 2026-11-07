@@ -262,10 +262,13 @@ else
 
     [SupplyParameterFromQuery(Name = "p")] public string? PeriodParam { get; set; }
     [SupplyParameterFromQuery(Name = "view")] public string? ViewParam { get; set; }
-    [SupplyParameterFromQuery(Name = "subs")] public bool Subs { get; set; }
+    // Text, parsed (FilterValues), so a value that isn't one ("?subs=1", "?n=all") is ignored rather than failing the page.
+    [SupplyParameterFromQuery(Name = "subs")] public string? SubsParam { get; set; }
     [SupplyParameterFromQuery(Name = "line")] public string? LineParam { get; set; }
     [SupplyParameterFromQuery(Name = "at")] public string? AtParam { get; set; }
-    [SupplyParameterFromQuery(Name = "n")] public int? SpanParam { get; set; }
+    [SupplyParameterFromQuery(Name = "n")] public string? SpanParam { get; set; }
+
+    private bool Subs => FilterValues.Flag(SubsParam);
     [SupplyParameterFromQuery(Name = "chart")] public string? ChartParam { get; set; }
     [SupplyParameterFromQuery(Name = "tactic")] public string? TacticParam { get; set; }
 
@@ -336,7 +339,7 @@ else
     {
         var reading = ++_reading;
         _end = Period.Parse(PeriodParam) ?? TrendsSvc.DefaultEnd(PeriodKind.Month);
-        _span = TrendsService.SpanOrDefault(_end.Kind, SpanParam);
+        _span = TrendsService.SpanOrDefault(_end.Kind, FilterValues.Number(SpanParam));
         _view = Views.Any(v => v.View == ViewParam) ? ViewParam! : "tags";
         _line = LineParam;
         _at = Period.Parse(AtParam) is { } at && at.Kind == _end.Kind ? at : null;

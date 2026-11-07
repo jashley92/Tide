@@ -250,14 +250,15 @@ What triage does with it:
 Triage (`/triage`, `Components/Pages/Triage.razor`) is a keyboard-driven inbox. Its tabs are the item states (New,
 Shortlisted, Dismissed, Duplicate, Promoted) and, set apart at the end, Sources. The tab, filters, page and selected
 row are kept in the address (`triage?tab=…&cve=kev&named=true&page=2&at=…`), so a reload or a copied link opens the
-same view.
+same view. The page stays open when a link changes only the query, and shows what the new address says: a pager link
+its page, the sidebar's Triage the New tab, Back the tab and filters it returns to.
 
 **Pages.** Each tab shows 50 items a page (`InboxFilter.PageSize`), with numbered pages (`Pager`) and a count ("1–50
 of 213"). There's no hidden cap: every matching item is on some page. `IntakeService.InboxPageAsync` counts the matches
 and cuts the page in the database wherever it can. New, *Likely used*, *Names what we run* and the KEV filter depend on
 what only the app knows (ageing into Older, the Our stack matcher, the CVE records' KEV flag, the learned counts), so
-for those it reads every matching item light and pages that in memory. A page past the end shows the last page. Tab
-counts stay totals, and Older pages too.
+for those it reads every matching item light and pages that in memory. A page past the end shows the last page, and
+the address is rewritten to say so. Tab counts stay totals, and Older pages too.
 
 `IntakeService.InboxAsync(InboxFilter)` builds each row (`InboxRow`):
 
