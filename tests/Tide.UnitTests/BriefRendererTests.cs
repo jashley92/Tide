@@ -111,6 +111,22 @@ public class BriefRendererTests
     }
 
     [Fact]
+    public void AnEditionLeftWithNoArticles_SaysSo_InTheEmailAndTheSharePointCopy()
+    {
+        // Every article is above the company-wide ceiling: that edition has none, and says so rather than going out blank.
+        var brief = Brief();
+        brief.Items.RemoveAll(i => i.Article!.Tlp == TlpLevel.Clear);
+        var edition = BriefEditions.Build(brief, Edition.Public, TlpLevel.Green);
+        edition.Articles.Should().BeEmpty();
+
+        var email = _renderer.Render(edition, Context()).EmailHtml;
+        var page = _renderer.Semantic(edition, Context() with { ImageSrc = img => "files/" + img.Shot.FileId }, null, img => img.FileName);
+
+        email.Should().Contain("Nothing in this edition today.").And.NotContain("Partner-only article");
+        page.Should().Contain("<p>Nothing in this edition today.</p>").And.NotContain("Partner-only article");
+    }
+
+    [Fact]
     public void SharePoint_Public_IsPlainSemanticHtml_WithNothingRestricted()
     {
         var edition = BriefEditions.Build(Brief(), Edition.Public, TlpLevel.Green);
