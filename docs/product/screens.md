@@ -21,7 +21,7 @@ Every route, its component and the permission it needs are in the [route table](
 - Intelligence: [Threat stories](#threat-stories) · [Our stack](#our-stack) ·
   [Adversary profiles](#adversary-profiles) · [Detection coverage](#detection-coverage) ·
   [Indicator exports](#indicator-exports) · [Threat trends and the board scorecard](#threat-trends-and-the-board-scorecard) ·
-  [Reports](#reports) · [Opening metrics](#opening-metrics)
+  [Reports](#reports) · [Team commitments](#team-commitments) · [Opening metrics](#opening-metrics)
 - Team: [Brief rotation](#brief-rotation) · [Workload](#workload) · [Saved queries](#saved-queries) ·
   [Outreach templates](#outreach-templates) · [External teams](#external-teams) · [My notifications](#my-notifications)
 - [The API, for the SOC's other tools](#the-api-for-the-socs-other-tools)
@@ -602,6 +602,23 @@ as Trends and Metrics, marked AMBER:
 
 Each section has room for the lead's assessment, which prints with the report but isn't saved. *Print* prints the
 report without the app's frame. A period still under way is marked "(to date)".
+
+## Team commitments
+
+**Route:** `/reports/teams` · **Workflow:** [metrics and trends](../workflows/metrics-and-trends.md#team-commitments)
+
+How each team does against the due dates on the actions it owns, over the last 30, 90, 180 or 365 days (90 by
+default). Linked from Reports and Workload, and open to everyone who reads actions. A row per team, external teams
+marked:
+
+- **Actions due** in the window (one with no due date made no commitment, so isn't counted);
+- **On time**: the share done by the due date, of those done or past it ("50% (2 of 4)");
+- **Average days late**, in calendar days, for those done late or still open past their due date;
+- **Open now** and **Overdue now**, whatever the window.
+
+*Parts of splits only* counts only the parts a split made; *External teams only* lists only the external teams. A
+team's name and its open count open its actions on the Actions list; its overdue count opens the Overdue view. The
+table downloads as CSV, with the window and filters chosen.
 
 ## Opening metrics
 

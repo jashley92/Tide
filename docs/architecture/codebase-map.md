@@ -112,7 +112,7 @@ through `ICurrentUser.Has(Permission.…)`, whether or not the page already hide
 | `Security/` | Roles, permissions and policies (`RoleDefinitions`, `Policies` in `Security.cs`), the list of every activity and what it needs (`Capabilities`), claim types, and stored roles. | `Security.cs`, `Capabilities` |
 | `Settings/` | Settings administrators change in the app: distribution ceilings (`DistributionSettings`) and operational settings (`OperationalSettings`, kept in memory by `SavedSettings`/`OperationalSettingsService`). | `OperationalSettings` |
 | `Stack/` | Our stack products, "We run" tags, and triage matching. | `StackService` |
-| `Trends/` | Threat trends ([ADR 0013](../decisions/0013-trends-count-articles-by-first-brief.md)), periods, trend charts, and the reports page. | `TrendsService`, `ReportService`, `Period` |
+| `Trends/` | Threat trends ([ADR 0013](../decisions/0013-trends-count-articles-by-first-brief.md)), periods, trend charts, the reports page, and the team commitments scorecard. | `TrendsService`, `ReportService`, `TeamScorecardService`, `Period` |
 
 **Belongs here:** anything a page or endpoint does that touches data or decides a rule, including permission checks.
 A page that writes to the database without a service is a bug. Pure, static logic (renderers, parsers, rule tables)
@@ -262,7 +262,7 @@ There's no DBA schema script yet (`deploy/README.md`, "Not yet here").
 | A hunt query dialect | `QueryDialects` / `HuntQueryBuilder` (`Actions/HuntQueries.cs`) | Golden files in `tests/Tide.UnitTests/Golden`. [ADR 0006](../decisions/0006-query-dialects-are-templates.md) |
 | Outreach emails | `OutreachFill`, `OutreachService`, `OutreachTemplateService` | `OutreachPanel.razor` |
 | Metrics and their import | `MetricsService`, `MetricMath`, `MetricImportService`, `MetricCsv` | `MetricDropFolder`, `MetricImportHostedService` |
-| Trends or reports | `TrendsService`, `ReportService`, `Period` | `Trends.razor`, `Reports.razor` |
+| Trends or reports | `TrendsService`, `ReportService`, `TeamScorecardService`, `Period` | `Trends.razor`, `Reports.razor`, `TeamCommitments.razor` |
 | Search or indicator lookup | `SearchService`, `SearchText`, `Lookups` | [ADR 0011](../decisions/0011-search-with-portable-like-queries.md) |
 | Exports (CSV, STIX) | `ExportService`, `Stix` | Golden `export.csv`, `export.stix.json` |
 | The REST API | `src/Tide.Web/Api/ApiEndpoints.cs`, `ApiService` | `OpenApi.cs` (kept by hand), `ApiScopes`, [../API.md](../API.md) |

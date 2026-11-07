@@ -125,6 +125,7 @@ caps each column on screen. Saved queries and outreach templates, libraries of t
 | `MetricImportService` | `Metrics/MetricImportService.cs` | Metric values from CSV (ADR [0014](../decisions/0014-metric-values-from-csv.md)) | `ImportDroppedAsync`, `UploadAsync`, `RecentAsync` | Administer to upload; none for the drop folder |
 | `TrendsService` | `Trends/TrendsService.cs` | Counts over periods, by first brief (ADR [0013](../decisions/0013-trends-count-articles-by-first-brief.md)) | `ReportAsync`, `ArticlesAsync` | ReadTeamEdition |
 | `ReportService` | `Trends/ReportService.cs` | The period report on Reports | `BuildAsync` | through `TrendsService` |
+| `TeamScorecardService` | `Trends/TeamScorecardService.cs` | The team commitments scorecard: each team's actions due in a window, on time, late, days late, open and overdue now, counted by team in the database with `ActionQueries.WhereMet`, `WhereLate` and `WhereOverdue` (the database's twin of `ActionSla.StateOf`) | `BuildAsync`, `ToCsv` | ReadActions |
 | `SearchService` | `Search/SearchService.cs` | Search and indicator lookup (ADR [0011](../decisions/0011-search-with-portable-like-queries.md)) | `SearchAsync` | ReadTeamEdition |
 | `RelatedService` | `Search/RelatedService.cs` | An article's related articles | `ForArticleAsync` | ReadTeamEdition |
 | `ExportService` | `Exports/ExportService.cs` | Gathering indicators for STIX or CSV, cut at a TLP (ADR [0012](../decisions/0012-exports-carry-tlp-and-stable-ids.md)) | `GatherAsync` | ReadTeamEdition |
@@ -179,6 +180,7 @@ correctly (`ExportEndpoints.CsvFile`).
 | GET `/trends/export.csv?p=&subs=&n=` | `TrendsService.ReportAsync`, `ToCsv` | `AsExport` | `exports` | `private, no-store` | The trend table ending at period `p` (`2026-09`, `2026-Q3`). |
 | GET `/trends/articles.csv?p=&line=&subs=` | `TrendsService.ArticlesAsync` | `AsExport` | `exports` | `private, no-store` | The articles one trend line counted. |
 | GET `/reports/export.csv?p=` | `ReportService.BuildAsync` | `AsExport` | `exports` | `private, no-store` | The period report. |
+| GET `/reports/teams/export.csv?days=&parts=&external=` | `TeamScorecardService.BuildAsync`, `ToCsv` | `AsExport(ReadActions)` | `exports` | `private, no-store` | The team commitments scorecard, a row per team. |
 | GET `/exports/{scope}/{key}?format=&tlp=` | `ExportService.GatherAsync`, `Stix.Write`, `IndicatorCsv.Write` | `AsExport` | `exports` | `private, no-store` | `scope` is `article`, `brief` or `story`; STIX 2.1 (`application/stix+json;version=2.1`) or `format=csv`; `tlp` is the ceiling, every level by default. |
 | GET `/admin/system/tide.config.psd1` | `InstallAnswers.Write` | Administer | none | `no-store` | The install answers file for this server. No secrets. |
 | GET `/admin/system/config-bundle.json` | `ConfigBundleService.ExportAsync` | Administer | none | `no-store` | The administered settings. No secrets. |

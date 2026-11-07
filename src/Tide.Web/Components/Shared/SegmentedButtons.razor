@@ -1,0 +1,25 @@
+@typeparam T
+@* A row of buttons, one of which is chosen: the period kinds and ranges on Reports and Trends, the scorecard's window.
+   The chosen one is primary and pressed; choosing one calls OnPick with it (the page usually puts it in the address). *@
+<div class="btn-group" role="group" aria-label="@Label">
+    @foreach (var item in Items)
+    {
+        var on = EqualityComparer<T>.Default.Equals(item, Selected);
+        <button type="button" class="btn btn-sm @(on ? "btn-primary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(on)"
+                @onclick="() => OnPick.InvokeAsync(item)">@Text(item)</button>
+    }
+</div>
+
+@code {
+    /// <summary>What the group is, for a screen reader ("Period", "Window").</summary>
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+
+    [Parameter, EditorRequired] public IEnumerable<T> Items { get; set; } = [];
+
+    [Parameter] public T? Selected { get; set; }
+
+    /// <summary>A button's words.</summary>
+    [Parameter] public Func<T, string> Text { get; set; } = item => item?.ToString() ?? "";
+
+    [Parameter] public EventCallback<T> OnPick { get; set; }
+}

@@ -118,6 +118,7 @@ brief's live meeting.
 | Edit Our stack and adversaries | Yes | Yes | No | No | No | No |
 | **Reports** | | | | | | |
 | Reports, trends and exports | Yes | Yes | Yes | Yes | No | No |
+| Team commitments scorecard and its CSV | Yes | Yes | Yes | Yes | No | No |
 | Coverage of detection rules | Yes | Yes | No | No | No | No |
 | **Administration** | | | | | | |
 | Organization, holidays, teams and SLAs, rotation | Yes | No | No | No | No | No |

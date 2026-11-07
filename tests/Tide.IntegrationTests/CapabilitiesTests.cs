@@ -73,6 +73,7 @@ public class CapabilitiesTests : IDisposable
         ["Read Our stack and adversaries"] = (db, _) => db.Stack().ListAsync(),
         ["Edit Our stack and adversaries"] = (db, _) => db.Stack().SaveAsync(new StackForm { Name = "Contoso " + Guid.NewGuid().ToString("N")[..6] }),
         ["Reports, trends and exports"] = (db, _) => db.Trends().ArticlesAsync([], new Dictionary<Guid, DateOnly>()),
+        ["Team commitments scorecard and its CSV"] = (db, _) => db.TeamScorecard().BuildAsync(),
     };
 
     // Each row a page's policy settles.
@@ -90,6 +91,7 @@ public class CapabilitiesTests : IDisposable
         ["Read the metrics history"] = [typeof(MetricsHistory)],
         ["Read Our stack and adversaries"] = [typeof(StackPage), typeof(AdversariesPage)],
         ["Reports, trends and exports"] = [typeof(Reports), typeof(Trends)],
+        ["Team commitments scorecard and its CSV"] = [typeof(TeamCommitments)],
         ["Coverage of detection rules"] = [typeof(CoveragePage)],
         ["Read the brief rotation"] = [typeof(RotationPage)],
         ["Choose my own notifications (reminders, digests, rotation emails)"] = [typeof(MyNotifications)],

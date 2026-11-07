@@ -104,6 +104,7 @@ public static class Capabilities
         new(Stack, "Edit Our stack and adversaries", "StackService.RequireWrite; AdversaryService.RequireWrite", [G(Permission.WriteArticles)]),
 
         new(Reports, "Reports, trends and exports", "Policies.ReadTeamEdition; ExportService", [G(Permission.ReadTeamEdition)]),
+        new(Reports, "Team commitments scorecard and its CSV", "Policies.ReadActions; TeamScorecardService.BuildAsync", [G(Permission.ReadActions)]),
         new(Reports, "Coverage of detection rules", "Policies.WriteArticles (Coverage)", [G(Permission.WriteArticles)]),
 
         new(Administration, "Organization, holidays, teams and SLAs, rotation", "Policies.Administer", [G(Permission.Administer)]),

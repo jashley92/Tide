@@ -263,3 +263,25 @@ public class AttackCatalogTests
         Tide.Application.Mitre.AttackCatalog.Find("T1574.002").Should().BeNull("the picker offers only live techniques");
     }
 }
+
+/// <summary>The reports' one number formatter.</summary>
+public class WordsNumTests
+{
+    [Fact]
+    public void Num_ShowsOneDecimalAtMost_InvariantCulture_AndDaysSaysOneDay()
+    {
+        var was = System.Globalization.CultureInfo.CurrentCulture;
+        System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("de-DE");
+        try
+        {
+            Words.Num(2.24).Should().Be("2.2", "a full stop, whatever the server's culture");
+            Words.Num(7).Should().Be("7");
+            Words.Num(null).Should().BeEmpty();
+            Words.Num(null, "—").Should().Be("—");
+            Words.Days(1).Should().Be("1 day");
+            Words.Days(1.04).Should().Be("1 day", "the shown number decides");
+            Words.Days(2.5).Should().Be("2.5 days");
+        }
+        finally { System.Globalization.CultureInfo.CurrentCulture = was; }
+    }
+}

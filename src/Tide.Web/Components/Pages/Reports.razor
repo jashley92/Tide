@@ -17,7 +17,8 @@
 <div class="tide-page-head">
     <div>
         <h1>Reports</h1>
-        <div class="tide-sub">Compared with the previous period. Assessments print with the report but aren't saved.</div>
+        <div class="tide-sub">Compared with the previous period. Assessments print with the report but aren't saved.
+            <span class="tide-noprint"><a href="reports/teams">Team commitments</a>: each team against its due dates.</span></div>
     </div>
     @if (_report is not null)
     {
@@ -30,13 +31,8 @@
 
 <div class="tide-card tide-noprint">
     <div class="d-flex gap-3 flex-wrap align-items-center">
-        <div class="btn-group" role="group" aria-label="Period">
-            @foreach (var k in new[] { PeriodKind.Week, PeriodKind.Month, PeriodKind.Quarter })
-            {
-                <button type="button" class="btn btn-sm @(_period.Kind == k ? "btn-primary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(_period.Kind == k)"
-                        @onclick="() => Go(Switched(k))">@(k switch { PeriodKind.Week => "Week", PeriodKind.Month => "Month", _ => "Quarter" })</button>
-            }
-        </div>
+        <SegmentedButtons T="PeriodKind" Label="Period" Items="@Kinds" Selected="@_period.Kind" OnPick="k => Go(Switched(k))"
+                          Text="@(k => k switch { PeriodKind.Week => "Week", PeriodKind.Month => "Month", _ => "Quarter" })" />
         <div class="d-flex gap-1 align-items-center">
             <button type="button" class="btn btn-outline-secondary btn-sm" aria-label="Earlier" title="Earlier" @onclick="() => Go(_period.Previous)"><span class="bi bi-chevron-left" aria-hidden="true"></span></button>
             <strong>@_period.Label@(TrendsSvc.IsPartial(_period) ? " (to date)" : "")</strong>
@@ -148,13 +144,9 @@ else
 
     private static string Value(Tide.Domain.Entities.MetricDefinition m, decimal? v) => v is { } n ? Tide.Application.Metrics.MetricMath.Format(m.Format, n) : "—";
 
-    // "1 day", not "1 days": the shown number decides, so no floating-point comparison.
-    private static string Num(double? v, string unit)
-    {
-        if (v is not { } n) return "—";
-        var shown = n.ToString("0.#", CultureInfo.InvariantCulture);
-        return shown + (unit == " days" && shown == "1" ? " day" : unit);
-    }
+    private static readonly PeriodKind[] Kinds = [PeriodKind.Week, PeriodKind.Month, PeriodKind.Quarter];
+
+    private static string Num(double? v, string unit) => v is not { } n ? "—" : unit == " days" ? Words.Days(n) : Words.Num(n) + unit;
 
     // A trend line's numbers open in Trends, on the line, for this period.
     private string TrendsLink(string line, string view) => $"trends?p={_period.Key}&view={view}&line={Uri.EscapeDataString(line)}&at={_period.Key}";
@@ -171,7 +163,7 @@ else
                             <th scope="row">@if (f.Line is { } line) { <a href="@TrendsLink(line, line.StartsWith("actions:", StringComparison.Ordinal) ? "actions" : "tags")">@f.Name</a> } else { @f.Name }</th>
                             <td class="tide-table-num">@Num(f.Current, f.Unit)</td>
                             <td class="tide-table-num">@Num(f.Previous, f.Unit)</td>
-                            <td class="tide-table-num">@(f.Change is { } c ? (c > 0 ? "+" : "") + c.ToString("0.#", CultureInfo.InvariantCulture) : "—")</td>
+                            <td class="tide-table-num">@(f.Change is { } c ? (c > 0 ? "+" : "") + Words.Num(c) : "—")</td>
                         </tr>
                     }
                 </tbody>
