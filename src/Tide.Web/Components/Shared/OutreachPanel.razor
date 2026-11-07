@@ -204,15 +204,16 @@
     private bool _busy, _writing;
 
     internal OutreachState State => _state;
+    internal bool Writing => _writing;
     internal OutreachWritten? Written => _written;
 
-    // Read when the action is read (the page hands over a new one after each save), not on every redraw around it.
-    protected override async Task OnParametersSetAsync()
+    // The emails came with the action (ActionService.GetAsync reads them, newest first): taken when the page hands over a
+    // new one after each save, not on every redraw around it.
+    protected override void OnParametersSet()
     {
         if (ReferenceEquals(Action, _stateFor)) return;
         _stateFor = Action;
-        try { _state = await OutreachSvc.ForActionAsync(Action.Id); }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        _state = new OutreachState(Action.Outreach, OutreachSvc.FollowUpDays);
     }
 
     private DateOnly SentOn(OutreachMessage m) => OutreachDates.SentOn(m.SentAtUtc, Clock);

@@ -141,7 +141,8 @@ public class HandoffPagesTests(TideApp app) : IClassFixture<TideApp>
         d.Action.TeamId.Should().Be(to);
         d.HandedFrom.Should().Be("EP86 handing team");
         await using var again = await Open(number);
-        WebUtility.HtmlDecode(await again.Html()).Should().Contain("Handed from EP86 handing team by Tester").And.Contain("Their firewall");
+        WebUtility.HtmlDecode(await again.Html()).Should().Contain("handed from EP86 handing team by Tester").And.Contain("Their firewall")
+            .And.Contain("Handed from EP86 handing team to EP86 receiving team: Their firewall", "and its history line is in the feed");
     }
 
     [Fact]

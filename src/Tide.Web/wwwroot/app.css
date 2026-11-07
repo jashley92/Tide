@@ -1257,13 +1257,70 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
     .tide-status-seg { display: grid; grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
     .tide-status-opt { padding: var(--tide-space-2) var(--tide-space-1); }
 }
-/* The facts strip under an action's title: six in a row, three or two to a row on smaller screens. */
+/* An action's facts: six in a row in present mode, three or two to a row on smaller screens; two to a row in the
+   action page's side column (.tide-facts-side). */
 .tide-facts { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 1px; margin: 0 0 var(--tide-space-4); background: var(--tide-border); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl); overflow: hidden; }
 .tide-fact { background: var(--tide-surface); padding: var(--tide-space-2) var(--tide-space-3); min-width: 0; }
 .tide-fact dt { font-size: var(--tide-text-xs); font-weight: var(--tide-weight-medium); color: var(--tide-text-muted); }
 .tide-fact dd { margin: 0; font-weight: var(--tide-weight-medium); overflow-wrap: anywhere; }
 @media (max-width: 1100px) { .tide-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 640.98px) { .tide-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* The action page (layout D). The header: title, a line of badges (the status badge a button that opens the status row
+   under the line, tide-status-choices, ordered last so it wraps onto its own line), who has it, and on the right the
+   primary button and More. */
+.tide-action-head { align-items: flex-start; }
+.tide-action-title { flex: 1 1 32rem; min-width: 0; }
+.tide-action-badges { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); margin-top: var(--tide-space-2); }
+.tide-action-due { font-size: var(--tide-text-sm); color: var(--tide-text-muted); }
+.tide-action-who { display: flex; flex-wrap: wrap; gap: 0 var(--tide-space-2); }
+.tide-action-who .tide-handoff { overflow-wrap: anywhere; }
+.tide-action-do { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); }
+.tide-status-badge { display: inline-flex; align-items: center; gap: var(--tide-space-1); padding: 0; border: 0; background: none; color: var(--tide-text-muted);
+    border-radius: var(--tide-radius-pill); cursor: pointer; font-size: var(--tide-text-xs); }
+.tide-status-badge:hover .tide-badge, .tide-status-badge[aria-expanded="true"] .tide-badge { box-shadow: 0 0 0 1px var(--tide-accent); }
+.tide-status-badge:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
+.tide-status-choices { flex: 1 0 100%; order: 10; margin-top: var(--tide-space-1); }
+.tide-status-choices .tide-status-row { margin-bottom: var(--tide-space-2); }
+/* A menu button's menu (MenuButton): the account menu's popover, its items the filter bar's. */
+a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
+.tide-menubutton { position: relative; display: inline-flex; }
+.tide-menubutton-caret { font-size: .7rem; margin-left: var(--tide-space-1); }
+.tide-menubutton-pop { width: min(15rem, calc(100vw - 1.5rem)); }
+/* The two columns: the work, and beside it facts, tools, the article and files. Under lg they open into one column
+   (display: contents) in the phone's order: Next, details, tools, lineage, what's happened, facts, article, files. */
+.tide-action-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 0 var(--tide-space-4); align-items: start; }
+.tide-action-main, .tide-action-side { min-width: 0; }
+@media (max-width: 991.98px) {
+    .tide-action-layout { display: flex; flex-direction: column; align-items: stretch; }
+    .tide-action-main, .tide-action-side { display: contents; }
+    .tide-ord-1 { order: 1; } .tide-ord-2 { order: 2; } .tide-ord-3 { order: 3; } .tide-ord-4 { order: 4; }
+    .tide-ord-5 { order: 5; } .tide-ord-6 { order: 6; } .tide-ord-7 { order: 7; } .tide-ord-8 { order: 8; }
+}
+/* The Next line: the one thing to do, tinted like the accent, its links after it. */
+.tide-next { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--tide-space-1) var(--tide-space-2); margin-bottom: 1rem; padding: var(--tide-space-2) var(--tide-space-3);
+    border: 1px solid var(--tide-accent); border-radius: var(--tide-radius-lg); background: var(--tide-accent-soft); font-size: var(--tide-text-sm); }
+.tide-next-links { display: inline-flex; flex-wrap: wrap; gap: var(--tide-space-1) var(--tide-space-3); }
+.tide-next-links .btn-link { font-size: inherit; vertical-align: baseline; }
+.tide-facts-side { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; background: none; border: 0; border-radius: 0; gap: var(--tide-space-3) var(--tide-space-4); }
+.tide-facts-side .tide-fact { padding: 0; background: none; }
+.tide-facts-side .tide-fact-wide { grid-column: 1 / -1; }
+/* The tool drawer: tabs over the existing panels, whose own card and heading fold into it. */
+.tide-drawer .tide-drawer-tabs { margin: calc(-1 * var(--tide-space-2)) 0 var(--tide-space-3); }
+.tide-drawer .tide-drawer-tabs .tide-tabbar-item { padding: .45rem .6rem; font-size: .88rem; }
+.tide-drawer [role="tabpanel"] .tide-card { border: 0; border-radius: 0; padding: 0; margin: 0; background: none; }
+.tide-drawer [role="tabpanel"] .tide-card > h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.tide-drawer .tide-add-section { margin-bottom: 0; }
+/* What's happened: one feed, a comment by its author's initials, a history line by TIDE's mark. */
+.tide-feed-head { display: flex; align-items: baseline; gap: var(--tide-space-2); margin-bottom: var(--tide-space-2); }
+.tide-feed-head h2 { margin: 0; }
+.tide-feed-list { list-style: none; margin: 0; padding: 0; }
+.tide-feed-item { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: var(--tide-space-2); padding: var(--tide-space-2) 0; border-bottom: 1px solid var(--tide-border); }
+.tide-feed-item:last-child { border-bottom: 0; }
+.tide-feed-item:focus { outline: none; }
+.tide-feed-item:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
+.tide-feed-mark { width: 28px; height: 28px; font-size: .7rem; }
+.tide-feed-sys { background: var(--tide-surface-2); color: var(--tide-text-muted); }
+.tide-feed-line .tide-feed-body { font-size: var(--tide-text-sm); overflow-wrap: anywhere; }
 /* An empty section as the button that starts it: dashed, the width of a card. */
 .tide-add-section { display: flex; align-items: center; gap: var(--tide-space-2); width: 100%; margin-bottom: 1rem; padding: var(--tide-space-3) var(--tide-space-4); border: 1px dashed var(--tide-border-strong); border-radius: var(--tide-radius-xl); background: transparent; color: var(--tide-text-muted); font: inherit; font-weight: var(--tide-weight-medium); text-align: left; text-decoration: none; }
 .tide-add-section:hover { color: var(--tide-text); border-color: var(--tide-accent); background: var(--tide-surface); }

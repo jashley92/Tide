@@ -243,12 +243,45 @@ an action is never re-checked, so an action overdue for over a year can still be
 
 ![An action's page](../screenshots/doc-action-detail.png)
 
-1. Status, changed in one click (outcomes are asked for when it's closed).
-2. The facts: due date with how close it is, assignee, team, priority, kind and external ticket.
-3. The checklist, each item ticked by name.
-4. Comments, in Markdown, with screenshots or evidence attached.
-5. *About*: the brief it was raised for and the article it came from.
+1. The header: its badges (status, priority, due date and SLA, Escalated), who has it, the one primary button and
+   *More*. The status badge opens the status row (outcomes are asked for when it's closed).
+2. The facts: team, assignee, kind, external ticket, when it was created, and its due date with how close it is.
+3. The tool drawer: the checklist, each item ticked by name, and beside it the parts' timeline, hunt queries or
+   outreach, where the action has them.
+4. *What's happened*: its comments, in Markdown with screenshots or evidence, and its history, in one feed.
+5. *From the article*: the article it came from, with its CVEs.
 6. Files on the action: picked, dropped or pasted, each with its SHA-256.
+
+**The page.** One column of work and one of reference (`ActionPage`):
+
+- **Header.** The title and number; one line of badges: the status (for whoever may work it, a button that opens the
+  status row and its prompt under the line, `ActionStatusControl` with `AsBadge`), the priority, the due date with its
+  SLA badge, and *Escalated* while it is; then a muted line: team · assignee · "handed from {team} by {name}: {reason}"
+  after a hand-off. On the right, **one primary button** chosen by the action's state and kind
+  (`ActionGuide.Primary`, [business rule A27](../reference/business-rules.md#actions-and-sla)), and **More**
+  (`MenuButton`, a menu with the arrow keys) for everything else whoever is looking may do: *Take it*, *Record an
+  update* (when neither is the primary), *Hand off…*, *Split to teams…* and *Split off a part* (an analyst, on a
+  top-level action), *Edit* and *Change status…*. A read-only viewer sees neither.
+- **Next.** A line under the header when something needs doing, with links that do it (`ActionGuide.Next`,
+  [business rule A28](../reference/business-rules.md#actions-and-sla)): a part overdue ("Branch IT is 3 days late on
+  A-15", with *Chase them*, the part's page, and *Record their reply*, the part's page with Record an update open:
+  `actions/15?do=recordupdate`), an email past its follow-up day with no reply, escalated, blocked, or past its own due
+  date. Only the most important shows, and only to whoever may work it.
+- **Main column.** *Details*, with *Outcome* under it once it's closed; the *Lineage* when it has parts or is one; and
+  *What's happened*, one feed of its comments and history lines (a recorded reply is a comment, and hand-offs,
+  splits and escalations are history lines), oldest first, so the newest sits by the comment box at its foot
+  (`ActionFeed`). The latest 10 show, with *Show N earlier* for the rest; a comment being edited is never folded away,
+  and a file's *On a comment* link unfolds the feed. A comment carries its author's initials, a history line TIDE's
+  mark. The comment box keeps its Markdown toolbar, its attachments and *Record a team's update*; Ctrl+Enter posts.
+- **Side column.** The facts card; the **tool drawer** (`ActionToolDrawer`), a card of tabs over the existing panels:
+  *Checklist* always, *Timeline* on a parent whose parts have a due date, *Hunt queries* for an IOC sweep or threat
+  hunt (or one with hunts) and *Outreach* for an Outreach action (or one with emails). It opens on the kind's own tool
+  (Outreach, else Hunt queries for a sweep or hunt, else Checklist), or the one the address asks for:
+  `actions/12?tool=hunt`; choosing a tab puts it in the address, which shows it. A tool's panel is drawn the first
+  time its tab shows and kept after, so a half-written query or email survives a look at another tab. Then *From the
+  article*, the external team's contact card when its team is external, and *Files*.
+- **On a phone** the two columns become one, in this order: header, Next, details, the tool drawer, lineage, what's
+  happened, facts, the article, files.
 
 - **Assignee.** A new assignee must be a member of the action's team; one it already has keeps it (an analyst who took
   it). The meeting's assignee and due boxes change only what they say (`AssignAsync`, `SetDueAsync`), so a due date set
@@ -517,7 +550,7 @@ it until it's done. Some of those teams work outside TIDE ([external teams](#ext
 **Hand off.** *Hand off* on an action's page (anyone who may work it): choose the team and say why.
 `HandoffService.HandOffAsync` changes the owning team, records who handed it, when and why (`HandedFromTeamId`,
 `HandedByName`, `HandedAtUtc`, `HandoffReason`), writes "Handed from {team} to {team}: {reason}" in its history, and
-shows "Handed from {team} by {name}: {reason}" under the action's title. Its assignee stays only if they're on the
+shows "handed from {team} by {name}: {reason}" on the line under the action's badges. Its assignee stays only if they're on the
 receiving team. The receiving team is emailed (the *Action handed to a team* template): its mailbox, or its members who
 haven't turned *Hand-offs to your team* off in My notifications. An external team isn't emailed; its reminders tell it.
 
@@ -526,13 +559,13 @@ Choosing another team in an action's editor is the same hand-off (`HandoffServic
 in the editor" when it's left blank. Either way the lineage, the history line, the receiving team's limit and its email
 are the same, so an external team's Reply-To doesn't depend on which was used.
 
-**Split to teams.** On an open top-level action, an analyst's *Split to teams* opens a dialog: tick the teams, give each
+**Split to teams.** On an open top-level action, an analyst's *Split to teams* (under *More*, and under a parent's lineage) opens a dialog: tick the teams, give each
 a due date (the parent's to start with; a later one is warned about) and an optional ticket link, and *Split* raises a
 part for each, together (`HandoffService.SplitAsync`). Each is titled "{parent} – {team}" and takes the parent's
 details, kind, priority and article, and the parent's own indicators when it has no article. None has an assignee or a
 checklist. Someone who works actions can add an external team in the dialog with just a name and a contact email.
 
-**A part one at a time.** *Split off a part* opens the new-action form prefilled from the parent: its title (to edit),
+**A part one at a time.** *Split off a part* (under *More*) opens the new-action form prefilled from the parent: its title (to edit),
 details, due date, article, kind and priority. The team is never chosen for you (the form says *Choose a team*), and
 the assignee, ticket and checklist start blank. A due date after the parent's is warned about.
 
@@ -557,7 +590,7 @@ its Parts card: the parts aren't listed again, and *Split off a part for a team*
 part's page shows its parent and every part, itself marked "(this action)". An action raised without an article
 starts at the parent.
 
-**Remediation timeline.** Under the lineage, on the parent only, *Remediation timeline* (`RemediationTimelineCard`,
+**Remediation timeline.** In the tool drawer's *Timeline* tab, on the parent only, *Remediation timeline* (`RemediationTimelineCard`,
 `RemediationTimeline.Build`) puts the parts on one date scale, from the first part's creation (a split part's is the
 split) to the latest due date, close or today. Each part has a bar from its creation to the end of its due day; an
 open part past due runs on to today, and one closed late runs on to its close, hatched in the danger colour; the day
@@ -566,7 +599,8 @@ bars are striped. Today, from the organization's clock (`OrgClock`), is a dashed
 the words under it), and the summary under the timeline says the date. Under each bar its dates are written out ("Started Nov 2 ·
 due Nov 20 · closed Nov 18, 2 days early"). It isn't shown when no part has a due date.
 
-**Record an update.** Whoever may work an action has *Record an update* beside *Hand off*, for what its team said
+**Record an update.** Whoever may work an action has *Record an update* (the primary button for Tracking, an external
+team's action or a parent with open parts; otherwise under *More*, and beside the comment box), for what its team said
 outside TIDE, most often an external team's emailed reply (`RecordUpdateDialog`, `ActionService.RecordUpdateAsync`).
 In one dialog: paste their reply (optional), choose the status (any of them; a closing one asks for the
 outcome and its note, as the status buttons do), set a new due date (optional, with why it moves) and add a short
@@ -812,5 +846,6 @@ Every one of these follows colleagues' saves live through the `actions` and `act
 | Escalation ladder | `src/Tide.Application/Actions/Escalation.cs` (`EscalationLadder`, `EscalationStep`, `EscalationOptions`), `EscalationScan.cs` (`ReminderService.EscalateAsync`); the page's form `src/Tide.Web/Components/Pages/Admin/EscalationForm.cs` |
 | Reminders | `src/Tide.Application/Actions/Reminders.cs` (`ReminderService`, `ReminderOptions`), `src/Tide.Web/Services/ReminderHostedService.cs` |
 | Notification choices | `src/Tide.Application/Preferences/` (`NotificationKinds`, `NotificationPreferenceService`, `RecipientResolver`, `UserPreferenceService`) |
+| The page's primary button, Next line, tools and feed | `src/Tide.Application/Actions/ActionGuide.cs` (`ActionFlow`, `ActionGuide.Primary`, `More`, `Next`, `Tools`, `Opening`), `ActionFeed.cs` (`ActionFeed.Of`, `Window`) |
 | Pages | `src/Tide.Web/Components/Pages/ActionPage.razor`, `ActionsBoard.razor`, `Workload.razor`, `ExternalTeams.razor`, `SavedQueriesPage.razor`, `OutreachTemplatesPage.razor`, `MyNotifications.razor` |
-| Panels | `src/Tide.Web/Components/Shared/HuntPanel.razor`, `OutreachPanel.razor`, `ActionFilesPanel.razor`, `ActionStatusControl.razor`, `ActionKanban.razor`, `SplitDialog.razor`, `OverLimitDialog.razor`, `ActionLineageFlow.razor`, `RemediationTimelineCard.razor`, `RecordUpdateDialog.razor` |
+| Panels | `src/Tide.Web/Components/Shared/HuntPanel.razor`, `OutreachPanel.razor`, `ActionFilesPanel.razor`, `ActionStatusControl.razor`, `ActionKanban.razor`, `SplitDialog.razor`, `OverLimitDialog.razor`, `ActionLineageFlow.razor`, `RemediationTimelineCard.razor`, `RecordUpdateDialog.razor`, `ActionToolDrawer.razor`, `ActionNextStrip.razor`, `MenuButton.razor` |

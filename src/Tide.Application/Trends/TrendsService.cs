@@ -418,7 +418,7 @@ public sealed class TrendsService(IAppDbContextFactory dbs, ICurrentUser user, O
         return sb.ToString();
     }
 
-    private DateOnly LocalDay(DateTimeOffset utc) => DateOnly.FromDateTime(clock.ToLocal(utc).DateTime);
+    private DateOnly LocalDay(DateTimeOffset utc) => clock.DayOf(utc);
 
     private void RequireRead()
     {

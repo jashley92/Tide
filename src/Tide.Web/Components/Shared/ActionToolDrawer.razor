@@ -1,0 +1,133 @@
+@* The action page's tool drawer: one card in the side column whose tabs (TabBar with a panel; tabs.js) hold the existing
+   panels: the checklist, the parts' timeline on a parent with dated parts, hunt queries and outreach, where each belongs
+   (ActionGuide.Tools). Which one shows comes from the address alone: the tool ?tool= asks for, else the kind's own
+   (ActionGuide.Opening); a tab only asks the page to put its tool in the address. A panel is drawn the first time its
+   tab shows and kept (hidden) after, so a half-written query or email survives a look at another tab. The panels' own
+   card and heading fold into the drawer by CSS (.tide-drawer), so they're used as they are. *@
+
+<section class="tide-card tide-drawer" aria-label="Tools">
+    <TabBar Items="Tabs" Label="Tools" Level="TabLevel.Page" Active="@ActionGuide.Key(Tool)" PanelId="tool-panel" OnSelect="SelectKey" Class="tide-drawer-tabs" />
+    <div role="tabpanel" id="tool-panel" aria-labelledby="@TabBar.TabId("tool-panel", ActionGuide.Key(Tool))" data-tool="@ActionGuide.Key(Tool)">
+        @if (_opened.Contains(ActionTool.Checklist))
+        {
+            <div hidden="@(Tool != ActionTool.Checklist)">
+                @* An empty checklist is a button to start one, not an empty list; it opens in place. *@
+                @if (A.Checklist.Count == 0 && Detail.CanWork && !_addingChecklist)
+                {
+                    <button type="button" class="tide-add-section" @onclick="() => _addingChecklist = true"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add checklist item</button>
+                }
+                else if (Detail.CanWork || A.Checklist.Count > 0)
+                {
+                    var done = A.Checklist.Count(i => i.IsDone);
+                    <div class="d-flex gap-2 align-items-center flex-wrap mb-2 small">
+                        @if (A.Checklist.Count > 0) { <span class="tide-count tide-muted">@done of @A.Checklist.Count done</span> }
+                        @if (A.PlaybookName is not null) { <Badge Class="ms-auto">@A.PlaybookName playbook</Badge> }
+                    </div>
+                    <ActionChecklist @key="A.Id" ActionId="A.Id" Kind="A.Kind" CanWork="Detail.CanWork" Autofocus="_addingChecklist" OnChanged="Changed" />
+                }
+                else
+                {
+                    <p class="small tide-muted mb-0">Nothing on the checklist.</p>
+                }
+            </div>
+        }
+        @if (_opened.Contains(ActionTool.Timeline) && Detail.Lineage is { } lineage)
+        {
+            <div hidden="@(Tool != ActionTool.Timeline)">
+                <RemediationTimelineCard Parts="lineage.Parts" Today="Today" />
+            </div>
+        }
+        @if (_opened.Contains(ActionTool.Hunt))
+        {
+            <div hidden="@(Tool != ActionTool.Hunt)">
+                <HuntPanel @key="A.Id" Action="A" CanWork="Detail.CanWork" Changed="Changed" />
+            </div>
+        }
+        @if (_opened.Contains(ActionTool.Outreach))
+        {
+            <div hidden="@(Tool != ActionTool.Outreach)">
+                <OutreachPanel @key="@($"outreach-{A.Id}")" @ref="_outreach" Action="A" CanWork="Detail.CanWork" Files="Detail.Files" Changed="Changed" />
+            </div>
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ActionDetail Detail { get; set; } = default!;
+
+    /// <summary>The tool the address asks for (<c>?tool=</c>), by its key.</summary>
+    [Parameter] public string? Asked { get; set; }
+
+    /// <summary>The organization's today (OrgClock).</summary>
+    [Parameter, EditorRequired] public DateOnly Today { get; set; }
+
+    /// <summary>After a panel saves: the page reloads the action.</summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
+    /// <summary>A tab chosen: the page puts its key in the address, which shows it.</summary>
+    [Parameter] public EventCallback<string> ToolChanged { get; set; }
+
+    private ActionItem A => Detail.Action;
+    private IReadOnlyList<ActionTool> _tools = [ActionTool.Checklist];
+
+    // The tools whose panels have been drawn: each stays, hidden, once its tab has shown.
+    private readonly HashSet<ActionTool> _opened = [];
+    private bool _addingChecklist;
+    private OutreachPanel? _outreach;
+
+    // What to do with the outreach panel once it's drawn (the page's Write the email or Record the reply).
+    private Func<OutreachPanel, Task>? _onOutreach;
+
+    /// <summary>The tool shown: the address's, else the kind's own.</summary>
+    internal ActionTool Tool => ActionGuide.Opening(Asked, A.Kind, _tools);
+
+    internal IReadOnlyList<ActionTool> Tools => _tools;
+
+    protected override void OnParametersSet()
+    {
+        _tools = ActionGuide.Tools(A.Kind, ActionGuide.HasTimeline(Detail.Lineage, A.Id), A.Hunts.Count, Detail.Emails);
+        _opened.Add(Tool);
+    }
+
+    private IReadOnlyList<TabBarItem> Tabs => _tools.Select(t => new TabBarItem(ActionGuide.Name(t), "", Icon(t), ActionGuide.Key(t),
+        t == ActionTool.Checklist && A.Checklist.Count > 0 ? A.Checklist.Count : t == ActionTool.Hunt && A.Hunts.Count > 0 ? A.Hunts.Count
+            : t == ActionTool.Outreach && Detail.Emails > 0 ? Detail.Emails : null)).ToList();
+
+    private static string Icon(ActionTool t) => t switch
+    {
+        ActionTool.Timeline => "bi-bar-chart-steps",
+        ActionTool.Hunt => "bi-terminal",
+        ActionTool.Outreach => "bi-envelope-paper",
+        _ => "bi-check2-square",
+    };
+
+    /// <summary>Asks for a tool, as its tab does: its panel is drawn now, and the page puts it in the address.</summary>
+    internal Task Select(ActionTool t)
+    {
+        if (!_tools.Contains(t) || t == Tool) return Task.CompletedTask;
+        _opened.Add(t);
+        return ToolChanged.InvokeAsync(ActionGuide.Key(t));
+    }
+
+    /// <summary>Asks for the Outreach tool and does <paramref name="then"/> with its panel: now when it's drawn, else
+    /// once it is.</summary>
+    internal async Task WithOutreach(Func<OutreachPanel, Task> then)
+    {
+        await Select(ActionTool.Outreach);
+        if (_outreach is { } panel) await then(panel);
+        else
+        {
+            _onOutreach = then;
+            StateHasChanged();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_onOutreach is not { } then || _outreach is not { } panel) return;
+        _onOutreach = null;
+        await then(panel);
+    }
+
+    private Task SelectKey(string? key) => Select(ActionGuide.Opening(key, A.Kind, _tools));
+}

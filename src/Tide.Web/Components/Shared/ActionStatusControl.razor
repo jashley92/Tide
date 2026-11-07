@@ -2,40 +2,54 @@
    Done, Cancelled and Not applicable first open a small prompt in place for the outcome and a note (ActionCloseFields,
    the board's close rules); Esc or Cancel puts it back. A move goes through ActionService.MoveAsync from the status
    this page shows, so one that someone else has moved since is refused rather than overwriting theirs. The buttons
-   aren't disabled while a move saves (a second click is ignored instead), so focus stays where it was. *@
+   aren't disabled while a move saves (a second click is ignored instead), so focus stays where it was.
+   AsBadge draws the status as its badge, a button (aria-expanded) that shows and hides the same row and prompt under it;
+   a one-click move, Esc or Cancel folds them away again and focus goes back to the badge. *@
 @inject ActionService ActionSvc
 @inject ToastService Toasts
 
-<div class="tide-status-row">
-    <span class="tide-field-label mb-0" id="status-label">Status</span>
-    <div class="tide-status-seg" role="group" aria-labelledby="status-label">
-        @foreach (var s in ActionItem.StatusOrder)
-        {
-            var on = Shown == s;
-            <button type="button" @key="s" class="tide-status-opt @(on ? "on" : "")" aria-pressed="@(on ? "true" : "false")" data-status="@s"
-                    @ref="_buttons[s]" @onclick="() => Pick(s)">@ActionService.StatusName(s)</button>
-        }
-    </div>
-    @if (!Action.IsOpen && _closing is null)
-    {
-        <button type="button" class="btn btn-link btn-sm p-0" @onclick="EditOutcome">Change the outcome</button>
-    }
-</div>
-@if (_closing is { } c)
+@if (AsBadge)
 {
-    <div class="tide-status-prompt" role="group" aria-labelledby="status-prompt-title" @onkeydown="OnPromptKey">
-        <div class="tide-status-prompt-title" id="status-prompt-title">
-            @(c.To == c.From ? $"The outcome of {Ui.ActionLabel(Action.Number)}" : $"Move {Ui.ActionLabel(Action.Number)} to {ActionService.StatusName(c.To)}")
+    <button type="button" class="tide-status-badge" aria-expanded="@Ui.Aria(ChoicesShown)" aria-controls="status-choices"
+            aria-label="@($"Status: {ActionService.StatusName(Action.Status)}. Change it")" @ref="_badge" @onclick="ToggleChoices">
+        <ActionStatusBadge Status="Action.Status" /><span class="bi bi-chevron-down" aria-hidden="true"></span>
+    </button>
+}
+@if (!AsBadge || ChoicesShown)
+{
+    <div class="@(AsBadge ? "tide-status-choices" : null)" id="@(AsBadge ? "status-choices" : null)" @onkeydown="OnChoicesKey">
+        <div class="tide-status-row">
+            <span class="tide-field-label mb-0" id="status-label">Status</span>
+            <div class="tide-status-seg" role="group" aria-labelledby="status-label">
+                @foreach (var s in ActionItem.StatusOrder)
+                {
+                    var on = Shown == s;
+                    <button type="button" @key="s" class="tide-status-opt @(on ? "on" : "")" aria-pressed="@(on ? "true" : "false")" data-status="@s"
+                            @ref="_buttons[s]" @onclick="() => Pick(s)">@ActionService.StatusName(s)</button>
+                }
+            </div>
+            @if (!Action.IsOpen && _closing is null)
+            {
+                <button type="button" class="btn btn-link btn-sm p-0" @onclick="EditOutcome">Change the outcome</button>
+            }
         </div>
-        <div class="tide-status-prompt-fields">
-            <ActionCloseFields Kind="Action.Kind" Current="Action.Outcome" To="c.To" Id="status-close" Autofocus="true" Outcome="_outcome" OutcomeChanged="Choose" Note="@_note" NoteChanged="Write" />
-        </div>
-        <div class="d-flex gap-2 mt-2">
-            <button type="button" class="btn btn-primary btn-sm" disabled="@(!ActionCloseFields.CanClose(c.To, _outcome))" @onclick="Confirm">
-                @(c.To == c.From ? "Save the outcome" : $"Move to {ActionService.StatusName(c.To)}")
-            </button>
-            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="Revert">Cancel</button>
-        </div>
+        @if (_closing is { } c)
+        {
+            <div class="tide-status-prompt" role="group" aria-labelledby="status-prompt-title" data-submit-scope @onkeydown="OnPromptKey">
+                <div class="tide-status-prompt-title" id="status-prompt-title">
+                    @(c.To == c.From ? $"The outcome of {Ui.ActionLabel(Action.Number)}" : $"Move {Ui.ActionLabel(Action.Number)} to {ActionService.StatusName(c.To)}")
+                </div>
+                <div class="tide-status-prompt-fields">
+                    <ActionCloseFields Kind="Action.Kind" Current="Action.Outcome" To="c.To" Id="status-close" Autofocus="true" Outcome="_outcome" OutcomeChanged="Choose" Note="@_note" NoteChanged="Write" />
+                </div>
+                <div class="d-flex gap-2 mt-2">
+                    <button type="button" class="btn btn-primary btn-sm" data-submit disabled="@(!ActionCloseFields.CanClose(c.To, _outcome))" @onclick="Confirm">
+                        @(c.To == c.From ? "Save the outcome" : $"Move to {ActionService.StatusName(c.To)}")
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="Revert">Cancel</button>
+                </div>
+            </div>
+        }
     </div>
 }
 
@@ -60,6 +74,9 @@
     /// <summary>The prompt's move was refused because the action moved since it opened: the page says it changed elsewhere.</summary>
     [Parameter] public EventCallback Stale { get; set; }
 
+    /// <summary>Drawn as the status badge, a button that shows the row and prompt (the action page's header).</summary>
+    [Parameter] public bool AsBadge { get; set; }
+
     /// <summary>A move waiting on its outcome: from the status the page showed when it opened, to a closed one.</summary>
     private sealed record PendingClose(ActionStatus From, ActionStatus To);
 
@@ -75,6 +92,41 @@
 
     /// <summary>Whether the outcome prompt is open.</summary>
     public bool IsPrompting => _closing is not null;
+
+    private ElementReference _badge;
+    private bool _choices, _focusBadge;
+
+    /// <summary>Whether the row of statuses shows: always, unless it's drawn as the badge, which shows it on a click.</summary>
+    public bool ChoicesShown => !AsBadge || _choices || _closing is not null;
+
+    /// <summary>The badge's click: the statuses show, the current one focused, or fold away.</summary>
+    public async Task ToggleChoices()
+    {
+        if (ChoicesShown) await Fold();
+        else ShowChoices();
+    }
+
+    /// <summary>Shows the statuses (the More menu's "Change status"), the current one focused.</summary>
+    public void ShowChoices()
+    {
+        _choices = true;
+        _focus = Shown;
+        StateHasChanged();
+    }
+
+    // Folds the row back into the badge, any prompt with it, and focus goes to the badge.
+    private async Task Fold()
+    {
+        if (!AsBadge) return;
+        await Close();
+        (_choices, _focusBadge, _focus) = (false, true, null);
+        StateHasChanged();
+    }
+
+    private async Task OnChoicesKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape" && _closing is null) await Fold();
+    }
 
     /// <summary>The prompt's outcome, as chosen.</summary>
     public void Choose(ActionOutcome outcome) => _outcome = outcome;
@@ -99,7 +151,7 @@
             return;
         }
         await Close();
-        await Move(from, to, ActionOutcome.None, null);
+        if (await Move(from, to, ActionOutcome.None, null)) await Fold();
     }
 
     /// <summary>A closed action's outcome and note, changed without moving it.</summary>
@@ -109,7 +161,7 @@
     public async Task Confirm()
     {
         if (_busy || _closing is not { } c || !ActionCloseFields.CanClose(c.To, _outcome)) return;
-        if (await Move(c.From, c.To, _outcome, _note)) await Close();
+        if (await Move(c.From, c.To, _outcome, _note)) { await Close(); await Fold(); }
     }
 
     /// <summary>Esc or Cancel: the prompt closes and the buttons show the status as it was.</summary>
@@ -118,6 +170,7 @@
         if (_closing is null) return;
         _focus = Action.Status;
         await Close();
+        await Fold();
     }
 
     // Both redraw now: the page's own reload, or a test, may call them from outside an event.
@@ -179,6 +232,11 @@
     // Focus goes back to the status button once the prompt closes, or onto the one just moved to.
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_focusBadge && !_busy)
+        {
+            _focusBadge = false;
+            await _badge.TryFocusAsync(orGone: true);
+        }
         if (_focus is not { } s || _busy) return;
         _focus = null;
         try { if (_buttons.TryGetValue(s, out var b)) await b.FocusAsync(); }

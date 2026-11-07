@@ -730,7 +730,7 @@ public class ActionFilePageTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task TheFilesSection_IsInTheSideColumn_AfterAbout_WithEachFilesDetailsBehindMore()
+    public async Task TheFilesSection_IsLastInTheSideColumn_WithEachFilesDetailsBehindMore()
     {
         var (number, id) = await NewAction("files-page: side column");
         var added = await As(sp => sp.GetRequiredService<ActionFileService>().AddAsync(id,
@@ -740,12 +740,13 @@ public class ActionFilePageTests(TideApp app) : IClassFixture<TideApp>
         await using var page = await Open(number);
         var html = await page.Html();
         int At(string text) => html.IndexOf(text, StringComparison.Ordinal);
-        var side = At("<div class=\"col-lg-4\">");
+        var side = At("<div class=\"tide-action-side\">");
         side.Should().BeGreaterThan(0);
         At("id=\"files\"").Should().BeGreaterThan(side, "Files are in the side column")
-            .And.BeGreaterThan(At("<h2>About</h2>"), "under About")
-            .And.BeGreaterThan(At("<h2>Comments"), "so when the columns stack they come after Comments")
-            .And.BeLessThan(At("<h2>History</h2>"), "and before History");
+            .And.BeGreaterThan(At("aria-label=\"Facts\""), "under the facts")
+            .And.BeGreaterThan(At("class=\"tide-card tide-drawer\""), "and the tools")
+            .And.BeGreaterThan(At("id=\"feed-h\""), "after what's happened, as they come when the columns stack");
+        html.Should().Contain("<div class=\"tide-ord-8\">", "and last of all on a phone");
         html.Should().Contain($"title=\"{f.FileName}\"", "a long name is cut short with the full name in its title");
 
         var more = html[At($"id=\"file-more-{f.FileId}\"")..];

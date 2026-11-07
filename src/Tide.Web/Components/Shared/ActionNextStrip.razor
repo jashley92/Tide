@@ -1,0 +1,28 @@
+@* The action page's Next line (ActionGuide.Next): the one thing that most needs doing, in words, and links that do it.
+   A link to another action (a late part) goes to its page, running its flow there by ?do= (Ui.ActionUrl); the rest are
+   this page's own flows, which it runs (Do). Drawn only when there's something to do. *@
+
+<div class="tide-next" role="note" aria-label="Next" data-next="@Step.Kind">
+    <strong>Next:</strong>
+    <span>@Step.Text</span>
+    <span class="tide-next-links">
+        @foreach (var link in Step.Links)
+        {
+            @if (link.On is { } other)
+            {
+                <a href="@Ui.ActionUrl(other, link.Flow == ActionFlow.None ? null : "do=" + ActionGuide.Key(link.Flow))">@link.Label</a>
+            }
+            else
+            {
+                <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => Do.InvokeAsync(link.Flow)">@link.Label</button>
+            }
+        }
+    </span>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public NextStep Step { get; set; } = default!;
+
+    /// <summary>A link that's one of the page's own flows: the page runs it.</summary>
+    [Parameter] public EventCallback<ActionFlow> Do { get; set; }
+}

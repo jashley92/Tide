@@ -317,6 +317,9 @@ public static class Ui
 
     public static string ActionUrl(int number) => $"actions/{number}";
 
+    /// <summary>An action's address with a query (<c>do=recordupdate</c>), or its plain address for none.</summary>
+    public static string ActionUrl(int number, string? query) => string.IsNullOrEmpty(query) ? ActionUrl(number) : $"{ActionUrl(number)}?{query}";
+
     public static string ActionLabel(int number) => $"A-{number}";
 
     public static string Day(DateOnly d) => d.ToString("dddd, MMMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture);

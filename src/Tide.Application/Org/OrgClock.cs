@@ -78,6 +78,9 @@ public sealed class OrgClock : IDisposable
     /// <summary>A UTC instant as local time in the organization's zone.</summary>
     public DateTimeOffset ToLocal(DateTimeOffset utc) => TimeZoneInfo.ConvertTime(utc, Zone);
 
+    /// <summary>The day, in the organization's zone, a UTC instant falls on.</summary>
+    public DateOnly DayOf(DateTimeOffset utc) => DateOnly.FromDateTime(ToLocal(utc).DateTime);
+
     /// <summary>
     /// The first instant of a local <paramref name="day"/>: the day an instant falls on (<see cref="ToLocal"/>) is
     /// <paramref name="day"/> from here until the next day's start. A midnight a clock change skips starts at the change.

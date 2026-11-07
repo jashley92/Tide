@@ -146,10 +146,16 @@ public class ActionPageTests(TideApp app) : IClassFixture<TideApp>
         await using (var page = await RenderAsync<ActionPage>(app, "/actions/" + theirs.Number, new() { ["Number"] = (int?)theirs.Number }, Owner))
         {
             var html = await page.Html();
-            html.Should().Contain("Theirs").And.NotContain("tide-status-seg").And.NotContain("Add checklist item", "someone who can't work it sees its status, not the buttons");
+            html.Should().Contain("Theirs").And.NotContain("tide-status-seg").And.NotContain("class=\"tide-status-badge\"")
+                .And.NotContain("Add checklist item", "someone who can't work it sees its status, not the buttons");
         }
         await using (var page = await RenderAsync<ActionPage>(app, "/actions/" + ours.Number, new() { ["Number"] = (int?)ours.Number }, Owner))
+        {
+            (await page.Html()).Should().Contain("class=\"tide-status-badge\"", "the status badge is the button that opens them");
+            var control = page.Component.StatusControl!;
+            await page.Click(_ => control.ToggleChoices());
             (await page.Html()).Should().Contain("tide-status-seg");
+        }
 
         // The buttons aren't drawn for them, and the service refuses it regardless.
         await using var r = await RenderAsync<ActionStatusControl>(app, "/actions/" + theirs.Number, For(theirs), Owner);
@@ -171,26 +177,31 @@ public class ActionPageTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task ThePage_PutsTheFactsInAStrip_AndDrawsEmptySectionsAsTheButtonsThatStartThem()
+    public async Task ThePage_PutsTheFactsInACard_AndDrawsEmptySectionsAsTheButtonsThatStartThem()
     {
         var a = await NewAction("Sweep the proxy logs", ActionKind.IocSweep);
         await using var r = await RenderAsync<ActionPage>(app, "/actions/" + a.Number, new() { ["Number"] = (int?)a.Number });
         var html = await r.Html();
 
-        html.Should().Contain("<dl class=\"tide-facts\">");
-        foreach (var fact in new[] { "Due", "Assignee", "Team", "Priority", "Kind", "Ticket" })
+        html.Should().Contain("<dl class=\"tide-facts tide-facts-side\">");
+        foreach (var fact in new[] { "Team", "Assignee", "Kind", "Ticket", "Created", "Due" })
             html.Should().Contain($"<div class=\"tide-fact\"><dt>{fact}</dt>");
         html.Should().Contain("<dd>Cyber Defense</dd>").And.Contain("<dd>IOC sweep</dd>").And.Contain("<dd>Unassigned</dd>");
+        html.Should().Contain("title=\"Priority P3\"", "the priority is a badge in the header");
 
-        html.Should().Contain("Add checklist item</button>").And.NotContain("Add hunt query</button>")
-            .And.Contain($"href=\"actions/new?parent={a.Id}\"").And.Contain("Split off a part</a>")
+        html.Should().NotContain("Add hunt query</button>")
             .And.Contain("<h2>Hunt queries", "a sweep's queries are its work: the panel is open, ready to generate one")
             .And.Contain("aria-label=\"Query language\"").And.NotContain("Split off a part for a team");
-        html.IndexOf("<h2>History</h2>", StringComparison.Ordinal).Should().BeGreaterThan(html.IndexOf("<h2>About</h2>", StringComparison.Ordinal),
-            "history is in the side column, under About");
+        html.IndexOf("aria-label=\"Facts\"", StringComparison.Ordinal).Should().BeGreaterThan(html.IndexOf("id=\"feed-h\"", StringComparison.Ordinal),
+            "the facts are in the side column, after the work");
+        r.Component.MoreItems.Should().Contain(i => i.Label == "Split off a part" && i.Href == $"actions/new?parent={a.Id}");
+
+        // Its checklist tab: empty, the button that starts one.
+        await using (var checklist = await RenderAsync<ActionPage>(app, $"/actions/{a.Number}?tool=checklist", new() { ["Number"] = (int?)a.Number }))
+            (await checklist.Html()).Should().Contain("Add checklist item</button>");
 
         await As((actions, _) => actions.AddChecklistItemAsync(a.Id, "Pull 30 days of logs"));
-        await using var filled = await RenderAsync<ActionPage>(app, "/actions/" + a.Number, new() { ["Number"] = (int?)a.Number });
+        await using var filled = await RenderAsync<ActionPage>(app, $"/actions/{a.Number}?tool=checklist", new() { ["Number"] = (int?)a.Number });
         (await filled.HtmlOnce("Pull 30 days of logs")).Should().Contain("Checklist").And.NotContain("Add checklist item</button>",
             "a checklist with items is the card");
     }

@@ -314,6 +314,17 @@ that fits its kind.
   count every action in the group, not only this page's. Each board column shows its first 20 cards, then *Show N
   more*. The closed columns show the last 7 days; *Show older*, under Done, takes them back 30 days.
 - **Raising.** Raise one from an article, from the board, or in the meeting without leaving the slide.
+- **An action's page.** Its title and one line of badges (status, priority, due date, Escalated), then its team, who
+  has it and who handed it over. One button does the thing that comes next, chosen by where the action stands: *Write
+  the email* for an Outreach action with none sent, *Record the reply* while one waits, *Record an update* for work
+  followed rather than done here (Tracking, an external team's, a parent with open parts), *Take it* when nobody has
+  it, else *Start work*, *Unblock* or *Close with outcome*. Everything else is under *More*. The status badge opens the
+  status choices. A *Next* line says what most needs doing, with links that do it: a part that's late (chase them, or
+  record their reply), an email past its follow-up day, escalated, blocked, or late. Beside the work, the facts and a
+  card of tools in tabs: the checklist, the parts' timeline, hunt queries, outreach, opening on the action's own (the
+  address can name one: `?tool=hunt`). *What's happened* is one feed of its comments and history, newest at the
+  bottom by the comment box, with *Show N earlier* for the rest. On a phone it's one column: the header, Next,
+  details, the tools, the lineage, what's happened, the facts, the article and the files.
 - **Splitting.** A long remediation splits into parts, one per team: one at a time (*Split off a part*, prefilled from
   the parent, with no team chosen), or several at once (*Split to teams*: tick the teams, give each a due date and a
   ticket link). A parent shows its parts in its lineage, with their progress ("3 of 5 done · 1 overdue · next due
@@ -323,7 +334,7 @@ that fits its kind.
   date or how late it is, tinted and labelled done, on track, due soon, overdue or tracking in the same colours as the
   due-date badges. Each is a link. On the parent it takes the place of a list of parts, with the buttons to split off
   more under it. A part's page shows its parent and the other parts, with itself marked. On a phone the steps stack.
-- **Remediation timeline.** Under it, on the parent: a bar per part from when it was raised to when it's due, the
+- **Remediation timeline.** In the tool card's *Timeline* tab, on the parent: a bar per part from when it was raised to when it's due, the
   days past due in red, when each closed, and a line for today, with each part's dates written under its bar.
 - **Recording an update.** *Record an update* puts what a team said by email on its action in one step: their reply
   (kept as a comment headed as theirs), the status, a new due date and why, and a note, as one line in its history.
@@ -333,9 +344,10 @@ that fits its kind.
   open and due, but not counted against the team's limit.
 - **Limits.** A team may have a limit on its active actions; the list and board filtered to it say "4 of 5 active",
   and going over is counted, asked about or refused, as an administrator set it.
-- **Around it.** An action can have an external ticket link, comments (from any team) and a readable history.
+- **Around it.** An action can have an external ticket link, comments (from any team) and a readable history, read
+  together under *What's happened*.
 - **Files.** Files can be added to an action itself (picked, dropped or pasted, or while raising it) as well as to
-  its comments. Its Files section, in the side column under About, lists both, newest first: a compact row each, with
+  its comments. Its Files section, last in the side column, lists both, newest first: a compact row each, with
   its description, SHA-256 and controls under its "More" button. A file is checked from its first bytes as well as
   its name and type, and an image whose bytes don't match isn't shown inline. A file that can run (a program,
   script, installer, shortcut, Office file with macros and the like) downloads in a zip with the password `infected`,

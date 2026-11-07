@@ -152,6 +152,7 @@ the tables and columns are in [data model](../architecture/data-model.md).
 
 | Term | Meaning | Code name |
 |---|---|---|
+| **Next line** | On an action's page, the one thing that most needs doing (a late part, an email past its follow-up, escalated, blocked, late), with links that do it. | `ActionGuide.Next`, `ActionNextStrip` |
 | **Not sent** | Finishing a brief that won't go, when email is on, with a required reason. It counts as Sent but nothing is frozen or published. | `Brief.NotSentReason`, `DistributionService.FinishNotSentAsync`; API `finishedAs: "notSent"` |
 | **Notification mark** | A record that one reminder email went, so a scan that stops partway never sends it twice. | `NotificationMark` |
 
@@ -175,6 +176,7 @@ the tables and columns are in [data model](../architecture/data-model.md).
 | **Playbook** | A checklist for a kind of action, offered when one is created or worked. The team's library, kept by whoever works actions. | `Playbook`, `PlaybookStep`, `ActionChecklistItem` |
 | **Presence** | Who else has a brief, article, action or triage item open, and whether they're editing. In memory. | `Presence`, `PresenceNote`, `PresenceCircuit` |
 | **Presenter** | The analyst who presents a day's brief: the rotation's choice for the day (an *override*, else the week's analyst), recorded on the brief. Presenting can be handed to another analyst in the meeting. | `IPresenterLookup`, `Brief.AnalystName` |
+| **Primary button** | The one button an action's page offers first, chosen by where the action stands and its kind (Write the email, Record the reply, Record an update, Take it, Start work, Unblock, Close with outcome); everything else is under *More*. | `ActionGuide.Primary`, `ActionFlow` |
 | **Priority** | How urgent a threat is, P1 (most urgent) to P4. An action raised in the meeting takes its article's priority. | `Priority` |
 | **Promote** | In triage: turn an item into a draft article, claimed in one statement so two analysts can't make two. *Promote as one article* does it for a whole *group*. | `IntakeService.PromoteAsync`, `PromoteAsOneAsync`, `FeedItemStatus.Promoted` |
 
@@ -222,6 +224,7 @@ the tables and columns are in [data model](../architecture/data-model.md).
 | **Team edition** | The edition for the security teams: everything up to its ceiling (AMBER+STRICT by default), with the day's numbers, the team note, indicators and the actions raised. | `Edition.Team` |
 | **Team note (opening note)** | The team's note at the start of the meeting (what's coming up, the week's phishing trends), in Markdown. Team edition only; a new brief starts with the previous one's. | `Brief.TeamNote`, `BriefService.SetTeamNoteAsync` |
 | **Team queue** | On Today, a person's teams' open actions that are theirs or nobody's, theirs first, by due date, with *Take it*. | `TeamQueue`, `ActionService.TeamQueueAsync` |
+| **Tool drawer** | On an action's page, the card of tabs beside the work holding its checklist, parts' timeline, hunt queries and outreach, opening on the kind's own (or `?tool=`). | `ActionToolDrawer`, `ActionGuide.Tools`, `ActionTool` |
 | **Tracking** | An action status: handed to others and followed. Open (its due date and SLA apply) but not active, so not counted against its team's limit. | `ActionStatus.Tracking` |
 | **Threat** | An article that asks something of the organization, with a *priority*. Its "why it matters" starts at AMBER. | `Classification.Threat` |
 | **TLP 2.0** | The Traffic Light Protocol, version 2.0 (FIRST), on every article and part. **CLEAR**: no limit. **GREEN**: the community, not public. **AMBER**: the organization and its clients, need to know. **AMBER+STRICT**: the organization only. **RED**: the named recipients only. A part never counts lower than its article. | `TlpLevel` (`Clear`, `Green`, `Amber`, `AmberStrict`, `Red`), `Article.Effective`, `Article.HighestTlp` |

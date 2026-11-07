@@ -1,4 +1,5 @@
-// The filter bar's "+ Filter" menu from the keyboard (FilterBar). CSP-safe (an external file, no inline handlers).
+// The filter bar's "+ Filter" menu from the keyboard (FilterBar), and every menu button's menu (MenuButton, the action page's
+// More) the same way. CSP-safe (an external file, no inline handlers).
 // .NET opens and closes it; this moves focus. Opening it, or one filter's options, focuses the first choice (the one in
 // force, or a text filter's box): focusIn. The arrows and Home/End move between the choices (tideRoving, in theme.js).
 // Tab leaves it closed (its backdrop is clicked, which .NET hears). Esc is .NET's: it closes it and focus goes back to
@@ -18,7 +19,7 @@ window.tideFilters = (function () {
 
     function onKey(e) {
         if (e.ctrlKey || e.metaKey || e.altKey || !e.target || !e.target.closest) return;
-        const trigger = e.target.closest('.tide-filter-add');
+        const trigger = e.target.closest('.tide-filter-add, .tide-menubutton-btn');
         if (trigger) {
             if (e.key === 'ArrowDown' && trigger.getAttribute('aria-expanded') !== 'true') {
                 e.preventDefault();
@@ -26,7 +27,7 @@ window.tideFilters = (function () {
             }
             return;
         }
-        const pop = e.target.closest('.tide-filter-pop');
+        const pop = e.target.closest('.tide-filter-pop, .tide-menubutton-pop');
         if (!pop) return;
         if (e.key === 'Tab') {
             const backdrop = pop.parentElement.querySelector('.tide-popover-backdrop');
