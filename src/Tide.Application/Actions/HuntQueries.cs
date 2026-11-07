@@ -241,7 +241,7 @@ public sealed partial class HuntQueryBuilder(IAppDbContextFactory dbs, ICurrentU
                 windowed &= template.Contains(QueryDialects.DaysPlaceholder, StringComparison.Ordinal);
                 blocks++;
                 // A kind's template takes only {{values}}; {{values:kind}} is a saved query's, and is left as it is here.
-                var list = dialect.List(chunk);
+                var list = dialect.List(Searched(kind, chunk));
                 sb.Append(Fill(template, days, scope => scope is null ? list : null)).Append('\n');
             }
         }
@@ -266,6 +266,25 @@ public sealed partial class HuntQueryBuilder(IAppDbContextFactory dbs, ICurrentU
         .OrderBy(g => g.Key)
         .Select(g => (Kind: g.Key, Values: g.Select(i => i.Value.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList()))
         .ToList();
+
+    private static readonly System.Globalization.IdnMapping Idn = new();
+
+    /// <summary>
+    /// The values a block searches for <paramref name="values"/> of <paramref name="kind"/>: each as written, and an
+    /// international domain name ("bücher.example") in its punycode form too ("xn--bcher-kva.example"), which is how DNS,
+    /// proxy and endpoint logs record it, so the hunt doesn't come back clean for a name the logs hold. Counted as the one
+    /// indicator it is.
+    /// </summary>
+    private static string[] Searched(HuntValueKind kind, IEnumerable<string> values) => kind != HuntValueKind.Domain
+        ? values.ToArray()
+        : values.SelectMany(v => Ascii(v) is { } ascii && !string.Equals(ascii, v, StringComparison.OrdinalIgnoreCase) ? [v, ascii] : new[] { v })
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+
+    private static string? Ascii(string domain)
+    {
+        try { return Idn.GetAscii(domain.TrimEnd('.')).ToLowerInvariant(); }
+        catch (ArgumentException) { return null; }   // not a name IDNA can write (a label too long, say): searched as written
+    }
 
     /// <summary>
     /// A template filled for one block: <c>{{days}}</c> first (so a value that happens to contain "{{days}}" is left as it
@@ -310,6 +329,8 @@ public sealed partial class HuntQueryBuilder(IAppDbContextFactory dbs, ICurrentU
     {
         var byKind = ByKind(indicators ?? []).ToDictionary(g => g.Kind, g => g.Values);
         var all = byKind.Values.SelectMany(v => v).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var kindOf = new Dictionary<string, HuntValueKind>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (kind, values) in byKind) foreach (var v in values) kindOf.TryAdd(v, kind);
         // Each scope the query fills, once: null for {{values}}, else a kind.
         var scopes = ValuesPlaceholders(text).Distinct().ToList();
         foreach (var scope in scopes)
@@ -319,10 +340,13 @@ public sealed partial class HuntQueryBuilder(IAppDbContextFactory dbs, ICurrentU
             if (scope is { } k && !byKind.ContainsKey(k))
                 throw new InvalidOperationException($"This saved query needs {HuntValues.Label(k).ToLowerInvariant()} ({ValuesPlaceholder(k)}), and the action has none.");
         }
-        List<string> ValuesOf(HuntValueKind? scope) => scope is { } k ? byKind[k] : all;
+        // A scope's indicators, each with the forms it's searched as (Searched), so a block holds at most so many indicators.
+        List<string[]> ValuesOf(HuntValueKind? scope) => scope is { } k
+            ? byKind[k].Chunk(MaxValuesPerBlock).Select(c => Searched(k, c)).ToList()
+            : all.Chunk(MaxValuesPerBlock).Select(c => c.SelectMany(v => Searched(kindOf[v], [v])).ToArray()).ToList();
 
         // Each scope's lists, block by block, each written once.
-        var blocks = scopes.Select(s => ValuesOf(s).Chunk(MaxValuesPerBlock).Select(dialect.List).ToList()).ToList();
+        var blocks = scopes.Select(s => ValuesOf(s).Select(dialect.List).ToList()).ToList();
         var parts = blocks.Aggregate(1, (n, b) => n * b.Count);
         var windowed = text.Contains(QueryDialects.DaysPlaceholder, StringComparison.Ordinal);
         var used = scopes.Count == 0 ? 0 : scopes.Contains(null) ? all.Count : scopes.Sum(k => byKind[k!.Value].Count);

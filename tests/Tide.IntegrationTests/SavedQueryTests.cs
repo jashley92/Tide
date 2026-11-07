@@ -317,6 +317,30 @@ public class SavedQueryServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task AQueryTideFilledWithManyIndicators_IsAdded_AndItsEditIsSaved_ButAHandWrittenOneIsStillHeldToTheLimit()
+    {
+        var action = await Action();
+        var svc = _db.Actions();
+        // 400 SHA-256 hashes: about 27,000 characters once quoted, more than a person may write by hand.
+        await svc.AddIndicatorsAsync(action.Id, Enumerable.Range(0, 400).Select(i => new IndicatorForm { Type = IndicatorType.FileHash, Value = i.ToString("x64") }));
+
+        var saved = await svc.AddSavedHuntAsync(action.Id, await Save("Hash sweep", text: "DeviceFileEvents\n| where SHA256 in~ ({{values}})"));
+        saved.Text.Length.Should().BeGreaterThan(20000);
+        await svc.SaveHuntTextAsync(saved.Id, saved.Text + "\n| take 100");
+
+        var generated = await svc.GenerateHuntAsync(action.Id, "kql");
+        generated.Text.Length.Should().BeGreaterThan(20000);
+        await svc.SaveHuntTextAsync(generated.Id, generated.Text + "\n| take 100");
+
+        var hunts = (await svc.GetAsync(action.Number))!.Action.Hunts;
+        hunts.Should().HaveCount(2).And.OnlyContain(h => h.Text.EndsWith("| take 100"));
+        await FluentActions.Invoking(() => svc.AddHandWrittenHuntAsync(action.Id, "kql", new string('x', 20001)))
+            .Should().ThrowAsync<ArgumentException>().WithMessage("That query is too long.");
+        await FluentActions.Invoking(() => svc.SaveHuntTextAsync(generated.Id, generated.GeneratedText + new string('x', 20001)))
+            .Should().ThrowAsync<ArgumentException>().WithMessage("That query is too long.");
+    }
+
+    [Fact]
     public async Task AnActionFromAnArticle_AddsToTheArticle_ForAnAnalyst_AndAnOwnerWhoWorksItIsToldToAskOne()
     {
         var action = await ActionWithArticle((IndicatorType.IpAddress, "203.0.113.45"));

@@ -601,8 +601,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         b.Entity<HuntQuery>(e =>
         {
             e.Property(x => x.Dialect).HasMaxLength(16);
-            e.Property(x => x.GeneratedText).HasMaxLength(20000);
-            e.Property(x => x.Text).HasMaxLength(20000);
+            e.Property(x => x.GeneratedText).HasMaxLength(HuntQuery.MaxText);
+            e.Property(x => x.Text).HasMaxLength(HuntQuery.MaxText);
             e.Property(x => x.CreatedByName).HasMaxLength(256);
             e.Property(x => x.Notes).HasMaxLength(2000);
             Person(e, x => x.RunById, x => x.RunByName);

@@ -1835,7 +1835,7 @@ namespace Tide.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("GeneratedText")
                         .IsRequired()
-                        .HasMaxLength(20000)
+                        .HasMaxLength(200000)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Notes")
@@ -1868,7 +1868,7 @@ namespace Tide.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("Text")
                         .IsRequired()
-                        .HasMaxLength(20000)
+                        .HasMaxLength(200000)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
