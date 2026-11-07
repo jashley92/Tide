@@ -185,10 +185,15 @@ public class PrerenderHandoffTests
             var actions = scope.ServiceProvider.GetRequiredService<ActionService>();
             await actions.AddChecklistItemAsync((await actions.GetAsync(1))!.Action.Id, "Pull 30 days of VPN logs");
         }
+        // A sweep's drawer opens on its hunt queries; a tool's panel is drawn once its tab shows, so the checklist's is
+        // asked for by the address.
         var html = await app.CreateClient().GetStringAsync("/actions/1");
+        html.Should().Contain("Sweep VPN and firewall logs").And.Contain("Hunt queries");
+        handoff.Count.Should().Be(before + 2, "the page and its hunt panel");
 
-        html.Should().Contain("Sweep VPN and firewall logs").And.Contain("Hunt queries").And.Contain("Pull 30 days of VPN logs");
-        handoff.Count.Should().Be(before + 3);
+        html = await app.CreateClient().GetStringAsync("/actions/1?tool=checklist");
+        html.Should().Contain("Pull 30 days of VPN logs");
+        handoff.Count.Should().Be(before + 4, "the page again, and its checklist");
     }
 
     [Fact]

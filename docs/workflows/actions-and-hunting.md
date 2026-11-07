@@ -264,9 +264,9 @@ an action is never re-checked, so an action overdue for over a year can still be
   top-level action), *Edit* and *Change status…*. A read-only viewer sees neither.
 - **Next.** A line under the header when something needs doing, with links that do it (`ActionGuide.Next`,
   [business rule A28](../reference/business-rules.md#actions-and-sla)): a part overdue ("Branch IT is 3 days late on
-  A-15", with *Chase them*, the part's page, and *Record their reply*, the part's page with Record an update open),
-  an email past its follow-up day with no reply, escalated, blocked, or past its own due date. Only the most important
-  shows, and only to whoever may work it.
+  A-15", with *Chase them*, the part's page, and *Record their reply*, the part's page with Record an update open:
+  `actions/15?do=recordupdate`), an email past its follow-up day with no reply, escalated, blocked, or past its own due
+  date. Only the most important shows, and only to whoever may work it.
 - **Main column.** *Details*, with *Outcome* under it once it's closed; the *Lineage* when it has parts or is one; and
   *What's happened*, one feed of its comments and history lines (a recorded reply is a comment, and hand-offs,
   splits and escalations are history lines), oldest first, so the newest sits by the comment box at its foot
@@ -277,8 +277,9 @@ an action is never re-checked, so an action overdue for over a year can still be
   *Checklist* always, *Timeline* on a parent whose parts have a due date, *Hunt queries* for an IOC sweep or threat
   hunt (or one with hunts) and *Outreach* for an Outreach action (or one with emails). It opens on the kind's own tool
   (Outreach, else Hunt queries for a sweep or hunt, else Checklist), or the one the address asks for:
-  `actions/12?tool=hunt`; choosing a tab puts it in the address. Then *From the article*, the external team's contact
-  card when its team is external, and *Files*.
+  `actions/12?tool=hunt`; choosing a tab puts it in the address, which shows it. A tool's panel is drawn the first
+  time its tab shows and kept after, so a half-written query or email survives a look at another tab. Then *From the
+  article*, the external team's contact card when its team is external, and *Files*.
 - **On a phone** the two columns become one, in this order: header, Next, details, the tool drawer, lineage, what's
   happened, facts, the article, files.
 
@@ -845,6 +846,6 @@ Every one of these follows colleagues' saves live through the `actions` and `act
 | Escalation ladder | `src/Tide.Application/Actions/Escalation.cs` (`EscalationLadder`, `EscalationStep`, `EscalationOptions`), `EscalationScan.cs` (`ReminderService.EscalateAsync`); the page's form `src/Tide.Web/Components/Pages/Admin/EscalationForm.cs` |
 | Reminders | `src/Tide.Application/Actions/Reminders.cs` (`ReminderService`, `ReminderOptions`), `src/Tide.Web/Services/ReminderHostedService.cs` |
 | Notification choices | `src/Tide.Application/Preferences/` (`NotificationKinds`, `NotificationPreferenceService`, `RecipientResolver`, `UserPreferenceService`) |
-| The page's primary button, Next line, tools and feed | `src/Tide.Application/Actions/ActionGuide.cs` (`ActionGuide.Primary`, `Next`, `Tools`, `Opening`), `ActionFeed.cs` (`ActionFeed.Of`, `Window`) |
+| The page's primary button, Next line, tools and feed | `src/Tide.Application/Actions/ActionGuide.cs` (`ActionFlow`, `ActionGuide.Primary`, `More`, `Next`, `Tools`, `Opening`), `ActionFeed.cs` (`ActionFeed.Of`, `Window`) |
 | Pages | `src/Tide.Web/Components/Pages/ActionPage.razor`, `ActionsBoard.razor`, `Workload.razor`, `ExternalTeams.razor`, `SavedQueriesPage.razor`, `OutreachTemplatesPage.razor`, `MyNotifications.razor` |
 | Panels | `src/Tide.Web/Components/Shared/HuntPanel.razor`, `OutreachPanel.razor`, `ActionFilesPanel.razor`, `ActionStatusControl.razor`, `ActionKanban.razor`, `SplitDialog.razor`, `OverLimitDialog.razor`, `ActionLineageFlow.razor`, `RemediationTimelineCard.razor`, `RecordUpdateDialog.razor`, `ActionToolDrawer.razor`, `ActionNextStrip.razor`, `MenuButton.razor` |

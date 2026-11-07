@@ -241,6 +241,12 @@ public sealed record ActionDetail(ActionItem Action, ActionRow? Parent, IReadOnl
 
     /// <summary>Where it came from and went, for an action that has parts or is one; null otherwise.</summary>
     public ActionLineage? Lineage { get; init; }
+
+    /// <summary>How many emails it has (an Outreach action's, read with it into <see cref="ActionItem.Outreach"/>, newest first).</summary>
+    public int Emails => Action.Outreach.Count;
+
+    /// <summary>The email waiting longest for a reply, or null (<see cref="OutreachState.Oldest"/>).</summary>
+    public OutreachMessage? Waiting => new OutreachState(Action.Outreach, null).Oldest;
 }
 
 /// <summary>One team's load: open, overdue, due soon, P1, closed in the last week, and open by assignee (none for an external
@@ -712,11 +718,12 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var a = await db.Actions.AsNoTracking()
             .Include(x => x.Team).Include(x => x.Article).ThenInclude(x => x!.Indicators).Include(x => x.Article).ThenInclude(x => x!.Cves)
             .Include(x => x.Comments).ThenInclude(c => c.Files).Include(x => x.Events).Include(x => x.Hunts).Include(x => x.Checklist)
-            .Include(x => x.Indicators).AsSplitQuery().FirstOrDefaultAsync(x => x.Number == number, ct);
+            .Include(x => x.Indicators).Include(x => x.Outreach).AsSplitQuery().FirstOrDefaultAsync(x => x.Number == number, ct);
         if (a is null) return null;
         a.Comments = a.Comments.OrderBy(c => c.AtUtc).ToList();
         a.Events = a.Events.OrderByDescending(e => e.AtUtc).ToList();
         a.Hunts = a.Hunts.OrderByDescending(h => h.CreatedAtUtc).ToList();
+        a.Outreach = a.Outreach.OrderByDescending(m => m.SentAtUtc).ToList();
         a.Indicators = a.Indicators.OrderBy(i => i.AddedAtUtc).ThenBy(i => i.Value, StringComparer.OrdinalIgnoreCase).ToList();
         var parent = a.ParentId is { } pid ? await Rows(db, db.Actions.AsNoTracking().Where(x => x.Id == pid)).FirstOrDefaultAsync(ct) : null;
         var children = (await Rows(db, db.Actions.AsNoTracking().Where(x => x.ParentId == a.Id)).ToListAsync(ct)).OrderBy(c => c.Number).ToList();
@@ -766,7 +773,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     // Its state is worked out here, once, by the organization's calendar: the flow and the timeline both read it.
     private LineageNode Node(Guid id, int number, string title, string team, bool external, ActionStatus status, DateOnly? due,
         DateOnly? closed, DateTimeOffset created, string? handedFrom) =>
-        new(id, number, title, team, external, status, due, closed, DateOnly.FromDateTime(clock.ToLocal(created).DateTime),
+        new(id, number, title, team, external, status, due, closed, clock.DayOf(created),
             LineageRules.StateOf(status, due, clock.Today, clock.Days), handedFrom);
 
     /// <summary>An action's details (Markdown), or null: a new part starts from its parent's.</summary>

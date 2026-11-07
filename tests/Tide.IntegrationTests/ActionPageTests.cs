@@ -189,15 +189,19 @@ public class ActionPageTests(TideApp app) : IClassFixture<TideApp>
         html.Should().Contain("<dd>Cyber Defense</dd>").And.Contain("<dd>IOC sweep</dd>").And.Contain("<dd>Unassigned</dd>");
         html.Should().Contain("title=\"Priority P3\"", "the priority is a badge in the header");
 
-        html.Should().Contain("Add checklist item</button>").And.NotContain("Add hunt query</button>")
+        html.Should().NotContain("Add hunt query</button>")
             .And.Contain("<h2>Hunt queries", "a sweep's queries are its work: the panel is open, ready to generate one")
             .And.Contain("aria-label=\"Query language\"").And.NotContain("Split off a part for a team");
         html.IndexOf("aria-label=\"Facts\"", StringComparison.Ordinal).Should().BeGreaterThan(html.IndexOf("id=\"feed-h\"", StringComparison.Ordinal),
             "the facts are in the side column, after the work");
         r.Component.MoreItems.Should().Contain(i => i.Label == "Split off a part" && i.Href == $"actions/new?parent={a.Id}");
 
+        // Its checklist tab: empty, the button that starts one.
+        await using (var checklist = await RenderAsync<ActionPage>(app, $"/actions/{a.Number}?tool=checklist", new() { ["Number"] = (int?)a.Number }))
+            (await checklist.Html()).Should().Contain("Add checklist item</button>");
+
         await As((actions, _) => actions.AddChecklistItemAsync(a.Id, "Pull 30 days of logs"));
-        await using var filled = await RenderAsync<ActionPage>(app, "/actions/" + a.Number, new() { ["Number"] = (int?)a.Number });
+        await using var filled = await RenderAsync<ActionPage>(app, $"/actions/{a.Number}?tool=checklist", new() { ["Number"] = (int?)a.Number });
         (await filled.HtmlOnce("Pull 30 days of logs")).Should().Contain("Checklist").And.NotContain("Add checklist item</button>",
             "a checklist with items is the card");
     }

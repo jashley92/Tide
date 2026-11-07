@@ -157,7 +157,7 @@ public class LineageAndUpdatesTests(TideApp app) : IClassFixture<TideApp>
         var (parent, overdue, tracking, done, _) = await Split("EP88e");
         var d = await Detail(parent);
         var timeline = RemediationTimeline.Build(d.Lineage!.Parts, Today)!;
-        await using var page = await Open(parent);
+        await using var page = await RenderAsync<ActionPage>(app, $"/actions/{parent}?tool=timeline", new() { ["Number"] = (int?)parent });
         var html = WebUtility.HtmlDecode(Timeline(await page.Html()));
 
         html.Should().Contain($"data-today-at=\"{timeline.Today.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}\"");

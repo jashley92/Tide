@@ -176,7 +176,7 @@ the tables and columns are in [data model](../architecture/data-model.md).
 | **Playbook** | A checklist for a kind of action, offered when one is created or worked. The team's library, kept by whoever works actions. | `Playbook`, `PlaybookStep`, `ActionChecklistItem` |
 | **Presence** | Who else has a brief, article, action or triage item open, and whether they're editing. In memory. | `Presence`, `PresenceNote`, `PresenceCircuit` |
 | **Presenter** | The analyst who presents a day's brief: the rotation's choice for the day (an *override*, else the week's analyst), recorded on the brief. Presenting can be handed to another analyst in the meeting. | `IPresenterLookup`, `Brief.AnalystName` |
-| **Primary button** | The one button an action's page offers first, chosen by where the action stands and its kind (Write the email, Record the reply, Record an update, Take it, Start work, Unblock, Close with outcome); everything else is under *More*. | `ActionGuide.Primary`, `PrimaryStep` |
+| **Primary button** | The one button an action's page offers first, chosen by where the action stands and its kind (Write the email, Record the reply, Record an update, Take it, Start work, Unblock, Close with outcome); everything else is under *More*. | `ActionGuide.Primary`, `ActionFlow` |
 | **Priority** | How urgent a threat is, P1 (most urgent) to P4. An action raised in the meeting takes its article's priority. | `Priority` |
 | **Promote** | In triage: turn an item into a draft article, claimed in one statement so two analysts can't make two. *Promote as one article* does it for a whole *group*. | `IntakeService.PromoteAsync`, `PromoteAsOneAsync`, `FeedItemStatus.Promoted` |
 

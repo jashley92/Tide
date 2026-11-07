@@ -50,7 +50,7 @@ public sealed record OutreachState(IReadOnlyList<OutreachMessage> Messages, int?
 public static class OutreachDates
 {
     /// <summary>The day, in the organization's zone, an email marked sent at <paramref name="sentAtUtc"/> was sent.</summary>
-    public static DateOnly SentOn(DateTimeOffset sentAtUtc, OrgClock clock) => DateOnly.FromDateTime(clock.ToLocal(sentAtUtc).DateTime);
+    public static DateOnly SentOn(DateTimeOffset sentAtUtc, OrgClock clock) => clock.DayOf(sentAtUtc);
 
     /// <summary>The day the reminder follows up an email sent at <paramref name="sentAtUtc"/>: <paramref name="days"/> business days on.</summary>
     public static DateOnly FollowUpOn(DateTimeOffset sentAtUtc, int days, OrgClock clock) =>

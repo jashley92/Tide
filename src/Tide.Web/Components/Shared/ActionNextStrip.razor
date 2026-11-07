@@ -1,20 +1,20 @@
 @* The action page's Next line (ActionGuide.Next): the one thing that most needs doing, in words, and links that do it.
-   A late part's links go to the part (its page, or its page with Record an update open: ?do=update); the rest are
-   the page's own flows, which it runs (Do). Drawn only when there's something to do. *@
+   A link to another action (a late part) goes to its page, running its flow there by ?do= (Ui.ActionUrl); the rest are
+   this page's own flows, which it runs (Do). Drawn only when there's something to do. *@
 
 <div class="tide-next" role="note" aria-label="Next" data-next="@Step.Kind">
     <strong>Next:</strong>
     <span>@Step.Text</span>
     <span class="tide-next-links">
-        @foreach (var (link, label) in Step.Links)
+        @foreach (var link in Step.Links)
         {
-            @if (Step.Part is { } part && link is NextLink.ChasePart or NextLink.PartReply)
+            @if (link.On is { } other)
             {
-                <a href="@(link == NextLink.PartReply ? Ui.ActionUrl(part) + "?do=update" : Ui.ActionUrl(part))">@label</a>
+                <a href="@Ui.ActionUrl(other, link.Flow == ActionFlow.None ? null : "do=" + ActionGuide.Key(link.Flow))">@link.Label</a>
             }
             else
             {
-                <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => Do.InvokeAsync(link)">@label</button>
+                <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => Do.InvokeAsync(link.Flow)">@link.Label</button>
             }
         }
     </span>
@@ -24,5 +24,5 @@
     [Parameter, EditorRequired] public NextStep Step { get; set; } = default!;
 
     /// <summary>A link that's one of the page's own flows: the page runs it.</summary>
-    [Parameter] public EventCallback<NextLink> Do { get; set; }
+    [Parameter] public EventCallback<ActionFlow> Do { get; set; }
 }

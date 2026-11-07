@@ -63,9 +63,9 @@ else
 {
     var a = _detail.Action;
     var state = ActionSla.StateOf(a, ActionSvc.Today, Clock.Days);
-    var primary = Primary;
-    var more = MoreItems;
-    var next = Next;
+    var primary = _primary;
+    var more = _moreItems;
+    var next = _next;
     @* The header: what it is, how it stands (the status badge changes it, for whoever may work it), who has it, and the
        one thing to do first, with everything else under More. *@
     <div class="tide-page-head tide-action-head">
@@ -76,7 +76,7 @@ else
             <div class="tide-action-badges">
                 @if (_detail.CanWork)
                 {
-                    <ActionStatusControl @key="a.Id" @ref="_statusControl" Action="a" AsBadge="true" OpenParts="@OpenParts" Changed="Reload" Prompting="OnPrompting" Stale="OnStatusStale" />
+                    <ActionStatusControl @key="a.Id" @ref="_statusControl" Action="a" AsBadge="true" OpenParts="@_openParts" Changed="Reload" Prompting="OnPrompting" Stale="OnStatusStale" />
                 }
                 else
                 {
@@ -102,12 +102,12 @@ else
                 }
             </div>
         </div>
-        @if (primary != PrimaryStep.None || more.Count > 0)
+        @if (primary != ActionFlow.None || more.Count > 0)
         {
             <div class="tide-action-do">
-                @if (primary != PrimaryStep.None)
+                @if (primary != ActionFlow.None)
                 {
-                    <button type="button" class="btn btn-primary" data-primary="@primary" disabled="@_busy" @onclick="RunPrimary"><span class="bi @PrimaryIcon(primary)" aria-hidden="true"></span> @ActionGuide.Label(primary)</button>
+                    <button type="button" class="btn btn-primary" data-primary="@primary" disabled="@_busy" @onclick="RunPrimary"><span class="bi @ActionGuide.Icon(primary)" aria-hidden="true"></span> @ActionGuide.Label(primary)</button>
                 }
                 @if (more.Count > 0)
                 {
@@ -119,7 +119,7 @@ else
 
     @if (_detail.CanWork)
     {
-        <RecordUpdateDialog @key="@($"update-{a.Id}")" @ref="_update" Action="a" OpenParts="@OpenParts" Done="Reload" />
+        <RecordUpdateDialog @key="@($"update-{a.Id}")" @ref="_update" Action="a" OpenParts="@_openParts" Done="Reload" />
     }
 
     @* Two columns: the work (Next, details, lineage, what's happened) and beside it the facts, the tools, the article and
@@ -129,7 +129,7 @@ else
         <div class="tide-action-main">
             @if (next is not null)
             {
-                <div class="tide-ord-1"><ActionNextStrip Step="next" Do="DoNext" /></div>
+                <div class="tide-ord-1"><ActionNextStrip Step="next" Do="Run" /></div>
             }
 
             @if (_editing is not null)
@@ -184,7 +184,7 @@ else
             @* What's happened: its comments and its history in one feed, oldest first, so the newest is by the comment box.
                A comment carries its author's initials; a history line TIDE's mark. The latest few show, the rest under
                "Show N earlier"; one being edited is never folded away. *@
-            @{ var feed = ActionFeed.Window(ActionFeed.Of(a.Comments, a.Events), _feedAll, _editingComment); }
+            @{ var feed = ActionFeed.Window(_feed, _feedAll, _editingComment); }
             <section class="tide-card tide-feed tide-ord-5" aria-labelledby="feed-h">
                 <div class="tide-feed-head">
                     <h2 id="feed-h" class="tide-card-title">What's happened <span class="tide-count tide-muted fw-normal">(@a.Comments.Count comment@(a.Comments.Count == 1 ? "" : "s"))</span></h2>
@@ -349,7 +349,7 @@ else
             </section>
 
             <div class="tide-ord-3">
-                <ActionToolDrawer @key="a.Id" @ref="_drawer" Detail="_detail" Emails="_outreach.Messages.Count" Asked="@_toolAsked" Today="ActionSvc.Today"
+                <ActionToolDrawer @key="a.Id" @ref="_drawer" Detail="_detail" Asked="@ToolParam" Today="ActionSvc.Today"
                                   Changed="Reload" ToolChanged="KeepTool" />
             </div>
 
@@ -446,29 +446,26 @@ else
     private ActionStatusControl? _statusControl;
     private ActionToolDrawer? _drawer;
     private MenuButton? _more;
-    private bool _prompting, _feedAll, _openUpdate;
+    private bool _prompting, _feedAll;
     private int? _shownNumber;
-    private string? _toolAsked, _doAsked;
 
-    // The action's emails, for its primary button, its Next line and whether the drawer has Outreach.
-    private OutreachState _outreach = OutreachState.None;
+    // The address's tool and do as last taken, and the flow ?do= asked for, to run once the page is drawn.
+    private (string? Tool, string? Do) _address;
+    private ActionFlow? _do;
 
-    // The address's tool goes to the drawer; ?do=update asks once for Record an update.
+    // The drawer reads ?tool= itself; a new ?do= is a flow to run once.
     private void TakeAddress()
     {
-        if (DoParam == "update" && _doAsked != DoParam) _openUpdate = true;
-        (_toolAsked, _doAsked) = (ToolParam, DoParam);
+        if (DoParam is not null && DoParam != _address.Do) _do = ActionGuide.Parse<ActionFlow>(DoParam);
+        _address = (ToolParam, DoParam);
     }
 
     protected override async Task OnParametersSetAsync()
     {
         // The same action with only its address's tool or do changed (a tab chosen, ?do= taken off): nothing to read again.
-        if (Number is not null && _detail is not null && _shownNumber == Number && (ToolParam != _toolAsked || DoParam != _doAsked))
-        {
-            TakeAddress();
-            return;
-        }
+        var addressOnly = Number is not null && _detail is not null && _shownNumber == Number && (ToolParam, DoParam) != _address;
         TakeAddress();
+        if (addressOnly) return;
         // The first interactive draw starts from what the prerender read, so a reload doesn't flash "Loading" over the
         // page; it's read again below, quietly, only if something was saved in between.
         var adopted = false;
@@ -515,7 +512,8 @@ else
     // people its editor offers.
     private void Adopt(ActionPage p)
     {
-        (_teams, _people, _detail, _topic, _shownNumber, _outreach) = (p._teams, p._people, p._detail, p._topic, p._shownNumber, p._outreach);
+        (_teams, _people, _detail, _topic, _shownNumber) = (p._teams, p._people, p._detail, p._topic, p._shownNumber);
+        Derive();
         (_form, _parent, _articleTitle) = (p._form, p._parent, p._articleTitle);
         _loaded = true;
     }
@@ -611,99 +609,92 @@ else
         if (_split is not null) await _split.OpenAsync();
     }
 
-    // --- the header's primary button and More, and the Next line ----------------------------------------------------
+    // --- the header's primary button and More, the Next line and the feed -------------------------------------------
 
-    private int OpenParts => _detail?.Children.Count(c => c.IsOpen) ?? 0;
+    // Worked out once each time the action is read (Derive), not on every redraw.
+    private int _openParts;
+    private ActionFlow _primary;
+    private NextStep? _next;
+    private IReadOnlyList<MenuButton.Item> _moreItems = [];
+    private IReadOnlyList<FeedEntry> _feed = [];
+    private HashSet<ActionFlow> _offered = [];
 
     /// <summary>The header's primary button (ActionGuide.Primary, business rule A27).</summary>
-    internal PrimaryStep Primary => _detail is not { Action: var a } d ? PrimaryStep.None
-        : ActionGuide.Primary(new PrimaryFacts(a.Status, a.Kind, d.CanWork, a.AssigneeId is not null, a.Team?.IsExternal == true, OpenParts,
-            _outreach.Messages.Count, _outreach.Waiting));
+    internal ActionFlow Primary => _primary;
 
     /// <summary>The Next line (ActionGuide.Next, business rule A28), or null when nothing needs doing.</summary>
-    internal NextStep? Next
+    internal NextStep? Next => _next;
+
+    /// <summary>What's under More (ActionGuide.More): everything else whoever is looking may do.</summary>
+    internal IReadOnlyList<MenuButton.Item> MoreItems => _moreItems;
+
+    // The action as read, turned into what the page shows first: its primary button, More, the Next line and the feed.
+    private void Derive()
     {
-        get
+        if (_detail is not { Action: var a } d)
         {
-            if (_detail is not { Action: var a } d) return null;
-            var waiting = _outreach.Oldest is { } m ? new WaitingEmail(m.To, OutreachDates.SentOn(m.SentAtUtc, Clock), OutreachSvc.FollowUpOn(m)) : null;
-            return ActionGuide.Next(new NextFacts(a.Status, a.DueDate, ActionSvc.Today, d.CanWork,
-                d.Lineage is { } l && l.Parent.Id == a.Id ? l.Parts : null, waiting,
-                a.EscalatedSince is { } at ? DateOnly.FromDateTime(Clock.ToLocal(at).DateTime) : null));
+            (_openParts, _primary, _next, _moreItems, _feed, _offered) = (0, ActionFlow.None, null, [], [], []);
+            return;
         }
+        _openParts = d.Children.Count(c => c.IsOpen);
+        var facts = new ActionFacts(a.Status, a.Kind, d.CanWork, a.AssigneeId is not null, a.Team?.IsExternal == true, _openParts,
+            d.Emails, d.Waiting is not null, a.AssigneeId == CurrentUser.UserId, d.CanEditAll, a.ParentId is null);
+        _primary = ActionGuide.Primary(facts);
+        var more = ActionGuide.More(facts);
+        _moreItems = [.. more.Select(f => f == ActionFlow.SplitOffPart
+            ? new MenuButton.Item(ActionGuide.Label(f), ActionGuide.Icon(f), Href: SplitOffHref(a))
+            : new MenuButton.Item(ActionGuide.Label(f), ActionGuide.Icon(f), EventCallback.Factory.Create(this, () => Run(f))))];
+        var waiting = d.Waiting is { } m ? new WaitingEmail(m.To, OutreachDates.SentOn(m.SentAtUtc, Clock), OutreachSvc.FollowUpOn(m)) : null;
+        _next = ActionGuide.Next(new NextFacts(a.Status, ActionSla.StateOf(a, ActionSvc.Today, Clock.Days), a.DueDate, ActionSvc.Today, d.CanWork,
+            d.Lineage is { } l && l.Parent.Id == a.Id ? l.Parts : null, waiting, a.EscalatedSince is { } at ? Clock.DayOf(at) : null));
+        _feed = ActionFeed.Of(a.Comments, a.Events);
+        // What runs: the primary button, More's flows, and the Next line's own (not those on another action).
+        _offered = [.. more, _primary, .. (_next?.Links ?? []).Where(l => l.On is null).Select(l => l.Flow)];
+        _offered.Remove(ActionFlow.None);
     }
 
-    /// <summary>
-    /// Everything the header offers besides its primary button, for whoever may do it: take it, record an update, hand
-    /// off, split, edit, and change the status (the status badge's choices). Nothing for a read-only viewer.
-    /// </summary>
-    internal IReadOnlyList<MenuButton.Item> MoreItems
-    {
-        get
-        {
-            if (_detail is not { Action: var a } d) return [];
-            var primary = Primary;
-            var items = new List<MenuButton.Item>();
-            if (d.CanWork && a.IsOpen && a.AssigneeId != CurrentUser.UserId && a.Team?.IsExternal != true && primary != PrimaryStep.TakeIt)
-                items.Add(new("Take it", "bi-person-check", Take));
-            if (d.CanWork && primary != PrimaryStep.RecordUpdate) items.Add(new("Record an update", "bi-envelope-check", StartUpdate));
-            if (d.CanWork) items.Add(new("Hand off…", "bi-box-arrow-right", StartHandoff));
-            if (d.CanEditAll && a.ParentId is null)
-            {
-                if (a.IsOpen) items.Add(new("Split to teams…", "bi-diagram-3", OpenSplit));
-                items.Add(new("Split off a part", "bi-plus-lg", Href: $"actions/new?parent={a.Id}"));
-            }
-            if (d.CanWork)
-            {
-                items.Add(new("Edit", "bi-pencil", Edit));
-                items.Add(new("Change status…", "bi-arrow-left-right", ChangeStatus));
-            }
-            return items;
-        }
-    }
+    private static string SplitOffHref(ActionItem a) => $"actions/new?parent={a.Id}";
 
     internal MenuButton? More => _more;
     internal ActionStatusControl? StatusControl => _statusControl;
     internal ActionToolDrawer? Drawer => _drawer;
 
-    private static string PrimaryIcon(PrimaryStep s) => s switch
+    /// <summary>
+    /// Runs a flow, from the primary button, More, the Next line or the address's <c>?do=</c>: each is one the page has
+    /// anyway. Only a flow the page offers whoever is looking runs.
+    /// </summary>
+    internal Task Run(ActionFlow flow)
     {
-        PrimaryStep.WriteEmail => "bi-envelope-paper",
-        PrimaryStep.RecordReply => "bi-reply",
-        PrimaryStep.RecordUpdate => "bi-envelope-check",
-        PrimaryStep.TakeIt => "bi-person-check",
-        PrimaryStep.StartWork or PrimaryStep.Unblock => "bi-play-fill",
-        _ => "bi-check2-circle",
-    };
+        if (!_offered.Contains(flow)) return Task.CompletedTask;
+        return flow switch
+        {
+            ActionFlow.WriteEmail => WithOutreach(p => p.Writing ? Task.CompletedTask : p.ToggleWriter()),
+            ActionFlow.RecordReply => WithOutreach(p => p.State.Oldest is { } oldest ? p.StartReply(oldest) : Task.CompletedTask),
+            ActionFlow.RecordUpdate => StartUpdate(),
+            ActionFlow.TakeIt => Take(),
+            ActionFlow.StartWork or ActionFlow.Unblock => _statusControl?.Pick(ActionStatus.InProgress) ?? Task.CompletedTask,
+            ActionFlow.CloseWithOutcome => _statusControl?.Pick(ActionStatus.Done) ?? Task.CompletedTask,
+            ActionFlow.HandOff => StartHandoff(),
+            ActionFlow.SplitToTeams => OpenSplit(),
+            ActionFlow.SplitOffPart => GoSplitOff(),
+            ActionFlow.Edit => Edit(),
+            ActionFlow.ChangeStatus => ChangeStatus(),
+            ActionFlow.Comment => _newCommentBox.TryFocusAsync(orGone: true),
+            _ => Task.CompletedTask,
+        };
+    }
 
-    /// <summary>The primary button: each is a flow the page has anyway.</summary>
-    internal Task RunPrimary() => Primary switch
-    {
-        PrimaryStep.WriteEmail => WriteEmail(),
-        PrimaryStep.RecordReply => RecordReply(),
-        PrimaryStep.RecordUpdate => StartUpdate(),
-        PrimaryStep.TakeIt => Take(),
-        PrimaryStep.StartWork or PrimaryStep.Unblock => _statusControl?.Pick(ActionStatus.InProgress) ?? Task.CompletedTask,
-        PrimaryStep.CloseWithOutcome => _statusControl?.Pick(ActionStatus.Done) ?? Task.CompletedTask,
-        _ => Task.CompletedTask,
-    };
+    internal Task RunPrimary() => Run(_primary);
 
-    /// <summary>A Next link that's one of this page's flows.</summary>
-    internal Task DoNext(NextLink link) => link switch
+    private Task GoSplitOff()
     {
-        NextLink.RecordReply => RecordReply(),
-        NextLink.WriteEmail => WriteEmail(),
-        NextLink.RecordUpdate => StartUpdate(),
-        NextLink.HandOff => StartHandoff(),
-        NextLink.Comment => _newCommentBox.TryFocusAsync(orGone: true),
-        NextLink.Edit => Edit(),
-        _ => Task.CompletedTask,
-    };
+        Nav.NavigateTo(SplitOffHref(_detail!.Action));
+        return Task.CompletedTask;
+    }
 
     private Task Edit()
     {
         StartEdit();
-        StateHasChanged();
         return Task.CompletedTask;
     }
 
@@ -713,34 +704,17 @@ else
         return Task.CompletedTask;
     }
 
-    // Outreach's own "Write the email", opened from the header: the drawer shows the Outreach tool first.
-    private async Task WriteEmail()
-    {
-        if (_drawer is null) return;
-        await _drawer.Select(ActionTool.Outreach);
-        if (_drawer.Outreach is { Writing: false } panel) await panel.ToggleWriter();
-    }
+    // Outreach's own Write the email or Record the reply, from the header or the Next line: the drawer shows Outreach.
+    private Task WithOutreach(Func<OutreachPanel, Task> then) => _drawer?.WithOutreach(then) ?? Task.CompletedTask;
 
-    // Outreach's own "Record the reply", for the email waiting longest.
-    private async Task RecordReply()
-    {
-        if (_drawer is null) return;
-        await _drawer.Select(ActionTool.Outreach);
-        if (_drawer.Outreach is { State.Oldest: { } oldest } panel) await panel.StartReply(oldest);
-    }
-
-    // Another tool chosen in the drawer: kept in the address, so a reload or a copied link opens it.
+    // Another tool chosen in the drawer: put in the address, which shows it, so a reload or a copied link opens it too.
     private void KeepTool(string key)
     {
         if (RendererInfo.IsInteractive) Nav.NavigateTo(Nav.GetUriWithQueryParameter("tool", key), replace: true);
     }
 
     // A file's "On a comment" link: the whole feed shows, and that comment takes focus once it's drawn.
-    internal void ShowComment(Guid commentId)
-    {
-        (_feedAll, _focusComment) = (true, commentId);
-        StateHasChanged();
-    }
+    internal void ShowComment(Guid commentId) => (_feedAll, _focusComment) = (true, commentId);
 
     private Guid? _focusComment;
     private readonly Dictionary<Guid, ElementReference> _commentItems = [];
@@ -749,14 +723,10 @@ else
     internal bool FeedAll => _feedAll;
 
     /// <summary>"Show N earlier": the whole feed.</summary>
-    internal void ShowAll()
-    {
-        _feedAll = true;
-        StateHasChanged();
-    }
+    internal void ShowAll() => _feedAll = true;
 
-    /// <summary>Whether Record an update opens once it's drawn (<c>?do=update</c>).</summary>
-    internal bool OpensUpdate => _openUpdate;
+    /// <summary>The flow the address's <c>?do=</c> asked for, run once the page is drawn.</summary>
+    internal ActionFlow? Doing => _do;
 
     private Task SetNoReminders(bool off) => Run(async () =>
     {
@@ -815,7 +785,7 @@ else
         _changedBy = null;
         _detail = await ActionSvc.GetAsync(Number!.Value);
         _topic = _detail is null ? "" : ChangeFeed.Action(_detail.Action.Id);
-        _outreach = _detail is null ? OutreachState.None : await OutreachSvc.ForActionAsync(_detail.Action.Id);
+        Derive();
         CloseEditOfGoneComment();
     }
 
@@ -1044,12 +1014,12 @@ else
     // Paste a screenshot (or a copied file) anywhere on the page, or drop files on the comment box.
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        // ?do=update: Record an update opens once, and the address forgets it, so a reload doesn't open it again.
-        if (_openUpdate && _update is not null)
+        // ?do=: its flow runs once, and the address forgets it, so a reload doesn't run it again.
+        if (_do is { } flow && _detail is not null)
         {
-            _openUpdate = false;
+            _do = null;
             if (RendererInfo.IsInteractive) Nav.NavigateTo(Nav.GetUriWithQueryParameter("do", (string?)null), replace: true);
-            _ = InvokeAsync(StartUpdate);
+            _ = InvokeAsync(() => Run(flow));
         }
         // A file's "On a comment" link: that comment, unfolded by now, takes focus (and so scrolls into view).
         if (_focusComment is { } jump)

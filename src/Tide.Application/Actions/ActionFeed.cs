@@ -41,8 +41,12 @@ public static class ActionFeed
         var from = all ? 0 : Math.Max(0, entries.Count - latest);
         if (keep is { } id)
         {
-            var at = entries.ToList().FindIndex(e => e.Comment?.Id == id);
-            if (at >= 0) from = Math.Min(from, at);
+            for (var at = 0; at < from; at++)
+            {
+                if (entries[at].Comment?.Id != id) continue;
+                from = at;
+                break;
+            }
         }
         return new FeedWindow(entries.Skip(from).ToList(), from);
     }

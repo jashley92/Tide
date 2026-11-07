@@ -31,8 +31,9 @@
 </div>
 
 @code {
-    /// <summary>One command on the menu: a <see cref="Run"/> or an <see cref="Href"/>.</summary>
-    public sealed record Item(string Label, string? Icon = null, Func<Task>? Run = null, string? Href = null);
+    /// <summary>One command on the menu: a <see cref="Run"/> or an <see cref="Href"/>. Run is an EventCallback, so the
+    /// component that made it (the page) draws again after it, as after a click of its own.</summary>
+    public sealed record Item(string Label, string? Icon = null, EventCallback Run = default, string? Href = null);
 
     [Parameter, EditorRequired] public string Label { get; set; } = "";
     [Parameter, EditorRequired] public IReadOnlyList<Item> Items { get; set; } = [];
@@ -58,7 +59,7 @@
     {
         Close(false);
         StateHasChanged();
-        if (i.Run is not null) await i.Run();
+        await i.Run.InvokeAsync();
     }
 
     private void Close(bool refocus)

@@ -23,6 +23,14 @@ public class OrgClockTests
     }
 
     [Fact]
+    public void DayOf_IsTheLocalDayAnInstantFallsOn()
+    {
+        var clock = At(DateTimeOffset.UtcNow);
+        clock.DayOf(new DateTimeOffset(2026, 10, 27, 2, 0, 0, TimeSpan.Zero)).Should().Be(new DateOnly(2026, 10, 26), "still Monday evening in New York");
+        clock.DayOf(new DateTimeOffset(2026, 10, 27, 5, 0, 0, TimeSpan.Zero)).Should().Be(new DateOnly(2026, 10, 27));
+    }
+
+    [Fact]
     public void CurrentBriefDate_OnAWeekend_IsMonday()
     {
         At(new DateTimeOffset(2026, 10, 24, 15, 0, 0, TimeSpan.Zero)).CurrentBriefDate.Should().Be(new DateOnly(2026, 10, 26));

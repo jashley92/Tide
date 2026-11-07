@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.RegularExpressions;
 using FluentAssertions;
+using Microsoft.AspNetCore.Components;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Abstractions;
@@ -54,6 +55,11 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
         RenderAsync<ActionPage>(app, $"/actions/{number}{(tool is null ? "" : "?tool=" + tool)}{(@do is null ? "" : "?do=" + @do)}",
             new() { ["Number"] = (int?)number }, who);
 
+    // Does what a click on the page does: runs it as the page's event, so the page draws again after it.
+    private static Task Clicked(ActionPage page, Func<Task> what) => EventCallback.Factory.Create(page, what).InvokeAsync();
+
+    private static Task Clicked(ActionPage page, Action what) => EventCallback.Factory.Create(page, what).InvokeAsync();
+
     private DateOnly Today => app.Services.GetRequiredService<Tide.Application.Org.OrgClock>().Today;
 
     // Flags an action escalated for the due date it has, as a step of the ladder does.
@@ -96,7 +102,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
 
         Regex.Matches(head, "btn btn-primary").Should().HaveCount(1, "one primary button");
         head.Should().Contain("data-primary=\"TakeIt\"").And.Contain("Take it</button>");
-        page.Component.Primary.Should().Be(PrimaryStep.TakeIt, "open and nobody has it");
+        page.Component.Primary.Should().Be(ActionFlow.TakeIt, "open and nobody has it");
     }
 
     [Fact]
@@ -148,7 +154,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
         await Move(number, ActionStatus.Open);   // taking it started it: back to Open, held by Olu
 
         await using var page = await Open(number);
-        page.Component.Primary.Should().Be(PrimaryStep.StartWork);
+        page.Component.Primary.Should().Be(ActionFlow.StartWork);
         (await page.Html()).Should().Contain("data-primary=\"StartWork\"").And.Contain("Start work</button>");
         page.Component.MoreItems.Select(i => i.Label).Should().StartWith(["Take it", "Record an update"]);
 
@@ -156,7 +162,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
         (await Detail(number)).Action.Status.Should().Be(ActionStatus.InProgress, "Start work moves it to In progress");
 
         await using var again = await Open(number);
-        again.Component.Primary.Should().Be(PrimaryStep.CloseWithOutcome);
+        again.Component.Primary.Should().Be(ActionFlow.CloseWithOutcome);
         await again.Click(p => p.RunPrimary());
         (await again.Html()).Should().Contain("class=\"tide-status-prompt\"").And.Contain($"Move A-{number} to Done")
             .And.Contain("aria-expanded=\"true\" aria-controls=\"status-choices\"", "closing asks for the outcome in the status row, opened");
@@ -205,15 +211,23 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
         var html = WebUtility.HtmlDecode(await page.Html());
         var next = Section(html, "<div class=\"tide-next\"", "</div>");
         next.Should().Contain("data-next=\"PartLate\"").And.Contain($"Layout Branch IT is 3 days late on A-{late}.")
-            .And.Contain($"<a href=\"actions/{late}\">Chase them</a>").And.Contain($"<a href=\"actions/{late}?do=update\">Record their reply</a>");
+            .And.Contain($"<a href=\"actions/{late}\">Chase them</a>").And.Contain($"<a href=\"actions/{late}?do=recordupdate\">Record their reply</a>");
         html.IndexOf("class=\"tide-next\"", StringComparison.Ordinal).Should().BeLessThan(html.IndexOf("id=\"feed-h\"", StringComparison.Ordinal));
-        page.Component.Primary.Should().Be(PrimaryStep.RecordUpdate, "a parent with open parts records their updates");
+        page.Component.Primary.Should().Be(ActionFlow.RecordUpdate, "a parent with open parts records their updates");
 
-        // The part's own page: late itself, and ?do=update opens Record an update once it's drawn.
-        await using var part = await Open(late, @do: "update");
+        // The part's own page: late itself, and ?do=recordupdate runs Record an update once it's drawn.
+        await using var part = await Open(late, @do: "recordupdate");
         part.Component.Next!.Kind.Should().Be(NextKind.Overdue);
         WebUtility.HtmlDecode(await part.Html()).Should().Contain($"It's 3 days late: it was due {Tide.Application.Content.Words.MonthDay(Today.AddDays(-3))}.");
-        part.Component.OpensUpdate.Should().BeTrue();
+        part.Component.Doing.Should().Be(ActionFlow.RecordUpdate);
+        await part.Press(p => p.Run(ActionFlow.RecordUpdate));
+        (await part.HtmlOnce("Their reply")).Should().Contain("Record an update from Layout Branch IT", "the flow ?do= names, through the one dispatcher");
+
+        // A flow the page doesn't offer whoever is looking doesn't run, from the address or anywhere else.
+        await using var viewer = await Open(late, Viewer, @do: "handoff");
+        viewer.Component.Doing.Should().Be(ActionFlow.HandOff);
+        await viewer.Press(p => p.Run(ActionFlow.HandOff));
+        (await viewer.Html()).Should().NotContain("Hand it to");
     }
 
     [Fact]
@@ -230,15 +244,15 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
         {
             page.Component.Next!.Kind.Should().Be(NextKind.Escalated);
             (await page.Html()).Should().Contain("data-next=\"Escalated\"").And.Contain("Record an update</button>").And.Contain("Hand off</button>");
-            await page.Press(p => p.DoNext(NextLink.HandOff));
+            await page.Press(p => p.Run(ActionFlow.HandOff));
             (await page.HtmlOnce("Hand it to")).Should().Contain($"Hand A-{escalated} off");
         }
         await using (var page = await Open(blocked))
         {
             page.Component.Next!.Kind.Should().Be(NextKind.Blocked);
-            page.Component.Primary.Should().Be(PrimaryStep.TakeIt);
+            page.Component.Primary.Should().Be(ActionFlow.TakeIt);
             (await page.Html()).Should().Contain("It&#x27;s blocked.").And.Contain("Say what it&#x27;s waiting on</button>");
-            await page.Click(p => p.DoNext(NextLink.Edit));
+            await page.Click(p => Clicked(p, () => p.Run(ActionFlow.Edit)));
             (await page.Html()).Should().Contain("<h2>Edit</h2>");
         }
         await using (var page = await Open(onTrack))
@@ -267,7 +281,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
 
         await using (var page = await Open(number))
         {
-            page.Component.Primary.Should().Be(PrimaryStep.WriteEmail);
+            page.Component.Primary.Should().Be(ActionFlow.WriteEmail);
             (await page.Html()).Should().Contain("data-tool=\"outreach\"", "an Outreach action's drawer opens on Outreach").And.Contain("Write the email</button>");
             await page.Click(p => p.RunPrimary());
             (await page.HtmlOnce("id=\"outreach-writer\"")).Should().Contain("id=\"outreach-writer\"", "the primary opens the writer");
@@ -283,7 +297,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
         });
         await using (var page = await Open(number))
         {
-            page.Component.Primary.Should().Be(PrimaryStep.RecordReply);
+            page.Component.Primary.Should().Be(ActionFlow.RecordReply);
             page.Component.Next.Should().BeNull("its follow-up isn't due yet");
             await page.Press(p => p.RunPrimary());
             (await page.HtmlOnce("Record the reply from psirt@vendor.example")).Should().Contain("Close the action with this reply");
@@ -338,7 +352,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
 
             var comment = (await Detail(number)).Action.Comments.First();
             await page.Click(p => p.EditComment(comment));
-            await page.Click(p => { p.ShowAll(); return Task.CompletedTask; });
+            await page.Click(p => Clicked(p, p.ShowAll));
             var editing = Section(await page.Html(), "<div data-submit-scope>", "Cancel</button>");
             editing.Should().Contain("id=\"comment-edit\"").And.Contain("class=\"btn btn-primary btn-sm\" data-submit");
         }
@@ -350,7 +364,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
             var all = (await Detail(number)).Action;
             var entries = all.Comments.Count + all.Events.Count;
             html.Should().Contain($"Show {entries - ActionFeed.Latest} earlier</button>").And.NotContain("Layout first comment").And.Contain("Layout more 11");
-            await page.Click(p => { p.ShowAll(); return Task.CompletedTask; });
+            await page.Click(p => Clicked(p, p.ShowAll));
             (await page.Html()).Should().Contain("Layout first comment").And.NotContain("earlier</button>");
         }
     }
@@ -375,16 +389,32 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
             var html = await page.Html();
             html.Should().Contain("data-tool=\"hunt\"").And.Contain("id=\"tool-panel-tab-hunt\" class=\"tide-tabbar-item active\" aria-selected=\"true\"")
                 .And.Contain("id=\"tool-panel-tab-checklist\" class=\"tide-tabbar-item \" aria-selected=\"false\"");
-            html.Should().Contain("aria-label=\"Query language\"", "the hunt panel is drawn").And.Contain("Add checklist item", "and the checklist, hidden");
+            html.Should().Contain("aria-label=\"Query language\"", "the hunt panel is drawn")
+                .And.NotContain("Add checklist item", "the checklist isn't, until its tab shows");
         }
         await using (var page = await Open(outreach))
             (await page.Html()).Should().Contain("data-tool=\"outreach\"");
 
         await using (var asked = await Open(sweep, tool: "checklist"))
         {
-            (await asked.Html()).Should().Contain("data-tool=\"checklist\"", "?tool= opens the tool asked for");
-            await asked.Click(p => p.Drawer!.Select(ActionTool.Hunt));
-            (await asked.Html()).Should().Contain("data-tool=\"hunt\"");
+            var html = await asked.Html();
+            html.Should().Contain("data-tool=\"checklist\"", "?tool= opens the tool asked for")
+                .And.NotContain("aria-label=\"Query language\"", "a tool's panel is drawn the first time its tab shows");
+        }
+
+        // A tab asks for its tool to go in the address, which shows it; its panel is drawn now, and kept.
+        string? keyAsked = null;
+        var detail = await Detail(sweep);
+        await using (var drawer = await RenderAsync<ActionToolDrawer>(app, $"/actions/{sweep}", new()
+        {
+            ["Detail"] = detail, ["Asked"] = "checklist", ["Today"] = Today,
+            ["ToolChanged"] = EventCallback.Factory.Create<string>(this, key => keyAsked = key),
+        }))
+        {
+            await drawer.Click(d => EventCallback.Factory.Create(d, () => d.Select(ActionTool.Hunt)).InvokeAsync());
+            keyAsked.Should().Be("hunt");
+            drawer.Component.Tool.Should().Be(ActionTool.Checklist, "the address hasn't changed yet");
+            (await drawer.Html()).Should().Contain("aria-label=\"Query language\"", "the hunt panel is drawn, hidden, ready to show");
         }
         await using (var missing = await Open(block, tool: "outreach"))
             (await missing.Html()).Should().Contain("data-tool=\"checklist\"", "a tool it hasn't got falls back to the kind's own");
@@ -402,16 +432,18 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
         await using (var page = await Open(parent))
         {
             var html = await page.Html();
-            html.Should().Contain("tide-lineage").And.Contain("id=\"tool-panel-tab-timeline\"").And.Contain("tide-remtl");
+            html.Should().Contain("tide-lineage").And.Contain("id=\"tool-panel-tab-timeline\"").And.NotContain("tide-remtl", "drawn once its tab shows");
             html.IndexOf("tide-lineage", StringComparison.Ordinal).Should().BeLessThan(html.IndexOf("id=\"feed-h\"", StringComparison.Ordinal),
                 "the lineage comes before what's happened");
             page.Component.MoreItems.Should().Contain(i => i.Label == "Split to teams…");
         }
+        await using (var timeline = await Open(parent, tool: "timeline"))
+            (await timeline.Html()).Should().Contain("data-tool=\"timeline\"").And.Contain("tide-remtl");
         await using (var page = await Open(part))
         {
             var html = await page.Html();
             html.Should().Contain($"Part of A-{parent}").And.Contain("tide-lineage").And.NotContain("tool-panel-tab-timeline");
-            page.Component.Primary.Should().Be(PrimaryStep.RecordUpdate, "an external team's part records their updates");
+            page.Component.Primary.Should().Be(ActionFlow.RecordUpdate, "an external team's part records their updates");
             page.Component.MoreItems.Select(i => i.Label).Should().NotContain(["Split to teams…", "Split off a part", "Take it"],
                 "a part isn't split again, and nobody takes an external team's work");
         }
@@ -428,7 +460,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
         await using var page = await Open(number, Viewer);
         var html = await page.Html();
         html.Should().Contain("Layout viewer action").And.Contain("Layout checked on duty").And.Contain("id=\"feed-h\"");
-        page.Component.Primary.Should().Be(PrimaryStep.None);
+        page.Component.Primary.Should().Be(ActionFlow.None);
         page.Component.MoreItems.Should().BeEmpty();
         Header(html).Should().NotContain("btn-primary").And.NotContain("tide-menubutton").And.NotContain("tide-status-badge")
             .And.Contain(">Open</span>", "the status is a plain badge");
@@ -448,7 +480,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
 
         await using var page = await Open(number);
         (await page.Html()).Should().NotContain("Layout the oldest comment");
-        await page.Click(p => { p.ShowComment(oldest.Id); return Task.CompletedTask; });
+        await page.Click(p => Clicked(p, () => p.ShowComment(oldest.Id)));
         (await page.Html()).Should().Contain($"id=\"comment-{oldest.Id}\" tabindex=\"-1\"").And.Contain("Layout the oldest comment");
         page.Component.FeedAll.Should().BeTrue();
     }
