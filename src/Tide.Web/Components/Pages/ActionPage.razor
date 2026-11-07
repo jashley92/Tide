@@ -708,9 +708,11 @@ else
     private Task WithOutreach(Func<OutreachPanel, Task> then) => _drawer?.WithOutreach(then) ?? Task.CompletedTask;
 
     // Another tool chosen in the drawer: put in the address, which shows it, so a reload or a copied link opens it too.
+    // A ?do= is dropped with it: the address it's built from may not yet show ?do= taken off, and it would run again.
     private void KeepTool(string key)
     {
-        if (RendererInfo.IsInteractive) Nav.NavigateTo(Nav.GetUriWithQueryParameter("tool", key), replace: true);
+        if (RendererInfo.IsInteractive)
+            Nav.NavigateTo(Nav.GetUriWithQueryParameters(new Dictionary<string, object?> { ["tool"] = key, ["do"] = null }), replace: true);
     }
 
     // A file's "On a comment" link: the whole feed shows, and that comment takes focus once it's drawn.
