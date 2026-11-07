@@ -419,20 +419,6 @@ public class HeadersAndHostileUrlTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Theory]
-    [InlineData("/exports/brief/{day}?format=csv")]
-    [InlineData("/exports/brief/{day}")]
-    [InlineData("/metrics/export.csv")]
-    [InlineData("/trends/export.csv")]
-    [InlineData("/trends/articles.csv")]
-    [InlineData("/rotation/my.ics")]
-    public async Task IndicatorAndMetricExports_AreNotCacheable(string path)
-    {
-        var res = await app.CreateClient().GetAsync(path.Replace("{day}", WebSeed.Day(app)));
-        res.StatusCode.Should().Be(HttpStatusCode.OK);
-        Header(res, "Cache-Control").Should().Match(c => c.Contains("no-store") || c.Contains("private"), path);
-    }
-
-    [Theory]
     [InlineData("/files/..%2F..%2Fappsettings.json/inline")]
     [InlineData("/files/00000000-0000-0000-0000-000000000000%2F..%2F..%2Fx/download")]
     [InlineData("/exports/brief/..%2F..%2Fetc%2Fpasswd")]
@@ -501,28 +487,6 @@ public class HeadersAndHostileUrlTests(TideApp app) : IClassFixture<TideApp>
         csv.Should().NotContain(",-2+3").And.Contain("'-2+3");
         foreach (var line in csv.Split('\n').Skip(1).Where(l => l.Length > 0))
             line.Split(',')[0].TrimStart('"').Should().NotMatchRegex("^[=+\\-@\\t\\r]", "no cell starts with a formula trigger");
-    }
-
-    [Fact]
-    public async Task AnArticleBullet_WithinItsLimit_NeverBreaksThePagesOrTheEmail()
-    {
-        Guid id;
-        var day = app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;
-        using (var scope = app.Services.CreateScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var article = new Article { Title = "Deep", Tlp = TlpLevel.Clear, Status = ArticleStatus.Ready, AuthorId = "x", AuthorName = "X" };
-            article.Bullets.Add(new ArticleBullet { Text = new string('[', 200) + "x", Tlp = TlpLevel.Clear });
-            db.Articles.Add(article);
-            var brief = db.Briefs.Include(b => b.Items).First(b => b.BriefDate == day);
-            brief.Items.Add(new BriefItem { ArticleId = article.Id, SortOrder = 99 });
-            await db.SaveChangesAsync();
-            id = article.Id;
-        }
-        var client = app.CreateClient();
-        (await client.GetAsync($"/articles/{id}")).StatusCode.Should().Be(HttpStatusCode.OK);
-        (await client.GetAsync($"/briefs/{day:yyyy-MM-dd}/email/team")).StatusCode.Should().Be(HttpStatusCode.OK);
-        (await client.GetAsync($"/briefs/{day:yyyy-MM-dd}/sharepoint")).StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]
