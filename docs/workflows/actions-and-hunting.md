@@ -814,7 +814,7 @@ Every one of these follows colleagues' saves live through the `actions` and `act
 | A saved action edited by two people | The second save is refused as stale; the page offers a reload. |
 | A colleague moves a card while you drag it | The move is refused, naming where it went. |
 | Assigning someone not on the team | Refused: "That person isn't on the action's team." |
-| Retired team | Can't be chosen for a new action or a move; an action already on it stays. |
+| Retired team | Can't be chosen for a new action or a move; an action already on it stays, and the team stays on Workload (marked Retired) while it has open actions. |
 | Generate with no indicators | Refused, saying to add them on the article, on the card, or build from the story. |
 | A saved query placeholder with no values | Refused when it's added. |
 | A hunt's result recorded twice at once | The second is refused as stale (the action's version moved). |

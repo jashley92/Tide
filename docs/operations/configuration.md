@@ -162,7 +162,7 @@ seed accepts them.
 
 | Key | Default | Allowed values | Where | Effect |
 |---|---|---|---|---|
-| `Database:Provider` | `Sqlite` | `Sqlite` (development) or `SqlServer` (production). Anything not `SqlServer` is SQLite. | Server | Start-up |
+| `Database:Provider` | `Sqlite` | `Sqlite` (development) or `SqlServer` (production), in any case; blank is SQLite. Anything else stops start-up, naming the setting. | Server | Start-up |
 | `Database:ApplyMigrations` | `true` | `true`: the app migrates its schema at start-up (the pool needs `db_owner`). `false`: a DBA applies the schema; start-up refuses to run with pending migrations. | Server | Start-up |
 | `ConnectionStrings:Default` | `Data Source=App_Data/tide.db` | Required for SQL Server. The installer writes `Server=…;Database=…;Trusted_Connection=True;Encrypt=True;TrustServerCertificate=…;Application Name=TIDE`. | Server | Start-up |
 

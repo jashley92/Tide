@@ -38,6 +38,7 @@ else
                 <h2>
                     <a href="@($"actions?view=open&team={t.Team.Id}")">@t.Team.Name</a>
                     @if (t.Team.IsExternal) { <Badge Class="ms-1">External</Badge> }
+                    @if (t.Team.IsRetired) { <Badge Class="ms-1">Retired</Badge> }
                     @if (t.Active is { } active) { <span class="tide-count fw-normal @(active.Over ? "tide-level-critical" : "tide-muted") ms-auto">@active.Text</span> }
                 </h2>
                 <div class="tide-load-nums">

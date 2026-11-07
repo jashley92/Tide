@@ -5,6 +5,10 @@ namespace Tide.Application.Operations;
 /// <summary>A background job Diagnostics lists.</summary>
 public sealed record JobDefinition(string Key, string Name, string Schedule);
 
+/// <summary>A run that did its work but found parts of it failed (a reminder scan whose relay was down): recorded as a
+/// failure with just its message.</summary>
+public sealed class JobProblemException(string message) : Exception(message);
+
 /// <summary>A job's latest run, as Diagnostics shows it. <see cref="LastError"/> is scrubbed of credentials.</summary>
 public sealed record JobState(
     JobDefinition Job, bool Enabled, DateTimeOffset? LastStartedUtc, DateTimeOffset? LastFinishedUtc, bool? LastSucceeded,
@@ -59,7 +63,7 @@ public sealed class JobMonitor(TimeProvider time)
         }
         catch (Exception ex)
         {
-            Failed(job, ex.GetType().Name + ": " + ex.Message);
+            Failed(job, ex is JobProblemException ? ex.Message : ex.GetType().Name + ": " + ex.Message);
             throw;
         }
     }

@@ -700,7 +700,8 @@ on-call schedule.)
 **Route:** `/workload` · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md)
 
 Each team's open actions, what's late, and who holds what, with per-person and P1 counts. A team with a limit shows
-"4 of 5 active"; an external team has no holders. A team's name opens its
+"4 of 5 active"; an external team has no holders. A retired team is listed, marked Retired, while it still has open
+actions. A team's name opens its
 open actions on the Actions list. The numbers update live as actions change.
 
 ![Workload](../screenshots/workload.png)

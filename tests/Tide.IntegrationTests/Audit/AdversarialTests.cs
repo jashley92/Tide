@@ -2198,11 +2198,12 @@ public class OpsChallengeTests
         }
     }
 
-    private sealed class SlowThenHealthyDb(TestDb db, TimeSpan delay) : IAppDbContextFactory
+    // Slow on the clock the health check's limit runs on, so the test moves both on together.
+    private sealed class SlowThenHealthyDb(TestDb db, TimeSpan delay, TimeProvider time) : IAppDbContextFactory
     {
         public async Task<IAppDbContext> CreateAsync(CancellationToken ct = default)
         {
-            await Task.Delay(delay, ct);
+            await Task.Delay(delay, time, ct);
             return await db.CreateAsync(ct);
         }
     }
@@ -2211,18 +2212,25 @@ public class OpsChallengeTests
     public async Task HealthCheck_ADatabaseThatIsSlowButAnswersInsideTheLimit_IsHealthy()
     {
         using var db = new TestDb();
-        var check = new Tide.Web.Services.DatabaseHealthCheck(new SlowThenHealthyDb(db, TimeSpan.FromSeconds(2)));
-        var result = await check.CheckHealthAsync(new Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext());
+        // The limit and the database's delay on a clock the test moves: a loaded machine's slow timers can't decide it.
+        var clock = new Tide.TestSupport.ManualClock();
+        var check = new Tide.Web.Services.DatabaseHealthCheck(
+            new SlowThenHealthyDb(db, Tide.Web.Services.DatabaseHealthCheck.TimeLimit - TimeSpan.FromMilliseconds(1), clock), clock);
+        var probe = check.CheckHealthAsync(new Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext());
+        clock.Advance(Tide.Web.Services.DatabaseHealthCheck.TimeLimit - TimeSpan.FromMilliseconds(1));
+        var result = await probe.WaitAsync(TimeSpan.FromSeconds(30));
         result.Status.Should().Be(Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy);
     }
 
     [Fact]
     public async Task HealthCheck_ADatabaseOverTheLimit_IsUnhealthy_AndTheCallersOwnCancellationIsNotBlamedOnTheDatabase()
     {
-        var check = new Tide.Web.Services.DatabaseHealthCheck(new SlowDb(TimeSpan.FromSeconds(30)));
-        var sw = Stopwatch.StartNew();
-        var result = await check.CheckHealthAsync(new Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext());
-        sw.Elapsed.Should().BeLessThan(Tide.Web.Services.DatabaseHealthCheck.TimeLimit + TimeSpan.FromSeconds(3));
+        var clock = new Tide.TestSupport.ManualClock();
+        var check = new Tide.Web.Services.DatabaseHealthCheck(new SlowDb(TimeSpan.FromSeconds(30)), clock);
+        var probe = check.CheckHealthAsync(new Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext());
+        clock.Advance(Tide.Web.Services.DatabaseHealthCheck.TimeLimit);
+        // Unhealthy once the limit passes, not when the database's 30 seconds are up.
+        var result = await probe.WaitAsync(TimeSpan.FromSeconds(20));
         result.Status.Should().Be(Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy);
         result.Description.Should().Contain("within 5 seconds");
 

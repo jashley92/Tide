@@ -63,7 +63,7 @@ public sealed class ToastService
 }
 
 /// <summary>Readiness: the database answers a query.</summary>
-public sealed class DatabaseHealthCheck(IAppDbContextFactory dbs) : IHealthCheck
+public sealed class DatabaseHealthCheck(IAppDbContextFactory dbs, TimeProvider time) : IHealthCheck
 {
     /// <summary>How long the database has to answer a probe.</summary>
     public static readonly TimeSpan TimeLimit = TimeSpan.FromSeconds(5);
@@ -72,8 +72,9 @@ public sealed class DatabaseHealthCheck(IAppDbContextFactory dbs) : IHealthCheck
     {
         // Asynchronous, with the probe's token and a time limit of its own: a database that hangs (or that the SQL Server
         // retry policy keeps retrying) mustn't hold a probe, and a thread, for minutes while monitors keep sending more.
-        using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        limit.CancelAfter(TimeLimit);
+        // The limit runs on the app's clock, so a test can move it on rather than wait on a busy machine's timers.
+        using var deadline = new CancellationTokenSource(TimeLimit, time);
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
         try
         {
             await using var db = await dbs.CreateAsync(limit.Token);

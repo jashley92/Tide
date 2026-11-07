@@ -124,6 +124,9 @@ public enum ReminderKind
 /// opted out ("all recipients opted out" when that was everyone).</summary>
 public sealed record ReminderRun(ReminderKind Kind, DateTimeOffset AtUtc, int Sent, string? Error, string? Note = null);
 
+/// <summary>What one pass of the due scans did: the emails sent, and each scan that failed (its run, with its error).</summary>
+public sealed record ReminderPass(int Sent, IReadOnlyList<ReminderRun> Failed);
+
 /// <summary>The scans' last runs, kept in memory (a restart clears it). Singleton.</summary>
 public sealed class ReminderLog
 {
@@ -155,14 +158,21 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
 
     /// <summary>
     /// Runs every enabled scan that's due now (its time of day has come). Each scan's failure is its own: it's logged
-    /// and the others still run.
+    /// and the others still run. Returns the emails sent and the scans that failed, so the poller's run is recorded as
+    /// failed (on Diagnostics) when one did, not as a success.
     /// </summary>
-    public async Task RunDueAsync(CancellationToken ct = default)
+    public async Task<ReminderPass> RunDueAsync(CancellationToken ct = default)
     {
+        var sent = 0;
+        var failed = new List<ReminderRun>();
         foreach (var kind in Enum.GetValues<ReminderKind>())
         {
-            if (IsEnabled(kind) && IsTime(kind)) await RunAsync(kind, rethrow: false, scheduled: true, ct);
+            if (!IsEnabled(kind) || !IsTime(kind)) continue;
+            var before = log.Last(kind);
+            sent += await RunAsync(kind, rethrow: false, scheduled: true, ct);
+            if (log.Last(kind) is { Error: not null } run && !ReferenceEquals(run, before)) failed.Add(run);
         }
+        return new ReminderPass(sent, failed);
     }
 
     // One scan at a time in this process: an administrator's "Run now" and the poller can't both read the marks, both
