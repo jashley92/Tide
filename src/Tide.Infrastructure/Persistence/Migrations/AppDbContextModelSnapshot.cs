@@ -2637,7 +2637,7 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
-                    b.Property<Guid>("ChangeId")
+                    b.Property<Guid?>("ChangeId")
                         .HasColumnType("TEXT");
 
                     b.HasKey("Date");
@@ -3779,8 +3779,7 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.HasOne("Tide.Domain.Entities.RotationChange", null)
                         .WithMany()
                         .HasForeignKey("ChangeId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Cascade);
                 });
 
             modelBuilder.Entity("Tide.Domain.Entities.ScorecardTag", b =>

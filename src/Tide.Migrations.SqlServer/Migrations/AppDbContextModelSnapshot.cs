@@ -2642,7 +2642,7 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
-                    b.Property<Guid>("ChangeId")
+                    b.Property<Guid?>("ChangeId")
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Date");
@@ -3784,8 +3784,7 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.HasOne("Tide.Domain.Entities.RotationChange", null)
                         .WithMany()
                         .HasForeignKey("ChangeId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Cascade);
                 });
 
             modelBuilder.Entity("Tide.Domain.Entities.ScorecardTag", b =>

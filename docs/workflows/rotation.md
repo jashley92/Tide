@@ -29,7 +29,7 @@ colleague, and the manager is told). Holidays: [ADR 0018](../decisions/0018-holi
 | `RotationMember` | An analyst in the rotation, their place in the roster (`SortOrder`) and whether they're active. |
 | `RotationWeek` | Who presents a week (Monday to Friday), keyed by its Monday. |
 | `RotationChange` | A request: a cover (the requester's days `GiveFrom`–`GiveTo` go to the partner) or a swap (also the partner's days `TakeFrom`–`TakeTo` go to the requester), a note, a status, who asked and who decided. |
-| `RotationOverride` | One business day whose presenter differs from the week's, written when a change is approved, pointing at that change (`ChangeId`). |
+| `RotationOverride` | One business day whose presenter differs from the week's, written when a change is approved, pointing at that change (`ChangeId`); or, with no `ChangeId`, a day kept for whoever presented it when its week was given to someone else afterwards (below). |
 
 All four are in `src/Tide.Domain/Entities/Rotation.cs`. A request moves at most 20 business days
 (`RotationService.MaxRequestDays`).
@@ -172,7 +172,20 @@ Administration › Organization › Brief rotation (`/admin/rotation`, `Rotation
 |---|---|---|
 | Roster | Add an analyst (from the user directory), take one out (`IsActive` false: past and assigned weeks stay), move up or down | `AddMemberAsync`, `SetMemberActiveAsync`, `MoveMemberAsync` |
 | Managers to notify | Addresses told of every approved and recorded change (`Rotation:ManagerEmails`, a `Settings` row, 4,000 characters) | `SaveManagerEmailsAsync` |
-| Weekly rota | Set or clear a week's analyst; *fill* the next 1 to 52 empty weeks in roster order, carrying on after whoever had the last assigned week | `SetWeekAsync`, `GenerateAsync` |
+| Weekly rota | Set or clear a week's analyst; *fill* the next 1 to 52 empty weeks in roster order, carrying on after whoever had the last assigned week; *Correct past days* to change days already presented too | `SetWeekAsync`, `GenerateAsync` |
+
+**Days already presented keep their presenter.** Giving a week to someone else (or clearing it) changes only the days
+whose meeting hasn't been held. A day whose brief was presented or sent, or held and put back to ready (the same test
+as an approval or an undo uses, `RotationService.HeldAsync`), keeps whoever presented it: `SetWeekAsync` writes a
+`RotationOverride` with no `ChangeId` for it, and the calendar shows that analyst on the day, not as cover. The page
+then says which days were kept, for whom and why ("Kept Sam on Mon Nov 2, Tue Nov 3: those days' briefs were already
+presented"). Giving the week back to that analyst drops the kept days, since the week says so again. A day an approved
+change moved stays with the change either way.
+
+To change a presented day as well, an administrator ticks **Correct past days** and sets the week again. That's one
+deliberate step: the box clears after the change. The kept days follow the week, the page names the days corrected,
+and besides the week's own audit row an entry on `RotationWeek` records "Presented days corrected: …" with the old and
+new analyst. Only the rota changes; each brief still names who presented it.
 
 Every write publishes the `rotation` topic and is audited. The wording of the four rotation emails is set on Email
 templates ([administration.md](administration.md#email-templates)).

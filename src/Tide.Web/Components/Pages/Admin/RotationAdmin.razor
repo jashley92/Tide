@@ -70,6 +70,15 @@
                 <div><label class="tide-field-label" for="g-n">Weeks</label><input id="g-n" type="number" min="1" max="52" class="tide-w-count form-control form-control-sm" @bind="_weeks" /></div>
                 <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="Generate">Fill empty weeks in roster order</button>
             </div>
+            <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" id="correct-past" @bind="_correctPast" />
+                <label class="form-check-label" for="correct-past">Correct past days</label>
+                <div class="form-text">Changing a week keeps the presenter of its days already presented or sent. Tick this to change those days too; the audit log records it as a correction.</div>
+            </div>
+            @if (_weekNote is not null)
+            {
+                <div class="alert alert-info py-2 small" role="status" data-week-note>@_weekNote</div>
+            }
             <table class="tide-table">
                 <thead><tr><th>Week of</th><th>Presenting</th></tr></thead>
                 <tbody>
@@ -96,6 +105,8 @@
     private IReadOnlyList<AppUser> _people = [];
     private List<KeyValuePair<DateOnly, string?>> _rota = [];
     private string? _add, _managers;
+    internal string? _weekNote;
+    internal bool _correctPast;
     private bool _busy;
     private DateOnly _from;
     private int _weeks = 12;
@@ -142,7 +153,19 @@
         Toasts.Show($"Filled {n} week{(n == 1 ? "" : "s")}.");
     });
 
-    private Task SetWeek(DateOnly week, string? userId) => Run(() => Rotation.SetWeekAsync(week, userId));
+    // Says which presented days the change kept, and why, or which it corrected. A correction is one deliberate step:
+    // the box clears after it.
+    internal Task SetWeek(DateOnly week, string? userId) => Run(async () =>
+    {
+        var set = await Rotation.SetWeekAsync(week, userId, _correctPast);
+        var kept = string.Join("; ", set.Kept.GroupBy(k => k.AnalystName).Select(g => $"{g.Key} on {Days(g.Select(k => k.Date).ToList())}"));
+        _weekNote = set.Kept.Count > 0
+            ? $"Kept {kept}: {(set.Kept.Count == 1 ? "that day's brief was" : "those days' briefs were")} already presented. Tick Correct past days to change {(set.Kept.Count == 1 ? "it" : "them")} too."
+            : set.Corrected.Count > 0 ? $"Corrected {Days(set.Corrected)}, already presented, to the new analyst. The audit log records the correction." : null;
+        _correctPast = false;
+    });
+
+    private static string Days(IReadOnlyList<DateOnly> days) => string.Join(", ", days.Select(d => d.ToString("ddd MMM d", CultureInfo.InvariantCulture)));
 
     private Task SaveManagers() => Run(async () =>
     {

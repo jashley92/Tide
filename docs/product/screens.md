@@ -829,7 +829,7 @@ Every page, by tab (from `AdminLayout.Groups`):
 | Overview | Overview | `/admin` | What's left to set up, and where everything is set. |
 | Organization | Organization settings | `/admin/organization` | The team's name, its time zone, when the brief meets, and its holidays. |
 | Organization | Teams & SLA | `/admin/teams` | The teams that own actions, their members and escalation contacts, SLA targets, when reminder emails go, and the escalation ladder: the steps that run by themselves on an action as it slips. |
-| Organization | Brief rotation | `/admin/rotation` | Who presents the brief, the weekly rota, and who's told about swaps and cover. |
+| Organization | Brief rotation | `/admin/rotation` | Who presents the brief, the weekly rota (a week's days already presented keep their presenter unless *Correct past days* is ticked), and who's told about swaps and cover. |
 | Actions | Card rules | `/admin/card-rules` | Which actions are coloured and labelled on the board and list, and which rules the Actions filter bar offers. |
 | Intelligence | Sources | `/admin/sources` | The feeds and catalogs triage takes items from, and CVE enrichment. |
 | Intelligence | Source health | `/admin/source-health` | How much each source sends and how much of it the team uses, with feeds worth pausing. |
