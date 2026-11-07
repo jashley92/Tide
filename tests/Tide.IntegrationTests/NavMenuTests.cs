@@ -53,7 +53,7 @@ public class NavMenuTests(TideApp app) : IClassFixture<TideApp>
         nav.Groups.Select(g => (g.Label, string.Join(",", g.Links))).Should().Equal(
             ("Daily", ",triage,articles,actions,search"),
             ("Intelligence", "stories,briefs,trends,stack,adversaries,reports,coverage,metrics"),
-            ("Team", "rotation,workload,hunts/saved,outreach/templates"),
+            ("Team", "rotation,workload,hunts/saved,outreach/templates,playbooks,board-rules"),
             ("Company-wide", "published"),
             ("Administration", "admin"));
         nav.Html.Should().NotContain("nav-more").And.NotContain(">More<").And.NotContain("<button", "the labels are text, not controls");
@@ -133,7 +133,7 @@ public class ActionOwnerNavTests(ActionOwnerApp app) : IClassFixture<ActionOwner
         nav.Groups.Select(g => (g.Label, string.Join(",", g.Links))).Should().Equal(
             ("Daily", ",articles,actions,search"),
             ("Intelligence", "stories,briefs,trends,stack,adversaries"),
-            ("Team", "workload,hunts/saved,outreach/templates"),
+            ("Team", "workload,hunts/saved,outreach/templates,playbooks,board-rules"),
             ("Company-wide", "published"));
         nav.Html.Should().NotContain("aria-label=\"Triage").And.NotContain("Administration");
     }

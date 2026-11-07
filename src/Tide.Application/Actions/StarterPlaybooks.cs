@@ -13,6 +13,9 @@ public sealed record StarterPlaybook(string Name, string Description, ActionKind
 /// </summary>
 public static class StarterPlaybooks
 {
+    /// <summary>Who the Playbooks page says made them: an administrator's to delete, anyone's who works actions to retire.</summary>
+    public const string SavedBy = "TIDE";
+
     public static readonly IReadOnlyList<StarterPlaybook> All =
     [
         new("IOC sweep", "Search our logs for an article's indicators and record what came back.", ActionKind.IocSweep,
@@ -80,10 +83,10 @@ public static class StarterPlaybooks
         ]),
     ];
 
-    /// <summary>A starter as a row, active, in the list's order.</summary>
+    /// <summary>A starter as a row, offered, in the list's order, made by TIDE.</summary>
     public static Playbook ToEntity(StarterPlaybook s, int order)
     {
-        var p = new Playbook { Name = s.Name, Description = s.Description, Kind = s.Kind, IsActive = true, SortOrder = order };
+        var p = new Playbook { Name = s.Name, Description = s.Description, Kind = s.Kind, SortOrder = order, CreatedByName = SavedBy };
         p.Steps.AddRange(s.Steps.Select((text, i) => new PlaybookStep { PlaybookId = p.Id, Order = i, Text = text }));
         return p;
     }

@@ -1415,7 +1415,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     {
         var playbook = await db.Playbooks.AsNoTracking().Include(p => p.Steps).FirstOrDefaultAsync(p => p.Id == playbookId, ct)
                        ?? throw new KeyNotFoundException("That playbook no longer exists.");
-        if (!playbook.IsActive) throw new ArgumentException($"The {playbook.Name} playbook is retired.");
+        if (playbook.IsRetired) throw new ArgumentException($"The {playbook.Name} playbook is retired.");
         if (playbook.Kind is { } k && k != kind) throw new ArgumentException($"The {playbook.Name} playbook is for {KindName(k)} actions.");
         return playbook;
     }

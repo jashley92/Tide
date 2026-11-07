@@ -498,7 +498,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasMany(x => x.Indicators).WithOne().HasForeignKey(x => x.ActionId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Outreach).WithOne().HasForeignKey(x => x.ActionId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Files).WithOne().HasForeignKey(x => x.ActionId).OnDelete(DeleteBehavior.Cascade);
-            e.Property(x => x.PlaybookName).HasMaxLength(100);
+            e.Property(x => x.PlaybookName).HasMaxLength(Playbook.MaxName);
             Person(e, x => x.HandedById, x => x.HandedByName);
             e.Property(x => x.HandoffReason).HasMaxLength(ActionItem.MaxHandoffReason);
             e.HasOne<Playbook>().WithMany().HasForeignKey(x => x.PlaybookId).OnDelete(DeleteBehavior.Restrict);
@@ -569,8 +569,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
         b.Entity<Playbook>(e =>
         {
-            e.Property(x => x.Name).HasMaxLength(100);
-            e.Property(x => x.Description).HasMaxLength(1000);
+            e.Property(x => x.Name).HasMaxLength(Playbook.MaxName);
+            e.Property(x => x.Description).HasMaxLength(Playbook.MaxDescription);
+            e.Property(x => x.CreatedByName).HasMaxLength(256);
+            e.Property(x => x.ModifiedByName).HasMaxLength(256);
+            e.Property(x => x.EditVersion).IsConcurrencyToken();
             e.HasMany(x => x.Steps).WithOne().HasForeignKey(x => x.PlaybookId).OnDelete(DeleteBehavior.Cascade);
             Audited(e);
         });

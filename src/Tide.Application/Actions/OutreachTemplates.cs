@@ -39,13 +39,17 @@ public sealed record OutreachTemplateRow(OutreachTemplate Template, int Emails);
 /// </summary>
 public sealed class OutreachTemplateService(IAppDbContextFactory dbs, ICurrentUser user)
 {
+    private readonly TeamLibrary<OutreachTemplate> _library = new(dbs, user, db => db.OutreachTemplates, new(
+        "That template no longer exists.",
+        "Someone else changed this template since you opened it. Reload to see their changes.",
+        "Only people who work actions can change the outreach templates.",
+        "Only the person who saved it, or an administrator, can delete a template. Retire it instead."));
+
     /// <summary>Whether the current user may save, edit, retire and restore templates.</summary>
-    public bool CanWrite => user.Has(Permission.WorkActions);
+    public bool CanWrite => _library.CanWrite;
 
     /// <summary>Whether the current user may delete <paramref name="t"/>: an administrator, or whoever saved it.</summary>
-    public bool CanDelete(OutreachTemplate t) => CanDelete(t.CreatedBy);
-
-    private bool CanDelete(string? savedBy) => user.Has(Permission.Administer) || (CanWrite && savedBy is not null && savedBy == user.UserId);
+    public bool CanDelete(OutreachTemplate t) => _library.CanDelete(t.CreatedBy);
 
     /// <summary>Every template, retired ones too when <paramref name="includeRetired"/>, by name, each with how many
     /// emails were marked sent from it.</summary>
@@ -91,24 +95,18 @@ public sealed class OutreachTemplateService(IAppDbContextFactory dbs, ICurrentUs
     /// <summary>Saves a new template, or changes one; its id. A change begun on a copy someone has since changed is refused.</summary>
     public async Task<Guid> SaveAsync(OutreachTemplateForm form, CancellationToken ct = default)
     {
-        RequireWrite();
+        _library.RequireWrite();
         var (name, description, subject, body, to, ceiling) = Checked(form);
 
         await using var db = await dbs.CreateAsync(ct);
         OutreachTemplate t;
         if (form.Id is { } id)
         {
-            t = await db.OutreachTemplates.FirstOrDefaultAsync(x => x.Id == id, ct) ?? throw new KeyNotFoundException("That template no longer exists.");
-            if (t.EditVersion != form.EditVersion) throw new StaleEditException(Stale);
+            t = await _library.ForEditAsync(db.OutreachTemplates, id, form.EditVersion, ct);
             if (t.Name == name && t.Description == description && t.Subject == subject && t.Body == body && t.To == to && t.Ceiling == ceiling) return t.Id;
-            t.ModifiedByName = user.DisplayName;
-            t.EditVersion = Guid.NewGuid();
+            _library.Changed(t);
         }
-        else
-        {
-            t = new OutreachTemplate { CreatedByName = user.DisplayName };
-            db.OutreachTemplates.Add(t);
-        }
+        else t = _library.Added(db, new OutreachTemplate());
         // One name, ignoring case on both providers (LIKE, as the saved queries' names are).
         var exact = Search.SearchText.Literal(name);
         if (await db.OutreachTemplates.AnyAsync(x => x.Id != t.Id && EF.Functions.Like(x.Name, exact, Search.SearchText.Escape), ct))
@@ -119,7 +117,7 @@ public sealed class OutreachTemplateService(IAppDbContextFactory dbs, ICurrentUs
         t.Body = body;
         t.To = to;
         t.Ceiling = ceiling;
-        await SaveEditAsync(db, ct);
+        await _library.SaveEditAsync(db, ct);
         return t.Id;
     }
 
@@ -152,53 +150,13 @@ public sealed class OutreachTemplateService(IAppDbContextFactory dbs, ICurrentUs
     }
 
     /// <summary>Retires a template (it's no longer offered on actions, and stays on the list to read) or restores it.</summary>
-    public async Task SetRetiredAsync(Guid id, bool retired, CancellationToken ct = default)
-    {
-        RequireWrite();
-        await using var db = await dbs.CreateAsync(ct);
-        var t = await db.OutreachTemplates.FirstOrDefaultAsync(x => x.Id == id, ct) ?? throw new KeyNotFoundException("That template no longer exists.");
-        if (t.IsRetired == retired) return;
-        t.IsRetired = retired;
-        t.ModifiedByName = user.DisplayName;
-        await db.SaveChangesAsync(ct);
-    }
+    public Task SetRetiredAsync(Guid id, bool retired, CancellationToken ct = default) => _library.SetRetiredAsync(id, retired, ct);
 
     /// <summary>Deletes a template: whoever saved it, or an administrator. Emails written from it keep its name.</summary>
-    public async Task DeleteAsync(Guid id, CancellationToken ct = default)
-    {
-        await using var db = await dbs.CreateAsync(ct);
-        var t = await db.OutreachTemplates.FirstOrDefaultAsync(x => x.Id == id, ct);
-        if (t is null)
-        {
-            // Already gone, as asked: whoever could delete one they saved is let by, and anyone else is refused as for any other.
-            if (!CanDelete(user.UserId)) throw new ForbiddenException(NotTheirs);
-            return;
-        }
-        if (!CanDelete(t)) throw new ForbiddenException(NotTheirs);
-        db.OutreachTemplates.Remove(t);
-        try { await db.SaveChangesAsync(ct); }
-        // Someone deleted it first: it's gone, as asked.
-        catch (DbUpdateConcurrencyException) { }
-    }
-
-    private const string Stale = "Someone else changed this template since you opened it. Reload to see their changes.";
-    private const string Refusal = "Only people who work actions can change the outreach templates.";
-    private const string NotTheirs = "Only the person who saved it, or an administrator, can delete a template. Retire it instead.";
-
-    // A save that lost the race to another edit (the version moved under it) is refused as stale, not as a database error.
-    private static async Task SaveEditAsync(IAppDbContext db, CancellationToken ct)
-    {
-        try { await db.SaveChangesAsync(ct); }
-        catch (DbUpdateConcurrencyException) { throw new StaleEditException(Stale); }
-    }
+    public Task DeleteAsync(Guid id, CancellationToken ct = default) => _library.DeleteAsync(id, null, ct);
 
     private void RequireRead()
     {
         if (!user.Has(Permission.ReadActions)) throw new ForbiddenException("You don't have access to the outreach templates.");
-    }
-
-    private void RequireWrite()
-    {
-        if (!CanWrite) throw new ForbiddenException(Refusal);
     }
 }

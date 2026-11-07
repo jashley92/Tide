@@ -49,7 +49,7 @@ the tables and columns are in [data model](../architecture/data-model.md).
 
 | Term | Meaning | Code name |
 |---|---|---|
-| **Card rule** | An administrator's rule that colours and labels actions on the board and list, and may be offered as a filter on the Actions page. | `ActionCardRule`, `CardColour`, `CardRuleSla` |
+| **Card rule** | An administrator's rule that colours and labels actions on the board and list, and may be offered as a filter on the Actions page. Everyone who reads actions reads them on **Board rules**. | `ActionCardRule`, `CardColour`, `CardRuleSla` |
 | **Carry-over** | Articles on a brief that weren't discussed at the meeting go on the next business day's brief when the meeting ends. Reopening the meeting takes them back. | `BriefService.MarkPresentedAsync` (`carry`), `BriefItem.CarriedFromBriefId` |
 | **Ceiling** | The highest TLP an edition, an API token, an export, an outreach template or the AI provider may carry. Anything above it is left out whole, never hidden. The defaults are AMBER+STRICT for the team edition and GREEN for the company-wide edition. A ceiling governs what leaves TIDE, not what people see in it. | `DistributionSettings` (`Distribution:TeamMaxTlp`, `PublicMaxTlp`), `BriefSend.Ceiling`, `Ai:MaxTlp` |
 | **Change feed** | The in-memory notice board that tells open pages something they show was saved, so they update live. | `ChangeFeed`, `ChangeInterceptor`, `LiveChanges` |
@@ -172,7 +172,7 @@ the tables and columns are in [data model](../architecture/data-model.md).
 | **Period** | A week, month or quarter that Trends and Reports count by ("2026-W44", "2026-10", "2026-Q4"). | `Period`, `PeriodKind` |
 | **Permission** | One thing a role allows: read published, read the team edition, write articles, present briefs, work actions, read actions, enter metrics, meeting notes, join meetings, administer. Each has a policy of the same name. | `Permission`, `Policies`; [ADR 0002](../decisions/0002-permissions-as-code.md) |
 | **Personal digest** | One person's own email of their open actions, daily or weekly, chosen on My notifications. | `ReminderKind.PersonalDigest`, preference `notify.digest` |
-| **Playbook** | A checklist for a kind of action, offered when one is created or worked. | `Playbook`, `PlaybookStep`, `ActionChecklistItem` |
+| **Playbook** | A checklist for a kind of action, offered when one is created or worked. The team's library, kept by whoever works actions. | `Playbook`, `PlaybookStep`, `ActionChecklistItem` |
 | **Presence** | Who else has a brief, article, action or triage item open, and whether they're editing. In memory. | `Presence`, `PresenceNote`, `PresenceCircuit` |
 | **Presenter** | The analyst who presents a day's brief: the rotation's choice for the day (an *override*, else the week's analyst), recorded on the brief. Presenting can be handed to another analyst in the meeting. | `IPresenterLookup`, `Brief.AnalystName` |
 | **Priority** | How urgent a threat is, P1 (most urgent) to P4. An action raised in the meeting takes its article's priority. | `Priority` |

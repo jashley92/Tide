@@ -199,7 +199,8 @@ public class ReaderOverHttpTests(ReaderApp app) : IClassFixture<ReaderApp>
     [InlineData("/admin/queries")]
     [InlineData("/admin/sources")]
     [InlineData("/admin/rotation")]
-    [InlineData("/admin/playbooks")]
+    [InlineData("/playbooks")]
+    [InlineData("/board-rules")]
     [InlineData("/admin/card-rules")]
     [InlineData("/admin/system")]
     [InlineData("/admin/system/bundle")]
@@ -884,9 +885,7 @@ public sealed class ServiceWorld : IDisposable
             ("Sla.Save", () => db.Sla().SaveAsync(new Dictionary<Priority, int?>(), new Dictionary<ActionKind, int?>())),
             ("Queries.SaveTemplate", () => db.Queries().SaveTemplateAsync("kql", HuntValueKind.Domain, "x")),
             ("Queries.ResetTemplate", () => db.Queries().ResetTemplateAsync("kql", HuntValueKind.Domain)),
-            ("Playbooks.Save", () => db.Playbooks().SaveAsync(new PlaybookForm { Name = "x", Steps = ["a"] })),
-            ("Playbooks.Remove", () => db.Playbooks().RemoveAsync(Guid.NewGuid())),
-            ("Playbooks.Move", () => db.Playbooks().MoveAsync(Guid.NewGuid(), 1)),
+            // Playbooks are the team's library (EP-89): an action owner keeps them, as the saved queries.
             ("CardRules.Save", () => db.CardRules().SaveAsync(new ActionCardRule { Name = "x" })),
             ("CardRules.Delete", () => db.CardRules().DeleteAsync(Guid.NewGuid())),
             ("CardRules.Move", () => db.CardRules().MoveAsync(Guid.NewGuid(), 1)),
@@ -1150,7 +1149,6 @@ public class AnalystAgainstTheServicesTests : IAsyncLifetime
             ("Teams.AddMember", () => db.Teams().AddMemberAsync(_w.TeamA, "eve", "Eve")),
             ("Sla.Save", () => db.Sla().SaveAsync(new Dictionary<Priority, int?>(), new Dictionary<ActionKind, int?>())),
             ("Queries.SaveTemplate", () => db.Queries().SaveTemplateAsync("kql", HuntValueKind.Domain, "x")),
-            ("Playbooks.Save", () => db.Playbooks().SaveAsync(new PlaybookForm { Name = "x", Steps = ["a"] })),
             ("CardRules.Save", () => db.CardRules().SaveAsync(new ActionCardRule { Name = "x" })),
             ("RoleMappings.Add", () => _w.RoleMappings().AddAsync("CORP\\Everyone", AppRole.Admin)),
             ("RoleMappings.List", () => _w.RoleMappings().ListAsync()),

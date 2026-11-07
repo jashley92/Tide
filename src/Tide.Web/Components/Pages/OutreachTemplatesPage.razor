@@ -1,12 +1,7 @@
 @page "/outreach/templates"
 @attribute [Authorize(Policy = Policies.ReadActions)]
 @inject OutreachTemplateService TemplateSvc
-@inject ToastService Toasts
-@inject OrgClock Clock
-@inject ChangeFeed Feed
-@inject ChangeOrigin Origin
-@inject NavigationManager Nav
-@implements IDisposable
+@inherits LibraryPage<OutreachTemplateRow>
 
 @* The team's outreach emails (ADR 0019): a question to a vendor, a partner, an ISAC or another team, kept for a
    colleague to fill from their own Outreach action with Write the email. Kept as the saved hunt queries are: whoever
@@ -91,7 +86,7 @@ else
                         <h3 class="tide-subhead my-0" id="@(id + "-h")">@t.Name</h3>
                         <TlpBadge Level="t.Ceiling" />
                         @if (t.IsRetired) { <Badge>Retired</Badge> }
-                        <span class="ms-auto small tide-muted">@Used(r.Emails)</span>
+                        <span class="ms-auto small tide-muted">@Used(r.Emails, "for", "email")</span>
                     </div>
                     @if (t.Description is { } about) { <p class="small mb-1">@about</p> }
                     <div class="small tide-muted mb-2">@Provenance(t)</div>
@@ -121,85 +116,21 @@ else
 }
 
 @code {
-    private IReadOnlyList<OutreachTemplateRow>? _rows;
     private OutreachTemplateForm? _form;
     private ConfirmDialog _confirm = default!;
-    private bool _canWrite, _busy, _showRetired;
-    private string? _words;
+    private bool _canWrite;
 
-    internal IReadOnlyList<OutreachTemplateRow>? Rows => _rows;
     internal OutreachTemplateForm? Form => _form;
 
-    private IReadOnlyList<OutreachTemplateRow> _shown = [];
+    protected override string Topic => ChangeFeed.OutreachTemplates;
 
-    /// <summary>The rows the filter leaves: every word typed (<see cref="Filter"/>).</summary>
-    internal IReadOnlyList<OutreachTemplateRow> Shown => _shown;
+    protected override (string One, string Many, string Library) Names => ("template", "templates", "outreach templates");
 
-    // Worked out when the rows or the filter change, not on each redraw.
-    private void Filter()
-    {
-        var words = TableView.Words(_words);
-        _shown = (_rows ?? []).Where(r => OutreachTemplateService.Matches(r.Template, words)).ToList();
-        Slice();
-    }
+    protected override async Task<IReadOnlyList<OutreachTemplateRow>> ReadAsync(bool includeRetired) => await TemplateSvc.ListAsync(includeRetired);
 
-    private IReadOnlyList<OutreachTemplateRow> _onPage = [];
-
-    /// <summary>The rows on the page shown, of <see cref="Shown"/>.</summary>
-    internal IReadOnlyList<OutreachTemplateRow> OnPage => _onPage;
-
-    // This page's cards, or the last page's when this one has gone.
-    private void Slice()
-    {
-        var asked = _page;
-        (_onPage, _page) = TableView.PageOf(_shown, _page, PageSize);
-        if (_page != asked) TableView.SayPage(Nav, RendererInfo, _page);
-    }
-
-    // "1–20 of 34 templates", or "12 templates" on one page.
-    private string CountText => TableView.Count((_page - 1) * PageSize + 1, _onPage.Count, _shown.Count, null, false, "template", "templates");
-
-    // A page of 20 cards at a time (they're long: the whole query or email), the page from the address (?page=2), so a
-    // reload, Back or a copied link keeps it. A filter starts again from the first page; an edit, or a colleague's change,
-    // keeps the page, or shows the last one when a delete or retire took this page away.
-    [SupplyParameterFromQuery(Name = "page")] public string? PageParam { get; set; }
-
-    internal const int PageSize = 20;
-    private int _page = 1;
-
-    /// <summary>The page shown, from 1.</summary>
-    internal int Page => _page;
-
-    // Another page in the address (a pager link, Back): show it.
-    protected override void OnParametersSet()
-    {
-        var page = TableView.PageFrom(PageParam);
-        if (page == _page) return;
-        _page = page;
-        Slice();
-    }
-
-    private string PageHref(int page) => Nav.GetUriWithQueryParameter("page", page == 1 ? null : page);
-
-    // Clear: the words; retired ones stay shown or hidden as chosen.
-    internal void ClearFilters()
-    {
-        _words = null;
-        Refilter();
-    }
-
-    // A filter changed: the first page, and the address says so.
-    private void Refilter()
-    {
-        _page = 1;
-        Filter();
-        TableView.SayPage(Nav, RendererInfo, 1);
-    }
-
-
-    private string Provenance(OutreachTemplate t) => Ui.Provenance(Clock, t, t.CreatedByName, t.ModifiedByName);
-
-    private static string Used(int emails) => emails == 0 ? "Not used yet" : $"Used for {Ui.Plural(emails, "email")}";
+    // Every word typed.
+    protected override IEnumerable<OutreachTemplateRow> Filtered(IReadOnlyList<OutreachTemplateRow> rows, IReadOnlyList<string> words) =>
+        rows.Where(r => OutreachTemplateService.Matches(r.Template, words));
 
     private RenderFragment EditForm => __builder =>
     {
@@ -244,38 +175,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         _canWrite = TemplateSvc.CanWrite;
-        _page = TableView.PageFrom(PageParam);
-        _live = new LiveChanges(Feed, Origin, c => c.Topic == ChangeFeed.OutreachTemplates, InvokeAsync, OnChangedElsewhere);
-        await Load();
-    }
-
-    // A colleague saved, changed, retired or deleted one: re-read in place. An edit under way keeps what's typed; its save
-    // is refused as stale if that template was the one changed.
-    private LiveChanges? _live;
-
-    public void Dispose() => _live?.Dispose();
-
-    internal async Task OnChangedElsewhere(IReadOnlyList<Change> heard)
-    {
-        if (_busy) return;   // a step is under way, and it reads theirs when it's done
-        await Load();
-        Toasts.Show($"{LiveChanges.Who(heard)} updated the outreach templates.");
-        StateHasChanged();
-    }
-
-    private async Task Load()
-    {
-        try { _rows = await TemplateSvc.ListAsync(_showRetired); }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
-        Filter();
-    }
-
-    private async Task ToggleRetired(ChangeEventArgs e)
-    {
-        _showRetired = e.Value is true;
-        _page = 1;
-        TableView.SayPage(Nav, RendererInfo, 1);
-        await Load();
+        await base.OnInitializedAsync();
     }
 
     internal void New()
@@ -308,19 +208,6 @@ else
         StateHasChanged();
     }
 
-    private async Task Run(Func<Task> step)
-    {
-        if (_busy) return;
-        _busy = true;
-        try
-        {
-            await step();
-            await Load();
-        }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
-        finally { _busy = false; }
-    }
-
     internal Task Save() => Run(async () =>
     {
         await TemplateSvc.SaveAsync(_form!);
@@ -328,11 +215,7 @@ else
         _form = null;
     });
 
-    internal Task Retire(OutreachTemplate t, bool retired) => Run(async () =>
-    {
-        await TemplateSvc.SetRetiredAsync(t.Id, retired);
-        Toasts.Show(retired ? $"{t.Name} retired. It's no longer offered on actions." : $"{t.Name} restored.");
-    });
+    internal Task Retire(OutreachTemplate t, bool retired) => Retiring(t.Name, retired, () => TemplateSvc.SetRetiredAsync(t.Id, retired));
 
     private async Task Delete(OutreachTemplate t)
     {

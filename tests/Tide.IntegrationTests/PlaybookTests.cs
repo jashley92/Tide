@@ -8,7 +8,7 @@ using Tide.Domain.Enums;
 
 namespace Tide.IntegrationTests;
 
-/// <summary>Playbooks and checklists, card rules, and files on actions' comments.</summary>
+/// <summary>Playbooks and checklists, card rules, and files on actions' comments. Who keeps the playbooks is PlaybookLibraryTests.</summary>
 public class PlaybookTests : IDisposable
 {
     private readonly TestDb _db = new();
@@ -38,10 +38,9 @@ public class PlaybookTests : IDisposable
         a.Events.Should().Contain(e => e.Text.Contains("with the Ransomware sweep playbook's checklist"));
 
         // A later edit to the playbook doesn't reach the action; applying it again adds only the new step.
-        await _db.Playbooks().SaveAsync(new PlaybookForm
-        {
-            Id = playbook, Name = "Ransomware sweep", Kind = ActionKind.IocSweep, Steps = ["Pull the indicators", "sweep proxy logs", "Sweep DNS logs"],
-        });
+        var edit = PlaybookForm.From((await _db.Playbooks().ListAsync()).Single(p => p.Id == playbook));
+        edit.Steps = ["Pull the indicators", "sweep proxy logs", "Sweep DNS logs"];
+        await _db.Playbooks().SaveAsync(edit);
         (await svc.ChecklistAsync(a.Id)).Should().HaveCount(3);
         (await svc.ApplyPlaybookAsync(a.Id, playbook)).Should().Be(1, "the steps it has, by text ignoring case, aren't added twice");
         (await svc.ChecklistAsync(a.Id)).Select(i => i.Text).Should().EndWith("Sweep DNS logs");
@@ -53,26 +52,25 @@ public class PlaybookTests : IDisposable
     }
 
     [Fact]
-    public async Task Playbooks_AreForAdministrators_AndOneInUseIsRetiredNotDeleted()
+    public async Task APlaybookInUse_IsKeptAndRetired_NotDeleted_AndARetiredOneIsNotOffered()
     {
         var team = await Team();
         var used = await SweepPlaybook();
         var unused = await _db.Playbooks().SaveAsync(new PlaybookForm { Name = "Spare", Steps = ["One"] });
         await _db.Actions().CreateAsync(new ActionForm { Title = "Sweep", Kind = ActionKind.IocSweep, TeamId = team, PlaybookId = used });
 
-        await _db.Playbooks().RemoveAsync(used);
-        await _db.Playbooks().RemoveAsync(unused);
+        await FluentActions.Invoking(() => _db.Playbooks().DeleteAsync(used)).Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Actions' checklists were started from Ransomware sweep, so it's kept for their history. Retire it instead.");
+        await _db.Playbooks().SetRetiredAsync(used, true);
+        await _db.Playbooks().DeleteAsync(unused);
         var all = await _db.Playbooks().ListAsync(includeRetired: true);
-        all.Should().ContainSingle().Which.IsActive.Should().BeFalse();
+        all.Should().ContainSingle().Which.IsRetired.Should().BeTrue();
+        (await _db.Playbooks().ForKindAsync(ActionKind.IocSweep)).Should().BeEmpty("a retired one isn't offered");
         var retired = () => _db.Actions().CreateAsync(new ActionForm { Title = "Again", Kind = ActionKind.IocSweep, TeamId = team, PlaybookId = used });
         await retired.Should().ThrowAsync<ArgumentException>().WithMessage("*retired*");
 
         var empty = () => _db.Playbooks().SaveAsync(new PlaybookForm { Name = "Nothing", Steps = ["  "] });
         await empty.Should().ThrowAsync<ArgumentException>();
-
-        _db.User.Roles = new HashSet<AppRole> { AppRole.Analyst };
-        var analyst = () => _db.Playbooks().SaveAsync(new PlaybookForm { Name = "Mine", Steps = ["x"] });
-        await analyst.Should().ThrowAsync<ForbiddenException>();
     }
 
     [Fact]
@@ -163,7 +161,7 @@ public class PlaybookTests : IDisposable
         var form = PlaybookForm.From((await pb.ListAsync()).Single(p => p.Id == any));
         form.Steps.Should().Equal("Tell the requester");
         form.Description.Should().Be("For any action.");
-        await pb.RemoveAsync(Guid.NewGuid());   // an unknown one is no error
+        await pb.DeleteAsync(Guid.NewGuid());   // an unknown one is no error
     }
 
     [Fact]

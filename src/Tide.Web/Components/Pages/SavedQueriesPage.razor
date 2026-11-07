@@ -1,12 +1,7 @@
 @page "/hunts/saved"
 @attribute [Authorize(Policy = Policies.ReadActions)]
 @inject SavedQueryService SavedSvc
-@inject ToastService Toasts
-@inject OrgClock Clock
-@inject ChangeFeed Feed
-@inject ChangeOrigin Origin
-@inject NavigationManager Nav
-@implements IDisposable
+@inherits LibraryPage<SavedQueryRow>
 
 @* The team's saved hunt queries (ADR 0006), by language: a tuned sweep or a behavioural hunt kept for a colleague to add
    to their own action from its Hunt queries card. Whoever works actions saves, edits, retires and restores them, and
@@ -97,7 +92,7 @@ else
                         <div class="d-flex gap-2 align-items-center flex-wrap">
                             <h3 class="tide-subhead my-0" id="@(id + "-h")">@q.Name</h3>
                             @if (q.IsRetired) { <Badge>Retired</Badge> }
-                            <span class="ms-auto small tide-muted">@Used(r.Actions)</span>
+                            <span class="ms-auto small tide-muted">@Used(r.Actions, "on", "action")</span>
                         </div>
                         @if (q.Description is { } about) { <p class="small mb-1">@about</p> }
                         <div class="small tide-muted mb-2">@Provenance(q)</div>
@@ -125,43 +120,26 @@ else
 }
 
 @code {
-    private IReadOnlyList<SavedQueryRow>? _rows;
     private SavedQueryForm? _form;
     private ConfirmDialog _confirm = default!;
-    private bool _canWrite, _busy, _showRetired;
-    private string? _words;
+    private bool _canWrite;
     private string _language = "";
 
-    internal IReadOnlyList<SavedQueryRow>? Rows => _rows;
     internal SavedQueryForm? Form => _form;
 
-    private IReadOnlyList<SavedQueryRow> _shown = [];
+    protected override string Topic => ChangeFeed.SavedQueries;
 
-    /// <summary>The rows the filters leave: the language chosen (or all) and every word typed (<see cref="Filter"/>).</summary>
-    internal IReadOnlyList<SavedQueryRow> Shown => _shown;
+    protected override (string One, string Many, string Library) Names => ("saved query", "saved queries", "saved queries");
 
-    private IReadOnlyList<SavedQueryRow> _onPage = [];
+    protected override async Task<IReadOnlyList<SavedQueryRow>> ReadAsync(bool includeRetired) => await SavedSvc.ListAsync(includeRetired);
 
-    /// <summary>The rows on the page shown, of <see cref="Shown"/>.</summary>
-    internal IReadOnlyList<SavedQueryRow> OnPage => _onPage;
+    // The language chosen (or all) and every word typed. Each language's queries together (the languages in the order they
+    // first come, as their headings are), so the pages run through the headings in order.
+    protected override IEnumerable<SavedQueryRow> Filtered(IReadOnlyList<SavedQueryRow> rows, IReadOnlyList<string> words) =>
+        rows.Where(r => _language.Length == 0 || r.Query.Dialect == _language).Where(r => SavedQueryService.Matches(r.Query, words))
+            .GroupBy(r => r.Query.Dialect).SelectMany(g => g);
 
-    // Worked out when the rows or the filters change, not on each redraw. Each language's queries together (the languages
-    // in the order they first come, as their headings are), so the pages run through the headings in order.
-    private void Filter()
-    {
-        var words = TableView.Words(_words);
-        _shown = (_rows ?? []).Where(r => _language.Length == 0 || r.Query.Dialect == _language).Where(r => SavedQueryService.Matches(r.Query, words))
-            .GroupBy(r => r.Query.Dialect).SelectMany(g => g).ToList();
-        Slice();
-    }
-
-    // This page's cards, or the last page's when this one has gone.
-    private void Slice()
-    {
-        var asked = _page;
-        (_onPage, _page) = TableView.PageOf(_shown, _page, PageSize);
-        if (_page != asked) TableView.SayPage(Nav, RendererInfo, _page);
-    }
+    protected override void ClearOwnFilters() => _language = "";
 
     // Whether a card's language runs on from the page before: its heading says "continued".
     private bool Continues(SavedQueryRow first)
@@ -170,31 +148,6 @@ else
         return _onPage.Count > 0 && first == _onPage[0] && at > 0 && _shown[at - 1].Query.Dialect == first.Query.Dialect;
     }
 
-    // "1–20 of 34 saved queries", or "12 saved queries" on one page.
-    private string CountText => TableView.Count((_page - 1) * PageSize + 1, _onPage.Count, _shown.Count, null, false, "saved query", "saved queries");
-
-    // A page of 20 cards at a time (they're long: the whole query or email), the page from the address (?page=2), so a
-    // reload, Back or a copied link keeps it. A filter starts again from the first page; an edit, or a colleague's change,
-    // keeps the page, or shows the last one when a delete or retire took this page away.
-    [SupplyParameterFromQuery(Name = "page")] public string? PageParam { get; set; }
-
-    internal const int PageSize = 20;
-    private int _page = 1;
-
-    /// <summary>The page shown, from 1.</summary>
-    internal int Page => _page;
-
-    // Another page in the address (a pager link, Back): show it.
-    protected override void OnParametersSet()
-    {
-        var page = TableView.PageFrom(PageParam);
-        if (page == _page) return;
-        _page = page;
-        Slice();
-    }
-
-    private string PageHref(int page) => Nav.GetUriWithQueryParameter("page", page == 1 ? null : page);
-
     // A pill per language, by its short name: presets of the language filter, so one at a time.
     internal static readonly IReadOnlyList<FilterPill> Pills = [.. QueryDialects.All.Select(d => new FilterPill(d.Key, PillName(d.Key), "language", [d.Key]))];
 
@@ -202,26 +155,6 @@ else
 
     internal IReadOnlyList<FilterDef> Defs =>
         [new("language", "Language", FilterKind.Single, v => _language = FilterValues.First(v) ?? "") { InMenu = false, Values = FilterValues.Of(_language) }];
-
-    // Clear: the words and the language; retired ones stay shown or hidden as chosen.
-    internal void ClearFilters()
-    {
-        (_words, _language) = (null, "");
-        Refilter();
-    }
-
-    // A filter changed: the first page, and the address says so.
-    internal void Refilter()
-    {
-        _page = 1;
-        Filter();
-        TableView.SayPage(Nav, RendererInfo, 1);
-    }
-
-
-    private string Provenance(SavedQuery q) => Ui.Provenance(Clock, q, q.CreatedByName, q.ModifiedByName);
-
-    private static string Used(int actions) => actions == 0 ? "Not used yet" : $"Used on {Ui.Plural(actions, "action")}";
 
     private RenderFragment EditForm => __builder =>
     {
@@ -258,38 +191,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         _canWrite = SavedSvc.CanWrite;
-        _page = TableView.PageFrom(PageParam);
-        _live = new LiveChanges(Feed, Origin, c => c.Topic == ChangeFeed.SavedQueries, InvokeAsync, OnChangedElsewhere);
-        await Load();
-    }
-
-    // A colleague saved, changed, retired or deleted one: re-read in place. An edit under way keeps what's typed; its save
-    // is refused as stale if that query was the one changed.
-    private LiveChanges? _live;
-
-    public void Dispose() => _live?.Dispose();
-
-    internal async Task OnChangedElsewhere(IReadOnlyList<Change> heard)
-    {
-        if (_busy) return;   // a step is under way, and it reads theirs when it's done
-        await Load();
-        Toasts.Show($"{LiveChanges.Who(heard)} updated the saved queries.");
-        StateHasChanged();
-    }
-
-    private async Task Load()
-    {
-        try { _rows = await SavedSvc.ListAsync(_showRetired); }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
-        Filter();
-    }
-
-    private async Task ToggleRetired(ChangeEventArgs e)
-    {
-        _showRetired = e.Value is true;
-        _page = 1;
-        TableView.SayPage(Nav, RendererInfo, 1);
-        await Load();
+        await base.OnInitializedAsync();
     }
 
     private void New() => _form = new SavedQueryForm { Dialect = _language.Length > 0 ? _language : QueryDialects.All[0].Key };
@@ -300,19 +202,6 @@ else
         StateHasChanged();
     }
 
-    private async Task Run(Func<Task> step)
-    {
-        if (_busy) return;
-        _busy = true;
-        try
-        {
-            await step();
-            await Load();
-        }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
-        finally { _busy = false; }
-    }
-
     internal Task Save() => Run(async () =>
     {
         await SavedSvc.SaveAsync(_form!);
@@ -320,11 +209,7 @@ else
         _form = null;
     });
 
-    internal Task Retire(SavedQuery q, bool retired) => Run(async () =>
-    {
-        await SavedSvc.SetRetiredAsync(q.Id, retired);
-        Toasts.Show(retired ? $"{q.Name} retired. It's no longer offered on actions." : $"{q.Name} restored.");
-    });
+    internal Task Retire(SavedQuery q, bool retired) => Retiring(q.Name, retired, () => SavedSvc.SetRetiredAsync(q.Id, retired));
 
     private async Task Delete(SavedQuery q)
     {

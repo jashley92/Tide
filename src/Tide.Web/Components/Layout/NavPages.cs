@@ -51,6 +51,8 @@ public static class NavPages
         new("workload", "Workload", "bi-people", "workload", Team, [Permission.ReadActions]),
         new("saved-queries", "Saved queries", "bi-bookmark", "hunts/saved", Team, [Permission.ReadActions], Keywords: "hunt query library siem kql xql"),
         new("outreach-templates", "Outreach templates", "bi-envelope-paper", "outreach/templates", Team, [Permission.ReadActions], Keywords: "email vendor partner isac ask template library"),
+        new("playbooks", "Playbooks", "bi-journal-check", "playbooks", Team, [Permission.ReadActions], Keywords: "checklist steps runbook library"),
+        new("board-rules", "Board rules", "bi-palette", "board-rules", Team, [Permission.ReadActions], Keywords: "card rules colour color label"),
         new("published", "Published briefs", "bi-megaphone", "published", CompanyWide, [Permission.ReadPublished], Keywords: "archive company"),
         // One entry; the Administration page's tabs reach every admin page (AdminLayout).
         new("admin", "Administration", "bi-sliders", "admin", Administration, [Permission.Administer], Keywords: "settings admin"),

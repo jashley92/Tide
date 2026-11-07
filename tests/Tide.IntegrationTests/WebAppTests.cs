@@ -92,7 +92,8 @@ public class WebAppTests(TideApp app) : IClassFixture<TideApp>
         "/admin/sources",
         "/rotation",
         "/admin/rotation",
-        "/admin/playbooks",
+        "/playbooks",
+        "/board-rules",
         "/admin/card-rules",
         "/actions?view=open&layout=board",
     ];

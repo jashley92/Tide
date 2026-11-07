@@ -43,6 +43,9 @@ public sealed class ChangeFeed
     /// <summary>The team's outreach email templates: one saved, edited, retired, restored or deleted.</summary>
     public const string OutreachTemplates = "outreach-templates";
 
+    /// <summary>The team's playbooks: one saved, edited, moved, retired, restored or deleted.</summary>
+    public const string Playbooks = "playbooks";
+
     public static string Article(Guid id) => $"article:{id}";
 
     /// <summary>An article's adversary and product tags, which the editor's We run and Threat actors pickers show. Apart from the article's

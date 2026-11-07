@@ -93,6 +93,10 @@ public static class Capabilities
         new(Actions, "Read the outreach templates", "Policies.ReadActions; OutreachTemplateService.RequireRead", [G(Permission.ReadActions)]),
         new(Actions, "Save, edit, retire and restore outreach templates", "OutreachTemplateService.RequireWrite", [G(Permission.WorkActions)]),
         new(Actions, "Delete outreach templates", "OutreachTemplateService.CanDelete", [G(Permission.Administer), Q("own ones", Permission.WorkActions)]),
+        new(Actions, "Read the playbooks", "Policies.ReadActions; PlaybookService.RequireRead", [G(Permission.ReadActions)]),
+        new(Actions, "Add, edit, reorder, retire and restore playbooks", "PlaybookService (TeamLibrary.RequireWrite)", [G(Permission.WorkActions)]),
+        new(Actions, "Delete playbooks no action was started from", "PlaybookService.CanDelete", [G(Permission.Administer), Q("own ones", Permission.WorkActions)]),
+        new(Actions, "Read the board rules (the card rules, read-only)", "Policies.ReadActions; CardRuleService.ListAsync", [G(Permission.ReadActions)]),
         new(Actions, "Choose my own notifications (reminders, digests, rotation emails)", "NotificationPreferenceService.Require (My notifications)",
             [G(Permission.ReadActions)]),
 
@@ -108,7 +112,7 @@ public static class Capabilities
         new(Reports, "Coverage of detection rules", "Policies.WriteArticles (Coverage)", [G(Permission.WriteArticles)]),
 
         new(Administration, "Organization, holidays, teams and SLAs, rotation", "Policies.Administer", [G(Permission.Administer)]),
-        new(Administration, "Playbooks, card rules, query templates", "Policies.Administer", [G(Permission.Administer)]),
+        new(Administration, "Card rules, query templates", "Policies.Administer", [G(Permission.Administer)]),
         new(Administration, "Sources, source health, scorecard tags, detection rules", "Policies.Administer", [G(Permission.Administer)]),
         new(Administration, "Opening metrics and metric imports", "Policies.Administer", [G(Permission.Administer)]),
         new(Administration, "Role mappings, edition ceilings, recipients, email templates", "Policies.Administer", [G(Permission.Administer)]),

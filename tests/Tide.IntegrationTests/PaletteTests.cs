@@ -53,7 +53,7 @@ public class PaletteEntryTests
     }
 
     [Theory]
-    [InlineData("", 22)]
+    [InlineData("", 24)]
     [InlineData("triage", 1)]
     [InlineData("TRIAGE", 1)]
     [InlineData("ioc", 1)]
@@ -62,7 +62,7 @@ public class PaletteEntryTests
     public void Match_NeedsEveryWord_InTheNameOrItsOtherWords(string query, int expected)
     {
         var all = PaletteEntries.For(new FakeUser(AppRole.Admin), Day);
-        all.Should().HaveCount(22, "every page, Saved queries and Outreach templates among them, and the shortcuts");
+        all.Should().HaveCount(24, "every page, the team's libraries and Board rules among them, and the shortcuts");
         PaletteEntries.Match(all, query).Should().HaveCount(expected);
     }
 
@@ -72,6 +72,14 @@ public class PaletteEntryTests
         var all = PaletteEntries.For(new FakeUser(AppRole.Admin), Day);
         PaletteEntries.Match(all, " brief ").Select(e => e.Label).Should()
             .Equal("Today", "Brief archive", "Brief rotation", "Published briefs", "Present today's brief");
+    }
+
+    [Fact]
+    public void Match_FindsThePlaybooksAndBoardRules_ByTheirOtherWords_ForAViewerToo()
+    {
+        var all = PaletteEntries.For(new FakeUser(AppRole.Viewer), Day);
+        PaletteEntries.Match(all, "checklist").Select(e => (e.Label, e.Href)).Should().Equal(("Playbooks", "playbooks"));
+        PaletteEntries.Match(all, "card colour").Select(e => (e.Label, e.Href)).Should().Equal(("Board rules", "board-rules"));
     }
 
     [Fact]

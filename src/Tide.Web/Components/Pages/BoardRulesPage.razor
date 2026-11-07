@@ -1,0 +1,79 @@
+@page "/board-rules"
+@attribute [Authorize(Policy = Policies.ReadActions)]
+@inject CardRuleService RuleSvc
+@inject TeamService TeamSvc
+@inject ICurrentUser CurrentUser
+@inject ToastService Toasts
+
+@* The administrators' card rules, read-only, for everyone who reads actions: why a card on the board is red, what its
+   label means, and which rules + Filter offers. Administrators change them on Administration › Card rules. *@
+
+<PageTitle>Board rules · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <h1>Board rules</h1>
+        <div class="tide-sub">How the Actions board and list mark actions: one that matches all of a rule's conditions gets its
+            label, and the first matching rule, in this order, gives it its colour. Rules offered as a filter are under
+            + Filter on the Actions page, with their counts. Administrators set them.</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary" href="actions"><span class="bi bi-kanban" aria-hidden="true"></span> Actions</a>
+        @if (CurrentUser.Has(Permission.Administer))
+        {
+            <a class="btn btn-outline-secondary" href="admin/card-rules"><span class="bi bi-pencil" aria-hidden="true"></span> Edit card rules</a>
+        }
+    </div>
+</div>
+
+@if (_rules is null)
+{
+    <LoadingBlock />
+}
+else if (_rules.Count == 0)
+{
+    <div class="tide-card">
+        <EmptyState Icon="bi-palette" Title="No board rules yet.">Every card shows in its plain colour. An administrator can add rules.</EmptyState>
+    </div>
+}
+else
+{
+    <section class="tide-card" aria-labelledby="br-list-h">
+        <h2 id="br-list-h">Rules, in order <span class="tide-count tide-muted fw-normal">(@_rules.Count)</span></h2>
+        <table class="tide-table">
+            <thead><tr><th scope="col">Label</th><th scope="col">Matches actions that are</th><th scope="col">Colour</th><th scope="col">Offered as a filter</th></tr></thead>
+            <tbody>
+                @foreach (var r in _rules)
+                {
+                    <tr @key="r.Id">
+                        <CardRuleCells Rule="r" Teams="_teams" />
+                        <td class="small">@r.Colour</td>
+                        <td class="small">@(r.ShowAsFilter ? "Yes" : "No")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+}
+
+@code {
+    private IReadOnlyList<ActionCardRule>? _rules;
+    private IReadOnlyList<Team> _teams = [];
+
+    /// <summary>The rules shown: those turned on, in order.</summary>
+    internal IReadOnlyList<ActionCardRule>? Rules => _rules;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _teams = await TeamSvc.ListAsync(includeRetired: true);
+            _rules = await RuleSvc.ListAsync();
+        }
+        catch (Exception ex)
+        {
+            _rules = [];
+            Toasts.Error(UserFacingError.For(ex));
+        }
+    }
+}

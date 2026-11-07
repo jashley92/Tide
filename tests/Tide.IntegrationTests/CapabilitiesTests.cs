@@ -67,6 +67,13 @@ public class CapabilitiesTests : IDisposable
             Name = "Probe " + Guid.NewGuid().ToString("N")[..6], Subject = "{{product.name}}", Body = "Are we affected?",
         }),
         ["Delete outreach templates"] = (db, _) => db.OutreachTemplates().DeleteAsync(Guid.NewGuid()),
+        ["Read the playbooks"] = (db, _) => db.Playbooks().ListAsync(),
+        ["Add, edit, reorder, retire and restore playbooks"] = (db, _) => db.Playbooks().SaveAsync(new PlaybookForm
+        {
+            Name = "Probe " + Guid.NewGuid().ToString("N")[..6], Steps = ["Pull the indicators"],
+        }),
+        ["Delete playbooks no action was started from"] = (db, _) => db.Playbooks().DeleteAsync(Guid.NewGuid()),
+        ["Read the board rules (the card rules, read-only)"] = (db, _) => db.CardRules().ListAsync(),
         ["Choose my own notifications (reminders, digests, rotation emails)"] = (db, _) => db.NotificationPrefs().GetMineAsync(),
         ["Enter the day's numbers"] = (db, s) => db.Metrics().SaveValueAsync(s.Metric, Day, 3, null),
         ["Read the metrics history"] = (db, _) => db.Metrics().HistoryAsync(Day, Day),
@@ -84,6 +91,8 @@ public class CapabilitiesTests : IDisposable
         ["Read actions: their pages, the board, Workload"] = [typeof(ActionPage), typeof(ActionsBoard), typeof(Workload)],
         ["Read the saved hunt queries"] = [typeof(SavedQueriesPage)],
         ["Read the outreach templates"] = [typeof(OutreachTemplatesPage)],
+        ["Read the playbooks"] = [typeof(PlaybooksPage)],
+        ["Read the board rules (the card rules, read-only)"] = [typeof(BoardRulesPage)],
         ["Triage the inbox"] = [typeof(Triage)],
         ["Review articles"] = [typeof(ReviewPage)],
         ["Read the team edition: briefs, the brief archive, Today"] = [typeof(BriefPage), typeof(BriefsArchive)],

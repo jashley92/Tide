@@ -138,7 +138,7 @@ public class StarterLibrariesTests
     {
         StarterPlaybooks.All.Select(s => s.Kind).Should().BeEquivalentTo(Enum.GetValues<ActionKind>().Where(k => k != ActionKind.Other));
         var p = StarterPlaybooks.ToEntity(StarterPlaybooks.All[1], 1);
-        (p.Kind, p.IsActive, p.SortOrder).Should().Be((ActionKind.ThreatHunt, true, 1));
+        (p.Kind, p.IsRetired, p.SortOrder, p.CreatedByName).Should().Be((ActionKind.ThreatHunt, false, 1, "TIDE"));
         p.Steps.Should().OnlyContain(x => x.PlaybookId == p.Id).And.BeInAscendingOrder(x => x.Order);
     }
 }

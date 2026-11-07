@@ -34,13 +34,17 @@ public sealed record SavedQueryRow(SavedQuery Query, int Actions);
 /// </summary>
 public sealed class SavedQueryService(IAppDbContextFactory dbs, ICurrentUser user)
 {
+    private readonly TeamLibrary<SavedQuery> _library = new(dbs, user, db => db.SavedQueries, new(
+        "That saved query no longer exists.",
+        "Someone else changed this saved query since you opened it. Reload to see their changes.",
+        "Only people who work actions can change the saved queries.",
+        "Only the person who saved it, or an administrator, can delete a saved query. Retire it instead."));
+
     /// <summary>Whether the current user may save, edit, retire and restore saved queries.</summary>
-    public bool CanWrite => user.Has(Permission.WorkActions);
+    public bool CanWrite => _library.CanWrite;
 
     /// <summary>Whether the current user may delete <paramref name="q"/>: an administrator, or whoever saved it.</summary>
-    public bool CanDelete(SavedQuery q) => CanDelete(q.CreatedBy);
-
-    private bool CanDelete(string? savedBy) => user.Has(Permission.Administer) || (CanWrite && savedBy is not null && savedBy == user.UserId);
+    public bool CanDelete(SavedQuery q) => _library.CanDelete(q.CreatedBy);
 
     /// <summary>
     /// Every saved query, retired ones too when <paramref name="includeRetired"/>, by language (as the languages are
@@ -93,24 +97,18 @@ public sealed class SavedQueryService(IAppDbContextFactory dbs, ICurrentUser use
     /// <summary>Saves a new query, or changes one; its id. A change begun on a copy someone has since changed is refused.</summary>
     public async Task<Guid> SaveAsync(SavedQueryForm form, CancellationToken ct = default)
     {
-        RequireWrite();
+        _library.RequireWrite();
         var (d, name, description, text) = Checked(form);
 
         await using var db = await dbs.CreateAsync(ct);
         SavedQuery q;
         if (form.Id is { } id)
         {
-            q = await db.SavedQueries.FirstOrDefaultAsync(x => x.Id == id, ct) ?? throw new KeyNotFoundException("That saved query no longer exists.");
-            if (q.EditVersion != form.EditVersion) throw new StaleEditException(Stale);
+            q = await _library.ForEditAsync(db.SavedQueries, id, form.EditVersion, ct);
             if (q.Name == name && q.Dialect == d.Key && q.Description == description && q.Text == text) return q.Id;
-            q.ModifiedByName = user.DisplayName;
-            q.EditVersion = Guid.NewGuid();
+            _library.Changed(q);
         }
-        else
-        {
-            q = new SavedQuery { CreatedByName = user.DisplayName };
-            db.SavedQueries.Add(q);
-        }
+        else q = _library.Added(db, new SavedQuery());
         // One name per language, ignoring case on both providers (LIKE, as the playbooks' names are).
         var exact = Search.SearchText.Literal(name);
         if (await db.SavedQueries.AnyAsync(x => x.Id != q.Id && x.Dialect == d.Key && EF.Functions.Like(x.Name, exact, Search.SearchText.Escape), ct))
@@ -119,7 +117,7 @@ public sealed class SavedQueryService(IAppDbContextFactory dbs, ICurrentUser use
         q.Dialect = d.Key;
         q.Description = description;
         q.Text = text;
-        await SaveEditAsync(db, ct);
+        await _library.SaveEditAsync(db, ct);
         return q.Id;
     }
 
@@ -147,7 +145,7 @@ public sealed class SavedQueryService(IAppDbContextFactory dbs, ICurrentUser use
     /// </summary>
     public async Task<string> DraftTextAsync(HuntQuery hunt, CancellationToken ct = default)
     {
-        RequireWrite();
+        _library.RequireWrite();
         if (hunt.SavedQueryId is { } id)
         {
             await using var db = await dbs.CreateAsync(ct);
@@ -162,7 +160,7 @@ public sealed class SavedQueryService(IAppDbContextFactory dbs, ICurrentUser use
     /// </summary>
     public async Task<Guid> SaveFromHuntAsync(Guid huntId, string name, string? description, string text, CancellationToken ct = default)
     {
-        RequireWrite();
+        _library.RequireWrite();
         string dialect;
         await using (var db = await dbs.CreateAsync(ct))
             dialect = await db.HuntQueries.AsNoTracking().Where(h => h.Id == huntId).Select(h => h.Dialect).FirstOrDefaultAsync(ct)
@@ -171,41 +169,10 @@ public sealed class SavedQueryService(IAppDbContextFactory dbs, ICurrentUser use
     }
 
     /// <summary>Retires a query (it's no longer offered on actions, and stays on the list to read) or restores it.</summary>
-    public async Task SetRetiredAsync(Guid id, bool retired, CancellationToken ct = default)
-    {
-        RequireWrite();
-        await using var db = await dbs.CreateAsync(ct);
-        var q = await db.SavedQueries.FirstOrDefaultAsync(x => x.Id == id, ct) ?? throw new KeyNotFoundException("That saved query no longer exists.");
-        if (q.IsRetired == retired) return;
-        q.IsRetired = retired;
-        q.ModifiedByName = user.DisplayName;
-        await db.SaveChangesAsync(ct);
-    }
+    public Task SetRetiredAsync(Guid id, bool retired, CancellationToken ct = default) => _library.SetRetiredAsync(id, retired, ct);
 
     /// <summary>Deletes a query: whoever saved it, or an administrator. Hunts added from it keep its name.</summary>
-    public async Task DeleteAsync(Guid id, CancellationToken ct = default)
-    {
-        await using var db = await dbs.CreateAsync(ct);
-        var q = await db.SavedQueries.FirstOrDefaultAsync(x => x.Id == id, ct);
-        // One rule (CanDelete), applied to one that's gone too, as if it were their own: whoever could delete their own
-        // is let by (it's gone, as asked), and anyone else is refused as for any other.
-        if (!CanDelete(q is null ? user.UserId : q.CreatedBy)) throw new ForbiddenException("Only the person who saved it, or an administrator, can delete a saved query. Retire it instead.");
-        if (q is null) return;
-        db.SavedQueries.Remove(q);
-        try { await db.SaveChangesAsync(ct); }
-        // Someone deleted it first: it's gone, as asked.
-        catch (DbUpdateConcurrencyException) { }
-    }
-
-    private const string Stale = "Someone else changed this saved query since you opened it. Reload to see their changes.";
-    private const string Refusal = "Only people who work actions can change the saved queries.";
-
-    // A save that lost the race to another edit (the version moved under it) is refused as stale, not as a database error.
-    private static async Task SaveEditAsync(IAppDbContext db, CancellationToken ct)
-    {
-        try { await db.SaveChangesAsync(ct); }
-        catch (DbUpdateConcurrencyException) { throw new StaleEditException(Stale); }
-    }
+    public Task DeleteAsync(Guid id, CancellationToken ct = default) => _library.DeleteAsync(id, null, ct);
 
     private static int DialectOrder(string key)
     {
@@ -217,10 +184,5 @@ public sealed class SavedQueryService(IAppDbContextFactory dbs, ICurrentUser use
     private void RequireRead()
     {
         if (!user.Has(Permission.ReadActions)) throw new ForbiddenException("You don't have access to the saved queries.");
-    }
-
-    private void RequireWrite()
-    {
-        if (!CanWrite) throw new ForbiddenException(Refusal);
     }
 }

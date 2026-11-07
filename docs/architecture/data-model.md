@@ -55,7 +55,7 @@ snapshot is right.
 | **Org dates are `date`** | Business days are `DateOnly` (`date`) in the organization's time zone, never UTC: `Briefs.BriefDate`, `MetricValues.BriefDate`, `Actions.DueDate`/`RaisedOn`/`ClosedDate`, `Holidays.Date`, `RotationWeeks.WeekStart`, `RotationOverrides.Date`, `RotationChanges.GiveFrom`/`GiveTo`/`TakeFrom`/`TakeTo`, `StackProducts.CheckedOn`, `Webhooks.OverdueSentFor`, and the KEV dates on `CveRecords`. `OrgClock` (`src/Tide.Application/Org/OrgClock.cs`) works out "today" from `Org:TimeZone`, so the brief for "today" doesn't change at UTC midnight. |
 | **Stamps** | `AuditInterceptor` stamps **S** tables on every save. An insert sets `CreatedAtUtc` and `CreatedBy`; an update sets `ModifiedAtUtc` and `ModifiedBy`. Services don't set these columns. Tables that aren't **S** keep their own "who and when" columns, set by the service (`UpdatedAtUtc`/`UpdatedBy`, `AddedAtUtc`/`AddedByName`, `SentAtUtc`…). Some **S** tables also keep the person's display name (`SavedQueries.CreatedByName`), because `CreatedBy` holds only the id. |
 | **Concurrency** | Six tables carry `EditVersion uniqueidentifier`, mapped with `IsConcurrencyToken()`: `Articles`, `Briefs`, `Actions`, `ActionComments`, `SavedQueries` and `OutreachTemplates`. The service gives it a new Guid on each save, and EF adds `WHERE EditVersion = @original` to the update. A save from an older copy fails with `DbUpdateConcurrencyException`, and the service rethrows it as `StaleEditException` (`src/Tide.Application/Articles/ArticleService.cs`), which the page shows. Nothing uses `rowversion`. |
-| **Retire, don't delete** | No table has an `IsDeleted` column, and there are no global query filters. Admin-managed lists use one rule: **delete a record nothing uses yet, otherwise retire it**. Retired records are marked with `IsRetired` (`Sources`, `Teams`, `ScorecardCategories`, `ScorecardTags`, `MetricGroups`, `MetricDefinitions`, `Adversaries`, `StackProducts`, `SavedQueries`, `OutreachTemplates`) or `IsActive = false` (`Playbooks`, `ActionCardRules`, `RotationMembers`). Examples: `TeamService.SetRetiredAsync`, `PlaybookService.RemoveAsync` and `IntakeService` for sources. Retired records are hidden from pickers but stay readable in history. |
+| **Retire, don't delete** | No table has an `IsDeleted` column, and there are no global query filters. Admin-managed lists use one rule: **delete a record nothing uses yet, otherwise retire it**. Retired records are marked with `IsRetired` (`Sources`, `Teams`, `ScorecardCategories`, `ScorecardTags`, `MetricGroups`, `MetricDefinitions`, `Adversaries`, `StackProducts`, `SavedQueries`, `OutreachTemplates`, `Playbooks`) or `IsActive = false` (`ActionCardRules`, `RotationMembers`). Examples: `TeamService.SetRetiredAsync`, `PlaybookService.DeleteAsync` (refused for one an action was started from) and `IntakeService` for sources. Retired records are hidden from pickers but stay readable in history. |
 | **Kept for the record** | An article that was briefed or had an action raised from it can't be deleted (`ArticleService.DeleteAsync`). Only a draft on no brief can. A story with articles is closed, not deleted (`StoryService.DeleteAsync`). Files on actions and comments are "removed": the record is hidden but its bytes, hash and row stay (`IRemovableFile` in `src/Tide.Domain/Entities/Actions.cs`). Sends, corrections, audit rows and action events are never deleted. |
 | **Pruned** | Two kinds of rows are deleted on a schedule by `IntakeHostedService`'s daily prune. `FeedItems` older than `Intake:RetentionDays` (minimum 7) are deleted if they're still New, Dismissed or Duplicate (`IntakeService.PruneAsync`). `FeedItemTexts` older than `Intake:ReadingDays` (1 to 30) are deleted by `ReadingService.PruneAsync`. Their `TriageSplits` rows and kept text go with them by cascade. |
 | **String lengths** | `HasMaxLength` sets every bounded string. On SQL Server a length over 4,000 becomes `nvarchar(max)`, so for those columns the bound exists only in code: `ActionItem.Description` 8,000, `MeetingNote.Text` 8,000, `HuntQuery.Text` 20,000, `SavedQuery.MaxText` 19,500, `OutreachMessage.MaxBody` 40,000, `AiDraft.MaxSuggestions` 60,000, `ArticleText.MaxChars` 40,000. Columns with no configured length are also `nvarchar(max)`: `Articles.WhyItMatters`, `Articles.RecommendedActions`, `Briefs.MeetingNotes`, the `EmailHtml`/`WebHtml` columns and `AuditLog.ChangesJson`. Most entities declare their bounds as `const int Max…` (for example `StackProduct.MaxNotes`), and both the services and `OnModelCreating` use those constants. |
@@ -406,7 +406,8 @@ erDiagram
     Playbooks {
         uuid Id PK
         int Kind
-        bool IsActive
+        bool IsRetired
+        uuid EditVersion "concurrency"
     }
     ActionCardRules {
         uuid Id PK
@@ -1095,12 +1096,14 @@ sends it. While a reply is outstanding, the action is waiting. Written by `Outre
 | `ReplyRecordedByName`, `ReplyNotes` | nvarchar(256), nvarchar(4000) | yes | |
 | `ReplyFileId` | uniqueidentifier | yes | The `Files` id of an `ActionFile` on the same action. **No FK**: a second cascade path to `Actions` would be refused by SQL Server, and `ActionFiles` rows aren't deleted while the action exists. |
 
-### `Playbooks` (S, A) and `PlaybookSteps` (A)
+### `Playbooks` (S, A, V) and `PlaybookSteps` (A)
 
-An administrator's named, ordered steps for a kind of action (`Kind` null means any kind). Starting a checklist copies
-the steps, so a later edit to the playbook doesn't change existing checklists. A playbook no action was started from
-is deleted; otherwise it's retired with `IsActive = false`. Columns: `Name` nvarchar(100), `Description`
-nvarchar(1000), `Kind`, `IsActive`, `SortOrder` and the stamps. `PlaybookSteps` has `PlaybookId` (cascade), `Order`
+The team's named, ordered steps for a kind of action (`Kind` null means any kind). Starting a checklist copies the
+steps, so a later edit to the playbook doesn't change existing checklists. Only a playbook no action was started from
+can be deleted; otherwise it's retired with `IsRetired`. Columns: `Name` nvarchar(100), `Description` nvarchar(1000),
+`Kind`, `IsRetired`, `SortOrder`, `CreatedByName`/`ModifiedByName` nvarchar(256), `EditVersion` and the stamps.
+`IsRetired` replaced `IsActive` in `PlaybooksTeamLibrary`, which turned the values over and filled the names from the
+audit trail (the starters, made by the system, as "TIDE"). `PlaybookSteps` has `PlaybookId` (cascade), `Order`
 (indexed with `PlaybookId`) and `Text` nvarchar(300). At most 40 steps. Written by `PlaybookService`
 (`Actions/Playbooks.cs`).
 

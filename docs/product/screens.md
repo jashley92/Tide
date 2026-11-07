@@ -23,7 +23,8 @@ Every route, its component and the permission it needs are in the [route table](
   [Indicator exports](#indicator-exports) · [Threat trends and the board scorecard](#threat-trends-and-the-board-scorecard) ·
   [Reports](#reports) · [Team commitments](#team-commitments) · [Opening metrics](#opening-metrics)
 - Team: [Brief rotation](#brief-rotation) · [Workload](#workload) · [Saved queries](#saved-queries) ·
-  [Outreach templates](#outreach-templates) · [External teams](#external-teams) · [My notifications](#my-notifications)
+  [Outreach templates](#outreach-templates) · [Playbooks](#playbooks) · [Board rules](#board-rules) ·
+  [External teams](#external-teams) · [My notifications](#my-notifications)
 - [The API, for the SOC's other tools](#the-api-for-the-socs-other-tools)
 - [Administration](#administration)
 - [When something's wrong](#when-somethings-wrong)
@@ -723,6 +724,26 @@ A new install, or an upgrade whose library is still empty, starts with 5 starter
 once: *Vendor: are we affected?*, *Internal: action required*, *ISAC / partner: share and ask*, *Follow-up / chase*
 and *Internal inquiry: are we impacted?*.
 
+## Playbooks
+
+**Route:** `/playbooks` (under Team in the sidebar) · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md#playbooks)
+
+The team's checklists, kept beside Saved queries and in the same way, 20 to a page: a name, the kind of action it's
+for (or any kind), a description and its steps. Choose one when raising an action, or apply one from an action's
+checklist; the steps are copied. Whoever works actions adds, edits, reorders, retires and restores them; whoever made
+one, or an administrator, deletes it, unless an action was started from it (then only Retire). The 7 starters are
+made by "TIDE": an administrator deletes them. Each card says how many actions were started from it, and who saved
+and changed it. The filter bar has the search box, a pill per kind of action and **Show retired**. The old
+`/admin/playbooks` address comes here.
+
+## Board rules
+
+**Route:** `/board-rules` (under Team in the sidebar, and a button on the Actions page) · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md#board-rules)
+
+The card rules, read-only, for everyone who reads actions: each rule's label in its colour, what it matches, the
+colour and whether + Filter on the Actions page offers it. An administrator gets a link to edit them on
+Administration › Card rules.
+
 ## External teams
 
 **Route:** `/teams/external` (linked from the Actions page and Teams & SLA) · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md#external-teams)
@@ -771,7 +792,7 @@ One Administration entry in the sidebar opens every setting page, grouped into t
 checklist read from the live configuration. It covers:
 
 - the teams, their members and the SLA targets;
-- playbooks and card rules;
+- card rules;
 - the sources and CVE enrichment;
 - the scorecard taxonomy (tags are retired, never deleted, once used);
 - the query templates;
@@ -793,7 +814,6 @@ Every page, by tab (from `AdminLayout.Groups`):
 | Organization | Organization settings | `/admin/organization` | The team's name, its time zone, when the brief meets, and its holidays. |
 | Organization | Teams & SLA | `/admin/teams` | The teams that own actions, their members and escalation contacts, SLA targets, when reminder emails go, and the escalation ladder: the steps that run by themselves on an action as it slips. |
 | Organization | Brief rotation | `/admin/rotation` | Who presents the brief, the weekly rota, and who's told about swaps and cover. |
-| Actions | Playbooks | `/admin/playbooks` | Checklists for each kind of action, offered when one is created or worked. Starts with one for each kind but Other. |
 | Actions | Card rules | `/admin/card-rules` | Which actions are coloured and labelled on the board and list, and which rules the Actions filter bar offers. |
 | Intelligence | Sources | `/admin/sources` | The feeds and catalogs triage takes items from, and CVE enrichment. |
 | Intelligence | Source health | `/admin/source-health` | How much each source sends and how much of it the team uses, with feeds worth pausing. |
