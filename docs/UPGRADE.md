@@ -171,6 +171,61 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
+### v1.7.0
+
+Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds two migrations, `HandoffsTrackingAndExternalTeams` and
+`EscalationLadder`; none of the earlier ones change. On a DbaApplies install, the DBA applies them first, as for any
+release that carries one.
+
+**Changes to check before upgrading**
+- **A new action status, Tracking.** The API can now return `Tracking` as an action's status: handed to others and
+  being followed. It counts as open. A script or SOAR playbook that lists the statuses it expects needs to allow it.
+- **Starter content on upgrade.** If your Saved queries, Outreach templates or Playbooks library is still empty, it
+  gets a starter set once: 13 hunt queries (KQL, XQL, Falcon), 5 email templates and 7 playbooks, saved by "TIDE".
+  A library that already has anything in it is left alone, and starters you delete or retire never come back.
+- **The menu.** Saved queries and Outreach templates moved from Daily to Team.
+
+**For administrators**
+- **Escalation ladder** (Administration › Organization › Teams & SLA › Escalation). Steps run by themselves on an open
+  action as it slips, a set number of business days before or after its due date: remind the team, copy the team's
+  escalation contact, raise the priority, or flag it escalated (a badge, an Escalated card on Today, and the top of the
+  meeting's overdue list). Off until you turn it on; "Use the defaults" fills in a starting ladder. Each team can have
+  an escalation contact.
+- **Active-work limit per team** (Teams & SLA), optional: show the count, warn and ask for a reason, or refuse.
+- **External teams** (Actions › External teams): teams tracked in TIDE that work elsewhere and have no members, with a
+  contact, how to engage them, and their own reminder schedule. Anyone who works actions can add and edit them.
+  Their reminder emails make sense without TIDE access (no links, nothing from an article unless the analyst wrote it
+  in). They're off until you turn on external reminders on Teams & SLA.
+- **Triage grouping settings** (Administration › Sources): how far apart two reports of one event can be (12 to 96
+  hours, 48 by default), and extra words for the grouping to ignore, beside the built-in ones.
+- **New settings** (all off or unchanged until set): `Notifications:ExternalReminders:Enabled`,
+  `Notifications:Escalation:Enabled`, `:Scope` and `:Steps`. They're in Teams & SLA and in the config bundle.
+- **Documentation.** The docs are rewritten as a full set (architecture, data model, API reference, business rules,
+  workflows, operations), in `docs/`.
+
+**For everyone**
+- **Hand off, split and follow work across teams.**
+  - **Hand off** any action to another team with a reason; the history shows where it came from. Changing the team in
+    the editor counts as a hand-off too.
+  - **Split to teams**: from one action, create a part for each responsible team, each with its own due date and
+    ticket link. Parts fill in from the parent.
+  - **Tracking** is a new status for work handed to others and being followed, with its own board column.
+  - **Lineage** on a parent or a part: the article, the parent and every part, coloured by state, with a
+    **remediation timeline** of each part against its due date. "Part of A-12" filters the board to its parts.
+  - **Record an update**: paste a team's emailed reply and set the status, a new date and a note in one step.
+- **Team commitments** (Reports › Team commitments): for each team, over 30 to 365 days, how many actions were due,
+  the share done on time, the average days late, and what's open and overdue now. It exports to CSV.
+- **One filter bar on every list.** Search, one-click pills for the common filters (Overdue, P1–P2, Tracking; in
+  Triage, Names a CVE, KEV, We run it), chips for the rest, and a "+ Filter" menu. Links and bookmarks still work.
+- **Pages.** Triage and the actions list come in pages of 50, with the real count (Triage no longer stops quietly at
+  200); Saved queries and Outreach templates in pages of 20. Board columns show 20 cards with "Show more", and Done
+  shows the last 7 days, with "Show older" for 30.
+- **More filters**: actions by search, priority, due date and status; triage items by CVE, KEV and "Names what we run".
+- **Triage groups** reports whichever way each outlet capitalises its headline, and "Not the same: split" now holds
+  for the whole team, with Undo.
+- **Outreach templates** can name a date in business days: `{{today:+2}}` (or `-2`).
+- **Typing quickly** in the ATT&CK picker, a table's filter box or a type-ahead field no longer loses letters.
+
 ### v1.6.0
 
 Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds two migrations, `OutreachEmailsAndStackContacts` and
