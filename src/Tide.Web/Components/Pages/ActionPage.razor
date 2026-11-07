@@ -224,7 +224,7 @@ else
                                 </div>
                             }
                             <MarkdownToolbar For="comment-edit" Label="Edit the comment" Class="mt-1" />
-                            <textarea id="comment-edit" class="form-control form-control-sm" rows="3" maxlength="8000" aria-label="Edit the comment" @ref="_commentBox" @bind="_commentEdit" @bind:event="oninput"></textarea>
+                            <textarea id="comment-edit" class="form-control form-control-sm tide-autogrow tide-grow-3" rows="3" maxlength="8000" aria-label="Edit the comment" @ref="_commentBox" @bind="_commentEdit" @bind:event="oninput"></textarea>
                             <div class="d-flex gap-2 mt-1">
                                 <button class="btn btn-primary btn-sm" disabled="@(_busy || (string.IsNullOrWhiteSpace(_commentEdit) && liveFiles.Count == 0))" @onclick="() => SaveComment(c)">Save</button>
                                 <button class="btn btn-outline-secondary btn-sm" @onclick="() => CancelComment(c)">Cancel</button>
@@ -269,7 +269,7 @@ else
                 {
                     <div id="comment-zone" class="tide-comment-compose mt-2">
                         <MarkdownToolbar For="comment-new" Label="New comment" />
-                        <textarea id="comment-new" class="form-control form-control-sm" rows="2" maxlength="8000" aria-label="New comment" placeholder="Add a comment (Markdown)" @bind="_comment" @bind:event="oninput"></textarea>
+                        <textarea id="comment-new" class="form-control form-control-sm tide-autogrow tide-grow-2" rows="2" maxlength="8000" aria-label="New comment" placeholder="Add a comment (Markdown)" @bind="_comment" @bind:event="oninput"></textarea>
                         @if (_attachments.Count > 0)
                         {
                             <ul class="tide-comment-files mt-1">
@@ -385,7 +385,7 @@ else
             }
         </select>
         <label class="tide-field-label mt-2" for="handoff-why">Why</label>
-        <textarea id="handoff-why" class="form-control form-control-sm" rows="2" maxlength="@ActionItem.MaxHandoffReason" @bind="_handWhy" @bind:event="oninput"
+        <textarea id="handoff-why" class="form-control form-control-sm tide-autogrow tide-grow-2" rows="2" maxlength="@ActionItem.MaxHandoffReason" @bind="_handWhy" @bind:event="oninput"
                   placeholder="The fix is theirs: a firewall change."></textarea>
         <div class="form-text">Kept in its history and shown on it. Its assignee stays only if they're on that team.</div>
         @if (_handError is not null) { <div class="text-danger small mt-2" role="alert">@_handError</div> }

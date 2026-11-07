@@ -252,7 +252,7 @@ else
                     @if (_showPasteBullets)
                     {
                         <div class="mt-2">
-                            <textarea class="form-control form-control-sm" rows="5" aria-label="Lines to turn into bullets" placeholder="One bullet per line. Leading -, * or • is dropped."
+                            <textarea class="form-control form-control-sm tide-autogrow tide-grow-3" rows="5" aria-label="Lines to turn into bullets" placeholder="One bullet per line. Leading -, * or • is dropped."
                                       @bind="_pasteBullets" @bind:event="oninput"></textarea>
                             <button type="button" class="btn btn-primary btn-sm mt-2" @onclick="AddPastedBullets">Add as bullets</button>
                         </div>

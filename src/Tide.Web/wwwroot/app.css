@@ -514,7 +514,8 @@ li > .tide-tlp, .tide-md + .tide-tlp { margin-left: .4rem; }
 .tide-field-label { font-size: .8rem; font-weight: var(--tide-weight-semibold); color: var(--tide-text-muted); margin-bottom: .3rem; display: block; }
 .tide-bullet-row { display: grid; grid-template-columns: 1.4rem minmax(0, 1fr) 7.5rem auto; gap: .4rem; align-items: start; margin-bottom: .4rem; }
 /* A text box that grows with its text (an article's bullets, BLUF, why it matters and recommended actions): the browser sizes it where it can; autogrow.js elsewhere. */
-.tide-autogrow { field-sizing: content; min-height: calc(1.5em + .5rem + 2px); resize: none; overflow-y: hidden; }
+/* Grows with its text, to a cap; past it, it scrolls, so a long paste doesn't push the page's buttons out of sight. */
+.tide-autogrow { field-sizing: content; min-height: calc(1.5em + .5rem + 2px); max-height: min(60vh, 32rem); resize: none; overflow-y: auto; }
 .tide-autogrow.tide-grow-2 { min-height: calc(3em + .75rem + 2px); }   /* never shorter than its two or three starting rows */
 .tide-autogrow.tide-grow-3 { min-height: calc(4.5em + .75rem + 2px); }
 .tide-bullet-row .tide-dot { padding-top: .45rem; color: var(--tide-text-muted); text-align: center; }
@@ -840,6 +841,7 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
 .tide-notes-new { display: inline-block; min-width: 1.35em; margin-left: .3em; padding: 0 .35em; border-radius: var(--tide-radius-pill); background: var(--tide-slide-warn); color: var(--tide-slide-bg); font-size: .78em; font-weight: var(--tide-weight-bold); line-height: 1.35em; text-align: center; animation: tide-presence-pulse 2s ease-in-out 3; }
 @media (prefers-reduced-motion: reduce) { .tide-notes-new { animation: none; } }
 .tide-present-notes .tide-note-list textarea { min-height: 4em; }
+.tide-present-notes textarea.tide-autogrow { max-height: 30vh; }   /* the panel floats over the slide */
 .tide-live-banner { display: flex; align-items: center; gap: .6rem; margin-bottom: 1rem; padding: .5rem .9rem; border: 1px solid var(--tide-accent); border-radius: var(--tide-radius-lg); background: var(--tide-accent-soft); color: var(--tide-text); }
 .tide-live-banner .tide-presence-dot { margin-left: 0; }
 .tide-live-dot { width: .6rem; height: .6rem; border-radius: var(--tide-radius-pill); background: var(--tide-accent); animation: tide-presence-pulse 2s ease-in-out infinite; }

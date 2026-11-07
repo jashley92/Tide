@@ -48,7 +48,7 @@
 
         <div class="tide-card">
             <h2>Managers to notify</h2>
-            <textarea class="form-control form-control-sm tide-data" rows="2" aria-label="Manager email addresses" placeholder="cti-manager@example.org" @bind="_managers"></textarea>
+            <textarea class="form-control form-control-sm tide-data tide-autogrow tide-grow-2" rows="2" aria-label="Manager email addresses" placeholder="cti-manager@example.org" @bind="_managers"></textarea>
             <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveManagers">Save</button>
         </div>
     </div>

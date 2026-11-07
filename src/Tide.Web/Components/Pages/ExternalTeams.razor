@@ -114,7 +114,7 @@
             <div class="col-12"><label class="tide-field-label" for="@p-desc">What they do</label><input id="@p-desc" class="form-control form-control-sm" maxlength="500" @bind="f.Description" /></div>
             <div class="col-12">
                 <label class="tide-field-label" for="@p-engage">How to engage them</label>
-                <textarea id="@p-engage" class="form-control form-control-sm" rows="2" maxlength="@Team.MaxEngage" placeholder="Raise a ticket in their queue; urgent: call their on-call line." @bind="f.Engage"></textarea>
+                <textarea id="@p-engage" class="form-control form-control-sm tide-autogrow tide-grow-2" rows="2" maxlength="@Team.MaxEngage" placeholder="Raise a ticket in their queue; urgent: call their on-call line." @bind="f.Engage"></textarea>
             </div>
             <div class="col-12"><EscalationContactFields Id="@($"{p}-esc")" External="true" @bind-Name="f.EscalationName" @bind-Email="f.EscalationEmail" /></div>
             <div class="col-12">

@@ -30,7 +30,7 @@
         else
         {
             <label class="tide-field-label" for="draft-text">Article text</label>
-            <textarea id="draft-text" class="form-control form-control-sm" rows="6" maxlength="@ArticleText.MaxChars" aria-describedby="draft-text-help"
+            <textarea id="draft-text" class="form-control form-control-sm tide-autogrow tide-grow-3" rows="6" maxlength="@ArticleText.MaxChars" aria-describedby="draft-text-help"
                       placeholder="Paste the article, or a report's text. Or fetch it from the link." @bind="_sourceText" @bind:event="oninput" @bind:after="TextEdited"></textarea>
             <div class="form-text" id="draft-text-help">
                 @if (!string.IsNullOrWhiteSpace(_sourceText))
@@ -104,7 +104,7 @@
             @if (_pasting)
             {
                 <label class="tide-field-label mt-2" for="draft-answer">The tool's answer (JSON)</label>
-                <textarea id="draft-answer" class="form-control form-control-sm tide-data" rows="4" placeholder='{ "bottomLine": "…", "bullets": [ … ] }'
+                <textarea id="draft-answer" class="form-control form-control-sm tide-data tide-autogrow tide-grow-3" rows="4" placeholder='{ "bottomLine": "…", "bullets": [ … ] }'
                           @bind="_answer" @bind:event="oninput"></textarea>
                 <button type="button" class="btn btn-primary btn-sm mt-2" disabled="@(_busy || string.IsNullOrWhiteSpace(_answer))" @onclick="CheckPasted">Check and show suggestions</button>
             }

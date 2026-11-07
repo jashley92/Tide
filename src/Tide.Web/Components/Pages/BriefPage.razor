@@ -933,7 +933,7 @@ else
                     <label class="tide-field-label" for="intro">Title slide line (optional)</label>
                     <TlpSelect Value="_introTlp" ValueChanged="v => _introTlp = v" Label="The title slide line's TLP" Class="w-auto mb-1" />
                 </div>
-                <textarea id="intro" class="form-control form-control-sm" rows="2" maxlength="2000" @bind="_intro"
+                <textarea id="intro" class="form-control form-control-sm tide-autogrow tide-grow-2" rows="2" maxlength="2000" @bind="_intro"
                           placeholder="Shown on the title slide: a quiet day, a theme, a reminder."></textarea>
                 <div class="small tide-muted mt-1">An edition whose ceiling is below its TLP leaves it out.</div>
                 <button class="btn btn-outline-secondary btn-sm mt-2" disabled="@_busy" @onclick="SaveDetails">Save</button>

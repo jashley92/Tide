@@ -105,7 +105,7 @@
                                 <label class="tide-field-label mb-1" for="ow-body">Body</label>
                                 <button type="button" class="btn btn-link btn-sm ms-auto p-0" data-copy-target="ow-body" data-copy-status="ow-status" data-copy-done="Body copied."><span class="bi bi-clipboard" aria-hidden="true"></span> Copy body</button>
                             </div>
-                            <textarea id="ow-body" class="form-control form-control-sm tide-email-body" maxlength="@OutreachMessage.MaxBody" @bind="_body"></textarea>
+                            <textarea id="ow-body" class="form-control form-control-sm tide-email-body tide-autogrow" maxlength="@OutreachMessage.MaxBody" @bind="_body"></textarea>
                         </div>
                     </div>
                     <div class="d-flex gap-2 align-items-center flex-wrap mt-2">
@@ -166,7 +166,7 @@
 <ConfirmDialog @ref="_replyDialog" Form="true" ConfirmDisabled="@(_replyClose && _replyOutcome == ActionOutcome.None)" Confirming="RecordReply">
     <div>
         <label class="tide-field-label" for="or-notes">What they said</label>
-        <textarea id="or-notes" class="form-control form-control-sm" rows="3" maxlength="@OutreachMessage.MaxNotes" placeholder="Not affected: we run 17.11.3, fixed in 17.10." @bind="_replyNotes"></textarea>
+        <textarea id="or-notes" class="form-control form-control-sm tide-autogrow tide-grow-3" rows="3" maxlength="@OutreachMessage.MaxNotes" placeholder="Not affected: we run 17.11.3, fixed in 17.10." @bind="_replyNotes"></textarea>
     </div>
     <div class="mt-2">
         <label class="tide-field-label" for="or-file">The reply as a file (optional)</label>

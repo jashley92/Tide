@@ -56,6 +56,7 @@ state beyond what's on screen.
   each keystroke arrives. Without it, Blazor's copy is the last value it drew, so a later render sends the server's
   text, older than what's typed by then under any latency, over the newest keystrokes. Bound, a render carrying the
   typed text sends nothing, and a clear or a value set from outside still reaches the box.
+- **Every multi-line text box (`<textarea>`) carries `tide-autogrow`**, so it grows with its text, up to `min(60vh, 32rem)` (30vh in present mode's notes panel), then scrolls. `tide-grow-2` / `tide-grow-3` keep its starting height at two or three rows; boxes with their own starting height (`tide-query`, `tide-email-body`, `tide-etpl-body`) keep it. The browser sizes them where it supports CSS `field-sizing: content`; `autogrow.js` does elsewhere.
 - **Every script is an external file**, versioned with `?v=` in `App.razor` because browsers cache by URL. Bump the
   version when a file changes.
 
@@ -333,7 +334,7 @@ loads in `<head>`. Each exposes at most one `window.tide*` object for .NET to ca
 | `combo.js` | `tideCombo` | Scrolls a `SearchCombobox`'s highlighted option into view (`block: "nearest"`), smoothly unless reduced motion is asked for. |
 | `filters.js` | `tideFilters` | The filter bar's + Filter menu from the keyboard: focuses its first choice when it opens (`focusIn`), and (delegated, one listener for every bar) moves between choices with the arrows and Home/End (`tideRoving`), opens it with the down arrow, and closes it on Tab. |
 | `pager.js` | (none; delegated) | After a page change, scrolls the list's top back into view once the new rows arrive. |
-| `autogrow.js` | (none) | Text boxes (`textarea.tide-autogrow`) grow with their text where the browser lacks CSS `field-sizing: content`. |
+| `autogrow.js` | (none) | Text boxes (`textarea.tide-autogrow`, every multi-line box) grow with their text, to the CSS cap, where the browser lacks CSS `field-sizing: content`. |
 
 ## Keyboard shortcuts
 

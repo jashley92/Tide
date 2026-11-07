@@ -47,7 +47,7 @@
             </div>
             <div class="col-12">
                 <label class="tide-field-label" for="pb-steps">Steps, one per line, in order</label>
-                <textarea id="pb-steps" class="form-control form-control-sm" rows="8" @bind="_steps"
+                <textarea id="pb-steps" class="form-control form-control-sm tide-autogrow tide-grow-3" rows="8" @bind="_steps"
                           placeholder="@("Pull the advisory's indicators\nSweep proxy logs, 30 days back\nSweep EDR telemetry\nRecord hits and escalate")"></textarea>
                 <div class="form-text">Up to @Playbook.MaxSteps steps of @ActionChecklistItem.MaxText characters each.</div>
             </div>

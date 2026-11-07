@@ -737,7 +737,7 @@ else
                             @if (ArticleTitle(n.ArticleId) is { } on) { <div class="tide-note-on" title="@on">@on</div> }
                             @if (_editingNote == n.Id)
                             {
-                                <textarea aria-label="Edit the note" maxlength="@MeetingService.MaxNote" @bind="_editText" @bind:event="oninput"></textarea>
+                                <textarea class="tide-autogrow tide-grow-3" aria-label="Edit the note" maxlength="@MeetingService.MaxNote" @bind="_editText" @bind:event="oninput"></textarea>
                                 <div class="d-flex gap-2 mt-1">
                                     <button class="btn btn-sm btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(_editText))" @onclick="SaveEdit">Save</button>
                                     <button class="btn btn-sm btn-link" @onclick="() => _editingNote = null">Cancel</button>
@@ -752,7 +752,7 @@ else
                 </ol>
                 @if (_canNote)
                 {
-                    <textarea aria-label="New note" maxlength="@MeetingService.MaxNote" placeholder="@NotePlaceholder" @bind="_noteText" @bind:event="oninput"></textarea>
+                    <textarea class="tide-autogrow tide-grow-3" aria-label="New note" maxlength="@MeetingService.MaxNote" placeholder="@NotePlaceholder" @bind="_noteText" @bind:event="oninput"></textarea>
                     <button class="btn btn-sm btn-primary mt-1" disabled="@(_busy || string.IsNullOrWhiteSpace(_noteText))" @onclick="AddNote">Add note</button>
                 }
             </div>
