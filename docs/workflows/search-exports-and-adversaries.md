@@ -126,7 +126,11 @@ Articles point at it (`Article.StoryId`). `StoryService`:
 
 - **Stories list** (`/stories`): each story's status (Active, Monitoring, Closed), article count and last article.
 - **A story's page** (`/stories/{id}`): the timeline of its articles oldest first, the CVEs, actors and techniques they
-  add up to, when each was briefed, the actions, and the export.
+  add up to, when each was briefed, the actions, and the export. It updates in place when a colleague links an article
+  to the story or takes one off, changes one of its articles, or edits the story (the `story:{id}` topic, and each of
+  its articles' `article:` and `article-tags:` topics); a change to any other article is silent, with no toast and no
+  re-read. An open Edit form keeps what's typed
+  ([collaboration.md](../architecture/collaboration.md#changefeed-and-its-topics)).
 - **Joining.** The editor's story picker offers at most eight: with nothing typed, the open stories that had an
   article most recently; with words, every story whose name holds them, open ones first (`StoryService` pick list).
   Similar articles suggests the story of a related article.

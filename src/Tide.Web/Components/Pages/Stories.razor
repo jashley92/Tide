@@ -162,31 +162,44 @@ else
 
     private IReadOnlyList<StoryRow>? _list;
     private StoryDetail? _detail;
+    internal StoryDetail? Detail => _detail;
     private IReadOnlyDictionary<string, CveRecord> _cveRecords = new Dictionary<string, CveRecord>();
     private IReadOnlyList<ActionRow> _actions = [];
     private bool _loaded, _canWrite, _editing, _busy;
     private string? _name, _summary;
+    internal string? TypedName { get => _name; set => _name = value; }
     private StoryStatus _status;
     private ConfirmDialog _confirm = default!;
     private Guid? _shownId;
 
-    // A colleague added, edited or deleted a story, or (for the list's counts) an article: re-read in place. An open Edit
-    // form keeps what's typed in it; only the story it edits is re-read.
+    // Re-read in place when a colleague changes what's shown. The list: any story, or any article (its counts). A story's
+    // page: the story itself, an article linked to it or taken off it, or a change to one of its articles (its row, its
+    // CVEs and techniques, its adversary tags); other articles stay silent. An open Edit form keeps what's typed in it.
     private LiveChanges? _live;
 
+    // The topics of the shown story's articles, swapped whole when the story is read: the feed's filter reads it on the
+    // publisher's thread.
+    private volatile IReadOnlySet<string> _articleTopics = new HashSet<string>();
+
     protected override void OnInitialized() =>
-        _live = new LiveChanges(Feed, Origin, c => c.Topic == ChangeFeed.Stories || (c.Topic == ChangeFeed.Articles && Id is null), InvokeAsync, async heard =>
+        _live = new LiveChanges(Feed, Origin, Wanted, InvokeAsync, OnChangedElsewhere);
+
+    internal bool Wanted(Change c) => Id is { } id
+        ? c.Topic == ChangeFeed.Story(id) || _articleTopics.Contains(c.Topic)
+        : c.Topic == ChangeFeed.Stories || c.Topic == ChangeFeed.Articles;
+
+    internal async Task OnChangedElsewhere(IReadOnlyList<Change> heard)
+    {
+        if (_busy || !_loaded) return;   // a read or a step is under way, and it will show theirs
+        try
         {
-            if (_busy || !_loaded) return;   // a read or a step is under way, and it will show theirs
-            try
-            {
-                if (Id is null) _list = await StorySvc.ListAsync();
-                else await LoadStory();
-            }
-            catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
-            Toasts.Show($"{LiveChanges.Who(heard)} updated the stories.");
-            StateHasChanged();
-        });
+            if (Id is null) _list = await StorySvc.ListAsync();
+            else await LoadStory();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        Toasts.Show($"{LiveChanges.Who(heard)} updated {(Id is null ? "the stories" : "this story")}.");
+        StateHasChanged();
+    }
 
     public void Dispose() => _live?.Dispose();
 
@@ -201,6 +214,7 @@ else
         {
             (_shownId, _editing, _name, _summary) = (Id, false, null, null);
             _detail = null;
+            _articleTopics = new HashSet<string>();
         }
         var id = Id;
         if (id is null)
@@ -229,6 +243,7 @@ else
         var byArticle = await ActionSvc.ForArticlesAsync(detail.Articles.Select(a => a.Id).ToList());
         if (Id != id) return;
         (_detail, _cveRecords, _actions) = (detail, cves, detail.Articles.SelectMany(a => byArticle[a.Id]).ToList());
+        _articleTopics = detail.Articles.SelectMany(a => new[] { ChangeFeed.Article(a.Id), ChangeFeed.ArticleTags(a.Id) }).ToHashSet(StringComparer.Ordinal);
     }
 
     internal void StartEdit()

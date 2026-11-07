@@ -532,7 +532,8 @@ its send log.
 
 Stories link articles across days into a timeline, with their CVEs, actors, techniques and actions: a campaign, a
 vulnerability being exploited, or an actor followed over weeks. An article joins one from the editor, which suggests
-the story of a related article.
+the story of a related article. A story's page updates in place when a colleague links an article to it or takes one
+off, or changes one of its articles; changes to other articles don't touch it. The edit form keeps what's typed in it.
 
 ## Our stack
 

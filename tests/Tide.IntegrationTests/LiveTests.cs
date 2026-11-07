@@ -498,11 +498,12 @@ public class ChangeInterceptorTests : IDisposable
         Of(new ActionComment { ActionId = a }).Should().Equal(ChangeFeed.Action(a));
         Of(new HuntQuery { ActionId = a }).Should().Equal(ChangeFeed.Action(a));
         Of(new Article { Id = a }).Should().Equal(ChangeFeed.Article(a), ChangeFeed.Articles);
+        Of(new Article { Id = a, StoryId = b }).Should().Equal(ChangeFeed.Article(a), ChangeFeed.Articles, ChangeFeed.Story(b));
         Of(new RotationChange()).Should().Equal(ChangeFeed.Rotation);
         Of(new RotationOverride()).Should().Equal(ChangeFeed.Rotation);
         Of(new RotationWeek()).Should().Equal(ChangeFeed.Rotation);
         Of(new RotationMember()).Should().Equal(ChangeFeed.Rotation);
-        Of(new Story()).Should().Equal(ChangeFeed.Stories);
+        Of(new Story { Id = a }).Should().Equal(ChangeFeed.Stories, ChangeFeed.Story(a));
         Of(new ActionChecklistItem { ActionId = a }).Should().Equal(ChangeFeed.Action(a));
         Of(new ActionEvent { ActionId = a }).Should().Equal(ChangeFeed.Action(a));
         Of(new MetricValue { BriefDate = new DateOnly(2026, 10, 22) }).Should().Equal("metrics-day:2026-10-22");

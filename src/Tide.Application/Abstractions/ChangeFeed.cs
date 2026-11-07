@@ -25,7 +25,7 @@ public sealed class ChangeFeed
     /// <summary>Any article: the articles list, and the brief's Add article count and picker.</summary>
     public const string Articles = "articles";
 
-    /// <summary>Any story: the stories list.</summary>
+    /// <summary>Any story: the stories list (one story's page follows <see cref="Story"/>).</summary>
     public const string Stories = "stories";
 
     /// <summary>Any action: the actions list and board.</summary>
@@ -58,6 +58,9 @@ public sealed class ChangeFeed
     /// <summary>An article's adversary and product tags, which the editor's We run and Threat actors pickers show. Apart from the article's
     /// own topic: a tag doesn't move the article's edit version, so its editor, brief and Present mode needn't hear it.</summary>
     public static string ArticleTags(Guid id) => $"article-tags:{id}";
+
+    /// <summary>One story: it was edited or deleted, or an article was linked to it, taken off it, or saved while on it.</summary>
+    public static string Story(Guid id) => $"story:{id}";
 
     public static string Brief(Guid id) => $"brief:{id}";
 

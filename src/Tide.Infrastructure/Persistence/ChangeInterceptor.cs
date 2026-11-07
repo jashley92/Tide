@@ -73,7 +73,9 @@ public sealed class ChangeInterceptor(ChangeFeed feed, ICurrentUser user, Change
     /// <summary>What a changed row means to an open page; nothing for rows no page follows.</summary>
     public static IEnumerable<string> TopicsOf(object entity) => entity switch
     {
-        Article a => [ChangeFeed.Article(a.Id), ChangeFeed.Articles],   // every save, not only a title or status: the lists debounce
+        // Every save, not only a title or status: the lists debounce. On a story, its page hears it too.
+        Article { StoryId: { } story } a => [ChangeFeed.Article(a.Id), ChangeFeed.Articles, ChangeFeed.Story(story)],
+        Article a => [ChangeFeed.Article(a.Id), ChangeFeed.Articles],
         ArticleBullet x => [ChangeFeed.Article(x.ArticleId)],
         ArticleScreenshot x => [ChangeFeed.Article(x.ArticleId)],
         ArticleTag x => [ChangeFeed.Article(x.ArticleId)],
@@ -95,7 +97,7 @@ public sealed class ChangeInterceptor(ChangeFeed feed, ICurrentUser user, Change
         ActionIndicator x => [ChangeFeed.Action(x.ActionId)],
         OutreachMessage x => [ChangeFeed.Action(x.ActionId)],
         RotationChange or RotationOverride or RotationWeek or RotationMember => [ChangeFeed.Rotation],
-        Story => [ChangeFeed.Stories],
+        Story s => [ChangeFeed.Stories, ChangeFeed.Story(s.Id)],
         ActionChecklistItem x => [ChangeFeed.Action(x.ActionId)],
         ActionEvent x => [ChangeFeed.Action(x.ActionId)],
         // A comment's files are added and removed only with the comment itself, whose save is heard; a description set on
@@ -118,11 +120,17 @@ public sealed class ChangeInterceptor(ChangeFeed feed, ICurrentUser user, Change
         if (ctx is null) return;
         var topics = ctx.ChangeTracker.Entries()
             .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
-            .SelectMany(e => TopicsOf(e.Entity))
+            .SelectMany(e => TopicsOf(e.Entity).Concat(StoryLeft(e)))
             .ToHashSet(StringComparer.Ordinal);
         if (topics.Count > 0) _pending.AddOrUpdate(ctx, topics);
         else _pending.Remove(ctx);
     }
+
+    // An article taken off a story, or moved to another, is news to the story it left: its row now names the other.
+    private static IEnumerable<string> StoryLeft(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry e) =>
+        e.Entity is Article && e.State is EntityState.Modified or EntityState.Deleted
+            && e.Property(nameof(Article.StoryId)).OriginalValue is Guid left && !Equals(left, e.Property(nameof(Article.StoryId)).CurrentValue)
+            ? [ChangeFeed.Story(left)] : [];
 
     private void Publish(DbContext? ctx)
     {

@@ -56,7 +56,7 @@ Topics are published by `ChangeInterceptor.TopicsOf` for each added, modified or
 
 | Row | Topics |
 |---|---|
-| `Article` | `article:{id}`, `articles` |
+| `Article` | `article:{id}`, `articles`, and `story:{id}` for the story it's on; a save that takes it off a story or moves it to another also publishes `story:{id}` for the story it left (`ChangeInterceptor.StoryLeft`, from the row's original `StoryId`) |
 | `ArticleBullet`, `ArticleScreenshot`, `ArticleTag`, `ArticleTechnique`, `ArticleIndicator`, `ArticleLink`, `ArticleCve` | `article:{id}` |
 | `ArticleAdversary` | `article-tags:{id}` (not the article's topic: a tag doesn't move its edit version), `adversaries` |
 | `ArticleProduct` | `article-tags:{id}` |
@@ -66,7 +66,7 @@ Topics are published by `ChangeInterceptor.TopicsOf` for each added, modified or
 | `ActionItem`, `ActionFile` | `action:{id}`, `actions` |
 | `ActionComment`, `HuntQuery`, `ActionIndicator`, `OutreachMessage`, `ActionChecklistItem`, `ActionEvent` | `action:{id}` |
 | `RotationChange`, `RotationOverride`, `RotationWeek`, `RotationMember` | `rotation` |
-| `Story` | `stories` |
+| `Story` | `stories`, `story:{id}` |
 | `MetricValue` | `metrics-day:{yyyy-MM-dd}` |
 | `MetricDefinition`, `MetricGroup` | `metrics` |
 | `StackProduct` | `stack` |
@@ -159,7 +159,8 @@ What pages do with it:
 | Triage | `triage` | re-reads, with LiveMarks, ghosts, tab counts and one toast (`TriageNews`); under an open promote form or attach picker it holds the changes behind an "Updates waiting" pill |
 | Articles list | `articles` | re-reads the rows it shows, with its filters |
 | Rotation | `rotation` | re-reads, saying when a request now waits for you or yours was answered |
-| Stories, Our stack, Saved queries, Outreach templates, Playbooks | `stories`, `stack`, `saved-queries`, `outreach-templates`, `playbooks` | re-read; a product's edit form keeps what's typed and shows `ChangedElsewhere` when a colleague saved that product; a library's edit follows its card to the page it moved to, or keeps its form above the list when the card left it (`LibraryPage.OnChangedElsewhere`, `EditingOffPage`) |
+| A story's page (`Stories`, `/stories/{id}`) | `story:{id}`, and `article:{id}` and `article-tags:{id}` for each article on it | re-reads the story and says "… updated this story": an article linked to it or taken off it, a change to one of its articles (row, CVEs, techniques, adversary tags), or the story itself. Other articles and stories are silent. The Edit form keeps what's typed (`Stories.OnChangedElsewhere`) |
+| Stories list, Our stack, Saved queries, Outreach templates, Playbooks | `stories` and `articles` (the counts), `stack`, `saved-queries`, `outreach-templates`, `playbooks` | re-read; a product's edit form keeps what's typed and shows `ChangedElsewhere` when a colleague saved that product; a library's edit follows its card to the page it moved to, or keeps its form above the list when the card left it (`LibraryPage.OnChangedElsewhere`, `EditingOffPage`) |
 | Adversaries list and profile (`AdversariesPage`) | `adversaries` | re-read; a profile's edit form keeps what's typed and shows `ChangedElsewhere` with Reload when a colleague changed that profile (only a change to the one shown is told) |
 | External teams | `teams` | re-reads the list; the add and edit forms keep what's typed; an edit of a team that's gone closes, and says so |
 | We run and Threat actors cards (`TagCard`) | `article-tags:{id}` | re-read the tags |
