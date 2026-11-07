@@ -36,10 +36,10 @@ CLI signed in (`gh auth status`) as an account that can set the repository's sec
 
 ```powershell
 git switch -c release-signing-key origin/main
-pwsh tools/release/New-ReleaseSigningKey.ps1 -BackupPath E:\tide-release-key.pem
+pwsh tools/signing/New-ReleaseSigningKey.ps1 -BackupPath E:\tide-release-key.pem
 ```
 
-`tools/release/New-ReleaseSigningKey.ps1` runs on PowerShell 7 or Windows PowerShell 5.1. It:
+`tools/signing/New-ReleaseSigningKey.ps1` runs on PowerShell 7 or Windows PowerShell 5.1. It:
 
 - generates an RSA-3072 key pair;
 - writes the private key (PEM, PKCS#8) to `-BackupPath`, which must be a new file. It's the only copy outside
@@ -61,7 +61,7 @@ tests use it with throwaway keys. `-Repository` names another repository's secre
 Installs trust only the keys their installed `TideReleaseKeys.ps1` pins, and learn a new one only from a release they
 already trust. So a new key goes in through a release signed by the old one:
 
-1. On a branch, run `pwsh tools/release/New-ReleaseSigningKey.ps1 -BackupPath <new file> -Rotate`. It pins the new key
+1. On a branch, run `pwsh tools/signing/New-ReleaseSigningKey.ps1 -BackupPath <new file> -Rotate`. It pins the new key
    beside the old one and leaves the secret alone. Merge the pull request.
 2. Tag a release. It's signed by the old key and carries both keys to every install that upgrades to it.
 3. Switch the secret to the new key (the script prints this command):

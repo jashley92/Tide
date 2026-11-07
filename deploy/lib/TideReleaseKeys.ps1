@@ -5,7 +5,7 @@
 # Each entry: @{ Id = '<first 16 hex characters of the SHA-256 of the key's SubjectPublicKeyInfo>'; Added = '<date>';
 #                Xml = '<RSAKeyValue><Modulus>...</Modulus><Exponent>...</Exponent></RSAKeyValue>' }
 #
-# Don't edit by hand: tools/release/New-ReleaseSigningKey.ps1 adds a key above the marker line below. It's an array so a
+# Don't edit by hand: tools/signing/New-ReleaseSigningKey.ps1 adds a key above the marker line below. It's an array so a
 # new key can be added, and shipped in a release signed by the old one, before releases are signed with the new one
 # (docs/development/releasing.md, "Rotating the key"). Removing a key stops installs that upgrade past this file from
 # trusting it.

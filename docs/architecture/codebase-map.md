@@ -235,7 +235,7 @@ There's no DBA schema script yet (`deploy/README.md`, "Not yet here").
 | `tools/ci/check-migrations-immutable.sh` | Fails CI when a migration that shipped in a release tag was changed or removed. |
 | `tools/ci/check-sonar-quality-gate.sh` | Reads the SonarQube Cloud quality gate. |
 | `tools/ci/extract-release-notes.sh` | Release notes for the release workflow. |
-| `tools/release/New-ReleaseSigningKey.ps1` | Makes the release signing key: sets the `RELEASE_SIGNING_KEY` secret and pins the public key ([releasing.md](../development/releasing.md)). |
+| `tools/signing/New-ReleaseSigningKey.ps1` | Makes the release signing key: sets the `RELEASE_SIGNING_KEY` secret and pins the public key ([releasing.md](../development/releasing.md)). |
 | `tools/upgrade-test/upgrade-path.sh` | Installs older releases into SQL Server, starts this tree against the same database, and checks it comes up healthy with data intact. |
 | `.github/workflows/ci.yml` | `build-test` (restore, build, test, Sonar, migration immutability, pending model changes for both providers, vulnerable packages) and `sql-server` (apply migrations twice, SQL Server tests, the upgrade path). |
 | `.github/workflows/release.yml` | Builds the bundle from `main`: the published app, the deploy scripts, `migrations-sqlserver.txt`, the `.sha256`, and the `.sig` signed with the release key. |

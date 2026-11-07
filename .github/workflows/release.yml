@@ -137,7 +137,7 @@ jobs:
 
       # Sign the bundle with TIDE's release key: RSA-PSS, SHA-256, a 32-byte salt, as lib\TideUpgrade.ps1
       # (Test-TideReleaseSignature) verifies it. The key is the RELEASE_SIGNING_KEY secret (PEM), made by
-      # tools/release/New-ReleaseSigningKey.ps1 (docs/development/releasing.md). No release is published unsigned: the
+      # tools/signing/New-ReleaseSigningKey.ps1 (docs/development/releasing.md). No release is published unsigned: the
       # job fails without the secret, and when the secret's public key isn't one deploy/lib/TideReleaseKeys.ps1 pins
       # (a wrong secret, or a key whose pinning wasn't merged), since installs would refuse the signature.
       - name: Sign the bundle
@@ -146,7 +146,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -z "${RELEASE_SIGNING_KEY}" ]]; then
-            echo "::error::The RELEASE_SIGNING_KEY secret isn't set, so the bundle can't be signed, and no release is published unsigned. Make the key with tools/release/New-ReleaseSigningKey.ps1 (docs/development/releasing.md), merge its TideReleaseKeys.ps1, and tag again."
+            echo "::error::The RELEASE_SIGNING_KEY secret isn't set, so the bundle can't be signed, and no release is published unsigned. Make the key with tools/signing/New-ReleaseSigningKey.ps1 (docs/development/releasing.md), merge its TideReleaseKeys.ps1, and tag again."
             exit 1
           fi
           version="${GITHUB_REF_NAME}"

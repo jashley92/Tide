@@ -29,7 +29,7 @@ fetched from the same place as the zip proves only that the two match: whoever c
   which falls back to the hash with a warning. With no key pinned, the hash checks are all there is, as before.
 - **The hash can be checked offline.** `-ExpectedSha256 <hex>`, or the release's `.sha256` beside the zip, is used
   before github.com is asked. github.com is asked only for an unsigned bundle with neither.
-- **The key is made once by the owner**, with `tools/release/New-ReleaseSigningKey.ps1`: it sets the secret through
+- **The key is made once by the owner**, with `tools/signing/New-ReleaseSigningKey.ps1`: it sets the secret through
   `gh` (the key is never shown), writes the only other copy to a backup the owner keeps offline, and pins the public
   key. Nothing in CI or the tests uses the real key; the tests make throwaway keys.
 - **A new key is rotated in through a release signed by the old one**: pin the new key, release (signed by the old),

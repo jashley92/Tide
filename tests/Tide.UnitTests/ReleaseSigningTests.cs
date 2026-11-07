@@ -8,7 +8,7 @@ namespace Tide.UnitTests;
 
 /// <summary>
 /// Release signing and the offline hash check (lib\TideUpgrade.ps1 Invoke-TideBundleCheck, Test-TideBundle.ps1,
-/// tools/release/New-ReleaseSigningKey.ps1), on every PowerShell here: Windows PowerShell 5.1 verifies with RSACng and
+/// tools/signing/New-ReleaseSigningKey.ps1), on every PowerShell here: Windows PowerShell 5.1 verifies with RSACng and
 /// PowerShell 7 with RSA.Create(), so each signature check runs on each. Every key is a throwaway made by the test.
 /// </summary>
 public partial class DeployScriptPowerShellTests
@@ -280,7 +280,7 @@ public partial class DeployScriptPowerShellTests
     [Fact]
     public void The_shipped_release_keys_load_and_each_is_a_well_formed_RSA_key()
     {
-        // Shipped empty until the owner runs tools/release/New-ReleaseSigningKey.ps1; then each key must load where the
+        // Shipped empty until the owner runs tools/signing/New-ReleaseSigningKey.ps1; then each key must load where the
         // upgrade verifies with it, and carry the id the Release workflow derives from the secret.
         foreach (var shell in Shells())
         {
@@ -336,7 +336,7 @@ public partial class DeployScriptPowerShellTests
                 again.GetProperty("ok").GetBoolean().Should().BeFalse();
                 again.GetProperty("text").GetString().Should().Contain("exists");
                 var noKeysPath = Run("""
-                    try { & (Join-Path (Join-Path (Join-Path (Split-Path -Parent $deploy) 'tools') 'release') 'New-ReleaseSigningKey.ps1') -BackupPath (Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString('N') + '.pem')) -DryRun 6>$null; $m = 'ran' }
+                    try { & (Join-Path (Join-Path (Join-Path (Split-Path -Parent $deploy) 'tools') 'signing') 'New-ReleaseSigningKey.ps1') -BackupPath (Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString('N') + '.pem')) -DryRun 6>$null; $m = 'ran' }
                     catch { $m = $_.Exception.Message }
                     ConvertTo-Json -Compress -InputObject @{ m = $m }
                     """, shell);
@@ -383,7 +383,7 @@ public partial class DeployScriptPowerShellTests
 
     private static JsonElement KeyScript(string keys, string backup, string shell) => Run($$"""
         try {
-            $text = @(& (Join-Path (Join-Path (Join-Path (Split-Path -Parent $deploy) 'tools') 'release') 'New-ReleaseSigningKey.ps1') `
+            $text = @(& (Join-Path (Join-Path (Join-Path (Split-Path -Parent $deploy) 'tools') 'signing') 'New-ReleaseSigningKey.ps1') `
                 -BackupPath '{{backup.Replace("'", "''")}}' -KeysPath '{{keys.Replace("'", "''")}}' -DryRun 6>&1 | ForEach-Object { "$_" }) -join "`n"
             $ok = $true
         } catch { $text = $_.Exception.Message; $ok = $false }
