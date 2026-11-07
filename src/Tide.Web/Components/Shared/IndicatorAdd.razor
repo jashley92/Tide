@@ -20,11 +20,11 @@
         <button type="button" class="btn btn-outline-secondary btn-sm w-100" disabled="@Disabled" @onclick="AddOne">Add</button>
     </div>
 </div>
-<details class="mt-3" open="@_showExtract">
+<details class="mt-3" open="@_showExtract" data-submit-scope>
     <summary class="small fw-semibold">@(Cves ? "Find indicators and CVEs in pasted text" : "Find indicators in pasted text")</summary>
     <textarea class="form-control form-control-sm mt-2 tide-autogrow tide-grow-3" rows="5" aria-label="Text to search for indicators"
               placeholder="Paste the article, a vendor report's IOC appendix, or an email. Nothing here is saved." @bind="_extractText" @bind:event="oninput"></textarea>
-    <button type="button" class="btn btn-outline-secondary btn-sm mt-2" @onclick="Extract"><span class="bi bi-search" aria-hidden="true"></span> Find</button>
+    <button type="button" class="btn btn-outline-secondary btn-sm mt-2" data-submit @onclick="Extract"><span class="bi bi-search" aria-hidden="true"></span> Find</button>
     @if (_found is not null)
     {
         @if (_found.Indicators.Count == 0 && _found.Cves.Count == 0)

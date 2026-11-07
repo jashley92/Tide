@@ -30,7 +30,7 @@
     <div class="col-xl-7">
         @foreach (var (t, i) in _teams.Select((t, i) => (t, i)))
         {
-            <div class="tide-card @(t.IsRetired ? "tide-retired" : "")" @key="t.Id">
+            <div class="tide-card @(t.IsRetired ? "tide-retired" : "")" @key="t.Id" data-submit-scope>
                 @if (_editing == t.Id)
                 {
                     <div class="row g-2 mb-2">
@@ -41,7 +41,7 @@
                         <div class="col-12"><ActiveLimitFields Id="@($"limit-{t.Id}")" @bind-Limit="_limit" @bind-Mode="_mode" /></div>
                     </div>
                     <div class="d-flex gap-2 mb-2">
-                        <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="() => Save(t.Id)">Save</button>
+                        <button class="btn btn-primary btn-sm" disabled="@_busy" data-submit @onclick="() => Save(t.Id)">Save</button>
                         <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editing = null">Cancel</button>
                     </div>
                 }
@@ -93,18 +93,18 @@
             <a class="btn btn-outline-secondary btn-sm" href="teams/external"><span class="bi bi-building" aria-hidden="true"></span> Manage external teams</a>
         </div>
 
-        <div class="tide-card">
+        <div class="tide-card" data-submit-scope>
             <h2>New team</h2>
             <div class="row g-2">
                 <div class="col-md-5"><input class="form-control form-control-sm" placeholder="Name (e.g. Vulnerability Management)" aria-label="New team name" @bind="_newName" /></div>
                 <div class="col-md-5"><input class="form-control form-control-sm" placeholder="Team mailbox (optional)" aria-label="New team mailbox" @bind="_newEmail" /></div>
-                <div class="col-md-2"><button class="btn btn-primary btn-sm w-100" disabled="@_busy" @onclick="AddTeam">Add team</button></div>
+                <div class="col-md-2"><button class="btn btn-primary btn-sm w-100" disabled="@_busy" data-submit @onclick="AddTeam">Add team</button></div>
             </div>
         </div>
     </div>
 
     <div class="col-xl-5">
-        <div class="tide-card">
+        <div class="tide-card" data-submit-scope>
             <h2>SLA targets</h2>
             <p class="small tide-muted">Business days a new action gets before it's due. A kind's target, when set, wins over the priority's. Blank or 0: none.</p>
             <table class="tide-table mb-2">
@@ -125,10 +125,10 @@
                     }
                 </tbody>
             </table>
-            <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="SaveSla">Save targets</button>
+            <button class="btn btn-primary btn-sm" disabled="@_busy" data-submit @onclick="SaveSla">Save targets</button>
         </div>
 
-        <section class="tide-card" aria-labelledby="rem-title">
+        <section class="tide-card" aria-labelledby="rem-title" data-submit-scope>
             <h2 id="rem-title">Reminders and digests</h2>
             <p class="small tide-muted">All off by default but the personal digest's offer; each is sent once. Times in @Clock.Zone.Id
                 (<a href="admin/organization">Organization settings</a>). Until saved here, the server's <span class="tide-data">Notifications</span> values apply.</p>
@@ -200,7 +200,7 @@
                     <div class="form-text" id="rem-followup-help">How long an Outreach action's email waits for its reply before whoever sent it is reminded, at the reminder time.</div>
                 </div>
             </div>
-            <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveReminders">Save reminders</button>
+            <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" data-submit @onclick="SaveReminders">Save reminders</button>
         </section>
 
         <section class="tide-card" aria-labelledby="esc-title">

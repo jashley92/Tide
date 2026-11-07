@@ -57,6 +57,12 @@ state beyond what's on screen.
   text, older than what's typed by then under any latency, over the newest keystrokes. Bound, a render carrying the
   typed text sends nothing, and a clear or a value set from outside still reaches the box.
 - **Every multi-line text box (`<textarea>`) carries `tide-autogrow`**, so it grows with its text, up to `min(60vh, 32rem)` (30vh in present mode's notes panel), then scrolls. `tide-grow-2` / `tide-grow-3` keep its starting height at two or three rows; boxes with their own starting height (`tide-query`, `tide-email-body`, `tide-etpl-body`) keep it. The browser sizes them where it supports CSS `field-sizing: content`; `autogrow.js` does elsewhere.
+- **A form with one main action marks its container `data-submit-scope` and the button `data-submit`**, so Ctrl+Enter
+  (`⌘ Enter`) in one of its text boxes presses it (`submitkeys.js`, EP-90): `<div data-submit-scope>`, then
+  `<button … data-submit @onclick="Save">`. One `data-submit` to a scope, and scopes don't nest. A dialog with one
+  `btn-primary` button (a `ConfirmDialog` with `Form`) and a real `<form>` need nothing. A box with no single action
+  (a filter, the article editor) gets no scope, and the keys do nothing there. A single-line box takes part only inside
+  a scope. `SubmitKeysTests` checks every scope has its one button.
 - **Every script is an external file**, versioned with `?v=` in `App.razor` because browsers cache by URL. Bump the
   version when a file changes.
 
@@ -334,6 +340,7 @@ loads in `<head>`. Each exposes at most one `window.tide*` object for .NET to ca
 | `combo.js` | `tideCombo` | Scrolls a `SearchCombobox`'s highlighted option into view (`block: "nearest"`), smoothly unless reduced motion is asked for. |
 | `filters.js` | `tideFilters` | The filter bar's + Filter menu from the keyboard: focuses its first choice when it opens (`focusIn`), and (delegated, one listener for every bar) moves between choices with the arrows and Home/End (`tideRoving`), opens it with the down arrow, and closes it on Tab. |
 | `pager.js` | (none; delegated) | After a page change, scrolls the list's top back into view once the new rows arrive. |
+| `submitkeys.js` | (none; delegated) | `Ctrl+Enter` / `⌘ Enter` in a text box presses the main button: its `[data-submit-scope]`'s `[data-submit]` button, else a `<form>`'s submit, else an open dialog's one `btn-primary` button; otherwise nothing. Never a disabled button; skips an IME composition and a held key. A box bound on change (`@bind`) is sent a `change` first, as a mouse click's blur would; if that's what held the button back, it's pressed once .NET enables it (within 1.5 s, focus still in the box). |
 | `autogrow.js` | (none) | Text boxes (`textarea.tide-autogrow`, every multi-line box) grow with their text, to the CSS cap, where the browser lacks CSS `field-sizing: content`. |
 
 ## Keyboard shortcuts
@@ -345,7 +352,7 @@ that the letter-shortcut switch turns off.
 
 | Where | Keys |
 |---|---|
-| Everywhere | `Ctrl K` or `⌘ K`: Go to a page, article or action. `?` (letter): this list. `Esc`: close a dialog or menu. |
+| Everywhere | `Ctrl K` or `⌘ K`: Go to a page, article or action. `?` (letter): this list. `Ctrl Enter` or `⌘ Enter`: post or save the text box you're in (where its form or dialog has one main action). `Esc`: close a dialog or menu. |
 | The Go to box | `↓` `↑`: next and previous result. `Enter`: open it. `Esc`: close, back where you were. |
 | Triage | `↓` `↑`, or `J` `K`: next and previous item; `J` on a page's last row goes on to the next page, and `K` on its first back to the previous page's last row. `S` shortlist, `X` dismiss, `D` mark a duplicate of the similar article, `P` promote, `O` open the source in a new tab, `V` read it here, `R` put back in New (all letters). `Esc`: close the promote form or reading pane. On a group, `Enter` or `→` opens it and `←` closes it. |
 | Present mode | `→` or `Enter`: next slide. `←` or `Backspace`: previous. `Space` / `Page Down` and `Shift Space` / `Page Up`: scroll a long slide, then change slide at its end. `Home` `End`: first and last slide. `D` (letter): mark discussed. `F` (letter): full screen. `Esc`: leave full screen, then close a zoomed screenshot. |

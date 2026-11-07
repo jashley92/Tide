@@ -400,7 +400,9 @@ One box at the top of every page.
 - **A CVE.** Paste a CVE for its CVSS, EPSS and KEV status, the articles about it, and what was done.
 
 **Go to** (`Ctrl+K`) jumps to a page, starts an article or action, or opens one by title or number ("A-12"). `?`
-lists the page's keyboard shortcuts, with the switch that turns single-letter shortcuts off.
+lists the page's keyboard shortcuts, with the switch that turns single-letter shortcuts off. In a text box,
+`Ctrl+Enter` (`⌘ Enter` on a Mac) does its form's main action: posts the comment or note, saves the template or
+settings, records the reply. Where there's no one action (a filter, the article editor), it does nothing.
 
 ![Indicator lookup](../screenshots/search-lookup.png)
 

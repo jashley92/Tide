@@ -157,7 +157,7 @@ else
                         @if (_rules is not null) { <span>Outlined in red: no enabled detection rule is tagged with it (<a href="coverage">Coverage</a>).</span> }</div>
                 }
             </section>
-            <section class="tide-card" aria-labelledby="adv-about-h">
+            <section class="tide-card" aria-labelledby="adv-about-h" data-submit-scope>
                 <h2 id="adv-about-h">About it <TlpBadge Level="TlpLevel.Amber" /></h2>
                 @if (_canWrite && _form is { } f)
                 {
@@ -181,7 +181,7 @@ else
                             <textarea id="f-notes" class="form-control form-control-sm tide-autogrow" rows="4" maxlength="4000"
                                       placeholder="What we've seen, what to watch for, what we've changed because of it" @bind="f.Notes"></textarea></div>
                     </div>
-                    <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="Save">Save</button>
+                    <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" data-submit @onclick="Save">Save</button>
                     @if (!p.IsRetired && _others.Count > 0)
                     {
                         <details class="mt-3">

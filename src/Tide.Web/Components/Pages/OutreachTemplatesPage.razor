@@ -204,38 +204,40 @@ else
     private RenderFragment EditForm => __builder =>
     {
         var f = _form!;
-        <div class="row g-2">
-            <div class="col-md-6">
-                <label class="tide-field-label" for="ot-f-name">Name</label>
-                <input id="ot-f-name" class="form-control form-control-sm" maxlength="@OutreachTemplate.MaxName" placeholder="Are we affected? (vendor PSIRT)" @bind="f.Name" />
+        <div data-submit-scope>
+            <div class="row g-2">
+                <div class="col-md-6">
+                    <label class="tide-field-label" for="ot-f-name">Name</label>
+                    <input id="ot-f-name" class="form-control form-control-sm" maxlength="@OutreachTemplate.MaxName" placeholder="Are we affected? (vendor PSIRT)" @bind="f.Name" />
+                </div>
+                <div class="col-md-3">
+                    <label class="tide-field-label" for="ot-f-ceiling">Highest TLP it carries</label>
+                    <TlpSelect @bind-Value="f.Ceiling" Id="ot-f-ceiling" DescribedBy="ot-f-ceiling-help" Label="Highest TLP it carries" />
+                    <div class="form-text" id="ot-f-ceiling-help">Parts above it are left out. CLEAR or GREEN for outside the organization.</div>
+                </div>
+                <div class="col-md-3">
+                    <label class="tide-field-label" for="ot-f-to">Always to (optional)</label>
+                    <input id="ot-f-to" type="email" class="form-control form-control-sm" maxlength="@OutreachTemplate.MaxTo" placeholder="psirt@vendor.example" aria-describedby="ot-f-to-help" @bind="f.To" />
+                    <div class="form-text" id="ot-f-to-help">Otherwise the product's contact, or whoever the analyst types.</div>
+                </div>
+                <div class="col-12">
+                    <label class="tide-field-label" for="ot-f-about">What it's for (optional)</label>
+                    <input id="ot-f-about" class="form-control form-control-sm" maxlength="@OutreachTemplate.MaxDescription" @bind="f.Description" />
+                </div>
+                <div class="col-12">
+                    <label class="tide-field-label" for="ot-f-subject">Subject</label>
+                    <input id="ot-f-subject" class="form-control form-control-sm" maxlength="@OutreachTemplate.MaxSubject" placeholder="{{product.name}}: are we affected by {{article.cves}}?" @bind="f.Subject" />
+                </div>
+                <div class="col-12">
+                    <label class="tide-field-label" for="ot-f-body">Body</label>
+                    <textarea id="ot-f-body" class="form-control form-control-sm tide-email-body tide-autogrow" maxlength="@OutreachTemplate.MaxBody" aria-describedby="ot-f-body-help" @bind="f.Body"></textarea>
+                    <OutreachTemplateHelp Id="ot-f-body-help" />
+                </div>
             </div>
-            <div class="col-md-3">
-                <label class="tide-field-label" for="ot-f-ceiling">Highest TLP it carries</label>
-                <TlpSelect @bind-Value="f.Ceiling" Id="ot-f-ceiling" DescribedBy="ot-f-ceiling-help" Label="Highest TLP it carries" />
-                <div class="form-text" id="ot-f-ceiling-help">Parts above it are left out. CLEAR or GREEN for outside the organization.</div>
+            <div class="d-flex gap-2 mt-2">
+                <button class="btn btn-primary btn-sm" disabled="@_busy" data-submit @onclick="Save">Save</button>
+                <button class="btn btn-outline-secondary btn-sm" @onclick="() => _form = null">Cancel</button>
             </div>
-            <div class="col-md-3">
-                <label class="tide-field-label" for="ot-f-to">Always to (optional)</label>
-                <input id="ot-f-to" type="email" class="form-control form-control-sm" maxlength="@OutreachTemplate.MaxTo" placeholder="psirt@vendor.example" aria-describedby="ot-f-to-help" @bind="f.To" />
-                <div class="form-text" id="ot-f-to-help">Otherwise the product's contact, or whoever the analyst types.</div>
-            </div>
-            <div class="col-12">
-                <label class="tide-field-label" for="ot-f-about">What it's for (optional)</label>
-                <input id="ot-f-about" class="form-control form-control-sm" maxlength="@OutreachTemplate.MaxDescription" @bind="f.Description" />
-            </div>
-            <div class="col-12">
-                <label class="tide-field-label" for="ot-f-subject">Subject</label>
-                <input id="ot-f-subject" class="form-control form-control-sm" maxlength="@OutreachTemplate.MaxSubject" placeholder="{{product.name}}: are we affected by {{article.cves}}?" @bind="f.Subject" />
-            </div>
-            <div class="col-12">
-                <label class="tide-field-label" for="ot-f-body">Body</label>
-                <textarea id="ot-f-body" class="form-control form-control-sm tide-email-body tide-autogrow" maxlength="@OutreachTemplate.MaxBody" aria-describedby="ot-f-body-help" @bind="f.Body"></textarea>
-                <OutreachTemplateHelp Id="ot-f-body-help" />
-            </div>
-        </div>
-        <div class="d-flex gap-2 mt-2">
-            <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="Save">Save</button>
-            <button class="btn btn-outline-secondary btn-sm" @onclick="() => _form = null">Cancel</button>
         </div>
     };
 

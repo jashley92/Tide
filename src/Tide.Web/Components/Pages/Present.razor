@@ -721,7 +721,7 @@ else
                 <ol class="tide-note-list" aria-label="Notes so far">
                     @foreach (var n in _record.Notes)
                     {
-                        <li @key="n.Id">
+                        <li @key="n.Id" data-submit-scope>
                             <div class="tide-note-meta">
                                 <span class="tide-presence-dot tide-avatar-@Ui.AvatarSwatch(n.AuthorId)" aria-hidden="true">@MainLayout.Initials(n.AuthorName)</span>
                                 <strong>@n.AuthorName</strong>
@@ -739,7 +739,7 @@ else
                             {
                                 <textarea class="tide-autogrow tide-grow-3" aria-label="Edit the note" maxlength="@MeetingService.MaxNote" @bind="_editText" @bind:event="oninput"></textarea>
                                 <div class="d-flex gap-2 mt-1">
-                                    <button class="btn btn-sm btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(_editText))" @onclick="SaveEdit">Save</button>
+                                    <button class="btn btn-sm btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(_editText))" data-submit @onclick="SaveEdit">Save</button>
                                     <button class="btn btn-sm btn-link" @onclick="() => _editingNote = null">Cancel</button>
                                 </div>
                             }
@@ -752,8 +752,10 @@ else
                 </ol>
                 @if (_canNote)
                 {
-                    <textarea class="tide-autogrow tide-grow-3" aria-label="New note" maxlength="@MeetingService.MaxNote" placeholder="@NotePlaceholder" @bind="_noteText" @bind:event="oninput"></textarea>
-                    <button class="btn btn-sm btn-primary mt-1" disabled="@(_busy || string.IsNullOrWhiteSpace(_noteText))" @onclick="AddNote">Add note</button>
+                    <div data-submit-scope>
+                        <textarea class="tide-autogrow tide-grow-3" aria-label="New note" maxlength="@MeetingService.MaxNote" placeholder="@NotePlaceholder" @bind="_noteText" @bind:event="oninput"></textarea>
+                        <button class="btn btn-sm btn-primary mt-1" disabled="@(_busy || string.IsNullOrWhiteSpace(_noteText))" data-submit @onclick="AddNote">Add note</button>
+                    </div>
                 }
             </div>
         }

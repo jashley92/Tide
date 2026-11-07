@@ -24,7 +24,7 @@
     @foreach (var row in _rows.Where(r => r.Dialect.Key == _dialect))
     {
         var key = (row.Dialect.Key, row.Kind);
-        <div class="tide-card" @key="key">
+        <div class="tide-card" @key="key" data-submit-scope>
             <h2>
                 @HuntValues.Label(row.Kind)
                 @if (row.IsOff) { <Badge>Turned off</Badge> }
@@ -37,7 +37,7 @@
                 <textarea class="tide-query tide-autogrow" spellcheck="false" aria-label="Template for @HuntValues.Label(row.Kind)" @bind="_text"></textarea>
                 <div class="form-text">Leave it empty to turn this kind off.</div>
                 <div class="d-flex gap-2 mt-2">
-                    <button class="btn btn-primary btn-sm" @onclick="() => Save(row, _text)">Save</button>
+                    <button class="btn btn-primary btn-sm" data-submit @onclick="() => Save(row, _text)">Save</button>
                     <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editing = null">Cancel</button>
                 </div>
             }

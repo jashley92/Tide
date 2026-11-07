@@ -50,7 +50,7 @@
 
 @if (_form is not null)
 {
-    <div class="tide-card-form tide-card">
+    <div class="tide-card-form tide-card" data-submit-scope>
         <h2>@(_form.Id is null ? "New source" : "Edit source")</h2>
         <div class="row g-2">
             <div class="col-md-5"><label class="tide-field-label" for="s-name">Name</label><input id="s-name" class="form-control form-control-sm" maxlength="100" @bind="_form.Name" /></div>
@@ -164,7 +164,7 @@
             }
         </div>
         <div class="d-flex gap-2 mt-3">
-            <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="Save">Save</button>
+            <button class="btn btn-primary btn-sm" disabled="@_busy" data-submit @onclick="Save">Save</button>
             <button class="btn btn-outline-secondary btn-sm" @onclick="() => _form = null">Cancel</button>
         </div>
     </div>
@@ -261,7 +261,7 @@
     <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveIntake">Save polling</button>
 </section>
 
-<section class="tide-card" aria-labelledby="sponsored-title">
+<section class="tide-card" aria-labelledby="sponsored-title" data-submit-scope>
     <h2 id="sponsored-title"><span class="bi bi-megaphone" aria-hidden="true"></span> Sponsored items</h2>
     <p class="small tide-muted">A feed item that reads as sponsored isn't taken in, and counts as filtered out. A marker matches as whole words, ignoring
         case, in an item's author, source, tags, title or the first @SponsoredFilter.SummaryStart characters of its summary; a hyphen and a space are
@@ -292,10 +292,10 @@
             </div>
         </div>
     </div>
-    <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveSponsored">Save sponsored items</button>
+    <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" data-submit @onclick="SaveSponsored">Save sponsored items</button>
 </section>
 
-<section class="tide-card" aria-labelledby="ads-title">
+<section class="tide-card" aria-labelledby="ads-title" data-submit-scope>
     <h2 id="ads-title"><span class="bi bi-eraser" aria-hidden="true"></span> Adverts in fetched articles</h2>
     <p class="small tide-muted">Taken out when an article's page is read, in triage or for the editor. Blocks whose class or id names an ad slot always are.
         A label matches a whole line in any case; end it with * to match a short line that starts with it. One per line.</p>
@@ -309,7 +309,7 @@
             <textarea id="ad-labels" class="form-control form-control-sm tide-autogrow tide-grow-3" rows="6" @bind="AdLabels" @bind:event="oninput"></textarea>
         </div>
     </div>
-    <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveAds">Save adverts</button>
+    <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" data-submit @onclick="SaveAds">Save adverts</button>
 </section>
 
 <section class="tide-card" aria-labelledby="older-title">
@@ -325,7 +325,7 @@
     <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveAgeing">Save</button>
 </section>
 
-<section class="tide-card" aria-labelledby="grouping-title">
+<section class="tide-card" aria-labelledby="grouping-title" data-submit-scope>
     <h2 id="grouping-title"><span class="bi bi-collection" aria-hidden="true"></span> Triage grouping</h2>
     <p class="small tide-muted">Triage suggests reports that look like one event told by several feeds: published close together, naming a CVE in common or
         sharing two uncommon words, one of them a name. Common words don't count. These change only that suggestion, not the check for a repeated
@@ -359,7 +359,7 @@
             @foreach (var w in TriageGroups.GenericWords) { <li class="list-inline-item tide-data">@w</li> }
         </ul>
     </details>
-    <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveGrouping">Save triage grouping</button>
+    <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" data-submit @onclick="SaveGrouping">Save triage grouping</button>
 </section>
 
 <section class="tide-card" aria-labelledby="cve-title">

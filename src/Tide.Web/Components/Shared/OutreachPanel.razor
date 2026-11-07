@@ -34,7 +34,7 @@
     }
     @if (_writing)
     {
-        <div class="tide-hunt-picker mb-3" id="outreach-writer">
+        <div class="tide-hunt-picker mb-3" id="outreach-writer" data-submit-scope>
             @if (_templates is null)
             {
                 <LoadingBlock Rows="2" />
@@ -109,7 +109,7 @@
                         </div>
                     </div>
                     <div class="d-flex gap-2 align-items-center flex-wrap mt-2">
-                        <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" aria-describedby="ow-sent-help" @onclick="MarkSent"><span class="bi bi-send-check" aria-hidden="true"></span> Mark sent</button>
+                        <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" aria-describedby="ow-sent-help" data-submit @onclick="MarkSent"><span class="bi bi-send-check" aria-hidden="true"></span> Mark sent</button>
                         <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="ToggleWriter">Cancel</button>
                         <span id="ow-status" class="small tide-muted" role="status" aria-live="polite"></span>
                     </div>
