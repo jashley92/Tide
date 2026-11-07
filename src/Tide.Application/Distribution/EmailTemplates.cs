@@ -150,6 +150,21 @@ public static partial class EmailTemplateCatalog
             new("RequestList", "Each request: its title, what's asked (its details), when it's due and how overdue, and its ticket link. Written by TIDE, with no TIDE links.", Html: true, Required: true),
         ], Footer: "Sent by {{From}} to follow up its requests to {{Team}}. Reply to this email to answer.");
 
+    // Its reader may not use TIDE (an external team's manager, say), so it reads on its own and names no TIDE page; for an
+    // internal team, each request links to its page.
+    public static readonly EmailTemplate Escalation = new(
+        "escalation", "Escalation contact",
+        "Sent at the reminder time, by an escalation ladder step that copies the escalation contact, to the owning team's escalation contact: the team's requests that reached the step. For an external team it has no TIDE links; for an internal one each request links to its page. Replies go to whoever follows the work. Needs the escalation ladder on (Teams & SLA), and the team's escalation contact.",
+        "{{From}}: {{Requests}} to {{Team}} needing attention", "Requests needing attention",
+        "Hello {{Contact}},\n\nYou're the escalation contact for {{Team}}, so {{From}} is letting you know that these requests to {{Team}} are still open and close to or past their due date.\n\n{{RequestList}}\n\nPlease help get them moving, and reply to this email with where they stand.",
+        [
+            new("Team", "The owning team's name."),
+            new("Contact", "The escalation contact's name, or \"there\" when none is set."),
+            new("From", "Who is asking: this server's team name (Organization settings)."),
+            new("Requests", "How many, in words: \"2 requests\"."),
+            new("RequestList", "Each request: its title, what's asked (its details), when it's due and how overdue, and its ticket link; for an internal team, a link to it. Written by TIDE.", Html: true, Required: true),
+        ], Footer: "Sent by {{From}} to the escalation contact for {{Team}}. Reply to this email to answer.");
+
     public static readonly EmailTemplate BriefNotReady = new(
         "brief-not-ready", "Brief not ready",
         "Sent on a business day, at the brief-not-ready time, to the presenting analyst (or the listed recipients) when today's brief isn't marked ready. Needs it on (Teams & SLA).",
@@ -212,7 +227,7 @@ public static partial class EmailTemplateCatalog
         [Requester, Partner, Change, new("DecisionNote", "\" “the note”\" when they wrote one, else blank.")]);
 
     public static readonly IReadOnlyList<EmailTemplate> All =
-        [DueSoon, Overdue, Digest, PersonalDigest, OutreachFollowUp, Handoff, ExternalReminder, BriefNotReady, Presenting, RotationRequest, RotationApproved,
+        [DueSoon, Overdue, Digest, PersonalDigest, OutreachFollowUp, Handoff, ExternalReminder, Escalation, BriefNotReady, Presenting, RotationRequest, RotationApproved,
             RotationRecorded, RotationDeclined];
 
     public static EmailTemplate? ById(string? id) => All.FirstOrDefault(t => string.Equals(t.Id, id, StringComparison.OrdinalIgnoreCase));

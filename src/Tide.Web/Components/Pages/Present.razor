@@ -182,10 +182,10 @@ else
                                 @foreach (var o in _open.Rows)
                                 {
                                     <tr>
-                                        <td><PriorityBadge Priority="o.Row.Priority" /> @ActionNum(o.Row.Number) @o.Row.Title</td>
+                                        <td><PriorityBadge Priority="o.Row.Priority" /> @ActionNum(o.Row.Number) @o.Row.Title <EscalatedBadge At="o.Row.EscalatedSince" /></td>
                                         <td>@o.Row.TeamName</td>
                                         <td>@(o.NoOneToOwn ? "No one: the team has no members" : o.Row.AssigneeName ?? "Unassigned")</td>
-                                        <td class="tide-slide-late">@o.DaysLate day@(o.DaysLate == 1 ? "" : "s")</td>
+                                        <td class="tide-slide-late">@o.Late</td>
                                     </tr>
                                 }
                             </tbody>

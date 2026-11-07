@@ -39,6 +39,11 @@ public static class OperationalSettings
     public const string OutreachFollowUpDays = "Notifications:OutreachFollowUp:Days";
     public const string ExternalReminders = "Notifications:ExternalReminders:Enabled";
 
+    /// <summary>The escalation ladder: on or off, which actions it climbs, and its steps (<see cref="EscalationLadder"/>).</summary>
+    public const string Escalation = "Notifications:Escalation:Enabled";
+    public const string EscalationScope = "Notifications:Escalation:Scope";
+    public const string EscalationSteps = "Notifications:Escalation:Steps";
+
     public const string IntakeEnabled = "Intake:Enabled";
     public const string RetentionDays = "Intake:RetentionDays";
     public const string MinPollMinutes = "Intake:MinPollMinutes";
@@ -90,7 +95,7 @@ public static class OperationalSettings
         [Presenting] = Switch,
         [Overdue] = Switch,
         [Digest] = Switch,
-        [DigestDay] = Day,
+        [DigestDay] = EnumValue<DayOfWeek>("The digest day is a day of the week, such as Monday."),
         [DigestTime] = Time("The digest time"),
         [BriefNotReady] = Switch,
         [BriefNotReadyTime] = Time("The brief-not-ready time"),
@@ -99,6 +104,9 @@ public static class OperationalSettings
         [OutreachFollowUp] = Switch,
         [OutreachFollowUpDays] = Number("The follow-up wait", ReminderOptions.FollowUpOptions.MinDays, ReminderOptions.FollowUpOptions.MaxDays),
         [ExternalReminders] = Switch,
+        [Escalation] = Switch,
+        [EscalationScope] = EnumValue<Actions.EscalationScope>("The escalation ladder climbs All actions, PartsOnly or ExternalOnly."),
+        [EscalationSteps] = EscalationLadder.Normalize,
         [IntakeEnabled] = Switch,
         [RetentionDays] = Number("Days feed items are kept", 7, 3650),
         [MinPollMinutes] = Number("The shortest poll", 5, 24 * 60),
@@ -118,7 +126,7 @@ public static class OperationalSettings
         [DropFolderPollMinutes] = Number("The drop folder's interval", 1, 60),
         [UpdateIntervalHours] = Number("The update check's interval", 6, 168),
         [RequireSharePoint] = Switch,
-        [ZipDownloads] = ZipMode,
+        [ZipDownloads] = EnumValue<Files.ZipDownloads>("Zipped downloads are RiskyOnly, Always or Never."),
     };
 
     public static IReadOnlyCollection<string> Keys => Rules.Keys;
@@ -188,6 +196,9 @@ public static class OperationalSettings
         s.Use(OutreachFollowUp, v => o.OutreachFollowUp.Enabled = bool.Parse(v));
         s.Use(OutreachFollowUpDays, v => o.OutreachFollowUp.Days = int.Parse(v, Invariant));
         s.Use(ExternalReminders, v => o.ExternalReminders.Enabled = bool.Parse(v));
+        s.Use(Escalation, v => o.Escalation.Enabled = bool.Parse(v));
+        s.Use(EscalationScope, v => o.Escalation.Scope = Enum.Parse<Actions.EscalationScope>(v));
+        s.Use(EscalationSteps, v => o.Escalation.Steps = v);
     }
 
     internal static void Apply(SavedSettings s, IntakeOptions o)
@@ -248,15 +259,11 @@ public static class OperationalSettings
             ? t.ToString("HH:mm", Invariant)
             : throw new ArgumentException($"{what} is a 24-hour time such as 08:00.");
 
-    private static string Day(string v) =>
-        !int.TryParse(v, out _) && Enum.TryParse<DayOfWeek>(v, ignoreCase: true, out var d) && Enum.IsDefined(d)
-            ? d.ToString()
-            : throw new ArgumentException("The digest day is a day of the week, such as Monday.");
-
-    private static string ZipMode(string v) =>
-        !int.TryParse(v, out _) && Enum.TryParse<Files.ZipDownloads>(v, ignoreCase: true, out var mode) && Enum.IsDefined(mode)
-            ? mode.ToString()
-            : throw new ArgumentException("Zipped downloads are RiskyOnly, Always or Never.");
+    // One of an enum's names, any case, stored as named; never its number, which would read as a name that isn't one.
+    private static Func<string, string> EnumValue<T>(string message) where T : struct, Enum => v =>
+        !int.TryParse(v, out _) && Enum.TryParse<T>(v, ignoreCase: true, out var value) && Enum.IsDefined(value)
+            ? value.ToString()
+            : throw new ArgumentException(message);
 
     private static string Name(string v) => v.Length is > 0 and <= MaxTeamName
         ? v

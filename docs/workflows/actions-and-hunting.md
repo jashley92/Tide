@@ -2,7 +2,7 @@
 
 How follow-up work leaves the brief and is tracked to the end: raising an action, who works it, its SLA, its files,
 hunt queries and their dialects, the team's saved queries, outreach emails, reminders, people's own notification
-choices and the personal digest. Also hand-offs, splits and parts, Tracking, active limits, and the teams that work outside TIDE. It's for developers changing this code, and for anyone who needs to know exactly
+choices and the personal digest. Also hand-offs, splits and parts, Tracking, active limits, the teams that work outside TIDE, and the escalation ladder. It's for developers changing this code, and for anyone who needs to know exactly
 what a button does underneath.
 
 **Contents**
@@ -17,6 +17,7 @@ what a button does underneath.
 - [Outreach](#outreach)
 - [Hand-offs, splits, parts and tracking](#hand-offs-splits-parts-and-tracking)
 - [External teams](#external-teams)
+- [The escalation ladder](#the-escalation-ladder)
 - [Reminders and digests](#reminders-and-digests)
 - [My notifications and the personal digest](#my-notifications-and-the-personal-digest)
 - [Lists, board, Today's queue and Workload](#lists-board-todays-queue-and-workload)
@@ -26,7 +27,8 @@ what a button does underneath.
 Related: [ADR 0006](../decisions/0006-query-dialects-are-templates.md) (hunt queries are generated text),
 [ADR 0008](../decisions/0008-teams-own-actions.md) (teams own actions),
 [ADR 0019](../decisions/0019-outreach-emails-are-written-never-sent.md) (outreach emails are written, never sent),
-[ADR 0020](../decisions/0020-external-teams-are-emailed-without-tide.md) (external teams, Tracking and active limits).
+[ADR 0020](../decisions/0020-external-teams-are-emailed-without-tide.md) (external teams, Tracking and active limits),
+[ADR 0021](../decisions/0021-escalation-is-an-administered-ladder.md) (the escalation ladder).
 The tables behind all of this are in [data-model.md](../architecture/data-model.md); the API's action endpoints are in
 [API.md](../API.md).
 
@@ -78,9 +80,10 @@ policy, and the services check again, so a page that forgets can't write.
 | Remove a file | who added it, an analyst, or an administrator; restore: administrator | `ActionFileService.RemoveAsync`, `RestoreAsync` |
 | Hand an action off (the button, or another team in the editor) | whoever can work it | `HandoffService.HandOffAsync`, `ActionService.SaveAsync` |
 | Split an action to teams | `WriteArticles` | `HandoffService.SplitAsync` |
-| Add, edit, retire external teams | `WorkActions` | `TeamService.AddExternalAsync`, `UpdateExternalAsync`, `SetRetiredAsync` |
+| Add, edit, retire external teams, and set an external team's escalation contact | `WorkActions` | `TeamService.AddExternalAsync`, `UpdateExternalAsync`, `SetRetiredAsync`, `SetEscalationContactAsync` |
+| Set an internal team's escalation contact | `Administer` | `TeamService.SetEscalationContactAsync` |
 | Turn an action's external reminders off | whoever can work it | `ActionService.SetNoRemindersAsync` |
-| Teams, members, SLA targets, reminder settings, playbooks, card rules, query templates | `Administer` | `TeamService`, `SlaSettings`, `PlaybookService`, `CardRuleService`, `HuntQueryBuilder` |
+| Teams, members, SLA targets, reminder and escalation settings, playbooks, card rules, query templates | `Administer` | `TeamService`, `SlaSettings`, `PlaybookService`, `CardRuleService`, `HuntQueryBuilder` |
 | A team's active limit | `Administer` | `TeamService.SetLimitAsync` |
 | Run a reminder scan now | `Administer` | `ReminderService.RunNowAsync` |
 
@@ -579,6 +582,56 @@ assignee, else the mailbox of the team that handed it over, else its creator (`E
 (`before`, `late-0`, `late-1`…) is marked, so it goes once; moving the due date starts over. The internal reminders
 are unchanged.
 
+## The escalation ladder
+
+An administrator lists a few steps on Teams & SLA (*Escalation*) that run by themselves on an open action as it slips.
+It's off until it's turned on there (`Notifications:Escalation:Enabled`), and it runs in the reminder sweep
+(`ReminderKind.Escalation`, `ReminderService.EscalateAsync` in `EscalationScan.cs`) at the reminder time on business
+days. ADR [0021](../decisions/0021-escalation-is-an-administered-ladder.md).
+
+**A step** is a *when* and what it does (`EscalationStep`). When: so many business days before the due date, on the
+due day, or so many business days after it, in the organization's working days with its holidays
+(`EscalationLadder.DayOf`; a due date on a day off counts back from the working day before it, as an external
+reminder does). What it does, from a fixed menu (`EscalationDoes`), any of:
+
+| Does | What happens |
+|---|---|
+| Remind | The owning team is emailed as its reminders go. An external team gets its own reminder email (the *External team reminder* template), unless its reminders or the action's are off or it has no contact email. An internal one: the assignee, else the team mailbox, else its members, with the *Actions due soon* template before the due date and *Overdue actions* after it, leaving out whoever turned that kind off in My notifications. |
+| Copy the escalation contact | The team's escalation contact (a name and email on the team, internal or external: Teams & SLA, External teams) gets the *Escalation contact* template listing the team's actions at the step, one email per team. For an external team it has no TIDE link or number; for an internal one each request links to its page. Reply-To is whoever follows the work (`ExternalCadence.ReplyTo`). A team with no escalation contact copies no one, said in the history. |
+| Raise priority | Up one (P3 → P2), never above P1. |
+| Flag | `ActionItem.EscalatedForDue` is set to its due date (and `EscalatedAtUtc` to now): an *Escalated* badge on its row, card and page, the *Escalated* card on Today for its team, its assignee and (for a part) its parent's assignee, and the meeting's overdue list. Flagging one already escalated changes nothing. |
+
+The defaults, ready when it's turned on (`EscalationLadder.Defaults`): two business days before, remind; three after,
+copy the escalation contact; seven after, raise priority and flag; fourteen after, flag (a no-op when it already is:
+it puts the action in the meeting if an earlier step didn't). **Which actions** is one choice for the whole ladder:
+all actions, only parts of a split, or only external teams' actions (`EscalationScope`).
+
+**Rules.**
+
+- Only open actions with a due date climb, Tracking included; a closed one gets no step.
+- Each step runs once per action and due date: a `NotificationMark` (`escalation`, `{action}:{due}:{step}`), and a
+  history line by *TIDE*, such as "Escalated, 7 business days late: priority P3 → P2; flagged escalated." The history
+  names who was reminded by address, as the email went. A new due date starts the ladder again for that date.
+- On a day, only the steps whose day is the latest to have come run (several, when they share it;
+  `EscalationLadder.Plan`). Earlier ones it passed over (the ladder turned on, or the date moved, after their day)
+  never run, and need no mark: for that due date they can't be the latest again. So turning it on doesn't send a
+  backlog of emails at once.
+- The sweep reads only the candidates' ids and due dates, plans them, leaves out what's marked, then reads in full just
+  the actions with a step to run (no article but its marking). Where replies go is read once for all its emails.
+- The emails go first, batched by recipient. If every email for an action failed, its step waits for the next poll,
+  as a reminder does; with email turned off, the step still runs and the history says so.
+- The actions' own changes (priority, flag), their history lines and their marks are saved in one save, on one fresh
+  read of them all, so a colleague's edit isn't undone. If a colleague saved one at that moment, the whole save is
+  lost, so each is read again and saved on its own (tried once more if it clashes again). An action that closed or
+  moved its date meanwhile isn't changed.
+- **Escalated is read, never cleared.** An action is escalated while it's open and still due on the date it was flagged
+  for (`ActionItem.IsEscalated`, `EscalatedFor`; in the database `ActionQueries.WhereEscalated`, on a filtered index of
+  `EscalatedForDue`). Closing it, or moving its due date either way, ends it with nothing to write, as the marks are
+  kept per due date; a new date's own ladder flags it again if it slips that far.
+- Steps that don't read (a hand-edited server value) climb nothing; the run's note on Teams & SLA says why, and it's
+  logged.
+- *Run now* (beside the section) runs it whatever the switch, as the other scans' do.
+
 ## Reminders and digests
 
 `ReminderService` (`src/Tide.Application/Actions/Reminders.cs`) holds the scans. `ReminderHostedService` calls
@@ -596,6 +649,7 @@ others. An administrator can run any scan now from Teams & SLA.
 | Presenting next | reminder time, the business day before a stretch | the analyst presenting next | per stretch |
 | Outreach follow-up | reminder time, N business days after an email was marked sent (1 to 30, default 5) | whoever marked it sent | `outreach-follow-up` per email |
 | External team reminders | reminder time, by each external team's cadence | the team's contact email, Reply-To whoever follows the work | `external-reminder` per action, due date and step |
+| Escalation ladder | reminder time on business days, by its steps ([above](#the-escalation-ladder)) | the owning team, its escalation contact | `escalation` per action, due date and step |
 
 Each scan is off until an administrator enables it (`Notifications` section, set on Teams & SLA), except the
 personal digest's offer, which is on and sends nothing until someone chooses a digest. Each batches one email per
@@ -665,6 +719,10 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
   (`BoardClosedDays`); *Show older*, under Done, takes them to 30 days (`BoardOlderDays`) for that visit.
 - **Today's team queue** (`TeamQueueAsync`): the person's teams' open actions that are theirs or nobody's, theirs
   first, up to 8, with *Take it*. Without `WriteArticles` it leads Today in place of the producers' step strip.
+- **Today's Escalated card** (`TeamQueue.Escalated`, read with the queue on its context; `EscalatedAsync` alone): the
+  escalated actions that are the person's to chase (assigned to them, on a team of theirs, or a part of an action
+  assigned to them), soonest due first, up to 8. Read while the ladder is on, or while anything is still escalated.
+  Shown only when there are any: first on an action owner's Today, above the actions card on an analyst's.
 - **Workload** (`/workload`, `WorkloadAsync`): each team's open, overdue, due soon and blocked counts, closed and met
   last week, and who holds what with per-person and P1 counts (not for an external team, which has no holders), and
   "4 of 5 active" for a team with a limit. Over longer windows, each team against its due dates is on
@@ -697,6 +755,10 @@ Every one of these follows colleagues' saves live through the `actions` and `act
 | Handing off to an external team | Its assignee is cleared (nobody is on the team); no email: its reminders tell it. |
 | An external team with no contact email | Its reminders have nowhere to go: none is sent until one is given. |
 | A split to a team twice, or from a part | Refused: each team once; parts split one level deep. |
+| The escalation ladder turned on with actions already weeks late | Each runs only its latest step that has come (flag, by the defaults); the earlier ones never run. |
+| An escalated action's date moved, even to one still before today | It's no longer escalated; its ladder starts again for the new date at that date's latest step, which may flag it again. |
+| A ladder step's emails all fail | Nothing is changed or marked; the next poll tries the step again. |
+| Raise priority on a P1 | It stays P1; the history says "priority already P1". |
 
 ## Where it lives in code
 
@@ -717,6 +779,7 @@ Every one of these follows colleagues' saves live through the `actions` and `act
 | Hand-offs, splits, limits, rollup | `src/Tide.Application/Actions/Handoffs.cs` (`HandoffService`), `ActiveLimits.cs`, `ActionRollup.cs` |
 | Lineage, remediation timeline, recorded updates | `src/Tide.Application/Actions/ActionLineage.cs` (`ActionLineage`, `LineageRules`, `RemediationTimeline`), `TeamUpdates.cs` (`TeamUpdate`, `TeamUpdates`), `ActionService.RecordUpdateAsync` |
 | External reminders | `src/Tide.Application/Actions/ExternalReminders.cs` (`ExternalCadence`, `ReminderService.ExternalAsync`) |
+| Escalation ladder | `src/Tide.Application/Actions/Escalation.cs` (`EscalationLadder`, `EscalationStep`, `EscalationOptions`), `EscalationScan.cs` (`ReminderService.EscalateAsync`); the page's form `src/Tide.Web/Components/Pages/Admin/EscalationForm.cs` |
 | Reminders | `src/Tide.Application/Actions/Reminders.cs` (`ReminderService`, `ReminderOptions`), `src/Tide.Web/Services/ReminderHostedService.cs` |
 | Notification choices | `src/Tide.Application/Preferences/` (`NotificationKinds`, `NotificationPreferenceService`, `RecipientResolver`, `UserPreferenceService`) |
 | Pages | `src/Tide.Web/Components/Pages/ActionPage.razor`, `ActionsBoard.razor`, `Workload.razor`, `ExternalTeams.razor`, `SavedQueriesPage.razor`, `OutreachTemplatesPage.razor`, `MyNotifications.razor` |

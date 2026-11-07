@@ -45,6 +45,12 @@ public static class ExternalCadence
         return start;
     }
 
+    /// <summary>The latest due date whose window, starting <paramref name="before"/> working days ahead of it, has opened by
+    /// <paramref name="today"/>: those working days ahead, and the days off just after them (a due date on a day off is
+    /// reached from the working day before). Nothing due later can be due a reminder or a step yet.</summary>
+    public static DateOnly LastDueInReach(DateOnly today, int before, WorkingDays days) =>
+        days.Next(Enumerable.Range(0, before).Aggregate(today, (d, _) => days.Next(d))).AddDays(-1);
+
     /// <summary>
     /// Where a reply to an external team's reminder about <paramref name="a"/> goes: for a part, its parent's assignee, else
     /// the parent's team mailbox; for a top-level one, its own assignee, else the mailbox of the team that handed it over,
@@ -73,9 +79,8 @@ public sealed partial class ReminderService
             .ToDictionaryAsync(t => t.Id, ct);
         if (teams.Count == 0) return 0;
         var ids = teams.Keys.ToList();
-        // Nothing due after the furthest any team looks ahead can be due a reminder: the working days its reminder starts
-        // before, and the days off just after them (a due date on a day off is reminded the working day before).
-        var latest = clock.Days.Next(Enumerable.Range(0, teams.Values.Max(t => t.RemindBeforeDays)).Aggregate(today, (d, _) => clock.Days.Next(d))).AddDays(-1);
+        // Nothing due after the furthest any team looks ahead can be due a reminder.
+        var latest = ExternalCadence.LastDueInReach(today, teams.Values.Max(t => t.RemindBeforeDays), clock.Days);
         // Only what the email and its Reply-To use: no article content, only its marking.
         var open = await db.Actions.AsNoTracking().WhereOpen()
             .Where(a => ids.Contains(a.TeamId) && a.DueDate != null && a.DueDate <= latest && !a.NoReminders)
@@ -100,22 +105,32 @@ public sealed partial class ReminderService
         {
             var team = teams[batch.Key];
             var list = batch.Select(x => x.Action).OrderBy(a => a.DueDate).ThenBy(a => a.Number).ToList();
-            var t = _templates.Render(EmailTemplateCatalog.ExternalReminder, new Dictionary<string, string>
-            {
-                ["Team"] = team.Name,
-                ["Contact"] = team.ContactName ?? team.Name,
-                ["From"] = clock.TeamName,
-                ["Requests"] = $"{list.Count} request{S(list.Count)}",
-                ["RequestList"] = RequestList(list, today, clock.Days),
-            });
-            var html = Shell(t.Heading, clock.TeamName + " · " + DayText(today), MarkingLine(list) + t.BodyHtml, t.Footer);
-            var replyTo = list.Select(a => replies.GetValueOrDefault(a.Id)).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-            var result = await email.SendAsync(new OutgoingEmail([team.ContactEmail!], Marked(t.Subject, list), html, ToText(html), [], replyTo), ct);
+            var result = await email.SendAsync(RequestsEmail(EmailTemplateCatalog.ExternalReminder, team, team.ContactEmail!, team.ContactName ?? team.Name,
+                list, today, replies), ct);
             if (result.Status != EmailSendStatus.Sent) continue;
             sent++;
             await MarkAsync(db, ExternalMark, batch.Select(x => x.Key!).ToList());
         }
         return sent;
+    }
+
+    // An email about a team's requests, to someone who may not use TIDE (the external reminder template, and the escalation
+    // contact's): the team, who it's to (<paramref name="contact"/>), the request list (linked to TIDE only with
+    // <paramref name="tideUrl"/>), and replies to whoever follows each one.
+    private OutgoingEmail RequestsEmail(EmailTemplate template, Team team, string to, string contact, IReadOnlyList<ActionItem> list, DateOnly today,
+        IReadOnlyDictionary<Guid, string?> replies, string? tideUrl = null)
+    {
+        var t = _templates.Render(template, new Dictionary<string, string>
+        {
+            ["Team"] = team.Name,
+            ["Contact"] = contact,
+            ["From"] = clock.TeamName,
+            ["Requests"] = $"{list.Count} request{S(list.Count)}",
+            ["RequestList"] = RequestList(list, today, clock.Days, tideUrl),
+        });
+        var html = Shell(t.Heading, clock.TeamName + " · " + DayText(today), MarkingLine(list) + t.BodyHtml, t.Footer);
+        var replyTo = list.Select(a => replies.GetValueOrDefault(a.Id)).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return new OutgoingEmail([to], Marked(t.Subject, list), html, ToText(html), [], replyTo);
     }
 
     // An action's mark for the reminder due now ("{action}:{due}:{step}"), or null when none is.
@@ -145,9 +160,10 @@ public sealed partial class ReminderService
 
     /// <summary>
     /// An external team's requests, for someone without TIDE: each one's title, what's asked (its details as written on
-    /// the action, nothing from its article), when it's due and how late, and its ticket link. No TIDE number or link.
+    /// the action, nothing from its article), when it's due and how late, and its ticket link. No TIDE number or link,
+    /// unless <paramref name="tideUrl"/> (this server's address) is given for readers who use TIDE: then each links to its page.
     /// </summary>
-    internal static string RequestList(IEnumerable<ActionItem> actions, DateOnly today, WorkingDays days)
+    internal static string RequestList(IEnumerable<ActionItem> actions, DateOnly today, WorkingDays days, string? tideUrl = null)
     {
         var sb = new StringBuilder();
         foreach (var a in actions)
@@ -162,6 +178,9 @@ public sealed partial class ReminderService
             if (!string.IsNullOrWhiteSpace(a.TicketUrl))
                 sb.Append(CultureInfo.InvariantCulture,
                     $"<div style=\"font-size:13px;\">Ticket: <a style=\"color:{Palette.Link};\" href=\"{Esc(a.TicketUrl)}\">{Esc(a.TicketRef ?? a.TicketUrl)}</a></div>");
+            if (!string.IsNullOrWhiteSpace(tideUrl))
+                sb.Append(CultureInfo.InvariantCulture,
+                    $"<div style=\"font-size:13px;\"><a style=\"color:{Palette.Link};\" href=\"{Esc(tideUrl.TrimEnd('/') + "/actions/" + a.Number)}\">A-{a.Number} in TIDE</a></div>");
             sb.Append("</div>");
         }
         return sb.ToString();

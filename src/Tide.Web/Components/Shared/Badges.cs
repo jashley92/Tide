@@ -202,6 +202,22 @@ public static class LineageTones
     };
 }
 
+/// <summary>"Escalated", filled red, on an escalated action; nothing otherwise. Its title says when.</summary>
+public sealed class EscalatedBadge : ComponentBase
+{
+    [Inject] private Application.Org.OrgClock Clock { get; set; } = default!;
+
+    /// <summary>When it was escalated, while it still is (<see cref="Domain.Entities.ActionItem.EscalatedSince"/>,
+    /// <c>ActionRow.EscalatedSince</c>); null draws nothing.</summary>
+    [Parameter] public DateTimeOffset? At { get; set; }
+
+    protected override void BuildRenderTree(RenderTreeBuilder b)
+    {
+        if (At is not { } at) return;
+        Badge.Write(b, BadgeTone.Danger, true, "Escalated", "bi-arrow-up-circle-fill", "Escalated " + Ui.When(Clock, at));
+    }
+}
+
 /// <summary>An action's status as a pill.</summary>
 public sealed class ActionStatusBadge : ComponentBase
 {

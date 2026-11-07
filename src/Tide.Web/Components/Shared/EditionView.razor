@@ -36,9 +36,9 @@
             <ul class="list-unstyled mb-1">
                 @foreach (var o in open.Rows)
                 {
-                    <li><PriorityBadge Priority="o.Row.Priority" /> <a href="@Ui.ActionUrl(o.Row.Number)">@Ui.ActionLabel(o.Row.Number)</a> @o.Row.Title
+                    <li><PriorityBadge Priority="o.Row.Priority" /> <a href="@Ui.ActionUrl(o.Row.Number)">@Ui.ActionLabel(o.Row.Number)</a> @o.Row.Title <EscalatedBadge At="o.Row.EscalatedSince" />
                         <span class="tide-muted">&middot; @o.Row.TeamName &middot; @(o.NoOneToOwn ? "no one: the team has no members" : o.Row.AssigneeName ?? "unassigned")</span>
-                        <span class="tide-slide-late">@o.DaysLate day@(o.DaysLate == 1 ? "" : "s") late</span></li>
+                        <span class="tide-slide-late">@o.Late</span></li>
                 }
             </ul>
             @if (open.Overdue > open.Rows.Count) { <div class="small tide-muted">@open.Overdue overdue in all; the rest are under Actions &gt; Overdue.</div> }

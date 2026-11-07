@@ -227,11 +227,12 @@ public sealed class BriefRenderer(IMarkdownService markdown)
             var label = $"A-{a.Number}";
             var number = baseUrl is null ? Esc(label) : $"<a style=\"color:{Palette.Link};\" href=\"{Esc($"{baseUrl}/actions/{a.Number}")}\">{Esc(label)}</a>";
             var holder = o.NoOneToOwn ? "no one: the team has no members" : a.AssigneeName ?? "unassigned";
+            var escalated = a.Escalated ? $" <strong style=\"color:{Palette.Threat};\">Escalated</strong>" : "";
             sb.Append(Invariant, $"""
                 <tr>
                   <td style="padding:5px 6px 5px 0;font-size:12px;font-weight:700;white-space:nowrap;color:{(a.Priority <= Priority.P2 ? Palette.Threat : Palette.Muted)};">{a.Priority}</td>
-                  <td style="padding:5px 0;font-size:14px;color:{Palette.Text};">{number} {Esc(a.Title)} <span style="color:{Palette.Muted};">&middot; {Esc(a.TeamName)} &middot; {Esc(holder)}</span></td>
-                  <td align="right" style="padding:5px 0 5px 8px;font-size:13px;font-weight:600;white-space:nowrap;color:{Palette.Threat};">{o.DaysLate} day{(o.DaysLate == 1 ? "" : "s")} late</td>
+                  <td style="padding:5px 0;font-size:14px;color:{Palette.Text};">{number} {Esc(a.Title)}{escalated} <span style="color:{Palette.Muted};">&middot; {Esc(a.TeamName)} &middot; {Esc(holder)}</span></td>
+                  <td align="right" style="padding:5px 0 5px 8px;font-size:13px;font-weight:600;white-space:nowrap;color:{Palette.Threat};">{Esc(o.Late)}</td>
                 </tr>
                 """);
         }

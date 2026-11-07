@@ -465,6 +465,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.ContactName).HasMaxLength(Team.MaxContactName);
             e.Property(x => x.ContactEmail).HasMaxLength(256);
             e.Property(x => x.Engage).HasMaxLength(Team.MaxEngage);
+            e.Property(x => x.EscalationName).HasMaxLength(Team.MaxContactName);
+            e.Property(x => x.EscalationEmail).HasMaxLength(256);
             e.HasMany(x => x.Members).WithOne().HasForeignKey(x => x.TeamId).OnDelete(DeleteBehavior.Cascade);
             Audited(e);
         });
@@ -505,6 +507,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasIndex(x => x.AssigneeId);
             e.HasIndex(x => x.ArticleId);
             e.HasIndex(x => x.ParentId);
+            // Only flagged actions are in it, so Today's Escalated card and the meeting's list read a handful of rows.
+            // Square brackets quote a name in SQL Server and SQLite alike.
+            e.HasIndex(x => x.EscalatedForDue).HasFilter("[EscalatedForDue] IS NOT NULL");
             Audited(e);
         });
 

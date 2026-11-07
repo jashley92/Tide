@@ -47,6 +47,7 @@
                         <div class="tide-kcard-head">
                             <a class="tide-action-num" href="@Ui.ActionUrl(r.Number)" draggable="false">@Ui.ActionLabel(r.Number)</a>
                             <PriorityBadge Priority="r.Priority" />
+                            <EscalatedBadge At="r.EscalatedSince" />
                             <span class="tide-muted small ms-auto text-truncate">@ActionService.KindName(r.Kind)</span>
                         </div>
                         @if (held is not null)

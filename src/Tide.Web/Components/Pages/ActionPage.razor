@@ -70,6 +70,7 @@ else
             <div class="tide-sub d-flex gap-2 align-items-center flex-wrap">
                 <PresenceNote Place="@ActionPlace(a.Number)" Editing="Editing" />
                 <ActionStatusBadge Status="a.Status" />
+                <EscalatedBadge At="a.EscalatedSince" />
                 @if (a.Outcome != ActionOutcome.None) { <span>@ActionService.OutcomeName(a.Outcome)</span> }
                 @if (_detail.Parent is { } parentRow)
                 {

@@ -416,6 +416,12 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .IsConcurrencyToken()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTimeOffset?>("EscalatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateOnly?>("EscalatedForDue")
+                        .HasColumnType("date");
+
                     b.Property<DateTimeOffset?>("HandedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -497,6 +503,9 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.HasIndex("ArticleId");
 
                     b.HasIndex("AssigneeId");
+
+                    b.HasIndex("EscalatedForDue")
+                        .HasFilter("[EscalatedForDue] IS NOT NULL");
 
                     b.HasIndex("Number")
                         .IsUnique();
@@ -3117,6 +3126,14 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<string>("Engage")
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("EscalationEmail")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("EscalationName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<bool>("IsExternal")
                         .HasColumnType("bit");

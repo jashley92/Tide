@@ -323,6 +323,7 @@ until then (times are in the organization's time zone, set on **Organization set
 | `Presenting:Enabled` | At `ReminderTime`, a reminder to whoever presents the brief the next business day (once per stretch). |
 | `PersonalDigest:Enabled` | On by default: people may choose, on **My notifications**, a digest of their own actions, daily at `ReminderTime` on business days or weekly on `Digest:Day` at `Digest:Time`. Nothing goes until someone does. |
 | `OutreachFollowUp:Enabled`, `Days` | At `ReminderTime` on business days, a reminder to whoever marked an Outreach action's email sent, once it has had no reply recorded for `Days` business days (1 to 30; 5 by default) and the action is still open. Once per email. |
+| `Escalation:Enabled`, `Scope`, `Steps` | The escalation ladder: at `ReminderTime` on business days, each open action runs the step it has reached as it slips (remind its team, copy its escalation contact, raise its priority, flag it escalated), once per due date. Edited on Teams & SLA as a list of steps; set each team's escalation contact on its form first. |
 
 Each thing is sent once. **Administration > Teams & SLA** shows each scan's last run and can run one now.
 

@@ -110,7 +110,10 @@ public static class ActionSla
     public static int DaysLate(DateOnly? due, DateOnly today) => due is { } d && d < today ? today.DayNumber - d.DayNumber : 0;
 
     /// <summary>"3 days late", "1 day late", or null when it isn't.</summary>
-    public static string? LateText(DateOnly? due, DateOnly today) => DaysLate(due, today) switch
+    public static string? LateText(DateOnly? due, DateOnly today) => LateText(DaysLate(due, today));
+
+    /// <summary>"3 days late" for so many calendar days late, or null for none.</summary>
+    public static string? LateText(int daysLate) => daysLate switch
     {
         0 => null,
         1 => "1 day late",

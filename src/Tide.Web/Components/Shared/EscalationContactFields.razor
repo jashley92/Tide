@@ -1,0 +1,28 @@
+@* A team's escalation contact, the name and email the escalation ladder copies: on Teams & SLA for an internal team (an
+   administrator's), on External teams for an external one (whoever works actions). TeamService saves them. *@
+
+<div class="row g-2">
+    <div class="col-md-6">
+        <label class="tide-field-label" for="@($"{Id}-name")">Escalation contact</label>
+        <input id="@($"{Id}-name")" class="form-control form-control-sm" maxlength="@Team.MaxContactName" placeholder="A manager or duty lead (optional)"
+               value="@Name" @onchange="e => NameChanged.InvokeAsync(e.Value?.ToString())" />
+    </div>
+    <div class="col-md-6">
+        <label class="tide-field-label" for="@($"{Id}-email")">Escalation contact's email</label>
+        <input id="@($"{Id}-email")" class="form-control form-control-sm" maxlength="256" aria-describedby="@($"{Id}-help")"
+               value="@Email" @onchange="e => EmailChanged.InvokeAsync(e.Value?.ToString())" />
+    </div>
+    <div class="col-12 form-text mt-0" id="@($"{Id}-help")">Who the escalation ladder copies when the team's actions slip, if a step says so.
+        @(External ? "Their email has no TIDE links." : "Each request in it links to TIDE.")</div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+    [Parameter] public string? Name { get; set; }
+    [Parameter] public EventCallback<string?> NameChanged { get; set; }
+    [Parameter] public string? Email { get; set; }
+    [Parameter] public EventCallback<string?> EmailChanged { get; set; }
+
+    /// <summary>For an external team, whose contact may not use TIDE.</summary>
+    [Parameter] public bool External { get; set; }
+}

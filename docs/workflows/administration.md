@@ -43,7 +43,7 @@ role holds it; an administrator also holds every other permission
 |---|---|---|---|---|
 | Overview | `/admin` | nothing: the checklist and the index | (reads several) | |
 | Organization › Organization settings | `/admin/organization` | team name, time zone, meeting time; holidays | `OperationalSettingsService`, `HolidayService` | `Settings`, `Holidays` |
-| Organization › Teams & SLA | `/admin/teams` | internal teams, members, team mailbox, each team's active limit and what happens at it (show, warn, refuse), retire; a link to External teams; SLA targets by priority and kind; reminder and digest switches and times (external team reminders among them), brief-not-ready recipients, outreach follow-up days, run a scan now, last run, opt-out counts; which action files download zipped | `TeamService`, `SlaSettings`, `OperationalSettingsService`, `ReminderService`, `NotificationPreferenceService` | `Teams`, `TeamMembers`, `Settings` |
+| Organization › Teams & SLA | `/admin/teams` | internal teams, members, team mailbox, escalation contact, each team's active limit and what happens at it (show, warn, refuse), retire; a link to External teams; SLA targets by priority and kind; reminder and digest switches and times (external team reminders among them), brief-not-ready recipients, outreach follow-up days, run a scan now, last run, opt-out counts; the escalation ladder (on or off, which actions, its steps, run it now); which action files download zipped | `TeamService`, `SlaSettings`, `OperationalSettingsService`, `ReminderService`, `NotificationPreferenceService` | `Teams`, `TeamMembers`, `Settings` |
 | Organization › Brief rotation | `/admin/rotation` | roster, weekly rota, managers to notify | `RotationService` | rotation tables, `Settings` |
 | Actions › Playbooks | `/admin/playbooks` | checklists per kind of action; a new install, or an upgrade with none, starts with one for each kind but Other, added once (`Data:StarterPlaybooks`) | `PlaybookService` | `Playbooks` |
 | Actions › Card rules | `/admin/card-rules` | colours and labels on the board and list, and the rules offered as filters | `CardRuleService` | `ActionCardRules` |
@@ -65,9 +65,18 @@ role holds it; an administrator also holds every other permission
 | System › Updates | `/admin/system/updates` | the update check's switch and interval | `UpdateCheckService`, `UpdateSettings` | `Settings` |
 
 **External teams** (`/teams/external`) isn't under Administration: anyone with `WorkActions` keeps the teams that work
-outside TIDE there (contact, how to engage them, their reminders' cadence), and an administrator also sets their active
-limits there. Internal teams stay on Teams & SLA, the administrators'. See
+outside TIDE there (contact, how to engage them, their reminders' cadence, their escalation contact), and an
+administrator also sets their active limits there. Internal teams stay on Teams & SLA, the administrators'. See
 [actions-and-hunting.md](actions-and-hunting.md#external-teams).
+
+**Escalation** (on Teams & SLA) is the escalation ladder: a switch (off until turned on), which actions it climbs (all,
+only parts of a split, or only external teams'), and its steps in order, each a number of business days before, on or
+after the due date and what it does (remind the team, copy its escalation contact, raise priority, flag). Steps are
+added, removed and moved up or down here; *Use the defaults* puts back the four it starts with. *Save escalation*
+checks them all (at most 8 steps, 0 to 60 business days, each doing something, no two the same) and saves the three
+settings together, or none, saying why. A last run whose steps didn't read (a hand-edited server value) says so. Each internal team's escalation contact (a name and email) is set in its
+editor here; an external team's on External teams. See
+[actions-and-hunting.md](actions-and-hunting.md#the-escalation-ladder).
 
 The workflows behind several pages are on their own pages: teams, SLA and reminders in
 [actions-and-hunting.md](actions-and-hunting.md); the rotation in [rotation.md](rotation.md); metrics and imports in
@@ -141,6 +150,7 @@ template: it's written from the brief ([distribution.md](distribution.md)).
 | `outreach-follow-up` | Outreach follow-up | `ReminderService` |
 | `handoff` | Action handed to a team | `HandoffService` |
 | `external-reminder` | External team reminder (to people without TIDE: no links) | `ReminderService` |
+| `escalation` | Escalation contact (a ladder step's copy to the team's escalation contact: no TIDE links for an external team, a link to each request for an internal one) | `ReminderService` |
 | `brief-not-ready` | Brief not ready | `ReminderService` |
 | `presenting` | Presenting next | `ReminderService` |
 | `rotation-request` | Swap or cover request | `RotationService` |
@@ -288,6 +298,8 @@ System › Updates (`UpdateCheckService`) says whether a newer TIDE release is p
 | A bundle import that fails partway | Nothing is saved (all or nothing). |
 | The update check with no internet | "Couldn't check" and why; nothing else is affected. |
 | A setting saved in the app and also set on the server | The app's value wins; Setting sources shows which. |
+| Escalation steps with two the same, or more than 8 | Refused on save, naming the steps; skipped on import. |
+| An escalation steps value on the server that doesn't read | The ladder climbs nothing until one that reads is saved. |
 
 ## Where it lives in code
 

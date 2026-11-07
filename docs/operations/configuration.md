@@ -235,7 +235,7 @@ except the personal digest's offer. What each sends is in [INSTALL.md](../INSTAL
 
 | Key | Default | Allowed values |
 |---|---|---|
-| `Notifications:ReminderTime` | `08:00` | `HH:mm`. Due soon, overdue, presenting, outreach follow-up, the external teams' reminders and the daily personal digest go at or after it on business days. |
+| `Notifications:ReminderTime` | `08:00` | `HH:mm`. Due soon, overdue, presenting, outreach follow-up, the external teams' reminders, the escalation ladder and the daily personal digest go at or after it on business days. |
 | `Notifications:DueSoon:Enabled` | `false` | `true`/`false` |
 | `Notifications:Overdue:Enabled` | `false` | `true`/`false` |
 | `Notifications:Presenting:Enabled` | `false` | `true`/`false` |
@@ -249,6 +249,9 @@ except the personal digest's offer. What each sends is in [INSTALL.md](../INSTAL
 | `Notifications:OutreachFollowUp:Enabled` | `false` | `true`/`false` |
 | `Notifications:OutreachFollowUp:Days` | `5` | 1 to 30 business days. |
 | `Notifications:ExternalReminders:Enabled` | `false` | `true`/`false`. Emails each external team, with its own reminders on, about its actions due soon or overdue at the reminder time, at the team's own cadence (set on External teams). Goes outside TIDE's users. |
+| `Notifications:Escalation:Enabled` | `false` | `true`/`false`. Climbs the escalation ladder at the reminder time on business days: each open action runs the step it has reached, once per due date ([actions-and-hunting.md](../workflows/actions-and-hunting.md#the-escalation-ladder)). A step may email outside TIDE's users (an external team, an escalation contact). |
+| `Notifications:Escalation:Scope` | `All` | `All`, `PartsOnly` (actions with a parent) or `ExternalOnly` (external teams' actions). |
+| `Notifications:Escalation:Steps` | `before 2: remind; after 3: contact; after 7: raise, flag; after 14: flag` | The steps in order, apart by semicolons: a when (`before N`, `due` or `after N` business days, 0 to 60) and what it does (`remind`, `contact`, `raise`, `flag`, apart by commas). At most 8, none doing nothing, no two the same. Teams & SLA edits it as a list. A server value that doesn't read climbs nothing. |
 
 ### Intake
 
@@ -352,7 +355,7 @@ app's own bookkeeping.
 
 **Administration › Email templates** rewords the notification emails: due soon (`due-soon`), overdue (`overdue`), the
 weekly team digest (`digest`), the personal digest (`personal-digest`), outreach follow-up (`outreach-follow-up`), a hand-off
-(`handoff`), the external team reminder (`external-reminder`), brief not ready (`brief-not-ready`), presenting next (`presenting`), and the rotation's request, approved, recorded and
+(`handoff`), the external team reminder (`external-reminder`), the escalation contact's copy (`escalation`), brief not ready (`brief-not-ready`), presenting next (`presenting`), and the rotation's request, approved, recorded and
 declined emails (`rotation-request`, `rotation-approved`, `rotation-recorded`, `rotation-declined`).
 `EmailTemplateCatalog` holds each one's default subject, heading and Markdown body and the `{{Name}}` values it fills.
 

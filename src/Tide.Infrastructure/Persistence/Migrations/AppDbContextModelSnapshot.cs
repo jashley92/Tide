@@ -411,6 +411,12 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .IsConcurrencyToken()
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("EscalatedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateOnly?>("EscalatedForDue")
+                        .HasColumnType("TEXT");
+
                     b.Property<long?>("HandedAtUtc")
                         .HasColumnType("INTEGER");
 
@@ -492,6 +498,9 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.HasIndex("ArticleId");
 
                     b.HasIndex("AssigneeId");
+
+                    b.HasIndex("EscalatedForDue")
+                        .HasFilter("[EscalatedForDue] IS NOT NULL");
 
                     b.HasIndex("Number")
                         .IsUnique();
@@ -3111,6 +3120,14 @@ namespace Tide.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("Engage")
                         .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EscalationEmail")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EscalationName")
+                        .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("IsExternal")

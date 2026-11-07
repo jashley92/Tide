@@ -32,6 +32,11 @@ internal static class ActionQueries
     public static IQueryable<ActionItem> WhereOverdue(this IQueryable<ActionItem> q, DateOnly today) =>
         q.WhereOpen().Where(a => a.DueDate < today);
 
+    /// <summary>The escalated actions: open, and flagged by the escalation ladder for the due date they have
+    /// (<see cref="ActionItem.EscalatedFor"/>). Served by the filtered index on <c>EscalatedForDue</c>.</summary>
+    public static IQueryable<ActionItem> WhereEscalated(this IQueryable<ActionItem> q) =>
+        q.Where(a => a.EscalatedForDue != null && a.EscalatedForDue == a.DueDate).WhereOpen();
+
     /// <summary>The closed actions: done, cancelled or not applicable.</summary>
     public static IQueryable<ActionItem> WhereClosed(this IQueryable<ActionItem> q) => q.Where(a => ActionItem.ClosedStatuses.Contains(a.Status));
 

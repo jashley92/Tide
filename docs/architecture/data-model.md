@@ -330,6 +330,7 @@ erDiagram
         uuid ArticleId FK
         uuid ParentId FK
         uuid PlaybookId FK
+        date EscalatedForDue
         uuid EditVersion "concurrency"
     }
     Teams {
@@ -338,6 +339,7 @@ erDiagram
         bool IsRetired
         bool IsExternal
         int ActiveLimit
+        string EscalationEmail
     }
     TeamMembers {
         uuid TeamId PK
@@ -957,6 +959,13 @@ The active limit and the external team's profile (EP-86):
 | `RemindBeforeDays` | int | no | Business days before the due date its first reminder goes, 0 to 10 (0: the due day). Default 2. |
 | `RemindOverdueEveryDays` | int | yes | Business days between reminders while overdue, 1 to 20; null reminds once. The migration set existing rows to 3. |
 
+The escalation contact (EP-88 part C), on any team, internal or external:
+
+| Column | Type | Null | Meaning |
+|---|---|---|---|
+| `EscalationName` | nvarchar(200) | yes | Who the escalation ladder copies when the team's actions slip: a manager, a duty lead. |
+| `EscalationEmail` | nvarchar(256) | yes | Where a step that copies the escalation contact emails; null copies no one. An internal team's is set by an administrator, an external team's by anyone with `WorkActions` (`TeamService.SetEscalationContactAsync`). The migration left existing rows null. |
+
 `TeamMembers` has key `(TeamId, UserId)` and is cascade-deleted with its team. Columns: `UserId`/`DisplayName`
 nvarchar(256) and `AddedAtUtc`. `UserId` is indexed. Members are the people who may work the team's actions, with
 `WorkActions`. Both tables are written by `TeamService`.
@@ -992,6 +1001,8 @@ config change. A team owns it, it's due by a date the SLA targets suggest, and i
 | `HandedById`, `HandedByName` | nvarchar(256) | yes | Who handed it on last. |
 | `HandedAtUtc` | datetimeoffset | yes | When. |
 | `HandoffReason` | nvarchar(500) | yes | Why, as they wrote it: shown on the action. Its history keeps every hand-off. |
+| `EscalatedForDue` | date | yes | The due date a step of the escalation ladder flagged it escalated for. It's escalated while it's open and `EscalatedForDue` equals `DueDate` (`ActionItem.EscalatedFor`, `ActionQueries.WhereEscalated`), so closing it or moving its date ends it with no write. A filtered index (`IS NOT NULL`) holds only flagged rows. The migration left existing rows null. |
+| `EscalatedAtUtc` | datetimeoffset | yes | When it was flagged, for the badge's title. Read only while it's escalated (`EscalatedSince`). |
 | `EditVersion` | uniqueidentifier | no | Concurrency token. |
 | stamps | | | **S** columns. |
 
@@ -1014,8 +1025,10 @@ where noted. In practice actions aren't deleted.
 
 Records that a reminder or digest was sent, so each scan sends it once. Key `(Kind, Key)`, for example `due-soon` and
 `{action}:{due}`. An external team's reminder is `external-reminder` and `{action}:{due}:{step}`, the step `before` or
-`late-0`, `late-1`… (`ExternalCadence.Step`). `Kind` is nvarchar(32), `Key` nvarchar(200), and `SentAtUtc` is indexed. Written by `ReminderService`
-(`Actions/Reminders.cs`).
+`late-0`, `late-1`… (`ExternalCadence.Step`). A step of the escalation ladder is `escalation` and
+`{action}:{due}:{step}`, the step its offset and what it does (`+7.12`: seven business days after, raise and flag), so
+reordering the steps doesn't run one again. Only a step that ran is marked: one passed over can't be the latest again. `Kind` is nvarchar(32), `Key`
+nvarchar(200), and `SentAtUtc` is indexed. Written by `ReminderService` (`Actions/Reminders.cs`, `EscalationScan.cs`).
 
 ## Hunting, outreach and playbooks
 
@@ -1437,6 +1450,8 @@ the stored values.
 | `StoryStatus` | 0 **Active**. 1 **Monitoring**. 2 **Closed**. |
 | `ActionStatus` | 0 **Open**. 1 **InProgress**. 2 **Blocked**. 3 **Done**. 4 **Cancelled**. 5 **NotApplicable**. 6 **Tracking**: handed to others and followed. Open, InProgress, Blocked and Tracking are open (`ActionItem.IsOpen`); Done, Cancelled and NotApplicable closed (`ActionItem.IsClosedStatus`). Only the first three are active (`ActionItem.IsActiveStatus`), counted against a team's limit. People read them in `ActionItem.StatusOrder`, Tracking between Blocked and Done. |
 | `ActiveLimitMode` | 0 **Show**: the count only. 1 **Warn**: going over asks for a reason, kept in the action's history. 2 **Refuse**. |
+| `EscalationScope` | 0 **All**. 1 **PartsOnly**: actions with a parent. 2 **ExternalOnly**: external teams' actions. **Not stored in any table**: the setting `Notifications:Escalation:Scope` holds its name. |
+| `EscalationDoes` | Flags: 1 **Remind**, 2 **CopyContact**, 4 **RaisePriority**, 8 **Flag**. **Not stored as a column**: a step's flags appear in its `NotificationMarks` key; the setting `Notifications:Escalation:Steps` holds them as words. |
 | `ActionOutcome` | 0 **None**. 1 **NoHits**. 2 **HitsEscalated**: hits found and handed on (an incident case, the SOC). 3 **Remediated**. 4 **Blocked**. 5 **RiskAccepted**. 6 **NotAffected**. 7 **Answered**. 8 **Other**. |
 | `HuntResult` | 0 **NotRun**. 1 **NoHits**. 2 **Hits**. |
 | `ReviewStatus` (in `Entities/Review.cs`) | 0 **Asked**: waiting for the reviewer. 1 **Approved**. 2 **ChangesAsked**. 3 **Withdrawn**: replaced by a later request or taken back by the author. |
