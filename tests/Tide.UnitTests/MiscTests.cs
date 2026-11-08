@@ -265,7 +265,13 @@ public class AttackCatalogTests
     {
         var merged = Tide.Application.Mitre.AttackCatalog.Retired("t1574.002")!;
         merged.ReplacedBy!.Id.Should().Be("T1574.001");
-        Tide.Application.Mitre.AttackCatalog.RetiredText(merged).Should().Contain("merged into T1574.001");
+        Tide.Application.Mitre.AttackCatalog.RetiredText(merged).Should().Be(
+            "T1574.002 (DLL Side-Loading) is no longer in ATT&CK v19.1: it was replaced by T1574.001 DLL.",
+            "the version is the catalogue's, not when ATT&CK retired it");
+        var deprecated = Tide.Application.Mitre.AttackCatalog.Retired("T1026")!;
+        deprecated.ReplacedBy.Should().BeNull();
+        Tide.Application.Mitre.AttackCatalog.RetiredText(deprecated).Should().Be(
+            "T1026 (Multiband Communication) is no longer in ATT&CK v19.1: it was deprecated with no replacement.");
         Tide.Application.Mitre.AttackCatalog.Retired("T1566").Should().BeNull("it's live");
         Tide.Application.Mitre.AttackCatalog.Retired("T9999").Should().BeNull();
         Tide.Application.Mitre.AttackCatalog.Find("T1574.002").Should().BeNull("the picker offers only live techniques");

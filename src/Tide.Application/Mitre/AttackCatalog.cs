@@ -29,10 +29,12 @@ public static class AttackCatalog
     public static RetiredTechnique? Retired(string? techniqueId) =>
         string.IsNullOrWhiteSpace(techniqueId) ? null : _retired.Value.GetValueOrDefault(techniqueId.Trim());
 
-    /// <summary>"T1574.002 (DLL Side-Loading) was merged into T1574.001 Hijack Execution Flow: DLL", or why it's gone.</summary>
+    /// <summary>"T1574.002 (DLL Side-Loading) is no longer in ATT&amp;CK v19.1: it was replaced by T1574.001 DLL.", or that
+    /// it was deprecated. The version is the catalogue's, not when the change happened (ATT&amp;CK may have retired it
+    /// several versions earlier), and it says "replaced" because a revocation isn't always a merge.</summary>
     public static string RetiredText(RetiredTechnique r) => r.ReplacedBy is { } by
-        ? $"{r.Id} ({r.Name}) was merged into {by.Id} {by.Name} in ATT&CK {Version}."
-        : $"{r.Id} ({r.Name}) was deprecated in ATT&CK and has no replacement.";
+        ? $"{r.Id} ({r.Name}) is no longer in ATT&CK {Version}: it was replaced by {by.Id} {by.Name}."
+        : $"{r.Id} ({r.Name}) is no longer in ATT&CK {Version}: it was deprecated with no replacement.";
 
     /// <summary>Every live (non-revoked, non-deprecated) technique and sub-technique, ordered by id.</summary>
     public static ImmutableArray<AttackTechnique> All => _all.Value;
