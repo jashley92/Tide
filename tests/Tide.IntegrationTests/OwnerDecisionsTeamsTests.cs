@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Abstractions;
 using Tide.Application.Actions;
@@ -166,6 +166,7 @@ public class OwnerDecisionsTeamsPageTests(TideApp app) : IClassFixture<TideApp>
         page.Component.Editing.Should().Be(id, "the form stays open");
 
         await page.Click(p => p.ReloadTheirs());
-        (page.Component.ChangedBy, page.Component.EditForm.ContactName, page.Component.EditForm.Engage).Should().Be((null, "Robin's contact", null));
+        (string? ChangedBy, string? ContactName, string? Engage) reloaded = (page.Component.ChangedBy, page.Component.EditForm.ContactName, page.Component.EditForm.Engage);
+        reloaded.Should().Be((null, "Robin's contact", null));
     }
 }

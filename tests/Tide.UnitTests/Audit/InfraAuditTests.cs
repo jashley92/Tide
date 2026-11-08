@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using Tide.Application.Operations;
 
 namespace Tide.UnitTests.Audit;

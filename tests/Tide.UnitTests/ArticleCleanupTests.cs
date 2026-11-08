@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using Tide.Application.Assist;
 using Tide.Application.Intake;
 using Tide.Application.Settings;

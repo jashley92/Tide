@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using Tide.Application.Distribution;
 using Tide.Web.Components.Shared;
 using static Tide.IntegrationTests.ComponentHarness;

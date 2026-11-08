@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using System.Text;
-using FluentAssertions;
+using AwesomeAssertions;
 using Tide.Application.Content;
 using Tide.Application.Distribution;
 using Tide.Application.Files;

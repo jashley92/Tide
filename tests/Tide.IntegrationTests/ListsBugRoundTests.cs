@@ -1,6 +1,6 @@
 using System.Net;
 using System.Reflection;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Tide.Application.Actions;

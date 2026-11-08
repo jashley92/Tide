@@ -1,5 +1,5 @@
 using System.Text.RegularExpressions;
-using FluentAssertions;
+using AwesomeAssertions;
 using Tide.Application.Operations;
 
 namespace Tide.UnitTests;

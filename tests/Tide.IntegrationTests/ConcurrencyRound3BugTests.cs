@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Abstractions;
@@ -175,6 +175,7 @@ public class ConcurrencyRound3PageTests(TideApp app) : IClassFixture<TideApp>
             (await check.ServiceProvider.GetRequiredService<StackService>().GetAsync(id))!.Product.Versions.Should().Be("1.1", "Robin's save stands");
 
         await typed.Click(p => p.ReloadTheirs());
-        (typed.Component.ChangedBy, typed.Component.Form!.Versions).Should().Be((null, "1.1"));
+        (string? ChangedBy, string? Versions) reloaded = (typed.Component.ChangedBy, typed.Component.Form!.Versions);
+        reloaded.Should().Be((null, "1.1"));
     }
 }

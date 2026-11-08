@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using Tide.Application.Actions;
 using Tide.Application.Articles;
 using Tide.Application.Search;

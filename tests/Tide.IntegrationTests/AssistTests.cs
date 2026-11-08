@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;

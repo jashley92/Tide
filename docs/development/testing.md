@@ -21,7 +21,8 @@ change.
 
 ## The test projects
 
-Both projects use xUnit 2 and FluentAssertions, collect coverage with coverlet, and compile `tests/Shared` in
+Both projects use xUnit 2 and AwesomeAssertions (the Apache-2.0 fork of FluentAssertions, which became a paid
+licence for commercial use at v8; the `.Should()` API is the same), collect coverage with coverlet, and compile `tests/Shared` in
 (`TestClock`, `ShiftedClock`, `ManualClock`, `StaticOptionsMonitor<T>`). Test doubles are hand-written; there is no
 mocking library.
 

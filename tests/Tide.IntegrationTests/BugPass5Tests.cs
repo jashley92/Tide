@@ -1,5 +1,5 @@
 using System.Text;
-using FluentAssertions;
+using AwesomeAssertions;
 using Tide.Application.Adversaries;
 using Tide.Application.Org;
 using Tide.Application.Rotation;

@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Metrics;
 using Tide.Web.Components.Shared;

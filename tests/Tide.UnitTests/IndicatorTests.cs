@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using Tide.Application.Indicators;
 using Tide.Domain.Enums;
 using Tide.Domain.Observables;

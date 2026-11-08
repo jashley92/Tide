@@ -1,6 +1,6 @@
 using System.Globalization;
 using System.Text;
-using FluentAssertions;
+using AwesomeAssertions;
 using Tide.Application.Assist;
 using Tide.Application.Content;
 using Tide.Domain.Entities;
