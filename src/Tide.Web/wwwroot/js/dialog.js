@@ -3,6 +3,14 @@
 window.tideDialog = (function () {
     let opener = null;
 
+    // The controls Tab can reach in a dialog, in order. One inside an inert part (a folded ATT&CK column) can't take
+    // focus, so it's left out: the Tab cycle's first and last are always controls the browser will actually focus.
+    function focusables(container) {
+        return Array.prototype.filter.call(
+            container.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), select, textarea, [tabindex="0"]'),
+            function (el) { return !el.closest('[inert]'); });
+    }
+
     // Inside the lightbox, only the keys it handles lose their default (Tab stays on its one button; Enter, Space and
     // Escape close it), so the browser's own shortcuts (zoom, find, copy) still work over a screenshot.
     document.addEventListener('keydown', function (e) {
@@ -12,12 +20,12 @@ window.tideDialog = (function () {
         // Focus outside an open dialog (it was on the page, or dropped to the body): Tab goes into the dialog, not behind it.
         var open = !modal && e.key === 'Tab' ? document.querySelector('.tide-modal') : null;
         if (open) {
-            var into = open.querySelector('button:not([disabled]), a[href], input:not([disabled]), select, textarea, [tabindex="0"]');
+            var into = focusables(open)[0];
             if (into) { e.preventDefault(); into.focus(); }
             return;
         }
         if (modal && e.key === 'Tab') {
-            var f = modal.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), select, textarea, [tabindex="0"]');
+            var f = focusables(modal);
             if (f.length === 0) return;
             var first = f[0], last = f[f.length - 1];
             // The dialog itself has focus (its text was clicked: it takes focus then, so Escape still reaches it): Tab
