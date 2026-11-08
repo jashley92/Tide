@@ -145,7 +145,7 @@ public class ArticleServiceTests : IDisposable
         var form = await NewForm();
         form.TechniqueIds = ["T1574.002"];
         var act = () => _db.Articles().SaveAsync(form);
-        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*merged into T1574.001*");
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*no longer in ATT&CK v19.1: it was replaced by T1574.001 DLL. Add that one instead.*");
     }
 
     [Fact]
@@ -154,7 +154,7 @@ public class ArticleServiceTests : IDisposable
         var form = await NewForm();
         await using (var ctx = _db.Context())
         {
-            // As the article is after an ATT&CK upgrade: it carries T1574.002, merged into T1574.001 in v19.1.
+            // As the article is after an ATT&CK upgrade: it carries T1574.002, which v19.1 no longer has (replaced by T1574.001).
             ctx.ArticleTechniques.Add(new Tide.Domain.Entities.ArticleTechnique { ArticleId = form.Id, TechniqueId = "T1574.002" });
             await ctx.SaveChangesAsync();
         }
