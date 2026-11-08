@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using Tide.Application.Scorecard;
 using Tide.Domain.Entities;
 

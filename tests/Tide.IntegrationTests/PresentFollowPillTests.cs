@@ -1,6 +1,6 @@
 using System.Net;
 using System.Text.RegularExpressions;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Web.Components.Pages;
 using Tide.Web.Services;

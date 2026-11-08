@@ -1,6 +1,6 @@
 using System.Text;
 using System.Text.Json;
-using FluentAssertions;
+using AwesomeAssertions;
 using Tide.Application.Content;
 using Tide.Application.Exports;
 using Tide.Domain.Entities;

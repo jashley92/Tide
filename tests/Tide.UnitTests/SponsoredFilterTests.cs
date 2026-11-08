@@ -1,5 +1,5 @@
 using System.Text;
-using FluentAssertions;
+using AwesomeAssertions;
 using Tide.Application.Intake;
 using Tide.Application.Settings;
 

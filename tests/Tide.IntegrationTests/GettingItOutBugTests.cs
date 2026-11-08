@@ -1,6 +1,6 @@
 using System.Security.AccessControl;
 using System.Security.Principal;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Tide.Application.Org;

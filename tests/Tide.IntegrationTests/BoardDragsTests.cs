@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using Tide.Domain.Enums;
 using Tide.Web.Services;
 

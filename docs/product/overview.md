@@ -159,7 +159,7 @@ These are choices, not gaps. Each has a decision record.
 | Email | An SMTP relay through `System.Net.Mail` (`SmtpClientFactory`); images embedded as `cid:` parts |
 | Libraries | Markdig (Markdown, raw HTML off), AngleSharp (reading an article's page for drafting), SharpZipLib (the password-protected zip for risky files) |
 | AI (optional) | Azure OpenAI (`AzureOpenAiAssistant`), behind `IThreatIntelAssistant` |
-| Tests | xUnit, FluentAssertions, `Microsoft.AspNetCore.Mvc.Testing` for the whole app over HTTP |
+| Tests | xUnit, AwesomeAssertions, `Microsoft.AspNetCore.Mvc.Testing` for the whole app over HTTP |
 | Hosting | Windows Server and IIS, installed and upgraded by the PowerShell scripts in `deploy/` |
 
 The projects and how dependencies point inward are in the [architecture overview](../architecture/overview.md) and

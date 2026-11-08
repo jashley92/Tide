@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Logging;
 using Tide.IntegrationTests.Audit;
 using Tide.Web.Security;

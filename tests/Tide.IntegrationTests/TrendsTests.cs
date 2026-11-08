@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using Tide.Application.Metrics;
 using Microsoft.EntityFrameworkCore;
 using Tide.Application.Articles;

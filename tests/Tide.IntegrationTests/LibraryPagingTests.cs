@@ -1,6 +1,6 @@
 using System.Net;
 using System.Reflection;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Actions;
 using Tide.Domain.Enums;
