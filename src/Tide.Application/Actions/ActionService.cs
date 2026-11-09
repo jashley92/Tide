@@ -611,7 +611,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     }
 
     /// <summary>A team nobody in TIDE owns work on: no members, and not external (an external team's reminders follow
-    /// its work). The meeting ranks its overdue actions up; a new action raised to it says so.</summary>
+    /// its work). The meeting ranks its overdue actions up; an action raised to it on the action page says so.</summary>
     private static readonly Expression<Func<Team, bool>> NoOneToOwn = t => !t.IsExternal && !t.Members.Any();
 
     /// <summary>Whether a team has nobody in TIDE, so an action raised to it is on nobody's list (<see cref="NoOneToOwn"/>).</summary>
@@ -1044,8 +1044,8 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// <summary>
     /// A quick action from the meeting: a title, kind, team and (optional) due date, on an article, at the article's
     /// priority (see <see cref="QuickPriority"/>), assigned to whoever raises it. Internal teams only: an external
-    /// team's work is a part split off an action, so it has a parent to follow it up. A blank due date takes the SLA target's, a kind's own target first
-    /// (ADR 0008). <paramref name="raisedOn"/> is a past day's brief being presented after the fact;
+    /// team's work is a part split off an action, so it has a parent to follow it up. A blank due date takes the SLA
+    /// target's, a kind's own target first (ADR 0008). <paramref name="raisedOn"/> is a past day's brief being presented after the fact;
     /// <paramref name="overLimitReason"/> is why it goes ahead over a team's limit that warns (<see cref="ActiveLimits"/>).
     /// </summary>
     public async Task<int> QuickAddAsync(Guid articleId, string title, ActionKind kind, Guid teamId, DateOnly? due, DateOnly? raisedOn = null,
