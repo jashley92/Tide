@@ -124,13 +124,11 @@ public class ActionItem : AuditableEntity
     /// the date first promised as well as the one it has now. Null only while it has never had one. Actions from before
     /// it was kept start from the date they had then.
     /// </summary>
-    public DateOnly? OriginalDueDate { get; set; }
+    public DateOnly? OriginalDueDate { get; private set; }
 
-    /// <summary>How many times its due date has changed since it was first set (moved later or earlier, or cleared).</summary>
-    public int DueDateMoves { get; set; }
-
-    /// <summary>Whether its due date has moved since it was first set.</summary>
-    public bool DueDateMoved => DueDateMoves > 0;
+    /// <summary>How many times its due date has changed since it was first set (moved later or earlier, or cleared).
+    /// Like <see cref="OriginalDueDate"/>, only <see cref="DueDate"/>'s setter writes it.</summary>
+    public int DueDateMoves { get; private set; }
 
     /// <summary>
     /// The business day the action belongs to, when it was raised after the fact (while writing up a past day's
@@ -213,7 +211,10 @@ public class ActionItem : AuditableEntity
     public string? DeletedByName { get; set; }
     public string? DeleteReason { get; set; }
 
-    public bool IsDeleted => DeletedAtUtc is not null;
+    /// <summary>The name of the query filter that leaves deleted actions (and what's only theirs) out, for the few reads
+    /// that must see them: <c>IgnoreQueryFilters([ActionItem.DeletedFilter])</c>, so any other filter added later
+    /// still applies there.</summary>
+    public const string DeletedFilter = "Deleted";
 
     public bool IsOpen => !IsClosedStatus(Status);
 

@@ -438,7 +438,7 @@ else
 </ConfirmDialog>
 
 @* Delete it: for an action raised by mistake or twice, with why. Work that won't be done is closed instead. *@
-<ConfirmDialog @ref="_deleteDialog" Form="true" Confirming="Delete" ConfirmDisabled="@string.IsNullOrWhiteSpace(_deleteWhy)" ConfirmIcon="bi-trash">
+<ConfirmDialog @ref="_deleteDialog" Form="true" Confirming="Delete" ConfirmDisabled="@string.IsNullOrWhiteSpace(DeleteWhy)" ConfirmIcon="bi-trash">
     <p class="small">
         Delete is for an action raised by mistake, or a duplicate. If the work just won't be done, close it
         <strong>Cancelled</strong> or <strong>Not applicable</strong> instead, so it stays on the record.
@@ -446,9 +446,9 @@ else
     <p class="small tide-muted">A deleted action leaves every list, count, reminder and report. Its number isn't reused,
         and an administrator can restore it.</p>
     <label class="tide-field-label" for="delete-why">Why</label>
-    <textarea id="delete-why" class="form-control form-control-sm tide-autogrow tide-grow-2" rows="2" maxlength="@ActionItem.MaxDeleteReason" @bind="_deleteWhy" @bind:event="oninput"
+    <textarea id="delete-why" class="form-control form-control-sm tide-autogrow tide-grow-2" rows="2" maxlength="@ActionItem.MaxDeleteReason" @bind="DeleteWhy" @bind:event="oninput"
               placeholder="A duplicate of A-41."></textarea>
-    @if (_deleteError is not null) { <div class="text-danger small mt-2" role="alert">@_deleteError</div> }
+    @if (DeleteError is not null) { <div class="text-danger small mt-2" role="alert">@DeleteError</div> }
 </ConfirmDialog>
 
 @code {
@@ -629,26 +629,24 @@ else
     // --- Delete (More): a mistake or a duplicate, with why ------------------------------------------------------------
 
     private ConfirmDialog _deleteDialog = default!;
-    private string? _deleteWhy, _deleteError;
-
-    internal string? DeleteWhy { get => _deleteWhy; set => _deleteWhy = value; }
-    internal string? DeleteError => _deleteError;
+    internal string? DeleteWhy { get; set; }
+    internal string? DeleteError { get; private set; }
 
     internal async Task StartDelete()
     {
-        (_deleteWhy, _deleteError) = (null, null);
+        (DeleteWhy, DeleteError) = (null, null);
         await _deleteDialog.Ask($"Delete {Ui.ActionLabel(_detail!.Action.Number)}?", null, "Delete", danger: true);
     }
 
     // The dialog's Delete: kept open, saying why, when it's refused (a parent with open parts, say).
     internal async Task<bool> Delete()
     {
-        _deleteError = null;
+        DeleteError = null;
         var a = _detail!.Action;
-        try { await ActionSvc.DeleteAsync(a.Id, _deleteWhy); }
+        try { await ActionSvc.DeleteAsync(a.Id, DeleteWhy); }
         catch (Exception ex)
         {
-            _deleteError = UserFacingError.For(ex);
+            DeleteError = UserFacingError.For(ex);
             return false;
         }
         Toasts.Show($"Deleted {Ui.ActionLabel(a.Number)}.");
@@ -700,7 +698,7 @@ else
         _openParts = d.Children.Count(c => c.IsOpen);
         var facts = new ActionFacts(a.Status, a.Kind, d.CanWork, a.AssigneeId is not null, a.Team?.IsExternal == true, _openParts,
             d.Emails, d.Waiting is not null, a.AssigneeId == CurrentUser.UserId, d.CanEditAll, a.ParentId is null,
-            CanDelete: d.CanWork && (CurrentUser.Has(Permission.WriteArticles) || CurrentUser.Has(Permission.Administer)));
+            CanDelete: d.CanWork && ActionSvc.MayDelete);
         _primary = ActionGuide.Primary(facts);
         var more = ActionGuide.More(facts);
         _moreItems = [.. more.Select(f => f == ActionFlow.SplitOffPart
@@ -718,7 +716,7 @@ else
     private static string SplitOffHref(ActionItem a) => $"actions/new?parent={a.Id}";
 
     /// <summary>"Originally due Mon Nov 9 · moved 2 times" once its due date has moved; null while it hasn't.</summary>
-    internal static string? MovedNote(ActionItem a) => !a.DueDateMoved ? null
+    internal static string? MovedNote(ActionItem a) => a.DueDateMoves == 0 ? null
         : $"Originally due {(a.OriginalDueDate is { } first ? Ui.ShortDay(first) : "with no date")} · moved {Words.Plural(a.DueDateMoves, "time")}";
 
     internal MenuButton? More => _more;

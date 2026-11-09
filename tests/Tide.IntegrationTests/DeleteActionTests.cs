@@ -57,8 +57,8 @@ public class DeleteActionTests : IDisposable
         await Svc.DeleteAsync(id, "A duplicate of A-1");
 
         await using var c = _db.Context();
-        var gone = await c.Actions.IgnoreQueryFilters().SingleAsync(a => a.Id == id);
-        (gone.DeleteReason, gone.DeletedById, gone.DeletedByName, gone.IsDeleted).Should().Be(("A duplicate of A-1", _db.User.UserId, _db.User.DisplayName, true));
+        var gone = await c.Actions.IgnoreQueryFilters([ActionItem.DeletedFilter]).SingleAsync(a => a.Id == id);
+        (gone.DeleteReason, gone.DeletedById, gone.DeletedByName, gone.DeletedAtUtc is not null).Should().Be(("A duplicate of A-1", _db.User.UserId, _db.User.DisplayName, true));
         (await Svc.GetAsync(number)).Should().BeNull("a deleted action is gone from its page");
         await Svc.Invoking(s => s.DeleteAsync(id, "again")).Should().ThrowAsync<KeyNotFoundException>("it's deleted already");
     }
@@ -131,7 +131,7 @@ public class DeleteActionTests : IDisposable
         await using var c = _db.Context();
         (await c.ActionComments.AnyAsync(x => x.ActionId == gone)).Should().BeFalse();
         (await c.ActionEvents.AnyAsync(x => x.ActionId == gone)).Should().BeFalse();
-        (await c.ActionComments.IgnoreQueryFilters().AnyAsync(x => x.ActionId == gone)).Should().BeTrue("it's kept, to be restored");
+        (await c.ActionComments.IgnoreQueryFilters([ActionItem.DeletedFilter]).AnyAsync(x => x.ActionId == gone)).Should().BeTrue("it's kept, to be restored");
         (await c.ActionEvents.AnyAsync(x => x.ActionId == kept)).Should().BeTrue();
         (await c.Actions.Include(a => a.Comments).Include(a => a.Events).SingleAsync(a => a.Id == kept)).Events.Should().NotBeEmpty();
     }
@@ -179,7 +179,7 @@ public class DeleteActionTests : IDisposable
 
         (await Svc.DeletedAsync()).Should().BeEmpty();
         var back = (await Svc.GetAsync(partNumber))!;
-        (back.Action.Status, back.Action.Outcome, back.Action.IsDeleted, back.Action.DeleteReason).Should().Be((ActionStatus.Done, ActionOutcome.NoHits, false, (string?)null));
+        (back.Action.Status, back.Action.Outcome, back.Action.DeletedAtUtc is not null, back.Action.DeleteReason).Should().Be((ActionStatus.Done, ActionOutcome.NoHits, false, (string?)null));
         back.Parent!.Number.Should().Be(parentNumber);
         back.Action.Events.Select(e => e.Text).Should().Contain(t => t.StartsWith("Deleted it: Raised twice"))
             .And.Contain(t => t.StartsWith("Restored it (deleted ") && t.EndsWith(": Raised twice)."), "its history keeps both");

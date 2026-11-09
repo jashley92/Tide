@@ -216,7 +216,7 @@ public class MigrationFillTests
 
         await using (var ctx = database.Context())
         {
-            var all = await ctx.Actions.IgnoreQueryFilters().ToDictionaryAsync(a => a.Number);
+            var all = await ctx.Actions.IgnoreQueryFilters([ActionItem.DeletedFilter]).ToDictionaryAsync(a => a.Number);
             (all[1].DueDate, all[1].OriginalDueDate, all[1].DueDateMoves).Should().Be((new DateOnly(2026, 11, 20), new DateOnly(2026, 11, 20), 0),
                 "an action from before starts from the date it has, with no moves counted");
             (all[2].DueDate, all[2].OriginalDueDate, all[2].DueDateMoves).Should().Be(((DateOnly?)null, (DateOnly?)null, 0));

@@ -168,10 +168,13 @@ else
     private static string Range(TeamScorecard c) =>
         $"Due {c.From.ToString("MMM d, yyyy", CultureInfo.InvariantCulture)} to {c.To.ToString("MMM d, yyyy", CultureInfo.InvariantCulture)}";
 
-    private static string OnTime(TeamScore r) => r.OnTimePercent is { } p ? $"{Words.Num(p)}% ({r.OnTime} of {r.OnTime + r.Late})" : "—";
+    private static string OnTime(TeamScore r) => Share(r.OnTimePercent, r.OnTime, r.Late);
 
-    internal static string OnTimeOriginal(TeamScore r) =>
-        r.OnTimeOriginalPercent is { } p ? $"{Words.Num(p)}% ({r.OnTimeOriginal} of {r.OnTimeOriginal + r.LateOriginal})" : "—";
+    internal static string OnTimeOriginal(TeamScore r) => Share(r.OnTimeOriginalPercent, r.OnTimeOriginal, r.LateOriginal);
+
+    // "50% (2 of 4)", or "—" with nothing on time or late.
+    private static string Share(double? percent, int onTime, int late) =>
+        percent is { } p ? $"{Words.Num(p)}% ({onTime} of {onTime + late})" : "—";
 
     // "2 of 7 (3 moves)": of the actions first due in the window, those re-dated, and how often.
     internal static string DatesMoved(TeamScore r) => r.OriginallyDue == 0 ? "—"

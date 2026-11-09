@@ -26,7 +26,7 @@ namespace Tide.Application.Trends;
 public sealed record TeamScore(Team Team, int Parts, int OnTime, int Late, double? AverageDaysLate, int OpenNow, int OverdueNow)
 {
     /// <summary>The share done on time, 0 to 100, of those that were on time or late; null when none were either.</summary>
-    public double? OnTimePercent => OnTime + Late == 0 ? null : Math.Round(100.0 * OnTime / (OnTime + Late), 1);
+    public double? OnTimePercent => Share(OnTime, Late);
 
     /// <summary>Its actions whose first due date is in the window.</summary>
     public int OriginallyDue { get; init; }
@@ -44,8 +44,10 @@ public sealed record TeamScore(Team Team, int Parts, int OnTime, int Late, doubl
     public int Moves { get; init; }
 
     /// <summary>The share done by the date first given, 0 to 100, of those on time or late against it; null when none were.</summary>
-    public double? OnTimeOriginalPercent => OnTimeOriginal + LateOriginal == 0 ? null
-        : Math.Round(100.0 * OnTimeOriginal / (OnTimeOriginal + LateOriginal), 1);
+    public double? OnTimeOriginalPercent => Share(OnTimeOriginal, LateOriginal);
+
+    // The on-time share both measures give: to one decimal place, or null with nothing on time or late.
+    private static double? Share(int onTime, int late) => onTime + late == 0 ? null : Math.Round(100.0 * onTime / (onTime + late), 1);
 }
 
 /// <summary>The team commitments scorecard: a row per team, for the actions due from <see cref="From"/> to <see cref="To"/>

@@ -48,7 +48,7 @@ else
                             <td class="text-nowrap">@Ui.When(Clock, r.DeletedAtUtc)<span class="small tide-muted d-block">by @(r.DeletedByName ?? "someone")</span></td>
                             <td class="tide-pre-line">@r.Reason</td>
                             <td class="text-end">
-                                <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy"
+                                <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_busy || r.ParentDeleted)"
                                         title="@(r.ParentDeleted ? "Its parent is deleted too: restore that first" : null)"
                                         aria-label="@($"Restore {Ui.ActionLabel(r.Number)}")" @onclick="() => Restore(r)">
                                     <span class="bi bi-arrow-counterclockwise" aria-hidden="true"></span> Restore

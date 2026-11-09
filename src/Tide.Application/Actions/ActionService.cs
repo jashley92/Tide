@@ -82,13 +82,13 @@ public sealed record ActionRow(Guid Id, int Number, string Title, ActionKind Kin
     public int ChildrenOpen => Children - ChildrenClosed;
 }
 
-/// <summary>An overdue action the meeting looks at again: how late it is, and whether its team has no members (so
-/// nobody sees it as theirs). <see cref="Tlp"/> is the TLP of the article it was raised from, if any: what it's marked at.</summary>
 /// <summary>A deleted action on the administrators' list: who deleted it, when and why, and whether its parent is deleted
 /// too (it's restored after its parent).</summary>
 public sealed record DeletedAction(Guid Id, int Number, string Title, string TeamName, ActionStatus Status, DateTimeOffset DeletedAtUtc,
-    string? DeletedById, string? DeletedByName, string? Reason, bool ParentDeleted);
+    string? DeletedByName, string? Reason, bool ParentDeleted);
 
+/// <summary>An overdue action the meeting looks at again: how late it is, and whether its team has no members (so
+/// nobody sees it as theirs). <see cref="Tlp"/> is the TLP of the article it was raised from, if any: what it's marked at.</summary>
 public sealed record OutstandingAction(ActionRow Row, int DaysLate, bool NoOneToOwn, TlpLevel? Tlp = null)
 {
     /// <summary>"3 days late", or "not yet due" for an escalated one that isn't (the meeting's and the email's words).</summary>
@@ -889,12 +889,12 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// <summary>The deleted actions, the latest deleted first, with who deleted each, when and why. Administrators only.</summary>
     public async Task<IReadOnlyList<DeletedAction>> DeletedAsync(CancellationToken ct = default)
     {
-        RequireAdminister();
+        RequireAdmin();
         await using var db = await dbs.CreateAsync(ct);
         // IgnoreQueryFilters reaches the whole query, its subqueries too, so the parent's deletion is asked for outright.
-        return await db.Actions.AsNoTracking().IgnoreQueryFilters().Where(a => a.DeletedAtUtc != null)
+        return await db.Actions.AsNoTracking().IgnoreQueryFilters([ActionItem.DeletedFilter]).Where(a => a.DeletedAtUtc != null)
             .OrderByDescending(a => a.DeletedAtUtc).ThenByDescending(a => a.Number)
-            .Select(a => new DeletedAction(a.Id, a.Number, a.Title, a.Team!.Name, a.Status, a.DeletedAtUtc!.Value, a.DeletedById, a.DeletedByName,
+            .Select(a => new DeletedAction(a.Id, a.Number, a.Title, a.Team!.Name, a.Status, a.DeletedAtUtc!.Value, a.DeletedByName,
                 a.DeleteReason, db.Actions.Any(p => p.Id == a.ParentId && p.DeletedAtUtc != null)))
             .ToListAsync(ct);
     }
@@ -905,15 +905,14 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// </summary>
     public async Task<int> RestoreAsync(Guid id, CancellationToken ct = default)
     {
-        RequireAdminister();
+        RequireAdmin();
         await using var db = await dbs.CreateAsync(ct);
-        var a = await db.Actions.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == id, ct) ?? throw new KeyNotFoundException("That action no longer exists.");
+        var a = await db.Actions.IgnoreQueryFilters([ActionItem.DeletedFilter]).FirstOrDefaultAsync(x => x.Id == id, ct) ?? throw new KeyNotFoundException("That action no longer exists.");
         if (a.DeletedAtUtc is not { } deleted) return a.Number;
-        if (a.ParentId is { } parentId && !await db.Actions.AnyAsync(p => p.Id == parentId, ct))
-        {
-            var parent = await db.Actions.IgnoreQueryFilters().Where(p => p.Id == parentId).Select(p => p.Number).FirstAsync(ct);
+        if (a.ParentId is { } parentId
+            && await db.Actions.IgnoreQueryFilters([ActionItem.DeletedFilter]).Where(p => p.Id == parentId && p.DeletedAtUtc != null)
+                .Select(p => (int?)p.Number).FirstOrDefaultAsync(ct) is { } parent)
             throw new InvalidOperationException($"It's a part of A-{parent}, which is deleted too: restore A-{parent} first.");
-        }
         var line = $"Restored it (deleted {Day(clock.DayOf(deleted))} by {a.DeletedByName ?? "someone"}: {a.DeleteReason}).";
         (a.DeletedAtUtc, a.DeletedById, a.DeletedByName, a.DeleteReason) = (null, null, null, null);
         a.EditVersion = Guid.NewGuid();
@@ -922,7 +921,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         return a.Number;
     }
 
-    private void RequireAdminister()
+    private void RequireAdmin()
     {
         if (!user.Has(Permission.Administer)) throw new ForbiddenException("Only an administrator can see and restore deleted actions.");
     }
@@ -1021,7 +1020,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             await using var db = await dbs.CreateAsync(ct);
             var made = await build(db);
             // Deleted ones included: a number is never reused.
-            var number = (await db.Actions.IgnoreQueryFilters().MaxAsync(x => (int?)x.Number, ct) ?? 0) + 1;
+            var number = (await db.Actions.IgnoreQueryFilters([ActionItem.DeletedFilter]).MaxAsync(x => (int?)x.Number, ct) ?? 0) + 1;
             foreach (var (a, line) in made)
             {
                 a.Number = number++;
@@ -1946,7 +1945,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             var parent = await db.Actions.AsNoTracking().FirstOrDefaultAsync(x => x.Id == parentId, ct) ?? throw new KeyNotFoundException("The parent action no longer exists.");
             if (parent.ParentId is not null) throw new ArgumentException("Actions split one level deep: choose the top action as the parent.");
             // A deleted part counts: restoring it mustn't make parts two levels deep.
-            if (await db.Actions.IgnoreQueryFilters().AnyAsync(x => x.ParentId == a.Id, ct))
+            if (await db.Actions.IgnoreQueryFilters([ActionItem.DeletedFilter]).AnyAsync(x => x.ParentId == a.Id, ct))
                 throw new ArgumentException("Actions split one level deep: this one already has parts, so it can't become a part.");
         }
         a.Title = title;

@@ -40,7 +40,7 @@ public class OriginalDueDateTests
 
         var number = await svc.CreateAsync(new ActionForm { Title = "Patch the edge VPN", TeamId = team, DueDate = first });
         var a = await Read(db, number);
-        (a.OriginalDueDate, a.DueDateMoves, a.DueDateMoved).Should().Be((first, 0, false));
+        (a.OriginalDueDate, a.DueDateMoves).Should().Be((first, 0));
 
         // The editor, keeping the date: nothing moves.
         var form = ActionForm.From(a);

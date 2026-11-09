@@ -242,7 +242,7 @@ and asks why in a dialog that says which to use when (`ActionService.DeleteAsync
   because those are also read on their own (search reads comments, Trends reads hunts, the follow-up reminder reads
   emails, the file routes read files). No required relationship ends at a filtered row, so EF never hands back a
   comment without its action.
-- **Seen only where it must be** (`IgnoreQueryFilters()`): numbering (a number is never reused), the guards that keep
+- **Seen only where it must be** (`IgnoreQueryFilters([ActionItem.DeletedFilter])`, lifting this named filter alone): numbering (a number is never reused), the guards that keep
   what an action refers to (an article, a team or a playbook a deleted action names isn't deleted from under it), the
   check that a stored file is still in use, a detection gap's row (raising a new gap action takes it over), the audit
   log's names ("A-12 … (deleted)", linked to the deleted list), and the administrator's list and restore. A filter

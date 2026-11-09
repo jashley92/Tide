@@ -219,7 +219,7 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOp
         if (team.IsExternal) RequireExternal();
         else RequireAdmin();
         // A deleted action counts: it's kept (an administrator may restore it), and its foreign key holds the team.
-        if (retired && !await db.Actions.IgnoreQueryFilters().AnyAsync(a => a.TeamId == id || a.HandedFromTeamId == id, ct) && !await db.ActionCardRules.AnyAsync(r => r.TeamId == id, ct))
+        if (retired && !await db.Actions.IgnoreQueryFilters([ActionItem.DeletedFilter]).AnyAsync(a => a.TeamId == id || a.HandedFromTeamId == id, ct) && !await db.ActionCardRules.AnyAsync(r => r.TeamId == id, ct))
             db.Teams.Remove(team);
         else team.IsRetired = retired;
         await SaveMovedAsync(db, team, ct);

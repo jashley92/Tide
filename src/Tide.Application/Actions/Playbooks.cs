@@ -155,7 +155,7 @@ public sealed class PlaybookService(IAppDbContextFactory dbs, ICurrentUser user)
     public Task DeleteAsync(Guid id, CancellationToken ct = default) => _library.DeleteAsync(id, async (db, p, token) =>
     {
         // A deleted action counts: it's kept (an administrator may restore it), and its foreign key holds the playbook.
-        if (await db.Actions.IgnoreQueryFilters().AnyAsync(a => a.PlaybookId == p.Id, token))
+        if (await db.Actions.IgnoreQueryFilters([ActionItem.DeletedFilter]).AnyAsync(a => a.PlaybookId == p.Id, token))
             throw new InvalidOperationException($"Actions' checklists were started from {p.Name}, so it's kept for their history. Retire it instead.");
     }, ct);
 
