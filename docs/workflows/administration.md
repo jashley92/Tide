@@ -54,7 +54,7 @@ role holds it; an administrator also holds every other permission
 | Brief › Opening metrics | `/admin/metrics` | groups, metrics, thresholds, charts, the example set | `MetricsService` | metric tables |
 | Brief › Metric imports | `/admin/metric-imports` | upload a CSV; drop folder on or off and its interval; recent imports | `MetricImportService`, `OperationalSettingsService` | `MetricImports`, `Settings` |
 | People & distribution › Access & distribution | `/admin/access` | AD group to role mappings; edition TLP ceilings; review before send; SharePoint required; each edition's recipients; the capabilities table (read-only) | `RoleMappingService`, `DistributionSettings`, `ReviewService`, `OperationalSettingsService` | `RoleMappings`, `Settings` |
-| People & distribution › Email templates | `/admin/email-templates` | the wording of the notification emails | `EmailTemplateService` | `Settings` (`EmailTemplate:*`) |
+| People & distribution › Email templates | `/admin/email-templates` | the wording of the notification emails; each template's standing copies (CC, BCC) and the archive copy | `EmailTemplateService` | `Settings` (`EmailTemplate:*`, `EmailCopy:*`) |
 | People & distribution › API access | `/admin/api` | API tokens and webhooks | `ApiTokenService`, `WebhookService` | see [API.md](../API.md) |
 | System › Diagnostics | `/admin/system` | nothing: health checks, this server, database, email delivery, storage, connections, background jobs | `SystemDiagnostics` | |
 | System › Server configuration | `/admin/system/server` | nothing: what's set on the server, secrets shown only as set or not | `SystemSettings` | |
@@ -178,6 +178,29 @@ encoded, so an action's title can't add markup; TIDE's own markup (the actions t
 keeps the rest: the shell, the line under the heading, the TLP marking in a reminder's subject and at its top, the
 managers' copy heading, and the plain-text part. `EmailTemplateStore` (a singleton) holds the saved parts, loaded at
 start-up and after every save, reset or bundle import; the senders render from it.
+
+**Copies** (`EmailCopyRules`, `EmailCopyStore`, `CopyingEmailSender`). A copy is a standing way for mail to leave TIDE,
+so each is checked as it's saved:
+
+- **A template's copies** (`SaveCopiesAsync`): *Always copy (CC)*, seen by every recipient, and *Always blind-copy
+  (BCC)*, seen by none, up to 5 addresses each, each a real address and each once. Every email made from the template
+  carries them, one copy per email (a reminder run sends one per person or team, so a copy gets one each). An address
+  already on the email isn't added again.
+- **Blind only to people outside TIDE.** The *External team reminder* and *Escalation contact* templates go to
+  addresses outside TIDE's users: a CC is refused there, and anything saved as one is sent blind, so an outside
+  contact never sees an internal address.
+- **Outside the organization, confirmed.** The organization's domain is the sending address's (`Email:From`) and its
+  subdomains. A copy outside it is refused with the addresses named (`OutsideCopiesException`), and saved only when an
+  administrator confirms *Copy anyway*.
+- **The archive copy** (`SaveArchiveAsync`, `EmailCopy:Archive`): one address blind-copied on every email TIDE sends, a
+  brief's editions, corrections and test copies included: a record of what was sent and when. It gets TLP:AMBER
+  editions, so it must be inside the organization's domain, with no override.
+- **Kept and reported.** Each is a `Settings` row (`EmailCopy:{id}:{Cc|Bcc}`, `EmailCopy:Archive`), audited like any
+  change, and never carried in a configuration bundle, so an import can't add a copy nobody confirmed. The preview
+  says *Also sent to*, and the list marks a template with copies.
+- **A refused copy never costs the email.** When the relay refuses a copy address, the email still went to its
+  recipients (`EmailSendResult.RefusedCopies`): it's logged, and a reminder run's note says to check the copy
+  addresses. Only when every recipient is refused is the email Failed.
 
 ```mermaid
 sequenceDiagram

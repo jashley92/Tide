@@ -34,7 +34,16 @@ public sealed class MisbehavingSmtpServer : IDisposable
 
         /// <summary>Refuses the session at its greeting (554).</summary>
         RefuseAtGreeting,
+
+        /// <summary>Refuses one recipient (550 at its RCPT TO), takes the others and the message, and says so.</summary>
+        RefuseOneRecipient,
     }
+
+    /// <summary>The recipient <see cref="Fault.RefuseOneRecipient"/> refuses.</summary>
+    public string? Refuse { get; init; }
+
+    /// <summary>The recipients it took (RCPT TO), as written.</summary>
+    public System.Collections.Concurrent.ConcurrentQueue<string> Taken { get; } = new();
 
     private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
     private readonly CancellationTokenSource _stop = new();
@@ -91,6 +100,19 @@ public sealed class MisbehavingSmtpServer : IDisposable
                         break;
                     case "MAIL" when _fault == Fault.RefuseSender:
                         await writer.WriteLineAsync("550 sender refused");
+                        break;
+                    case "RCPT" when _fault == Fault.RefuseOneRecipient && Refuse is not null && line.Contains(Refuse, StringComparison.OrdinalIgnoreCase):
+                        await writer.WriteLineAsync("550 5.1.1 no such mailbox");
+                        break;
+                    case "RCPT":
+                        Taken.Enqueue(line);
+                        await writer.WriteLineAsync("250 OK");
+                        break;
+                    case "DATA" when _fault == Fault.RefuseOneRecipient:
+                        await writer.WriteLineAsync("354 go ahead");
+                        while (await reader.ReadLineAsync(stop) is { } d && d != ".") { /* the message */ }
+                        Interlocked.Increment(ref _data);
+                        await writer.WriteLineAsync("250 queued");
                         break;
                     case "DATA":
                         await writer.WriteLineAsync("354 go ahead");

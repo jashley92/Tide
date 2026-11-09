@@ -29,8 +29,95 @@ public sealed record EmailPreview(string Subject, string Html);
 /// row, so a reset is removing them. A save takes effect at once. Administrators only.
 /// </summary>
 public sealed class EmailTemplateService(IAppDbContextFactory dbs, ICurrentUser user, EmailTemplateStore store, IEmailSender email,
-    OrgClock clock, IOptions<AppOptions> app, TimeProvider time)
+    OrgClock clock, IOptions<AppOptions> app, TimeProvider time, EmailCopyStore? copies = null, Microsoft.Extensions.Configuration.IConfiguration? config = null)
 {
+    private readonly EmailCopyStore _copies = copies ?? new EmailCopyStore();
+
+    /// <summary>The organization's domain, from the sending address (<c>Email:From</c>): copies outside it are confirmed.</summary>
+    public string? HomeDomain => EmailCopyRules.HomeDomain(config?["Email:From"]);
+
+    /// <summary>A template's standing copies as saved.</summary>
+    public TemplateCopies Copies(string id)
+    {
+        RequireAdmin();
+        return _copies.For(EmailTemplateCatalog.ById(id) ?? throw new KeyNotFoundException("There's no such email template."));
+    }
+
+    /// <summary>The archive copy's address, or null.</summary>
+    public string? Archive
+    {
+        get
+        {
+            RequireAdmin();
+            return _copies.Archive;
+        }
+    }
+
+    /// <summary>
+    /// Saves a template's standing copies (addresses separated by commas, semicolons or lines; blank for none). Refused,
+    /// saying why: an address that isn't one, more than <see cref="EmailCopyRules.MaxPerList"/> in either, a CC on a
+    /// template that goes outside TIDE (BCC only, so its readers never see an internal address), and, unless
+    /// <paramref name="confirmOutside"/>, an address outside the organization's domain
+    /// (<see cref="OutsideCopiesException"/>, naming them, for the page to ask). Audited like any setting; takes effect at once.
+    /// </summary>
+    public async Task SaveCopiesAsync(string id, string? cc, string? bcc, bool confirmOutside = false, CancellationToken ct = default)
+    {
+        RequireAdmin();
+        var t = EmailTemplateCatalog.ById(id) ?? throw new KeyNotFoundException("There's no such email template.");
+        var ccList = EmailCopyRules.Parse(cc, "Copy (CC)");
+        var bccList = EmailCopyRules.Parse(bcc, "Blind copy (BCC)");
+        if (EmailCopyRules.GoesOutside(t) && ccList.Count > 0)
+            throw new ArgumentException($"“{t.Title}” goes to people outside TIDE: use Blind copy (BCC), so they don't see who else gets it.");
+        var outside = ccList.Concat(bccList).Where(a => !EmailCopyRules.IsInside(a, HomeDomain)).ToList();
+        if (outside.Count > 0 && !confirmOutside) throw new OutsideCopiesException(outside, HomeDomain);
+        await SaveCopyRowsAsync(new Dictionary<string, string>
+        {
+            [EmailCopyRules.Key(t.Id, bcc: false)] = EmailCopyRules.Join(ccList),
+            [EmailCopyRules.Key(t.Id, bcc: true)] = EmailCopyRules.Join(bccList),
+        }, ct);
+    }
+
+    /// <summary>
+    /// Saves the archive copy: one address blind-copied on every email TIDE sends, a brief's editions included, so it
+    /// must be inside the organization's domain (and there must be one, from <c>Email:From</c>). Blank for none.
+    /// </summary>
+    public async Task SaveArchiveAsync(string? address, CancellationToken ct = default)
+    {
+        RequireAdmin();
+        var list = EmailCopyRules.Parse(address, "Archive copy", max: 1);
+        if (list.Count == 1 && !EmailCopyRules.IsInside(list[0], HomeDomain))
+            throw new ArgumentException(HomeDomain is null
+                ? "The archive copy gets every email TIDE sends, so it must be inside your organization's domain, and none is known: set Email:From on the server first."
+                : $"The archive copy gets every email TIDE sends, a brief's editions included, so it must be inside {HomeDomain}.");
+        await SaveCopyRowsAsync(new Dictionary<string, string> { [EmailCopyRules.ArchiveKey] = EmailCopyRules.Join(list) }, ct);
+    }
+
+    // Each key's row: written, or removed when blank. Then the copies in force are read again.
+    private async Task SaveCopyRowsAsync(IReadOnlyDictionary<string, string> values, CancellationToken ct)
+    {
+        await using (var db = await dbs.CreateAsync(ct))
+        {
+            var keys = values.Keys.ToList();
+            var rows = await db.Settings.Where(s => keys.Contains(s.Key)).ToListAsync(ct);
+            foreach (var (key, value) in values)
+            {
+                var row = rows.FirstOrDefault(r => string.Equals(r.Key, key, StringComparison.OrdinalIgnoreCase));
+                if (value.Length == 0)
+                {
+                    if (row is not null) db.Settings.Remove(row);
+                    continue;
+                }
+                if (row?.Value == value) continue;
+                if (row is null) db.Settings.Add(row = new AppSetting { Key = key });
+                row.Value = value;
+                row.UpdatedAtUtc = time.GetUtcNow();
+                row.UpdatedBy = user.UserId;
+            }
+            await db.SaveChangesAsync(ct);
+        }
+        await _copies.RefreshAsync(dbs, ct);
+    }
+
     public async Task<IReadOnlyList<EmailTemplateView>> GetAllAsync(CancellationToken ct = default)
     {
         RequireAdmin();

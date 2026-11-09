@@ -6,7 +6,17 @@ public sealed record InlineImage(string ContentId, string FileName, string Conte
 /// <summary>One email to send: an HTML body with a plain-text alternative, and its inline images. <paramref name="ReplyTo"/>, when
 /// given, is where a reply goes instead of the sender (an external team's reminder, answered by whoever follows its work).</summary>
 public sealed record OutgoingEmail(IReadOnlyList<string> To, string Subject, string Html, string Text, IReadOnlyList<InlineImage> Images,
-    IReadOnlyList<string>? ReplyTo = null);
+    IReadOnlyList<string>? ReplyTo = null)
+{
+    /// <summary>The template it was made from (<see cref="EmailTemplate.Id"/>), so its copies go with it; null for one
+    /// that isn't a template's (a brief's edition, a correction).</summary>
+    public string? Template { get; init; }
+
+    /// <summary>Copies: seen by every recipient (CC), or not (BCC). Added by <see cref="CopyingEmailSender"/> from the
+    /// template's and the archive's copy addresses.</summary>
+    public IReadOnlyList<string> Cc { get; init; } = [];
+    public IReadOnlyList<string> Bcc { get; init; } = [];
+}
 
 public enum EmailSendStatus
 {
@@ -30,6 +40,10 @@ public enum EmailSendStatus
 /// carry addresses.</summary>
 public sealed record EmailSendResult(EmailSendStatus Status, string? Error = null, int Refused = 0)
 {
+    /// <summary>Copy addresses (CC or BCC) the relay refused. They never count against the email itself: it went to
+    /// its recipients.</summary>
+    public int RefusedCopies { get; init; }
+
     /// <summary>Whether it went or may have: either way it isn't sent again by itself.</summary>
     public bool MayHaveGone => Status is EmailSendStatus.Sent or EmailSendStatus.Unknown;
 }

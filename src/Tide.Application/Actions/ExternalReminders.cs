@@ -217,7 +217,7 @@ public sealed partial class ReminderService
         });
         var html = Shell(t.Heading, clock.TeamName + " · " + DayText(today), MarkingLine(list) + t.BodyHtml, t.Footer);
         var replyTo = list.Select(a => replies.GetValueOrDefault(a.Id)).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        return new OutgoingEmail([to], Marked(t.Subject, list), html, ToText(html), [], replyTo);
+        return new OutgoingEmail([to], Marked(t.Subject, list), html, ToText(html), [], replyTo) { Template = t.TemplateId };
     }
 
     // An action's mark for its reminder at a step: "{action}:{due}:{step}", and for one handed from another team, the team

@@ -21,6 +21,20 @@
 }
 else
 {
+    <section class="tide-card mb-3" aria-labelledby="etpl-archive-title" data-submit-scope>
+        <h2 id="etpl-archive-title"><span class="bi bi-archive" aria-hidden="true"></span> Archive copy</h2>
+        <p class="small tide-muted mb-2">One address blind-copied on <strong>every</strong> email TIDE sends, a brief's editions and test copies included: a record that each was sent.
+            It must be inside @(Templates.HomeDomain ?? "your organization's domain (set Email:From on the server)"). Blank for none. Saving it is audited.</p>
+        <div class="d-flex flex-wrap gap-2 align-items-end">
+            <div class="flex-grow-1 tide-maxw-sm">
+                <label class="tide-field-label" for="etpl-archive">Archive address</label>
+                <input id="etpl-archive" type="email" class="form-control form-control-sm tide-data" maxlength="256" placeholder="@($"tide-archive@{Templates.HomeDomain ?? "example.org"}")" @bind="_archive" />
+            </div>
+            <button class="btn btn-outline-secondary btn-sm" data-submit disabled="@_busy" @onclick="SaveArchive">Save archive copy</button>
+        </div>
+        @if (_archiveError is not null) { <p class="text-danger small mt-2 mb-0" role="alert">@_archiveError</p> }
+    </section>
+
     <div class="tide-etpl">
         <nav class="tide-etpl-list" aria-label="Email templates">
             @foreach (var v in _views)
@@ -29,6 +43,7 @@ else
                 <button type="button" class="tide-etpl-item @(current ? "active" : "")" aria-current="@(current ? "true" : null)"
                         @onclick="() => Select(v.Template.Id)" disabled="@_busy">
                     <span>@v.Template.Title</span>
+                    @if (Templates.Copies(v.Template.Id).Any) { <span class="bi bi-people small tide-muted" title="Copied to standing addresses" aria-label="Has copies"></span> }
                     @if (_drafts.ContainsKey(v.Template.Id) || (current && Unsaved)) { <Badge Tone="BadgeTone.Warn">Unsaved</Badge> }
                     else if (v.IsCustomized) { <Badge Tone="BadgeTone.Ok">Customized</Badge> }
                 </button>
@@ -81,11 +96,31 @@ else
                     </div>
                 </section>
 
+                <section class="tide-card" aria-labelledby="etpl-copies-title" data-submit-scope>
+                    <h2 id="etpl-copies-title"><span class="bi bi-people" aria-hidden="true"></span> Copies</h2>
+                    <p class="small tide-muted mb-2">Addresses every email from this template is copied to, one copy per email: a reminder run sends one email per person or team,
+                        so a copy here gets one each. Up to @EmailCopyRules.MaxPerList in each; separate them with commas or lines. Saving is audited, and copies aren't carried in a configuration bundle.</p>
+                    @if (EmailCopyRules.GoesOutside(sel.Template))
+                    {
+                        <div class="tide-missing small mb-2" role="note"><span class="bi bi-shield-lock" aria-hidden="true"></span> This email goes to people outside TIDE, so its copies are blind only: they never see an internal address.</div>
+                    }
+                    else
+                    {
+                        <label class="tide-field-label" for="etpl-cc">Always copy (CC) <span class="fw-normal">: every recipient sees these</span></label>
+                        <textarea id="etpl-cc" class="form-control form-control-sm tide-data tide-autogrow tide-grow-2" rows="1" @bind="_cc"></textarea>
+                    }
+                    <label class="tide-field-label mt-2" for="etpl-bcc">Always blind-copy (BCC) <span class="fw-normal">: no recipient sees these</span></label>
+                    <textarea id="etpl-bcc" class="form-control form-control-sm tide-data tide-autogrow tide-grow-2" rows="1" @bind="_bcc"></textarea>
+                    @if (_copyError is not null) { <p class="text-danger small mt-2 mb-0" role="alert">@_copyError</p> }
+                    <button class="btn btn-outline-secondary btn-sm mt-2" data-submit disabled="@_busy" @onclick="() => SaveCopies(false)">Save copies</button>
+                </section>
+
                 <section class="tide-card" aria-labelledby="etpl-preview-title">
                     <h2 id="etpl-preview-title"><span class="bi bi-eye" aria-hidden="true"></span> Preview <span class="small tide-muted fw-normal">with sample values</span></h2>
                     @if (_preview is { } p)
                     {
                         <div class="small mb-2"><span class="tide-muted">Subject:</span> @p.Subject</div>
+                        @if (AlsoSentTo(sel) is { } also) { <div class="small mb-2" id="etpl-also"><span class="tide-muted">Also sent to:</span> <span class="tide-data">@also</span></div> }
                         <iframe class="tide-etpl-frame" title="Preview of the email" sandbox="" srcdoc="@p.Html"></iframe>
                     }
                 </section>
@@ -94,7 +129,66 @@ else
     </div>
 }
 
+<ConfirmDialog @ref="_confirm" />
+
 @code {
+    private ConfirmDialog _confirm = default!;
+    private string? _cc, _bcc, _archive, _copyError, _archiveError;
+
+    /// <summary>The standing copies every email from <paramref name="v"/> carries, as saved: "CC a@x; BCC b@x (archive)".</summary>
+    internal string? AlsoSentTo(EmailTemplateView v)
+    {
+        var copies = Templates.Copies(v.Template.Id);
+        var outside = EmailCopyRules.GoesOutside(v.Template);
+        var parts = new List<string>();
+        if (!outside && copies.Cc.Count > 0) parts.Add("CC " + EmailCopyRules.Join(copies.Cc));
+        var bcc = (outside ? copies.Cc.Concat(copies.Bcc) : copies.Bcc).ToList();
+        if (bcc.Count > 0) parts.Add("BCC " + EmailCopyRules.Join(bcc));
+        if (Templates.Archive is { } archive) parts.Add($"BCC {archive} (archive)");
+        return parts.Count == 0 ? null : string.Join(" · ", parts);
+    }
+
+    // The copies' boxes, as saved for the template shown.
+    private void ShowCopies()
+    {
+        var c = Templates.Copies(_id);
+        (_cc, _bcc, _copyError) = (string.Join(Environment.NewLine, c.Cc), string.Join(Environment.NewLine, c.Bcc), null);
+    }
+
+    // Saved as typed; an address outside the organization's domain is asked about first.
+    internal async Task SaveCopies(bool confirmed)
+    {
+        if (_busy) return;
+        _busy = true;
+        _copyError = null;
+        var ask = (string?)null;
+        try
+        {
+            await Templates.SaveCopiesAsync(_id, _cc, _bcc, confirmed);
+            ShowCopies();
+            Toasts.Show("Copies saved. They go with the next email from this template.");
+        }
+        catch (OutsideCopiesException ex) { ask = ex.Message; }
+        catch (Exception ex) { _copyError = UserFacingError.For(ex); }
+        finally { _busy = false; }
+        if (ask is not null && await _confirm.Ask("Copy outside your organization?", ask, "Copy anyway")) await SaveCopies(true);
+    }
+
+    internal async Task SaveArchive()
+    {
+        if (_busy) return;
+        _busy = true;
+        _archiveError = null;
+        try
+        {
+            await Templates.SaveArchiveAsync(_archive);
+            _archive = Templates.Archive;
+            Toasts.Show(_archive is null ? "No archive copy." : $"Every email TIDE sends is now blind-copied to {_archive}.");
+        }
+        catch (Exception ex) { _archiveError = UserFacingError.For(ex); }
+        finally { _busy = false; }
+    }
+
     private IReadOnlyList<EmailTemplateView>? _views;
     private string _id = "";
     private string _subject = "", _heading = "", _body = "";
@@ -118,6 +212,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         _views = await Templates.GetAllAsync();
+        _archive = Templates.Archive;
         _to = await Templates.TestAddressAsync();
         if (_views.Count > 0) Select(_views[0].Template.Id);
     }
@@ -131,6 +226,7 @@ else
         _error = null;
         if (Selected is not { } v) return;
         (_subject, _heading, _body, _stamp) = _drafts.Remove(id, out var draft) ? draft : (v.Subject, v.Heading, v.Body, v.Stamp);
+        ShowCopies();
         UpdatePreview();
     }
 

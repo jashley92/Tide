@@ -186,6 +186,7 @@ using (var scope = app.Services.CreateScope())
     await scope.ServiceProvider.GetRequiredService<DatabaseInitializer>().InitializeAsync();
     await app.Services.GetRequiredService<SavedSettings>().RefreshAsync(scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>());
     await app.Services.GetRequiredService<EmailTemplateStore>().RefreshAsync(scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>());
+    await app.Services.GetRequiredService<EmailCopyStore>().RefreshAsync(scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>());
 }
 
 // Development only: the screenshot tool's fuller demo data (tools/screenshots), when Demo:Seed is set.
