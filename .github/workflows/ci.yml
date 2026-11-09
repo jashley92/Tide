@@ -95,6 +95,11 @@ jobs:
         if: ${{ !cancelled() }}
         run: bash tools/ci/check-migrations-immutable.sh
 
+      # tools/ci/check-removed-css.sh, against the PR's base or the commit before on main.
+      - name: No class the markup uses loses its style
+        if: ${{ !cancelled() }}
+        run: bash tools/ci/check-removed-css.sh "${{ github.event.pull_request.base.sha || github.event.before || 'origin/main' }}"
+
       - name: No un-migrated model changes (SQL Server + SQLite)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
@@ -119,6 +124,47 @@ jobs:
       - name: Deprecated package report (informational)
         if: always()
         run: dotnet list package --deprecated 2>&1 | tee deprecated.log || true
+
+  # Layout rules in Chromium on the seeded demo (tools/screenshots/layout.mjs, README.md there).
+  layout:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Build.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Cache Playwright's browser
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('tools/screenshots/package-lock.json') }}
+
+      - name: Install Playwright and its Chromium
+        working-directory: tools/screenshots
+        # The locked Playwright, without lifecycle scripts (it needs none: its CLI fetches the browser), run from
+        # node_modules rather than npx, which could fetch an unpinned package.
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          ./node_modules/.bin/playwright install --with-deps --only-shell chromium
+
+      - name: Layout holds
+        run: node tools/screenshots/layout.mjs
+
+      - name: TIDE's log (on failure)
+        if: failure()
+        run: tail -n 200 tools/screenshots/.demo/tide.log || true
 
   # The production migrations, applied to a real SQL Server 2022 and applied again (a no-op), and the tests marked to run
   # on SQL Server: the SQLite run above can't catch SQL Server-only failures (index sizes, cascade paths, type mappings,
