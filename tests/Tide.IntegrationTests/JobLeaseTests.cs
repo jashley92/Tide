@@ -98,7 +98,9 @@ public class JobLeaseTests
         (await b.HoldAsync()).Should().BeFalse();
 
         await a.ReleaseAsync();
-        clock.Now = Start.AddSeconds(1);
+        clock.Now = Start.AddSeconds(10);
+        (await b.HoldAsync()).Should().BeFalse("a standby looks again only after RenewAfter");
+        clock.Now = Start + BackgroundJobLease.RenewAfter;
         (await b.HoldAsync()).Should().BeTrue("the overlapping process takes over without waiting for the lease to lapse");
     }
 

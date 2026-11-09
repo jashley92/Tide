@@ -79,10 +79,12 @@ public sealed class JobRunLog(JobMonitor jobs, TimeProvider time, ILogger<JobRun
             var runs = db.JobRuns.AsNoTracking().Where(r => r.Job == job.Key);
             var latest = await runs.OrderByDescending(r => r.StartedAtUtc).FirstOrDefaultAsync(ct);
             if (latest is null) continue;
-            var lastSuccess = await runs.Where(r => r.Succeeded).OrderByDescending(r => r.StartedAtUtc).FirstOrDefaultAsync(ct);
-            var lastFailure = await runs.Where(r => !r.Succeeded).OrderByDescending(r => r.StartedAtUtc).FirstOrDefaultAsync(ct);
-            var failuresInARow = lastSuccess is null
-                ? await runs.CountAsync(r => !r.Succeeded, ct)
+            // The latest run is the last success or the last failure; only the other is asked for, and the failures
+            // since the last success only when the latest failed.
+            var lastSuccess = latest.Succeeded ? latest : await runs.Where(r => r.Succeeded).OrderByDescending(r => r.StartedAtUtc).FirstOrDefaultAsync(ct);
+            var lastFailure = !latest.Succeeded ? latest : await runs.Where(r => !r.Succeeded).OrderByDescending(r => r.StartedAtUtc).FirstOrDefaultAsync(ct);
+            var failuresInARow = latest.Succeeded ? 0
+                : lastSuccess is null ? await runs.CountAsync(r => !r.Succeeded, ct)
                 : await runs.CountAsync(r => !r.Succeeded && r.StartedAtUtc > lastSuccess.StartedAtUtc, ct);
             jobs.Restore(job, Finished(latest), lastFailure is null ? null : Finished(lastFailure), lastSuccess?.FinishedAtUtc, failuresInARow);
         }

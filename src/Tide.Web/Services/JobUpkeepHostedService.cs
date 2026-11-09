@@ -7,7 +7,7 @@ namespace Tide.Web.Services;
 /// Keeps the background jobs' own bookkeeping: renews the job lease every <see cref="Interval"/> whatever the jobs are
 /// doing (a long CVE refresh doesn't let it lapse, and a standing-by process takes over within a few minutes of the
 /// holder stopping), writes the finished runs to the job history, and prunes the history daily while it holds the
-/// lease. At shutdown it writes what's left and lets the lease go, so the next process takes over at once. Registered
+/// lease. At shutdown it writes what's left and lets the lease go, so the next process takes over within 30 seconds. Registered
 /// before the jobs, so it stops after them.
 /// </summary>
 public sealed class JobUpkeepHostedService(IServiceScopeFactory scopes, BackgroundJobLease lease, JobRunLog runs, TimeProvider time,

@@ -106,8 +106,8 @@ public sealed class JobMonitor(TimeProvider time, ILogger<JobMonitor>? log = nul
         }
         catch (Exception ex)
         {
-            var problem = ex is JobProblemException;
-            Fail(job, started, problem ? ex.Message : ex.GetType().Name + ": " + ex.Message, problem ? null : ex);
+            if (ex is JobProblemException) Fail(job, started, ex.Message, null);
+            else Fail(job, started, Describe(ex), ex);
             throw;
         }
     }
@@ -124,13 +124,11 @@ public sealed class JobMonitor(TimeProvider time, ILogger<JobMonitor>? log = nul
         Queue(new FinishedRun(job.Key, startedUtc, now, true, detail, null));
     }
 
-    /// <summary>Records a run that finished without an exception but didn't work (the update check couldn't reach GitHub),
-    /// or one whose exception was caught outside <see cref="RunAsync"/> (<paramref name="exception"/>, logged with it).</summary>
-    public void Failed(JobDefinition job, string why, Exception? exception = null)
-    {
-        var s = Get(job);
-        Fail(job, s.Running && s.LastStartedUtc is { } started ? started : time.GetUtcNow(), why, exception);
-    }
+    /// <summary>Records a run that finished without an exception but didn't work (the update check couldn't reach GitHub).</summary>
+    public void Failed(JobDefinition job, string why) => Fail(job, time.GetUtcNow(), why, null);
+
+    /// <summary>Records a run whose exception was caught outside <see cref="RunAsync"/>, logged with it.</summary>
+    public void Failed(JobDefinition job, Exception exception) => Fail(job, time.GetUtcNow(), Describe(exception), exception);
 
     private void Fail(JobDefinition job, DateTimeOffset startedUtc, string why, Exception? exception)
     {
@@ -193,6 +191,8 @@ public sealed class JobMonitor(TimeProvider time, ILogger<JobMonitor>? log = nul
     {
         if (_pending.Count > MaxPending) _pending.RemoveRange(0, _pending.Count - MaxPending);
     }
+
+    private static string Describe(Exception ex) => ex.GetType().Name + ": " + ex.Message;
 
     private JobState Update(JobDefinition job, Func<JobState, JobState> change) => _states.AddOrUpdate(job.Key, _ => throw new KeyNotFoundException(job.Key), (_, s) => change(s));
 }

@@ -240,7 +240,7 @@ None of them can stop the app.
   holds the lease: one row in `JobLeases`, taken and renewed with one conditional `UPDATE` (set this holder and a new
   expiry where the row is this holder's or has lapsed), atomic on SQLite and SQL Server alike, so a web garden, an
   overlapping recycle or a second server on the database doesn't send a reminder twice. It lapses 3 minutes after its
-  last renewal; a pass within 30 seconds of the last renewal doesn't ask again. While the database doesn't answer, a
+  last renewal; a pass within 30 seconds of the last check (a renewal, or a standby's look) doesn't ask again. While the database doesn't answer, a
   holder keeps going until 30 seconds before the expiry it wrote, then stops. The in-process locks (the reminder
   scans' `SemaphoreSlim`) still keep an administrator's **Run now** and the poller apart within the process.
 - **Reporting.** Each run is reported to `JobMonitor` (Administration › System › Diagnostics, `/health/jobs`), which
@@ -248,7 +248,7 @@ None of them can stop the app.
 - **Upkeep.** `JobUpkeepHostedService` (`src/Tide.Web/Services/JobUpkeepHostedService.cs`), registered first so it
   stops last, renews the lease every 30 seconds whatever the jobs are doing, writes the queued runs to `JobRuns`, and
   prunes runs older than 30 days daily while it holds the lease. At shutdown it writes what's left and lets the lease
-  go, so a standby takes over at once. At start-up `JobRunLog.RestoreAsync` reads each job's latest run back into
+  go, so a standby takes over within 30 seconds. At start-up `JobRunLog.RestoreAsync` reads each job's latest run back into
   the monitor.
 
 ```mermaid

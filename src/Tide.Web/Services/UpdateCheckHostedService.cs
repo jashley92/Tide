@@ -62,7 +62,7 @@ public sealed class UpdateCheckHostedService(IServiceScopeFactory scopes, Update
         catch (Exception ex)
         {
             // Logged by the monitor (a Warning, with the job's event id); it's tried again later.
-            jobs.Failed(JobMonitor.UpdateCheck, ex.GetType().Name + ": " + ex.Message, ex);
+            jobs.Failed(JobMonitor.UpdateCheck, ex);
             _lastRunUtc = time.GetUtcNow();
         }
     }

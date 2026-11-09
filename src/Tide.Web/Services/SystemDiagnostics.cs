@@ -121,15 +121,11 @@ public sealed class SystemDiagnostics(
             yield return new("Background jobs", CheckLevel.Info, $"Not run here: {holder} runs them.");
             yield break;
         }
-        var worst = health.Findings.Where(f => f.Level == health.Level).Select(f => f.Text).ToList();
-        if (health.Level == JobHealthLevel.Unhealthy)
+        if (health.Level != JobHealthLevel.Healthy)
         {
-            yield return new("Background jobs", CheckLevel.Problem, string.Join(" ", worst) + " See the jobs below.");
-            yield break;
-        }
-        if (health.Level == JobHealthLevel.Degraded)
-        {
-            yield return new("Background jobs", CheckLevel.Attention, string.Join(" ", worst) + " See the jobs below.");
+            var worst = health.Findings.Where(f => f.Level == health.Level).Select(f => f.Text);
+            yield return new("Background jobs", health.Level == JobHealthLevel.Unhealthy ? CheckLevel.Problem : CheckLevel.Attention,
+                string.Join(" ", worst) + " See the jobs below.");
             yield break;
         }
         var failed = states.Where(s => s.Enabled && s.LastSucceeded == false).Select(s => s.Job.Name).ToList();

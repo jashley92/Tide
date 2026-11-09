@@ -455,13 +455,13 @@ app.MapGet("/admin/system/audit.csv", async (HttpContext http, Tide.Application.
 var healthLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Tide.Health");
 Func<HttpContext, HealthReport, Task> StatusWord(string what)
 {
-    var lastWarningTicks = new long[1];
+    var lastWarningTicks = 0L;
     return (http, report) =>
     {
         var now = DateTimeOffset.UtcNow.UtcTicks;
-        var last = Interlocked.Read(ref lastWarningTicks[0]);
+        var last = Interlocked.Read(ref lastWarningTicks);
         if (report.Status != HealthStatus.Healthy && now - last > TimeSpan.TicksPerMinute
-            && Interlocked.CompareExchange(ref lastWarningTicks[0], now, last) == last)
+            && Interlocked.CompareExchange(ref lastWarningTicks, now, last) == last)
             healthLog.LogWarning("{What} is {Status}: {Checks}", what, report.Status,
                 string.Join("; ", report.Entries.Where(e => e.Value.Status != HealthStatus.Healthy)
                     .Select(e => e.Key + " " + e.Value.Description + (e.Value.Exception is { } ex ? " (" + SecretMask.Scrub(ex.GetType().Name + ": " + ex.Message) + ")" : ""))));

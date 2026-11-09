@@ -172,7 +172,7 @@ pool's `startMode` to `AlwaysRunning` and its idle timeout to zero. Don't change
 the holder runs the jobs, and any other (a web garden, an overlapping recycle, a standby server started by mistake)
 skips its passes, so no reminder is sent twice. The lease is taken and renewed with one conditional `UPDATE` every 30
 seconds (`JobUpkeepHostedService`) and lapses 3 minutes after its last renewal, so a standby takes over within a few
-minutes of the holder dying, and at once when the holder shuts down cleanly (it lets the lease go). The expiry is
+minutes of the holder dying, and within 30 seconds when the holder shuts down cleanly (it lets the lease go). The expiry is
 compared on each server's clock, so keep the servers' clocks in sync (domain time is enough). Diagnostics names the
 holder ("Job lease"), and on a standby says it's standing by. The installer and the upgrade also set the pool to one
 worker process (`maxProcesses = 1`).

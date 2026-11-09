@@ -50,7 +50,7 @@ public interface IJobLease
 /// and a new expiry where the row is this holder's or has lapsed, which is atomic on SQLite and SQL Server alike. The
 /// first process to find no row inserts it; the key stops a second insert. It lapses <see cref="Expiry"/> after its last
 /// renewal, so a process that dies is taken over within a few minutes, and it's let go at shutdown so the next process
-/// takes over at once. The expiry is compared on each process's own clock: servers on a domain keep theirs within
+/// takes over within 30 seconds. The expiry is compared on each process's own clock: servers on a domain keep theirs within
 /// seconds of each other, well inside the margin.
 /// Singleton (it's asked from the hosted services, so it makes a scope for each database call).
 /// </summary>
@@ -62,19 +62,20 @@ public sealed class BackgroundJobLease(IServiceScopeFactory scopes, TimeProvider
     /// <summary>How long the lease lasts after a renewal.</summary>
     public static readonly TimeSpan Expiry = TimeSpan.FromMinutes(3);
 
-    /// <summary>A pass within this long of the last renewal doesn't ask the database again.</summary>
+    /// <summary>A pass within this long of the last check doesn't ask the database again: a holder's renewal, or a
+    /// standing-by process's look at whether the lease has come free.</summary>
     public static readonly TimeSpan RenewAfter = TimeSpan.FromSeconds(30);
 
     /// <summary>While the database doesn't answer, a holder keeps running until this long before the expiry it last wrote.</summary>
     public static readonly TimeSpan Margin = TimeSpan.FromSeconds(30);
 
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private DateTimeOffset _renewedAt = DateTimeOffset.MinValue;
+    private DateTimeOffset _askedAt = DateTimeOffset.MinValue;
     private volatile LeaseStatus _status = LeaseStatus.NotChecked;
 
     /// <summary>This process's id on the lease: the machine, the process id, and a value of its own (a recycled process
     /// can be given the same id).</summary>
-    public string Holder { get; } = Truncate(holder ?? $"{Environment.MachineName}/{Environment.ProcessId}/{Guid.NewGuid():N}");
+    public string Holder { get; } = Content.Words.Clip(holder ?? $"{Environment.MachineName}/{Environment.ProcessId}/{Guid.NewGuid():N}", Domain.Entities.JobLease.MaxHolder);
 
     public LeaseStatus Status => _status;
 
@@ -84,12 +85,12 @@ public sealed class BackgroundJobLease(IServiceScopeFactory scopes, TimeProvider
         try
         {
             var now = time.GetUtcNow();
-            if (_status.State == LeaseState.Held && now - _renewedAt < RenewAfter) return true;
+            if (_status.State is LeaseState.Held or LeaseState.StandingBy && now - _askedAt < RenewAfter) return _status.State == LeaseState.Held;
             var before = _status;
             try
             {
-                _status = await TakeAsync(now, ct);
-                if (_status.State == LeaseState.Held) _renewedAt = now;
+                _status = await TakeAsync(before, now, ct);
+                _askedAt = now;
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
@@ -112,7 +113,7 @@ public sealed class BackgroundJobLease(IServiceScopeFactory scopes, TimeProvider
         finally { _gate.Release(); }
     }
 
-    private async Task<LeaseStatus> TakeAsync(DateTimeOffset now, CancellationToken ct)
+    private async Task<LeaseStatus> TakeAsync(LeaseStatus before, DateTimeOffset now, CancellationToken ct)
     {
         await using var scope = scopes.CreateAsyncScope();
         await using var db = await scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>().CreateAsync(ct);
@@ -125,20 +126,23 @@ public sealed class BackgroundJobLease(IServiceScopeFactory scopes, TimeProvider
                 .SetProperty(l => l.AcquiredAtUtc, l => l.Holder == me ? l.AcquiredAtUtc : now)
                 .SetProperty(l => l.Holder, me)
                 .SetProperty(l => l.ExpiresAtUtc, until), ct) == 1;
-        if (!taken && !await db.JobLeases.AnyAsync(l => l.Name == BackgroundJobs, ct))
+        // A renewal is the one statement: it was this holder's, so it's held since it was taken.
+        if (taken) return new LeaseStatus(LeaseState.Held, me, until, before.State == LeaseState.Held ? before.HeldSinceUtc : now, now, null);
+        var row = await db.JobLeases.AsNoTracking().FirstOrDefaultAsync(l => l.Name == BackgroundJobs, ct);
+        if (row is null)
         {
             db.JobLeases.Add(new Domain.Entities.JobLease { Name = BackgroundJobs, Holder = me, AcquiredAtUtc = now, ExpiresAtUtc = until });
             try
             {
                 await db.SaveChangesAsync(ct);
-                taken = true;
+                return new LeaseStatus(LeaseState.Held, me, until, now, now, null);
             }
-            catch (DbUpdateException) { /* another process inserted it first: it holds it */ }
+            catch (DbUpdateException)
+            {
+                // Another process inserted it first: it holds it.
+                row = await db.JobLeases.AsNoTracking().FirstOrDefaultAsync(l => l.Name == BackgroundJobs, ct);
+            }
         }
-        await using var read = await scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>().CreateAsync(ct);
-        var row = await read.JobLeases.AsNoTracking().FirstOrDefaultAsync(l => l.Name == BackgroundJobs, ct);
-        if (taken || row?.Holder == me)
-            return new LeaseStatus(LeaseState.Held, me, row?.ExpiresAtUtc ?? until, row?.AcquiredAtUtc ?? now, now, null);
         return new LeaseStatus(LeaseState.StandingBy, row?.Holder, row?.ExpiresAtUtc, null, now, null);
     }
 
@@ -175,6 +179,4 @@ public sealed class BackgroundJobLease(IServiceScopeFactory scopes, TimeProvider
     }
 
     public void Dispose() => _gate.Dispose();
-
-    private static string Truncate(string s) => s.Length > Domain.Entities.JobLease.MaxHolder ? s[..Domain.Entities.JobLease.MaxHolder] : s;
 }

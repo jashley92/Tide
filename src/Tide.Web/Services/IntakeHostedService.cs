@@ -82,7 +82,7 @@ public sealed class IntakeHostedService(IServiceScopeFactory scopes, ChangeFeed 
         catch (Exception ex)
         {
             // Logged by the monitor (a Warning, with the job's event id); it's tried again at the next pass.
-            jobs.Failed(JobMonitor.CveRefresh, ex.GetType().Name + ": " + ex.Message, ex);
+            jobs.Failed(JobMonitor.CveRefresh, ex);
         }
     }
 
