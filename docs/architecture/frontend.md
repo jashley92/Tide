@@ -93,7 +93,7 @@ Three layouts, in `src/Tide.Web/Components/Layout`:
 | `BlankLayout` | Present mode (`/present/{day}`) | No sidebar or top bar. `PageBoundary` (contained), `ToastHost`, and the `CommandPalette` and `ShortcutsOverlay` with keys only, no buttons. |
 
 **The sidebar.** `NavMenu` draws `NavPages.GroupsFor(user)`: every page the person may open, under small group labels
-(Daily, Intelligence, Team, Company-wide, Administration), the daily ones first. `NavPages.All()` is the single list
+(Daily, Intelligence, Insight, Team, Company-wide, Administration), the daily ones first. `NavPages.All()` is the single list
 of sidebar pages, with each page's icon, address, group, the permissions it needs (all of them) and extra keywords;
 the command palette reads the same list, so the two never disagree. A group with no page for the person isn't drawn.
 The sidebar's visibility rule is only a hint: each page's own `[Authorize]` policy decides.
