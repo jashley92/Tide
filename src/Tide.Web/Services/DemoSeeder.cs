@@ -241,7 +241,7 @@ public static class DemoSeeder
 
         private async Task HistoryAsync(IAppDbContext db, Dictionary<string, Guid> tags, Dictionary<string, Team> teams, CancellationToken ct)
         {
-            var number = await db.Actions.Select(a => (int?)a.Number).MaxAsync(ct) ?? 0;
+            var number = await db.Actions.IgnoreQueryFilters([ActionItem.DeletedFilter]).Select(a => (int?)a.Number).MaxAsync(ct) ?? 0;   // a deleted one's number isn't reused
             var teamList = teams.Values.OrderBy(t => t.SortOrder).ToList();
             var start = _today.AddDays(-190);
             var people = new[] { (dev.UserId, dev.DisplayName) }.Concat(Analysts).ToArray();

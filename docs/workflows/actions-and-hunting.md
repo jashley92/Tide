@@ -10,6 +10,7 @@ what a button does underneath.
 - [Who may do what](#who-may-do-what)
 - [Raising an action](#raising-an-action)
 - [Status and outcomes](#status-and-outcomes)
+- [Deleting an action](#deleting-an-action)
 - [SLA and due dates](#sla-and-due-dates)
 - [Working an action: assignee, checklist, comments, files](#working-an-action-assignee-checklist-comments-files)
 - [Hunt queries](#hunt-queries)
@@ -87,6 +88,8 @@ policy, and the services check again, so a page that forgets can't write.
 | Teams, members, SLA targets, reminder and escalation settings, card rules, query templates | `Administer` | `TeamService`, `SlaSettings`, `CardRuleService`, `HuntQueryBuilder` |
 | A team's active limit | `Administer` | `TeamService.UpdateAsync` (Teams & SLA), `UpdateExternalAsync` (External teams), `SetLimitAsync` |
 | Run a reminder scan now | `Administer` | `ReminderService.RunNowAsync` |
+| Delete an action (a mistake or a duplicate) | `WriteArticles` or `Administer`, **and** able to work it | `ActionService.DeleteAsync` |
+| See the deleted actions and restore one | `Administer` | `ActionService.DeletedAsync`, `RestoreAsync` |
 
 An analyst (and an administrator, who holds every permission) works any action. An Action owner works only their
 teams' actions. Membership is by user id in `TeamMember`, administered on Teams & SLA.
@@ -217,6 +220,38 @@ the column the card was in, and is refused if the action has moved since ("Someo
 meantime"). `ChangeOutcomeAsync` changes a closed action's outcome without moving it, and is refused the same way if
 someone reopened it meanwhile.
 
+## Deleting an action
+
+Cancelled and Not applicable close work that won't be done; it stays on the record and in the counts. **Delete** is
+for an action that shouldn't exist at all: raised by mistake, or a duplicate. It's the last item under the action
+page's *More*, for an analyst or an administrator who may work the action (`ActionGuide.More`, `ActionFacts.CanDelete`),
+and asks why in a dialog that says which to use when (`ActionService.DeleteAsync`):
+
+- **Refused** without a reason (up to 500 characters), for someone who isn't an analyst or administrator or can't work
+  the action, and for a parent with open parts ("delete or close its parts first"). A parent whose parts are all
+  closed may be deleted; its parts then stand alone (no parent number or lineage).
+- **What it does.** It stamps `DeletedAtUtc`, `DeletedById`/`DeletedByName` and `DeleteReason`, moves the edit
+  version, and adds "Deleted it: {why}" to its history. Nothing is removed: its number, comments, files, hunts, emails
+  and history are kept. The save is audited as any change is, and heard on the actions feed (`ChangeFeed.Actions` and
+  the action's own topic), so open lists, boards and the action's page update; the page then says *Action not found*.
+- **Gone everywhere.** An EF global query filter (`AppDbContext.DeletedActionsLeftOut`) leaves a deleted action out of
+  every read: the lists, the board, counts and rule counts, Workload, Team commitments, Today's queue and Escalated,
+  the meeting's lists, reminders, the escalation ladder, digests, webhooks, the API, search and lookups, the brief's
+  actions, Trends and reports, and duplicate detection. What's only its (comments and their files, history, files,
+  checklist, hunts, indicators, emails, its detection gap) is filtered too, through a filter that asks for its action,
+  because those are also read on their own (search reads comments, Trends reads hunts, the follow-up reminder reads
+  emails, the file routes read files). No required relationship ends at a filtered row, so EF never hands back a
+  comment without its action.
+- **Seen only where it must be** (`IgnoreQueryFilters([ActionItem.DeletedFilter])`, lifting this named filter alone): numbering (a number is never reused), the guards that keep
+  what an action refers to (an article, a team or a playbook a deleted action names isn't deleted from under it), the
+  check that a stored file is still in use, a detection gap's row (raising a new gap action takes it over), the audit
+  log's names ("A-12 … (deleted)", linked to the deleted list), and the administrator's list and restore. A filter
+  ignored in a query is ignored in its subqueries too, so those ask for `DeletedAtUtc` outright where it matters.
+- **Restore.** Administration › Deleted actions (`/admin/deleted-actions`) lists each deleted action, the latest first,
+  with its team and status, who deleted it, when and why, and *Restore* (`RestoreAsync`, administrators only). It comes
+  back as it was, with "Restored it (deleted … by …: why)." in its history, audited. A part whose parent is deleted too
+  waits for the parent.
+
 ## SLA and due dates
 
 A new action's due date is a number of business days from today: the kind's target when one is set, else the
@@ -239,13 +274,24 @@ Overdue, Due today, This week (to the end of the business week), Later, and Bloc
 Changing a saved action's priority offers the new SLA date; it never moves the date by itself. A due date already on
 an action is never re-checked, so an action overdue for over a year can still be edited.
 
+**The original due date.** An action keeps the first due date it was given (`OriginalDueDate`, set once and never
+moved) and counts every later change to its date (`DueDateMoves`), moved later or earlier, or cleared. Both are kept by
+`ActionItem.DueDate`'s setter, so every path that sets a date counts alike: creating it (a date given, or the SLA's for
+a blank one), the editor, Record an update, the meeting's due box, a split's parts and the meeting's quick add (a part's
+first date is its own). Setting the date it already has, a hand-off, or an edit that keeps the date moves nothing.
+Loading an action doesn't count (EF reads and writes the column through the backing field). Once the date has moved, the
+action's facts say "Originally due Mon Nov 9 · moved 2 times" under the due date, and Team commitments judges it against
+the first date as well as the current one ([metrics and trends](metrics-and-trends.md#team-commitments)). Actions from
+before this was kept start from the date they had at the upgrade (the migration copies it), with no moves.
+
 ## Working an action: assignee, checklist, comments, files
 
 ![An action's page](../screenshots/doc-action-detail.png)
 
 1. The header: its badges (status, priority, due date and SLA, Escalated), who has it, the one primary button and
    *More*. The status badge opens the status row (outcomes are asked for when it's closed).
-2. The facts: team, assignee, kind, external ticket, when it was created, and its due date with how close it is.
+2. The facts: team, assignee, kind, external ticket, when it was created, and its due date with how close it is (and,
+   once the date has moved, "Originally due … · moved N times" under it).
 3. The tool drawer: the checklist, each item ticked by name, and beside it the parts' timeline, hunt queries or
    outreach, where the action has them.
 4. *What's happened*: its comments, in Markdown with screenshots or evidence, and its history, in one feed.
@@ -943,5 +989,6 @@ Every one of these follows colleagues' saves live through the `actions` and `act
 | Reminders | `src/Tide.Application/Actions/Reminders.cs` (`ReminderService`, `ReminderOptions`), `src/Tide.Web/Services/ReminderHostedService.cs` |
 | Notification choices | `src/Tide.Application/Preferences/` (`NotificationKinds`, `NotificationPreferenceService`, `RecipientResolver`, `UserPreferenceService`) |
 | The page's primary button, Next line, tools and feed | `src/Tide.Application/Actions/ActionGuide.cs` (`ActionFlow`, `ActionGuide.Primary`, `More`, `Next`, `Tools`, `Opening`), `ActionFeed.cs` (`ActionFeed.Of`, `Window`) |
+| Deleting and restoring | `ActionService.DeleteAsync`, `DeletedAsync`, `RestoreAsync`; the query filters, `src/Tide.Infrastructure/Persistence/AppDbContext.cs` (`DeletedActionsLeftOut`); the list, `src/Tide.Web/Components/Pages/Admin/DeletedActionsAdmin.razor` |
 | Pages | `src/Tide.Web/Components/Pages/ActionPage.razor`, `ActionsBoard.razor`, `Workload.razor`, `ExternalTeams.razor`, `SavedQueriesPage.razor`, `OutreachTemplatesPage.razor`, `MyNotifications.razor` |
 | Panels | `src/Tide.Web/Components/Shared/HuntPanel.razor`, `OutreachPanel.razor`, `ActionFilesPanel.razor`, `ActionStatusControl.razor`, `ActionKanban.razor`, `SplitDialog.razor`, `OverLimitDialog.razor`, `ActionLineageFlow.razor`, `RemediationTimelineCard.razor`, `RecordUpdateDialog.razor`, `ActionToolDrawer.razor`, `ActionNextStrip.razor`, `MenuButton.razor` |

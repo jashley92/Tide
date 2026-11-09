@@ -378,7 +378,8 @@ public sealed class DetectionService(IAppDbContextFactory dbs, ICurrentUser user
         await using (var db = await dbs.CreateAsync(ct))
         {
             var actionId = await db.Actions.Where(a => a.Number == number).Select(a => a.Id).FirstAsync(ct);
-            var gap = await db.DetectionGaps.FirstOrDefaultAsync(g => g.TechniqueId == row.TechniqueId, ct);
+            // The technique's gap row, even one whose action was deleted (its key is the technique): it takes the new action.
+            var gap = await db.DetectionGaps.IgnoreQueryFilters([ActionItem.DeletedFilter]).FirstOrDefaultAsync(g => g.TechniqueId == row.TechniqueId, ct);
             if (gap is null) db.DetectionGaps.Add(gap = new DetectionGap { TechniqueId = row.TechniqueId });
             (gap.ActionId, gap.RaisedAtUtc) = (actionId, time.GetUtcNow());
             await db.SaveChangesAsync(ct);

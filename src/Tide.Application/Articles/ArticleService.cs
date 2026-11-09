@@ -404,7 +404,8 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
         if (a is null) return;
         if (a.Status != ArticleStatus.Draft || await db.BriefItems.AnyAsync(i => i.ArticleId == id, ct))
             throw new InvalidOperationException("Only a draft that isn't on a brief can be deleted.");
-        if (await db.Actions.AnyAsync(x => x.ArticleId == id, ct))
+        // A deleted action counts: it's kept (an administrator may restore it), and its foreign key holds the article.
+        if (await db.Actions.IgnoreQueryFilters([ActionItem.DeletedFilter]).AnyAsync(x => x.ArticleId == id, ct))
             throw new InvalidOperationException("Actions were raised from this article, so it's kept for their record.");
         var fileIds = a.Screenshots.Select(s => s.FileId).ToList();
         // A triage item promoted into this draft goes back to the inbox, rather than staying "promoted" with no article.
@@ -424,7 +425,7 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
             await using var now = await dbs.CreateAsync(ct);
             if (await now.BriefItems.AnyAsync(i => i.ArticleId == id, ct))
                 throw new InvalidOperationException("Only a draft that isn't on a brief can be deleted.", ex);
-            if (await now.Actions.AnyAsync(x => x.ArticleId == id, ct))
+            if (await now.Actions.IgnoreQueryFilters([ActionItem.DeletedFilter]).AnyAsync(x => x.ArticleId == id, ct))
                 throw new InvalidOperationException("Actions were raised from this article, so it's kept for their record.", ex);
             throw;
         }

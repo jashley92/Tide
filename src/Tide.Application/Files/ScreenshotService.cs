@@ -214,11 +214,11 @@ public sealed class ScreenshotService(IAppDbContextFactory dbs, ICurrentUser use
     }
 
     /// <summary>Whether anything holds the stored file: a hunt (other than <paramref name="exceptHuntId"/>), a comment, an
-    /// action, an article's screenshot or a frozen send's image.</summary>
+    /// action, an article's screenshot or a frozen send's image. A deleted action's are in use too: it can be restored.</summary>
     internal static async Task<bool> InUseAsync(IAppDbContext db, Guid fileId, Guid? exceptHuntId, CancellationToken ct) =>
-        await db.HuntQueries.AnyAsync(h => h.EvidenceFileId == fileId && h.Id != exceptHuntId, ct)
-        || await db.ActionCommentFiles.AnyAsync(f => f.FileId == fileId, ct)
-        || await db.ActionFiles.AnyAsync(f => f.FileId == fileId, ct)
+        await db.HuntQueries.IgnoreQueryFilters([ActionItem.DeletedFilter]).AnyAsync(h => h.EvidenceFileId == fileId && h.Id != exceptHuntId, ct)
+        || await db.ActionCommentFiles.IgnoreQueryFilters([ActionItem.DeletedFilter]).AnyAsync(f => f.FileId == fileId, ct)
+        || await db.ActionFiles.IgnoreQueryFilters([ActionItem.DeletedFilter]).AnyAsync(f => f.FileId == fileId, ct)
         || await db.ArticleScreenshots.AnyAsync(s => s.FileId == fileId, ct)
         || await db.BriefSendImages.AnyAsync(i => i.FileId == fileId, ct);
 

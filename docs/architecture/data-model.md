@@ -328,10 +328,13 @@ erDiagram
         uuid TeamId FK
         string AssigneeId
         date DueDate
+        date OriginalDueDate
+        int DueDateMoves
         uuid ArticleId FK
         uuid ParentId FK
         uuid PlaybookId FK
         date EscalatedForDue
+        datetimeoffset DeletedAtUtc "query filter"
         uuid EditVersion "concurrency"
     }
     Teams {
@@ -1005,7 +1008,9 @@ config change. A team owns it, it's due by a date the SLA targets suggest, and i
 | `Priority` | int | no | `Priority` 1–4. |
 | `TeamId` | uniqueidentifier | no | FK → `Teams`, **restrict**. Indexed. |
 | `AssigneeId`, `AssigneeName` | nvarchar(256) | yes | The person working it. When null, the action is the team's. `AssigneeId` is indexed. |
-| `DueDate` | date | yes | A business day in org time. Defaults from `ActionSla.DueDate`. Indexed with `Status`. |
+| `DueDate` | date | yes | A business day in org time. Defaults from `ActionSla.DueDate`. Indexed with `Status`. Read and written by EF through its backing field, so only code setting it keeps `OriginalDueDate` and `DueDateMoves`. |
+| `OriginalDueDate` | date | yes | The first due date it was given, set once by `ActionItem.DueDate`'s setter and never moved. Team commitments judges it against this date too. Null only while it has never had a date. The migration (`ActionOriginalDueDate`) set it to `DueDate` for existing rows. |
+| `DueDateMoves` | int | no | How many times its due date has changed since it was first set (later, earlier or cleared). 0 for rows from before the migration. |
 | `RaisedOn` | date | yes | The business day the action belongs to, when it was raised after the fact. Null means the day it was created. |
 | `Status` | int | no | `ActionStatus`. |
 | `Outcome` | int | no | `ActionOutcome`. |
@@ -1022,13 +1027,20 @@ config change. A team owns it, it's due by a date the SLA targets suggest, and i
 | `HandoffReason` | nvarchar(500) | yes | Why, as they wrote it: shown on the action. Its history keeps every hand-off. |
 | `EscalatedForDue` | date | yes | The due date a step of the escalation ladder flagged it escalated for. It's escalated while it's open and `EscalatedForDue` equals `DueDate` (`ActionItem.EscalatedFor`, `ActionQueries.WhereEscalated`), so closing it or moving its date ends it with no write. A filtered index (`IS NOT NULL`) holds only flagged rows. The migration left existing rows null. |
 | `EscalatedAtUtc` | datetimeoffset | yes | When it was flagged, for the badge's title. Read only while it's escalated (`EscalatedSince`). |
+| `DeletedAtUtc` | datetimeoffset | yes | When it was deleted (a mistake or a duplicate); null while it stands. **A global query filter** (`HasQueryFilter(ActionItem.DeletedFilter, a => a.DeletedAtUtc == null)`, a named filter, in `AppDbContext.DeletedActionsLeftOut`) leaves a deleted row out of every query; `IgnoreQueryFilters([ActionItem.DeletedFilter])` reads it where it must be seen (numbering, the guards on its article, team and playbook, the administrator's deleted list and restore, the audit log's names). The row is never removed. |
+| `DeletedById`, `DeletedByName` | nvarchar(256) | yes | Who deleted it. Cleared on restore. |
+| `DeleteReason` | nvarchar(500) | yes | Why, as they wrote it (required to delete). Cleared on restore; the history keeps it. |
 | `EditVersion` | uniqueidentifier | no | Concurrency token. |
 | stamps | | | **S** columns. |
 
 ### Action child tables
 
 All of these are cascade-deleted with the action and all are audited. Each is written by `ActionService`, except
-where noted. In practice actions aren't deleted.
+where noted. Actions are never hard-deleted: a deleted action is soft-deleted (`DeletedAtUtc`) and these rows are
+kept with it. Each of these tables (and `DetectionGaps`) has its own query filter, true only while its action stands
+(`ActionCommentFiles` through its comment), because each is also read on its own; so no required relationship ends at
+a filtered row (EF's warning 10622), and a deleted action's comments, files, hunts and emails leave search, Trends,
+the reminders and the file routes with it.
 
 | Table | Key | Columns | Notes |
 |---|---|---|---|

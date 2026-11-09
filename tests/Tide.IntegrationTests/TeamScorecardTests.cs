@@ -93,6 +93,54 @@ public class TeamScorecardTests
         card.Teams[2].Team.Id.Should().Be(s.RetiredBusy.Id);
     }
 
+    // An action first due on firstDue, its date then moved to each of moves in turn.
+    private static ActionItem Moved(Team team, DateOnly firstDue, DateOnly[] moves, ActionStatus status = ActionStatus.Open, DateOnly? closed = null)
+    {
+        var a = Act(team, firstDue, status, closed);
+        foreach (var d in moves) a.DueDate = d;
+        return a;
+    }
+
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task OnTimeVsTheOriginalDate_JudgesEachByTheDateFirstGiven_AndCountsTheDatesMoved(string provider)
+    {
+        using var db = Db(provider);
+        var team = new Team { Key = "redaters", Name = "Re-daters" };
+        var steady = new Team { Key = "steady", Name = "Steady" };
+        await Add(db, team, steady,
+            // Re-dated and then done by the new date: on time now, late against the first.
+            Moved(team, D(9, 1), [D(9, 10)], ActionStatus.Done, D(9, 9)),
+            // Moved twice, still open past the first date but not the last: neither now, late against the first.
+            Moved(team, D(9, 3), [D(9, 8), D(9, 30)], ActionStatus.InProgress),
+            // Moved earlier and done by both.
+            Moved(team, D(9, 12), [D(9, 11)], ActionStatus.Done, D(9, 11)),
+            // First due before the window, moved into it: counted now, not against the first.
+            Moved(team, D(5, 1), [D(9, 2)], ActionStatus.Done, D(9, 2)),
+            // First due in the window, moved out of it: not counted now, late against the first.
+            Moved(team, D(9, 4), [D(10, 20)], ActionStatus.Open),
+            // Never moved, done on time: the same either way.
+            Act(team, D(9, 5), ActionStatus.Done, D(9, 5)),
+            Act(steady, D(9, 5), ActionStatus.Done, D(9, 5)),
+            Act(steady, D(9, 6), ActionStatus.Done, D(9, 7)));
+
+        var card = await db.TeamScorecard(Clock).BuildAsync();
+
+        var r = card.Teams.Single(t => t.Team.Name == "Re-daters");
+        r.Should().BeEquivalentTo(new { Parts = 4, OnTime = 4, Late = 0, OnTimePercent = 100.0 }, "by the dates they have now, nothing's late");
+        r.Should().BeEquivalentTo(new { OriginallyDue = 5, OnTimeOriginal = 2, LateOriginal = 3, OnTimeOriginalPercent = 40.0, Moved = 4, Moves = 5 },
+            "by the dates first given, three were late");
+        TeamCommitments.OnTimeOriginal(r).Should().Be("40% (2 of 5)");
+        TeamCommitments.DatesMoved(r).Should().Be("4 of 5 (5 moves)");
+
+        var s = card.Teams.Single(t => t.Team.Name == "Steady");
+        s.Should().BeEquivalentTo(new { OnTime = 1, Late = 1, OnTimeOriginal = 1, LateOriginal = 1, Moved = 0, Moves = 0 }, "with no move, both measures agree");
+        TeamCommitments.DatesMoved(s).Should().Be("0 of 2");
+
+        var csv = TeamScorecardService.ToCsv(card).Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        csv.Should().Contain("Re-daters,no,4,4,0,100,,2,0,2026-06-18,2026-09-15,5,2,3,40,4,5");
+    }
+
     [Theory]
     [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
     public async Task PartsOnly_CountsTheSplitsParts_AndExternalOnly_ListsTheExternalTeams(string provider)
@@ -160,10 +208,12 @@ public class TeamScorecardTests
         var csv = TeamScorecardService.ToCsv(await db.TeamScorecard(Clock).BuildAsync());
 
         var lines = csv.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        lines[0].Should().Be("team,external,parts,on_time,late,on_time_percent,average_days_late,open_now,overdue_now,from,to");
-        lines.Should().Contain("Cyber Defense,no,6,2,2,50,7,4,1,2026-06-18,2026-09-15")
-            .And.Contain("Managed SOC,yes,2,1,1,50,1,0,0,2026-06-18,2026-09-15")
-            .And.Contain("\"'=HYPERLINK(\"\"x\"\")\",no,0,0,0,,,0,0,2026-06-18,2026-09-15", "no on-time share or days late with nothing measured");
+        // The measures against the first due date come after the window, so the columns before keep their places.
+        lines[0].Should().Be("team,external,parts,on_time,late,on_time_percent,average_days_late,open_now,overdue_now,from,to,"
+            + "originally_due,on_time_vs_original,late_vs_original,on_time_vs_original_percent,dates_moved,moves");
+        lines.Should().Contain("Cyber Defense,no,6,2,2,50,7,4,1,2026-06-18,2026-09-15,6,2,2,50,0,0", "no date moved, so both measures agree")
+            .And.Contain("Managed SOC,yes,2,1,1,50,1,0,0,2026-06-18,2026-09-15,2,1,1,50,0,0")
+            .And.Contain("\"'=HYPERLINK(\"\"x\"\")\",no,0,0,0,,,0,0,2026-06-18,2026-09-15,0,0,0,,0,0", "no on-time share or days late with nothing measured");
     }
 }
 

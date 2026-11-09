@@ -125,7 +125,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
         var team = await Team("Layout more team");
         var number = await Raise(team, "Layout block the domain");
         await using var page = await Open(number);
-        page.Component.MoreItems.Select(i => i.Label).Should().Equal("Record an update", "Hand off…", "Split to teams…", "Split off a part", "Edit", "Change status…");
+        page.Component.MoreItems.Select(i => i.Label).Should().Equal("Record an update", "Hand off…", "Split to teams…", "Split off a part", "Edit", "Change status…", "Delete…");
 
         var head = Header(await page.Html());
         head.Should().Contain("class=\"btn btn-outline-secondary tide-menubutton-btn\" aria-haspopup=\"menu\" aria-expanded=\"false\"").And.NotContain("role=\"menu\"");
@@ -142,6 +142,59 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
 
         await page.Press(p => p.More!.Choose(p.MoreItems.Single(i => i.Label == "Hand off…")));
         (await page.HtmlOnce("Hand it to")).Should().Contain($"Hand A-{number} off");
+    }
+
+    [Fact]
+    public async Task Delete_UnderMore_AsksWhy_SaysWhatItsFor_AndRefusesAParentWithOpenParts()
+    {
+        var team = await Team("Layout delete team");
+        var parent = await Raise(team, "Layout delete parent");
+        await Raise(team, "Layout delete part", parent: (await Detail(parent)).Action.Id);
+        var dup = await Raise(team, "Layout delete duplicate");
+
+        // A team member who isn't an analyst works it, but isn't offered Delete.
+        await As(async sp => { await sp.GetRequiredService<TeamService>().AddMemberAsync(team, "dev:layout-owner", "Olu Owner"); return true; });
+        await using (var theirs = await Open(dup, Owner))
+            theirs.Component.MoreItems.Select(i => i.Label).Should().Contain("Edit").And.NotContain("Delete…");
+
+        await using (var page = await Open(parent))
+        {
+            await page.Press(p => p.More!.Choose(p.MoreItems.Single(i => i.Label == "Delete…")));
+            var dialog = WebUtility.HtmlDecode(await page.HtmlOnce("Why"));
+            dialog.Should().Contain($"Delete A-{parent}?").And.Contain("raised by mistake, or a duplicate")
+                .And.Contain("<strong>Cancelled</strong> or <strong>Not applicable</strong> instead");
+            await page.Click(async p =>
+            {
+                p.DeleteWhy = "A mistake";
+                (await p.Delete()).Should().BeFalse("it has an open part");
+                p.DeleteError.Should().Contain("delete or close its parts first");
+            });
+        }
+
+        await using (var page = await Open(dup))
+        {
+            await page.Press(p => p.StartDelete());
+            await page.Click(async p =>
+            {
+                p.DeleteWhy = "A duplicate of the parent";
+                // Deleted, it goes back to the actions (the test's renderer throws where a circuit would navigate).
+                var leaving = await p.Invoking(x => x.Delete()).Should().ThrowAsync<NavigationException>();
+                leaving.Which.Location.Should().EndWith("actions");
+                p.DeleteError.Should().BeNull();
+            });
+        }
+        (await As(sp => sp.GetRequiredService<ActionService>().GetAsync(dup))).Should().BeNull();
+        await using (var gone = await Open(dup))
+            (await gone.Html()).Should().Contain("Action not found");
+
+        // The administrator's list has it, with who, when and why, and restores it.
+        await using var admin = await RenderAsync<Tide.Web.Components.Pages.Admin.DeletedActionsAdmin>(app, "/admin/deleted-actions");
+        var row = admin.Component.Rows!.Single(r => r.Number == dup);
+        (row.Reason, row.DeletedByName).Should().Be(("A duplicate of the parent", "Tester"));
+        WebUtility.HtmlDecode(await admin.Html()).Should().Contain("<h1 class=\"tide-admin-title\">Deleted actions</h1>").And.Contain("A duplicate of the parent")
+            .And.Contain($"aria-label=\"Restore A-{dup}\"");
+        await As(a => a.RestoreAsync(row.Id));
+        (await Detail(dup)).Action.Title.Should().Be("Layout delete duplicate");
     }
 
     [Fact]

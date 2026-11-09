@@ -334,10 +334,12 @@ that fits its kind.
   has it and who handed it over. One button does the thing that comes next, chosen by where the action stands: *Write
   the email* for an Outreach action with none sent, *Record the reply* while one waits, *Record an update* for work
   followed rather than done here (Tracking, an external team's, a parent with open parts), *Take it* when nobody has
-  it, else *Start work*, *Unblock* or *Close with outcome*. Everything else is under *More*. The status badge opens the
-  status choices. A *Next* line says what most needs doing, with links that do it: a part that's late (chase them, or
-  record their reply), an email past its follow-up day, escalated, blocked, or late. Beside the work, the facts and a
-  card of tools in tabs: the checklist, the parts' timeline, hunt queries, outreach, opening on the action's own (the
+  it, else *Start work*, *Unblock* or *Close with outcome*. Everything else is under *More*, the last of it *Delete…*
+  for an analyst or administrator: for an action raised by mistake or twice, it asks why and says that work that
+  won't be done is closed Cancelled or Not applicable instead. A deleted action leaves every list, count, reminder and
+  report; an administrator can restore it. The status badge opens the status choices. A *Next* line says what most needs doing, with links that do it: a part that's late (chase them, or
+  record their reply), an email past its follow-up day, escalated, blocked, or late. Beside the work, the facts (once
+  the due date has moved, "Originally due Mon Nov 9 · moved 2 times" under it) and a card of tools in tabs: the checklist, the parts' timeline, hunt queries, outreach, opening on the action's own (the
   address can name one: `?tool=hunt`). *What's happened* is one feed of its comments and history, newest at the
   bottom by the comment box, with *Show N earlier* for the rest. On a phone it's one column: the header, Next,
   details, the tools, the lineage, what's happened, the facts, the article and the files.
@@ -669,7 +671,10 @@ marked:
 
 - **Actions due** in the window (one with no due date made no commitment, so isn't counted);
 - **On time**: the share done by the due date, of those done or past it ("50% (2 of 4)");
+- **On time vs. original date**: the same, against the date each action was first given, over those first due in the
+  window, so a team that keeps moving its dates doesn't show as on time;
 - **Average days late**, in calendar days, for those done late or still open past their due date;
+- **Dates moved**: of those first due in the window, how many had their date moved, and how often ("4 of 5 (5 moves)");
 - **Open now** and **Overdue now**, whatever the window.
 
 *Parts of splits only* counts only the parts a split made; *External teams only* lists only the external teams. A
@@ -831,7 +836,7 @@ One Administration entry in the sidebar opens every setting page, grouped into t
 checklist read from the live configuration. It covers:
 
 - the teams, their members and the SLA targets;
-- card rules;
+- card rules, and the deleted actions (restored from there);
 - the sources and CVE enrichment;
 - the scorecard taxonomy (tags are retired, never deleted, once used);
 - the query templates;
@@ -854,6 +859,7 @@ Every page, by tab (from `AdminLayout.Groups`):
 | Organization | Teams & SLA | `/admin/teams` | The teams that own actions, their members and escalation contacts, SLA targets, when reminder emails go, and the escalation ladder: the steps that run by themselves on an action as it slips. |
 | Organization | Brief rotation | `/admin/rotation` | Who presents the brief, the weekly rota (a week's days already presented keep their presenter unless *Correct past days* is ticked), and who's told about swaps and cover. |
 | Actions | Card rules | `/admin/card-rules` | Which actions are coloured and labelled on the board and list, and which rules the Actions filter bar offers. |
+| Actions | Deleted actions | `/admin/deleted-actions` | The actions deleted as a mistake or a duplicate, the latest first: each one's team and status, who deleted it, when and why, and *Restore* (a part after its parent). Updates live as actions are deleted or restored. |
 | Intelligence | Sources | `/admin/sources` | The feeds and catalogs triage takes items from, and CVE enrichment. |
 | Intelligence | Source health | `/admin/source-health` | How much each source sends and how much of it the team uses, with feeds worth pausing. |
 | Intelligence | Scorecard tags | `/admin/scorecard` | The categories and tags articles are counted by on the board scorecard. |

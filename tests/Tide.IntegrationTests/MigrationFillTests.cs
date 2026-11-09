@@ -197,6 +197,32 @@ public class MigrationFillTests
         }
     }
 
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task ActionOriginalDueDate_StartsFromTheDateEachActionHas(string provider)
+    {
+        using var database = new MigratedDatabase(provider);
+        var team = new Team { Key = "fill", Name = "Fill" };
+        var dated = new ActionItem { Number = 1, Title = "Dated", Team = team, DueDate = new DateOnly(2026, 11, 2) };
+        dated.DueDate = new DateOnly(2026, 11, 20);   // moved before the upgrade: the move isn't on record then
+        var undated = new ActionItem { Number = 2, Title = "Undated", Team = team };
+        await using (var ctx = database.Context())
+        {
+            ctx.AddRange(team, dated, undated);
+            await ctx.SaveChangesAsync();
+        }
+
+        database.UpgradeAgainFrom("ActionOriginalDueDate");
+
+        await using (var ctx = database.Context())
+        {
+            var all = await ctx.Actions.IgnoreQueryFilters([ActionItem.DeletedFilter]).ToDictionaryAsync(a => a.Number);
+            (all[1].DueDate, all[1].OriginalDueDate, all[1].DueDateMoves).Should().Be((new DateOnly(2026, 11, 20), new DateOnly(2026, 11, 20), 0),
+                "an action from before starts from the date it has, with no moves counted");
+            (all[2].DueDate, all[2].OriginalDueDate, all[2].DueDateMoves).Should().Be(((DateOnly?)null, (DateOnly?)null, 0));
+        }
+    }
+
     // A database on one provider, migrated as the app migrates its own, and dropped afterwards.
     private sealed class MigratedDatabase : IDisposable
     {
