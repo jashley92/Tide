@@ -2140,8 +2140,8 @@ button.tide-slide-werun-chip:focus-visible { outline: 3px solid var(--tide-slide
 .tide-present .tide-slide-tags-edit { margin-left: auto; font-size: 1.15em; letter-spacing: normal; text-transform: none; font-weight: var(--tide-weight-regular); padding: .1em .7em; border-radius: var(--tide-radius-pill); white-space: nowrap; }
 /* The slide's tags (outlined chips), ATT&CK (a column per tactic, kill-chain order, its colour a bar on the left) and
    CVEs (a summary, the most pressing chip, and "+N more" an analyst can open): full-strength text, nothing off the edge. */
-.tide-slide-scorecard { list-style: none; padding: 0; margin: 0 0 .6em; display: flex; flex-wrap: wrap; gap: .3em .35em; }
-.tide-slide-tagchip { font-size: .78em; line-height: 1.6; padding: 0 .6em; border: 1px solid color-mix(in srgb, var(--tide-slide-muted) 40%, transparent); background: color-mix(in srgb, var(--tide-slide-text) 4%, transparent); border-radius: var(--tide-radius-round); color: var(--tide-slide-text); }
+.tide-slide-scorecard { list-style: none; padding: 0; margin: 0 0 .6em; display: flex; flex-wrap: wrap; gap: .3rem; }
+.tide-slide .tide-slide-tagchip { margin: 0; border-color: var(--tide-slide-line-strong); }
 .tide-slide-attack { list-style: none; padding: 0; margin: 0 0 .5em; display: grid; grid-template-columns: repeat(auto-fit, minmax(13em, 1fr)); gap: .4em 1em; }
 .tide-slide-tactic { --tac: var(--tide-slide-muted); display: flex; flex-direction: column; gap: .1em; border-left: 3px solid var(--tac); padding-left: .6em; font-size: .92em; line-height: 1.35; min-width: 0; }
 .tide-slide-tactic-name { display: inline-flex; align-items: center; gap: .35em; font-size: .85em; color: var(--tide-slide-muted); }

@@ -105,8 +105,8 @@ public class PresentSlideTagsTests(TideApp app) : IClassFixture<TideApp>
         // The scorecard tags first: a chip each, by category in the scorecard's order, the category its tooltip and said
         // to a screen reader.
         var line = section[section.IndexOf("tide-slide-scorecard", StringComparison.Ordinal)..section.IndexOf("</ul>", StringComparison.Ordinal)];
-        line.Should().Contain($"<li class=\"tide-slide-tagchip\" title=\"Threat types 91\"><span class=\"visually-hidden\">Threat types 91: </span>{s.TagNames[0]}</li>")
-            .And.Contain($"<li class=\"tide-slide-tagchip\" title=\"Third-party risk 91\"><span class=\"visually-hidden\">Third-party risk 91: </span>{s.TagNames[2]}</li>");
+        line.Should().Contain($"<li class=\"tide-chip tide-slide-tagchip\" title=\"Threat types 91\"><span class=\"visually-hidden\">Threat types 91: </span>{s.TagNames[0]}</li>")
+            .And.Contain($"<li class=\"tide-chip tide-slide-tagchip\" title=\"Third-party risk 91\"><span class=\"visually-hidden\">Third-party risk 91: </span>{s.TagNames[2]}</li>");
         line.IndexOf(s.TagNames[1], StringComparison.Ordinal).Should().BeLessThan(line.IndexOf(s.TagNames[2], StringComparison.Ordinal));
         section.IndexOf("tide-slide-scorecard", StringComparison.Ordinal).Should().BeLessThan(section.IndexOf("tide-slide-attack", StringComparison.Ordinal));
 
