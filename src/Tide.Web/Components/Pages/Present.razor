@@ -1374,12 +1374,8 @@ else
         _qaTitles.Remove(articleId);
         _qaDue = null;
         await LoadActions();
-        Toasts.Show($"{Ui.ActionLabel(number)} added.{await NoOneToOwn(_qaTeam)}");
+        Toasts.Show($"{Ui.ActionLabel(number)} added and assigned to you.");
     });
-
-    // An action raised to a team with nobody in TIDE is on nobody's list: the toast says so.
-    private async Task<string> NoOneToOwn(Guid team) =>
-        await ActionSvc.TeamHasNoMembersAsync(team) ? " Its team has no members in TIDE, so it's on nobody's list until someone is added." : "";
 
     // --- the recommended lines, raised one at a time ------------------------------------------------------------
 
@@ -1429,7 +1425,7 @@ else
             if (!await _overLimit.RunAsync(async reason =>
                     number = await ActionSvc.QuickAddAsync(articleId, line, draft.Kind, draft.Team, null, RaisedFor, reason))) return;
             await LoadActions();
-            Toasts.Show($"{Ui.ActionLabel(number)} raised.{await NoOneToOwn(draft.Team)}");
+            Toasts.Show($"{Ui.ActionLabel(number)} raised and assigned to you.");
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _raising = false; }

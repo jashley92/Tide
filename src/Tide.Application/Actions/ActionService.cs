@@ -1043,7 +1043,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
 
     /// <summary>
     /// A quick action from the meeting: a title, kind, team and (optional) due date, on an article, at the article's
-    /// priority (see <see cref="QuickPriority"/>). A blank due date takes the SLA target's, a kind's own target first
+    /// priority (see <see cref="QuickPriority"/>), assigned to whoever raises it. A blank due date takes the SLA target's, a kind's own target first
     /// (ADR 0008). <paramref name="raisedOn"/> is a past day's brief being presented after the fact;
     /// <paramref name="overLimitReason"/> is why it goes ahead over a team's limit that warns (<see cref="ActiveLimits"/>).
     /// </summary>
@@ -1057,6 +1057,8 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         {
             Title = title, Kind = kind, TeamId = teamId, DueDate = due, ArticleId = articleId, Priority = QuickPriority(articlePriority, kind),
             RaisedOn = raisedOn, OverLimitReason = overLimitReason,
+            // Whoever raises it in the meeting holds it, so it's on someone's list from the start; they can hand it on.
+            AssigneeId = user.UserId, AssigneeName = user.DisplayName,
         }, ct);
     }
 
