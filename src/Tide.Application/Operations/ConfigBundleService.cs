@@ -149,13 +149,14 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
                 continue;
             }
             var kind = row is null ? BundleChangeKind.Add : BundleChangeKind.Update;
-            // What widens what leaves (Widens), and an address outside the organization in a list: either is warned, both said.
+            // What widens what leaves (Widens), and an address outside the organization added to a list: either is warned, both said.
             var outside = AddressLists.Contains(s.Key)
-                ? boundary.CurrentOrUnknown().Outside(OperationalSettings.SplitAddresses(value))
+                ? boundary.CurrentOrUnknown().Outside(OperationalSettings.SplitAddresses(value)
+                    .Except(OperationalSettings.SplitAddresses(row?.Value ?? ServerValue(s.Key) ?? ""), StringComparer.OrdinalIgnoreCase))
                 : [];
             var risks = new[] { Widens(s.Key, row?.Value ?? ServerValue(s.Key), value), outside.Count > 0 ? $"Outside the organization: {string.Join("; ", outside)}." : null }
                 .OfType<string>().ToList();
-            changes.Add(new(SettingsArea, s.Key, kind, risks.Count > 0 ? Clip(string.Join(" ", risks)) : Clip(value), Warning: risks.Count > 0));
+            changes.Add(new(SettingsArea, s.Key, kind, risks.Count > 0 ? string.Join(" ", risks) : Clip(value), Warning: risks.Count > 0));
             if (!apply) continue;
             if (row is null) db.Settings.Add(rows[s.Key] = row = new AppSetting { Key = s.Key });
             row.Value = value;

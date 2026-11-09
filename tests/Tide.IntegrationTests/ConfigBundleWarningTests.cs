@@ -25,14 +25,14 @@ public sealed class ConfigBundleWarningTests : IDisposable
 
     private ConfigBundleService Service(DistributionOptions? distribution = null, ReminderOptions? reminders = null) =>
         new(_db, _db.User, new CountingRoleDirectory(), TimeProvider.System,
-            distribution: distribution is null ? null : Options.Create(distribution), reminders: reminders is null ? null : Options.Create(reminders));
+            distribution: distribution is null ? null : Options.Create(distribution), reminders: reminders is null ? null : Options.Create(reminders), boundary: _db.Boundary);
 
     private static ConfigBundle Bundle(IReadOnlyList<BundleSetting>? settings = null, IReadOnlyList<BundleSource>? sources = null) =>
         new(ConfigBundle.FormatName, 1, DateTimeOffset.UtcNow, "Tester", "dev", settings ?? [], [], sources ?? [], [], []);
 
     // One change warned (a company-wide recipient), one routine (the reminder time).
     private static ConfigBundle WarnedBundle() =>
-        Bundle([new(DistributionSettings.PublicRecipientsKey, "all-staff@contoso.com"), new(OperationalSettings.ReminderTime, "09:30")]);
+        Bundle([new(DistributionSettings.PublicRecipientsKey, "all-staff@example.org"), new(OperationalSettings.ReminderTime, "09:30")]);
 
     private static BundleSource Feed(string name, string tlp) =>
         new(name, "Feed", "https://vendor.example.org/feed", tlp, "C", null, 60, true, false, null, null, null, null);
@@ -79,25 +79,25 @@ public sealed class ConfigBundleWarningTests : IDisposable
     [Fact]
     public async Task AddingTeamEditionRecipients_IsWarned_NamingThem()
     {
-        await _db.Settings().SaveRecipientsAsync(Edition.Team, "cti@contoso.com");
-        var c = await Preview(new(DistributionSettings.TeamRecipientsKey, "cti@contoso.com; a@partner.example; b@partner.example"));
+        await _db.Settings().SaveRecipientsAsync(Edition.Team, "cti@example.org", confirmOutside: true);
+        var c = await Preview(new(DistributionSettings.TeamRecipientsKey, "cti@example.org; a@partner.example.org; b@partner.example.org"));
         c.Warning.Should().BeTrue();
-        c.Detail.Should().Be("Adds 2 recipients to the team edition: a@partner.example, b@partner.example.");
+        c.Detail.Should().Be("Adds 2 recipients to the team edition: a@partner.example.org, b@partner.example.org.");
     }
 
     [Fact]
     public async Task AddingCompanyWideRecipients_IsWarned()
     {
-        var c = await Preview(new(DistributionSettings.PublicRecipientsKey, "all-staff@contoso.com"));
+        var c = await Preview(new(DistributionSettings.PublicRecipientsKey, "all-staff@example.org"));
         c.Warning.Should().BeTrue();
-        c.Detail.Should().Be("Adds 1 recipient to the company-wide edition: all-staff@contoso.com.");
+        c.Detail.Should().Be("Adds 1 recipient to the company-wide edition: all-staff@example.org.");
     }
 
     [Fact]
     public async Task RemovingRecipients_IsNotWarned()
     {
-        await _db.Settings().SaveRecipientsAsync(Edition.Public, "a@contoso.com; b@contoso.com");
-        var c = await Preview(new(DistributionSettings.PublicRecipientsKey, "A@contoso.com"));
+        await _db.Settings().SaveRecipientsAsync(Edition.Public, "a@example.org; b@example.org", confirmOutside: true);
+        var c = await Preview(new(DistributionSettings.PublicRecipientsKey, "A@example.org"));
         c.Kind.Should().Be(BundleChangeKind.Update);
         c.Warning.Should().BeFalse("the same address in other case, and one fewer, sends to no one new");
     }
@@ -105,37 +105,38 @@ public sealed class ConfigBundleWarningTests : IDisposable
     [Fact]
     public async Task AddingRecipients_OverTheServersList_CountsOnlyTheNewOnes()
     {
-        var c = await Preview(new(DistributionSettings.TeamRecipientsKey, "cti@contoso.com; new@contoso.com"),
-            Service(new DistributionOptions { TeamRecipients = ["cti@contoso.com"] }));
-        c.Detail.Should().Be("Adds 1 recipient to the team edition: new@contoso.com.");
+        var c = await Preview(new(DistributionSettings.TeamRecipientsKey, "cti@example.org; new@example.org"),
+            Service(new DistributionOptions { TeamRecipients = ["cti@example.org"] }));
+        c.Detail.Should().Be("Adds 1 recipient to the team edition: new@example.org.");
     }
 
     [Fact]
     public async Task AddingBriefNotReadyRecipients_IsWarned()
     {
         var reminders = new ReminderOptions();
-        reminders.BriefNotReady.Recipients = ["lead@contoso.com"];
-        var c = await Preview(new(OperationalSettings.BriefNotReadyRecipients, "lead@contoso.com; someone@elsewhere.example"), Service(reminders: reminders));
+        reminders.BriefNotReady.Recipients = ["lead@example.org"];
+        var c = await Preview(new(OperationalSettings.BriefNotReadyRecipients, "lead@example.org; someone@elsewhere.example"), Service(reminders: reminders));
         c.Warning.Should().BeTrue();
-        c.Detail.Should().Be("Adds 1 recipient to those told when there's no brief: someone@elsewhere.example.");
+        c.Detail.Should().Be("Adds 1 recipient to those told when there's no brief: someone@elsewhere.example. Outside the organization: someone@elsewhere.example.",
+            "an address added outside the organization is named for both reasons");
     }
 
     [Fact]
     public async Task AddingRotationManagers_IsWarned()
     {
-        await Save(Tide.Application.Rotation.RotationService.ManagerEmailsKey, "boss@contoso.com");
-        var c = await Preview(new(Tide.Application.Rotation.RotationService.ManagerEmailsKey, "boss@contoso.com; other@elsewhere.example"));
+        await Save(Tide.Application.Rotation.RotationService.ManagerEmailsKey, "boss@example.org");
+        var c = await Preview(new(Tide.Application.Rotation.RotationService.ManagerEmailsKey, "boss@example.org; other@elsewhere.example"));
         c.Kind.Should().Be(BundleChangeKind.Update);
         c.Warning.Should().BeTrue();
-        c.Detail.Should().Be("Adds 1 recipient to the managers told about rotation swaps: other@elsewhere.example.");
+        c.Detail.Should().Be("Adds 1 recipient to the managers told about rotation swaps: other@elsewhere.example. Outside the organization: other@elsewhere.example.");
     }
 
     [Fact]
     public async Task ManyRecipients_AreNamedFiveAtATime()
     {
-        var list = string.Join("; ", Enumerable.Range(1, 8).Select(i => $"r{i}@contoso.com"));
+        var list = string.Join("; ", Enumerable.Range(1, 8).Select(i => $"r{i}@example.org"));
         var c = await Preview(new(DistributionSettings.TeamRecipientsKey, list));
-        c.Detail.Should().StartWith("Adds 8 recipients to the team edition: r1@contoso.com, ").And.EndWith("r5@contoso.com and 3 more.");
+        c.Detail.Should().StartWith("Adds 8 recipients to the team edition: r1@example.org, ").And.EndWith("r5@example.org and 3 more.");
     }
 
     [Fact]
@@ -264,16 +265,16 @@ public sealed class ConfigBundleWarningTests : IDisposable
     [Fact]
     public async Task AnImport_WhosePlanChangedSinceThePreview_IsRefused_AndChangesNothing()
     {
-        var bundle = Bundle([new(DistributionSettings.TeamRecipientsKey, "cti@contoso.com; new@contoso.com"), new(OperationalSettings.ReminderTime, "09:30")]);
+        var bundle = Bundle([new(DistributionSettings.TeamRecipientsKey, "cti@example.org; new@example.org"), new(OperationalSettings.ReminderTime, "09:30")]);
         var preview = await Service().PreviewAsync(bundle);
         // Someone changes the list here after the preview: the import would now add a different set.
-        await _db.Settings().SaveRecipientsAsync(Edition.Team, "cti@contoso.com");
+        await _db.Settings().SaveRecipientsAsync(Edition.Team, "cti@example.org", confirmOutside: true);
         await Service().Invoking(s => s.ImportAsync(bundle, preview.Fingerprint(), acknowledged: true)).Should()
             .ThrowAsync<Tide.Application.Articles.StaleEditException>().WithMessage("The configuration changed since you previewed it: preview again.");
         await Service().Invoking(s => s.ImportAsync(bundle, "not a fingerprint", acknowledged: true)).Should()
             .ThrowAsync<Tide.Application.Articles.StaleEditException>();
         await using var ctx = _db.Context();
-        ctx.Settings.Single().Value.Should().Be("cti@contoso.com", "nothing the bundle carries was written");
+        ctx.Settings.Single().Value.Should().Be("cti@example.org", "nothing the bundle carries was written");
     }
 
     [Fact]
@@ -285,7 +286,7 @@ public sealed class ConfigBundleWarningTests : IDisposable
         done.Fingerprint().Should().Be(preview.Fingerprint(), "what was imported is what was read");
         done.Warnings.Should().Be(1);
         await using var ctx = _db.Context();
-        ctx.Settings.Single(s => s.Key == DistributionSettings.PublicRecipientsKey).Value.Should().Be("all-staff@contoso.com");
+        ctx.Settings.Single(s => s.Key == DistributionSettings.PublicRecipientsKey).Value.Should().Be("all-staff@example.org");
         ctx.Settings.Single(s => s.Key == OperationalSettings.ReminderTime).Value.Should().Be("09:30");
     }
 }
