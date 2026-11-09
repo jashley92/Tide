@@ -235,7 +235,7 @@ public class ConfigBundleServiceTests
         await using (var ctx = target.Context())
             ctx.RoleMappings.Should().BeEmpty("a preview writes nothing");
 
-        var done = await service.ImportAsync(bundle);
+        var done = await service.PreviewAndImportAsync(bundle);
         done.Count(BundleChangeKind.Add).Should().Be(preview.Count(BundleChangeKind.Add));
         roles.Reloads.Should().Be(1, "a new mapping takes effect at once");
         await using (var ctx = target.Context())
@@ -264,7 +264,7 @@ public class ConfigBundleServiceTests
         var bundle = await sourceService.ExportAsync();
         var (target, service, _) = Admin();
         using var _t = target;
-        var done = await service.ImportAsync(bundle);
+        var done = await service.PreviewAndImportAsync(bundle);
         done.Changes.Single(c => c.Item == "Paid feed").Detail.Should().Contain("turned off");
         await using var ctx = target.Context();
         ctx.Sources.Single(s => s.Name == "Paid feed").Enabled.Should().BeFalse();
@@ -285,7 +285,7 @@ public class ConfigBundleServiceTests
             [new BundleScorecardCategory("", "No key", null, 0, false, []),
              new BundleScorecardCategory("new-cat", "New category", null, 9, false, [new BundleScorecardTag("new-tag", "New tag", null, 0, false), new BundleScorecardTag("", "", null, 0, false)])],
             [new("nosuchdialect", "Domain", "x"), new("kql", "Domain", "")]);
-        var done = await service.ImportAsync(bundle);
+        var done = await service.PreviewAndImportAsync(bundle);
         done.Changes.Where(c => c.Kind == BundleChangeKind.Skipped).Should().HaveCount(11);
         done.Changes.Where(c => c.Kind == BundleChangeKind.Add).Select(c => c.Item).Should().BeEquivalentTo("Actions:Sla:Priority:P1", "New category", "New category › New tag");
         await using var ctx = db.Context();
@@ -300,7 +300,7 @@ public class ConfigBundleServiceTests
         await service.Invoking(s => s.ExportAsync()).Should().ThrowAsync<ForbiddenException>();
         var bundle = new ConfigBundle(ConfigBundle.FormatName, 1, DateTimeOffset.UtcNow, "x", "dev", [], [], [], [], []);
         await service.Invoking(s => s.PreviewAsync(bundle)).Should().ThrowAsync<ForbiddenException>();
-        await service.Invoking(s => s.ImportAsync(bundle)).Should().ThrowAsync<ForbiddenException>();
+        await service.Invoking(s => s.ImportAsync(bundle, "", acknowledged: true)).Should().ThrowAsync<ForbiddenException>();
     }
 
     [Fact]

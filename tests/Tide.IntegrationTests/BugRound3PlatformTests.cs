@@ -48,7 +48,7 @@ public class BugRound3PlatformTests : IDisposable
             await ctx.SaveChangesAsync();
         }
 
-        var done = await Bundles().ImportAsync(Bundle(queryTemplates: """[ { "dialect": "KQL", "kind": "domain", "template": "new {{values}}" } ]"""));
+        var done = await Bundles().PreviewAndImportAsync(Bundle(queryTemplates: """[ { "dialect": "KQL", "kind": "domain", "template": "new {{values}}" } ]"""));
 
         done.Changes.Should().ContainSingle(c => c.Area == "Query templates").Which.Kind.Should().Be(BundleChangeKind.Update);
         await using var check = _db.Context();
@@ -74,7 +74,7 @@ public class BugRound3PlatformTests : IDisposable
 
         (await Bundles().PreviewAsync(bundle)).Changes.Where(c => c.Area == "Scorecard").Select(c => c.Kind)
             .Should().Equal(BundleChangeKind.Update, BundleChangeKind.Update);
-        await Bundles().ImportAsync(bundle);
+        await Bundles().PreviewAndImportAsync(bundle);
 
         await using var check = _db.Context();
         (await check.ScorecardCategories.AsNoTracking().ToListAsync()).Should().ContainSingle()

@@ -51,7 +51,7 @@ public class BugPass6Tests : IDisposable
         var bundle = new ConfigBundle(ConfigBundle.FormatName, ConfigBundle.CurrentVersion, DateTimeOffset.UtcNow, "x", "x", [], [], [], [], [],
             [new BundleHoliday(day, "Founders' Day"), new BundleHoliday(new DateOnly(2150, 1, 2), "Far off"), new BundleHoliday(new DateOnly(2026, 10, 8), "Kept")]);
 
-        var preview = await new ConfigBundleService(_db, _db.User, new CountingRoleDirectory(), TimeProvider.System).ImportAsync(bundle);
+        var preview = await new ConfigBundleService(_db, _db.User, new CountingRoleDirectory(), TimeProvider.System).PreviewAndImportAsync(bundle);
 
         var holidays = preview.Changes.Where(c => c.Area == "Holidays").ToList();
         holidays.Single(c => c.Item.StartsWith("2026-10-07", StringComparison.Ordinal)).Should().Match<BundleChange>(c => c.Kind == BundleChangeKind.Skipped && c.Detail!.Contains("brief"));

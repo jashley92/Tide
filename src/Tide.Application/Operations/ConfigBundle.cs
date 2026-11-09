@@ -90,4 +90,18 @@ public sealed record BundlePreview(ConfigBundle Bundle, IReadOnlyList<BundleChan
 
     /// <summary>The changes flagged for a careful look.</summary>
     public int Warnings => Changes.Count(c => c.Warning);
+
+    /// <summary>What this preview showed, as a hash: the bundle and every planned change (its warning included). The import
+    /// is given it back and refuses when the plan it works out differs, so what's imported is what was read.</summary>
+    public string Fingerprint
+    {
+        get
+        {
+            var text = new System.Text.StringBuilder(Bundle.ToJson());
+            foreach (var c in Changes)
+                text.Append('\n').Append(c.Area).Append('\u001f').Append(c.Item).Append('\u001f').Append((int)c.Kind)
+                    .Append('\u001f').Append(c.Detail).Append('\u001f').Append(c.Warning ? '1' : '0');
+            return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text.ToString())));
+        }
+    }
 }

@@ -86,7 +86,7 @@ public class BugRound2PlatformTests : IDisposable
         var bundle = ConfigBundle.Parse(Encoding.UTF8.GetBytes(json));
         var service = new ConfigBundleService(_db, _db.User, new CountingRoleDirectory(), TimeProvider.System, saved);
 
-        var done = await service.ImportAsync(bundle);
+        var done = await service.PreviewAndImportAsync(bundle);
 
         done.Changes.Should().Contain(c => c.Item == OperationalSettings.TeamName && c.Kind == BundleChangeKind.Update);
         done.Changes.Should().Contain(c => c.Item == DistributionSettings.PublicMaxTlpKey && c.Kind == BundleChangeKind.Add);

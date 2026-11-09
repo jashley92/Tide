@@ -198,10 +198,19 @@
         _busy = true;
         try
         {
-            _preview = await Bundles.ImportAsync(_chosen);
+            // The preview that was read goes back: the service refuses if the plan changed since, or a warning wasn't read.
+            _preview = await Bundles.ImportAsync(_chosen, _preview.Fingerprint, _acknowledged);
             _imported = true;
             _current = await Bundles.ExportAsync();
             Toasts.Show($"Imported {_fileName}: {_preview.Count(BundleChangeKind.Add)} added, {_preview.Count(BundleChangeKind.Update)} updated.");
+        }
+        catch (Tide.Application.Articles.StaleEditException ex)
+        {
+            // What's here changed since the preview: show the new one, to be read (and its warnings ticked) again.
+            Toasts.Error(ex.Message);
+            _acknowledged = false;
+            try { _preview = await Bundles.PreviewAsync(_chosen); }
+            catch (Exception again) { _preview = null; Toasts.Error(UserFacingError.For(again)); }
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _busy = false; }

@@ -9,10 +9,21 @@ using Tide.Domain.Enums;
 
 namespace Tide.IntegrationTests;
 
+public static class ConfigBundleTestExtensions
+{
+    /// <summary>What an administrator does on the page: preview, read the warnings, import that preview.</summary>
+    public static async Task<BundlePreview> PreviewAndImportAsync(this ConfigBundleService service, ConfigBundle bundle, CancellationToken ct = default)
+    {
+        var preview = await service.PreviewAsync(bundle, ct);
+        return await service.ImportAsync(bundle, preview.Fingerprint, acknowledged: true, ct);
+    }
+}
+
 /// <summary>
 /// The bundle import flags a change that widens what leaves the organization, as it flags a role mapping that gives
 /// Admin: a higher edition ceiling, more recipients, a lower source TLP, email turned on or reworded for people outside
-/// TIDE. Each is still imported (the page asks for the warnings to be read first); a routine change isn't flagged.
+/// TIDE, escalation steps that email outside. Each is still imported once the warnings are read; the service refuses
+/// otherwise, and refuses an import whose plan differs from the preview read. A routine change isn't flagged.
 /// </summary>
 public sealed class ConfigBundleWarningTests : IDisposable
 {
@@ -152,7 +163,7 @@ public sealed class ConfigBundleWarningTests : IDisposable
         preview.Changes.Single(c => c.Item == "New blog").Warning.Should().BeFalse("a new source has nothing yet to loosen");
 
         // Still imported once read: the warning doesn't stop it.
-        await Service().ImportAsync(Bundle(sources: [Feed("Vendor blog", "Clear")]));
+        await Service().PreviewAndImportAsync(Bundle(sources: [Feed("Vendor blog", "Clear")]));
         await using var check = _db.Context();
         check.Sources.Single(s => s.Name == "Vendor blog").DefaultTlp.Should().Be(TlpLevel.Clear);
     }
@@ -218,5 +229,69 @@ public sealed class ConfigBundleWarningTests : IDisposable
         preview.Changes.Single(c => c.Item == OperationalSettings.ReminderTime).Should()
             .Match<BundleChange>(c => c.Kind == BundleChangeKind.Update && !c.Warning && c.Detail == "09:30");
         preview.Warnings.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task EscalationSteps_ThatAddAContactOrRemindStep_AreWarned_ButNotOnesThatOnlyRaiseOrFlag()
+    {
+        await Save(OperationalSettings.EscalationSteps, "after 7: raise, flag");
+        var added = await Preview(new(OperationalSettings.EscalationSteps, "before 2: remind; after 3: contact; after 7: raise, flag"));
+        added.Warning.Should().BeTrue();
+        added.Detail.Should().Be("Adds escalation steps that email people outside TIDE (escalation contacts, external teams): before 2: remind; after 3: contact.");
+
+        (await Preview(new(OperationalSettings.EscalationSteps, "after 7: raise, flag; after 14: flag"))).Warning
+            .Should().BeFalse("raising and flagging email no one");
+        (await Preview(new(OperationalSettings.EscalationSteps, "after 7: flag"))).Warning.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task EscalationSteps_AreComparedWithTheServersLadder_WhenNoneIsSaved()
+    {
+        // Nothing saved: the default ladder (before 2: remind; after 3: contact; ...) is in force, so those aren't new.
+        var same = await Preview(new(OperationalSettings.EscalationSteps, "before 2: remind; after 3: contact"));
+        same.Warning.Should().BeFalse();
+        var moved = await Preview(new(OperationalSettings.EscalationSteps, "before 2: remind; after 1: contact"));
+        moved.Warning.Should().BeTrue("the contact is now copied two days sooner");
+        moved.Detail.Should().EndWith(": after 1: contact.");
+    }
+
+    [Fact]
+    public async Task AWarnedImport_NotAcknowledged_IsRefused_AndChangesNothing()
+    {
+        var bundle = Bundle([new(DistributionSettings.PublicRecipientsKey, "all-staff@contoso.com"), new(OperationalSettings.ReminderTime, "09:30")]);
+        var preview = await Service().PreviewAsync(bundle);
+        preview.Warnings.Should().Be(1);
+        await Service().Invoking(s => s.ImportAsync(bundle, preview.Fingerprint, acknowledged: false)).Should()
+            .ThrowAsync<InvalidOperationException>().WithMessage("1 change needs a careful look: confirm you've read the warnings, then import.");
+        await using var ctx = _db.Context();
+        ctx.Settings.Should().BeEmpty("a refused import writes nothing, the routine change included");
+    }
+
+    [Fact]
+    public async Task AnImport_WhosePlanChangedSinceThePreview_IsRefused_AndChangesNothing()
+    {
+        var bundle = Bundle([new(DistributionSettings.TeamRecipientsKey, "cti@contoso.com; new@contoso.com"), new(OperationalSettings.ReminderTime, "09:30")]);
+        var preview = await Service().PreviewAsync(bundle);
+        // Someone changes the list here after the preview: the import would now add a different set.
+        await _db.Settings().SaveRecipientsAsync(Edition.Team, "cti@contoso.com");
+        await Service().Invoking(s => s.ImportAsync(bundle, preview.Fingerprint, acknowledged: true)).Should()
+            .ThrowAsync<Tide.Application.Articles.StaleEditException>().WithMessage("The configuration changed since you previewed it: preview again.");
+        await Service().Invoking(s => s.ImportAsync(bundle, "not a fingerprint", acknowledged: true)).Should()
+            .ThrowAsync<Tide.Application.Articles.StaleEditException>();
+        await using var ctx = _db.Context();
+        ctx.Settings.Single().Value.Should().Be("cti@contoso.com", "nothing the bundle carries was written");
+    }
+
+    [Fact]
+    public async Task AWarnedImport_Acknowledged_WithTheFingerprintOfThePreviewRead_Applies()
+    {
+        var bundle = Bundle([new(DistributionSettings.PublicRecipientsKey, "all-staff@contoso.com"), new(OperationalSettings.ReminderTime, "09:30")]);
+        var preview = await Service().PreviewAsync(bundle);
+        var done = await Service().ImportAsync(bundle, preview.Fingerprint, acknowledged: true);
+        done.Fingerprint.Should().Be(preview.Fingerprint, "what was imported is what was read");
+        done.Warnings.Should().Be(1);
+        await using var ctx = _db.Context();
+        ctx.Settings.Single(s => s.Key == DistributionSettings.PublicRecipientsKey).Value.Should().Be("all-staff@contoso.com");
+        ctx.Settings.Single(s => s.Key == OperationalSettings.ReminderTime).Value.Should().Be("09:30");
     }
 }

@@ -352,7 +352,7 @@ public class TriageGroupingSettingsTests
             .And.Contain(new BundleSetting(OperationalSettings.GroupIgnoredWords, "webinar; roundtable"));
 
         using var target = new SettingsRig();
-        await target.Get<ConfigBundleService>().ImportAsync(bundle);
+        await target.Get<ConfigBundleService>().PreviewAndImportAsync(bundle);
         var grouping = target.Now<IntakeOptions>().Grouping();
         grouping.Window.Should().Be(TimeSpan.FromHours(72));
         grouping.Ignored.Should().BeEquivalentTo("webinar", "roundtable");

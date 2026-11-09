@@ -255,7 +255,7 @@ public class OperationalSettingsTests
         {
             Settings = [.. bundle.Settings, new BundleSetting(OperationalSettings.CveRefreshHours, "9999"), new BundleSetting(OperationalSettings.ReminderTime, "7:05")],
         };
-        var done = await target.Get<ConfigBundleService>().ImportAsync(tampered);
+        var done = await target.Get<ConfigBundleService>().PreviewAndImportAsync(tampered);
         done.Changes.Single(c => c.Item == OperationalSettings.CveRefreshHours).Kind.Should().Be(BundleChangeKind.Skipped);
         done.Changes.Single(c => c.Item == OperationalSettings.DigestDay).Kind.Should().Be(BundleChangeKind.Add);
         target.Now<ReminderOptions>().Digest.Day.Should().Be(DayOfWeek.Wednesday, "an import takes effect at once");

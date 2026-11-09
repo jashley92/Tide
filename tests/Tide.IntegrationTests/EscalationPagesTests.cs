@@ -66,7 +66,7 @@ public class EscalationSettingsTests
         SettingsCatalog.Find(OperationalSettings.EscalationSteps)!.EditedIn.Should().Be("admin/teams");
 
         using var target = new SettingsRig();
-        var done = await target.Get<ConfigBundleService>().ImportAsync(bundle with
+        var done = await target.Get<ConfigBundleService>().PreviewAndImportAsync(bundle with
         {
             Settings = [.. bundle.Settings, new BundleSetting(OperationalSettings.Escalation, "sometimes")],
         });

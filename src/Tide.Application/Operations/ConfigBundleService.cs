@@ -71,12 +71,22 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
         return new BundlePreview(bundle, await PlanAsync(db, bundle, apply: false, ct));
     }
 
-    /// <summary>Imports the bundle and says what it did.</summary>
-    public async Task<BundlePreview> ImportAsync(ConfigBundle bundle, CancellationToken ct = default)
+    /// <summary>Imports the bundle and says what it did. <paramref name="fingerprint"/> is the
+    /// <see cref="BundlePreview.Fingerprint"/> of the preview the administrator read: when the plan worked out now differs
+    /// (the configuration here changed since, or another bundle), nothing is written and they're asked to preview again.
+    /// A plan with a warning is imported only when <paramref name="acknowledged"/> says the warnings were read.</summary>
+    public async Task<BundlePreview> ImportAsync(ConfigBundle bundle, string fingerprint, bool acknowledged, CancellationToken ct = default)
     {
         RequireAdmin();
         await using var db = await dbs.CreateAsync(ct);
         var changes = await PlanAsync(db, bundle, apply: true, ct);
+        // Refused before anything is saved: the context's pending changes go with it.
+        var planned = new BundlePreview(bundle, changes);
+        if (!string.Equals(planned.Fingerprint, fingerprint, StringComparison.Ordinal))
+            throw new StaleEditException("The configuration changed since you previewed it: preview again.");
+        if (planned.Warnings > 0 && !acknowledged)
+            throw new InvalidOperationException(
+                $"{(planned.Warnings == 1 ? "1 change needs" : $"{planned.Warnings} changes need")} a careful look: confirm you've read the warnings, then import.");
         await db.SaveChangesAsync(ct);
         if (changes.Any(c => c.Area == GroupsArea && c.Kind == BundleChangeKind.Add)) directory.Invalidate();
         // An operational setting imported takes effect at once, as one saved on its page does.
@@ -155,6 +165,7 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
             OperationalSettings.BriefNotReadyRecipients => string.Join("; ", r.BriefNotReady.Recipients ?? []),
             OperationalSettings.ExternalReminders => r.ExternalReminders.Enabled ? "true" : "false",
             OperationalSettings.Escalation => r.Escalation.Enabled ? "true" : "false",
+            OperationalSettings.EscalationSteps => r.Escalation.Steps,
             _ => Distribution.EmailTemplateCatalog.Parse(key) is { } t ? Distribution.EmailTemplateCatalog.Normalize(t.Part, t.Template.Default(t.Part)) : null,
         };
     }
@@ -196,6 +207,18 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
             return key == OperationalSettings.ExternalReminders
                 ? "Turns on reminders to external teams, emailed to their contacts outside TIDE."
                 : "Turns on the escalation ladder, which emails escalation contacts, outside TIDE included.";
+        }
+        if (key == OperationalSettings.EscalationSteps)
+        {
+            // A step that copies the escalation contact emails them, and one that reminds emails an external team's contacts:
+            // both can reach people outside TIDE. One that wasn't there at that day, or that does more of it, is warned.
+            const EscalationDoes mails = EscalationDoes.CopyContact | EscalationDoes.Remind;
+            var had = EscalationLadder.ParseOrNone(current).Where(s => (s.Does & mails) != 0)
+                .GroupBy(s => s.Offset).ToDictionary(g => g.Key, g => g.Aggregate(EscalationDoes.None, (a, s) => a | (s.Does & mails)));
+            var added = EscalationLadder.ParseOrNone(value)
+                .Where(s => (s.Does & mails & ~had.GetValueOrDefault(s.Offset)) != 0).Select(s => s.Text).ToList();
+            return added.Count == 0 ? null
+                : $"Adds escalation steps that email people outside TIDE (escalation contacts, external teams): {string.Join("; ", added)}.";
         }
         if (Distribution.EmailTemplateCatalog.Parse(key) is { } t && Distribution.EmailCopyRules.GoesOutside(t.Template)
             && Distribution.EmailTemplateCatalog.Normalize(t.Part, current) != value)

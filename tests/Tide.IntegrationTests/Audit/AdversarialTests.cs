@@ -901,7 +901,7 @@ public sealed class ServiceWorld : IDisposable
             ("Reminders.RunNow", () => db.Reminders().RunNowAsync(ReminderKind.Overdue)),
             ("Bundles.Export", () => Bundles().ExportAsync()),
             ("Bundles.Preview", () => Bundles().PreviewAsync(new ConfigBundle(ConfigBundle.FormatName, ConfigBundle.CurrentVersion, DateTimeOffset.UtcNow, "eve", "0", [], [], [], [], []))),
-            ("Bundles.Import", () => Bundles().ImportAsync(new ConfigBundle(ConfigBundle.FormatName, ConfigBundle.CurrentVersion, DateTimeOffset.UtcNow, "eve", "0", [], [], [], [], []))),
+            ("Bundles.Import", () => Bundles().PreviewAndImportAsync(new ConfigBundle(ConfigBundle.FormatName, ConfigBundle.CurrentVersion, DateTimeOffset.UtcNow, "eve", "0", [], [], [], [], []))),
             ("Updates.SaveEnabled", () => Updates().SaveEnabledAsync(false)),
         ];
     }
@@ -1134,7 +1134,7 @@ public class AnalystAgainstTheServicesTests : IAsyncLifetime
             ("Rotation.RequestForSomeoneElse", () => db.Rotation().RequestAsync(new RotationRequest { RequesterId = ServiceWorld.Robin, PartnerId = ServiceWorld.Me, GiveFrom = _w.Week, GiveTo = _w.Week })),
             ("Reminders.RunNow", () => db.Reminders().RunNowAsync(ReminderKind.Overdue)),
             ("Bundles.Export", () => _w.Bundles().ExportAsync()),
-            ("Bundles.Import", () => _w.Bundles().ImportAsync(new ConfigBundle(ConfigBundle.FormatName, ConfigBundle.CurrentVersion, DateTimeOffset.UtcNow, "eve", "0", [], [], [], [], []))),
+            ("Bundles.Import", () => _w.Bundles().PreviewAndImportAsync(new ConfigBundle(ConfigBundle.FormatName, ConfigBundle.CurrentVersion, DateTimeOffset.UtcNow, "eve", "0", [], [], [], [], []))),
             ("Updates.SaveEnabled", () => _w.Updates().SaveEnabledAsync(false)),
         ]);
         leaks.Should().BeEmpty();
@@ -3055,7 +3055,7 @@ public class BundleWarningsThroughTheServiceTests : IAsyncLifetime
         preview.Warnings.Should().Be(6, "every everyone-group and the Admin grant");
         preview.Changes.Single(c => c.Item.StartsWith("SOC-Analysts", StringComparison.Ordinal)).Warning.Should().BeFalse();
         preview.Changes.Where(c => c.Warning).Should().OnlyContain(c => c.Detail != null && c.Detail.StartsWith("Check this"));
-        await bundles.ImportAsync(Bundle([new("Everyone ", "Reader")]));
+        await bundles.PreviewAndImportAsync(Bundle([new("Everyone ", "Reader")]));
         (await _w.RoleMappings().ListAsync()).Should().Contain(m => m.AdGroup == "Everyone" && m.RoleName == "Reader");
         (await _w.RoleMappings().ListAsync()).Should().NotContain(m => m.AdGroup.EndsWith(' '));
         // Imported once, the same mapping in another case is unchanged, not a second row.
@@ -3075,7 +3075,7 @@ public class BundleWarningsThroughTheServiceTests : IAsyncLifetime
         (await bundles.PreviewAsync(Bundle(settings: [new(Tide.Application.Settings.DistributionSettings.TeamRecipientsKey, List(200, dupe: true))])))
             .Changes.Single().Kind.Should().NotBe(BundleChangeKind.Skipped, "the duplicate counts once");
         // Imported, the list is what the settings page would accept.
-        await bundles.ImportAsync(Bundle(settings: [new(Tide.Application.Settings.DistributionSettings.TeamRecipientsKey, List(200))]));
+        await bundles.PreviewAndImportAsync(Bundle(settings: [new(Tide.Application.Settings.DistributionSettings.TeamRecipientsKey, List(200))]));
         (await _w.Db.Settings().GetRecipientsAsync(Edition.Team)).Should().HaveCount(200);
     }
 }
