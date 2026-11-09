@@ -27,6 +27,7 @@
             @if (Form.TeamId == Guid.Empty) { <option value="@Guid.Empty">Choose a team</option> }
             @foreach (var t in Teams.Where(t => !t.IsRetired || t.Id == Form.TeamId)) { <option value="@t.Id">@t.Name</option> }
         </select>
+        @if (IsNew || Form.TeamId != Form.FromTeamId) { <NotEmailedNote Team="@Teams.FirstOrDefault(t => t.Id == Form.TeamId)" /> }
     </div>
     @if (!IsNew && Form.TeamId != Form.FromTeamId)
     {

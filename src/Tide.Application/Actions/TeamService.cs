@@ -71,9 +71,16 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOp
         return team.Id;
     }
 
-    /// <summary>A blank form for a new external team: its reminders on or off as an administrator set for new teams
-    /// (<see cref="ReminderOptions.ExternalReminderOptions.NewTeamsOn"/>), the rest at their defaults.</summary>
-    public ExternalTeamForm NewExternalForm() => new() { RemindersOn = reminders.CurrentValue.ExternalReminders.NewTeamsOn };
+    /// <summary>Why <paramref name="team"/> won't be emailed its reminders, or null when it will be (<see cref="ExternalCadence.NotEmailedWhy"/>).</summary>
+    public string? NotEmailedWhy(Team team) => ExternalCadence.NotEmailedWhy(team, reminders.CurrentValue.ExternalReminders.Enabled);
+
+    /// <summary>A blank form for a new external team: its reminders on or off, and their schedule, as an administrator
+    /// set for new teams (<see cref="ReminderOptions.ExternalReminderOptions"/>), the rest at their defaults.</summary>
+    public ExternalTeamForm NewExternalForm()
+    {
+        var o = reminders.CurrentValue.ExternalReminders;
+        return new() { RemindersOn = o.NewTeamsOn, RemindBeforeDays = o.BeforeDays, RemindOverdueEveryDays = o.EveryDays };
+    }
 
     /// <summary>An external team with just a name and, optionally, its contact's email (the split dialog's quick add),
     /// its reminders on or off as set for new teams.</summary>

@@ -493,6 +493,8 @@ public class HandoffsAndExternalTeamsTests : IDisposable
         var startOff = new ReminderOptions { ExternalReminders = { Enabled = true, NewTeamsOn = false } };
         var teams = _db.Teams(startOff);
         teams.NewExternalForm().RemindersOn.Should().BeFalse();
+        var scheduled = _db.Teams(new ReminderOptions { ExternalReminders = { NewTeamsBeforeDays = 5, NewTeamsEveryDays = 0 } }).NewExternalForm();
+        (scheduled.RemindBeforeDays, scheduled.RemindOverdueEveryDays).Should().Be((5, (int?)null), "the schedule set for new teams, 0 meaning once");
         var quick = await teams.AddExternalAsync("Hosting Provider", "noc@provider.example");
         var chosen = teams.NewExternalForm();
         (chosen.Name, chosen.ContactEmail, chosen.RemindersOn) = ("Facilities", "facilities@example.org", true);   // whoever adds it can still turn them on

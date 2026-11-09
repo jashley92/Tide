@@ -170,6 +170,18 @@
                                         <label class="form-check-label" for="rem-ext-new">New external teams start with their reminders on</label>
                                     </div>
                                     <div class="small tide-muted" id="rem-ext-new-help">Off: a team added on External teams or while splitting an action isn't emailed until someone turns its reminders on. Teams already added keep theirs.</div>
+                                    <div class="row g-2 mt-1">
+                                        <div class="col-sm-6">
+                                            <label class="tide-field-label" for="rem-ext-before">A new team is reminded (business days before the due date)</label>
+                                            <input id="rem-ext-before" type="number" min="0" max="@Team.MaxRemindBefore" class="form-control form-control-sm tide-w-count" @bind="_rem.NewExternalBefore" aria-describedby="rem-ext-before-help" />
+                                            <div class="form-text" id="rem-ext-before-help">0: on the due day only.</div>
+                                        </div>
+                                        <div class="col-sm-6">
+                                            <label class="tide-field-label" for="rem-ext-every">Then while overdue, every (business days)</label>
+                                            <input id="rem-ext-every" type="number" min="@Team.MinRemindEvery" max="@Team.MaxRemindEvery" class="form-control form-control-sm tide-w-count" placeholder="Once" @bind="_rem.NewExternalEvery" aria-describedby="rem-ext-every-help" />
+                                            <div class="form-text" id="rem-ext-every-help">Blank: once only. Whoever adds a team can change both.</div>
+                                        </div>
+                                    </div>
                                 </td>
                             </tr>
                         }
@@ -378,6 +390,8 @@
         public string? Recipients { get; set; }
         public int FollowUpDays { get; set; }
         public bool NewExternalTeamsOn { get; set; }
+        public int NewExternalBefore { get; set; }
+        public int? NewExternalEvery { get; set; }
 
         public static ReminderForm From(ReminderService r)
         {
@@ -388,6 +402,7 @@
                 BriefNotReadyTime = Time(o.BriefNotReady.Time, 10), Recipients = string.Join(Environment.NewLine, o.BriefNotReady.Recipients ?? []),
                 FollowUpDays = ReminderOptions.FollowUpOptions.Clamp(o.OutreachFollowUp.Days),
                 NewExternalTeamsOn = o.ExternalReminders.NewTeamsOn,
+                NewExternalBefore = o.ExternalReminders.BeforeDays, NewExternalEvery = o.ExternalReminders.EveryDays,
             };
             foreach (var kind in Enum.GetValues<ReminderKind>()) form.On[kind] = r.IsEnabled(kind);
             return form;
@@ -547,6 +562,8 @@
                 [OperationalSettings.OutreachFollowUpDays] = _rem.FollowUpDays.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 [OperationalSettings.ExternalReminders] = Switch(_rem.On[ReminderKind.ExternalReminder]),
                 [OperationalSettings.ExternalRemindersNewTeams] = Switch(_rem.NewExternalTeamsOn),
+                [OperationalSettings.ExternalRemindersNewBefore] = _rem.NewExternalBefore.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                [OperationalSettings.ExternalRemindersNewEvery] = (_rem.NewExternalEvery ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture),
             });
             _rem = ReminderForm.From(Reminders);
             Toasts.Show("Saved. Applies within five minutes.");

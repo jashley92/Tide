@@ -42,6 +42,10 @@ public static class OperationalSettings
     /// <summary>Whether a new external team starts with its own reminders on. On by default.</summary>
     public const string ExternalRemindersNewTeams = "Notifications:ExternalReminders:NewTeamsOn";
 
+    /// <summary>A new external team's schedule: business days before the due date, and every how many while overdue (0: once).</summary>
+    public const string ExternalRemindersNewBefore = "Notifications:ExternalReminders:NewTeamsBeforeDays";
+    public const string ExternalRemindersNewEvery = "Notifications:ExternalReminders:NewTeamsEveryDays";
+
     /// <summary>The escalation ladder: on or off, which actions it climbs, and its steps (<see cref="EscalationLadder"/>).</summary>
     public const string Escalation = "Notifications:Escalation:Enabled";
     public const string EscalationScope = "Notifications:Escalation:Scope";
@@ -108,6 +112,8 @@ public static class OperationalSettings
         [OutreachFollowUpDays] = Number("The follow-up wait", ReminderOptions.FollowUpOptions.MinDays, ReminderOptions.FollowUpOptions.MaxDays),
         [ExternalReminders] = Switch,
         [ExternalRemindersNewTeams] = Switch,
+        [ExternalRemindersNewBefore] = Number("Days before the due date", 0, Domain.Entities.Team.MaxRemindBefore),
+        [ExternalRemindersNewEvery] = v => v == "0" ? v : Number("While overdue, the days between reminders (0: once)", Domain.Entities.Team.MinRemindEvery, Domain.Entities.Team.MaxRemindEvery)(v),
         [Escalation] = Switch,
         [EscalationScope] = EnumValue<Actions.EscalationScope>("The escalation ladder climbs All actions, PartsOnly or ExternalOnly."),
         [EscalationSteps] = EscalationLadder.Normalize,
@@ -201,6 +207,8 @@ public static class OperationalSettings
         s.Use(OutreachFollowUpDays, v => o.OutreachFollowUp.Days = int.Parse(v, Invariant));
         s.Use(ExternalReminders, v => o.ExternalReminders.Enabled = bool.Parse(v));
         s.Use(ExternalRemindersNewTeams, v => o.ExternalReminders.NewTeamsOn = bool.Parse(v));
+        s.Use(ExternalRemindersNewBefore, v => o.ExternalReminders.NewTeamsBeforeDays = int.Parse(v, Invariant));
+        s.Use(ExternalRemindersNewEvery, v => o.ExternalReminders.NewTeamsEveryDays = int.Parse(v, Invariant));
         s.Use(Escalation, v => o.Escalation.Enabled = bool.Parse(v));
         s.Use(EscalationScope, v => o.Escalation.Scope = Enum.Parse<Actions.EscalationScope>(v));
         s.Use(EscalationSteps, v => o.Escalation.Steps = v);

@@ -18,6 +18,30 @@ public class HandoffRulesTests
     private static readonly WorkingDays Days = new(new Dictionary<DateOnly, string> { [Thanksgiving] = "Thanksgiving", [DayAfter] = "Day after" });
 
     [Fact]
+    public void AnExternalTeamThatWontBeEmailed_SaysWhy_AndOneThatWill_SaysNothing()
+    {
+        Team Ext(bool on = true, string? email = "noc@provider.example") => new() { Name = "Hosting", IsExternal = true, RemindersOn = on, ContactEmail = email };
+        ExternalCadence.NotEmailedWhy(Ext(), scanOn: true).Should().BeNull();
+        ExternalCadence.NotEmailedWhy(new Team { Name = "Network" }, scanOn: false).Should().BeNull("an internal team isn't emailed this way at all");
+        ExternalCadence.NotEmailedWhy(Ext(), scanOn: false).Should().Be("External team reminders are off for everyone, so Hosting won't be emailed about this.");
+        ExternalCadence.NotEmailedWhy(Ext(on: false), scanOn: true).Should().Be("Hosting's reminders are off, so they won't be emailed about this.");
+        ExternalCadence.NotEmailedWhy(Ext(email: " "), scanOn: true).Should().Be("Hosting has no contact email, so they won't be emailed about this.");
+    }
+
+    [Fact]
+    public void ANewExternalTeamsSchedule_IsKeptInItsRange_AndZeroIsOnce()
+    {
+        new ReminderOptions.ExternalReminderOptions().Should().Match<ReminderOptions.ExternalReminderOptions>(o => o.BeforeDays == 2 && o.EveryDays == 3);
+        new ReminderOptions.ExternalReminderOptions { NewTeamsBeforeDays = 40, NewTeamsEveryDays = 0 }.Should()
+            .Match<ReminderOptions.ExternalReminderOptions>(o => o.BeforeDays == Team.MaxRemindBefore && o.EveryDays == null);
+        new ReminderOptions.ExternalReminderOptions { NewTeamsBeforeDays = -1, NewTeamsEveryDays = 99 }.Should()
+            .Match<ReminderOptions.ExternalReminderOptions>(o => o.BeforeDays == 0 && o.EveryDays == Team.MaxRemindEvery);
+        Tide.Application.Settings.OperationalSettings.Normalize(Tide.Application.Settings.OperationalSettings.ExternalRemindersNewEvery, "0").Should().Be("0");
+        Tide.Application.Settings.OperationalSettings.Problem(Tide.Application.Settings.OperationalSettings.ExternalRemindersNewEvery, "21").Should().NotBeNull();
+        Tide.Application.Settings.OperationalSettings.Problem(Tide.Application.Settings.OperationalSettings.ExternalRemindersNewBefore, "11").Should().NotBeNull();
+    }
+
+    [Fact]
     public void TheLimit_ShowsOnly_WarnsForAReason_OrRefuses()
     {
         ActiveLimits.Decide("Network Engineering", 5, 5, ActiveLimitMode.Show, null).Should().BeNull("show only counts");

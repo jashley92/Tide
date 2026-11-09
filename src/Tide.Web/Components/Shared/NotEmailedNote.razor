@@ -1,0 +1,13 @@
+@* Under a choice of team (a hand-off, a split's part, the editor's team, an external action's card): says when an
+   external team won't be emailed its reminders, and why, so work isn't handed to someone who never hears of it.
+   Nothing for an internal team, or one that will be emailed. *@
+@inject Tide.Application.Actions.TeamService TeamSvc
+
+@if (Team is not null && TeamSvc.NotEmailedWhy(Team) is { } why)
+{
+    <div class="tide-missing small mt-2" role="status"><span class="bi bi-envelope-slash" aria-hidden="true"></span> @why</div>
+}
+
+@code {
+    [Parameter] public Tide.Domain.Entities.Team? Team { get; set; }
+}

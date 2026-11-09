@@ -657,7 +657,14 @@ reminders: on or off, how many business days before the due date (0 to 10, defau
 overdue every so many business days (1 to 20, default 3) or once. A new team's reminders start on, unless an
 administrator has turned off *New external teams start with their reminders on* (Teams & SLA,
 `Notifications:ExternalReminders:NewTeamsOn`): then the add form and the split dialog's quick add start them off, and
-the team isn't emailed until someone turns them on. Teams already added keep theirs. They can be retired like any team. Every change is
+the team isn't emailed until someone turns them on. The schedule a new team starts with (2 days before, then every 3)
+is an administrator's to change there too. Teams already added keep theirs. They can be retired like any team.
+
+**Saying when one won't be emailed** (`ExternalCadence.NotEmailedWhy`, `NotEmailedNote`). Wherever work is given to an
+external team, TIDE says when that team won't hear about it, and why: external team reminders are off for everyone,
+the team's own reminders are off, or it has no contact email. It shows under the hand-off dialog's team, the action
+editor's team (a new action, or a team change), each external part ticked in the split dialog, and on an external
+action's team card. External teams marks such a team *Not emailed*, the reason in its tooltip. Every change is
 audited. An action owned by an external team shows the team's contact and *Don't remind {team} about this one*. The
 page follows the `teams` topic: a colleague's change re-reads the list, keeping what's typed in the add and edit
 forms; an edit of a team a colleague retired or removed closes and says so. An edit opened before a colleague's change

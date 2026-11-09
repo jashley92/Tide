@@ -381,8 +381,8 @@ else
                             <input class="form-check-input" type="checkbox" role="switch" id="no-remind" checked="@a.NoReminders" disabled="@_busy" @onchange="e => SetNoReminders(e.Value is true)" />
                             <label class="form-check-label" for="no-remind">Don't remind @external.Name about this one</label>
                         </div>
-                        @if (!external.RemindersOn) { <div class="form-text">The team's reminders are off.</div> }
                     }
+                    <NotEmailedNote Team="external" />
                 </div>
             }
 
@@ -415,6 +415,7 @@ else
                 <option value="@t.Id">@t.Name@(t.IsExternal ? " (external)" : "")</option>
             }
         </select>
+        <NotEmailedNote Team="@_teams.FirstOrDefault(t => t.Id == _handTo)" />
         <label class="tide-field-label mt-2" for="handoff-why">Why</label>
         <textarea id="handoff-why" class="form-control form-control-sm tide-autogrow tide-grow-2" rows="2" maxlength="@ActionItem.MaxHandoffReason" @bind="_handWhy" @bind:event="oninput"
                   placeholder="The fix is theirs: a firewall change."></textarea>
