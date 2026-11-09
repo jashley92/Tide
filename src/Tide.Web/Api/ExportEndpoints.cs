@@ -24,7 +24,7 @@ public enum AuditedWhen
 /// <summary>
 /// What every download endpoint (exports, CSVs, email previews, the SharePoint zip) has in common. Each download that's
 /// sent is recorded (<see cref="Recorded"/>): a line in the access log (who, the route, the record it names, the TLP
-/// ceiling and the size), and, where the endpoint asks for it (<see cref="Audited"/>), a row in the audit log
+/// ceiling and the size), and, where the endpoint asks for it (<see cref="AuditedWhen"/>), a row in the audit log
 /// (<see cref="DownloadAudit"/>).
 /// </summary>
 public static class ExportEndpoints
@@ -34,17 +34,16 @@ public static class ExportEndpoints
 
     private const string CeilingItem = "Tide.Download.Ceiling", BytesItem = "Tide.Download.Bytes";
 
-    /// <summary>Held to <paramref name="policy"/> and the exports rate limit, never kept by a cache, and recorded.</summary>
-    public static RouteHandlerBuilder AsExport(this RouteHandlerBuilder endpoint, string policy = Policies.ReadTeamEdition) =>
-        endpoint.RequireAuthorization(policy).RequireRateLimiting(RateLimit).AddEndpointFilter(NoStore).Recorded();
+    /// <summary>Held to <paramref name="policy"/> and the exports rate limit, never kept by a cache, and recorded (in the
+    /// audit log too as <paramref name="audited"/> says).</summary>
+    public static RouteHandlerBuilder AsExport(this RouteHandlerBuilder endpoint, string policy = Policies.ReadTeamEdition,
+        AuditedWhen audited = AuditedWhen.Never) =>
+        endpoint.RequireAuthorization(policy).RequireRateLimiting(RateLimit).AddEndpointFilter(NoStore).Recorded(audited);
 
     /// <summary>Each download sent from <paramref name="endpoint"/> is in the access log, and in the audit log as
     /// <paramref name="when"/> says.</summary>
     public static RouteHandlerBuilder Recorded(this RouteHandlerBuilder endpoint, AuditedWhen when = AuditedWhen.Never) =>
-        endpoint.AddEndpointFilter(RecordAsync).Audited(when);
-
-    /// <summary>For an endpoint already recorded (<see cref="AsExport"/>): when its downloads are in the audit log too.</summary>
-    public static RouteHandlerBuilder Audited(this RouteHandlerBuilder endpoint, AuditedWhen when) => endpoint.WithMetadata(new DownloadAuditing(when));
+        endpoint.AddEndpointFilter(RecordAsync).WithMetadata(new DownloadAuditing(when));
 
     /// <summary>The TLP ceiling this download was held to, for its record.</summary>
     public static void NoteCeiling(HttpContext http, TlpLevel ceiling) => http.Items[CeilingItem] = ceiling;
@@ -68,7 +67,8 @@ public static class ExportEndpoints
         var key = string.Join('/', http.Request.RouteValues.Values.Select(v => Convert.ToString(v, CultureInfo.InvariantCulture)));
         TlpLevel? ceiling = http.Items.TryGetValue(CeilingItem, out var c) && c is TlpLevel t ? t : null;
         var (name, bytes) = Describe(result, http);
-        http.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger(AmbientUser.AccessLogCategory).LogInformation(
+        // The request's access log, made ambient by UserMirrorMiddleware.
+        (AmbientUser.AccessLog ?? http.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger(AmbientUser.AccessLogCategory)).LogInformation(
             "Download by {User}: {Route} {Key}, TLP ceiling {Ceiling}, {Bytes} bytes, as {FileName}",
             http.User.Identity?.Name ?? "anonymous", route, key, ceiling is { } l ? Tlp.Label(l) : "none", bytes?.ToString(CultureInfo.InvariantCulture) ?? "unknown", name ?? "-");
         var when = endpoint?.Metadata.GetMetadata<DownloadAuditing>()?.When ?? AuditedWhen.Never;

@@ -591,9 +591,10 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
         var people = await db.Users.AsNoTracking().Where(u => ids.Contains(u.Sid)).ToDictionaryAsync(u => u.Sid, ct);
         // Someone who has since lost sight of actions, or hasn't signed in lately (or has no address), isn't sent their titles.
         var active = Active(Permission.ReadActions);
-        choices = [.. choices.Where(c => people.TryGetValue(c.UserId, out var p) && !string.IsNullOrWhiteSpace(p.Email))];
-        Inactive(choices.Where(c => !active.Allows(people[c.UserId].RolesCsv, people[c.UserId].LastSeenUtc)).Select(c => c.UserId));
-        choices = [.. choices.Where(c => active.Allows(people[c.UserId].RolesCsv, people[c.UserId].LastSeenUtc))];
+        var byAccess = choices.Where(c => people.TryGetValue(c.UserId, out var p) && !string.IsNullOrWhiteSpace(p.Email))
+            .ToLookup(c => active.Allows(people[c.UserId].RolesCsv, people[c.UserId].LastSeenUtc));
+        Inactive(byAccess[false].Select(c => c.UserId));
+        choices = [.. byAccess[true]];
         if (choices.Count == 0) return 0;
         var readers = choices.Select(c => c.UserId).ToList();
 

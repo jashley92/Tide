@@ -40,11 +40,11 @@ internal static class RecipientResolver
         ActiveRule? active = null)
     {
         var ids = userIds.Distinct().ToList();
-        var people = await db.Users.AsNoTracking().Where(u => ids.Contains(u.Sid) && u.Email != null && u.Email != "")
-            .Select(u => new { u.Sid, u.Email, u.RolesCsv, u.LastSeenUtc }).ToListAsync(ct);
+        if (ids.Count == 0) return new Recipients(new Dictionary<string, string>(), new HashSet<string>(), new HashSet<string>());
+        var people = await WithAddress(db, ids).Select(u => new { u.Sid, u.Email, u.RolesCsv, u.LastSeenUtc }).ToListAsync(ct);
         var inactive = active is null ? [] : people.Where(p => !active.Allows(p.RolesCsv, p.LastSeenUtc)).Select(p => p.Sid).ToHashSet();
         var addresses = people.Where(p => !inactive.Contains(p.Sid)).ToDictionary(p => p.Sid, p => p.Email!);
-        if (ids.Count == 0 || kind is null) return new Recipients(addresses, new HashSet<string>(), inactive);
+        if (kind is null) return new Recipients(addresses, new HashSet<string>(), inactive);
         var off = await db.UserPreferences.AsNoTracking()
             .Where(p => p.Name == kind.Name && p.Value == UserPreferences.Off && ids.Contains(p.UserId))
             .Select(p => p.UserId).ToListAsync(ct);
@@ -52,9 +52,10 @@ internal static class RecipientResolver
     }
 
     /// <summary>The address of each of these people who has one (the user mirror, as signed in from the directory).</summary>
-    public static Task<Dictionary<string, string>> AddressesAsync(IAppDbContext db, IEnumerable<string> userIds, CancellationToken ct)
-    {
-        var ids = userIds.Distinct().ToList();
-        return db.Users.AsNoTracking().Where(u => ids.Contains(u.Sid) && u.Email != null && u.Email != "").ToDictionaryAsync(u => u.Sid, u => u.Email!, ct);
-    }
+    public static Task<Dictionary<string, string>> AddressesAsync(IAppDbContext db, IEnumerable<string> userIds, CancellationToken ct) =>
+        WithAddress(db, userIds.Distinct().ToList()).ToDictionaryAsync(u => u.Sid, u => u.Email!, ct);
+
+    // These people, those of them with an address.
+    private static IQueryable<Domain.Entities.AppUser> WithAddress(IAppDbContext db, List<string> ids) =>
+        db.Users.AsNoTracking().Where(u => ids.Contains(u.Sid) && u.Email != null && u.Email != "");
 }

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Tide.Application.Abstractions;
+using Tide.Application.Content;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 
@@ -26,8 +27,10 @@ public sealed class DownloadAudit(IAppDbContextFactory dbs, ICurrentUser user)
     /// <summary>The audit log's action for a download, as it's stored.</summary>
     public const string Action = "Downloaded";
 
-    /// <summary>The fields a download's row holds, by name.</summary>
-    public const string NameField = "Name", RouteField = "Route", CeilingField = "CeilingTlp", BytesField = "Bytes";
+    /// <summary>The field a download's row holds its TLP ceiling in (the audit log labels it).</summary>
+    public const string CeilingField = "CeilingTlp";
+
+    private const string NameField = "Name", RouteField = "Route", BytesField = "Bytes";
 
     // The audit log's key column is this long.
     private const int MaxKey = 100;
@@ -45,7 +48,7 @@ public sealed class DownloadAudit(IAppDbContextFactory dbs, ICurrentUser user)
         db.AuditLog.Add(new AuditLogEntry
         {
             AtUtc = DateTimeOffset.UtcNow, UserId = user.UserId, UserName = user.DisplayName, Action = Action, EntityType = EntityType,
-            EntityKey = download.Key.Length <= MaxKey ? download.Key : download.Key[..MaxKey],
+            EntityKey = Words.Clip(download.Key, MaxKey),
             ChangesJson = JsonSerializer.Serialize(changes),
         });
         await db.SaveChangesAsync(ct);

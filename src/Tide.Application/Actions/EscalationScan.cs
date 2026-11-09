@@ -4,6 +4,7 @@ using Tide.Application.Abstractions;
 using Tide.Application.Distribution;
 using Tide.Application.Preferences;
 using Tide.Domain.Entities;
+using Tide.Domain.Enums;
 
 namespace Tide.Application.Actions;
 
@@ -189,8 +190,9 @@ public sealed partial class ReminderService
     private async Task<int> RemindInternalAsync(IAppDbContext db, List<Climb> climbs, DateOnly today, CancellationToken ct)
     {
         var people = climbs.Select(c => c.Action.AssigneeId).OfType<string>().Concat(climbs.SelectMany(c => c.Team.Members.Select(m => m.UserId))).ToList();
-        var late = await RecipientResolver.ResolveAsync(db, NotificationKinds.For(ReminderKind.Overdue), people, ct, Active(Domain.Enums.Permission.ReadActions));
-        var soon = await RecipientResolver.ResolveAsync(db, NotificationKinds.For(ReminderKind.DueSoon), people, ct, Active(Domain.Enums.Permission.ReadActions));
+        var active = Active(Permission.ReadActions);
+        var late = await RecipientResolver.ResolveAsync(db, NotificationKinds.For(ReminderKind.Overdue), people, ct, active);
+        var soon = await RecipientResolver.ResolveAsync(db, NotificationKinds.For(ReminderKind.DueSoon), people, ct, active);
         var byRecipient = new Dictionary<(string To, bool Late), List<Climb>>();
         foreach (var c in climbs)
         {

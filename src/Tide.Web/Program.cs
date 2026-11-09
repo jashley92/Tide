@@ -284,10 +284,11 @@ app.MapGet("/files/{id:guid}/download", async (Guid id, string? plain, Tide.Appl
 {
     if (await files.OpenAsync(id, ct: ct) is { } onAction)
     {
-        if (!FileRisk.ZipFirst(files.ZipMode, onAction.RiskReason) || (plain == "1" && files.ZipMode != ZipDownloads.Always))
-            return FileDownloads.Plain(http, onAction.Content, onAction.FileName);
+        var asIs = plain == "1";
+        if (!FileRisk.ZipFirst(files.ZipMode, onAction.RiskReason)) return FileDownloads.Plain(http, onAction.Content, onAction.FileName);
+        if (asIs && files.ZipMode != ZipDownloads.Always) return FileDownloads.Plain(http, onAction.Content, onAction.FileName);
         await onAction.DisposeAsync();
-        return plain == "1"
+        return asIs
             ? Results.Text("Every file on an action downloads in a zip here (Files:ZipDownloads is Always). Download the zip: it opens with the password \"infected\".",
                 "text/plain", Encoding.UTF8, StatusCodes.Status403Forbidden)
             : Results.Redirect($"{http.Request.PathBase}/files/{id}/zip");
@@ -407,7 +408,7 @@ app.MapGet("/exports/{scope}/{key}", async (string scope, string key, string? fo
     return string.Equals(format, "csv", StringComparison.OrdinalIgnoreCase)
         ? CsvFile(IndicatorCsv.Write(set, appOptions.Value.BaseUrl), name + ".csv")
         : Results.File(Stix.Write(set, clock.TeamName), "application/stix+json;version=2.1", name + ".stix.json");
-}).AsExport().Audited(AuditedWhen.AboveGreen);
+}).AsExport(audited: AuditedWhen.AboveGreen);
 
 // Administration > System > Configuration bundle: the install answers file this server would be installed with, and the
 // settings administrators made in the app. Neither carries a secret (see InstallAnswers and ConfigBundle). Each download is
@@ -434,7 +435,7 @@ app.MapGet("/admin/system/audit.csv", async (HttpContext http, Tide.Application.
     var filter = Tide.Application.History.AuditFilter.FromQuery(name => http.Request.Query[name].FirstOrDefault());
     var rows = await audit.ExportAsync(filter, ct);
     return CsvFile(Tide.Application.History.AuditCsv.Write(rows, clock), $"tide-audit-log-{clock.Today:yyyy-MM-dd}.csv");
-}).AsExport(Policies.Administer).Audited(AuditedWhen.Always);
+}).AsExport(Policies.Administer, AuditedWhen.Always);
 
 // Health probes for IIS, a load balancer or uptime monitoring: status only, no detail, no sign-in.
 // The framework logs an Error for each failing probe (one every few seconds from a load balancer during an outage); its
