@@ -446,6 +446,7 @@ else
 
     protected override void OnInitialized()
     {
+        _me = CurrentUser.UserId;
         _live = new LiveChanges(Feed, Origin, c => _follow.Contains(c.Topic), InvokeAsync, OnChangedElsewhere);
         _actionMarks = new LiveMarks<Guid>(InvokeAsync, StateHasChanged);
         _around = new LiveChanges(Feed, Origin, c => (c.Topic == ChangeFeed.Rotation && AsToday) || c.Topic == ChangeFeed.Articles,
@@ -467,7 +468,7 @@ else
         _ = InvokeAsync(StateHasChanged);
     }
 
-    // Around the brief rather than on it: Today's "Coming up for you" and "Recently written", and the articles the Add
+    // Around the brief rather than on it: Today's "Coming up for you", "Not on a brief yet" and "Recently written", and the articles the Add
     // article count and picker offer. Each is re-read alone; an open picker keeps what's ticked (AddArticlesDialog).
     private LiveChanges? _around;
 
@@ -1192,6 +1193,12 @@ else
                 </ul>
             }
         </section>
+        @if (_canWrite && _brief is not null)
+        {
+            @Unbriefed()
+        }
+        else
+        {
         <section class="tide-card" aria-labelledby="recent-h">
             <h2 id="recent-h">Recently written <span class="tide-count">(@_recent.Count)</span></h2>
             @if (_recent.Count == 0)
@@ -1215,6 +1222,67 @@ else
             {
                 <a class="btn btn-outline-secondary btn-sm mt-2" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article</a>
             }
+        </section>
+        }
+    };
+
+    /// <summary>
+    /// For whoever writes the brief: what hasn't been on any brief yet. Ready articles (anyone's) first, then the person's
+    /// own drafts, newest first: the brief's to-do, each with Add while today's brief can still change. Read from the
+    /// same candidates as Add article, so the two agree.
+    /// </summary>
+    internal IReadOnlyList<BriefCandidate> NotYetBriefed =>
+        [.. _candidates.Where(c => c.Available && c.LastBriefed is null && (c.Status == ArticleStatus.Ready || c.AuthorId == _me))
+            .OrderBy(c => c.Status == ArticleStatus.Ready ? 0 : 1).ThenByDescending(c => c.CreatedAtUtc)];
+
+    private const int NotYetBriefedShown = 8;
+
+    // Who's reading, as the page opened: their drafts are the ones listed.
+    private string _me = "";
+
+    // One article onto the end of today's running order, from the card.
+    internal Task AddFromCard(BriefCandidate c) =>
+        Run(() => BriefSvc.AddArticleAsync(_brief!.Id, c.Id), $"Added “{c.Title}” to the end of the running order.");
+
+    private RenderFragment Unbriefed() => __builder =>
+    {
+        var all = NotYetBriefed;
+        var canAdd = _brief is { Status: not BriefStatus.Sent };
+        <section class="tide-card" aria-labelledby="recent-h">
+            <h2 id="recent-h">Not on a brief yet <span class="tide-count">(@all.Count)</span></h2>
+            <p class="small tide-muted mb-2">Ready articles first, then your own drafts. None has been on a brief.</p>
+            @if (all.Count == 0)
+            {
+                <EmptyState Icon="bi-check2-circle" Title="Everything ready is on a brief." Compact="true" />
+            }
+            <ul class="list-unstyled mb-0">
+                @foreach (var c in all.Take(NotYetBriefedShown))
+                {
+                    <li class="mb-2 d-flex gap-2 align-items-start" @key="c.Id">
+                        <div class="flex-grow-1">
+                            <a href="articles/@c.Id" class="fw-semibold text-decoration-none">@c.Title</a>
+                            <div class="tide-run-meta">
+                                <ClassBadge Classification="c.Classification" Priority="c.Priority" />
+                                <StatusBadge Status="@c.Status.ToString()" />
+                                <span>@c.AuthorName &middot; @Ui.When(Clock, c.CreatedAtUtc)</span>
+                            </div>
+                        </div>
+                        @if (canAdd)
+                        {
+                            <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@_busy" aria-label="Add @c.Title to today's brief" @onclick="() => AddFromCard(c)">
+                                <span class="bi bi-plus-lg" aria-hidden="true"></span> Add
+                            </button>
+                        }
+                    </li>
+                }
+            </ul>
+            <div class="d-flex gap-2 mt-2">
+                @if (all.Count > NotYetBriefedShown && canAdd)
+                {
+                    <button type="button" class="btn btn-link btn-sm p-0" disabled="@_busy" @onclick="AskAdd">All @all.Count in Add article</button>
+                }
+                <a class="btn btn-outline-secondary btn-sm ms-auto" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article</a>
+            </div>
         </section>
     };
 }
