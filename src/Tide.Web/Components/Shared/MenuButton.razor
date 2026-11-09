@@ -2,7 +2,9 @@
    + Filter uses, over a backdrop that closes it. Each item runs something or goes somewhere. From the keyboard it works as
    + Filter does (filters.js): the down arrow on the button opens it, the first item takes focus, the arrows, Home and End
    move between items (tideRoving), Tab leaves it closed, and Esc closes it with focus back on the button. Choosing an item
-   closes it first, so a dialog the item opens takes focus from there. *@
+   closes it first, so a dialog the item opens takes focus from there. With ChildContent instead of Items, the popover
+   holds that (the metric history's chart picker: boxes to tick, and a find box that takes focus first), and stays open
+   while it's used. *@
 @inject IJSRuntime JS
 
 <div class="tide-menubutton">
@@ -21,7 +23,8 @@
     @if (_open)
     {
         <div class="tide-popover-backdrop" @onclick="() => Close(false)"></div>
-        <div class="tide-popover tide-popover-end tide-menubutton-pop" id="@_id" role="menu" aria-label="@Label" @ref="_pop" @onkeydown="Key">
+        <div class="tide-popover tide-popover-end tide-menubutton-pop @PopClass" id="@_id" role="menu" aria-label="@(MenuLabel ?? Label)" @ref="_pop" @onkeydown="Key">
+            @ChildContent
             @foreach (var i in Items)
             {
                 @if (i.Href is not null)
@@ -43,7 +46,17 @@
     public sealed record Item(string Label, string? Icon = null, EventCallback Run = default, string? Href = null);
 
     [Parameter, EditorRequired] public string Label { get; set; } = "";
-    [Parameter, EditorRequired] public IReadOnlyList<Item> Items { get; set; } = [];
+    [Parameter] public IReadOnlyList<Item> Items { get; set; } = [];
+
+    /// <summary>What the popover holds instead of <see cref="Items"/>; it stays open while it's used.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>The popover's own class (its width), and its name for a screen reader when that isn't the button's.</summary>
+    [Parameter] public string? PopClass { get; set; }
+    [Parameter] public string? MenuLabel { get; set; }
+
+    /// <summary>Called as it opens (the chart picker empties its find box).</summary>
+    [Parameter] public Action? Opened { get; set; }
     [Parameter] public string? Icon { get; set; }
     [Parameter] public string ButtonClass { get; set; } = "btn btn-outline-secondary";
     [Parameter] public bool Disabled { get; set; }
@@ -61,7 +74,11 @@
     internal void Toggle()
     {
         if (_open) Close(true);
-        else (_open, _focusPop) = (true, true);
+        else
+        {
+            (_open, _focusPop) = (true, true);
+            Opened?.Invoke();
+        }
         StateHasChanged();
     }
 

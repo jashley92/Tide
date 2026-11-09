@@ -1,62 +1,53 @@
-@* Which metrics the metric history page charts: a button naming them that opens a list of every metric under its group,
-   each a box to tick, with a box per group that ticks or clears its current metrics (mixed when some are charted), and a
-   box to find one by name. Retired metrics are listed only once asked for, or when one is charted. It stays open while
-   metrics are ticked; Esc, Tab or a click outside closes it. In the filter bar's popover, so the keyboard works as there
-   (filters.js): the find box first, the down arrow into the list, the arrows, Home and End along it. *@
+@* Which metrics the metric history page charts: a menu button naming them that opens a list of every metric under its
+   group, each a box to tick, with a box per group that ticks or clears its current metrics (mixed when some are
+   charted), and a box to find one by name. Retired metrics are listed only once asked for, or when one is charted or
+   found. It stays open while metrics are ticked; Esc, Tab or a click outside closes it (MenuButton). *@
 @using Tide.Application.Metrics
-@inject IJSRuntime JS
 
-<div class="tide-menubutton tide-mc-picker">
-    <button type="button" class="btn btn-outline-secondary btn-sm tide-menubutton-btn" aria-haspopup="menu" aria-expanded="@Ui.Aria(_open)"
-            aria-controls="@(_open ? _id : null)" @ref="_trigger" @onclick="Toggle">
-        <span class="bi bi-graph-up" aria-hidden="true"></span> Chart: @Summary <span class="bi bi-chevron-down tide-menubutton-caret" aria-hidden="true"></span>
-    </button>
-    @if (_open)
-    {
+<MenuButton Label="@($"Chart: {Summary}")" Icon="bi-graph-up" ButtonClass="btn btn-outline-secondary btn-sm" MenuLabel="Metrics to chart"
+            PopClass="tide-mc-pop" Opened="() => _find = string.Empty">
+    @{
         var find = _find.Trim();
+        var ids = Picked.Select(m => m.Id).ToHashSet();
         var showRetired = _retired || Picked.Any(m => m.IsRetired) || find.Length > 0;
         var groups = Metrics.GroupBy(m => m.GroupId)
             .Select(g => (Group: g.ToList(), Listed: g.Where(m => (showRetired || !m.IsRetired) && Matches(m, find)).ToList()))
             .Where(g => g.Listed.Count > 0).ToList();
-        <div class="tide-popover-backdrop" @onclick="() => Close(false)"></div>
-        <div class="tide-popover tide-popover-end tide-menubutton-pop tide-mc-pop" id="@_id" role="menu" aria-label="Metrics to chart" @ref="_pop" @onkeydown="Key">
-            <input type="search" class="form-control form-control-sm tide-filter-find" placeholder="Find a metric" aria-label="Find a metric"
-                   @bind="_find" @bind:event="oninput" />
-            <div class="tide-mc-list">
-                @foreach (var (group, listed) in groups)
-                {
-                    var state = MetricChartPicks.GroupState(group, Picked);
-                    var name = group[0].Group?.Name ?? "";
-                    <button type="button" role="menuitemcheckbox" tabindex="-1" class="tide-filter-item tide-mc-group" aria-checked="@(state switch { true => "true", false => "false", null => "mixed" })"
-                            @onclick="() => PickedChanged.InvokeAsync(MetricChartPicks.ToggleGroup(Metrics, Picked, group[0].GroupId))">
-                        <span class="bi @Box(state) tide-mc-box" aria-hidden="true"></span><span>@name</span>
-                        <span class="tide-filter-item-now">@group.Count(m => !m.IsRetired) metric@(group.Count(m => !m.IsRetired) == 1 ? "" : "s")</span>
-                    </button>
-                    @foreach (var m in listed)
-                    {
-                        var on = Picked.Any(p => p.Id == m.Id);
-                        <button type="button" role="menuitemcheckbox" tabindex="-1" class="tide-filter-item tide-mc-metric" aria-checked="@Ui.Aria(on)"
-                                @onclick="() => PickedChanged.InvokeAsync(MetricChartPicks.Toggle(Metrics, Picked, m))">
-                            <span class="bi @Box(on) tide-mc-box" aria-hidden="true"></span><span>@m.Name</span>
-                            @if (m.IsRetired) { <span class="tide-filter-item-now">retired</span> }
-                        </button>
-                    }
-                }
-                @if (groups.Count == 0)
-                {
-                    <div class="tide-filter-group">No metric matches "@find".</div>
-                }
-            </div>
-            @if (Metrics.Any(m => m.IsRetired) && find.Length == 0)
+    }
+    <input type="search" class="form-control form-control-sm tide-filter-find" placeholder="Find a metric" aria-label="Find a metric"
+           @bind="_find" @bind:event="oninput" />
+    <div class="tide-mc-list">
+        @foreach (var (group, listed) in groups)
+        {
+            var state = MetricChartPicks.GroupState(group, Picked);
+            <button type="button" role="menuitemcheckbox" tabindex="-1" class="tide-filter-item tide-mc-group" aria-checked="@(state is { } all ? Ui.Aria(all) : "mixed")"
+                    @onclick="() => PickedChanged.InvokeAsync(MetricChartPicks.ToggleGroup(Metrics, Picked, group[0].GroupId))">
+                <span class="bi @Box(state) tide-mc-box" aria-hidden="true"></span><span>@group[0].Group?.Name</span>
+                <span class="tide-filter-item-now">@Ui.Plural(group.Count(m => !m.IsRetired), "metric")</span>
+            </button>
+            @foreach (var m in listed)
             {
-                <button type="button" role="menuitemcheckbox" tabindex="-1" class="tide-filter-item tide-mc-retired" aria-checked="@Ui.Aria(showRetired)"
-                        disabled="@Picked.Any(m => m.IsRetired)" @onclick="() => _retired = !_retired">
-                    <span class="bi @Box(showRetired) tide-mc-box" aria-hidden="true"></span><span>Show retired metrics</span>
+                var on = ids.Contains(m.Id);
+                <button type="button" role="menuitemcheckbox" tabindex="-1" class="tide-filter-item tide-mc-metric" aria-checked="@Ui.Aria(on)"
+                        @onclick="() => PickedChanged.InvokeAsync(MetricChartPicks.Toggle(Metrics, Picked, m))">
+                    <span class="bi @Box(on) tide-mc-box" aria-hidden="true"></span><span>@m.Name</span>
+                    @if (m.IsRetired) { <span class="tide-filter-item-now">retired</span> }
                 </button>
             }
-        </div>
+        }
+        @if (groups.Count == 0)
+        {
+            <div class="tide-filter-hint" role="status">No metric matches "@find".</div>
+        }
+    </div>
+    @if (Metrics.Any(m => m.IsRetired) && find.Length == 0)
+    {
+        <button type="button" role="menuitemcheckbox" tabindex="-1" class="tide-filter-item tide-mc-retired" aria-checked="@Ui.Aria(showRetired)"
+                disabled="@Picked.Any(m => m.IsRetired)" @onclick="() => _retired = !_retired">
+            <span class="bi @Box(showRetired) tide-mc-box" aria-hidden="true"></span><span>Show retired metrics</span>
+        </button>
     }
-</div>
+</MenuButton>
 
 @code {
     /// <summary>Every metric, in the history's order (by group).</summary>
@@ -65,51 +56,20 @@
     [Parameter, EditorRequired] public IReadOnlyList<MetricDefinition> Picked { get; set; } = [];
     [Parameter] public EventCallback<IReadOnlyList<MetricDefinition>> PickedChanged { get; set; }
 
-    private readonly string _id = "chart-" + Guid.NewGuid().ToString("N")[..8];
-    private ElementReference _trigger, _pop;
-    private bool _open, _retired, _focusPop, _focusTrigger;
+    private bool _retired;
     private string _find = "";
 
     /// <summary>What's charted, short: the metric, the group when it's all of one, or how many.</summary>
     internal string Summary => Picked switch
     {
         [var one] => one.Name,
-        [var first, ..] when Picked.All(m => m.GroupId == first.GroupId) && MetricChartPicks.GroupState(Metrics.Where(m => m.GroupId == first.GroupId), Picked) == true
-            => first.Group?.Name ?? $"{Picked.Count} metrics",
+        [var first, ..] when first.Group is { } g && Picked.All(m => m.GroupId == first.GroupId)
+            && MetricChartPicks.GroupState(Metrics.Where(m => m.GroupId == first.GroupId), Picked) == true => g.Name,
         _ => $"{Picked.Count} metrics",
     };
-
-    internal void Toggle()
-    {
-        if (_open) Close(true);
-        else (_open, _focusPop, _find) = (true, true, "");
-    }
-
-    private void Close(bool refocus) => (_open, _focusTrigger) = (false, refocus);
-
-    private void Key(KeyboardEventArgs e)
-    {
-        if (e.Key == "Escape") Close(true);
-    }
 
     private static bool Matches(MetricDefinition m, string find) => find.Length == 0
         || m.Name.Contains(find, StringComparison.OrdinalIgnoreCase) || (m.Group?.Name.Contains(find, StringComparison.OrdinalIgnoreCase) ?? false);
 
     private static string Box(bool? state) => state switch { true => "bi-check-square-fill", false => "bi-square", null => "bi-dash-square-fill" };
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (_focusPop && _open)
-        {
-            _focusPop = false;
-            try { await JS.InvokeVoidAsync("tideFilters.focusIn", _pop); }
-            catch (JSDisconnectedException) { }
-            catch (JSException) { /* closed meanwhile */ }
-        }
-        if (_focusTrigger)
-        {
-            _focusTrigger = false;
-            await _trigger.TryFocusAsync(orGone: true);
-        }
-    }
 }

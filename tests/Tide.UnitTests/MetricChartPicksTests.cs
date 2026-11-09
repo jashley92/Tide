@@ -6,7 +6,7 @@ using Tide.Domain.Enums;
 namespace Tide.UnitTests;
 
 /// <summary>Which metrics the metric history page charts (MetricChartPicks), kept in its address, how it draws them, and
-/// the threshold bands it shades (MetricBands).</summary>
+/// the threshold bands it shades (MetricBands, which the bullet bars draw too).</summary>
 public class MetricChartPicksTests
 {
     private static readonly MetricGroup Email = new() { Id = Guid.NewGuid(), Key = "email", Name = "Email triage" };
@@ -73,22 +73,19 @@ public class MetricChartPicksTests
         MetricChartPicks.ViewFor([Reported, Mttr], null).Should().Be(MetricChartView.Grid, "counts and hours on one axis would read as comparable");
         var seven = Enumerable.Range(0, MetricChartPicks.MaxOverlay + 1).Select(i => M(Email, "m" + i)).ToList();
         MetricChartPicks.ViewFor(seven, null).Should().Be(MetricChartView.Grid);
-        MetricChartPicks.ViewQuery(MetricChartView.Overlay).Should().BeNull();
     }
 
     [Fact]
-    public void Bands_ShadeWhereAValueTripsAThreshold_InTheMetricsDirection_ClippedToTheChart()
+    public void Bands_RunUpTheAxis_InTheMetricsDirection_OpenAtEachEnd()
     {
         var lower = new MetricDefinition { Direction = MetricDirection.LowerIsBetter, WarnThreshold = 10, CriticalThreshold = 20 };
-        MetricBands.Of(lower, (0, 30)).Should().Equal(new MetricBand(20, 30, MetricLevel.Critical), new MetricBand(10, 20, MetricLevel.Warn));
-        MetricBands.Of(lower, (0, 15)).Should().Equal(new MetricBand(10, 15, MetricLevel.Warn));
-        MetricBands.Of(lower, (0, 5)).Should().BeEmpty("neither threshold is on the chart");
+        MetricBands.Of(lower).Should().Equal(new MetricBand(null, 10, MetricLevel.Normal), new MetricBand(10, 20, MetricLevel.Warn), new MetricBand(20, null, MetricLevel.Critical));
 
         var higher = new MetricDefinition { Direction = MetricDirection.HigherIsBetter, WarnThreshold = 90, CriticalThreshold = 80 };
-        MetricBands.Of(higher, (70, 100)).Should().Equal(new MetricBand(70, 80, MetricLevel.Critical), new MetricBand(80, 90, MetricLevel.Warn));
+        MetricBands.Of(higher).Should().Equal(new MetricBand(null, 80, MetricLevel.Critical), new MetricBand(80, 90, MetricLevel.Warn), new MetricBand(90, null, MetricLevel.Normal));
 
         var warnOnly = new MetricDefinition { Direction = MetricDirection.HigherIsBetter, WarnThreshold = 90 };
-        MetricBands.Of(warnOnly, (70, 100)).Should().Equal(new MetricBand(70, 90, MetricLevel.Warn));
-        MetricBands.Of(new MetricDefinition(), (0, 1)).Should().BeEmpty();
+        MetricBands.Of(warnOnly).Should().Equal(new MetricBand(null, 90, MetricLevel.Warn), new MetricBand(90, null, MetricLevel.Normal));
+        MetricBands.Of(new MetricDefinition()).Should().BeEmpty();
     }
 }

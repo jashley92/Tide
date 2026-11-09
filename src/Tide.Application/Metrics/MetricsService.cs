@@ -30,6 +30,21 @@ public sealed record MetricTile(MetricDefinition Metric, decimal? Value, string?
     public IReadOnlyList<decimal?> Trend { get; init; } = [];
 
     public string Display => Value is { } v ? MetricMath.Format(Metric.Format, v) : "—";
+
+    /// <summary>
+    /// The metric on <paramref name="day"/>, from its values (any order): the day's value and note, the comparison with
+    /// the previous business day that has one, its level, and where an imported value came from. No sparkline or trend.
+    /// </summary>
+    public static MetricTile On(MetricDefinition m, IReadOnlyCollection<MetricValue> mine, DateOnly day)
+    {
+        var today = mine.FirstOrDefault(v => v.BriefDate == day);
+        var previous = MetricMath.PreviousWithValue(mine.Select(v => (v.BriefDate, v.Value)), day);
+        return new MetricTile(m, today?.Value, today?.Note, MetricMath.Compare(m.Direction, today?.Value, previous), MetricMath.LevelOf(m, today?.Value), [])
+        {
+            ImportedFrom = today?.Source == MetricSource.Imported ? today.EnteredByName : null,
+            Reference = previous,
+        };
+    }
 }
 
 public sealed record MetricGroupDay(MetricGroup Group, IReadOnlyList<MetricTile> Tiles)
@@ -149,14 +164,10 @@ public sealed class MetricsService(IAppDbContextFactory dbs, ICurrentUser user, 
 
         MetricTile Tile(MetricDefinition m, List<MetricValue> mine, IReadOnlyList<DateOnly> trendDays)
         {
-            var today = mine.FirstOrDefault(v => v.BriefDate == day);
-            var previous = MetricMath.PreviousWithValue(mine.Select(v => (v.BriefDate, v.Value)), day);
             var byDate = mine.ToDictionary(v => v.BriefDate, v => v.Value);
-            return new MetricTile(m, today?.Value, today?.Note, MetricMath.Compare(m.Direction, today?.Value, previous),
-                MetricMath.LevelOf(m, today?.Value), sparkDays.Select(d => byDate.TryGetValue(d, out var v) ? v : (decimal?)null).ToList())
+            return MetricTile.On(m, mine, day) with
             {
-                ImportedFrom = today?.Source == MetricSource.Imported ? today.EnteredByName : null,
-                Reference = previous,
+                Spark = sparkDays.Select(d => byDate.TryGetValue(d, out var v) ? v : (decimal?)null).ToList(),
                 Trend = trendDays.Select(d => byDate.TryGetValue(d, out var v) ? v : (decimal?)null).ToList(),
             };
         }

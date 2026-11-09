@@ -2,14 +2,18 @@
    series on a shared value axis, and over it a stop per date that the pointer or the arrow keys land on. The stop
    carries what the tooltip says (the date, then each line's value in its own format); js/chart.js shows it. Coloured by
    CSS, in series order: twelve colours, then the same twelve again dashed, so every line keeps its own look (Series).
-   Bands, when given, shade the stretches of the value axis that trip a metric's thresholds, under the lines. *@
+   Bands, when given, shade the stretches of the value axis where a metric's thresholds trip, under the lines, clipped
+   to the axis. *@
 @using System.Globalization
 @using Tide.Application.Metrics
 
 @{
     var known = Lines.SelectMany(l => l.Values).OfType<decimal>().ToList();
     var range = MetricMath.ChartRange(known, FromZero);
-    var bands = BandsFor?.Invoke(range) ?? [];
+    // Each band that trips a threshold, clipped to the axis: (top, bottom) in the plot's 0-300 units.
+    var bands = (Bands ?? []).Where(b => b.Level != MetricLevel.Normal)
+        .Select(b => (b.Level, Top: Y(Math.Min(b.To ?? range.Max, range.Max)) * 3, Bottom: Y(Math.Max(b.From ?? range.Min, range.Min)) * 3))
+        .Where(b => b.Bottom > b.Top).ToList();
     var n = Labels.Count;
     double X(int i) => n > 1 ? 100.0 * i / (n - 1) : 50;
     double Y(decimal v) => 100 * (1 - MetricMath.ChartHeight(v, range));
@@ -23,14 +27,17 @@
             @for (var s = 0; s < Lines.Count; s++)
             {
                 var at = s;
-                if (OnTakeOff.HasDelegate)
-                {
-                    <button type="button" class="tide-chart-legend-item" title="Take off the chart" aria-label="Take @Lines[s].Name off the chart" @onclick="() => OnTakeOff.InvokeAsync(at)"><i class="tide-chart-swatch @Series(s)" aria-hidden="true"></i>@Lines[s].Name<span class="bi bi-x" aria-hidden="true"></span></button>@Lines[s].After
-                }
-                else
-                {
-                    <span><i class="tide-chart-swatch @Series(s)" aria-hidden="true"></i>@Lines[s].Name@Lines[s].After</span>
-                }
+                <span>
+                    @if (OnTakeOff.HasDelegate)
+                    {
+                        <button type="button" class="tide-chart-legend-item" title="Take off the chart" aria-label="Take @Lines[s].Name off the chart" @onclick="() => OnTakeOff.InvokeAsync(at)"><i class="tide-chart-swatch @Series(s)" aria-hidden="true"></i>@Lines[s].Name<span class="bi bi-x" aria-hidden="true"></span></button>
+                    }
+                    else
+                    {
+                        <i class="tide-chart-swatch @Series(s)" aria-hidden="true"></i>@Lines[s].Name
+                    }
+                    @Lines[s].After
+                </span>
             }
         </figcaption>
     }
@@ -41,8 +48,7 @@
             <svg viewBox="0 0 1000 300" preserveAspectRatio="none" aria-hidden="true">
                 @foreach (var b in bands)
                 {
-                    <rect class="tide-chart-band tide-chart-band-@b.Level.ToString().ToLowerInvariant()" x="0" width="1000"
-                          y="@Num(Y(b.To) * 3)" height="@Num((Y(b.From) - Y(b.To)) * 3)" />
+                    <rect class="tide-chart-band-@b.Level.ToString().ToLowerInvariant()" x="0" width="1000" y="@Num(b.Top)" height="@Num(b.Bottom - b.Top)" />
                 }
                 <line class="tide-chart-grid" x1="0" y1="0" x2="1000" y2="0" />
                 <line class="tide-chart-grid" x1="0" y1="150" x2="1000" y2="150" />
@@ -106,8 +112,8 @@
     /// <summary>When set, each line in the key is a button that takes it off the chart (by its index in
     /// <see cref="Lines"/>).</summary>
     [Parameter] public EventCallback<int> OnTakeOff { get; set; }
-    /// <summary>The threshold bands to shade, for the value axis's span (a chart of one metric).</summary>
-    [Parameter] public Func<(decimal Min, decimal Max), IReadOnlyList<MetricBand>>? BandsFor { get; set; }
+    /// <summary>A metric's threshold bands (MetricBands.Of) to shade: a chart of one metric.</summary>
+    [Parameter] public IReadOnlyList<MetricBand>? Bands { get; set; }
     /// <summary>A short plot, one of a grid of small charts.</summary>
     [Parameter] public bool Compact { get; set; }
 

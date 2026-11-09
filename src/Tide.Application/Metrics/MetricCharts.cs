@@ -209,22 +209,10 @@ public static class MetricCharts
         if (scale <= 0) scale = 1;
         double F(decimal v) => (double)Math.Clamp(v / scale, 0, 1);
 
-        var stops = new List<(decimal At, MetricLevel Level)>();
-        if (m.WarnThreshold is { } w) stops.Add((w, MetricLevel.Warn));
-        if (m.CriticalThreshold is { } c) stops.Add((c, MetricLevel.Critical));
-        stops.Sort((a, b) => a.At.CompareTo(b.At));
-        // The band edges from 0 up: 0, each threshold, the end of the scale. Higher is better: the low end is the bad one,
-        // so the band below each threshold is that threshold's level, and normal is above them all. Otherwise (lower is
-        // better, or neutral) normal is below the first threshold, and the band above each is that threshold's level.
-        var bands = new List<BulletBand>();
-        if (stops.Count > 0)
-        {
-            var at = stops.Select(x => F(x.At)).Prepend(0).Append(1).ToList();
-            var levels = m.Direction == MetricDirection.HigherIsBetter
-                ? stops.Select(x => x.Level).Append(MetricLevel.Normal)
-                : stops.Select(x => x.Level).Prepend(MetricLevel.Normal);
-            bands.AddRange(levels.Select((level, i) => new BulletBand(level, at[i], at[i + 1])).Where(b => b.To > b.From));
-        }
+        // The thresholds' bands (MetricBands), from 0 to the end of the scale.
+        var stops = MetricBands.Stops(m);
+        var bands = MetricBands.Of(m).Select(b => new BulletBand(b.Level, b.From is { } f ? F(f) : 0, b.To is { } t ? F(t) : 1))
+            .Where(b => b.To > b.From).ToList();
         // A label starts at its edge (the headroom leaves room after the last one), but of two, the lower one ends at its
         // edge instead, so they lean apart and don't overlap, unless it's too near the start of the bar to.
         var edges = stops.Select((x, i) =>

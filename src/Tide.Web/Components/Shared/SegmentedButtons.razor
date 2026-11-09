@@ -1,12 +1,13 @@
 @typeparam T
 @* A row of buttons, one of which is chosen: the period kinds and ranges on Reports and Trends, the scorecard's window.
-   The chosen one is primary and pressed; choosing one calls OnPick with it (the page usually puts it in the address). *@
+   The chosen one is primary and pressed; choosing one calls OnPick with it (the page usually puts it in the address).
+   One that can't be chosen now is disabled, its Title saying why (the metric history's One chart). *@
 <div class="btn-group" role="group" aria-label="@Label">
     @foreach (var item in Items)
     {
         var on = EqualityComparer<T>.Default.Equals(item, Selected);
         <button type="button" class="btn btn-sm @(on ? "btn-primary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(on)"
-                @onclick="() => OnPick.InvokeAsync(item)">@Text(item)</button>
+                disabled="@(Disabled?.Invoke(item) ?? false)" title="@Title?.Invoke(item)" @onclick="() => OnPick.InvokeAsync(item)">@Text(item)</button>
     }
 </div>
 
@@ -22,4 +23,8 @@
     [Parameter] public Func<T, string> Text { get; set; } = item => item?.ToString() ?? "";
 
     [Parameter] public EventCallback<T> OnPick { get; set; }
+
+    /// <summary>Whether a button can't be chosen now, and a button's tooltip.</summary>
+    [Parameter] public Func<T, bool>? Disabled { get; set; }
+    [Parameter] public Func<T, string?>? Title { get; set; }
 }

@@ -241,8 +241,9 @@ html[data-nav="collapsed"] .sidebar { width: 64px; }
 main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .top-row { height: 3.25rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0 1.5rem 0 2rem; background: var(--tide-surface); border-bottom: 1px solid var(--tide-border); position: sticky; top: 0; z-index: 1020; }
 .content { padding: 1.25rem 1.5rem 3rem 2rem; max-width: 1400px; width: 100%; }
-/* A data page (metric history, trends) takes the whole window, so its wide table scrolls only when it's wider than that. */
-.content:has(.tide-page-wide) { max-width: none; }
+/* A page with a wide board or table (the actions board, the metric history and trends tables) takes the whole window,
+   so it scrolls sideways only when it's wider than that. */
+.content:has(.tide-kanban, .tide-mh-scroll, .tide-trend-table) { max-width: none; }
 
 .tide-side-head { display: flex; align-items: center; }
 .tide-menu-btn { display: none; }
@@ -895,7 +896,6 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-chart-box { margin: 0; }
 .tide-chart-legend { display: flex; flex-wrap: wrap; gap: .3rem 1rem; font-size: .82rem; color: var(--tide-text-muted); margin-bottom: .5rem; max-height: 7.5rem; overflow-y: auto; }
 .tide-chart-legend > span { display: inline-flex; align-items: center; gap: .35rem; }
-.tide-chart-legend-item + span { margin-left: -.6rem; }   /* a line's latest change, after its key entry */
 .tide-chart-legend-item { display: inline-flex; align-items: center; gap: .35rem; padding: 0 .25rem; border: 0; border-radius: var(--tide-radius-xs); background: none; color: inherit; font: inherit; text-align: left; }
 .tide-chart-legend-item .bi { opacity: .6; }
 .tide-chart-legend-item:hover { color: var(--tide-text); }
@@ -911,7 +911,6 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-chart-plot.tide-chart-tall { height: 300px; }   /* room for a tooltip of ten lines and a count of the rest */
 .tide-chart-plot.tide-chart-compact { height: 110px; }
 /* A metric's threshold bands, under its line: the warning and critical colours, faint. */
-.tide-chart-band { stroke: none; }
 .tide-chart-band-warn { fill: var(--tide-warn); opacity: .16; }
 .tide-chart-band-critical { fill: var(--tide-threat); opacity: .2; }
 .tide-chart-plot:focus { outline: none; }
@@ -1926,7 +1925,6 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 }
 
 /* The Actions board needs its six columns: the page is as wide as the window there, not capped. */
-.content:has(.tide-kanban) { max-width: none; }
 
 /* Windows high contrast (forced colours) drops backgrounds: badges, TLP chips and the current page keep an outline,
    so a P1 still reads as a chip beside a P2 and the sidebar still shows where you are. */
@@ -2067,8 +2065,6 @@ button.tide-mentry-chip:focus-visible { outline: 2px solid var(--tide-focus-ring
 .tide-mentry-group .tide-metric-value, .tide-mentry-group .tide-metric-note { scroll-margin-top: 12rem; }   /* clear of the header, the bar and the group heading */
 @media (forced-colors: active) { .tide-mentry-chip.is-current, .tide-mentry-group.is-current { outline: 2px solid Highlight; } }
 
-/* The metric history table with many metrics (MetricsHistory): groups over their columns, a line between groups, and
-   the headings and the Day column kept in view while the table scrolls inside its own box. */
 /* The metric history's charts: what to chart (MetricChartPicker), and a grid of a small chart per metric. */
 .tide-mc-pop { width: min(24rem, calc(100vw - 1.5rem)); }
 .tide-mc-list { max-height: min(60vh, 26rem); overflow-y: auto; margin-top: .35rem; }
@@ -2085,6 +2081,8 @@ button.tide-mentry-chip:focus-visible { outline: 2px solid var(--tide-focus-ring
 .tide-mc-remove:hover { color: var(--tide-text); }
 .tide-mc-cell-now { min-height: 1.5rem; margin-bottom: .2rem; font-size: .82rem; font-variant-numeric: tabular-nums; }
 .tide-mc-cell-now strong { font-family: var(--tide-font-data); font-size: 1.05rem; margin-right: .3rem; }
+/* The metric history table with many metrics (MetricsHistory): groups over their columns, a line between groups, and
+   the headings and the Day column kept in view while the table scrolls inside its own box. */
 .tide-mh-scroll { overflow: auto; max-height: calc(100vh - 10rem); position: relative; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-md); }
 .tide-mh-scroll:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
 .tide-mh-scroll .tide-mh-table { display: table; width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; }

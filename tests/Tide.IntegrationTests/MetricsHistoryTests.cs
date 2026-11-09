@@ -155,7 +155,7 @@ public class MetricsHistoryTests(TideApp app) : IClassFixture<TideApp>
 
         chart.Should().Contain("Vulnerabilities: Critical").And.Contain("lower is better");
         // The axis runs 5 to 7; a value of 6 or more trips the warning: the top half.
-        chart.Should().Contain("<rect class=\"tide-chart-band tide-chart-band-warn\" x=\"0\" width=\"1000\" y=\"0\" height=\"150\"");
+        chart.Should().Contain("<rect class=\"tide-chart-band-warn\" x=\"0\" width=\"1000\" y=\"0\" height=\"150\"");
         chart.Should().Contain("class=\"tide-trend-worse\"", "up is worse for it");
     }
 
