@@ -1,0 +1,78 @@
+@* Guards something typed and not yet saved: leaving the page for another in TIDE asks first (LeaveDialog: Save and
+   leave, Discard and leave, or Stay), and closing the tab or going to another site gets the browser's own question.
+   Place it in the component that holds the unsaved state, so its Dirty follows each keystroke's render:
+       <UnsavedGuard Dirty="NoteDirty" Message="Your note isn't saved." Save="SaveNote" Discard="DropNote" />
+   Without Save there's no Save and leave (a draft that can't be saved in one step, a comment that would be posted).
+   Several guards on one page (a comment box, a dialog and a panel) ask one at a time, and once one is told Stay the
+   rest don't ask. *@
+@using System.Runtime.CompilerServices
+@inject NavigationManager Nav
+
+<NavigationLock ConfirmExternalNavigation="Dirty" OnBeforeInternalNavigation="ConfirmLeave" />
+<LeaveDialog @ref="_leave" />
+
+@code {
+    /// <summary>Whether there's something unsaved.</summary>
+    [Parameter] public bool Dirty { get; set; }
+
+    /// <summary>What's unsaved, as the question's body: "You've changed this article since it was last saved."</summary>
+    [Parameter] public string Message { get; set; } = "What you've typed here isn't saved.";
+
+    /// <summary>Save and leave: saves, and says whether it worked (a refused save stays on the page to sort out). Null: no
+    /// Save and leave.</summary>
+    [Parameter] public Func<Task<bool>>? Save { get; set; }
+
+    /// <summary>Discard and leave: drops what was typed, before the page goes.</summary>
+    [Parameter] public EventCallback Discard { get; set; }
+
+    private LeaveDialog _leave = default!;
+
+    /// <summary>The question, for a test to answer as a click would.</summary>
+    internal LeaveDialog Leave => _leave;
+
+    // One question at a time per circuit (the navigation manager is the circuit's own), and the navigation a guard was
+    // told to stay for, so the guards after it don't ask about it too.
+    private sealed class Turn
+    {
+        public readonly SemaphoreSlim Gate = new(1, 1);
+        public LocationChangingContext? Stayed;
+    }
+
+    private static readonly ConditionalWeakTable<NavigationManager, Turn> Turns = new();
+
+    internal async Task ConfirmLeave(LocationChangingContext ctx)
+    {
+        if (!Dirty) return;
+        var turn = Turns.GetValue(Nav, _ => new Turn());
+        await turn.Gate.WaitAsync();
+        try
+        {
+            if (ReferenceEquals(turn.Stayed, ctx) || ctx.CancellationToken.IsCancellationRequested) return;
+            if (await Ask()) return;
+            turn.Stayed = ctx;
+            ctx.PreventNavigation();
+        }
+        finally { turn.Gate.Release(); }
+    }
+
+    /// <summary>
+    /// Whether to let a navigation go ahead: at once when nothing is unsaved; otherwise as the person chooses. Save and
+    /// leave goes only if the save works; Discard and leave drops the changes; Stay keeps everything as it is.
+    /// </summary>
+    public Task<bool> MayLeave() => Dirty ? Ask() : Task.FromResult(true);
+
+    /// <summary>Asks what to do with the unsaved changes, and does it: whether to go ahead.</summary>
+    public async Task<bool> Ask()
+    {
+        switch (await _leave.Ask(Message, canSave: Save is not null))
+        {
+            case LeaveDialog.Choice.Save:
+                return await Save!();
+            case LeaveDialog.Choice.Discard:
+                await Discard.InvokeAsync();
+                return true;
+            default:
+                return false;
+        }
+    }
+}

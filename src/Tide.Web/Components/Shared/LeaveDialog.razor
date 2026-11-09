@@ -1,7 +1,9 @@
 @* Leaving a page with unsaved changes: Save and leave, Discard and leave, or Stay, in place of the browser's OK/Cancel
    box that couldn't offer to save. Drawn as ConfirmDialog is: focus moves to Stay when it opens (the safe choice, so
    Enter stays), Tab stays inside (dialog.js), Escape or a click outside stays, and focus goes back to what had it.
-   Usage, from a NavigationLock's OnBeforeInternalNavigation:  switch (await _leave.Ask("…")) { case LeaveDialog.Choice.Save: … } *@
+   Usage, from a NavigationLock's OnBeforeInternalNavigation:  switch (await _leave.Ask("…")) { case LeaveDialog.Choice.Save: … }
+   UnsavedGuard wraps both for any page with something unsaved. Asked with canSave: false (a draft with no one save, a
+   comment that would be posted), it offers only Discard and leave, or Stay. *@
 @implements IDisposable
 @inject IJSRuntime JS
 
@@ -15,7 +17,10 @@
             <div class="tide-modal-actions tide-modal-actions-wrap">
                 <button type="button" class="btn btn-outline-secondary btn-sm" @ref="_stay" @onclick="Stay">Stay</button>
                 <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => Close(Choice.Discard)">Discard and leave</button>
-                <button type="button" class="btn btn-primary btn-sm" @onclick="() => Close(Choice.Save)">Save and leave</button>
+                @if (_canSave)
+                {
+                    <button type="button" class="btn btn-primary btn-sm" @onclick="() => Close(Choice.Save)">Save and leave</button>
+                }
             </div>
         </div>
     </div>
@@ -27,18 +32,19 @@
 
     private readonly string _titleId = "leave-" + Guid.NewGuid().ToString("N")[..8];
     private string _bodyId => _titleId + "-body";
-    private bool _open, _shown;
+    private bool _open, _shown, _canSave = true;
     private string _message = "";
     private TaskCompletionSource<Choice>? _answer;
     private ElementReference _stay;
 
     /// <summary>Asks what to do with the unsaved changes; <paramref name="message"/> says what they are. A second ask
-    /// (another navigation while this one waits) answers the first with Stay.</summary>
-    public Task<Choice> Ask(string message)
+    /// (another navigation while this one waits) answers the first with Stay. Without <paramref name="canSave"/> there's
+    /// no Save and leave.</summary>
+    public Task<Choice> Ask(string message, bool canSave = true)
     {
         _answer?.TrySetResult(Choice.Stay);
         _answer = new TaskCompletionSource<Choice>(TaskCreationOptions.RunContinuationsAsynchronously);
-        (_message, _open) = (message, true);
+        (_message, _canSave, _open) = (message, canSave, true);
         StateHasChanged();
         return _answer.Task;
     }

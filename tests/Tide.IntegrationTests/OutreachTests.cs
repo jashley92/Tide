@@ -590,12 +590,15 @@ public class OutreachPageTests(TideApp app) : IClassFixture<TideApp>
                 .And.Contain("Nothing to fill for {{article.title}}, {{indicators}}")
                 .And.Contain("data-copy-target=\"ow-subject\"").And.Contain("data-copy-target=\"ow-body\"").And.Contain("Mark sent</button>");
             r.Component.Written!.To.Should().Be("isac@isac.example");
+            r.Component.DraftEdited.Should().BeFalse("the fill alone can be written again, so leaving doesn't ask");
 
             await r.Click(p => p.MarkSent());
             Toasts(r).Select(t => t.Message).Should().Contain("The email still has a [[…]] marker where TIDE had nothing to fill. Fill it in or take it out first.");
 
             r.Component.Edit(body: "Hello,\n\nDid members see this?");
+            r.Component.DraftEdited.Should().BeTrue("a changed email isn't left without asking");
             await r.Click(p => p.MarkSent());
+            r.Component.DraftEdited.Should().BeFalse("marked sent, it's kept");
             Toasts(r).Select(t => t.Message).Should().Contain($"Marked sent to isac@isac.example. A-{number} is waiting for the reply.");
         }
 

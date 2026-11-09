@@ -18,6 +18,38 @@ public sealed class ToastService(TimeProvider? time = null)
     private readonly List<Toast> _toasts = [];
     private readonly Lock _lock = new();
 
+    // Each confirmation's timer, which dismisses it. Held (the pointer or focus on the toasts), every one stops; let go,
+    // each starts its full time again, so nothing goes while it's being read or reached for (WCAG 2.2.1).
+    private readonly Dictionary<Guid, ITimer> _timers = [];
+    private bool _held;
+
+    /// <summary>How long a confirmation shows: longer with an Undo, to give time to reach it.</summary>
+    public static TimeSpan Lasts(Toast toast) => TimeSpan.FromSeconds(toast.Undo is null ? 4 : 10);
+
+    /// <summary>Whether the confirmations' timers are held.</summary>
+    internal bool Held
+    {
+        get { lock (_lock) return _held; }
+    }
+
+    /// <summary>Holds every confirmation where it is (the pointer or focus came onto the toasts), or lets them go again,
+    /// each with its full time.</summary>
+    public void Hold(bool held)
+    {
+        lock (_lock)
+        {
+            if (_held == held) return;
+            _held = held;
+            foreach (var t in _toasts.Where(t => !t.IsError)) Arm(t);
+        }
+    }
+
+    /// <summary>The newest toast with an Undo, which Alt+Z takes back, or null.</summary>
+    public Toast? Undoable
+    {
+        get { lock (_lock) return _toasts.LastOrDefault(t => t.Undo is not null); }
+    }
+
     public IReadOnlyList<Toast> Toasts
     {
         get { lock (_lock) return _toasts.ToArray(); }
@@ -45,7 +77,11 @@ public sealed class ToastService(TimeProvider? time = null)
 
     public void Dismiss(Guid id)
     {
-        lock (_lock) _toasts.RemoveAll(t => t.Id == id);
+        lock (_lock)
+        {
+            _toasts.RemoveAll(t => t.Id == id);
+            Disarm(id);
+        }
         Changed?.Invoke();
     }
 
@@ -57,11 +93,32 @@ public sealed class ToastService(TimeProvider? time = null)
             // A confirmation means the last attempt worked, so errors left from earlier attempts no longer apply.
             if (!isError) _toasts.RemoveAll(t => t.IsError);
             _toasts.Add(toast);
-            if (_toasts.Count > 4) _toasts.RemoveAt(0);
+            if (_toasts.Count > 4)
+            {
+                Disarm(_toasts[0].Id);
+                _toasts.RemoveAt(0);
+            }
+            // Errors stay until dismissed or a later confirmation; confirmations go by themselves (once let go, if held).
+            if (!isError) Arm(toast);
         }
         Changed?.Invoke();
-        // Errors stay until dismissed or a later confirmation; confirmations go by themselves.
-        if (!isError) _ = Task.Delay(TimeSpan.FromSeconds(undo is null ? 4 : 10), _time).ContinueWith(_ => Dismiss(toast.Id), TaskScheduler.Default);
+    }
+
+    // Under the lock: starts the toast's timer afresh, or stops it while held.
+    private void Arm(Toast toast)
+    {
+        if (!_timers.TryGetValue(toast.Id, out var timer))
+        {
+            var id = toast.Id;
+            _timers[id] = timer = _time.CreateTimer(_ => Dismiss(id), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+        }
+        timer.Change(_held ? Timeout.InfiniteTimeSpan : Lasts(toast), Timeout.InfiniteTimeSpan);
+    }
+
+    // Under the lock: the toast has gone, and its timer with it.
+    private void Disarm(Guid id)
+    {
+        if (_timers.Remove(id, out var timer)) timer.Dispose();
     }
 }
 

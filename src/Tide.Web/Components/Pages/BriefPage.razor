@@ -262,6 +262,9 @@ else
 
 <AddArticlesDialog @ref="_add" Candidates="_candidates" Shortlist="_shortlist" />
 <ConfirmDialog @ref="_confirm" />
+@* The opening note, or the presenter and title slide line, changed and not saved: leaving (another day's brief
+   included) asks first. *@
+<UnsavedGuard Dirty="Unsaved" Message="@UnsavedMessage" Save="SaveUnsaved" Discard="DiscardUnsaved" />
 @* The Send step: the test copy and each edition's confirmation, in a dialog; only the send log for someone who can't send. *@
 <ConfirmDialog @ref="_send" CloseOnly="true" Wide="true" Title="@SendTitle">
     <DistributePanel Date="_date" Sent="Load" Correct="_correct" MeetingHeld="@((_brief?.MeetingHeldAtUtc ?? _brief?.PresentedAtUtc) is not null || _brief?.Status == BriefStatus.Sent)"
@@ -529,6 +532,44 @@ else
 
     private bool DetailsDirty => _brief is not null && (_analystId != _brief.AnalystId
         || (_intro ?? "").Trim() != (_brief.Intro ?? "").Trim() || _introTlp != _brief.IntroTlp);
+
+    /// <summary>Whether leaving would lose the opening note or the meeting's details as typed (only while they can be edited).</summary>
+    internal bool Unsaved => _canWrite && _brief is { Status: not BriefStatus.Sent } && (NoteDirty || DetailsDirty);
+
+    private string UnsavedMessage => (NoteDirty, DetailsDirty) switch
+    {
+        (true, true) => "You've changed the opening note and the meeting's presenter or title slide line, and not saved them.",
+        (true, false) => "You've changed the opening note and not saved it.",
+        _ => "You've changed the meeting's presenter or title slide line and not saved it.",
+    };
+
+    // Save and leave: whichever was changed; a refusal says why and stays.
+    internal async Task<bool> SaveUnsaved()
+    {
+        try
+        {
+            if (NoteDirty) await BriefSvc.SetTeamNoteAsync(_brief!.Id, _teamNote);
+            if (DetailsDirty)
+            {
+                var name = _people.FirstOrDefault(p => p.Sid == _analystId)?.DisplayName ?? _brief!.AnalystName;
+                await BriefSvc.SetDetailsAsync(_brief!.Id, _analystId, name, _intro, _introTlp);
+            }
+            Toasts.Show("Saved.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            return false;
+        }
+    }
+
+    // Discard and leave: back to the brief as saved, so another day's brief (the same page) doesn't start out dirty.
+    private void DiscardUnsaved()
+    {
+        if (_brief is null) return;
+        (_analystId, _intro, _introTlp, _teamNote) = (_brief.AnalystId, _brief.Intro, _brief.IntroTlp, _brief.TeamNote);
+    }
 
     // What else this page follows, beyond the brief it shows.
     private HashSet<string> Followed()

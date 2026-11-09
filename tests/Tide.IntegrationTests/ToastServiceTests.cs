@@ -44,6 +44,44 @@ public class ToastServiceTests
     }
 
     [Fact]
+    public void Held_NothingGoes_AndLetGo_EachGetsItsFullTimeAgain()
+    {
+        var clock = new ManualClock();
+        var toasts = new ToastService(clock);
+        toasts.Show("Saved.");
+        clock.Advance(TimeSpan.FromSeconds(3));
+        toasts.Hold(true);                                          // the pointer comes onto the toasts
+        toasts.Show("Took it off.", () => Task.CompletedTask);      // one arriving while held waits too
+        clock.Advance(TimeSpan.FromMinutes(5));
+        toasts.Toasts.Select(t => t.Message).Should().Equal("Saved.", "Took it off.");
+        clock.Pending.Should().Be(0, "every timer is stopped while held");
+
+        toasts.Hold(false);                                         // and leaves
+        clock.Advance(TimeSpan.FromSeconds(4) - TimeSpan.FromTicks(1));
+        toasts.Toasts.Should().HaveCount(2, "the 3 seconds gone before the hold don't count against it");
+        clock.Advance(TimeSpan.FromTicks(1));
+        toasts.Toasts.Select(t => t.Message).Should().Equal("Took it off.");
+        clock.Advance(TimeSpan.FromSeconds(6));
+        toasts.Toasts.Should().BeEmpty("an Undo's 10 seconds started when the hold ended");
+        clock.Pending.Should().Be(0);
+    }
+
+    [Fact]
+    public void Undoable_IsTheNewestWithAnUndo_AndAToastPushedOutTakesItsTimerWithIt()
+    {
+        var clock = new ManualClock();
+        var toasts = new ToastService(clock);
+        toasts.Show("First.", () => Task.CompletedTask);
+        toasts.Show("Second.", () => Task.CompletedTask);
+        toasts.Show("Plain.");
+        toasts.Undoable!.Message.Should().Be("Second.");
+        for (var i = 0; i < 3; i++) toasts.Show($"More {i}.");
+        toasts.Toasts.Should().HaveCount(4);
+        clock.Pending.Should().Be(4, "the ones pushed out don't leave timers behind");
+        toasts.Undoable.Should().BeNull();
+    }
+
+    [Fact]
     public async Task AnUndo_RunsOnce_AndTakesItsToastAway()
     {
         var toasts = new ToastService();

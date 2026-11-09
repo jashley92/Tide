@@ -281,9 +281,11 @@ public class LineageAndUpdatesTests(TideApp app) : IClassFixture<TideApp>
         await page.Press(p => p.StartUpdate());
         WebUtility.HtmlDecode(await page.HtmlOnce("Their reply")).Should().Contain("Record an update from EP88j refusing team").And.Contain("Tracking (now)");
         var dialog = page.Component.Updater!;
+        dialog.Unsaved.Should().BeFalse("open with nothing filled in, leaving loses nothing");
         await page.Click(async _ =>
         {
             (dialog.Form!.Status, dialog.Form.Note) = (ActionStatus.InProgress, "Back with us");
+            dialog.Unsaved.Should().BeTrue("filled in, leaving asks first");
             (await dialog.Save()).Should().BeFalse();
         });
         dialog.Error.Should().Contain("at its limit");

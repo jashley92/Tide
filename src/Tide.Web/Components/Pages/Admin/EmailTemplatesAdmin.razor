@@ -130,9 +130,48 @@ else
 }
 
 <ConfirmDialog @ref="_confirm" />
+<UnsavedGuard Dirty="AnyUnsaved" Message="@UnsavedMessage" Discard="DiscardAll" />
 
 @code {
     private ConfirmDialog _confirm = default!;
+
+    // The copies' boxes or the archive address, typed and not saved, read as the save reads them (text it would refuse is
+    // unsaved too).
+    private static bool Differs(string? typed, IEnumerable<string> saved, int max = EmailCopyRules.MaxPerList)
+    {
+        try { return !EmailCopyRules.Parse(typed, "", max).SequenceEqual(saved, StringComparer.OrdinalIgnoreCase); }
+        catch (ArgumentException) { return true; }
+    }
+
+    internal bool CopiesUnsaved => _id.Length > 0 && Templates.Copies(_id) is var c && (Differs(_cc, c.Cc) || Differs(_bcc, c.Bcc));
+
+    internal bool ArchiveUnsaved => Differs(_archive, Templates.Archive is { } a ? [a] : [], max: 1);
+
+    /// <summary>Whether leaving would lose anything: a template's wording (this one's, or a draft kept for another), its
+    /// copies, or the archive address.</summary>
+    internal bool AnyUnsaved => _views is not null && (Unsaved || _drafts.Count > 0 || CopiesUnsaved || ArchiveUnsaved);
+
+    private string UnsavedMessage
+    {
+        get
+        {
+            var parts = new List<string>();
+            var wording = _drafts.Count + (Unsaved ? 1 : 0);   // the one shown is never among the drafts
+            if (wording > 0) parts.Add(wording == 1 ? "a template's wording" : $"{wording} templates' wording");
+            if (CopiesUnsaved) parts.Add("this template's copies");
+            if (ArchiveUnsaved) parts.Add("the archive address");
+            return $"You've changed {string.Join(" and ", parts)}, and not saved it.";
+        }
+    }
+
+    // Discard and leave: what was typed goes, so the page doesn't go on saying it's unsaved.
+    private void DiscardAll()
+    {
+        _drafts.Clear();
+        if (Selected is { } v) (_subject, _heading, _body, _stamp) = (v.Subject, v.Heading, v.Body, v.Stamp);
+        _archive = Templates.Archive;
+        ShowCopies();
+    }
     private string? _cc, _bcc, _archive, _copyError, _archiveError;
 
     /// <summary>The standing copies every email from <paramref name="v"/> carries, as saved: "CC a@x; BCC b@x (archive)".</summary>

@@ -3,13 +3,16 @@
    sender), shows what was left out and what had nothing to fill, and gives the subject and body to edit and copy into the
    analyst's own mail, the To line offering the template's address or the product's contact. "Mark sent" records it; the
    action then waits for the reply, with the follow-up reminder's day, until "Record the reply" keeps what came back (and
-   a file, added to the action's files) and closes the action with an outcome, by the rule every close follows. *@
+   a file, added to the action's files) and closes the action with an outcome, by the rule every close follows. An email
+   whose boxes were changed from the fill and not marked sent asks before the page is left (UnsavedGuard). *@
 @inject OutreachService OutreachSvc
 @inject OutreachTemplateService TemplateSvc
 @inject ActionFileService FileSvc
 @inject OrgClock Clock
 @inject ToastService Toasts
 
+<UnsavedGuard Dirty="DraftEdited" Message="You've changed the outreach email, and it isn't marked sent. Copy it into your mail first, or it's lost."
+              Discard="DiscardDraft" />
 <section class="tide-card" aria-labelledby="outreach-h">
     <h2 id="outreach-h">Outreach <span class="tide-count tide-muted fw-normal">(@_state.Messages.Count)</span></h2>
     @if (_state.Oldest is { } oldest)
@@ -243,6 +246,12 @@
     private Guid? _templateId, _productId;
     private OutreachWritten? _written;
     private string? _to, _subject, _body;
+
+    /// <summary>Whether the email's boxes hold changes of the analyst's own (the fill alone can be written again).</summary>
+    internal bool DraftEdited => _writing && _written is { } w
+        && ((_to ?? "") != (w.To ?? "") || (_subject ?? "") != w.Draft.Subject || (_body ?? "") != w.Draft.Body);
+
+    private void DiscardDraft() => (_writing, _written) = (false, null);
 
     private string TemplateValue
     {

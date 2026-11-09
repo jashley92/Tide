@@ -1,40 +1,91 @@
 @inject ToastService Toasts
 @implements IDisposable
 
-@* Confirmations are announced politely; errors interrupt (role=alert), so a failed save isn't missed. *@
-<div class="tide-toasts">
+@* Confirmations are announced politely; errors interrupt (role=alert), so a failed save isn't missed. While the pointer
+   or focus is on them, confirmations stay (ToastService.Hold), and go their full time once it leaves. The newest Undo is
+   also Alt+Z, from anywhere (toasts.js), and its toast says so. *@
+@{
+    // One copy for the whole draw, so both lists and the newest Undo agree.
+    var toasts = Toasts.Toasts;
+    _newestUndo = toasts.LastOrDefault(t => t.Undo is not null)?.Id;
+}
+<div class="tide-toasts" @onpointerenter="() => Point(true)" @onpointerleave="() => Point(false)"
+     @onfocusin="() => Focus(true)" @onfocusout="() => Focus(false)">
     <div role="status" aria-live="polite">
-        @foreach (var t in Toasts.Toasts.Where(t => !t.IsError)) { @Toast(t) }
+        @foreach (var t in toasts.Where(t => !t.IsError)) { @Toast(t) }
     </div>
     <div role="alert" aria-live="assertive">
-        @foreach (var t in Toasts.Toasts.Where(t => t.IsError)) { @Toast(t) }
+        @foreach (var t in toasts.Where(t => t.IsError)) { @Toast(t) }
     </div>
 </div>
 
 @code {
+    /// <summary>The keys that press the newest toast's Undo (toasts.js listens for them).</summary>
+    public const string UndoKeys = "Alt+Z";
+
     private RenderFragment Toast(ToastService.Toast t) => __builder =>
     {
+        var newest = t.Id == _newestUndo;
         <div class="tide-toast @(t.IsError ? "tide-toast-error" : "")" @key="t.Id">
             <span class="bi @(t.IsError ? "bi-exclamation-octagon" : "bi-check2-circle")" aria-hidden="true"></span>
-            <span>@t.Message</span>
+            <span>
+                @t.Message
+                @if (newest)
+                {
+                    <span class="visually-hidden"> Press @UndoKeys to undo.</span>
+                }
+            </span>
             @if (t.Undo is not null)
             {
-                <button type="button" class="tide-toast-undo" @onclick="() => Undo(t.Id)">Undo</button>
+                <button type="button" class="tide-toast-undo" data-toast-undo="@(newest ? "newest" : null)" aria-keyshortcuts="@(newest ? UndoKeys : null)"
+                        title="@(newest ? $"Undo ({UndoKeys})" : null)" @onclick="() => Undo(t.Id)">Undo</button>
             }
-            <button type="button" aria-label="Dismiss" @onclick="() => Toasts.Dismiss(t.Id)"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+            <button type="button" class="tide-toast-dismiss" aria-label="Dismiss" @onclick="() => Dismiss(t.Id)"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
         </div>
     };
+
+    private Guid? _newestUndo;
+
+    // Whether the pointer, and focus, are on the toasts: either holds them.
+    private bool _pointer, _focus;
+
+    internal void Point(bool on) => Hold(on, _focus);
+
+    internal void Focus(bool on) => Hold(_pointer, on);
+
+    private void Hold(bool pointer, bool focus)
+    {
+        (_pointer, _focus) = (pointer, focus);
+        Toasts.Hold(pointer || focus);
+    }
+
+    // The button pressed goes with its toast, and focus with it (a browser may not say it left), so focus no longer holds.
+    internal void Dismiss(Guid id)
+    {
+        Focus(false);
+        Toasts.Dismiss(id);
+    }
 
     // The toasts sit outside the page's error boundary, so an Undo that fails says so rather than ending the session.
     internal async Task Undo(Guid id)
     {
+        Focus(false);
         try { await Toasts.UndoAsync(id); }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
     }
 
     protected override void OnInitialized() => Toasts.Changed += OnChanged;
 
-    private void OnChanged() => InvokeAsync(StateHasChanged);
+    private void OnChanged() => InvokeAsync(() =>
+    {
+        // None left: nothing is under the pointer or holds focus, whatever the last event said.
+        if (Toasts.Toasts.Count == 0 && (_pointer || _focus)) Hold(false, false);
+        StateHasChanged();
+    });
 
-    public void Dispose() => Toasts.Changed -= OnChanged;
+    public void Dispose()
+    {
+        Toasts.Changed -= OnChanged;
+        Toasts.Hold(false);
+    }
 }

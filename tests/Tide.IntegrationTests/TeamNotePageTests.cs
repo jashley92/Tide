@@ -209,4 +209,20 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
         await SaveAs(Robin, brief, "- Tabletop exercise on Friday");
         (await page.HtmlOnce("Tabletop exercise on Friday")).Should().Contain("Tabletop exercise on Friday").And.NotContain("Invoice lures", "the page read the note again");
     }
+
+    [Fact]
+    public async Task TheBriefPage_ANoteTypedAndNotSaved_IsGuarded_AndSaveAndLeaveSavesIt()
+    {
+        var (day, _) = await Brief(72, Note);
+        await using var page = await RenderAsync<BriefPage>(app, $"/briefs/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" });
+        page.Component.Unsaved.Should().BeFalse("nothing typed yet");
+
+        var typed = typeof(BriefPage).GetField("_teamNote", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        await page.Click(p => { typed.SetValue(p, "- Typed and not saved"); return Task.CompletedTask; });
+        page.Component.Unsaved.Should().BeTrue("leaving now would lose the note");
+
+        await page.Click(async p => (await p.SaveUnsaved()).Should().BeTrue());
+        await using var scope = SignedIn(app, SignIn.Analyst);
+        (await scope.ServiceProvider.GetRequiredService<BriefService>().GetAsync(day))!.TeamNote.Should().Be("- Typed and not saved");
+    }
 }

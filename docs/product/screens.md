@@ -276,7 +276,11 @@ and a part never counts lower than its article. On a threat, "why it matters to 
 names our own systems. Analysts can see each article's and each brief's **History**: who changed which field, and
 when. The rules are in [editions and TLP](../architecture/editions-and-tlp.md).
 
-Leaving the editor with unsaved changes asks whether to save, discard or stay.
+Leaving the editor with unsaved changes asks whether to save, discard or stay. So does leaving other pages with
+something typed and not saved: an Email template's wording, copies or archive address; an action's comment, an edit
+to one, an update being recorded, or an outreach email changed from its fill; the brief's opening note and meeting
+details; a meeting note in present mode. Where there's no one thing to save (a comment that would be posted, an email
+not yet sent) it asks only whether to discard or stay.
 
 ## Review before send
 
@@ -353,6 +357,9 @@ that fits its kind.
 - **Handing off.** *Hand off* gives an action to another team with a short reason, shown on it. The receiving team is
   emailed, unless it works outside TIDE. When the action's reminders are off, the dialog asks *Keep reminders off*
   (ticked); untick it to turn them back on for the new team.
+- **Won't be emailed.** Wherever a team is chosen (the editor, hand-off, split, the meeting's quick add and
+  recommended lines, Coverage's *Raise action*), an external team that won't hear of it says so and why, with the
+  fix. Fixes on another page (Teams & SLA, the team's contact email) open in a new tab, so nothing typed is lost.
 - **Tracking.** A status, and a board column between Blocked and Done, for work handed to others and followed: still
   open and due, but not counted against the team's limit.
 - **Limits.** A team may have a limit on its active actions; the list and board filtered to it say "4 of 5 active",
@@ -429,6 +436,9 @@ One box at the top of every page.
 lists the page's keyboard shortcuts, with the switch that turns single-letter shortcuts off. In a text box,
 `Ctrl+Enter` (`⌘ Enter` on a Mac) does its form's main action: posts the comment or note, saves the template or
 settings, records the reply. Where there's no one action (a filter, the article editor), it does nothing.
+
+**Toasts.** A confirmation goes after a few seconds (10 when it offers Undo), but stays while the pointer or focus is
+on it, and gets its full time again after. `Alt+Z` (`âŒ¥ Z` on a Mac) presses the newest Undo while it shows.
 
 ![Indicator lookup](../screenshots/search-lookup.png)
 

@@ -663,6 +663,11 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 @keyframes tide-toast-in { from { transform: translateY(.5rem); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .tide-toast { animation: none; } }
 .tide-toast button { background: none; border: 0; color: inherit; opacity: .75; margin-left: auto; padding: 0; }
+/* Dismiss: a target of at least 24x24 CSS px (WCAG 2.5.8), its glyph centred; the toast's own padding stays as it was. */
+.tide-toast .tide-toast-dismiss { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px;
+    margin: -.2rem -.35rem -.2rem auto; border-radius: var(--tide-radius-sm); }
+.tide-toast .tide-toast-dismiss:hover { opacity: 1; background: var(--tide-surface-2); }
+.tide-toast .tide-toast-dismiss:focus-visible { opacity: 1; outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
 .reconnect-modal { display: none; }
 .reconnect-modal.components-reconnect-show, .reconnect-modal.components-reconnect-failed, .reconnect-modal.components-reconnect-rejected { display: grid; position: fixed; inset: 0; background: var(--tide-overlay); z-index: 3000; place-items: center; }
 .reconnect-card { background: var(--tide-surface); color: var(--tide-text); border-radius: var(--tide-radius-xl); padding: 1.5rem 1.75rem; max-width: 420px; text-align: center; }
@@ -882,6 +887,8 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-metric-ref-value { font-family: var(--tide-font-data); font-weight: var(--tide-weight-semibold); color: var(--tide-text); font-variant-numeric: tabular-nums; }
 @media (max-width: 700px) { .tide-metric-row { grid-template-columns: minmax(0, 1fr) 6rem; } .tide-metric-row .tide-metric-note, .tide-metric-row .tide-metric-prev { grid-column: 1 / -1; } }
 .tide-missing { background: var(--tide-warn-soft); color: var(--tide-warn); border-radius: var(--tide-radius-lg); padding: .45rem .7rem; font-size: .86rem; }
+/* NotEmailedNote on a slide's row of controls (the quick add, a recommended line): the whole row's width, and small. */
+.tide-missing.tide-missing-compact { grid-column: 1 / -1; padding: .2em .55em; font-size: .75em; margin-top: .25em; }
 .tide-past-day { display: flex; gap: .6rem; align-items: flex-start; background: var(--tide-info-soft); color: var(--tide-info); border-radius: var(--tide-radius-lg); padding: .6rem .8rem; font-size: .9rem; }
 .tide-edition-iocs { list-style: none; padding-left: 0; margin-bottom: .25rem; font-size: .86rem; }
 .tide-past-day > .bi { font-size: 1.1rem; line-height: 1.3; }
@@ -1799,7 +1806,8 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-pick-list .form-check-input { flex: none; margin-top: .2rem; }
 .tide-pick-list label, .tide-pick-list .tide-pick-text { min-width: 0; font-size: var(--tide-text-sm); }
 
-.tide-toast .tide-toast-undo { opacity: 1; color: var(--tide-accent-text); font-weight: var(--tide-weight-semibold); text-decoration: underline; margin-left: auto; }
+.tide-toast .tide-toast-undo { opacity: 1; color: var(--tide-accent-text); font-weight: var(--tide-weight-semibold); text-decoration: underline; margin-left: auto;
+    min-height: 24px; padding: 0 .25rem; }
 .tide-toast .tide-toast-undo + button { margin-left: var(--tide-space-2); }
 .tide-toast .tide-toast-undo:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
 
