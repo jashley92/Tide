@@ -22,6 +22,7 @@ public static class Shortcuts
         new(["?"], "This list of shortcuts", Letter: true),
         new(["Ctrl Enter", "⌘ Enter"], "Post or save the text box you're in"),
         new(["Esc"], "Close a dialog or menu"),
+        new(["Alt Z", "⌥ Z"], "Undo, while a toast offers it (the newest)"),
     ]);
 
     public static readonly ShortcutGroup Palette = new("In the Go to box",

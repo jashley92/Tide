@@ -8,7 +8,7 @@
    On today's brief, the Stepper the page gives stands above the title in place of the breadcrumbs. At 900px or
    narrower the fields and the rail are one pane at a time, chosen by an Edit | Preview switch (app.css), and the choice
    is kept while you step through the brief; the sticky bar stays at the foot of either pane, so the save state and Save
-   are there in Preview too. Leaving with unsaved changes asks: Save and leave, Discard and leave, or Stay (LeaveDialog). *@
+   are there in Preview too. Leaving with unsaved changes asks: Save and leave, Discard and leave, or Stay (UnsavedGuard). *@
 @inject ArticleService ArticleSvc
 @inject ScreenshotService Shots
 @inject BriefService Briefs
@@ -36,7 +36,7 @@ else if (_form is null || _article is null)
 }
 else
 {
-    <NavigationLock ConfirmExternalNavigation="_dirty" OnBeforeInternalNavigation="ConfirmLeave" />
+    <UnsavedGuard @ref="_guard" Dirty="_dirty" Message="You've changed this article since it was last saved." Save="Save" Discard="DiscardChanges" />
     <ChangedElsewhere By="@_changedBy" What="article" OnReload="ReloadTheirs" />
 
     <div class="tide-page-head">
@@ -473,7 +473,6 @@ else
 }
 
 <ConfirmDialog @ref="_confirm" />
-<LeaveDialog @ref="_leave" />
 
 @code {
     /// <summary>The article to edit.</summary>
@@ -570,10 +569,10 @@ else
     }
 
     private ConfirmDialog _confirm = default!;
-    private LeaveDialog _leave = default!;
+    private UnsavedGuard _guard = default!;
 
     /// <summary>The unsaved-changes question, for a test to answer as a click would.</summary>
-    internal LeaveDialog Leave => _leave;
+    internal LeaveDialog Leave => _guard.Leave;
     private readonly Dictionary<ArticlePart, ElementReference> _heads = [];
     private Guid? _loadedId;
 
@@ -1114,30 +1113,13 @@ else
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
     }
 
-    private async Task ConfirmLeave(LocationChangingContext ctx)
-    {
-        if (!await MayLeave()) ctx.PreventNavigation();
-    }
-
     /// <summary>
-    /// Whether to let a navigation go ahead: at once when nothing is unsaved; otherwise as the person chooses. Save and
-    /// leave goes only if the save works (a stale copy is refused, and stays here to sort out); Discard and leave drops
-    /// the changes (the next article, or the page, loads afresh); Stay keeps everything as it is.
+    /// Whether to let a navigation go ahead (UnsavedGuard): at once when nothing is unsaved; otherwise as the person
+    /// chooses. Save and leave goes only if the save works (a stale copy is refused, and stays here to sort out); Discard
+    /// and leave drops the changes (the next article, or the page, loads afresh); Stay keeps everything as it is.
     /// </summary>
-    internal async Task<bool> MayLeave()
-    {
-        if (!_dirty) return true;
-        switch (await _leave.Ask("You've changed this article since it was last saved."))
-        {
-            case LeaveDialog.Choice.Save:
-                return await Save();
-            case LeaveDialog.Choice.Discard:
-                // Loaded again even when the way out leads back to this article, so what was discarded isn't left showing.
-                _dirty = false;
-                _loadedId = null;
-                return true;
-            default:
-                return false;
-        }
-    }
+    internal Task<bool> MayLeave() => _dirty ? _guard.Ask() : Task.FromResult(true);
+
+    // Loaded again even when the way out leads back to this article, so what was discarded isn't left showing.
+    private void DiscardChanges() => (_dirty, _loadedId) = (false, null);
 }

@@ -296,6 +296,7 @@ else
     private string Empty => _view switch
     {
         _ when _priorities.Count > 0 || _due is not null || _status is not null || _parentNumber is not null || _side is not null || _raised || _assignee is not null
+            || _teamId is not null || _kind is not null || _search is not null
             || (_ruleId is not null && !_asBoard) => "No actions match these filters.",
         ActionView.Mine => "Nothing assigned to you.",
         ActionView.MyTeams => "Your teams have no open actions (or you're on no team).",

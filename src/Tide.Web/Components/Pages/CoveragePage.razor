@@ -63,6 +63,11 @@ else
                 </select>
             }
         </div>
+        @if (_teams.Count > 0 && r.Gaps > 0)
+        {
+            @* An external team chosen that won't hear of what's raised for it: said before anything is raised. *@
+            <NotEmailedNote Team="@_teams.FirstOrDefault(t => t.Id == _teamId)" Class="mb-2" />
+        }
         @if (r.Gaps == 0)
         {
             <p class="small tide-muted mb-0">@(r.Rows.Count == 0 ? "No techniques on the articles briefed in this window." : "Every technique briefed has an enabled rule tagged with it.")</p>

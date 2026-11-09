@@ -176,6 +176,26 @@ public class ActionsLayoutPreferenceTests(TideApp app) : IClassFixture<TideApp>
         (await Saved(viewer)).Should().Be(UserPreferences.List);
     }
 
+    [Theory]
+    [InlineData("kind=threathunt")]
+    [InlineData("team=00000000-0000-0000-0000-0000000000a1")]
+    [InlineData("q=zzqx-nothing-like-this")]
+    public async Task Mine_NarrowedToNothing_SaysNothingMatches_NotThatNothingIsAssigned(string filter)
+    {
+        // A team, a kind or words that match none of their actions: the filters emptied it, not the tab (words say which).
+        await using var r = await RenderAsync<ActionsBoard>(app, $"/actions?view=mine&layout=list&{filter}", @as: Person());
+        var html = await r.Html();
+        html.Should().Contain(filter.StartsWith("q=", StringComparison.Ordinal) ? "No actions match &#x2018;zzqx-nothing-like-this&#x2019;" : "No actions match these filters.");
+        html.Should().NotContain("Nothing assigned to you.");
+    }
+
+    [Fact]
+    public async Task Mine_Unfiltered_AndEmpty_SaysNothingIsAssigned()
+    {
+        await using var r = await RenderAsync<ActionsBoard>(app, "/actions?view=mine&layout=list", @as: Person());
+        (await r.Html()).Should().Contain("Nothing assigned to you.");
+    }
+
     [Fact]
     public async Task Preference_WithoutTheActionsPage_OrAValueItCantHold_IsRefused()
     {

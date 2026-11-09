@@ -400,6 +400,9 @@ else
 }
 
 <ConfirmDialog @ref="_confirm" />
+@* A comment typed (or files attached) and not posted, or a comment's edit not saved: leaving asks first. Record an
+   update and the outreach email guard their own. *@
+<UnsavedGuard Dirty="CommentUnsaved" Message="@CommentUnsavedMessage" Discard="DiscardComments" />
 <ScreenshotDialog Set="_shotSet" @bind-Open="_shot" />
 <OverLimitDialog @ref="_overLimit" />
 
@@ -987,6 +990,22 @@ else
         if (posted.Length == 0 || !box.StartsWith(posted, StringComparison.Ordinal)) return box;
         var rest = box[posted.Length..].TrimStart();
         return rest.Length == 0 ? null : rest;
+    }
+
+    /// <summary>Whether leaving would lose a comment: one typed or with files attached and not posted, or an edit not saved.</summary>
+    internal bool CommentUnsaved => !string.IsNullOrWhiteSpace(_comment) || _attachments.Count > 0 || CommentEditUnsaved;
+
+    private string CommentUnsavedMessage =>
+        (!string.IsNullOrWhiteSpace(_comment) || _attachments.Count > 0) && CommentEditUnsaved ? "Your new comment isn't posted, and your changes to a comment aren't saved."
+        : CommentEditUnsaved ? "Your changes to the comment aren't saved."
+        : "Your comment isn't posted.";
+
+    // Discard and leave: the comment drafts go, so the page doesn't go on holding them.
+    private void DiscardComments()
+    {
+        _comment = null;
+        _attachments.Clear();
+        (_editingComment, _commentEdit, _commentEditBase, _commentTheirs, _commentTheirsBy) = (null, null, null, null, null);
     }
 
     internal string? CommentDraft { get => _comment; set => _comment = value; }

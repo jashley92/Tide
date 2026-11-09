@@ -2,7 +2,7 @@
    step. Their reply (kept as a comment quoting it), the status it's at now (closing asks for the outcome, as the status
    buttons do, and a parent with open parts asks first), a new due date and why, and a note; ActionService.RecordUpdateAsync
    saves it all as one history line. A team over its limit asks why (OverLimitDialog) or refuses, and the dialog stays
-   open saying so. *@
+   open saying so. Leaving the page with it open and filled in asks first (UnsavedGuard). *@
 @inject ActionService ActionSvc
 @inject ToastService Toasts
 
@@ -54,6 +54,7 @@
 </ConfirmDialog>
 <ConfirmDialog @ref="_confirm" />
 <OverLimitDialog @ref="_overLimit" />
+<UnsavedGuard Dirty="Unsaved" Message="@($"Your update from {Team} isn't recorded.")" Discard="() => _dialog.Cancel()" />
 
 @code {
     [Parameter, EditorRequired] public ActionItem Action { get; set; } = default!;
@@ -68,6 +69,12 @@
     private OverLimitDialog _overLimit = default!;
     private TeamUpdate? _form;
     private string? _error;
+    private bool _asking;   // the dialog is open
+
+    /// <summary>Whether it's open with something filled in that leaving would lose.</summary>
+    internal bool Unsaved => _asking && _form is { } f
+        && (!string.IsNullOrWhiteSpace(f.Reply) || !string.IsNullOrWhiteSpace(f.Note) || !string.IsNullOrWhiteSpace(f.DueReason)
+            || f.Status != Action.Status || DueMoves);
 
     private string Team => Action.Team?.Name ?? "the team";
     private bool Closing => _form is { } f && f.Status != Action.Status && ActionItem.IsClosedStatus(f.Status);
@@ -85,10 +92,15 @@
     internal string? Error => _error;
 
     /// <summary>Opens it, from the action as the page shows it.</summary>
-    public Task OpenAsync()
+    public async Task OpenAsync()
     {
-        (_form, _error) = (new TeamUpdate { ActionId = Action.Id, From = Action.Status, Status = Action.Status }, null);
-        return _dialog.Ask($"Record an update from {Team}", null, "Record update", danger: false);
+        (_form, _error, _asking) = (new TeamUpdate { ActionId = Action.Id, From = Action.Status, Status = Action.Status }, null, true);
+        try { await _dialog.Ask($"Record an update from {Team}", null, "Record update", danger: false); }
+        finally
+        {
+            _asking = false;
+            StateHasChanged();   // the guard stands down
+        }
     }
 
     // Another status starts its outcome afresh: one chosen for Done may not fit Cancelled.
