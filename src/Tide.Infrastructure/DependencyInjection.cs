@@ -55,7 +55,9 @@ public static class DependencyInjection
         services.AddSingleton<MetricDropFolder>();
         services.Configure<EmailOptions>(config.GetSection("Email"));
         services.AddSingleton<OutboundCircuit>();
-        services.AddSingleton<IEmailSender, EmailSender>();
+        // Every email goes out through the standing copies (a template's CC and BCC, the archive), then the relay.
+        services.AddSingleton<EmailSender>();
+        services.AddSingleton<IEmailSender>(sp => new CopyingEmailSender(sp.GetRequiredService<EmailSender>(), sp.GetRequiredService<EmailCopyStore>()));
         services.AddSingleton<IOutboundHttp, OutboundHttp>();
         services.AddSingleton<IThreatIntelAssistant, AzureOpenAiAssistant>();
         services.AddScoped<DatabaseInitializer>();

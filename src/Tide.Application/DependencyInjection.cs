@@ -54,6 +54,7 @@ public static class DependencyInjection
         // The operational settings saved in Administration, laid over the server's values (OperationalSettings).
         services.AddSingleton<SavedSettings>();
         services.AddSingleton<EmailTemplateStore>();
+        services.AddSingleton<EmailCopyStore>();
         services.AddScoped<EmailTemplateService>();
         services.AddScoped<OperationalSettingsService>();
         Overlay<OrgOptions>(services, OperationalSettings.Apply);

@@ -279,7 +279,11 @@ public static partial class EmailTemplateCatalog
 }
 
 /// <summary>A template filled in: the subject, the heading and the body's HTML (the shell goes round it), and its footer.</summary>
-public sealed record RenderedTemplate(string Subject, string Heading, string BodyHtml, string Footer = EmailTemplateCatalog.DefaultFooter);
+public sealed record RenderedTemplate(string Subject, string Heading, string BodyHtml, string Footer = EmailTemplateCatalog.DefaultFooter)
+{
+    /// <summary>The template it was made from, which an email made from it names (<see cref="OutgoingEmail.Template"/>).</summary>
+    public string? TemplateId { get; init; }
+}
 
 /// <summary>
 /// Fills a template in. Plain values are HTML-encoded in the body (and left as text in the subject and heading, which
@@ -308,7 +312,7 @@ public static partial class EmailTemplateRenderer
             t.Token(m.Groups[1].Value) is { Html: true } ? Value(m.Groups[1].Value, out _) : m.Value);
         html = EmailTemplateCatalog.TokenRegex().Replace(Style(html), m =>
             Value(m.Groups[1].Value, out var token) is var v && token is { Html: true } ? v : Esc(v));
-        return new RenderedTemplate(Line(subject), Line(heading), html, Line(t.Footer));
+        return new RenderedTemplate(Line(subject), Line(heading), html, Line(t.Footer)) { TemplateId = t.Id };
     }
 
     [GeneratedRegex(@"<p>\s*\{\{\s*([A-Za-z][A-Za-z0-9]*)\s*\}\}\s*</p>\n?", RegexOptions.None, matchTimeoutMilliseconds: 1000)]

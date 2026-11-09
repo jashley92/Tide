@@ -494,7 +494,7 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
         var managers = await ManagerEmailsAsync(ct);
         if (managers.Count == 0) return;
         var notice = Html("Brief rotation change (for your information)", t.BodyHtml);
-        await email.SendAsync(new OutgoingEmail(managers, t.Subject, notice, ToText(notice), []), ct);
+        await email.SendAsync(new OutgoingEmail(managers, t.Subject, notice, ToText(notice), []) { Template = t.TemplateId }, ct);
     }
 
     /// <summary>The colleague declines; the requester is told.</summary>
@@ -769,7 +769,7 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
         var to = (await RecipientResolver.ResolveAsync(db, NotificationKinds.RotationRequests, userIds, ct)).Reachable();
         if (to.Count == 0) return;
         var html = Html(t.Heading, t.BodyHtml);
-        await email.SendAsync(new OutgoingEmail(to, t.Subject, html, ToText(html), []), ct);
+        await email.SendAsync(new OutgoingEmail(to, t.Subject, html, ToText(html), []) { Template = t.TemplateId }, ct);
     }
 
     private void RequireRead()

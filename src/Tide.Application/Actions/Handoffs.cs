@@ -175,7 +175,7 @@ public sealed class HandoffNotices(OrgClock clock, IEmailSender email, IOptions<
             ["ActionList"] = ActionTable(shown, today, app.Value.BaseUrl, clock.Days),
         });
         var html = Shell(t.Heading, clock.TeamName + " · " + DayText(today), MarkingLine(shown) + t.BodyHtml, t.Footer);
-        var result = await email.SendAsync(new OutgoingEmail(recipients, Marked(t.Subject, shown), html, ToText(html), []), ct);
+        var result = await email.SendAsync(new OutgoingEmail(recipients, Marked(t.Subject, shown), html, ToText(html), []) { Template = t.TemplateId }, ct);
         return result.MayHaveGone ? 1 : 0;
     }
 }

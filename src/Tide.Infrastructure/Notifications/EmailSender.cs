@@ -101,17 +101,14 @@ public sealed class EmailSender(IOptionsMonitor<EmailOptions> options, ILogger<E
             {
                 // The relay took it for the others; sending again would repeat it to all of them.
                 circuit.Succeeded(target);
-                log.LogWarning("An email reached {Delivered} of {RecipientCount} recipient(s); {Refused} were refused ({Failure}).",
-                    valid - ex.InnerExceptions.Length, valid, ex.InnerExceptions.Length, Failure(ex));
-                return new EmailSendResult(EmailSendStatus.Sent, Refused: ex.InnerExceptions.Length);
+                return Partial(ex.InnerExceptions.Select(e => e.FailedRecipient), message, valid, ex);
             }
             catch (SmtpFailedRecipientException ex) when (ex is not SmtpFailedRecipientsException && valid > 1)
             {
                 // When exactly one of several addresses is refused, SmtpClient throws the singular exception after the
                 // others got it: the same partial delivery.
                 circuit.Succeeded(target);
-                log.LogWarning("An email reached {Delivered} of {RecipientCount} recipient(s); 1 was refused ({Failure}).", valid - 1, valid, Failure(ex));
-                return new EmailSendResult(EmailSendStatus.Sent, Refused: 1);
+                return Partial([ex.FailedRecipient], message, valid, ex);
             }
             catch (Exception ex) when (ex is SmtpException or IOException or InvalidOperationException or System.Net.Sockets.SocketException
                                        && !string.IsNullOrWhiteSpace(o.PickupDirectory))
@@ -139,6 +136,26 @@ public sealed class EmailSender(IOptionsMonitor<EmailOptions> options, ILogger<E
         }
     }
 
+    // Some addresses were refused and the rest took it. A refused copy (CC or BCC) never counts against the email: it
+    // went to its recipients. Only when every one of its recipients was refused did it fail (its copies got it anyway).
+    private EmailSendResult Partial(IEnumerable<string?> failed, MailMessage message, int valid, Exception ex)
+    {
+        var refused = failed.Select(f => (f ?? "").Trim().Trim('<', '>')).ToList();
+        var recipients = message.To.Select(a => a.Address).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var toRefused = refused.Count(recipients.Contains);
+        var copiesRefused = refused.Count - toRefused;
+        if (copiesRefused > 0) log.LogWarning("{Copies} copy address(es) on an email were refused ({Failure}); its recipients still got it.", copiesRefused, Failure(ex));
+        if (toRefused > 0 && toRefused == recipients.Count)
+        {
+            log.LogError("Every recipient of an email was refused ({Failure}).", Failure(ex));
+            return new EmailSendResult(EmailSendStatus.Failed, Explain(ex)) { RefusedCopies = copiesRefused };
+        }
+        if (toRefused > 0)
+            log.LogWarning("An email reached {Delivered} of {RecipientCount} recipient(s); {Refused} were refused ({Failure}).",
+                recipients.Count - toRefused, recipients.Count, toRefused, Failure(ex));
+        return new EmailSendResult(EmailSendStatus.Sent, Refused: toRefused) { RefusedCopies = copiesRefused };
+    }
+
     // A MailMessage for the addresses that parse: text first (the fallback), then HTML with its images linked in.
     private (MailMessage Message, int Valid) Compose(EmailOptions o, OutgoingEmail email)
     {
@@ -155,6 +172,11 @@ public sealed class EmailSender(IOptionsMonitor<EmailOptions> options, ILogger<E
             }
             if (message.To.Count == 0) throw new FormatException("None of the recipient addresses is a valid email address.");
             if (bad > 0) log.LogWarning("Skipped {Bad} recipient address(es) that aren't valid; sending to {Good}.", bad, message.To.Count);
+            // Its copies (a template's standing CC and BCC, the archive's BCC): an address that doesn't parse is left out.
+            foreach (var addr in email.Cc)
+                if (MailAddress.TryCreate(addr, out var cc)) message.CC.Add(cc);
+            foreach (var addr in email.Bcc)
+                if (MailAddress.TryCreate(addr, out var bcc)) message.Bcc.Add(bcc);
             // Replies go to whoever follows the work, when the email says so (an address that doesn't parse is left out).
             foreach (var addr in email.ReplyTo ?? [])
                 if (MailAddress.TryCreate(addr, out var reply)) message.ReplyToList.Add(reply);
@@ -175,7 +197,7 @@ public sealed class EmailSender(IOptionsMonitor<EmailOptions> options, ILogger<E
                 html.LinkedResources.Add(resource);
             }
             message.AlternateViews.Add(html);
-            return (message, message.To.Count);
+            return (message, message.To.Count + message.CC.Count + message.Bcc.Count);
         }
         catch
         {

@@ -208,7 +208,11 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
 
     // This scan's emails the relay may have taken without saying so (a timeout, a dropped connection): counted as gone, so
     // they're marked and never sent again by themselves, and the run's note says to check. Scans run one at a time.
-    private int _unsure;
+    private int _unsure, _refusedCopies;
+
+    /// <summary>The run's note when standing copies were refused: the emails still went, but a copy address is wrong.</summary>
+    public static string RefusedCopiesNote(int n) =>
+        $"{n} cop{(n == 1 ? "y" : "ies")} refused by the relay (the emails still went): check the copy addresses on Email templates";
 
     /// <summary>What a run's note says of emails that may not have arrived.</summary>
     public static string UnsureNote(int n) =>
@@ -220,6 +224,7 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
     {
         var result = await email.SendAsync(message, ct);
         if (result.Status == EmailSendStatus.Unknown) _unsure++;
+        _refusedCopies += result.RefusedCopies;
         return result;
     }
 
@@ -228,7 +233,7 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
     private async Task<int> RunAsync(ReminderKind kind, bool rethrow, bool scheduled, CancellationToken ct)
     {
         await Running.WaitAsync(ct);
-        _unsure = 0;
+        (_unsure, _refusedCopies) = (0, 0);
         try
         {
             var scan = kind switch
@@ -246,9 +251,10 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
             // The poll comes round every few minutes after the scan's time, and most find nothing new to send (or only
             // people who opted out). That mustn't overwrite what the day's real run sent.
             var last = log.Last(kind);
-            var quiet = scheduled && scan.Sent == 0 && scan.Problem is null && _unsure == 0 && last is { Error: null, Sent: > 0 }
+            var quiet = scheduled && scan.Sent == 0 && scan.Problem is null && _unsure == 0 && _refusedCopies == 0 && last is { Error: null, Sent: > 0 }
                         && clock.ToLocal(last.AtUtc).Date == clock.Now.Date;
-            var note = _unsure == 0 ? scan.Note : string.Join("; ", new[] { scan.Note, UnsureNote(_unsure) }.OfType<string>());
+            var notes = new[] { scan.Note, _unsure == 0 ? null : UnsureNote(_unsure), _refusedCopies == 0 ? null : RefusedCopiesNote(_refusedCopies) }.OfType<string>().ToList();
+            var note = notes.Count == 0 ? null : string.Join("; ", notes);
             if (!quiet) log.Record(new ReminderRun(kind, clock.Now.ToUniversalTime(), scan.Sent, null, note, Unsure: _unsure));
             return scan.Sent;
         }
@@ -353,7 +359,7 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
             ["ActionList"] = Table(list, today),
         });
         var html = Shell(t.Heading, clock.TeamName + " · " + DayText(today), MarkingLine(list) + t.BodyHtml, t.Footer);
-        return new OutgoingEmail([to], Marked(t.Subject, list), html, ToText(html), []);
+        return new OutgoingEmail([to], Marked(t.Subject, list), html, ToText(html), []) { Template = t.TemplateId };
     }
 
     // One recipient's reminder about an action (the address hashed: keys are short).
@@ -420,7 +426,7 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
                 ["ClosedList"] = closed.Count > 0 ? ListHeading("Closed in the last week", top: 14) + Table(closed, today) : "",
             });
             var html = Shell(t.Heading, clock.TeamName + " · week of " + weekStart.ToString("MMMM d", CultureInfo.InvariantCulture), MarkingLine(actions) + t.BodyHtml, t.Footer);
-            var result = await SendAsync(new OutgoingEmail(to, Marked(t.Subject, actions), html, ToText(html), []), ct);
+            var result = await SendAsync(new OutgoingEmail(to, Marked(t.Subject, actions), html, ToText(html), []) { Template = t.TemplateId }, ct);
             if (!result.MayHaveGone) continue;
             await MarkAsync(db, "digest", [key]);
             sent++;
@@ -460,7 +466,7 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
             ["Status"] = what, ["BriefLink"] = link, ["MeetingTime"] = meeting,
         });
         var html = Shell(t.Heading, $"{clock.TeamName} · the meeting is at {meeting}", t.BodyHtml, t.Footer);
-        var result = await SendAsync(new OutgoingEmail(to, t.Subject, html, ToText(html), []), ct);
+        var result = await SendAsync(new OutgoingEmail(to, t.Subject, html, ToText(html), []) { Template = t.TemplateId }, ct);
         if (!result.MayHaveGone) return 0;
         await MarkAsync(db, "brief-not-ready", [key]);
         return new Scan(1, optedOut ? 1 : 0);
@@ -493,7 +499,7 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
             ["RotationLink"] = link,
         });
         var html = Shell(t.Heading, $"{clock.TeamName} · from {day}", t.BodyHtml, t.Footer);
-        var result = await SendAsync(new OutgoingEmail([address], t.Subject, html, ToText(html), []), ct);
+        var result = await SendAsync(new OutgoingEmail([address], t.Subject, html, ToText(html), []) { Template = t.TemplateId }, ct);
         if (!result.MayHaveGone) return 0;
         await MarkAsync(db, "presenting", [key]);
         return 1;
@@ -586,7 +592,7 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
                 ["NewList"] = Section(seen.Count == 0 ? "Your other open actions" : "New to you since your last digest", fresh, 14),
             });
             var html = Shell(t.Heading, clock.TeamName + " · " + period, MarkingLine(listed) + t.BodyHtml, t.Footer);
-            var result = await SendAsync(new OutgoingEmail([person.Email!], Marked(t.Subject, listed), html, ToText(html), []), ct);
+            var result = await SendAsync(new OutgoingEmail([person.Email!], Marked(t.Subject, listed), html, ToText(html), []) { Template = t.TemplateId }, ct);
             if (!result.MayHaveGone) continue;
             sent++;
             await MarkAsync(db, "personal-digest", [key]);
@@ -644,7 +650,7 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
                 ["WaitingList"] = WaitingList(emails.Select(m => (open[m.ActionId].Number, m.To, OutreachDates.SentOn(m.SentAtUtc, clock)))),
             });
             var html = Shell(t.Heading, clock.TeamName + " · " + DayText(today), MarkingLine(list) + t.BodyHtml, t.Footer);
-            var result = await SendAsync(new OutgoingEmail([to], Marked(t.Subject, list), html, ToText(html), []), ct);
+            var result = await SendAsync(new OutgoingEmail([to], Marked(t.Subject, list), html, ToText(html), []) { Template = t.TemplateId }, ct);
             if (!result.MayHaveGone) continue;
             sent++;
             await MarkAsync(db, FollowUpMark, emails.Select(m => m.Key).ToList());

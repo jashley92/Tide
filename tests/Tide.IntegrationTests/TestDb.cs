@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Tide.Application.Abstractions;
 using Tide.Application.Actions;
@@ -475,8 +476,13 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
     /// <summary>The email templates saved in Administration, as the app keeps them (the reminders and rotation read it).</summary>
     public EmailTemplateStore EmailTemplates { get; } = new(Options.Create(new AppOptions { BaseUrl = "https://tide.example.org" }));
 
-    public EmailTemplateService EmailTemplateAdmin() =>
-        new(this, User, EmailTemplates, Email, Clock, Options.Create(new AppOptions { BaseUrl = "https://tide.example.org" }), TimeProvider.System);
+    /// <summary>The standing copies, read again after each save (the service's own).</summary>
+    public EmailCopyStore EmailCopies { get; } = new();
+
+    public EmailTemplateService EmailTemplateAdmin(string? from = "tide@example.org") =>
+        new(this, User, EmailTemplates, Email, Clock, Options.Create(new AppOptions { BaseUrl = "https://tide.example.org" }), TimeProvider.System,
+            EmailCopies, new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?> { ["Email:From"] = from }).Build());
 
     public ScorecardService Scorecard() => new(this, User);
 
