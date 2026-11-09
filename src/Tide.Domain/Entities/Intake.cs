@@ -113,10 +113,18 @@ public class FeedItem : Entity
     public string? StatusByName { get; set; }
     public DateTimeOffset? StatusAtUtc { get; set; }
 
+    /// <summary>The longest name kept for who decided (<see cref="StatusByName"/>, <see cref="DismissKeptByName"/>).</summary>
+    public const int MaxName = 256;
+
     /// <summary>Who said a dismissal the missed-stories check questioned was right, and when: it's not questioned again.
-    /// Any later decision on the item clears it.</summary>
+    /// It counts only while it's newer than the item's last decision (<see cref="DismissKept"/>), so any later decision,
+    /// whichever way it's made, outdates it without anything having to clear it.</summary>
     public string? DismissKeptByName { get; set; }
     public DateTimeOffset? DismissKeptAtUtc { get; set; }
+
+    /// <summary>Whether the item is dismissed and someone has said that was right since (see
+    /// <see cref="DismissKeptAtUtc"/>). IntakeService.MissedAsync applies the same rule in its query.</summary>
+    public bool DismissKept => Status == FeedItemStatus.Dismissed && DismissKeptAtUtc is { } kept && (StatusAtUtc is not { } at || kept >= at);
 
     public IEnumerable<string> CveList => (Cves ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 }

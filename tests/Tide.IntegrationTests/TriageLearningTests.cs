@@ -197,25 +197,30 @@ public class TriageLearningTests : IDisposable
         var fresh = await Item(news, "Still new");
         async Task<IEnumerable<Guid>> Missed() => (await _db.Intake().MissedAsync()).Select(m => m.Item.Id);
 
-        (await _db.Intake().KeepDismissedAsync([kev, fresh])).Should().Be(1, "only a dismissed item is kept");
+        var (n, at) = await _db.Intake().KeepDismissedAsync([kev, fresh]);
+        n.Should().Be(1, "only a dismissed item is kept");
         (await Missed()).Should().Equal(octo);
         await using (var ctx = _db.Context())
         {
             var kept = await ctx.FeedItems.SingleAsync(i => i.Id == kev);
             kept.DismissKeptByName.Should().Be(_db.User.DisplayName);
-            kept.DismissKeptAtUtc.Should().NotBeNull();
+            kept.DismissKeptAtUtc.Should().Be(at);
+            kept.DismissKept.Should().BeTrue();
         }
-        (await _db.Intake().KeepDismissedAsync([kev])).Should().Be(0, "it's kept already");
+        (await _db.Intake().KeepDismissedAsync([kev])).Count.Should().Be(0, "it's kept already");
 
-        await _db.Intake().UndoKeepDismissedAsync([kev]);
+        (await _db.Intake().UndoKeepDismissedAsync([kev], at.AddSeconds(-1))).Should().Be(0, "only the keep made at that time is taken back");
+        (await _db.Intake().UndoKeepDismissedAsync([kev], at)).Should().Be(1);
         (await Missed()).Should().Equal(kev, octo);
 
-        // Kept, then put back and dismissed again: a new decision, so the check asks about it again.
+        // Kept, then put back and dismissed again: a new decision outdates the keep, so the check asks about it again.
         await _db.Intake().KeepDismissedAsync([kev, octo]);
         (await Missed()).Should().BeEmpty();
         await _db.Intake().RestoreAsync(kev);
         await _db.Intake().DismissAsync(kev, IntakeService.DismissReasons[0]);
         (await Missed()).Should().Equal(kev);
+        await using (var ctx = _db.Context())
+            (await ctx.FeedItems.SingleAsync(i => i.Id == kev)).DismissKept.Should().BeFalse("the keep is older than the dismissal");
     }
 }
 
@@ -266,7 +271,7 @@ public class TriageLearningPageTests(TideApp app) : IClassFixture<TideApp>
         }
 
         await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
-            (await scope.ServiceProvider.GetRequiredService<IntakeService>().KeepDismissedAsync([first, second])).Should().Be(2);
+            (await scope.ServiceProvider.GetRequiredService<IntakeService>().KeepDismissedAsync([first, second])).Count.Should().Be(2);
         await using (var after = await ComponentHarness.RenderAsync<Tide.Web.Components.Pages.Triage>(app, "/triage"))
             (await after.Html()).Should().NotContain("Missed this week?", "a dismissal said to be right isn't asked about again, for anyone");
     }

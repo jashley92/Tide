@@ -100,8 +100,7 @@ window.tideTriage = (function () {
         remember: function (url) {
             history.replaceState(history.state, '', new URL(url, document.baseURI).href);
         },
-        // A choice kept in this browser (the inbox order). With no value it
-        // reads; null forgets it.
+        // A choice kept in this browser (the inbox order). With no value it reads; null forgets it.
         pref: function (key, value) {
             try {
                 if (value === undefined) return localStorage.getItem('tide-triage-' + key);

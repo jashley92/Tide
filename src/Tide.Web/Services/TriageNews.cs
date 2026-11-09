@@ -14,7 +14,7 @@ public static class TriageNews
     /// <summary>What a row shows that someone else's work can change: its state and who set it, its group, its
     /// coverage and the items it's like. Two rows with the same signature look the same.</summary>
     public static object Signature(InboxRow row) => string.Join('|',
-        row.Item.Status, row.Item.StatusByName, row.Item.Title, row.Item.Cves, row.Item.ArticleId, row.Item.DismissReason,
+        row.Item.Status, row.Item.StatusByName, row.Item.Title, row.Item.Cves, row.Item.ArticleId, row.Item.DismissReason, row.Item.DismissKept,
         row.Similar?.Id, row.SameCve.Count, row.Group?.Newest, row.Group?.Ids.Count, row.Split?.Batch,
         string.Join(',', row.Coverage.Select(c => string.Create(CultureInfo.InvariantCulture,
             $"{c.ArticleId}:{c.Why}:{c.BriefDate}:{c.Attachable}:{string.Join('.', c.OpenActions)}"))));

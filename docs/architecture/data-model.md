@@ -659,7 +659,7 @@ polled twice or found in two feeds is one row. Written by `IntakeService` (poll,
 | `SimilarToId` | uniqueidentifier | yes | An item that looked like this one when it was fetched. **No FK**; cleared on prune. |
 | `ArticleId` | uniqueidentifier | yes | FK → `Articles`, **set null**. The article it was promoted to (or attached to). Indexed. |
 | `StatusByName`, `StatusAtUtc` | nvarchar(256), datetimeoffset | yes | Who last changed the status, and when. |
-| `DismissKeptByName`, `DismissKeptAtUtc` | nvarchar(256), datetimeoffset | yes | Who said a dismissal the missed-stories check questioned was right, and when; it isn't questioned again. Cleared by any later status change. |
+| `DismissKeptByName`, `DismissKeptAtUtc` | nvarchar(256), datetimeoffset | yes | Who said a dismissal the missed-stories check questioned was right, and when; it isn't questioned again. It counts only while newer than `StatusAtUtc` (`FeedItem.DismissKept`), so any later decision outdates it. |
 
 ### `FeedItemTexts` (not audited)
 

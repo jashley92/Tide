@@ -766,8 +766,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Excerpt).HasMaxLength(FeedItem.MaxExcerpt);
             e.Property(x => x.Cves).HasMaxLength(1000);
             e.Property(x => x.DismissReason).HasMaxLength(200);
-            e.Property(x => x.StatusByName).HasMaxLength(256);
-            e.Property(x => x.DismissKeptByName).HasMaxLength(256);
+            e.Property(x => x.StatusByName).HasMaxLength(FeedItem.MaxName);
+            e.Property(x => x.DismissKeptByName).HasMaxLength(FeedItem.MaxName);
             e.HasOne<Article>().WithMany().HasForeignKey(x => x.ArticleId).OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(x => new { x.Status, x.FetchedAtUtc });
             e.HasIndex(x => x.FetchedAtUtc);

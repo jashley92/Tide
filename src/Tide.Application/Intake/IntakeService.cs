@@ -785,7 +785,8 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         await using var db = await dbs.CreateAsync(ct);
         var since = time.GetUtcNow().AddDays(-MissedDays);
         var dismissed = await db.FeedItems.AsNoTracking().Include(i => i.Source)
-            .Where(i => i.Status == FeedItemStatus.Dismissed && i.DismissKeptAtUtc == null && i.FetchedAtUtc >= since)
+            .Where(i => i.Status == FeedItemStatus.Dismissed && i.FetchedAtUtc >= since)
+            .Where(NotKept)
             .OrderByDescending(i => i.FetchedAtUtc).ToListAsync(ct);
         if (dismissed.Count == 0) return [];
         var kev = await KevAsync(db, dismissed, ct);
@@ -955,26 +956,33 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     /// <summary>Puts an item back in the inbox as new (undoes a shortlist, dismissal or duplicate; never a promotion).</summary>
     public Task RestoreAsync(Guid id, CancellationToken ct = default) => SetAsync(id, FeedItemStatus.New, null, null, ct);
 
+    // FeedItem.DismissKept as a query: a dismissal no one has said was right since it was made.
+    private static readonly System.Linq.Expressions.Expression<Func<FeedItem, bool>> NotKept =
+        i => i.DismissKeptAtUtc == null || (i.StatusAtUtc != null && i.DismissKeptAtUtc < i.StatusAtUtc);
+
     /// <summary>
     /// "Right to dismiss": the missed-stories check stops asking about these dismissed items, for everyone, with who said
-    /// so and when kept on each. Only those still dismissed and not yet kept. Returns how many changed.
+    /// so and when kept on each. Only those still dismissed and not kept since. How many changed, and the time they were
+    /// kept at (which <see cref="UndoKeepDismissedAsync"/> takes back).
     /// </summary>
-    public async Task<int> KeepDismissedAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default)
+    public async Task<(int Count, DateTimeOffset At)> KeepDismissedAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default)
     {
         RequireTriage();
         await using var db = await dbs.CreateAsync(ct);
-        var by = Content.Words.Clip(user.DisplayName, 256);
+        var by = Content.Words.Clip(user.DisplayName, FeedItem.MaxName);
         var at = time.GetUtcNow();
-        return await db.FeedItems.Where(i => ids.Contains(i.Id) && i.Status == FeedItemStatus.Dismissed && i.DismissKeptAtUtc == null)
+        var n = await db.FeedItems.Where(i => ids.Contains(i.Id) && i.Status == FeedItemStatus.Dismissed).Where(NotKept)
             .ExecuteUpdateAsync(u => u.SetProperty(i => i.DismissKeptByName, by).SetProperty(i => i.DismissKeptAtUtc, at), ct);
+        return (n, at);
     }
 
-    /// <summary>Undoes <see cref="KeepDismissedAsync"/> (its toast's Undo): the check asks about them again.</summary>
-    public async Task UndoKeepDismissedAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default)
+    /// <summary>Undoes <see cref="KeepDismissedAsync"/> (its toast's Undo): the check asks about them again. Only the
+    /// keep made <paramref name="at"/> that time, so a colleague's since stands. How many it took back.</summary>
+    public async Task<int> UndoKeepDismissedAsync(IReadOnlyCollection<Guid> ids, DateTimeOffset at, CancellationToken ct = default)
     {
         RequireTriage();
         await using var db = await dbs.CreateAsync(ct);
-        await db.FeedItems.Where(i => ids.Contains(i.Id))
+        return await db.FeedItems.Where(i => ids.Contains(i.Id) && i.DismissKeptAtUtc == at)
             .ExecuteUpdateAsync(u => u.SetProperty(i => i.DismissKeptByName, (string?)null).SetProperty(i => i.DismissKeptAtUtc, (DateTimeOffset?)null), ct);
     }
 
@@ -1060,8 +1068,7 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         var by = status == FeedItemStatus.New ? null : user.DisplayName;
         var at = status == FeedItemStatus.New ? null : (DateTimeOffset?)time.GetUtcNow();
         return items.ExecuteUpdateAsync(u => u.SetProperty(i => i.Status, status).SetProperty(i => i.DismissReason, dismissReason)
-            .SetProperty(i => i.DuplicateOfId, duplicate).SetProperty(i => i.StatusByName, by).SetProperty(i => i.StatusAtUtc, at)
-            .SetProperty(i => i.DismissKeptByName, (string?)null).SetProperty(i => i.DismissKeptAtUtc, (DateTimeOffset?)null), ct);
+            .SetProperty(i => i.DuplicateOfId, duplicate).SetProperty(i => i.StatusByName, by).SetProperty(i => i.StatusAtUtc, at), ct);
     }
 
     private void Stamp(FeedItem item, FeedItemStatus status, string? reason, Guid? duplicateOf)
@@ -1072,7 +1079,6 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         item.DuplicateOfId = status == FeedItemStatus.Duplicate ? duplicateOf : null;
         item.StatusByName = status == FeedItemStatus.New ? null : user.DisplayName;
         item.StatusAtUtc = status == FeedItemStatus.New ? null : time.GetUtcNow();
-        (item.DismissKeptByName, item.DismissKeptAtUtc) = (null, null);
     }
 
     /// <summary>

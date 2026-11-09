@@ -89,8 +89,7 @@ else
 
 @if (_status == FeedItemStatus.New && !_older && _missed.Count > 0)
 {
-    @* EP-81: a story dismissed this week that names a KEV-listed CVE or a watched adversary, and reached no brief. Each
-       is put back, or said to be right to dismiss: one click, for everyone, with Undo on the toast. *@
+    @* EP-81: a story dismissed this week that names a KEV-listed CVE or a watched adversary, and reached no brief. *@
     var shown = _missed.Take(MissedShown).ToList();
     <div class="alert alert-warning tide-missed" role="status">
         <div><strong>Missed this week?</strong> @_missed.Count dismissed item@(_missed.Count == 1 ? "" : "s") name@(_missed.Count == 1 ? "s" : "") something we track, and no brief covered @(_missed.Count == 1 ? "it" : "them").</div>
@@ -249,9 +248,9 @@ else
                                 <Badge Tone="BadgeTone.Info" Class="tide-badge-wrap">@c.Why covered@(c.BriefDate is { } d ? $" {Ui.ShortDay(d)}" : ""): <a href="articles/@c.ArticleId" @onclick:stopPropagation="true">@Short(c.ArticleTitle)</a></Badge>
                             }
                             @if (item.Status == FeedItemStatus.Dismissed && item.DismissReason is not null) { <span>Dismissed: @item.DismissReason</span> }
-                            @if (item.Status == FeedItemStatus.Dismissed && item.DismissKeptByName is not null)
+                            @if (item.DismissKept)
                             {
-                                <span title="The missed-stories check asked about it, and they said it was right to dismiss">kept by @item.DismissKeptByName@(item.DismissKeptAtUtc is { } keptAt ? ", " + Ui.When(Clock, keptAt) : "")</span>
+                                <span title="Said right to dismiss when Missed this week? asked">kept by @item.DismissKeptByName, @Ui.When(Clock, item.DismissKeptAtUtc!.Value)</span>
                             }
                             @if (item.Status != FeedItemStatus.New && item.StatusByName is not null)
                             {
@@ -733,29 +732,45 @@ else
         await Refilter();
     }
 
-    /// <summary>How many missed stories the notice lists at once; the rest follow as these are dealt with.</summary>
-    internal const int MissedShown = 5;
+    // How many missed stories the notice lists at once; the rest follow as these are dealt with.
+    private const int MissedShown = 5;
 
-    // "Right to dismiss": the check stops asking about them, for everyone. Undo on the toast asks again.
-    internal async Task KeepDismissed(IReadOnlyList<MissedItem> items)
+    // "Right to dismiss": one click, no dialog. The check stops asking about them for everyone, colleagues' pages hear it,
+    // and the toast's Undo asks again. Only the notice changes, so it's not read again.
+    private async Task KeepDismissed(IReadOnlyList<MissedItem> items)
     {
         if (_busy) return;
         _busy = true;
         var ids = items.Select(m => m.Item.Id).ToList();
         try
         {
-            await Intake.KeepDismissedAsync(ids);
-            Toasts.Show(items is [var one] ? $"Kept dismissed: {Short(one.Item.Title)}" : $"Kept {items.Count} dismissed.", async () =>
+            var (n, at) = await Intake.KeepDismissedAsync(ids);
+            _missed = [.. _missed.Where(m => !ids.Contains(m.Item.Id))];
+            Announce();
+            if (n == 0) Toasts.Show("Nothing changed: a colleague got to those first.");
+            else Toasts.Show(items is [var one] ? $"Kept dismissed: {Short(one.Item.Title)}" : $"Kept {n} dismissed.", async () =>
             {
                 // From the toast: this page re-renders itself, as the click wasn't on it.
-                await Intake.UndoKeepDismissedAsync(ids);
-                await Load();
+                await UndoKeepDismissed(ids, at);
                 StateHasChanged();
             });
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _busy = false; }
-        await Load();
+    }
+
+    private async Task UndoKeepDismissed(IReadOnlyCollection<Guid> ids, DateTimeOffset at)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            if (await Intake.UndoKeepDismissedAsync(ids, at) == 0) Toasts.Show("Nothing to undo: a colleague already changed them.");
+            Announce();
+            await Load();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
     }
 
     private async Task PutBack(MissedItem missed)
@@ -765,6 +780,7 @@ else
         try
         {
             await Intake.RestoreAsync(missed.Item.Id);
+            Announce();
             Toasts.Show($"Put back in New: {Short(missed.Item.Title)}");
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
