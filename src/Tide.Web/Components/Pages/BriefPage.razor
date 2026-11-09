@@ -290,6 +290,13 @@ else
     private IReadOnlyList<BriefCandidate> _candidates = [];
     private IReadOnlyList<InboxRow> _shortlist = [];   // shortlisted triage items, at the top of the Add article picker
     private IReadOnlyList<ArticleSummary> _recent = [];
+
+    // The latest articles beside Today's brief. Someone who writes the brief sees what's written (when there's no brief
+    // for Not on a brief yet). Anyone else sees only what's been presented, at or below the team edition's TLP ceiling:
+    // not a draft's title, nor one marked above what the team edition carries.
+    private async Task<IReadOnlyList<ArticleSummary>> RecentAsync() => _canWrite
+        ? await ArticleSvc.ListAsync(take: 8)
+        : [.. (await ArticleSvc.ListAsync(status: ArticleStatus.Presented, take: 40)).Where(a => a.Tlp <= _teamMax).Take(8)];
     private IReadOnlyList<ActionRow>? _mine;
     private TeamQueue? _queue;
     private int? _newInFeed;
@@ -398,7 +405,7 @@ else
         if (_canWrite) _people = await Users.ListAsync();
         if (AsToday)
         {
-            _recent = (await ArticleSvc.ListAsync(take: 8)).ToList();
+            _recent = await RecentAsync();
             _upcoming = await Rotation.UpcomingAsync();
         }
         if (!adopted) _brief = null;   // another day: "Loading" until it's read (a reload after an action keeps the page, and focus, in place)
@@ -510,7 +517,7 @@ else
             }
             if (changes.Any(c => c.Topic == ChangeFeed.Articles))
             {
-                if (AsToday) _recent = (await ArticleSvc.ListAsync(take: 8)).ToList();
+                if (AsToday) _recent = await RecentAsync();
                 if (_canWrite && _brief is not null) _candidates = await BriefSvc.CandidatesAsync(_brief.Id);
             }
         }
@@ -1200,10 +1207,10 @@ else
         else
         {
         <section class="tide-card" aria-labelledby="recent-h">
-            <h2 id="recent-h">Recently written <span class="tide-count">(@_recent.Count)</span></h2>
+            <h2 id="recent-h">@(_canWrite ? "Recently written" : "Recently presented") <span class="tide-count">(@_recent.Count)</span></h2>
             @if (_recent.Count == 0)
             {
-                <EmptyState Icon="bi-file-earmark-text" Title="No articles yet." Compact="true" />
+                <EmptyState Icon="bi-file-earmark-text" Title="@(_canWrite ? "No articles yet." : "Nothing presented yet.")" Compact="true" />
             }
             <ul class="list-unstyled mb-0">
                 @foreach (var r in _recent)

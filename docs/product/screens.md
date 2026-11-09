@@ -69,8 +69,9 @@ Present, Send**), each saying where it stands, with one main button for whicheve
 
 Beside them, **Not on a brief yet** lists what hasn't been on any brief: Ready articles (anyone's) first, then your own
 drafts, newest first, up to 8, each with *Add* while today's brief hasn't gone out (the rest are under *Add
-article*). It reads the same candidates as Add article, so the two agree. Someone who doesn't write the brief sees the
-latest articles there instead.
+article*). It reads the same candidates as Add article, so the two agree. Someone who doesn't write the brief sees
+**Recently presented** there instead: only articles that have been presented, at or below the team edition's TLP
+ceiling, so never a draft's title or one marked above what the team edition carries.
 
 Readiness checks say what's missing on each article before the meeting. A threat whose "why it matters to us" would
 reach the company-wide edition is flagged.

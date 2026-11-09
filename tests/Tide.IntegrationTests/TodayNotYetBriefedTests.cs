@@ -21,11 +21,11 @@ public class TodayNotYetBriefedTests(TideApp app) : IClassFixture<TideApp>
 
     private DateOnly Today => app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;
 
-    private async Task<Guid> Article(string title, SignIn who, ArticleStatus status = ArticleStatus.Draft)
+    private async Task<Guid> Article(string title, SignIn who, ArticleStatus status = ArticleStatus.Draft, TlpLevel tlp = TlpLevel.Clear)
     {
         Guid id;
         await using (var scope = SignedIn(app, who))
-            id = await scope.ServiceProvider.GetRequiredService<ArticleService>().CreateAsync(title, "Vendor", null, TlpLevel.Clear);
+            id = await scope.ServiceProvider.GetRequiredService<ArticleService>().CreateAsync(title, "Vendor", null, tlp);
         if (status != ArticleStatus.Draft)
         {
             await using var scope = app.Services.CreateAsyncScope();
@@ -60,10 +60,17 @@ public class TodayNotYetBriefedTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task AReader_StillGetsTheLatestArticles()
+    public async Task AReader_GetsOnlyWhatsBeenPresented_AtOrBelowTheTeamEditionsTlp()
     {
+        await Article("NYB presented to all", Analyst, ArticleStatus.Presented);
+        await Article("NYB presented, red", Analyst, ArticleStatus.Presented, TlpLevel.Red);
+        await Article("NYB a draft readers can't see", Analyst);
+
         await using var r = await RenderAsync<BriefPage>(app, "/", new() { ["Day"] = $"{Today:yyyy-MM-dd}", ["AsToday"] = true }, new SignIn("dev:nyb-reader", "Reader", "ActionOwner"));
         var html = WebUtility.HtmlDecode(await r.Html());
-        html.Should().NotContain("Not on a brief yet", "they don't write the brief");
+        html.Should().NotContain("Not on a brief yet", "they don't write the brief").And.Contain("Recently presented")
+            .And.Contain("NYB presented to all")
+            .And.NotContain("NYB presented, red", "above the team edition's ceiling")
+            .And.NotContain("NYB a draft readers can't see", "a draft's title isn't theirs to see");
     }
 }
