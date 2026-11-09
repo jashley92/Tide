@@ -84,6 +84,37 @@ public class OperationalSettingsPagesTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task TeamsAndSla_NewExternalTeamsCanStartWithRemindersOff_AndExternalTeamsAddFormStartsSo()
+    {
+        await using var r = await ComponentHarness.RenderAsync<TeamsAdmin>(app, "/admin/teams");
+        var html = await r.Html();
+        html.Should().Contain("id=\"rem-ext-new\"").And.Contain("New external teams start with their reminders on");
+        var form = typeof(TeamsAdmin).GetField("_rem", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var on = form.GetValue(r.Component)!.GetType().GetProperty("NewExternalTeamsOn")!;
+        on.GetValue(form.GetValue(r.Component)).Should().Be(true, "on until an administrator turns it off");
+        try
+        {
+            await r.Renderer.Dispatcher.InvokeAsync(() => on.SetValue(form.GetValue(r.Component), false));
+            await r.Click(c => c.SaveReminders());
+            (await Saved(OperationalSettings.ExternalRemindersNewTeams)).Should().Be("false");
+            on.GetValue(form.GetValue(r.Component)).Should().Be(false, "the form shows what was just saved");
+
+            await using var page = await ComponentHarness.RenderAsync<Tide.Web.Components.Pages.ExternalTeams>(app, "/teams/external");
+            page.Component.NewForm.RemindersOn.Should().BeFalse("a new team starts as the setting says, at once");
+        }
+        finally
+        {
+            await using var scope = app.Services.CreateAsyncScope();
+            await using var db = await scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>().CreateAsync();
+            db.Settings.RemoveRange(db.Settings.Where(s => s.Key == OperationalSettings.ExternalRemindersNewTeams));
+            await db.SaveChangesAsync();
+            await scope.ServiceProvider.GetRequiredService<SavedSettings>().RefreshAsync(scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>());
+        }
+        await using var after = await ComponentHarness.RenderAsync<Tide.Web.Components.Pages.ExternalTeams>(app, "/teams/external");
+        after.Component.NewForm.RemindersOn.Should().BeTrue("back to the server's value once the saved one is gone");
+    }
+
+    [Fact]
     public async Task TeamsAndSla_AChangedReminderTime_IsSaved_AndStaysOnTheForm()
     {
         await using var r = await ComponentHarness.RenderAsync<TeamsAdmin>(app, "/admin/teams");

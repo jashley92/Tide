@@ -52,7 +52,8 @@
                 {
                     <div class="d-flex gap-2 align-items-start">
                         <div class="flex-grow-1">
-                            <h2 class="tide-card-title mb-0">@t.Name @if (t.IsRetired) { <Badge>Retired</Badge> }</h2>
+                            <h2 class="tide-card-title mb-0">@t.Name @if (t.IsRetired) { <Badge>Retired</Badge> }
+                                else if (TeamSvc.NotEmailedWhy(t) is { } why) { <Badge Tone="BadgeTone.Warn" Icon="bi-envelope-slash" Title="@why" Class="ms-1">Not emailed</Badge> }</h2>
                             @if (t.Description is not null) { <div class="small">@t.Description</div> }
                             <dl class="tide-meta-grid small mt-1 mb-0">
                                 <dt>Contact</dt><dd>@(t.ContactName ?? "None named") @if (t.ContactEmail is not null) { <span class="tide-data ms-1">@t.ContactEmail</span> }</dd>
@@ -98,7 +99,16 @@
     internal ExternalTeamForm EditForm => _form;
     internal IReadOnlyList<Team> Shown => _teams;
 
-    protected override Task OnInitializedAsync() => Load();
+    /// <summary><c>?edit={id}</c> opens that team's form (the "Add a contact email" fix links here).</summary>
+    [SupplyParameterFromQuery(Name = "edit")] public string? EditParam { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // A new team's reminders start as an administrator set for new teams (Teams & SLA).
+        _new = TeamSvc.NewExternalForm();
+        await Load();
+        if (TeamSvc.CanManageExternal && Guid.TryParse(EditParam, out var id) && _teams.FirstOrDefault(t => t.Id == id) is { } team) Edit(team);
+    }
 
     // A colleague added, edited or retired a team: the list is read again. The add and edit forms are the page's own
     // copies, so what's typed in them stays; a team being edited that's gone closes its form, and says so.
@@ -208,7 +218,7 @@
     {
         await TeamSvc.AddExternalAsync(_new);
         Toasts.Show($"{_new.Name.Trim()} added.");
-        _new = new();
+        _new = TeamSvc.NewExternalForm();
     });
 
     // One save, on the version the form opened on (the limit with it, for an administrator): a colleague's change since

@@ -146,6 +146,39 @@ public class HandoffPagesTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task HandingToAnExternalTeamThatWontBeEmailed_SaysSo_AndExternalTeamsMarksIt()
+    {
+        var from = await Team("EP86 hands to quiet");
+        var quiet = await As(sp => sp.GetRequiredService<TeamService>().AddExternalAsync(new ExternalTeamForm { Name = "EP86 quiet provider", RemindersOn = false }));
+        var number = await Raise(from, "EP86 handed to the quiet one");
+        await using var page = await Open(number);
+        await page.Press(p => p.StartHandoff());
+        (await page.HtmlOnce("Hand it to")).Should().Contain("EP86 quiet provider (external)").And.NotContain("won&#x27;t be emailed", "nothing's chosen yet");
+
+        // The note the dialog shows under the team chosen, for that team, and none for an internal one.
+        var teams = await As(sp => sp.GetRequiredService<TeamService>().ListAsync());
+        await using (var note = await RenderAsync<NotEmailedNote>(app, "/", new() { ["Team"] = teams.Single(t => t.Id == quiet) }))
+            WebUtility.HtmlDecode(await note.Html()).Should().Contain("EP86 quiet provider won't be emailed about this").And.Contain("bi-envelope-slash");
+        await using (var none = await RenderAsync<NotEmailedNote>(app, "/", new() { ["Team"] = teams.Single(t => t.Id == from) }))
+            (await none.Html()).Trim().Should().BeEmpty();
+        // The fix comes with it, for whoever may make it: reminders are off for everyone here, an administrator's to turn on.
+        await using (var admin = await RenderAsync<NotEmailedNote>(app, "/", new() { ["Team"] = teams.Single(t => t.Id == quiet) }))
+            (await admin.Html()).Should().Contain("href=\"admin/teams#rem-title\"");
+        await using (var owner = await RenderAsync<NotEmailedNote>(app, "/", new() { ["Team"] = teams.Single(t => t.Id == quiet) }, new SignIn("dev:ep86-owner", "Owner", "ActionOwner")))
+            (await owner.Html()).Should().NotContain("admin/teams", "only an administrator turns them on for everyone");
+
+        // On its own (the scan on), the team's switch and the missing contact each offer theirs.
+        var off = teams.Single(t => t.Id == quiet);
+        var withScan = ExternalCadence.NotEmailed(off, scanOn: true)!;
+        withScan.Cause.Should().Be(NotEmailedCause.TeamOff);
+        await using (var editing = await RenderAsync<ExternalTeams>(app, $"/teams/external?edit={quiet}"))
+            editing.Component.Editing.Should().Be(quiet, "Add a contact email opens that team's form");
+
+        await using var list = await RenderAsync<ExternalTeams>(app, "/teams/external");
+        WebUtility.HtmlDecode(await list.Html()).Should().Contain("Not emailed");
+    }
+
+    [Fact]
     public async Task ASplit_FromTheActionsPage_AddsAnExternalTeamInline_AndRaisesTheParts()
     {
         var owner = await Team("EP86 split owner");

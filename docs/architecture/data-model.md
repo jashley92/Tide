@@ -966,7 +966,7 @@ The active limit and the external team's profile (EP-86):
 | `ContactName` | nvarchar(200) | yes | An external team's contact. |
 | `ContactEmail` | nvarchar(256) | yes | Where an external team's reminders go. `Email` stays null for an external team, so no internal email reaches it. |
 | `Engage` | nvarchar(2000) | yes | How to engage an external team (its ticket queue, say). |
-| `RemindersOn` | bit | no | Whether an external team gets its reminder emails. Default 1. |
+| `RemindersOn` | bit | no | Whether an external team gets its reminder emails. Default 1; a new external team starts as `Notifications:ExternalReminders:NewTeamsOn` sets (on unless an administrator turned it off). |
 | `RemindBeforeDays` | int | no | Business days before the due date its first reminder goes, 0 to 10 (0: the due day). Default 2. |
 | `RemindOverdueEveryDays` | int | yes | Business days between reminders while overdue, 1 to 20; null reminds once. The migration set existing rows to 3. |
 

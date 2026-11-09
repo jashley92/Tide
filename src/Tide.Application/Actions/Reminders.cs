@@ -38,8 +38,8 @@ public sealed class ReminderOptions
     public FollowUpOptions OutreachFollowUp { get; set; } = new();
 
     /// <summary>At <see cref="ReminderTime"/>, email each external team (with its reminders on) about its actions due soon or
-    /// overdue, as its own cadence sets.</summary>
-    public Toggle ExternalReminders { get; set; } = new();
+    /// overdue, as its own cadence sets; and whether a new external team starts with its reminders on.</summary>
+    public ExternalReminderOptions ExternalReminders { get; set; } = new();
 
     /// <summary>At <see cref="ReminderTime"/> on business days, climb the escalation ladder: each open action that has
     /// reached a step gets what the step does (<see cref="EscalationLadder"/>).</summary>
@@ -62,6 +62,26 @@ public sealed class ReminderOptions
     public sealed class Toggle
     {
         public bool Enabled { get; set; }
+    }
+
+    public sealed class ExternalReminderOptions
+    {
+        public bool Enabled { get; set; }
+
+        /// <summary>Whether a new external team starts with its own reminders on (<see cref="Team.RemindersOn"/>). On by
+        /// default; whoever adds the team can still change it, and it never touches a team already added.</summary>
+        public bool NewTeamsOn { get; set; } = true;
+
+        /// <summary>A new external team's schedule, as whoever adds it may change: business days before the due date (0 to
+        /// <see cref="Team.MaxRemindBefore"/>; 0 is the due day), and every how many while overdue (0: once).</summary>
+        public int NewTeamsBeforeDays { get; set; } = Team.DefaultRemindBefore;
+        public int NewTeamsEveryDays { get; set; } = Team.DefaultRemindEvery;
+
+        /// <summary><see cref="NewTeamsBeforeDays"/> in its range.</summary>
+        public int BeforeDays => Math.Clamp(NewTeamsBeforeDays, 0, Team.MaxRemindBefore);
+
+        /// <summary><see cref="NewTeamsEveryDays"/> in its range, or null for once.</summary>
+        public int? EveryDays => NewTeamsEveryDays <= 0 ? null : Math.Clamp(NewTeamsEveryDays, Team.MinRemindEvery, Team.MaxRemindEvery);
     }
 
     public sealed class DigestOptions

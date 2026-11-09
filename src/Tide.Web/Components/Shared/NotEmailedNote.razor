@@ -1,0 +1,54 @@
+@* Under a choice of team (a hand-off, a split's part, the editor's team, an external action's card): says when an
+   external team won't be emailed its reminders, and why, so work isn't handed to someone who never hears of it.
+   Nothing for an internal team, or one that will be emailed. *@
+@* Each reason comes with its fix, for whoever may make it: an administrator turns the reminders on for everyone (Teams
+   & SLA), whoever keeps the external teams turns this team's on here, or adds its contact email on External teams. *@
+@inject Tide.Application.Actions.TeamService TeamSvc
+@inject ICurrentUser CurrentUser
+@inject ToastService Toasts
+@using Tide.Application.Actions
+
+@if (Team is not null && !_turnedOn.Contains(Team.Id) && TeamSvc.NotEmailed(Team) is { } why)
+{
+    <div class="tide-missing small mt-2" role="status">
+        <span class="bi bi-envelope-slash" aria-hidden="true"></span> @why.Text
+        @switch (why.Cause)
+        {
+            case NotEmailedCause.OffForEveryone when CurrentUser.Has(Permission.Administer):
+                <a class="ms-1" href="admin/teams#rem-title">Turn them on in Teams &amp; SLA</a>
+                break;
+            case NotEmailedCause.TeamOff when TeamSvc.CanManageExternal:
+                <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" disabled="@_busy" @onclick="TurnOn">Turn their reminders on</button>
+                break;
+            case NotEmailedCause.NoContact when TeamSvc.CanManageExternal:
+                <a class="ms-1" href="@($"teams/external?edit={Team.Id}")">Add a contact email</a>
+                break;
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public Tide.Domain.Entities.Team? Team { get; set; }
+
+    /// <summary>After the team's reminders are turned on here, so the page can read the team again.</summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
+    // Teams turned on from this note: the Team handed in is the page's copy, read before the change.
+    private readonly HashSet<Guid> _turnedOn = [];
+    private bool _busy;
+
+    internal async Task TurnOn()
+    {
+        if (Team is not { } team || _busy) return;
+        _busy = true;
+        try
+        {
+            await TeamSvc.TurnRemindersOnAsync(team.Id);
+            _turnedOn.Add(team.Id);
+            Toasts.Show($"{team.Name}'s reminders are on.");
+            await Changed.InvokeAsync();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+}

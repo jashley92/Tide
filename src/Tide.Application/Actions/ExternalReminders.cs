@@ -15,8 +15,39 @@ namespace Tide.Application.Actions;
 /// When an external team is reminded about an action, by its cadence, kept pure so it's tested on its own. Days are the
 /// organization's working days (its holidays too): the scan runs only on one, and counts in them.
 /// </summary>
+/// <summary>What keeps an external team from being emailed, each with its own fix.</summary>
+public enum NotEmailedCause
+{
+    /// <summary>External team reminders are off for everyone (an administrator's, on Teams &amp; SLA).</summary>
+    OffForEveryone = 0,
+
+    /// <summary>The team's own reminders are off (whoever works actions, on External teams).</summary>
+    TeamOff = 1,
+
+    /// <summary>The team has no contact email (likewise).</summary>
+    NoContact = 2,
+}
+
+public sealed record NotEmailedReason(NotEmailedCause Cause, string Text);
+
 public static class ExternalCadence
 {
+    /// <summary>
+    /// Why <paramref name="team"/> won't be emailed its reminders, or null when it will be (or isn't external): the
+    /// scan is off for everyone (<paramref name="scanOn"/>), the team's own reminders are off, or it has no contact email.
+    /// Said wherever work is given to one, so a request isn't left with someone who never hears of it.
+    /// </summary>
+    public static string? NotEmailedWhy(Team team, bool scanOn) => NotEmailed(team, scanOn)?.Text;
+
+    /// <summary>Why <paramref name="team"/> won't be emailed, as a reason (so the fix can be offered) and its words; null
+    /// when it will be, or isn't external.</summary>
+    public static NotEmailedReason? NotEmailed(Team team, bool scanOn) =>
+        !team.IsExternal ? null
+        : !scanOn ? new(NotEmailedCause.OffForEveryone, $"External team reminders are off for everyone, so {team.Name} won't be emailed about this.")
+        : !team.RemindersOn ? new(NotEmailedCause.TeamOff, $"{team.Name}'s reminders are off, so they won't be emailed about this.")
+        : string.IsNullOrWhiteSpace(team.ContactEmail) ? new(NotEmailedCause.NoContact, $"{team.Name} has no contact email, so they won't be emailed about this.")
+        : null;
+
     /// <summary>The step before the due date.</summary>
     public const string Before = "before";
 

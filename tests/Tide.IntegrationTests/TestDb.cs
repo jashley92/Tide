@@ -490,7 +490,7 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public FakeEmailSender Email { get; } = new();
 
-    public TeamService Teams() => new(this, User);
+    public TeamService Teams(ReminderOptions? options = null) => new(this, User, new StaticOptionsMonitor<ReminderOptions>(options ?? ReminderOptions));
 
     public SlaSettings Sla() => new(this, User, Options.Create(new SlaOptions()));
 
