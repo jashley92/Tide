@@ -31,6 +31,11 @@ public class Brief : AuditableEntity
     /// edition. A new brief starts with the previous brief's, so standing items roll forward.</summary>
     public string? TeamNote { get; set; }
 
+    /// <summary>When someone last saved the opening note on this brief, changed or kept as still current (who is in the
+    /// audit trail). Null on a brief that started with the previous brief's note and hasn't been looked at since: Today
+    /// flags it.</summary>
+    public DateTimeOffset? TeamNoteReviewedAtUtc { get; set; }
+
     /// <summary>The meeting's notes from before they were kept per person (<see cref="MeetingNote"/>). The upgrade moves
     /// them into one note each and empties this; nothing writes it now.</summary>
     public string? MeetingNotes { get; set; }

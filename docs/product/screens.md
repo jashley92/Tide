@@ -453,7 +453,7 @@ A full-screen, keyboard-driven slide deck, always dark because it's on a shared 
 
 - a title slide with the agenda;
 - the team's opening note (what's coming up, the week's phishing trends; team edition only, carried from the
-  previous brief);
+  previous brief, and flagged *Not updated* on Today for analysts until it's changed or kept with *Still current*);
 - the opening numbers, a slide per metric group;
 - one slide per article;
 - a wrap-up with every recommended action not yet raised;

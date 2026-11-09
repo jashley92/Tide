@@ -1344,6 +1344,9 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasMaxLength(4000)
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("TeamNoteReviewedAtUtc")
+                        .HasColumnType("INTEGER");
+
                     b.HasKey("Id");
 
                     b.HasIndex("BriefDate")

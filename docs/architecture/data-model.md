@@ -845,6 +845,7 @@ note, presented, reopen) and `DistributionService` (sent, not sent, distributed 
 | `Status` | int | no | `BriefStatus`. |
 | `Intro`, `IntroTlp` | nvarchar(2000), int | yes / no | The title-slide line and its TLP. An edition whose ceiling is below `IntroTlp` leaves the line out. |
 | `TeamNote` | nvarchar(4000) | yes | The team's opening note (Markdown). Appears in the team edition only. A new brief copies the previous brief's note. |
+| `TeamNoteReviewedAtUtc` | datetimeoffset | yes | When the opening note was last saved on this brief, changed or kept as still current (who, in the audit trail). Null while it's the previous brief's, carried and not looked at: Today flags it *Not updated* until the meeting is held (`BriefService.TeamNoteCarriedOver`). |
 | `MeetingNotes` | nvarchar(max) | yes | **Legacy.** The single meeting-notes field from before notes were kept per person. The upgrade moved it into `MeetingNotes` rows. Nothing writes it now. |
 | `MeetingHeldAtUtc` | datetimeoffset | yes | When the meeting was held. For a brief written up after the fact, it's the day the brief was for. |
 | `PresentedAtUtc` | datetimeoffset | yes | When someone chose "End the meeting". |
