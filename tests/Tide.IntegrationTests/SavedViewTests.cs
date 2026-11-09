@@ -59,7 +59,7 @@ public class SavedViewTests : IDisposable
         left.Should().Contain(v => v.Id == urgent.Id).Which.Query.Should().Be("view=open&layout=list&priority=p1,p2");
 
         var next = await Views.SaveAsync("Due this week", "view=open&due=week");
-        (await Views.ListAsync()).Last().Id.Should().Be(next.Id, "a new view goes after the others");
+        (await Views.ListAsync())[^1].Id.Should().Be(next.Id, "a new view goes after the others");
     }
 
     [Fact]
