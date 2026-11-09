@@ -31,6 +31,7 @@ public interface IAppDbContext : IAsyncDisposable, IDisposable
     DbSet<ArticleReview> ArticleReviews { get; }
     DbSet<ReviewComment> ReviewComments { get; }
     DbSet<Webhook> Webhooks { get; }
+    DbSet<StoredSecret> StoredSecrets { get; }
     DbSet<ArticleTechnique> ArticleTechniques { get; }
     DbSet<ArticleIndicator> ArticleIndicators { get; }
     DbSet<ArticleCve> ArticleCves { get; }

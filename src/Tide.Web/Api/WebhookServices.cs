@@ -4,16 +4,21 @@ using Tide.Application.Operations;
 
 namespace Tide.Web.Api;
 
-/// <summary>A webhook's signing secret, encrypted with the server's data protection keys (DataProtection:KeyPath).</summary>
+/// <summary>A webhook's signing secret, or a secret saved in the app, encrypted with the server's data protection keys
+/// (DataProtection:KeyPath), each under its own purpose.</summary>
 public sealed class DataProtectionSecrets(IDataProtectionProvider provider) : ISecretProtector
 {
-    private readonly IDataProtector _protector = provider.CreateProtector("Tide.Webhooks.Secret.v1");
+    private const string WebhookPurpose = "Tide.Webhooks.Secret.v1";
 
-    public string Protect(string secret) => _protector.Protect(secret);
+    public string Protect(string secret) => Protect(WebhookPurpose, secret);
 
-    public string? Unprotect(string protectedSecret)
+    public string? Unprotect(string protectedSecret) => Unprotect(WebhookPurpose, protectedSecret);
+
+    public string Protect(string purpose, string secret) => provider.CreateProtector(purpose).Protect(secret);
+
+    public string? Unprotect(string purpose, string protectedSecret)
     {
-        try { return _protector.Unprotect(protectedSecret); }
+        try { return provider.CreateProtector(purpose).Unprotect(protectedSecret); }
         catch (System.Security.Cryptography.CryptographicException) { return null; }
     }
 }

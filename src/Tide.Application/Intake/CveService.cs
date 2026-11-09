@@ -18,7 +18,8 @@ public sealed class CveOptions
     /// <summary>Hours between enrichment runs; EPSS is refreshed this often, NVD weekly.</summary>
     public int RefreshHours { get; set; } = 24;
 
-    /// <summary>An NVD API key raises its rate limit tenfold. Set it as the <c>Cve__NvdApiKey</c> environment variable.</summary>
+    /// <summary>An NVD API key raises its rate limit tenfold. Saved in Administration › Secrets (<see cref="Settings.StoredSecrets"/>)
+    /// or set as the <c>Cve__NvdApiKey</c> environment variable, which wins.</summary>
     public string NvdApiKey { get; set; } = "";
 
     public string NvdUrl { get; set; } = "https://services.nvd.nist.gov/rest/json/cves/2.0";

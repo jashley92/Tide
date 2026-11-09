@@ -3,6 +3,7 @@
 @layout AdminLayout
 @using Tide.Application.Operations
 @inject SystemSettings Settings
+@inject Tide.Application.Settings.StoredSecretService StoredSecrets
 
 <PageTitle>Server configuration · TIDE</PageTitle>
 
@@ -29,7 +30,8 @@
                         <tr>
                             <th scope="row">@r.Info.Label <code class="d-block small tide-muted">@r.Info.Key</code></th>
                             <td>
-                                @if (r.Shown is null) { <span class="tide-muted">Not set</span> }
+                                @if (r.Shown is null && _saved.Contains(r.Info.Key)) { <a href="admin/system/secrets"><Badge Tone="BadgeTone.Ok" Icon="bi-key">Saved in the app</Badge></a> }
+                                else if (r.Shown is null) { <span class="tide-muted">Not set</span> }
                                 else if (r.Shown == SecretMask.SetSecret) { <Badge Tone="BadgeTone.Ok" Icon="bi-lock-fill">Set</Badge> }
                                 else { <span class="tide-data small">@r.Shown</span> }
                             </td>
@@ -45,6 +47,11 @@
 
 @code {
     private IReadOnlyList<SettingRow> _rows = [];
+    private IReadOnlySet<string> _saved = new HashSet<string>();   // the secrets saved in the app (Secrets), in force where the server has none
 
-    protected override void OnInitialized() => _rows = Settings.Server();
+    protected override void OnInitialized()
+    {
+        _rows = Settings.Server();
+        _saved = StoredSecrets.InForceKeys();
+    }
 }

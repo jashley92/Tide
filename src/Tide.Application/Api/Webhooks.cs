@@ -21,6 +21,27 @@ public interface ISecretProtector
 
     /// <summary>The secret, or null when it can't be read (the keys changed).</summary>
     string? Unprotect(string protectedSecret);
+
+    /// <summary>The same under a purpose of its own (a secret saved in the app): a value protected for one purpose never
+    /// opens under another.</summary>
+    string Protect(string purpose, string secret);
+
+    string? Unprotect(string purpose, string protectedSecret);
+}
+
+/// <summary>Where nothing has set up Data Protection (a tool, a test that builds the services alone): nothing opens, and
+/// protecting refuses, so a secret is never stored unprotected. The web app registers the real one.</summary>
+public sealed class NoSecretProtector : ISecretProtector
+{
+    private const string Why = "Secrets can't be encrypted here: Data Protection isn't set up.";
+
+    public string Protect(string secret) => throw new InvalidOperationException(Why);
+
+    public string? Unprotect(string protectedSecret) => null;
+
+    public string Protect(string purpose, string secret) => throw new InvalidOperationException(Why);
+
+    public string? Unprotect(string purpose, string protectedSecret) => null;
 }
 
 /// <summary>Posts a webhook's JSON body; the status code, or why it failed.</summary>

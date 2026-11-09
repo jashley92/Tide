@@ -115,12 +115,14 @@ public sealed class AuditInterceptor(ICurrentUser user, TimeProvider time) : Sav
 
     // The properties that can carry a credential, named one by one (a name heuristic over every property hid a team's
     // Key and an action's AssigneeName): a source's address may hold a key or a sign-in, and a setting's value is a secret
-    // when the settings catalogue lists it as one or its key names one ("Cve:NvdApiKey"), and a webhook's signing secret is one. Everything else is recorded as it is, so the trail stays readable.
+    // when the settings catalogue lists it as one or its key names one ("Cve:NvdApiKey"), and a webhook's signing secret and
+    // a secret saved in the app (even encrypted) are one. Everything else is recorded as it is, so the trail stays readable.
     private static Mask MaskFor(object entity, string property) => entity switch
     {
         Source when property == nameof(Source.Url) => Mask.Url,
         AppSetting s when property == nameof(AppSetting.Value) && SettingsCatalog.IsSecret(s.Key) => Mask.Secret,
         Webhook when property == nameof(Webhook.Secret) => Mask.Secret,
+        StoredSecret when property == nameof(StoredSecret.Protected) => Mask.Secret,
         _ => Mask.None,
     };
 

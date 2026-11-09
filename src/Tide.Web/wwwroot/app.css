@@ -1703,6 +1703,8 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-changed-elsewhere { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin: 0 0 1rem; padding: .6rem .85rem; border-radius: var(--tide-radius-xl); border: 1px solid var(--tide-warn); background: var(--tide-warn-soft); color: var(--tide-text); }
 /* Administration > System: health checks, settings tables and the update check. */
 .tide-kv { width: 100%; border-collapse: collapse; font-size: .92rem; }
+/* Secrets: a password box of a sensible width beside its buttons. */
+.tide-secret-input { flex: 1 1 16rem; max-width: 28rem; }
 .tide-kv th { width: 34%; font-weight: var(--tide-weight-medium); color: var(--tide-text-muted); padding: .45rem .6rem .45rem 0; vertical-align: top; border-bottom: 1px solid var(--tide-border); }
 .tide-kv td { padding: .45rem 0; border-bottom: 1px solid var(--tide-border); vertical-align: top; overflow-wrap: anywhere; }
 .tide-kv tr:last-child th, .tide-kv tr:last-child td { border-bottom: 0; }

@@ -118,7 +118,12 @@ the file changes nothing until the saved row is gone. Setting sources shows whic
 
 ## Secrets and environment variables
 
-Never put a secret in a JSON file. Set these as environment variables on the app pool, or in protected configuration.
+Never put a secret in a JSON file. Save it in **Administration › Secrets**, where it's encrypted with the server's
+Data Protection keys (`DataProtection:KeyPath`, themselves encrypted with DPAPI) before it's stored, so neither the
+database nor any file holds it in plain text. Or set it as an environment variable on the app pool, which IIS keeps in
+`applicationHost.config` unencrypted, readable by Administrators and SYSTEM. An environment variable wins over a saved
+secret, so the server's administrator always has the last word. A saved secret takes effect at once; an environment
+variable at the next recycle.
 
 | Variable | Setting |
 |---|---|

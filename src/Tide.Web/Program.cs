@@ -189,6 +189,7 @@ using (var scope = app.Services.CreateScope())
 {
     await scope.ServiceProvider.GetRequiredService<DatabaseInitializer>().InitializeAsync();
     await app.Services.GetRequiredService<SavedSettings>().RefreshAsync(scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>());
+    await app.Services.GetRequiredService<StoredSecrets>().RefreshAsync(scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>());
     await app.Services.GetRequiredService<EmailTemplateStore>().RefreshAsync(scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>());
     await app.Services.GetRequiredService<EmailCopyStore>().RefreshAsync(scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>());
     // Each job's latest run from the job history, so Diagnostics and /health/jobs know when it last went well.

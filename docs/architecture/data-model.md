@@ -1394,6 +1394,21 @@ Only a hash is kept. Written by `ApiTokenService` (`Api/ApiTokens.cs`). See [../
 | `Calls` | bigint | no | Incremented with `ExecuteUpdateAsync`, so not audited. |
 | stamps | | | **S** columns. |
 
+### `StoredSecrets` (S, A)
+
+A secret an administrator saved in Administration › Secrets in place of the server's configuration: the mail relay
+password (`Email:SmtpPassword`), the NVD key (`Cve:NvdApiKey`) or the Azure OpenAI key (`Ai:ApiKey`). Written by
+`StoredSecretService`; read into memory by `StoredSecrets` at start-up and after each change, and laid into the options
+only where the server's configuration leaves the secret blank (the server's always wins).
+
+| Column | Type | Null | Meaning |
+|---|---|---|---|
+| `Id` | uniqueidentifier | no | |
+| `Key` | nvarchar(100) | no | Unique. The configuration key it stands in for. |
+| `Protected` | nvarchar(4000) | no | The value encrypted with ASP.NET Core data protection under the secret's own purpose (`StoredSecretDefinition.Purpose`), so one never opens as another. Without the key ring it won't decrypt: the page marks it *Won't decrypt*. The audit log records it only as set. |
+| `SavedByName` | nvarchar(256) | no | Who saved it last, as the page names them. |
+| stamps | | | **S** columns. |
+
 ### `Webhooks` (S, A)
 
 An address TIDE posts to when something happens, signed with HMAC-SHA256. Written by `WebhookService`

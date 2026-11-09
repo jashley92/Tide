@@ -16,8 +16,9 @@ public sealed class EmailOptions
     /// <summary>The account to sign in to the relay as (AUTH); blank sends without signing in.</summary>
     public string SmtpUsername { get; set; } = "";
 
-    /// <summary><see cref="SmtpUsername"/>'s password. Keep it out of the file: set it as an environment variable
-    /// (<c>Email__SmtpPassword</c>) on the app pool, or use <see cref="SmtpUseDefaultCredentials"/>.</summary>
+    /// <summary><see cref="SmtpUsername"/>'s password. Keep it out of the file: save it in Administration › Secrets
+    /// (encrypted), or set it as an environment variable (<c>Email__SmtpPassword</c>) on the app pool, which wins; or use
+    /// <see cref="SmtpUseDefaultCredentials"/>.</summary>
     public string SmtpPassword { get; set; } = "";
 
     /// <summary>Sign in as the app-pool account (integrated Windows authentication), with no password anywhere: for

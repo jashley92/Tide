@@ -38,6 +38,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<ArticleReview> ArticleReviews => Set<ArticleReview>();
     public DbSet<ReviewComment> ReviewComments => Set<ReviewComment>();
     public DbSet<Webhook> Webhooks => Set<Webhook>();
+    public DbSet<StoredSecret> StoredSecrets => Set<StoredSecret>();
     public DbSet<ArticleTechnique> ArticleTechniques => Set<ArticleTechnique>();
     public DbSet<ArticleIndicator> ArticleIndicators => Set<ArticleIndicator>();
     public DbSet<ArticleCve> ArticleCves => Set<ArticleCve>();
@@ -303,6 +304,15 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasIndex(x => x.Hash).IsUnique();
             e.Property(x => x.Hint).HasMaxLength(8);
             e.Property(x => x.Scopes).HasMaxLength(400);
+            Audited(e);
+        });
+
+        b.Entity<StoredSecret>(e =>
+        {
+            e.HasIndex(x => x.Key).IsUnique();
+            e.Property(x => x.Key).HasMaxLength(100);
+            e.Property(x => x.Protected).HasMaxLength(4000);
+            e.Property(x => x.SavedByName).HasMaxLength(256);
             Audited(e);
         });
 

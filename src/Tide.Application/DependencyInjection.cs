@@ -1,6 +1,7 @@
 using System.Text;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Tide.Application.Actions;
 using Tide.Application.Admin;
@@ -71,6 +72,12 @@ public static class DependencyInjection
         Overlay<DistributionOptions>(services, OperationalSettings.Apply);
         Overlay<FileStoreOptions>(services, OperationalSettings.Apply);
         Overlay<EmailBoundaryOptions>(services, OperationalSettings.Apply);
+        // Secrets saved in the app fill in what the server's configuration leaves blank.
+        services.TryAddSingleton<Api.ISecretProtector, Api.NoSecretProtector>();   // the web app registers Data Protection's
+        services.AddSingleton<StoredSecrets>();
+        services.AddScoped<StoredSecretService>();
+        SecretOverlay<CveOptions>(services, StoredSecrets.Apply);
+        SecretOverlay<AiOptions>(services, StoredSecrets.Apply);
         // The organization's email boundary: every list that sends mail outward checks its addresses against it.
         services.AddSingleton(sp => new EmailBoundary(sp.GetRequiredService<IOptionsMonitor<EmailBoundaryOptions>>()));
         services.AddSingleton(sp => new OrgClock(sp.GetRequiredService<IOptionsMonitor<OrgOptions>>(), sp.GetRequiredService<TimeProvider>()));
@@ -130,6 +137,14 @@ public static class DependencyInjection
         services.AddScoped<AuditLogService>();
         services.AddScoped<DownloadAudit>();
         return services;
+    }
+
+    /// <summary>Fills in <typeparamref name="T"/>'s secret from those saved in the app (<see cref="StoredSecretOverlay{T}"/>).</summary>
+    public static void SecretOverlay<T>(IServiceCollection services, Action<StoredSecrets, T> apply) where T : class
+    {
+        services.AddSingleton(sp => new StoredSecretOverlay<T>(sp.GetRequiredService<StoredSecrets>(), apply));
+        services.AddSingleton<IPostConfigureOptions<T>>(sp => sp.GetRequiredService<StoredSecretOverlay<T>>());
+        services.AddSingleton<IOptionsChangeTokenSource<T>>(sp => sp.GetRequiredService<StoredSecretOverlay<T>>());
     }
 
     private static void Overlay<T>(IServiceCollection services, Action<SavedSettings, T> apply) where T : class
