@@ -27,7 +27,7 @@ public sealed class ToastService(TimeProvider? time = null)
     public static TimeSpan Lasts(Toast toast) => TimeSpan.FromSeconds(toast.Undo is null ? 4 : 10);
 
     /// <summary>Whether the confirmations' timers are held.</summary>
-    public bool Held
+    internal bool Held
     {
         get { lock (_lock) return _held; }
     }

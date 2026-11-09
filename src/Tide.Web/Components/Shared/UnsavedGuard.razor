@@ -48,7 +48,7 @@
         try
         {
             if (ReferenceEquals(turn.Stayed, ctx) || ctx.CancellationToken.IsCancellationRequested) return;
-            if (await MayLeave()) return;
+            if (await Ask()) return;
             turn.Stayed = ctx;
             ctx.PreventNavigation();
         }

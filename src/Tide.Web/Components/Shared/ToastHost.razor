@@ -4,13 +4,18 @@
 @* Confirmations are announced politely; errors interrupt (role=alert), so a failed save isn't missed. While the pointer
    or focus is on them, confirmations stay (ToastService.Hold), and go their full time once it leaves. The newest Undo is
    also Alt+Z, from anywhere (toasts.js), and its toast says so. *@
+@{
+    // One copy for the whole draw, so both lists and the newest Undo agree.
+    var toasts = Toasts.Toasts;
+    _newestUndo = toasts.LastOrDefault(t => t.Undo is not null)?.Id;
+}
 <div class="tide-toasts" @onpointerenter="() => Point(true)" @onpointerleave="() => Point(false)"
      @onfocusin="() => Focus(true)" @onfocusout="() => Focus(false)">
     <div role="status" aria-live="polite">
-        @foreach (var t in Toasts.Toasts.Where(t => !t.IsError)) { @Toast(t) }
+        @foreach (var t in toasts.Where(t => !t.IsError)) { @Toast(t) }
     </div>
     <div role="alert" aria-live="assertive">
-        @foreach (var t in Toasts.Toasts.Where(t => t.IsError)) { @Toast(t) }
+        @foreach (var t in toasts.Where(t => t.IsError)) { @Toast(t) }
     </div>
 </div>
 
@@ -20,7 +25,7 @@
 
     private RenderFragment Toast(ToastService.Toast t) => __builder =>
     {
-        var newest = t.Undo is not null && Toasts.Undoable?.Id == t.Id;
+        var newest = t.Id == _newestUndo;
         <div class="tide-toast @(t.IsError ? "tide-toast-error" : "")" @key="t.Id">
             <span class="bi @(t.IsError ? "bi-exclamation-octagon" : "bi-check2-circle")" aria-hidden="true"></span>
             <span>
@@ -39,19 +44,19 @@
         </div>
     };
 
+    private Guid? _newestUndo;
+
     // Whether the pointer, and focus, are on the toasts: either holds them.
     private bool _pointer, _focus;
 
-    internal void Point(bool on)
-    {
-        _pointer = on;
-        Toasts.Hold(_pointer || _focus);
-    }
+    internal void Point(bool on) => Hold(on, _focus);
 
-    internal void Focus(bool on)
+    internal void Focus(bool on) => Hold(_pointer, on);
+
+    private void Hold(bool pointer, bool focus)
     {
-        _focus = on;
-        Toasts.Hold(_pointer || _focus);
+        (_pointer, _focus) = (pointer, focus);
+        Toasts.Hold(pointer || focus);
     }
 
     // The button pressed goes with its toast, and focus with it (a browser may not say it left), so focus no longer holds.
@@ -74,11 +79,7 @@
     private void OnChanged() => InvokeAsync(() =>
     {
         // None left: nothing is under the pointer or holds focus, whatever the last event said.
-        if (Toasts.Toasts.Count == 0 && (_pointer || _focus))
-        {
-            (_pointer, _focus) = (false, false);
-            Toasts.Hold(false);
-        }
+        if (Toasts.Toasts.Count == 0 && (_pointer || _focus)) Hold(false, false);
         StateHasChanged();
     });
 

@@ -154,10 +154,10 @@ public class UnsavedGuardTests(TideApp app) : IClassFixture<TideApp>
         await using (var note = await RenderAsync<NotEmailedNote>(app, "/", new() { ["Team"] = team }))
         {
             var html = await note.Html();
-            html.Should().Contain("href=\"admin/teams#rem-title\" target=\"_blank\" rel=\"noopener\"")
+            html.Should().Contain("href=\"admin/teams#rem-title\" target=\"_blank\" rel=\"noopener noreferrer\"")
                 .And.Contain("<span class=\"visually-hidden\"> (opens in a new tab)</span>").And.Contain("tide-missing small mt-2");
         }
-        await using (var compact = await RenderAsync<NotEmailedNote>(app, "/", new() { ["Team"] = team, ["Compact"] = true }))
+        await using (var compact = await RenderAsync<NotEmailedNote>(app, "/", new() { ["Team"] = team, ["Class"] = "tide-missing-compact" }))
             (await compact.Html()).Should().Contain("tide-missing small tide-missing-compact").And.NotContain(" mt-2");
     }
 

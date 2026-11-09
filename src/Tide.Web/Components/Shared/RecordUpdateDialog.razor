@@ -69,10 +69,9 @@
     private OverLimitDialog _overLimit = default!;
     private TeamUpdate? _form;
     private string? _error;
-    private bool _asking;   // the dialog is open
 
-    /// <summary>Whether it's open with something filled in that leaving would lose.</summary>
-    internal bool Unsaved => _asking && _form is { } f
+    /// <summary>Whether it's open (the form is there only then) with something filled in that leaving would lose.</summary>
+    internal bool Unsaved => _form is { } f
         && (!string.IsNullOrWhiteSpace(f.Reply) || !string.IsNullOrWhiteSpace(f.Note) || !string.IsNullOrWhiteSpace(f.DueReason)
             || f.Status != Action.Status || DueMoves);
 
@@ -94,11 +93,11 @@
     /// <summary>Opens it, from the action as the page shows it.</summary>
     public async Task OpenAsync()
     {
-        (_form, _error, _asking) = (new TeamUpdate { ActionId = Action.Id, From = Action.Status, Status = Action.Status }, null, true);
+        (_form, _error) = (new TeamUpdate { ActionId = Action.Id, From = Action.Status, Status = Action.Status }, null);
         try { await _dialog.Ask($"Record an update from {Team}", null, "Record update", danger: false); }
         finally
         {
-            _asking = false;
+            _form = null;
             StateHasChanged();   // the guard stands down
         }
     }

@@ -993,12 +993,16 @@ else
     }
 
     /// <summary>Whether leaving would lose a comment: one typed or with files attached and not posted, or an edit not saved.</summary>
-    internal bool CommentUnsaved => !string.IsNullOrWhiteSpace(_comment) || _attachments.Count > 0 || CommentEditUnsaved;
+    internal bool CommentUnsaved => NewCommentUnsaved || CommentEditUnsaved;
 
-    private string CommentUnsavedMessage =>
-        (!string.IsNullOrWhiteSpace(_comment) || _attachments.Count > 0) && CommentEditUnsaved ? "Your new comment isn't posted, and your changes to a comment aren't saved."
-        : CommentEditUnsaved ? "Your changes to the comment aren't saved."
-        : "Your comment isn't posted.";
+    private bool NewCommentUnsaved => !string.IsNullOrWhiteSpace(_comment) || _attachments.Count > 0;
+
+    private string CommentUnsavedMessage => (NewCommentUnsaved, CommentEditUnsaved) switch
+    {
+        (true, true) => "Your new comment isn't posted, and your changes to a comment aren't saved.",
+        (false, true) => "Your changes to the comment aren't saved.",
+        _ => "Your comment isn't posted.",
+    };
 
     // Discard and leave: the comment drafts go, so the page doesn't go on holding them.
     private void DiscardComments()

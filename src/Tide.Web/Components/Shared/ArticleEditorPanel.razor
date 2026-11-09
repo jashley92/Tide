@@ -1118,6 +1118,7 @@ else
     /// chooses. Save and leave goes only if the save works (a stale copy is refused, and stays here to sort out); Discard
     /// and leave drops the changes (the next article, or the page, loads afresh); Stay keeps everything as it is.
     /// </summary>
+    // Reads _dirty as it is now, not as the guard's last render had it.
     internal Task<bool> MayLeave() => _dirty ? _guard.Ask() : Task.FromResult(true);
 
     // Loaded again even when the way out leads back to this article, so what was discarded isn't left showing.

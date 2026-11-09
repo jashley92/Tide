@@ -11,7 +11,7 @@
 
 @if (Team is not null && !_turnedOn.Contains(Team.Id) && TeamSvc.NotEmailed(Team) is { } why)
 {
-    <div class="tide-missing small @(Compact ? "tide-missing-compact" : Class)" role="status">
+    <div class="tide-missing small @Class" role="status">
         <span class="bi bi-envelope-slash" aria-hidden="true"></span> @why.Text
         @switch (why.Cause)
         {
@@ -31,17 +31,15 @@
 @code {
     [Parameter] public Tide.Domain.Entities.Team? Team { get; set; }
 
-    /// <summary>Smaller and tighter, for a row of controls on a slide (the meeting's quick add): spans the row it's in.</summary>
-    [Parameter] public bool Compact { get; set; }
-
-    /// <summary>Its spacing where it sits (not Compact): a margin above, by default.</summary>
+    /// <summary>Its spacing where it sits: a margin above by default; <c>tide-missing-compact</c> for a row of controls on a
+    /// slide (the meeting's quick add), small and the row's full width.</summary>
     [Parameter] public string Class { get; set; } = "mt-2";
 
     // A fix on another page: a new tab, so the page this note is on (a dialog half filled in) isn't left. Said to a screen
     // reader, and shown by the icon.
     private static RenderFragment NewTab(string href, string text) => __builder =>
     {
-        <a class="ms-1" href="@href" target="_blank" rel="noopener">@text<span class="bi bi-box-arrow-up-right ms-1 small" aria-hidden="true"></span><span class="visually-hidden"> (opens in a new tab)</span></a>
+        <a class="ms-1" href="@href" target="_blank" rel="noopener noreferrer">@text<span class="bi bi-box-arrow-up-right ms-1 small" aria-hidden="true"></span><span class="visually-hidden"> (opens in a new tab)</span></a>
     };
 
     /// <summary>After the team's reminders are turned on here, so the page can read the team again.</summary>

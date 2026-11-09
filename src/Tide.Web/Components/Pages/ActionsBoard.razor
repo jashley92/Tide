@@ -290,14 +290,19 @@ else
     // How long typing in the search box pauses before the actions are searched.
     private readonly TypingPause _typing = new(300);
 
-    private bool Filtered => _search is not null || _priorities.Count > 0 || _due is not null || _status is not null || _ruleId is not null || _parentNumber is not null
+    // The filters besides the card rule and the bar's Team, Kind and Held by.
+    private bool Narrowed => _search is not null || _priorities.Count > 0 || _due is not null || _status is not null || _parentNumber is not null
         || _side is not null || _raised;
+
+    // What the list's own empty state counts as filtered.
+    private bool Filtered => Narrowed || _ruleId is not null;
+
+    // Every filter but the card rule, which the empty message counts only off the board. AnyFilter is these or the rule.
+    private bool FilteredBesidesRule => Narrowed || _teamId is not null || _kind is not null || _assignee is not null;
 
     private string Empty => _view switch
     {
-        _ when _priorities.Count > 0 || _due is not null || _status is not null || _parentNumber is not null || _side is not null || _raised || _assignee is not null
-            || _teamId is not null || _kind is not null || _search is not null
-            || (_ruleId is not null && !_asBoard) => "No actions match these filters.",
+        _ when FilteredBesidesRule || (_ruleId is not null && !_asBoard) => "No actions match these filters.",
         ActionView.Mine => "Nothing assigned to you.",
         ActionView.MyTeams => "Your teams have no open actions (or you're on no team).",
         ActionView.Overdue => "Nothing is overdue.",
@@ -527,7 +532,7 @@ else
     }
 
     // Clear shows while anything narrows the list: a pill, a filter, the words.
-    private bool AnyFilter => Filtered || _teamId is not null || _kind is not null || _assignee is not null;
+    private bool AnyFilter => FilteredBesidesRule || _ruleId is not null;
 
     // Clear: every filter and the words; the view, layout and grouping stay.
     internal Task ClearFilters()

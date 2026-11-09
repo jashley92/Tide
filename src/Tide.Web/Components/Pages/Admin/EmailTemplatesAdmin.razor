@@ -135,15 +135,17 @@ else
 @code {
     private ConfirmDialog _confirm = default!;
 
-    // The copies' boxes or the archive address, typed and not saved (judged as the save reads them: one address a line or
-    // separated by commas or semicolons, blanks dropped).
-    private static IEnumerable<string> Addresses(string? text) =>
-        (text ?? "").Split(['\n', '\r', ',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    // The copies' boxes or the archive address, typed and not saved, read as the save reads them (text it would refuse is
+    // unsaved too).
+    private static bool Differs(string? typed, IEnumerable<string> saved, int max = EmailCopyRules.MaxPerList)
+    {
+        try { return !EmailCopyRules.Parse(typed, "", max).SequenceEqual(saved, StringComparer.OrdinalIgnoreCase); }
+        catch (ArgumentException) { return true; }
+    }
 
-    internal bool CopiesUnsaved => _id.Length > 0 && Templates.Copies(_id) is var c
-        && (!Addresses(_cc).SequenceEqual(c.Cc, StringComparer.OrdinalIgnoreCase) || !Addresses(_bcc).SequenceEqual(c.Bcc, StringComparer.OrdinalIgnoreCase));
+    internal bool CopiesUnsaved => _id.Length > 0 && Templates.Copies(_id) is var c && (Differs(_cc, c.Cc) || Differs(_bcc, c.Bcc));
 
-    internal bool ArchiveUnsaved => !string.Equals((_archive ?? "").Trim(), Templates.Archive ?? "", StringComparison.OrdinalIgnoreCase);
+    internal bool ArchiveUnsaved => Differs(_archive, Templates.Archive is { } a ? [a] : [], max: 1);
 
     /// <summary>Whether leaving would lose anything: a template's wording (this one's, or a draft kept for another), its
     /// copies, or the archive address.</summary>
@@ -154,11 +156,11 @@ else
         get
         {
             var parts = new List<string>();
-            var wording = _drafts.Keys.Count(k => k != _id) + (Unsaved ? 1 : 0);
+            var wording = _drafts.Count + (Unsaved ? 1 : 0);   // the one shown is never among the drafts
             if (wording > 0) parts.Add(wording == 1 ? "a template's wording" : $"{wording} templates' wording");
             if (CopiesUnsaved) parts.Add("this template's copies");
             if (ArchiveUnsaved) parts.Add("the archive address");
-            return parts.Count == 0 ? "Nothing here is unsaved." : $"You've changed {string.Join(" and ", parts)}, and not saved it.";
+            return $"You've changed {string.Join(" and ", parts)}, and not saved it.";
         }
     }
 

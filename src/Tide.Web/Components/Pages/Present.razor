@@ -338,7 +338,7 @@ else
                                                             @foreach (var t in _teams) { <option value="@t.Id">@t.Name</option> }
                                                         </select>
                                                         <button type="button" class="btn btn-sm btn-primary" disabled="@_raising" aria-describedby="@lineId" @onclick="() => Raise(a.Id, line, draft)"><span class="bi bi-plus-lg" aria-hidden="true"></span> Raise</button>
-                                                        <NotEmailedNote Team="@_teams.FirstOrDefault(t => t.Id == draft.Team)" Compact="true" />
+                                                        <NotEmailedNote Team="@_teams.FirstOrDefault(t => t.Id == draft.Team)" Class="tide-missing-compact" />
                                                     }
                                                 </li>
                                             }
@@ -478,7 +478,7 @@ else
                                             }
                                             <button class="btn btn-sm btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(QuickAddTitle(a.Id)))" @onclick="() => QuickAdd(a.Id)"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add</button>
                                         </div>
-                                        <NotEmailedNote Team="@_teams.FirstOrDefault(t => t.Id == _qaTeam)" Compact="true" />
+                                        <NotEmailedNote Team="@_teams.FirstOrDefault(t => t.Id == _qaTeam)" Class="tide-missing-compact" />
                                     }
                                     else if (raised.Count == 0)
                                     {
