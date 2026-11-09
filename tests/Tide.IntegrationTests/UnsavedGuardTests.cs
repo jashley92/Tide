@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Actions;
+using Tide.Application.Settings;
 using Tide.Web.Components.Pages;
 using Tide.Web.Components.Pages.Admin;
 using Tide.Web.Components.Shared;
@@ -142,23 +143,28 @@ public class UnsavedGuardTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task NotEmailedNote_ItsFixesOpenInANewTab_AndCompactSpansTheRow()
+    public async Task NotEmailedNote_ItsFixOnAnotherPage_OpensInANewTab()
     {
         Guid quiet;
         await using (var scope = SignedIn(app, SignIn.Analyst))
-            quiet = await scope.ServiceProvider.GetRequiredService<TeamService>().AddExternalAsync(new ExternalTeamForm { Name = "Guard quiet provider", RemindersOn = false });
+            quiet = await scope.ServiceProvider.GetRequiredService<TeamService>().AddExternalAsync(new ExternalTeamForm { Name = "Guard quiet provider", RemindersOn = true });
         Tide.Domain.Entities.Team team;
         await using (var scope = SignedIn(app, SignIn.Analyst))
             team = (await scope.ServiceProvider.GetRequiredService<TeamService>().ListAsync()).Single(t => t.Id == quiet);
 
-        await using (var note = await RenderAsync<NotEmailedNote>(app, "/", new() { ["Team"] = team }))
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            await scope.ServiceProvider.GetRequiredService<OperationalSettingsService>().SaveAsync(new Dictionary<string, string?> { [OperationalSettings.ExternalReminders] = "true" });
+        try
         {
-            var html = await note.Html();
-            html.Should().Contain("href=\"admin/teams#rem-title\" target=\"_blank\" rel=\"noopener noreferrer\"")
+            await using var note = await RenderAsync<NotEmailedNote>(app, "/", new() { ["Team"] = team });
+            (await note.Html()).Should().Contain($"href=\"teams/external?edit={quiet}\" target=\"_blank\" rel=\"noopener noreferrer\"", "no contact email: add one")
                 .And.Contain("<span class=\"visually-hidden\"> (opens in a new tab)</span>").And.Contain("tide-missing small mt-2");
         }
-        await using (var compact = await RenderAsync<NotEmailedNote>(app, "/", new() { ["Team"] = team, ["Class"] = "tide-missing-compact" }))
-            (await compact.Html()).Should().Contain("tide-missing small tide-missing-compact").And.NotContain(" mt-2");
+        finally
+        {
+            await using var scope = SignedIn(app, SignIn.Analyst);
+            await scope.ServiceProvider.GetRequiredService<OperationalSettingsService>().SaveAsync(new Dictionary<string, string?> { [OperationalSettings.ExternalReminders] = "false" });
+        }
     }
 
     [Fact]

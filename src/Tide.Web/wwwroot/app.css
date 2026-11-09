@@ -887,8 +887,6 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-metric-ref-value { font-family: var(--tide-font-data); font-weight: var(--tide-weight-semibold); color: var(--tide-text); font-variant-numeric: tabular-nums; }
 @media (max-width: 700px) { .tide-metric-row { grid-template-columns: minmax(0, 1fr) 6rem; } .tide-metric-row .tide-metric-note, .tide-metric-row .tide-metric-prev { grid-column: 1 / -1; } }
 .tide-missing { background: var(--tide-warn-soft); color: var(--tide-warn); border-radius: var(--tide-radius-lg); padding: .45rem .7rem; font-size: .86rem; }
-/* NotEmailedNote on a slide's row of controls (the quick add, a recommended line): the whole row's width, and small. */
-.tide-missing.tide-missing-compact { grid-column: 1 / -1; padding: .2em .55em; font-size: .75em; margin-top: .25em; }
 .tide-past-day { display: flex; gap: .6rem; align-items: flex-start; background: var(--tide-info-soft); color: var(--tide-info); border-radius: var(--tide-radius-lg); padding: .6rem .8rem; font-size: .9rem; }
 .tide-edition-iocs { list-style: none; padding-left: 0; margin-bottom: .25rem; font-size: .86rem; }
 .tide-past-day > .bi { font-size: 1.1rem; line-height: 1.3; }

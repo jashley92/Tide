@@ -2,6 +2,7 @@ using System.Net;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Actions;
+using Tide.Application.Settings;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 using Tide.Web.Components.Pages;
@@ -34,6 +35,13 @@ public class HandoffPagesTests(TideApp app) : IClassFixture<TideApp>
         var id = await teams.AddAsync(name, null, null);
         if (limit is not null) await teams.SetLimitAsync(id, limit, mode);
         return id;
+    });
+
+    // External team reminders for everyone, an administrator's switch on Teams & SLA (off unless set).
+    private Task ExternalReminders(bool on) => As(async sp =>
+    {
+        await sp.GetRequiredService<OperationalSettingsService>().SaveAsync(new Dictionary<string, string?> { [OperationalSettings.ExternalReminders] = on ? "true" : "false" });
+        return true;
     });
 
     private Task<int> Raise(Guid team, string title, Guid? parent = null, DateOnly? due = null) =>
@@ -155,22 +163,26 @@ public class HandoffPagesTests(TideApp app) : IClassFixture<TideApp>
         await page.Press(p => p.StartHandoff());
         (await page.HtmlOnce("Hand it to")).Should().Contain("EP86 quiet provider (external)").And.NotContain("won&#x27;t be emailed", "nothing's chosen yet");
 
-        // The note the dialog shows under the team chosen, for that team, and none for an internal one.
+        // The note under the team chosen: nothing while external reminders are off for everyone (an administrator's
+        // choice, not this team's gap), and none for an internal team. With them on, this team's own switch and its fix,
+        // for whoever keeps the external teams.
         var teams = await As(sp => sp.GetRequiredService<TeamService>().ListAsync());
-        await using (var note = await RenderAsync<NotEmailedNote>(app, "/", new() { ["Team"] = teams.Single(t => t.Id == quiet) }))
-            WebUtility.HtmlDecode(await note.Html()).Should().Contain("EP86 quiet provider won't be emailed about this").And.Contain("bi-envelope-slash");
-        await using (var none = await RenderAsync<NotEmailedNote>(app, "/", new() { ["Team"] = teams.Single(t => t.Id == from) }))
-            (await none.Html()).Trim().Should().BeEmpty();
-        // The fix comes with it, for whoever may make it: reminders are off for everyone here, an administrator's to turn on.
-        await using (var admin = await RenderAsync<NotEmailedNote>(app, "/", new() { ["Team"] = teams.Single(t => t.Id == quiet) }))
-            (await admin.Html()).Should().Contain("href=\"admin/teams#rem-title\"");
-        await using (var owner = await RenderAsync<NotEmailedNote>(app, "/", new() { ["Team"] = teams.Single(t => t.Id == quiet) }, new SignIn("dev:ep86-owner", "Owner", "ActionOwner")))
-            (await owner.Html()).Should().NotContain("admin/teams", "only an administrator turns them on for everyone");
-
-        // On its own (the scan on), the team's switch and the missing contact each offer theirs.
         var off = teams.Single(t => t.Id == quiet);
-        var withScan = ExternalCadence.NotEmailed(off, scanOn: true)!;
-        withScan.Cause.Should().Be(NotEmailedCause.TeamOff);
+        await using (var everyone = await RenderAsync<NotEmailedNote>(app, "/", new() { ["Team"] = off }))
+            (await everyone.Html()).Trim().Should().BeEmpty("they're off for everyone, so nothing's missing here");
+        await ExternalReminders(true);
+        try
+        {
+            ExternalCadence.NotEmailed(off, scanOn: true)!.Cause.Should().Be(NotEmailedCause.TeamOff);
+            await using (var note = await RenderAsync<NotEmailedNote>(app, "/", new() { ["Team"] = off }))
+                WebUtility.HtmlDecode(await note.Html()).Should().Contain("EP86 quiet provider's reminders are off, so they won't be emailed about this")
+                    .And.Contain("bi-envelope-slash").And.Contain("Turn their reminders on");
+            await using (var none = await RenderAsync<NotEmailedNote>(app, "/", new() { ["Team"] = teams.Single(t => t.Id == from) }))
+                (await none.Html()).Trim().Should().BeEmpty();
+            await using (var viewer = await RenderAsync<NotEmailedNote>(app, "/", new() { ["Team"] = off }, Viewer))
+                (await viewer.Html()).Should().Contain("won&#x27;t be emailed").And.NotContain("Turn their reminders on", "only whoever keeps the external teams turns them on");
+        }
+        finally { await ExternalReminders(false); }
         await using (var editing = await RenderAsync<ExternalTeams>(app, $"/teams/external?edit={quiet}"))
             editing.Component.Editing.Should().Be(quiet, "Add a contact email opens that team's form");
 

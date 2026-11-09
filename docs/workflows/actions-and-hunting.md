@@ -709,11 +709,12 @@ the team isn't emailed until someone turns them on. The schedule a new team star
 is an administrator's to change there too. Teams already added keep theirs. They can be retired like any team.
 
 **Saying when one won't be emailed** (`ExternalCadence.NotEmailedWhy`, `NotEmailedNote`). Wherever work is given to an
-external team, TIDE says when that team won't hear about it, and why: external team reminders are off for everyone,
-the team's own reminders are off, or it has no contact email. It shows under the hand-off dialog's team, the action
-editor's team (a new action, or a team change), each external part ticked in the split dialog, and on an external
-action's team card. Each comes with its fix, for whoever may make it: *Turn them on in Teams & SLA* for an administrator,
-*Turn their reminders on* (`TeamService.TurnRemindersOnAsync`: audited, its schedule kept) or *Add a contact email*
+external team, TIDE says when that team won't hear about it, and why: the team's own reminders are off, or it has no
+contact email. While external team reminders are off for everyone, the note says nothing: that's an administrator's
+choice, not the team's gap, and *Not emailed* on External teams still says so. It shows under the hand-off dialog's
+team, the action editor's team (a new action, or a team change), each external part ticked in the split dialog, on an
+external action's team card and under Coverage's *Raise action*, never on the meeting's slides. Each comes with its fix,
+for whoever may make it: *Turn their reminders on* (`TeamService.TurnRemindersOnAsync`: audited, its schedule kept) or *Add a contact email*
 (External teams opened on that team's form, `?edit={id}`) for whoever keeps the external teams. External teams marks
 such a team *Not emailed*, the reason in its tooltip. Every change is
 audited. An action owned by an external team shows the team's contact and *Don't remind {team} about this one*. The
