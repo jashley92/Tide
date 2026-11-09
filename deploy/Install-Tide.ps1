@@ -359,9 +359,14 @@ Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name managedRuntimeVersion -Value
 Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name startMode -Value AlwaysRunning
 Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name processModel.idleTimeout -Value '00:00:00'
 # No scheduled recycle (the default is every 29 hours, which drops every open session mid-meeting) and never two
-# TIDE processes at once.
+# TIDE processes at once: no overlap at a recycle, and one worker process (no web garden).
 Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name recycling.periodicRestart.time -Value '00:00:00'
 Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name recycling.disallowOverlappingRotation -Value $true
+$single = Set-TideSingleWorkerProcess -Name $AppPoolName
+if (-not $single.Ok) {
+    throw ("The app pool '$AppPoolName' reads processModel.maxProcesses = $($single.After) after it was set to 1 (an " +
+           "applicationHost.config lock?). Set Maximum Worker Processes to 1 in the pool's Advanced Settings, then re-run.")
+}
 Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name processModel.identityType -Value SpecificUser
 Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name processModel.userName -Value $AppPoolIdentity
 $password = if ($AppPoolCredential) { $AppPoolCredential.GetNetworkCredential().Password } else { '' }   # a gMSA: none

@@ -219,7 +219,11 @@ The installer:
 - **Settings.** Writes `appsettings.Production.json` into the site. A re-run keeps the existing file and writes the
   new one beside it as `.new`.
 - **App pool.** Creates the pool: No Managed Code, your account, always running, no scheduled or overlapping
-  recycles.
+  recycles, and one worker process (`processModel.maxProcesses = 1`, Maximum Worker Processes in IIS Manager). It
+  reads that back and stops if the pool won't take it. Don't make the pool a web garden: each worker would keep its
+  own sign-ins and live pages. The background jobs run in one process whatever the pool says: the processes on one
+  database share a lease (the `JobLeases` table), and only its holder runs them (see
+  [backup-and-recovery.md](operations/backup-and-recovery.md#hosted-services-inside-the-app)).
 - **Site.** Creates the site with its host name and, given a certificate, an SNI binding on 443. Windows
   Authentication is on and Anonymous off, except `/health` for monitors (Windows off there) and `/api/v1` for API
   tokens (Windows left on, so a gMSA still signs in).

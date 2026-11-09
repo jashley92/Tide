@@ -7,10 +7,11 @@ namespace Tide.Web.Services;
 /// Runs the update check a few minutes after start, then every <c>Updates:CheckIntervalHours</c> (saved on the Updates
 /// page, else the server's, read each pass) while it's on. Every few minutes it re-reads whether the check is on (the setting saved on the Updates page, else
 /// <c>Updates:CheckEnabled</c>), so turning it on takes effect without a restart. A failed check is shown on the
-/// Updates page and Diagnostics; it never stops the app.
+/// Updates page and Diagnostics; it never stops the app. A process that doesn't hold the job lease skips its passes
+/// (another process checks).
 /// </summary>
 public sealed class UpdateCheckHostedService(IServiceScopeFactory scopes, UpdateCheckService updates, IOptionsMonitor<UpdateOptions> options,
-    JobMonitor jobs, TimeProvider time, ILogger<UpdateCheckHostedService> log) : BackgroundService
+    JobMonitor jobs, IJobLease lease, TimeProvider time, ILogger<UpdateCheckHostedService> log) : BackgroundService
 {
     public static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(5);
     public static readonly TimeSpan FirstDelay = TimeSpan.FromMinutes(2);
@@ -42,6 +43,7 @@ public sealed class UpdateCheckHostedService(IServiceScopeFactory scopes, Update
     /// logged, never thrown (except for shutting down).</summary>
     internal async Task PassAsync(CancellationToken ct)
     {
+        if (!await lease.HoldAsync(ct)) return;
         try
         {
             await ReadEnabledAsync(ct);
@@ -54,13 +56,13 @@ public sealed class UpdateCheckHostedService(IServiceScopeFactory scopes, Update
                 if (status.State == UpdateState.Failed) jobs.Failed(JobMonitor.UpdateCheck, status.Problem ?? "couldn't check");
                 else jobs.Succeeded(JobMonitor.UpdateCheck, started, status.State == UpdateState.Available ? $"{status.Latest!.Version} is available" : "up to date");
             }
-            jobs.Scheduled(JobMonitor.UpdateCheck, updates.Enabled, updates.Enabled ? (_lastRunUtc ?? time.GetUtcNow()) + interval : null);
+            jobs.Scheduled(JobMonitor.UpdateCheck, updates.Enabled, updates.Enabled ? (_lastRunUtc ?? time.GetUtcNow()) + interval : null, interval);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
-            jobs.Failed(JobMonitor.UpdateCheck, ex.GetType().Name + ": " + ex.Message);
-            log.LogError(ex, "The update check failed; it's tried again later.");
+            // Logged by the monitor (a Warning, with the job's event id); it's tried again later.
+            jobs.Failed(JobMonitor.UpdateCheck, ex.GetType().Name + ": " + ex.Message, ex);
             _lastRunUtc = time.GetUtcNow();
         }
     }

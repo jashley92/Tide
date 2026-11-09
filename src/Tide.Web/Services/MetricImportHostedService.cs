@@ -8,10 +8,11 @@ namespace Tide.Web.Services;
 /// <summary>
 /// Reads the metrics drop folder every <c>Metrics:Import:PollMinutes</c> when <c>Metrics:Import:DropFolderEnabled</c> is
 /// set (ADR 0014): each saved on Metric imports, else the server's. Both are read on each pass, so a change takes effect
-/// without a restart. A failure is logged and tried again at the next pass; it never stops the app.
+/// without a restart. A failure is logged and tried again at the next pass; it never stops the app. A process that
+/// doesn't hold the job lease skips its passes (another process reads the folder).
 /// </summary>
 public sealed class MetricImportHostedService(IServiceScopeFactory scopes, MetricDropFolder folder, IOptionsMonitor<MetricImportOptions> options,
-    JobMonitor jobs, TimeProvider time, ILogger<MetricImportHostedService> log) : BackgroundService
+    JobMonitor jobs, IJobLease lease, TimeProvider time, ILogger<MetricImportHostedService> log) : BackgroundService
 {
     public static readonly TimeSpan OffInterval = TimeSpan.FromMinutes(1);
 
@@ -36,24 +37,26 @@ public sealed class MetricImportHostedService(IServiceScopeFactory scopes, Metri
             {
                 try
                 {
-                    await jobs.RunAsync(JobMonitor.MetricDropFolder, async () =>
-                    {
-                        await using var scope = scopes.CreateAsyncScope();
-                        var read = await folder.ProcessAsync(scope.ServiceProvider.GetRequiredService<MetricImportService>(), stoppingToken);
-                        if (read > 0) log.LogInformation("Imported {Count} metrics file(s) from the drop folder.", read);
-                        return $"{read} file{(read == 1 ? "" : "s")}";
-                    });
+                    if (await lease.HoldAsync(stoppingToken))
+                        await jobs.RunAsync(JobMonitor.MetricDropFolder, async () =>
+                        {
+                            await using var scope = scopes.CreateAsyncScope();
+                            var read = await folder.ProcessAsync(scope.ServiceProvider.GetRequiredService<MetricImportService>(), stoppingToken);
+                            if (read > 0) log.LogInformation("Imported {Count} metrics file(s) from the drop folder.", read);
+                            return $"{read} file{(read == 1 ? "" : "s")}";
+                        });
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
                 catch (Exception ex)
                 {
-                    log.LogError(ex, "Reading the metrics drop folder failed; it's tried again at the next pass.");
+                    // Recorded and logged (a Warning, with the job's event id) by the monitor.
+                    log.LogDebug(ex, "Reading the metrics drop folder failed; it's tried again at the next pass.");
                 }
             }
             // While it's off, whether it's on is asked every minute, so turning it on takes effect soon.
             on = Read(() => folder.Enabled, false);
             var wait = on ? Read(() => TimeSpan.FromMinutes(Math.Clamp(options.CurrentValue.PollMinutes, 1, 60)), OffInterval) : OffInterval;
-            jobs.Scheduled(JobMonitor.MetricDropFolder, on, on ? time.GetUtcNow() + wait : null);
+            jobs.Scheduled(JobMonitor.MetricDropFolder, on, on ? time.GetUtcNow() + wait : null, on ? wait : null);
             try { await Task.Delay(wait, stoppingToken); }
             catch (OperationCanceledException) { return; }
         }

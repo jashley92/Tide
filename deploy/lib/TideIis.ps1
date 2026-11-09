@@ -22,6 +22,23 @@ function Stop-TideAppPool([string] $Name, [int] $TimeoutSeconds = 120) {
            "files. Stop the pool in IIS Manager (or end its w3wp.exe), then re-run.")
 }
 
+# One worker process for the pool (processModel.maxProcesses = 1). A web garden runs a copy of the app in each worker:
+# the app's job lease keeps the background jobs to one of them, but sign-ins, live pages and presence are each
+# worker's own. Sets it, reads it back, and returns what it was and what it is now (the caller says what to do when
+# it isn't 1). A value read through the IIS provider can be a ConfigurationAttribute; its .Value is the number.
+function Set-TideSingleWorkerProcess([string] $Name) {
+    function Read-MaxProcesses {
+        $v = (Get-Item "IIS:\AppPools\$Name").processModel.maxProcesses
+        if ($null -ne $v -and $v.PSObject.Properties['Value']) { $v = $v.Value }
+        if ($null -eq $v) { return $null }
+        return [int]$v
+    }
+    $before = Read-MaxProcesses
+    Set-ItemProperty "IIS:\AppPools\$Name" -Name processModel.maxProcesses -Value 1
+    $after = Read-MaxProcesses
+    return [pscustomobject]@{ Before = $before; After = $after; Ok = ($after -eq 1) }
+}
+
 # The paths IIS lets through to the app without a Windows sign-in. The rest of the site stays Windows-authenticated.
 # The app still enforces each one: /health (and /health/live below it) answers a status word only, with no detail;
 # /api/v1 lets a bearer token (Authorization: Bearer tide_pat_...) reach the app, which still requires a token or a

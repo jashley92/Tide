@@ -155,12 +155,19 @@ else
 
     <section class="tide-card" aria-labelledby="diag-jobs">
         <h2 id="diag-jobs"><span class="bi bi-clock-history" aria-hidden="true"></span> Background jobs</h2>
-        <p class="small tide-muted">Since the app last started.
+        <p class="small tide-muted">
+            @switch (report.Lease.State)
+            {
+                case LeaseState.Held: <text>This process (@report.Lease.HolderName) runs them. </text> break;
+                case LeaseState.StandingBy: <text>Standing by: @(report.Lease.HolderName ?? "another process") runs them, so this process runs none. </text> break;
+                case LeaseState.Unreachable: <text>The job lease couldn't be taken, so none runs here until the database answers. </text> break;
+            }
+            Each job's latest run, kept across restarts; the runs and failures are of the last @((int)JobRunLog.Keep.TotalDays) days.
             @if (report.Sources.Enabled > 0) { <text>@report.Sources.Enabled source@(report.Sources.Enabled == 1 ? " is" : "s are") turned on; @report.Sources.Failing failing. </text> }
             @if (report.LastCveRun is { } cve) { <text>The last CVE refresh was @Ui.When(Clock, cve.AtUtc).</text> }
         </p>
         <table class="tide-table">
-            <thead><tr><th>Job</th><th>State</th><th>Last run</th><th>Next</th></tr></thead>
+            <thead><tr><th>Job</th><th>State</th><th>Last run</th><th>Next</th><th class="text-end">Runs</th></tr></thead>
             <tbody>
                 @foreach (var j in report.Jobs)
                 {
@@ -170,7 +177,12 @@ else
                             <div class="small tide-muted">@j.Job.Schedule</div>
                         </td>
                         <td class="text-nowrap">
-                            @if (j.Running) { <Badge Tone="BadgeTone.Info">Running</Badge> }
+                            @if (report.JobHealth.For(j.Job) is { } finding)
+                            {
+                                <Badge Tone="@(finding.Level == JobHealthLevel.Unhealthy ? BadgeTone.Danger : BadgeTone.Warn)">@(finding.Problem switch { JobProblem.Hung => "Hung", JobProblem.Overdue => "Overdue", _ => "Failing" })</Badge>
+                                <div class="small tide-muted text-wrap">@finding.Text</div>
+                            }
+                            else if (j.Running) { <Badge Tone="BadgeTone.Info">Running</Badge> }
                             else if (!j.Enabled) { <Badge>Off</Badge> }
                             else if (j.LastSucceeded == false) { <CheckBadge Level="CheckLevel.Attention" /> }
                             else if (j.LastSucceeded == true) { <CheckBadge Level="CheckLevel.Ok" /> }
@@ -189,10 +201,35 @@ else
                             }
                         </td>
                         <td class="text-nowrap">@(j.Enabled && j.NextDueUtc is { } next ? Ui.When(Clock, next) : "—")</td>
+                        <td class="text-end text-nowrap">
+                            @if (report.JobHistory.For(j.Job) is { } h)
+                            {
+                                @h.Runs @if (h.Failed > 0) { <span class="small text-danger d-block">@h.Failed failed</span> }
+                            }
+                            else { <span class="tide-muted">—</span> }
+                        </td>
                     </tr>
                 }
             </tbody>
         </table>
+        @if (report.JobHistory.RecentFailures.Count > 0)
+        {
+            <h3 class="h6 mt-3">Recent failures</h3>
+            <table class="tide-table">
+                <thead><tr><th>When</th><th>Job</th><th>Server</th><th>Error</th></tr></thead>
+                <tbody>
+                    @foreach (var f in report.JobHistory.RecentFailures)
+                    {
+                        <tr>
+                            <td class="text-nowrap">@Ui.When(Clock, f.FinishedUtc)</td>
+                            <td class="text-nowrap">@(JobMonitor.All.FirstOrDefault(d => d.Key == f.Job)?.Name ?? f.Job)</td>
+                            <td class="text-nowrap tide-data small">@f.Machine</td>
+                            <td class="small">@f.Error</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
     </section>
 }
 

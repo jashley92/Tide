@@ -10,9 +10,9 @@ namespace Tide.Web.Services;
 /// when it's due (when <c>Cve:Enabled</c>), and prunes old feed items once a day. Each setting is the one saved on
 /// Sources, else the server's, read on every pass. Each part's failure is logged and
 /// tried again at the next pass; it never stops the app. Each part's runs are reported to <see cref="JobMonitor"/> for
-/// Diagnostics.
+/// Diagnostics. A process that doesn't hold the job lease skips its passes (another process runs them).
 /// </summary>
-public sealed class IntakeHostedService(IServiceScopeFactory scopes, ChangeFeed changes, JobMonitor jobs, IOptionsMonitor<IntakeOptions> intake,
+public sealed class IntakeHostedService(IServiceScopeFactory scopes, ChangeFeed changes, JobMonitor jobs, IJobLease lease, IOptionsMonitor<IntakeOptions> intake,
     IOptionsMonitor<CveOptions> cve, TimeProvider time, ILogger<IntakeHostedService> log) : BackgroundService
 {
     public static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(1);
@@ -37,12 +37,13 @@ public sealed class IntakeHostedService(IServiceScopeFactory scopes, ChangeFeed 
     /// server's), so turning either on or off takes effect at the next pass.</summary>
     internal async Task PassAsync(CancellationToken stoppingToken)
     {
+        if (!await lease.HoldAsync(stoppingToken)) return;
         var now = time.GetUtcNow();
         var polling = intake.CurrentValue.Enabled;
         var enriching = cve.CurrentValue.Enabled;
         // Each part's on/off is known before any of them runs, so a slow first pass doesn't show the later ones as off.
         jobs.Scheduled(JobMonitor.FeedPoll, polling, polling ? now + PollInterval : null);
-        jobs.Scheduled(JobMonitor.CveRefresh, enriching, enriching ? jobs.Get(JobMonitor.CveRefresh).NextDueUtc ?? now : null);
+        jobs.Scheduled(JobMonitor.CveRefresh, enriching, enriching ? jobs.Get(JobMonitor.CveRefresh).NextDueUtc ?? now : null, CveInterval(cve.CurrentValue));
         jobs.Scheduled(JobMonitor.Prune, true, _lastPrune == DateTimeOffset.MinValue ? now : _lastPrune + TimeSpan.FromDays(1));
         await Step("Polling the sources", JobMonitor.FeedPoll, async sp =>
         {
@@ -75,15 +76,17 @@ public sealed class IntakeHostedService(IServiceScopeFactory scopes, ChangeFeed 
             if (run is { Error: { } error }) jobs.Failed(JobMonitor.CveRefresh, error);
             else if (run is not null) jobs.Succeeded(JobMonitor.CveRefresh, started, $"KEV {run.Kev}, EPSS {run.Epss}, NVD {run.Nvd}");
             var last = jobs.Get(JobMonitor.CveRefresh).LastFinishedUtc;
-            jobs.Scheduled(JobMonitor.CveRefresh, o.Enabled, o.Enabled ? (last ?? started) + TimeSpan.FromHours(Math.Max(1, o.RefreshHours)) : null);
+            jobs.Scheduled(JobMonitor.CveRefresh, o.Enabled, o.Enabled ? (last ?? started) + CveInterval(o) : null, CveInterval(o));
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { /* shutting down */ }
         catch (Exception ex)
         {
-            jobs.Failed(JobMonitor.CveRefresh, ex.GetType().Name + ": " + ex.Message);
-            log.LogError(ex, "Refreshing the CVE data failed; it's tried again at the next pass.");
+            // Logged by the monitor (a Warning, with the job's event id); it's tried again at the next pass.
+            jobs.Failed(JobMonitor.CveRefresh, ex.GetType().Name + ": " + ex.Message, ex);
         }
     }
+
+    private static TimeSpan CveInterval(CveOptions o) => TimeSpan.FromHours(Math.Max(1, o.RefreshHours));
 
     // Whether the step ran to the end.
     private async Task<bool> Step(string what, JobDefinition job, Func<IServiceProvider, Task<string?>> work, CancellationToken ct)
@@ -100,7 +103,8 @@ public sealed class IntakeHostedService(IServiceScopeFactory scopes, ChangeFeed 
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { /* shutting down */ }
         catch (Exception ex)
         {
-            log.LogError(ex, "{What} failed; it's tried again at the next pass.", what);
+            // Recorded and logged (a Warning, with the job's event id) by the monitor.
+            log.LogDebug(ex, "{What} failed; it's tried again at the next pass.", what);
         }
         return false;
     }

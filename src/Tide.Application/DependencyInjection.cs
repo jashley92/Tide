@@ -45,6 +45,10 @@ public static class DependencyInjection
         services.Configure<AiOptions>(config.GetSection("Ai"));
         services.Configure<EmailBoundaryOptions>(config.GetSection("Email"));
         services.AddSingleton<JobMonitor>();
+        services.AddSingleton<JobRunLog>();
+        // One process runs the background jobs (the lease in the database); the others stand by.
+        services.AddSingleton<BackgroundJobLease>();
+        services.AddSingleton<IJobLease>(sp => sp.GetRequiredService<BackgroundJobLease>());
         services.AddSingleton<UpdateCheckService>();
         services.AddScoped<UpdateSettings>();
         services.AddScoped<ConfigBundleService>();

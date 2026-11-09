@@ -707,6 +707,45 @@ public partial class DeployScriptPowerShellTests
     }
 
     [Fact]
+    public void The_pool_is_set_to_one_worker_process_read_back_and_a_value_that_doesnt_take_is_reported()
+    {
+        // Stand-ins for the IIS provider: Set-ItemProperty records what it's asked; Get-Item answers the pool's
+        // maxProcesses, first as a ConfigurationAttribute-like object (with .Value), as the provider can. Under each
+        // PowerShell here, since the installer and the upgrade run under Windows PowerShell 5.1.
+        foreach (var shell in Shells())
+        {
+            var r = Run("""
+                . (Join-Path (Join-Path $deploy 'lib') 'TideIis.ps1')
+                $script:max = [pscustomobject]@{ Value = [long]4 }
+                $script:sticks = $true
+                $script:calls = @()
+                function Get-Item([string] $Path) { [pscustomobject]@{ processModel = [pscustomobject]@{ maxProcesses = $script:max } } }
+                function Set-ItemProperty([string] $Path, [string] $Name, $Value) {
+                    $script:calls += "$Path $Name=$Value"
+                    if ($script:sticks) { $script:max = $Value }
+                }
+                $set = Set-TideSingleWorkerProcess -Name 'TIDE'
+                $script:max = 2; $script:sticks = $false
+                $locked = Set-TideSingleWorkerProcess -Name 'TIDE'
+                ConvertTo-Json -Compress -InputObject ([ordered]@{
+                    calls = @($script:calls); before = $set.Before; after = $set.After; ok = $set.Ok
+                    lockedAfter = $locked.After; lockedOk = $locked.Ok })
+                """, shell);
+            r.GetProperty("calls")[0].GetString().Should().Be(@"IIS:\AppPools\TIDE processModel.maxProcesses=1");
+            (r.GetProperty("before").GetInt32(), r.GetProperty("after").GetInt32(), r.GetProperty("ok").GetBoolean()).Should().Be((4, 1, true), shell);
+            (r.GetProperty("lockedAfter").GetInt32(), r.GetProperty("lockedOk").GetBoolean()).Should().Be((2, false), shell);
+        }
+
+        // The installer stops on a pool that won't take it; the upgrade (its new build already in place) warns.
+        var install = File.ReadAllText(Path.Combine(DeployScriptTests.Deploy, "Install-Tide.ps1"));
+        var upgrade = File.ReadAllText(Path.Combine(DeployScriptTests.Deploy, "Upgrade-Tide.ps1"));
+        install.Should().MatchRegex(@"Set-TideSingleWorkerProcess -Name \$AppPoolName\s+if \(-not \$single\.Ok\) \{\s+throw");
+        upgrade.Should().MatchRegex(@"Set-TideSingleWorkerProcess -Name \$AppPoolName\s+if \(-not \$single\.Ok\) \{[^}]*Write-Warn2");
+        upgrade.IndexOf("Set-TideSingleWorkerProcess", StringComparison.Ordinal).Should().BePositive()
+            .And.BeLessThan(upgrade.IndexOf("Write-Step \"Starting app pool\"", StringComparison.Ordinal), "it's set while the pool is stopped");
+    }
+
+    [Fact]
     public void Settings_files_with_the_comments_and_trailing_commas_the_app_accepts_are_read_under_Windows_PowerShell_too()
     {
         // .NET's configuration reader takes these; Windows PowerShell 5.1's ConvertFrom-Json doesn't, and the scheduled

@@ -147,7 +147,10 @@ caps each column on screen. Saved queries, outreach templates and playbooks, lib
 | `ApiTokenService` | `Api/ApiTokens.cs` | API tokens: issue, revoke, sign in | `ListAsync`, `IssueAsync`, `RevokeAsync`, `AuthenticateAsync` | Administer (not for sign-in) |
 | `WebhookService` | `Api/Webhooks.cs` | Webhooks and their delivery | `ListAsync`, `AddAsync`, `SetEnabledAsync`, `RemoveAsync`, `TestAsync`, `DeliverDueAsync` | Administer (not for delivery) |
 | `ApiService` | `Api/ApiService.cs` | The API's reads and writes, each through the service above | `BriefAsync`, `ActionsAsync`, `ActionAsync`, `OpenFileAsync`, `UpdateActionAsync`, `StackAsync`, `MetricsAsync`, `SetMetricAsync`, `ProposeAsync` | ReadTeamEdition for a brief; the rest in the services it calls |
-| `JobMonitor` (singleton) | `Operations/JobMonitor.cs` | Each background job's last run, for Diagnostics | `RunAsync`, `Scheduled`, `Succeeded`, `Failed` | none |
+| `JobMonitor` (singleton) | `Operations/JobMonitor.cs` | Each background job's last run, for Diagnostics and `/health/jobs`; logs each failure under the job's event id | `RunAsync`, `Scheduled`, `Succeeded`, `Failed`, `TakeFinished`, `Restore` | none |
+| `BackgroundJobLease` (singleton, also `IJobLease`) | `Operations/BackgroundJobLease.cs` | Whether this process runs the background jobs (the `JobLeases` row) | `HoldAsync`, `ReleaseAsync`, `Status` | none |
+| `JobRunLog` (singleton) | `Operations/JobRunLog.cs` | The job history (`JobRuns`): writes, prunes after 30 days, restores at start-up, reads for Diagnostics | `FlushAsync`, `PruneAsync`, `RestoreAsync`, `HistoryAsync` | none |
+| `JobHealth` (static) | `Operations/JobHealth.cs` | Whether each job is failing, overdue or hung | `Evaluate` | none |
 | `OrgClock` (singleton) | `Org/OrgClock.cs` | The organization's time zone, today, business days and holidays | `Today`, `CurrentBriefDate`, `Days` | none |
 
 The Web project adds circuit-level services for live collaboration (`Presence`, `LiveMeetings`, `BoardDrags`, in
@@ -228,10 +231,25 @@ flowchart TD
 
 ## Background jobs
 
-Five hosted services run in the web process (registered with `AddHostedService` in `Program.cs`). Each loops with
-`Task.Delay`, makes a fresh DI scope per pass, reports to `JobMonitor` (shown in Administration › System ›
-Diagnostics; a restart clears it), re-reads its on/off settings on every pass so a change takes effect without a
-restart, and logs a failure and tries again at the next pass. None of them can stop the app.
+Five hosted services run the jobs in the web process (registered with `AddHostedService` in `Program.cs`), and a
+sixth keeps their bookkeeping. Each loops with `Task.Delay`, makes a fresh DI scope per pass, re-reads its on/off
+settings on every pass so a change takes effect without a restart, and tries again at the next pass after a failure.
+None of them can stop the app.
+
+- **One process runs them.** Before each pass a job asks `IJobLease.HoldAsync` and skips the pass unless this process
+  holds the lease: one row in `JobLeases`, taken and renewed with one conditional `UPDATE` (set this holder and a new
+  expiry where the row is this holder's or has lapsed), atomic on SQLite and SQL Server alike, so a web garden, an
+  overlapping recycle or a second server on the database doesn't send a reminder twice. It lapses 3 minutes after its
+  last renewal; a pass within 30 seconds of the last renewal doesn't ask again. While the database doesn't answer, a
+  holder keeps going until 30 seconds before the expiry it wrote, then stops. The in-process locks (the reminder
+  scans' `SemaphoreSlim`) still keep an administrator's **Run now** and the poller apart within the process.
+- **Reporting.** Each run is reported to `JobMonitor` (Administration › System › Diagnostics, `/health/jobs`), which
+  logs a failure as a Warning under the job's event id (7101 to 7107) and queues the run for the job history.
+- **Upkeep.** `JobUpkeepHostedService` (`src/Tide.Web/Services/JobUpkeepHostedService.cs`), registered first so it
+  stops last, renews the lease every 30 seconds whatever the jobs are doing, writes the queued runs to `JobRuns`, and
+  prunes runs older than 30 days daily while it holds the lease. At shutdown it writes what's left and lets the lease
+  go, so a standby takes over at once. At start-up `JobRunLog.RestoreAsync` reads each job's latest run back into
+  the monitor.
 
 ```mermaid
 flowchart LR
@@ -261,6 +279,12 @@ flowchart LR
 | `MetricImportHostedService` (`src/Tide.Web/Services/MetricImportHostedService.cs`) | Every `Metrics:Import:PollMinutes` (5, held to 1 to 60) while on; checks every minute while off | CSV files in `metrics-inbox` under `Files:RootPath`, once unchanged for 30 seconds | Metric values and an import record (`MetricImportService.ImportDroppedAsync`); moves each file to `processed`, `rejected` or `failed`, deleted after 90 days (`MetricDropFolder`) | `Metrics:Import:DropFolderEnabled` (off by default) | Logged; a file the database couldn't take waits for the next pass. A setting that won't bind is logged and treated as off. |
 | `UpdateCheckHostedService` (`src/Tide.Web/Services/UpdateCheckHostedService.cs`) | First check 2 minutes after start, then every `Updates:CheckIntervalHours` (24, held to 6 to 168); re-reads the switch every 5 minutes | GitHub Releases for `Updates:Repository`, over `OutboundHttp` | Nothing in the database; the result in memory for the Updates page | `Updates:CheckEnabled` (off by default; saved on the Updates page) | Recorded as "couldn't check" with the reason; tried at the next interval. |
 | `WebhookHostedService` (`src/Tide.Web/Api/WebhookServices.cs`) | Every minute, at start-up first | Enabled webhooks; actions raised and brief sends since each watermark, at least 30 seconds old; open actions newly overdue | POSTs to each webhook; its watermarks and last result (outside the audit log) | Each webhook's on/off in Administration › API access | A webhook stops at its first failed post and retries from there next minute with the same event id. See [API.md](../API.md#webhooks). |
+| `JobUpkeepHostedService` (`src/Tide.Web/Services/JobUpkeepHostedService.cs`) | Every 30 seconds; at shutdown | The `JobLeases` row; the runs `JobMonitor` queued | The lease (renewed, or let go at shutdown); `JobRuns`, and deletes runs older than 30 days once a day | Always on; prunes only while it holds the lease | Logged as a Warning; runs it couldn't write are kept (up to 2,000) and written at the next pass. |
+
+Every job but the upkeep runs only in the process holding the job lease. A run past its job's limit (30 minutes for
+most, 2 hours for the CVE refresh, 10 minutes for the update check, 15 for webhooks, 1 hour for the prune) is hung,
+and a job with no good run in three intervals (at least 15 minutes) is overdue: see `JobHealth` and
+[backup-and-recovery.md](../operations/backup-and-recovery.md#endpoints).
 
 Other timers that aren't hosted services:
 
@@ -387,7 +411,7 @@ everything, log it, and record it on Diagnostics.
 | Download headers | `src/Tide.Web/Security/FileDownloads.cs` |
 | Security headers, circuit origin, user mirror | `src/Tide.Web/Security/SecurityHeadersMiddleware.cs`, `CircuitOriginMiddleware.cs`, `UserMirrorMiddleware.cs` |
 | Hosted services | `src/Tide.Web/Services/*HostedService.cs`, `src/Tide.Web/Api/WebhookServices.cs` |
-| Job reporting | `src/Tide.Application/Operations/JobMonitor.cs` |
+| Job reporting, lease and history | `src/Tide.Application/Operations/JobMonitor.cs`, `BackgroundJobLease.cs`, `JobRunLog.cs`, `JobHealth.cs` |
 | Outbound HTTP | `src/Tide.Infrastructure/Notifications/OutboundHttp.cs`, `AddressPolicy.cs`, `OutboundCircuit.cs` |
 | Email | `src/Tide.Infrastructure/Notifications/EmailSender.cs`, `EmailOptions.cs`, `SmtpClientFactory.cs` |
 | Change feed | `src/Tide.Application/Abstractions/ChangeFeed.cs`, `src/Tide.Infrastructure/Persistence/ChangeInterceptor.cs` |

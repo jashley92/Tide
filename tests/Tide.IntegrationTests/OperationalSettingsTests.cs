@@ -282,7 +282,7 @@ public class IntakeHostedServiceSettingsTests
         rig.Db.Http.Set(FeedUrl, "<rss version=\"2.0\"><channel><title>News</title></channel></rss>");
         await rig.Get<IntakeService>().SaveSourceAsync(new SourceForm { Name = "News", Kind = SourceKind.Feed, Url = FeedUrl, DefaultTlp = TlpLevel.Clear, PollMinutes = 30 });
         var jobs = new JobMonitor(TimeProvider.System);
-        var hosted = new IntakeHostedService(rig.Get<IServiceScopeFactory>(), new ChangeFeed(), jobs, rig.Get<IOptionsMonitor<IntakeOptions>>(),
+        var hosted = new IntakeHostedService(rig.Get<IServiceScopeFactory>(), new ChangeFeed(), jobs, new HeldLease(), rig.Get<IOptionsMonitor<IntakeOptions>>(),
             rig.Get<IOptionsMonitor<CveOptions>>(), TimeProvider.System, NullLogger<IntakeHostedService>.Instance);
 
         await hosted.PassAsync(CancellationToken.None);

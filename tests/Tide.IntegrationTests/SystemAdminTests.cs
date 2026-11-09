@@ -346,7 +346,7 @@ public class UpdateCheckHostedServiceTests
         var updates = new UpdateCheckService(db.Http, monitor, Microsoft.Extensions.Logging.Abstractions.NullLogger<UpdateCheckService>.Instance,
             running: ReleaseVersion.Parse("0.1.0-alpha.1"), useBuildVersion: false);
         var jobs = new JobMonitor(TimeProvider.System);
-        var hosted = new UpdateCheckHostedService(provider.GetRequiredService<IServiceScopeFactory>(), updates, monitor, jobs, TimeProvider.System,
+        var hosted = new UpdateCheckHostedService(provider.GetRequiredService<IServiceScopeFactory>(), updates, monitor, jobs, new HeldLease(), TimeProvider.System,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<UpdateCheckHostedService>.Instance);
         return new Rig(hosted, updates, jobs, provider);
     }
