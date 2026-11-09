@@ -100,7 +100,7 @@
             <div class="row g-2">
                 <div class="col-md-5"><input class="form-control form-control-sm" placeholder="Name (e.g. Vulnerability Management)" aria-label="New team name" @bind="_newName" /></div>
                 <div class="col-md-5"><input class="form-control form-control-sm" placeholder="Team mailbox (optional)" aria-label="New team mailbox" @bind="_newEmail" /></div>
-                <div class="col-md-2"><button class="btn btn-primary btn-sm w-100" disabled="@_busy" data-submit @onclick="AddTeam">Add team</button></div>
+                <div class="col-md-2"><button class="btn btn-primary btn-sm w-100" disabled="@_busy" data-submit @onclick="() => AddTeam()">Add team</button></div>
             </div>
         </div>
     </div>
@@ -665,11 +665,25 @@
     /// <summary>The internal teams listed.</summary>
     internal IReadOnlyList<Team> Shown => _teams;
 
-    private Task AddTeam() => Run(async () =>
+    // A mailbox outside the organization is asked about first.
+    internal async Task AddTeam(bool confirmOutside = false)
     {
-        await TeamSvc.AddAsync(_newName ?? "", null, _newEmail);
-        _newName = _newEmail = null;
-    });
+        var ask = (string?)null;
+        await Run(async () =>
+        {
+            try { await TeamSvc.AddAsync(_newName ?? "", null, _newEmail, confirmOutside); }
+            catch (OutsideAddressesException ex)
+            {
+                ask = ex.Message;
+                return;
+            }
+            _newName = _newEmail = null;
+        });
+        if (await _confirm.AskOutside(ask)) await AddTeam(true);
+    }
+
+    /// <summary>The add-a-team boxes, as a test types into them.</summary>
+    internal (string? Name, string? Email) NewTeam { get => (_newName, _newEmail); set => (_newName, _newEmail) = value; }
 
     private Task AddMember(Guid teamId) => Run(async () =>
     {

@@ -211,6 +211,29 @@ public class EmailBoundaryTests : IDisposable
         (await teams.ListAsync()).Single(t => t.Id == id).EscalationEmail.Should().Be("pat@home.example");
     }
 
+    [Fact]
+    public async Task AnInternalTeamsMailbox_OutsideTheOrganization_IsConfirmedWhenSetOrChanged()
+    {
+        var teams = _db.Teams();
+        (await FluentActions.Invoking(() => teams.AddAsync("Facilities", null, "facilities@contractor.example")).Should().ThrowAsync<OutsideAddressesException>())
+            .Which.Message.Should().Contain("facilities@contractor.example is outside example.org").And.Contain("reminders and digests");
+        (await teams.ListAsync()).Should().NotContain(t => t.Name == "Facilities", "nothing added until it's confirmed");
+        var id = await teams.AddAsync("Facilities", null, "facilities@contractor.example", confirmOutside: true);
+
+        await teams.UpdateAsync(id, "Facilities and estates", null, "facilities@contractor.example");   // the same mailbox: not asked again
+        await FluentActions.Invoking(() => teams.UpdateAsync(id, "Facilities and estates", null, "estates@contractor.example"))
+            .Should().ThrowAsync<OutsideAddressesException>();
+        await teams.UpdateAsync(id, "Facilities and estates", null, "facilities@example.org");   // inside: nothing to ask
+
+        var form = TeamForm.From((await teams.ListAsync()).Single(t => t.Id == id));
+        form.Email = "estates@contractor.example";
+        (await FluentActions.Invoking(() => teams.UpdateAsync(id, form)).Should().ThrowAsync<OutsideAddressesException>())
+            .Which.Outside.Should().ContainSingle().Which.Should().Be("estates@contractor.example");
+        form.ConfirmOutside = true;
+        await teams.UpdateAsync(id, form);
+        (await teams.ListAsync()).Single(t => t.Id == id).Email.Should().Be("estates@contractor.example");
+    }
+
     // --- the standing copies, checked again as each email goes ------------------------------------------------------
 
     [Fact]
@@ -235,7 +258,8 @@ public class EmailBoundaryTests : IDisposable
         sent.Cc.Should().BeEmpty();
         sent.Bcc.Should().ContainSingle().Which.Should().Be("partner@isac.example", "confirmed outside when it was saved");
         sent.To.Should().Equal("robin@example.org");
-        log.Warnings.Should().ContainSingle().Which.Should().Contain("lead@example.org").And.Contain("archive@example.org").And.Contain("example.net");
+        log.Warnings.Should().ContainSingle().Which.Should().Contain("2 copy addresses outside the organization were dropped")
+            .And.Contain("check Email templates").And.NotContain("@", "the log never carries an address");
     }
 
     // --- the boundary: Email:OrganizationDomains, else the domain of Email:From --------------------------------------

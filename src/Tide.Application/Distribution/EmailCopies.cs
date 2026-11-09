@@ -108,7 +108,8 @@ public sealed class EmailCopyStore
 /// Adds the standing copies to each email on its way to the relay: its template's CC and BCC, and the archive's BCC
 /// (<see cref="EmailCopyRules.For"/>). Everything TIDE sends goes through it. Each copy is checked against the
 /// organization's boundary again as it goes: one outside it that an administrator didn't confirm (it was inside when
-/// saved, and the domains have changed since), or an archive now outside it, is dropped, with a warning in the log.
+/// saved, and the domains have changed since), or an archive now outside it, is dropped, with a warning in the log that
+/// counts them (never naming an address).
 /// </summary>
 public sealed class CopyingEmailSender(IEmailSender inner, EmailCopyStore copies, EmailBoundary? boundary = null,
     ILogger<CopyingEmailSender>? logger = null) : IEmailSender
@@ -129,8 +130,9 @@ public sealed class CopyingEmailSender(IEmailSender inner, EmailCopyStore copies
             {
                 bool Keep(string a) => !dropped.Contains(a, StringComparer.OrdinalIgnoreCase);
                 (template, archive) = (new([.. template.Cc.Where(Keep)], [.. template.Bcc.Where(Keep)]), archive is not null && Keep(archive) ? archive : null);
-                logger?.LogWarning("Left a copy off an email ({Template}): {Addresses} {Verb} outside {Boundary} and wasn't confirmed. Save the copies again on Email templates.",
-                    email.Template ?? "a brief's edition", string.Join("; ", dropped), dropped.Count == 1 ? "is" : "are", inside.Describe);
+                // A count, never the addresses: the log carries none.
+                logger?.LogWarning("{Count} copy address{Plural} outside the organization {Verb} dropped from an email ({Template}); check Email templates.",
+                    dropped.Count, dropped.Count == 1 ? "" : "es", dropped.Count == 1 ? "was" : "were", email.Template ?? "a brief's edition");
             }
         }
         var (cc, bcc) = EmailCopyRules.For(email, template, archive);

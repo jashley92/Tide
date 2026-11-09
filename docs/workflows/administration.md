@@ -144,7 +144,7 @@ services apply, an IANA time zone, email addresses, domain names. Nothing needs 
 (`Email:OrganizationDomains`, each including its subdomains; empty uses the domain of `Email:From`, and the page says
 which is in force). Every list that sends mail checks against them (`OrganizationBoundary`): the editions' recipients
 (Access & distribution), the managers told about swaps (Brief rotation), who's told there's no brief and an internal
-team's escalation contact (Teams & SLA), a template's standing copies (Email templates), and an external team's contact
+team's mailbox and escalation contact (Teams & SLA), a template's standing copies (Email templates), and an external team's contact
 and escalation addresses (External teams, and the split dialog's quick add). An address outside them that the list
 didn't already have is refused with an `OutsideAddressesException` naming it and what goes there; the page asks
 (*Save anyway*, *Copy anyway*, *Add anyway* in the split dialog) and saves again confirmed. Domains saved with
