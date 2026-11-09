@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Tide.Application.Abstractions;
 using Tide.Application.Actions;
 using Tide.Application.Articles;
@@ -19,7 +20,8 @@ namespace Tide.Application.Operations;
 /// Administrators only.
 /// </summary>
 public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser user, IRoleDirectory directory, TimeProvider time,
-    SavedSettings? saved = null, Distribution.EmailTemplateStore? emailTemplates = null, Org.OrgClock? clock = null)
+    SavedSettings? saved = null, Distribution.EmailTemplateStore? emailTemplates = null, Org.OrgClock? clock = null,
+    IOptions<DistributionOptions>? distribution = null, IOptions<ReminderOptions>? reminders = null)
 {
     private const string SettingsArea = "Settings";
     private const string GroupsArea = "AD groups";
@@ -126,7 +128,10 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
                 changes.Add(new(SettingsArea, s.Key, BundleChangeKind.Unchanged));
                 continue;
             }
-            changes.Add(new(SettingsArea, s.Key, row is null ? BundleChangeKind.Add : BundleChangeKind.Update, Clip(value)));
+            var kind = row is null ? BundleChangeKind.Add : BundleChangeKind.Update;
+            changes.Add(Widens(s.Key, row?.Value ?? ServerValue(s.Key), value) is { } risk
+                ? new(SettingsArea, s.Key, kind, risk, Warning: true)
+                : new(SettingsArea, s.Key, kind, Clip(value)));
             if (!apply) continue;
             if (row is null) db.Settings.Add(rows[s.Key] = row = new AppSetting { Key = s.Key });
             row.Value = value;
@@ -134,6 +139,72 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
             row.UpdatedBy = user.UserId;
         }
     }
+
+    // What a setting is when no row is saved for it: the server's value (or the built-in default), written as a row
+    // would be. Only for the settings Widens looks at; null for the rest.
+    private string? ServerValue(string key)
+    {
+        var d = distribution?.Value ?? new DistributionOptions();
+        var r = reminders?.Value ?? new ReminderOptions();
+        return key switch
+        {
+            DistributionSettings.TeamMaxTlpKey => d.TeamMaxTlp.ToString(),
+            DistributionSettings.PublicMaxTlpKey => d.PublicMaxTlp.ToString(),
+            DistributionSettings.TeamRecipientsKey => string.Join("; ", d.TeamRecipients ?? []),
+            DistributionSettings.PublicRecipientsKey => string.Join("; ", d.PublicRecipients ?? []),
+            OperationalSettings.BriefNotReadyRecipients => string.Join("; ", r.BriefNotReady.Recipients ?? []),
+            OperationalSettings.ExternalReminders => r.ExternalReminders.Enabled ? "true" : "false",
+            OperationalSettings.Escalation => r.Escalation.Enabled ? "true" : "false",
+            _ => Distribution.EmailTemplateCatalog.Parse(key) is { } t ? Distribution.EmailTemplateCatalog.Normalize(t.Part, t.Template.Default(t.Part)) : null,
+        };
+    }
+
+    // The address lists whose recipients get mail from TIDE, and who they are, for the warning.
+    private static readonly Dictionary<string, string> RecipientLists = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [DistributionSettings.TeamRecipientsKey] = "the team edition",
+        [DistributionSettings.PublicRecipientsKey] = "the company-wide edition",
+        [OperationalSettings.BriefNotReadyRecipients] = "those told when there's no brief",
+        [Rotation.RotationService.ManagerEmailsKey] = "the managers told about rotation swaps",
+    };
+
+    /// <summary>Why an incoming setting widens what leaves the organization, or null when it doesn't: it raises an
+    /// edition's ceiling, adds recipients to a list TIDE mails, turns on email to people outside TIDE, or rewords an email
+    /// that goes to them. <paramref name="current"/> is the value in force (saved, or the server's); <paramref name="value"/>
+    /// the incoming one, as it would be stored.</summary>
+    internal static string? Widens(string key, string? current, string value)
+    {
+        if (key is DistributionSettings.TeamMaxTlpKey or DistributionSettings.PublicMaxTlpKey)
+        {
+            var edition = key == DistributionSettings.TeamMaxTlpKey ? "team edition" : "company-wide edition";
+            return Tlp.Parse(value) is { } to && Tlp.Parse(current ?? "") is var from && (from is null || to > from)
+                ? $"Raises the {edition}'s ceiling {(from is { } f ? $"from {Tlp.Label(f)} " : "")}to {Tlp.Label(to)}." : null;
+        }
+        if (RecipientLists.TryGetValue(key, out var list))
+        {
+            var have = Addresses(current).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var added = Addresses(value).Where(a => !have.Contains(a)).ToList();
+            if (added.Count == 0) return null;
+            var named = string.Join(", ", added.Take(5)) + (added.Count > 5 ? $" and {added.Count - 5} more" : "");
+            return $"Adds {added.Count} recipient{(added.Count == 1 ? "" : "s")} to {list}: {named}.";
+        }
+        if (key is OperationalSettings.ExternalReminders or OperationalSettings.Escalation)
+        {
+            var on = bool.TryParse(value, out var v) && v;
+            var was = bool.TryParse(current, out var c) && c;
+            if (!on || was) return null;
+            return key == OperationalSettings.ExternalReminders
+                ? "Turns on reminders to external teams, emailed to their contacts outside TIDE."
+                : "Turns on the escalation ladder, which emails escalation contacts, outside TIDE included.";
+        }
+        if (Distribution.EmailTemplateCatalog.Parse(key) is { } t && Distribution.EmailCopyRules.GoesOutside(t.Template)
+            && Distribution.EmailTemplateCatalog.Normalize(t.Part, current) != value)
+            return $"Changes the {t.Part.ToString().ToLowerInvariant()} of the {t.Template.Title} email, which goes to people outside TIDE: {Clip(value)}";
+        return null;
+    }
+
+    private static IEnumerable<string> Addresses(string? value) =>
+        (value ?? "").Split([';', ',', ' ', '\n', '\r', '\t'], StringSplitOptions.RemoveEmptyEntries).Distinct(StringComparer.OrdinalIgnoreCase);
 
     // A setting's key as the catalogue (or the email templates) names it; any other as it came.
     private static string CanonicalKey(string? key)
@@ -251,7 +322,15 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
             var detail = !b.UrlHidden ? null : row is null
                 ? "comes in turned off: enter its address again (the bundle hides a key in it)"
                 : "keeps its own address (the bundle hides a key in it)";
-            changes.Add(new(SourcesArea, name, row is null ? BundleChangeKind.Add : BundleChangeKind.Update, detail));
+            // A lower default TLP lets the source's items into a wider edition, and to the AI provider (its limit is checked
+            // against the source's TLP).
+            if (row is not null && tlp < row.DefaultTlp)
+            {
+                var risk = $"Lowers its default TLP from {Tlp.Label(row.DefaultTlp)} to {Tlp.Label(tlp)}: its items can go in a wider edition, and to the AI provider.";
+                changes.Add(new(SourcesArea, name, BundleChangeKind.Update, detail is null ? risk : $"{risk} It {detail}.", Warning: true));
+            }
+            else
+                changes.Add(new(SourcesArea, name, row is null ? BundleChangeKind.Add : BundleChangeKind.Update, detail));
             if (!apply) continue;
             if (row is null) db.Sources.Add(row = new Source { Name = name });
             if (row.Url != url) { row.ETag = null; row.LastModified = null; }

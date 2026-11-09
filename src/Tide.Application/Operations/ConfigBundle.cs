@@ -76,8 +76,9 @@ public sealed record ConfigBundle(
 public enum BundleChangeKind { Add, Update, Unchanged, Skipped }
 
 /// <param name="Area">"Settings", "AD groups", "Sources", "Scorecard", "Query templates", "Holidays".</param>
-/// <param name="Warning">The change needs a careful look before importing (it gives Admin, or a role to everyone);
-/// <see cref="Detail"/> says why.</param>
+/// <param name="Warning">The change needs a careful look before importing: it gives Admin or a role to everyone, or it
+/// widens what leaves the organization (a higher edition ceiling, more recipients, a lower source TLP, email turned on or
+/// reworded for people outside TIDE). <see cref="Detail"/> says why, and the import page asks for the warnings to be read.</param>
 public sealed record BundleChange(string Area, string Item, BundleChangeKind Kind, string? Detail = null, bool Warning = false);
 
 /// <summary>What importing a bundle would do (or did), item by item.</summary>

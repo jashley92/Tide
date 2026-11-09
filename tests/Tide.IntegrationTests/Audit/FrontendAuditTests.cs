@@ -389,6 +389,35 @@ public class FrontendAuditTests(TideApp app) : IClassFixture<TideApp>
             .And.Contain("bi-exclamation-triangle-fill me-1\" aria-hidden=\"true\"").And.Contain("would administer this TIDE");
     }
 
+    [Fact]
+    public async Task TheBundlePreview_WithAWarning_ImportsOnlyOnceTheWarningsAreRead()
+    {
+        await using var r = await RenderAsync<Tide.Web.Components.Pages.Admin.ConfigBundleAdmin>(app, "/admin/system/bundle");
+        var bundle = new Tide.Application.Operations.ConfigBundle(Tide.Application.Operations.ConfigBundle.FormatName, 1, DateTimeOffset.UtcNow, "Tester", "1.0",
+            [new(Tide.Application.Settings.DistributionSettings.PublicRecipientsKey, "audit-everyone@elsewhere.example")], [], [], [], []);
+        var preview = await r.Renderer.Dispatcher.InvokeAsync(() =>
+        {
+            r.Scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.Http.IHttpContextAccessor>().HttpContext = r.Signedin;
+            return r.Scope.ServiceProvider.GetRequiredService<Tide.Application.Operations.ConfigBundleService>().PreviewAsync(bundle);
+        });
+        preview.Warnings.Should().Be(1);
+        SetField(r.Component, "_preview", preview);
+        SetField(r.Component, "_chosen", bundle);
+        SetField(r.Component, "_fileName", "audit.json");
+        await r.Renderer.Dispatcher.InvokeAsync(() => ((IHandleEvent)r.Component).HandleEventAsync(EventCallbackWorkItem.Empty, null));
+        var html = await r.Html();
+        html.Should().Contain("id=\"bundle-ack\"").And.Contain("I've read the warnings").And.Contain("widen what leaves the organization")
+            .And.Contain("Adds 1 recipient to the company-wide edition: audit-everyone@elsewhere.example.");
+        ImportButton(html).Should().Contain("disabled", "not until the warnings are read");
+
+        SetField(r.Component, "_acknowledged", true);
+        await r.Renderer.Dispatcher.InvokeAsync(() => ((IHandleEvent)r.Component).HandleEventAsync(EventCallbackWorkItem.Empty, null));
+        ImportButton(await r.Html()).Should().NotContain("disabled");
+
+        static string ImportButton(string html) =>
+            System.Text.RegularExpressions.Regex.Match(html, "<button[^>]*>\\s*Import 1 change").Value;
+    }
+
     // ---- Round 5 ----
 
     [Fact]
