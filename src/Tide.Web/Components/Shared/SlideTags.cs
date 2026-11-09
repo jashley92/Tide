@@ -90,3 +90,26 @@ public static class SlideTags
         a.Cves.Select(c => c.CveId).Order(StringComparer.Ordinal),
     });
 }
+
+/// <summary>
+/// An article's CVEs on its slide: the most pressing first (on KEV, then the highest CVSS, then EPSS), summed up as
+/// "5 CVEs, all on KEV" with the first shown and the rest behind "+4 more", which an analyst can open.
+/// </summary>
+public static class SlideCves
+{
+    /// <summary>The CVE ids, the most pressing first; one not enriched yet goes last.</summary>
+    public static IReadOnlyList<string> Order(IEnumerable<string> ids, IReadOnlyDictionary<string, CveRecord> known) => ids
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderByDescending(id => known.GetValueOrDefault(id)?.IsKev == true)
+        .ThenByDescending(id => known.GetValueOrDefault(id)?.CvssScore ?? -1)
+        .ThenByDescending(id => known.GetValueOrDefault(id)?.EpssScore ?? -1)
+        .ThenBy(id => id, StringComparer.Ordinal)
+        .ToList();
+
+    /// <summary>How many of them CISA lists as exploited.</summary>
+    public static int Kev(IEnumerable<string> ids, IReadOnlyDictionary<string, CveRecord> known) => ids.Count(id => known.GetValueOrDefault(id)?.IsKev == true);
+
+    /// <summary>"5 CVEs, all on KEV", "5 CVEs, 2 on KEV" or "5 CVEs".</summary>
+    public static string Summary(int count, int kev) =>
+        $"{count} CVEs" + (kev == 0 ? "" : kev == count ? ", all on KEV" : $", {kev} on KEV");
+}

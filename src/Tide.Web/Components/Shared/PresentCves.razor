@@ -1,0 +1,33 @@
+@* All of an article's CVEs, opened over its slide in present mode from the slide's "+N more": the most pressing first
+   (SlideCves.Order), each with its chip, the affected product and, for one on KEV, CISA's dates. Team edition only, as
+   the other cards are; the company-wide slide opens its list in place. *@
+@using System.Globalization
+@inherits PresentCardBase
+
+@{ var a = Article; }
+<PresentCard Shown="a.Id" TitleId="present-cves-title" Class="tide-present-cves" Href="@($"articles/{a.Id}")" LinkText="Open the article"
+             CloseLabel="Close the CVEs" Kicker="@Kicker" CanClose="CanClose" Autofocus="Autofocus" OnClose="OnClose" Links="Links">
+    <Title><span class="tide-present-product-kicker">@SlideCves.Summary(_ids.Count, SlideCves.Kev(_ids, Records))</span> @a.Title</Title>
+    <ChildContent>
+        <ul class="tide-present-iocs-list">
+            @foreach (var id in _ids)
+            {
+                var r = Records.GetValueOrDefault(id);
+                <li @key="id"><CveChip CveId="@id" Record="r" />
+                    @if (r is not null && (r.Vendor ?? r.Product) is not null) { <span>@($"{r.Vendor} {r.Product}".Trim())</span> }
+                    @if (r is { IsKev: true }) { <span class="tide-present-help">On KEV since @(r.KevAddedDate is { } added ? Ui.IsoDay(added) : "?")@(r.KevDueDate is { } due ? $", due {Ui.IsoDay(due)}" : "")@(r.KevRansomware ? ", ransomware use" : "")</span> }</li>
+            }
+        </ul>
+    </ChildContent>
+</PresentCard>
+
+@code {
+    [Parameter, EditorRequired] public Tide.Domain.Entities.Article Article { get; set; } = default!;
+
+    /// <summary>What's known of each CVE (the slide's own lookup).</summary>
+    [Parameter] public IReadOnlyDictionary<string, Tide.Domain.Entities.CveRecord> Records { get; set; } = new Dictionary<string, Tide.Domain.Entities.CveRecord>();
+
+    private IReadOnlyList<string> _ids = [];
+
+    protected override void OnParametersSet() => _ids = SlideCves.Order(Article.Cves.Select(c => c.CveId), Records);
+}

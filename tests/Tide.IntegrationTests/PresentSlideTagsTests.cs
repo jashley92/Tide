@@ -102,18 +102,19 @@ public class PresentSlideTagsTests(TideApp app) : IClassFixture<TideApp>
         html.Should().NotContain("tide-slide-tags\"").And.NotContain("ATT&amp;CK and CVEs");
         section.Should().Contain("<span>Tags and ATT&amp;CK</span>");
 
-        // The scorecard tags first: one line, by category in the scorecard's order.
-        var line = section[section.IndexOf("tide-slide-scorecard", StringComparison.Ordinal)..section.IndexOf("</p>", StringComparison.Ordinal)];
-        line.Should().Contain($"<span class=\"tide-slide-scorecard-cat\">Threat types 91:</span> {s.TagNames[0]}, {s.TagNames[1]}")
-            .And.Contain($"<span class=\"tide-slide-scorecard-cat\">Third-party risk 91:</span> {s.TagNames[2]}").And.NotContain("tide-chip", "plain text, no chips");
-        line.IndexOf("Threat types", StringComparison.Ordinal).Should().BeLessThan(line.IndexOf("Third-party", StringComparison.Ordinal));
+        // The scorecard tags first: a chip each, by category in the scorecard's order, the category its tooltip and said
+        // to a screen reader.
+        var line = section[section.IndexOf("tide-slide-scorecard", StringComparison.Ordinal)..section.IndexOf("</ul>", StringComparison.Ordinal)];
+        line.Should().Contain($"<li class=\"tide-slide-tagchip\" title=\"Threat types 91\"><span class=\"visually-hidden\">Threat types 91: </span>{s.TagNames[0]}</li>")
+            .And.Contain($"<li class=\"tide-slide-tagchip\" title=\"Third-party risk 91\"><span class=\"visually-hidden\">Third-party risk 91: </span>{s.TagNames[2]}</li>");
+        line.IndexOf(s.TagNames[1], StringComparison.Ordinal).Should().BeLessThan(line.IndexOf(s.TagNames[2], StringComparison.Ordinal));
         section.IndexOf("tide-slide-scorecard", StringComparison.Ordinal).Should().BeLessThan(section.IndexOf("tide-slide-attack", StringComparison.Ordinal));
 
-        // Then a row per tactic in the matrix's order, its techniques as text after its chip: each technique once.
+        // Then a column per tactic in the matrix's order, its colour a bar, its techniques one to a line: each technique once.
         Regex.Matches(section, "class=\"tide-slide-tag-name\">([^<]+)<").Select(m => m.Groups[1].Value)
             .Should().Equal(["Initial Access", "Execution", "Impact"], "tactics in the matrix's order");
         section.Should().Contain($"style=\"--tac:{Ui.TacticColor(MitreTactic.InitialAccess)}\"").And.Contain(Ui.TacticGlyph(MitreTactic.Impact));
-        section.Should().Contain("<span class=\"tide-slide-tech\"><span class=\"tide-slide-tech-id\">T1190</span> Exploit Public-Facing Application</span><span class=\"tide-slide-tech-sep\" aria-hidden=\"true\"> · </span><span class=\"tide-slide-tech\"><span class=\"tide-slide-tech-id\">T1566.001</span> Spearphishing Attachment</span>");
+        section.Should().Contain("<span class=\"tide-slide-tech\"><span class=\"tide-slide-tech-id\">T1190</span> Exploit Public-Facing Application</span><span class=\"tide-slide-tech\"><span class=\"tide-slide-tech-id\">T1566.001</span> Spearphishing Attachment</span>");
         Regex.Count(html, "T1566\\.001").Should().Be(1, "a technique appears once on the slide");
         section.Should().NotContain("tide-chip-technique", "the old flat chip list is gone");
     }
