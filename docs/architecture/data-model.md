@@ -504,6 +504,7 @@ erDiagram
 ```mermaid
 erDiagram
     Users ||..o{ UserPreferences : "UserId = Sid"
+    Users ||..o{ SavedActionViews : "UserId = Sid"
     Users ||..o{ TeamMembers : "UserId = Sid"
     RoleMappings ||..o{ Users : "grants roles, RolesCsv"
     StackProducts }o--o| Teams : "owner, set null"
@@ -518,6 +519,13 @@ erDiagram
         string UserId PK
         string Name PK
         string Value
+    }
+    SavedActionViews {
+        uuid Id PK
+        string UserId UK
+        string Name UK
+        string Query
+        int SortOrder
     }
     RoleMappings {
         uuid Id PK
@@ -1308,6 +1316,23 @@ notification choices. Key `(UserId, Name)`: `UserId` nvarchar(256), `Name` nvarc
 `UpdatedAtUtc`. The valid names and values are defined in `UserPreferences` (`src/Tide.Application/Preferences`).
 Written by `UserPreferenceService`.
 
+### `SavedActionViews` (not audited)
+
+A person's own named view of the Actions page: the tab, layout and filters to open it with. Its own table rather than
+`UserPreferences` rows, because a person keeps several, each with a name and a place in their order, where a
+preference is one fixed value per name.
+
+| Column | Type | Null | Notes |
+|---|---|---|---|
+| `Id` | uniqueidentifier | no | |
+| `UserId` | nvarchar(256) | no | Whose it is (`Users.Sid`). Every read and write is of the signed-in person's own. |
+| `Name` | nvarchar(60) | no | Trimmed. `(UserId, Name)` is **unique**; the service also refuses the same name in another case. |
+| `Query` | nvarchar(2000) | no | What follows `actions?`, as `SavedViewService.Normalize` writes it: only the page's own parameters, each within its length, in a fixed order, never `page`. |
+| `SortOrder` | int | no | Its place among the person's views, from 0. |
+| `CreatedAtUtc` | datetimeoffset | no | |
+
+At most 12 per person (`SavedViewService.MaxViews`). Written by `SavedViewService`.
+
 ### `RoleMappings` (A)
 
 The C# class is `AdGroupRoleMapping`. Each row grants a built-in role to everyone in an AD group. `(AdGroup,
@@ -1435,6 +1460,7 @@ log masks again when it shows a row.
 | `AuditLogEntry` | `AuditLog` | The log itself. |
 | `AppUser` | `Users` | The sign-in mirror changes on every sign-in. |
 | `UserPreference` | `UserPreferences` | A person's own view choices change nothing anyone else sees. |
+| `SavedActionView` | `SavedActionViews` | Likewise, a person's own saved views of the Actions page. |
 | `NotificationMark` | `NotificationMarks` | Machine bookkeeping for reminders. |
 | `FeedItem` | `FeedItems` | Machine intake. Polls and prunes would flood the log. |
 | `CveRecord` | `CveRecords` | Refreshed from public sources. |

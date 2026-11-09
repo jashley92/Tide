@@ -12,6 +12,7 @@
 @implements IDisposable
 @inject CardRuleService RuleSvc
 @inject UserPreferenceService Prefs
+@inject SavedViewService SavedViews
 @inject PrerenderHandoff Handoff
 
 <PageTitle>Actions · TIDE</PageTitle>
@@ -35,7 +36,7 @@
 </div>
 
 <div class="d-flex flex-wrap align-items-end gap-2">
-    <TabBar Label="Views" Class="flex-grow-1" Items="@(Views.Where(v => !_asBoard || OnBoard(v.Item1)).Select(v => new TabBarItem(v.Item2, "", Key: v.Item1.ToString())).ToList())"
+    <TabBar Label="Views" Items="@(Views.Where(v => !_asBoard || OnBoard(v.Item1)).Select(v => new TabBarItem(v.Item2, "", Key: v.Item1.ToString())).ToList())"
             Active="@_view.ToString()" OnSelect="k => SetView(Enum.Parse<ActionView>(k!))" />
     @if (DefaultFor(_view) is { } shown)
     {
@@ -52,6 +53,29 @@
             }
         </div>
     }
+    @* The person's own saved views: a link each to the tab, layout and filters it keeps, the one shown marked, with a
+       menu to rename, move or delete it; Save view keeps what's shown now. *@
+    <div class="tide-savedviews flex-grow-1 mb-2">
+        @if (_saved.Count > 0)
+        {
+            var current = ActiveSaved;
+            <nav class="tide-savedviews-list" aria-label="Saved views">
+                @foreach (var v in _saved)
+                {
+                    var on = v.Id == current?.Id;
+                    <span class="tide-savedview" @key="v.Id">
+                        <a class="tide-chip tide-chip-pick @(on ? "selected" : "")" href="@("actions?" + v.Query)" aria-current="@(on ? "page" : null)">@v.Name</a>
+                        <MenuButton Label="@($"{v.Name}: rename, move or delete")" IconOnly="true" Icon="bi-three-dots-vertical" ButtonClass="tide-savedview-menu"
+                                    Items="@SavedMenu(v)" />
+                    </span>
+                }
+            </nav>
+        }
+        <button type="button" class="tide-filter-add" id="save-view" disabled="@(_saved.Count >= SavedViewService.MaxViews)" @onclick="StartSave"
+                title="@(_saved.Count >= SavedViewService.MaxViews ? $"You can keep up to {SavedViewService.MaxViews} views: delete one to save another" : "Keep this tab, layout and filters as a view of your own, beside the tabs")">
+            <span class="bi bi-bookmark-plus" aria-hidden="true"></span> Save view
+        </button>
+    </div>
     <TabBar Label="Layout" Level="TabLevel.Sub" Class="mb-2" Active="@(_asBoard ? "board" : "list")" OnSelect="SetLayout"
             Items="@([new TabBarItem("List", "", "bi-list-ul", "list"), new TabBarItem("Board", "", "bi-kanban", "board")])" />
 </div>
@@ -103,6 +127,16 @@ else
     </ActionTable>
 </div>
 }
+
+@* Save view and Rename: the view's name. Kept open, saying why, when it's refused (a name already used, the 12th view). *@
+<ConfirmDialog @ref="_nameDialog" Form="true" Confirming="SaveName" ConfirmDisabled="@string.IsNullOrWhiteSpace(_newName)" ConfirmIcon="bi-bookmark-check">
+    <label class="tide-field-label" for="saved-view-name">Name</label>
+    <input id="saved-view-name" class="form-control form-control-sm" maxlength="@SavedActionView.MaxName" @bind="_newName" @bind:event="oninput"
+           placeholder="My team's P1s" autocomplete="off" />
+    <div class="form-text">@(_renaming is null ? "Keeps this tab, layout and filters beside the tabs. Only you see your views." : "Only the name changes: the view still opens the same filters.")</div>
+    @if (_nameError is not null) { <div class="text-danger small mt-2" role="alert">@_nameError</div> }
+</ConfirmDialog>
+<ConfirmDialog @ref="_confirm" />
 
 @code {
     [SupplyParameterFromQuery(Name = "view")] public string? ViewParam { get; set; }
@@ -315,6 +349,7 @@ else
             SavedLayout ??= saved[UserPreferences.ActionsLayout];
             SavedView ??= saved[UserPreferences.ActionsView];
         }
+        _saved = await SavedViews.ListAsync();
     }
 
     // What the address says: compared, so the page knows when a link has changed it. The team, rule and parent are read as
@@ -388,7 +423,7 @@ else
         (_search, _kind, _priorities, _due, _status) = (p._search, p._kind, p._priorities, p._due, p._status);
         (_parentNumber, _active, _side, _raised, _holders) = (p._parentNumber, p._active, p._side, p._raised, p._holders);
         (_total, _page, _groups, _sort, _ruleCounts) = (p._total, p._page, p._groups, p._sort, p._ruleCounts);
-        (_loading, _adopted) = (false, true);
+        (_saved, _loading, _adopted) = (p._saved, false, true);
     }
 
     // The priorities in the address ("p1,p2"), each once, in order; a name that isn't one is dropped.
@@ -555,21 +590,123 @@ else
     // doesn't read it again.
     private void Remember()
     {
-        // The address always says which layout it is, so a reload or a copy of it opens what's shown.
+        var shown = ShownParameters();
+        _applied = new Address(Text("view"), _teamId, _assignee, Text("layout"), _ruleId, Text("group"), _search, Text("kind"), Text("priority"), Text("due"),
+            Text("status"), Text("page"), _parentNumber, Text("teams"), Text("raised"));
+        Nav.NavigateTo(Nav.GetUriWithQueryParameters("actions", shown), replace: true);
+
+        string? Text(string name) => (string?)shown[name];
+    }
+
+    // What's shown as the address says it: the tab, every filter, and the page when it isn't the first. The address always
+    // says which layout it is, so a reload or a copy of it opens what's shown.
+    private Dictionary<string, object?> ShownParameters()
+    {
         var layout = _asBoard ? UserPreferences.Board : UserPreferences.List;
         var view = _view.ToString().ToLowerInvariant();
         var group = !_asBoard && _groupByKind ? "kind" : null;
         var (kind, priority, status) = (_kind?.ToString().ToLowerInvariant(), FilterValues.Join(_priorities.Select(p => p.ToString().ToLowerInvariant())), _status?.ToString().ToLowerInvariant());
         var page = !_asBoard && _page > 1 ? _page.ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
         var (teams, raised) = (_side?.ToString().ToLowerInvariant(), _raised ? Me : null);
-        _applied = new Address(view, _teamId, _assignee, layout, _ruleId, group, _search, kind, priority, DueKey(_due), status, page, _parentNumber, teams, raised);
-        Nav.NavigateTo(Nav.GetUriWithQueryParameters("actions", new Dictionary<string, object?>
+        return new()
         {
             ["view"] = view, ["layout"] = layout, ["group"] = group, ["rule"] = _ruleId, ["team"] = _teamId, ["assignee"] = _assignee,
             ["q"] = _search, ["kind"] = kind, ["priority"] = priority, ["due"] = DueKey(_due), ["status"] = status, ["page"] = page, ["parent"] = _parentNumber,
             ["teams"] = teams, ["raised"] = raised,
-        }), replace: true);
+        };
     }
+
+    // --- Saved views (SavedViewService): the person's own, beside the tabs --------------------------------------------
+
+    private IReadOnlyList<ActionsSavedView> _saved = [];
+    private ConfirmDialog _nameDialog = default!;
+    private Guid? _renaming;
+    private string? _newName, _nameError;
+
+    internal IReadOnlyList<ActionsSavedView> Saved => _saved;
+    internal string? NewName { get => _newName; set => _newName = value; }
+    internal string? NameError => _nameError;
+
+    /// <summary>The query a view of what's shown keeps (what the address says, but never the list's page), in the order a
+    /// stored one has; null when it's more than a view can hold (a link's very long search).</summary>
+    internal string? ShownQuery() => SavedViewService.TryNormalize(string.Join('&', ShownParameters()
+        .Where(p => p.Key != SavedViewService.PageParameter && p.Value is not null)
+        .Select(p => p.Key + "=" + Uri.EscapeDataString(Convert.ToString(p.Value, System.Globalization.CultureInfo.InvariantCulture)!))));
+
+    /// <summary>The saved view that is what's shown, if one is: the first, when two keep the same filters.</summary>
+    internal ActionsSavedView? ActiveSaved => ShownQuery() is { } shown ? _saved.FirstOrDefault(v => v.Query == shown) : null;
+
+    private IReadOnlyList<MenuButton.Item> SavedMenu(ActionsSavedView v)
+    {
+        var at = _saved.ToList().IndexOf(v);
+        var items = new List<MenuButton.Item> { new("Rename", "bi-pencil", EventCallback.Factory.Create(this, () => StartRename(v))) };
+        if (at > 0) items.Add(new("Move earlier", "bi-arrow-left", EventCallback.Factory.Create(this, () => MoveSaved(v, -1))));
+        if (at < _saved.Count - 1) items.Add(new("Move later", "bi-arrow-right", EventCallback.Factory.Create(this, () => MoveSaved(v, 1))));
+        items.Add(new("Delete", "bi-trash", EventCallback.Factory.Create(this, () => DeleteSaved(v))));
+        return items;
+    }
+
+    internal async Task StartSave()
+    {
+        (_renaming, _newName, _nameError) = (null, null, null);
+        await _nameDialog.Ask("Save this view", null, "Save view", danger: false);
+    }
+
+    internal async Task StartRename(ActionsSavedView v)
+    {
+        (_renaming, _newName, _nameError) = (v.Id, v.Name, null);
+        await _nameDialog.Ask($"Rename \"{v.Name}\"", null, "Rename", danger: false);
+    }
+
+    // The dialog's Save view or Rename: kept open, saying why, when it's refused.
+    internal async Task<bool> SaveName()
+    {
+        _nameError = null;
+        try
+        {
+            if (_renaming is { } id)
+            {
+                await SavedViews.RenameAsync(id, _newName ?? "");
+                Toasts.Show("View renamed.");
+            }
+            else
+            {
+                var saved = await SavedViews.SaveAsync(_newName ?? "", ShownQuery() ?? throw new ArgumentException("These filters are too long to keep as a view."));
+                Toasts.Show($"Saved \"{saved.Name}\" beside the tabs.");
+            }
+            _saved = await SavedViews.ListAsync();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _nameError = UserFacingError.For(ex);
+            return false;
+        }
+    }
+
+    internal async Task MoveSaved(ActionsSavedView v, int by)
+    {
+        try
+        {
+            await SavedViews.MoveAsync(v.Id, by);
+            _saved = await SavedViews.ListAsync();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    internal async Task DeleteSaved(ActionsSavedView v)
+    {
+        if (!await _confirm.Ask($"Delete \"{v.Name}\"?", "Only your shortcut goes: no action changes.", "Delete view")) return;
+        try
+        {
+            await SavedViews.DeleteAsync(v.Id);
+            _saved = await SavedViews.ListAsync();
+            Toasts.Show($"Deleted \"{v.Name}\".");
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    private ConfirmDialog _confirm = default!;
 
     // A new sort from the list's headings, or "Clear the filter" from its empty state: from the first page.
     private async Task Query(TableQuery q)

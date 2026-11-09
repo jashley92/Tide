@@ -36,6 +36,30 @@ public class UserPreference
 }
 
 /// <summary>
+/// One person's named combination of the Actions page's tab, layout and filters, shown beside its tabs. Kept as the
+/// page's own query string, checked and put in a fixed order by <c>SavedViewService</c> before it's stored. One
+/// person's, so not shared and not audited.
+/// </summary>
+public class SavedActionView : Entity
+{
+    public const int MaxName = 60;
+
+    /// <summary>The longest query kept: every parameter at its longest, escaped, fits.</summary>
+    public const int MaxQuery = 2000;
+
+    /// <summary>The person's stable id (<see cref="AppUser.Sid"/>).</summary>
+    public string UserId { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>What follows <c>actions?</c>, e.g. "view=open&amp;layout=list&amp;priority=p1,p2". Never the list's page.</summary>
+    public string Query { get; set; } = string.Empty;
+
+    /// <summary>Where it sits among the person's views, from 0.</summary>
+    public int SortOrder { get; set; }
+    public DateTimeOffset CreatedAtUtc { get; set; }
+}
+
+/// <summary>
 /// Grants a built-in role to everyone in an AD security group. A group may grant several roles and a role may come
 /// from several groups. Seeded from the <c>RoleMapping</c> configuration section on first run, then administered in
 /// the app.

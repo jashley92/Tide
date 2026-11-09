@@ -9,6 +9,7 @@ public interface IAppDbContext : IAsyncDisposable, IDisposable
 {
     DbSet<AppUser> Users { get; }
     DbSet<UserPreference> UserPreferences { get; }
+    DbSet<SavedActionView> SavedActionViews { get; }
     DbSet<AdGroupRoleMapping> RoleMappings { get; }
     DbSet<AuditLogEntry> AuditLog { get; }
     DbSet<AppSetting> Settings { get; }

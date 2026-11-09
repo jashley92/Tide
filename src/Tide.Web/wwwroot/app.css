@@ -1118,6 +1118,17 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-filter-add { display: inline-flex; align-items: center; gap: .25rem; padding: .16rem .55rem; border: 1px dashed var(--tide-border-strong); border-radius: var(--tide-radius-pill);
     background: transparent; color: var(--tide-text-muted); font-size: .8rem; white-space: nowrap; }
 .tide-filter-add:hover, .tide-filter-add[aria-expanded="true"] { color: var(--tide-text); border-color: var(--tide-accent); }
+.tide-filter-add:disabled { opacity: .55; cursor: not-allowed; }
+/* Saved views beside the Actions tabs: a pill each (the filter bar's, the accent tint for the one shown) with a small
+   menu button, then Save view in + Filter's dashed outline. */
+.tide-savedviews { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1); min-width: 0; }
+.tide-savedviews-list { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1); }
+.tide-savedview { display: inline-flex; align-items: center; }
+.tide-savedview > .tide-chip { margin: 0; white-space: nowrap; text-decoration: none; }
+.tide-savedview > .tide-chip:hover { border-color: var(--tide-accent); }
+.tide-savedview-menu { border: 0; background: none; padding: .1rem .2rem; color: var(--tide-text-muted); border-radius: var(--tide-radius-pill); line-height: 1; font-size: .8rem; }
+.tide-savedview-menu:hover, .tide-savedview-menu[aria-expanded="true"] { color: var(--tide-text); background: var(--tide-surface-2); }
+.tide-savedview-menu:focus-visible, .tide-savedview > .tide-chip:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
 .tide-filter-item { display: flex; align-items: center; gap: .5rem; width: 100%; padding: .4rem .55rem; border: 0; border-radius: var(--tide-radius-md);
     background: transparent; color: var(--tide-text); font-size: .88rem; text-align: left; }
 .tide-filter-item:hover, .tide-filter-item:focus-visible { background: var(--tide-surface-2); outline: none; box-shadow: inset 2px 0 0 var(--tide-accent); }

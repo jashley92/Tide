@@ -7,9 +7,16 @@
 
 <div class="tide-menubutton">
     <button type="button" class="@ButtonClass tide-menubutton-btn" aria-haspopup="menu" aria-expanded="@Ui.Aria(_open)" aria-controls="@(_open ? _id : null)"
-            disabled="@Disabled" @ref="_trigger" @onclick="Toggle">
+            disabled="@Disabled" title="@(IconOnly ? Label : null)" @ref="_trigger" @onclick="Toggle">
         @if (Icon is not null) { <span class="bi @Icon" aria-hidden="true"></span> }
-        @Label <span class="bi bi-chevron-down tide-menubutton-caret" aria-hidden="true"></span>
+        @if (IconOnly)
+        {
+            <span class="visually-hidden">@Label</span>
+        }
+        else
+        {
+            @Label <span class="bi bi-chevron-down tide-menubutton-caret" aria-hidden="true"></span>
+        }
     </button>
     @if (_open)
     {
@@ -40,6 +47,10 @@
     [Parameter] public string? Icon { get; set; }
     [Parameter] public string ButtonClass { get; set; } = "btn btn-outline-secondary";
     [Parameter] public bool Disabled { get; set; }
+
+    /// <summary>Only the icon shows (a saved view's menu beside its pill): the label is the button's name for a screen
+    /// reader and its tooltip, and there's no caret.</summary>
+    [Parameter] public bool IconOnly { get; set; }
 
     private readonly string _id = "menu-" + Guid.NewGuid().ToString("N")[..8];
     private ElementReference _trigger, _pop;

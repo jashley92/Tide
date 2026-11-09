@@ -806,6 +806,17 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
   (`ActionsBoard.OpeningView`): Mine for someone who can't be given actions (neither `WorkActions` nor `WriteArticles`: a Viewer), My teams for someone
   on no team. A link's own `view` (Today's, the sidebar's) wins. Card rules (administered) colour and label
   cards, and those shown as filters are offered in the filter bar.
+- **Saved views** (`SavedViewService`, the `SavedActionViews` table). *Save view*, beside the tabs, asks for a name
+  and keeps what's shown: the tab, the layout and every filter, as the address says them, but never the list's page.
+  Each view is a pill after the tabs that opens `actions?{query}`; the one whose filters are what's shown is marked
+  (`aria-current="page"`, the pills' accent tint), so one more filter on top unmarks it. Its menu (⋮) renames it,
+  moves it earlier or later, or deletes it (asked first; the actions don't change). Views are each person's own:
+  anyone who can open Actions may keep up to 12 (`SavedViewService.MaxViews`), Viewers too, and no one sees or changes
+  another's. A name is at most 60 characters, trimmed, and once per person whatever its case. The query keeps only
+  the page's own parameters (`view`, `layout`, `group`, `rule`, `team`, `assignee`, `q`, `kind`, `priority`, `due`,
+  `status`, `parent`, `teams`, `raised`), each within its length (`SavedViewService.Parameters`), in that order;
+  anything else is refused and `page` is dropped. A view is a shortcut, not a filter of its own: one that names a team
+  or rule since retired opens the page as any such link does.
 - **Filters.** One bar for the list and the board (`FilterBar`; the filter is `ActionFilter`): the search box (title,
   A-number or the article's title), then five pills:
 

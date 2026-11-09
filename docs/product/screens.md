@@ -319,6 +319,9 @@ that fits its kind.
   count. "Part of A-12" (from a parent action's link) shows as a chip. They
   combine and stay in the address. Filtered to a team with an active limit, the bar says "4 of 5 active". The view
   tabs (Mine, My teams, All open…) stay tabs.
+- **Saved views.** *Save view*, beside the tabs, keeps the tab, layout and filters shown under a name (up to 60
+  characters). Each saved view is a pill after the tabs that opens it, marked while it's what's shown; its ⋮ menu
+  renames, moves or deletes it. They're each person's own, up to 12, on any computer.
 - **Long lists.** The list shows 50 actions a page, with numbered pages and the page in the address; group headings
   count every action in the group, not only this page's. Each board column shows its first 20 cards, then *Show N
   more*. The closed columns show the last 7 days; *Show older*, under Done, takes them back 30 days.

@@ -2682,6 +2682,40 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.ToTable("RotationWeeks");
                 });
 
+            modelBuilder.Entity("Tide.Domain.Entities.SavedActionView", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Query")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("SavedActionViews");
+                });
+
             modelBuilder.Entity("Tide.Domain.Entities.SavedQuery", b =>
                 {
                     b.Property<Guid>("Id")
