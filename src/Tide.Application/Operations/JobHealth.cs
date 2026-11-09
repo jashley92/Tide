@@ -96,8 +96,12 @@ public static class JobHealth
         t.TotalDays >= 2 ? $"{(int)t.TotalDays} days" : t.TotalHours >= 2 ? $"{(int)t.TotalHours} hours" : t.TotalMinutes >= 2 ? $"{(int)t.TotalMinutes} minutes"
         : $"{Math.Max(0, (int)t.TotalSeconds)} seconds";
 
-    private static string Every(TimeSpan t) =>
-        t.TotalDays >= 1 && t.TotalDays % 1 == 0 ? (t.TotalDays == 1 ? "daily" : $"every {t.TotalDays:0} days")
-        : t.TotalHours >= 1 && t.TotalHours % 1 == 0 ? (t.TotalHours == 1 ? "hourly" : $"every {t.TotalHours:0} hours")
-        : t.TotalMinutes <= 1 ? "every minute" : $"every {t.TotalMinutes:0} minutes";
+    // Whole days or hours are judged in ticks, which are exact, not in the fractional Total* values.
+    private static string Every(TimeSpan t)
+    {
+        var (days, hours) = (t.Ticks / TimeSpan.TicksPerDay, t.Ticks / TimeSpan.TicksPerHour);
+        return days >= 1 && t.Ticks % TimeSpan.TicksPerDay == 0 ? (days == 1 ? "daily" : $"every {days} days")
+            : hours >= 1 && t.Ticks % TimeSpan.TicksPerHour == 0 ? (hours == 1 ? "hourly" : $"every {hours} hours")
+            : t <= TimeSpan.FromMinutes(1) ? "every minute" : $"every {t.TotalMinutes:0} minutes";
+    }
 }
