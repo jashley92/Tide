@@ -53,6 +53,15 @@ const lineUp = (...selectors) => ({
   }, selectors),
 });
 
+/** The first match is wider than `px`: a page that takes the whole window isn't held to the usual width. */
+const widerThan = (selector, px) => ({
+  name: `wider than ${px}px: ${selector}`,
+  check: page => page.$eval(selector, (el, [selector, px]) => {
+    const width = Math.round(el.getBoundingClientRect().width);
+    return width > px ? [] : [`${selector} is ${width}px wide, held to ${px}px or less`];
+  }, [selector, px]),
+});
+
 /** At least one match is visible. */
 const visible = selector => ({
   name: `visible: ${selector}`,
@@ -79,8 +88,9 @@ const pages = [
     rules: [noSidewaysScroll, visible('#reader-panel .tide-action-ref')] },
   { name: 'actions-list', route: '/actions?tab=open&layout=list', widths: [1440, 1000],
     rules: [noSidewaysScroll, visible('.tide-action-ref')] },
-  { name: 'actions-board', route: '/actions?tab=open&layout=board', widths: [1440],
-    rules: [visible('.tide-kcard'), oneRow('.tide-kcard-head')] },
+  { name: 'actions-board', route: '/actions?tab=open&layout=board', widths: [1920, 1440],
+    rules: [visible('.tide-kcard'), oneRow('.tide-kcard-head'), [1800, widerThan('.content', 1400)]] },
+  { name: 'trends', route: '/trends', widths: [1920], rules: [noSidewaysScroll, widerThan('.content', 1400)] },
   { name: 'slide-article', route: '/present/{today}', setup: toArticleSlide, widths: [1440, 1100, 900],
     rules: [
       visible('.tide-quick-add'),
@@ -90,6 +100,8 @@ const pages = [
       [1001, lineUp('.tide-reco li > select:nth-of-type(1)', '.tide-slide-actlist .tide-action-assign > input')],
       [1001, lineUp('.tide-reco li > select:nth-of-type(2)', '.tide-slide-actlist .tide-action-assign > select')],
     ] },
+  { name: 'metrics-grid', route: '/metrics?chart=group:alert-queue,group:vulnerability-sla&view=grid', widths: [1920, 1000, 700],
+    rules: [noSidewaysScroll, visible('.tide-mc-cell'), visible('.tide-chart-band-warn'), oneRow('.tide-mc-cell-head'), [1800, widerThan('.content', 1400)]] },
 ];
 
 // --- the run -----------------------------------------------------------------------------------------------------------

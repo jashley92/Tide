@@ -1,0 +1,75 @@
+@* Which metrics the metric history page charts: a menu button naming them that opens a list of every metric under its
+   group, each a box to tick, with a box per group that ticks or clears its current metrics (mixed when some are
+   charted), and a box to find one by name. Retired metrics are listed only once asked for, or when one is charted or
+   found. It stays open while metrics are ticked; Esc, Tab or a click outside closes it (MenuButton). *@
+@using Tide.Application.Metrics
+
+<MenuButton Label="@($"Chart: {Summary}")" Icon="bi-graph-up" ButtonClass="btn btn-outline-secondary btn-sm" MenuLabel="Metrics to chart"
+            PopClass="tide-mc-pop" Opened="() => _find = string.Empty">
+    @{
+        var find = _find.Trim();
+        var ids = Picked.Select(m => m.Id).ToHashSet();
+        var showRetired = _retired || Picked.Any(m => m.IsRetired) || find.Length > 0;
+        var groups = Metrics.GroupBy(m => m.GroupId)
+            .Select(g => (Group: g.ToList(), Listed: g.Where(m => (showRetired || !m.IsRetired) && Matches(m, find)).ToList()))
+            .Where(g => g.Listed.Count > 0).ToList();
+    }
+    <input type="search" class="form-control form-control-sm tide-filter-find" placeholder="Find a metric" aria-label="Find a metric"
+           @bind="_find" @bind:event="oninput" />
+    <div class="tide-mc-list">
+        @foreach (var (group, listed) in groups)
+        {
+            var state = MetricChartPicks.GroupState(group, Picked);
+            <button type="button" role="menuitemcheckbox" tabindex="-1" class="tide-filter-item tide-mc-group" aria-checked="@(state is { } all ? Ui.Aria(all) : "mixed")"
+                    @onclick="() => PickedChanged.InvokeAsync(MetricChartPicks.ToggleGroup(Metrics, Picked, group[0].GroupId))">
+                <span class="bi @Box(state) tide-mc-box" aria-hidden="true"></span><span>@group[0].Group?.Name</span>
+                <span class="tide-filter-item-now">@Ui.Plural(group.Count(m => !m.IsRetired), "metric")</span>
+            </button>
+            @foreach (var m in listed)
+            {
+                var on = ids.Contains(m.Id);
+                <button type="button" role="menuitemcheckbox" tabindex="-1" class="tide-filter-item tide-mc-metric" aria-checked="@Ui.Aria(on)"
+                        @onclick="() => PickedChanged.InvokeAsync(MetricChartPicks.Toggle(Metrics, Picked, m))">
+                    <span class="bi @Box(on) tide-mc-box" aria-hidden="true"></span><span>@m.Name</span>
+                    @if (m.IsRetired) { <span class="tide-filter-item-now">retired</span> }
+                </button>
+            }
+        }
+        @if (groups.Count == 0)
+        {
+            <div class="tide-filter-hint" role="status">No metric matches "@find".</div>
+        }
+    </div>
+    @if (Metrics.Any(m => m.IsRetired) && find.Length == 0)
+    {
+        <button type="button" role="menuitemcheckbox" tabindex="-1" class="tide-filter-item tide-mc-retired" aria-checked="@Ui.Aria(showRetired)"
+                disabled="@Picked.Any(m => m.IsRetired)" @onclick="() => _retired = !_retired">
+            <span class="bi @Box(showRetired) tide-mc-box" aria-hidden="true"></span><span>Show retired metrics</span>
+        </button>
+    }
+</MenuButton>
+
+@code {
+    /// <summary>Every metric, in the history's order (by group).</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<MetricDefinition> Metrics { get; set; } = [];
+    /// <summary>The metrics charted, in the same order.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<MetricDefinition> Picked { get; set; } = [];
+    [Parameter] public EventCallback<IReadOnlyList<MetricDefinition>> PickedChanged { get; set; }
+
+    private bool _retired;
+    private string _find = "";
+
+    /// <summary>What's charted, short: the metric, the group when it's all of one, or how many.</summary>
+    internal string Summary => Picked switch
+    {
+        [var one] => one.Name,
+        [var first, ..] when first.Group is { } g && Picked.All(m => m.GroupId == first.GroupId)
+            && MetricChartPicks.GroupState(Metrics.Where(m => m.GroupId == first.GroupId), Picked) == true => g.Name,
+        _ => $"{Picked.Count} metrics",
+    };
+
+    private static bool Matches(MetricDefinition m, string find) => find.Length == 0
+        || m.Name.Contains(find, StringComparison.OrdinalIgnoreCase) || (m.Group?.Name.Contains(find, StringComparison.OrdinalIgnoreCase) ?? false);
+
+    private static string Box(bool? state) => state switch { true => "bi-check-square-fill", false => "bi-square", null => "bi-dash-square-fill" };
+}

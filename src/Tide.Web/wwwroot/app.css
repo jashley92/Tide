@@ -241,6 +241,9 @@ html[data-nav="collapsed"] .sidebar { width: 64px; }
 main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .top-row { height: 3.25rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0 1.5rem 0 2rem; background: var(--tide-surface); border-bottom: 1px solid var(--tide-border); position: sticky; top: 0; z-index: 1020; }
 .content { padding: 1.25rem 1.5rem 3rem 2rem; max-width: 1400px; width: 100%; }
+/* A page with a wide board or table (the actions board, the metric history and trends tables) takes the whole window,
+   so it scrolls sideways only when it's wider than that. */
+.content:has(.tide-kanban, .tide-mh-scroll, .tide-trend-table) { max-width: none; }
 
 .tide-side-head { display: flex; align-items: center; }
 .tide-menu-btn { display: none; }
@@ -906,6 +909,10 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-chart-axis { display: flex; flex-direction: column; justify-content: space-between; font-size: .75rem; color: var(--tide-text-muted); text-align: right; font-variant-numeric: tabular-nums; }
 .tide-chart-plot { position: relative; height: 220px; border-radius: var(--tide-radius-sm); cursor: crosshair; touch-action: pan-y; }
 .tide-chart-plot.tide-chart-tall { height: 300px; }   /* room for a tooltip of ten lines and a count of the rest */
+.tide-chart-plot.tide-chart-compact { height: 110px; }
+/* A metric's threshold bands, under its line: the warning and critical colours, faint. */
+.tide-chart-band-warn { fill: var(--tide-warn); opacity: .16; }
+.tide-chart-band-critical { fill: var(--tide-threat); opacity: .2; }
 .tide-chart-plot:focus { outline: none; }
 .tide-chart-plot:focus-visible { box-shadow: 0 0 0 2px var(--tide-focus-ring); }
 .tide-chart-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
@@ -1918,7 +1925,6 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 }
 
 /* The Actions board needs its six columns: the page is as wide as the window there, not capped. */
-.content:has(.tide-kanban) { max-width: none; }
 
 /* Windows high contrast (forced colours) drops backgrounds: badges, TLP chips and the current page keep an outline,
    so a P1 still reads as a chip beside a P2 and the sidebar still shows where you are. */
@@ -2059,6 +2065,22 @@ button.tide-mentry-chip:focus-visible { outline: 2px solid var(--tide-focus-ring
 .tide-mentry-group .tide-metric-value, .tide-mentry-group .tide-metric-note { scroll-margin-top: 12rem; }   /* clear of the header, the bar and the group heading */
 @media (forced-colors: active) { .tide-mentry-chip.is-current, .tide-mentry-group.is-current { outline: 2px solid Highlight; } }
 
+/* The metric history's charts: what to chart (MetricChartPicker), and a grid of a small chart per metric. */
+.tide-mc-pop { width: min(24rem, calc(100vw - 1.5rem)); }
+.tide-mc-list { max-height: min(60vh, 26rem); overflow-y: auto; margin-top: .35rem; }
+.tide-mc-group { font-weight: var(--tide-weight-semibold); }
+.tide-mc-metric { padding-left: 1.6rem; }
+.tide-mc-retired { border-top: 1px solid var(--tide-border); border-radius: 0; margin-top: .25rem; }
+.tide-mc-box { color: var(--tide-accent); }
+.tide-mc-box.bi-square { color: var(--tide-text-muted); }
+.tide-mc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: var(--tide-space-3); }
+.tide-mc-cell { min-width: 0; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-md); padding: .5rem .65rem .4rem; }
+.tide-mc-cell-head { display: flex; align-items: center; gap: .25rem; }
+.tide-mc-cell-head h3 { flex: 1; min-width: 0; margin: 0; font-size: .9rem; font-weight: var(--tide-weight-semibold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tide-mc-remove { padding: 0 .25rem; line-height: 1; color: var(--tide-text-muted); }
+.tide-mc-remove:hover { color: var(--tide-text); }
+.tide-mc-cell-now { min-height: 1.5rem; margin-bottom: .2rem; font-size: .82rem; font-variant-numeric: tabular-nums; }
+.tide-mc-cell-now strong { font-family: var(--tide-font-data); font-size: 1.05rem; margin-right: .3rem; }
 /* The metric history table with many metrics (MetricsHistory): groups over their columns, a line between groups, and
    the headings and the Day column kept in view while the table scrolls inside its own box. */
 .tide-mh-scroll { overflow: auto; max-height: calc(100vh - 10rem); position: relative; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-md); }

@@ -1,13 +1,19 @@
 @* One or more lines over the same dates or periods, drawn the same way everywhere (metrics, trends): an SVG line per
    series on a shared value axis, and over it a stop per date that the pointer or the arrow keys land on. The stop
    carries what the tooltip says (the date, then each line's value in its own format); js/chart.js shows it. Coloured by
-   CSS, in series order: twelve colours, then the same twelve again dashed, so every line keeps its own look (Series). *@
+   CSS, in series order: twelve colours, then the same twelve again dashed, so every line keeps its own look (Series).
+   Bands, when given, shade the stretches of the value axis where a metric's thresholds trip, under the lines, clipped
+   to the axis. *@
 @using System.Globalization
 @using Tide.Application.Metrics
 
 @{
     var known = Lines.SelectMany(l => l.Values).OfType<decimal>().ToList();
     var range = MetricMath.ChartRange(known, FromZero);
+    // Each band that trips a threshold, clipped to the axis: (top, bottom) in the plot's 0-300 units.
+    var bands = (Bands ?? []).Where(b => b.Level != MetricLevel.Normal)
+        .Select(b => (b.Level, Top: Y(Math.Min(b.To ?? range.Max, range.Max)) * 3, Bottom: Y(Math.Max(b.From ?? range.Min, range.Min)) * 3))
+        .Where(b => b.Bottom > b.Top).ToList();
     var n = Labels.Count;
     double X(int i) => n > 1 ? 100.0 * i / (n - 1) : 50;
     double Y(decimal v) => 100 * (1 - MetricMath.ChartHeight(v, range));
@@ -21,22 +27,29 @@
             @for (var s = 0; s < Lines.Count; s++)
             {
                 var at = s;
-                if (OnTakeOff.HasDelegate)
-                {
-                    <button type="button" class="tide-chart-legend-item" title="Take off the chart" aria-label="Take @Lines[s].Name off the chart" @onclick="() => OnTakeOff.InvokeAsync(at)"><i class="tide-chart-swatch @Series(s)" aria-hidden="true"></i>@Lines[s].Name<span class="bi bi-x" aria-hidden="true"></span></button>
-                }
-                else
-                {
-                    <span><i class="tide-chart-swatch @Series(s)" aria-hidden="true"></i>@Lines[s].Name</span>
-                }
+                <span>
+                    @if (OnTakeOff.HasDelegate)
+                    {
+                        <button type="button" class="tide-chart-legend-item" title="Take off the chart" aria-label="Take @Lines[s].Name off the chart" @onclick="() => OnTakeOff.InvokeAsync(at)"><i class="tide-chart-swatch @Series(s)" aria-hidden="true"></i>@Lines[s].Name<span class="bi bi-x" aria-hidden="true"></span></button>
+                    }
+                    else
+                    {
+                        <i class="tide-chart-swatch @Series(s)" aria-hidden="true"></i>@Lines[s].Name
+                    }
+                    @Lines[s].After
+                </span>
             }
         </figcaption>
     }
     <div class="tide-chart-frame">
         <div class="tide-chart-axis" aria-hidden="true"><span>@formatAxis(range.Max)</span><span>@formatAxis(range.Min)</span></div>
-        <div class="tide-chart-plot @(stops.Count <= 40 ? "tide-chart-dotted" : "") @(Lines.Count > 6 ? "tide-chart-tall" : "")" tabindex="0" role="group" aria-roledescription="chart"
+        <div class="tide-chart-plot @(stops.Count <= 40 ? "tide-chart-dotted" : "") @(Compact ? "tide-chart-compact" : Lines.Count > 6 ? "tide-chart-tall" : "")" tabindex="0" role="group" aria-roledescription="chart"
              aria-label="@Label. Use the arrow keys to read each value." data-chart>
             <svg viewBox="0 0 1000 300" preserveAspectRatio="none" aria-hidden="true">
+                @foreach (var b in bands)
+                {
+                    <rect class="tide-chart-band-@b.Level.ToString().ToLowerInvariant()" x="0" width="1000" y="@Num(b.Top)" height="@Num(b.Bottom - b.Top)" />
+                }
                 <line class="tide-chart-grid" x1="0" y1="0" x2="1000" y2="0" />
                 <line class="tide-chart-grid" x1="0" y1="150" x2="1000" y2="150" />
                 <line class="tide-chart-base" x1="0" y1="300" x2="1000" y2="300" />
@@ -72,7 +85,11 @@
 
 @code {
     /// <summary>A line on the chart: a value per label (null where there's none), shown with <see cref="Format"/>.</summary>
-    public sealed record Line(string Name, IReadOnlyList<decimal?> Values, Func<decimal, string> Format);
+    public sealed record Line(string Name, IReadOnlyList<decimal?> Values, Func<decimal, string> Format)
+    {
+        /// <summary>Shown after the line's name in the key (a metric's latest change).</summary>
+        public RenderFragment? After { get; init; }
+    }
 
     /// <summary>How many series colours the stylesheet defines (--tide-chart-1..12), and how many dash patterns it
     /// draws them in after the solid round (tide-chart-d1..3).</summary>
@@ -95,6 +112,10 @@
     /// <summary>When set, each line in the key is a button that takes it off the chart (by its index in
     /// <see cref="Lines"/>).</summary>
     [Parameter] public EventCallback<int> OnTakeOff { get; set; }
+    /// <summary>A metric's threshold bands (MetricBands.Of) to shade: a chart of one metric.</summary>
+    [Parameter] public IReadOnlyList<MetricBand>? Bands { get; set; }
+    /// <summary>A short plot, one of a grid of small charts.</summary>
+    [Parameter] public bool Compact { get; set; }
 
     /// <summary>How many lines the tooltip lists at one point; the rest are summed up in a line under them.</summary>
     internal const int TipLines = 10;
@@ -116,4 +137,5 @@
     }
 
     private static string Pct(double v) => v.ToString("0.##", CultureInfo.InvariantCulture) + "%";
+    private static string Num(double v) => v.ToString("0.#", CultureInfo.InvariantCulture);
 }

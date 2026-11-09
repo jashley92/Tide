@@ -122,6 +122,7 @@ the `widths` to check at (900px tall) and its `rules`:
 | `fits(selector)` | Nothing inside a match spills out of it sideways. |
 | `noSidewaysScroll` | The page isn't wider than the window. |
 | `visible(selector)` | At least one match is shown. |
+| `widerThan(selector, px)` | The first match is wider than `px` (a data page isn't held to the usual 1400px). |
 
 `[minWidth, rule]` applies a rule only at that width or wider (the slide's rows wrap below 1001px, as designed). A
 failure names the page, the width and the rule: `slide-article at 1440px: .tide-quick-add #1: its 5 parts are on more
