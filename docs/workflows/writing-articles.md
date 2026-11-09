@@ -94,7 +94,9 @@ The article page (`/articles/{id}`, `Components/Pages/ArticleEdit.razor`) has tw
 - **`ArticleEditorPanel`**: the form. Section pills jump to Assessment, Bottom line, Bullets, Why it matters,
   Recommended, Indicators & CVEs, and Tags & ATT&CK. A sticky save bar along the bottom holds Save, Discard, Save and mark
   ready (on a draft) or Back to draft (on a ready article), and Add to today's brief.
-- **`ReaderPreview`**: beside the editor, three tabs (`?side=actions` or `?side=details` opens on one):
+- **`ReaderPreview`**: beside the editor, whether it's ready ("Ready to brief", or how many things are missing in the
+  edition previewed and in the other, with Show from another tab), then three tabs (`?side=actions` or `?side=details`
+  opens on one):
   - **Preview**, first: what readers get. The article as the team or company-wide edition carries it (`?edition=company`
     opens on the company-wide one), with what that edition leaves out marked, the readiness gaps, the story and similar
     articles. A gap's link focuses its field; a gap with a fix (`ArticleFix`) applies it to the form.

@@ -25,6 +25,33 @@
 @implements IAsyncDisposable
 
 <section class="tide-card tide-reader" aria-label="Beside the article">
+    @* Whether it's ready, above the tabs so it's seen from any: the edition previewed, and the other's gaps if it has
+       some. The gaps themselves are placeholders where they belong in the preview; Show goes there. *@
+    @if (Current is { } now)
+    {
+        <p class="tide-reader-sum">
+            @if (now.Checks.Count == 0)
+            {
+                <span class="tide-reader-ready"><span class="bi bi-check-circle-fill" aria-hidden="true"></span> Ready to brief</span>
+            }
+            else
+            {
+                <span class="tide-reader-need"><span class="bi bi-exclamation-circle" aria-hidden="true"></span> @Ui.Plural(now.Checks.Count, "thing") missing</span>
+            }
+            @if (_both.FirstOrDefault(x => x.Edition != now.Edition) is { Checks.Count: > 0 } other)
+            {
+                <span class="tide-muted">&middot; @(other.Edition == Edition.Public ? "company-wide" : "team") edition: @Ui.Plural(other.Checks.Count, "thing") missing</span>
+            }
+            @if (now.Checks.Count > 0 && _side != PreviewTab)
+            {
+                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="() => SelectSide(PreviewTab)">Show</button>
+            }
+            @if (State.Dirty)
+            {
+                <span class="tide-reader-unsaved">Includes unsaved changes</span>
+            }
+        </p>
+    }
     <TabBar Label="Beside the article" Level="TabLevel.Sub" PanelId="reader-panel" Active="@_side" OnSelect="SelectSide" Class="tide-reader-tabs"
             Items="@([new TabBarItem("Preview", "", Key: PreviewTab), new TabBarItem("Actions", "", Key: ActionsTab, Count: _actionRows.Count), new TabBarItem("Details", "", Key: DetailsTab)])" />
     <div id="reader-panel" role="tabpanel" aria-labelledby="@TabBar.TabId("reader-panel", _side)">
@@ -70,21 +97,6 @@
     @if (Current is { } p)
     {
         <p class="tide-reader-hint">@Tide.Application.Distribution.BriefRenderer.EditionName(p.Edition) &middot; up to <TlpBadge Level="p.Ceiling" /></p>
-        <p class="tide-reader-sum">
-            @if (p.Checks.Count == 0)
-            {
-                <span class="tide-reader-ready"><span class="bi bi-check-circle-fill" aria-hidden="true"></span> Ready to brief</span>
-            }
-            else
-            {
-                <span class="tide-reader-need"><span class="bi bi-exclamation-circle" aria-hidden="true"></span> @p.Checks.Count thing@(p.Checks.Count == 1 ? "" : "s") missing</span>
-            }
-            @if (State.Dirty)
-            {
-                <span class="tide-reader-unsaved">Includes unsaved changes</span>
-            }
-        </p>
-
         <div class="tide-reader-doc tide-edition">
             @if (p.Cut is { } cut)
             {
