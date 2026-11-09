@@ -176,6 +176,27 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
+### v1.11.0
+
+Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). No migrations.
+
+**New**
+- **Chart several metrics at once.** On Metric history, *Chart: …* replaces the single-metric list. It opens every
+  metric under its group: tick metrics one by one, or tick a group to add all its current metrics, and find one by name.
+  Retired metrics are listed when you ask for them. What's charted is kept in the page's address, so a link shows the
+  same chart.
+  - **Layouts.** Up to 6 metrics in the same unit share one chart. *A chart each* draws a small chart per metric, each
+    on its own scale over the same days. It's used for more than 6 metrics, or for mixed units.
+  - **Readings.** Each metric shows its latest change, green when it moved the good way and red when the bad way. A
+    chart of one metric shades where its warning and critical thresholds trip.
+  - **From the table.** Filtering the table by group offers *Chart the groups shown*.
+- **An Insight section in the sidebar** holds Trends, Metrics, Coverage and Reports.
+
+**Changes**
+- **Wide tables use the whole window.** Metric history and Trends no longer stop at 1400px, as the actions board
+  already didn't, so on a wide screen their tables scroll sideways only when they're wider than the screen. Other pages
+  keep the usual width.
+
 ### v1.10.1
 
 Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). No migrations.
