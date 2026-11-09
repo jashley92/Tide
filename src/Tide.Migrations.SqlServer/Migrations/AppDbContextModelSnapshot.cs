@@ -1349,6 +1349,17 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasMaxLength(4000)
                         .HasColumnType("nvarchar(4000)");
 
+                    b.Property<DateTimeOffset?>("TeamNoteReviewedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("TeamNoteReviewedById")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("TeamNoteReviewedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("BriefDate")

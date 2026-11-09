@@ -1,6 +1,7 @@
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Tide.Application.Articles;
+using Tide.Application.Briefs;
 using Tide.Application.History;
 using Tide.Application.Security;
 using Tide.Domain.Enums;
@@ -40,6 +41,34 @@ public class TeamNoteTests : IDisposable
         // A brief already started isn't refilled, and a later one doesn't feed an earlier day.
         (await briefs.GetOrStartAsync(Tuesday)).TeamNote.Should().Be("- Only this now");
         (await briefs.GetOrStartAsync(new DateOnly(2026, 10, 23))).TeamNote.Should().BeNull("nothing is earlier than it");
+    }
+
+    [Fact]
+    public async Task ACarriedNote_IsFlagged_UntilItsChangedOrKeptAsStillCurrent_AndNotOnceTheMeetingsHeld()
+    {
+        var briefs = _db.Briefs();
+        var monday = await briefs.GetOrStartAsync(Monday);
+        await briefs.SetTeamNoteAsync(monday.Id, Note);
+        BriefService.TeamNoteCarriedOver((await briefs.GetAsync(Monday))!).Should().BeFalse("written on this brief");
+
+        var tuesday = await briefs.GetOrStartAsync(Tuesday);
+        BriefService.TeamNoteCarriedOver(tuesday).Should().BeTrue("Monday's, not looked at for Tuesday");
+
+        // Saved unchanged: kept as still current, by whom and when.
+        await briefs.SetTeamNoteAsync(tuesday.Id, Note);
+        tuesday = (await briefs.GetAsync(Tuesday))!;
+        BriefService.TeamNoteCarriedOver(tuesday).Should().BeFalse();
+        (tuesday.TeamNote, tuesday.TeamNoteReviewedById, tuesday.TeamNoteReviewedAtUtc).Should().Be((Note, _db.User.UserId, tuesday.TeamNoteReviewedAtUtc));
+        tuesday.TeamNoteReviewedAtUtc.Should().NotBeNull();
+
+        // Wednesday's starts flagged again; once its meeting is held there's nothing left to update it for.
+        var wednesday = await briefs.GetOrStartAsync(Wednesday);
+        BriefService.TeamNoteCarriedOver(wednesday).Should().BeTrue();
+        wednesday.PresentedAtUtc = DateTimeOffset.UtcNow;
+        BriefService.TeamNoteCarriedOver(wednesday).Should().BeFalse("the meeting's over");
+
+        // A blank note has nothing to flag.
+        BriefService.TeamNoteCarriedOver(new Tide.Domain.Entities.Brief()).Should().BeFalse();
     }
 
     [Fact]

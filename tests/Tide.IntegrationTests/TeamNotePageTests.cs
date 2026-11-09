@@ -211,6 +211,28 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task TheBriefPage_FlagsANoteCarriedOverFromTheLastBrief_UntilItsKeptOrChanged()
+    {
+        var (before, _) = await Brief(75, Note);
+        var day = Before(Today, 74);
+        Guid brief;
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            brief = (await scope.ServiceProvider.GetRequiredService<BriefService>().GetOrStartAsync(day)).Id;   // starts with the note from the day before
+        before.Should().BeBefore(day);
+
+        await using var page = await RenderAsync<BriefPage>(app, $"/briefs/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" });
+        var html = System.Net.WebUtility.HtmlDecode(await page.Html());
+        html.Should().Contain("Not updated").And.Contain("This is the last brief's note, not yet updated for").And.Contain("Still current</button>");
+        await using (var owner = await RenderAsync<BriefPage>(app, $"/briefs/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" }, Owner))
+            (await owner.Html()).Should().NotContain("Not updated", "only those who can update it are asked to");
+
+        // Still current: saved as it is (as the button does), the page hearing it.
+        await SaveAs(Robin, brief, Note);
+        for (var i = 0; i < 50 && (html = await page.Html()).Contains("Not updated"); i++) await Task.Delay(100);
+        html.Should().NotContain("Not updated").And.NotContain("Still current").And.Contain("Invoice lures are up", "kept as it was");
+    }
+
+    [Fact]
     public async Task TheBriefPage_ANoteTypedAndNotSaved_IsGuarded_AndSaveAndLeaveSavesIt()
     {
         var (day, _) = await Brief(72, Note);

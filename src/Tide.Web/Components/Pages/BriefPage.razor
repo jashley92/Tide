@@ -839,6 +839,9 @@ else
     private Task SaveTeamNote() => Run(() => BriefSvc.SetTeamNoteAsync(_brief!.Id, _teamNote),
         string.IsNullOrWhiteSpace(_teamNote) ? "Opening note cleared." : "Opening note saved.");
 
+    /// <summary>Keeps the last brief's opening note as it is for this one: it's reviewed, and no longer flagged.</summary>
+    internal Task KeepTeamNote() => Run(() => BriefSvc.SetTeamNoteAsync(_brief!.Id, _brief.TeamNote), "Opening note kept as it is.");
+
     private async Task Run(Func<Task> action, string? done, Action? then = null)
     {
         _busy = true;
@@ -943,7 +946,16 @@ else
         var editable = _canWrite && _brief!.Status != BriefStatus.Sent;
         if (!editable && string.IsNullOrWhiteSpace(_brief!.TeamNote)) return;
         <section class="tide-card" aria-labelledby="team-note-h" data-submit-scope>
-            <h2 id="team-note-h">Opening note <span class="ms-auto small fw-normal tide-muted">team edition only</span></h2>
+            <h2 id="team-note-h">Opening note
+                @if (editable && BriefService.TeamNoteCarriedOver(_brief!)) { <Badge Tone="BadgeTone.Warn" Icon="bi-clock-history" Class="ms-2">Not updated</Badge> }
+                <span class="ms-auto small fw-normal tide-muted">team edition only</span></h2>
+            @if (editable && BriefService.TeamNoteCarriedOver(_brief!))
+            {
+                <div class="tide-missing small mb-2" role="status"><span class="bi bi-clock-history" aria-hidden="true"></span>
+                    This is the last brief's note, not yet updated for @Ui.ShortDay(_date). Change it, or keep it if it still stands.
+                    <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" disabled="@(_busy || NoteDirty)" @onclick="KeepTeamNote">Still current</button>
+                </div>
+            }
             @if (editable)
             {
                 <label class="visually-hidden" for="team-note">Opening note</label>

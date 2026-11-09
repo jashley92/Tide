@@ -230,8 +230,9 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
     }
 
     /// <summary>
-    /// Saves the team's opening note (Markdown; blank clears it). Refused once the brief is sent, as its other content
-    /// is: the note went out in the team email as it was then.
+    /// Saves the team's opening note (Markdown; blank clears it), and marks it reviewed for this brief: saved unchanged,
+    /// it's kept as still current. Refused once the brief is sent, as its other content is: the note went out in the team
+    /// email as it was then.
     /// </summary>
     public async Task SetTeamNoteAsync(Guid briefId, string? note, CancellationToken ct = default)
     {
@@ -240,14 +241,24 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         var brief = await db.Briefs.FirstOrDefaultAsync(b => b.Id == briefId, ct) ?? throw new KeyNotFoundException("That brief no longer exists.");
         if (brief.Status == BriefStatus.Sent) throw new InvalidOperationException("This brief has been sent; its title slide line is fixed.");
         var text = ArticleService.CleanOrNull(note, TeamNoteMax, multiline: true);
-        if (text == brief.TeamNote) return;
+        if (text == brief.TeamNote && brief.TeamNoteReviewedAtUtc is not null) return;
         brief.TeamNote = text;
+        (brief.TeamNoteReviewedAtUtc, brief.TeamNoteReviewedById, brief.TeamNoteReviewedByName) = (clock.Now.ToUniversalTime(), user.UserId, user.DisplayName);
         Touch(brief);
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Whether <paramref name="brief"/>'s opening note is the previous brief's, carried forward and not yet looked at for
+    /// this one (neither changed nor kept as still current), while there's still a meeting to read it at.
+    /// </summary>
+    public static bool TeamNoteCarriedOver(Brief brief) =>
+        !string.IsNullOrWhiteSpace(brief.TeamNote) && brief.TeamNoteReviewedAtUtc is null
+        && brief.Status is BriefStatus.Draft or BriefStatus.Ready && brief.PresentedAtUtc is null && brief.MeetingHeldAtUtc is null;
+
     // The team note a brief for date starts with: the latest earlier brief's, so standing items roll forward. A note
-    // cleared on that brief stays cleared, rather than an older one coming back.
+    // cleared on that brief stays cleared, rather than an older one coming back. It's flagged until it's reviewed
+    // (TeamNoteCarriedOver).
     private static Task<string?> PreviousTeamNoteAsync(IAppDbContext db, DateOnly date, CancellationToken ct) =>
         db.Briefs.AsNoTracking().Where(b => b.BriefDate < date).OrderByDescending(b => b.BriefDate)
             .Select(b => b.TeamNote).FirstOrDefaultAsync(ct);
