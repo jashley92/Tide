@@ -34,7 +34,7 @@ public sealed class EmailTemplateService(IAppDbContextFactory dbs, ICurrentUser 
     private readonly EmailCopyStore _copies = copies ?? new EmailCopyStore();
 
     /// <summary>The organization's boundary (<see cref="OrganizationBoundary"/>): copies outside it are confirmed.</summary>
-    public OrganizationBoundary Boundary => boundary?.Current ?? OrganizationBoundary.Unknown;
+    public OrganizationBoundary Boundary => boundary.CurrentOrUnknown();
 
     /// <summary>The organization's domains as said on the page ("example.org"), or null when none is known.</summary>
     public string? HomeDomain => Boundary.Known ? Boundary.Describe : null;

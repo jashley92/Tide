@@ -191,7 +191,7 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
     private async Task<TlpLevel> CeilingAsync(CancellationToken ct) =>
         editions is not null ? (await editions.ReadAsync(ct)).Team : new Settings.DistributionOptions().TeamMaxTlp;
 
-    private OrganizationBoundary Boundary => boundary?.Current ?? OrganizationBoundary.Unknown;
+    private OrganizationBoundary Boundary => boundary.CurrentOrUnknown();
 
     // The wording an administrator set in Administration › Email templates, or the defaults.
     private readonly EmailTemplateStore _templates = templates ?? EmailTemplateStore.Defaults;

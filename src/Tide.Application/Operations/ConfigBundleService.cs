@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using Tide.Application.Abstractions;
 using Tide.Application.Actions;
 using Tide.Application.Articles;
+using Tide.Application.Distribution;
 using Tide.Application.Security;
 using Tide.Application.Settings;
 using Tide.Domain.Common;
@@ -150,7 +151,7 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
             var kind = row is null ? BundleChangeKind.Add : BundleChangeKind.Update;
             // What widens what leaves (Widens), and an address outside the organization in a list: either is warned, both said.
             var outside = AddressLists.Contains(s.Key)
-                ? (boundary?.Current ?? Distribution.OrganizationBoundary.Unknown).Outside(OperationalSettings.SplitAddresses(value))
+                ? boundary.CurrentOrUnknown().Outside(OperationalSettings.SplitAddresses(value))
                 : [];
             var risks = new[] { Widens(s.Key, row?.Value ?? ServerValue(s.Key), value), outside.Count > 0 ? $"Outside the organization: {string.Join("; ", outside)}." : null }
                 .OfType<string>().ToList();

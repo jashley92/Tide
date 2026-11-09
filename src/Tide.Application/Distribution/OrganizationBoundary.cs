@@ -70,16 +70,28 @@ public sealed class OrganizationBoundary
     /// <see cref="OutsideAddressesException"/> naming them, saying <paramref name="consequence"/>, for the page to ask
     /// <paramref name="question"/>.
     /// </summary>
-    public void Check(IEnumerable<string?> added, bool confirmed, string consequence, string question = "Save anyway?")
+    public void Check(IEnumerable<string?> added, bool confirmed, string consequence, string question = "Save anyway?") =>
+        Check(added.Select(a => (a, consequence)), confirmed, question);
+
+    /// <summary>As <see cref="Check(IEnumerable{string?}, bool, string, string)"/>, for a list being saved: only the
+    /// addresses it <paramref name="had"/> no longer need asking about.</summary>
+    public void CheckAdded(IEnumerable<string> now, IEnumerable<string> had, bool confirmed, string consequence) =>
+        Check(now.Except(had, StringComparer.OrdinalIgnoreCase), confirmed, consequence);
+
+    /// <summary>As above, each address with what goes to it: the message says each consequence once, for the addresses
+    /// outside.</summary>
+    public void Check(IEnumerable<(string? Address, string Consequence)> added, bool confirmed, string question = "Save anyway?")
     {
         if (confirmed) return;
-        var outside = Outside(added);
-        if (outside.Count > 0) throw new OutsideAddressesException(outside, OutsideAddressesException.Say(outside, this, consequence, question));
+        var outside = added.Where(a => !string.IsNullOrEmpty(a.Address) && !IsInside(a.Address)).ToList();
+        if (outside.Count == 0) return;
+        var addresses = Outside(outside.Select(a => a.Address));
+        var says = string.Join(" ", outside.Select(a => a.Consequence).Distinct());
+        throw new OutsideAddressesException(addresses, OutsideAddressesException.Say(addresses, this, says, question));
     }
 
-    /// <summary>The domains in a value as typed (separated by commas, semicolons, spaces or lines).</summary>
-    internal static IEnumerable<string> Split(string? value) =>
-        (value ?? "").Split([';', ',', ' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    /// <summary>The domains in a value as typed (separated as an address list is).</summary>
+    internal static IEnumerable<string> Split(string? value) => Settings.OperationalSettings.SplitAddresses(value);
 
     /// <summary>
     /// <c>Email:OrganizationDomains</c> as it's stored ("example.org; example.net"): each a domain name (a leading "@" is
@@ -111,27 +123,53 @@ public sealed class OrganizationBoundary
 
 /// <summary>
 /// The organization's boundary in force: <c>Email:OrganizationDomains</c> as saved in Administration (over the server's),
-/// else the domain of <c>Email:From</c>. Read afresh each time, so a saved change applies at once. Singleton.
+/// else the domain of <c>Email:From</c>. Built again only when the options change (a saved change reloads them), so it
+/// applies at once and costs nothing on each send. Singleton.
 /// </summary>
 public sealed class EmailBoundary
 {
-    private readonly Func<EmailBoundaryOptions> _options;
+    private readonly IOptionsMonitor<EmailBoundaryOptions>? _monitor;
+    private readonly EmailBoundaryOptions? _fixed;
+    private Built? _built;
 
-    public EmailBoundary(IOptionsMonitor<EmailBoundaryOptions> options) : this(() => options.CurrentValue) { }
+    // The options a boundary was built from, swapped whole so a reader on another thread never sees half of it.
+    private sealed record Built(EmailBoundaryOptions Options, OrganizationBoundary Boundary);
 
-    private EmailBoundary(Func<EmailBoundaryOptions> options) => _options = options;
+    public EmailBoundary(IOptionsMonitor<EmailBoundaryOptions> options) => _monitor = options;
+
+    private EmailBoundary(EmailBoundaryOptions options) => _fixed = options;
 
     /// <summary>A boundary that doesn't change: <paramref name="from"/>'s domain, or <paramref name="domains"/>.</summary>
-    public static EmailBoundary Fixed(string? from, params string[] domains)
+    public static EmailBoundary Fixed(string? from, params string[] domains) => new(new EmailBoundaryOptions { From = from, OrganizationDomains = domains });
+
+    private EmailBoundaryOptions Options => _monitor?.CurrentValue ?? _fixed!;
+
+    /// <summary>The sending address the boundary falls back to.</summary>
+    public string? From => Options.From;
+
+    /// <summary>The domains set (in Administration or on the server), none when it falls back to <see cref="From"/>'s.</summary>
+    public IReadOnlyList<string> OrganizationDomains => Options.OrganizationDomains;
+
+    public OrganizationBoundary Current
     {
-        var o = new EmailBoundaryOptions { From = from, OrganizationDomains = domains };
-        return new(() => o);
+        get
+        {
+            var o = Options;
+            if (_built is { } b && ReferenceEquals(b.Options, o)) return b.Boundary;
+            var built = new Built(o, OrganizationBoundary.Of(o.OrganizationDomains, o.From));
+            _built = built;
+            return built.Boundary;
+        }
     }
 
-    public OrganizationBoundary Current => OrganizationBoundary.Of(_options().OrganizationDomains, _options().From);
-
     /// <summary>The boundary with <paramref name="domains"/> in place of the saved ones (a save that changes them).</summary>
-    public OrganizationBoundary With(IEnumerable<string> domains) => OrganizationBoundary.Of(domains, _options().From);
+    public OrganizationBoundary With(IEnumerable<string> domains) => OrganizationBoundary.Of(domains, From);
+}
+
+public static class EmailBoundaryExtensions
+{
+    /// <summary>The boundary in force, or <see cref="OrganizationBoundary.Unknown"/> (nothing inside) without one.</summary>
+    public static OrganizationBoundary CurrentOrUnknown(this EmailBoundary? boundary) => boundary?.Current ?? OrganizationBoundary.Unknown;
 }
 
 /// <summary>

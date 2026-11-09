@@ -333,11 +333,10 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
         var value = string.Join("; ", list.Distinct(StringComparer.OrdinalIgnoreCase));
         // The setting's column holds 4,000 characters; SQL Server refuses more, SQLite would keep it.
         if (value.Length > 4000) throw new ArgumentException("That's too many addresses; use a distribution list instead.");
-        var had = await ManagerEmailsAsync(ct);
-        (boundary?.Current ?? OrganizationBoundary.Unknown).Check(list.Where(a => !had.Contains(a, StringComparer.OrdinalIgnoreCase)), confirmOutside,
-            "Every approved swap and cover, with who presents when, is emailed there.");
         await using var db = await dbs.CreateAsync(ct);
         var row = await db.Settings.FirstOrDefaultAsync(s => s.Key == ManagerEmailsKey, ct);
+        boundary.CurrentOrUnknown().CheckAdded(list, Settings.OperationalSettings.SplitAddresses(row?.Value), confirmOutside,
+            "Every approved swap and cover, with who presents when, is emailed there.");
         if (row is null) db.Settings.Add(row = new AppSetting { Key = ManagerEmailsKey });
         row.Value = value;
         row.UpdatedAtUtc = DateTimeOffset.UtcNow;

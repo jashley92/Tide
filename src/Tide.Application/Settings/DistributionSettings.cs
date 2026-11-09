@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Tide.Application.Abstractions;
+using Tide.Application.Distribution;
 using Tide.Application.Security;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
@@ -122,22 +123,19 @@ public sealed class DistributionSettings(IAppDbContextFactory dbs, ICurrentUser 
     // confirmed, naming it and what the edition carries; both lists' at once, so confirming one never passes the other's.
     private async Task CheckOutsideAsync(IReadOnlyList<(Edition Edition, string Value)> lists, CancellationToken ct)
     {
-        var inside = boundary?.Current ?? Distribution.OrganizationBoundary.Unknown;
-        var outside = new List<string>();
-        var says = new List<string>();
+        var inside = boundary.CurrentOrUnknown();
+        var added = new List<(Edition Edition, string Address)>();
         foreach (var (edition, value) in lists)
         {
             var had = await GetRecipientsAsync(edition, ct);
-            var added = inside.Outside(Split(value).Where(a => !had.Contains(a, StringComparer.OrdinalIgnoreCase)));
-            if (added.Count == 0) continue;
-            var (pub, team) = await ReadAsync(ct);
-            var (name, max) = edition == Edition.Public ? ("company-wide", pub) : ("team", team);
-            outside.AddRange(added);
-            says.Add($"The {name} edition goes to {string.Join("; ", added)} with everything marked up to {Tlp.Label(max)}.");
+            added.AddRange(inside.Outside(Split(value).Except(had, StringComparer.OrdinalIgnoreCase)).Select(a => (edition, a)));
         }
-        if (outside.Count > 0)
-            throw new Distribution.OutsideAddressesException(outside,
-                Distribution.OutsideAddressesException.Say(outside, inside, string.Join(" ", says), "Save anyway?"));
+        if (added.Count == 0) return;
+        var (pub, team) = await ReadAsync(ct);
+        string Says(Edition e) => e == Edition.Public
+            ? $"The company-wide edition goes there with everything marked up to {Tlp.Label(pub)}."
+            : $"The team edition goes there with everything marked up to {Tlp.Label(team)}.";
+        inside.Check(added.Select(a => ((string?)a.Address, Says(a.Edition))), confirmed: false);
     }
 
     // A recipient list as it's stored, or an ArgumentException saying what's wrong.

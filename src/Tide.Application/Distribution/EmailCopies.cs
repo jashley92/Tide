@@ -123,12 +123,12 @@ public sealed class CopyingEmailSender(IEmailSender inner, EmailCopyStore copies
         {
             var inside = boundary.Current;
             var confirmed = copies.ConfirmedOutside(email.Template);
-            bool Keep(string a) => inside.IsInside(a) || confirmed.Contains(a, StringComparer.OrdinalIgnoreCase);
-            var dropped = template.Cc.Concat(template.Bcc).Where(a => !Keep(a)).ToList();
-            if (archive is not null && !inside.IsInside(archive)) (dropped, archive) = ([.. dropped, archive], null);
+            var dropped = template.Cc.Concat(template.Bcc).Where(a => !inside.IsInside(a) && !confirmed.Contains(a, StringComparer.OrdinalIgnoreCase))
+                .Concat(archive is not null && !inside.IsInside(archive) ? [archive] : []).ToList();
             if (dropped.Count > 0)
             {
-                template = new([.. template.Cc.Where(Keep)], [.. template.Bcc.Where(Keep)]);
+                bool Keep(string a) => !dropped.Contains(a, StringComparer.OrdinalIgnoreCase);
+                (template, archive) = (new([.. template.Cc.Where(Keep)], [.. template.Bcc.Where(Keep)]), archive is not null && Keep(archive) ? archive : null);
                 logger?.LogWarning("Left a copy off an email ({Template}): {Addresses} {Verb} outside {Boundary} and wasn't confirmed. Save the copies again on Email templates.",
                     email.Template ?? "a brief's edition", string.Join("; ", dropped), dropped.Count == 1 ? "is" : "are", inside.Describe);
             }

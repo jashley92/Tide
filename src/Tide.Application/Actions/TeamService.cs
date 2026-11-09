@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using Tide.Application.Abstractions;
 using Tide.Application.Articles;
 using Tide.Application.Content;
+using Tide.Application.Distribution;
 using Tide.Application.Scorecard;
 using Tide.Application.Security;
 using Tide.Domain.Entities;
@@ -18,7 +19,7 @@ namespace Tide.Application.Actions;
 public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOptionsMonitor<ReminderOptions> reminders,
     Distribution.EmailBoundary? boundary = null)
 {
-    private Distribution.OrganizationBoundary Boundary => boundary?.Current ?? Distribution.OrganizationBoundary.Unknown;
+    private Distribution.OrganizationBoundary Boundary => boundary.CurrentOrUnknown();
 
     /// <summary>Whether <paramref name="address"/> is outside the organization (an external team's contact usually is): the
     /// forms say so beside it.</summary>
@@ -30,16 +31,8 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOp
     // A team's contact or escalation address outside the organization is confirmed the first time it's set, and whenever
     // it changes; one it already had is saved without asking. An external team's contact is outside by nature: its emails
     // are held to the team edition's ceiling, which is the real guard, so this only makes sure it's meant.
-    private void CheckOutside(bool confirmed, params (string? Was, string? Now, string Consequence)[] changes)
-    {
-        if (confirmed) return;
-        var changed = changes.Where(c => c.Now is not null && !string.Equals(c.Was, c.Now, StringComparison.OrdinalIgnoreCase)).ToList();
-        var inside = Boundary;
-        var outside = inside.Outside(changed.Select(c => c.Now));
-        if (outside.Count == 0) return;
-        var says = changed.Where(c => outside.Contains(c.Now!, StringComparer.OrdinalIgnoreCase)).Select(c => c.Consequence).Distinct();
-        throw new Distribution.OutsideAddressesException(outside, Distribution.OutsideAddressesException.Say(outside, inside, string.Join(" ", says), "Save anyway?"));
-    }
+    private void CheckOutside(bool confirmed, params (string? Was, string? Now, string Consequence)[] changes) =>
+        Boundary.Check(changes.Where(c => !string.Equals(c.Was, c.Now, StringComparison.OrdinalIgnoreCase)).Select(c => (c.Now, c.Consequence)), confirmed);
 
     private const string HeldToCeiling = "Requests marked above what the team edition carries are counted there, not named.";
     private const string ContactGets = "Their reminders go there. " + HeldToCeiling;

@@ -210,7 +210,7 @@ else
         catch (OutsideAddressesException ex) { ask = ex.Message; }
         catch (Exception ex) { _copyError = UserFacingError.For(ex); }
         finally { _busy = false; }
-        if (ask is not null && await _confirm.Ask("Copy outside your organization?", ask, "Copy anyway")) await SaveCopies(true);
+        if (await _confirm.AskOutside(ask, "Copy outside your organization?", "Copy anyway")) await SaveCopies(true);
     }
 
     internal async Task SaveArchive()

@@ -277,7 +277,7 @@ public sealed partial class ReminderService
     /// to ask (<paramref name="sender"/>).
     /// </summary>
     internal static string RequestList(IEnumerable<ActionItem> actions, DateOnly today, WorkingDays days, string? tideUrl = null,
-        int withheld = 0, string? sender = null)
+        int withheld = 0, string sender = "")
     {
         var sb = new StringBuilder();
         foreach (var a in actions)
@@ -299,7 +299,7 @@ public sealed partial class ReminderService
         }
         if (withheld > 0)
             sb.Append(CultureInfo.InvariantCulture,
-                $"<p style=\"margin:0 0 14px;font-size:13px;color:{Palette.Muted};\">{Esc(WithheldText(withheld, sender ?? "us"))}</p>");
+                $"<p style=\"margin:0 0 14px;font-size:13px;color:{Palette.Muted};\">{Esc(WithheldText(withheld, sender))}</p>");
         return sb.ToString();
     }
 

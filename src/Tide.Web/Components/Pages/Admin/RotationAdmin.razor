@@ -193,7 +193,7 @@
             }
             Toasts.Show("Saved.");
         });
-        if (ask is not null && await _confirm.Ask("Email outside your organization?", ask, "Save anyway")) await SaveManagers(true);
+        if (await _confirm.AskOutside(ask)) await SaveManagers(true);
     }
 
     /// <summary>The managers box, as a test types into it.</summary>

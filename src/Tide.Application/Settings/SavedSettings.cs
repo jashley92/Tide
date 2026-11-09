@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using Tide.Application.Abstractions;
+using Tide.Application.Distribution;
 using Tide.Application.Security;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
@@ -96,13 +97,13 @@ public sealed class OperationalSettingsService(IAppDbContextFactory dbs, ICurren
         {
             var keys = checkedValues.Keys.ToList();
             var rows = await db.Settings.Where(s => keys.Contains(s.Key)).ToDictionaryAsync(s => s.Key, StringComparer.OrdinalIgnoreCase, ct);
-            if (!confirmOutside && checkedValues.TryGetValue(OperationalSettings.BriefNotReadyRecipients, out var told))
+            if (checkedValues.TryGetValue(OperationalSettings.BriefNotReadyRecipients, out var told))
             {
                 var inside = checkedValues.TryGetValue(OperationalSettings.OrganizationDomains, out var domains) && boundary is not null
                     ? boundary.With(OperationalSettings.SplitAddresses(domains))
-                    : boundary?.Current ?? Distribution.OrganizationBoundary.Unknown;
-                var had = OperationalSettings.SplitAddresses(rows.GetValueOrDefault(OperationalSettings.BriefNotReadyRecipients)?.Value);
-                inside.Check(OperationalSettings.SplitAddresses(told).Where(a => !had.Contains(a, StringComparer.OrdinalIgnoreCase)), false,
+                    : boundary.CurrentOrUnknown();
+                inside.CheckAdded(OperationalSettings.SplitAddresses(told),
+                    OperationalSettings.SplitAddresses(rows.GetValueOrDefault(OperationalSettings.BriefNotReadyRecipients)?.Value), confirmOutside,
                     "They're told each morning there's no brief yet.");
             }
             foreach (var (key, value) in checkedValues)
