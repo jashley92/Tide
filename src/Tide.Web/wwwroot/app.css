@@ -320,6 +320,8 @@ mark.tide-mark { background: var(--tide-accent-soft); color: var(--tide-text); p
     .tide-crumbs li:nth-last-child(2) a::before { content: "\2039"; margin-right: .3rem; }
 }
 .tide-page-head .tide-sub { color: var(--tide-text-muted); margin-top: .2rem; font-size: .92rem; }
+/* A run of text beside a badge: it wraps between its words, rather than dropping whole under the badge. */
+.tide-sub-line { flex: 1 1 12rem; min-width: 0; }
 .tide-card { background: var(--tide-surface); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl); padding: 1rem 1.15rem; margin-bottom: 1rem; }
 .tide-card > h2, .tide-card-title { font-size: .95rem; font-weight: var(--tide-weight-semibold); margin: 0 0 .75rem; display: flex; align-items: center; gap: .5rem; }
 .tide-card-title .tide-count { color: var(--tide-text-muted); font-weight: var(--tide-weight-regular); }
@@ -1711,23 +1713,24 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 
 /* ---- Today: a day's brief (BriefPage). The step strip, then the running order and numbers beside the edition check,
    the meeting and (on Today) My actions, the rotation and recent articles. ---- */
-.tide-steps { list-style: none; margin: 0 0 var(--tide-space-4); padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+.tide-steps { container: steps / inline-size; list-style: none; margin: 0 0 var(--tide-space-4); padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
     border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl); background: var(--tide-surface); overflow: hidden; }
 .tide-step { display: flex; gap: var(--tide-space-2); align-items: flex-start; padding: var(--tide-space-3); border-left: 1px solid var(--tide-border); min-width: 0; }
 .tide-step:first-child { border-left: 0; }
 .tide-step-ico { flex: none; width: 1.4rem; height: 1.4rem; border-radius: var(--tide-radius-round); display: grid; place-items: center; font-size: var(--tide-text-xs);
     font-weight: var(--tide-weight-bold); border: 2px solid var(--tide-border-strong); color: var(--tide-text-muted); font-variant-numeric: tabular-nums; }
 .tide-step-txt { display: grid; min-width: 0; }
-.tide-step-label { font-weight: var(--tide-weight-semibold); display: flex; gap: var(--tide-space-2); align-items: center; }
+.tide-step-label { font-weight: var(--tide-weight-semibold); display: flex; flex-wrap: wrap; gap: 0 var(--tide-space-2); align-items: center; }
 .tide-step-label a, .tide-step-btn.btn-link { color: var(--tide-text); font-weight: var(--tide-weight-semibold); text-decoration: none; font-size: inherit; line-height: inherit; vertical-align: baseline; }
 .tide-step-label a:hover, .tide-step-btn.btn-link:hover { color: var(--tide-accent-text); text-decoration: underline; }
-.tide-step-detail { font-size: var(--tide-text-xs); color: var(--tide-text-muted); overflow-wrap: anywhere; }
+.tide-step-detail { font-size: var(--tide-text-xs); color: var(--tide-text-muted); overflow-wrap: break-word; }
 .tide-step-now { font-size: var(--tide-text-xs); font-weight: var(--tide-weight-bold); text-transform: uppercase; letter-spacing: .05em; color: var(--tide-accent-text); }
 .tide-step.is-done .tide-step-ico { background: var(--tide-ok-soft); border-color: var(--tide-ok); color: var(--tide-ok); }
 .tide-step.is-current { background: var(--tide-accent-soft); box-shadow: inset 0 -3px 0 var(--tide-accent); }
 .tide-step.is-current .tide-step-ico { border-color: var(--tide-accent); background: var(--tide-accent); color: var(--tide-surface); }
 .tide-step.is-attention .tide-step-ico { border-color: var(--tide-warn); color: var(--tide-warn); }
-@media (max-width: 700px) {
+/* Compact by the strip's own width, not the window's: beside an open sidebar it's narrow on a wide screen. */
+@container steps (max-width: 46rem) {
     .tide-step { flex-direction: column; align-items: center; text-align: center; padding: var(--tide-space-2) var(--tide-space-1); }
     .tide-step-label { justify-content: center; font-size: var(--tide-text-sm); }
     .tide-step-now { display: none; }
