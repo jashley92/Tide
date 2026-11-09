@@ -57,6 +57,16 @@ public sealed record FilterDef(string Key, string Label, FilterKind Kind, Action
     /// <summary>What its chip says, when "Label: value" doesn't read well.</summary>
     public string? ChipText { get; init; }
 
+    /// <summary>The heading it's listed under in "+ Filter" ("Who", "Where", "What", "When"); filters with none come
+    /// first, unheaded. Headings appear in the order their first filter does.</summary>
+    public string? Section { get; init; }
+
+    /// <summary>The options past which a box to find one is shown above them (a long list of people, say).</summary>
+    public const int FindAbove = 8;
+
+    /// <summary>Whether its options get a box to find one: many of them, for a single or multi filter.</summary>
+    public bool Findable => Kind != FilterKind.Text && Options.Count > FindAbove;
+
     /// <summary>A text filter's box: its input type ("date"), placeholder, suggestions, and a line of help under it.</summary>
     public string InputType { get; init; } = "text";
     public string? Placeholder { get; init; }

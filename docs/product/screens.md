@@ -300,14 +300,17 @@ is owned by a team and optionally assigned. It's due by a date the SLA targets s
 that fits its kind.
 
 - **Board or list.** The Actions page opens as a board until someone picks the list, and then remembers their
-  choice on any computer. A link that names a layout opens that one. On the board, a card is dragged to another
+  choice on any computer. A link that names a layout opens that one. It opens on Mine until someone picks *Open here
+  by default* on My teams or All open; a default that would always be empty for them (My teams for someone on no
+  team) opens All open instead. On the board, a card is dragged to another
   column, or moved from its Move menu by keyboard. Its columns are Open, In progress, Blocked, Tracking, Done, Cancelled
   and Not applicable.
 - **Filters.** One bar serves the list and the board: the search box (title, A-number or the article's title), then
-  the pills **Overdue**, **Due this week**, **P1–P2**, **Blocked** and **Tracking**. Overdue and Due this week take
-  turns, as do Blocked and Tracking (each pair is one filter). **+ Filter** holds team, kind, priority (any of P1 to
-  P4), due date (including no due date), status and, when an administrator shows card rules as filters, the rule, each
-  with its count. A holder chosen on Workload and "Part of A-12" (from a parent action's link) show as chips. They
+  the pills **Overdue**, **Due this week**, **P1–P2**, **Blocked**, **Tracking** and **Raised by me**. Overdue and Due this
+  week take turns, as do Blocked and Tracking (each pair is one filter). **+ Filter** holds team, held by (you, nobody,
+  or anyone holding an open action), internal or external teams, raised by, kind, priority (any of P1 to P4), due date
+  (including no due date), status and, when an administrator shows card rules as filters, the rule, each with its
+  count. "Part of A-12" (from a parent action's link) shows as a chip. They
   combine and stay in the address. Filtered to a team with an active limit, the bar says "4 of 5 active". The view
   tabs (Mine, My teams, All open…) stay tabs.
 - **Long lists.** The list shows 50 actions a page, with numbered pages and the page in the address; group headings

@@ -47,7 +47,14 @@ window.tideFilters = (function () {
             if (backdrop) backdrop.click();
             return;
         }
-        if (e.target.tagName === 'INPUT') return;   // typing a value: the keys move the caret
+        // A long list's find box: Down goes to the first choice it leaves; otherwise the keys move the caret.
+        if (e.target.tagName === 'INPUT') {
+            if (e.key === 'ArrowDown' && e.target.classList.contains('tide-filter-find')) {
+                const first = Array.prototype.slice.call(pop.querySelectorAll(choices)).find(function (c) { return !c.classList.contains('tide-filter-back'); });
+                if (first) { e.preventDefault(); first.focus(); }
+            }
+            return;
+        }
         const to = window.tideRoving(Array.prototype.slice.call(pop.querySelectorAll(choices)), document.activeElement, e, 'y');
         if (!to) return;
         e.preventDefault();

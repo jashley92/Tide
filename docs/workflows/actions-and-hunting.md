@@ -800,7 +800,11 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
 - **Actions page** (`/actions`, `ActionsBoard.razor`). A board (a column per status in `ActionItem.StatusOrder`:
   Open, In progress, Blocked, Tracking, Done, Cancelled, Not applicable; `BoardAsync`) or a list (`PageAsync`). Views:
   Mine, My teams, Open, Overdue, Closed (last 90 days). Overdue and Closed are list-only. The layout is the
-  `actions.layout` preference; a link's own `layout` wins for that visit. Card rules (administered) colour and label
+  `actions.layout` preference; a link's own `layout` wins for that visit. The tab an address without `view` opens
+  is the `actions.view` preference (`mine`, the default, `myteams` or `open`), set with *Open here by default* by the
+  tabs (*Opens here* on the tab that's theirs). A default that would always be empty opens All open instead
+  (`ActionsBoard.OpeningView`): Mine for someone who can't be given actions (neither `WorkActions` nor `WriteArticles`: a Viewer), My teams for someone
+  on no team. A link's own `view` (Today's, the sidebar's) wins. Card rules (administered) colour and label
   cards, and those shown as filters are offered in the filter bar.
 - **Filters.** One bar for the list and the board (`FilterBar`; the filter is `ActionFilter`): the search box (title,
   A-number or the article's title), then five pills:
@@ -812,12 +816,16 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
   | P1–P2 | `priority=p1,p2` | On while the priority filter is exactly P1 and P2. |
   | Blocked | `status=blocked` | Takes turns with Tracking: `status` holds one value. |
   | Tracking | `status=tracking` | |
+  | Raised by me | `raised=me` | The actions you created, wherever they are now: what you asked others for (`ActionFilter.RaisedByMe`). |
 
-  **+ Filter** holds team (`team`), kind (`kind`), priority (`priority`, any of P1 to P4: `priority=p1,p3`;
+  **+ Filter** lists them under Who (held by, raised by), Where (team, internal or external), What (kind, priority,
+  status, rule) and When (due), and gives a long list (held by, in a big team) a find box. It holds team (`team`); held by (`assignee`: you, nobody, or anyone holding an open action, with how many,
+  from `HoldersAsync`; a Workload link sets it too); internal or external teams (`teams=internal|external`,
+  `ActionFilter.Teams`); raised by (`raised=me`); kind (`kind`), priority (`priority`, any of P1 to P4: `priority=p1,p3`;
   `ActionFilter.Priorities`), due (`due`, with `none` for no due date), status (`status`, the open ones) and, when an
   administrator shows card rules as filters, the rule (`rule`, each with its count). Each is a chip while set, unless a
-  pill says it. A holder from Workload (`assignee`) and parent (`parent=12`, "Part of A-12": the parts of one action,
-  from its page's link) are chips only. They combine, and every filter, the view and the page are in the address.
+  pill says it. Held by stays when the view changes, except to Mine. Parent (`parent=12`, "Part of A-12": the parts
+  of one action, from its page's link) is a chip only. They combine, and every filter, the view and the page are in the address.
   A filter change goes back to the first page; **Clear** removes every filter and the words, and keeps the view and
   layout. Filtered to a team with an active limit, the bar shows "4 of 5 active" (`TeamActiveAsync`).
 - **The list** is sorted, grouped and paged in the database, 50 a page (`ActionService.ListPageSize`). Group headings

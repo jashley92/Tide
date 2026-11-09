@@ -37,6 +37,21 @@
 <div class="d-flex flex-wrap align-items-end gap-2">
     <TabBar Label="Views" Class="flex-grow-1" Items="@(Views.Where(v => !_asBoard || OnBoard(v.Item1)).Select(v => new TabBarItem(v.Item2, "", Key: v.Item1.ToString())).ToList())"
             Active="@_view.ToString()" OnSelect="k => SetView(Enum.Parse<ActionView>(k!))" />
+    @if (DefaultFor(_view) is { } shown)
+    {
+        @* The tab this page opens on when a link doesn't say: the person's own, set here. *@
+        <div class="mb-2 small">
+            @if (shown == SavedView)
+            {
+                <span class="tide-muted" id="view-default"><span class="bi bi-star-fill" aria-hidden="true"></span> Opens here</span>
+            }
+            else
+            {
+                <button type="button" class="btn btn-link btn-sm p-0" id="view-default" disabled="@_busyDefault" @onclick="() => SetDefaultView(shown)"
+                        title="Open Actions on @ViewLabel(_view) when a link doesn't say which tab"><span class="bi bi-star" aria-hidden="true"></span> Open here by default</button>
+            }
+        </div>
+    }
     <TabBar Label="Layout" Level="TabLevel.Sub" Class="mb-2" Active="@(_asBoard ? "board" : "list")" OnSelect="SetLayout"
             Items="@([new TabBarItem("List", "", "bi-list-ul", "list"), new TabBarItem("Board", "", "bi-kanban", "board")])" />
 </div>
@@ -102,6 +117,8 @@ else
     [SupplyParameterFromQuery(Name = "due")] public string? DueParam { get; set; }
     [SupplyParameterFromQuery(Name = "status")] public string? StatusParam { get; set; }
     [SupplyParameterFromQuery(Name = "parent")] public string? ParentParam { get; set; }
+    [SupplyParameterFromQuery(Name = "teams")] public string? TeamsParam { get; set; }
+    [SupplyParameterFromQuery(Name = "raised")] public string? RaisedParam { get; set; }
 
     /// <summary>The list's page, from 1 (text, so "?page=abc" is the first page, not a broken one).</summary>
     [SupplyParameterFromQuery(Name = DataTable<ActionRow>.PageParameter)] public string? PageParam { get; set; }
@@ -116,6 +133,63 @@ else
     public string? SavedLayout { get; set; }
 
     private bool SavedBoard => SavedLayout == UserPreferences.Board;
+
+    /// <summary>
+    /// The tab this person opens Actions on (Mine until they choose; My teams or All open), kept on the server like the
+    /// layout and read with it. An address with <c>view</c> (the sidebar's Recently closed, Today's links) wins.
+    /// </summary>
+    [PersistentState]
+    public string? SavedView { get; set; }
+
+    private bool _busyDefault;
+
+    // The preference's value for a tab that can be a default; null for Overdue and Recently closed.
+    private static string? DefaultFor(ActionView v) => v switch
+    {
+        ActionView.Mine => UserPreferences.Mine,
+        ActionView.MyTeams => UserPreferences.MyTeams,
+        ActionView.Open => UserPreferences.AllOpen,
+        _ => null,
+    };
+
+    private static string ViewLabel(ActionView v) => Views.First(x => x.Item1 == v).Item2;
+
+    /// <summary>
+    /// The tab an address without <c>view</c> opens: the person's default, unless it would always be empty for them:
+    /// Mine for someone who can't be given actions (a Viewer), My teams for someone on no team. Those open All open instead.
+    /// </summary>
+    internal ActionView OpeningView()
+    {
+        var chosen = SavedView switch { UserPreferences.MyTeams => ActionView.MyTeams, UserPreferences.AllOpen => ActionView.Open, _ => ActionView.Mine };
+        return chosen switch
+        {
+            ActionView.Mine when !CanHold => ActionView.Open,
+            ActionView.MyTeams when !_teams.Any(t => t.Members.Any(m => m.UserId == Me_)) => ActionView.Open,
+            _ => chosen,
+        };
+    }
+
+    // Whether actions can be given to this person: whoever works them, on a team (WorkActions) or all of them (WriteArticles).
+    // Read once as the page opens, with who they are, so a later address change reads the same person.
+    private bool CanHold => _canHold ??= CurrentUser.Has(Permission.WorkActions) || CurrentUser.Has(Permission.WriteArticles);
+    private bool? _canHold;
+    private string? _me;
+    private string Me_ => _me ??= CurrentUser.UserId;
+
+    // "Open here by default": this tab, from now on, wherever they sign in.
+    internal async Task SetDefaultView(string value)
+    {
+        if (_busyDefault) return;
+        _busyDefault = true;
+        try
+        {
+            await Prefs.SetAsync(UserPreferences.ActionsView, value);
+            SavedView = value;
+            Toasts.Show($"Actions opens on {ViewLabel(_view)} from now on.");
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busyDefault = false; }
+    }
 
     /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.</summary>
     [PersistentState]
@@ -158,7 +232,10 @@ else
     private ActionView _view = ActionView.Open;
     private Guid? _teamId;
     private ActionKind? _kind;
-    private string? _assignee;   // from Workload: one holder's open actions
+    private string? _assignee;   // Held by: one person's actions (or nobody's), from the menu or a Workload link
+    private ActionTeams? _side;   // only internal teams' actions, or only external teams'
+    private bool _raised;   // only the ones this person raised
+    private IReadOnlyList<ActionHolder> _holders = [];
     private string? _search;
     private IReadOnlyList<Priority> _priorities = [];
     private ActionDue? _due;
@@ -179,11 +256,13 @@ else
     // How long typing in the search box pauses before the actions are searched.
     private readonly TypingPause _typing = new(300);
 
-    private bool Filtered => _search is not null || _priorities.Count > 0 || _due is not null || _status is not null || _ruleId is not null || _parentNumber is not null;
+    private bool Filtered => _search is not null || _priorities.Count > 0 || _due is not null || _status is not null || _ruleId is not null || _parentNumber is not null
+        || _side is not null || _raised;
 
     private string Empty => _view switch
     {
-        _ when _priorities.Count > 0 || _due is not null || _status is not null || _parentNumber is not null || (_ruleId is not null && !_asBoard) => "No actions match these filters.",
+        _ when _priorities.Count > 0 || _due is not null || _status is not null || _parentNumber is not null || _side is not null || _raised || _assignee is not null
+            || (_ruleId is not null && !_asBoard) => "No actions match these filters.",
         ActionView.Mine => "Nothing assigned to you.",
         ActionView.MyTeams => "Your teams have no open actions (or you're on no team).",
         ActionView.Overdue => "Nothing is overdue.",
@@ -215,6 +294,7 @@ else
             try
             {
                 var was = _rows;
+                _holders = await ActionSvc.HoldersAsync();
                 await Fetch();
                 if (!_asBoard) _marks?.Apply(LiveDiff.Of(was, _rows, r => r.Id, r => r));
             }
@@ -226,18 +306,25 @@ else
             Adopt(prerendered);
         _teams = await Teams.ListAsync();
         _teamOptions = TeamOptions(_teams);
+        _holders = await ActionSvc.HoldersAsync();
         _rules = await RuleSvc.ListAsync();
-        SavedLayout ??= await Prefs.GetAsync(UserPreferences.ActionsLayout);
+        (_canHold, _me) = (CanHold, Me_);
+        if (SavedLayout is null || SavedView is null)
+        {
+            var saved = await Prefs.GetAsync([UserPreferences.ActionsLayout, UserPreferences.ActionsView]);
+            SavedLayout ??= saved[UserPreferences.ActionsLayout];
+            SavedView ??= saved[UserPreferences.ActionsView];
+        }
     }
 
     // What the address says: compared, so the page knows when a link has changed it. The team, rule and parent are read as
     // text and parsed here (FilterValues), so a value that isn't one ("?team=network") is ignored rather than failing the page.
     private sealed record Address(string? View, Guid? Team, string? Assignee, string? Layout, Guid? Rule, string? Group,
-        string? Q, string? Kind, string? Priority, string? Due, string? Status, string? Page, int? Parent = null);
+        string? Q, string? Kind, string? Priority, string? Due, string? Status, string? Page, int? Parent = null, string? Teams = null, string? Raised = null);
 
     private Address FromAddress() =>
         new(ViewParam, FilterValues.Id(TeamParam), AssigneeParam, LayoutParam, FilterValues.Id(RuleParam), GroupParam, Q, KindParam, PriorityParam, DueParam, StatusParam, PageParam,
-            FilterValues.Number(ParentParam));
+            FilterValues.Number(ParentParam), TeamsParam, RaisedParam);
 
     // The address as last applied. The page stays open when a link changes only the query (the sidebar's Actions from
     // ?view=closed, a link to ?view=overdue, a pager link), so the address is read whenever it changes, not only when the
@@ -250,7 +337,7 @@ else
         if (_applied == query) return;
         var was = _applied;
         _applied = query;
-        _view = EnumNames.OrNull<ActionView>(ViewParam, ignoreCase: true) ?? ActionView.Mine;
+        _view = EnumNames.OrNull<ActionView>(ViewParam, ignoreCase: true) ?? OpeningView();
         _groupByKind = string.Equals(GroupParam, "kind", StringComparison.OrdinalIgnoreCase);
         // No layout in the address: the person's own. A link to a view the board doesn't have (Overdue, Recently
         // closed) or to the list grouped by kind asks for the list, so it opens as the list.
@@ -268,6 +355,8 @@ else
         _status = EnumNames.OrNull<ActionStatus>(StatusParam, ignoreCase: true) is { } st && OpenStatuses.Contains(st) ? st : null;
         _page = TableView.PageFrom(PageParam);
         _parentNumber = query.Parent is > 0 ? query.Parent : null;
+        _side = EnumNames.OrNull<ActionTeams>(TeamsParam, ignoreCase: true);
+        _raised = string.Equals(RaisedParam, Me, StringComparison.OrdinalIgnoreCase);
         // Only another view resets the sort: another page (or filter) keeps the one chosen.
         if (was is null || !string.Equals(was.View, query.View, StringComparison.OrdinalIgnoreCase)) _sort = DefaultSort(_view);
         var quiet = _adopted;
@@ -297,7 +386,7 @@ else
         (_teams, _teamOptions, _rules, _board, _rows) = (p._teams, p._teamOptions, p._rules, p._board, p._rows);
         (_view, _asBoard, _groupByKind, _ruleId, _teamId, _assignee) = (p._view, p._asBoard, p._groupByKind, p._ruleId, p._teamId, p._assignee);
         (_search, _kind, _priorities, _due, _status) = (p._search, p._kind, p._priorities, p._due, p._status);
-        (_parentNumber, _active) = (p._parentNumber, p._active);
+        (_parentNumber, _active, _side, _raised, _holders) = (p._parentNumber, p._active, p._side, p._raised, p._holders);
         (_total, _page, _groups, _sort, _ruleCounts) = (p._total, p._page, p._groups, p._sort, p._ruleCounts);
         (_loading, _adopted) = (false, true);
     }
@@ -326,26 +415,64 @@ else
         new("p1p2", "P1–P2", "priority", [nameof(Priority.P1), nameof(Priority.P2)]),
         new("blocked", "Blocked", "status", [nameof(ActionStatus.Blocked)]),
         new("tracking", "Tracking", "status", [nameof(ActionStatus.Tracking)]) { Title = "Handed to others and followed until it's done" },
+        new("raised", "Raised by me", "raised", [Me]) { Title = "The actions you raised, wherever they are now: what you asked others for" },
     ];
 
-    // Every filter, under + Filter. A holder (from Workload) and the parts of one action (from its page) are set by
-    // links, so they're chips to remove, not in the menu.
+    // raised=me: the only value the Raised by filter takes.
+    private const string Me = "me";
+
+    private static readonly IReadOnlyList<FilterOption> SideOptions =
+        [new(nameof(ActionTeams.Internal), "Internal teams"), new(nameof(ActionTeams.External), "External teams")];
+
+    // Held by's choices: you, nobody (the team's), then everyone holding an open action, with how many.
+    private IReadOnlyList<FilterOption> HolderOptions()
+    {
+        var me = CurrentUser.UserId;
+        List<FilterOption> options = [new(me, "You"), new(ActionFilter.Unassigned, "Nobody (the team's)")];
+        options.AddRange(_holders.Where(h => h.Id != me).Select(h => new FilterOption(h.Id, $"{h.Name} ({h.Open})", "People")));
+        // A holder from a link who holds nothing open now (a Workload link, the closed view) is still shown as chosen.
+        if (_assignee is { } held && options.All(o => o.Value != held))
+            options.Add(new(held, Shown.FirstOrDefault(r => r.AssigneeId == held)?.AssigneeName ?? "One person", "People"));
+        return options;
+    }
+
+    private string HolderText(string held) =>
+        held == CurrentUser.UserId ? "Held by you"
+        : held == ActionFilter.Unassigned ? "Held by nobody (the team's)"
+        : "Held by " + (_holders.FirstOrDefault(h => h.Id == held)?.Name ?? Shown.FirstOrDefault(r => r.AssigneeId == held)?.AssigneeName ?? "one person");
+
+    // Every filter, under + Filter. The parts of one action (from its page) are set by a link, so that's a chip to
+    // remove, not in the menu. Held by is in the menu too, and a Workload link sets it.
     internal IReadOnlyList<FilterDef> Defs
     {
         get
         {
             var defs = new List<FilterDef>
             {
+                new("assignee", "Held by", FilterKind.Single, v => _assignee = FilterValues.First(v) is { Length: > 0 } held ? held : null)
+                {
+                    Options = HolderOptions(), Values = FilterValues.Of(_assignee), ChipText = _assignee is { } held ? HolderText(held) : null, Section = "Who",
+                },
                 new("team", "Team", FilterKind.Single, v => _teamId = Guid.TryParse(FilterValues.First(v), out var team) ? team : null)
                 {
-                    Options = _teamOptions, Values = FilterValues.Of(_teamId?.ToString()),
+                    Options = _teamOptions, Values = FilterValues.Of(_teamId?.ToString()), Section = "Where",
                 },
-                new("kind", "Kind", FilterKind.Single, v => _kind = FilterValues.Enum<ActionKind>(v)) { Options = KindOptions, Values = FilterValues.Of(_kind?.ToString()) },
-                new("priority", "Priority", FilterKind.Multi, v => _priorities = PrioritiesOf(v)) { Options = PriorityOptions, Values = [.. _priorities.Select(p => p.ToString())] },
-                new("due", "Due", FilterKind.Single, v => _due = FilterValues.Enum<ActionDue>(v)) { Options = DueOptions, Values = FilterValues.Of(_due?.ToString()) },
+                new("teams", "Internal or external", FilterKind.Single, v => _side = FilterValues.Enum<ActionTeams>(v))
+                {
+                    Options = SideOptions, Values = FilterValues.Of(_side?.ToString()),
+                    ChipText = _side switch { ActionTeams.Internal => "Only internal teams", ActionTeams.External => "Only external teams", _ => null },
+                    Section = "Where",
+                },
+                new("raised", "Raised by", FilterKind.Single, v => _raised = FilterValues.First(v) == Me)
+                {
+                    Options = [new(Me, "You")], Values = _raised ? [Me] : [], ChipText = _raised ? "Raised by you" : null, Section = "Who",
+                },
+                new("kind", "Kind", FilterKind.Single, v => _kind = FilterValues.Enum<ActionKind>(v)) { Options = KindOptions, Values = FilterValues.Of(_kind?.ToString()), Section = "What" },
+                new("priority", "Priority", FilterKind.Multi, v => _priorities = PrioritiesOf(v)) { Options = PriorityOptions, Values = [.. _priorities.Select(p => p.ToString())], Section = "What" },
+                new("due", "Due", FilterKind.Single, v => _due = FilterValues.Enum<ActionDue>(v)) { Options = DueOptions, Values = FilterValues.Of(_due?.ToString()), Section = "When" },
                 new("status", "Status", FilterKind.Single, v => _status = FilterValues.Enum<ActionStatus>(v) is { } st && OpenStatuses.Contains(st) ? st : null)
                 {
-                    Options = StatusOptions, Values = FilterValues.Of(_status?.ToString()),
+                    Options = StatusOptions, Values = FilterValues.Of(_status?.ToString()), Section = "What",
                 },
             };
             // An administrator's card rules shown as filters, each with how many it matches (counted as the list or board is read).
@@ -354,14 +481,8 @@ else
                 defs.Add(new("rule", "Rule", FilterKind.Single, v => _ruleId = Guid.TryParse(FilterValues.First(v), out var id) && rules.Any(r => r.Id == id) ? id : null)
                 {
                     Options = [.. rules.Select(r => new FilterOption(r.Id.ToString(), $"{r.Name} ({_ruleCounts.GetValueOrDefault(r.Id)})"))],
-                    Values = FilterValues.Of(_ruleId?.ToString()),
+                    Values = FilterValues.Of(_ruleId?.ToString()), Section = "What",
                     ChipText = rules.FirstOrDefault(r => r.Id == _ruleId) is { } rule ? "Rule: " + rule.Name : null,
-                });
-            if (_assignee is { } holder)
-                defs.Add(new("assignee", "Held by", FilterKind.Single, _ => _assignee = null)
-                {
-                    InMenu = false, Values = [holder],
-                    ChipText = "Held by " + (holder == ActionFilter.Unassigned ? "nobody (the team's)" : Shown.FirstOrDefault()?.AssigneeName ?? "one person"),
                 });
             if (_parentNumber is { } parent)
                 defs.Add(new("parent", "Part of", FilterKind.Single, _ => _parentNumber = null) { InMenu = false, Values = [parent.ToString()], ChipText = "Part of " + Ui.ActionLabel(parent) });
@@ -375,7 +496,7 @@ else
     // Clear: every filter and the words; the view, layout and grouping stay.
     internal Task ClearFilters()
     {
-        (_search, _teamId, _kind, _assignee, _due, _status, _ruleId, _parentNumber) = (null, null, null, null, null, null, null, null);
+        (_search, _teamId, _kind, _assignee, _due, _status, _ruleId, _parentNumber, _side, _raised) = (null, null, null, null, null, null, null, null, null, false);
         _priorities = [];
         return Refilter();
     }
@@ -400,7 +521,7 @@ else
     private async Task SetView(ActionView view)
     {
         _view = view;
-        _assignee = null;
+        if (view == ActionView.Mine) _assignee = null;   // Mine is held by you: another holder would show nothing
         _page = 1;
         _sort = DefaultSort(view);
         Remember();
@@ -440,11 +561,13 @@ else
         var group = !_asBoard && _groupByKind ? "kind" : null;
         var (kind, priority, status) = (_kind?.ToString().ToLowerInvariant(), FilterValues.Join(_priorities.Select(p => p.ToString().ToLowerInvariant())), _status?.ToString().ToLowerInvariant());
         var page = !_asBoard && _page > 1 ? _page.ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
-        _applied = new Address(view, _teamId, _assignee, layout, _ruleId, group, _search, kind, priority, DueKey(_due), status, page, _parentNumber);
+        var (teams, raised) = (_side?.ToString().ToLowerInvariant(), _raised ? Me : null);
+        _applied = new Address(view, _teamId, _assignee, layout, _ruleId, group, _search, kind, priority, DueKey(_due), status, page, _parentNumber, teams, raised);
         Nav.NavigateTo(Nav.GetUriWithQueryParameters("actions", new Dictionary<string, object?>
         {
             ["view"] = view, ["layout"] = layout, ["group"] = group, ["rule"] = _ruleId, ["team"] = _teamId, ["assignee"] = _assignee,
             ["q"] = _search, ["kind"] = kind, ["priority"] = priority, ["due"] = DueKey(_due), ["status"] = status, ["page"] = page, ["parent"] = _parentNumber,
+            ["teams"] = teams, ["raised"] = raised,
         }), replace: true);
     }
 
@@ -469,7 +592,7 @@ else
 
     private ActionFilter Filter() => new ActionFilter(_view, _teamId, _kind, AssigneeId: _assignee)
     {
-        Search = _search, Priorities = _priorities, Due = _due, Status = _status, ParentNumber = _parentNumber,
+        Search = _search, Priorities = _priorities, Due = _due, Status = _status, ParentNumber = _parentNumber, Teams = _side, RaisedByMe = _raised,
     };
 
     private ActionSort SortOf(TableSort? sort) => sort?.Key switch

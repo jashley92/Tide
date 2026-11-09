@@ -576,6 +576,31 @@ public class ActionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Filters_HeldBy_InternalOrExternal_AndRaisedByMe_NarrowTheList_AndTheHoldersAreCounted()
+    {
+        var team = await Team();
+        var outside = await _db.Teams().AddExternalAsync("Hosting Provider", "noc@provider.example");
+        var svc = _db.Actions();
+        var me = _db.User.UserId;
+        await svc.CreateAsync(new ActionForm { Title = "mine, internal", TeamId = team, AssigneeId = "u1", AssigneeName = "Robin" });
+        await svc.CreateAsync(new ActionForm { Title = "mine, external", TeamId = outside });
+        var them = _db.User.UserId = "S-1-5-21-SOMEONE-ELSE";
+        await _db.Actions().CreateAsync(new ActionForm { Title = "theirs, internal", TeamId = team, AssigneeId = "u2", AssigneeName = "Alex" });
+        await _db.Actions().CreateAsync(new ActionForm { Title = "theirs, also Robin's", TeamId = team, AssigneeId = "u1", AssigneeName = "Robin" });
+        _db.User.UserId = me;
+
+        async Task<IEnumerable<string>> Titles(ActionFilter f) => (await svc.ListAsync(f)).Select(r => r.Title).Order();
+        (await Titles(new ActionFilter(ActionView.Open) { Teams = ActionTeams.External })).Should().Equal("mine, external");
+        (await Titles(new ActionFilter(ActionView.Open) { Teams = ActionTeams.Internal })).Should().Equal("mine, internal", "theirs, also Robin's", "theirs, internal");
+        (await Titles(new ActionFilter(ActionView.Open) { RaisedByMe = true })).Should().Equal("mine, external", "mine, internal");
+        (await Titles(new ActionFilter(ActionView.Open, AssigneeId: "u1") { RaisedByMe = true })).Should().ContainSingle().Which.Should().Be("mine, internal", "they combine");
+        (await svc.BoardAsync(new ActionFilter(ActionView.Open) { RaisedByMe = true, Teams = ActionTeams.External })).Cards.Select(c => c.Title).Should().Equal("mine, external");
+
+        (await svc.HoldersAsync()).Should().Equal(new ActionHolder("u2", "Alex", 1), new ActionHolder("u1", "Robin", 2));
+        them.Should().NotBe(me);
+    }
+
+    [Fact]
     public async Task MyOverdueCount_IsMyOpenActionsPastDue_Only()
     {
         var team = await Team();

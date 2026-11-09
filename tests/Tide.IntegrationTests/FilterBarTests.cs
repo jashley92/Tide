@@ -253,6 +253,37 @@ public class FilterBarTests(TideApp app) : IClassFixture<TideApp>
         heard.Set.Value.Values.Should().BeEmpty("an empty box clears it");
     }
 
+    [Fact]
+    public async Task TheMenu_ListsFiltersUnderTheirHeadings_AndALongListGetsAFindBox()
+    {
+        var heard = new Heard();
+        var people = Enumerable.Range(1, 12).Select(i => new FilterOption($"u{i}", i == 7 ? "Robin Ortiz" : $"Person {i:00}", "People")).ToList();
+        var holder = new FilterDef("assignee", "Held by", FilterKind.Single, v => heard.Set = ("assignee", v)) { Options = people, Section = "Who" };
+        var kind = new FilterDef("kind", "Kind", FilterKind.Single, v => heard.Set = ("kind", v)) { Options = [new("Block", "Block")], Section = "What" };
+        await using var r = await ComponentHarness.RenderAsync<FilterBar>(app, "/actions", new Dictionary<string, object?>
+        {
+            ["Pills"] = (IReadOnlyList<FilterPill>)[], ["Filters"] = (IReadOnlyList<FilterDef>)[holder, kind],
+            ["OnChanged"] = EventCallback.Factory.Create(heard, () => heard.Changed++),
+        });
+
+        await Do(r, b => { b.Open(null); return Task.CompletedTask; });
+        var menu = WebUtility.HtmlDecode(await r.Html());
+        menu.Should().Contain("<div class=\"tide-filter-group\" role=\"presentation\">Who</div>").And.Contain(">What</div>");
+        menu.IndexOf(">Who</div>", StringComparison.Ordinal).Should().BeLessThan(menu.IndexOf(">What</div>", StringComparison.Ordinal));
+
+        kind.Findable.Should().BeFalse("one choice needs no finding");
+        holder.Findable.Should().BeTrue();
+        await Do(r, b => { b.Show(holder); return Task.CompletedTask; });
+        (await r.Html()).Should().Contain("class=\"form-control form-control-sm tide-filter-find\"").And.Contain("aria-label=\"Find a choice of Held by\"");
+        await Do(r, b => { b.Find = "robin"; return Task.CompletedTask; });
+        r.Component.Shown(holder).Select(o => o.Label).Should().Equal("Robin Ortiz");
+        await Do(r, b => { b.Find = "nobody here"; return Task.CompletedTask; });
+        WebUtility.HtmlDecode(await r.Html()).Should().Contain("No choice matches “nobody here”.");
+        await Do(r, b => { b.Find = "robin"; return Task.CompletedTask; });
+        await Do(r, b => b.Pick(b.Shown(holder).First().Value));
+        heard.Set!.Value.Values.Should().Equal("u7");
+    }
+
     // Does what a control would, then draws again, as an event handler would.
     private static Task Do<T>(ComponentHarness.Rendered<T> r, Func<T, Task> what) where T : ComponentBase =>
         r.Click(async c =>
@@ -319,8 +350,11 @@ public class FilterBarTests(TideApp app) : IClassFixture<TideApp>
         await using var r = await ComponentHarness.RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=list&team={teamId}&priority=p3&due=none&status=inprogress&parent=12&assignee=none&q=zzqx");
         var html = WebUtility.HtmlDecode(await r.HtmlOnce("action"));
         var menu = r.Component.Defs.Where(d => d.InMenu).Select(d => d.Key).ToList();
-        menu.Take(5).Should().Equal("team", "kind", "priority", "due", "status");
-        menu.Should().NotContain(["assignee", "parent"], "set by links, so chips only");
+        menu.Take(8).Should().Equal("assignee", "team", "teams", "raised", "kind", "priority", "due", "status");
+        // Listed under Who, Where, What and When, in that order.
+        r.Component.Defs.Where(d => d.InMenu).Select(d => d.Section).Distinct().Should().Equal("Who", "Where", "What", "When");
+        menu.Should().NotContain("parent", "set by a link, so a chip only");
+        r.Component.Defs.Single(d => d.Key == "assignee").Options.Take(2).Select(o => o.Label).Should().Equal("You", "Nobody (the team's)");
         r.Component.Defs.Single(d => d.Key == "team").Options.Should().Contain(o => o.Value == teamId.ToString() && o.Label == teamName, "built as the teams are read");
         foreach (var chip in new[] { $"Team: {teamName}", "Priority: P3", "Due: No due date", "Status: In progress", "Part of A-12", "Held by nobody (the team's)" })
             html.Should().Contain($"aria-label=\"Remove filter {chip}\"");
