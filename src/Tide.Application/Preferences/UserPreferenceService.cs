@@ -17,6 +17,11 @@ public static class UserPreferences
 
     public const string List = "list", Board = "board";
 
+    /// <summary>The Actions page's tab when a link doesn't say which: Mine (the default), My teams or All open.</summary>
+    public const string ActionsView = "actions.view";
+
+    public const string Mine = "mine", MyTeams = "myteams", AllOpen = "open";
+
     // --- My notifications (NotificationPreferenceService) ----------------------------------------------------------
 
     /// <summary>Due-soon reminders about the person's actions (or their team's, when it has no mailbox): on or off.</summary>
@@ -52,7 +57,7 @@ public static class UserPreferences
 
     // The notification kinds' values and permissions are theirs (NotificationKinds).
     private static readonly Dictionary<string, Definition> Known =
-        new Definition[] { new(ActionsLayout, [Board, List], Permission.ReadActions) }
+        new Definition[] { new(ActionsLayout, [Board, List], Permission.ReadActions), new(ActionsView, [Mine, MyTeams, AllOpen], Permission.ReadActions) }
             .Concat(NotificationKinds.All.Select(k => new Definition(k.Name, k.Values, k.Needs)))
             .ToDictionary(d => d.Name, StringComparer.Ordinal);
 

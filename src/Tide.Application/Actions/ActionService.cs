@@ -143,7 +143,26 @@ public sealed record ActionFilter(ActionView View = ActionView.Open, Guid? TeamI
 
     /// <summary>The parts of one action, by its number ("Part of A-12", <c>parent=12</c> in the address).</summary>
     public int? ParentNumber { get; init; }
+
+    /// <summary>Only internal teams' actions, or only external teams' (<c>teams=internal|external</c>); null for both.</summary>
+    public ActionTeams? Teams { get; init; }
+
+    /// <summary>Only the actions the person reading raised (created), wherever they are now (<c>raised=me</c>).</summary>
+    public bool RaisedByMe { get; init; }
 }
+
+/// <summary>Which teams' actions, as a filter.</summary>
+public enum ActionTeams
+{
+    /// <summary>Teams in TIDE, with members.</summary>
+    Internal = 0,
+
+    /// <summary>Teams that work outside TIDE (<see cref="Team.IsExternal"/>).</summary>
+    External = 1,
+}
+
+/// <summary>Someone who holds open actions, for the Held by filter: their user id, name, and how many.</summary>
+public sealed record ActionHolder(string Id, string Name, int Open);
 
 /// <summary>When an action is due, as a filter.</summary>
 public enum ActionDue
@@ -480,6 +499,12 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
                 break;
         }
         if (filter.TeamId is { } team) q = q.Where(a => a.TeamId == team);
+        if (filter.Teams is { } side)
+        {
+            var external = side == ActionTeams.External;
+            q = q.Where(a => a.Team!.IsExternal == external);
+        }
+        if (filter.RaisedByMe) q = q.Where(a => a.CreatedBy == user.UserId);
         if (filter.Kind is { } kind) q = q.Where(a => a.Kind == kind);
         if (filter.ArticleId is { } article) q = q.Where(a => a.ArticleId == article);
         if (filter.ParentNumber is { } parent)
@@ -522,6 +547,16 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     }
 
     /// <summary>How many open actions assigned to me are past due: one count, for the sidebar (no rows loaded).</summary>
+    /// <summary>Everyone who holds an open action, by name, with how many: the Held by filter's people.</summary>
+    public async Task<IReadOnlyList<ActionHolder>> HoldersAsync(CancellationToken ct = default)
+    {
+        RequireRead(user);
+        await using var db = await dbs.CreateAsync(ct);
+        var held = await db.Actions.AsNoTracking().WhereOpen().Where(a => a.AssigneeId != null)
+            .GroupBy(a => a.AssigneeId!).Select(g => new { Id = g.Key, Name = g.Max(a => a.AssigneeName), Open = g.Count() }).ToListAsync(ct);
+        return [.. held.Select(h => new ActionHolder(h.Id, h.Name ?? h.Id, h.Open)).OrderByName(h => h.Name)];
+    }
+
     public async Task<int> MyOverdueCountAsync(CancellationToken ct = default)
     {
         RequireRead(user);

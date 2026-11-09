@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Preferences;
 using Tide.Application.Security;
+using Tide.Application.Actions;
 using Tide.Domain.Enums;
 using Tide.Web.Components.Pages;
 using static Tide.IntegrationTests.ComponentHarness;
@@ -40,6 +41,53 @@ public class ActionsLayoutPreferenceTests(TideApp app) : IClassFixture<TideApp>
     {
         await using var scope = SignedIn(app, who);
         await scope.ServiceProvider.GetRequiredService<UserPreferenceService>().SetAsync(UserPreferences.ActionsLayout, layout);
+    }
+
+    private static ActionView View(Rendered<ActionsBoard> r) => (ActionView)typeof(ActionsBoard).GetField("_view", Private)!.GetValue(r.Component)!;
+
+    private async Task<string> SavedView(SignIn who)
+    {
+        await using var scope = SignedIn(app, who);
+        return await scope.ServiceProvider.GetRequiredService<UserPreferenceService>().GetAsync(UserPreferences.ActionsView);
+    }
+
+    [Fact]
+    public async Task TheDefaultTab_IsMine_UntilChosen_ThenOpensWhereChosen_AndALinksViewWins()
+    {
+        var who = Person();
+        (await SavedView(who)).Should().Be(UserPreferences.Mine);
+        await using (var r = await RenderAsync<ActionsBoard>(app, "/actions", @as: who))
+        {
+            View(r).Should().Be(ActionView.Mine);
+            (await r.Html()).Should().Contain("Opens here");
+        }
+
+        await using (var r = await RenderAsync<ActionsBoard>(app, "/actions?view=open", @as: who))
+        {
+            (await r.Html()).Should().Contain("Open here by default");
+            await r.Click(c => c.SetDefaultView(UserPreferences.AllOpen));
+        }
+        (await SavedView(who)).Should().Be(UserPreferences.AllOpen);
+
+        await using (var next = await RenderAsync<ActionsBoard>(app, "/actions", @as: who))
+            View(next).Should().Be(ActionView.Open, "an address without a view opens their default");
+        await using (var linked = await RenderAsync<ActionsBoard>(app, "/actions?view=mine", @as: who))
+            View(linked).Should().Be(ActionView.Mine, "a link that names a tab opens it");
+    }
+
+    [Fact]
+    public async Task ADefaultThatWouldAlwaysBeEmpty_OpensAllOpen()
+    {
+        // On no team: My teams has nothing to show them.
+        var analyst = Person();
+        await using (var scope = SignedIn(app, analyst))
+            await scope.ServiceProvider.GetRequiredService<UserPreferenceService>().SetAsync(UserPreferences.ActionsView, UserPreferences.MyTeams);
+        await using (var r = await RenderAsync<ActionsBoard>(app, "/actions", @as: analyst))
+            View(r).Should().Be(ActionView.Open);
+
+        // A Viewer can't be given actions: Mine is always empty for them.
+        await using (var r = await RenderAsync<ActionsBoard>(app, "/actions", @as: Person("Viewer")))
+            View(r).Should().Be(ActionView.Open);
     }
 
     [Fact]

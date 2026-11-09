@@ -319,8 +319,9 @@ public class FilterBarTests(TideApp app) : IClassFixture<TideApp>
         await using var r = await ComponentHarness.RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=list&team={teamId}&priority=p3&due=none&status=inprogress&parent=12&assignee=none&q=zzqx");
         var html = WebUtility.HtmlDecode(await r.HtmlOnce("action"));
         var menu = r.Component.Defs.Where(d => d.InMenu).Select(d => d.Key).ToList();
-        menu.Take(5).Should().Equal("team", "kind", "priority", "due", "status");
-        menu.Should().NotContain(["assignee", "parent"], "set by links, so chips only");
+        menu.Take(8).Should().Equal("team", "assignee", "teams", "raised", "kind", "priority", "due", "status");
+        menu.Should().NotContain("parent", "set by a link, so a chip only");
+        r.Component.Defs.Single(d => d.Key == "assignee").Options.Take(2).Select(o => o.Label).Should().Equal("You", "Nobody (the team's)");
         r.Component.Defs.Single(d => d.Key == "team").Options.Should().Contain(o => o.Value == teamId.ToString() && o.Label == teamName, "built as the teams are read");
         foreach (var chip in new[] { $"Team: {teamName}", "Priority: P3", "Due: No due date", "Status: In progress", "Part of A-12", "Held by nobody (the team's)" })
             html.Should().Contain($"aria-label=\"Remove filter {chip}\"");
