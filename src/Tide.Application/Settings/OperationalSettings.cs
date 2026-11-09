@@ -51,6 +51,10 @@ public static class OperationalSettings
     public const string EscalationScope = "Notifications:Escalation:Scope";
     public const string EscalationSteps = "Notifications:Escalation:Steps";
 
+    /// <summary>How many days since a person last signed in they're still reminded (and their roles must still allow what
+    /// the email shows): 1 to 365, 30 by default.</summary>
+    public const string ActiveWithinDays = "Notifications:ActiveWithinDays";
+
     public const string IntakeEnabled = "Intake:Enabled";
     public const string RetentionDays = "Intake:RetentionDays";
     public const string MinPollMinutes = "Intake:MinPollMinutes";
@@ -117,6 +121,7 @@ public static class OperationalSettings
         [Escalation] = Switch,
         [EscalationScope] = EnumValue<Actions.EscalationScope>("The escalation ladder climbs All actions, PartsOnly or ExternalOnly."),
         [EscalationSteps] = EscalationLadder.Normalize,
+        [ActiveWithinDays] = Number("Days since someone last signed in", ReminderOptions.MinActiveWithinDays, ReminderOptions.MaxActiveWithinDays),
         [IntakeEnabled] = Switch,
         [RetentionDays] = Number("Days feed items are kept", 7, 3650),
         [MinPollMinutes] = Number("The shortest poll", 5, 24 * 60),
@@ -212,6 +217,7 @@ public static class OperationalSettings
         s.Use(Escalation, v => o.Escalation.Enabled = bool.Parse(v));
         s.Use(EscalationScope, v => o.Escalation.Scope = Enum.Parse<Actions.EscalationScope>(v));
         s.Use(EscalationSteps, v => o.Escalation.Steps = v);
+        s.Use(ActiveWithinDays, v => o.ActiveWithinDays = int.Parse(v, Invariant));
     }
 
     internal static void Apply(SavedSettings s, IntakeOptions o)

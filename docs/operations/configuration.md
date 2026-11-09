@@ -173,7 +173,7 @@ seed accepts them.
 | `Files:RootPath` | `App_Data/files` | A folder; relative paths are under the content root. Production uses `<data root>\files`, outside the web root. The metrics drop folder is `metrics-inbox` under it. | Server | Start-up |
 | `Files:MaxImageMB` | `15` | Megabytes, at least 1. Caps one screenshot. | Server | Start-up |
 | `Files:MaxEvidenceMB` | `25` | Megabytes, at least 1. Caps any other file on an action or its comments. | Server | Start-up |
-| `Files:ZipDownloads` | `RiskyOnly` | `RiskyOnly`, `Always`, `Never`: when an action's file downloads inside a zip with the password `infected`. | In app: **Teams & SLA** | At once |
+| `Files:ZipDownloads` | `RiskyOnly` | `RiskyOnly`, `Always`, `Never`: when an action's file downloads inside a zip with the password `infected`. When the zip comes first, a bare `/files/{id}/download` link redirects to it; only the "as is" link (`?plain=1`) sends the file plain, and under `Always` never. | In app: **Teams & SLA** | At once |
 
 ### Organization
 
@@ -248,6 +248,7 @@ except the personal digest's offer. What each sends is in [INSTALL.md](../INSTAL
 | `Notifications:PersonalDigest:Enabled` | `true` | `true`/`false`. Lets people choose a digest in My notifications. |
 | `Notifications:OutreachFollowUp:Enabled` | `false` | `true`/`false` |
 | `Notifications:OutreachFollowUp:Days` | `5` | 1 to 30 business days. |
+| `Notifications:ActiveWithinDays` | `30` | 1 to 365 days. A person is reminded (due soon, overdue, digests, presenting, brief not ready, outreach follow-up, the ladder's remind step) only if they signed in within this many days and their roles, as last seen, still grant what the email shows. A team mailbox and fallback addresses are never held to it. The run's note counts who was skipped. |
 | `Notifications:ExternalReminders:Enabled` | `false` | `true`/`false`. Emails each external team, with its own reminders on, about its actions due soon or overdue at the reminder time, at the team's own cadence (set on External teams). Goes outside TIDE's users. |
 | `Notifications:ExternalReminders:NewTeamsOn` | `true` | `true`/`false`. Whether a new external team starts with its own reminders on. Off: a team added on External teams or in the split dialog isn't emailed until someone turns its reminders on. Teams already added keep theirs. |
 | `Notifications:ExternalReminders:NewTeamsBeforeDays` | `2` | `0` to `10`. A new external team's reminder goes this many business days before the due date (0: the due day). Whoever adds the team can change it. |

@@ -120,6 +120,7 @@ public static class DependencyInjection
         services.AddScoped<Stack.StackService>();
         services.AddScoped<HistoryService>();
         services.AddScoped<AuditLogService>();
+        services.AddScoped<DownloadAudit>();
         return services;
     }
 

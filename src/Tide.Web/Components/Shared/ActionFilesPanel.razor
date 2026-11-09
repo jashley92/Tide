@@ -46,7 +46,11 @@
                             {
                                 <a href="@Ui.ZipUrl(f.FileId)" download="@(FileRisk.EntryName(f.FileName) + ".zip")" title="@ZipTitle"
                                    aria-label="Download @f.FileName in a zip"><span class="bi bi-file-earmark-zip" aria-hidden="true"></span>zip</a>
-                                <a href="@Ui.DownloadUrl(f.FileId)" download="@f.FileName" title="@AsIsTitle(f)" aria-label="Download @f.FileName as is">as is</a>
+                                @* Under Always the file is never sent as it is, so there's no link to it. *@
+                                @if (FileSvc.ZipMode != ZipDownloads.Always)
+                                {
+                                    <a href="@Ui.PlainDownloadUrl(f.FileId)" download="@f.FileName" title="@AsIsTitle(f)" aria-label="Download @f.FileName as is">as is</a>
+                                }
                             }
                             else
                             {

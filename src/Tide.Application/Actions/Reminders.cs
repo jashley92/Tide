@@ -45,6 +45,16 @@ public sealed class ReminderOptions
     /// reached a step gets what the step does (<see cref="EscalationLadder"/>).</summary>
     public EscalationOptions Escalation { get; set; } = new();
 
+    public const int MinActiveWithinDays = 1, MaxActiveWithinDays = 365, DefaultActiveWithinDays = 30;
+
+    /// <summary>A person is reminded only if they signed in within this many days (and their roles, as last seen then,
+    /// still grant what the email shows): someone who left, or lost access, stops getting them. A team mailbox is an
+    /// address, not a person, so it's never held to this. 30 by default.</summary>
+    public int ActiveWithinDays { get; set; } = DefaultActiveWithinDays;
+
+    /// <summary><see cref="ActiveWithinDays"/> in its range.</summary>
+    public int ActiveDays => Math.Clamp(ActiveWithinDays, MinActiveWithinDays, MaxActiveWithinDays);
+
     /// <summary>Whether an administrator has the scan on.</summary>
     public bool IsEnabled(ReminderKind kind) => kind switch
     {
@@ -141,7 +151,8 @@ public enum ReminderKind
 }
 
 /// <summary>A scan's last run, for the administration page. <paramref name="Note"/> says who wasn't emailed because they
-/// opted out ("all recipients opted out" when that was everyone).</summary>
+/// opted out ("all recipients opted out" when that was everyone), and how many were skipped as inactive (no access now,
+/// or not signed in within <see cref="ReminderOptions.ActiveWithinDays"/>).</summary>
 /// <paramref name="Unsure"/> counts its emails the relay may not have taken (a timeout, a dropped connection): marked as
 /// gone, not sent again by themselves, and named in the note so someone checks.
 public sealed record ReminderRun(ReminderKind Kind, DateTimeOffset AtUtc, int Sent, string? Error, string? Note = null, int Unsure = 0);
@@ -165,8 +176,11 @@ public sealed class ReminderLog
 /// sends one email per recipient (batched, not one per action), and records a mark so the same thing is never sent
 /// twice. An action goes to its assignee; an unassigned one to its team's mailbox, else to the team's members. The
 /// scans read actions and write only marks, so they run as the system, not as a person. Each leaves out whoever turned
-/// that kind off in My notifications (<see cref="NotificationPreferenceService"/>); a team mailbox and the brief-not-ready
-/// fallback recipients are addresses, not people, so they never opt out.
+/// that kind off in My notifications (<see cref="NotificationPreferenceService"/>), and whoever is inactive: their roles
+/// as last seen no longer grant what the email shows (reading actions; presenting briefs, for the rotation's), or they
+/// haven't signed in within <see cref="ReminderOptions.ActiveWithinDays"/>. An inactive assignee is passed over as one
+/// with no address is (the team hears instead). A team mailbox and the brief-not-ready fallback recipients are
+/// addresses, not people, so they never opt out and are never inactive.
 /// </summary>
 public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSender email, OrgClock clock, IOptionsMonitor<ReminderOptions> options,
     IOptions<AppOptions> app, ReminderLog log, ICurrentUser user, Rotation.IPresenterLookup? presenters = null, EmailTemplateStore? templates = null,
@@ -230,6 +244,20 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
     // they're marked and never sent again by themselves, and the run's note says to check. Scans run one at a time.
     private int _unsure, _refusedCopies;
 
+    // The people this scan left out as inactive (Active), each once, for the run's note.
+    private readonly HashSet<string> _inactive = [];
+
+    /// <summary>What a run's note says of people left out as inactive.</summary>
+    public static string InactiveNote(int n, int days) =>
+        $"{n} skipped as inactive (no access now, or not signed in for {days} day{(days == 1 ? "" : "s")})";
+
+    // Who this scan may still remind: roles (as last seen) granting what the email shows, and a sign-in within the
+    // setting's days.
+    private ActiveRule Active(Permission needed) => new(needed, clock.Now.ToUniversalTime().AddDays(-Options.ActiveDays));
+
+    // The people a resolved set left out as inactive, among these ids, counted for the run's note.
+    private void Inactive(IEnumerable<string> ids) => _inactive.UnionWith(ids);
+
     /// <summary>The run's note when standing copies were refused: the emails still went, but a copy address is wrong.</summary>
     public static string RefusedCopiesNote(int n) =>
         $"{n} cop{(n == 1 ? "y" : "ies")} refused by the relay (the emails still went): check the copy addresses on Email templates";
@@ -254,6 +282,7 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
     {
         await Running.WaitAsync(ct);
         (_unsure, _refusedCopies) = (0, 0);
+        _inactive.Clear();
         try
         {
             var scan = kind switch
@@ -273,7 +302,11 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
             var last = log.Last(kind);
             var quiet = scheduled && scan.Sent == 0 && scan.Problem is null && _unsure == 0 && _refusedCopies == 0 && last is { Error: null, Sent: > 0 }
                         && clock.ToLocal(last.AtUtc).Date == clock.Now.Date;
-            var notes = new[] { scan.Note, _unsure == 0 ? null : UnsureNote(_unsure), _refusedCopies == 0 ? null : RefusedCopiesNote(_refusedCopies) }.OfType<string>().ToList();
+            var notes = new[]
+            {
+                scan.Note, _inactive.Count == 0 ? null : InactiveNote(_inactive.Count, Options.ActiveDays),
+                _unsure == 0 ? null : UnsureNote(_unsure), _refusedCopies == 0 ? null : RefusedCopiesNote(_refusedCopies),
+            }.OfType<string>().ToList();
             var note = notes.Count == 0 ? null : string.Join("; ", notes);
             if (!quiet) log.Record(new ReminderRun(kind, clock.Now.ToUniversalTime(), scan.Sent, null, note, Unsure: _unsure));
             return scan.Sent;
@@ -341,13 +374,15 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
         if (pending.Count == 0) return 0;
 
         var people = pending.Select(a => a.AssigneeId).OfType<string>().Concat(pending.SelectMany(a => a.Team!.Members.Select(m => m.UserId))).ToList();
-        var reach = await RecipientResolver.ResolveAsync(db, NotificationKinds.For(overdue ? ReminderKind.Overdue : ReminderKind.DueSoon), people, ct);
+        var reach = await RecipientResolver.ResolveAsync(db, NotificationKinds.For(overdue ? ReminderKind.Overdue : ReminderKind.DueSoon), people, ct,
+            Active(Permission.ReadActions));
         var byRecipient = new Dictionary<string, List<ActionItem>>(StringComparer.OrdinalIgnoreCase);
         var leftOut = new HashSet<string>();
         foreach (var a in pending)
         {
-            var (recipients, skipped) = RecipientsOf(a, reach);
+            var (recipients, skipped, inactive) = RecipientsOf(a, reach);
             leftOut.UnionWith(skipped);
+            Inactive(inactive);
             foreach (var to in recipients.Where(to => !marks.Contains(RecipientKey(a, to))))
                 (byRecipient.TryGetValue(to, out var list) ? list : byRecipient[to] = []).Add(a);
         }
@@ -388,21 +423,25 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
     // Once per action per due date: moving the date earns a new reminder.
     private static string MarkKey(ActionItem a) => $"{a.Id:N}:{a.DueDate:yyyy-MM-dd}";
 
-    // Who's emailed about an action, and who would have been but opted out. An assignee who opted out isn't swapped for
-    // the team: the action is theirs. A team mailbox is an address, not a person, so it always gets it.
-    private static (IReadOnlyList<string> To, IReadOnlyList<string> OptedOut) RecipientsOf(ActionItem a, Recipients people)
+    // Who's emailed about an action, who would have been but opted out, and who was left out as inactive. An assignee who
+    // opted out isn't swapped for the team: the action is theirs. One who's inactive is, as one with no address is: they
+    // can't act on it. A team mailbox is an address, not a person, so it always gets it.
+    private static (IReadOnlyList<string> To, IReadOnlyList<string> OptedOut, IReadOnlyList<string> Inactive) RecipientsOf(ActionItem a, Recipients people)
     {
-        if (a.AssigneeId is { } id && people.Addresses.TryGetValue(id, out var mine)) return people.OptedOut.Contains(id) ? ([], [id]) : ([mine], []);
-        if (!string.IsNullOrWhiteSpace(a.Team?.Email)) return ([a.Team.Email], []);
-        return Members(a.Team, people);
+        if (a.AssigneeId is { } id && people.Addresses.TryGetValue(id, out var mine)) return people.OptedOut.Contains(id) ? ([], [id], []) : ([mine], [], []);
+        IReadOnlyList<string> gone = a.AssigneeId is { } was && people.Inactive.Contains(was) ? [was] : [];
+        if (!string.IsNullOrWhiteSpace(a.Team?.Email)) return ([a.Team.Email], [], gone);
+        var (to, optedOut, inactive) = Members(a.Team, people);
+        return (to, optedOut, [.. gone, .. inactive]);
     }
 
-    // A team's members' addresses, but for those who opted out (listed apart).
-    private static (IReadOnlyList<string> To, IReadOnlyList<string> OptedOut) Members(Team? team, Recipients people)
+    // A team's members' addresses, but for those who opted out (listed apart) and those left out as inactive (listed too).
+    private static (IReadOnlyList<string> To, IReadOnlyList<string> OptedOut, IReadOnlyList<string> Inactive) Members(Team? team, Recipients people)
     {
-        var members = team?.Members.Where(m => people.Addresses.ContainsKey(m.UserId)).Select(m => m.UserId).Distinct().ToList() ?? [];
+        var ids = team?.Members.Select(m => m.UserId).Distinct().ToList() ?? [];
+        var members = ids.Where(people.Addresses.ContainsKey).ToList();
         return ([.. members.Where(m => !people.OptedOut.Contains(m)).Select(m => people.Addresses[m]).Distinct(StringComparer.OrdinalIgnoreCase)],
-            [.. members.Where(people.OptedOut.Contains)]);
+            [.. members.Where(people.OptedOut.Contains)], [.. ids.Where(people.Inactive.Contains)]);
     }
 
     // --- weekly digest ------------------------------------------------------------------------------------------
@@ -416,7 +455,7 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
         var teams = await db.Teams.AsNoTracking().Include(t => t.Members).Where(t => !t.IsRetired).ToListAsync(ct);
         var marks = (await db.NotificationMarks.AsNoTracking().Where(m => m.Kind == "digest").Select(m => m.Key).ToListAsync(ct)).ToHashSet();
         var members = await RecipientResolver.ResolveAsync(db, NotificationKinds.For(ReminderKind.Digest),
-            teams.SelectMany(t => t.Members.Select(m => m.UserId)), ct);
+            teams.SelectMany(t => t.Members.Select(m => m.UserId)), ct, Active(Permission.ReadActions));
         var sent = 0;
         var leftOut = new HashSet<string>();
         foreach (var team in teams)
@@ -426,8 +465,9 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
             IReadOnlyList<string> to = [team.Email!];
             if (string.IsNullOrWhiteSpace(team.Email))
             {
-                (to, var skipped) = Members(team, members);
+                (to, var skipped, var inactive) = Members(team, members);
                 leftOut.UnionWith(skipped);
+                Inactive(inactive);
             }
             if (to.Count == 0) continue;
             var actions = await db.Actions.AsNoTracking().Include(a => a.Article).Where(a => a.TeamId == team.Id)
@@ -468,9 +508,12 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
 
         var to = new List<string>();
         // The brief's analyst, or (no brief yet) whoever the rotation says presents today. An analyst who opted out of
-        // rotation reminders isn't nudged, but the fallback recipients (a team lead, a mailbox: not a person's choice) are.
+        // rotation reminders isn't nudged, but the fallback recipients (a team lead, a mailbox: not a person's choice) are;
+        // so are they for an analyst who's inactive.
         var analystId = brief?.AnalystId ?? (presenters is null ? null : (await presenters.PresenterAsync(today, ct))?.Id);
-        var analyst = analystId is null ? null : await RecipientResolver.ResolveAsync(db, NotificationKinds.For(ReminderKind.BriefNotReady), [analystId], ct);
+        var analyst = analystId is null ? null : await RecipientResolver.ResolveAsync(db, NotificationKinds.For(ReminderKind.BriefNotReady), [analystId], ct,
+            Active(Permission.PresentBriefs));
+        if (analyst is not null) Inactive(analyst.Inactive);
         var optedOut = analyst?.OptedOut.Count > 0;
         if (analyst is not null && !optedOut && analyst.Addresses.TryGetValue(analystId!, out var address))
             to.Add(address);
@@ -505,7 +548,9 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
         var key = $"{who.Id}:{next:yyyy-MM-dd}";
         await using var db = await dbs.CreateAsync(ct);
         if (await db.NotificationMarks.AnyAsync(m => m.Kind == "presenting" && m.Key == key, ct)) return 0;
-        var presenter = await RecipientResolver.ResolveAsync(db, NotificationKinds.For(ReminderKind.Presenting), [who.Id], ct);
+        var presenter = await RecipientResolver.ResolveAsync(db, NotificationKinds.For(ReminderKind.Presenting), [who.Id], ct,
+            Active(Permission.PresentBriefs));
+        Inactive(presenter.Inactive);
         if (presenter.OptedOut.Contains(who.Id)) return new Scan(0, 1);
         if (!presenter.Addresses.TryGetValue(who.Id, out var address) || string.IsNullOrWhiteSpace(address)) return 0;
         var day = next.ToString("dddd, MMMM d", CultureInfo.InvariantCulture);
@@ -544,9 +589,11 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
         if (choices.Count == 0) return 0;
         var ids = choices.Select(c => c.UserId).ToList();
         var people = await db.Users.AsNoTracking().Where(u => ids.Contains(u.Sid)).ToDictionaryAsync(u => u.Sid, ct);
-        // Someone who has since lost sight of actions (or has no address) isn't sent their titles.
-        choices = [.. choices.Where(c => people.TryGetValue(c.UserId, out var p) && !string.IsNullOrWhiteSpace(p.Email)
-                                         && Security.StoredRoles.Has(p.RolesCsv, Permission.ReadActions))];
+        // Someone who has since lost sight of actions, or hasn't signed in lately (or has no address), isn't sent their titles.
+        var active = Active(Permission.ReadActions);
+        choices = [.. choices.Where(c => people.TryGetValue(c.UserId, out var p) && !string.IsNullOrWhiteSpace(p.Email))];
+        Inactive(choices.Where(c => !active.Allows(people[c.UserId].RolesCsv, people[c.UserId].LastSeenUtc)).Select(c => c.UserId));
+        choices = [.. choices.Where(c => active.Allows(people[c.UserId].RolesCsv, people[c.UserId].LastSeenUtc))];
         if (choices.Count == 0) return 0;
         var readers = choices.Select(c => c.UserId).ToList();
 
@@ -653,7 +700,9 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
         waiting = [.. waiting.Where(m => open.ContainsKey(m.ActionId))];
         if (waiting.Count == 0) return 0;
 
-        var senders = await RecipientResolver.ResolveAsync(db, NotificationKinds.For(ReminderKind.OutreachFollowUp), waiting.Select(m => m.SentById), ct);
+        var senders = await RecipientResolver.ResolveAsync(db, NotificationKinds.For(ReminderKind.OutreachFollowUp), waiting.Select(m => m.SentById), ct,
+            Active(Permission.ReadActions));
+        Inactive(senders.Inactive);
         var sent = 0;
         var leftOut = new HashSet<string>();
         foreach (var mine in waiting.GroupBy(m => m.SentById))

@@ -49,7 +49,7 @@ public static class ApiEndpoints
                 await s.OpenFileAsync(number, fileId, ApiTokenAuthenticationHandler.Ceiling(http.User), ct) is { } file
                     ? zip == true ? FileDownloads.Zipped(http, file) : FileDownloads.Plain(http, file.Content, file.FileName)
                     : NotFound($"There's no such file on A-{number}."))
-            .Scope(ApiScopes.ActionsRead);
+            .Scope(ApiScopes.ActionsRead).Recorded(AuditedWhen.Always);
 
         api.MapPatch("/actions/{number:int}", async (int number, ApiActionUpdate update, ApiService s, HttpContext http, CancellationToken ct) =>
                 await s.UpdateActionAsync(number, update, ApiTokenAuthenticationHandler.Ceiling(http.User), ApiBase(http), ct) is { } a ? Results.Ok(a) : NotFound($"There's no action A-{number}."))

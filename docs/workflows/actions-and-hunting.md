@@ -766,6 +766,28 @@ writes a `NotificationMark` as each email goes, so a scan stopped partway resume
 reminder's key includes the due date, so moving the date earns a new reminder. The wording of each is an email
 template (see [administration.md](administration.md#email-templates)).
 
+### Who's reminded
+
+A person is reminded only while they still have access, as far as TIDE can tell (`ActiveRule`, passed to
+`RecipientResolver.ResolveAsync`): their roles, as last seen at sign-in (`AppUser.RolesCsv`, read with `StoredRoles`),
+still grant what the email shows, and they signed in (`AppUser.LastSeenUtc`) within `Notifications:ActiveWithinDays`
+(1 to 365, default 30, set on Teams & SLA as *Remind people signed in within (days)*). Anyone else is inactive:
+
+| Scan | Needs |
+|---|---|
+| Due soon, overdue, the escalation ladder's remind step, weekly team digest, personal digest, outreach follow-up | `ReadActions` |
+| Presenting next, brief not ready | `PresentBriefs` |
+
+- An inactive person is treated as having no address. An inactive assignee is passed over for the team (its mailbox,
+  else its active members), as one with no address is; an inactive analyst's brief-not-ready nudge goes to the fallback
+  recipients.
+- A team mailbox, the brief-not-ready fallback recipients and an external team's contact are addresses, not people:
+  never held to the rule.
+- The run's note counts the people left out this way, each once: "2 skipped as inactive (no access now, or not signed
+  in for 30 days)", beside any opted out. An escalation step that reminded no one for that reason says so in the
+  action's history.
+- Hand-off emails and rotation requests are sent when someone acts, not on a schedule, and aren't held to it.
+
 ## My notifications and the personal digest
 
 An administrator turns each kind on or off for everyone. Each person then chooses for themselves on **My
@@ -792,7 +814,8 @@ an administrator has off. The senders apply them through `RecipientResolver` and
 
 The **personal digest** lists a person's open actions (assigned to them, or unassigned on a team of theirs without a
 mailbox) that are overdue or due soon, then the others not in an earlier digest of theirs (`digest-seen` marks). It
-isn't sent to someone the user mirror says no longer reads actions. Administrators see on Teams & SLA how many opted
+isn't sent to someone the user mirror says no longer reads actions, or who hasn't signed in lately ([who's
+reminded](#whos-reminded)). Administrators see on Teams & SLA how many opted
 out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
 
 ## Lists, board, Today's queue and Workload

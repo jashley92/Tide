@@ -309,6 +309,10 @@ public static class Ui
 
     public static string DownloadUrl(Guid fileId) => $"files/{fileId}/download";
 
+    /// <summary>The file as it is, when its main download is the zip: the "as is" link on an action's Files list, the
+    /// only place that asks for it (a bare download link to such a file is sent to the zip).</summary>
+    public static string PlainDownloadUrl(Guid fileId) => $"files/{fileId}/download?plain=1";
+
     /// <summary>The file inside a zip with the password "infected".</summary>
     public static string ZipUrl(Guid fileId) => $"files/{fileId}/zip";
 

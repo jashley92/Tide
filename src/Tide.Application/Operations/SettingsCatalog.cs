@@ -113,6 +113,7 @@ public static class SettingsCatalog
         new("Reminders", "New external teams start with reminders on", OperationalSettings.ExternalRemindersNewTeams, EditedIn: TeamsPage),
         new("Reminders", "New external teams: days before the due date", OperationalSettings.ExternalRemindersNewBefore, EditedIn: TeamsPage),
         new("Reminders", "New external teams: every (days) while overdue", OperationalSettings.ExternalRemindersNewEvery, EditedIn: TeamsPage),
+        new("Reminders", "Remind people signed in within (days)", OperationalSettings.ActiveWithinDays, EditedIn: TeamsPage),
         new("Escalation", "Escalation ladder", OperationalSettings.Escalation, EditedIn: TeamsPage),
         new("Escalation", "Actions it climbs", OperationalSettings.EscalationScope, EditedIn: TeamsPage),
         new("Escalation", "Its steps", OperationalSettings.EscalationSteps, EditedIn: TeamsPage),

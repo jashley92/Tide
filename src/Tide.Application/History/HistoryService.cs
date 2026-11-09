@@ -156,6 +156,7 @@ public static class HistoryFormatter
         [nameof(Brief.DistributedByName)] = "Distributed by",
         [nameof(Brief.NotSentByName)] = "Finished as not sent by",
         [nameof(Brief.NotSentReason)] = "Why it wasn't sent",
+        [DownloadAudit.CeilingField] = "TLP ceiling",
     };
 
     // The order fields are listed in: the editor's, then any other by name.

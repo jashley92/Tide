@@ -12,12 +12,14 @@ using Tide.Domain.Enums;
 
 namespace Tide.Application.History;
 
-/// <summary>What a save did to a record, as the audit log lists it.</summary>
+/// <summary>What a save did to a record, as the audit log lists it; or a download (<see cref="DownloadAudit"/>), which
+/// changed nothing.</summary>
 public enum AuditAction
 {
     Created,
     Changed,
     Deleted,
+    Downloaded,
 }
 
 /// <summary>A filter in force on the audit log, the filter without it (its chip's remove link), and which filter it is (its address name).</summary>
@@ -175,6 +177,7 @@ public static class AuditKinds
         [nameof(RotationChange)] = "Rotation change",
         [nameof(RotationOverride)] = "Rotation cover",
         [nameof(StoredFile)] = "File",
+        [DownloadAudit.EntityType] = "Download",
     };
 
     /// <summary>Every kind, by name for people, as the kind filter offers them.</summary>
@@ -322,6 +325,7 @@ public sealed class AuditLogService(IAppDbContextFactory dbs, ICurrentUser user,
     {
         AuditAction.Created => "Added",
         AuditAction.Deleted => "Deleted",
+        AuditAction.Downloaded => DownloadAudit.Action,
         _ => "Modified",
     };
 
@@ -329,6 +333,7 @@ public sealed class AuditLogService(IAppDbContextFactory dbs, ICurrentUser user,
     {
         "Added" => AuditAction.Created,
         "Deleted" => AuditAction.Deleted,
+        DownloadAudit.Action => AuditAction.Downloaded,
         _ => AuditAction.Changed,
     };
 

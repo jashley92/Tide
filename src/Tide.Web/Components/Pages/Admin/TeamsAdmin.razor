@@ -224,6 +224,12 @@
                            aria-describedby="rem-followup-help" @bind="_rem.FollowUpDays" />
                     <div class="form-text" id="rem-followup-help">How long an Outreach action's email waits for its reply before whoever sent it is reminded, at the reminder time.</div>
                 </div>
+                <div class="col-sm-6">
+                    <label class="tide-field-label" for="rem-active-days">Remind people signed in within (days)</label>
+                    <input id="rem-active-days" type="number" class="form-control form-control-sm tide-w-count" min="@ReminderOptions.MinActiveWithinDays" max="@ReminderOptions.MaxActiveWithinDays"
+                           aria-describedby="rem-active-help" @bind="_rem.ActiveDays" />
+                    <div class="form-text" id="rem-active-help">Someone who hasn't signed in for longer, or whose roles no longer let them see what a reminder shows, isn't sent one. A team mailbox always is.</div>
+                </div>
             </div>
             <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" data-submit @onclick="SaveReminders">Save reminders</button>
         </section>
@@ -389,6 +395,7 @@
         public TimeOnly BriefNotReadyTime { get; set; }
         public string? Recipients { get; set; }
         public int FollowUpDays { get; set; }
+        public int ActiveDays { get; set; }
         public bool NewExternalTeamsOn { get; set; }
         public int NewExternalBefore { get; set; }
         public int? NewExternalEvery { get; set; }
@@ -401,6 +408,7 @@
                 ReminderTime = Time(o.ReminderTime, 8), DigestDay = o.Digest.Day, DigestTime = Time(o.Digest.Time, 8),
                 BriefNotReadyTime = Time(o.BriefNotReady.Time, 10), Recipients = string.Join(Environment.NewLine, o.BriefNotReady.Recipients ?? []),
                 FollowUpDays = ReminderOptions.FollowUpOptions.Clamp(o.OutreachFollowUp.Days),
+                ActiveDays = o.ActiveDays,
                 NewExternalTeamsOn = o.ExternalReminders.NewTeamsOn,
                 NewExternalBefore = o.ExternalReminders.BeforeDays, NewExternalEvery = o.ExternalReminders.EveryDays,
             };
@@ -560,6 +568,7 @@
                 [OperationalSettings.PersonalDigest] = Switch(_rem.On[ReminderKind.PersonalDigest]),
                 [OperationalSettings.OutreachFollowUp] = Switch(_rem.On[ReminderKind.OutreachFollowUp]),
                 [OperationalSettings.OutreachFollowUpDays] = _rem.FollowUpDays.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                [OperationalSettings.ActiveWithinDays] = _rem.ActiveDays.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 [OperationalSettings.ExternalReminders] = Switch(_rem.On[ReminderKind.ExternalReminder]),
                 [OperationalSettings.ExternalRemindersNewTeams] = Switch(_rem.NewExternalTeamsOn),
                 [OperationalSettings.ExternalRemindersNewBefore] = _rem.NewExternalBefore.ToString(System.Globalization.CultureInfo.InvariantCulture),
