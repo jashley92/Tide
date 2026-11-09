@@ -182,6 +182,7 @@ else
                                 <Badge Tone="@(finding.Level == JobHealthLevel.Unhealthy ? BadgeTone.Danger : BadgeTone.Warn)">@(finding.Problem switch { JobProblem.Hung => "Hung", JobProblem.Overdue => "Overdue", _ => "Failing" })</Badge>
                                 <div class="small tide-muted text-wrap">@finding.Text</div>
                             }
+                            else if (report.JobHealth.StandingBy) { <Badge>Standing by</Badge> }
                             else if (j.Running) { <Badge Tone="BadgeTone.Info">Running</Badge> }
                             else if (!j.Enabled) { <Badge>Off</Badge> }
                             else if (j.LastSucceeded == false) { <CheckBadge Level="CheckLevel.Attention" /> }

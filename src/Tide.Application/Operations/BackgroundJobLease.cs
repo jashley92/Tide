@@ -43,6 +43,22 @@ public interface IJobLease
     LeaseStatus Status { get; }
 }
 
+/// <summary>A job run by hand (an administrator's Run now, an analyst's Pull now) on a process that's standing by: the
+/// holder runs the jobs, so it's run there, where the marks and the history are kept in step.</summary>
+public sealed class StandingByException(string? holder)
+    : InvalidOperationException($"This server is standing by: {holder ?? "another server"} runs the background jobs. Run it there.");
+
+public static class JobLeaseExtensions
+{
+    /// <summary>Throws <see cref="StandingByException"/> unless this process holds the lease. A service made without one
+    /// (a test's) runs as the holder.</summary>
+    public static async Task RequireHeldAsync(this IJobLease? lease, CancellationToken ct = default)
+    {
+        if (lease is null || await lease.HoldAsync(ct)) return;
+        throw new StandingByException(lease.Status.HolderName);
+    }
+}
+
 /// <summary>
 /// The one lease every process on the database asks for before running a background job, kept in the <c>JobLeases</c>
 /// table, so a second process (a web garden, an overlapping recycle, a standby server started by mistake) stands by

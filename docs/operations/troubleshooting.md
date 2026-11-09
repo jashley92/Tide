@@ -94,6 +94,9 @@ failure and counts, not content.
 
 ### A job never runs on this server, and Diagnostics says "Standing by"
 
+Run now, Poll now, Pull now, the CVE refresh and Check now say "This server is standing by: … runs the background
+jobs. Run it there." on such a server.
+
 - **Cause:** another process on the same database holds the job lease: another server pointed at this database (a
   standby started by mistake), or a second worker in the pool.
 - **Where to look:** Diagnostics › "Job lease" names the holder (machine and process id).

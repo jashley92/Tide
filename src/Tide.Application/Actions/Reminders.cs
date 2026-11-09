@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Tide.Application.Abstractions;
 using Tide.Application.Distribution;
+using Tide.Application.Operations;
 using Tide.Application.Org;
 using Tide.Application.Preferences;
 using Tide.Domain.Entities;
@@ -184,7 +185,8 @@ public sealed class ReminderLog
 /// </summary>
 public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSender email, OrgClock clock, IOptionsMonitor<ReminderOptions> options,
     IOptions<AppOptions> app, ReminderLog log, ICurrentUser user, Rotation.IPresenterLookup? presenters = null, EmailTemplateStore? templates = null,
-    Microsoft.Extensions.Logging.ILogger<ReminderService>? logger = null, Settings.DistributionSettings? editions = null, EmailBoundary? boundary = null)
+    Microsoft.Extensions.Logging.ILogger<ReminderService>? logger = null, Settings.DistributionSettings? editions = null, EmailBoundary? boundary = null,
+    Operations.IJobLease? lease = null)
 {
     // The team edition's ceiling: an email to someone outside the organization (an external team's contact, an escalation
     // contact outside it) names only the requests marked up to it, as the webhooks hold to it.
@@ -226,11 +228,13 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
     // send, and then both write the same marks.
     private static readonly SemaphoreSlim Running = new(1, 1);
 
-    /// <summary>An administrator runs a scan now, from Administration (marks still stop repeats).</summary>
-    public Task<int> RunNowAsync(ReminderKind kind, CancellationToken ct = default)
+    /// <summary>An administrator runs a scan now, from Administration (marks still stop repeats). Refused on a process
+    /// standing by under the job lease: the holder runs the scans, so it's run there.</summary>
+    public async Task<int> RunNowAsync(ReminderKind kind, CancellationToken ct = default)
     {
         if (!user.Has(Permission.Administer)) throw new Security.ForbiddenException("Only an administrator can run a reminder scan.");
-        return RunAsync(kind, ct);
+        await lease.RequireHeldAsync(ct);
+        return await RunAsync(kind, ct);
     }
 
     public ReminderRun? LastRun(ReminderKind kind) => log.Last(kind);

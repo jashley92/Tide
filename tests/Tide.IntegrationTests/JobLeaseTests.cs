@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Tide.Application.Abstractions;
+using Tide.Application.Actions;
 using Tide.Application.Operations;
 using Tide.Domain.Enums;
 using Tide.Web.Components.Pages.Admin;
@@ -295,5 +296,80 @@ public class JobChecksTests
         jobs.Succeeded(JobMonitor.Reminders, Now, null);
         Checks(jobs, held)[1].Should().Match<HealthItem>(c => c.Level == CheckLevel.Ok);
         Checks(jobs, new LeaseStatus(LeaseState.Unreachable, null, null, null, Now, "timeout"))[0].Level.Should().Be(CheckLevel.Problem);
+    }
+}
+
+/// <summary>The app on a process standing by: another holds the job lease.</summary>
+public sealed class StandbyApp : TideApp
+{
+    protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
+    {
+        base.ConfigureWebHost(builder);
+        Microsoft.AspNetCore.TestHost.WebHostBuilderExtensions.ConfigureTestServices(builder, services =>
+        {
+            Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.RemoveAll<IJobLease>(services);
+            services.AddSingleton<IJobLease, StandbyLease>();
+        });
+    }
+}
+
+// A job run by hand on a standby ran beside the holder's scheduled run: the reminder scans' lock is the process's own,
+// so the same emails could go from both. Each Run now asks for the lease, as the scheduled passes do.
+public class RunNowOnAStandbyTests(StandbyApp app) : IClassFixture<StandbyApp>
+{
+    private const string Refusal = "This server is standing by: OTHER, process 2 runs the background jobs. Run it there.";
+
+    [Fact]
+    public async Task EveryRunNow_IsRefused_NamingTheHolder()
+    {
+        using var scope = app.Services.CreateScope();
+        Audit.ServiceScopes.SignIn(scope, Permission.Administer, Permission.WriteArticles);
+        var sp = scope.ServiceProvider;
+
+        foreach (var kind in new[] { ReminderKind.Overdue, ReminderKind.Escalation })
+            (await FluentActions.Awaiting(() => sp.GetRequiredService<Tide.Application.Actions.ReminderService>().RunNowAsync(kind))
+                .Should().ThrowAsync<StandingByException>()).WithMessage(Refusal);
+        (await FluentActions.Awaiting(() => sp.GetRequiredService<Tide.Application.Intake.IntakeService>().PollNowAsync(Guid.NewGuid()))
+            .Should().ThrowAsync<StandingByException>()).WithMessage(Refusal);
+        (await FluentActions.Awaiting(() => sp.GetRequiredService<Tide.Application.Intake.IntakeService>().PullNowAsync(Guid.NewGuid()))
+            .Should().ThrowAsync<StandingByException>()).WithMessage(Refusal);
+        (await FluentActions.Awaiting(() => sp.GetRequiredService<Tide.Application.Intake.CveService>().EnrichNowAsync())
+            .Should().ThrowAsync<StandingByException>()).WithMessage(Refusal);
+
+        var updates = app.Services.GetRequiredService<UpdateCheckService>();
+        updates.Enabled = true;
+        try
+        {
+            (await FluentActions.Awaiting(() => updates.CheckAsync(manual: true)).Should().ThrowAsync<StandingByException>()).WithMessage(Refusal);
+        }
+        finally { updates.Enabled = false; }
+    }
+
+    [Fact]
+    public void ThePagesToast_ShowsTheRefusalAsWritten()
+    {
+        UserFacingError.For(new StandingByException("OTHER, process 2")).Should().Be(Refusal);
+        UserFacingError.For(new StandingByException(null)).Should().StartWith("This server is standing by: another server runs");
+    }
+
+    [Fact]
+    public async Task Diagnostics_ShowsTheJobsAsStandingBy_NotAsNotRunYet()
+    {
+        await using var page = await ComponentHarness.RenderAsync<DiagnosticsAdmin>(app, "/admin/system");
+        var html = await page.HtmlOnce("Standing by");
+        html.Should().Contain("Standing by").And.NotContain("Not run yet");
+    }
+}
+
+public class RunNowOnTheHolderTests(TideApp app) : IClassFixture<TideApp>
+{
+    [Fact]
+    public async Task RunNow_StillRuns_WhereTheLeaseIsHeld()
+    {
+        using var scope = app.Services.CreateScope();
+        Audit.ServiceScopes.SignIn(scope, Permission.Administer);
+        var sent = await scope.ServiceProvider.GetRequiredService<Tide.Application.Actions.ReminderService>().RunNowAsync(ReminderKind.Overdue);
+        sent.Should().BeGreaterThanOrEqualTo(0);
+        app.Services.GetRequiredService<BackgroundJobLease>().Status.State.Should().Be(LeaseState.Held);
     }
 }

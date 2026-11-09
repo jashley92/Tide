@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Tide.Application.Abstractions;
+using Tide.Application.Operations;
 using Tide.Application.Security;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
@@ -58,7 +59,7 @@ public sealed class CveRunLog
 /// refreshes the CVEs on articles and on recent feed items; pages read what's stored and never wait on these services.
 /// </summary>
 public sealed class CveService(IAppDbContextFactory dbs, ICurrentUser user, IOutboundHttp http, IOptionsMonitor<CveOptions> options, TimeProvider time,
-    CveRunLog log, Briefs.IMeetingsInProgress? meetings = null)
+    CveRunLog log, Briefs.IMeetingsInProgress? meetings = null, Operations.IJobLease? lease = null)
 {
     public const string LastRunKey = "Cve:LastRun";
 
@@ -154,11 +155,13 @@ public sealed class CveService(IAppDbContextFactory dbs, ICurrentUser user, IOut
     public const int ManualNvdLookups = 5;
 
     /// <summary>An administrator refreshes the CVE data now (whether or not the schedule is on). NVD is limited to a few
-    /// lookups; the scheduled run does the rest. Null when a refresh is already running.</summary>
-    public Task<CveRun?> EnrichNowAsync(CancellationToken ct = default)
+    /// lookups; the scheduled run does the rest. Null when a refresh is already running. Refused on a process standing
+    /// by under the job lease.</summary>
+    public async Task<CveRun?> EnrichNowAsync(CancellationToken ct = default)
     {
         if (!user.Has(Permission.Administer)) throw new ForbiddenException("Only an administrator can refresh the CVE data.");
-        return EnrichAsync(ct, ManualNvdLookups);
+        await lease.RequireHeldAsync(ct);
+        return await EnrichAsync(ct, ManualNvdLookups);
     }
 
     // One run at a time: one asked for meanwhile (by hand, or the schedule's) doesn't run, and is null.

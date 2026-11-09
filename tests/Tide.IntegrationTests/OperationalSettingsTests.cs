@@ -39,6 +39,8 @@ public sealed class SettingsRig : IDisposable
         services.AddSingleton<IOutboundHttp>(Db.Http);
         services.AddSingleton<IFileStore>(Db.Store);
         services.AddSingleton<IRoleDirectory>(new CountingRoleDirectory());
+        // As the app has: the job lease, which a job run by hand asks for, logs.
+        services.AddLogging();
         Provider = services.BuildServiceProvider();
     }
 
