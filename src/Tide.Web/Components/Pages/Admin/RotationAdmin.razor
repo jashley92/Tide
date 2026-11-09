@@ -49,7 +49,7 @@
         <div class="tide-card" data-submit-scope>
             <h2>Managers to notify</h2>
             <textarea class="form-control form-control-sm tide-data tide-autogrow tide-grow-2" rows="2" aria-label="Manager email addresses" placeholder="cti-manager@example.org" @bind="_managers"></textarea>
-            <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" data-submit @onclick="SaveManagers">Save</button>
+            <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" data-submit @onclick="() => SaveManagers()">Save</button>
         </div>
     </div>
 
@@ -100,7 +100,10 @@
     </div>
 </div>
 
+<ConfirmDialog @ref="_confirm" />
+
 @code {
+    private ConfirmDialog _confirm = default!;
     private IReadOnlyList<RotationMember> _members = [];
     private IReadOnlyList<AppUser> _people = [];
     private List<KeyValuePair<DateOnly, string?>> _rota = [];
@@ -176,11 +179,25 @@
 
     private static string Days(IEnumerable<DateOnly> days) => string.Join(", ", days.Select(Ui.ShortDay));
 
-    private Task SaveManagers() => Run(async () =>
+    // An address outside the organization added to the managers is asked about first.
+    internal async Task SaveManagers(bool confirmOutside = false)
     {
-        await Rotation.SaveManagerEmailsAsync(_managers);
-        Toasts.Show("Saved.");
-    });
+        var ask = (string?)null;
+        await Run(async () =>
+        {
+            try { await Rotation.SaveManagerEmailsAsync(_managers, confirmOutside); }
+            catch (Tide.Application.Distribution.OutsideAddressesException ex)
+            {
+                ask = ex.Message;
+                return;
+            }
+            Toasts.Show("Saved.");
+        });
+        if (await _confirm.AskOutside(ask)) await SaveManagers(true);
+    }
+
+    /// <summary>The managers box, as a test types into it.</summary>
+    internal string? Managers { get => _managers; set => _managers = value; }
 
     // One change at a time: a second click while one runs (a double-click on Add) does nothing, so nothing is added
     // twice. The buttons are disabled meanwhile.

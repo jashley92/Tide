@@ -37,6 +37,8 @@ public class TideApp : WebApplicationFactory<Program>
         else builder.UseSetting("ConnectionStrings:Default", $"Data Source={Path.Combine(_dir, "tide.db")};Pooling=False");
         builder.UseSetting("Files:RootPath", Path.Combine(_dir, "files"));
         builder.UseSetting("Email:PickupDirectory", Path.Combine(_dir, "mail"));
+        // The organization's boundary (the sending address's domain): the tests' own addresses are in example.org.
+        builder.UseSetting("Email:From", "tide@example.org");
         if (Role is { } role)
         {
             builder.UseSetting("DevAuth:Roles:0", role);

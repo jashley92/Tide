@@ -89,6 +89,11 @@
     // An alert is described by what it says; a form's fields describe themselves.
     private string? DescribedBy => !string.IsNullOrEmpty(_message) ? _bodyId : ChildContent is not null && !Form && !CloseOnly ? _contentId : null;
 
+    /// <summary>Asks before saving addresses outside the organization: <paramref name="message"/> is the
+    /// <c>OutsideAddressesException</c>'s, naming them (null: nothing to ask). True to save again, confirmed.</summary>
+    public async Task<bool> AskOutside(string? message, string title = "Email outside your organization?", string confirmLabel = "Save anyway") =>
+        message is not null && await Ask(title, message, confirmLabel);
+
     /// <summary>
     /// Asks, and answers true when the person chose <paramref name="confirmLabel"/>. <paramref name="danger"/> colours that
     /// button as destructive (the default); pass false for a choice that isn't (taking over an action, ending a meeting).

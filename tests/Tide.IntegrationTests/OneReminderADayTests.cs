@@ -36,7 +36,7 @@ public class OneReminderADayTests : IDisposable
 
     private async Task<ActionItem> DueTuesday()
     {
-        var team = await _db.Teams().AddExternalAsync(new ExternalTeamForm { Name = "Network Engineering", ContactName = "Alex", ContactEmail = "network@network.example" });
+        var team = await _db.Teams().AddExternalAsync(new ExternalTeamForm { ConfirmOutside = true, Name = "Network Engineering", ContactName = "Alex", ContactEmail = "network@network.example" });
         var number = await _db.Actions().CreateAsync(new ActionForm { Title = "Block the domains", TeamId = team, Priority = Priority.P3 });
         await using var ctx = _db.Context();
         var row = await ctx.Actions.SingleAsync(x => x.Number == number);

@@ -192,15 +192,17 @@ checks it.
 |---|---|---|---|---|
 | `Distribution:PublicMaxTlp` | `Green` | `Clear`, `Green`, `Amber`, `AmberStrict`, `Red`. The company-wide edition carries nothing above it. Never above the team ceiling: a higher value is read as the team's. | In app: **Access & distribution** | At once (server default: start-up) |
 | `Distribution:TeamMaxTlp` | `AmberStrict` | As above. The team edition and the meeting carry nothing above it. | In app: **Access & distribution** | At once (server default: start-up) |
-| `Distribution:TeamRecipients` | `[]` | Email addresses, at most 200, separated by `;`, `,`, spaces or lines. Empty means the edition isn't emailed. | In app: **Access & distribution** | At once (server default: start-up) |
+| `Distribution:TeamRecipients` | `[]` | Email addresses, at most 200, separated by `;`, `,`, spaces or lines. Empty means the edition isn't emailed. An address outside the organization (`Email:OrganizationDomains`) that the list didn't have is asked about before it's saved. | In app: **Access & distribution** | At once (server default: start-up) |
 | `Distribution:PublicRecipients` | `[]` | As above. Usually one distribution list. | In app: **Access & distribution** | At once (server default: start-up) |
+| `Email:OrganizationDomains` | `[]` (the domain of `Email:From`) | Domain names, at most 20, separated by `;`, `,`, spaces or lines (a leading `@` is dropped), stored lower case. Each includes its subdomains. An address in none of them is outside the organization: every list that sends mail asks before saving one, and the emails about a team's requests to someone outside are held to the team edition's ceiling. Empty: the domain of `Email:From`. On the server, a JSON array. | In app: **Access & distribution** (server default too) | At once (server default: start-up) |
 | `Distribution:RequireSharePoint` | `false` | `true`: a brief isn't finished until someone confirms its SharePoint copy was posted. | In app: **Access & distribution** | At once |
 
 What the ceilings mean is in [editions-and-tlp.md](../architecture/editions-and-tlp.md).
 
 ### Email
 
-All of email is server-only. `EmailSender` reads its options on every send, so a corrected file applies at the next
+All of email is server-only but `Email:OrganizationDomains`, which is listed under [Distribution](#distribution) as an
+administrator sets it on Access & distribution. `EmailSender` reads its options on every send, so a corrected file applies at the next
 send. See [integrations.md](integrations.md#smtp-relay) for behaviour.
 
 | Key | Default | Allowed values | Where | Effect |
@@ -213,7 +215,7 @@ send. See [integrations.md](integrations.md#smtp-relay) for behaviour.
 | `Email:SmtpPassword` | blank | Secret. Set as `Email__SmtpPassword`. | Server (environment) | Recycle |
 | `Email:SmtpUseDefaultCredentials` | `false` | `true` signs in as the app-pool account (on-premises Exchange). Can't be used with a user name or password (`EmailOptions.SignInProblem`). | Server | Next send |
 | `Email:SmtpTimeoutSeconds` | `30` | Clamped to 5 to 300. A send the relay doesn't answer within it is recorded as outcome unknown (it may have gone), not failed, and isn't sent again by itself. | Server | Next send |
-| `Email:From` | `tide@localhost` | The sender address. The relay must let TIDE send as it. | Server | Next send |
+| `Email:From` | `tide@localhost` | The sender address. The relay must let TIDE send as it. Its domain is the organization's when `Email:OrganizationDomains` is empty. | Server | Next send |
 | `Email:FromName` | `TIDE` | The display name. | Server | Next send |
 | `Email:PickupDirectory` | blank (`App_Data/mail` in development) | A folder; messages are written there as `.eml` files instead of going to a relay. | Server | Next send |
 
@@ -244,7 +246,7 @@ except the personal digest's offer. What each sends is in [INSTALL.md](../INSTAL
 | `Notifications:Digest:Time` | `08:00` | `HH:mm` |
 | `Notifications:BriefNotReady:Enabled` | `false` | `true`/`false` |
 | `Notifications:BriefNotReady:Time` | `10:00` | `HH:mm`. The nudge goes between this time and the meeting time. |
-| `Notifications:BriefNotReady:Recipients` | `[]` | Up to 50 addresses (a larger audience is a distribution list). |
+| `Notifications:BriefNotReady:Recipients` | `[]` | Up to 50 addresses (a larger audience is a distribution list). One outside the organization, newly added, is asked about first. |
 | `Notifications:PersonalDigest:Enabled` | `true` | `true`/`false`. Lets people choose a digest in My notifications. |
 | `Notifications:OutreachFollowUp:Enabled` | `false` | `true`/`false` |
 | `Notifications:OutreachFollowUp:Days` | `5` | 1 to 30 business days. |
@@ -346,7 +348,8 @@ These rows live in the `Settings` table with no server default.
 
 | Key | What it is | Edited on | In a bundle |
 |---|---|---|---|
-| `Rotation:ManagerEmails` | Addresses told about rotation swaps and cover. | **Brief rotation** | Yes |
+| `Rotation:ManagerEmails` | Addresses told about rotation swaps and cover. One outside the organization, newly added, is asked about first. | **Brief rotation** | Yes |
+| `EmailCopy:{id}:Cc`, `EmailCopy:{id}:Bcc`, `EmailCopy:{id}:Outside`, `EmailCopy:Archive` | A template's standing copies, the ones an administrator confirmed outside the organization, and the archive copy. | **Email templates** | No |
 | `EmailTemplate:{id}:{Subject\|Heading\|Body}` | A reworded notification email part. | **Email templates** | Yes |
 | `Cve:LastRun` | When CVE enrichment last ran (ISO 8601). | Written by `CveService` | No (bookkeeping) |
 | `Data:IndicatorsCanonical` | Marks a one-time pass over stored indicators as done (`DatabaseInitializer.CanonicalizeIndicatorsAsync`). | Written at start-up | No |
@@ -411,6 +414,8 @@ item: added, updated, unchanged or skipped with the reason. Nothing is written u
   (`ConfigBundleService.SettingProblem`): a TLP level for a ceiling, 0 to 260 for an SLA target, a valid
   operational value, or valid addresses (at most 200). Keys are matched ignoring case and written as the app writes
   them, and an older SLA kind name is renamed.
+- An address list (an edition's recipients, the rotation's managers, who's told there's no brief) with an address
+  outside the organization is flagged in the preview, naming them, as its page would ask.
 - A group mapping that holds everyone who signs in (`Everyone`, `Authenticated Users`, `Domain Users`, `Users`, their
   well-known SIDs, or a domain's `…-513`), or any Admin mapping,
   is flagged for a second look.

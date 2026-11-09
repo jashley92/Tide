@@ -12,6 +12,7 @@
 @inject ActionFileService FileSvc
 @inject Tide.Application.Preferences.NotificationPreferenceService NotifyPrefs
 @using Tide.Application.Settings
+@using Tide.Application.Distribution
 @using Tide.Application.Preferences
 
 <PageTitle>Teams &amp; SLA · TIDE</PageTitle>
@@ -99,7 +100,7 @@
             <div class="row g-2">
                 <div class="col-md-5"><input class="form-control form-control-sm" placeholder="Name (e.g. Vulnerability Management)" aria-label="New team name" @bind="_newName" /></div>
                 <div class="col-md-5"><input class="form-control form-control-sm" placeholder="Team mailbox (optional)" aria-label="New team mailbox" @bind="_newEmail" /></div>
-                <div class="col-md-2"><button class="btn btn-primary btn-sm w-100" disabled="@_busy" data-submit @onclick="AddTeam">Add team</button></div>
+                <div class="col-md-2"><button class="btn btn-primary btn-sm w-100" disabled="@_busy" data-submit @onclick="() => AddTeam()">Add team</button></div>
             </div>
         </div>
     </div>
@@ -231,7 +232,7 @@
                     <div class="form-text" id="rem-active-help">Someone who hasn't signed in for longer, or whose roles no longer let them see what a reminder shows, isn't sent one. A team mailbox always is.</div>
                 </div>
             </div>
-            <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" data-submit @onclick="SaveReminders">Save reminders</button>
+            <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" data-submit @onclick="() => SaveReminders()">Save reminders</button>
         </section>
 
         <section class="tide-card" aria-labelledby="esc-title">
@@ -547,10 +548,12 @@
 
     private static string Switch(bool on) => on ? "true" : "false";
 
-    internal async Task SaveReminders()
+    // An address outside the organization added to who's told there's no brief is asked about first.
+    internal async Task SaveReminders(bool confirmOutside = false)
     {
         if (_busy) return;
         _busy = true;
+        var ask = (string?)null;
         try
         {
             await Settings.SaveAsync(new Dictionary<string, string?>
@@ -573,12 +576,14 @@
                 [OperationalSettings.ExternalRemindersNewTeams] = Switch(_rem.NewExternalTeamsOn),
                 [OperationalSettings.ExternalRemindersNewBefore] = _rem.NewExternalBefore.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 [OperationalSettings.ExternalRemindersNewEvery] = (_rem.NewExternalEvery ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture),
-            });
+            }, confirmOutside);
             _rem = ReminderForm.From(Reminders);
             Toasts.Show("Saved. Applies within five minutes.");
         }
+        catch (OutsideAddressesException ex) { ask = ex.Message; }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _busy = false; }
+        if (await _confirm.AskOutside(ask)) await SaveReminders(true);
     }
 
     // Saves the ladder: on or off, its scope and its steps, together and each checked; refused whole, saying why.
@@ -615,18 +620,30 @@
     private string? _changedBy;
     internal string? ChangedBy => _changedBy;
 
-    // One save, on the version the form opened on: another administrator's change since is refused, not overwritten.
-    internal Task Save(Guid id) => Run(async () =>
+    // One save, on the version the form opened on: another administrator's change since is refused, not overwritten. An
+    // escalation contact outside the organization is asked about first.
+    internal async Task Save(Guid id, bool confirmOutside = false)
     {
-        try { await TeamSvc.UpdateAsync(id, _form); }
-        catch (Tide.Application.Articles.StaleEditException)
+        var ask = (string?)null;
+        _form.ConfirmOutside = confirmOutside;
+        await Run(async () =>
         {
-            // The form stays to copy from, and Reload shows theirs.
-            _changedBy ??= "Someone";
-            throw;
-        }
-        (_editing, _changedBy) = (null, null);
-    });
+            try { await TeamSvc.UpdateAsync(id, _form); }
+            catch (Tide.Application.Articles.StaleEditException)
+            {
+                // The form stays to copy from, and Reload shows theirs.
+                _changedBy ??= "Someone";
+                throw;
+            }
+            catch (OutsideAddressesException ex)
+            {
+                ask = ex.Message;
+                return;
+            }
+            (_editing, _changedBy) = (null, null);
+        });
+        if (await _confirm.AskOutside(ask)) await Save(id, true);
+    }
 
     // The banner's Reload: the team as it is now (the list is read again), and what was typed goes.
     internal async Task ReloadTheirs()
@@ -648,11 +665,25 @@
     /// <summary>The internal teams listed.</summary>
     internal IReadOnlyList<Team> Shown => _teams;
 
-    private Task AddTeam() => Run(async () =>
+    // A mailbox outside the organization is asked about first.
+    internal async Task AddTeam(bool confirmOutside = false)
     {
-        await TeamSvc.AddAsync(_newName ?? "", null, _newEmail);
-        _newName = _newEmail = null;
-    });
+        var ask = (string?)null;
+        await Run(async () =>
+        {
+            try { await TeamSvc.AddAsync(_newName ?? "", null, _newEmail, confirmOutside); }
+            catch (OutsideAddressesException ex)
+            {
+                ask = ex.Message;
+                return;
+            }
+            _newName = _newEmail = null;
+        });
+        if (await _confirm.AskOutside(ask)) await AddTeam(true);
+    }
+
+    /// <summary>The add-a-team boxes, as a test types into them.</summary>
+    internal (string? Name, string? Email) NewTeam { get => (_newName, _newEmail); set => (_newName, _newEmail) = value; }
 
     private Task AddMember(Guid teamId) => Run(async () =>
     {

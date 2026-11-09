@@ -184,8 +184,15 @@ public sealed class ReminderLog
 /// </summary>
 public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSender email, OrgClock clock, IOptionsMonitor<ReminderOptions> options,
     IOptions<AppOptions> app, ReminderLog log, ICurrentUser user, Rotation.IPresenterLookup? presenters = null, EmailTemplateStore? templates = null,
-    Microsoft.Extensions.Logging.ILogger<ReminderService>? logger = null)
+    Microsoft.Extensions.Logging.ILogger<ReminderService>? logger = null, Settings.DistributionSettings? editions = null, EmailBoundary? boundary = null)
 {
+    // The team edition's ceiling: an email to someone outside the organization (an external team's contact, an escalation
+    // contact outside it) names only the requests marked up to it, as the webhooks hold to it.
+    private async Task<TlpLevel> CeilingAsync(CancellationToken ct) =>
+        editions is not null ? (await editions.ReadAsync(ct)).Team : new Settings.DistributionOptions().TeamMaxTlp;
+
+    private OrganizationBoundary Boundary => boundary.CurrentOrUnknown();
+
     // The wording an administrator set in Administration › Email templates, or the defaults.
     private readonly EmailTemplateStore _templates = templates ?? EmailTemplateStore.Defaults;
 

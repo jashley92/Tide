@@ -149,16 +149,20 @@ public class EscalationPagesTests(TideApp app) : IClassFixture<TideApp>
     {
         await using var r = await RenderAsync<ExternalTeams>(app, "/teams/external", null, new SignIn("dev:esc-ext", "Ext Owner", "ActionOwner"));
         (await r.Html()).Should().Contain("id=\"new-esc-name\"").And.Contain("id=\"new-esc-email\"");
-        r.Component.NewForm.Name = "Escalation Hosting";
-        r.Component.NewForm.ContactEmail = "noc@hosting.example";
-        r.Component.NewForm.EscalationName = "Morgan";
-        r.Component.NewForm.EscalationEmail = "duty@hosting.example";
-        await r.Click(c => c.Add());
+        await r.Click(c =>
+        {
+            (c.NewForm.Name, c.NewForm.ContactEmail) = ("Escalation Hosting", "noc@hosting.example");
+            (c.NewForm.EscalationName, c.NewForm.EscalationEmail) = ("Morgan", "duty@hosting.example");
+            return Task.CompletedTask;
+        });
+        await r.Click(c => c.Add(confirmOutside: true));   // as Save anyway does, once asked
 
         var team = await TeamNamed("Escalation Hosting");
         (team.IsExternal, team.EscalationName, team.EscalationEmail).Should().Be((true, "Morgan", "duty@hosting.example"));
         await using var again = await RenderAsync<ExternalTeams>(app, "/teams/external");
         (await again.Html()).Should().Contain("<dt>Escalation contact</dt>").And.Contain("duty@hosting.example");
+        await using var editing = await RenderAsync<ExternalTeams>(app, $"/teams/external?edit={team.Id}");
+        (await editing.Html()).Should().Contain("data-outside", "its form says the addresses are outside the organization");
     }
 
     [Fact]

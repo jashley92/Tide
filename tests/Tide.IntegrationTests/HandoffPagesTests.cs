@@ -195,7 +195,11 @@ public class HandoffPagesTests(TideApp app) : IClassFixture<TideApp>
             (dialog.NewName, dialog.NewEmail) = ("EP86 Hosting Provider", "noc@provider.example");
             await dialog.AddExternal();
         });
+        dialog.Outside.Should().Contain("noc@provider.example is outside example.org", "a contact outside the organization is asked about first");
+        dialog.Parts.Should().HaveCount(1, "nothing added until it's confirmed");
+        await page.Click(_ => dialog.AddExternal(confirmOutside: true));   // Add anyway
         dialog.Error.Should().BeNull();
+        dialog.Outside.Should().BeNull();
         dialog.Parts.Should().HaveCount(2, "the new external team is ticked");
         await page.Click(async _ => (await dialog.Split()).Should().BeTrue(dialog.Error));
 

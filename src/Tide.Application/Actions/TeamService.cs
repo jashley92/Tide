@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using Tide.Application.Abstractions;
 using Tide.Application.Articles;
 using Tide.Application.Content;
+using Tide.Application.Distribution;
 using Tide.Application.Scorecard;
 using Tide.Application.Security;
 using Tide.Domain.Entities;
@@ -15,8 +16,28 @@ namespace Tide.Application.Actions;
 /// The teams that own actions, and who is on them. Administrators manage them; a team that owns an action is retired,
 /// not deleted. Being on a team lets a person with WorkActions work that team's actions.
 /// </summary>
-public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOptionsMonitor<ReminderOptions> reminders)
+public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOptionsMonitor<ReminderOptions> reminders,
+    Distribution.EmailBoundary? boundary = null)
 {
+    private Distribution.OrganizationBoundary Boundary => boundary.CurrentOrUnknown();
+
+    /// <summary>Whether <paramref name="address"/> is outside the organization (an external team's contact usually is): the
+    /// forms say so beside it.</summary>
+    public bool IsOutside(string? address) => !string.IsNullOrWhiteSpace(address) && !Boundary.IsInside(address.Trim());
+
+    /// <summary>The organization's domains as said on a form ("example.org").</summary>
+    public string InsideText => Boundary.Describe;
+
+    // A team's contact or escalation address outside the organization is confirmed the first time it's set, and whenever
+    // it changes; one it already had is saved without asking. An external team's contact is outside by nature: its emails
+    // are held to the team edition's ceiling, which is the real guard, so this only makes sure it's meant.
+    private void CheckOutside(bool confirmed, params (string? Was, string? Now, string Consequence)[] changes) =>
+        Boundary.Check(changes.Where(c => !string.Equals(c.Was, c.Now, StringComparison.OrdinalIgnoreCase)).Select(c => (c.Now, c.Consequence)), confirmed);
+
+    private const string HeldToCeiling = "Requests marked above what the team edition carries are counted there, not named.";
+    private const string ContactGets = "Their reminders go there. " + HeldToCeiling;
+    private const string EscalationGets = "The escalation ladder emails slipping requests there. " + HeldToCeiling;
+    private const string MailboxGets = "The team's reminders and digests go there, with everything they list.";
     /// <summary>Every team with its members, in order; retired ones too when <paramref name="includeRetired"/>.</summary>
     public async Task<IReadOnlyList<Team>> ListAsync(bool includeRetired = false, CancellationToken ct = default)
     {
@@ -36,12 +57,16 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOp
         return (await db.TeamMembers.AsNoTracking().Where(m => m.UserId == userId).Select(m => m.TeamId).ToListAsync(ct)).ToHashSet();
     }
 
-    public async Task<Guid> AddAsync(string name, string? description, string? email, CancellationToken ct = default)
+    /// <summary>Adds an internal team. A mailbox outside the organization is refused
+    /// (<see cref="Distribution.OutsideAddressesException"/>) unless <paramref name="confirmOutside"/>.</summary>
+    public async Task<Guid> AddAsync(string name, string? description, string? email, bool confirmOutside = false, CancellationToken ct = default)
     {
         RequireAdmin();
         var clean = AdminLists.Name(name);
+        var mailbox = Email(email);
+        Boundary.CheckAdded(mailbox is null ? [] : [mailbox], [], confirmOutside, MailboxGets);
         await using var db = await dbs.CreateAsync(ct);
-        var team = new Team { Name = clean, Description = AdminLists.Description(description), Email = Email(email) };
+        var team = new Team { Name = clean, Description = AdminLists.Description(description), Email = mailbox };
         await AddTeamAsync(db, team, ct);
         return team.Id;
     }
@@ -67,6 +92,7 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOp
         await using var db = await dbs.CreateAsync(ct);
         var team = new Team { IsExternal = true };
         form.ApplyTo(team);
+        CheckOutside(form.ConfirmOutside, (null, team.ContactEmail, ContactGets), (null, team.EscalationEmail, EscalationGets));
         await AddTeamAsync(db, team, ct);
         return team.Id;
     }
@@ -101,11 +127,12 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOp
     }
 
     /// <summary>An external team with just a name and, optionally, its contact's email (the split dialog's quick add),
-    /// its reminders on or off as set for new teams.</summary>
-    public Task<Guid> AddExternalAsync(string name, string? contactEmail, CancellationToken ct = default)
+    /// its reminders on or off as set for new teams. A contact outside the organization is confirmed
+    /// (<paramref name="confirmOutside"/>), as on the form.</summary>
+    public Task<Guid> AddExternalAsync(string name, string? contactEmail, bool confirmOutside = false, CancellationToken ct = default)
     {
         var form = NewExternalForm();
-        (form.Name, form.ContactEmail) = (name, contactEmail);
+        (form.Name, form.ContactEmail, form.ConfirmOutside) = (name, contactEmail, confirmOutside);
         return AddExternalAsync(form, ct);
     }
 
@@ -124,7 +151,9 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOp
         var team = await TeamAsync(db, id, ct);
         if (!team.IsExternal) throw new ForbiddenException("Only an administrator can change an internal team.");
         NotStale(team, form.EditVersion);
+        var (contactWas, escalationWas) = (team.ContactEmail, team.EscalationEmail);
         form.ApplyTo(team);
+        CheckOutside(form.ConfirmOutside, (contactWas, team.ContactEmail, ContactGets), (escalationWas, team.EscalationEmail, EscalationGets));
         if (admin) (team.ActiveLimit, team.LimitMode) = (form.ActiveLimit, form.LimitMode);
         await SaveMovedAsync(db, team, ct);
     }
@@ -143,6 +172,7 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOp
         await using var db = await dbs.CreateAsync(ct);
         var team = await TeamAsync(db, id, ct);
         NotStale(team, form.EditVersion);
+        CheckOutside(form.ConfirmOutside, (team.Email, email, MailboxGets), (team.EscalationEmail, escalation.Email, EscalationGets));
         (team.Name, team.Description, team.Email) = (name, description, email);
         (team.ActiveLimit, team.LimitMode) = (form.ActiveLimit, form.LimitMode);
         (team.EscalationName, team.EscalationEmail) = escalation;
@@ -177,15 +207,18 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOp
         if (!CanManageExternal) throw new ForbiddenException("Only someone who works actions can change the external teams.");
     }
 
-    /// <summary>Changes an internal team's name, description and mailbox.</summary>
-    public async Task UpdateAsync(Guid id, string name, string? description, string? email, CancellationToken ct = default)
+    /// <summary>Changes an internal team's name, description and mailbox; a mailbox outside the organization, newly set
+    /// or changed, is confirmed (<paramref name="confirmOutside"/>).</summary>
+    public async Task UpdateAsync(Guid id, string name, string? description, string? email, bool confirmOutside = false, CancellationToken ct = default)
     {
         RequireAdmin();
         await using var db = await dbs.CreateAsync(ct);
         var team = await TeamAsync(db, id, ct);
+        var mailbox = Email(email);
+        Boundary.CheckAdded(mailbox is null ? [] : [mailbox], team.Email is null ? [] : [team.Email], confirmOutside, MailboxGets);
         team.Name = AdminLists.Name(name);
         team.Description = AdminLists.Description(description);
-        team.Email = Email(email);
+        team.Email = mailbox;
         await SaveMovedAsync(db, team, ct);
     }
 
@@ -194,13 +227,15 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOp
     /// clears them). An internal team's is an administrator's to set; an external team's, whoever keeps the external
     /// teams'. Audited like any change to a team.
     /// </summary>
-    public async Task SetEscalationContactAsync(Guid id, string? name, string? email, CancellationToken ct = default)
+    public async Task SetEscalationContactAsync(Guid id, string? name, string? email, bool confirmOutside = false, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
         var team = await TeamAsync(db, id, ct);
         if (team.IsExternal) RequireExternal();
         else RequireAdmin();
-        (team.EscalationName, team.EscalationEmail) = EscalationContact(name, email);
+        var contact = EscalationContact(name, email);
+        CheckOutside(confirmOutside, (team.EscalationEmail, contact.Email, EscalationGets));
+        (team.EscalationName, team.EscalationEmail) = contact;
         await SaveMovedAsync(db, team, ct);
     }
 
@@ -346,6 +381,9 @@ public sealed class TeamForm
     public string? EscalationName { get; set; }
     public string? EscalationEmail { get; set; }
 
+    /// <summary>The mailbox or escalation contact is meant to be outside the organization (the page asked, and was told so).</summary>
+    public bool ConfirmOutside { get; set; }
+
     public static TeamForm From(Team t) => new()
     {
         EditVersion = t.EditVersion, Name = t.Name, Description = t.Description, Email = t.Email, ActiveLimit = t.ActiveLimit, LimitMode = t.LimitMode,
@@ -385,6 +423,10 @@ public sealed class ExternalTeamForm
     /// administrator saves the form; a new team has none.</summary>
     public int? ActiveLimit { get; set; }
     public ActiveLimitMode LimitMode { get; set; } = ActiveLimitMode.Show;
+
+    /// <summary>A contact or escalation address set or changed outside the organization is meant (the page asked, and was
+    /// told so).</summary>
+    public bool ConfirmOutside { get; set; }
 
     public static ExternalTeamForm From(Team t) => new()
     {

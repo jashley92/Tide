@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Tide.Application.Abstractions;
+using Tide.Application.Distribution;
 using Tide.Application.Security;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
@@ -30,7 +31,7 @@ public sealed class DistributionOptions
 /// <summary>The edition ceilings and recipient lists in force: the administered value when one is saved, else the
 /// configured default.</summary>
 public sealed class DistributionSettings(IAppDbContextFactory dbs, ICurrentUser user, IOptions<DistributionOptions> defaults,
-    Briefs.IMeetingsInProgress? meetings = null)
+    Briefs.IMeetingsInProgress? meetings = null, Distribution.EmailBoundary? boundary = null)
 {
     public const string PublicMaxTlpKey = "Distribution:PublicMaxTlp";
     public const string TeamMaxTlpKey = "Distribution:TeamMaxTlp";
@@ -90,27 +91,51 @@ public sealed class DistributionSettings(IAppDbContextFactory dbs, ICurrentUser 
     }
 
     /// <summary>Saves an edition's recipient list (addresses separated by commas, semicolons or lines). Every address must
-    /// be a valid one; an empty list means the edition isn't emailed.</summary>
-    public async Task SaveRecipientsAsync(Edition edition, string? addresses, CancellationToken ct = default)
+    /// be a valid one; an empty list means the edition isn't emailed. An address outside the organization that the list
+    /// didn't have is refused (<see cref="Distribution.OutsideAddressesException"/>, naming it) unless
+    /// <paramref name="confirmOutside"/>.</summary>
+    public async Task SaveRecipientsAsync(Edition edition, string? addresses, bool confirmOutside = false, CancellationToken ct = default)
     {
         if (!user.Has(Permission.Administer)) throw new ForbiddenException("Only an administrator can change who the brief is sent to.");
         var value = CheckedRecipients(addresses);
         await using var db = await dbs.CreateAsync(ct);
+        if (!confirmOutside) await CheckOutsideAsync([(edition, value)], ct);
         await Upsert(db, edition == Edition.Public ? PublicRecipientsKey : TeamRecipientsKey, value, ct);
         await db.SaveChangesAsync(ct);
     }
 
     /// <summary>Saves both editions' recipient lists, both or neither: each is checked before either is saved, so a bad
-    /// address in one list leaves the other as it was too.</summary>
-    public async Task SaveRecipientsAsync(string? teamAddresses, string? publicAddresses, CancellationToken ct = default)
+    /// address in one list, or an outside one not confirmed, leaves the other as it was too.</summary>
+    public async Task SaveRecipientsAsync(string? teamAddresses, string? publicAddresses, bool confirmOutside = false, CancellationToken ct = default)
     {
         if (!user.Has(Permission.Administer)) throw new ForbiddenException("Only an administrator can change who the brief is sent to.");
         var team = CheckedRecipients(teamAddresses);
         var pub = CheckedRecipients(publicAddresses);
         await using var db = await dbs.CreateAsync(ct);
+        if (!confirmOutside) await CheckOutsideAsync([(Edition.Team, team), (Edition.Public, pub)], ct);
         await Upsert(db, TeamRecipientsKey, team, ct);
         await Upsert(db, PublicRecipientsKey, pub, ct);
         await db.SaveChangesAsync(ct);
+    }
+
+    // An edition goes to everyone on its list with all it carries: the team edition up to its ceiling (AMBER by default),
+    // so an address outside the organization is one more way for it to leave. Each one the list didn't already have is
+    // confirmed, naming it and what the edition carries; both lists' at once, so confirming one never passes the other's.
+    private async Task CheckOutsideAsync(IReadOnlyList<(Edition Edition, string Value)> lists, CancellationToken ct)
+    {
+        var inside = boundary.CurrentOrUnknown();
+        var added = new List<(Edition Edition, string Address)>();
+        foreach (var (edition, value) in lists)
+        {
+            var had = await GetRecipientsAsync(edition, ct);
+            added.AddRange(inside.Outside(Split(value).Except(had, StringComparer.OrdinalIgnoreCase)).Select(a => (edition, a)));
+        }
+        if (added.Count == 0) return;
+        var (pub, team) = await ReadAsync(ct);
+        string Says(Edition e) => e == Edition.Public
+            ? $"The company-wide edition goes there with everything marked up to {Tlp.Label(pub)}."
+            : $"The team edition goes there with everything marked up to {Tlp.Label(team)}.";
+        inside.Check(added.Select(a => ((string?)a.Address, Says(a.Edition))), confirmed: false);
     }
 
     // A recipient list as it's stored, or an ArgumentException saying what's wrong.

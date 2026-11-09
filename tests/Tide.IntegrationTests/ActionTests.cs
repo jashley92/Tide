@@ -579,7 +579,7 @@ public class ActionServiceTests : IDisposable
     public async Task Filters_HeldBy_InternalOrExternal_AndRaisedByMe_NarrowTheList_AndTheHoldersAreCounted()
     {
         var team = await Team();
-        var outside = await _db.Teams().AddExternalAsync("Hosting Provider", "noc@provider.example");
+        var outside = await _db.Teams().AddExternalAsync("Hosting Provider", "noc@provider.example", confirmOutside: true);
         var svc = _db.Actions();
         var me = _db.User.UserId;
         await svc.CreateAsync(new ActionForm { Title = "mine, internal", TeamId = team, AssigneeId = "u1", AssigneeName = "Robin" });

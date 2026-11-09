@@ -30,7 +30,7 @@ public class LineageAndUpdatesTests(TideApp app) : IClassFixture<TideApp>
     private Task<Guid> Team(string name, int? limit = null, ActiveLimitMode mode = ActiveLimitMode.Show, bool external = false) => As(async sp =>
     {
         var teams = sp.GetRequiredService<TeamService>();
-        var id = external ? await teams.AddExternalAsync(name, "noc@provider.example") : await teams.AddAsync(name, null, null);
+        var id = external ? await teams.AddExternalAsync(name, "noc@provider.example", confirmOutside: true) : await teams.AddAsync(name, null, null);
         if (limit is not null) await teams.SetLimitAsync(id, limit, mode);
         return id;
     });

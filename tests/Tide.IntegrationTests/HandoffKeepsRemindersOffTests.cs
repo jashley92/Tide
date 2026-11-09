@@ -26,8 +26,8 @@ public class HandoffKeepsRemindersOffTests : IDisposable
     // An action on one external team, its reminders turned off, and another external team to hand it to.
     private async Task<(ActionItem Action, Guid To)> Quiet()
     {
-        var from = await _db.Teams().AddExternalAsync("Network Engineering", "network@network.example");
-        var to = await _db.Teams().AddExternalAsync("Hosting Provider", "noc@hosting.example");
+        var from = await _db.Teams().AddExternalAsync("Network Engineering", "network@network.example", confirmOutside: true);
+        var to = await _db.Teams().AddExternalAsync("Hosting Provider", "noc@hosting.example", confirmOutside: true);
         var number = await _db.Actions().CreateAsync(new ActionForm { Title = "Block the domains", TeamId = from });
         var a = (await _db.Actions().GetAsync(number))!.Action;
         await _db.Actions().SetNoRemindersAsync(a.Id, off: true);
@@ -61,7 +61,7 @@ public class HandoffKeepsRemindersOffTests : IDisposable
         kept.NoReminders.Should().BeTrue();
         history.Last().Should().Be("Handed from Network Engineering to Hosting Provider: They host the resolvers");
 
-        var other = await _db.Teams().AddExternalAsync("Registrar", "abuse@registrar.example");
+        var other = await _db.Teams().AddExternalAsync("Registrar", "abuse@registrar.example", confirmOutside: true);
         await _db.Actions().SetNoRemindersAsync(a.Id, off: false);
         await _db.Handoffs().HandOffAsync(a.Id, other, "They hold the domain");
         (await Read(a)).Action.NoReminders.Should().BeFalse("keeping them off never turns them off");
@@ -78,7 +78,7 @@ public class HandoffKeepsRemindersOffTests : IDisposable
         (await Read(a)).Action.NoReminders.Should().BeTrue();
 
         var back = ActionForm.From((await Read(a)).Action);
-        back.TeamId = (await _db.Teams().AddExternalAsync("Registrar", "abuse@registrar.example"));
+        back.TeamId = (await _db.Teams().AddExternalAsync("Registrar", "abuse@registrar.example", confirmOutside: true));
         back.TurnRemindersOn = true;
         await _db.Actions().SaveAsync(back);
         var (after, history) = await Read(a);
@@ -106,8 +106,8 @@ public class HandoffKeepsRemindersOffPageTests(TideApp app) : IClassFixture<Tide
         var (from, to, number) = await As(async sp =>
         {
             var teams = sp.GetRequiredService<TeamService>();
-            var f = await teams.AddExternalAsync("DecA remind-off sender", "a@decA.example");
-            var t = await teams.AddExternalAsync("DecA remind-off receiver", "b@decA.example");
+            var f = await teams.AddExternalAsync("DecA remind-off sender", "a@decA.example", confirmOutside: true);
+            var t = await teams.AddExternalAsync("DecA remind-off receiver", "b@decA.example", confirmOutside: true);
             var n = await sp.GetRequiredService<ActionService>().CreateAsync(new ActionForm { Title = "DecA quiet action", TeamId = f });
             return (f, t, n);
         });

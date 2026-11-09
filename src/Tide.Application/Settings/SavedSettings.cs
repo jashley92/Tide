@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using Tide.Application.Abstractions;
+using Tide.Application.Distribution;
 using Tide.Application.Security;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
@@ -81,11 +82,14 @@ public sealed class OperationalSettingsOverlay<T>(SavedSettings saved, Action<Sa
 
 /// <summary>Saves the <see cref="OperationalSettings"/>: administrators only, every value checked. Each is a row in the
 /// <c>Settings</c> table, audited like any change, and takes effect at once.</summary>
-public sealed class OperationalSettingsService(IAppDbContextFactory dbs, ICurrentUser user, SavedSettings saved, TimeProvider time)
+public sealed class OperationalSettingsService(IAppDbContextFactory dbs, ICurrentUser user, SavedSettings saved, TimeProvider time,
+    Distribution.EmailBoundary? boundary = null)
 {
     /// <summary>Saves the values given (key to value), all or none: one that doesn't pass its check refuses the lot,
-    /// saying why. A value the same as the one saved is left alone.</summary>
-    public async Task SaveAsync(IReadOnlyDictionary<string, string?> values, CancellationToken ct = default)
+    /// saying why. A value the same as the one saved is left alone. An address outside the organization added to who's
+    /// told there's no brief is refused (<see cref="Distribution.OutsideAddressesException"/>, naming it) unless
+    /// <paramref name="confirmOutside"/>; the organization's domains saved with it are the ones it's checked against.</summary>
+    public async Task SaveAsync(IReadOnlyDictionary<string, string?> values, bool confirmOutside = false, CancellationToken ct = default)
     {
         if (!user.Has(Permission.Administer)) throw new ForbiddenException("Only an administrator can change these settings.");
         var checkedValues = values.ToDictionary(v => v.Key, v => OperationalSettings.Normalize(v.Key, v.Value));
@@ -93,6 +97,15 @@ public sealed class OperationalSettingsService(IAppDbContextFactory dbs, ICurren
         {
             var keys = checkedValues.Keys.ToList();
             var rows = await db.Settings.Where(s => keys.Contains(s.Key)).ToDictionaryAsync(s => s.Key, StringComparer.OrdinalIgnoreCase, ct);
+            if (checkedValues.TryGetValue(OperationalSettings.BriefNotReadyRecipients, out var told))
+            {
+                var inside = checkedValues.TryGetValue(OperationalSettings.OrganizationDomains, out var domains) && boundary is not null
+                    ? boundary.With(OperationalSettings.SplitAddresses(domains))
+                    : boundary.CurrentOrUnknown();
+                inside.CheckAdded(OperationalSettings.SplitAddresses(told),
+                    OperationalSettings.SplitAddresses(rows.GetValueOrDefault(OperationalSettings.BriefNotReadyRecipients)?.Value), confirmOutside,
+                    "They're told each morning there's no brief yet.");
+            }
             foreach (var (key, value) in checkedValues)
             {
                 if (rows.TryGetValue(key, out var row) && row.Value == value) continue;
