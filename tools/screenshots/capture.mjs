@@ -7,21 +7,13 @@
 //
 // The manifest below is the list of shots. See README.md in this folder for how to add one and how callouts work.
 
-import { spawn, execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, createWriteStream } from 'node:fs';
-import os from 'node:os';
+import { mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { baseUrl, fill, readDemo, repo, settle, startTide } from './tide.mjs';
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const repo = path.resolve(here, '..', '..');
-const web = path.join(repo, 'src', 'Tide.Web');
 const outDir = path.join(repo, 'docs', 'screenshots');
-const demoDir = path.join(here, '.demo');
-const port = Number(process.env.PORT ?? 5112);
-const external = process.env.BASE_URL?.replace(/\/$/, '');
-const base = external ?? `http://localhost:${port}`;
+const base = baseUrl();
 const startedAt = new Date();
 
 // --- the manifest -------------------------------------------------------------------------------------------------
@@ -124,8 +116,8 @@ const wanted = only.length ? shots.filter(s => only.includes(s.name)) : shots;
 
 let server;
 try {
-  if (!external) server = await startTide();
-  const demo = JSON.parse(readFileSync(path.join(demoDir, 'demo.json'), 'utf8'));
+  server = await startTide();
+  const demo = readDemo();
   const problems = await capture(wanted, demo);
   if (problems.length) {
     for (const p of problems) console.error(p);
@@ -144,11 +136,6 @@ function fail(message) {
 }
 
 async function capture(list, demo) {
-  const fill = route => route.replace(/\{(\w+)\}/g, (_, key) => {
-    const value = demo[key[0].toUpperCase() + key.slice(1)];
-    if (value === undefined) throw new Error(`The route ${route} names {${key}}, which the seed doesn't provide.`);
-    return String(value);
-  });
   mkdirSync(outDir, { recursive: true });
   const browser = await chromium.launch();
   const problems = [];
@@ -166,7 +153,7 @@ async function capture(list, demo) {
       // The browser's clock stands still at the moment the run started, so anything the page times reads the same.
       await page.clock.setFixedTime(startedAt);
       try {
-        await page.goto(base + fill(shot.route), { waitUntil: 'networkidle' });
+        await page.goto(base + fill(shot.route, demo), { waitUntil: 'networkidle' });
         await settle(page);
         if (shot.setup) { await shot.setup(page, demo); await settle(page); }
         const missing = await annotate(page, shot.annotate ?? []);
@@ -189,13 +176,6 @@ async function capture(list, demo) {
   return problems;
 }
 
-
-// The page is interactive (Blazor's circuit is up) and fonts are in.
-async function settle(page) {
-  await page.waitForLoadState('networkidle');
-  await page.evaluate(() => document.fonts.ready);
-  await page.waitForTimeout(500);
-}
 
 async function clipFor(page, shot) {
   if (!shot.clip) return undefined;
@@ -240,61 +220,4 @@ async function annotate(page, callouts) {
     document.body.appendChild(layer);
   }, targets);
   return [];
-}
-
-/**
- * The dotnet executable, by absolute path rather than a search of PATH: DOTNET_HOST_PATH (set when run from dotnet),
- * DOTNET_ROOT, or the SDK's usual install folders.
- */
-function dotnet() {
-  const exe = process.platform === 'win32' ? 'dotnet.exe' : 'dotnet';
-  const candidates = [
-    process.env.DOTNET_HOST_PATH,
-    process.env.DOTNET_ROOT && path.join(process.env.DOTNET_ROOT, exe),
-    process.platform === 'win32' && path.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'dotnet', exe),
-    '/usr/local/share/dotnet/dotnet', '/usr/share/dotnet/dotnet', '/usr/lib/dotnet/dotnet',
-    path.join(os.homedir(), '.dotnet', exe),
-  ].filter(Boolean);
-  const found = candidates.find(c => path.isAbsolute(c) && existsSync(c));
-  if (!found) throw new Error(`dotnet wasn't found in ${candidates.join(', ')}. Set DOTNET_ROOT to the folder that holds ${exe}.`);
-  return found;
-}
-
-// --- TIDE, seeded ------------------------------------------------------------------------------------------------------
-
-async function startTide() {
-  if (!process.env.REUSE) rmSync(demoDir, { recursive: true, force: true });
-  mkdirSync(demoDir, { recursive: true });
-  console.log('Building TIDE...');
-  execFileSync(dotnet(), ['build', path.join(web, 'Tide.Web.csproj'), '-c', 'Debug', '-v', 'q', '-nologo'], { stdio: 'inherit' });
-  const binDir = path.join(web, 'bin', 'Debug');
-  const tfm = readdirSync(binDir).find(d => existsSync(path.join(binDir, d, 'Tide.Web.dll')));
-  if (!tfm) throw new Error('The build left no Tide.Web.dll under src/Tide.Web/bin/Debug.');
-
-  console.log(`Starting TIDE on ${base} with the demo database (${process.env.REUSE ? 'reused' : 'fresh'})...`);
-  const log = createWriteStream(path.join(demoDir, 'tide.log'));
-  const child = spawn(dotnet(), [path.join(binDir, tfm, 'Tide.Web.dll'),
-    '--urls', base,
-    '--Demo:Seed=true', `--Demo:InfoFile=${path.join(demoDir, 'demo.json')}`,
-    `--ConnectionStrings:Default=Data Source=${path.join(demoDir, 'tide.db')}`,
-    `--Files:RootPath=${path.join(demoDir, 'files')}`,
-    `--Email:PickupDirectory=${path.join(demoDir, 'mail')}`,
-    '--Logging:LogLevel:Default=Warning', '--Logging:LogLevel:Tide.Demo=Information',
-  ], { cwd: web, env: { ...process.env, ASPNETCORE_ENVIRONMENT: 'Development' }, stdio: ['ignore', 'pipe', 'pipe'] });
-  child.stdout.pipe(log);
-  child.stderr.pipe(log);
-  let exited = null;
-  child.on('exit', code => { exited = code; });
-
-  const deadline = Date.now() + 180_000;
-  while (Date.now() < deadline) {
-    if (exited !== null) throw new Error(`TIDE stopped (exit ${exited}) before it answered; see ${path.join(demoDir, 'tide.log')}.`);
-    try {
-      if ((await fetch(`${base}/health/live`)).ok) break;
-    } catch { /* not up yet */ }
-    await new Promise(r => setTimeout(r, 500));
-  }
-  if (Date.now() >= deadline) { child.kill(); throw new Error('TIDE did not answer within three minutes.'); }
-  console.log('Capturing...');
-  return { stop: () => child.kill() };
 }

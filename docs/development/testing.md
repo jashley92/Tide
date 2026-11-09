@@ -297,13 +297,16 @@ flowchart TD
     G --> CI
     CI --> BT["build-test job"]
     CI --> SQL["sql-server job"]
+    CI --> LAY["layout job"]
     BT --> B1["Sonar begin, build, test<br/>with coverage, Sonar end"]
     BT --> B2["Released migrations immutable"]
+    BT --> B5["No class the markup uses<br/>loses its style"]
     BT --> B3["No un-migrated model changes<br/>for both providers"]
     BT --> B4["Vulnerable package scan"]
     SQL --> S1["Apply SQL Server migrations twice"]
     SQL --> S2["SQL Server tests"]
     SQL --> S3["Upgrade from recent releases<br/>and the first release"]
+    LAY --> L1["Layout rules in Chromium<br/>on a seeded demo, at several widths"]
     G --> R["release job: version tag on main,<br/>Sonar gate passed on main,<br/>immutable migrations, release notes,<br/>build, publish, bundle, GitHub Release"]
 ```
 
@@ -320,9 +323,17 @@ Runs on pull requests and pushes to `main`, and is called by the release workflo
 | Build (`-c Release`) | The build or an analyzer error fails. `AnalysisLevel` is `latest-recommended`. |
 | Test, with OpenCover coverage | Any test fails. |
 | Released migrations are immutable (`tools/ci/check-migrations-immutable.sh`) | A migration in any `v*` tag reachable from HEAD was edited, renamed or deleted, in either set (the model snapshots may change). |
+| No class the markup uses loses its style (`tools/ci/check-removed-css.sh`) | A change drops the last rule in `app.css` for a `tide-*` class a Razor component or C# file still uses (compared with the PR's base, or the commit before on `main`). Its element would fall back to the browser's defaults, which no HTML test sees. |
 | No un-migrated model changes | `dotnet ef migrations has-pending-model-changes` finds a model change with no migration, for SQL Server or SQLite. |
 | Vulnerable package scan | `dotnet list package --vulnerable --include-transitive` reports one. |
 | Deprecated package report | Never; informational. |
+
+**`layout`** (Ubuntu, .NET `10.0.x`, Chromium through Playwright): `tools/screenshots/layout.mjs` builds TIDE, seeds the
+demo database as the screenshot capture does, and checks each page's layout rules at the widths it's used at: rows of
+controls that must stay one line (the meeting's quick add, a recommended line, an action on a slide), columns that must
+line up, pages that mustn't scroll sideways, and boxes nothing spills out of (the step strip's steps). It fails naming
+the page, the width and the rule, and prints TIDE's log. Run it locally with `node tools/screenshots/layout.mjs`
+(`tools/screenshots/README.md`).
 
 Sonar's settings: PowerShell files (`**/*.ps1`, `**/*.psd1`) are left out of analysis; migrations are left out of
 coverage and duplication; Razor components, JavaScript and PowerShell are left out of coverage (no coverage tooling);

@@ -100,3 +100,28 @@ explain each number in a legend under the image.
 
 The circles are drawn into the page just before the capture, so they sit over the UI exactly where the element is. A
 selector that matches nothing fails the run. A callout can't silently disappear when the UI changes.
+
+## Layout checks
+
+`layout.mjs` uses the same demo database and server (`tide.mjs` starts both, for either script) to check the layout in a
+real browser, which the HTML tests can't: v1.10.0's meeting quick add had all five controls in its markup, stacked one
+per line. CI runs it on every pull request (the `layout` job).
+
+```bash
+node tools/screenshots/layout.mjs
+```
+
+`ONLY`, `REUSE`, `PORT` and `BASE_URL` work as above. Each page in its `pages` list has a `route`, an optional `setup`,
+the `widths` to check at (900px tall) and its `rules`:
+
+| Rule | Holds when |
+| --- | --- |
+| `oneRow(selector)` | Every match lays its visible children out on one line. |
+| `lineUp(selectorA, selectorB, ...)` | The first visible match of each starts at the same x, within 2px. |
+| `fits(selector)` | Nothing inside a match spills out of it sideways. |
+| `noSidewaysScroll` | The page isn't wider than the window. |
+| `visible(selector)` | At least one match is shown. |
+
+`[minWidth, rule]` applies a rule only at that width or wider (the slide's rows wrap below 1001px, as designed). A
+failure names the page, the width and the rule: `slide-article at 1440px: .tide-quick-add #1: its 5 parts are on more
+than one line (135px tall)`. When you add a screen with a row or a column that has to hold, add its rule here.
