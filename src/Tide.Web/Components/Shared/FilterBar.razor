@@ -99,8 +99,9 @@
                         }
                         <div role="menu" aria-label="@_step.Label" id="@(_id)-opts">
                             @Back
-                            @if (_step.Findable && !Shown(_step).Any()) { <div class="tide-filter-hint" role="status">No choice matches “@_find”.</div> }
-                            @foreach (var g in Shown(_step).GroupBy(o => o.Group))
+                            @{ var shown = Shown(_step).ToList(); }
+                            @if (_step.Findable && shown.Count == 0) { <div class="tide-filter-hint" role="status">No choice matches “@_find”.</div> }
+                            @foreach (var g in shown.GroupBy(o => o.Group))
                             {
                                 @if (g.Key is { } group) { <div class="tide-filter-group" role="presentation">@group</div> }
                                 @foreach (var o in g)
@@ -232,8 +233,12 @@
     // force stays listed, so it can be seen and removed.
     private string? _find;
 
-    internal IEnumerable<FilterOption> Shown(FilterDef f) => string.IsNullOrWhiteSpace(_find) ? f.Options
-        : f.Options.Where(o => o.Label.Contains(_find.Trim(), StringComparison.OrdinalIgnoreCase) || f.Values.Contains(o.Value));
+    internal IEnumerable<FilterOption> Shown(FilterDef f)
+    {
+        if (string.IsNullOrWhiteSpace(_find)) return f.Options;
+        var find = _find.Trim();
+        return f.Options.Where(o => o.Label.Contains(find, StringComparison.OrdinalIgnoreCase) || f.Values.Contains(o.Value));
+    }
 
     internal string? Find { get => _find; set => _find = value; }
 

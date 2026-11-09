@@ -57,8 +57,8 @@ public sealed record FilterDef(string Key, string Label, FilterKind Kind, Action
     /// <summary>What its chip says, when "Label: value" doesn't read well.</summary>
     public string? ChipText { get; init; }
 
-    /// <summary>The heading it's listed under in "+ Filter" ("Who", "Where", "What", "When"); filters with none come
-    /// first, unheaded. Headings appear in the order their first filter does.</summary>
+    /// <summary>The heading it's listed under in "+ Filter" ("Who", "Where", "What", "When"); filters with none are
+    /// listed unheaded. Each group appears in the order its first filter does.</summary>
     public string? Section { get; init; }
 
     /// <summary>The options past which a box to find one is shown above them (a long list of people, say).</summary>

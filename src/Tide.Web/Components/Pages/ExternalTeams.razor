@@ -54,7 +54,7 @@
                     <div class="d-flex gap-2 align-items-start">
                         <div class="flex-grow-1">
                             <h2 class="tide-card-title mb-0">@t.Name @if (t.IsRetired) { <Badge>Retired</Badge> }
-                                else if (TeamSvc.NotEmailedWhy(t) is { } why) { <Badge Tone="BadgeTone.Warn" Icon="bi-envelope-slash" Title="@why" Class="ms-1">Not emailed</Badge> }</h2>
+                                else if (TeamSvc.NotEmailed(t)?.Text is { } why) { <Badge Tone="BadgeTone.Warn" Icon="bi-envelope-slash" Title="@why" Class="ms-1">Not emailed</Badge> }</h2>
                             @if (t.Description is not null) { <div class="small">@t.Description</div> }
                             <dl class="tide-meta-grid small mt-1 mb-0">
                                 <dt>Contact</dt><dd>@(t.ContactName ?? "None named") @if (t.ContactEmail is not null) { <span class="tide-data ms-1">@t.ContactEmail</span> }</dd>

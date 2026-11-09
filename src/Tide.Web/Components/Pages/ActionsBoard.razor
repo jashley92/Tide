@@ -636,7 +636,6 @@ else
     /// <summary>The query a view of what's shown keeps (what the address says, but never the list's page), in the order a
     /// stored one has; null when it's more than a view can hold (a link's very long search).</summary>
     internal string? ShownQuery() => SavedViewService.TryNormalize(string.Join('&', ShownParameters()
-        .Where(p => p.Key != SavedViewService.PageParameter && p.Value is not null)
         .Select(p => p.Key + "=" + Uri.EscapeDataString(Convert.ToString(p.Value, System.Globalization.CultureInfo.InvariantCulture)!))));
 
     /// <summary>The saved view that is what's shown, if one is: the first, when two keep the same filters.</summary>
@@ -644,10 +643,9 @@ else
 
     private IReadOnlyList<MenuButton.Item> SavedMenu(ActionsSavedView v)
     {
-        var at = _saved.ToList().IndexOf(v);
         var items = new List<MenuButton.Item> { new("Rename", "bi-pencil", EventCallback.Factory.Create(this, () => StartRename(v))) };
-        if (at > 0) items.Add(new("Move earlier", "bi-arrow-left", EventCallback.Factory.Create(this, () => MoveSaved(v, -1))));
-        if (at < _saved.Count - 1) items.Add(new("Move later", "bi-arrow-right", EventCallback.Factory.Create(this, () => MoveSaved(v, 1))));
+        if (_saved[0] != v) items.Add(new("Move earlier", "bi-arrow-left", EventCallback.Factory.Create(this, () => MoveSaved(v, -1))));
+        if (_saved[^1] != v) items.Add(new("Move later", "bi-arrow-right", EventCallback.Factory.Create(this, () => MoveSaved(v, 1))));
         items.Add(new("Delete", "bi-trash", EventCallback.Factory.Create(this, () => DeleteSaved(v))));
         return items;
     }

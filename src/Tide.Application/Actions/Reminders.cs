@@ -4,6 +4,7 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Tide.Application.Abstractions;
+using Tide.Application.Content;
 using Tide.Application.Distribution;
 using Tide.Application.Org;
 using Tide.Application.Preferences;
@@ -267,7 +268,7 @@ public sealed partial class ReminderService(IAppDbContextFactory dbs, IEmailSend
 
     /// <summary>The run's note when standing copies were refused: the emails still went, but a copy address is wrong.</summary>
     public static string RefusedCopiesNote(int n) =>
-        $"{n} cop{(n == 1 ? "y" : "ies")} refused by the relay (the emails still went): check the copy addresses on Email templates";
+        $"{Words.Plural(n, "copy", "copies")} refused by the relay (the emails still went): check the copy addresses on Email templates";
 
     /// <summary>What a run's note says of emails that may not have arrived.</summary>
     public static string UnsureNote(int n) =>

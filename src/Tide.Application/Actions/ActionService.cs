@@ -551,7 +551,6 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         return q;
     }
 
-    /// <summary>How many open actions assigned to me are past due: one count, for the sidebar (no rows loaded).</summary>
     /// <summary>Everyone who holds an open action, by name, with how many: the Held by filter's people.</summary>
     public async Task<IReadOnlyList<ActionHolder>> HoldersAsync(CancellationToken ct = default)
     {
@@ -562,6 +561,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         return [.. held.Select(h => new ActionHolder(h.Id, h.Name ?? h.Id, h.Open)).OrderByName(h => h.Name)];
     }
 
+    /// <summary>How many open actions assigned to me are past due: one count, for the sidebar (no rows loaded).</summary>
     public async Task<int> MyOverdueCountAsync(CancellationToken ct = default)
     {
         RequireRead(user);

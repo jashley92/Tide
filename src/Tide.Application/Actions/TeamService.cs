@@ -97,9 +97,6 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOp
         return team.Id;
     }
 
-    /// <summary>Why <paramref name="team"/> won't be emailed its reminders, or null when it will be (<see cref="ExternalCadence.NotEmailedWhy"/>).</summary>
-    public string? NotEmailedWhy(Team team) => ExternalCadence.NotEmailedWhy(team, reminders.CurrentValue.ExternalReminders.Enabled);
-
     /// <summary>Why <paramref name="team"/> won't be emailed, with its cause, or null (<see cref="ExternalCadence.NotEmailed"/>).</summary>
     public NotEmailedReason? NotEmailed(Team team) => ExternalCadence.NotEmailed(team, reminders.CurrentValue.ExternalReminders.Enabled);
 
