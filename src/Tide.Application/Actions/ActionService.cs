@@ -1043,7 +1043,8 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
 
     /// <summary>
     /// A quick action from the meeting: a title, kind, team and (optional) due date, on an article, at the article's
-    /// priority (see <see cref="QuickPriority"/>), assigned to whoever raises it. A blank due date takes the SLA target's, a kind's own target first
+    /// priority (see <see cref="QuickPriority"/>), assigned to whoever raises it. Internal teams only: an external
+    /// team's work is a part split off an action, so it has a parent to follow it up. A blank due date takes the SLA target's, a kind's own target first
     /// (ADR 0008). <paramref name="raisedOn"/> is a past day's brief being presented after the fact;
     /// <paramref name="overLimitReason"/> is why it goes ahead over a team's limit that warns (<see cref="ActiveLimits"/>).
     /// </summary>
@@ -1052,7 +1053,11 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     {
         Priority? articlePriority;
         await using (var db = await dbs.CreateAsync(ct))
+        {
+            if (await db.Teams.AsNoTracking().AnyAsync(t => t.Id == teamId && t.IsExternal, ct))
+                throw new ArgumentException("An external team's work is split off an action as a part. Raise it for one of your teams, then split it.");
             articlePriority = await db.Articles.AsNoTracking().Where(a => a.Id == articleId).Select(a => a.Priority).FirstOrDefaultAsync(ct);
+        }
         return await CreateAsync(new ActionForm
         {
             Title = title, Kind = kind, TeamId = teamId, DueDate = due, ArticleId = articleId, Priority = QuickPriority(articlePriority, kind),

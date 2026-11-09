@@ -92,6 +92,28 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task TheMeeting_OffersInternalTeamsOnly_AndRefusesAnExternalOne()
+    {
+        var (day, article) = await BriefWithRecommendations(14);
+        var name = "Meeting external provider " + Guid.NewGuid().ToString("N")[..6];
+        Guid external;
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            external = await scope.ServiceProvider.GetRequiredService<TeamService>().AddExternalAsync(new ExternalTeamForm { Name = name });
+
+        await using var r = await RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" });
+        await r.Click(p => p.OnPresentKey("last"));
+        await r.Click(p => p.OnPresentKey("prev"));
+        var slide = await r.Html();
+        slide.Should().Contain("class=\"tide-reco\"").And.NotContain(name, "an external team's work is split off an action, with a parent to follow it up");
+
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+        {
+            var refused = () => scope.ServiceProvider.GetRequiredService<ActionService>().QuickAddAsync(article, "Patch their edge", ActionKind.PatchRemediate, external, null, day);
+            (await refused.Should().ThrowAsync<ArgumentException>()).WithMessage("*split off an action as a part*");
+        }
+    }
+
+    [Fact]
     public async Task AnActionAddedInTheMeeting_ToATeamThatWarnsAtItsLimit_AsksWhy_AndGoesAhead()
     {
         var (day, article) = await BriefWithRecommendations(17);
