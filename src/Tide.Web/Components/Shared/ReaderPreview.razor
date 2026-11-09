@@ -26,7 +26,7 @@
 
 <section class="tide-card tide-reader" aria-label="Beside the article">
     @* Whether it's ready, above the tabs so it's seen from any: the edition previewed, and the other's gaps if it has
-       some. The gaps themselves are placeholders where they belong in the preview; Show goes there. *@
+       some. The gaps themselves are placeholders where they belong in the preview; Show goes to the first. *@
     @if (Current is { } now)
     {
         <p class="tide-reader-sum">
@@ -42,9 +42,9 @@
             {
                 <span class="tide-muted">&middot; @(other.Edition == Edition.Public ? "company-wide" : "team") edition: @Ui.Plural(other.Checks.Count, "thing") missing</span>
             }
-            @if (now.Checks.Count > 0 && _side != PreviewTab)
+            @if (now.Checks.Count > 0)
             {
-                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="() => SelectSide(PreviewTab)">Show</button>
+                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="ShowGaps">Show</button>
             }
             @if (State.Dirty)
             {
@@ -412,12 +412,27 @@
         StateHasChanged();
     }
 
+    // Show: the preview, scrolled to its first gap, which takes focus (once drawn, so after the tab has switched).
+    private bool _showGap;
+
+    private async Task ShowGaps()
+    {
+        if (_side != PreviewTab) await SelectSide(PreviewTab);
+        _showGap = true;
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (_revealSimilar)
         {
             _revealSimilar = false;
             try { await JS.InvokeVoidAsync("tideEditor.jump", _similarHead, null); }
+            catch (JSDisconnectedException) { /* the tab has gone */ }
+        }
+        if (_showGap)
+        {
+            _showGap = false;
+            try { await JS.InvokeVoidAsync("tideEditor.firstGap"); }
             catch (JSDisconnectedException) { /* the tab has gone */ }
         }
         if (!firstRender) return;

@@ -100,7 +100,7 @@ public class ReaderPreviewTests(TideApp app) : IClassFixture<TideApp>
 
         var preview = await app.CreateClient().GetStringAsync($"/articles/{gaps}");
         var on = preview.IndexOf("class=\"tide-reader-sum\"", StringComparison.Ordinal);
-        preview[on..preview.IndexOf("</p>", on, StringComparison.Ordinal)].Should().NotContain("Show</button>", "on the preview the gaps are in view");
+        preview[on..preview.IndexOf("</p>", on, StringComparison.Ordinal)].Should().Contain(">Show</button>", "on the preview too: a gap may be far down");
 
         var ready = await app.CreateClient().GetStringAsync($"/articles/{await Save(NewArticle(fill: a => a.Classification = Classification.Informational))}?side=details");
         var at = ready.IndexOf("class=\"tide-reader-sum\"", StringComparison.Ordinal);
