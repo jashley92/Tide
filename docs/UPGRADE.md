@@ -176,6 +176,80 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
+### v1.9.0
+
+Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds four migrations: `SavedActionViews`,
+`ActionOriginalDueDate` (which fills the new original due date from each action's current one), `ActionSoftDelete`
+and `JobLeaseAndRuns`. None of the earlier ones change. On a DbaApplies install, the DBA applies them first, as for any
+release that carries one. The upgrade also sets the app pool to one worker process (`processModel.maxProcesses = 1`)
+and reads it back.
+
+**Changes to check before upgrading**
+- **Know your organization's email domains.** TIDE now asks before saving any address outside them, on every list
+  that sends mail: the edition recipients, rotation managers, brief-not-ready recipients, a team's mailbox and
+  escalation contact, external teams' contacts, and template copies. With `Email:OrganizationDomains` unset, the
+  domain of `Email:From` is used. If you send from a relay or SaaS domain, set your real domains on Access &
+  distribution first, or every address will be asked about. Addresses already saved aren't asked about again.
+- **External teams' emails are held to the team edition's TLP ceiling.** An external team's reminder, and the
+  escalation contact's email for an external team or an outside contact, no longer name an action whose article is
+  marked above that ceiling. It's counted, with "1 more request is marked above what we share by email: ask {team}".
+- **Reminders stop for people who no longer have access.** Each scheduled reminder and digest now goes only to someone
+  whose roles grant what it shows and who has signed in within `Notifications:ActiveWithinDays` (30 by default, on
+  Teams & SLA). An inactive assignee's reminder goes to the team mailbox or its active members instead, and the run's
+  note counts who was skipped. Someone who rarely signs in may stop getting reminders: raise the setting if so.
+- **One server runs the background jobs.** A database lease means only one process runs the reminders, intake,
+  webhooks and the other jobs. A second server or process on the same database stands by, says so on Diagnostics,
+  and refuses an administrator's Run now, naming the server that holds the lease. Servers sharing a database need
+  roughly synchronized clocks.
+- **A risky file downloads zipped from any link.** A link straight to an action's file (one pasted in a comment, say)
+  now gets the password-protected zip when `Files:ZipDownloads` says so. Only the file list's "as is" link, which
+  carries a short-lived pass for that person and file, gets the plain file. Under `Always`, the API zips every file
+  too, whatever `?zip` says.
+- **A configuration bundle import asks first.** A bundle that widens what leaves the organization (raises a TLP
+  ceiling, adds recipients or outside addresses, lowers a source's TLP, turns on external reminders or the escalation
+  ladder, adds an escalation step that emails outside, rewords an email that goes outside) shows a warning on each such
+  change, and Import needs "I've read the warnings". An import whose plan changed since its preview is refused.
+
+**New settings** (all unchanged until set)
+- `Email:OrganizationDomains`: your organization's email domains (Access & distribution).
+- `Notifications:ActiveWithinDays`: 30. Who still gets scheduled reminders (Teams & SLA).
+- `Notifications:ExternalReminders:NewTeamsOn` (`true`), `NewTeamsBeforeDays` (`2`), `NewTeamsEveryDays` (`3`, `0`
+  for once): how a new external team's reminders start (Teams & SLA).
+
+**For administrators**
+- **Standing copies on email templates.** Each template can carry an *Always copy (CC)* and *Always blind-copy (BCC)*
+  list, and one archive address can be blind-copied on every email TIDE sends. Templates to people outside TIDE take
+  blind copies only; an outside copy is confirmed; the archive copy must be inside the organization. Copies are
+  audited and never travel in a configuration bundle. A copy the relay refuses never costs the email its recipients.
+- **Deleted actions.** An analyst or administrator can delete an action raised by mistake or twice, with a reason
+  (Cancelled and Not applicable stay for work that won't be done). It disappears everywhere: lists, counts, reminders,
+  search, the API and exports. Administration › Deleted actions shows who deleted each, when and why, with Restore.
+  Numbers are never reused.
+- **Job health for monitoring.** `/health/jobs` answers Unhealthy when an enabled job is hung or overdue, and Degraded
+  after three failures in a row; point SCOM or an uptime checker at it. Run history is kept for 30 days and survives a
+  restart, and each job failure is logged as a Warning with a stable event id (7101–7107). Diagnostics shows Hung,
+  Overdue and Failing badges and recent failures.
+- **Downloads leave a record.** Exports above GREEN, every file download, the configuration bundle, the install answers
+  file and `audit.csv` are in the audit log (Downloads), and every download is in the access log.
+- **External teams.** New teams can start with their reminders off, and with their own schedule. Wherever work is
+  handed to an external team that won't be emailed (reminders off for everyone or for the team, or no contact email),
+  TIDE says so, with the fix for whoever may make it, and External teams marks such a team *Not emailed*.
+
+**For everyone**
+- **Actions page.** New filters: held by (anyone holding an open action), internal or external teams, and raised by
+  you, with a *Raised by me* pill. *+ Filter* is grouped under Who, Where, What and When, with a find box for a long
+  list. Choose the tab Actions opens on (*Open here by default*), and save any combination of tab, layout and filters
+  as a named view beside the tabs.
+- **Honest on-time rates.** Each action keeps the first due date it was given and how often it moved. Team
+  commitments adds "on time vs. original date" and "dates moved", and an action's page says when its date has moved.
+- **Today.** Whoever writes the brief sees *Not on a brief yet*: Ready articles, then their own drafts, each with Add.
+  Everyone else sees *Recently presented*, within the team edition's TLP.
+- **Unsaved work is kept.** Leaving a page with unsaved changes (email templates, a comment, Record an update, an
+  outreach email, the brief's note, the meeting note) asks first.
+- **Toasts.** A toast waits while it's pointed at or focused, its buttons are larger, and Alt+Z presses the newest
+  Undo.
+- **Fixes:** on Mine, filtering to a team or kind with no matches no longer says "Nothing assigned to you".
+
 ### v1.8.0
 
 Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds seven migrations: `PlaybooksTeamLibrary`,
