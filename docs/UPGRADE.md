@@ -176,6 +176,53 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
+### v1.10.0
+
+Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds two migrations: `OpeningNoteReviewed` and
+`StoredSecrets`. None of the earlier ones change. On a DbaApplies install, the DBA applies them first, as for any
+release that carries one.
+
+**Changes to check before upgrading**
+- **Secrets can be saved in the app.** The mail relay password, the NVD API key and the Azure OpenAI key can now be
+  saved in Administration › System › Secrets, encrypted with the server's Data Protection keys, instead of only as
+  environment variables on the app pool (which IIS keeps unencrypted in `applicationHost.config`). An environment
+  variable still wins, so nothing changes until you save one and remove the variable. Back up the key ring
+  (`DataProtection:KeyPath`) with the database: a database restored without it can't decrypt a saved secret, which
+  Secrets then marks *Won't decrypt* until it's saved again.
+- **Actions raised in the meeting are assigned to whoever raises them,** and go to internal teams only: the quick add
+  and a recommended line's Raise no longer offer an external team. An external team's work is split off an action as
+  a part, so it has a parent to follow it up.
+- **The opening note is flagged until it's looked at.** A brief that starts with the previous brief's note shows
+  analysts *Not updated* on Today until someone saves it or keeps it with *Still current*. A brief not yet presented
+  when you upgrade shows the flag too, if it has a note.
+
+**For administrators**
+- **Secrets** (Administration › System). Each saved secret is never shown again: the page says whether one is saved,
+  when and by whom, and whether the server's configuration sets it (which wins). The audit log records it only as set.
+  Server configuration and Setting sources show a secret saved here as *Saved in Administration, encrypted*.
+
+**For everyone**
+- **Actions title first.** In lists and on cards an action leads with its title and ends with its number, small and
+  muted: the Actions table (no # column; typing `A-1201` in its filter still finds it), the board, Today, search,
+  stories, trends, our stack, adversaries and the slides. Where the number is what's quoted (an action's own page,
+  "Part of", "Raised as", toasts and emails) it still leads.
+- **An article's actions, in reach.** Beside the article editor, Preview, Actions and Details are now tabs, the count
+  of its actions on the Actions tab, with how many recommended lines aren't raised yet. `?side=actions` or
+  `?side=details` opens a tab. Above the tabs, from any of them: *Ready to brief*, or how many things are missing (in
+  this edition and the other), with Show, which goes to the first.
+- **The meeting slides.**
+  - An article's actions are one line each: the whole title opens the action over the slide (the presenter's for
+    everyone following), its number after it, then team and due date, then Take it, the assignee and the date. They
+    share their control columns with the recommended lines above, so the boxes and buttons line up down the slide.
+  - Tags and ATT&CK read better: tags as chips, a column per tactic with its techniques, and the CVEs summed up ("5
+    CVEs, all on KEV") with the most pressing one and "+4 more", which opens them all over the slide.
+  - The "won't be emailed" note is gone from the slides, and on actions it no longer appears when external team
+    reminders are off for everyone (an administrator's choice); it still says when one team's reminders are off or it
+    has no contact email.
+- **Today in a narrow window.** The step strip compacts by its own width, so "Now" no longer runs into the next step
+  beside an open sidebar; words no longer split mid-word; and no line starts with "·".
+- **The opening note's helper text** under its box is gone: the toolbar shows the formatting.
+
 ### v1.9.0
 
 Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds four migrations: `SavedActionViews`,
