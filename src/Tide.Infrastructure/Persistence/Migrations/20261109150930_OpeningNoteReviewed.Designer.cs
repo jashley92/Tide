@@ -11,7 +11,7 @@ using Tide.Infrastructure.Persistence;
 namespace Tide.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261109144621_OpeningNoteReviewed")]
+    [Migration("20261109150930_OpeningNoteReviewed")]
     partial class OpeningNoteReviewed
     {
         /// <inheritdoc />
@@ -1349,14 +1349,6 @@ namespace Tide.Infrastructure.Persistence.Migrations
 
                     b.Property<long?>("TeamNoteReviewedAtUtc")
                         .HasColumnType("INTEGER");
-
-                    b.Property<string>("TeamNoteReviewedById")
-                        .HasMaxLength(256)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TeamNoteReviewedByName")
-                        .HasMaxLength(256)
-                        .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 

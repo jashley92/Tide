@@ -54,11 +54,11 @@ public class TeamNoteTests : IDisposable
         var tuesday = await briefs.GetOrStartAsync(Tuesday);
         BriefService.TeamNoteCarriedOver(tuesday).Should().BeTrue("Monday's, not looked at for Tuesday");
 
-        // Saved unchanged: kept as still current, by whom and when.
+        // Saved unchanged: kept as still current.
         await briefs.SetTeamNoteAsync(tuesday.Id, Note);
         tuesday = (await briefs.GetAsync(Tuesday))!;
         BriefService.TeamNoteCarriedOver(tuesday).Should().BeFalse();
-        (tuesday.TeamNote, tuesday.TeamNoteReviewedById, tuesday.TeamNoteReviewedAtUtc).Should().Be((Note, _db.User.UserId, tuesday.TeamNoteReviewedAtUtc));
+        tuesday.TeamNote.Should().Be(Note);
         tuesday.TeamNoteReviewedAtUtc.Should().NotBeNull();
 
         // Wednesday's starts flagged again; once its meeting is held there's nothing left to update it for.

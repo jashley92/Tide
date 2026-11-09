@@ -944,12 +944,13 @@ else
     private RenderFragment TeamNoteCard() => __builder =>
     {
         var editable = _canWrite && _brief!.Status != BriefStatus.Sent;
+        var carried = editable && BriefService.TeamNoteCarriedOver(_brief);
         if (!editable && string.IsNullOrWhiteSpace(_brief!.TeamNote)) return;
         <section class="tide-card" aria-labelledby="team-note-h" data-submit-scope>
             <h2 id="team-note-h">Opening note
-                @if (editable && BriefService.TeamNoteCarriedOver(_brief!)) { <Badge Tone="BadgeTone.Warn" Icon="bi-clock-history" Class="ms-2">Not updated</Badge> }
+                @if (carried) { <Badge Tone="BadgeTone.Warn" Icon="bi-clock-history" Class="ms-2">Not updated</Badge> }
                 <span class="ms-auto small fw-normal tide-muted">team edition only</span></h2>
-            @if (editable && BriefService.TeamNoteCarriedOver(_brief!))
+            @if (carried)
             {
                 <div class="tide-missing small mb-2" role="status"><span class="bi bi-clock-history" aria-hidden="true"></span>
                     This is the last brief's note, not yet updated for @Ui.ShortDay(_date). Change it, or keep it if it still stands.

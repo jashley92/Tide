@@ -15,20 +15,6 @@ namespace Tide.Infrastructure.Persistence.Migrations
                 table: "Briefs",
                 type: "INTEGER",
                 nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "TeamNoteReviewedById",
-                table: "Briefs",
-                type: "TEXT",
-                maxLength: 256,
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "TeamNoteReviewedByName",
-                table: "Briefs",
-                type: "TEXT",
-                maxLength: 256,
-                nullable: true);
         }
 
         /// <inheritdoc />
@@ -36,14 +22,6 @@ namespace Tide.Infrastructure.Persistence.Migrations
         {
             migrationBuilder.DropColumn(
                 name: "TeamNoteReviewedAtUtc",
-                table: "Briefs");
-
-            migrationBuilder.DropColumn(
-                name: "TeamNoteReviewedById",
-                table: "Briefs");
-
-            migrationBuilder.DropColumn(
-                name: "TeamNoteReviewedByName",
                 table: "Briefs");
         }
     }

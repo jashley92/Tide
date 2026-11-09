@@ -362,7 +362,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             Person(e, x => x.AnalystId, x => x.AnalystName);
             e.Property(x => x.Intro).HasMaxLength(2000);
             e.Property(x => x.TeamNote).HasMaxLength(Tide.Application.Briefs.BriefService.TeamNoteMax);
-            Person(e, x => x.TeamNoteReviewedById, x => x.TeamNoteReviewedByName);
             Person(e, x => x.DistributedById, x => x.DistributedByName);
             Person(e, x => x.NotSentById, x => x.NotSentByName);
             e.Property(x => x.NotSentReason).HasMaxLength(Tide.Application.Distribution.DistributionService.NotSentReasonMax);

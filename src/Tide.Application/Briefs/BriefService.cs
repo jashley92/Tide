@@ -243,7 +243,7 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
         var text = ArticleService.CleanOrNull(note, TeamNoteMax, multiline: true);
         if (text == brief.TeamNote && brief.TeamNoteReviewedAtUtc is not null) return;
         brief.TeamNote = text;
-        (brief.TeamNoteReviewedAtUtc, brief.TeamNoteReviewedById, brief.TeamNoteReviewedByName) = (clock.Now.ToUniversalTime(), user.UserId, user.DisplayName);
+        brief.TeamNoteReviewedAtUtc = clock.Now.ToUniversalTime();   // who saved it is in the brief's audit trail
         Touch(brief);
         await db.SaveChangesAsync(ct);
     }

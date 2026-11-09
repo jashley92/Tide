@@ -12,7 +12,7 @@ using Tide.Infrastructure.Persistence;
 namespace Tide.Migrations.SqlServer.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261109144634_OpeningNoteReviewed")]
+    [Migration("20261109150938_OpeningNoteReviewed")]
     partial class OpeningNoteReviewed
     {
         /// <inheritdoc />
@@ -1354,14 +1354,6 @@ namespace Tide.Migrations.SqlServer.Migrations
 
                     b.Property<DateTimeOffset?>("TeamNoteReviewedAtUtc")
                         .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("TeamNoteReviewedById")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<string>("TeamNoteReviewedByName")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
 
                     b.HasKey("Id");
 
