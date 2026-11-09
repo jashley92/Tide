@@ -91,17 +91,12 @@ public sealed record BundlePreview(ConfigBundle Bundle, IReadOnlyList<BundleChan
     /// <summary>The changes flagged for a careful look.</summary>
     public int Warnings => Changes.Count(c => c.Warning);
 
+    /// <summary>"1 change needs", "3 changes need": how the page and the import's refusal count the warnings.</summary>
+    public string NeedALook => Warnings == 1 ? "1 change needs" : $"{Warnings} changes need";
+
     /// <summary>What this preview showed, as a hash: the bundle and every planned change (its warning included). The import
-    /// is given it back and refuses when the plan it works out differs, so what's imported is what was read.</summary>
-    public string Fingerprint
-    {
-        get
-        {
-            var text = new System.Text.StringBuilder(Bundle.ToJson());
-            foreach (var c in Changes)
-                text.Append('\n').Append(c.Area).Append('\u001f').Append(c.Item).Append('\u001f').Append((int)c.Kind)
-                    .Append('\u001f').Append(c.Detail).Append('\u001f').Append(c.Warning ? '1' : '0');
-            return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text.ToString())));
-        }
-    }
+    /// is given it back and refuses when the plan it works out differs, so what's imported is what was read. A method, not
+    /// a property: it serializes the whole bundle, so a record's ToString mustn't.</summary>
+    public string Fingerprint() => Distribution.SendOutcome.Fingerprint(
+        [Bundle.ToJson(), .. Changes.Select(c => string.Join('\u001f', c.Area, c.Item, (int)c.Kind, c.Detail, c.Warning))]);
 }

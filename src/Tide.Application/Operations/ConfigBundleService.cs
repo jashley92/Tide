@@ -82,11 +82,11 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
         var changes = await PlanAsync(db, bundle, apply: true, ct);
         // Refused before anything is saved: the context's pending changes go with it.
         var planned = new BundlePreview(bundle, changes);
-        if (!string.Equals(planned.Fingerprint, fingerprint, StringComparison.Ordinal))
+        if (!string.Equals(planned.Fingerprint(), fingerprint, StringComparison.Ordinal))
             throw new StaleEditException("The configuration changed since you previewed it: preview again.");
         if (planned.Warnings > 0 && !acknowledged)
             throw new InvalidOperationException(
-                $"{(planned.Warnings == 1 ? "1 change needs" : $"{planned.Warnings} changes need")} a careful look: confirm you've read the warnings, then import.");
+                $"{planned.NeedALook} a careful look: confirm you've read the warnings, then import.");
         await db.SaveChangesAsync(ct);
         if (changes.Any(c => c.Area == GroupsArea && c.Kind == BundleChangeKind.Add)) directory.Invalidate();
         // An operational setting imported takes effect at once, as one saved on its page does.
@@ -99,7 +99,7 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
         // And the holidays: the rota, deadlines and reminders follow them at once.
         if (clock is not null && changes.Any(c => c.Area == HolidaysArea && c.Kind is BundleChangeKind.Add or BundleChangeKind.Update))
             await Org.HolidayService.LoadAsync(db, clock, ct);
-        return new BundlePreview(bundle, changes);
+        return planned;
     }
 
     private async Task<List<BundleChange>> PlanAsync(IAppDbContext db, ConfigBundle bundle, bool apply, CancellationToken ct)
@@ -139,9 +139,8 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
                 continue;
             }
             var kind = row is null ? BundleChangeKind.Add : BundleChangeKind.Update;
-            changes.Add(Widens(s.Key, row?.Value ?? ServerValue(s.Key), value) is { } risk
-                ? new(SettingsArea, s.Key, kind, risk, Warning: true)
-                : new(SettingsArea, s.Key, kind, Clip(value)));
+            var risk = Widens(s.Key, row?.Value ?? ServerValue(s.Key), value);
+            changes.Add(new(SettingsArea, s.Key, kind, risk ?? Clip(value), Warning: risk is not null));
             if (!apply) continue;
             if (row is null) db.Settings.Add(rows[s.Key] = row = new AppSetting { Key = s.Key });
             row.Value = value;
@@ -166,7 +165,7 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
             OperationalSettings.ExternalReminders => r.ExternalReminders.Enabled ? "true" : "false",
             OperationalSettings.Escalation => r.Escalation.Enabled ? "true" : "false",
             OperationalSettings.EscalationSteps => r.Escalation.Steps,
-            _ => Distribution.EmailTemplateCatalog.Parse(key) is { } t ? Distribution.EmailTemplateCatalog.Normalize(t.Part, t.Template.Default(t.Part)) : null,
+            _ => Distribution.EmailTemplateCatalog.Parse(key) is { } t ? t.Template.Default(t.Part) : null,
         };
     }
 
@@ -188,16 +187,18 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
         if (key is DistributionSettings.TeamMaxTlpKey or DistributionSettings.PublicMaxTlpKey)
         {
             var edition = key == DistributionSettings.TeamMaxTlpKey ? "team edition" : "company-wide edition";
-            return Tlp.Parse(value) is { } to && Tlp.Parse(current ?? "") is var from && (from is null || to > from)
-                ? $"Raises the {edition}'s ceiling {(from is { } f ? $"from {Tlp.Label(f)} " : "")}to {Tlp.Label(to)}." : null;
+            var to = Tlp.Parse(value);
+            var from = Tlp.Parse(current);
+            if (to is not { } raised || raised <= from) return null;   // no ceiling in force reads: any is warned
+            return $"Raises the {edition}'s ceiling {(from is { } f ? $"from {Tlp.Label(f)} " : "")}to {Tlp.Label(raised)}.";
         }
         if (RecipientLists.TryGetValue(key, out var list))
         {
-            var have = Addresses(current).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var added = Addresses(value).Where(a => !have.Contains(a)).ToList();
+            var have = OperationalSettings.SplitAddresses(current).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var added = OperationalSettings.SplitAddresses(value).Distinct(StringComparer.OrdinalIgnoreCase).Where(a => !have.Contains(a)).ToList();
             if (added.Count == 0) return null;
             var named = string.Join(", ", added.Take(5)) + (added.Count > 5 ? $" and {added.Count - 5} more" : "");
-            return $"Adds {added.Count} recipient{(added.Count == 1 ? "" : "s")} to {list}: {named}.";
+            return $"Adds {Content.Words.Plural(added.Count, "recipient")} to {list}: {named}.";
         }
         if (key is OperationalSettings.ExternalReminders or OperationalSettings.Escalation)
         {
@@ -213,8 +214,8 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
             // A step that copies the escalation contact emails them, and one that reminds emails an external team's contacts:
             // both can reach people outside TIDE. One that wasn't there at that day, or that does more of it, is warned.
             const EscalationDoes mails = EscalationDoes.CopyContact | EscalationDoes.Remind;
-            var had = EscalationLadder.ParseOrNone(current).Where(s => (s.Does & mails) != 0)
-                .GroupBy(s => s.Offset).ToDictionary(g => g.Key, g => g.Aggregate(EscalationDoes.None, (a, s) => a | (s.Does & mails)));
+            var had = new Dictionary<int, EscalationDoes>();
+            foreach (var s in EscalationLadder.ParseOrNone(current)) had[s.Offset] = had.GetValueOrDefault(s.Offset) | (s.Does & mails);
             var added = EscalationLadder.ParseOrNone(value)
                 .Where(s => (s.Does & mails & ~had.GetValueOrDefault(s.Offset)) != 0).Select(s => s.Text).ToList();
             return added.Count == 0 ? null
@@ -225,9 +226,6 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
             return $"Changes the {t.Part.ToString().ToLowerInvariant()} of the {t.Template.Title} email, which goes to people outside TIDE: {Clip(value)}";
         return null;
     }
-
-    private static IEnumerable<string> Addresses(string? value) =>
-        (value ?? "").Split([';', ',', ' ', '\n', '\r', '\t'], StringSplitOptions.RemoveEmptyEntries).Distinct(StringComparer.OrdinalIgnoreCase);
 
     // A setting's key as the catalogue (or the email templates) names it; any other as it came.
     private static string CanonicalKey(string? key)
@@ -347,13 +345,11 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
                 : "keeps its own address (the bundle hides a key in it)";
             // A lower default TLP lets the source's items into a wider edition, and to the AI provider (its limit is checked
             // against the source's TLP).
-            if (row is not null && tlp < row.DefaultTlp)
-            {
-                var risk = $"Lowers its default TLP from {Tlp.Label(row.DefaultTlp)} to {Tlp.Label(tlp)}: its items can go in a wider edition, and to the AI provider.";
-                changes.Add(new(SourcesArea, name, BundleChangeKind.Update, detail is null ? risk : $"{risk} It {detail}.", Warning: true));
-            }
-            else
-                changes.Add(new(SourcesArea, name, row is null ? BundleChangeKind.Add : BundleChangeKind.Update, detail));
+            var risk = row is not null && tlp < row.DefaultTlp
+                ? $"Lowers its default TLP from {Tlp.Label(row.DefaultTlp)} to {Tlp.Label(tlp)}: its items can go in a wider edition, and to the AI provider."
+                : null;
+            changes.Add(new(SourcesArea, name, row is null ? BundleChangeKind.Add : BundleChangeKind.Update,
+                risk is null ? detail : detail is null ? risk : $"{risk} It {detail}.", Warning: risk is not null));
             if (!apply) continue;
             if (row is null) db.Sources.Add(row = new Source { Name = name });
             if (row.Url != url) { row.ETag = null; row.LastModified = null; }

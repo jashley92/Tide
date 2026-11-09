@@ -9,16 +9,6 @@ using Tide.Domain.Enums;
 
 namespace Tide.IntegrationTests;
 
-public static class ConfigBundleTestExtensions
-{
-    /// <summary>What an administrator does on the page: preview, read the warnings, import that preview.</summary>
-    public static async Task<BundlePreview> PreviewAndImportAsync(this ConfigBundleService service, ConfigBundle bundle, CancellationToken ct = default)
-    {
-        var preview = await service.PreviewAsync(bundle, ct);
-        return await service.ImportAsync(bundle, preview.Fingerprint, acknowledged: true, ct);
-    }
-}
-
 /// <summary>
 /// The bundle import flags a change that widens what leaves the organization, as it flags a role mapping that gives
 /// Admin: a higher edition ceiling, more recipients, a lower source TLP, email turned on or reworded for people outside
@@ -39,6 +29,10 @@ public sealed class ConfigBundleWarningTests : IDisposable
 
     private static ConfigBundle Bundle(IReadOnlyList<BundleSetting>? settings = null, IReadOnlyList<BundleSource>? sources = null) =>
         new(ConfigBundle.FormatName, 1, DateTimeOffset.UtcNow, "Tester", "dev", settings ?? [], [], sources ?? [], [], []);
+
+    // One change warned (a company-wide recipient), one routine (the reminder time).
+    private static ConfigBundle WarnedBundle() =>
+        Bundle([new(DistributionSettings.PublicRecipientsKey, "all-staff@contoso.com"), new(OperationalSettings.ReminderTime, "09:30")]);
 
     private static BundleSource Feed(string name, string tlp) =>
         new(name, "Feed", "https://vendor.example.org/feed", tlp, "C", null, 60, true, false, null, null, null, null);
@@ -258,10 +252,10 @@ public sealed class ConfigBundleWarningTests : IDisposable
     [Fact]
     public async Task AWarnedImport_NotAcknowledged_IsRefused_AndChangesNothing()
     {
-        var bundle = Bundle([new(DistributionSettings.PublicRecipientsKey, "all-staff@contoso.com"), new(OperationalSettings.ReminderTime, "09:30")]);
+        var bundle = WarnedBundle();
         var preview = await Service().PreviewAsync(bundle);
         preview.Warnings.Should().Be(1);
-        await Service().Invoking(s => s.ImportAsync(bundle, preview.Fingerprint, acknowledged: false)).Should()
+        await Service().Invoking(s => s.ImportAsync(bundle, preview.Fingerprint(), acknowledged: false)).Should()
             .ThrowAsync<InvalidOperationException>().WithMessage("1 change needs a careful look: confirm you've read the warnings, then import.");
         await using var ctx = _db.Context();
         ctx.Settings.Should().BeEmpty("a refused import writes nothing, the routine change included");
@@ -274,7 +268,7 @@ public sealed class ConfigBundleWarningTests : IDisposable
         var preview = await Service().PreviewAsync(bundle);
         // Someone changes the list here after the preview: the import would now add a different set.
         await _db.Settings().SaveRecipientsAsync(Edition.Team, "cti@contoso.com");
-        await Service().Invoking(s => s.ImportAsync(bundle, preview.Fingerprint, acknowledged: true)).Should()
+        await Service().Invoking(s => s.ImportAsync(bundle, preview.Fingerprint(), acknowledged: true)).Should()
             .ThrowAsync<Tide.Application.Articles.StaleEditException>().WithMessage("The configuration changed since you previewed it: preview again.");
         await Service().Invoking(s => s.ImportAsync(bundle, "not a fingerprint", acknowledged: true)).Should()
             .ThrowAsync<Tide.Application.Articles.StaleEditException>();
@@ -285,10 +279,10 @@ public sealed class ConfigBundleWarningTests : IDisposable
     [Fact]
     public async Task AWarnedImport_Acknowledged_WithTheFingerprintOfThePreviewRead_Applies()
     {
-        var bundle = Bundle([new(DistributionSettings.PublicRecipientsKey, "all-staff@contoso.com"), new(OperationalSettings.ReminderTime, "09:30")]);
+        var bundle = WarnedBundle();
         var preview = await Service().PreviewAsync(bundle);
-        var done = await Service().ImportAsync(bundle, preview.Fingerprint, acknowledged: true);
-        done.Fingerprint.Should().Be(preview.Fingerprint, "what was imported is what was read");
+        var done = await Service().ImportAsync(bundle, preview.Fingerprint(), acknowledged: true);
+        done.Fingerprint().Should().Be(preview.Fingerprint(), "what was imported is what was read");
         done.Warnings.Should().Be(1);
         await using var ctx = _db.Context();
         ctx.Settings.Single(s => s.Key == DistributionSettings.PublicRecipientsKey).Value.Should().Be("all-staff@contoso.com");

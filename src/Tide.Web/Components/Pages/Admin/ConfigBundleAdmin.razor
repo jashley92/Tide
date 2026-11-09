@@ -91,7 +91,7 @@
             {
                 <div class="alert alert-warning small py-2" role="note">
                     <span class="bi bi-exclamation-triangle" aria-hidden="true"></span>
-                    @(p.Warnings == 1 ? "1 change needs" : $"{p.Warnings} changes need") a careful look before you import: marked below.
+                    @p.NeedALook a careful look before you import: marked below.
                     They give Admin or a role to everyone who signs in, or widen what leaves the organization: a higher edition ceiling,
                     more recipients, a lower source TLP, or email to people outside TIDE.
                 </div>
@@ -124,7 +124,7 @@
                     </tbody>
                 </table>
             </div>
-            @if (p.Warnings > 0 && !_imported && p.HasChanges)
+            @if (p.Warnings > 0 && !_imported)
             {
                 <div class="form-check mt-2">
                     <input class="form-check-input" type="checkbox" id="bundle-ack" checked="@_acknowledged"
@@ -135,7 +135,7 @@
             <div class="d-flex gap-2 align-items-center mt-2">
                 @if (!_imported)
                 {
-                    <button type="button" class="btn btn-primary btn-sm" @onclick="Import" disabled="@(_busy || !p.HasChanges || !Acknowledged(p))">
+                    <button type="button" class="btn btn-primary btn-sm" @onclick="Import" disabled="@(_busy || !p.HasChanges || (p.Warnings > 0 && !_acknowledged))">
                         @(p.HasChanges ? $"Import {p.Count(BundleChangeKind.Add) + p.Count(BundleChangeKind.Update)} change(s)" : "Nothing to import")
                     </button>
                     <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="Clear" disabled="@_busy">Cancel</button>
@@ -153,9 +153,6 @@
     private ConfigBundle? _chosen;
     private string? _fileName;
     private bool _busy, _imported, _showAll, _acknowledged;
-
-    // A preview with warnings is imported only once whoever imports it says they've read them.
-    private bool Acknowledged(BundlePreview p) => p.Warnings == 0 || _acknowledged;
 
     protected override async Task OnInitializedAsync()
     {
@@ -194,12 +191,12 @@
 
     private async Task Import()
     {
-        if (_chosen is null || _preview is null || !Acknowledged(_preview)) return;
+        if (_chosen is null || _preview is null) return;
         _busy = true;
         try
         {
             // The preview that was read goes back: the service refuses if the plan changed since, or a warning wasn't read.
-            _preview = await Bundles.ImportAsync(_chosen, _preview.Fingerprint, _acknowledged);
+            _preview = await Bundles.ImportAsync(_chosen, _preview.Fingerprint(), _acknowledged);
             _imported = true;
             _current = await Bundles.ExportAsync();
             Toasts.Show($"Imported {_fileName}: {_preview.Count(BundleChangeKind.Add)} added, {_preview.Count(BundleChangeKind.Update)} updated.");
