@@ -30,8 +30,8 @@
                     {
                         <span title="Some of this article is marked higher than the article itself">holds <TlpBadge Level="a.HighestTlp" /></span>
                     }
-                    <span>@a.Bullets.Count bullet@(a.Bullets.Count == 1 ? "" : "s")</span>
-                    @if (a.Screenshots.Count > 0) { <span>&middot; @a.Screenshots.Count screenshot@(a.Screenshots.Count == 1 ? "" : "s")</span> }
+                    <span>@Ui.Plural(a.Bullets.Count, "bullet")</span>
+                    @if (a.Screenshots.Count > 0) { <span>@Ui.Plural(a.Screenshots.Count, "screenshot")</span> }
                     @if (a.Tlp > PublicMax) { <span title="Left out of the company-wide edition"><span class="bi bi-eye-slash" aria-hidden="true"></span> team only</span> }
                     @if (ShowDiscussed)
                     {

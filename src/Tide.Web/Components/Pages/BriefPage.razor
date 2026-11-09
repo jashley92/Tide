@@ -63,24 +63,9 @@ else
                 @if (_brief is not null)
                 {
                     <StatusBadge Status="@StatusLabel" />
-                    <span>Presented by @_brief.AnalystName</span>
                 }
-                @if ((_brief?.MeetingHeldAtUtc ?? _brief?.PresentedAtUtc) is { } held)
-                {
-                    <span>&middot; met @Ui.When(Clock, held)</span>
-                    @if (_brief!.Items.Count > 0)
-                    {
-                        <span>&middot; @_brief.Items.Count(i => i.Discussed) of @_brief.Items.Count discussed</span>
-                    }
-                    @if (_brief.PresentedAtUtc is { } rec && Clock.ToLocal(rec).Date != Clock.ToLocal(held).Date)
-                    {
-                        <span title="When the meeting was recorded as over">&middot; recorded @Ui.When(Clock, rec)</span>
-                    }
-                }
-                else
-                {
-                    <span>@(_brief is null ? "" : "· ")meets at @MeetsAt @ZoneLabel</span>
-                }
+                @* One run of text, so a narrow page wraps it between words and a "·" never starts a line. *@
+                <span class="tide-sub-line">@string.Join(" · ", MeetingLine())</span>
             </div>
         </div>
         @if (_brief is not null)
@@ -834,6 +819,20 @@ else
     {
         var name = _people.FirstOrDefault(p => p.Sid == _analystId)?.DisplayName ?? _brief!.AnalystName;
         return Run(() => BriefSvc.SetDetailsAsync(_brief!.Id, _analystId, name, _intro, _introTlp), "Saved.");
+    }
+
+    // The line under the title, after the status: who presents, then when it met (and how much was discussed, and when it
+    // was recorded as over, if that's another day) or when it meets.
+    private IEnumerable<string> MeetingLine()
+    {
+        if (_brief is not null) yield return $"Presented by {_brief.AnalystName}";
+        if ((_brief?.MeetingHeldAtUtc ?? _brief?.PresentedAtUtc) is { } held)
+        {
+            yield return $"met {Ui.When(Clock, held)}";
+            if (_brief!.Items.Count > 0) yield return $"{_brief.Items.Count(i => i.Discussed)} of {_brief.Items.Count} discussed";
+            if (_brief.PresentedAtUtc is { } rec && Clock.ToLocal(rec).Date != Clock.ToLocal(held).Date) yield return $"recorded {Ui.When(Clock, rec)}";
+        }
+        else yield return $"meets at {MeetsAt} {ZoneLabel}".TrimEnd();
     }
 
     private Task SaveTeamNote() => Run(() => BriefSvc.SetTeamNoteAsync(_brief!.Id, _teamNote),
