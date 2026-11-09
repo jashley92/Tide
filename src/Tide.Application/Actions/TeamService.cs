@@ -218,7 +218,8 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOp
         // An external team is retired by whoever keeps the external teams; an internal one only by an administrator.
         if (team.IsExternal) RequireExternal();
         else RequireAdmin();
-        if (retired && !await db.Actions.AnyAsync(a => a.TeamId == id || a.HandedFromTeamId == id, ct) && !await db.ActionCardRules.AnyAsync(r => r.TeamId == id, ct))
+        // A deleted action counts: it's kept (an administrator may restore it), and its foreign key holds the team.
+        if (retired && !await db.Actions.IgnoreQueryFilters().AnyAsync(a => a.TeamId == id || a.HandedFromTeamId == id, ct) && !await db.ActionCardRules.AnyAsync(r => r.TeamId == id, ct))
             db.Teams.Remove(team);
         else team.IsRetired = retired;
         await SaveMovedAsync(db, team, ct);

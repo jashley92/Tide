@@ -44,6 +44,9 @@ public enum ActionFlow
 
     /// <summary>The comment box.</summary>
     Comment,
+
+    /// <summary>Delete it (a mistake or a duplicate), asking why.</summary>
+    Delete,
 }
 
 /// <summary>The tools in the action page's side drawer, each an existing panel.</summary>
@@ -62,8 +65,9 @@ public enum NextKind { PartLate = 0, NoReply, Escalated, Blocked, Overdue }
 /// <param name="Mine">Whether the viewer has it.</param>
 /// <param name="CanEditAll">Whether the viewer is an analyst (ActionDetail.CanEditAll), who splits.</param>
 /// <param name="TopLevel">Whether it isn't a part, so it can be split.</param>
+/// <param name="CanDelete">Whether the viewer may delete it: an analyst or administrator who may work it.</param>
 public sealed record ActionFacts(ActionStatus Status, ActionKind Kind, bool CanWork, bool Assigned, bool External,
-    int OpenParts = 0, int Emails = 0, bool Waiting = false, bool Mine = false, bool CanEditAll = false, bool TopLevel = true)
+    int OpenParts = 0, int Emails = 0, bool Waiting = false, bool Mine = false, bool CanEditAll = false, bool TopLevel = true, bool CanDelete = false)
 {
     public bool IsOpen => !ActionItem.IsClosedStatus(Status);
 }
@@ -121,7 +125,8 @@ public static class ActionGuide
     /// <summary>
     /// Everything else the viewer may do, in the menu's order: take it (by <see cref="CanTake"/>) and record an update
     /// when neither is the primary; hand off; split to teams (open) and split off a part, for an analyst on a top-level
-    /// action; edit; change status. Nothing for a viewer who can't work it or split it.
+    /// action; edit; change status; last, delete, for an analyst or administrator who may work it (a mistake or a
+    /// duplicate). Nothing for a viewer who can't work it or split it.
     /// </summary>
     public static IReadOnlyList<ActionFlow> More(ActionFacts f)
     {
@@ -136,6 +141,7 @@ public static class ActionGuide
             more.Add(ActionFlow.SplitOffPart);
         }
         if (f.CanWork) more.AddRange([ActionFlow.Edit, ActionFlow.ChangeStatus]);
+        if (f.CanDelete) more.Add(ActionFlow.Delete);
         return more;
     }
 
@@ -155,6 +161,7 @@ public static class ActionGuide
         ActionFlow.Edit => "Edit",
         ActionFlow.ChangeStatus => "Change status…",
         ActionFlow.Comment => "Comment",
+        ActionFlow.Delete => "Delete…",
         _ => "",
     };
 
@@ -173,6 +180,7 @@ public static class ActionGuide
         ActionFlow.Edit => "bi-pencil",
         ActionFlow.ChangeStatus => "bi-arrow-left-right",
         ActionFlow.Comment => "bi-chat-left-text",
+        ActionFlow.Delete => "bi-trash",
         _ => "",
     };
 

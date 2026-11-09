@@ -84,6 +84,11 @@ public sealed record ActionRow(Guid Id, int Number, string Title, ActionKind Kin
 
 /// <summary>An overdue action the meeting looks at again: how late it is, and whether its team has no members (so
 /// nobody sees it as theirs). <see cref="Tlp"/> is the TLP of the article it was raised from, if any: what it's marked at.</summary>
+/// <summary>A deleted action on the administrators' list: who deleted it, when and why, and whether its parent is deleted
+/// too (it's restored after its parent).</summary>
+public sealed record DeletedAction(Guid Id, int Number, string Title, string TeamName, ActionStatus Status, DateTimeOffset DeletedAtUtc,
+    string? DeletedById, string? DeletedByName, string? Reason, bool ParentDeleted);
+
 public sealed record OutstandingAction(ActionRow Row, int DaysLate, bool NoOneToOwn, TlpLevel? Tlp = null)
 {
     /// <summary>"3 days late", or "not yet due" for an escalated one that isn't (the meeting's and the email's words).</summary>
@@ -849,6 +854,79 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         await SaveEditAsync(db, ct);
     }
 
+    // --- deleting and restoring ---------------------------------------------------------------------------------
+
+    /// <summary>The administrators' list of deleted actions, where each can be restored.</summary>
+    public const string DeletedActionsHref = "admin/deleted-actions";
+
+    /// <summary>Whether the current user may delete actions at all: an analyst or an administrator (each action is then
+    /// held to <see cref="CanWork"/> too).</summary>
+    public bool MayDelete => user.Has(Permission.WriteArticles) || user.Has(Permission.Administer);
+
+    /// <summary>
+    /// Deletes an action raised by mistake or twice: it's kept, with its number, history and files, but left out of
+    /// every read (the database's query filter). For an analyst or an administrator who may work it, with a reason;
+    /// refused for a parent with open parts. Cancelled or Not applicable is for work that won't be done, not this.
+    /// Audited, with a line in its history, and heard on the actions feed as any change to an action is.
+    /// </summary>
+    public async Task DeleteAsync(Guid id, string? reason, CancellationToken ct = default)
+    {
+        if (!MayDelete) throw new ForbiddenException("Only analysts and administrators can delete an action.");
+        var why = ArticleService.CleanOrNull(reason, ActionItem.MaxDeleteReason, multiline: true)
+                  ?? throw new ArgumentException("Say why it's deleted: a mistake, or a duplicate of which action.");
+        await using var db = await dbs.CreateAsync(ct);
+        var a = await FindAsync(db, id, ct);
+        await RequireWork(db, user, a, ct, "Only analysts and administrators who can edit this action can delete it.");
+        var openParts = await db.Actions.WhereOpen().CountAsync(c => c.ParentId == a.Id, ct);
+        if (openParts > 0)
+            throw new InvalidOperationException($"A-{a.Number} has {Words.Plural(openParts, "open part")}: delete or close its parts first.");
+        (a.DeletedAtUtc, a.DeletedById, a.DeletedByName, a.DeleteReason) = (DateTimeOffset.UtcNow, user.UserId, user.DisplayName, why);
+        a.EditVersion = Guid.NewGuid();
+        db.ActionEvents.Add(Event(user, a.Id, $"Deleted it: {why}"));
+        await SaveEditAsync(db, ct);
+    }
+
+    /// <summary>The deleted actions, the latest deleted first, with who deleted each, when and why. Administrators only.</summary>
+    public async Task<IReadOnlyList<DeletedAction>> DeletedAsync(CancellationToken ct = default)
+    {
+        RequireAdminister();
+        await using var db = await dbs.CreateAsync(ct);
+        // IgnoreQueryFilters reaches the whole query, its subqueries too, so the parent's deletion is asked for outright.
+        return await db.Actions.AsNoTracking().IgnoreQueryFilters().Where(a => a.DeletedAtUtc != null)
+            .OrderByDescending(a => a.DeletedAtUtc).ThenByDescending(a => a.Number)
+            .Select(a => new DeletedAction(a.Id, a.Number, a.Title, a.Team!.Name, a.Status, a.DeletedAtUtc!.Value, a.DeletedById, a.DeletedByName,
+                a.DeleteReason, db.Actions.Any(p => p.Id == a.ParentId && p.DeletedAtUtc != null)))
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Brings a deleted action back, as it was, its number and history included. Administrators only; audited, with a
+    /// line in its history. A part whose parent is deleted waits for the parent.
+    /// </summary>
+    public async Task<int> RestoreAsync(Guid id, CancellationToken ct = default)
+    {
+        RequireAdminister();
+        await using var db = await dbs.CreateAsync(ct);
+        var a = await db.Actions.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == id, ct) ?? throw new KeyNotFoundException("That action no longer exists.");
+        if (a.DeletedAtUtc is not { } deleted) return a.Number;
+        if (a.ParentId is { } parentId && !await db.Actions.AnyAsync(p => p.Id == parentId, ct))
+        {
+            var parent = await db.Actions.IgnoreQueryFilters().Where(p => p.Id == parentId).Select(p => p.Number).FirstAsync(ct);
+            throw new InvalidOperationException($"It's a part of A-{parent}, which is deleted too: restore A-{parent} first.");
+        }
+        var line = $"Restored it (deleted {Day(clock.DayOf(deleted))} by {a.DeletedByName ?? "someone"}: {a.DeleteReason}).";
+        (a.DeletedAtUtc, a.DeletedById, a.DeletedByName, a.DeleteReason) = (null, null, null, null);
+        a.EditVersion = Guid.NewGuid();
+        db.ActionEvents.Add(Event(user, a.Id, line));
+        await SaveEditAsync(db, ct);
+        return a.Number;
+    }
+
+    private void RequireAdminister()
+    {
+        if (!user.Has(Permission.Administer)) throw new ForbiddenException("Only an administrator can see and restore deleted actions.");
+    }
+
     /// <summary>The id and article of the action with this number, for whoever may read it as <see cref="GetAsync"/>
     /// allows; null when there's none. For a check that needs no more of the action (the API's file download).</summary>
     internal async Task<(Guid Id, Guid? ArticleId)?> FindReadableAsync(int number, CancellationToken ct = default)
@@ -942,7 +1020,8 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         {
             await using var db = await dbs.CreateAsync(ct);
             var made = await build(db);
-            var number = (await db.Actions.MaxAsync(x => (int?)x.Number, ct) ?? 0) + 1;
+            // Deleted ones included: a number is never reused.
+            var number = (await db.Actions.IgnoreQueryFilters().MaxAsync(x => (int?)x.Number, ct) ?? 0) + 1;
             foreach (var (a, line) in made)
             {
                 a.Number = number++;
@@ -1866,7 +1945,8 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             if (parentId == a.Id) throw new ArgumentException("An action can't be part of itself.");
             var parent = await db.Actions.AsNoTracking().FirstOrDefaultAsync(x => x.Id == parentId, ct) ?? throw new KeyNotFoundException("The parent action no longer exists.");
             if (parent.ParentId is not null) throw new ArgumentException("Actions split one level deep: choose the top action as the parent.");
-            if (await db.Actions.AnyAsync(x => x.ParentId == a.Id, ct))
+            // A deleted part counts: restoring it mustn't make parts two levels deep.
+            if (await db.Actions.IgnoreQueryFilters().AnyAsync(x => x.ParentId == a.Id, ct))
                 throw new ArgumentException("Actions split one level deep: this one already has parts, so it can't become a part.");
         }
         a.Title = title;

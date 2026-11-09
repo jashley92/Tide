@@ -98,8 +98,39 @@ public class ActionItem : AuditableEntity
     public string? AssigneeId { get; set; }
     public string? AssigneeName { get; set; }
 
-    /// <summary>The business day it's due, in the organization's time zone.</summary>
-    public DateOnly? DueDate { get; set; }
+    // EF reads and writes the column through this field (its convention for a field named after the property), so
+    // loading an action doesn't count as a move; only code setting DueDate does.
+    private DateOnly? _dueDate;
+
+    /// <summary>
+    /// The business day it's due, in the organization's time zone. Setting it keeps the record honest: the first date it's
+    /// given becomes <see cref="OriginalDueDate"/> (set once, never moved), and every later change, cleared or moved
+    /// either way, adds one to <see cref="DueDateMoves"/>. Setting the date it already has changes nothing.
+    /// </summary>
+    public DateOnly? DueDate
+    {
+        get => _dueDate;
+        set
+        {
+            if (value == _dueDate) return;
+            if (OriginalDueDate is null) OriginalDueDate = value;
+            else DueDateMoves++;
+            _dueDate = value;
+        }
+    }
+
+    /// <summary>
+    /// The first due date it was given, kept when the date moves, so the team commitments scorecard can judge it against
+    /// the date first promised as well as the one it has now. Null only while it has never had one. Actions from before
+    /// it was kept start from the date they had then.
+    /// </summary>
+    public DateOnly? OriginalDueDate { get; set; }
+
+    /// <summary>How many times its due date has changed since it was first set (moved later or earlier, or cleared).</summary>
+    public int DueDateMoves { get; set; }
+
+    /// <summary>Whether its due date has moved since it was first set.</summary>
+    public bool DueDateMoved => DueDateMoves > 0;
 
     /// <summary>
     /// The business day the action belongs to, when it was raised after the fact (while writing up a past day's
@@ -167,6 +198,22 @@ public class ActionItem : AuditableEntity
     /// </summary>
     public DateOnly? EscalatedForDue { get; set; }
     public DateTimeOffset? EscalatedAtUtc { get; set; }
+
+    public const int MaxDeleteReason = 500;
+
+    /// <summary>
+    /// When it was deleted (a mistake or a duplicate), by whom and why; null while it stands. A deleted action is kept,
+    /// with its number, comments, files and history, but the database's query filter leaves it (and them) out of every
+    /// read, so it's gone from every list, count, reminder, digest, webhook, export and search; an administrator lists
+    /// and restores it. Cancelled and Not applicable are for work that won't be done; this is for an action that
+    /// shouldn't exist.
+    /// </summary>
+    public DateTimeOffset? DeletedAtUtc { get; set; }
+    public string? DeletedById { get; set; }
+    public string? DeletedByName { get; set; }
+    public string? DeleteReason { get; set; }
+
+    public bool IsDeleted => DeletedAtUtc is not null;
 
     public bool IsOpen => !IsClosedStatus(Status);
 

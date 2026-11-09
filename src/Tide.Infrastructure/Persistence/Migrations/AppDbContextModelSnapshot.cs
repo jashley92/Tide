@@ -403,12 +403,30 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("DeleteReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("DeletedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("DeletedById")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Description")
                         .HasMaxLength(8000)
                         .HasColumnType("TEXT");
 
                     b.Property<DateOnly?>("DueDate")
                         .HasColumnType("TEXT");
+
+                    b.Property<int>("DueDateMoves")
+                        .HasColumnType("INTEGER");
 
                     b.Property<Guid>("EditVersion")
                         .IsConcurrencyToken()
@@ -453,6 +471,9 @@ namespace Tide.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("Number")
                         .HasColumnType("INTEGER");
+
+                    b.Property<DateOnly?>("OriginalDueDate")
+                        .HasColumnType("TEXT");
 
                     b.Property<int>("Outcome")
                         .HasColumnType("INTEGER");

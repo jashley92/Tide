@@ -408,12 +408,30 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<string>("DeleteReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTimeOffset?>("DeletedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DeletedById")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("DeletedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
                     b.Property<string>("Description")
                         .HasMaxLength(8000)
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<DateOnly?>("DueDate")
                         .HasColumnType("date");
+
+                    b.Property<int>("DueDateMoves")
+                        .HasColumnType("int");
 
                     b.Property<Guid>("EditVersion")
                         .IsConcurrencyToken()
@@ -458,6 +476,9 @@ namespace Tide.Migrations.SqlServer.Migrations
 
                     b.Property<int>("Number")
                         .HasColumnType("int");
+
+                    b.Property<DateOnly?>("OriginalDueDate")
+                        .HasColumnType("date");
 
                     b.Property<int>("Outcome")
                         .HasColumnType("int");

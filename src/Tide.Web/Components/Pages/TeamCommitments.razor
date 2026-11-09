@@ -60,7 +60,9 @@ else
                             <th scope="col">Team</th>
                             <th scope="col" class="tide-table-num" title="@(c.PartsOnly ? "Parts of splits" : "Actions") due in the window">@(c.PartsOnly ? "Parts" : "Actions") due</th>
                             <th scope="col" class="tide-table-num" title="Done by the due date, of those done or past it">On time</th>
+                            <th scope="col" class="tide-table-num" title="Done by the due date first given, of the actions first due in the window that are done or past that date">On time vs. original date</th>
                             <th scope="col" class="tide-table-num" title="Calendar days past the due date, done late or still open">Average days late</th>
+                            <th scope="col" class="tide-table-num" title="Of the actions first due in the window, those whose due date moved (and the moves in all)">Dates moved</th>
                             <th scope="col" class="tide-table-num">Open now</th>
                             <th scope="col" class="tide-table-num">Overdue now</th>
                         </tr>
@@ -76,7 +78,9 @@ else
                                 </th>
                                 <td class="tide-table-num">@r.Parts</td>
                                 <td class="tide-table-num @(r.OnTimePercent < 100 ? "tide-report-bad" : "")">@OnTime(r)</td>
+                                <td class="tide-table-num @(r.OnTimeOriginalPercent < 100 ? "tide-report-bad" : "")">@OnTimeOriginal(r)</td>
                                 <td class="tide-table-num">@(r.AverageDaysLate is { } late ? Words.Days(late) : "—")</td>
+                                <td class="tide-table-num">@DatesMoved(r)</td>
                                 <td class="tide-table-num"><a href="@ActionsHref(r.Team, "open")" aria-label="@($"{r.OpenNow} open for {r.Team.Name}")">@r.OpenNow</a></td>
                                 <td class="tide-table-num @(r.OverdueNow > 0 ? "tide-report-bad" : "")"><a href="@ActionsHref(r.Team, "overdue")" aria-label="@($"{r.OverdueNow} overdue for {r.Team.Name}")">@r.OverdueNow</a></td>
                             </tr>
@@ -89,6 +93,9 @@ else
             Counted by due date: an action due in the window is on time when it was done by that day, and late when it was
             done after it or is still open past it. Cancelled and not applicable ones are neither, nor is one due today and
             still open. Days late are calendar days. Open and overdue are as of today, whatever the window.
+            <em>On time vs. original date</em> judges the actions first due in the window by the date they were first
+            given, so moving a date doesn't turn a missed commitment into a kept one; <em>Dates moved</em> is how many of
+            them had their date moved, and how often.
             @if (c.PartsOnly) { <text>Only the parts a split made are counted, not the action that was split.</text> }
         </p>
     </section>
@@ -162,4 +169,12 @@ else
         $"Due {c.From.ToString("MMM d, yyyy", CultureInfo.InvariantCulture)} to {c.To.ToString("MMM d, yyyy", CultureInfo.InvariantCulture)}";
 
     private static string OnTime(TeamScore r) => r.OnTimePercent is { } p ? $"{Words.Num(p)}% ({r.OnTime} of {r.OnTime + r.Late})" : "—";
+
+    internal static string OnTimeOriginal(TeamScore r) =>
+        r.OnTimeOriginalPercent is { } p ? $"{Words.Num(p)}% ({r.OnTimeOriginal} of {r.OnTimeOriginal + r.LateOriginal})" : "—";
+
+    // "2 of 7 (3 moves)": of the actions first due in the window, those re-dated, and how often.
+    internal static string DatesMoved(TeamScore r) => r.OriginallyDue == 0 ? "—"
+        : r.Moved == 0 ? $"0 of {r.OriginallyDue}"
+        : $"{r.Moved} of {r.OriginallyDue} ({Words.Plural(r.Moves, "move")})";
 }

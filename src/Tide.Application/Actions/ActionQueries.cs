@@ -28,6 +28,18 @@ internal static class ActionQueries
         q.Where(a => (a.Status == ActionStatus.Done && a.ClosedDate > a.DueDate)
                      || (ActionItem.OpenStatuses.Contains(a.Status) && a.DueDate < today));
 
+    /// <summary>The actions that met the due date they were first given (<see cref="ActionItem.OriginalDueDate"/>): Done on
+    /// or before it, by <see cref="WhereMet"/>'s rule. One whose date moved later, and was then done by the new date,
+    /// didn't.</summary>
+    public static IQueryable<ActionItem> WhereMetOriginal(this IQueryable<ActionItem> q) =>
+        q.Where(a => a.OriginalDueDate != null && a.Status == ActionStatus.Done && (a.ClosedDate == null || a.ClosedDate <= a.OriginalDueDate));
+
+    /// <summary>The actions late on <paramref name="today"/> against the due date they were first given: Done after it, or
+    /// open past it, by <see cref="WhereLate"/>'s rule.</summary>
+    public static IQueryable<ActionItem> WhereLateOriginal(this IQueryable<ActionItem> q, DateOnly today) =>
+        q.Where(a => (a.Status == ActionStatus.Done && a.ClosedDate > a.OriginalDueDate)
+                     || (ActionItem.OpenStatuses.Contains(a.Status) && a.OriginalDueDate < today));
+
     /// <summary>The open actions past their due date on <paramref name="today"/> (<see cref="SlaState.Overdue"/>).</summary>
     public static IQueryable<ActionItem> WhereOverdue(this IQueryable<ActionItem> q, DateOnly today) =>
         q.WhereOpen().Where(a => a.DueDate < today);

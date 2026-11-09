@@ -523,8 +523,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             // Only flagged actions are in it, so Today's Escalated card and the meeting's list read a handful of rows.
             // Square brackets quote a name in SQL Server and SQLite alike.
             e.HasIndex(x => x.EscalatedForDue).HasFilter("[EscalatedForDue] IS NOT NULL");
+            Person(e, x => x.DeletedById, x => x.DeletedByName);
+            e.Property(x => x.DeleteReason).HasMaxLength(ActionItem.MaxDeleteReason);
             Audited(e);
         });
+        DeletedActionsLeftOut(b);
 
         b.Entity<ActionComment>(e =>
         {
@@ -836,6 +839,30 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
                     else if (property.ClrType == typeof(DateTimeOffset?)) property.SetValueConverter(toTicksNullable);
                 }
         }
+    }
+
+    /// <summary>
+    /// A deleted action (<see cref="ActionItem.DeletedAtUtc"/>) is left out of every read, and so is everything that's
+    /// only its: its comments and their files, history, files, checklist, hunts, indicators, emails and the detection gap
+    /// it was raised for. Each of those is queried on its own somewhere (search reads comments, Trends reads hunts, the
+    /// follow-up reminders read emails, the file routes read files), so the action's filter alone wouldn't keep them out;
+    /// filtering them too also means no required relationship ends at a filtered row (EF's warning 10622): a comment's
+    /// action, or a comment file's comment, is always there when the row is. <c>IgnoreQueryFilters()</c> is used only
+    /// where deleted ones must be seen: numbering, the guards before deleting what an action refers to, files still in
+    /// use, the audit log's names, and the administrator's deleted list and restore.
+    /// </summary>
+    private void DeletedActionsLeftOut(ModelBuilder b)
+    {
+        b.Entity<ActionItem>().HasQueryFilter(a => a.DeletedAtUtc == null);
+        b.Entity<ActionComment>().HasQueryFilter(x => Actions.Any(a => a.Id == x.ActionId));
+        b.Entity<ActionCommentFile>().HasQueryFilter(x => ActionComments.Any(c => c.Id == x.CommentId));
+        b.Entity<ActionEvent>().HasQueryFilter(x => Actions.Any(a => a.Id == x.ActionId));
+        b.Entity<ActionFile>().HasQueryFilter(x => Actions.Any(a => a.Id == x.ActionId));
+        b.Entity<ActionChecklistItem>().HasQueryFilter(x => Actions.Any(a => a.Id == x.ActionId));
+        b.Entity<HuntQuery>().HasQueryFilter(x => Actions.Any(a => a.Id == x.ActionId));
+        b.Entity<ActionIndicator>().HasQueryFilter(x => Actions.Any(a => a.Id == x.ActionId));
+        b.Entity<OutreachMessage>().HasQueryFilter(x => Actions.Any(a => a.Id == x.ActionId));
+        b.Entity<DetectionGap>().HasQueryFilter(x => Actions.Any(a => a.Id == x.ActionId));
     }
 
     private static void Audited<T>(EntityTypeBuilder<T> e) where T : Domain.Common.AuditableEntity

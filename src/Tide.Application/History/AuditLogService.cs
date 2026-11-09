@@ -485,13 +485,13 @@ internal static class AuditRecords
         nameof(BriefItem) => await db.BriefItems.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.BriefId, ct),
         nameof(BriefSend) => await db.BriefSends.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.BriefId, ct),
         nameof(BriefCorrection) => await db.BriefCorrections.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.BriefId, ct),
-        nameof(ActionEvent) => await db.ActionEvents.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.ActionId, ct),
-        nameof(ActionComment) => await db.ActionComments.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.ActionId, ct),
-        nameof(ActionFile) => await db.ActionFiles.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.ActionId, ct),
-        nameof(ActionChecklistItem) => await db.ActionChecklistItems.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.ActionId, ct),
-        nameof(HuntQuery) => await db.HuntQueries.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.ActionId, ct),
-        nameof(ActionIndicator) => await db.ActionIndicators.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.ActionId, ct),
-        nameof(OutreachMessage) => await db.OutreachMessages.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.ActionId, ct),
+        nameof(ActionEvent) => await db.ActionEvents.AsNoTracking().IgnoreQueryFilters().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.ActionId, ct),
+        nameof(ActionComment) => await db.ActionComments.AsNoTracking().IgnoreQueryFilters().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.ActionId, ct),
+        nameof(ActionFile) => await db.ActionFiles.AsNoTracking().IgnoreQueryFilters().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.ActionId, ct),
+        nameof(ActionChecklistItem) => await db.ActionChecklistItems.AsNoTracking().IgnoreQueryFilters().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.ActionId, ct),
+        nameof(HuntQuery) => await db.HuntQueries.AsNoTracking().IgnoreQueryFilters().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.ActionId, ct),
+        nameof(ActionIndicator) => await db.ActionIndicators.AsNoTracking().IgnoreQueryFilters().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.ActionId, ct),
+        nameof(OutreachMessage) => await db.OutreachMessages.AsNoTracking().IgnoreQueryFilters().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.ActionId, ct),
         nameof(PlaybookStep) => await db.PlaybookSteps.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.PlaybookId, ct),
         nameof(MetricValue) => await db.MetricValues.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.DefinitionId, ct),
         _ => [],
@@ -513,8 +513,10 @@ internal static class AuditRecords
                 return (await db.Briefs.AsNoTracking().Where(x => ids.Contains(x.Id)).Select(x => new { x.Id, x.BriefDate }).ToListAsync(ct))
                     .ToDictionary(x => x.Id, x => (BriefName(x.BriefDate), (string?)("briefs/" + Iso(x.BriefDate))));
             case nameof(ActionItem):
-                return (await db.Actions.AsNoTracking().Where(x => ids.Contains(x.Id)).Select(x => new { x.Id, x.Number, x.Title }).ToListAsync(ct))
-                    .ToDictionary(x => x.Id, x => ($"A-{x.Number} {x.Title}", (string?)$"actions/{x.Number}"));
+                return (await db.Actions.AsNoTracking().IgnoreQueryFilters().Where(x => ids.Contains(x.Id)).Select(x => new { x.Id, x.Number, x.Title, x.DeletedAtUtc }).ToListAsync(ct))
+                    // A deleted action is still named, linked to the deleted list where it can be restored.
+                    .ToDictionary(x => x.Id, x => x.DeletedAtUtc is null ? ($"A-{x.Number} {x.Title}", (string?)$"actions/{x.Number}")
+                        : ($"A-{x.Number} {x.Title} (deleted)", (string?)Actions.ActionService.DeletedActionsHref));
             case nameof(Story):
                 return (await db.Stories.AsNoTracking().Where(x => ids.Contains(x.Id)).Select(x => new { x.Id, x.Name }).ToListAsync(ct))
                     .ToDictionary(x => x.Id, x => (x.Name, (string?)$"stories/{x.Id}"));

@@ -1,0 +1,112 @@
+@page "/admin/deleted-actions"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@implements IDisposable
+@inject ActionService ActionSvc
+@inject OrgClock Clock
+@inject ChangeFeed Feed
+@inject ChangeOrigin Origin
+@inject ToastService Toasts
+
+@* The deleted actions (a mistake or a duplicate, deleted from the action's More menu): who deleted each, when and why,
+   and Restore. Only an administrator sees a deleted action anywhere; everywhere else it's gone. *@
+
+<PageTitle>Deleted actions · TIDE</PageTitle>
+
+<ConfirmDialog @ref="_confirm" />
+
+<div class="tide-page-head">
+    <div>
+        <h1 class="tide-admin-title">Deleted actions</h1>
+        <div class="tide-sub">Actions deleted as a mistake or a duplicate. They're left out of every list, count, reminder and
+            report; their numbers aren't reused. Restoring one brings it back as it was, with its history.</div>
+    </div>
+</div>
+
+@if (_rows is null)
+{
+    <LoadingBlock />
+}
+else if (_rows.Count == 0)
+{
+    <EmptyState Icon="bi-trash" Title="No deleted actions" />
+}
+else
+{
+    <div class="tide-card">
+        <div class="table-responsive">
+            <table class="tide-table">
+                <caption class="visually-hidden">Deleted actions, who deleted each, when and why</caption>
+                <thead><tr><th scope="col">Action</th><th scope="col">Team</th><th scope="col">Deleted</th><th scope="col">Why</th><th scope="col"></th></tr></thead>
+                <tbody>
+                    @foreach (var r in _rows)
+                    {
+                        <tr @key="r.Id">
+                            <th scope="row"><span class="tide-action-num">@Ui.ActionLabel(r.Number)</span> @r.Title
+                                <span class="small tide-muted d-block">@ActionService.StatusName(r.Status)</span></th>
+                            <td>@r.TeamName</td>
+                            <td class="text-nowrap">@Ui.When(Clock, r.DeletedAtUtc)<span class="small tide-muted d-block">by @(r.DeletedByName ?? "someone")</span></td>
+                            <td class="tide-pre-line">@r.Reason</td>
+                            <td class="text-end">
+                                <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy"
+                                        title="@(r.ParentDeleted ? "Its parent is deleted too: restore that first" : null)"
+                                        aria-label="@($"Restore {Ui.ActionLabel(r.Number)}")" @onclick="() => Restore(r)">
+                                    <span class="bi bi-arrow-counterclockwise" aria-hidden="true"></span> Restore
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private ConfirmDialog _confirm = default!;
+    private IReadOnlyList<DeletedAction>? _rows;
+    private bool _busy;
+
+    internal IReadOnlyList<DeletedAction>? Rows => _rows;
+
+    // Another administrator's restore, or an action deleted meanwhile, shows without a reload, once per burst.
+    private LiveChanges? _live;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _live = new LiveChanges(Feed, Origin, c => c.Topic == ChangeFeed.Actions, InvokeAsync, async _ =>
+        {
+            await Load();
+            StateHasChanged();
+        });
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        try { _rows = await ActionSvc.DeletedAsync(); }
+        catch (Exception ex)
+        {
+            _rows = [];
+            Toasts.Error(UserFacingError.For(ex));
+        }
+    }
+
+    internal async Task Restore(DeletedAction r)
+    {
+        if (_busy) return;
+        if (!await _confirm.Ask($"Restore {Ui.ActionLabel(r.Number)}?", "It comes back as it was, on every list and count, with its history.",
+                "Restore", danger: false)) return;
+        _busy = true;
+        try
+        {
+            var number = await ActionSvc.RestoreAsync(r.Id);
+            Toasts.Show($"Restored {Ui.ActionLabel(number)}.");
+            await Load();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    public void Dispose() => _live?.Dispose();
+}

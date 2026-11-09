@@ -241,24 +241,40 @@ the last 30, 90 (the default), 180 or 365 days, today included. The rules are
 |---|---|
 | Actions due (Parts due with the parts filter) | The team's actions due in the window. One with no due date isn't counted: it made no commitment. |
 | On time | Done on or before the due date, as a share of those on time or late, with the counts ("50% (2 of 4)"). Late is done after the due date, or still open past it. Cancelled and Not applicable are neither, nor is one due today and still open. "—" when nothing is either. |
+| On time vs. original date | The same rule against the date each action was **first** given (`ActionItem.OriginalDueDate`), over the team's actions first due in the window: done on or before that first date, as a share of those on time or late against it ("40% (2 of 5)"). An action re-dated and then done by its new date is on time in *On time* and late here. |
 | Average days late | Calendar days from the due date to the close, or to today while still open, averaged over the late ones. Calendar days, as `ActionSla.Late` and an action's "3 days late" count them. |
+| Dates moved | Of the team's actions first due in the window, how many had their due date moved, and how many moves in all ("4 of 5 (5 moves)"). "—" when none was first due in the window. |
 | Open now, Overdue now | The team's open actions (Tracking included) today, and those past their due date, whatever the window. |
 
 An action is in the window its due date falls in, not by when it was raised or closed, so a late action still open
-counts as late in the window it fell due in, and one closed long after counts once.
+counts as late in the window it fell due in, and one closed long after counts once. A deleted action (a mistake or a
+duplicate, [deleting an action](actions-and-hunting.md#deleting-an-action)) isn't counted in any column, nor in Trends,
+Workload or the reports.
+
+**Why two on-time measures.** A due date can be moved with only a reason (Record an update,
+[A21](../reference/business-rules.md#actions-and-sla)), and moving it restarts the escalation ladder
+([A24](../reference/business-rules.md#actions-and-sla)), so *On time* alone would show a team that keeps re-dating its
+work as 100% on time. *On time vs. original date* and *Dates moved* sit beside it so that's seen; the current measures
+stay, as the date a team is held to now. An action keeps its first due date and a count of moves from the moment it's
+first given one (`ActionItem.DueDate`'s setter, so every path that sets a date counts the same way); actions from
+before this was kept start from the date they had at the upgrade, with no moves.
 
 - **Filters**, kept in the address (`?days=`, `?parts=true`, `?external=true`): *Parts of splits only* counts only the
   parts a split made (actions with a parent), not the actions split or any other; *External teams only* lists only the
   external teams.
 - **Each team** links to its open actions on the Actions list (`actions?view=open&team=&layout=list`), and its overdue
   count to the Overdue view.
-- **Which teams.** Every team that isn't retired, in the teams' order; a retired team only while it has an action due in
-  the window or open now.
+- **Which teams.** Every team that isn't retired, in the teams' order; a retired team only while it has an action due
+  (or first due) in the window or open now.
 - **CSV.** `GET /reports/teams/export.csv?days=&parts=&external=`, a row per team with the window's dates, formulas
-  neutralised (`TeamScorecardService.ToCsv`). Team names and counts carry no TLP, as the other reports' CSVs carry
-  none; the file name says the window and filters (`tide-team-commitments-2026-11-06-90d-parts.csv`).
-- **Counted in the database.** Counts by team (due in the window, met, open, overdue), each with the database's twin
-  of `ActionSla.StateOf` (`ActionQueries.WhereMet`, `WhereLate`, `WhereOverdue`), so a count in SQL and a state on a page
+  neutralised (`TeamScorecardService.ToCsv`). The measures against the first date (`originally_due`,
+  `on_time_vs_original`, `late_vs_original`, `on_time_vs_original_percent`, `dates_moved`, `moves`) come after the
+  window's `from` and `to`, so a sheet reading the earlier columns by position still reads them. Team names and counts
+  carry no TLP, as the other reports' CSVs carry none; the file name says the window and filters
+  (`tide-team-commitments-2026-11-06-90d-parts.csv`).
+- **Counted in the database.** Counts by team (due in the window, met, open, overdue; first due in the window, met and
+  late against the first date, moved), each with the database's twin of `ActionSla.StateOf` (`ActionQueries.WhereMet`,
+  `WhereLate`, `WhereOverdue`, `WhereMetOriginal`, `WhereLateOriginal`), so a count in SQL and a state on a page
   agree. Only the late actions come back, as their team and two dates, for `ActionSla.Late` to give their days late, so
   neither provider is asked for a date difference, which SQLite and SQL Server write differently. The window starts at
   `ActionQueries.LastDaysFrom(today, days)`.
