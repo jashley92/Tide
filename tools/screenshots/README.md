@@ -8,7 +8,8 @@ Rerun it whenever the UI changes. It takes about a minute.
 
 - The .NET SDK the solution builds with.
 - Node.js 20 or later.
-- Once, from this folder: `npm install`, then `npx playwright install chromium`.
+- Once, from this folder: `npm ci --ignore-scripts`, then `./node_modules/.bin/playwright install chromium` (the locked
+  Playwright, as CI runs it).
 
 ## Run it
 
