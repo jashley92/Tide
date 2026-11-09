@@ -415,9 +415,11 @@ Downloads one live file on the action or one of its comments (`ApiService.OpenFi
 
 **Query parameter:** `zip` (optional, boolean). `true` returns the file inside a zip with the password `infected`, in
 classic ZipCrypto so any zip tool opens it. Use it for a `risky` file: the zip stops it running on arrival and keeps
-antivirus from deleting it.
+antivirus from deleting it. When the server's `Files:ZipDownloads` is `Always`, every file comes zipped, whatever `zip`
+says.
 
-**Response 200:** the bytes as an attachment, `application/octet-stream` (or `application/zip` with `zip=true`),
+**Response 200:** the bytes as an attachment, `application/octet-stream` (or `application/zip` with `zip=true`, or
+under `Files:ZipDownloads=Always`),
 under the name it was added with (`<name>.zip` zipped). Headers: `Cache-Control: private, no-store`,
 `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox; default-src 'none'`.
 

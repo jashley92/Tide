@@ -69,6 +69,7 @@ builder.Services.AddRazorComponents()
 // profile), so every recycle signs everyone out. Persist it to a stable, ACL-restricted folder, encrypted at rest. A fixed
 // application name keeps the ring stable if the content-root path changes. Development (no path) keeps the default.
 var dp = builder.Services.AddDataProtection().SetApplicationName("TIDE");
+builder.Services.AddSingleton<PlainDownloads>();
 var dpKeyPath = builder.Configuration["DataProtection:KeyPath"];
 if (!string.IsNullOrWhiteSpace(dpKeyPath))
 {
@@ -276,15 +277,16 @@ app.MapGet("/files/{id:guid}/inline", async (Guid id, ScreenshotService shots, H
 // Files on actions and their comments (and a hunt's evidence, an article's screenshot), as downloads under the name they
 // were added with: any kind of file (a log, a pcap, an email, a sample), so never shown inline and never sniffed into a
 // type. ActionFileService.OpenAsync decides who may have an action's or a comment's file, per file; ScreenshotService the rest.
-// An action's or a comment's file whose main download is the zip (Files:ZipDownloads) isn't sent plain from a bare link
-// (one in a comment's Markdown, say): it's sent to the zip, unless ?plain=1 says the person chose "as is" on the action's
-// Files list. Under Always, it's never sent plain. Every download is recorded, in the access log and the audit log.
+// An action's or a comment's file whose main download is the zip (Files:ZipDownloads) isn't sent plain from a link written
+// by hand (one in a comment's Markdown, say): it's sent to the zip, unless ?plain= carries the pass the action's Files
+// list mints for its "as is" link (PlainDownloads: this file, this person, ten minutes). Under Always, it's never sent
+// plain. Every download is recorded, in the access log and the audit log.
 app.MapGet("/files/{id:guid}/download", async (Guid id, string? plain, Tide.Application.Actions.ActionFileService files, ScreenshotService shots,
-    HttpContext http, CancellationToken ct) =>
+    PlainDownloads passes, ICurrentUser user, HttpContext http, CancellationToken ct) =>
 {
     if (await files.OpenAsync(id, ct: ct) is { } onAction)
     {
-        var asIs = plain == "1";
+        var asIs = passes.Allows(plain, id, user.UserId);
         if (!FileRisk.ZipFirst(files.ZipMode, onAction.RiskReason)) return FileDownloads.Plain(http, onAction.Content, onAction.FileName);
         if (asIs && files.ZipMode != ZipDownloads.Always) return FileDownloads.Plain(http, onAction.Content, onAction.FileName);
         await onAction.DisposeAsync();

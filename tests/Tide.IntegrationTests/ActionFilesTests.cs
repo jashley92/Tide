@@ -722,7 +722,7 @@ public class ActionFilePageTests(TideApp app) : IClassFixture<TideApp>
         html.Should().Contain($"actions/{number}#comment-").And.Contain("id=\"comment-");
         html.Should().Contain("The dropper from the mailbox").And.Contain(risky[0].Sha256 + "</code>");
         html.Should().Contain($"files/{risky[0].FileId}/zip").And.Contain("aria-label=\"Download sample.exe in a zip\"").And.Contain("aria-label=\"Download sample.exe as is\"")
-            .And.Contain($"files/{risky[0].FileId}/download?plain=1")
+            .And.Contain($"files/{risky[0].FileId}/download?plain=")
             .And.Contain("Warning: It&#x27;s a Windows program.");
         html.Should().Contain("Up to 25 MB a file (15 MB for an image).");
         html.Should().Contain("Remove gateway.log", "a comment's file is removed on its own too");
@@ -792,7 +792,7 @@ public class ActionFilePageTests(TideApp app) : IClassFixture<TideApp>
             {
                 var html = await page.Html();
                 html.Should().Contain($"files/{files[0].FileId}/zip").And.Contain($"files/{files[1].FileId}/zip");
-                html.Should().NotContain(" as is\"", "under Always no file is sent as it is").And.NotContain("?plain=1");
+                html.Should().NotContain(" as is\"", "under Always no file is sent as it is").And.NotContain("?plain=");
             }
 
             await SetZip(ZipDownloads.Never);

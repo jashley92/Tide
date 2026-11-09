@@ -1,7 +1,10 @@
 using System.Net;
+using System.Net.Http.Headers;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Tide.Application.Actions;
+using Tide.Application.Api;
 using Tide.Application.Articles;
 using Tide.Application.History;
 using Tide.Application.Operations;
@@ -9,6 +12,7 @@ using Tide.Application.Preferences;
 using Tide.Application.Settings;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
+using Tide.Web.Security;
 using static Tide.IntegrationTests.ComponentHarness;
 
 namespace Tide.IntegrationTests;
@@ -27,14 +31,14 @@ public class DownloadAuditTests(TideApp app) : IClassFixture<TideApp>
     private Task<IReadOnlyList<AuditRow>> Downloads(string key) => As(async sp =>
         (await sp.GetRequiredService<AuditLogService>().PageAsync(new AuditFilter { Kind = DownloadAudit.EntityType, Key = key })).Rows);
 
-    private async Task<(Guid ActionId, Guid FileId)> ActionWithFile(string name, byte[] bytes) => await As(async sp =>
+    private async Task<(int Number, Guid FileId)> ActionWithFile(string name, byte[] bytes) => await As(async sp =>
     {
         var team = (await sp.GetRequiredService<TeamService>().ListAsync())[0].Id;
         var actions = sp.GetRequiredService<ActionService>();
         var number = await actions.CreateAsync(new ActionForm { Title = "download-audit " + name, TeamId = team });
         var id = (await actions.GetAsync(number))!.Action.Id;
         var file = (await sp.GetRequiredService<ActionFileService>().AddAsync(id, [new ActionFileUpload(name, bytes)])).Single();
-        return (id, file.FileId);
+        return (number, file.FileId);
     });
 
     private Task SetZip(Application.Files.ZipDownloads mode) => As(async sp =>
@@ -101,35 +105,76 @@ public class DownloadAuditTests(TideApp app) : IClassFixture<TideApp>
         csv.Should().Contain(",downloaded,Download,");
     }
 
+    // The dev sign-in the HTTP client is signed in as, and a pass minted for it.
+    private string Me => app.Services.GetRequiredService<IOptions<DevAuthOptions>>().Value.UserId;
+
+    private string Pass(Guid fileId, string? userId = null, DateTimeOffset? expires = null)
+    {
+        var passes = app.Services.GetRequiredService<PlainDownloads>();
+        var pass = expires is { } at ? passes.Mint(fileId, userId ?? Me, at) : passes.Mint(fileId, userId ?? Me);
+        return Uri.EscapeDataString(pass);
+    }
+
     [Fact]
-    public async Task ARiskyFilesPlainDownload_GoesToTheZip_UnlessAsIsWasChosen_AndUnderAlwaysIsRefused()
+    public async Task ARiskyFilesPlainDownload_GoesToTheZip_UnlessItCarriesAValidPass_AndUnderAlwaysIsRefused()
     {
         var (_, risky) = await ActionWithFile("dropper.exe", Samples.FakeProgram);
         var (_, calm) = await ActionWithFile("calm.txt", Samples.Text("calm"));
+        var (_, other) = await ActionWithFile("other.exe", Samples.FakeProgram);
         var client = app.CreateClient(new() { AllowAutoRedirect = false });
+        async Task ShouldGoToTheZip(string query, string because)
+        {
+            var res = await client.GetAsync($"/files/{risky}/download{query}");
+            res.StatusCode.Should().Be(HttpStatusCode.Redirect, because);
+            res.Headers.Location!.OriginalString.Should().EndWith($"/files/{risky}/zip");
+        }
 
         await SetZip(Application.Files.ZipDownloads.RiskyOnly);
-        var bare = await client.GetAsync($"/files/{risky}/download");
-        bare.StatusCode.Should().Be(HttpStatusCode.Redirect, "a bare link (one in a comment, say) doesn't send a file that can run");
-        bare.Headers.Location!.OriginalString.Should().EndWith($"/files/{risky}/zip");
-        var asIs = await client.GetAsync($"/files/{risky}/download?plain=1");
-        asIs.StatusCode.Should().Be(HttpStatusCode.OK);
+        await ShouldGoToTheZip("", "a bare link (one in a comment, say) doesn't send a file that can run");
+        await ShouldGoToTheZip("?plain=1", "a link written by hand can't say it was chosen as is");
+        await ShouldGoToTheZip("?plain=" + Uri.EscapeDataString("CfDJ8forged-pass"), "a forged pass");
+        await ShouldGoToTheZip("?plain=" + Pass(other), "a pass for another file");
+        await ShouldGoToTheZip("?plain=" + Pass(risky, "dev:someone-else"), "a pass minted for someone else");
+        await ShouldGoToTheZip("?plain=" + Pass(risky, expires: DateTimeOffset.UtcNow.AddMinutes(-1)), "an expired pass");
+
+        var asIs = await client.GetAsync($"/files/{risky}/download?plain={Pass(risky)}");
+        asIs.StatusCode.Should().Be(HttpStatusCode.OK, "the Files list's \"as is\" pass, for this file and this person");
         (await asIs.Content.ReadAsByteArrayAsync()).Should().Equal(Samples.FakeProgram);
         (await client.GetAsync($"/files/{calm}/download")).StatusCode.Should().Be(HttpStatusCode.OK, "a file that can't run isn't zipped first");
-        (await Downloads(risky.ToString())).Should().ContainSingle("the redirect sent nothing");
+        (await Downloads(risky.ToString())).Should().ContainSingle("the redirects sent nothing");
+        PlainDownloads.Lifetime.Should().Be(TimeSpan.FromMinutes(10));
 
         try
         {
             await SetZip(Application.Files.ZipDownloads.Always);
             (await client.GetAsync($"/files/{calm}/download")).StatusCode.Should().Be(HttpStatusCode.Redirect);
-            var refused = await client.GetAsync($"/files/{risky}/download?plain=1");
-            refused.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            var refused = await client.GetAsync($"/files/{risky}/download?plain={Pass(risky)}");
+            refused.StatusCode.Should().Be(HttpStatusCode.Forbidden, "under Always not even a valid pass gets the plain file");
             (await refused.Content.ReadAsStringAsync()).Should().Contain("zip");
-            (await client.GetAsync($"/files/{calm}/download?plain=1")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            (await client.GetAsync($"/files/{calm}/download?plain=1")).StatusCode.Should().Be(HttpStatusCode.Redirect);
             (await client.GetAsync($"/files/{calm}/zip")).StatusCode.Should().Be(HttpStatusCode.OK);
 
             await SetZip(Application.Files.ZipDownloads.Never);
             (await client.GetAsync($"/files/{risky}/download")).StatusCode.Should().Be(HttpStatusCode.OK, "under Never every file is sent as it is");
+        }
+        finally { await SetZip(Application.Files.ZipDownloads.RiskyOnly); }
+    }
+
+    [Fact]
+    public async Task TheApi_ZipsEveryFile_UnderAlways_WhateverZipSays()
+    {
+        var (number, fileId) = await ActionWithFile("api-calm.txt", Samples.Text("calm"));
+        var token = await As(async sp => (await sp.GetRequiredService<ApiTokenService>().IssueAsync("zip always", [ApiScopes.ActionsRead], TlpLevel.Amber, 1)).Token);
+        var client = app.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var url = $"/api/v1/actions/{number}/files/{fileId}";
+
+        (await client.GetAsync(url)).Content.Headers.ContentType!.MediaType.Should().Be("application/octet-stream", "RiskyOnly: the caller chooses");
+        try
+        {
+            await SetZip(Application.Files.ZipDownloads.Always);
+            (await client.GetAsync(url)).Content.Headers.ContentType!.MediaType.Should().Be("application/zip");
+            (await client.GetAsync(url + "?zip=false")).Content.Headers.ContentType!.MediaType.Should().Be("application/zip");
         }
         finally { await SetZip(Application.Files.ZipDownloads.RiskyOnly); }
     }

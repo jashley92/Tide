@@ -44,10 +44,12 @@ public static class ApiEndpoints
                 await s.ActionAsync(number, ApiTokenAuthenticationHandler.Ceiling(http.User), ApiBase(http), ct) is { } a ? Results.Ok(a) : NotFound($"There's no action A-{number}."))
             .Scope(ApiScopes.ActionsRead);
 
-        // A file on the action (or one of its comments), as it was added, or in a zip with the password "infected" (?zip=true).
+        // A file on the action (or one of its comments), as it was added, or in a zip with the password "infected" (?zip=true;
+        // always, whatever ?zip says, under Files:ZipDownloads=Always).
         api.MapGet("/actions/{number:int}/files/{fileId:guid}", async (int number, Guid fileId, bool? zip, ApiService s, HttpContext http, CancellationToken ct) =>
                 await s.OpenFileAsync(number, fileId, ApiTokenAuthenticationHandler.Ceiling(http.User), ct) is { } file
-                    ? zip == true ? FileDownloads.Zipped(http, file) : FileDownloads.Plain(http, file.Content, file.FileName)
+                    ? zip == true || s.ZipMode == Tide.Application.Files.ZipDownloads.Always
+                        ? FileDownloads.Zipped(http, file) : FileDownloads.Plain(http, file.Content, file.FileName)
                     : NotFound($"There's no such file on A-{number}."))
             .Scope(ApiScopes.ActionsRead).Recorded(AuditedWhen.Always);
 

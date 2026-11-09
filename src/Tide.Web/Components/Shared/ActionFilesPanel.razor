@@ -5,6 +5,7 @@
    analyst or an administrator removes it, saying why; an administrator restores it. *@
 @inject ActionFileService FileSvc
 @inject ICurrentUser CurrentUser
+@inject Tide.Web.Security.PlainDownloads PlainPasses
 @inject OrgClock Clock
 @inject ToastService Toasts
 
@@ -49,7 +50,7 @@
                                 @* Under Always the file is never sent as it is, so there's no link to it. *@
                                 @if (FileSvc.ZipMode != ZipDownloads.Always)
                                 {
-                                    <a href="@Ui.PlainDownloadUrl(f.FileId)" download="@f.FileName" title="@AsIsTitle(f)" aria-label="Download @f.FileName as is">as is</a>
+                                    <a href="@Ui.PlainDownloadUrl(f.FileId, PlainPasses, CurrentUser.UserId)" download="@f.FileName" title="@AsIsTitle(f)" aria-label="Download @f.FileName as is">as is</a>
                                 }
                             }
                             else

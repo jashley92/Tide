@@ -114,6 +114,9 @@ public sealed class ApiService(IAppDbContextFactory dbs, ICurrentUser user, Dist
 
     /// <summary>A live file on the action, opened to download; null when the action isn't there for the caller (as
     /// <see cref="ActionAsync"/>) or the file isn't on it.</summary>
+    /// <summary>When a file downloads in a zip (<c>Files:ZipDownloads</c>): under Always, the API zips every file too.</summary>
+    public Files.ZipDownloads ZipMode => files.ZipMode;
+
     public async Task<FileDownload?> OpenFileAsync(int number, Guid fileId, TlpLevel? callerCeiling, CancellationToken ct = default)
     {
         if (await actions.FindReadableAsync(number, ct) is not { } a) return null;

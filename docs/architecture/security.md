@@ -508,9 +508,12 @@ Bytes live on disk under `Files:RootPath`, outside the web root, with a `StoredF
   file on arrival, not a reader.
 - **Zip first is enforced, not just offered.** When the zip is a file's main download (`FileRisk.ZipFirst`), a bare
   `/files/{id}/download` (a link pasted into a comment's Markdown, say) redirects to `/files/{id}/zip`. Only the
-  "as is" link on the action's Files list asks for the plain file, with `?plain=1`. Under `Always` there's no "as is"
-  link and `?plain=1` is refused with a 403: no action's or comment's file is ever sent plain. The API's file download
-  keeps its own explicit `?zip=true` choice.
+  "as is" link on the action's Files list gets the plain file: it carries `?plain=` with a pass (`PlainDownloads`), a
+  Data Protection `ITimeLimitedDataProtector` value under its own purpose, bound to the file id and the person it was
+  minted for, good for 10 minutes. A link written by hand, a forged or expired pass, or one minted for another file or
+  person is sent to the zip. Under `Always` there's no "as is" link and even a valid pass is refused with a 403: no
+  action's or comment's file is ever sent plain. The API's file download (`?zip=true`) zips every file under `Always`
+  too, whatever `zip` says.
 - `ActionFileService.OpenAsync` checks access per file. Removing keeps the bytes, hash and row with who, when and why;
   only an administrator restores.
 
