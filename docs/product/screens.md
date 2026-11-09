@@ -359,9 +359,10 @@ that fits its kind.
 - **Handing off.** *Hand off* gives an action to another team with a short reason, shown on it. The receiving team is
   emailed, unless it works outside TIDE. When the action's reminders are off, the dialog asks *Keep reminders off*
   (ticked); untick it to turn them back on for the new team.
-- **Won't be emailed.** Wherever a team is chosen (the editor, hand-off, split, the meeting's quick add and
-  recommended lines, Coverage's *Raise action*), an external team that won't hear of it says so and why, with the
-  fix. Fixes on another page (Teams & SLA, the team's contact email) open in a new tab, so nothing typed is lost.
+- **Won't be emailed.** Wherever a team is chosen (the editor, hand-off, split, Coverage's *Raise action*), an
+  external team that won't hear of it says so and why, with the fix, while external team reminders are on for
+  everyone. Off for everyone is an administrator's choice, so it isn't said on each action, nor on a slide in the
+  meeting. The contact email fix opens in a new tab, so nothing typed is lost.
 - **Tracking.** A status, and a board column between Blocked and Done, for work handed to others and followed: still
   open and due, but not counted against the team's limit.
 - **Limits.** A team may have a limit on its active actions; the list and board filtered to it say "4 of 5 active",

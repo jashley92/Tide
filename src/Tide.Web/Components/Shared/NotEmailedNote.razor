@@ -1,23 +1,19 @@
-@* Under a choice of team (a hand-off, a split's part, the editor's team, an external action's card, the meeting's quick
-   add and recommended lines, Coverage's Raise action): says when an external team won't be emailed its reminders, and
-   why, so work isn't handed to someone who never hears of it. Nothing for an internal team, or one that will be emailed. *@
-@* Each reason comes with its fix, for whoever may make it: an administrator turns the reminders on for everyone (Teams
-   & SLA), whoever keeps the external teams turns this team's on here, or adds its contact email on External teams. The
-   two that are other pages open in a new tab, so a dialog or form it sits in keeps what was typed. *@
+@* Under a choice of team (a hand-off, a split's part, the editor's team, an external action's card, Coverage's Raise
+   action): says when an external team won't be emailed its reminders, and
+   why, so work isn't handed to someone who never hears of it. Nothing for an internal team, or one that will be emailed,
+   and nothing while external reminders are off for everyone: that's an administrator's choice, not this team's gap. *@
+@* Each reason comes with its fix, for whoever may make it: whoever keeps the external teams turns this team's on here,
+   or adds its contact email on External teams (in a new tab, so a dialog or form it sits in keeps what was typed). *@
 @inject Tide.Application.Actions.TeamService TeamSvc
-@inject ICurrentUser CurrentUser
 @inject ToastService Toasts
 @using Tide.Application.Actions
 
-@if (Team is not null && !_turnedOn.Contains(Team.Id) && TeamSvc.NotEmailed(Team) is { } why)
+@if (Team is not null && !_turnedOn.Contains(Team.Id) && TeamSvc.NotEmailed(Team) is { Cause: not NotEmailedCause.OffForEveryone } why)
 {
     <div class="tide-missing small @Class" role="status">
         <span class="bi bi-envelope-slash" aria-hidden="true"></span> @why.Text
         @switch (why.Cause)
         {
-            case NotEmailedCause.OffForEveryone when CurrentUser.Has(Permission.Administer):
-                @NewTab("admin/teams#rem-title", "Turn them on in Teams & SLA")
-                break;
             case NotEmailedCause.TeamOff when TeamSvc.CanManageExternal:
                 <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" disabled="@_busy" @onclick="TurnOn">Turn their reminders on</button>
                 break;
@@ -31,8 +27,7 @@
 @code {
     [Parameter] public Tide.Domain.Entities.Team? Team { get; set; }
 
-    /// <summary>Its spacing where it sits: a margin above by default; <c>tide-missing-compact</c> for a row of controls on a
-    /// slide (the meeting's quick add), small and the row's full width.</summary>
+    /// <summary>Its spacing where it sits: a margin above by default.</summary>
     [Parameter] public string Class { get; set; } = "mt-2";
 
     // A fix on another page: a new tab, so the page this note is on (a dialog half filled in) isn't left. Said to a screen
