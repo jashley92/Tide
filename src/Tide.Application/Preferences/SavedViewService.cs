@@ -163,8 +163,10 @@ public sealed class SavedViewService(IAppDbContextFactory dbs, ICurrentUser user
     private static void RefuseTaken(IEnumerable<SavedActionView> mine, string name, Guid? except)
     {
         if (mine.Any(v => v.Id != except && string.Equals(v.Name, name, StringComparison.OrdinalIgnoreCase)))
-            throw new ArgumentException($"You already have a view named \"{name}\".", nameof(name));
+            throw Taken(name);
     }
+
+    private static ArgumentException Taken(string name) => new($"You already have a view named \"{name}\".", nameof(name));
 
     private static SavedActionView Find(IEnumerable<SavedActionView> mine, Guid id) => mine.FirstOrDefault(v => v.Id == id) ?? throw NotFound();
 
@@ -175,7 +177,7 @@ public sealed class SavedViewService(IAppDbContextFactory dbs, ICurrentUser user
     private static async Task SaveAsync(IAppDbContext db, string name, CancellationToken ct)
     {
         try { await db.SaveChangesAsync(ct); }
-        catch (DbUpdateException) { throw new ArgumentException($"You already have a view named \"{name}\".", nameof(name)); }
+        catch (DbUpdateException) { throw Taken(name); }
     }
 
     private string Require()

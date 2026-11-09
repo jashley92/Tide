@@ -177,11 +177,9 @@ else
     /// <summary>The standing copies every email from <paramref name="v"/> carries, as saved: "CC a@x; BCC b@x (archive)".</summary>
     internal string? AlsoSentTo(EmailTemplateView v)
     {
-        var copies = Templates.Copies(v.Template.Id);
-        var outside = EmailCopyRules.GoesOutside(v.Template);
+        var (cc, bcc) = EmailCopyRules.Routed(v.Template, Templates.Copies(v.Template.Id));
         var parts = new List<string>();
-        if (!outside && copies.Cc.Count > 0) parts.Add("CC " + EmailCopyRules.Join(copies.Cc));
-        var bcc = (outside ? copies.Cc.Concat(copies.Bcc) : copies.Bcc).ToList();
+        if (cc.Count > 0) parts.Add("CC " + EmailCopyRules.Join(cc));
         if (bcc.Count > 0) parts.Add("BCC " + EmailCopyRules.Join(bcc));
         if (Templates.Archive is { } archive) parts.Add($"BCC {archive} (archive)");
         return parts.Count == 0 ? null : string.Join(" · ", parts);

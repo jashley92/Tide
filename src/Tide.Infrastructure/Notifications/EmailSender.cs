@@ -101,14 +101,14 @@ public sealed class EmailSender(IOptionsMonitor<EmailOptions> options, ILogger<E
             {
                 // The relay took it for the others; sending again would repeat it to all of them.
                 circuit.Succeeded(target);
-                return Partial(ex.InnerExceptions.Select(e => e.FailedRecipient), message, valid, ex);
+                return Partial(ex.InnerExceptions.Select(e => e.FailedRecipient), message, ex);
             }
             catch (SmtpFailedRecipientException ex) when (ex is not SmtpFailedRecipientsException && valid > 1)
             {
                 // When exactly one of several addresses is refused, SmtpClient throws the singular exception after the
                 // others got it: the same partial delivery.
                 circuit.Succeeded(target);
-                return Partial([ex.FailedRecipient], message, valid, ex);
+                return Partial([ex.FailedRecipient], message, ex);
             }
             catch (Exception ex) when (ex is SmtpException or IOException or InvalidOperationException or System.Net.Sockets.SocketException
                                        && !string.IsNullOrWhiteSpace(o.PickupDirectory))
@@ -138,7 +138,7 @@ public sealed class EmailSender(IOptionsMonitor<EmailOptions> options, ILogger<E
 
     // Some addresses were refused and the rest took it. A refused copy (CC or BCC) never counts against the email: it
     // went to its recipients. Only when every one of its recipients was refused did it fail (its copies got it anyway).
-    private EmailSendResult Partial(IEnumerable<string?> failed, MailMessage message, int valid, Exception ex)
+    private EmailSendResult Partial(IEnumerable<string?> failed, MailMessage message, Exception ex)
     {
         var refused = failed.Select(f => (f ?? "").Trim().Trim('<', '>')).ToList();
         var recipients = message.To.Select(a => a.Address).ToHashSet(StringComparer.OrdinalIgnoreCase);

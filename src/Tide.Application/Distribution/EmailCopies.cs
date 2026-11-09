@@ -2,6 +2,8 @@ using System.Net.Mail;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Tide.Application.Abstractions;
+using Tide.Application.Content;
+using Tide.Application.Settings;
 
 namespace Tide.Application.Distribution;
 
@@ -44,13 +46,13 @@ public static class EmailCopyRules
     public static IReadOnlyList<string> Parse(string? text, string what, int max = MaxPerList)
     {
         var list = new List<string>();
-        foreach (var raw in (text ?? "").Split([',', ';', ' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        foreach (var raw in (text ?? "").Split(DistributionSettings.Separators, StringSplitOptions.RemoveEmptyEntries))
         {
-            if (!MailAddress.TryCreate(raw, out var parsed) || !string.Equals(parsed.Address, raw, StringComparison.OrdinalIgnoreCase) || !raw.Contains('.', StringComparison.Ordinal))
+            if (!DistributionSettings.IsAddress(raw) || !raw.Contains('.', StringComparison.Ordinal))
                 throw new ArgumentException($"{what}: “{raw}” isn't an email address.");
-            if (!list.Contains(parsed.Address, StringComparer.OrdinalIgnoreCase)) list.Add(parsed.Address);
+            if (!list.Contains(raw, StringComparer.OrdinalIgnoreCase)) list.Add(raw);
         }
-        if (list.Count > max) throw new ArgumentException($"{what}: at most {max} address{(max == 1 ? "" : "es")}.");
+        if (list.Count > max) throw new ArgumentException($"{what}: at most {Words.Plural(max, "address", "addresses")}.");
         return list;
     }
 
@@ -66,15 +68,14 @@ public static class EmailCopyRules
     /// </summary>
     public static (IReadOnlyList<string> Cc, IReadOnlyList<string> Bcc) For(OutgoingEmail email, TemplateCopies copies, string? archive)
     {
-        var template = EmailTemplateCatalog.ById(email.Template);
-        var cc = template is not null && GoesOutside(template) ? [] : copies.Cc;
-        var bcc = (template is not null && GoesOutside(template) ? copies.Cc.Concat(copies.Bcc) : copies.Bcc)
-            .Concat(archive is null ? [] : [archive]);
+        var (cc, bcc) = Routed(EmailTemplateCatalog.ById(email.Template), copies);
         var seen = new HashSet<string>(email.To.Concat(email.Cc).Concat(email.Bcc), StringComparer.OrdinalIgnoreCase);
-        var addCc = cc.Where(seen.Add).ToList();
-        var addBcc = bcc.Where(seen.Add).ToList();
-        return (addCc, addBcc);
+        return (cc.Where(seen.Add).ToList(), bcc.Concat(archive is null ? [] : [archive]).Where(seen.Add).ToList());
     }
+
+    /// <summary>A template's copies as they go out: one that goes outside TIDE gets them all blind, whatever was saved.</summary>
+    public static (IReadOnlyList<string> Cc, IReadOnlyList<string> Bcc) Routed(EmailTemplate? t, TemplateCopies copies) =>
+        t is not null && GoesOutside(t) ? ([], [.. copies.Cc, .. copies.Bcc]) : (copies.Cc, copies.Bcc);
 }
 
 /// <summary>The standing copies in force, read from <c>Settings</c> at startup and after each save.</summary>
