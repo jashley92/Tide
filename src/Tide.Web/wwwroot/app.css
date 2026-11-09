@@ -1128,6 +1128,8 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-filter-tick { width: 1rem; flex: 0 0 auto; color: var(--tide-accent-text); }
 .tide-filter-group { padding: .45rem .55rem .15rem; color: var(--tide-text-muted); font-size: var(--tide-text-xs); font-weight: var(--tide-weight-semibold); }
 .tide-filter-remove { color: var(--tide-text-muted); }
+/* A long list's find box, kept in view above its choices as they scroll. */
+.tide-filter-find { position: sticky; top: 0; z-index: 1; margin: .2rem .2rem .35rem; width: calc(100% - .4rem); }
 .tide-filter-pop { max-height: min(26rem, 70vh); overflow-y: auto; }
 .tide-filter-pop form { display: grid; gap: var(--tide-space-2); }
 .tide-filter-hint { margin: 0; color: var(--tide-text-muted); font-size: var(--tide-text-xs); }

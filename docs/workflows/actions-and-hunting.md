@@ -805,7 +805,8 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
   | Tracking | `status=tracking` | |
   | Raised by me | `raised=me` | The actions you created, wherever they are now: what you asked others for (`ActionFilter.RaisedByMe`). |
 
-  **+ Filter** holds team (`team`); held by (`assignee`: you, nobody, or anyone holding an open action, with how many,
+  **+ Filter** lists them under Who (held by, raised by), Where (team, internal or external), What (kind, priority,
+  status, rule) and When (due), and gives a long list (held by, in a big team) a find box. It holds team (`team`); held by (`assignee`: you, nobody, or anyone holding an open action, with how many,
   from `HoldersAsync`; a Workload link sets it too); internal or external teams (`teams=internal|external`,
   `ActionFilter.Teams`); raised by (`raised=me`); kind (`kind`), priority (`priority`, any of P1 to P4: `priority=p1,p3`;
   `ActionFilter.Priorities`), due (`due`, with `none` for no due date), status (`status`, the open ones) and, when an

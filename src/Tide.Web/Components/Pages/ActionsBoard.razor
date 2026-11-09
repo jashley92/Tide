@@ -449,29 +449,30 @@ else
         {
             var defs = new List<FilterDef>
             {
-                new("team", "Team", FilterKind.Single, v => _teamId = Guid.TryParse(FilterValues.First(v), out var team) ? team : null)
-                {
-                    Options = _teamOptions, Values = FilterValues.Of(_teamId?.ToString()),
-                },
                 new("assignee", "Held by", FilterKind.Single, v => _assignee = FilterValues.First(v) is { Length: > 0 } held ? held : null)
                 {
-                    Options = HolderOptions(), Values = FilterValues.Of(_assignee), ChipText = _assignee is { } held ? HolderText(held) : null,
+                    Options = HolderOptions(), Values = FilterValues.Of(_assignee), ChipText = _assignee is { } held ? HolderText(held) : null, Section = "Who",
+                },
+                new("team", "Team", FilterKind.Single, v => _teamId = Guid.TryParse(FilterValues.First(v), out var team) ? team : null)
+                {
+                    Options = _teamOptions, Values = FilterValues.Of(_teamId?.ToString()), Section = "Where",
                 },
                 new("teams", "Internal or external", FilterKind.Single, v => _side = FilterValues.Enum<ActionTeams>(v))
                 {
                     Options = SideOptions, Values = FilterValues.Of(_side?.ToString()),
                     ChipText = _side switch { ActionTeams.Internal => "Only internal teams", ActionTeams.External => "Only external teams", _ => null },
+                    Section = "Where",
                 },
                 new("raised", "Raised by", FilterKind.Single, v => _raised = FilterValues.First(v) == Me)
                 {
-                    Options = [new(Me, "You")], Values = _raised ? [Me] : [], ChipText = _raised ? "Raised by you" : null,
+                    Options = [new(Me, "You")], Values = _raised ? [Me] : [], ChipText = _raised ? "Raised by you" : null, Section = "Who",
                 },
-                new("kind", "Kind", FilterKind.Single, v => _kind = FilterValues.Enum<ActionKind>(v)) { Options = KindOptions, Values = FilterValues.Of(_kind?.ToString()) },
-                new("priority", "Priority", FilterKind.Multi, v => _priorities = PrioritiesOf(v)) { Options = PriorityOptions, Values = [.. _priorities.Select(p => p.ToString())] },
-                new("due", "Due", FilterKind.Single, v => _due = FilterValues.Enum<ActionDue>(v)) { Options = DueOptions, Values = FilterValues.Of(_due?.ToString()) },
+                new("kind", "Kind", FilterKind.Single, v => _kind = FilterValues.Enum<ActionKind>(v)) { Options = KindOptions, Values = FilterValues.Of(_kind?.ToString()), Section = "What" },
+                new("priority", "Priority", FilterKind.Multi, v => _priorities = PrioritiesOf(v)) { Options = PriorityOptions, Values = [.. _priorities.Select(p => p.ToString())], Section = "What" },
+                new("due", "Due", FilterKind.Single, v => _due = FilterValues.Enum<ActionDue>(v)) { Options = DueOptions, Values = FilterValues.Of(_due?.ToString()), Section = "When" },
                 new("status", "Status", FilterKind.Single, v => _status = FilterValues.Enum<ActionStatus>(v) is { } st && OpenStatuses.Contains(st) ? st : null)
                 {
-                    Options = StatusOptions, Values = FilterValues.Of(_status?.ToString()),
+                    Options = StatusOptions, Values = FilterValues.Of(_status?.ToString()), Section = "What",
                 },
             };
             // An administrator's card rules shown as filters, each with how many it matches (counted as the list or board is read).
@@ -480,7 +481,7 @@ else
                 defs.Add(new("rule", "Rule", FilterKind.Single, v => _ruleId = Guid.TryParse(FilterValues.First(v), out var id) && rules.Any(r => r.Id == id) ? id : null)
                 {
                     Options = [.. rules.Select(r => new FilterOption(r.Id.ToString(), $"{r.Name} ({_ruleCounts.GetValueOrDefault(r.Id)})"))],
-                    Values = FilterValues.Of(_ruleId?.ToString()),
+                    Values = FilterValues.Of(_ruleId?.ToString()), Section = "What",
                     ChipText = rules.FirstOrDefault(r => r.Id == _ruleId) is { } rule ? "Rule: " + rule.Name : null,
                 });
             if (_parentNumber is { } parent)

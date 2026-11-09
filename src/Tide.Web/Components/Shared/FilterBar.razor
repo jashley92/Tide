@@ -53,13 +53,17 @@
                     @if (_step is null)
                     {
                         <div role="menu" aria-label="Add a filter">
-                            @foreach (var f in InMenu)
+                            @foreach (var section in InMenu.GroupBy(f => f.Section))
                             {
-                                <button type="button" role="menuitem" tabindex="-1" class="tide-filter-item" @onclick="() => Show(f)">
-                                    <span>@f.Label</span>
-                                    @if (f.IsSet) { <span class="tide-filter-item-now">@f.Shown</span> }
-                                    <span class="bi bi-chevron-right tide-filter-item-go" aria-hidden="true"></span>
-                                </button>
+                                @if (section.Key is { } heading) { <div class="tide-filter-group" role="presentation">@heading</div> }
+                                @foreach (var f in section)
+                                {
+                                    <button type="button" role="menuitem" tabindex="-1" class="tide-filter-item" @onclick="() => Show(f)">
+                                        <span>@f.Label</span>
+                                        @if (f.IsSet) { <span class="tide-filter-item-now">@f.Shown</span> }
+                                        <span class="bi bi-chevron-right tide-filter-item-go" aria-hidden="true"></span>
+                                    </button>
+                                }
                             }
                         </div>
                     }
@@ -86,9 +90,17 @@
                     }
                     else
                     {
-                        <div role="menu" aria-label="@_step.Label">
+                        @if (_step.Findable)
+                        {
+                            @* A long list (everyone holding an action): type to narrow it; Down goes to the first match, Enter picks it. *@
+                            <input type="search" class="form-control form-control-sm tide-filter-find" id="@(_id)-find" autocomplete="off" maxlength="100"
+                                   placeholder="Find…" aria-label="@($"Find a choice of {_step.Label}")" aria-controls="@(_id)-opts"
+                                   @bind="_find" @bind:event="oninput" @onkeydown="FindKey" />
+                        }
+                        <div role="menu" aria-label="@_step.Label" id="@(_id)-opts">
                             @Back
-                            @foreach (var g in _step.Options.GroupBy(o => o.Group))
+                            @if (_step.Findable && !Shown(_step).Any()) { <div class="tide-filter-hint" role="status">No choice matches “@_find”.</div> }
+                            @foreach (var g in Shown(_step).GroupBy(o => o.Group))
                             {
                                 @if (g.Key is { } group) { <div class="tide-filter-group" role="presentation">@group</div> }
                                 @foreach (var o in g)
@@ -206,6 +218,7 @@
     internal void Show(FilterDef? step)
     {
         _step = step;
+        _find = null;
         _draft = step is null ? [] : [.. step.Values];
         _text = step?.Kind == FilterKind.Text ? step.Values.FirstOrDefault() : null;
         _focusPop = true;
@@ -214,6 +227,19 @@
     internal Task Press(FilterPill p) => Filter(p.FilterKey) is { } f ? Set(f, p.Pressed(f)) : Task.CompletedTask;
 
     internal Task Remove(string key) => Filter(key) is { } f ? Set(f, []) : Task.CompletedTask;
+
+    // The words typed to find a choice in a long list, and the choices they match (by name, ignoring case); the one in
+    // force stays listed, so it can be seen and removed.
+    private string? _find;
+
+    internal IEnumerable<FilterOption> Shown(FilterDef f) => string.IsNullOrWhiteSpace(_find) ? f.Options
+        : f.Options.Where(o => o.Label.Contains(_find.Trim(), StringComparison.OrdinalIgnoreCase) || f.Values.Contains(o.Value));
+
+    internal string? Find { get => _find; set => _find = value; }
+
+    // Enter in the find box picks the first match.
+    private Task FindKey(KeyboardEventArgs e) =>
+        e.Key == "Enter" && _step is { } f && Shown(f).FirstOrDefault() is { } first ? Pick(first.Value) : Task.CompletedTask;
 
     // One of a single filter's options applies it; a multi filter's ticks wait for Apply.
     internal Task Pick(string value)
