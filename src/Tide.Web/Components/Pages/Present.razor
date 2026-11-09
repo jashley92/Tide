@@ -370,38 +370,59 @@ else
                                         </div>
                                         @if (scorecard.Count > 0)
                                         {
-                                            <p class="tide-slide-scorecard"><span class="visually-hidden">Scorecard tags: </span>@for (var i = 0; i < scorecard.Count; i++)
-                                            {
-                                                var g = scorecard[i];
-                                                @if (i > 0) { <span class="tide-slide-scorecard-sep" aria-hidden="true"> · </span> }<span class="tide-slide-scorecard-group"><span class="tide-slide-scorecard-cat">@g.Category:</span> @string.Join(", ", g.Tags)</span>
-                                            }</p>
+                                            <ul class="tide-slide-scorecard" aria-label="Scorecard tags">
+                                                @foreach (var g in scorecard)
+                                                {
+                                                    @foreach (var tag in g.Tags)
+                                                    {
+                                                        <li class="tide-chip tide-slide-tagchip" title="@g.Category"><span class="visually-hidden">@g.Category: </span>@tag</li>
+                                                    }
+                                                }
+                                            </ul>
                                         }
                                         @if (tactics.Count > 0)
                                         {
                                             <ul class="tide-slide-attack" aria-label="ATT&CK by tactic">
                                                 @foreach (var t in tactics)
                                                 {
-                                                    <li @key="t.Tactic">
-                                                        <span class="tide-chip tide-slide-tactic" style="--tac:@Ui.TacticColor(t.Tactic)"><span class="bi @Ui.TacticGlyph(t.Tactic)" aria-hidden="true"></span><span class="tide-slide-tag-name">@t.Name</span><span class="visually-hidden">:</span></span>
-                                                        <span class="tide-slide-techniques">@for (var i = 0; i < t.Shown.Count; i++)
+                                                    <li @key="t.Tactic" class="tide-slide-tactic" style="--tac:@Ui.TacticColor(t.Tactic)">
+                                                        <span class="tide-slide-tactic-name"><span class="bi @Ui.TacticGlyph(t.Tactic)" aria-hidden="true"></span><span class="tide-slide-tag-name">@t.Name</span><span class="visually-hidden">:</span></span>
+                                                        @foreach (var x in t.Shown)
                                                         {
-                                                            var x = t.Shown[i];
-                                                            @if (i > 0) { <span class="tide-slide-tech-sep" aria-hidden="true"> · </span> }<span class="tide-slide-tech"><span class="tide-slide-tech-id">@x.Id</span> @x.Name</span>
-                                                        }@if (t.Left.Count > 0)
+                                                            <span class="tide-slide-tech"><span class="tide-slide-tech-id">@x.Id</span> @x.Name</span>
+                                                        }
+                                                        @if (t.Left.Count > 0)
                                                         {
                                                             var rest = string.Join("; ", t.Left.Select(x => $"{x.Id} {x.Name}"));
-                                                            <span class="tide-slide-tech-sep" aria-hidden="true"> · </span><span class="tide-slide-tech-more" title="@rest">+@t.Left.Count more<span class="visually-hidden">: @rest</span></span>
-                                                        }</span>
+                                                            <span class="tide-slide-tech-more" title="@rest">+@t.Left.Count more<span class="visually-hidden">: @rest</span></span>
+                                                        }
                                                     </li>
                                                 }
                                             </ul>
                                         }
                                         @if (a.Cves.Count > 0)
                                         {
-                                            <div class="tide-slide-cves">
-                                                @foreach (var c in a.Cves.OrderBy(c => c.CveId))
+                                            var cves = SlideCves.For(a.Cves.Select(c => c.CveId), _cves);
+                                            var many = cves.Items.Count > 1;
+                                            var open = !many || (!CanOpenCard && _cvesOpen.Contains(a.Id));
+                                            var cvesId = $"slide-cves-{a.Id:N}";
+                                            <div class="tide-slide-cves" id="@cvesId">
+                                                @if (many)
                                                 {
-                                                    <CveChip CveId="@c.CveId" Record="@_cves.GetValueOrDefault(c.CveId)" />
+                                                    <span class="tide-slide-cve-sum @(cves.Kev > 0 ? "tide-slide-cve-sum-kev" : "")">@cves.Summary</span>
+                                                }
+                                                @foreach (var (id, record) in open ? cves.Items : cves.Items.Take(1))
+                                                {
+                                                    <CveChip @key="id" CveId="@id" Record="record" />
+                                                }
+                                                @if (many && CanOpenCard)
+                                                {
+                                                    <button type="button" class="btn btn-link btn-sm tide-slide-cve-more" aria-expanded="@Ui.Aria(ShownCves?.Article.Id == a.Id)"
+                                                            title="Show them all over the slide" @onclick="() => ShowCves(a.Id)">+@(cves.Items.Count - 1) more</button>
+                                                }
+                                                else if (many)
+                                                {
+                                                    <button type="button" class="btn btn-link btn-sm tide-slide-cve-more" aria-expanded="@Ui.Aria(open)" aria-controls="@cvesId" @onclick="() => ToggleCves(a.Id)">@(open ? "Show fewer" : $"+{cves.Items.Count - 1} more")</button>
                                                 }
                                             </div>
                                         }
@@ -781,6 +802,10 @@ else
         else if (ShownIndicators is { } shownIocs)
         {
             <PresentIndicators Article="shownIocs" Kicker="@Kicker(_popup.Own)" CanClose="!Held" Autofocus="_focusCard" OnClose="CloseCard" Links="_readsTeam" />
+        }
+        else if (ShownCves is { } shownCves)
+        {
+            <PresentCves Article="shownCves.Article" Cves="SlideCves.For(shownCves.Article.Cves.Select(c => c.CveId), _cves)" Kicker="@Kicker(_popup.Own)" CanClose="!Held" Autofocus="_focusCard" OnClose="CloseCard" Links="_readsTeam" />
         }
 
         @* Inside the slides' root, so it shows in full screen too; present.js leaves the keys to it while it's open. *@
@@ -1560,6 +1585,16 @@ else
     /// team edition, presenting or following (never a Viewer or Visitor, who can't write). The save itself is the article editor's, which checks again.</summary>
     private bool CanEditTags => TeamEdition && CurrentUser.Has(Permission.WriteArticles);
 
+    // The articles whose full CVE list is open in place on this screen: where no card can open (the company-wide
+    // edition, or a follower the presenter holds). Elsewhere "+N more" opens the CVE card.
+    private readonly HashSet<Guid> _cvesOpen = [];
+
+    /// <summary>Opens or closes an article's full CVE list in place on its slide, for this screen alone.</summary>
+    internal void ToggleCves(Guid articleId)
+    {
+        if (!_cvesOpen.Remove(articleId)) _cvesOpen.Add(articleId);
+    }
+
     /// <summary>For tests: the tag panel open over the slide, if any.</summary>
     internal PresentTagEditor? TagEditor => _tagEditor;
 
@@ -2171,7 +2206,13 @@ else
             ? Cut(_brief).Articles.FirstOrDefault(x => x.Article.Id == id && x.Indicators.Count > 0)
             : null;
 
-    private bool CardOpen => _product is not null || ShownIndicators is not null;
+    // The article whose CVEs are open over its slide (two or more: one is on the slide already).
+    private EditionArticle? ShownCves =>
+        TeamEdition && _popup.Shown is { Kind: MeetingCardKind.Cves, Id: var id } && _brief is not null
+            ? Cut(_brief).Articles.FirstOrDefault(x => x.Article.Id == id && x.Article.Cves.Count > 1)
+            : null;
+
+    private bool CardOpen => _product is not null || ShownIndicators is not null || ShownCves is not null;
 
     // Each article's tactics and scorecard tags as its slide draws them, worked out once per read of the brief rather than
     // on every render. A brief read again is a new object, with new articles: the cache starts afresh for it.
@@ -2200,6 +2241,9 @@ else
 
     /// <summary>Shows an article's indicators over its slide (<see cref="ShowCard"/>).</summary>
     internal Task ShowIndicators(Guid articleId) => ShowCard(MeetingCard.ForIndicators(articleId));
+
+    /// <summary>Shows all of an article's CVEs over its slide (<see cref="ShowCard"/>).</summary>
+    internal Task ShowCves(Guid articleId) => ShowCard(MeetingCard.ForCves(articleId));
 
     /// <summary>
     /// Opens a card over the slide, as <see cref="ShowAction"/> does an action: the presenter's opens for everyone
@@ -2258,8 +2302,8 @@ else
                 if (_popup.Shown != shown) return;
                 _product = card;
                 break;
-            case { Kind: MeetingCardKind.Indicators }:
-                break;   // drawn from the edition as read (ShownIndicators)
+            case { Kind: MeetingCardKind.Indicators or MeetingCardKind.Cves }:
+                break;   // drawn from the edition as read (ShownIndicators, ShownCves)
         }
         if (!CardOpen)
         {

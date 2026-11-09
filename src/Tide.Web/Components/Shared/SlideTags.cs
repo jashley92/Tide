@@ -90,3 +90,29 @@ public static class SlideTags
         a.Cves.Select(c => c.CveId).Order(StringComparer.Ordinal),
     });
 }
+
+/// <summary>An article's CVEs on its slide, the most pressing first, each with what's known of it.</summary>
+public sealed record SlideCveList(IReadOnlyList<(string Id, CveRecord? Record)> Items, int Kev)
+{
+    /// <summary>"5 CVEs, all on KEV", "5 CVEs, 2 on KEV" or "5 CVEs".</summary>
+    public string Summary => Ui.Plural(Items.Count, "CVE") + (Kev == 0 ? "" : Kev == Items.Count ? ", all on KEV" : $", {Kev} on KEV");
+}
+
+/// <summary>
+/// An article's CVEs on its slide: the most pressing first (on KEV, then the highest CVSS, then EPSS; one not enriched
+/// yet last), summed up as "5 CVEs, all on KEV" with the first shown and the rest behind "+4 more".
+/// </summary>
+public static class SlideCves
+{
+    public static SlideCveList For(IEnumerable<string> ids, IReadOnlyDictionary<string, CveRecord> known)
+    {
+        var items = ids.Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(id => (Id: id, Record: known.GetValueOrDefault(id)))
+            .OrderByDescending(x => x.Record?.IsKev == true)
+            .ThenByDescending(x => x.Record?.CvssScore ?? -1)
+            .ThenByDescending(x => x.Record?.EpssScore ?? -1)
+            .ThenBy(x => x.Id, StringComparer.Ordinal)
+            .ToList();
+        return new(items, items.Count(x => x.Record?.IsKev == true));
+    }
+}

@@ -121,10 +121,10 @@ public class PresentTagEditTests(TideApp app) : IClassFixture<TideApp>
         await Do(pat, p => p.EditTags(s.First));
         await SaveTags(pat, [s.Tag], ["T1190"]);
         html = await pat.Html();
-        html.Should().NotContain("present-tagedit-title").And.Contain(">Initial Access<").And.Contain($":</span> {s.TagName}</span>").And.Contain("> Edit tags</button>");
+        html.Should().NotContain("present-tagedit-title").And.Contain(">Initial Access<").And.Contain($": </span>{s.TagName}</li>").And.Contain("> Edit tags</button>");
 
         await Do(robin, p => p.OnChangedElsewhere([Heard(s.First)]));
-        (await robin.Html()).Should().Contain(">Initial Access<").And.Contain($":</span> {s.TagName}</span>");
+        (await robin.Html()).Should().Contain(">Initial Access<").And.Contain($": </span>{s.TagName}</li>");
         robin.Scope.ServiceProvider.GetRequiredService<ToastService>().Toasts.Should().NotContain(t => t.Message.StartsWith("Tester"), "a tag edit is quiet");
         EndMeeting(app, s.Day);
     }
@@ -152,7 +152,7 @@ public class PresentTagEditTests(TideApp app) : IClassFixture<TideApp>
 
         await Do(pat, p => p.OnChangedElsewhere([Heard(s.First)]));
         await pat.Click(p => p.OnPresentKey("prev"));
-        (await pat.Html()).Should().Contain(">Initial Access<").And.Contain(">Impact<").And.Contain($":</span> {s.TagName}</span>");
+        (await pat.Html()).Should().Contain(">Initial Access<").And.Contain(">Impact<").And.Contain($": </span>{s.TagName}</li>");
         pat.Scope.ServiceProvider.GetRequiredService<ToastService>().Toasts.Should().NotContain(t => t.Message.StartsWith("Tester"));
 
         await using var scope = SignedIn(app, SignIn.Analyst);
@@ -337,7 +337,7 @@ public class PresentTagEditTests(TideApp app) : IClassFixture<TideApp>
             html.Should().Contain($"<h2>{s.FirstTitle}</h2>");
             var row = PresentSlideTagsTests.Section(html);
             row.Should().NotBeNull("the room's tags and ATT&CK");
-            row!.Should().Contain(">Initial Access<").And.Contain($":</span> {s.TagName}</span>", "the team edition's scorecard tags, as the room sees them")
+            row!.Should().Contain(">Initial Access<").And.Contain($": </span>{s.TagName}</li>", "the team edition's scorecard tags, as the room sees them")
                 .And.NotContain("<a ", "the chips link nowhere").And.NotContain("href").And.NotContain("tide-slide-tags-edit");
 
             await Do(r, p => p.EditTags(s.First));

@@ -1,0 +1,26 @@
+@* All of an article's CVEs, opened over its slide in present mode from the slide's "+N more": the most pressing first
+   (SlideCves), each with its chip, the affected product and, for one on KEV, CISA's dates (CveChip's wording). Team
+   edition only, as the other cards are; where no card opens, the slide opens its list in place. *@
+@inherits PresentCardBase
+
+<PresentCard Shown="Article.Id" TitleId="present-cves-title" Class="tide-present-cves" Href="@($"articles/{Article.Id}")" LinkText="Open the article"
+             CloseLabel="Close the CVEs" Kicker="@Kicker" CanClose="CanClose" Autofocus="Autofocus" OnClose="OnClose" Links="Links">
+    <Title><span class="tide-present-product-kicker">@Cves.Summary</span> @Article.Title</Title>
+    <ChildContent>
+        <ul class="tide-present-iocs-list">
+            @foreach (var (id, r) in Cves.Items)
+            {
+                <li @key="id"><CveChip CveId="@id" Record="r" />
+                    @if (r is not null && CveChip.Affected(r) is { } affected) { <span>@affected</span> }
+                    @if (r is not null && CveChip.KevLine(r) is { } kev) { <span class="tide-present-help">@kev</span> }</li>
+            }
+        </ul>
+    </ChildContent>
+</PresentCard>
+
+@code {
+    [Parameter, EditorRequired] public Tide.Domain.Entities.Article Article { get; set; } = default!;
+
+    /// <summary>Its CVEs as the slide orders them.</summary>
+    [Parameter, EditorRequired] public SlideCveList Cves { get; set; } = default!;
+}

@@ -32,6 +32,9 @@ public enum MeetingCardKind
 
     /// <summary>An article's indicators, by the article's id.</summary>
     Indicators,
+
+    /// <summary>An article's CVEs, all of them, by the article's id.</summary>
+    Cves,
 }
 
 /// <summary>A card opened over a slide in present mode: what kind it is, and whose (a product's id, an article's).</summary>
@@ -42,6 +45,9 @@ public sealed record MeetingCard(MeetingCardKind Kind, Guid Id)
 
     /// <summary>The article <paramref name="articleId"/>'s indicators.</summary>
     public static MeetingCard ForIndicators(Guid articleId) => new(MeetingCardKind.Indicators, articleId);
+
+    /// <summary>The article <paramref name="articleId"/>'s CVEs.</summary>
+    public static MeetingCard ForCves(Guid articleId) => new(MeetingCardKind.Cves, articleId);
 }
 
 /// <summary>No meeting is ever running: where present mode isn't (a test, a tool).</summary>
