@@ -1387,6 +1387,10 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-slide-actions ul { list-style: none; padding: 0; margin: 0 0 .5em; font-size: .9em; }
 .tide-slide-actions li { padding: .25em 0; display: flex; gap: .6em; align-items: center; flex-wrap: wrap; }
 .tide-slide-actions .tide-action-num { color: var(--tide-slide-muted); }
+/* The meeting's quick add, a row: what needs doing, kind, team, due date, Add. */
+.tide-quick-add { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto auto; gap: .4em; align-items: center; }
+.tide-quick-add .form-control, .tide-quick-add .form-select { background-color: var(--tide-slide-surface); color: var(--tide-slide-text); border-color: var(--tide-slide-line-strong); font-size: .8em; }
+@media (max-width: 1000px) { .tide-quick-add { grid-template-columns: 1fr 1fr; } }
 /* The article slide's work section on one set of control columns: Recommended's kind, team and Raise over Actions' due
    date, assignee and Take it, so the boxes and the buttons line up down the slide. Its actions are one line each, in
    shared columns (subgrid): the title (the whole row opens it), its number, team and due, then the controls. The widths
