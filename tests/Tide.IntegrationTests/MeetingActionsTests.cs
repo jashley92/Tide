@@ -76,7 +76,9 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
             var actions = scope.ServiceProvider.GetRequiredService<ActionService>();
             var team = (await scope.ServiceProvider.GetRequiredService<TeamService>().ListAsync())[0].Id;
             number = await actions.QuickAddAsync(article, "Patch GitLab to 17.3.2", ActionKind.PatchRemediate, team, null, day);
-            (await actions.GetAsync(number))!.Action.Priority.Should().Be(Priority.P1, "the article's priority");
+            var made = (await actions.GetAsync(number))!.Action;
+            made.Priority.Should().Be(Priority.P1, "the article's priority");
+            (made.AssigneeId, made.AssigneeName).Should().Be(("dev:tester", "Tester"), "whoever raises it in the meeting holds it");
         }
         await using var again = await RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" });
         await again.Click(p => p.OnPresentKey("last"));
@@ -87,6 +89,28 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
         await again.Click(p => p.OnPresentKey("last"));
         (await again.Html()).Should().NotContain("<li>Patch GitLab to 17.3.2</li>", "a raised line isn't a gap any more")
             .And.Contain("<li>Notify the service desk</li>");
+    }
+
+    [Fact]
+    public async Task TheMeeting_OffersInternalTeamsOnly_AndRefusesAnExternalOne()
+    {
+        var (day, article) = await BriefWithRecommendations(14);
+        var name = "Meeting external provider " + Guid.NewGuid().ToString("N")[..6];
+        Guid external;
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            external = await scope.ServiceProvider.GetRequiredService<TeamService>().AddExternalAsync(new ExternalTeamForm { Name = name });
+
+        await using var r = await RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" });
+        await r.Click(p => p.OnPresentKey("last"));
+        await r.Click(p => p.OnPresentKey("prev"));
+        var slide = await r.Html();
+        slide.Should().Contain("class=\"tide-reco\"").And.NotContain(name, "an external team's work is split off an action, with a parent to follow it up");
+
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+        {
+            var refused = () => scope.ServiceProvider.GetRequiredService<ActionService>().QuickAddAsync(article, "Patch their edge", ActionKind.PatchRemediate, external, null, day);
+            (await refused.Should().ThrowAsync<ArgumentException>()).WithMessage("*split off an action as a part*");
+        }
     }
 
     [Fact]

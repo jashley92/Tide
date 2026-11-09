@@ -923,7 +923,9 @@ else
         var canPresent = CurrentUser.Has(Permission.PresentBriefs);
         var (canWork, canNote) = (CurrentUser.Has(Permission.WorkActions), MeetingSvc.CanNote);
         var record = brief is null ? MeetingRecord.None : await MeetingSvc.GetAsync(brief.Id);
-        var teams = _readsTeam ? (await TeamSvc.ListAsync()).ToList() : [];
+        // Internal teams only: the meeting raises work for the security team's own teams, and an external team's part is
+        // split off an action afterwards (QuickAddAsync refuses one).
+        var teams = _readsTeam ? (await TeamSvc.ListAsync()).Where(t => !t.IsExternal).ToList() : [];
         var teamsByKind = canCreate ? await ActionSvc.TeamsByKindAsync() : new Dictionary<ActionKind, Guid>();
         var actions = brief is null ? null : await BriefSvc.EditionActionsAsync(brief);
         var cves = brief is null ? new Dictionary<string, CveRecord>() : await CvesOf(brief);
@@ -1374,12 +1376,8 @@ else
         _qaTitles.Remove(articleId);
         _qaDue = null;
         await LoadActions();
-        Toasts.Show($"{Ui.ActionLabel(number)} added.{await NoOneToOwn(_qaTeam)}");
+        Toasts.Show($"{Ui.ActionLabel(number)} added and assigned to you.");
     });
-
-    // An action raised to a team with nobody in TIDE is on nobody's list: the toast says so.
-    private async Task<string> NoOneToOwn(Guid team) =>
-        await ActionSvc.TeamHasNoMembersAsync(team) ? " Its team has no members in TIDE, so it's on nobody's list until someone is added." : "";
 
     // --- the recommended lines, raised one at a time ------------------------------------------------------------
 
@@ -1429,7 +1427,7 @@ else
             if (!await _overLimit.RunAsync(async reason =>
                     number = await ActionSvc.QuickAddAsync(articleId, line, draft.Kind, draft.Team, null, RaisedFor, reason))) return;
             await LoadActions();
-            Toasts.Show($"{Ui.ActionLabel(number)} raised.{await NoOneToOwn(draft.Team)}");
+            Toasts.Show($"{Ui.ActionLabel(number)} raised and assigned to you.");
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _raising = false; }
