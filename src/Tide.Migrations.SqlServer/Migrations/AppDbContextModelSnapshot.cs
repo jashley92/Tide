@@ -1915,6 +1915,69 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.ToTable("HuntQueries");
                 });
 
+            modelBuilder.Entity("Tide.Domain.Entities.JobLease", b =>
+                {
+                    b.Property<string>("Name")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("AcquiredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Holder")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Name");
+
+                    b.ToTable("JobLeases");
+                });
+
+            modelBuilder.Entity("Tide.Domain.Entities.JobRun", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTimeOffset>("FinishedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Job")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("Machine")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("StartedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("Succeeded")
+                        .HasColumnType("bit");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StartedAtUtc");
+
+                    b.HasIndex("Job", "StartedAtUtc");
+
+                    b.ToTable("JobRuns");
+                });
+
             modelBuilder.Entity("Tide.Domain.Entities.MeetingAttendee", b =>
                 {
                     b.Property<Guid>("Id")

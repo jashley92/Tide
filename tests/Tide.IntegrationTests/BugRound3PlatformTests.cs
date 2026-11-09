@@ -92,7 +92,7 @@ public class BugRound3PlatformTests : IDisposable
         rig.Db.Commands.Before(sql => sql.Contains("\"FeedItems\"", StringComparison.Ordinal) && sql.Contains("\"FetchedAtUtc\" <", StringComparison.Ordinal),
             () => throw new InvalidOperationException("The database is busy."));
         var jobs = new JobMonitor(TimeProvider.System);
-        var hosted = new IntakeHostedService(rig.Get<IServiceScopeFactory>(), new Tide.Application.Abstractions.ChangeFeed(), jobs,
+        var hosted = new IntakeHostedService(rig.Get<IServiceScopeFactory>(), new Tide.Application.Abstractions.ChangeFeed(), jobs, new HeldLease(),
             rig.Get<IOptionsMonitor<IntakeOptions>>(), rig.Get<IOptionsMonitor<CveOptions>>(), TimeProvider.System, NullLogger<IntakeHostedService>.Instance);
 
         await hosted.PassAsync(CancellationToken.None);

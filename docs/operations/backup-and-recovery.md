@@ -168,6 +168,33 @@ Each runs in the app pool's process, reports to `JobMonitor` (shown on Diagnosti
 at its next pass. None stops the app. An IIS pool that idles out would stop them too, so `Install-Tide.ps1` sets the
 pool's `startMode` to `AlwaysRunning` and its idle timeout to zero. Don't change either.
 
+**One process runs them.** Every process on the database asks for one lease (the `JobLeases` table) before each pass:
+the holder runs the jobs, and any other (a web garden, an overlapping recycle, a standby server started by mistake)
+skips its passes, so no reminder is sent twice. The lease is taken and renewed with one conditional `UPDATE` every 30
+seconds (`JobUpkeepHostedService`) and lapses 3 minutes after its last renewal, so a standby takes over within a few
+minutes of the holder dying, and within 30 seconds when the holder shuts down cleanly (it lets the lease go). The expiry is
+compared on each server's clock, so keep the servers' clocks in sync (domain time is enough). Diagnostics names the
+holder ("Job lease"), and on a standby says it's standing by. The installer and the upgrade also set the pool to one
+worker process (`maxProcesses = 1`).
+
+**Each run is kept** in the job history (the `JobRuns` table) for 30 days, pruned daily: the job, the server, when it
+started and finished, whether it went well, and its summary or its error (scrubbed of credentials, at most 500
+characters). At start-up each job's latest run is read back, so Diagnostics and `/health/jobs` know when it last went
+well across a restart. Diagnostics shows each job's runs and failures over the 30 days, and the 10 latest failures.
+
+**Each failure is logged** as a Warning (category `Tide.Application.Operations.JobMonitor`, "Background job … failed (N
+in a row) …"), with an event id of its own per job, for an alert rule on one job:
+
+| Event id | Job (Diagnostics name) |
+|---|---|
+| 7101 | Polling the sources |
+| 7102 | Refreshing the CVE data |
+| 7103 | Pruning old feed items |
+| 7104 | Reminder and digest emails |
+| 7105 | Metrics drop folder |
+| 7106 | Update check |
+| 7107 | Webhooks |
+
 | Job (Diagnostics name) | Service | How often | When it does something |
 |---|---|---|---|
 | Polling the sources | `IntakeHostedService` | Every minute | `Intake:Enabled`; each source on its own interval, doubled per consecutive failure up to 16 times |
@@ -194,24 +221,39 @@ pool's `startMode` to `AlwaysRunning` and its idle timeout to zero. Don't change
 
 ### Endpoints
 
-Both answer without sign-in (the installer sets an anonymous carve-out for `/health`), with status only and no detail.
-Both are rate limited to 120 requests a minute per address.
+All three answer without sign-in (the installer sets an anonymous carve-out for `/health` and the paths below it),
+with status only and no detail. All are rate limited to 120 requests a minute per address.
 
 | Endpoint | Checks | Answers |
 |---|---|---|
 | `/health/live` | Nothing: the process answers | `Healthy` |
 | `/health` | Readiness: the database answers a query within 5 seconds (`DatabaseHealthCheck`) | `Healthy` or `Unhealthy`, as `text/plain` |
+| `/health/jobs` | The background jobs (`JobsHealthCheck`, from memory: it asks the database nothing) | `Healthy`, `Degraded` (HTTP 200) or `Unhealthy` (HTTP 503), as `text/plain` |
 
 Point IIS, a load balancer or an uptime monitor at `/health`. `Upgrade-Tide.ps1` and `Verify-Install.ps1` use it too.
 While it's failing, one warning a minute is logged as `Tide.Health` ("Readiness is Unhealthy: database …"), not one
 per probe.
+
+Point SCOM, or an uptime monitor that reads the body, at `/health/jobs` as a second monitor: the app can answer
+`/health` while its jobs have quietly stopped. A job that's turned on makes it:
+
+- **Unhealthy** when it's **hung** (a run has gone on past the job's limit: 30 minutes for most, 2 hours for the CVE
+  refresh, 10 minutes for the update check) or **overdue** (it last went well more than three of its intervals ago, at
+  least 15 minutes, counted from when it was turned on or the process took the lease if that's later);
+- **Degraded** when its last 3 or more runs failed.
+
+A job that's off isn't counted, and a process standing by under the job lease answers `Healthy` (another runs the
+jobs). Alert on `Unhealthy`, and on `Degraded` that lasts; Diagnostics says which job and why. A monitor that only
+reads status codes sees `Degraded` as 200: match the body's word instead. While it isn't healthy, one warning a minute
+is logged as `Tide.Health` ("Background jobs is Unhealthy: jobs …").
 
 ### Diagnostics
 
 **Administration › System › Diagnostics** is the deeper check, for administrators: the build and uptime; the
 database and whether its schema is current; the screenshot folder is writable (it writes and deletes one empty file);
 the key ring is on disk; email is on, signs in properly, and isn't backed off; which sources are failing; each
-background job's last run, result and next run; whether the role mappings loaded; whether WebSockets are in use (this
+background job's last run, result and next run, whether it's failing, overdue or hung, and its runs and failures over
+30 days; which process holds the job lease (or that this one is standing by); whether the role mappings loaded; whether WebSockets are in use (this
 page's connection and everyone's since start); and whether a newer release is out. It changes nothing.
 
 ### What to watch
@@ -219,9 +261,10 @@ page's connection and everyone's since start); and whether a newer release is ou
 | Watch | Where | Means |
 |---|---|---|
 | `/health` not `Healthy` | Your monitor | The database is down or slow, or the app isn't running. |
+| `/health/jobs` `Unhealthy`, or `Degraded` for a while | Your monitor | A background job is hung, overdue, or keeps failing: Diagnostics says which. |
 | Scheduled backup or drill task failed | Task Scheduler last result, or your monitoring of it | No usable set tonight, or a set that doesn't restore. |
 | Critical entries | Windows Application log, source `.NET Runtime` | The role directory couldn't reload, or the server's AD domain can't be found. |
-| "A … failed; it's tried again at the next pass" | Application log | A background job failed (see [troubleshooting.md](troubleshooting.md)). |
+| "Background job … failed", event ids 7101 to 7107 | Application log | A background job failed (see [troubleshooting.md](troubleshooting.md)). |
 | Disk on the data root and SQL log volume | Your monitor | Files grow with screenshots; the log grows without log backups. |
 | Diagnostics checks not Ok | The page | Anything above, explained, with where to fix it. |
 
@@ -236,6 +279,8 @@ How to read the log, and how to raise its level, is in [INSTALL.md](../INSTALL.m
 | Key ring | `src/Tide.Web/Program.cs` (data protection) |
 | File store | `src/Tide.Infrastructure/Storage/DiskFileStore.cs` |
 | Hosted services | `src/Tide.Web/Services/IntakeHostedService.cs`, `ReminderHostedService.cs`, `MetricImportHostedService.cs`, `UpdateCheckHostedService.cs`; `src/Tide.Web/Api/WebhookServices.cs` (`WebhookHostedService`) |
-| Job reporting | `src/Tide.Application/Operations/JobMonitor.cs` |
-| Health | `src/Tide.Web/Program.cs` (`MapHealthChecks`), `src/Tide.Web/Services/Services.cs` (`DatabaseHealthCheck`) |
+| Job reporting | `src/Tide.Application/Operations/JobMonitor.cs`, `JobHealth.cs`, `JobRunLog.cs` |
+| Job lease | `src/Tide.Application/Operations/BackgroundJobLease.cs`, `src/Tide.Web/Services/JobUpkeepHostedService.cs` |
+| Pool settings | `deploy/lib/TideIis.ps1` (`Set-TideSingleWorkerProcess`) |
+| Health | `src/Tide.Web/Program.cs` (`MapHealthChecks`), `src/Tide.Web/Services/Services.cs` (`DatabaseHealthCheck`, `JobsHealthCheck`) |
 | Diagnostics | `src/Tide.Web/Services/SystemDiagnostics.cs`, `src/Tide.Web/Components/Pages/Admin/DiagnosticsAdmin.razor` |

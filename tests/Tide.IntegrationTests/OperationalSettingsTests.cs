@@ -39,6 +39,8 @@ public sealed class SettingsRig : IDisposable
         services.AddSingleton<IOutboundHttp>(Db.Http);
         services.AddSingleton<IFileStore>(Db.Store);
         services.AddSingleton<IRoleDirectory>(new CountingRoleDirectory());
+        // As the app has: the job lease, which a job run by hand asks for, logs.
+        services.AddLogging();
         Provider = services.BuildServiceProvider();
     }
 
@@ -282,7 +284,7 @@ public class IntakeHostedServiceSettingsTests
         rig.Db.Http.Set(FeedUrl, "<rss version=\"2.0\"><channel><title>News</title></channel></rss>");
         await rig.Get<IntakeService>().SaveSourceAsync(new SourceForm { Name = "News", Kind = SourceKind.Feed, Url = FeedUrl, DefaultTlp = TlpLevel.Clear, PollMinutes = 30 });
         var jobs = new JobMonitor(TimeProvider.System);
-        var hosted = new IntakeHostedService(rig.Get<IServiceScopeFactory>(), new ChangeFeed(), jobs, rig.Get<IOptionsMonitor<IntakeOptions>>(),
+        var hosted = new IntakeHostedService(rig.Get<IServiceScopeFactory>(), new ChangeFeed(), jobs, new HeldLease(), rig.Get<IOptionsMonitor<IntakeOptions>>(),
             rig.Get<IOptionsMonitor<CveOptions>>(), TimeProvider.System, NullLogger<IntakeHostedService>.Instance);
 
         await hosted.PassAsync(CancellationToken.None);

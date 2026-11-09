@@ -32,7 +32,7 @@ in [configuration.md](configuration.md), [integrations.md](integrations.md) and 
 | **Administration › Teams & SLA** | Each reminder scan's last run, emails sent, opt-outs, error; **Run now** | |
 | **Administration › Metric imports** | What each import did, row by row | |
 | The brief's **Send** step | The send log: each send's status, error, and "outcome unknown" | |
-| `/health`, `/health/live` | Database readiness; the process up | Anonymous; status word only. |
+| `/health`, `/health/live`, `/health/jobs` | Database readiness; the process up; the background jobs | Anonymous; status word only. |
 | Browser developer tools (F12) | The `_blazor` WebSocket (101), console errors, 4xx and 5xx on files | Network and Console tabs. |
 | IIS logs (`%SystemDrive%\inetpub\logs\LogFiles`) | Status code per request | |
 
@@ -79,6 +79,29 @@ failure and counts, not content.
 - **Where to look:** the log's `Tide.Health` warning, once a minute: "Readiness is Unhealthy: database …".
 - **Fix:** check SQL Server, the network, and the pool account's login. A 401 on `/health` means the anonymous
   carve-out is missing: rerun `Install-Tide.ps1` or `Upgrade-Tide.ps1`, which add it.
+
+### `/health/jobs` says `Unhealthy` or `Degraded`
+
+- **Cause:** a background job that's turned on is hung (a run past its limit), overdue (no good run in three of its
+  intervals, at least 15 minutes), or failing (its last 3 or more runs failed: `Degraded`).
+- **Where to look:** Diagnostics › Health checks › "Background jobs" names the job and why; the jobs table shows its
+  last error and the recent failures. The log has a Warning per failed run, "Background job … failed (N in a row)",
+  under the job's event id (7101 to 7107, listed in
+  [backup-and-recovery.md](backup-and-recovery.md#hosted-services-inside-the-app)).
+- **Fix:** fix what the error names (the relay for reminders, the proxy for feeds and the CVE data). A hung job
+  usually waits on a host that never answers: recycle the pool to start it again. Overdue with no failures means the
+  job stopped running: check "Job lease" on Diagnostics, then recycle.
+
+### A job never runs on this server, and Diagnostics says "Standing by"
+
+Run now, Poll now, Pull now, the CVE refresh and Check now say "This server is standing by: … runs the background
+jobs. Run it there." on such a server.
+
+- **Cause:** another process on the same database holds the job lease: another server pointed at this database (a
+  standby started by mistake), or a second worker in the pool.
+- **Where to look:** Diagnostics › "Job lease" names the holder (machine and process id).
+- **Fix:** stop the other server, or set the pool's Maximum Worker Processes to 1 (rerun `Install-Tide.ps1` or
+  `Upgrade-Tide.ps1`, which set it). If the holder died, this process takes over within 3 minutes by itself.
 
 ## Sign-in and access
 

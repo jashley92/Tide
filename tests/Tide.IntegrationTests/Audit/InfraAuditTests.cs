@@ -276,6 +276,9 @@ public sealed class HostedShutdownTests
                 services.AddScoped<IAppDbContextFactory>(sp => new HoldingDbFactory(
                     new Tide.Infrastructure.Persistence.AppDbContextFactoryAdapter(
                         sp.GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<Tide.Infrastructure.Persistence.AppDbContext>>())));
+                // The job lease asks the database too, which this factory holds forever: the jobs run as its holder.
+                services.RemoveAll<Tide.Application.Operations.IJobLease>();
+                services.AddSingleton<Tide.Application.Operations.IJobLease, HeldLease>();
             });
         }
     }

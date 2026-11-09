@@ -75,6 +75,8 @@ public interface IAppDbContext : IAsyncDisposable, IDisposable
     DbSet<RotationChange> RotationChanges { get; }
     DbSet<RotationOverride> RotationOverrides { get; }
     DbSet<Holiday> Holidays { get; }
+    DbSet<JobLease> JobLeases { get; }
+    DbSet<JobRun> JobRuns { get; }
 
     /// <summary>The connection's transactions, for a claim that takes several rows or none (a group promote).</summary>
     Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade Database { get; }

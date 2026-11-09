@@ -36,7 +36,7 @@ public sealed record UpdateStatus(UpdateState State, ReleaseVersion? Running, Da
 /// Singleton; <see cref="Enabled"/> is kept in step with the saved setting by the hosted service and the Updates page.
 /// </summary>
 public sealed class UpdateCheckService(IOutboundHttp http, IOptionsMonitor<UpdateOptions> options, ILogger<UpdateCheckService> log,
-    TimeProvider? time = null, ReleaseVersion? running = null, bool useBuildVersion = true) : IDisposable
+    TimeProvider? time = null, ReleaseVersion? running = null, bool useBuildVersion = true, IJobLease? lease = null) : IDisposable
 {
     public static readonly TimeSpan TimeLimit = TimeSpan.FromSeconds(10);
 
@@ -77,6 +77,8 @@ public sealed class UpdateCheckService(IOutboundHttp http, IOptionsMonitor<Updat
     public async Task<UpdateStatus> CheckAsync(bool manual = false, CancellationToken ct = default)
     {
         if (!Enabled) return Status;
+        // Check now on a process standing by is refused: the holder checks, and its result is the one kept.
+        if (manual) await lease.RequireHeldAsync(ct);
         await _gate.WaitAsync(ct);
         try
         {

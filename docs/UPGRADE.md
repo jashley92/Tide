@@ -114,7 +114,12 @@ What it does, in order:
 4. **Deploys**: adds the missing settings and the carve-outs, stops the pool (waiting until its worker has let go of the
    files), copies the release's `app` folder over the site, and removes what the earlier release shipped under
    `wwwroot`, and the assemblies at the top of the folder, that this one doesn't. `appsettings.Production.json` (and
-   its `.new`), `logs` and `App_Data` stay, and the data root is outside the site.
+   its `.new`), `logs` and `App_Data` stay, and the data root is outside the site. While the pool is stopped it sets
+   the pool as the installer does: no scheduled recycle, no overlapping recycle, and one worker process
+   (`processModel.maxProcesses = 1`, Maximum Worker Processes in IIS Manager). It reads that back; a pool that still
+   reads more than 1 (a lock in `applicationHost.config`) is a warning, not a failure, since the new build is already
+   in place: set it by hand. Only one process runs the background jobs either way (the job lease), but each worker
+   keeps its own sign-ins and live pages.
 5. **Starts and warms up**: on AppMigrates the first start applies the new migrations; it polls `/health` for up to 11
    minutes (past the 10-minute `startupTimeLimit`). If TIDE doesn't answer `Healthy`, it puts the previous files back
    and starts the pool again; if the new build had already applied migrations, it leaves the pool **stopped** and says

@@ -47,13 +47,17 @@ public sealed record ConnectionInfo(HttpTransportType? Current, IReadOnlyList<Tr
     public bool NeedsFix => Level == CheckLevel.Attention || FellBack > 0;
 }
 
+/// <summary>The report. <see cref="Lease"/> is whether this process runs the background jobs; <see cref="JobHealth"/>
+/// is what <c>/health/jobs</c> answers from; <see cref="JobHistory"/> is the job history's last 30 days.</summary>
 public sealed record DiagnosticsReport(
     DateTimeOffset CheckedAtUtc, BuildInfo Build, DatabaseInfo Database, IReadOnlyList<JobState> Jobs, EmailInfo Email,
-    IReadOnlyList<StorageInfo> Storage, SourceHealth Sources, CveRun? LastCveRun, IReadOnlyList<HealthItem> Checks, ConnectionInfo Connection);
+    IReadOnlyList<StorageInfo> Storage, SourceHealth Sources, CveRun? LastCveRun, IReadOnlyList<HealthItem> Checks, ConnectionInfo Connection,
+    LeaseStatus Lease, JobHealthReport JobHealth, JobRunHistory JobHistory);
 
 /// <summary>
 /// Whether TIDE is healthy, for Administration › System › Diagnostics: the build and how long it's been
-/// up, the database and its schema, each background job's last run, email delivery, the folders it writes, and the
+/// up, the database and its schema, which process runs the background jobs, each job's last run (and whether it's
+/// failing, overdue or hung, as <c>/health/jobs</c> says) and its history, email delivery, the folders it writes, and the
 /// feeds that are failing; summed up as checks, each with where it's fixed. It reads and probes; it changes nothing
 /// (the folder probe writes and deletes one empty file). Nothing it shows carries a secret: the connection is
 /// described by provider only, and errors are scrubbed. Administrators only: the page says so, and so does
@@ -61,7 +65,7 @@ public sealed record DiagnosticsReport(
 /// </summary>
 public sealed class SystemDiagnostics(
     IConfiguration config, IWebHostEnvironment env, IDbContextFactory<AppDbContext> contexts, IAppDbContextFactory dbs, JobMonitor jobs,
-    IOptionsMonitor<EmailOptions> email, OutboundCircuit circuit, CveRunLog cveLog, IRoleDirectory roles, UpdateCheckService updates,
+    IJobLease lease, IOptionsMonitor<EmailOptions> email, OutboundCircuit circuit, CveRunLog cveLog, IRoleDirectory roles, UpdateCheckService updates,
     TimeProvider time, ICurrentUser user, PresenceCircuit presenceCircuit, TransportCounts transportCounts)
 {
     public static readonly TimeSpan DatabaseTimeLimit = TimeSpan.FromSeconds(5);
@@ -76,10 +80,58 @@ public sealed class SystemDiagnostics(
         var storage = Storage();
         var sources = database.Reachable ? await SourcesAsync(ct) : new SourceHealth(0, 0, []);
         var states = jobs.States;
+        var leaseStatus = lease.Status;
+        var jobHealth = Tide.Application.Operations.JobHealth.Evaluate(states, leaseStatus, time.GetUtcNow());
+        var history = database.Reachable ? await HistoryAsync(ct) : JobRunHistory.None;
         var connection = new ConnectionInfo(presenceCircuit.Transport, transportCounts.Snapshot());
-        var checks = Checks(database, states, mail, storage, sources);
+        var checks = Checks(database, mail, storage, sources);
         checks.InsertRange(1, ConnectionChecks(connection));
-        return new DiagnosticsReport(time.GetUtcNow(), build, database, states, mail, storage, sources, cveLog.Last, checks, connection);
+        checks.InsertRange(checks.FindIndex(c => c.Label == "Sources") + 1, JobChecks(states, leaseStatus, jobHealth));
+        return new DiagnosticsReport(time.GetUtcNow(), build, database, states, mail, storage, sources, cveLog.Last, checks, connection,
+            leaseStatus, jobHealth, history);
+    }
+
+    private async Task<JobRunHistory> HistoryAsync(CancellationToken ct)
+    {
+        try { return await JobRunLog.HistoryAsync(dbs, ct); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { return JobRunHistory.None; }
+    }
+
+    /// <summary>
+    /// Which process runs the background jobs (the job lease), and how the jobs stand: hung or overdue is a Problem,
+    /// failing again and again is Attention, as <c>/health/jobs</c> says Unhealthy or Degraded; a last run that failed
+    /// is Attention too. A process standing by runs none, so none is judged.
+    /// </summary>
+    internal static IEnumerable<HealthItem> JobChecks(IReadOnlyList<JobState> states, LeaseStatus lease, JobHealthReport health)
+    {
+        var holder = lease.HolderName ?? "another process";
+        yield return lease.State switch
+        {
+            LeaseState.Held when lease.Problem is { } p => new("Job lease", CheckLevel.Attention,
+                $"This process ({holder}) runs the background jobs, but couldn't renew the lease ({p}). It stops before the lease lapses unless the database answers."),
+            LeaseState.Held => new("Job lease", CheckLevel.Ok, $"This process ({holder}) runs the background jobs."),
+            LeaseState.StandingBy => new("Job lease", CheckLevel.Info,
+                $"Standing by: {holder} runs the background jobs, so this process runs none. It takes over within a few minutes if that one stops."),
+            LeaseState.Unreachable => new("Job lease", CheckLevel.Problem,
+                $"Couldn't take the lease ({lease.Problem}): no background job runs here until the database answers."),
+            _ => new("Job lease", CheckLevel.Info, "Not asked yet: it's taken within a minute of start-up."),
+        };
+        if (health.StandingBy)
+        {
+            yield return new("Background jobs", CheckLevel.Info, $"Not run here: {holder} runs them.");
+            yield break;
+        }
+        if (health.Level != JobHealthLevel.Healthy)
+        {
+            var worst = health.Findings.Where(f => f.Level == health.Level).Select(f => f.Text);
+            yield return new("Background jobs", health.Level == JobHealthLevel.Unhealthy ? CheckLevel.Problem : CheckLevel.Attention,
+                string.Join(" ", worst) + " See the jobs below.");
+            yield break;
+        }
+        var failed = states.Where(s => s.Enabled && s.LastSucceeded == false).Select(s => s.Job.Name).ToList();
+        yield return failed.Count == 0
+            ? new("Background jobs", CheckLevel.Ok, "None failing, overdue or hung.")
+            : new("Background jobs", CheckLevel.Attention, $"Last run failed: {string.Join(", ", failed)}. See the jobs below.");
     }
 
     private BuildInfo Build()
@@ -208,7 +260,7 @@ public sealed class SystemDiagnostics(
             $"{connection.FellBack} of {connection.SinceStart} since the app started didn't use WebSockets ({which}). {ConnectionTransport.Fix}");
     }
 
-    private List<HealthItem> Checks(DatabaseInfo db, IReadOnlyList<JobState> states, EmailInfo mail, IReadOnlyList<StorageInfo> storage, SourceHealth sources)
+    private List<HealthItem> Checks(DatabaseInfo db, EmailInfo mail, IReadOnlyList<StorageInfo> storage, SourceHealth sources)
     {
         var checks = new List<HealthItem>
         {
@@ -241,10 +293,6 @@ public sealed class SystemDiagnostics(
             ? new("Sources", CheckLevel.Ok, sources.Enabled == 0 ? "None turned on." : $"All {sources.Enabled} answering.")
             : new("Sources", CheckLevel.Attention, $"{sources.Failing} of {sources.Enabled} failing: {string.Join(", ", sources.FailingNames)}.", "admin/sources"));
 
-        var failed = states.Where(s => s.LastSucceeded == false).Select(s => s.Job.Name).ToList();
-        checks.Add(failed.Count == 0
-            ? new("Background jobs", CheckLevel.Ok, "No failures since the app started.")
-            : new("Background jobs", CheckLevel.Attention, $"Last run failed: {string.Join(", ", failed)}. See the jobs below."));
 
         checks.Add(roles.IsCurrent
             ? new("Role mappings", CheckLevel.Ok, "Loaded.")

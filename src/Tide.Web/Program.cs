@@ -140,6 +140,8 @@ builder.Services.AddScoped<PresenceCircuit>();
 builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler>(sp => sp.GetRequiredService<PresenceCircuit>());
 // The circuit's user is ambient during each of its activities, so a refusal can be logged with who asked.
 builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler, AmbientUserCircuitHandler>();
+// First, so it stops last: it writes the jobs' last runs and lets the job lease go once they've stopped.
+builder.Services.AddHostedService<JobUpkeepHostedService>();
 builder.Services.AddHostedService<ReminderHostedService>();
 builder.Services.AddHostedService<IntakeHostedService>();
 builder.Services.AddHostedService<MetricImportHostedService>();
@@ -148,9 +150,10 @@ builder.Services.AddHostedService<WebhookHostedService>();
 builder.Services.AddScoped<SystemSettings>();
 builder.Services.AddScoped<SystemDiagnostics>();
 
-// --- Health: liveness (the process answers) and readiness (the database answers) ---
+// --- Health: liveness (the process answers), readiness (the database answers) and the background jobs ---
 builder.Services.AddHealthChecks()
-    .AddCheck<DatabaseHealthCheck>("database", tags: ["ready"]);
+    .AddCheck<DatabaseHealthCheck>("database", tags: ["ready"])
+    .AddCheck<JobsHealthCheck>("jobs", tags: ["jobs"]);
 
 // --- Rate limits: per signed-in user (or address) on the image endpoint, which reads files from disk ---
 builder.Services.AddRateLimiter(o =>
@@ -188,6 +191,13 @@ using (var scope = app.Services.CreateScope())
     await app.Services.GetRequiredService<SavedSettings>().RefreshAsync(scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>());
     await app.Services.GetRequiredService<EmailTemplateStore>().RefreshAsync(scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>());
     await app.Services.GetRequiredService<EmailCopyStore>().RefreshAsync(scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>());
+    // Each job's latest run from the job history, so Diagnostics and /health/jobs know when it last went well.
+    try { await app.Services.GetRequiredService<JobRunLog>().RestoreAsync(scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>()); }
+    catch (Exception ex)
+    {
+        app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Tide.Jobs")
+            .LogWarning(ex, "Couldn't read the job history at start-up; Diagnostics shows only this process's runs.");
+    }
 }
 
 // Development only: the screenshot tool's fuller demo data (tools/screenshots), when Demo:Seed is set.
@@ -441,26 +451,31 @@ app.MapGet("/admin/system/audit.csv", async (HttpContext http, Tide.Application.
 
 // Health probes for IIS, a load balancer or uptime monitoring: status only, no detail, no sign-in.
 // The framework logs an Error for each failing probe (one every few seconds from a load balancer during an outage); its
-// category is quiet (see the logging filter above) and one Warning a minute says the database isn't answering instead.
+// category is quiet (see the logging filter above) and one Warning a minute says what isn't healthy instead.
 var healthLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Tide.Health");
-var lastHealthWarningTicks = 0L;
-app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false }).AllowAnonymous().RequireRateLimiting("health");
-app.MapHealthChecks("/health", new HealthCheckOptions
+Func<HttpContext, HealthReport, Task> StatusWord(string what)
 {
-    Predicate = c => c.Tags.Contains("ready"),
-    ResponseWriter = (http, report) =>
+    var lastWarningTicks = 0L;
+    return (http, report) =>
     {
         var now = DateTimeOffset.UtcNow.UtcTicks;
-        var last = Interlocked.Read(ref lastHealthWarningTicks);
+        var last = Interlocked.Read(ref lastWarningTicks);
         if (report.Status != HealthStatus.Healthy && now - last > TimeSpan.TicksPerMinute
-            && Interlocked.CompareExchange(ref lastHealthWarningTicks, now, last) == last)
-            healthLog.LogWarning("Readiness is {Status}: {Checks}", report.Status,
+            && Interlocked.CompareExchange(ref lastWarningTicks, now, last) == last)
+            healthLog.LogWarning("{What} is {Status}: {Checks}", what, report.Status,
                 string.Join("; ", report.Entries.Where(e => e.Value.Status != HealthStatus.Healthy)
                     .Select(e => e.Key + " " + e.Value.Description + (e.Value.Exception is { } ex ? " (" + SecretMask.Scrub(ex.GetType().Name + ": " + ex.Message) + ")" : ""))));
         http.Response.ContentType = "text/plain";
         return http.Response.WriteAsync(report.Status.ToString());
-    },
-}).AllowAnonymous().RequireRateLimiting("health");
+    };
+}
+app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false }).AllowAnonymous().RequireRateLimiting("health");
+app.MapHealthChecks("/health", new HealthCheckOptions { Predicate = c => c.Tags.Contains("ready"), ResponseWriter = StatusWord("Readiness") })
+    .AllowAnonymous().RequireRateLimiting("health");
+// The background jobs (JobsHealthCheck): Healthy, Degraded (200) or Unhealthy (503), the word only; the detail is on
+// Diagnostics.
+app.MapHealthChecks("/health/jobs", new HealthCheckOptions { Predicate = c => c.Tags.Contains("jobs"), ResponseWriter = StatusWord("Background jobs") })
+    .AllowAnonymous().RequireRateLimiting("health");
 
 await app.RunAsync();
 

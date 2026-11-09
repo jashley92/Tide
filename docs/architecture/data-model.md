@@ -28,6 +28,7 @@ snapshot is right.
 - [Rotation and the calendar](#rotation-and-the-calendar)
 - [Reference data: scorecard, stack, adversaries](#reference-data-scorecard-stack-adversaries)
 - [Users, settings, security and the API](#users-settings-security-and-the-api)
+- [Background jobs](#background-jobs)
 - [Files: on disk and in the database](#files-on-disk-and-in-the-database)
 - [The audit log](#the-audit-log)
 - [Enums](#enums)
@@ -39,14 +40,14 @@ snapshot is right.
 | Marker | Means |
 |---|---|
 | **S** | Stamped. The class derives from `AuditableEntity`, so it has `CreatedAtUtc`, `CreatedBy`, `ModifiedAtUtc` and `ModifiedBy`, which `AuditInterceptor` fills. |
-| **A** | Audited. Every insert, update and delete writes an `AuditLog` row in the same save. Only the eight types in `AuditInterceptor.NotAudited` aren't audited. |
+| **A** | Audited. Every insert, update and delete writes an `AuditLog` row in the same save. Only the eleven types in `AuditInterceptor.NotAudited` aren't audited. |
 | **V** | Has an `EditVersion` concurrency token. |
 
 ## Conventions that apply everywhere
 
 | Convention | Detail |
 |---|---|
-| **Keys** | Most tables have a `uniqueidentifier Id` from `Entity` (`src/Tide.Domain/Common/Entity.cs`). C# generates it with `Guid.NewGuid()`; the database never does. `AppDbContext.OnModelCreating` sets `ValueGenerated.Never` on every Guid key property. Without that, EF would treat a new child added through a tracked parent (whose key is already set) as an existing row and update it. Link tables (`ArticleTags`, `ArticleCves`, `TeamMembers`…) have composite keys. A few tables are keyed by a natural value: `Settings.Key`, `CveRecords.CveId`, `DetectionGaps.TechniqueId`, `Holidays.Date`, `RotationWeeks.WeekStart`, `RotationOverrides.Date`, `RotationMembers.UserId`, `FeedItemTexts.FeedItemId`, and the composite keys of `UserPreferences`, `QueryTemplates` and `NotificationMarks`. |
+| **Keys** | Most tables have a `uniqueidentifier Id` from `Entity` (`src/Tide.Domain/Common/Entity.cs`). C# generates it with `Guid.NewGuid()`; the database never does. `AppDbContext.OnModelCreating` sets `ValueGenerated.Never` on every Guid key property. Without that, EF would treat a new child added through a tracked parent (whose key is already set) as an existing row and update it. Link tables (`ArticleTags`, `ArticleCves`, `TeamMembers`…) have composite keys. A few tables are keyed by a natural value: `Settings.Key`, `CveRecords.CveId`, `DetectionGaps.TechniqueId`, `Holidays.Date`, `RotationWeeks.WeekStart`, `RotationOverrides.Date`, `RotationMembers.UserId`, `FeedItemTexts.FeedItemId`, `JobLeases.Name`, and the composite keys of `UserPreferences`, `QueryTemplates` and `NotificationMarks`. |
 | **Human numbers** | Actions also carry `Number` (`A-42`), which is unique and never reused. `ActionService` assigns it as the highest number plus one. When two creates take the same number, the unique index refuses one of them and the service retries, up to three attempts. |
 | **People are strings** | A row stores a person as their stable user id plus the display name they had at the time, as a pair of columns: `AuthorId`/`AuthorName`, `AssigneeId`/`AssigneeName`, `SentById`/`SentByName` and so on. `AppDbContext.Person` maps each pair as `nvarchar(256)`. The id is whatever `CurrentUser.IdOf` returns for the principal: the `NameIdentifier` claim (the dev sign-in's id, or `api:<token id>` for an API token), otherwise the UPN, otherwise the account name. `CreatedBy` and `ModifiedBy` hold that id, or `system` for unattended work. There are **no foreign keys to `Users`**. That table is a mirror for display names and pickers. **Needs verification:** which claim a production Windows (Negotiate) sign-in supplies first. `CurrentUser.IdOf`'s comment says the SID, but nothing in `src/Tide.Web/Security` adds a `NameIdentifier` claim for Windows principals. Signing in on IIS and reading `Users.Sid` would confirm it. |
 | **Enums are integers** | EF has no value conversions for enums, so every enum column is `int`. Each enum's comment says "Stored; append, never renumber." Add new members at the end, and never renumber or remove one. Two things are stored **by name** instead: `AppRole` names in `RoleMappings.RoleName` and `Users.RolesCsv`. Never rename an `AppRole` member. |
@@ -556,6 +557,17 @@ erDiagram
     NotificationMarks {
         string Kind PK
         string Key PK
+    }
+    JobLeases {
+        string Name PK
+        string Holder
+        datetimeoffset ExpiresAtUtc
+    }
+    JobRuns {
+        uuid Id PK
+        string Job
+        datetimeoffset StartedAtUtc
+        bool Succeeded
     }
     StackProducts {
         uuid Id PK
@@ -1397,6 +1409,43 @@ An address TIDE posts to when something happens, signed with HMAC-SHA256. Writte
 | `OverdueSentFor` | date | yes | The last day whose newly overdue actions were sent. |
 | `LastAtUtc`, `LastStatus`, `LastError` | datetimeoffset, int, nvarchar(500) | yes | The last delivery, updated with `ExecuteUpdateAsync`. |
 | stamps | | | **S** columns. |
+
+## Background jobs
+
+The background jobs' own bookkeeping. Neither table is audited, holds anything a person typed, or links to another
+table. See [backend.md](backend.md#background-jobs).
+
+### `JobLeases` (not audited)
+
+Which process runs the background jobs. One row today, `background-jobs`, made by the first process to ask. Every
+process on the database asks before each job's pass; only the holder runs it. `BackgroundJobLease`
+(`Operations/BackgroundJobLease.cs`) takes and renews it with one `ExecuteUpdateAsync` (set this holder and a new
+expiry where the row is this holder's or has lapsed), so two processes can't both take it, and lets it go at shutdown
+by setting its expiry to now.
+
+| Column | Type | Null | Meaning |
+|---|---|---|---|
+| `Name` | nvarchar(64) | no | Key. The lease's name. |
+| `Holder` | nvarchar(200) | no | The holding process: machine, process id and a value of its own, `WEB01/4312/9f0c…`. |
+| `AcquiredAtUtc` | datetimeoffset | no | When this holder took it; a renewal leaves it. |
+| `ExpiresAtUtc` | datetimeoffset | no | When it lapses unless renewed: 3 minutes after the last renewal. |
+
+### `JobRuns` (not audited)
+
+One row per run of a background job, so Diagnostics and `/health/jobs` keep each job's history across restarts.
+Written in batches by `JobRunLog` (`Operations/JobRunLog.cs`) every 30 seconds from what `JobMonitor` queued; rows
+older than 30 days are deleted daily by the lease holder.
+
+| Column | Type | Null | Meaning |
+|---|---|---|---|
+| `Id` | uniqueidentifier | no | |
+| `Job` | nvarchar(32) | no | The job's key: `feeds`, `cve`, `prune`, `reminders`, `metric-drop`, `updates`, `webhooks`. Indexed with `StartedAtUtc`. |
+| `Machine` | nvarchar(64) | no | The server that ran it. |
+| `StartedAtUtc` | datetimeoffset | no | Indexed, for the prune. |
+| `FinishedAtUtc` | datetimeoffset | no | |
+| `Succeeded` | bit | no | |
+| `Detail` | nvarchar(200) | yes | The job's own summary of a run that went well ("3 new items"). |
+| `Error` | nvarchar(500) | yes | A failed run's error, scrubbed of credentials (`SecretMask`) and cut short. |
 
 ## Files: on disk and in the database
 

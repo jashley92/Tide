@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Tide.Application.Abstractions;
+using Tide.Application.Operations;
 
 namespace Tide.Web.Services;
 
@@ -149,6 +150,26 @@ public sealed class DatabaseHealthCheck(IAppDbContextFactory dbs, TimeProvider t
         {
             return HealthCheckResult.Unhealthy("The database didn't answer.", ex);
         }
+    }
+}
+
+/// <summary>
+/// <c>/health/jobs</c>: whether the background jobs are working (<see cref="JobHealth"/>): Unhealthy when a job turned on
+/// is hung or overdue, Degraded when one keeps failing, Healthy otherwise, and Healthy while this process stands by under
+/// the job lease. From memory only: it asks the database nothing.
+/// </summary>
+public sealed class JobsHealthCheck(JobMonitor jobs, IJobLease lease, TimeProvider time) : IHealthCheck
+{
+    public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken ct = default)
+    {
+        var report = JobHealth.Evaluate(jobs.States, lease.Status, time.GetUtcNow());
+        var why = report.StandingBy ? "Standing by: another process runs the background jobs." : string.Join(" ", report.Findings.Select(f => f.Text));
+        return Task.FromResult(report.Level switch
+        {
+            JobHealthLevel.Healthy => HealthCheckResult.Healthy(why),
+            JobHealthLevel.Degraded => HealthCheckResult.Degraded(why),
+            _ => HealthCheckResult.Unhealthy(why),
+        });
     }
 }
 

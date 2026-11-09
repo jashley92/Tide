@@ -33,8 +33,9 @@ public sealed class HttpWebhookPoster(IHttpClientFactory clients) : IWebhookPost
     }
 }
 
-/// <summary>Sends webhooks' events every minute (see <see cref="WebhookService.DeliverDueAsync"/>).</summary>
-public sealed class WebhookHostedService(IServiceScopeFactory scopes, JobMonitor jobs, TimeProvider time, ILogger<WebhookHostedService> log) : BackgroundService
+/// <summary>Sends webhooks' events every minute (see <see cref="WebhookService.DeliverDueAsync"/>). A process that doesn't
+/// hold the job lease skips its passes (another process sends them).</summary>
+public sealed class WebhookHostedService(IServiceScopeFactory scopes, JobMonitor jobs, IJobLease lease, TimeProvider time, ILogger<WebhookHostedService> log) : BackgroundService
 {
     public static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(1);
 
@@ -44,17 +45,19 @@ public sealed class WebhookHostedService(IServiceScopeFactory scopes, JobMonitor
         {
             try
             {
-                await jobs.RunAsync(JobMonitor.Webhooks, async () =>
-                {
-                    await using var scope = scopes.CreateAsyncScope();
-                    var posted = await scope.ServiceProvider.GetRequiredService<WebhookService>().DeliverDueAsync(stoppingToken);
-                    return posted == 0 ? null : $"{posted} sent";
-                });
+                if (await lease.HoldAsync(stoppingToken))
+                    await jobs.RunAsync(JobMonitor.Webhooks, async () =>
+                    {
+                        await using var scope = scopes.CreateAsyncScope();
+                        var posted = await scope.ServiceProvider.GetRequiredService<WebhookService>().DeliverDueAsync(stoppingToken);
+                        return posted == 0 ? null : $"{posted} sent";
+                    });
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
             catch (Exception ex)
             {
-                log.LogError(ex, "Sending webhooks failed; it's tried again at the next run.");
+                // Recorded and logged (a Warning, with the job's event id) by the monitor.
+                log.LogDebug(ex, "Sending webhooks failed; it's tried again at the next run.");
             }
             jobs.Scheduled(JobMonitor.Webhooks, true, time.GetUtcNow() + PollInterval);
             try { await Task.Delay(PollInterval, stoppingToken); }

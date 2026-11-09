@@ -145,7 +145,8 @@ public sealed record SplitNote(Guid Batch, string ByName, DateTimeOffset AtUtc, 
 /// articles. Old items nobody kept are pruned.
 /// </summary>
 public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, IOutboundHttp http, ArticleService articles,
-    IOptionsMonitor<IntakeOptions> options, TimeProvider time, SponsoredLog? sponsoredLog = null, SourcePollGuard? polls = null)
+    IOptionsMonitor<IntakeOptions> options, TimeProvider time, SponsoredLog? sponsoredLog = null, SourcePollGuard? polls = null,
+    IJobLease? lease = null)
 {
     // The app's one guard (a singleton); a service made without one guards only its own polls.
     private readonly SourcePollGuard _polls = polls ?? new SourcePollGuard();
@@ -293,10 +294,12 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     private const string Busy = "This source is being pulled now. Its new items arrive in a moment.";
 
     /// <summary>An administrator polls a source now (enabled or not, and whether or not intake is switched on), on
-    /// Administration › Sources: not held to the analyst pull-now window. Refused only while it's being polled.</summary>
+    /// Administration › Sources: not held to the analyst pull-now window. Refused while it's being polled, and on a
+    /// process standing by under the job lease.</summary>
     public async Task<PollResult> PollNowAsync(Guid id, CancellationToken ct = default)
     {
         RequireAdmin();
+        await lease.RequireHeldAsync(ct);
         // A source the API proposes to has no feed: "polling" its placeholder address only recorded a failure on it.
         await using (var db = await dbs.CreateAsync(ct))
             if (await db.Sources.AsNoTracking().AnyAsync(s => s.Id == id && s.Kind == SourceKind.Api, ct))
@@ -325,11 +328,13 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     /// <summary>
     /// An analyst pulls a polled source now, from Triage (whether or not intake is switched on). Refused within the
     /// pull-now window of its last pull, scheduled or forced, for everyone (administrators too: theirs without the window
-    /// is <see cref="PollNowAsync"/>), and while it's being pulled, so two people pressing at once make one pull.
+    /// is <see cref="PollNowAsync"/>), and while it's being pulled, so two people pressing at once make one pull. Refused
+    /// on a process standing by under the job lease.
     /// </summary>
     public async Task<PollResult> PullNowAsync(Guid id, CancellationToken ct = default)
     {
         RequireTriage();
+        await lease.RequireHeldAsync(ct);
         return await ExclusiveAsync(id, async () =>
         {
             // Read once the source is ours: a pull that finished a moment ago has moved its last pull.

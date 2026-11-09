@@ -6,9 +6,10 @@ namespace Tide.Web.Services;
 /// <summary>
 /// Runs the reminder and digest scans (<see cref="ReminderService"/>) every few minutes. Each scan is off until it's
 /// turned on (on Teams &amp; SLA, else under <c>Notifications</c> on the server, read afresh each scan), waits for its time of day, and sends a thing once (marks), so a frequent poll costs only
-/// a few queries. A failed pass is logged and the next poll tries again; it never stops the app.
+/// a few queries. A failed pass is logged and the next poll tries again; it never stops the app. A process that doesn't
+/// hold the job lease skips its passes (another process sends them).
 /// </summary>
-public sealed class ReminderHostedService(IServiceScopeFactory scopes, JobMonitor jobs, TimeProvider time, ILogger<ReminderHostedService> log) : BackgroundService
+public sealed class ReminderHostedService(IServiceScopeFactory scopes, JobMonitor jobs, IJobLease lease, TimeProvider time, ILogger<ReminderHostedService> log) : BackgroundService
 {
     public static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(5);
 
@@ -28,6 +29,7 @@ public sealed class ReminderHostedService(IServiceScopeFactory scopes, JobMonito
     /// A failure is logged, never thrown (except for shutting down).</summary>
     internal async Task PassAsync(CancellationToken stoppingToken)
     {
+        if (!await lease.HoldAsync(stoppingToken)) return;
         try
         {
             await jobs.RunAsync(JobMonitor.Reminders, async () =>
@@ -43,7 +45,8 @@ public sealed class ReminderHostedService(IServiceScopeFactory scopes, JobMonito
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
-            log.LogError(ex, "A reminder scan failed; it's tried again at the next poll.");
+            // Recorded and logged (a Warning, with the job's event id) by the monitor.
+            log.LogDebug(ex, "A reminder scan failed; it's tried again at the next poll.");
         }
         jobs.Scheduled(JobMonitor.Reminders, true, time.GetUtcNow() + PollInterval);
     }

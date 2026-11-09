@@ -82,6 +82,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<RotationChange> RotationChanges => Set<RotationChange>();
     public DbSet<RotationOverride> RotationOverrides => Set<RotationOverride>();
     public DbSet<Holiday> Holidays => Set<Holiday>();
+    public DbSet<JobLease> JobLeases => Set<JobLease>();
+    public DbSet<JobRun> JobRuns => Set<JobRun>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -694,6 +696,24 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Kind).HasMaxLength(32);
             e.Property(x => x.Key).HasMaxLength(200);
             e.HasIndex(x => x.SentAtUtc);
+        });
+
+        b.Entity<JobLease>(e =>
+        {
+            e.HasKey(x => x.Name);
+            e.Property(x => x.Name).HasMaxLength(JobLease.MaxName);
+            e.Property(x => x.Holder).HasMaxLength(JobLease.MaxHolder);
+        });
+
+        // Diagnostics reads each job's latest runs; the prune deletes by age.
+        b.Entity<JobRun>(e =>
+        {
+            e.Property(x => x.Job).HasMaxLength(JobRun.MaxJob);
+            e.Property(x => x.Machine).HasMaxLength(JobRun.MaxMachine);
+            e.Property(x => x.Detail).HasMaxLength(JobRun.MaxDetail);
+            e.Property(x => x.Error).HasMaxLength(JobRun.MaxError);
+            e.HasIndex(x => new { x.Job, x.StartedAtUtc });
+            e.HasIndex(x => x.StartedAtUtc);
         });
 
         b.Entity<Source>(e =>

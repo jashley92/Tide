@@ -769,9 +769,19 @@ if ($rc -ge 8) {
 $removed = @(Remove-TideStaleFiles -From $appSrc -To $SitePath)
 if ($removed.Count) { Write-Info "Removed $($removed.Count) file(s) the earlier release had and this one doesn't: $($removed -join ', ')" }
 
-# As the installer sets them: no scheduled recycle, no overlap.
+# As the installer sets them: no scheduled recycle, no overlap, one worker process. The pool is stopped, so a change
+# here doesn't recycle anything.
 Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name recycling.periodicRestart.time -Value '00:00:00'
 Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name recycling.disallowOverlappingRotation -Value $true
+$single = Set-TideSingleWorkerProcess -Name $AppPoolName
+if (-not $single.Ok) {
+    # The new build is in place: say so rather than leave the pool stopped. The app's job lease still keeps the
+    # background jobs to one worker.
+    Write-Warn2 ("The app pool reads processModel.maxProcesses = $($single.After) after it was set to 1. Set Maximum " +
+                 "Worker Processes to 1 in the pool's Advanced Settings: each worker keeps its own sign-ins and live pages.")
+} elseif ($null -ne $single.Before -and $single.Before -ne 1) {
+    Write-Info "Maximum worker processes was $($single.Before); it's now 1."
+}
 
 Write-Step "Starting app pool"
 Start-WebAppPool -Name $AppPoolName
