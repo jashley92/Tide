@@ -16,6 +16,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 {
     public DbSet<AppUser> Users => Set<AppUser>();
     public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
+    public DbSet<SavedActionView> SavedActionViews => Set<SavedActionView>();
     public DbSet<AdGroupRoleMapping> RoleMappings => Set<AdGroupRoleMapping>();
     public DbSet<AuditLogEntry> AuditLog => Set<AuditLogEntry>();
     public DbSet<AppSetting> Settings => Set<AppSetting>();
@@ -100,6 +101,15 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.UserId).HasMaxLength(256);
             e.Property(x => x.Name).HasMaxLength(64);
             e.Property(x => x.Value).HasMaxLength(200);
+        });
+
+        // Names are unique per person ignoring case (the service checks; the index holds the exact name against a race).
+        b.Entity<SavedActionView>(e =>
+        {
+            e.Property(x => x.UserId).HasMaxLength(256);
+            e.Property(x => x.Name).HasMaxLength(SavedActionView.MaxName);
+            e.Property(x => x.Query).HasMaxLength(SavedActionView.MaxQuery);
+            e.HasIndex(x => new { x.UserId, x.Name }).IsUnique();
         });
 
         b.Entity<AdGroupRoleMapping>(e =>

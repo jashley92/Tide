@@ -570,6 +570,7 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
     public ReminderOptions ReminderOptions { get; } = new();
 
     public Tide.Application.Preferences.UserPreferenceService Preferences() => new(this, User, TimeProvider.System);
+    public Tide.Application.Preferences.SavedViewService SavedViews() => new(this, User, TimeProvider.System);
 
     public Tide.Application.Preferences.NotificationPreferenceService NotificationPrefs(ReminderOptions? options = null) =>
         new(this, User, Preferences(), new StaticOptionsMonitor<ReminderOptions>(options ?? ReminderOptions));
