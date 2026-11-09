@@ -4,11 +4,11 @@
 
 @if (OnOpen.HasDelegate)
 {
-    <button type="button" class="tide-action-title-btn @TitleClass" aria-label="Open @Label, @Title" @onclick="OnOpen" @attributes="Attributes">@TitleContent</button>
+    <button type="button" class="tide-action-ref-btn @TitleClass" aria-label="Open @Label, @Title" @onclick="OnOpen">@TitleContent</button>
 }
 else if (Link)
 {
-    <a class="tide-action-title @TitleClass" href="@Ui.ActionUrl(Number)" @attributes="Attributes">@TitleContent</a>
+    <a class="tide-action-ref @TitleClass" href="@Ui.ActionUrl(Number)" draggable="@(Draggable ? null : "false")">@TitleContent</a>
 }
 else
 {
@@ -32,8 +32,8 @@ else
 
     [Parameter] public string? TitleClass { get; set; }
 
-    /// <summary>Anything else for the title's link or button (draggable="false" on a board card).</summary>
-    [Parameter(CaptureUnmatchedValues = true)] public IReadOnlyDictionary<string, object>? Attributes { get; set; }
+    /// <summary>False on a board card: dragging the card mustn't drag its link.</summary>
+    [Parameter] public bool Draggable { get; set; } = true;
 
     private string Label => Ui.ActionLabel(Number);
 

@@ -1108,10 +1108,11 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-action-num { font-family: var(--tide-font-data); font-weight: var(--tide-weight-semibold); color: var(--tide-text-muted); white-space: nowrap; }
 /* ActionRef: in a list or on a card the title leads and the number follows, small and muted, to quote. */
 .tide-action-num-after { margin-left: .4em; font-size: .8em; font-weight: var(--tide-weight-regular); }
-a.tide-action-title { text-decoration: none; }
-a.tide-action-title:hover, a.tide-action-title:focus-visible { text-decoration: underline; }
-.tide-action-title-btn { background: none; border: 0; padding: 0; color: inherit; font: inherit; text-align: start; cursor: pointer; }
-.tide-action-title-btn:hover, .tide-action-title-btn:focus-visible { text-decoration: underline; text-underline-offset: .2em; }
+a.tide-action-ref { text-decoration: none; }
+a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: underline; }
+/* On a slide the title is the button that opens the action over it (.tide-action-open is the number-only one, "Raised as"). */
+.tide-action-ref-btn { background: none; border: 0; padding: 0; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.tide-action-ref-btn:hover, .tide-action-ref-btn:focus-visible { text-decoration: underline; text-underline-offset: .2em; }
 /* The filter bar (FilterBar): the words, quick pills (pickable chips, the accent tint while on), a chip per other filter,
    + Filter (a popover, as the account menu is), the count and Clear. */
 .tide-filterbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); min-width: 0; margin-bottom: var(--tide-space-3); }
@@ -1388,28 +1389,21 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-slide-actions .tide-action-num { color: var(--tide-slide-muted); }
 /* The article slide's work section on one set of control columns: Recommended's kind, team and Raise over Actions' due
    date, assignee and Take it, so the boxes and the buttons line up down the slide. Its actions are one line each, in
-   shared columns (subgrid): the title (the whole row opens it), its number, team and due, then the controls. */
+   shared columns (subgrid): the title (the whole row opens it), its number, team and due, then the controls. The widths
+   are em, read where they're used: both lists are .9em, so they match. Narrower than 1000px, each wraps as it did. */
 .tide-slide { --tide-ctl-1: 10em; --tide-ctl-2: 13em; --tide-ctl-3: 6em; --tide-ctl-gap: .6em; }
-.tide-slide-actlist { display: grid; column-gap: var(--tide-ctl-gap);
-    grid-template-columns: minmax(0, max-content) auto minmax(0, 1fr) calc(var(--tide-ctl-1) + var(--tide-ctl-2) + var(--tide-ctl-3) + 2 * var(--tide-ctl-gap)); }
-.tide-slide-actions .tide-slide-actlist > li { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: baseline; gap: 0 var(--tide-ctl-gap); position: relative; border-radius: var(--tide-radius-md); padding: .2em 0; }
-.tide-slide-actlist > li:has(> .tide-action-title-btn):hover { background: color-mix(in srgb, var(--tide-slide-accent) 12%, transparent); }
-.tide-slide-actlist .tide-action-title-btn::after { content: ""; position: absolute; inset: 0; }
-.tide-slide-actlist .tide-action-num-after { margin-left: 0; }
-.tide-slide-actlist .tide-present-help { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tide-slide-actlist .tide-action-assign { grid-column: 4; margin: 0; justify-self: end; align-self: center; position: relative; z-index: 1;
-    display: grid; grid-template-columns: var(--tide-ctl-1) var(--tide-ctl-2) var(--tide-ctl-3); column-gap: var(--tide-ctl-gap); }
-.tide-slide-actlist .tide-action-assign > input { grid-column: 1; grid-row: 1; width: 100%; }
-.tide-slide-actlist .tide-action-assign > select { grid-column: 2; grid-row: 1; width: 100%; }
-.tide-slide-actlist .tide-action-assign > .btn { grid-column: 3; grid-row: 1; justify-self: stretch; }
-@media (max-width: 1000px) {
-    .tide-slide-actlist { display: block; }
-    .tide-slide-actions .tide-slide-actlist > li { display: flex; flex-wrap: wrap; align-items: baseline; }
-    .tide-slide-actlist .tide-action-assign { display: inline-flex; flex-wrap: wrap; gap: .3em; }
+@media (min-width: 1001px) {
+    .tide-slide-actlist { display: grid; column-gap: var(--tide-ctl-gap);
+        grid-template-columns: minmax(0, max-content) auto minmax(0, 1fr) calc(var(--tide-ctl-1) + var(--tide-ctl-2) + var(--tide-ctl-3) + 2 * var(--tide-ctl-gap)); }
+    .tide-slide-actions .tide-slide-actlist > li { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: baseline; gap: 0 var(--tide-ctl-gap); position: relative; border-radius: var(--tide-radius-md); padding: .2em 0; }
+    .tide-slide-actlist > li:has(> .tide-action-ref-btn):hover { background: color-mix(in srgb, var(--tide-slide-accent) 12%, transparent); }
+    .tide-slide-actlist .tide-action-ref-btn::after { content: ""; position: absolute; inset: 0; }
+    .tide-slide-actlist .tide-action-num-after { margin-left: 0; }
+    .tide-slide-actlist .tide-present-help { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tide-slide-actlist .tide-action-assign { grid-column: 4; margin: 0; justify-self: end; align-self: center; position: relative; z-index: 1;
+        display: grid; grid-template-columns: var(--tide-ctl-1) var(--tide-ctl-2) var(--tide-ctl-3); column-gap: var(--tide-ctl-gap); }
+    .tide-slide-actlist .tide-action-assign > .form-select, .tide-slide-actlist .tide-action-assign > .form-control, .tide-slide-actlist .tide-action-assign > .btn { width: 100%; }
 }
-.tide-quick-add { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto auto; gap: .4em; align-items: center; }
-.tide-quick-add .form-control, .tide-quick-add .form-select { background-color: var(--tide-slide-surface); color: var(--tide-slide-text); border-color: var(--tide-slide-line-strong); font-size: .8em; }
-@media (max-width: 1000px) { .tide-quick-add { grid-template-columns: 1fr 1fr; } }
 /* The article's recommended actions, a line each, with what to raise it as and Raise (or the action it became). */
 .tide-reco { list-style: none; padding: 0; margin: 0 0 .6em; font-size: .9em; }
 .tide-reco li { display: grid; grid-template-columns: minmax(0, 1fr) var(--tide-ctl-1) var(--tide-ctl-2) var(--tide-ctl-3); column-gap: var(--tide-ctl-gap); row-gap: .4em; align-items: center; padding: .25em 0; border-bottom: 1px solid var(--tide-slide-line-strong); }

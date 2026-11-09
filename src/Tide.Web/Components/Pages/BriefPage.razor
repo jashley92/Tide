@@ -943,7 +943,7 @@ else
     private RenderFragment TeamNoteCard() => __builder =>
     {
         var editable = _canWrite && _brief!.Status != BriefStatus.Sent;
-        var carried = editable && BriefService.TeamNoteCarriedOver(_brief);
+        var carried = editable && BriefService.TeamNoteCarriedOver(_brief!);
         if (!editable && string.IsNullOrWhiteSpace(_brief!.TeamNote)) return;
         <section class="tide-card" aria-labelledby="team-note-h" data-submit-scope>
             <h2 id="team-note-h">Opening note

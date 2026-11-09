@@ -1,41 +1,30 @@
-@* The follow-up actions raised from an article, title first, and a link to raise another. Bare, it draws no card or
-   heading of its own (the article page's Actions tab), and takes the rows its page already read. *@
+@* An article's follow-up actions, title first (ActionRef), and New action: the Actions tab beside the article
+   (ReaderPreview), which reads them once and hands them in. *@
 @inject ActionService ActionSvc
 @inject ICurrentUser CurrentUser
 
-<div class="@(Bare ? "" : "tide-card")">
-    @if (!Bare) { <h2>Actions <span class="tide-count">(@_rows.Count)</span></h2> }
-    @if (_rows.Count == 0)
-    {
-        <p class="small tide-muted mb-2">No follow-up actions yet.</p>
-    }
-    @foreach (var r in _rows)
-    {
-        <div class="d-flex gap-2 align-items-start py-1 border-bottom small" @key="r.Id">
-            <span class="flex-grow-1"><ActionRef Number="r.Number" Title="@r.Title" /><span class="tide-muted"> &middot; @r.TeamName</span> <FileCount Count="r.Files" /></span>
-            @if (r.IsOpen) { <SlaBadge State="r.Sla(ActionSvc.Today, ActionSvc.Days)" Due="r.DueDate" Today="ActionSvc.Today" /> } else { <ActionStatusBadge Status="r.Status" /> }
-        </div>
-    }
-    @if (CurrentUser.Has(Permission.WriteArticles))
-    {
-        <a class="btn btn-outline-secondary btn-sm mt-2" href="@($"actions/new?article={ArticleId}")"><span class="bi bi-plus-lg" aria-hidden="true"></span> New action</a>
-    }
-    @ChildContent
-</div>
+@if (Rows.Count == 0)
+{
+    <p class="small tide-muted mb-2">No follow-up actions yet.</p>
+}
+@foreach (var r in Rows)
+{
+    <div class="d-flex gap-2 align-items-start py-1 border-bottom small" @key="r.Id">
+        <span class="flex-grow-1"><ActionRef Number="r.Number" Title="@r.Title" /><span class="tide-muted"> &middot; @r.TeamName</span> <FileCount Count="r.Files" /></span>
+        @if (r.IsOpen) { <SlaBadge State="r.Sla(ActionSvc.Today, ActionSvc.Days)" Due="r.DueDate" Today="ActionSvc.Today" /> } else { <ActionStatusBadge Status="r.Status" /> }
+    </div>
+}
+@if (CurrentUser.Has(Permission.WriteArticles))
+{
+    <a class="btn btn-outline-secondary btn-sm mt-2" href="@($"actions/new?article={ArticleId}")"><span class="bi bi-plus-lg" aria-hidden="true"></span> New action</a>
+}
+@ChildContent
 
 @code {
     [Parameter, EditorRequired] public Guid ArticleId { get; set; }
 
-    /// <summary>The article's actions, when the page has read them already.</summary>
-    [Parameter] public IReadOnlyList<ActionRow>? Rows { get; set; }
-
-    /// <summary>No card or heading: the list inside another (a tab).</summary>
-    [Parameter] public bool Bare { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyList<ActionRow> Rows { get; set; } = [];
 
     /// <summary>Said under the list (how many recommended lines aren't raised yet).</summary>
     [Parameter] public RenderFragment? ChildContent { get; set; }
-
-    private IReadOnlyList<ActionRow> _rows = [];
-
-    protected override async Task OnParametersSetAsync() => _rows = Rows ?? await ActionSvc.ForArticleAsync(ArticleId);
 }

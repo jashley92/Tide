@@ -58,9 +58,11 @@ window.tideEditor = (function () {
             if (ref) document.addEventListener('keydown', onKey);
         },
         // Puts ?edition=company in the address, or takes it out (null), keeping the rest and the history entry's state.
-        showEdition: function (key) {
+        showEdition: function (key) { window.tideEditor.showParam('edition', key); },
+        // The same for any of the preview's choices kept in the address (?side=actions, the tab beside the article).
+        showParam: function (name, value) {
             const url = new URL(window.location.href);
-            if (key) url.searchParams.set('edition', key); else url.searchParams.delete('edition');
+            if (value) url.searchParams.set(name, value); else url.searchParams.delete(name);
             history.replaceState(history.state, '', url.toString());
         }
     };

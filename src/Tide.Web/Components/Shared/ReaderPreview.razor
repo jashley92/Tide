@@ -8,10 +8,12 @@
    (N)": what's already been written about the same thing (RelatedPanel), where an action can be mentioned in why it
    matters (OnMention) and the article put in a related one's story (ShowRelated opens it and scrolls to it). For
    someone who can't edit, whose editor fields are hidden, the article's products and threat actors as read-only cards
-   (they're tagged in the editor: We run under Why it matters, Threat actors under Context). Then, folded away: both
-   editions' verdicts, the briefs it's on, its follow-up actions and CVE context. Keys 1 and 2 pick the edition (single characters, so the shortcut
-   switch turns them off); the choice is kept in the address (?edition=company) so a link can open either, and told to
-   the page (EditionChanged) so its own links, the brief stepper's, keep it. *@
+   (they're tagged in the editor: We run under Why it matters, Threat actors under Context). That's the Preview tab;
+   beside it, Actions (its count on the tab: the follow-up actions title first, and how many recommended lines aren't
+   raised yet) and Details (both editions' verdicts, the briefs it's on, CVE context). Keys 1 and 2 pick the edition
+   (single characters, so the shortcut switch turns them off). The edition and the tab are kept in the address
+   (?edition=company, ?side=actions) so a link can open either, and told to the page (EditionChanged, SideChanged) so its
+   own links, the brief stepper's, keep them. *@
 @inject Tide.Application.Settings.DistributionSettings Distribution
 @inject ActionService ActionSvc
 @inject RelatedService RelatedSvc
@@ -28,7 +30,7 @@
     <div id="reader-panel" role="tabpanel" aria-labelledby="@TabBar.TabId("reader-panel", _side)">
     @if (_side == ActionsTab)
     {
-        <ArticleActions ArticleId="State.Article.Id" Rows="_actionRows" Bare="true">
+        <ArticleActions ArticleId="State.Article.Id" Rows="_actionRows">
             @if (UnraisedLines is > 0 and var n)
             {
                 <p class="small tide-muted mt-2 mb-0"><span class="bi bi-lightbulb" aria-hidden="true"></span> @Ui.Plural(n, "recommended line") not raised yet.</p>
@@ -183,19 +185,30 @@
     private IReadOnlyList<ActionRow> _actionRows = [];
 
     // The tab beside the article: the preview (first), its actions, or its details (both editions' verdicts, its briefs, CVE context).
-    internal const string PreviewTab = "preview", ActionsTab = "actions", DetailsTab = "details";
+    private const string PreviewTab = "preview", ActionsTab = "actions", DetailsTab = "details";
     private string _side = PreviewTab;
 
     /// <summary>The tab to open on, as the address names it (<c>?side=actions</c>).</summary>
     [Parameter] public string? Side { get; set; }
     private string? _sideSeen;
 
-    /// <summary>Shows a tab beside the article (internal for the tests).</summary>
-    internal void SelectSide(string? key) => _side = key is ActionsTab or DetailsTab ? key : PreviewTab;
+    /// <summary>Told the tab picked, by its key in the address (null for the preview).</summary>
+    [Parameter] public EventCallback<string?> SideChanged { get; set; }
 
-    // The recommended lines (as typed) that no action on the article has the title of, as the meeting slide counts them.
-    private int UnraisedLines => RecommendedActions.Lines(State.Form.RecommendedActions)
-        .Count(l => !_actionRows.Any(r => RecommendedActions.Raised(l, r.Title)));
+    private static string Tab(string? key) => key is ActionsTab or DetailsTab ? key : PreviewTab;
+
+    // A tab picked: shown, kept in the address without a navigation (as the edition is), and told to the page.
+    private async Task SelectSide(string? key)
+    {
+        _side = Tab(key);
+        _sideSeen = _side == PreviewTab ? null : _side;
+        try { await JS.InvokeVoidAsync("tideEditor.showParam", "side", _sideSeen); }
+        catch (JSDisconnectedException) { /* the tab has gone */ }
+        await SideChanged.InvokeAsync(_sideSeen);
+    }
+
+    // The recommended lines (as typed) that no action on the article raised, as the meeting slide finds them.
+    private int UnraisedLines => RecommendedActions.Unraised(State.Form.RecommendedActions, _actionRows.Select(r => r.Title)).Count;
     private Guid? _actionsFor;
     private ArticleForm? _builtFrom;
     private ArticlePreview[] _both = [];
@@ -265,7 +278,7 @@
         if (Side != _sideSeen)
         {
             _sideSeen = Side;
-            SelectSide(Side);
+            _side = Tab(Side);
         }
         // The team edition's actions, read once for the article (again only when the editor moves to another one).
         if (_actionsFor != State.Article.Id)

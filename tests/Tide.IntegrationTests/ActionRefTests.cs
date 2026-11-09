@@ -22,7 +22,7 @@ public class ActionRefTests(TideApp app) : IClassFixture<TideApp>
         await using (var link = await RenderAsync<ActionRef>(app, "/", new() { ["Number"] = 1234, ["Title"] = "Patch the gateways" }))
         {
             var html = await link.Html();
-            html.Should().Contain("<a class=\"tide-action-title \" href=\"actions/1234\">Patch the gateways</a>")
+            html.Should().Contain("<a class=\"tide-action-ref \" href=\"actions/1234\">Patch the gateways</a>")
                 .And.Contain("<span class=\"tide-action-num tide-action-num-after\">A-1234</span>");
             html.IndexOf("Patch the gateways", StringComparison.Ordinal).Should().BeLessThan(html.IndexOf("A-1234", StringComparison.Ordinal), "the title first");
         }
@@ -34,7 +34,7 @@ public class ActionRefTests(TideApp app) : IClassFixture<TideApp>
             ["OnOpen"] = EventCallback.Factory.Create(this, () => opened++),
         }))
         {
-            (await button.Html()).Should().Contain("<button type=\"button\" class=\"tide-action-title-btn \" aria-label=\"Open A-7, Sweep the logs\">Sweep the logs</button>",
+            (await button.Html()).Should().Contain("<button type=\"button\" class=\"tide-action-ref-btn \" aria-label=\"Open A-7, Sweep the logs\">Sweep the logs</button>",
                 "on a slide the title opens the action, and says which");
         }
 
@@ -68,5 +68,7 @@ public class ActionRefTests(TideApp app) : IClassFixture<TideApp>
         html.Should().Contain($"href=\"actions/{number}\">Patch the gateways</a>").And.Contain($"A-{number}</span>")
             .And.Contain("2 recommended lines not raised yet.", "one of the three became an action");
         html.Should().Contain("<span>Actions</span>").And.Contain("tide-tabbar-count\">1</span>", "the tab carries the count");
+        BriefStepper.Href(article, "company", "actions").Should().Be($"articles/{article}?edition=company&side=actions", "a step keeps the edition and the tab");
+        BriefStepper.Href(article, null, null).Should().Be($"articles/{article}");
     }
 }
