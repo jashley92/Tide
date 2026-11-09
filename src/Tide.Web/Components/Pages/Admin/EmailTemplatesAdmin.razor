@@ -24,11 +24,11 @@ else
     <section class="tide-card mb-3" aria-labelledby="etpl-archive-title" data-submit-scope>
         <h2 id="etpl-archive-title"><span class="bi bi-archive" aria-hidden="true"></span> Archive copy</h2>
         <p class="small tide-muted mb-2">One address blind-copied on <strong>every</strong> email TIDE sends, a brief's editions and test copies included: a record that each was sent.
-            It must be inside @(Templates.HomeDomain ?? "your organization's domain (set Email:From on the server)"). Blank for none. Saving it is audited.</p>
+            It must be inside @(Templates.HomeDomain ?? "your organization's domain (set it on Access & distribution, or Email:From on the server)"). Blank for none. Saving it is audited.</p>
         <div class="d-flex flex-wrap gap-2 align-items-end">
             <div class="flex-grow-1 tide-maxw-sm">
                 <label class="tide-field-label" for="etpl-archive">Archive address</label>
-                <input id="etpl-archive" type="email" class="form-control form-control-sm tide-data" maxlength="256" placeholder="@($"tide-archive@{Templates.HomeDomain ?? "example.org"}")" @bind="_archive" />
+                <input id="etpl-archive" type="email" class="form-control form-control-sm tide-data" maxlength="256" placeholder="@($"tide-archive@{Templates.Boundary.Domains.FirstOrDefault() ?? "example.org"}")" @bind="_archive" />
             </div>
             <button class="btn btn-outline-secondary btn-sm" data-submit disabled="@_busy" @onclick="SaveArchive">Save archive copy</button>
         </div>
@@ -207,7 +207,7 @@ else
             ShowCopies();
             Toasts.Show("Copies saved. They go with the next email from this template.");
         }
-        catch (OutsideCopiesException ex) { ask = ex.Message; }
+        catch (OutsideAddressesException ex) { ask = ex.Message; }
         catch (Exception ex) { _copyError = UserFacingError.For(ex); }
         finally { _busy = false; }
         if (ask is not null && await _confirm.Ask("Copy outside your organization?", ask, "Copy anyway")) await SaveCopies(true);

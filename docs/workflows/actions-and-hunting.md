@@ -652,7 +652,9 @@ one to own". It's kept wherever a team is chosen or counted: the team pickers an
 and the overdue counts.
 
 Anyone with `WorkActions` keeps them on **External teams** (`/teams/external`, linked from the Actions page and Teams &
-SLA): a name, what they do, a contact name and email, how to engage them (their ticket queue, say), and their
+SLA): a name, what they do, a contact name and email (said to be outside the organization beside it when it is, and
+confirmed the first time it's set and whenever it changes: *Save anyway?*; the split dialog's quick add asks too,
+*Add anyway*), how to engage them (their ticket queue, say), and their
 reminders: on or off, how many business days before the due date (0 to 10, default 2; 0 is the due day), and while
 overdue every so many business days (1 to 20, default 3) or once. A new team's reminders start on, unless an
 administrator has turned off *New external teams start with their reminders on* (Teams & SLA,
@@ -679,7 +681,11 @@ business days, when an administrator has *External team reminders* on, each exte
 contact email gets one email listing its open actions whose reminder is due by its cadence (`ExternalCadence.Step`,
 counted in the organization's working days, holidays included). Each is listed with its title, its details as written
 on the action, its due date and how many business days late, and its ticket link. The email has no TIDE link or
-number, nothing from an article that wasn't written into the action, and closes asking for a reply. Its Reply-To is
+number, nothing from an article that wasn't written into the action, and closes asking for a reply. It's held to the
+team edition's ceiling (`Distribution:TeamMaxTlp`), as the webhooks are: an action whose article is marked above it
+isn't named, by title or details, and isn't in the email's marking. It still counts toward "{n} requests", the list
+ends "1 more request is marked above what we share by email: ask {team name}", and its step is marked as any other's,
+so it isn't tried again (`ReminderService.Held`, `WithheldText`). Its Reply-To is
 whoever follows the work: a part's parent's assignee, else the parent's team mailbox; a top-level action's own
 assignee, else the mailbox of the team that handed it over, else its creator (`ExternalCadence.ReplyTo`). Each step
 (`before`, `late-0`, `late-1`…) is marked, so it goes once; moving the due date starts over. An action handed from
@@ -705,7 +711,7 @@ reminder does). What it does, from a fixed menu (`EscalationDoes`), any of:
 | Does | What happens |
 |---|---|
 | Remind | The owning team is emailed as its reminders go. An external team gets its own reminder email (the *External team reminder* template), unless its reminders or the action's are off or it has no contact email, or its cadence already reminded the contact about that action today: then the step is skipped and done, its history line saying *reminder skipped: {contact} was already reminded today*. An internal one: the assignee, else the team mailbox, else its members, with the *Actions due soon* template before the due date and *Overdue actions* after it, leaving out whoever turned that kind off in My notifications. |
-| Copy the escalation contact | The team's escalation contact (a name and email on the team, internal or external: Teams & SLA, External teams) gets the *Escalation contact* template listing the team's actions at the step, one email per team. For an external team it has no TIDE link or number; for an internal one each request links to its page. Reply-To is whoever follows the work (`ExternalCadence.ReplyTo`). A team with no escalation contact copies no one, said in the history. |
+| Copy the escalation contact | The team's escalation contact (a name and email on the team, internal or external: Teams & SLA, External teams) gets the *Escalation contact* template listing the team's actions at the step, one email per team. For an external team it has no TIDE link or number; for an internal one each request links to its page. For an external team, or an internal team's contact outside the organization (`Email:OrganizationDomains`), it's held to the team edition's ceiling as the external reminders are, with no TIDE link: a request above it is counted, not named, and its step is done all the same. Reply-To is whoever follows the work (`ExternalCadence.ReplyTo`). A team with no escalation contact copies no one, said in the history. |
 | Raise priority | Up one (P3 → P2), never above P1. |
 | Flag | `ActionItem.EscalatedForDue` is set to its due date (and `EscalatedAtUtc` to now): an *Escalated* badge on its row, card and page, the *Escalated* card on Today for its team, its assignee and (for a part) its parent's assignee, and the meeting's overdue list. Flagging one already escalated changes nothing. |
 

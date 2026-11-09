@@ -29,12 +29,15 @@ public sealed record EmailPreview(string Subject, string Html);
 /// row, so a reset is removing them. A save takes effect at once. Administrators only.
 /// </summary>
 public sealed class EmailTemplateService(IAppDbContextFactory dbs, ICurrentUser user, EmailTemplateStore store, IEmailSender email,
-    OrgClock clock, IOptions<AppOptions> app, TimeProvider time, EmailCopyStore? copies = null, Microsoft.Extensions.Configuration.IConfiguration? config = null)
+    OrgClock clock, IOptions<AppOptions> app, TimeProvider time, EmailCopyStore? copies = null, EmailBoundary? boundary = null)
 {
     private readonly EmailCopyStore _copies = copies ?? new EmailCopyStore();
 
-    /// <summary>The organization's domain, from the sending address (<c>Email:From</c>): copies outside it are confirmed.</summary>
-    public string? HomeDomain => EmailCopyRules.HomeDomain(config?["Email:From"]);
+    /// <summary>The organization's boundary (<see cref="OrganizationBoundary"/>): copies outside it are confirmed.</summary>
+    public OrganizationBoundary Boundary => boundary?.Current ?? OrganizationBoundary.Unknown;
+
+    /// <summary>The organization's domains as said on the page ("example.org"), or null when none is known.</summary>
+    public string? HomeDomain => Boundary.Known ? Boundary.Describe : null;
 
     /// <summary>A template's standing copies as saved.</summary>
     public TemplateCopies Copies(string id)
@@ -57,7 +60,7 @@ public sealed class EmailTemplateService(IAppDbContextFactory dbs, ICurrentUser 
     /// Saves a template's standing copies (addresses separated by commas, semicolons or lines; blank for none). Refused,
     /// saying why: an address that isn't one, more than <see cref="EmailCopyRules.MaxPerList"/> in either, a CC on a
     /// template that goes outside TIDE (BCC only, so its readers never see an internal address), and, unless
-    /// <paramref name="confirmOutside"/>, an address outside the organization's domain
+    /// <paramref name="confirmOutside"/>, an address outside the organization's boundary not confirmed before
     /// (<see cref="OutsideCopiesException"/>, naming them, for the page to ask). Audited like any setting; takes effect at once.
     /// </summary>
     public async Task SaveCopiesAsync(string id, string? cc, string? bcc, bool confirmOutside = false, CancellationToken ct = default)
@@ -68,27 +71,35 @@ public sealed class EmailTemplateService(IAppDbContextFactory dbs, ICurrentUser 
         var bccList = EmailCopyRules.Parse(bcc, "Blind copy (BCC)");
         if (EmailCopyRules.GoesOutside(t) && ccList.Count > 0)
             throw new ArgumentException($"“{t.Title}” goes to people outside TIDE: use Blind copy (BCC), so they don't see who else gets it.");
-        var outside = ccList.Concat(bccList).Where(a => !EmailCopyRules.IsInside(a, HomeDomain)).ToList();
-        if (outside.Count > 0 && !confirmOutside) throw new OutsideCopiesException(outside, HomeDomain);
+        var inside = Boundary;
+        var outside = inside.Outside(ccList.Concat(bccList));
+        // One confirmed when saved before isn't asked about again.
+        var asked = outside.Except(_copies.ConfirmedOutside(t.Id), StringComparer.OrdinalIgnoreCase).ToList();
+        if (asked.Count > 0 && !confirmOutside) throw new OutsideCopiesException(asked, inside);
+        // The ones confirmed are kept as such: each is checked again as an email goes (CopyingEmailSender), and only
+        // these may be outside then.
         await SaveCopyRowsAsync(new Dictionary<string, string>
         {
             [EmailCopyRules.Key(t.Id, bcc: false)] = EmailCopyRules.Join(ccList),
             [EmailCopyRules.Key(t.Id, bcc: true)] = EmailCopyRules.Join(bccList),
+            [EmailCopyRules.ConfirmedKey(t.Id)] = EmailCopyRules.Join(outside),
         }, ct);
     }
 
     /// <summary>
     /// Saves the archive copy: one address blind-copied on every email TIDE sends, a brief's editions included, so it
-    /// must be inside the organization's domain (and there must be one, from <c>Email:From</c>). Blank for none.
+    /// must be inside the organization's boundary (and there must be one: <c>Email:OrganizationDomains</c>, or the domain of
+    /// <c>Email:From</c>). Blank for none.
     /// </summary>
     public async Task SaveArchiveAsync(string? address, CancellationToken ct = default)
     {
         RequireAdmin();
         var list = EmailCopyRules.Parse(address, "Archive copy", max: 1);
-        if (list.Count == 1 && !EmailCopyRules.IsInside(list[0], HomeDomain))
-            throw new ArgumentException(HomeDomain is null
-                ? "The archive copy gets every email TIDE sends, so it must be inside your organization's domain, and none is known: set Email:From on the server first."
-                : $"The archive copy gets every email TIDE sends, a brief's editions included, so it must be inside {HomeDomain}.");
+        var inside = Boundary;
+        if (list.Count == 1 && !inside.IsInside(list[0]))
+            throw new ArgumentException(!inside.Known
+                ? "The archive copy gets every email TIDE sends, so it must be inside your organization's domain, and none is known: set Email:From on the server, or the organization's domains on Access & distribution, first."
+                : $"The archive copy gets every email TIDE sends, a brief's editions included, so it must be inside {inside.Describe}.");
         await SaveCopyRowsAsync(new Dictionary<string, string> { [EmailCopyRules.ArchiveKey] = EmailCopyRules.Join(list) }, ct);
     }
 

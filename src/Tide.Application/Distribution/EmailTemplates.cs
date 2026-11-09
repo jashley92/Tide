@@ -146,8 +146,8 @@ public static partial class EmailTemplateCatalog
             new("Team", "The external team's name."),
             new("Contact", "Their contact's name, or the team's name when none is set."),
             new("From", "Who is asking: this server's team name (Organization settings)."),
-            new("Requests", "How many, in words: \"2 requests\"."),
-            new("RequestList", "Each request: its title, what's asked (its details), when it's due and how overdue, and its ticket link. Written by TIDE, with no TIDE links.", Html: true, Required: true),
+            new("Requests", "How many, in words: \"2 requests\" (those only counted included)."),
+            new("RequestList", "Each request: its title, what's asked (its details), when it's due and how overdue, and its ticket link. One marked above the team edition's ceiling is only counted (\"1 more request is marked above what we share by email\"). Written by TIDE, with no TIDE links.", Html: true, Required: true),
         ], Footer: "Sent by {{From}} to follow up its requests to {{Team}}. Reply to this email to answer.");
 
     // Its reader may not use TIDE (an external team's manager, say), so it reads on its own and names no TIDE page; for an
@@ -161,8 +161,8 @@ public static partial class EmailTemplateCatalog
             new("Team", "The owning team's name."),
             new("Contact", "The escalation contact's name, or \"there\" when none is set."),
             new("From", "Who is asking: this server's team name (Organization settings)."),
-            new("Requests", "How many, in words: \"2 requests\"."),
-            new("RequestList", "Each request: its title, what's asked (its details), when it's due and how overdue, and its ticket link; for an internal team, a link to it. Written by TIDE.", Html: true, Required: true),
+            new("Requests", "How many, in words: \"2 requests\" (those only counted included)."),
+            new("RequestList", "Each request: its title, what's asked (its details), when it's due and how overdue, and its ticket link; for an internal team's contact inside the organization, a link to it. For an external team, or a contact outside the organization, one marked above the team edition's ceiling is only counted. Written by TIDE.", Html: true, Required: true),
         ], Footer: "Sent by {{From}} to the escalation contact for {{Team}}. Reply to this email to answer.");
 
     public static readonly EmailTemplate BriefNotReady = new(

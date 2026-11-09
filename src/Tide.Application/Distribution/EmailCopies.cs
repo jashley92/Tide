@@ -1,5 +1,6 @@
 using System.Net.Mail;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Tide.Application.Abstractions;
 
 namespace Tide.Application.Distribution;
@@ -55,18 +56,9 @@ public static class EmailCopyRules
 
     public static string Join(IEnumerable<string> addresses) => string.Join("; ", addresses);
 
-    /// <summary>The organization's domain: the sending address's (<c>Email:From</c>), or null when none is set.</summary>
-    public static string? HomeDomain(string? from) =>
-        MailAddress.TryCreate(from ?? "", out var a) ? a.Host.ToLowerInvariant() : null;
-
-    /// <summary>Whether <paramref name="address"/> is in <paramref name="home"/> or one of its subdomains. With no home
-    /// domain known, nothing is.</summary>
-    public static bool IsInside(string address, string? home)
-    {
-        if (home is null || !MailAddress.TryCreate(address, out var a)) return false;
-        var host = a.Host.ToLowerInvariant();
-        return host == home || host.EndsWith("." + home, StringComparison.Ordinal);
-    }
+    /// <summary>The row naming a template's copies an administrator confirmed outside the organization: kept when it's
+    /// sent. Any other copy outside it (one that was inside when saved, before the domains changed) is dropped then.</summary>
+    public static string ConfirmedKey(string templateId) => $"{KeyPrefix}{templateId}:Outside";
 
     /// <summary>
     /// The addresses to copy <paramref name="email"/> to: its template's, then the archive, as CC and BCC, leaving out any
@@ -97,6 +89,10 @@ public sealed class EmailCopyStore
 
     public string? Archive => _values.TryGetValue(EmailCopyRules.ArchiveKey, out var v) && v.Length > 0 ? v : null;
 
+    /// <summary>The template's copies an administrator confirmed outside the organization when saving them.</summary>
+    public IReadOnlyList<string> ConfirmedOutside(string? templateId) =>
+        EmailTemplateCatalog.ById(templateId) is { } t ? List(EmailCopyRules.ConfirmedKey(t.Id)) : [];
+
     private IReadOnlyList<string> List(string key) =>
         _values.TryGetValue(key, out var v) ? v.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) : [];
 
@@ -110,24 +106,38 @@ public sealed class EmailCopyStore
 
 /// <summary>
 /// Adds the standing copies to each email on its way to the relay: its template's CC and BCC, and the archive's BCC
-/// (<see cref="EmailCopyRules.For"/>). Everything TIDE sends goes through it.
+/// (<see cref="EmailCopyRules.For"/>). Everything TIDE sends goes through it. Each copy is checked against the
+/// organization's boundary again as it goes: one outside it that an administrator didn't confirm (it was inside when
+/// saved, and the domains have changed since), or an archive now outside it, is dropped, with a warning in the log.
 /// </summary>
-public sealed class CopyingEmailSender(IEmailSender inner, EmailCopyStore copies) : IEmailSender
+public sealed class CopyingEmailSender(IEmailSender inner, EmailCopyStore copies, EmailBoundary? boundary = null,
+    ILogger<CopyingEmailSender>? logger = null) : IEmailSender
 {
     public bool Enabled => inner.Enabled;
 
     public Task<EmailSendResult> SendAsync(OutgoingEmail email, CancellationToken ct = default)
     {
-        var (cc, bcc) = EmailCopyRules.For(email, copies.For(email.Template), copies.Archive);
+        var template = copies.For(email.Template);
+        var archive = copies.Archive;
+        if (boundary is not null)
+        {
+            var inside = boundary.Current;
+            var confirmed = copies.ConfirmedOutside(email.Template);
+            bool Keep(string a) => inside.IsInside(a) || confirmed.Contains(a, StringComparer.OrdinalIgnoreCase);
+            var dropped = template.Cc.Concat(template.Bcc).Where(a => !Keep(a)).ToList();
+            if (archive is not null && !inside.IsInside(archive)) (dropped, archive) = ([.. dropped, archive], null);
+            if (dropped.Count > 0)
+            {
+                template = new([.. template.Cc.Where(Keep)], [.. template.Bcc.Where(Keep)]);
+                logger?.LogWarning("Left a copy off an email ({Template}): {Addresses} {Verb} outside {Boundary} and wasn't confirmed. Save the copies again on Email templates.",
+                    email.Template ?? "a brief's edition", string.Join("; ", dropped), dropped.Count == 1 ? "is" : "are", inside.Describe);
+            }
+        }
+        var (cc, bcc) = EmailCopyRules.For(email, template, archive);
         return inner.SendAsync(cc.Count == 0 && bcc.Count == 0 ? email : email with { Cc = [.. email.Cc, .. cc], Bcc = [.. email.Bcc, .. bcc] }, ct);
     }
 }
 
-/// <summary>A copy address outside the organization's domain, not yet confirmed: the page asks, naming them.</summary>
-public sealed class OutsideCopiesException(IReadOnlyList<string> outside, string? home)
-    : InvalidOperationException(home is null
-        ? $"Your organization's domain isn't known (Email:From), so {EmailCopyRules.Join(outside)} can't be checked. Copy {(outside.Count == 1 ? "it" : "them")} anyway?"
-        : $"{EmailCopyRules.Join(outside)} {(outside.Count == 1 ? "is" : "are")} outside {home}. Every email from this template will be copied there. Copy anyway?")
-{
-    public IReadOnlyList<string> Outside { get; } = outside;
-}
+/// <summary>A copy address outside the organization's boundary, not yet confirmed: the page asks, naming them.</summary>
+public sealed class OutsideCopiesException(IReadOnlyList<string> outside, OrganizationBoundary boundary)
+    : OutsideAddressesException(outside, Say(outside, boundary, "Every email from this template will be copied there.", "Copy anyway?"));

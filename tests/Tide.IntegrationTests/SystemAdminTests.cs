@@ -118,7 +118,7 @@ public sealed class ConfigSourceTests : IDisposable
 
         // An in-app setting saved in Administration wins, and says who saved it.
         db.User.Roles = new HashSet<AppRole> { AppRole.Admin };
-        await db.Settings().SaveRecipientsAsync(Edition.Team, "team@contoso.com");
+        await db.Settings().SaveRecipientsAsync(Edition.Team, "team@contoso.com", confirmOutside: true);
         var inApp = await settings.InAppAsync();
         var team = inApp.Single(r => r.Info.Key == "Distribution:TeamRecipients");
         team.Should().Match<SettingRow>(r => r.FromDatabase && r.Source == SystemSettings.SavedInApp && r.Shown == "team@contoso.com" && r.SavedBy == "Test Analyst");
@@ -180,7 +180,7 @@ public class ConfigBundleServiceTests
     private static async Task Seed(TestDb db)
     {
         await db.Settings().SaveAsync(TlpLevel.Clear, TlpLevel.Amber);
-        await db.Settings().SaveRecipientsAsync(Edition.Team, "cti@contoso.com");
+        await db.Settings().SaveRecipientsAsync(Edition.Team, "cti@contoso.com", confirmOutside: true);
         await new RoleMappingService(db, db.User, new CountingRoleDirectory()).AddAsync("CONTOSO\\CTI-Admins", AppRole.Admin);
         await db.Scorecard().AddCategoryAsync("Ransomware", "Extortion crews");
         await using var ctx = db.Context();

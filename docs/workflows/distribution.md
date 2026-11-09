@@ -38,7 +38,10 @@ TLP is on [architecture/editions-and-tlp.md](../architecture/editions-and-tlp.md
 | Published | Never | Each real send the relay took, unless withdrawn by a TLP slip |
 
 The ceilings and recipient lists are server defaults an administrator overrides in the app, at Access & distribution
-(`DistributionSettings`). Both editions are cut by `BriefEditions.Build(brief, edition, ceiling, actions)`; anything
+(`DistributionSettings`). An address outside the organization (`Email:OrganizationDomains`, else the domain of
+`Email:From`, set on the same page) that a list didn't have is refused, naming it and what that edition carries up to
+its ceiling, until the administrator confirms (*Save anyway*): an outside address on the team edition's list gets
+AMBER. Both lists are checked together, so confirming covers every address named and no other. Both editions are cut by `BriefEditions.Build(brief, edition, ceiling, actions)`; anything
 above the ceiling (an article, a bullet, a screenshot, a caption) is left out, not hidden. See ADR
 [0005](../decisions/0005-editions-from-one-model.md).
 

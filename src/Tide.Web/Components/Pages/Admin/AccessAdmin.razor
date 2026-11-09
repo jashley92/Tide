@@ -7,6 +7,7 @@
 @inject IRoleDirectory Directory
 @inject Tide.Application.Settings.OperationalSettingsService Operational
 @inject Microsoft.Extensions.Options.IOptionsMonitor<Tide.Application.Settings.DistributionOptions> DistributionOptions
+@inject Tide.Application.Distribution.EmailBoundary Boundary
 @inject ToastService Toasts
 
 <PageTitle>Access &amp; distribution · TIDE</PageTitle>
@@ -67,8 +68,23 @@
 </div>
 
 <div class="tide-card" data-submit-scope>
+    <h2>Your organization's email domains</h2>
+    <p class="tide-muted small">An address in one of these domains, or a subdomain of one, is inside your organization. Before any list that
+        sends mail (the editions' recipients, the managers told about swaps, who's told there's no brief, the email templates' copies, a
+        team's contacts) saves an address outside them, you're asked. Leave empty to use the sending address's domain
+        (@(Tide.Application.Distribution.OrganizationBoundary.HomeDomain(BoundaryFrom) ?? "none set")).</p>
+    <div class="d-flex gap-2 flex-wrap align-items-center">
+        <label class="visually-hidden" for="org-domains">Organization's email domains</label>
+        <input id="org-domains" class="form-control form-control-sm tide-data tide-maxw-md" maxlength="2000" placeholder="example.org; example.net" @bind="_domains" />
+        <button class="btn btn-primary btn-sm" disabled="@_busy" data-submit @onclick="SaveDomains">Save domains</button>
+    </div>
+    <div class="form-text">Inside now: @Boundary.Current.Describe@(Boundary.Current.FromSender ? " (the sending address's)" : "").</div>
+</div>
+
+<div class="tide-card" data-submit-scope>
     <h2>Email recipients</h2>
-    <p class="tide-muted small">Separate addresses with commas, semicolons or line breaks. An empty list means that edition isn't emailed.</p>
+    <p class="tide-muted small">Separate addresses with commas, semicolons or line breaks. An empty list means that edition isn't emailed.
+        An address outside @Boundary.Current.Describe is asked about before it's saved: the team edition carries what's marked up to its ceiling.</p>
     <div class="row g-3">
         <div class="col-md-6">
             <label class="tide-field-label" for="team-recipients">Security team edition</label>
@@ -79,7 +95,7 @@
             <textarea id="public-recipients" class="form-control form-control-sm tide-data tide-autogrow tide-grow-3" rows="4" @bind="_publicRecipients" placeholder="all-staff@example.org"></textarea>
         </div>
     </div>
-    <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" data-submit @onclick="SaveRecipients">Save recipients</button>
+    <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" data-submit @onclick="() => SaveRecipients()">Save recipients</button>
 </div>
 
 <div class="tide-card">
@@ -159,7 +175,16 @@
     </div>
 </div>
 
+<ConfirmDialog @ref="_confirm" />
+
 @code {
+    private ConfirmDialog _confirm = default!;
+    private string? _domains;
+
+    // The sending address the boundary falls back to, as the server sets it.
+    [Inject] private Microsoft.Extensions.Options.IOptionsMonitor<Tide.Application.Distribution.EmailBoundaryOptions> BoundaryOptions { get; set; } = default!;
+    private string? BoundaryFrom => BoundaryOptions.CurrentValue.From;
+
     private IReadOnlyList<AdGroupRoleMapping> _rows = [];
     private string? _group;
     private AppRole _role = AppRole.Analyst;
@@ -174,6 +199,7 @@
         _publicRecipients = string.Join(Environment.NewLine, await Distribution.GetRecipientsAsync(Edition.Public));
         _reviewRule = await Reviews.RuleAsync();
         _requireSharePoint = DistributionOptions.CurrentValue.RequireSharePoint;
+        _domains = string.Join("; ", BoundaryOptions.CurrentValue.OrganizationDomains);
         await Load();
     }
 
@@ -210,15 +236,47 @@
         await Load();
     });
 
-    private Task SaveRecipients() => Run(async () =>
+    internal Task SaveDomains() => Run(async () =>
     {
-        // Both lists checked before either is saved: a bad company-wide address no longer leaves the team list saved
-        // behind an error that reads as if nothing was.
-        await Distribution.SaveRecipientsAsync(_teamRecipients, _publicRecipients);
-        _teamRecipients = string.Join(Environment.NewLine, await Distribution.GetRecipientsAsync(Edition.Team));
-        _publicRecipients = string.Join(Environment.NewLine, await Distribution.GetRecipientsAsync(Edition.Public));
-        Toasts.Show("Recipients saved.");
+        await Operational.SaveAsync(new Dictionary<string, string?>
+        {
+            [Tide.Application.Settings.OperationalSettings.OrganizationDomains] = _domains,
+        });
+        _domains = string.Join("; ", BoundaryOptions.CurrentValue.OrganizationDomains);
+        Toasts.Show($"Saved. Inside your organization: {Boundary.Current.Describe}.");
     });
+
+    /// <summary>The domains box, as a test types into it.</summary>
+    internal string? Domains { get => _domains; set => _domains = value; }
+
+    /// <summary>The recipient boxes, as a test types into them.</summary>
+    internal (string? Team, string? Public) Recipients { get => (_teamRecipients, _publicRecipients); set => (_teamRecipients, _publicRecipients) = value; }
+
+    // Both lists checked before either is saved: a bad company-wide address no longer leaves the team list saved
+    // behind an error that reads as if nothing was. An address outside the organization is asked about first.
+    internal async Task SaveRecipients(bool confirmOutside = false)
+    {
+        var ask = await RunAsking(async () =>
+        {
+            await Distribution.SaveRecipientsAsync(_teamRecipients, _publicRecipients, confirmOutside);
+            _teamRecipients = string.Join(Environment.NewLine, await Distribution.GetRecipientsAsync(Edition.Team));
+            _publicRecipients = string.Join(Environment.NewLine, await Distribution.GetRecipientsAsync(Edition.Public));
+            Toasts.Show("Recipients saved.");
+        });
+        if (ask is not null && await _confirm.Ask("Send the brief outside your organization?", ask, "Save anyway")) await SaveRecipients(true);
+    }
+
+    // As Run, but an address outside the organization is returned to ask about, not shown as an error.
+    private async Task<string?> RunAsking(Func<Task> action)
+    {
+        if (_busy) return null;
+        _busy = true;
+        try { await action(); }
+        catch (Tide.Application.Distribution.OutsideAddressesException ex) { return ex.Message; }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+        return null;
+    }
 
     private Task SaveCeilings() => Run(async () =>
     {

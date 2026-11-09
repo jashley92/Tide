@@ -12,6 +12,7 @@
 @inject ActionFileService FileSvc
 @inject Tide.Application.Preferences.NotificationPreferenceService NotifyPrefs
 @using Tide.Application.Settings
+@using Tide.Application.Distribution
 @using Tide.Application.Preferences
 
 <PageTitle>Teams &amp; SLA · TIDE</PageTitle>
@@ -231,7 +232,7 @@
                     <div class="form-text" id="rem-active-help">Someone who hasn't signed in for longer, or whose roles no longer let them see what a reminder shows, isn't sent one. A team mailbox always is.</div>
                 </div>
             </div>
-            <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" data-submit @onclick="SaveReminders">Save reminders</button>
+            <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" data-submit @onclick="() => SaveReminders()">Save reminders</button>
         </section>
 
         <section class="tide-card" aria-labelledby="esc-title">
@@ -547,10 +548,12 @@
 
     private static string Switch(bool on) => on ? "true" : "false";
 
-    internal async Task SaveReminders()
+    // An address outside the organization added to who's told there's no brief is asked about first.
+    internal async Task SaveReminders(bool confirmOutside = false)
     {
         if (_busy) return;
         _busy = true;
+        var ask = (string?)null;
         try
         {
             await Settings.SaveAsync(new Dictionary<string, string?>
@@ -573,12 +576,14 @@
                 [OperationalSettings.ExternalRemindersNewTeams] = Switch(_rem.NewExternalTeamsOn),
                 [OperationalSettings.ExternalRemindersNewBefore] = _rem.NewExternalBefore.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 [OperationalSettings.ExternalRemindersNewEvery] = (_rem.NewExternalEvery ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture),
-            });
+            }, confirmOutside);
             _rem = ReminderForm.From(Reminders);
             Toasts.Show("Saved. Applies within five minutes.");
         }
+        catch (OutsideAddressesException ex) { ask = ex.Message; }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _busy = false; }
+        if (ask is not null && await _confirm.Ask("Email outside your organization?", ask, "Save anyway")) await SaveReminders(true);
     }
 
     // Saves the ladder: on or off, its scope and its steps, together and each checked; refused whole, saying why.
@@ -615,18 +620,30 @@
     private string? _changedBy;
     internal string? ChangedBy => _changedBy;
 
-    // One save, on the version the form opened on: another administrator's change since is refused, not overwritten.
-    internal Task Save(Guid id) => Run(async () =>
+    // One save, on the version the form opened on: another administrator's change since is refused, not overwritten. An
+    // escalation contact outside the organization is asked about first.
+    internal async Task Save(Guid id, bool confirmOutside = false)
     {
-        try { await TeamSvc.UpdateAsync(id, _form); }
-        catch (Tide.Application.Articles.StaleEditException)
+        var ask = (string?)null;
+        _form.ConfirmOutside = confirmOutside;
+        await Run(async () =>
         {
-            // The form stays to copy from, and Reload shows theirs.
-            _changedBy ??= "Someone";
-            throw;
-        }
-        (_editing, _changedBy) = (null, null);
-    });
+            try { await TeamSvc.UpdateAsync(id, _form); }
+            catch (Tide.Application.Articles.StaleEditException)
+            {
+                // The form stays to copy from, and Reload shows theirs.
+                _changedBy ??= "Someone";
+                throw;
+            }
+            catch (OutsideAddressesException ex)
+            {
+                ask = ex.Message;
+                return;
+            }
+            (_editing, _changedBy) = (null, null);
+        });
+        if (ask is not null && await _confirm.Ask("Email outside your organization?", ask, "Save anyway")) await Save(id, true);
+    }
 
     // The banner's Reload: the team as it is now (the list is read again), and what was typed goes.
     internal async Task ReloadTheirs()

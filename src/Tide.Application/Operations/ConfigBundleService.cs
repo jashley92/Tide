@@ -21,8 +21,17 @@ namespace Tide.Application.Operations;
 /// </summary>
 public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser user, IRoleDirectory directory, TimeProvider time,
     SavedSettings? saved = null, Distribution.EmailTemplateStore? emailTemplates = null, Org.OrgClock? clock = null,
-    IOptions<DistributionOptions>? distribution = null, IOptions<ReminderOptions>? reminders = null)
+    IOptions<DistributionOptions>? distribution = null, IOptions<ReminderOptions>? reminders = null,
+    Distribution.EmailBoundary? boundary = null)
 {
+    // The address lists a bundle can carry: an address outside the organization in one is flagged in the preview, as the
+    // page that edits it would ask before saving it.
+    private static readonly HashSet<string> AddressLists = new(StringComparer.OrdinalIgnoreCase)
+    {
+        Settings.DistributionSettings.TeamRecipientsKey, Settings.DistributionSettings.PublicRecipientsKey,
+        Rotation.RotationService.ManagerEmailsKey, OperationalSettings.BriefNotReadyRecipients,
+    };
+
     private const string SettingsArea = "Settings";
     private const string GroupsArea = "AD groups";
     private const string SourcesArea = "Sources";
@@ -139,8 +148,13 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
                 continue;
             }
             var kind = row is null ? BundleChangeKind.Add : BundleChangeKind.Update;
-            var risk = Widens(s.Key, row?.Value ?? ServerValue(s.Key), value);
-            changes.Add(new(SettingsArea, s.Key, kind, risk ?? Clip(value), Warning: risk is not null));
+            // What widens what leaves (Widens), and an address outside the organization in a list: either is warned, both said.
+            var outside = AddressLists.Contains(s.Key)
+                ? (boundary?.Current ?? Distribution.OrganizationBoundary.Unknown).Outside(OperationalSettings.SplitAddresses(value))
+                : [];
+            var risks = new[] { Widens(s.Key, row?.Value ?? ServerValue(s.Key), value), outside.Count > 0 ? $"Outside the organization: {string.Join("; ", outside)}." : null }
+                .OfType<string>().ToList();
+            changes.Add(new(SettingsArea, s.Key, kind, risks.Count > 0 ? Clip(string.Join(" ", risks)) : Clip(value), Warning: risks.Count > 0));
             if (!apply) continue;
             if (row is null) db.Settings.Add(rows[s.Key] = row = new AppSetting { Key = s.Key });
             row.Value = value;

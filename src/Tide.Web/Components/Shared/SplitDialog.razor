@@ -45,8 +45,13 @@
             <div class="row g-2">
                 <div class="col-sm-5"><input class="form-control form-control-sm" maxlength="100" placeholder="Name (e.g. Network Engineering)" aria-label="New external team's name" @bind="_newName" /></div>
                 <div class="col-sm-5"><input class="form-control form-control-sm" maxlength="256" placeholder="Contact email (optional)" aria-label="New external team's contact email" @bind="_newEmail" /></div>
-                <div class="col-sm-2"><button type="button" class="btn btn-outline-secondary btn-sm w-100" disabled="@string.IsNullOrWhiteSpace(_newName)" @onclick="AddExternal">Add</button></div>
+                <div class="col-sm-2"><button type="button" class="btn btn-outline-secondary btn-sm w-100" disabled="@string.IsNullOrWhiteSpace(_newName)" @onclick="() => AddExternal()">Add</button></div>
             </div>
+            @if (_outside is not null)
+            {
+                <div class="alert alert-warning small mt-2 mb-0" role="alert">@_outside
+                    <button type="button" class="btn btn-outline-secondary btn-sm ms-2" @onclick="() => AddExternal(true)">Add anyway</button></div>
+            }
         </div>
     }
     @if (_error is not null) { <div class="text-danger small mt-2" role="alert">@_error</div> }
@@ -72,20 +77,23 @@
     private OverLimitDialog _overLimit = default!;
     private IReadOnlyList<Team> _teams = [];
     private readonly List<Part> _parts = [];
-    private string? _newName, _newEmail, _error;
+    private string? _newName, _newEmail, _error, _outside;
 
     internal List<Part> Parts => _parts;
     internal IReadOnlyList<Team> Teams => _teams;
     internal string? NewName { get => _newName; set => _newName = value; }
     internal string? NewEmail { get => _newEmail; set => _newEmail = value; }
     internal string? Error => _error;
+
+    /// <summary>What's asked before adding a team whose contact is outside the organization, or null.</summary>
+    internal string? Outside => _outside;
     internal OverLimitDialog OverLimit => _overLimit;
 
     /// <summary>Opens the dialog with no team chosen; true once the parts are raised.</summary>
     public async Task<bool> OpenAsync()
     {
         _parts.Clear();
-        (_newName, _newEmail, _error) = (null, null, null);
+        (_newName, _newEmail, _error, _outside) = (null, null, null, null);
         _teams = (await TeamSvc.ListAsync()).Where(t => t.Id != Parent.TeamId).ToList();
         return await _dialog.Ask($"Split {Ui.ActionLabel(Parent.Number)} to teams",
             "Each team gets its own part, titled for it, with this action's details. Each starts unassigned.", "Split", danger: false);
@@ -97,15 +105,18 @@
         if (on) _parts.Add(new Part(teamId, Parent.DueDate));
     }
 
-    internal async Task AddExternal()
+    // A contact outside the organization is asked about here, inside the dialog: Add anyway confirms it.
+    internal async Task AddExternal(bool confirmOutside = false)
     {
+        _outside = null;
         try
         {
-            var id = await TeamSvc.AddExternalAsync(_newName ?? "", _newEmail);
+            var id = await TeamSvc.AddExternalAsync(_newName ?? "", _newEmail, confirmOutside);
             _teams = (await TeamSvc.ListAsync()).Where(t => t.Id != Parent.TeamId).ToList();
             Toggle(id, true);
             (_newName, _newEmail, _error) = (null, null, null);
         }
+        catch (Tide.Application.Distribution.OutsideAddressesException ex) { _outside = ex.Message; }
         catch (Exception ex) { _error = UserFacingError.For(ex); }
     }
 

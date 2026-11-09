@@ -24,7 +24,7 @@ public class BugRound2PlatformTests : IDisposable
     [Fact]
     public async Task ABadCompanyWideAddress_SavesNeitherList()
     {
-        await _db.Settings().SaveRecipientsAsync("cti@contoso.com", "all@contoso.com");
+        await _db.Settings().SaveRecipientsAsync("cti@contoso.com", "all@contoso.com", confirmOutside: true);
 
         await FluentActions.Invoking(() => _db.Settings().SaveRecipientsAsync("soc@contoso.com", "not an address"))
             .Should().ThrowAsync<ArgumentException>().WithMessage("*not*");

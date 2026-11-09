@@ -60,7 +60,8 @@ public interface IPresenterLookup
 /// manager is emailed a notice of every approved change. An administrator keeps the roster and the rota, can arrange
 /// cover on someone's behalf (still approved by the colleague taking it on), and can undo a change.
 /// </summary>
-public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user, OrgClock clock, IEmailSender email, IOptions<AppOptions> app, EmailTemplateStore? templates = null)
+public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user, OrgClock clock, IEmailSender email, IOptions<AppOptions> app, EmailTemplateStore? templates = null,
+    EmailBoundary? boundary = null)
     : IPresenterLookup
 {
     public const string ManagerEmailsKey = "Rotation:ManagerEmails";
@@ -320,8 +321,10 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
             .Where(a => MailAddress.TryCreate(a, out _)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
-    /// <summary>Who's told about every approved swap and cover (they don't approve them).</summary>
-    public async Task SaveManagerEmailsAsync(string? addresses, CancellationToken ct = default)
+    /// <summary>Who's told about every approved swap and cover (they don't approve them). An address outside the
+    /// organization that the list didn't have is refused (<see cref="OutsideAddressesException"/>, naming it) unless
+    /// <paramref name="confirmOutside"/>.</summary>
+    public async Task SaveManagerEmailsAsync(string? addresses, bool confirmOutside = false, CancellationToken ct = default)
     {
         RequireAdmin();
         var list = (addresses ?? "").Split([';', ',', '\n', '\r', ' ', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
@@ -330,6 +333,9 @@ public sealed class RotationService(IAppDbContextFactory dbs, ICurrentUser user,
         var value = string.Join("; ", list.Distinct(StringComparer.OrdinalIgnoreCase));
         // The setting's column holds 4,000 characters; SQL Server refuses more, SQLite would keep it.
         if (value.Length > 4000) throw new ArgumentException("That's too many addresses; use a distribution list instead.");
+        var had = await ManagerEmailsAsync(ct);
+        (boundary?.Current ?? OrganizationBoundary.Unknown).Check(list.Where(a => !had.Contains(a, StringComparer.OrdinalIgnoreCase)), confirmOutside,
+            "Every approved swap and cover, with who presents when, is emailed there.");
         await using var db = await dbs.CreateAsync(ct);
         var row = await db.Settings.FirstOrDefaultAsync(s => s.Key == ManagerEmailsKey, ct);
         if (row is null) db.Settings.Add(row = new AppSetting { Key = ManagerEmailsKey });

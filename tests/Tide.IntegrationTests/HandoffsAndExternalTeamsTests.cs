@@ -256,7 +256,7 @@ public class HandoffsAndExternalTeamsTests : IDisposable
     public async Task AHandoffToAnExternalTeam_EmailsNoOne()
     {
         var a = await New(await Team("Cyber Response"));
-        var external = await _db.Teams().AddExternalAsync(new ExternalTeamForm { Name = "Hosting Provider", ContactEmail = "noc@provider.example" });
+        var external = await _db.Teams().AddExternalAsync(new ExternalTeamForm { ConfirmOutside = true, Name = "Hosting Provider", ContactEmail = "noc@provider.example" });
         (await _db.Handoffs().HandOffAsync(a.Id, external, "They host it")).Should().Be(0);
         _db.Email.Sent.Should().BeEmpty("an external team hears only through its reminders");
     }
@@ -270,7 +270,7 @@ public class HandoffsAndExternalTeamsTests : IDisposable
     {
         var owner = await Team("Cyber Response");
         var network = await Team("Network Engineering");
-        var hosting = await _db.Teams().AddExternalAsync("Hosting Provider", "noc@provider.example");
+        var hosting = await _db.Teams().AddExternalAsync("Hosting Provider", "noc@provider.example", confirmOutside: true);
         var today = _db.Clock.Today;
         var number = await _db.Actions().CreateAsync(new ActionForm
         {
@@ -444,7 +444,7 @@ public class HandoffsAndExternalTeamsTests : IDisposable
     public async Task AnActionHandedToAnotherExternalTeam_RemindsThatTeam_ThoughTheFirstWasRemindedAlready()
     {
         var first = await _db.Teams().AddExternalAsync(new ExternalTeamForm { Name = "Network Engineering", ContactEmail = "network@example.org", RemindBeforeDays = 2 });
-        var second = await _db.Teams().AddExternalAsync(new ExternalTeamForm { Name = "Hosting Provider", ContactEmail = "noc@provider.example", RemindBeforeDays = 2 });
+        var second = await _db.Teams().AddExternalAsync(new ExternalTeamForm { ConfirmOutside = true, Name = "Hosting Provider", ContactEmail = "noc@provider.example", RemindBeforeDays = 2 });
         var a = await Due(first, "Block the domains", new DateOnly(2026, 11, 30));
 
         (await Remind(24)).Should().Be(1, "Tuesday: two business days before Monday");
@@ -469,7 +469,7 @@ public class HandoffsAndExternalTeamsTests : IDisposable
     public async Task WhileOverdue_ItsEveryNBusinessDays_OrOnce()
     {
         var every = await _db.Teams().AddExternalAsync(new ExternalTeamForm { Name = "Network Engineering", ContactEmail = "network@example.org", RemindBeforeDays = 0, RemindOverdueEveryDays = 2 });
-        var once = await _db.Teams().AddExternalAsync(new ExternalTeamForm { Name = "Hosting Provider", ContactEmail = "noc@provider.example", RemindBeforeDays = 0, RemindOverdueEveryDays = null });
+        var once = await _db.Teams().AddExternalAsync(new ExternalTeamForm { ConfirmOutside = true, Name = "Hosting Provider", ContactEmail = "noc@provider.example", RemindBeforeDays = 0, RemindOverdueEveryDays = null });
         var due = new DateOnly(2026, 11, 20);   // a Friday: Monday the 23rd is a business day late
         await Due(every, "Patch the edge", due);
         await Due(once, "Confirm the version", due);
@@ -495,7 +495,7 @@ public class HandoffsAndExternalTeamsTests : IDisposable
         teams.NewExternalForm().RemindersOn.Should().BeFalse();
         var scheduled = _db.Teams(new ReminderOptions { ExternalReminders = { NewTeamsBeforeDays = 5, NewTeamsEveryDays = 0 } }).NewExternalForm();
         (scheduled.RemindBeforeDays, scheduled.RemindOverdueEveryDays).Should().Be((5, (int?)null), "the schedule set for new teams, 0 meaning once");
-        var quick = await teams.AddExternalAsync("Hosting Provider", "noc@provider.example");
+        var quick = await teams.AddExternalAsync("Hosting Provider", "noc@provider.example", confirmOutside: true);
         var chosen = teams.NewExternalForm();
         (chosen.Name, chosen.ContactEmail, chosen.RemindersOn) = ("Facilities", "facilities@example.org", true);   // whoever adds it can still turn them on
         var on = await teams.AddExternalAsync(chosen);
@@ -517,7 +517,7 @@ public class HandoffsAndExternalTeamsTests : IDisposable
     [Fact]
     public async Task TurningATeamsRemindersOn_FromTheNote_KeepsItsSchedule_IsAudited_AndMovesItsVersion()
     {
-        var id = await _db.Teams().AddExternalAsync(new ExternalTeamForm { Name = "Hosting Provider", ContactEmail = "noc@provider.example", RemindersOn = false, RemindBeforeDays = 4 });
+        var id = await _db.Teams().AddExternalAsync(new ExternalTeamForm { ConfirmOutside = true, Name = "Hosting Provider", ContactEmail = "noc@provider.example", RemindersOn = false, RemindBeforeDays = 4 });
         var before = (await _db.Teams().ListAsync()).Single(t => t.Id == id);
         await using (var ctx = _db.Context())
         {
@@ -539,7 +539,7 @@ public class HandoffsAndExternalTeamsTests : IDisposable
     public async Task TheTeamsSwitch_AndAnActionsSwitch_TurnThemOff_AndOneEmailListsATeamsRequests()
     {
         var team = await _db.Teams().AddExternalAsync(new ExternalTeamForm { Name = "Network Engineering", ContactEmail = "network@example.org" });
-        var off = await _db.Teams().AddExternalAsync(new ExternalTeamForm { Name = "Hosting Provider", ContactEmail = "noc@provider.example", RemindersOn = false });
+        var off = await _db.Teams().AddExternalAsync(new ExternalTeamForm { ConfirmOutside = true, Name = "Hosting Provider", ContactEmail = "noc@provider.example", RemindersOn = false });
         var due = new DateOnly(2026, 11, 24);
         await Due(team, "First request", due);
         await Due(team, "Second request", due);

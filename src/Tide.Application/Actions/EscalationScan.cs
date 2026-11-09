@@ -59,12 +59,13 @@ public sealed partial class ReminderService
 
         // Where replies go, read once for every email that names it.
         var replies = await ReplyToAsync(db, [.. climbs.Where(NeedsReplyTo).Select(c => c.Action)], ct);
+        var ceiling = await CeilingAsync(ct);
         var sent = 0;
         var finished = false;
         try
         {
-            sent = await EscalationRemindAsync(db, [.. climbs.Where(c => c.Does.HasFlag(EscalationDoes.Remind))], replies, today, ct);
-            sent += await CopyContactsAsync([.. climbs.Where(c => c.Does.HasFlag(EscalationDoes.CopyContact))], replies, today, ct);
+            sent = await EscalationRemindAsync(db, [.. climbs.Where(c => c.Does.HasFlag(EscalationDoes.Remind))], replies, ceiling, today, ct);
+            sent += await CopyContactsAsync([.. climbs.Where(c => c.Does.HasFlag(EscalationDoes.CopyContact))], replies, ceiling, today, ct);
             finished = true;
         }
         finally
@@ -156,15 +157,15 @@ public sealed partial class ReminderService
     // The owning team is reminded as it is reminded already: an external team by its own reminder email (one per team,
     // unless its reminders or the action's are off); an internal one at each action's assignee, else its mailbox, else its
     // members, with the due-soon or overdue email, leaving out whoever opted out of that.
-    private async Task<int> EscalationRemindAsync(IAppDbContext db, List<Climb> climbs, IReadOnlyDictionary<Guid, string?> replies, DateOnly today,
-        CancellationToken ct)
+    private async Task<int> EscalationRemindAsync(IAppDbContext db, List<Climb> climbs, IReadOnlyDictionary<Guid, string?> replies, TlpLevel ceiling,
+        DateOnly today, CancellationToken ct)
     {
         var sent = 0;
         var external = climbs.Where(c => c.Team.IsExternal && c.Team.RemindersOn && !string.IsNullOrWhiteSpace(c.Team.ContactEmail)).ToList();
         // The contacts' marks for today, read once: which the cadence already reminded about what.
         var remindedToday = await ContactMarksAsync(db, [.. external.Select(c => ContactKey(c.Action.Id, today, Hash(c.Team.ContactEmail!)))], ct);
         foreach (var team in climbs.Where(c => c.Team.IsExternal).GroupBy(c => c.Action.TeamId))
-            sent += await RemindExternalAsync(db, [.. team], remindedToday, replies, today, ct);
+            sent += await RemindExternalAsync(db, [.. team], remindedToday, replies, ceiling, today, ct);
         var inside = climbs.Where(c => !c.Team.IsExternal).ToList();
         return inside.Count == 0 ? sent : sent + await RemindInternalAsync(db, inside, today, ct);
     }
@@ -172,7 +173,7 @@ public sealed partial class ReminderService
     // The contact has one reminder about an action a day: one its cadence already sent today is skipped, saying so, and
     // the step is done all the same.
     private async Task<int> RemindExternalAsync(IAppDbContext db, List<Climb> climbs, IReadOnlySet<string> remindedToday,
-        IReadOnlyDictionary<Guid, string?> replies, DateOnly today, CancellationToken ct)
+        IReadOnlyDictionary<Guid, string?> replies, TlpLevel ceiling, DateOnly today, CancellationToken ct)
     {
         var team = climbs[0].Team;
         var why = !team.RemindersOn ? $"not reminded: {team.Name}'s reminders are off"
@@ -182,7 +183,7 @@ public sealed partial class ReminderService
         if (list.Count == 0) return 0;
         var byAction = list.ToDictionary(c => c.Action.Id);
         var (result, went, skipped) = await SendExternalReminderAsync(db, team, list.Select(c => c.Action), Hash(team.ContactEmail!), remindedToday,
-            replies, today, ct);
+            replies, ceiling, today, ct);
         foreach (var a in skipped) byAction[a.Id].Say(SkippedReminder(team.ContactEmail!));
         return result is null ? 0 : Went(result, went.Select(a => byAction[a.Id]), $"reminded {team.Name} at {team.ContactEmail}");
     }
@@ -220,10 +221,14 @@ public sealed partial class ReminderService
     // --- copy the escalation contact ----------------------------------------------------------------------------
 
     // One email per team to its escalation contact, listing its actions that reached such a step. Someone outside TIDE
-    // may read it, so an external team's names no TIDE page; an internal team's links each request to its page.
-    private async Task<int> CopyContactsAsync(List<Climb> climbs, IReadOnlyDictionary<Guid, string?> replies, DateOnly today, CancellationToken ct)
+    // may read it, so an external team's names no TIDE page; an internal team's links each request to its page. An
+    // external team's contact, or any contact outside the organization, gets it held to the team edition's ceiling: a
+    // request marked above it is counted, not named (RequestsEmail), and its step is done all the same.
+    private async Task<int> CopyContactsAsync(List<Climb> climbs, IReadOnlyDictionary<Guid, string?> replies, TlpLevel ceiling, DateOnly today,
+        CancellationToken ct)
     {
         var sent = 0;
+        var inside = Boundary;
         foreach (var batch in climbs.GroupBy(c => c.Action.TeamId))
         {
             var list = batch.ToList();
@@ -233,8 +238,9 @@ public sealed partial class ReminderService
                 foreach (var c in list) c.Say($"no escalation contact to copy for {team.Name}");
                 continue;
             }
+            var held = team.IsExternal || !inside.IsInside(team.EscalationEmail);
             var result = await SendAsync(RequestsEmail(EmailTemplateCatalog.Escalation, team, team.EscalationEmail, team.EscalationName ?? "there",
-                InOrder(list), today, replies, team.IsExternal ? null : app.Value.BaseUrl), ct);
+                InOrder(list), today, replies, held ? ceiling : null, held ? null : app.Value.BaseUrl), ct);
             sent += Went(result, list, $"copied {team.EscalationName ?? team.EscalationEmail}, the escalation contact for {team.Name}");
         }
         return sent;

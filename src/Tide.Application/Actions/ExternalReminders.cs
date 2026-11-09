@@ -6,6 +6,7 @@ using Tide.Application.Distribution;
 using Tide.Application.Org;
 using Tide.Application.Preferences;
 using Tide.Domain.Entities;
+using Tide.Domain.Enums;
 using static Tide.Application.Actions.ActionEmails;
 using static Tide.Application.Distribution.EmailComposer;
 
@@ -142,12 +143,14 @@ public sealed partial class ReminderService
         if (due.Count == 0) return 0;
 
         var replies = await ReplyToAsync(db, due.Select(x => x.Action).ToList(), ct);
+        var ceiling = await CeilingAsync(ct);
         var sent = 0;
         foreach (var batch in due.GroupBy(x => x.Action.TeamId))
         {
             var team = teams[batch.Key];
             var step = batch.ToDictionary(x => x.Action.Id, x => x.Key);
-            var (result, went, skipped) = await SendExternalReminderAsync(db, team, batch.Select(x => x.Action), contacts[team.Id], remindedToday, replies, today, ct);
+            var (result, went, skipped) = await SendExternalReminderAsync(db, team, batch.Select(x => x.Action), contacts[team.Id], remindedToday, replies,
+                ceiling, today, ct);
             // The escalation ladder's remind step reached the contact about these today: their step is done all the same,
             // so it doesn't go the next day instead.
             if (skipped.Count > 0)
@@ -187,38 +190,57 @@ public sealed partial class ReminderService
     // actions the contact was already reminded about today (in remindedToday, by the other) are skipped; the rest go in
     // one email, in due order, and when it went or may have, each is marked so the other skips it today. Returns the
     // send's result (null when every one was skipped) and which went and which were skipped; each caller records its own.
+    // Held to the team edition's ceiling (RequestsEmail): one marked above it is counted, not named, and is marked as
+    // reminded all the same.
     private async Task<(EmailSendResult? Result, IReadOnlyList<ActionItem> Went, IReadOnlyList<ActionItem> Skipped)> SendExternalReminderAsync(
         IAppDbContext db, Team team, IEnumerable<ActionItem> actions, string contactHash, IReadOnlySet<string> remindedToday,
-        IReadOnlyDictionary<Guid, string?> replies, DateOnly today, CancellationToken ct)
+        IReadOnlyDictionary<Guid, string?> replies, TlpLevel ceiling, DateOnly today, CancellationToken ct)
     {
         var all = actions.ToList();
         var skipped = all.Where(a => remindedToday.Contains(ContactKey(a.Id, today, contactHash))).ToList();
         var go = all.Except(skipped).OrderBy(a => a.DueDate).ThenBy(a => a.Number).ToList();
         if (go.Count == 0) return (null, go, skipped);
         var result = await SendAsync(RequestsEmail(EmailTemplateCatalog.ExternalReminder, team, team.ContactEmail!, team.ContactName ?? team.Name,
-            go, today, replies), ct);
+            go, today, replies, ceiling), ct);
         if (result.MayHaveGone) await MarkAsync(db, ContactMark, go.Select(a => ContactKey(a.Id, today, contactHash)).ToList());
         return (result, go, skipped);
     }
 
     // An email about a team's requests, to someone who may not use TIDE (the external reminder template, and the escalation
     // contact's): the team, who it's to (<paramref name="contact"/>), the request list (linked to TIDE only with
-    // <paramref name="tideUrl"/>), and replies to whoever follows each one.
+    // <paramref name="tideUrl"/>), and replies to whoever follows each one. With a <paramref name="ceiling"/> (the team
+    // edition's, for anyone outside the organization), a request whose article is marked above it isn't named: no title,
+    // no details, nothing in the marking. It's still counted, and the list says how many more there are and who to ask.
     private OutgoingEmail RequestsEmail(EmailTemplate template, Team team, string to, string contact, IReadOnlyList<ActionItem> list, DateOnly today,
-        IReadOnlyDictionary<Guid, string?> replies, string? tideUrl = null)
+        IReadOnlyDictionary<Guid, string?> replies, TlpLevel? ceiling, string? tideUrl = null)
     {
+        var (shown, withheld) = Held(list, ceiling);
         var t = _templates.Render(template, new Dictionary<string, string>
         {
             ["Team"] = team.Name,
             ["Contact"] = contact,
             ["From"] = clock.TeamName,
             ["Requests"] = $"{list.Count} request{S(list.Count)}",
-            ["RequestList"] = RequestList(list, today, clock.Days, tideUrl),
+            ["RequestList"] = RequestList(shown, today, clock.Days, tideUrl, withheld, clock.TeamName),
         });
-        var html = Shell(t.Heading, clock.TeamName + " · " + DayText(today), MarkingLine(list) + t.BodyHtml, t.Footer);
+        var html = Shell(t.Heading, clock.TeamName + " · " + DayText(today), MarkingLine(shown) + t.BodyHtml, t.Footer);
         var replyTo = list.Select(a => replies.GetValueOrDefault(a.Id)).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        return new OutgoingEmail([to], Marked(t.Subject, list), html, ToText(html), [], replyTo) { Template = t.TemplateId };
+        return new OutgoingEmail([to], Marked(t.Subject, shown), html, ToText(html), [], replyTo) { Template = t.TemplateId };
     }
+
+    /// <summary>The requests that may be named in an email held to <paramref name="ceiling"/> (an action raised on its own
+    /// carries no marking, so it may), and how many may not. No ceiling: all of them.</summary>
+    internal static (IReadOnlyList<ActionItem> Shown, int Withheld) Held(IReadOnlyList<ActionItem> list, TlpLevel? ceiling)
+    {
+        if (ceiling is not { } max) return (list, 0);
+        var shown = list.Where(a => a.Article is null || a.Article.Tlp <= max).ToList();
+        return (shown, list.Count - shown.Count);
+    }
+
+    /// <summary>What an email says in place of the requests it doesn't name: "1 more request is marked above what we share
+    /// by email: ask {sender}."</summary>
+    internal static string WithheldText(int withheld, string sender) =>
+        $"{withheld} more request{S(withheld)} {(withheld == 1 ? "is" : "are")} marked above what we share by email: ask {sender}.";
 
     // An action's mark for its reminder at a step: "{action}:{due}:{step}", and for one handed from another team, the team
     // it's with now after that (":{team}"). The team it was handed to hears only through its reminders, so a step the
@@ -251,8 +273,11 @@ public sealed partial class ReminderService
     /// An external team's requests, for someone without TIDE: each one's title, what's asked (its details as written on
     /// the action, nothing from its article), when it's due and how late, and its ticket link. No TIDE number or link,
     /// unless <paramref name="tideUrl"/> (this server's address) is given for readers who use TIDE: then each links to its page.
+    /// <paramref name="withheld"/> more, marked above what's shared by email, are said after them, as a number, with who
+    /// to ask (<paramref name="sender"/>).
     /// </summary>
-    internal static string RequestList(IEnumerable<ActionItem> actions, DateOnly today, WorkingDays days, string? tideUrl = null)
+    internal static string RequestList(IEnumerable<ActionItem> actions, DateOnly today, WorkingDays days, string? tideUrl = null,
+        int withheld = 0, string? sender = null)
     {
         var sb = new StringBuilder();
         foreach (var a in actions)
@@ -272,6 +297,9 @@ public sealed partial class ReminderService
                     $"<div style=\"font-size:13px;\"><a style=\"color:{Palette.Link};\" href=\"{Esc(tideUrl.TrimEnd('/') + "/actions/" + a.Number)}\">A-{a.Number} in TIDE</a></div>");
             sb.Append("</div>");
         }
+        if (withheld > 0)
+            sb.Append(CultureInfo.InvariantCulture,
+                $"<p style=\"margin:0 0 14px;font-size:13px;color:{Palette.Muted};\">{Esc(WithheldText(withheld, sender ?? "us"))}</p>");
         return sb.ToString();
     }
 

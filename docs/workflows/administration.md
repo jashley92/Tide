@@ -53,7 +53,7 @@ role holds it; an administrator also holds every other permission
 | Intelligence › Query templates | `/admin/queries` | each dialect's template per kind of value | `HuntQueryBuilder.SaveTemplateAsync`, `ResetTemplateAsync` | `QueryTemplates` |
 | Brief › Opening metrics | `/admin/metrics` | groups, metrics, thresholds, charts, the example set | `MetricsService` | metric tables |
 | Brief › Metric imports | `/admin/metric-imports` | upload a CSV; drop folder on or off and its interval; recent imports | `MetricImportService`, `OperationalSettingsService` | `MetricImports`, `Settings` |
-| People & distribution › Access & distribution | `/admin/access` | AD group to role mappings; edition TLP ceilings; review before send; SharePoint required; each edition's recipients; the capabilities table (read-only) | `RoleMappingService`, `DistributionSettings`, `ReviewService`, `OperationalSettingsService` | `RoleMappings`, `Settings` |
+| People & distribution › Access & distribution | `/admin/access` | AD group to role mappings; edition TLP ceilings; review before send; SharePoint required; the organization's email domains (`Email:OrganizationDomains`); each edition's recipients; the capabilities table (read-only) | `RoleMappingService`, `DistributionSettings`, `ReviewService`, `OperationalSettingsService` | `RoleMappings`, `Settings` |
 | People & distribution › Email templates | `/admin/email-templates` | the wording of the notification emails; each template's standing copies (CC, BCC) and the archive copy | `EmailTemplateService` | `Settings` (`EmailTemplate:*`, `EmailCopy:*`) |
 | People & distribution › API access | `/admin/api` | API tokens and webhooks | `ApiTokenService`, `WebhookService` | see [API.md](../API.md) |
 | System › Diagnostics | `/admin/system` | nothing: health checks, this server, database, email delivery, storage, connections, background jobs | `SystemDiagnostics` | |
@@ -137,8 +137,21 @@ sequenceDiagram
 ```
 
 `OperationalSettings` checks every value on save and on bundle import: HH:mm times, numbers within the bounds the
-services apply, an IANA time zone, email addresses. Nothing needs a restart. The mechanism (`SavedSettings`,
+services apply, an IANA time zone, email addresses, domain names. Nothing needs a restart. The mechanism (`SavedSettings`,
 `OperationalSettingsOverlay<T>`) and the list of keys are in [configuration.md](../operations/configuration.md).
+
+**Addresses outside the organization.** Access & distribution sets the organization's email domains
+(`Email:OrganizationDomains`, each including its subdomains; empty uses the domain of `Email:From`, and the page says
+which is in force). Every list that sends mail checks against them (`OrganizationBoundary`): the editions' recipients
+(Access & distribution), the managers told about swaps (Brief rotation), who's told there's no brief and an internal
+team's escalation contact (Teams & SLA), a template's standing copies (Email templates), and an external team's contact
+and escalation addresses (External teams, and the split dialog's quick add). An address outside them that the list
+didn't already have is refused with an `OutsideAddressesException` naming it and what goes there; the page asks
+(*Save anyway*, *Copy anyway*, *Add anyway* in the split dialog) and saves again confirmed. Domains saved with
+who's told there's no brief are the ones it's checked against. An external team's contact is outside by nature: it's
+confirmed only when first set or changed, the form says it's outside, and its emails are held to the team edition's
+ceiling ([actions-and-hunting.md](actions-and-hunting.md#external-teams)). A configuration bundle that carries an
+outside address in one of these lists flags it in the preview.
 
 ## Email templates
 

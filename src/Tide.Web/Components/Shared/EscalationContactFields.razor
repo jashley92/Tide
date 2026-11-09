@@ -1,5 +1,7 @@
 @* A team's escalation contact, the name and email the escalation ladder copies: on Teams & SLA for an internal team (an
-   administrator's), on External teams for an external one (whoever works actions). TeamService saves them. *@
+   administrator's), on External teams for an external one (whoever works actions). TeamService saves them. An address
+   outside the organization is said to be, beside it: its emails are held to the team edition's ceiling. *@
+@inject TeamService TeamSvc
 
 <div class="row g-2">
     <div class="col-md-6">
@@ -13,7 +15,12 @@
                value="@Email" @onchange="e => EmailChanged.InvokeAsync(e.Value?.ToString())" />
     </div>
     <div class="col-12 form-text mt-0" id="@($"{Id}-help")">Who the escalation ladder copies when the team's actions slip, if a step says so.
-        @(External ? "Their email has no TIDE links." : "Each request in it links to TIDE.")</div>
+        @(External || TeamSvc.IsOutside(Email) ? "Their email has no TIDE links." : "Each request in it links to TIDE.")</div>
+    @if (TeamSvc.IsOutside(Email))
+    {
+        <div class="col-12 form-text mt-0 text-warning-emphasis" role="status" data-outside>Outside @TeamSvc.InsideText: requests marked above
+            what the team edition carries are counted in their email, not named.</div>
+    }
 </div>
 
 @code {

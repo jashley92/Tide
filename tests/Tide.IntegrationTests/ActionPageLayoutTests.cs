@@ -36,7 +36,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
         As(async sp => { await what(sp.GetRequiredService<ActionService>()); return true; }, who);
 
     private Task<Guid> Team(string name, bool external = false) => As(sp => external
-        ? sp.GetRequiredService<TeamService>().AddExternalAsync(name, "noc@provider.example")
+        ? sp.GetRequiredService<TeamService>().AddExternalAsync(name, "noc@provider.example", confirmOutside: true)
         : sp.GetRequiredService<TeamService>().AddAsync(name, null, null));
 
     private Task<int> Raise(Guid team, string title, ActionKind kind = ActionKind.Block, DateOnly? due = null, Guid? parent = null,

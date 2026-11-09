@@ -84,6 +84,7 @@ public static class SettingsCatalog
         new("Distribution", "Team edition recipients", "Distribution:TeamRecipients", EditedIn: "admin/access"),
         new("Distribution", "Company-wide edition recipients", "Distribution:PublicRecipients", EditedIn: "admin/access"),
         new("Distribution", "SharePoint posting required", OperationalSettings.RequireSharePoint, EditedIn: "admin/access"),
+        new("Distribution", "Organization's email domains", OperationalSettings.OrganizationDomains, EditedIn: "admin/access"),
         .. Enum.GetValues<Priority>().Select(p =>
             new SettingInfo("Action SLA", $"{p} target (business days)", "Actions:Sla:Priority:" + p, EditedIn: "admin/teams")),
         .. Enum.GetValues<ActionKind>().Select(k =>

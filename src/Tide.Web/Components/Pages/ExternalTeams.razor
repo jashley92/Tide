@@ -1,5 +1,6 @@
 @page "/teams/external"
 @attribute [Authorize(Policy = Policies.ReadActions)]
+@using Tide.Application.Distribution
 @inject TeamService TeamSvc
 @inject ICurrentUser CurrentUser
 @inject ToastService Toasts
@@ -80,7 +81,7 @@
             <div class="tide-card" data-submit-scope>
                 <h2>New external team</h2>
                 @Fields(_new, "new")
-                <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" data-submit @onclick="Add">Add external team</button>
+                <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" data-submit @onclick="() => Add()">Add external team</button>
             </div>
         </div>
     }
@@ -182,7 +183,13 @@
         <div class="row g-2">
             <div class="col-md-6"><label class="tide-field-label" for="@p-name">Name</label><input id="@p-name" class="form-control form-control-sm" maxlength="100" placeholder="Network Engineering" @bind="f.Name" /></div>
             <div class="col-md-6"><label class="tide-field-label" for="@p-contact">Contact name</label><input id="@p-contact" class="form-control form-control-sm" maxlength="@Team.MaxContactName" @bind="f.ContactName" /></div>
-            <div class="col-12"><label class="tide-field-label" for="@p-email">Contact email</label><input id="@p-email" class="form-control form-control-sm" maxlength="256" placeholder="network-team@example.org" @bind="f.ContactEmail" /></div>
+            <div class="col-12"><label class="tide-field-label" for="@p-email">Contact email</label><input id="@p-email" class="form-control form-control-sm" maxlength="256" placeholder="network-team@example.org" @bind="f.ContactEmail" />
+                @if (TeamSvc.IsOutside(f.ContactEmail))
+                {
+                    <div class="form-text text-warning-emphasis" role="status" data-outside>Outside @TeamSvc.InsideText: their reminders name only the
+                        requests marked up to what the team edition carries, and count the rest. You're asked to confirm a new address.</div>
+                }
+            </div>
             <div class="col-12"><label class="tide-field-label" for="@p-desc">What they do</label><input id="@p-desc" class="form-control form-control-sm" maxlength="500" @bind="f.Description" /></div>
             <div class="col-12">
                 <label class="tide-field-label" for="@p-engage">How to engage them</label>
@@ -214,26 +221,50 @@
         _form = ExternalTeamForm.From(t);
     }
 
-    internal Task Add() => Run(async () =>
+    // A contact or escalation address outside the organization, new or changed, is asked about first (an external team's
+    // usually is: its emails are held to the team edition's ceiling).
+    internal async Task Add(bool confirmOutside = false)
     {
-        await TeamSvc.AddExternalAsync(_new);
-        Toasts.Show($"{_new.Name.Trim()} added.");
-        _new = TeamSvc.NewExternalForm();
-    });
+        var ask = (string?)null;
+        _new.ConfirmOutside = confirmOutside;
+        await Run(async () =>
+        {
+            try { await TeamSvc.AddExternalAsync(_new); }
+            catch (OutsideAddressesException ex)
+            {
+                ask = ex.Message;
+                return;
+            }
+            Toasts.Show($"{_new.Name.Trim()} added.");
+            _new = TeamSvc.NewExternalForm();
+        });
+        if (ask is not null && await _confirm.Ask("Email outside your organization?", ask, "Save anyway")) await Add(true);
+    }
 
     // One save, on the version the form opened on (the limit with it, for an administrator): a colleague's change since
     // is refused, not overwritten.
-    internal Task Save(Guid id) => Run(async () =>
+    internal async Task Save(Guid id, bool confirmOutside = false)
     {
-        try { await TeamSvc.UpdateExternalAsync(id, _form); }
-        catch (StaleEditException)
+        var ask = (string?)null;
+        _form.ConfirmOutside = confirmOutside;
+        await Run(async () =>
         {
-            // The form stays to copy from, and Reload shows theirs.
-            _changedBy ??= "Someone";
-            throw;
-        }
-        (_editing, _changedBy) = (null, null);
-    });
+            try { await TeamSvc.UpdateExternalAsync(id, _form); }
+            catch (StaleEditException)
+            {
+                // The form stays to copy from, and Reload shows theirs.
+                _changedBy ??= "Someone";
+                throw;
+            }
+            catch (OutsideAddressesException ex)
+            {
+                ask = ex.Message;
+                return;
+            }
+            (_editing, _changedBy) = (null, null);
+        });
+        if (ask is not null && await _confirm.Ask("Email outside your organization?", ask, "Save anyway")) await Save(id, true);
+    }
 
     private async Task Retire(Team t)
     {

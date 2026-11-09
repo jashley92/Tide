@@ -43,6 +43,7 @@ public static class DependencyInjection
         services.Configure<CveOptions>(config.GetSection("Cve"));
         services.Configure<UpdateOptions>(config.GetSection("Updates"));
         services.Configure<AiOptions>(config.GetSection("Ai"));
+        services.Configure<EmailBoundaryOptions>(config.GetSection("Email"));
         services.AddSingleton<JobMonitor>();
         services.AddSingleton<UpdateCheckService>();
         services.AddScoped<UpdateSettings>();
@@ -65,6 +66,9 @@ public static class DependencyInjection
         Overlay<UpdateOptions>(services, OperationalSettings.Apply);
         Overlay<DistributionOptions>(services, OperationalSettings.Apply);
         Overlay<FileStoreOptions>(services, OperationalSettings.Apply);
+        Overlay<EmailBoundaryOptions>(services, OperationalSettings.Apply);
+        // The organization's email boundary: every list that sends mail outward checks its addresses against it.
+        services.AddSingleton(sp => new EmailBoundary(sp.GetRequiredService<IOptionsMonitor<EmailBoundaryOptions>>()));
         services.AddSingleton(sp => new OrgClock(sp.GetRequiredService<IOptionsMonitor<OrgOptions>>(), sp.GetRequiredService<TimeProvider>()));
         services.AddSingleton<IMarkdownService, MarkdownService>();
         services.AddSingleton<BriefRenderer>();

@@ -471,7 +471,11 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
     public MeetingService Meetings(TimeProvider? time = null) => new(this, User, time ?? TimeProvider.System, Live);
 
     public RotationService Rotation(OrgClock? clock = null) =>
-        new(this, User, clock ?? Clock, Email, Options.Create(new AppOptions { BaseUrl = "https://tide.example.org" }), EmailTemplates);
+        new(this, User, clock ?? Clock, Email, Options.Create(new AppOptions { BaseUrl = "https://tide.example.org" }), EmailTemplates, Boundary);
+
+    /// <summary>The organization's email boundary the services check addresses against: example.org (the sending
+    /// address's domain) unless a test sets another.</summary>
+    public EmailBoundary Boundary { get; set; } = EmailBoundary.Fixed("tide@example.org");
 
     /// <summary>The email templates saved in Administration, as the app keeps them (the reminders and rotation read it).</summary>
     public EmailTemplateStore EmailTemplates { get; } = new(Options.Create(new AppOptions { BaseUrl = "https://tide.example.org" }));
@@ -481,8 +485,7 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public EmailTemplateService EmailTemplateAdmin(string? from = "tide@example.org") =>
         new(this, User, EmailTemplates, Email, Clock, Options.Create(new AppOptions { BaseUrl = "https://tide.example.org" }), TimeProvider.System,
-            EmailCopies, new Microsoft.Extensions.Configuration.ConfigurationBuilder()
-                .AddInMemoryCollection(new Dictionary<string, string?> { ["Email:From"] = from }).Build());
+            EmailCopies, EmailBoundary.Fixed(from));
 
     public ScorecardService Scorecard() => new(this, User);
 
@@ -492,11 +495,11 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public MetricImportService MetricImports(OrgClock? clock = null) => new(this, User, clock ?? Clock, TimeProvider.System);
 
-    public DistributionSettings Settings() => new(this, User, Options.Create(new DistributionOptions()), Live);
+    public DistributionSettings Settings() => new(this, User, Options.Create(new DistributionOptions()), Live, Boundary);
 
     public FakeEmailSender Email { get; } = new();
 
-    public TeamService Teams(ReminderOptions? options = null) => new(this, User, new StaticOptionsMonitor<ReminderOptions>(options ?? ReminderOptions));
+    public TeamService Teams(ReminderOptions? options = null) => new(this, User, new StaticOptionsMonitor<ReminderOptions>(options ?? ReminderOptions), Boundary);
 
     public SlaSettings Sla() => new(this, User, Options.Create(new SlaOptions()));
 
@@ -583,7 +586,8 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public ReminderService Reminders(ReminderOptions? options = null, OrgClock? clock = null, ReminderLog? log = null) =>
         new(this, Email, clock ?? Clock, new StaticOptionsMonitor<ReminderOptions>(options ?? new ReminderOptions()),
-            Options.Create(new AppOptions { BaseUrl = "https://tide.example.org" }), log ?? new ReminderLog(), User, Rotation(clock), EmailTemplates);
+            Options.Create(new AppOptions { BaseUrl = "https://tide.example.org" }), log ?? new ReminderLog(), User, Rotation(clock), EmailTemplates,
+            editions: Settings(), boundary: Boundary);
 
     /// <summary>The distribution options the service reads (RequireSharePoint), changed by a test as an administrator would.</summary>
     public DistributionOptions DistributionOptions { get; } = new();

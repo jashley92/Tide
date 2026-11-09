@@ -84,6 +84,11 @@ public static class OperationalSettings
     /// not every team posts one.</summary>
     public const string RequireSharePoint = "Distribution:RequireSharePoint";
 
+    /// <summary>The organization's email domains (<see cref="Distribution.OrganizationBoundary"/>), each with its
+    /// subdomains: an address outside them is confirmed before a list that sends mail saves it. Empty: the domain of
+    /// <c>Email:From</c>.</summary>
+    public const string OrganizationDomains = "Email:OrganizationDomains";
+
     /// <summary>When an action's file downloads inside a password-protected zip by default (<see cref="Files.ZipDownloads"/>):
     /// RiskyOnly (the default), Always or Never.</summary>
     public const string ZipDownloads = "Files:ZipDownloads";
@@ -141,6 +146,7 @@ public static class OperationalSettings
         [DropFolderPollMinutes] = Number("The drop folder's interval", 1, 60),
         [UpdateIntervalHours] = Number("The update check's interval", 6, 168),
         [RequireSharePoint] = Switch,
+        [OrganizationDomains] = Distribution.OrganizationBoundary.Normalize,
         [ZipDownloads] = EnumValue<Files.ZipDownloads>("Zipped downloads are RiskyOnly, Always or Never."),
     };
 
@@ -251,6 +257,9 @@ public static class OperationalSettings
 
     internal static void Apply(SavedSettings s, DistributionOptions o) =>
         s.Use(RequireSharePoint, v => o.RequireSharePoint = bool.Parse(v));
+
+    internal static void Apply(SavedSettings s, Distribution.EmailBoundaryOptions o) =>
+        s.Use(OrganizationDomains, v => o.OrganizationDomains = [.. Distribution.OrganizationBoundary.Split(v)]);
 
     internal static void Apply(SavedSettings s, FileStoreOptions o) =>
         s.Use(ZipDownloads, v => o.ZipDownloads = Enum.Parse<Files.ZipDownloads>(v));

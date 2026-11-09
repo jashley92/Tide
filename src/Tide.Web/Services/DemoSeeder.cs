@@ -472,7 +472,7 @@ public static class DemoSeeder
         {
             var briefs = sp.GetRequiredService<BriefService>();
             var distribution = sp.GetRequiredService<DistributionService>();
-            await sp.GetRequiredService<DistributionSettings>().SaveRecipientsAsync("security-team@example.com", "all-staff@example.com", ct);
+            await sp.GetRequiredService<DistributionSettings>().SaveRecipientsAsync("security-team@example.com", "all-staff@example.com", confirmOutside: true, ct);
             var brief = await briefs.GetAsync(Sent, ct) ?? throw new InvalidOperationException("The sent brief wasn't seeded.");
             await briefs.MarkPresentedAsync(brief.Id, ct: ct);
             foreach (var edition in new[] { Edition.Team, Edition.Public })

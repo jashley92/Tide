@@ -327,7 +327,7 @@ public class EmailOutcomeTests : IDisposable
     // An external team's action due Tuesday Nov 24 2026: Friday Nov 20 is two business days before it.
     private async Task<ActionItem> DueTuesday()
     {
-        var team = await _db.Teams().AddExternalAsync(new ExternalTeamForm { Name = "Network Engineering", ContactEmail = "network@network.example" });
+        var team = await _db.Teams().AddExternalAsync(new ExternalTeamForm { ConfirmOutside = true, Name = "Network Engineering", ContactEmail = "network@network.example" });
         var number = await _db.Actions().CreateAsync(new ActionForm { Title = "Block the domains", TeamId = team, Priority = Priority.P3 });
         await using var ctx = _db.Context();
         var row = await ctx.Actions.SingleAsync(x => x.Number == number);

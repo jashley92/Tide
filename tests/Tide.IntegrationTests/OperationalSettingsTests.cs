@@ -30,7 +30,10 @@ public sealed class SettingsRig : IDisposable
     {
         Db.User.Roles = new HashSet<AppRole> { AppRole.Admin };
         var services = new ServiceCollection();
-        services.AddApplication(new ConfigurationBuilder().AddInMemoryCollection(server ?? []).Build());
+        // The organization's boundary is the sending address's domain, example.org, unless the test's server says otherwise.
+        var config = new Dictionary<string, string?> { ["Email:From"] = "tide@example.org" };
+        foreach (var (key, value) in server ?? []) config[key] = value;
+        services.AddApplication(new ConfigurationBuilder().AddInMemoryCollection(config).Build());
         services.AddSingleton<IAppDbContextFactory>(Db);
         services.AddSingleton<ICurrentUser>(Db.User);
         services.AddSingleton<IOutboundHttp>(Db.Http);

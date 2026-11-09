@@ -57,7 +57,8 @@ public static class DependencyInjection
         services.AddSingleton<OutboundCircuit>();
         // Every email goes out through the standing copies (a template's CC and BCC, the archive), then the relay.
         services.AddSingleton<EmailSender>();
-        services.AddSingleton<IEmailSender>(sp => new CopyingEmailSender(sp.GetRequiredService<EmailSender>(), sp.GetRequiredService<EmailCopyStore>()));
+        services.AddSingleton<IEmailSender>(sp => new CopyingEmailSender(sp.GetRequiredService<EmailSender>(), sp.GetRequiredService<EmailCopyStore>(),
+            sp.GetRequiredService<EmailBoundary>(), sp.GetService<Microsoft.Extensions.Logging.ILogger<CopyingEmailSender>>()));
         services.AddSingleton<IOutboundHttp, OutboundHttp>();
         services.AddSingleton<IThreatIntelAssistant, AzureOpenAiAssistant>();
         services.AddScoped<DatabaseInitializer>();

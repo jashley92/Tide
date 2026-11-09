@@ -52,14 +52,14 @@ public class EscalationTests : IDisposable
     private async Task<Guid> Internal(string name = "Network Engineering", string? mailbox = "network-team@example.org", string? contact = "pat.lee@example.org")
     {
         var id = await _db.Teams().AddAsync(name, null, mailbox);
-        if (contact is not null) await _db.Teams().SetEscalationContactAsync(id, "Pat Lee", contact);
+        if (contact is not null) await _db.Teams().SetEscalationContactAsync(id, "Pat Lee", contact, confirmOutside: true);
         return id;
     }
 
     private Task<Guid> External(string name = "Network Engineering", string? contact = "duty-manager@network.example", bool remindersOn = true) =>
         _db.Teams().AddExternalAsync(new ExternalTeamForm
         {
-            Name = name, ContactName = "Alex", ContactEmail = "network@network.example", RemindersOn = remindersOn,
+            Name = name, ContactName = "Alex", ContactEmail = "network@network.example", RemindersOn = remindersOn, ConfirmOutside = true,
             EscalationName = contact is null ? null : "Morgan", EscalationEmail = contact,
         });
 
@@ -271,8 +271,8 @@ public class EscalationTests : IDisposable
     [Fact]
     public async Task AClimbStoppedPartway_KeepsTheStepsWhoseEmailWent_AndDoesntEmailThemAgain()
     {
-        var one = await _db.Teams().AddExternalAsync(new ExternalTeamForm { Name = "Network Engineering", ContactEmail = "network@network.example" });
-        var two = await _db.Teams().AddExternalAsync(new ExternalTeamForm { Name = "Hosting Provider", ContactEmail = "noc@hosting.example" });
+        var one = await _db.Teams().AddExternalAsync(new ExternalTeamForm { ConfirmOutside = true, Name = "Network Engineering", ContactEmail = "network@network.example" });
+        var two = await _db.Teams().AddExternalAsync(new ExternalTeamForm { ConfirmOutside = true, Name = "Hosting Provider", ContactEmail = "noc@hosting.example" });
         await Due(one, "Block the domains", Tuesday);
         await Due(two, "Rotate the keys", Tuesday);
         var calls = 0;
@@ -474,10 +474,10 @@ public class EscalationTests : IDisposable
         As("S-1-5-21-OWNER", "Owner", AppRole.ActionOwner);
         var internalOne = () => _db.Teams().SetEscalationContactAsync(inside, "Sam", "sam@example.org");
         await internalOne.Should().ThrowAsync<ForbiddenException>();
-        await _db.Teams().SetEscalationContactAsync(outside, "Jo", "jo@network.example");
+        await _db.Teams().SetEscalationContactAsync(outside, "Jo", "jo@network.example", confirmOutside: true);
         var form = ExternalTeamForm.From((await _db.Teams().ListAsync()).Single(t => t.Id == outside));
         (form.EscalationName, form.EscalationEmail).Should().Be(("Jo", "jo@network.example"));
-        form.EscalationEmail = "kim@network.example";
+        (form.EscalationEmail, form.ConfirmOutside) = ("kim@network.example", true);
         await _db.Teams().UpdateExternalAsync(outside, form);
         (await _db.Teams().ListAsync()).Single(t => t.Id == outside).EscalationEmail.Should().Be("kim@network.example");
 
