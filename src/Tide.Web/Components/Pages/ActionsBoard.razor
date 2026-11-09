@@ -156,18 +156,25 @@ else
 
     /// <summary>
     /// The tab an address without <c>view</c> opens: the person's default, unless it would always be empty for them:
-    /// Mine for someone who can't be given actions, My teams for someone on no team. Those open All open instead.
+    /// Mine for someone who can't be given actions (a Viewer), My teams for someone on no team. Those open All open instead.
     /// </summary>
     internal ActionView OpeningView()
     {
         var chosen = SavedView switch { UserPreferences.MyTeams => ActionView.MyTeams, UserPreferences.AllOpen => ActionView.Open, _ => ActionView.Mine };
         return chosen switch
         {
-            ActionView.Mine when !CurrentUser.Has(Permission.WorkActions) => ActionView.Open,
-            ActionView.MyTeams when !_teams.Any(t => t.Members.Any(m => m.UserId == CurrentUser.UserId)) => ActionView.Open,
+            ActionView.Mine when !CanHold => ActionView.Open,
+            ActionView.MyTeams when !_teams.Any(t => t.Members.Any(m => m.UserId == Me_)) => ActionView.Open,
             _ => chosen,
         };
     }
+
+    // Whether actions can be given to this person: whoever works them, on a team (WorkActions) or all of them (WriteArticles).
+    // Read once as the page opens, with who they are, so a later address change reads the same person.
+    private bool CanHold => _canHold ??= CurrentUser.Has(Permission.WorkActions) || CurrentUser.Has(Permission.WriteArticles);
+    private bool? _canHold;
+    private string? _me;
+    private string Me_ => _me ??= CurrentUser.UserId;
 
     // "Open here by default": this tab, from now on, wherever they sign in.
     internal async Task SetDefaultView(string value)
@@ -301,6 +308,7 @@ else
         _teamOptions = TeamOptions(_teams);
         _holders = await ActionSvc.HoldersAsync();
         _rules = await RuleSvc.ListAsync();
+        (_canHold, _me) = (CanHold, Me_);
         if (SavedLayout is null || SavedView is null)
         {
             var saved = await Prefs.GetAsync([UserPreferences.ActionsLayout, UserPreferences.ActionsView]);

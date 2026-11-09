@@ -790,7 +790,7 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
   `actions.layout` preference; a link's own `layout` wins for that visit. The tab an address without `view` opens
   is the `actions.view` preference (`mine`, the default, `myteams` or `open`), set with *Open here by default* by the
   tabs (*Opens here* on the tab that's theirs). A default that would always be empty opens All open instead
-  (`ActionsBoard.OpeningView`): Mine for someone who can't be given actions (no `WorkActions`), My teams for someone
+  (`ActionsBoard.OpeningView`): Mine for someone who can't be given actions (neither `WorkActions` nor `WriteArticles`: a Viewer), My teams for someone
   on no team. A link's own `view` (Today's, the sidebar's) wins. Card rules (administered) colour and label
   cards, and those shown as filters are offered in the filter bar.
 - **Filters.** One bar for the list and the board (`FilterBar`; the filter is `ActionFilter`): the search box (title,
