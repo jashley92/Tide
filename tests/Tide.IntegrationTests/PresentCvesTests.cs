@@ -72,11 +72,12 @@ public class PresentCvesTests(TideApp app) : IClassFixture<TideApp>
             ["CVE-2"] = new() { CveId = "CVE-2", CvssScore = 5.5m, IsKev = true },
             ["CVE-3"] = new() { CveId = "CVE-3", CvssScore = 8.8m, IsKev = true },
         };
-        SlideCves.Order(["CVE-4", "CVE-1", "CVE-2", "CVE-3"], known).Should().Equal(["CVE-3", "CVE-2", "CVE-1", "CVE-4"], "on KEV first, then by CVSS; one not enriched yet last");
-        SlideCves.Kev(["CVE-1", "CVE-2", "CVE-3"], known).Should().Be(2);
-        SlideCves.Summary(5, 5).Should().Be("5 CVEs, all on KEV");
-        SlideCves.Summary(5, 2).Should().Be("5 CVEs, 2 on KEV");
-        SlideCves.Summary(5, 0).Should().Be("5 CVEs");
+        var list = SlideCves.For(["CVE-4", "CVE-1", "CVE-2", "CVE-3"], known);
+        list.Items.Select(x => x.Id).Should().Equal(["CVE-3", "CVE-2", "CVE-1", "CVE-4"], "on KEV first, then by CVSS; one not enriched yet last");
+        list.Items[0].Record.Should().BeSameAs(known["CVE-3"]);
+        (list.Kev, list.Summary).Should().Be((2, "4 CVEs, 2 on KEV"));
+        SlideCves.For(["CVE-2", "CVE-3"], known).Summary.Should().Be("2 CVEs, all on KEV");
+        SlideCves.For(["CVE-1", "CVE-4"], known).Summary.Should().Be("2 CVEs");
     }
 
     [Fact]
@@ -91,7 +92,7 @@ public class PresentCvesTests(TideApp app) : IClassFixture<TideApp>
 
         await Do(pat, p => p.ShowCves(s.Article));
         var html = await pat.Html();
-        html.Should().Contain("present-cves-title").And.Contain(s.Cves[0]).And.Contain(s.Cves[2]).And.Contain("VMware ESX").And.Contain("On KEV since 2026-10-28");
+        html.Should().Contain("present-cves-title").And.Contain(s.Cves[0]).And.Contain(s.Cves[2]).And.Contain("VMware ESX").And.Contain("On CISA KEV since 2026-10-28");
         html.IndexOf(s.Cves[1], html.IndexOf("present-cves-title", StringComparison.Ordinal), StringComparison.Ordinal)
             .Should().BeLessThan(html.IndexOf(s.Cves[0], html.IndexOf("present-cves-title", StringComparison.Ordinal), StringComparison.Ordinal), "most pressing first");
         await Do(pat, p => p.OnPresentKey("close"));

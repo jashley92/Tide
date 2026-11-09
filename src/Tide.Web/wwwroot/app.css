@@ -2133,13 +2133,12 @@ button.tide-slide-werun-chip:focus-visible { outline: 3px solid var(--tide-slide
 .tide-files-side .tide-file-remove { margin-top: 0; padding: .4rem; background: var(--tide-surface); border: 1px solid var(--tide-border); }
 .tide-files-side .tide-files-removed .tide-file-sub code { font-size: .76rem; }
 
-/* An article slide's "Tags and ATT&CK" section (Present, SlideTags), where "ATT&CK and CVEs" was: the scorecard tags as
-   one quiet line by category, then one row per tactic in kill-chain order (its chip, in the matrix colour and icon, then
-   its techniques as text, wrapping under themselves), then the CVEs. Edit tags sits at the heading's right. */
+/* An article slide's "Tags and ATT&CK" section (Present, SlideTags): the scorecard tags as chips, ATT&CK as a column per
+   tactic in kill-chain order (its colour a bar on the left), and the CVEs as a summary, the most pressing chip and
+   "+N more"; full-strength text, nothing off the edge. Edit tags sits at the heading's right. */
 .tide-slide-tagshead { display: flex; align-items: center; gap: .8em; }
 .tide-present .tide-slide-tags-edit { margin-left: auto; font-size: 1.15em; letter-spacing: normal; text-transform: none; font-weight: var(--tide-weight-regular); padding: .1em .7em; border-radius: var(--tide-radius-pill); white-space: nowrap; }
-/* The slide's tags (outlined chips), ATT&CK (a column per tactic, kill-chain order, its colour a bar on the left) and
-   CVEs (a summary, the most pressing chip, and "+N more" an analyst can open): full-strength text, nothing off the edge. */
+
 .tide-slide-scorecard { list-style: none; padding: 0; margin: 0 0 .6em; display: flex; flex-wrap: wrap; gap: .3rem; }
 .tide-slide .tide-slide-tagchip { margin: 0; border-color: var(--tide-slide-line-strong); }
 .tide-slide-attack { list-style: none; padding: 0; margin: 0 0 .5em; display: grid; grid-template-columns: repeat(auto-fit, minmax(13em, 1fr)); gap: .4em 1em; }

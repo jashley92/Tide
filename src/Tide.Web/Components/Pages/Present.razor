@@ -403,35 +403,27 @@ else
                                         }
                                         @if (a.Cves.Count > 0)
                                         {
-                                            var cves = SlideCves.Order(a.Cves.Select(c => c.CveId), _cves);
-                                            var open = cves.Count == 1 || _cvesOpen.Contains(a.Id);
+                                            var cves = SlideCves.For(a.Cves.Select(c => c.CveId), _cves);
+                                            var many = cves.Items.Count > 1;
+                                            var open = !many || (!CanOpenCard && _cvesOpen.Contains(a.Id));
                                             var cvesId = $"slide-cves-{a.Id:N}";
                                             <div class="tide-slide-cves" id="@cvesId">
-                                                @if (cves.Count > 1)
+                                                @if (many)
                                                 {
-                                                    var kev = SlideCves.Kev(cves, _cves);
-                                                    <span class="tide-slide-cve-sum @(kev > 0 ? "tide-slide-cve-sum-kev" : "")">@SlideCves.Summary(cves.Count, kev)</span>
+                                                    <span class="tide-slide-cve-sum @(cves.Kev > 0 ? "tide-slide-cve-sum-kev" : "")">@cves.Summary</span>
                                                 }
-                                                @foreach (var id in open ? cves : cves.Take(1))
+                                                @foreach (var (id, record) in open ? cves.Items : cves.Items.Take(1))
                                                 {
-                                                    <CveChip @key="id" CveId="@id" Record="@_cves.GetValueOrDefault(id)" />
+                                                    <CveChip @key="id" CveId="@id" Record="record" />
                                                 }
-                                                @if (cves.Count > 1)
+                                                @if (many && CanOpenCard)
                                                 {
-                                                    if (CanOpenCard)
-                                                    {
-                                                        <button type="button" class="btn btn-link btn-sm tide-slide-cve-more" aria-expanded="@Ui.Aria(ShownCves?.Article.Id == a.Id)"
-                                                                title="Show them all over the slide" @onclick="() => ShowCves(a.Id)">+@(cves.Count - 1) more</button>
-                                                    }
-                                                    else if (!TeamEdition)
-                                                    {
-                                                        <button type="button" class="btn btn-link btn-sm tide-slide-cve-more" aria-expanded="@Ui.Aria(open)" aria-controls="@cvesId" @onclick="() => ToggleCves(a.Id)">@(open ? "Show fewer" : $"+{cves.Count - 1} more")</button>
-                                                    }
-                                                    else
-                                                    {
-                                                        var rest = string.Join(", ", cves.Skip(1));
-                                                        <span class="tide-slide-tech-more" title="@rest">+@(cves.Count - 1) more<span class="visually-hidden">: @rest</span></span>
-                                                    }
+                                                    <button type="button" class="btn btn-link btn-sm tide-slide-cve-more" aria-expanded="@Ui.Aria(ShownCves?.Article.Id == a.Id)"
+                                                            title="Show them all over the slide" @onclick="() => ShowCves(a.Id)">+@(cves.Items.Count - 1) more</button>
+                                                }
+                                                else if (many)
+                                                {
+                                                    <button type="button" class="btn btn-link btn-sm tide-slide-cve-more" aria-expanded="@Ui.Aria(open)" aria-controls="@cvesId" @onclick="() => ToggleCves(a.Id)">@(open ? "Show fewer" : $"+{cves.Items.Count - 1} more")</button>
                                                 }
                                             </div>
                                         }
@@ -815,7 +807,7 @@ else
         }
         else if (ShownCves is { } shownCves)
         {
-            <PresentCves Article="shownCves.Article" Records="_cves" Kicker="@Kicker(_popup.Own)" CanClose="!Held" Autofocus="_focusCard" OnClose="CloseCard" Links="_readsTeam" />
+            <PresentCves Article="shownCves.Article" Cves="SlideCves.For(shownCves.Article.Cves.Select(c => c.CveId), _cves)" Kicker="@Kicker(_popup.Own)" CanClose="!Held" Autofocus="_focusCard" OnClose="CloseCard" Links="_readsTeam" />
         }
 
         @* Inside the slides' root, so it shows in full screen too; present.js leaves the keys to it while it's open. *@
@@ -1595,14 +1587,13 @@ else
     /// team edition, presenting or following (never a Viewer or Visitor, who can't write). The save itself is the article editor's, which checks again.</summary>
     private bool CanEditTags => TeamEdition && CurrentUser.Has(Permission.WriteArticles);
 
-    // The articles whose full CVE list is open on this screen: the company-wide edition's slides, which open no cards (on
-    // the team edition, "+N more" opens the CVE card, the presenter's for everyone following).
+    // The articles whose full CVE list is open in place on this screen: where no card can open (the company-wide
+    // edition, or a follower the presenter holds). Elsewhere "+N more" opens the CVE card.
     private readonly HashSet<Guid> _cvesOpen = [];
 
-    /// <summary>Opens or closes an article's full CVE list on its company-wide slide, for this screen alone.</summary>
+    /// <summary>Opens or closes an article's full CVE list in place on its slide, for this screen alone.</summary>
     internal void ToggleCves(Guid articleId)
     {
-        if (TeamEdition) return;
         if (!_cvesOpen.Remove(articleId)) _cvesOpen.Add(articleId);
     }
 

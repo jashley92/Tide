@@ -21,6 +21,13 @@
     [Parameter, EditorRequired] public string CveId { get; set; } = "";
     [Parameter] public CveRecord? Record { get; set; }
 
+    /// <summary>The vendor and product it affects ("VMware ESX"), or null when neither is known.</summary>
+    public static string? Affected(CveRecord r) => r.Vendor is null && r.Product is null ? null : $"{r.Vendor} {r.Product}".Trim();
+
+    /// <summary>"On CISA KEV since 2026-10-28, due 2026-11-18, ransomware use", or null when it isn't on KEV.</summary>
+    public static string? KevLine(CveRecord r) => !r.IsKev ? null
+        : $"On CISA KEV since {(r.KevAddedDate is { } added ? Ui.IsoDay(added) : "")}{(r.KevDueDate is { } d ? $", due {Ui.IsoDay(d)}" : "")}{(r.KevRansomware ? ", ransomware use" : "")}";
+
     private static string Severity(decimal score) => score >= 9 ? "critical" : score >= 7 ? "high" : score >= 4 ? "medium" : "low";
 
     private string Title
@@ -29,10 +36,10 @@
         {
             if (Record is null) return "Not enriched yet";
             var parts = new List<string>();
-            if (Record.Vendor is not null || Record.Product is not null) parts.Add($"{Record.Vendor} {Record.Product}".Trim());
+            if (Affected(Record) is { } affected) parts.Add(affected);
             if (Record.CvssScore is { } s) parts.Add($"CVSS {s.ToString("0.0", CultureInfo.InvariantCulture)} {Record.CvssSeverity}");
             if (Record.EpssScore is { } e) parts.Add($"EPSS {e.ToString("P1", CultureInfo.InvariantCulture)} (percentile {Record.EpssPercentile?.ToString("P0", CultureInfo.InvariantCulture)})");
-            if (Record.IsKev) parts.Add($"On CISA KEV since {(Record.KevAddedDate is { } added ? Ui.IsoDay(added) : "")}{(Record.KevDueDate is { } d ? $", due {Ui.IsoDay(d)}" : "")}{(Record.KevRansomware ? ", ransomware use" : "")}");
+            if (KevLine(Record) is { } kev) parts.Add(kev);
             if (Record.Description is not null) parts.Add(Record.Description.Length > 300 ? Record.Description[..300] + "…" : Record.Description);
             return string.Join("\n", parts);
         }
