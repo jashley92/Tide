@@ -148,8 +148,7 @@ else if (_results is { Terms.Count: > 0 } r)
             {
                 <div class="tide-hit" @key="a.Id">
                     <div class="d-flex gap-2 align-items-center flex-wrap">
-                        @if (_canOpenActions) { <a class="tide-action-num" href="@Ui.ActionUrl(a.Number)">@Ui.ActionLabel(a.Number)</a> <a class="tide-hit-title" href="@Ui.ActionUrl(a.Number)"><Highlight Text="@a.Title" Forms="_forms" /></a> }
-                        else { <span class="tide-action-num">@Ui.ActionLabel(a.Number)</span> <span class="tide-hit-title"><Highlight Text="@a.Title" Forms="_forms" /></span> }
+                        <span><ActionRef Number="a.Number" Title="@a.Title" Link="_canOpenActions" TitleClass="tide-hit-title"><Highlight Text="@a.Title" Forms="_forms" /></ActionRef></span>
                         <ActionStatusBadge Status="a.Status" />
                         <HuntBadge Result="a.Hunted" />
                     </div>

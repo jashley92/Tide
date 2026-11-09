@@ -207,7 +207,7 @@ else
                         @foreach (var r in _drillActions ?? [])
                         {
                             <li @key="r.Id">
-                                <div><a class="tide-action-num" href="@Ui.ActionUrl(r.Number)">@Ui.ActionLabel(r.Number)</a> <a href="@Ui.ActionUrl(r.Number)">@r.Title</a></div>
+                                <div><ActionRef Number="r.Number" Title="@r.Title" /></div>
                                 <div class="small d-flex gap-2 flex-wrap align-items-center my-1">
                                     <span>@ActionService.KindName(r.Kind) <PriorityBadge Priority="r.Priority" /></span>
                                     <span class="tide-muted">@r.TeamName</span>

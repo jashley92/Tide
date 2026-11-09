@@ -22,7 +22,40 @@
 @inject PrerenderHandoff Handoff
 @implements IAsyncDisposable
 
-<section class="tide-card tide-reader" aria-labelledby="reader-h">
+<section class="tide-card tide-reader" aria-label="Beside the article">
+    <TabBar Label="Beside the article" Level="TabLevel.Sub" PanelId="reader-panel" Active="@_side" OnSelect="SelectSide" Class="tide-reader-tabs"
+            Items="@([new TabBarItem("Preview", "", Key: PreviewTab), new TabBarItem("Actions", "", Key: ActionsTab, Count: _actionRows.Count), new TabBarItem("Details", "", Key: DetailsTab)])" />
+    <div id="reader-panel" role="tabpanel" aria-labelledby="@TabBar.TabId("reader-panel", _side)">
+    @if (_side == ActionsTab)
+    {
+        <ArticleActions ArticleId="State.Article.Id" Rows="_actionRows" Bare="true">
+            @if (UnraisedLines is > 0 and var n)
+            {
+                <p class="small tide-muted mt-2 mb-0"><span class="bi bi-lightbulb" aria-hidden="true"></span> @Ui.Plural(n, "recommended line") not raised yet.</p>
+            }
+        </ArticleActions>
+    }
+    else if (_side == DetailsTab)
+    {
+        <div class="tide-reader-details">
+        <h3 class="tide-subhead">Both editions</h3>
+        <ul class="tide-reader-verdicts">
+            @foreach (var v in _both)
+            {
+                <li><span class="fw-semibold">@(v.Edition == Edition.Public ? "Company-wide" : "Team")</span> <span class="tide-muted">@VerdictText(v)</span></li>
+            }
+        </ul>
+        @if (State.BriefDates.Count > 0)
+        {
+            <div class="small mt-2">On @(State.BriefDates.Count == 1 ? "the brief for " : "the briefs for ")
+                @foreach (var (d, i) in State.BriefDates.Select((d, i) => (d, i))) { @(i > 0 ? ", " : "")<a href="@Ui.BriefUrl(d)">@Ui.ShortDay(d)</a> }
+            </div>
+        }
+        <ArticleIntel ArticleId="State.Article.Id" CveIds="_cveIds" Classification="State.Article.Classification" />
+        </div>
+    }
+    else
+    {
     <div class="tide-reader-head">
         <h2 id="reader-h" class="mb-0">What readers get</h2>
         <div class="tide-seg" role="group" aria-label="Show">
@@ -106,25 +139,9 @@
             <ArticleAdversaryCard ArticleId="State.Article.Id" Boxed="true" />
         }
 
-        <details class="tide-reader-details">
-            <summary><span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span> Details</summary>
-            <h3 class="tide-subhead">Both editions</h3>
-            <ul class="tide-reader-verdicts">
-                @foreach (var v in _both)
-                {
-                    <li><span class="fw-semibold">@(v.Edition == Edition.Public ? "Company-wide" : "Team")</span> <span class="tide-muted">@VerdictText(v)</span></li>
-                }
-            </ul>
-            @if (State.BriefDates.Count > 0)
-            {
-                <div class="small mt-2">On @(State.BriefDates.Count == 1 ? "the brief for " : "the briefs for ")
-                    @foreach (var (d, i) in State.BriefDates.Select((d, i) => (d, i))) { @(i > 0 ? ", " : "")<a href="@Ui.BriefUrl(d)">@Ui.ShortDay(d)</a> }
-                </div>
-            }
-            <ArticleActions ArticleId="State.Article.Id" />
-            <ArticleIntel ArticleId="State.Article.Id" CveIds="_cveIds" Classification="State.Article.Classification" />
-        </details>
     }
+    }
+    </div>
 </section>
 
 <ConfirmDialog @ref="_confirm" />
@@ -163,6 +180,22 @@
     private bool _keyRead;
     private TlpLevel _publicMax = TlpLevel.Green, _teamMax = TlpLevel.AmberStrict;
     private IReadOnlyList<EditionAction> _actions = [];
+    private IReadOnlyList<ActionRow> _actionRows = [];
+
+    // The tab beside the article: the preview (first), its actions, or its details (both editions' verdicts, its briefs, CVE context).
+    internal const string PreviewTab = "preview", ActionsTab = "actions", DetailsTab = "details";
+    private string _side = PreviewTab;
+
+    /// <summary>The tab to open on, as the address names it (<c>?side=actions</c>).</summary>
+    [Parameter] public string? Side { get; set; }
+    private string? _sideSeen;
+
+    /// <summary>Shows a tab beside the article (internal for the tests).</summary>
+    internal void SelectSide(string? key) => _side = key is ActionsTab or DetailsTab ? key : PreviewTab;
+
+    // The recommended lines (as typed) that no action on the article has the title of, as the meeting slide counts them.
+    private int UnraisedLines => RecommendedActions.Lines(State.Form.RecommendedActions)
+        .Count(l => !_actionRows.Any(r => RecommendedActions.Raised(l, r.Title)));
     private Guid? _actionsFor;
     private ArticleForm? _builtFrom;
     private ArticlePreview[] _both = [];
@@ -216,7 +249,7 @@
     // they're read again.
     private void Adopt(ReaderPreview p)
     {
-        (_publicMax, _teamMax, _actions, _canWrite, _storyId, _work) = (p._publicMax, p._teamMax, p._actions, p._canWrite, p._storyId, p._work);
+        (_publicMax, _teamMax, _actions, _actionRows, _canWrite, _storyId, _work) = (p._publicMax, p._teamMax, p._actions, p._actionRows, p._canWrite, p._storyId, p._work);
         (_edition, _keySeen, _keyRead, _both, _cveIds) = (p._edition, p._keySeen, p._keyRead, p._both, p._cveIds);
     }
 
@@ -228,11 +261,18 @@
             (_keyRead, _keySeen) = (true, EditionKey);
             _edition = ArticlePreview.ParseEdition(EditionKey);
         }
+        // The tab the address names, when it opens or a link names another.
+        if (Side != _sideSeen)
+        {
+            _sideSeen = Side;
+            SelectSide(Side);
+        }
         // The team edition's actions, read once for the article (again only when the editor moves to another one).
         if (_actionsFor != State.Article.Id)
         {
             _actionsFor = State.Article.Id;
-            _actions = ArticlePreview.TeamActions(await ActionSvc.ForArticleAsync(State.Article.Id));
+            _actionRows = await ActionSvc.ForArticleAsync(State.Article.Id);
+            _actions = ArticlePreview.TeamActions(_actionRows);
             _builtFrom = null;
             _canWrite = CurrentUser.Has(Permission.WriteArticles);
             _storyId = State.Article.StoryId;

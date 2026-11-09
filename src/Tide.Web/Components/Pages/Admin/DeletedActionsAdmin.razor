@@ -42,7 +42,7 @@ else
                     @foreach (var r in _rows)
                     {
                         <tr @key="r.Id">
-                            <th scope="row"><span class="tide-action-num">@Ui.ActionLabel(r.Number)</span> @r.Title
+                            <th scope="row"><ActionRef Number="r.Number" Title="@r.Title" Link="false" />
                                 <span class="small tide-muted d-block">@ActionService.StatusName(r.Status)</span></th>
                             <td>@r.TeamName</td>
                             <td class="text-nowrap">@Ui.When(Clock, r.DeletedAtUtc)<span class="small tide-muted d-block">by @(r.DeletedByName ?? "someone")</span></td>

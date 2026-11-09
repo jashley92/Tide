@@ -183,7 +183,7 @@ else
                                 @foreach (var o in _open.Rows)
                                 {
                                     <tr>
-                                        <td><PriorityBadge Priority="o.Row.Priority" /> @ActionNum(o.Row.Number) @o.Row.Title <EscalatedBadge At="o.Row.EscalatedSince" /></td>
+                                        <td><PriorityBadge Priority="o.Row.Priority" /> @ActionTitle(o.Row.Number, o.Row.Title) <EscalatedBadge At="o.Row.EscalatedSince" /></td>
                                         <td>@o.Row.TeamName</td>
                                         <td>@(o.NoOneToOwn ? "No one: the team has no members" : o.Row.AssigneeName ?? "Unassigned")</td>
                                         <td class="tide-slide-late">@o.Late</td>
@@ -453,11 +453,11 @@ else
                                     @{ var raised = ea.Actions; }
                                     @if (raised.Count > 0)
                                     {
-                                        <ul>
+                                        <ul class="tide-slide-actlist">
                                             @foreach (var r in raised)
                                             {
                                                 <li>
-                                                    @ActionNum(r.Number) @r.Title
+                                                    @ActionTitle(r.Number, r.Title)
                                                     <span class="tide-present-help">@r.TeamName@(r.AssigneeName is { } who ? " · " + who : "")@(r.DueDate is { } due ? " · due " + Ui.ShortDay(due) : "")</span>
                                                     @if (CanWork(r))
                                                     {
@@ -565,7 +565,7 @@ else
                                 <ul>
                                     @foreach (var r in allRaised)
                                     {
-                                        <li>@ActionNum(r.Number) @r.Title <span class="tide-present-help">@r.TeamName · @ActionService.StatusName(r.Status)@(r.DueDate is { } due ? " · due " + Ui.ShortDay(due) : "")</span></li>
+                                        <li>@ActionTitle(r.Number, r.Title) <span class="tide-present-help">@r.TeamName · @ActionService.StatusName(r.Status)@(r.DueDate is { } due ? " · due " + Ui.ShortDay(due) : "")</span></li>
                                     }
                                 </ul>
                             </div>
@@ -2071,6 +2071,11 @@ else
     /// <summary>Whether this page can open an action: on the team edition, and not held by the presenter's lock.</summary>
     private bool CanOpenAction => TeamEdition && !Held && _readsTeam;
 
+    // An action's title in a slide's list: it opens the action over the slide where this page can (its number after it).
+    private RenderFragment ActionTitle(int number, string title) =>
+        @<ActionRef Number="number" Title="@title" Link="false" OnOpen="@(CanOpenAction ? EventCallback.Factory.Create(this, () => ShowAction(number)) : default)" />;
+
+    // An action's number alone, where it's what's quoted ("Raised as A-6"): it opens the action too.
     private RenderFragment ActionNum(int number) =>
         @<text>@if (CanOpenAction)
         {

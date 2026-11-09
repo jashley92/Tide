@@ -45,7 +45,6 @@
                     <article @key="r.Id" class="tide-kcard @(matched.Count > 0 ? "tide-ruled " + Ui.RuleClass(matched[0].Colour) : "") @(held is not null ? "tide-kcard-held" : "") @(arrived is not null ? "tide-kcard-arrived" : "")"
                              draggable="@(canMove ? "true" : "false")" data-id="@r.Id" data-status="@r.Status">
                         <div class="tide-kcard-head">
-                            <a class="tide-action-num" href="@Ui.ActionUrl(r.Number)" draggable="false">@Ui.ActionLabel(r.Number)</a>
                             <PriorityBadge Priority="r.Priority" />
                             <EscalatedBadge At="r.EscalatedSince" />
                             <span class="tide-muted small ms-auto text-truncate">@ActionService.KindName(r.Kind)</span>
@@ -64,7 +63,7 @@
                                 <span class="bi bi-arrow-return-right" aria-hidden="true"></span> Part of @Ui.ActionLabel(parent)
                             </a>
                         }
-                        <a class="tide-kcard-title" href="@Ui.ActionUrl(r.Number)" draggable="false">@r.Title</a>
+                        <div><ActionRef Number="r.Number" Title="@r.Title" TitleClass="tide-kcard-title" draggable="false" /></div>
                         @if (matched.Count > 0)
                         {
                             <div class="tide-kcard-labels">

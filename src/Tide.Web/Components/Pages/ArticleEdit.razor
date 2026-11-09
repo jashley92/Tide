@@ -4,14 +4,14 @@
 @* An article: the editor (ArticleEditorPanel holds the fields, saving and everything around them) and, beside it, what
    readers get (ReaderPreview): the article as an edition will carry it, its gaps, its related work (whose "Mention"
    writes into the editor's why it matters), and the details the rail used to hold.
-   ?edition=company opens the preview on the company-wide edition. On today's brief, BriefStepper walks to the article
+   ?edition=company opens the preview on the company-wide edition; ?side=actions or ?side=details opens that tab beside it. On today's brief, BriefStepper walks to the article
    before or after it, in the edition the preview shows. *@
 <ArticleEditorPanel Id="Id" @ref="_panel">
     <Stepper>
         <BriefStepper ArticleId="Id" EditionKey="@_edition" />
     </Stepper>
     <Aside Context="ed">
-        <ReaderPreview State="ed" EditionKey="@_edition" EditionChanged="e => _edition = e" OnFocus="Focus" OnFix="Fix" OnMention="Mention" />
+        <ReaderPreview State="ed" EditionKey="@_edition" Side="@Side" EditionChanged="e => _edition = e" OnFocus="Focus" OnFix="Fix" OnMention="Mention" />
     </Aside>
 </ArticleEditorPanel>
 
@@ -20,6 +20,9 @@
 
     /// <summary>The edition the preview opens on: <c>company</c>, or the team edition.</summary>
     [SupplyParameterFromQuery(Name = "edition")] public string? EditionKey { get; set; }
+
+    /// <summary>The tab beside the article to open on: <c>actions</c> or <c>details</c>, else the preview.</summary>
+    [SupplyParameterFromQuery(Name = "side")] public string? Side { get; set; }
 
     private ArticleEditorPanel? _panel;
 

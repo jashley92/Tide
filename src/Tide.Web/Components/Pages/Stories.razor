@@ -132,8 +132,7 @@ else
                     @foreach (var r in _actions)
                     {
                         <div class="d-flex gap-2 align-items-start py-1 border-bottom small">
-                            <a class="tide-action-num" href="@Ui.ActionUrl(r.Number)">@Ui.ActionLabel(r.Number)</a>
-                            <span class="flex-grow-1">@r.Title <span class="tide-muted">&middot; @r.TeamName</span></span>
+                            <span class="flex-grow-1"><ActionRef Number="r.Number" Title="@r.Title" /> <span class="tide-muted">&middot; @r.TeamName</span></span>
                             <ActionStatusBadge Status="r.Status" />
                         </div>
                     }

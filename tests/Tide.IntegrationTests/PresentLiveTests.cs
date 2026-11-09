@@ -158,7 +158,7 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
         await Do(owner, p => p.JoinIfLive());
         await FirstArticle(pat);
         await Do(owner, p => p.Follow());
-        (await owner.Html()).Should().Contain($"title=\"Open {label} here\"", "the action's number opens it");
+        (await owner.Html()).Should().Contain($"class=\"tide-action-title-btn \" aria-label=\"Open {label}, ", "the action's title opens it");
 
         await Do(pat, p => p.ShowAction(number));
         Meetings.Get(day)!.Action.Should().Be(number);

@@ -1133,9 +1133,8 @@ else
     private RenderFragment QueueRow(ActionRow r, string meta, bool offerTake) => __builder =>
     {
         <div class="tide-queue-row @_actionMarks?.Css(r.Id)" @key="r.Id">
-            <a class="tide-action-num" href="@Ui.ActionUrl(r.Number)">@Ui.ActionLabel(r.Number)</a>
             <span class="tide-queue-title">
-                @r.Title <FileCount Count="r.Files" />
+                <ActionRef Number="r.Number" Title="@r.Title" /> <FileCount Count="r.Files" />
                 <span class="tide-queue-meta">
                     @meta
                     @if (ActionSla.LateText(r.DueDate, ActionSvc.Today) is { } late)
@@ -1169,8 +1168,7 @@ else
                 @foreach (var r in _mine.Take(6))
                 {
                     <div class="d-flex gap-2 align-items-start py-1 border-bottom small @_actionMarks?.Css(r.Id)" @key="r.Id">
-                        <a class="tide-action-num" href="@Ui.ActionUrl(r.Number)">@Ui.ActionLabel(r.Number)</a>
-                        <span class="flex-grow-1">@r.Title <FileCount Count="r.Files" /></span>
+                        <span class="flex-grow-1"><ActionRef Number="r.Number" Title="@r.Title" /> <FileCount Count="r.Files" /></span>
                         <SlaBadge State="r.Sla(ActionSvc.Today, Clock.Days)" Due="r.DueDate" Today="ActionSvc.Today" />
                     </div>
                 }
@@ -1198,8 +1196,7 @@ else
                     @foreach (var r in _mine.Take(6))
                     {
                         <div class="d-flex gap-2 align-items-start py-1 border-bottom small @_actionMarks?.Css(r.Id)" @key="r.Id">
-                            <a class="tide-action-num" href="@Ui.ActionUrl(r.Number)">@Ui.ActionLabel(r.Number)</a>
-                            <span class="flex-grow-1">@r.Title <FileCount Count="r.Files" /></span>
+                            <span class="flex-grow-1"><ActionRef Number="r.Number" Title="@r.Title" /> <FileCount Count="r.Files" /></span>
                             <SlaBadge State="r.Sla(ActionSvc.Today, Clock.Days)" Due="r.DueDate" Today="ActionSvc.Today" />
                         </div>
                     }

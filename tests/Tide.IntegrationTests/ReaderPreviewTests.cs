@@ -44,13 +44,13 @@ public class ReaderPreviewTests(TideApp app) : IClassFixture<TideApp>
         return a.Id;
     }
 
-    // The preview's body: from its heading to the folded Details.
+    // The preview's body: from its heading to the story picker under it.
     private async Task<string> Preview(Guid id, string query = "")
     {
         var html = await app.CreateClient().GetStringAsync($"/articles/{id}{query}");
         var at = html.IndexOf("class=\"tide-card tide-reader\"", StringComparison.Ordinal);
         at.Should().BePositive("the reader preview replaces the right rail");
-        return html[at..html.IndexOf("<details class=\"tide-reader-details\"", at, StringComparison.Ordinal)];
+        return html[at..html.IndexOf("for=\"story-pick\"", at, StringComparison.Ordinal)];
     }
 
     [Fact]
@@ -107,18 +107,23 @@ public class ReaderPreviewTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task Details_HoldWhatTheRailDid_AndBothEditionsVerdicts()
+    public async Task TheTabsBeside_ArePreviewActionsAndDetails_AndTheAddressCanOpenEither()
     {
         var id = await Save(NewArticle(fill: a => a.Cves.Add(new ArticleCve { CveId = "CVE-2026-0001" })));
         var html = await app.CreateClient().GetStringAsync($"/articles/{id}");
-        var details = html[html.IndexOf("<details class=\"tide-reader-details\"", StringComparison.Ordinal)..];
+        html.Should().Contain("role=\"tablist\" aria-label=\"Beside the article\"").And.Contain("id=\"reader-panel-tab-preview\"")
+            .And.Contain("Threat story", "the preview is first, with the story picker")
+            .And.NotContain("Both editions").And.NotContain("tide-reader-details", "no folded Details any more");
 
+        var details = await app.CreateClient().GetStringAsync($"/articles/{id}?side=details");
         details.Should().Contain("Both editions").And.Contain("Included in full")
             .And.Contain("Partly included: 2 parts above TLP:GREEN left out")
-            .And.Contain("Actions").And.Contain($"actions/new?article={id}")
             .And.Contain("CVE context").And.Contain("CVE-2026-0001")
-            .And.NotContain("Threat story", "the story picker is out in the open, above Details");
-        html.Should().Contain("Threat story");
+            .And.NotContain("for=\"story-pick\"", "only the tab asked for is drawn");
+
+        var actions = await app.CreateClient().GetStringAsync($"/articles/{id}?side=actions");
+        actions.Should().Contain("aria-selected=\"true\" aria-controls=\"reader-panel\"").And.Contain($"actions/new?article={id}")
+            .And.Contain("No follow-up actions yet.").And.NotContain("Both editions");
         html.Should().NotContain("Ready to brief?", "the checklist card is gone: its gaps are placeholders now");
     }
 

@@ -1,0 +1,41 @@
+@* An action in a list or on a card: its title first, as the link to it (or the button that opens it over a slide), then its
+   number, small and muted, to quote. Where the number is what's quoted (the action's own page and card, a "Part of" chip,
+   "Raised as", a toast) it leads as before, with Ui.ActionLabel alone. *@
+
+@if (OnOpen.HasDelegate)
+{
+    <button type="button" class="tide-action-title-btn @TitleClass" aria-label="Open @Label, @Title" @onclick="OnOpen" @attributes="Attributes">@TitleContent</button>
+}
+else if (Link)
+{
+    <a class="tide-action-title @TitleClass" href="@Ui.ActionUrl(Number)" @attributes="Attributes">@TitleContent</a>
+}
+else
+{
+    <span class="@TitleClass">@TitleContent</span>
+}
+<span class="tide-action-num tide-action-num-after">@Label</span>
+
+@code {
+    [Parameter, EditorRequired] public int Number { get; set; }
+
+    [Parameter] public string Title { get; set; } = "";
+
+    /// <summary>How the title is drawn, when not as plain text (a search hit's highlighted words).</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>Whether the title links to the action's page (false: someone who can't open it, or a slide).</summary>
+    [Parameter] public bool Link { get; set; } = true;
+
+    /// <summary>Opens the action in place (a slide's card) instead of going to its page.</summary>
+    [Parameter] public EventCallback OnOpen { get; set; }
+
+    [Parameter] public string? TitleClass { get; set; }
+
+    /// <summary>Anything else for the title's link or button (draggable="false" on a board card).</summary>
+    [Parameter(CaptureUnmatchedValues = true)] public IReadOnlyDictionary<string, object>? Attributes { get; set; }
+
+    private string Label => Ui.ActionLabel(Number);
+
+    private RenderFragment TitleContent => ChildContent ?? (b => b.AddContent(0, Title));
+}

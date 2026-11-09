@@ -1,6 +1,6 @@
 @inject OrgClock Clock
 
-@* A list of actions: number, title (with its article), kind and priority, team and assignee, due date and SLA, status.
+@* A list of actions: title (its number after it, and its article), kind and priority, team and assignee, due date and SLA, status.
    One DataTable: filtered as you type, sorted by any heading, grouped by kind or by urgency when asked. *@
 
 <DataTable TItem="ActionRow" Items="Rows" Columns="Columns" Key="r => r.Id" One="action" Many="actions" Caption="@Caption"
@@ -8,13 +8,12 @@
            RowClass="RuleClass" GroupBy="Grouping" GroupOrder="GroupNames" Toolbar="Toolbar" Empty="Empty" PageInAddress="PageInAddress"
            ServerSide="ServerSide" Total="Total" OnQuery="OnQuery" GroupTotals="GroupTotals" PageSize="PageSize" Filtered="Filtered" FilterBox="!ServerSide">
     <RowTemplate Context="r">
-        <td><a class="tide-action-num" href="@Ui.ActionUrl(r.Number)">@Ui.ActionLabel(r.Number)</a></td>
         <td>
             @if (r.ParentNumber is { } parent)
             {
                 <a class="tide-kcard-parent small d-block" href="@Ui.ActionUrl(parent)"><span class="bi bi-arrow-return-right" aria-hidden="true"></span> Part of @Ui.ActionLabel(parent)</a>
             }
-            <a href="@Ui.ActionUrl(r.Number)">@r.Title</a>
+            <ActionRef Number="r.Number" Title="@r.Title" />
             <EscalatedBadge At="r.EscalatedSince" />
             <FileCount Count="r.Files" />
             <PresenceNote Place="@Tide.Web.Components.Pages.ActionPage.ActionPlace(r.Number)" Join="false" Compact="true" />
@@ -87,8 +86,7 @@
 
     private static readonly IReadOnlyList<TableColumn<ActionRow>> Columns =
     [
-        new("number", "#") { SortBy = r => r.Number, FilterBy = r => Ui.ActionLabel(r.Number) },
-        new("title", "Action") { SortBy = r => r.Title, FilterBy = r => r.Title + " " + r.ArticleTitle },
+        new("title", "Action") { SortBy = r => r.Title, FilterBy = r => r.Title + " " + Ui.ActionLabel(r.Number) + " " + r.ArticleTitle },
         new("kind", "Kind") { SortBy = r => r.Kind, FilterBy = r => ActionService.KindName(r.Kind) },
         new("team", "Team") { SortBy = r => r.TeamName, FilterBy = r => r.TeamName + " " + (r.AssigneeName ?? "Unassigned") },
         new("due", "Due") { SortBy = r => r.DueDate },

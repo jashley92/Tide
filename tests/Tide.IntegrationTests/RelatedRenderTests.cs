@@ -61,7 +61,7 @@ public class RelatedRenderTests(TideApp app) : IClassFixture<TideApp>
             .And.Contain("Add a report link");
         var picker = html.IndexOf("for=\"story-pick\">Threat story", StringComparison.Ordinal);
         picker.Should().BePositive();
-        picker.Should().BeLessThan(html.IndexOf("<details class=\"tide-reader-details\"", StringComparison.Ordinal), "the story picker is out of the folded Details");
+        picker.Should().BeGreaterThan(html.IndexOf("id=\"reader-panel\"", StringComparison.Ordinal), "the story picker is on the Preview tab, open at first");
     }
 
     [Fact]

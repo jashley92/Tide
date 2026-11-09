@@ -70,7 +70,7 @@ public class EditorRailLayoutTests(TideApp app) : IClassFixture<TideApp>
 
         var story = At(html, "for=\"story-pick\">Threat story");
         var similar = At(html, "Similar articles (0)");
-        similar.Should().BeGreaterThan(story).And.BeLessThan(At(html, "<details class=\"tide-reader-details\""), "directly under the story");
+        similar.Should().BeGreaterThan(story, "directly under the story");
         html.Should().Contain("aria-expanded=\"false\" aria-controls=\"similar-body\"")
             .And.Contain("id=\"similar-body\" class=\"tide-disclosure-body\" hidden").And.NotContain("tide-related-list");
         html[story..].Should().NotContain("Threat actors</h2>").And.NotContain("We run <a", "nothing tag-like is left in the rail for an analyst");

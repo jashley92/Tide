@@ -40,7 +40,7 @@
                             {
                                 <li @key="x.Number">
                                     <div>
-                                        <a href="actions/@x.Number" class="tide-data">@Ui.ActionLabel(x.Number)</a> @x.Title
+                                        <ActionRef Number="x.Number" Title="@x.Title" />
                                         <div class="tide-related-meta">
                                             @ActionService.StatusName(x.Status) &middot; @x.TeamName &middot; @(x.AssigneeName ?? "Unassigned")
                                             @if (x.DueDate is { } due) { <text> &middot; due @Ui.ShortDay(due)</text> }
