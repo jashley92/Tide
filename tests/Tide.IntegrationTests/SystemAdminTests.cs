@@ -7,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Tide.Application.Settings;
 using Tide.Application.Abstractions;
 using Tide.Application.Admin;
 using Tide.Application.Operations;
@@ -153,7 +154,8 @@ public sealed class ConfigSourceTests : IDisposable
         var users = new NoUsers();
         users.Users.Add(new AppUser { Sid = db.User.UserId, DisplayName = db.User.DisplayName });
         return new SystemSettings(config, db, users, env, new RoleMappingService(db, db.User, new CountingRoleDirectory()),
-            new OrgClock(Options.Create(new OrgOptions())), db.User, TimeProvider.System);
+            new OrgClock(Options.Create(new OrgOptions())), db.User, TimeProvider.System,
+            new StoredSecrets(new FakeSecrets(), Microsoft.Extensions.Logging.Abstractions.NullLogger<StoredSecrets>.Instance));
     }
 
     private sealed class FakeEnv : Microsoft.AspNetCore.Hosting.IWebHostEnvironment

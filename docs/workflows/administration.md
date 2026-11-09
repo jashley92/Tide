@@ -139,7 +139,7 @@ sequenceDiagram
 
 `OperationalSettings` checks every value on save and on bundle import: HH:mm times, numbers within the bounds the
 services apply, an IANA time zone, email addresses, domain names. Nothing needs a restart. The mechanism (`SavedSettings`,
-`OperationalSettingsOverlay<T>`) and the list of keys are in [configuration.md](../operations/configuration.md).
+`OptionsOverlay<TSource, T>`) and the list of keys are in [configuration.md](../operations/configuration.md).
 
 **Addresses outside the organization.** Access & distribution sets the organization's email domains
 (`Email:OrganizationDomains`, each including its subdomains; empty uses the domain of `Email:From`, and the page says

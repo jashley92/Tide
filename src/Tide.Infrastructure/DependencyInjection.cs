@@ -55,11 +55,8 @@ public static class DependencyInjection
         services.AddSingleton<MetricDropFolder>();
         services.Configure<EmailOptions>(config.GetSection("Email"));
         // The relay password saved in the app, when the server's configuration has none.
-        Tide.Application.DependencyInjection.SecretOverlay<EmailOptions>(services, (s, o) =>
-        {
-            if (string.IsNullOrWhiteSpace(o.SmtpPassword) && s.TryGet(Tide.Application.Settings.StoredSecretDefinition.SmtpPassword, out var password))
-                o.SmtpPassword = password;
-        });
+        Tide.Application.DependencyInjection.SecretOverlay<EmailOptions>(services, Tide.Application.Settings.StoredSecretDefinition.SmtpPassword,
+            o => o.SmtpPassword, (o, v) => o.SmtpPassword = v);
         services.AddSingleton<OutboundCircuit>();
         // Every email goes out through the standing copies (a template's CC and BCC, the archive), then the relay.
         services.AddSingleton<EmailSender>();

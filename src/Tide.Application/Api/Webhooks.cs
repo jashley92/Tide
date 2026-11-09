@@ -14,36 +14,6 @@ using Tide.Domain.Enums;
 
 namespace Tide.Application.Api;
 
-/// <summary>Keeps a secret TIDE must read back (a webhook's signing secret) encrypted at rest.</summary>
-public interface ISecretProtector
-{
-    string Protect(string secret);
-
-    /// <summary>The secret, or null when it can't be read (the keys changed).</summary>
-    string? Unprotect(string protectedSecret);
-
-    /// <summary>The same under a purpose of its own (a secret saved in the app): a value protected for one purpose never
-    /// opens under another.</summary>
-    string Protect(string purpose, string secret);
-
-    string? Unprotect(string purpose, string protectedSecret);
-}
-
-/// <summary>Where nothing has set up Data Protection (a tool, a test that builds the services alone): nothing opens, and
-/// protecting refuses, so a secret is never stored unprotected. The web app registers the real one.</summary>
-public sealed class NoSecretProtector : ISecretProtector
-{
-    private const string Why = "Secrets can't be encrypted here: Data Protection isn't set up.";
-
-    public string Protect(string secret) => throw new InvalidOperationException(Why);
-
-    public string? Unprotect(string protectedSecret) => null;
-
-    public string Protect(string purpose, string secret) => throw new InvalidOperationException(Why);
-
-    public string? Unprotect(string purpose, string protectedSecret) => null;
-}
-
 /// <summary>Posts a webhook's JSON body; the status code, or why it failed.</summary>
 public interface IWebhookPoster
 {
@@ -67,6 +37,9 @@ public sealed record AddedWebhook(Guid Id, string Secret);
 public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, ISecretProtector secrets, IWebhookPoster poster, OrgClock clock,
     IOptions<AppOptions> app, TimeProvider time, Settings.DistributionSettings editions)
 {
+    /// <summary>The Data Protection purpose a webhook's signing secret is kept under.</summary>
+    public const string SecretPurpose = "Tide.Webhooks.Secret.v1";
+
     public const string ActionRaised = "action.raised";
     public const string ActionOverdue = "action.overdue";
     public const string BriefSent = "brief.sent";
@@ -93,7 +66,7 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
         if (chosen.Count == 0) throw new ArgumentException("Choose at least one event.");
         var secret = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
         await using var db = await dbs.CreateAsync(ct);
-        var hook = new Webhook { Url = u.ToString(), Events = string.Join(' ', chosen), Secret = secrets.Protect(secret), SentUpToUtc = time.GetUtcNow() };
+        var hook = new Webhook { Url = u.ToString(), Events = string.Join(' ', chosen), Secret = secrets.Protect(SecretPurpose, secret), SentUpToUtc = time.GetUtcNow() };
         db.Webhooks.Add(hook);
         await db.SaveChangesAsync(ct);
         return new AddedWebhook(hook.Id, secret);
@@ -245,7 +218,7 @@ public sealed class WebhookService(IAppDbContextFactory dbs, ICurrentUser user, 
     // The id is the same each time an event is posted again (after a failure), so a receiver can drop a repeat.
     private async Task<(int? Status, string? Error)> PostAsync(Webhook hook, string name, string id, object data, CancellationToken ct)
     {
-        if (secrets.Unprotect(hook.Secret) is not { } secret) return (null, "The signing secret can't be read (the server's keys changed). Add the webhook again.");
+        if (secrets.Unprotect(SecretPurpose, hook.Secret) is not { } secret) return (null, "The signing secret can't be read (the server's keys changed). Add the webhook again.");
         var body = JsonSerializer.Serialize(new { id, @event = name, sentAtUtc = time.GetUtcNow(), data }, Json);
         var timestamp = time.GetUtcNow().ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
         var headers = new Dictionary<string, string>

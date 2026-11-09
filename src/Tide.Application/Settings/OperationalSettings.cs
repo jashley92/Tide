@@ -192,7 +192,7 @@ public static class OperationalSettings
             $"{id.Replace('_', ' ')} (UTC{(offset < TimeSpan.Zero ? "−" : "+")}{offset.Duration():hh\\:mm})";
     }
 
-    // --- read back over the server's values (OperationalSettingsOverlay) ------------------------------------------
+    // --- read back over the server's values (OptionsOverlay) ------------------------------------------
 
     internal static void Apply(SavedSettings s, OrgOptions o)
     {

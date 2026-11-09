@@ -108,7 +108,7 @@ builder.Services.AddAuthentication()
     .AddPolicyScheme(ApiTokenAuthenticationHandler.ApiScheme, "TIDE API", o => o.ForwardDefaultSelector = ctx =>
         ApiTokenAuthenticationHandler.Bearer(ctx.Request) is not null ? ApiTokenAuthenticationHandler.SchemeName
         : useWindows ? NegotiateDefaults.AuthenticationScheme : DevAuthenticationHandler.SchemeName);
-builder.Services.AddSingleton<Tide.Application.Api.ISecretProtector, DataProtectionSecrets>();
+builder.Services.AddSingleton<Tide.Application.Abstractions.ISecretProtector, Tide.Web.Security.DataProtectionSecrets>();
 builder.Services.AddScoped<Tide.Application.Api.IWebhookPoster, HttpWebhookPoster>();
 builder.Services.AddHttpClient(HttpWebhookPoster.Client, c => c.Timeout = TimeSpan.FromSeconds(15))
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });

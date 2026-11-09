@@ -38,6 +38,7 @@ public sealed class SettingsRig : IDisposable
         services.AddSingleton<ICurrentUser>(Db.User);
         services.AddSingleton<IOutboundHttp>(Db.Http);
         services.AddSingleton<IFileStore>(Db.Store);
+        services.AddSingleton<ISecretProtector, FakeSecrets>();   // the web app's is Data Protection
         services.AddSingleton<IRoleDirectory>(new CountingRoleDirectory());
         // As the app has: the job lease, which a job run by hand asks for, logs.
         services.AddLogging();

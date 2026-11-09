@@ -4,6 +4,16 @@ using Tide.Domain.Enums;
 
 namespace Tide.Application.Abstractions;
 
+/// <summary>Keeps a secret TIDE must read back (a webhook's signing secret, a secret saved in Administration) encrypted
+/// at rest, each under a purpose of its own: a value protected for one purpose never opens under another.</summary>
+public interface ISecretProtector
+{
+    string Protect(string purpose, string secret);
+
+    /// <summary>The secret, or null when it can't be read (the keys changed).</summary>
+    string? Unprotect(string purpose, string protectedSecret);
+}
+
 /// <summary>The database as the application layer sees it. Implemented by the Infrastructure DbContext.</summary>
 public interface IAppDbContext : IAsyncDisposable, IDisposable
 {

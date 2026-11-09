@@ -7,7 +7,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Tide.Application;
 using Tide.Application.Abstractions;
-using Tide.Application.Api;
 using Tide.Application.Assist;
 using Tide.Application.Intake;
 using Tide.Application.Security;
@@ -122,28 +121,19 @@ public sealed class StoredSecretsTests : IDisposable
         _sp.GetRequiredService<IOptionsMonitor<CveOptions>>().CurrentValue.NvdApiKey.Should().BeEmpty();
         var status = Service.List().Single(s => s.Definition == StoredSecretDefinition.NvdApiKey);
         (status.Saved, status.Unreadable).Should().Be((true, true));
-        Service.InForceKeys().Should().BeEmpty("one that won't open isn't in force");
     }
 
     [Fact]
     public async Task OnlyAnAdministrator_SavesOrSeesThem_AndOnlyKnownSecrets_NotBlank_NotTooLong()
     {
         await Service.Invoking(s => s.SaveAsync("Email:From", "x")).Should().ThrowAsync<ArgumentException>();
-        await Service.Invoking(s => s.SaveAsync("Cve:NvdApiKey", "   ")).Should().ThrowAsync<ArgumentException>().WithMessage("*Clear*");
+        await Service.Invoking(s => s.SaveAsync("Cve:NvdApiKey", "   ")).Should().ThrowAsync<ArgumentException>().WithMessage("*Remove*");
         await Service.Invoking(s => s.SaveAsync("Cve:NvdApiKey", new string('k', 201))).Should().ThrowAsync<ArgumentException>().WithMessage("*200*");
 
         _db.User.Roles = new HashSet<AppRole> { AppRole.Analyst };
         await Service.Invoking(s => s.SaveAsync("Cve:NvdApiKey", "k")).Should().ThrowAsync<ForbiddenException>();
         await Service.Invoking(s => s.ClearAsync("Cve:NvdApiKey")).Should().ThrowAsync<ForbiddenException>();
         Service.Invoking(s => s.List()).Should().Throw<ForbiddenException>();
-    }
-
-    [Fact]
-    public void WithoutDataProtection_NothingIsStoredUnprotected()
-    {
-        var none = new NoSecretProtector();
-        none.Invoking(p => p.Protect("purpose", "secret")).Should().Throw<InvalidOperationException>();
-        none.Unprotect("purpose", "anything").Should().BeNull();
     }
 }
 
@@ -170,10 +160,14 @@ public class StoredSecretsPageTests(TideApp app) : IClassFixture<TideApp>
                 html.Should().Contain("bi-lock-fill").And.Contain("by Tester").And.Contain("Replace it").And.Contain(">Remove<span class=\"visually-hidden\"> the saved CVE enrichment")
                     .And.NotContain("page-test-key-123", "never shown again");
             }
-            await using (var server = await RenderAsync<ServerConfigAdmin>(app, "/admin/system/server"))
-                (await server.Html()).Should().Contain("href=\"admin/system/secrets\"").And.Contain("Saved in the app").And.NotContain("page-test-key-123");
+            await using (var scope = SignedIn(app, SignIn.Analyst))
+            {
+                var row = scope.ServiceProvider.GetRequiredService<Tide.Web.Services.SystemSettings>().Server().Single(r => r.Info.Key == "Cve:NvdApiKey");
+                (row.Shown, row.Source).Should().Be((Tide.Application.Operations.SecretMask.SetSecret, Tide.Web.Services.SystemSettings.SavedSecretInApp),
+                    "the server leaves it blank, so the saved one is in force");
+            }
             await using (var sources = await RenderAsync<SettingSourcesAdmin>(app, "/admin/system/sources"))
-                (await sources.Html()).Should().Contain("Saved in the app, encrypted").And.NotContain("page-test-key-123");
+                (await sources.Html()).Should().Contain("Saved in Administration, encrypted").And.NotContain("page-test-key-123");
         }
         finally
         {

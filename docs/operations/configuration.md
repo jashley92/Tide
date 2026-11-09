@@ -44,7 +44,7 @@ flowchart TB
     E["Environment variables<br/>secrets, Email__SmtpPassword"] --> C
     C -->|"Configure binds each section"| O["Options classes<br/>OrgOptions, ReminderOptions,<br/>IntakeOptions, CveOptions ..."]
     S[("Settings table<br/>one row per saved key")] -->|"read at start-up<br/>and on every save or import"| SS["SavedSettings<br/>singleton, in memory"]
-    SS -->|"OperationalSettingsOverlay<br/>IPostConfigureOptions"| O
+    SS -->|"OptionsOverlay<br/>IPostConfigureOptions"| O
     SS -->|"change token<br/>IOptionsChangeTokenSource"| M["IOptionsMonitor<br/>recomputes the value"]
     O --> M
     M --> R["Readers: background jobs each pass,<br/>OrgClock, pages, email sender"]
@@ -56,7 +56,7 @@ flowchart TB
 **Operational settings** (`OperationalSettings`) are the organization, reminders, intake, CVE enrichment, metric
 imports, the update check's interval, SharePoint posting and zipped downloads. `SavedSettings` holds the saved rows in
 memory. It reads them at start-up (in `Program.cs`, after `DatabaseInitializer`) and again after every save
-(`OperationalSettingsService.SaveAsync`) or bundle import. `OperationalSettingsOverlay<T>` is registered for
+(`OperationalSettingsService.SaveAsync`) or bundle import. `OptionsOverlay<SavedSettings, T>` is registered for
 `OrgOptions`, `ReminderOptions`, `IntakeOptions`, `CveOptions`, `MetricImportOptions`, `UpdateOptions`,
 `DistributionOptions` and `FileStoreOptions`. It is both an `IPostConfigureOptions<T>`, which applies the saved values
 after binding, and an `IOptionsChangeTokenSource<T>`, which fires when `SavedSettings` changes. So everything that
@@ -440,7 +440,7 @@ running server knows, with no credentials, for `Install-Tide.ps1` or a rebuild (
 | Dev sign-in guard | `src/Tide.Web/Security/AuthModeGuard.cs` (`UseWindows`) |
 | Path base | `src/Tide.Web/Services/PathBaseSetting.cs` (`Normalize`) |
 | The in-app keys and their checks | `src/Tide.Application/Settings/OperationalSettings.cs` (`Normalize`, `Apply`) |
-| Saved values and the overlay | `src/Tide.Application/Settings/SavedSettings.cs` (`SavedSettings`, `OperationalSettingsOverlay<T>`, `OperationalSettingsService`) |
+| Saved values and the overlay | `src/Tide.Application/Settings/SavedSettings.cs` (`SavedSettings`, `OptionsOverlay<TSource, T>`, `OperationalSettingsService`); saved secrets in `StoredSecrets.cs` |
 | Catalogue of server and in-app settings | `src/Tide.Application/Operations/SettingsCatalog.cs` |
 | Where a value comes from | `src/Tide.Web/Services/ConfigSource.cs` (`Resolve`) |
 | Edition ceilings and recipients | `src/Tide.Application/Settings/DistributionSettings.cs` |

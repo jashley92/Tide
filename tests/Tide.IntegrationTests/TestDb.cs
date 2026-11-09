@@ -121,11 +121,8 @@ public sealed class FakeHttp : IOutboundHttp
 }
 
 /// <summary>"Protects" a secret reversibly, so a test can sign as the receiver would.</summary>
-public sealed class FakeSecrets : Tide.Application.Api.ISecretProtector
+public sealed class FakeSecrets : Tide.Application.Abstractions.ISecretProtector
 {
-    public string Protect(string secret) => "p:" + secret;
-    public string? Unprotect(string protectedSecret) => protectedSecret.StartsWith("p:", StringComparison.Ordinal) ? protectedSecret[2..] : null;
-
     // Under a purpose, as the real one: a value protected for one purpose doesn't open under another.
     public string Protect(string purpose, string secret) => $"p:{purpose}:{secret}";
 

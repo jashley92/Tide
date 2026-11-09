@@ -5,7 +5,6 @@
 @inject SystemSettings Settings
 @inject OrgClock Clock
 @inject ToastService Toasts
-@inject Tide.Application.Settings.StoredSecretService StoredSecrets
 
 <PageTitle>Setting sources · TIDE</PageTitle>
 
@@ -59,16 +58,8 @@
                 {
                     <tr>
                         <td>@r.Info.Label <code class="d-block small tide-muted">@r.Info.Key</code></td>
-                        @if (r.Shown is null && _saved.Contains(r.Info.Key))
-                        {
-                            <td><span class="tide-data small">@SecretMask.SetSecret</span></td>
-                            <td><a href="admin/system/secrets">Saved in the app, encrypted</a></td>
-                        }
-                        else
-                        {
-                            <td><span class="tide-data small">@(r.Shown ?? "—")</span></td>
-                            <td><SettingSourceBadge Source="@r.Source" /></td>
-                        }
+                        <td><span class="tide-data small">@(r.Shown ?? "—")</span></td>
+                        <td><SettingSourceBadge Source="@r.Source" /></td>
                     </tr>
                 }
             </tbody>
@@ -79,12 +70,10 @@
 @code {
     private IReadOnlyList<SettingRow>? _inApp;
     private IReadOnlyList<SettingRow> _server = [];
-    private IReadOnlySet<string> _saved = new HashSet<string>();   // the secrets saved in the app, in force where the server has none
 
     protected override async Task OnInitializedAsync()
     {
         _server = Settings.Server();
-        _saved = StoredSecrets.InForceKeys();
         try { _inApp = await Settings.InAppAsync(); }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); _inApp = []; }
     }
