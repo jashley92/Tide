@@ -11,7 +11,8 @@
 <PageTitle>Audit log · TIDE</PageTitle>
 
 @* The audit log: every change the audit interceptor recorded, across the whole system, newest first, with
-   who made it and what each field was before and after. Administrators only (the service checks too): the log holds
+   who made it and what each field was before and after; and the downloads that are recorded (DownloadAudit: an export
+   above TLP:GREEN, every file, the configuration bundle, this log's CSV), as the Download kind and the downloaded action. Administrators only (the service checks too): the log holds
    text at every TLP marking. The filters are the address's (AuditFilter.ToQuery), so a view can be bookmarked, and the
    export takes the same ones. Secrets show only as set or changed (HistoryFormatter.AuditChanges). *@
 <div class="tide-page-head">
@@ -30,7 +31,7 @@
                ServerSide="true" Total="_total" PageSize="AuditLogService.PageSize" PageInAddress="true" Busy="_reading"
                Filtered="@(_filter.Narrowed || _since is not null)" OnQuery="Query">
         <Toolbar>
-            @* The filter bar after the search box: Deleted as a pill, a chip for each other filter (a link to the log without
+            @* The filter bar after the search box: Deleted and Downloads as pills, a chip for each other filter (a link to the log without
                it) and + Filter for who, the kind of record, the action and the dates. *@
             <FilterBar Pills="Pills" Filters="Defs" Chips="Chips" Active="_filter.Narrowed" ClearHref="@Href(_filter.Cleared())" />
         </Toolbar>
@@ -77,7 +78,7 @@
             <td class="small tide-audit-changes">
                 @if (r.Changes.Count == 0)
                 {
-                    <span class="tide-muted">@(r.Action == AuditAction.Deleted ? "Deleted." : "No tracked fields changed.")</span>
+                    <span class="tide-muted">@(r.Action switch { AuditAction.Deleted => "Deleted.", AuditAction.Downloaded => "Downloaded.", _ => "No tracked fields changed." })</span>
                 }
                 else
                 {
@@ -152,8 +153,12 @@
 
     private void Go(AuditFilter f, bool replace = false) => Nav.NavigateTo(Href(f), replace: replace);
 
-    // The pill: deletions, what's asked of the log most, a preset of the action filter.
-    internal static readonly IReadOnlyList<FilterPill> Pills = [new("deleted", "Deleted", "action", [nameof(AuditAction.Deleted)])];
+    // The pills: deletions and downloads, what's asked of the log most, presets of the action filter.
+    internal static readonly IReadOnlyList<FilterPill> Pills =
+    [
+        new("deleted", "Deleted", "action", [nameof(AuditAction.Deleted)]),
+        new("downloaded", "Downloads", "action", [nameof(AuditAction.Downloaded)]),
+    ];
 
     // The chips, as the filter words them (the dates as one), each a link to the log without it.
     internal IReadOnlyList<FilterChipView> Chips => [.. _chips.Select(c => new FilterChipView(c.Label, c.Key, Href(c.Without)))];

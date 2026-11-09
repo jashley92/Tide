@@ -506,6 +506,14 @@ Bytes live on disk under `Files:RootPath`, outside the web root, with a `StoredF
   compressed, written as it streams with no plain copy on the server's disk, and its entry name has no folder or
   reserved character (`FileRisk.EntryName`). It's deliberately weak: it stops a double-click and antivirus deleting the
   file on arrival, not a reader.
+- **Zip first is enforced, not just offered.** When the zip is a file's main download (`FileRisk.ZipFirst`), a bare
+  `/files/{id}/download` (a link pasted into a comment's Markdown, say) redirects to `/files/{id}/zip`. Only the
+  "as is" link on the action's Files list gets the plain file: it carries `?plain=` with a pass (`PlainDownloads`), a
+  Data Protection `ITimeLimitedDataProtector` value under its own purpose, bound to the file id and the person it was
+  minted for, good for 10 minutes. A link written by hand, a forged or expired pass, or one minted for another file or
+  person is sent to the zip. Under `Always` there's no "as is" link and even a valid pass is refused with a 403: no
+  action's or comment's file is ever sent plain. The API's file download (`?zip=true`) zips every file under `Always`
+  too, whatever `zip` says.
 - `ActionFileService.OpenAsync` checks access per file. Removing keeps the bytes, hash and row with who, when and why;
   only an administrator restores.
 
@@ -567,6 +575,15 @@ AI drafting help is opt-in and capped by TLP (ADR [0004](../decisions/0004-opt-i
 - **Not audited:** the audit log itself, the user mirror (`AppUser`), `UserPreference`, `NotificationMark`, and machine
   bookkeeping (`FeedItem`, `CveRecord`, `DetectionRule`, `FeedItemText`). `ModifiedAtUtc`, `ModifiedBy` and
   `EditVersion` changes are skipped as noise.
+- **Downloads.** Every download endpoint is recorded by an endpoint filter (`ExportEndpoints.Recorded`, part of
+  `AsExport`, and on the file and configuration endpoints): a line in the access log (`Tide.Access`) with who, the
+  route, the record it names, the TLP ceiling and the size. Some are also written to the audit log
+  (`DownloadAudit`, kind `Download`, action `Downloaded`, keyed by the record): an indicator export
+  (`/exports/{scope}/{key}`) whose ceiling is above TLP:GREEN (no `?tlp=` means every level, so RED), every file
+  download (`/files/{id}/download`, `/files/{id}/zip`, the API's), the configuration bundle and install answers
+  (`/admin/system/config-bundle.json`, `/admin/system/tide.config.psd1`) and the audit log's own CSV. The row is
+  written before the answer is sent, so a download the log can't record isn't sent. A refusal, a redirect or a "not
+  found" isn't recorded as a download.
 - **Edits are versioned.** Articles, briefs and other edited records carry an `EditVersion` concurrency token; a save
   from a stale copy is refused with `StaleEditException`.
 
@@ -578,7 +595,9 @@ AI drafting help is opt-in and capped by TLP (ADR [0004](../decisions/0004-opt-i
 - **The audit log** (Administration › System › Audit log, `/admin/system/audit`, through `AuditLogService`) is
   `Administer` only, by the page's policy and in the service. It pages 50 at a time, filters by person, kind, record,
   dates, action and words, and exports at most 10,000 rows as CSV (`/admin/system/audit.csv`). Filters without an
-  index (action, words) and no person are held to 92 days.
+  index (action, words) and no person are held to 92 days. Downloads show as the Download kind and the downloaded
+  action (a "Downloads" pill), each named by the file it sent; "Only this record" lists every download of one file
+  or export.
 - **CSV cells** are written through `Csv.Cell`, which neutralises a leading formula character.
 
 ### Secret masking
@@ -661,6 +680,7 @@ An upgrade runs a release's scripts as an administrator, so a bundle has to be t
 | Files | `src/Tide.Application/Files/FileRisk.cs`, `ImageSniffer.cs`, `ScreenshotService.cs`, `src/Tide.Web/Security/FileDownloads.cs` | `ActionFilesTests.cs` (`ThePlainFile_IsAnAttachment_NeverSniffed_AndSandboxed`, `ARiskyFile_DownloadsInAZip_ThatOpensWithThePasswordInfected`), `Audit/SecurityAuditTests.cs` (`AReader_SeesNoScreenshotThatWasNeverPublished_ByAnyRoute`) |
 | Outbound | `src/Tide.Infrastructure/Notifications/AddressPolicy.cs`, `OutboundHttp.cs`, `OutboundCircuit.cs` | `OutboundHttpTests.cs` (`Get_ALoopbackAddress_IsRefusedByDefault_BeforeAnyRequest`, `Get_ARedirectToARefusedAddress_IsNotFollowed`) |
 | AI | `src/Tide.Application/Assist/AssistService.cs`, `DraftChecks.cs`, `src/Tide.Infrastructure/Assist/AzureOpenAiAssistant.cs` | `AssistTests.cs` (`AboveTheLimit_NothingIsSent_NorCopied`, `OurNotes_GoOnlyWhenTheLimitAllowsAmber_AndThenTheInputCountsAsAmber`) |
+| Download records and zip first | `src/Tide.Web/Api/ExportEndpoints.cs` (`Recorded`, `AsExport`, `AuditedWhen`), `src/Tide.Application/History/DownloadAudit.cs`, `src/Tide.Web/Program.cs` (`/files/{id}/download`) | `AccessAuditTests.cs` (`DownloadAuditTests`) |
 | Audit and secrets | `src/Tide.Infrastructure/Persistence/AuditInterceptor.cs`, `src/Tide.Application/Operations/SecretMask.cs`, `SettingsCatalog.cs` (`IsSecret`), `src/Tide.Application/History/AuditLogService.cs` | `AuditLogTests.cs` (`ASecret_ShowsOnlyAsSetOrChanged_OnThePageAndInTheCsv_AndIsntSearchable`), `Audit/SecurityAuditTests.cs` (`TheAuditTrail_NeverHoldsASettingNamedLikeASecret`) |
 | Release signing | `.github/workflows/release.yml` (Sign the bundle), `deploy/lib/TideUpgrade.ps1` (`Invoke-TideBundleCheck`, `Test-TideReleaseSignature`), `deploy/lib/TideReleaseKeys.ps1`, `deploy/Test-TideBundle.ps1`, `tools/signing/New-ReleaseSigningKey.ps1` | `tests/Tide.UnitTests/ReleaseSigningTests.cs` (`A_bundle_signed_by_a_pinned_key_is_accepted_and_one_changed_or_signed_by_another_key_is_refused`, `A_bundle_signed_by_the_Release_workflows_openssl_command_verifies_in_PowerShell`) |
 

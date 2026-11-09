@@ -38,8 +38,8 @@ public class RotationServiceTests : IDisposable
         await r.SaveManagerEmailsAsync("manager@example.org");
         await using var ctx = _db.Context();
         ctx.Users.AddRange(
-            new AppUser { Sid = Me, DisplayName = "Test Analyst", Email = "me@example.org", LastSeenUtc = DateTimeOffset.UtcNow },
-            new AppUser { Sid = Robin, DisplayName = "Robin", Email = "robin@example.org", LastSeenUtc = DateTimeOffset.UtcNow });
+            new AppUser { Sid = Me, DisplayName = "Test Analyst", Email = "me@example.org", RolesCsv = "Analyst", LastSeenUtc = DateTimeOffset.UtcNow },
+            new AppUser { Sid = Robin, DisplayName = "Robin", Email = "robin@example.org", RolesCsv = "Analyst", LastSeenUtc = DateTimeOffset.UtcNow });
         await ctx.SaveChangesAsync();
     }
 

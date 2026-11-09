@@ -4,6 +4,7 @@ using Tide.Application.Abstractions;
 using Tide.Application.Distribution;
 using Tide.Application.Preferences;
 using Tide.Domain.Entities;
+using Tide.Domain.Enums;
 
 namespace Tide.Application.Actions;
 
@@ -189,14 +190,18 @@ public sealed partial class ReminderService
     private async Task<int> RemindInternalAsync(IAppDbContext db, List<Climb> climbs, DateOnly today, CancellationToken ct)
     {
         var people = climbs.Select(c => c.Action.AssigneeId).OfType<string>().Concat(climbs.SelectMany(c => c.Team.Members.Select(m => m.UserId))).ToList();
-        var late = await RecipientResolver.ResolveAsync(db, NotificationKinds.For(ReminderKind.Overdue), people, ct);
-        var soon = await RecipientResolver.ResolveAsync(db, NotificationKinds.For(ReminderKind.DueSoon), people, ct);
+        var active = Active(Permission.ReadActions);
+        var late = await RecipientResolver.ResolveAsync(db, NotificationKinds.For(ReminderKind.Overdue), people, ct, active);
+        var soon = await RecipientResolver.ResolveAsync(db, NotificationKinds.For(ReminderKind.DueSoon), people, ct, active);
         var byRecipient = new Dictionary<(string To, bool Late), List<Climb>>();
         foreach (var c in climbs)
         {
             var isLate = c.Due < today;
-            var (to, optedOut) = RecipientsOf(c.Action, isLate ? late : soon);
-            if (to.Count == 0) c.Say(optedOut.Count > 0 ? "not reminded: they opted out" : "not reminded: no one has an address");
+            var (to, optedOut, inactive) = RecipientsOf(c.Action, isLate ? late : soon);
+            Inactive(inactive);
+            if (to.Count == 0)
+                c.Say(optedOut.Count > 0 ? "not reminded: they opted out"
+                    : inactive.Count > 0 ? "not reminded: whoever it goes to is inactive" : "not reminded: no one has an address");
             foreach (var address in to)
             {
                 var key = (address.ToLowerInvariant(), isLate);

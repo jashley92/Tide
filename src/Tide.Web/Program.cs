@@ -69,6 +69,7 @@ builder.Services.AddRazorComponents()
 // profile), so every recycle signs everyone out. Persist it to a stable, ACL-restricted folder, encrypted at rest. A fixed
 // application name keeps the ring stable if the content-root path changes. Development (no path) keeps the default.
 var dp = builder.Services.AddDataProtection().SetApplicationName("TIDE");
+builder.Services.AddSingleton<PlainDownloads>();
 var dpKeyPath = builder.Configuration["DataProtection:KeyPath"];
 if (!string.IsNullOrWhiteSpace(dpKeyPath))
 {
@@ -276,19 +277,33 @@ app.MapGet("/files/{id:guid}/inline", async (Guid id, ScreenshotService shots, H
 // Files on actions and their comments (and a hunt's evidence, an article's screenshot), as downloads under the name they
 // were added with: any kind of file (a log, a pcap, an email, a sample), so never shown inline and never sniffed into a
 // type. ActionFileService.OpenAsync decides who may have an action's or a comment's file, per file; ScreenshotService the rest.
-app.MapGet("/files/{id:guid}/download", async (Guid id, Tide.Application.Actions.ActionFileService files, ScreenshotService shots, HttpContext http,
-    CancellationToken ct) =>
+// An action's or a comment's file whose main download is the zip (Files:ZipDownloads) isn't sent plain from a link written
+// by hand (one in a comment's Markdown, say): it's sent to the zip, unless ?plain= carries the pass the action's Files
+// list mints for its "as is" link (PlainDownloads: this file, this person, ten minutes). Under Always, it's never sent
+// plain. Every download is recorded, in the access log and the audit log.
+app.MapGet("/files/{id:guid}/download", async (Guid id, string? plain, Tide.Application.Actions.ActionFileService files, ScreenshotService shots,
+    PlainDownloads passes, ICurrentUser user, HttpContext http, CancellationToken ct) =>
 {
-    if (await files.OpenAsync(id, ct: ct) is { } onAction) return FileDownloads.Plain(http, onAction.Content, onAction.FileName);
+    if (await files.OpenAsync(id, ct: ct) is { } onAction)
+    {
+        var asIs = passes.Allows(plain, id, user.UserId);
+        if (!FileRisk.ZipFirst(files.ZipMode, onAction.RiskReason)) return FileDownloads.Plain(http, onAction.Content, onAction.FileName);
+        if (asIs && files.ZipMode != ZipDownloads.Always) return FileDownloads.Plain(http, onAction.Content, onAction.FileName);
+        await onAction.DisposeAsync();
+        return asIs
+            ? Results.Text("Every file on an action downloads in a zip here (Files:ZipDownloads is Always). Download the zip: it opens with the password \"infected\".",
+                "text/plain", Encoding.UTF8, StatusCodes.Status403Forbidden)
+            : Results.Redirect($"{http.Request.PathBase}/files/{id}/zip");
+    }
     if (await shots.OpenAttachmentAsync(id, ct) is not { } file) return Results.NotFound();
     return FileDownloads.Plain(http, file.Content, file.FileName);
-}).RequireAuthorization().RequireRateLimiting("files");
+}).RequireAuthorization().RequireRateLimiting("files").Recorded(AuditedWhen.Always);
 
 // The same file inside a zip with the password "infected" (classic ZipCrypto): the main download of a file that can run
 // (Files:ZipDownloads), offered for an action's or a comment's file only.
 app.MapGet("/files/{id:guid}/zip", async (Guid id, Tide.Application.Actions.ActionFileService files, HttpContext http, CancellationToken ct) =>
     await files.OpenAsync(id, ct: ct) is { } file ? FileDownloads.Zipped(http, file) : Results.NotFound())
-    .RequireAuthorization().RequireRateLimiting("files");
+    .RequireAuthorization().RequireRateLimiting("files").Recorded(AuditedWhen.Always);
 
 // The email exactly as it would be sent now (its images from the inline endpoint), for the preview frame on the brief
 // page. Its own CSP: no script at all, sandboxed, and framable by this app only.
@@ -382,45 +397,47 @@ app.MapGet("/trends/articles.csv", async (string? p, string? line, bool? subs, T
 }).AsExport();
 
 // Indicators from an article, a brief or a story, as STIX 2.1 or CSV, with the articles above the TLP ceiling (?tlp=,
-// default every level) left out.
+// default every level) left out. One with a ceiling above TLP:GREEN is in the audit log as well as the access log.
 app.MapGet("/exports/{scope}/{key}", async (string scope, string key, string? format, string? tlp, ExportService exports,
-    OrgClock clock, IOptions<AppOptions> appOptions, CancellationToken ct) =>
+    OrgClock clock, IOptions<AppOptions> appOptions, HttpContext http, CancellationToken ct) =>
 {
     if (!EnumNames.TryParse<ExportScope>(scope, out var s, ignoreCase: true)) return Results.NotFound();
     if ((tlp is null ? TlpLevel.Red : Tlp.Parse(tlp)) is not { } ceiling) return Results.BadRequest("Unknown TLP.");
+    NoteCeiling(http, ceiling);
     var set = await exports.GatherAsync(s, key, ceiling, ct);
     if (set is null) return Results.NotFound();
     var name = $"tide-{set.FileStem}-{Tlp.Key(ceiling)}";
     return string.Equals(format, "csv", StringComparison.OrdinalIgnoreCase)
         ? CsvFile(IndicatorCsv.Write(set, appOptions.Value.BaseUrl), name + ".csv")
         : Results.File(Stix.Write(set, clock.TeamName), "application/stix+json;version=2.1", name + ".stix.json");
-}).AsExport();
+}).AsExport(audited: AuditedWhen.AboveGreen);
 
 // Administration > System > Configuration bundle: the install answers file this server would be installed with, and the
-// settings administrators made in the app. Neither carries a secret (see InstallAnswers and ConfigBundle).
+// settings administrators made in the app. Neither carries a secret (see InstallAnswers and ConfigBundle). Each download is
+// in the audit log.
 app.MapGet("/admin/system/tide.config.psd1", async (SystemSettings settings, HttpContext http, CancellationToken ct) =>
 {
     var text = InstallAnswers.Write(await settings.InstallFactsAsync(http.Request.PathBase.Value, ct));
     http.Response.Headers.CacheControl = "no-store";
     return Results.File(Utf8WithBom(text), "text/plain; charset=utf-8", InstallAnswers.FileName);
-}).RequireAuthorization(Policies.Administer);
+}).RequireAuthorization(Policies.Administer).Recorded(AuditedWhen.Always);
 
 app.MapGet("/admin/system/config-bundle.json", async (ConfigBundleService bundles, OrgClock clock, HttpContext http, CancellationToken ct) =>
 {
     var bundle = await bundles.ExportAsync(ct);
     http.Response.Headers.CacheControl = "no-store";
     return Results.File(Encoding.UTF8.GetBytes(bundle.ToJson()), "application/json", $"tide-config-bundle-{clock.Today:yyyy-MM-dd}.json");
-}).RequireAuthorization(Policies.Administer);
+}).RequireAuthorization(Policies.Administer).Recorded(AuditedWhen.Always);
 
 // Administration > System > Audit log: the rows the page's filters (the same query names) match, newest first, as CSV,
 // at most AuditLogService.MaxExport of them. Secrets are masked as on the page; the service checks the user is an
-// administrator too.
+// administrator too. Each download is itself in the audit log.
 app.MapGet("/admin/system/audit.csv", async (HttpContext http, Tide.Application.History.AuditLogService audit, OrgClock clock, CancellationToken ct) =>
 {
     var filter = Tide.Application.History.AuditFilter.FromQuery(name => http.Request.Query[name].FirstOrDefault());
     var rows = await audit.ExportAsync(filter, ct);
     return CsvFile(Tide.Application.History.AuditCsv.Write(rows, clock), $"tide-audit-log-{clock.Today:yyyy-MM-dd}.csv");
-}).AsExport(Policies.Administer);
+}).AsExport(Policies.Administer, AuditedWhen.Always);
 
 // Health probes for IIS, a load balancer or uptime monitoring: status only, no detail, no sign-in.
 // The framework logs an Error for each failing probe (one every few seconds from a load balancer during an outage); its

@@ -828,7 +828,7 @@ public class ReminderTests : IDisposable
     private async Task Person(string sid, string email)
     {
         await using var ctx = _db.Context();
-        ctx.Users.Add(new AppUser { Sid = sid, DisplayName = sid, Email = email, LastSeenUtc = DateTimeOffset.UtcNow });
+        ctx.Users.Add(new AppUser { Sid = sid, DisplayName = sid, Email = email, RolesCsv = "ActionOwner", LastSeenUtc = DateTimeOffset.UtcNow });
         await ctx.SaveChangesAsync();
     }
 

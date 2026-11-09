@@ -25,6 +25,7 @@ public static class FileDownloads
     public static IResult Zipped(HttpContext http, FileDownload file)
     {
         Harden(http);
+        Api.ExportEndpoints.NoteBytes(http, file.SizeBytes);
         // SharpZipLib writes synchronously.
         if (http.Features.Get<IHttpBodyControlFeature>() is { } body) body.AllowSynchronousIO = true;
         var entry = FileRisk.EntryName(file.FileName);
