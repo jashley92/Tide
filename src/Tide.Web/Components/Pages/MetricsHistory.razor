@@ -9,7 +9,8 @@
 
 <PageTitle>Metric history · TIDE</PageTitle>
 
-<div class="tide-page-head">
+@* A data page: it takes the whole window, so a wide table scrolls only when it's wider than that. *@
+<div class="tide-page-head tide-page-wide">
     <div>
         <h1>Metric history</h1>
         <div class="tide-sub">By business day, including retired metrics.</div>
@@ -36,13 +37,7 @@
         @if (_history is { Metrics.Count: > 0 })
         {
             <div class="ms-auto">
-                <label class="tide-field-label" for="chart-metric">Chart</label>
-                <select id="chart-metric" class="form-select form-select-sm" @bind="_chartId">
-                    @foreach (var m in _history.Metrics)
-                    {
-                        <option value="@m.Id">@m.Group?.Name: @m.Name@(m.IsRetired ? " (retired)" : "")</option>
-                    }
-                </select>
+                <MetricChartPicker Metrics="@_history.Metrics" Picked="@Picked" PickedChanged="Chart" />
             </div>
         }
     </div>
@@ -58,21 +53,82 @@ else if (_history.Metrics.Count == 0)
 }
 else
 {
-    var chart = _history.Metrics.FirstOrDefault(m => m.Id == _chartId) ?? _history.Metrics[0];
-    var series = _history.Values.Where(v => v.DefinitionId == chart.Id).OrderBy(v => v.BriefDate).ToList();
+    var picked = Picked;
+    var view = MetricChartPicks.ViewFor(picked, ViewParam);
+    var labels = _days.Select(Ui.ShortDay).ToList();
+    var span = $"from {labels[0]} to {labels[^1]}";
+    var charted = picked.Select(Series).ToList();
     <div class="tide-card">
-        <h2>@chart.Group?.Name: @chart.Name <span class="tide-muted fw-normal small">@DirectionText(chart.Direction)</span></h2>
-        @if (series.Count < 2)
+        <div class="d-flex justify-content-between align-items-baseline gap-2 flex-wrap">
+            <h2 class="tide-card-title">
+                @if (picked is [var only])
+                {
+                    @only.Group?.Name<text>: </text>@only.Name <span class="tide-muted fw-normal small">@DirectionText(only.Direction)</span>
+                }
+                else
+                {
+                    @picked.Count<text> metrics</text>
+                }
+            </h2>
+            @if (picked.Count > 1)
+            {
+                @* Overlay only for a few metrics in one unit: otherwise the grid is the only honest way to draw them. *@
+                var canOverlay = MetricChartPicks.CanOverlay(picked);
+                <div class="btn-group btn-group-sm" role="group" aria-label="Chart layout">
+                    <button type="button" class="btn btn-outline-secondary @(view == MetricChartView.Overlay ? "active" : "")" aria-pressed="@Ui.Aria(view == MetricChartView.Overlay)"
+                            disabled="@(!canOverlay)" title="@(canOverlay ? "Every line on one chart" : $"One chart takes up to {MetricChartPicks.MaxOverlay} metrics in the same unit")"
+                            @onclick="() => SetView(MetricChartView.Overlay)"><span class="bi bi-graph-up" aria-hidden="true"></span> One chart</button>
+                    <button type="button" class="btn btn-outline-secondary @(view == MetricChartView.Grid ? "active" : "")" aria-pressed="@Ui.Aria(view == MetricChartView.Grid)"
+                            @onclick="() => SetView(MetricChartView.Grid)"><span class="bi bi-grid" aria-hidden="true"></span> A chart each</button>
+                </div>
+            }
+        </div>
+        @if (view == MetricChartView.Overlay)
         {
-            <EmptyState Icon="bi-graph-up" Title="Not enough data in this range" Compact="true" />
+            @if (charted.All(c => c.Points < 2))
+            {
+                <EmptyState Icon="bi-graph-up" Title="Not enough data in this range" Compact="true" />
+            }
+            else
+            {
+                <LineChart Labels="@labels" Label="@($"{string.Join(", ", picked.Select(m => m.Name))} {span}")"
+                           Lines="@charted.Select(c => c.Line).ToList()" BandsFor="@(picked is [var one] ? r => MetricBands.Of(one, r) : null)"
+                           OnTakeOff="@(picked.Count > 1 ? EventCallback.Factory.Create<int>(this, i => Chart(MetricChartPicks.Toggle(_history.Metrics, picked, picked[i]))) : default)" />
+                @if (picked.Count == 1)
+                {
+                    <div class="small mt-1"><MetricChange Tile="@charted[0].Latest" /></div>
+                }
+            }
         }
         else
         {
-            var days = _days;
-            var values = days.Select(d => series.FirstOrDefault(v => v.BriefDate == d)?.Value).ToList();
-            var format = chart.Format;
-            <LineChart Labels="@days.Select(Ui.ShortDay).ToList()" Lines="@([new LineChart.Line(chart.Name, values, v => MetricMath.Format(format, v))])"
-                       Label="@($"{chart.Name} from {Ui.ShortDay(days[0])} to {Ui.ShortDay(days[^1])}")" />
+            <div class="tide-mc-grid">
+                @foreach (var c in charted)
+                {
+                    var m = c.Metric;
+                    <section class="tide-mc-cell" aria-label="@m.Name">
+                        <header class="tide-mc-cell-head">
+                            <h3 title="@m.Group?.Name: @m.Name, @DirectionText(m.Direction)">@m.Name@(m.IsRetired ? " (retired)" : "")</h3>
+                            <button type="button" class="btn btn-sm tide-mc-remove" title="Take off the chart" aria-label="Take @m.Name off the chart"
+                                    @onclick="() => Chart(MetricChartPicks.Toggle(_history.Metrics, picked, m))"><span class="bi bi-x" aria-hidden="true"></span></button>
+                        </header>
+                        <div class="tide-mc-cell-now">
+                            @if (c.Latest.Value is { } latest)
+                            {
+                                <strong class="@LevelClass(m, latest)">@MetricMath.Format(m.Format, latest)</strong> <MetricChange Tile="@c.Latest" ShowDate="false" />
+                            }
+                        </div>
+                        @if (c.Points < 2)
+                        {
+                            <div class="tide-muted small">Not enough data in this range</div>
+                        }
+                        else
+                        {
+                            <LineChart Labels="@labels" Lines="@([c.Line])" Compact="true" BandsFor="@(r => MetricBands.Of(m, r))" Label="@($"{m.Name} {span}")" />
+                        }
+                    </section>
+                }
+            </div>
         }
     </div>
 
@@ -88,6 +144,10 @@ else
             <FilterBar PillsLabel="Groups shown" Active="@(shown.Count != columns.Count)" OnChanged="StateHasChanged" OnClear="ShowAll"
                        Pills="@([.. columns.Select(g => new FilterPill(g.Key, $"{g.Name} ({g.Metrics.Count})", g.Key, FilterValues.Of(true)))])"
                        Filters="@([.. columns.Select(g => new FilterDef(g.Key, g.Name, FilterKind.Single, _ => Pick(columns, g.Key)) { InMenu = false, Values = FilterValues.Of(shown.Count != columns.Count && shown.Contains(g)) })])" />
+            @if (shown.Count != columns.Count)
+            {
+                <button type="button" class="btn btn-link btn-sm p-0 mb-2" @onclick="() => ChartGroups(shown)"><span class="bi bi-graph-up" aria-hidden="true"></span> Chart the groups shown</button>
+            }
         }
         @{ var byDay = shownValues.ToLookup(v => v.BriefDate); var dates = byDay.Select(g => g.Key).OrderDescending().ToList(); }
         @if (dates.Count == 0)
@@ -157,11 +217,42 @@ else
     /// <summary>The groups whose columns show, by key (MetricHistoryColumns); none for all of them.</summary>
     [SupplyParameterFromQuery(Name = MetricHistoryColumns.Parameter)] public string? GroupsParam { get; set; }
 
+    /// <summary>The metrics charted, and how (MetricChartPicks).</summary>
+    [SupplyParameterFromQuery(Name = MetricChartPicks.Parameter)] public string? ChartParam { get; set; }
+    [SupplyParameterFromQuery(Name = MetricChartPicks.ViewParameter)] public string? ViewParam { get; set; }
+
     private IReadOnlySet<string> _chosen = new HashSet<string>();
     private DateOnly _from, _to;
     private MetricHistory? _history;
     private IReadOnlyList<DateOnly> _days = [];
-    private Guid _chartId;
+
+    private IReadOnlyList<MetricDefinition> Picked => MetricChartPicks.Resolve(_history?.Metrics ?? [], ChartParam);
+
+    // A metric's line over the days shown, how many days have a value, and its latest value and change for its heading.
+    private sealed record Charted(MetricDefinition Metric, LineChart.Line Line, int Points, MetricTile Latest);
+
+    private Charted Series(MetricDefinition m)
+    {
+        var mine = _history!.Values.Where(v => v.DefinitionId == m.Id).ToDictionary(v => v.BriefDate, v => v.Value);
+        var values = _days.Select(d => mine.TryGetValue(d, out var v) ? v : (decimal?)null).ToList();
+        var points = mine.Select(kv => (Date: kv.Key, Value: kv.Value)).ToList();
+        (DateOnly Date, decimal Value)? last = points.Count == 0 ? null : points.MaxBy(p => p.Date);
+        var compared = last is { } l ? MetricMath.Compare(m.Direction, l.Value, MetricMath.PreviousWithValue(points, l.Date)) : null;
+        var latest = new MetricTile(m, last?.Value, null, compared, MetricMath.LevelOf(m, last?.Value), []);
+        var format = m.Format;
+        var line = new LineChart.Line(m.Name, values, v => MetricMath.Format(format, v)) { After = @<MetricChange Tile="@latest" ShowDate="false" /> };
+        return new Charted(m, line, values.Count(v => v is not null), latest);
+    }
+
+    private void Chart(IReadOnlyList<MetricDefinition> picked) => Go(MetricChartPicks.Parameter, MetricChartPicks.Query(_history!.Metrics, picked));
+
+    private void SetView(MetricChartView view) => Go(MetricChartPicks.ViewParameter, MetricChartPicks.ViewQuery(view));
+
+    // Every current metric of the groups the table shows.
+    private void ChartGroups(IReadOnlyList<MetricColumnGroup> shown) =>
+        Chart([.. _history!.Metrics.Where(m => !m.IsRetired && shown.Any(g => g.GroupId == m.GroupId))]);
+
+    private void Go(string name, string? value) => Nav.NavigateTo(Nav.GetUriWithQueryParameter(name, value), replace: true);
 
     private string CsvUrl => $"metrics/export.csv?from={Ui.IsoDay(_from)}&to={Ui.IsoDay(_to)}";
 
@@ -182,7 +273,7 @@ else
     private void Choose(IReadOnlySet<string> keys)
     {
         _chosen = keys;
-        Nav.NavigateTo(Nav.GetUriWithQueryParameter(MetricHistoryColumns.Parameter, MetricHistoryColumns.Query(keys)), replace: true);
+        Go(MetricHistoryColumns.Parameter, MetricHistoryColumns.Query(keys));
     }
 
     private Task Range(int days)
@@ -211,7 +302,6 @@ else
             for (var d = _from; d <= _to; d = d.AddDays(1))
                 if (Clock.Days.IsWorkingDay(d) || (!WorkingDays.IsWeekend(d) && entered.Contains(d))) days.Add(d);
             _days = days.Count > 0 ? days : [_to];
-            if (_history.Metrics.All(m => m.Id != _chartId)) _chartId = _history.Metrics.FirstOrDefault(m => !m.IsRetired)?.Id ?? Guid.Empty;
         }
         catch (Exception ex) when (reading == _reading) { Toasts.Error(UserFacingError.For(ex)); }
         catch (Exception) { /* a later read has the dates now */ }

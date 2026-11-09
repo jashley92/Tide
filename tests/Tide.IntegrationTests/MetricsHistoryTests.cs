@@ -2,13 +2,15 @@ using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Metrics;
 using Tide.Application.Org;
+using Tide.Domain.Enums;
 using Tide.Web.Components.Pages;
 
 namespace Tide.IntegrationTests;
 
-/// <summary>The metric history table (MetricsHistory) with several groups: a heading per group over its columns, a line
-/// between groups, the group filter kept in the address, and a day's note marked on its value. Its own app, so the
-/// columns are only this class's metrics.</summary>
+/// <summary>The metric history page (MetricsHistory) with several groups. The table: a heading per group over its columns,
+/// a line between groups, the group filter kept in the address, and a day's note marked on its value. The chart: the
+/// metrics picked in the address, on one chart or a chart each, with each one's latest change and its threshold bands.
+/// Its own app, so the columns are only this class's metrics.</summary>
 public class MetricsHistoryTests(TideApp app) : IClassFixture<TideApp>
 {
     private sealed record Made(Guid Group, string Key, Guid[] Metrics);
@@ -16,7 +18,8 @@ public class MetricsHistoryTests(TideApp app) : IClassFixture<TideApp>
     private static List<Made>? _made;
     private static readonly SemaphoreSlim Once = new(1, 1);
 
-    // Three groups (3, 2 and 1 metrics) with a value each on the last brief day, one of them with a note.
+    // Three groups (3, 2 and 1 metrics) with a value each on the last two brief days (5, then 7), the last one with a
+    // note on Clicked. Vulnerabilities' Critical is lower-is-better with a warning at 6.
     private async Task<List<Made>> Groups()
     {
         await Once.WaitAsync();
@@ -25,7 +28,8 @@ public class MetricsHistoryTests(TideApp app) : IClassFixture<TideApp>
             if (_made is not null) return _made;
             await using var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst);
             var svc = scope.ServiceProvider.GetRequiredService<MetricsService>();
-            var day = scope.ServiceProvider.GetRequiredService<OrgClock>().CurrentBriefDate;
+            var clock = scope.ServiceProvider.GetRequiredService<OrgClock>();
+            var day = clock.CurrentBriefDate;
             var made = new List<Made>();
             foreach (var (name, metrics) in new[] { ("Email triage", new[] { "Reported", "Clicked", "Blocked" }), ("Cases", ["Opened", "Closed"]), ("Vulnerabilities", ["Critical"]) })
             {
@@ -33,7 +37,10 @@ public class MetricsHistoryTests(TideApp app) : IClassFixture<TideApp>
                 var ids = new List<Guid>();
                 foreach (var m in metrics)
                 {
-                    var id = await svc.SaveMetricAsync(new MetricForm { GroupId = group, Name = m });
+                    var form = new MetricForm { GroupId = group, Name = m };
+                    if (m == "Critical") (form.Direction, form.WarnThreshold) = (MetricDirection.LowerIsBetter, 6);
+                    var id = await svc.SaveMetricAsync(form);
+                    await svc.SaveValueAsync(id, clock.Days.Previous(day), 5, null);
                     await svc.SaveValueAsync(id, day, 7, m == "Clicked" ? "One user, already reset" : null);
                     ids.Add(id);
                 }
@@ -105,6 +112,61 @@ public class MetricsHistoryTests(TideApp app) : IClassFixture<TideApp>
 
         html.Should().Contain("<span class=\"bi bi-chat-left-text tide-mh-note\" title=\"One user, already reset\" aria-hidden=\"true\"></span><span class=\"visually-hidden\">Note: One user, already reset</span>");
         html.Split("tide-mh-note\"").Length.Should().Be(2, "only the value with a note is marked");
+    }
+
+    // The chart's card: from its heading to the table's.
+    private static string ChartCard(string html) => html[html.IndexOf("tide-card-title", StringComparison.Ordinal)..html.IndexOf("<h2>Values", StringComparison.Ordinal)];
+
+    [Fact]
+    public async Task AGroupInTheAddress_IsCharted_OnOneChart_WithEachLinesLatestChange()
+    {
+        var made = await Groups();
+        await using var r = await ComponentHarness.RenderAsync<MetricsHistory>(app, $"/metrics?chart=group:{made[0].Key}");
+        var html = await r.HtmlOnce("<thead>");
+        var chart = ChartCard(html);
+
+        chart.Should().Contain("3 metrics");
+        chart.Split("<polyline").Length.Should().Be(4, "a line per metric of the group");
+        chart.Should().Contain("aria-label=\"Take Reported off the chart\"").And.Contain("aria-label=\"Take Blocked off the chart\"");
+        chart.Should().Contain("&#x25B2; &#x2B;2</span>", "each key entry has its latest change, ▲ +2");
+        chart.Should().NotContain("tide-mc-cell");
+        html.Should().Contain("Chart: Email triage", "the picker names the group charted");
+    }
+
+    [Fact]
+    public async Task AChartEach_DrawsASmallChartPerMetric_WithItsLatestValue()
+    {
+        var made = await Groups();
+        await using var r = await ComponentHarness.RenderAsync<MetricsHistory>(app, $"/metrics?chart=group:{made[0].Key},group:{made[1].Key}&view=grid");
+        var chart = ChartCard(await r.HtmlOnce("<thead>"));
+
+        chart.Split("class=\"tide-mc-cell\"").Length.Should().Be(6, "five metrics, a chart each");
+        chart.Split("tide-chart-compact").Length.Should().Be(6);
+        chart.Should().Contain("aria-pressed=\"true\"").And.Contain("A chart each");
+        chart.Should().Contain("<strong class=\"\">7</strong>");
+    }
+
+    [Fact]
+    public async Task AMetricWithAThreshold_ShadesWhereItTrips_AndColoursItsChangeByItsDirection()
+    {
+        await Groups();
+        await using var r = await ComponentHarness.RenderAsync<MetricsHistory>(app, "/metrics?chart=critical");
+        var chart = ChartCard(await r.HtmlOnce("<thead>"));
+
+        chart.Should().Contain("Vulnerabilities: Critical").And.Contain("lower is better");
+        // The axis runs 5 to 7; a value of 6 or more trips the warning: the top half.
+        chart.Should().Contain("<rect class=\"tide-chart-band tide-chart-band-warn\" x=\"0\" width=\"1000\" y=\"0\" height=\"150\"");
+        chart.Should().Contain("class=\"tide-trend-worse\"", "up is worse for it");
+    }
+
+    [Fact]
+    public async Task AFilteredTable_OffersToChartItsGroups()
+    {
+        var made = await Groups();
+        await using var r = await ComponentHarness.RenderAsync<MetricsHistory>(app, $"/metrics?groups={made[1].Key}");
+        (await r.HtmlOnce("<thead>")).Should().Contain("Chart the groups shown");
+        await using var all = await ComponentHarness.RenderAsync<MetricsHistory>(app, "/metrics");
+        (await all.HtmlOnce("<thead>")).Should().NotContain("Chart the groups shown");
     }
 
     // Whether the filter's chip for a name is pressed.
