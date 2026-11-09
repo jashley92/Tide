@@ -25,8 +25,7 @@
 @implements IAsyncDisposable
 
 <section class="tide-card tide-reader" aria-label="Beside the article">
-    @* Whether it's ready, above the tabs so it's seen from any: the edition previewed, and the other's gaps if it has
-       some. The gaps themselves are placeholders where they belong in the preview; Show goes to the first. *@
+    @* Whether it's ready: above the tabs, so it's seen from any. *@
     @if (Current is { } now)
     {
         <p class="tide-reader-sum">
@@ -37,14 +36,11 @@
             else
             {
                 <span class="tide-reader-need"><span class="bi bi-exclamation-circle" aria-hidden="true"></span> @Ui.Plural(now.Checks.Count, "thing") missing</span>
+                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="ShowGaps">Show</button>
             }
             @if (_both.FirstOrDefault(x => x.Edition != now.Edition) is { Checks.Count: > 0 } other)
             {
-                <span class="tide-muted">&middot; @(other.Edition == Edition.Public ? "company-wide" : "team") edition: @Ui.Plural(other.Checks.Count, "thing") missing</span>
-            }
-            @if (now.Checks.Count > 0)
-            {
-                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="ShowGaps">Show</button>
+                <span class="tide-muted">&middot; @Tide.Application.Distribution.BriefRenderer.EditionName(other.Edition).ToLowerInvariant(): @Ui.Plural(other.Checks.Count, "thing") missing</span>
             }
             @if (State.Dirty)
             {

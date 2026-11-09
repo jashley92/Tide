@@ -88,23 +88,26 @@ public class ReaderPreviewTests(TideApp app) : IClassFixture<TideApp>
             .And.Contain(ReaderPreview.OnlyYou).And.NotContain("Everyone may read this").And.NotContain("Exploited in the wild.");
     }
 
+    // The page, and its readiness line (above the tabs beside the article).
+    private async Task<(string Html, int At, string Line)> Readiness(Guid id, string query = "")
+    {
+        var html = await app.CreateClient().GetStringAsync($"/articles/{id}{query}");
+        var at = html.IndexOf("class=\"tide-reader-sum\"", StringComparison.Ordinal);
+        at.Should().BePositive();
+        return (html, at, html[at..html.IndexOf("</p>", at, StringComparison.Ordinal)]);
+    }
+
     [Fact]
     public async Task WhetherItsReady_IsAboveTheTabs_SeenFromAny_AndShowGoesToTheGaps()
     {
         var gaps = await Save(NewArticle(fill: a => { a.Bluf = ""; a.Classification = Classification.Threat; a.Priority = Priority.P2; }));
-        var html = await app.CreateClient().GetStringAsync($"/articles/{gaps}?side=actions");
-        var line = html.IndexOf("class=\"tide-reader-sum\"", StringComparison.Ordinal);
-        line.Should().BePositive().And.BeLessThan(html.IndexOf("role=\"tablist\" aria-label=\"Beside the article\"", StringComparison.Ordinal),
-            "above the tabs, so it's seen on Actions too");
-        html[line..html.IndexOf("</p>", line, StringComparison.Ordinal)].Should().Contain("2 things missing").And.Contain(">Show</button>", "on another tab, Show goes to the gaps");
+        var (html, at, line) = await Readiness(gaps, "?side=actions");
+        at.Should().BeLessThan(html.IndexOf("role=\"tablist\" aria-label=\"Beside the article\"", StringComparison.Ordinal), "above the tabs, so it's seen on Actions too");
+        line.Should().Contain("2 things missing").And.Contain(">Show</button>", "Show goes to the first gap");
+        (await Readiness(gaps)).Line.Should().Contain(">Show</button>", "on the preview too: a gap may be far down");
 
-        var preview = await app.CreateClient().GetStringAsync($"/articles/{gaps}");
-        var on = preview.IndexOf("class=\"tide-reader-sum\"", StringComparison.Ordinal);
-        preview[on..preview.IndexOf("</p>", on, StringComparison.Ordinal)].Should().Contain(">Show</button>", "on the preview too: a gap may be far down");
-
-        var ready = await app.CreateClient().GetStringAsync($"/articles/{await Save(NewArticle(fill: a => a.Classification = Classification.Informational))}?side=details");
-        var at = ready.IndexOf("class=\"tide-reader-sum\"", StringComparison.Ordinal);
-        ready[at..ready.IndexOf("</p>", at, StringComparison.Ordinal)].Should().Contain("Ready to brief").And.NotContain("Show</button>");
+        var ready = await Save(NewArticle(fill: a => a.Classification = Classification.Informational));
+        (await Readiness(ready, "?side=details")).Line.Should().Contain("Ready to brief").And.NotContain("Show</button>");
     }
 
     [Fact]
