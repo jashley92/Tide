@@ -515,6 +515,27 @@ public class HandoffsAndExternalTeamsTests : IDisposable
     }
 
     [Fact]
+    public async Task TurningATeamsRemindersOn_FromTheNote_KeepsItsSchedule_IsAudited_AndMovesItsVersion()
+    {
+        var id = await _db.Teams().AddExternalAsync(new ExternalTeamForm { Name = "Hosting Provider", ContactEmail = "noc@provider.example", RemindersOn = false, RemindBeforeDays = 4 });
+        var before = (await _db.Teams().ListAsync()).Single(t => t.Id == id);
+        await using (var ctx = _db.Context())
+        {
+            var audits = ctx.AuditLog.Count(e => e.EntityType == nameof(Team));
+            await _db.Teams().TurnRemindersOnAsync(id);
+            ctx.AuditLog.Count(e => e.EntityType == nameof(Team)).Should().Be(audits + 1);
+        }
+        var after = (await _db.Teams().ListAsync()).Single(t => t.Id == id);
+        (after.RemindersOn, after.RemindBeforeDays).Should().Be((true, 4));
+        after.EditVersion.Should().NotBe(before.EditVersion, "a form opened before can't save them off again unseen");
+
+        var internalTeam = await Team("Network");
+        await FluentActions.Invoking(() => _db.Teams().TurnRemindersOnAsync(internalTeam)).Should().ThrowAsync<ArgumentException>();
+        As("S-1-5-21-VIEWER", "Viewer", AppRole.Viewer);
+        await FluentActions.Invoking(() => _db.Teams().TurnRemindersOnAsync(id)).Should().ThrowAsync<ForbiddenException>();
+    }
+
+    [Fact]
     public async Task TheTeamsSwitch_AndAnActionsSwitch_TurnThemOff_AndOneEmailListsATeamsRequests()
     {
         var team = await _db.Teams().AddExternalAsync(new ExternalTeamForm { Name = "Network Engineering", ContactEmail = "network@example.org" });

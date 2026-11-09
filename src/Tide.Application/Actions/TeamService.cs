@@ -74,6 +74,24 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOp
     /// <summary>Why <paramref name="team"/> won't be emailed its reminders, or null when it will be (<see cref="ExternalCadence.NotEmailedWhy"/>).</summary>
     public string? NotEmailedWhy(Team team) => ExternalCadence.NotEmailedWhy(team, reminders.CurrentValue.ExternalReminders.Enabled);
 
+    /// <summary>Why <paramref name="team"/> won't be emailed, with its cause, or null (<see cref="ExternalCadence.NotEmailed"/>).</summary>
+    public NotEmailedReason? NotEmailed(Team team) => ExternalCadence.NotEmailed(team, reminders.CurrentValue.ExternalReminders.Enabled);
+
+    /// <summary>
+    /// Turns an external team's own reminders on, from the note that said they're off: its schedule stays as it was. For
+    /// whoever may keep the external teams; audited, and moves the team's edit version as any change to it does.
+    /// </summary>
+    public async Task TurnRemindersOnAsync(Guid id, CancellationToken ct = default)
+    {
+        RequireExternal();
+        await using var db = await dbs.CreateAsync(ct);
+        var team = await TeamAsync(db, id, ct);
+        if (!team.IsExternal) throw new ArgumentException("Only an external team's reminders are turned on here.");
+        if (team.RemindersOn) return;
+        team.RemindersOn = true;
+        await SaveMovedAsync(db, team, ct);
+    }
+
     /// <summary>A blank form for a new external team: its reminders on or off, and their schedule, as an administrator
     /// set for new teams (<see cref="ReminderOptions.ExternalReminderOptions"/>), the rest at their defaults.</summary>
     public ExternalTeamForm NewExternalForm()

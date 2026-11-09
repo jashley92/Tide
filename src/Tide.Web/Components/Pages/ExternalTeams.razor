@@ -99,11 +99,15 @@
     internal ExternalTeamForm EditForm => _form;
     internal IReadOnlyList<Team> Shown => _teams;
 
-    protected override Task OnInitializedAsync()
+    /// <summary><c>?edit={id}</c> opens that team's form (the "Add a contact email" fix links here).</summary>
+    [SupplyParameterFromQuery(Name = "edit")] public string? EditParam { get; set; }
+
+    protected override async Task OnInitializedAsync()
     {
         // A new team's reminders start as an administrator set for new teams (Teams & SLA).
         _new = TeamSvc.NewExternalForm();
-        return Load();
+        await Load();
+        if (TeamSvc.CanManageExternal && Guid.TryParse(EditParam, out var id) && _teams.FirstOrDefault(t => t.Id == id) is { } team) Edit(team);
     }
 
     // A colleague added, edited or retired a team: the list is read again. The add and edit forms are the page's own

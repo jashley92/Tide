@@ -161,6 +161,18 @@ public class HandoffPagesTests(TideApp app) : IClassFixture<TideApp>
             WebUtility.HtmlDecode(await note.Html()).Should().Contain("EP86 quiet provider won't be emailed about this").And.Contain("bi-envelope-slash");
         await using (var none = await RenderAsync<NotEmailedNote>(app, "/", new() { ["Team"] = teams.Single(t => t.Id == from) }))
             (await none.Html()).Trim().Should().BeEmpty();
+        // The fix comes with it, for whoever may make it: reminders are off for everyone here, an administrator's to turn on.
+        await using (var admin = await RenderAsync<NotEmailedNote>(app, "/", new() { ["Team"] = teams.Single(t => t.Id == quiet) }))
+            (await admin.Html()).Should().Contain("href=\"admin/teams#rem-title\"");
+        await using (var owner = await RenderAsync<NotEmailedNote>(app, "/", new() { ["Team"] = teams.Single(t => t.Id == quiet) }, new SignIn("dev:ep86-owner", "Owner", "ActionOwner")))
+            (await owner.Html()).Should().NotContain("admin/teams", "only an administrator turns them on for everyone");
+
+        // On its own (the scan on), the team's switch and the missing contact each offer theirs.
+        var off = teams.Single(t => t.Id == quiet);
+        var withScan = ExternalCadence.NotEmailed(off, scanOn: true)!;
+        withScan.Cause.Should().Be(NotEmailedCause.TeamOff);
+        await using (var editing = await RenderAsync<ExternalTeams>(app, $"/teams/external?edit={quiet}"))
+            editing.Component.Editing.Should().Be(quiet, "Add a contact email opens that team's form");
 
         await using var list = await RenderAsync<ExternalTeams>(app, "/teams/external");
         WebUtility.HtmlDecode(await list.Html()).Should().Contain("Not emailed");

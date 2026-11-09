@@ -26,6 +26,10 @@ public class HandoffRulesTests
         ExternalCadence.NotEmailedWhy(Ext(), scanOn: false).Should().Be("External team reminders are off for everyone, so Hosting won't be emailed about this.");
         ExternalCadence.NotEmailedWhy(Ext(on: false), scanOn: true).Should().Be("Hosting's reminders are off, so they won't be emailed about this.");
         ExternalCadence.NotEmailedWhy(Ext(email: " "), scanOn: true).Should().Be("Hosting has no contact email, so they won't be emailed about this.");
+        // Each with its cause, so the note can offer that one's fix; the first that applies wins.
+        ExternalCadence.NotEmailed(Ext(on: false, email: null), scanOn: false)!.Cause.Should().Be(NotEmailedCause.OffForEveryone);
+        ExternalCadence.NotEmailed(Ext(on: false, email: null), scanOn: true)!.Cause.Should().Be(NotEmailedCause.TeamOff);
+        ExternalCadence.NotEmailed(Ext(email: null), scanOn: true)!.Cause.Should().Be(NotEmailedCause.NoContact);
     }
 
     [Fact]
