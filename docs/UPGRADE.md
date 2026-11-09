@@ -176,6 +176,20 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
+### v1.12.0
+
+Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds one migration, `MissedDismissKept`: two nullable columns
+on `FeedItems`. None of the earlier ones change. On a DbaApplies install, the DBA applies it first, as for any release
+that carries one.
+
+**Changes to check before upgrading**
+- **"Missed this week?" on Triage: Right to dismiss replaces Hide until next week.** The notice lists dismissed
+  stories that name a KEV-listed CVE or a watched adversary and that no brief covered. Each now has *Right to dismiss*
+  beside *Put back in New*, and the notice has *All N were right to dismiss*. One click, no dialog, Undo on the toast.
+  It takes the story off the notice for the whole team (open Triage pages update), and the Dismissed tab shows who kept
+  it. A story put back and dismissed again is asked about again. *Hide until next week*, which hid the whole notice in
+  one browser, is gone.
+
 ### v1.11.0
 
 Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). No migrations.
