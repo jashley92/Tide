@@ -654,7 +654,10 @@ and the overdue counts.
 Anyone with `WorkActions` keeps them on **External teams** (`/teams/external`, linked from the Actions page and Teams &
 SLA): a name, what they do, a contact name and email, how to engage them (their ticket queue, say), and their
 reminders: on or off, how many business days before the due date (0 to 10, default 2; 0 is the due day), and while
-overdue every so many business days (1 to 20, default 3) or once. They can be retired like any team. Every change is
+overdue every so many business days (1 to 20, default 3) or once. A new team's reminders start on, unless an
+administrator has turned off *New external teams start with their reminders on* (Teams & SLA,
+`Notifications:ExternalReminders:NewTeamsOn`): then the add form and the split dialog's quick add start them off, and
+the team isn't emailed until someone turns them on. Teams already added keep theirs. They can be retired like any team. Every change is
 audited. An action owned by an external team shows the team's contact and *Don't remind {team} about this one*. The
 page follows the `teams` topic: a colleague's change re-reads the list, keeping what's typed in the add and edit
 forms; an edit of a team a colleague retired or removed closes and says so. An edit opened before a colleague's change

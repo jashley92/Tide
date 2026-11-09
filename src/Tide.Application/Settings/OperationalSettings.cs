@@ -39,6 +39,9 @@ public static class OperationalSettings
     public const string OutreachFollowUpDays = "Notifications:OutreachFollowUp:Days";
     public const string ExternalReminders = "Notifications:ExternalReminders:Enabled";
 
+    /// <summary>Whether a new external team starts with its own reminders on. On by default.</summary>
+    public const string ExternalRemindersNewTeams = "Notifications:ExternalReminders:NewTeamsOn";
+
     /// <summary>The escalation ladder: on or off, which actions it climbs, and its steps (<see cref="EscalationLadder"/>).</summary>
     public const string Escalation = "Notifications:Escalation:Enabled";
     public const string EscalationScope = "Notifications:Escalation:Scope";
@@ -104,6 +107,7 @@ public static class OperationalSettings
         [OutreachFollowUp] = Switch,
         [OutreachFollowUpDays] = Number("The follow-up wait", ReminderOptions.FollowUpOptions.MinDays, ReminderOptions.FollowUpOptions.MaxDays),
         [ExternalReminders] = Switch,
+        [ExternalRemindersNewTeams] = Switch,
         [Escalation] = Switch,
         [EscalationScope] = EnumValue<Actions.EscalationScope>("The escalation ladder climbs All actions, PartsOnly or ExternalOnly."),
         [EscalationSteps] = EscalationLadder.Normalize,
@@ -196,6 +200,7 @@ public static class OperationalSettings
         s.Use(OutreachFollowUp, v => o.OutreachFollowUp.Enabled = bool.Parse(v));
         s.Use(OutreachFollowUpDays, v => o.OutreachFollowUp.Days = int.Parse(v, Invariant));
         s.Use(ExternalReminders, v => o.ExternalReminders.Enabled = bool.Parse(v));
+        s.Use(ExternalRemindersNewTeams, v => o.ExternalReminders.NewTeamsOn = bool.Parse(v));
         s.Use(Escalation, v => o.Escalation.Enabled = bool.Parse(v));
         s.Use(EscalationScope, v => o.Escalation.Scope = Enum.Parse<Actions.EscalationScope>(v));
         s.Use(EscalationSteps, v => o.Escalation.Steps = v);

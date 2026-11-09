@@ -98,7 +98,12 @@
     internal ExternalTeamForm EditForm => _form;
     internal IReadOnlyList<Team> Shown => _teams;
 
-    protected override Task OnInitializedAsync() => Load();
+    protected override Task OnInitializedAsync()
+    {
+        // A new team's reminders start as an administrator set for new teams (Teams & SLA).
+        _new = TeamSvc.NewExternalForm();
+        return Load();
+    }
 
     // A colleague added, edited or retired a team: the list is read again. The add and edit forms are the page's own
     // copies, so what's typed in them stays; a team being edited that's gone closes its form, and says so.
@@ -208,7 +213,7 @@
     {
         await TeamSvc.AddExternalAsync(_new);
         Toasts.Show($"{_new.Name.Trim()} added.");
-        _new = new();
+        _new = TeamSvc.NewExternalForm();
     });
 
     // One save, on the version the form opened on (the limit with it, for an administrator): a colleague's change since

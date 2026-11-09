@@ -110,6 +110,7 @@ public static class SettingsCatalog
         new("Reminders", "Outreach follow-up", OperationalSettings.OutreachFollowUp, EditedIn: TeamsPage),
         new("Reminders", "Outreach follow-up after (business days)", OperationalSettings.OutreachFollowUpDays, EditedIn: TeamsPage),
         new("Reminders", "External team reminders", OperationalSettings.ExternalReminders, EditedIn: TeamsPage),
+        new("Reminders", "New external teams start with reminders on", OperationalSettings.ExternalRemindersNewTeams, EditedIn: TeamsPage),
         new("Escalation", "Escalation ladder", OperationalSettings.Escalation, EditedIn: TeamsPage),
         new("Escalation", "Actions it climbs", OperationalSettings.EscalationScope, EditedIn: TeamsPage),
         new("Escalation", "Its steps", OperationalSettings.EscalationSteps, EditedIn: TeamsPage),

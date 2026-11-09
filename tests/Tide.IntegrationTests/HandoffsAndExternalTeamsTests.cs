@@ -484,6 +484,35 @@ public class HandoffsAndExternalTeamsTests : IDisposable
     }
 
     [Fact]
+    public async Task NewExternalTeams_StartWithRemindersOn_UnlessAnAdministratorSetThemToStartOff()
+    {
+        // By default, as before: the add form and the split dialog's quick add both start them on.
+        _db.Teams().NewExternalForm().RemindersOn.Should().BeTrue();
+        var before = await _db.Teams().AddExternalAsync("Network Engineering", "network@example.org");
+
+        var startOff = new ReminderOptions { ExternalReminders = { Enabled = true, NewTeamsOn = false } };
+        var teams = _db.Teams(startOff);
+        teams.NewExternalForm().RemindersOn.Should().BeFalse();
+        var quick = await teams.AddExternalAsync("Hosting Provider", "noc@provider.example");
+        var chosen = teams.NewExternalForm();
+        (chosen.Name, chosen.ContactEmail, chosen.RemindersOn) = ("Facilities", "facilities@example.org", true);   // whoever adds it can still turn them on
+        var on = await teams.AddExternalAsync(chosen);
+
+        var all = await _db.Teams().ListAsync();
+        all.Single(t => t.Id == quick).RemindersOn.Should().BeFalse();
+        all.Single(t => t.Id == on).RemindersOn.Should().BeTrue();
+        all.Single(t => t.Id == before).RemindersOn.Should().BeTrue("a team already added keeps its own");
+
+        // The team that started off isn't emailed; the others are.
+        var due = new DateOnly(2026, 11, 24);
+        await Due(before, "Before", due);
+        await Due(quick, "Started off", due);
+        await Due(on, "Turned on", due);
+        await _db.Reminders(startOff, At(24)).RunDueAsync();
+        _db.Email.Sent.Select(e => e.To.Single()).Should().BeEquivalentTo(["network@example.org", "facilities@example.org"]);
+    }
+
+    [Fact]
     public async Task TheTeamsSwitch_AndAnActionsSwitch_TurnThemOff_AndOneEmailListsATeamsRequests()
     {
         var team = await _db.Teams().AddExternalAsync(new ExternalTeamForm { Name = "Network Engineering", ContactEmail = "network@example.org" });

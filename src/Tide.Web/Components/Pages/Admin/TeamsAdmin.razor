@@ -161,6 +161,18 @@
                         {
                             <tr><td colspan="2" class="pt-0">@List(_showing, KindText(kind), kind)</td></tr>
                         }
+                        @if (kind == ReminderKind.ExternalReminder)
+                        {
+                            <tr>
+                                <td colspan="2" class="ps-4">
+                                    <div class="form-check form-switch mb-0">
+                                        <input class="form-check-input" type="checkbox" role="switch" id="rem-ext-new" aria-describedby="rem-ext-new-help" @bind="_rem.NewExternalTeamsOn" />
+                                        <label class="form-check-label" for="rem-ext-new">New external teams start with their reminders on</label>
+                                    </div>
+                                    <div class="small tide-muted" id="rem-ext-new-help">Off: a team added on External teams or while splitting an action isn't emailed until someone turns its reminders on. Teams already added keep theirs.</div>
+                                </td>
+                            </tr>
+                        }
                     }
                     <tr>
                         <td colspan="2">
@@ -365,6 +377,7 @@
         public TimeOnly BriefNotReadyTime { get; set; }
         public string? Recipients { get; set; }
         public int FollowUpDays { get; set; }
+        public bool NewExternalTeamsOn { get; set; }
 
         public static ReminderForm From(ReminderService r)
         {
@@ -374,6 +387,7 @@
                 ReminderTime = Time(o.ReminderTime, 8), DigestDay = o.Digest.Day, DigestTime = Time(o.Digest.Time, 8),
                 BriefNotReadyTime = Time(o.BriefNotReady.Time, 10), Recipients = string.Join(Environment.NewLine, o.BriefNotReady.Recipients ?? []),
                 FollowUpDays = ReminderOptions.FollowUpOptions.Clamp(o.OutreachFollowUp.Days),
+                NewExternalTeamsOn = o.ExternalReminders.NewTeamsOn,
             };
             foreach (var kind in Enum.GetValues<ReminderKind>()) form.On[kind] = r.IsEnabled(kind);
             return form;
@@ -532,6 +546,7 @@
                 [OperationalSettings.OutreachFollowUp] = Switch(_rem.On[ReminderKind.OutreachFollowUp]),
                 [OperationalSettings.OutreachFollowUpDays] = _rem.FollowUpDays.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 [OperationalSettings.ExternalReminders] = Switch(_rem.On[ReminderKind.ExternalReminder]),
+                [OperationalSettings.ExternalRemindersNewTeams] = Switch(_rem.NewExternalTeamsOn),
             });
             _rem = ReminderForm.From(Reminders);
             Toasts.Show("Saved. Applies within five minutes.");

@@ -1,5 +1,6 @@
 using System.Net.Mail;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Tide.Application.Abstractions;
 using Tide.Application.Articles;
 using Tide.Application.Content;
@@ -14,7 +15,7 @@ namespace Tide.Application.Actions;
 /// The teams that own actions, and who is on them. Administrators manage them; a team that owns an action is retired,
 /// not deleted. Being on a team lets a person with WorkActions work that team's actions.
 /// </summary>
-public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user)
+public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user, IOptionsMonitor<ReminderOptions> reminders)
 {
     /// <summary>Every team with its members, in order; retired ones too when <paramref name="includeRetired"/>.</summary>
     public async Task<IReadOnlyList<Team>> ListAsync(bool includeRetired = false, CancellationToken ct = default)
@@ -70,9 +71,18 @@ public sealed class TeamService(IAppDbContextFactory dbs, ICurrentUser user)
         return team.Id;
     }
 
-    /// <summary>An external team with just a name and, optionally, its contact's email (the split dialog's quick add).</summary>
-    public Task<Guid> AddExternalAsync(string name, string? contactEmail, CancellationToken ct = default) =>
-        AddExternalAsync(new ExternalTeamForm { Name = name, ContactEmail = contactEmail }, ct);
+    /// <summary>A blank form for a new external team: its reminders on or off as an administrator set for new teams
+    /// (<see cref="ReminderOptions.ExternalReminderOptions.NewTeamsOn"/>), the rest at their defaults.</summary>
+    public ExternalTeamForm NewExternalForm() => new() { RemindersOn = reminders.CurrentValue.ExternalReminders.NewTeamsOn };
+
+    /// <summary>An external team with just a name and, optionally, its contact's email (the split dialog's quick add),
+    /// its reminders on or off as set for new teams.</summary>
+    public Task<Guid> AddExternalAsync(string name, string? contactEmail, CancellationToken ct = default)
+    {
+        var form = NewExternalForm();
+        (form.Name, form.ContactEmail) = (name, contactEmail);
+        return AddExternalAsync(form, ct);
+    }
 
     /// <summary>
     /// Saves an external team's form: its profile, reminders and escalation contact, and, when the caller administers,
