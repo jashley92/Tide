@@ -140,7 +140,10 @@ it can be pulled again instead.
   or a KEV-listed CVE stay on top. Newest first is the default; the choice is kept in the browser. Nothing is
   trained or stored: the counts are worked out from the items still kept.
 - **Missed this week?** New lists dismissed items from the last 7 days that name a KEV-listed CVE no article covers,
-  or a watched adversary no recent article is tagged with, each with *Put back in New*.
+  or a watched adversary no recent article is tagged with, five at a time. Each has *Put back in New* and *Right to
+  dismiss*. *Right to dismiss* takes it off the notice for everyone, and *All N were right to dismiss* does that for
+  every item listed. One click each, no dialog; the toast's Undo asks about them again. The Dismissed tab shows who
+  kept each one.
 - **Source health** (Administration) shows each source's items a week, how many were decided and promoted, the last
   item promoted and the median time to triage. A source that sent 10 or more items in 60 days with none promoted or
   shortlisted is suggested for pausing, and *Pause polling* switches it off; its items stay.

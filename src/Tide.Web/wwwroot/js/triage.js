@@ -100,7 +100,7 @@ window.tideTriage = (function () {
         remember: function (url) {
             history.replaceState(history.state, '', new URL(url, document.baseURI).href);
         },
-        // A choice kept in this browser (EP-81: the order, the missed-stories notice hidden for a week). With no value it
+        // A choice kept in this browser (the inbox order). With no value it
         // reads; null forgets it.
         pref: function (key, value) {
             try {

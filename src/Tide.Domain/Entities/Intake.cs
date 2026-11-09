@@ -113,6 +113,11 @@ public class FeedItem : Entity
     public string? StatusByName { get; set; }
     public DateTimeOffset? StatusAtUtc { get; set; }
 
+    /// <summary>Who said a dismissal the missed-stories check questioned was right, and when: it's not questioned again.
+    /// Any later decision on the item clears it.</summary>
+    public string? DismissKeptByName { get; set; }
+    public DateTimeOffset? DismissKeptAtUtc { get; set; }
+
     public IEnumerable<string> CveList => (Cves ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 }
 

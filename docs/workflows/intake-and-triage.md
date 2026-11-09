@@ -511,7 +511,11 @@ to readers. It goes with its item.
   top. Nothing is trained or stored: the counts are worked out from the items still kept. The sort choice is kept in the
   browser (`triage.js` `pref`).
 - **Missed this week?** (`IntakeService.MissedAsync`) Dismissed items from the last 7 days that name a KEV-listed CVE no
-  article covers, or a watched adversary no recent article is tagged with, each with "Put back in New".
+  article covers, or a watched adversary no recent article is tagged with, five at a time, each with "Put back in New"
+  and "Right to dismiss" (`KeepDismissedAsync`, with "All N were right to dismiss" for every item listed). Right to
+  dismiss stamps the item (`DismissKeptByName`, `DismissKeptAtUtc`), so the check stops asking about it for everyone;
+  the toast's Undo is `UndoKeepDismissedAsync`. Any later decision on the item clears the stamp, so an item put back
+  and dismissed again is asked about again.
 - **Source health** (`IntakeService.SourceHealthAsync`, administrators) shows items a week, how many were decided and
   promoted, the last promoted, and the median time to triage. A source with 10 or more items in 60 days and none
   promoted or shortlisted is suggested for pausing.

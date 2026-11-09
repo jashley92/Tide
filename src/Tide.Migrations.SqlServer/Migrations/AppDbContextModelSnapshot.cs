@@ -1733,6 +1733,13 @@ namespace Tide.Migrations.SqlServer.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
 
+                    b.Property<DateTimeOffset?>("DismissKeptAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DismissKeptByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
                     b.Property<string>("DismissReason")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");

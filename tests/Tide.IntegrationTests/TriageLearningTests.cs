@@ -1,6 +1,7 @@
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Tide.Application.Abstractions;
 using Tide.Application.Adversaries;
 using Tide.Application.Articles;
 using Tide.Application.Intake;
@@ -178,6 +179,44 @@ public class TriageLearningTests : IDisposable
         await _db.Intake().RestoreAsync(kev);
         (await _db.Intake().MissedAsync()).Select(m => m.Item.Id).Should().Equal(octo);
     }
+
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task RightToDismiss_StopsTheCheckAskingForEveryone_UntilTheItemIsDecidedAgain(string provider)
+    {
+        _db = _db.On(provider);
+        var news = await Source("News");
+        await _db.Adversaries().SaveAsync(new AdversaryForm { Name = "Octo Tempest", Watched = true });
+        await using (var ctx = _db.Context())
+        {
+            ctx.CveRecords.Add(new CveRecord { CveId = "CVE-2026-2222", IsKev = true });
+            await ctx.SaveChangesAsync();
+        }
+        var kev = await Item(news, "Exploited flaw in a product we don't run", FeedItemStatus.Dismissed, cves: "CVE-2026-2222", daysAgo: 1);
+        var octo = await Item(news, "Octo Tempest phones help desks", FeedItemStatus.Dismissed, daysAgo: 2);
+        var fresh = await Item(news, "Still new");
+        async Task<IEnumerable<Guid>> Missed() => (await _db.Intake().MissedAsync()).Select(m => m.Item.Id);
+
+        (await _db.Intake().KeepDismissedAsync([kev, fresh])).Should().Be(1, "only a dismissed item is kept");
+        (await Missed()).Should().Equal(octo);
+        await using (var ctx = _db.Context())
+        {
+            var kept = await ctx.FeedItems.SingleAsync(i => i.Id == kev);
+            kept.DismissKeptByName.Should().Be(_db.User.DisplayName);
+            kept.DismissKeptAtUtc.Should().NotBeNull();
+        }
+        (await _db.Intake().KeepDismissedAsync([kev])).Should().Be(0, "it's kept already");
+
+        await _db.Intake().UndoKeepDismissedAsync([kev]);
+        (await Missed()).Should().Equal(kev, octo);
+
+        // Kept, then put back and dismissed again: a new decision, so the check asks about it again.
+        await _db.Intake().KeepDismissedAsync([kev, octo]);
+        (await Missed()).Should().BeEmpty();
+        await _db.Intake().RestoreAsync(kev);
+        await _db.Intake().DismissAsync(kev, IntakeService.DismissReasons[0]);
+        (await Missed()).Should().Equal(kev);
+    }
 }
 
 /// <summary>Source health, and triage's order control.</summary>
@@ -195,6 +234,41 @@ public class TriageLearningPageTests(TideApp app) : IClassFixture<TideApp>
 
         await using var triage = await ComponentHarness.RenderAsync<Tide.Web.Components.Pages.Triage>(app, "/triage");
         (await triage.Html()).Should().Contain("Likely used").And.Contain("Newest");
+    }
+
+    [Fact]
+    public async Task TheMissedNotice_OffersRightToDismiss_OnEachAndForAll_AndNamesWhoKeptOne()
+    {
+        Guid first, second;
+        await using (var scope = app.Services.CreateAsyncScope())
+        await using (var db = await scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>().CreateAsync())
+        {
+            var source = new Source { Name = "missed-notice feed", Url = "https://missed.example.com/feed", PollMinutes = 30 };
+            db.Sources.Add(source);
+            db.CveRecords.Add(new CveRecord { CveId = "CVE-2026-7777", IsKev = true });
+            FeedItem Dismissed(int n) => new()
+            {
+                Source = source, Title = $"Exploited flaw {n}", Url = $"https://missed.example.com/{n}", UrlHash = $"missed{n}", FetchedAtUtc = DateTimeOffset.UtcNow.AddDays(-1),
+                Status = FeedItemStatus.Dismissed, Cves = "CVE-2026-7777", StatusAtUtc = DateTimeOffset.UtcNow,
+            };
+            var items = new[] { Dismissed(1), Dismissed(2) };
+            db.FeedItems.AddRange(items);
+            await db.SaveChangesAsync();
+            (first, second) = (items[0].Id, items[1].Id);
+        }
+
+        await using (var triage = await ComponentHarness.RenderAsync<Tide.Web.Components.Pages.Triage>(app, "/triage"))
+        {
+            var html = await triage.HtmlOnce("Missed this week?");
+            var notice = html[html.IndexOf("tide-missed", StringComparison.Ordinal)..];
+            notice.Split(">Right to dismiss</button>").Length.Should().Be(3, "each item has its own");
+            notice.Should().Contain(">All 2 were right to dismiss</button>").And.NotContain("Hide until next week");
+        }
+
+        await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+            (await scope.ServiceProvider.GetRequiredService<IntakeService>().KeepDismissedAsync([first, second])).Should().Be(2);
+        await using (var after = await ComponentHarness.RenderAsync<Tide.Web.Components.Pages.Triage>(app, "/triage"))
+            (await after.Html()).Should().NotContain("Missed this week?", "a dismissal said to be right isn't asked about again, for anyone");
     }
 
     [Theory]
