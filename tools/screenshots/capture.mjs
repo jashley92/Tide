@@ -10,10 +10,9 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
-import { baseUrl, fill, readDemo, repo, settle, startTide } from './tide.mjs';
+import { openPage, pick, readDemo, repo, startTide } from './tide.mjs';
 
 const outDir = path.join(repo, 'docs', 'screenshots');
-const base = baseUrl();
 const startedAt = new Date();
 
 // --- the manifest -------------------------------------------------------------------------------------------------
@@ -109,10 +108,7 @@ export const shots = [
 
 // --- the run -----------------------------------------------------------------------------------------------------------
 
-const only = (process.env.ONLY ?? '').split(',').map(s => s.trim()).filter(Boolean);
-const unknown = only.filter(n => !shots.some(s => s.name === n));
-if (unknown.length) fail(`No shot named ${unknown.join(', ')}. Shots: ${shots.map(s => s.name).join(', ')}`);
-const wanted = only.length ? shots.filter(s => only.includes(s.name)) : shots;
+const wanted = pick(shots, 'shot');
 
 let server;
 try {
@@ -130,32 +126,17 @@ try {
   server?.stop();
 }
 
-function fail(message) {
-  console.error(message);
-  process.exit(1);
-}
-
 async function capture(list, demo) {
   mkdirSync(outDir, { recursive: true });
   const browser = await chromium.launch();
   const problems = [];
   try {
     for (const shot of list) {
-      const context = await browser.newContext({
-        viewport: shot.viewport ?? desktop, deviceScaleFactor: 1, reducedMotion: 'reduce', colorScheme: 'light',
-        locale: 'en-US', timezoneId: 'America/New_York',
-      });
-      // The light theme and an expanded sidebar, whatever a previous visit chose.
-      await context.addInitScript(() => {
-        try { localStorage.setItem('tide-theme', 'light'); localStorage.removeItem('tide-nav'); } catch { /* none */ }
-      });
-      const page = await context.newPage();
-      // The browser's clock stands still at the moment the run started, so anything the page times reads the same.
-      await page.clock.setFixedTime(startedAt);
+      let context;
       try {
-        await page.goto(base + fill(shot.route, demo), { waitUntil: 'networkidle' });
-        await settle(page);
-        if (shot.setup) { await shot.setup(page, demo); await settle(page); }
+        // The browser's clock stands still at the moment the run started, so anything the page times reads the same.
+        let page;
+        ({ context, page } = await openPage(browser, { ...shot, viewport: shot.viewport ?? desktop }, demo, { deviceScaleFactor: 1, fixedTime: startedAt }));
         const missing = await annotate(page, shot.annotate ?? []);
         if (missing.length) {
           problems.push(`${shot.name}: annotation target(s) not found: ${missing.join(' | ')}`);
@@ -167,7 +148,7 @@ async function capture(list, demo) {
       } catch (e) {
         problems.push(`${shot.name}: ${e.message.split('\n')[0]}`);
       } finally {
-        await context.close();
+        await context?.close();
       }
     }
   } finally {

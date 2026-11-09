@@ -95,9 +95,7 @@ jobs:
         if: ${{ !cancelled() }}
         run: bash tools/ci/check-migrations-immutable.sh
 
-      # A rule removed for a class the markup still uses: its element falls back to the browser's defaults, which no test
-      # reading the rendered HTML sees (v1.10.0's meeting quick add stacked one control per line). Against the PR's base,
-      # or the commit before on main.
+      # tools/ci/check-removed-css.sh, against the PR's base or the commit before on main.
       - name: No class the markup uses loses its style
         if: ${{ !cancelled() }}
         run: bash tools/ci/check-removed-css.sh "${{ github.event.pull_request.base.sha || github.event.before || 'origin/main' }}"
@@ -127,9 +125,7 @@ jobs:
         if: always()
         run: dotnet list package --deprecated 2>&1 | tee deprecated.log || true
 
-  # The layout in a real browser (tools/screenshots/layout.mjs): rows of controls that must stay one line, columns that
-  # must line up, pages that mustn't scroll sideways or spill text, each at the widths it's used at, on a seeded demo
-  # database. A failure names the page, the width and the rule.
+  # Layout rules in Chromium on the seeded demo (tools/screenshots/layout.mjs, README.md there).
   layout:
     runs-on: ubuntu-latest
     permissions:
@@ -149,11 +145,17 @@ jobs:
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Build.props') }}
           restore-keys: nuget-${{ runner.os }}-
 
+      - name: Cache Playwright's browser
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('tools/screenshots/package-lock.json') }}
+
       - name: Install Playwright and its Chromium
         working-directory: tools/screenshots
         run: |
           npm ci --no-audit --no-fund
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps --only-shell chromium
 
       - name: Layout holds
         run: node tools/screenshots/layout.mjs

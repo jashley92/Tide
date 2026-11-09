@@ -1,6 +1,6 @@
 // Checks TIDE's layout in a real browser: rows of controls that must stay one line, columns that must line up, and
-// pages that mustn't scroll sideways or let text spill out of its box, each at the widths it's used at. The HTML tests
-// can't see these: v1.10.0's meeting quick add had all five controls in its markup, stacked one per line.
+// pages that mustn't scroll sideways or let text spill out of its box, each at the widths it's used at (README.md says
+// why, and how to add a page or a rule).
 //
 //   node tools/screenshots/layout.mjs                build, seed a demo database, start TIDE, check every page
 //   ONLY=slide-article node tools/screenshots/layout.mjs                 just these pages
@@ -9,9 +9,10 @@
 // Each failure names the page, the width and the rule. Add a page or a rule below; README.md says how.
 
 import { chromium } from 'playwright';
-import { baseUrl, fill, readDemo, settle, startTide } from './tide.mjs';
+import { openPage, pick, readDemo, startTide } from './tide.mjs';
 
-// --- the rules: each runs in the page and returns what's wrong (nothing, when it holds) ---------------------------------
+// --- the rules: each runs in the page and returns what's wrong (nothing, when it holds). A box is shown when it has
+// width and height. --------------------------------------------------------------------------------------------------
 
 /** Every element matching `selector` lays its visible children out on one line (they share a horizontal band). */
 const oneRow = selector => ({
@@ -44,7 +45,7 @@ const noSidewaysScroll = {
 const lineUp = (...selectors) => ({
   name: `line up: ${selectors.join(' / ')}`,
   check: page => page.evaluate(selectors => {
-    const lefts = selectors.map(s => [...document.querySelectorAll(s)].map(e => e.getBoundingClientRect()).find(r => r.width > 0));
+    const lefts = selectors.map(s => [...document.querySelectorAll(s)].map(e => e.getBoundingClientRect()).find(r => r.width > 0 && r.height > 0));
     const missing = selectors.filter((_, i) => !lefts[i]);
     if (missing.length) return [`nothing visible to line up: ${missing.join(', ')}`];
     const xs = lefts.map(r => Math.round(r.left));
@@ -59,12 +60,7 @@ const visible = selector => ({
     els.some(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; }) ? [] : [`${selector} isn't shown`], selector),
 });
 
-// --- the pages ----------------------------------------------------------------------------------------------------------
-//
-// route   as capture.mjs's ({today}, {vpnArticle}, ...)
-// setup   async page => {...} before checking
-// widths  the window widths to check at (each at 900px tall)
-// rules   the rules above; [minWidth, rule] applies a rule only at that width or wider
+// --- the pages: route, optional setup, widths (each 900px tall) and rules ([minWidth, rule] from that width up) ------
 
 /** Steps through the slides to the first article's (the one with its recommended lines and actions). */
 const toArticleSlide = async page => {
@@ -74,7 +70,7 @@ const toArticleSlide = async page => {
   }
 };
 
-export const pages = [
+const pages = [
   { name: 'today', route: '/', widths: [1440, 1000, 780],
     rules: [noSidewaysScroll, visible('.tide-steps'), fits('.tide-steps > li'), fits('.tide-page-head')] },
   { name: 'article', route: '/articles/{vpnArticle}', widths: [1440, 1000],
@@ -98,17 +94,12 @@ export const pages = [
 
 // --- the run -----------------------------------------------------------------------------------------------------------
 
-const only = (process.env.ONLY ?? '').split(',').map(s => s.trim()).filter(Boolean);
-const unknown = only.filter(n => !pages.some(p => p.name === n));
-if (unknown.length) {
-  console.error(`No page named ${unknown.join(', ')}. Pages: ${pages.map(p => p.name).join(', ')}`);
-  process.exit(1);
-}
+const wanted = pick(pages, 'page');
 
 let server;
 try {
   server = await startTide();
-  const problems = await check(only.length ? pages.filter(p => only.includes(p.name)) : pages, readDemo());
+  const problems = await check(wanted, readDemo());
   if (problems.length) {
     console.error(`\n${problems.length} layout problem${problems.length === 1 ? '' : 's'}:`);
     for (const p of problems) console.error(`  ${p}`);
@@ -127,25 +118,18 @@ async function check(list, demo) {
   try {
     for (const p of list) {
       for (const width of p.widths) {
-        const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: 'reduce', locale: 'en-US', timezoneId: 'America/New_York' });
-        const page = await context.newPage();
+        const rules = p.rules.map(r => Array.isArray(r) ? r : [0, r]).filter(([minWidth]) => width >= minWidth).map(([, r]) => r);
+        let context;
         try {
-          await page.goto(baseUrl() + fill(p.route, demo), { waitUntil: 'networkidle' });
-          await settle(page);
-          if (p.setup) { await p.setup(page); await settle(page); }
-          let held = 0;
-          for (const entry of p.rules) {
-            const [minWidth, rule] = Array.isArray(entry) ? entry : [0, entry];
-            if (width < minWidth) continue;
-            const found = await rule.check(page);
-            problems.push(...found.map(f => `${p.name} at ${width}px: ${f}`));
-            if (!found.length) held++;
-          }
-          console.log(`  ${p.name} at ${width}px: ${held} rule${held === 1 ? '' : 's'} hold`);
+          let page;
+          ({ context, page } = await openPage(browser, { ...p, viewport: { width, height: 900 } }, demo));
+          const before = problems.length;
+          for (const rule of rules) problems.push(...(await rule.check(page)).map(f => `${p.name} at ${width}px: ${f}`));
+          console.log(`  ${p.name} at ${width}px: ${rules.length - (problems.length - before)}/${rules.length} rules hold`);
         } catch (e) {
           problems.push(`${p.name} at ${width}px: ${e.message.split('\n')[0]}`);
         } finally {
-          await context.close();
+          await context?.close();
         }
       }
     }

@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const repo = path.resolve(here, '..', '..');
 const web = path.join(repo, 'src', 'Tide.Web');
-export const demoDir = path.join(here, '.demo');
+const demoDir = path.join(here, '.demo');
 
 /** The address TIDE answers on: BASE_URL (one already running on the demo database), else localhost:PORT (5112). */
 export function baseUrl() {
@@ -29,6 +29,42 @@ export function fill(route, demo) {
     if (value === undefined) throw new Error(`The route ${route} names {${key}}, which the seed doesn't provide.`);
     return String(value);
   });
+}
+
+/** The entries `ONLY=name1,name2` names, or all of them; an unknown name ends the run, listing the names there are. */
+export function pick(list, noun) {
+  const only = (process.env.ONLY ?? '').split(',').map(s => s.trim()).filter(Boolean);
+  const unknown = only.filter(n => !list.some(e => e.name === n));
+  if (unknown.length) {
+    console.error(`No ${noun} named ${unknown.join(', ')}. There are: ${list.map(e => e.name).join(', ')}`);
+    process.exit(1);
+  }
+  return only.length ? list.filter(e => only.includes(e.name)) : list;
+}
+
+/**
+ * Opens `route` in a fresh browser context, settled and set up: the same window settings for every script (reduced
+ * motion, US English, New York time), the light theme and an expanded sidebar whatever a previous visit chose, and any
+ * `extra` context options. `fixedTime` stops the browser's clock there. Returns { context, page }: close the context.
+ */
+export async function openPage(browser, { route, viewport, setup }, demo, { fixedTime, ...extra } = {}) {
+  const context = await browser.newContext({
+    viewport, reducedMotion: 'reduce', colorScheme: 'light', locale: 'en-US', timezoneId: 'America/New_York', ...extra,
+  });
+  try {
+    await context.addInitScript(() => {
+      try { localStorage.setItem('tide-theme', 'light'); localStorage.removeItem('tide-nav'); } catch { /* none */ }
+    });
+    const page = await context.newPage();
+    if (fixedTime) await page.clock.setFixedTime(fixedTime);
+    await page.goto(baseUrl() + fill(route, demo), { waitUntil: 'networkidle' });
+    await settle(page);
+    if (setup) { await setup(page, demo); await settle(page); }
+    return { context, page };
+  } catch (e) {
+    await context.close();
+    throw e;
+  }
 }
 
 /** The page is interactive (Blazor's circuit is up) and fonts are in. */
