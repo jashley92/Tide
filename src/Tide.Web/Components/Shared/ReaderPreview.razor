@@ -8,10 +8,12 @@
    (N)": what's already been written about the same thing (RelatedPanel), where an action can be mentioned in why it
    matters (OnMention) and the article put in a related one's story (ShowRelated opens it and scrolls to it). For
    someone who can't edit, whose editor fields are hidden, the article's products and threat actors as read-only cards
-   (they're tagged in the editor: We run under Why it matters, Threat actors under Context). Then, folded away: both
-   editions' verdicts, the briefs it's on, its follow-up actions and CVE context. Keys 1 and 2 pick the edition (single characters, so the shortcut
-   switch turns them off); the choice is kept in the address (?edition=company) so a link can open either, and told to
-   the page (EditionChanged) so its own links, the brief stepper's, keep it. *@
+   (they're tagged in the editor: We run under Why it matters, Threat actors under Context). That's the Preview tab;
+   beside it, Actions (its count on the tab: the follow-up actions title first, and how many recommended lines aren't
+   raised yet) and Details (both editions' verdicts, the briefs it's on, CVE context). Keys 1 and 2 pick the edition
+   (single characters, so the shortcut switch turns them off). The edition and the tab are kept in the address
+   (?edition=company, ?side=actions) so a link can open either, and told to the page (EditionChanged, SideChanged) so its
+   own links, the brief stepper's, keep them. *@
 @inject Tide.Application.Settings.DistributionSettings Distribution
 @inject ActionService ActionSvc
 @inject RelatedService RelatedSvc
@@ -22,7 +24,63 @@
 @inject PrerenderHandoff Handoff
 @implements IAsyncDisposable
 
-<section class="tide-card tide-reader" aria-labelledby="reader-h">
+<section class="tide-card tide-reader" aria-label="Beside the article">
+    @* Whether it's ready: above the tabs, so it's seen from any. *@
+    @if (Current is { } now)
+    {
+        <p class="tide-reader-sum">
+            @if (now.Checks.Count == 0)
+            {
+                <span class="tide-reader-ready"><span class="bi bi-check-circle-fill" aria-hidden="true"></span> Ready to brief</span>
+            }
+            else
+            {
+                <span class="tide-reader-need"><span class="bi bi-exclamation-circle" aria-hidden="true"></span> @Ui.Plural(now.Checks.Count, "thing") missing</span>
+                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="ShowGaps">Show</button>
+            }
+            @if (_both.FirstOrDefault(x => x.Edition != now.Edition) is { Checks.Count: > 0 } other)
+            {
+                <span class="tide-muted">&middot; @Tide.Application.Distribution.BriefRenderer.EditionName(other.Edition).ToLowerInvariant(): @Ui.Plural(other.Checks.Count, "thing") missing</span>
+            }
+            @if (State.Dirty)
+            {
+                <span class="tide-reader-unsaved">Includes unsaved changes</span>
+            }
+        </p>
+    }
+    <TabBar Label="Beside the article" Level="TabLevel.Sub" PanelId="reader-panel" Active="@_side" OnSelect="SelectSide" Class="tide-reader-tabs"
+            Items="@([new TabBarItem("Preview", "", Key: PreviewTab), new TabBarItem("Actions", "", Key: ActionsTab, Count: _actionRows.Count), new TabBarItem("Details", "", Key: DetailsTab)])" />
+    <div id="reader-panel" role="tabpanel" aria-labelledby="@TabBar.TabId("reader-panel", _side)">
+    @if (_side == ActionsTab)
+    {
+        <ArticleActions ArticleId="State.Article.Id" Rows="_actionRows">
+            @if (UnraisedLines is > 0 and var n)
+            {
+                <p class="small tide-muted mt-2 mb-0"><span class="bi bi-lightbulb" aria-hidden="true"></span> @Ui.Plural(n, "recommended line") not raised yet.</p>
+            }
+        </ArticleActions>
+    }
+    else if (_side == DetailsTab)
+    {
+        <div class="tide-reader-details">
+        <h3 class="tide-subhead">Both editions</h3>
+        <ul class="tide-reader-verdicts">
+            @foreach (var v in _both)
+            {
+                <li><span class="fw-semibold">@(v.Edition == Edition.Public ? "Company-wide" : "Team")</span> <span class="tide-muted">@VerdictText(v)</span></li>
+            }
+        </ul>
+        @if (State.BriefDates.Count > 0)
+        {
+            <div class="small mt-2">On @(State.BriefDates.Count == 1 ? "the brief for " : "the briefs for ")
+                @foreach (var (d, i) in State.BriefDates.Select((d, i) => (d, i))) { @(i > 0 ? ", " : "")<a href="@Ui.BriefUrl(d)">@Ui.ShortDay(d)</a> }
+            </div>
+        }
+        <ArticleIntel ArticleId="State.Article.Id" CveIds="_cveIds" Classification="State.Article.Classification" />
+        </div>
+    }
+    else
+    {
     <div class="tide-reader-head">
         <h2 id="reader-h" class="mb-0">What readers get</h2>
         <div class="tide-seg" role="group" aria-label="Show">
@@ -35,21 +93,6 @@
     @if (Current is { } p)
     {
         <p class="tide-reader-hint">@Tide.Application.Distribution.BriefRenderer.EditionName(p.Edition) &middot; up to <TlpBadge Level="p.Ceiling" /></p>
-        <p class="tide-reader-sum">
-            @if (p.Checks.Count == 0)
-            {
-                <span class="tide-reader-ready"><span class="bi bi-check-circle-fill" aria-hidden="true"></span> Ready to brief</span>
-            }
-            else
-            {
-                <span class="tide-reader-need"><span class="bi bi-exclamation-circle" aria-hidden="true"></span> @p.Checks.Count thing@(p.Checks.Count == 1 ? "" : "s") missing</span>
-            }
-            @if (State.Dirty)
-            {
-                <span class="tide-reader-unsaved">Includes unsaved changes</span>
-            }
-        </p>
-
         <div class="tide-reader-doc tide-edition">
             @if (p.Cut is { } cut)
             {
@@ -106,25 +149,9 @@
             <ArticleAdversaryCard ArticleId="State.Article.Id" Boxed="true" />
         }
 
-        <details class="tide-reader-details">
-            <summary><span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span> Details</summary>
-            <h3 class="tide-subhead">Both editions</h3>
-            <ul class="tide-reader-verdicts">
-                @foreach (var v in _both)
-                {
-                    <li><span class="fw-semibold">@(v.Edition == Edition.Public ? "Company-wide" : "Team")</span> <span class="tide-muted">@VerdictText(v)</span></li>
-                }
-            </ul>
-            @if (State.BriefDates.Count > 0)
-            {
-                <div class="small mt-2">On @(State.BriefDates.Count == 1 ? "the brief for " : "the briefs for ")
-                    @foreach (var (d, i) in State.BriefDates.Select((d, i) => (d, i))) { @(i > 0 ? ", " : "")<a href="@Ui.BriefUrl(d)">@Ui.ShortDay(d)</a> }
-                </div>
-            }
-            <ArticleActions ArticleId="State.Article.Id" />
-            <ArticleIntel ArticleId="State.Article.Id" CveIds="_cveIds" Classification="State.Article.Classification" />
-        </details>
     }
+    }
+    </div>
 </section>
 
 <ConfirmDialog @ref="_confirm" />
@@ -163,6 +190,33 @@
     private bool _keyRead;
     private TlpLevel _publicMax = TlpLevel.Green, _teamMax = TlpLevel.AmberStrict;
     private IReadOnlyList<EditionAction> _actions = [];
+    private IReadOnlyList<ActionRow> _actionRows = [];
+
+    // The tab beside the article: the preview (first), its actions, or its details (both editions' verdicts, its briefs, CVE context).
+    private const string PreviewTab = "preview", ActionsTab = "actions", DetailsTab = "details";
+    private string _side = PreviewTab;
+
+    /// <summary>The tab to open on, as the address names it (<c>?side=actions</c>).</summary>
+    [Parameter] public string? Side { get; set; }
+    private string? _sideSeen;
+
+    /// <summary>Told the tab picked, by its key in the address (null for the preview).</summary>
+    [Parameter] public EventCallback<string?> SideChanged { get; set; }
+
+    private static string Tab(string? key) => key is ActionsTab or DetailsTab ? key : PreviewTab;
+
+    // A tab picked: shown, kept in the address without a navigation (as the edition is), and told to the page.
+    private async Task SelectSide(string? key)
+    {
+        _side = Tab(key);
+        _sideSeen = _side == PreviewTab ? null : _side;
+        try { await JS.InvokeVoidAsync("tideEditor.showParam", "side", _sideSeen); }
+        catch (JSDisconnectedException) { /* the tab has gone */ }
+        await SideChanged.InvokeAsync(_sideSeen);
+    }
+
+    // The recommended lines (as typed) that no action on the article raised, as the meeting slide finds them.
+    private int UnraisedLines => RecommendedActions.Unraised(State.Form.RecommendedActions, _actionRows.Select(r => r.Title)).Count;
     private Guid? _actionsFor;
     private ArticleForm? _builtFrom;
     private ArticlePreview[] _both = [];
@@ -216,7 +270,7 @@
     // they're read again.
     private void Adopt(ReaderPreview p)
     {
-        (_publicMax, _teamMax, _actions, _canWrite, _storyId, _work) = (p._publicMax, p._teamMax, p._actions, p._canWrite, p._storyId, p._work);
+        (_publicMax, _teamMax, _actions, _actionRows, _canWrite, _storyId, _work) = (p._publicMax, p._teamMax, p._actions, p._actionRows, p._canWrite, p._storyId, p._work);
         (_edition, _keySeen, _keyRead, _both, _cveIds) = (p._edition, p._keySeen, p._keyRead, p._both, p._cveIds);
     }
 
@@ -228,11 +282,18 @@
             (_keyRead, _keySeen) = (true, EditionKey);
             _edition = ArticlePreview.ParseEdition(EditionKey);
         }
+        // The tab the address names, when it opens or a link names another.
+        if (Side != _sideSeen)
+        {
+            _sideSeen = Side;
+            _side = Tab(Side);
+        }
         // The team edition's actions, read once for the article (again only when the editor moves to another one).
         if (_actionsFor != State.Article.Id)
         {
             _actionsFor = State.Article.Id;
-            _actions = ArticlePreview.TeamActions(await ActionSvc.ForArticleAsync(State.Article.Id));
+            _actionRows = await ActionSvc.ForArticleAsync(State.Article.Id);
+            _actions = ArticlePreview.TeamActions(_actionRows);
             _builtFrom = null;
             _canWrite = CurrentUser.Has(Permission.WriteArticles);
             _storyId = State.Article.StoryId;
@@ -347,12 +408,27 @@
         StateHasChanged();
     }
 
+    // Show: the preview, scrolled to its first gap, which takes focus (once drawn, so after the tab has switched).
+    private bool _showGap;
+
+    private async Task ShowGaps()
+    {
+        if (_side != PreviewTab) await SelectSide(PreviewTab);
+        _showGap = true;
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (_revealSimilar)
         {
             _revealSimilar = false;
             try { await JS.InvokeVoidAsync("tideEditor.jump", _similarHead, null); }
+            catch (JSDisconnectedException) { /* the tab has gone */ }
+        }
+        if (_showGap)
+        {
+            _showGap = false;
+            try { await JS.InvokeVoidAsync("tideEditor.firstGap"); }
             catch (JSDisconnectedException) { /* the tab has gone */ }
         }
         if (!firstRender) return;

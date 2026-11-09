@@ -44,13 +44,13 @@ public class ReaderPreviewTests(TideApp app) : IClassFixture<TideApp>
         return a.Id;
     }
 
-    // The preview's body: from its heading to the folded Details.
+    // The preview's body: from its heading to the story picker under it.
     private async Task<string> Preview(Guid id, string query = "")
     {
         var html = await app.CreateClient().GetStringAsync($"/articles/{id}{query}");
         var at = html.IndexOf("class=\"tide-card tide-reader\"", StringComparison.Ordinal);
         at.Should().BePositive("the reader preview replaces the right rail");
-        return html[at..html.IndexOf("<details class=\"tide-reader-details\"", at, StringComparison.Ordinal)];
+        return html[at..html.IndexOf("for=\"story-pick\"", at, StringComparison.Ordinal)];
     }
 
     [Fact]
@@ -88,6 +88,28 @@ public class ReaderPreviewTests(TideApp app) : IClassFixture<TideApp>
             .And.Contain(ReaderPreview.OnlyYou).And.NotContain("Everyone may read this").And.NotContain("Exploited in the wild.");
     }
 
+    // The page, and its readiness line (above the tabs beside the article).
+    private async Task<(string Html, int At, string Line)> Readiness(Guid id, string query = "")
+    {
+        var html = await app.CreateClient().GetStringAsync($"/articles/{id}{query}");
+        var at = html.IndexOf("class=\"tide-reader-sum\"", StringComparison.Ordinal);
+        at.Should().BePositive();
+        return (html, at, html[at..html.IndexOf("</p>", at, StringComparison.Ordinal)]);
+    }
+
+    [Fact]
+    public async Task WhetherItsReady_IsAboveTheTabs_SeenFromAny_AndShowGoesToTheGaps()
+    {
+        var gaps = await Save(NewArticle(fill: a => { a.Bluf = ""; a.Classification = Classification.Threat; a.Priority = Priority.P2; }));
+        var (html, at, line) = await Readiness(gaps, "?side=actions");
+        at.Should().BeLessThan(html.IndexOf("role=\"tablist\" aria-label=\"Beside the article\"", StringComparison.Ordinal), "above the tabs, so it's seen on Actions too");
+        line.Should().Contain("2 things missing").And.Contain(">Show</button>", "Show goes to the first gap");
+        (await Readiness(gaps)).Line.Should().Contain(">Show</button>", "on the preview too: a gap may be far down");
+
+        var ready = await Save(NewArticle(fill: a => a.Classification = Classification.Informational));
+        (await Readiness(ready, "?side=details")).Line.Should().Contain("Ready to brief").And.NotContain("Show</button>");
+    }
+
     [Fact]
     public async Task AMissingPart_IsAPlaceholder_ThatGoesToItsField()
     {
@@ -107,18 +129,23 @@ public class ReaderPreviewTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task Details_HoldWhatTheRailDid_AndBothEditionsVerdicts()
+    public async Task TheTabsBeside_ArePreviewActionsAndDetails_AndTheAddressCanOpenEither()
     {
         var id = await Save(NewArticle(fill: a => a.Cves.Add(new ArticleCve { CveId = "CVE-2026-0001" })));
         var html = await app.CreateClient().GetStringAsync($"/articles/{id}");
-        var details = html[html.IndexOf("<details class=\"tide-reader-details\"", StringComparison.Ordinal)..];
+        html.Should().Contain("role=\"tablist\" aria-label=\"Beside the article\"").And.Contain("id=\"reader-panel-tab-preview\"")
+            .And.Contain("Threat story", "the preview is first, with the story picker")
+            .And.NotContain("Both editions").And.NotContain("tide-reader-details", "no folded Details any more");
 
+        var details = await app.CreateClient().GetStringAsync($"/articles/{id}?side=details");
         details.Should().Contain("Both editions").And.Contain("Included in full")
             .And.Contain("Partly included: 2 parts above TLP:GREEN left out")
-            .And.Contain("Actions").And.Contain($"actions/new?article={id}")
             .And.Contain("CVE context").And.Contain("CVE-2026-0001")
-            .And.NotContain("Threat story", "the story picker is out in the open, above Details");
-        html.Should().Contain("Threat story");
+            .And.NotContain("for=\"story-pick\"", "only the tab asked for is drawn");
+
+        var actions = await app.CreateClient().GetStringAsync($"/articles/{id}?side=actions");
+        actions.Should().Contain("aria-selected=\"true\" aria-controls=\"reader-panel\"").And.Contain($"actions/new?article={id}")
+            .And.Contain("No follow-up actions yet.").And.NotContain("Both editions");
         html.Should().NotContain("Ready to brief?", "the checklist card is gone: its gaps are placeholders now");
     }
 

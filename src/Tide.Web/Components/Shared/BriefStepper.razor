@@ -23,6 +23,9 @@
     /// <summary>The edition the preview shows, as the address names it (<c>company</c>, or null for the team edition).</summary>
     [Parameter] public string? EditionKey { get; set; }
 
+    /// <summary>The tab beside the article, as the address names it (<c>actions</c>, <c>details</c>, or null).</summary>
+    [Parameter] public string? SideKey { get; set; }
+
     private IReadOnlyList<BriefStop> _order = [];
     private int _at = -1;
     private Guid? _readFor;
@@ -47,11 +50,15 @@
     [PersistentState]
     public string? PrerenderedState { get; set; }
 
-    /// <summary>The address of an article on the brief, in the edition shown.</summary>
-    public static string Href(Guid articleId, string? editionKey) =>
-        $"articles/{articleId}{(string.IsNullOrEmpty(editionKey) ? "" : "?edition=" + Uri.EscapeDataString(editionKey))}";
+    /// <summary>The address of an article on the brief, in the edition and on the tab shown.</summary>
+    public static string Href(Guid articleId, string? editionKey, string? sideKey = null)
+    {
+        var query = new[] { ("edition", editionKey), ("side", sideKey) }.Where(q => !string.IsNullOrEmpty(q.Item2))
+            .Select(q => $"{q.Item1}={Uri.EscapeDataString(q.Item2!)}").ToList();
+        return $"articles/{articleId}{(query.Count == 0 ? "" : "?" + string.Join('&', query))}";
+    }
 
     private RenderFragment Step(int i, string which, string label, string keys, string shown) => i >= 0 && i < _order.Count
-        ? @<a href="@Href(_order[i].ArticleId, EditionKey)" data-step="@which" aria-keyshortcuts="@keys" title="@_order[i].Title (@shown)">@label</a>
+        ? @<a href="@Href(_order[i].ArticleId, EditionKey, SideKey)" data-step="@which" aria-keyshortcuts="@keys" title="@_order[i].Title (@shown)">@label</a>
         : @<a role="link" aria-disabled="true" class="tide-stepper-end">@label</a>;
 }

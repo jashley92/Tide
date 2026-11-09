@@ -51,7 +51,7 @@
             <div class="tide-missing small" role="status">
                 <span class="bi bi-exclamation-triangle" aria-hidden="true"></span>
                 Already open for this story, same kind and team:
-                @foreach (var d in _duplicates) { <a class="ms-1" href="actions/@d.Number">@Ui.ActionLabel(d.Number) @d.Title</a> }
+                @foreach (var d in _duplicates) { <span class="ms-1"><ActionRef Number="d.Number" Title="@d.Title" /></span> }
             </div>
         </div>
     }

@@ -178,6 +178,11 @@ the slide for the room (`LiveMeetings.Open`, `Show`), and edit its scorecard tag
 (`PresentTagEditor`, through `ArticleService.SaveTagsAsync`, so the same stale-edit rule applies). Raising actions is on
 [actions-and-hunting.md](actions-and-hunting.md).
 
+An article slide's actions are one line each, title first: the whole title opens the action over the slide, its number
+follows, then its team and due date, then Take it, the assignee and the due date at the row's end. They share one set of
+control columns with the recommended lines above (kind over due date, team over assignee, Raise over Take it), so the
+boxes and buttons line up down the slide.
+
 ## The live meeting
 
 **Start the meeting** makes it live for the team: a banner on every page and a Join button on the brief invite anyone

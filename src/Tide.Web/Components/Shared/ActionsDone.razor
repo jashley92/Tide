@@ -8,13 +8,12 @@
 else
 {
     <table class="tide-table">
-        <thead><tr><th>#</th><th>Action</th><th>Team</th><th>Status</th><th>Hunt</th></tr></thead>
+        <thead><tr><th>Action</th><th>Team</th><th>Status</th><th>Hunt</th></tr></thead>
         <tbody>
             @foreach (var a in Actions.Items)
             {
                 <tr @key="a.Id">
-                    <td>@if (CanOpen) { <a class="tide-action-num" href="@Ui.ActionUrl(a.Number)">@Ui.ActionLabel(a.Number)</a> } else { <span class="tide-action-num">@Ui.ActionLabel(a.Number)</span> }</td>
-                    <td>@if (CanOpen) { <a href="@Ui.ActionUrl(a.Number)">@a.Title</a> } else { @a.Title }</td>
+                    <td><ActionRef Number="a.Number" Title="@a.Title" Link="CanOpen" /></td>
                     <td class="small">@a.TeamName<div class="tide-muted">@(a.AssigneeName ?? "Unassigned")</div></td>
                     <td class="small"><ActionStatusBadge Status="a.Status" /></td>
                     <td class="small">@if (a.Hunted is null) { <span class="tide-muted">None</span> } else { <HuntBadge Result="a.Hunted" /> }</td>

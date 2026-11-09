@@ -51,6 +51,11 @@ window.tideEditor = (function () {
             to.scrollIntoView({ block: field ? 'center' : 'start', behavior: smooth ? 'smooth' : 'auto' });
             to.focus({ preventScroll: true });
         },
+        // To the preview's first gap (its dashed placeholder), focused: the readiness line's Show.
+        firstGap: function () {
+            const gap = document.querySelector('#reader-panel .tide-placeholder');
+            if (gap) window.tideEditor.jump(gap, null);
+        },
         // Starts the 1 and 2 keys for the preview's .NET object, or stops them (null).
         editionKeys: function (dotnetRef) {
             document.removeEventListener('keydown', onKey);
@@ -58,9 +63,11 @@ window.tideEditor = (function () {
             if (ref) document.addEventListener('keydown', onKey);
         },
         // Puts ?edition=company in the address, or takes it out (null), keeping the rest and the history entry's state.
-        showEdition: function (key) {
+        showEdition: function (key) { window.tideEditor.showParam('edition', key); },
+        // The same for any of the preview's choices kept in the address (?side=actions, the tab beside the article).
+        showParam: function (name, value) {
             const url = new URL(window.location.href);
-            if (key) url.searchParams.set('edition', key); else url.searchParams.delete('edition');
+            if (value) url.searchParams.set(name, value); else url.searchParams.delete(name);
             history.replaceState(history.state, '', url.toString());
         }
     };

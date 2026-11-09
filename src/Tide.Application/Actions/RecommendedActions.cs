@@ -23,6 +23,14 @@ public static class RecommendedActions
         .ToList();
 
     /// <summary>Whether an action titled <paramref name="title"/> is the one raised for <paramref name="line"/>.</summary>
+    /// <summary>The lines of <paramref name="markdown"/> that none of <paramref name="titles"/> raised (<see cref="Raised"/>):
+    /// the meeting slide's Raise rows and the article page's "not raised yet" count, alike.</summary>
+    public static IReadOnlyList<string> Unraised(string? markdown, IEnumerable<string> titles)
+    {
+        var raised = titles.ToList();
+        return Lines(markdown).Where(l => !raised.Any(t => Raised(l, t))).ToList();
+    }
+
     public static bool Raised(string line, string title) =>
         string.Equals(MarkdownService.OneLine(line), MarkdownService.OneLine(title), StringComparison.OrdinalIgnoreCase);
 

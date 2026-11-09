@@ -481,6 +481,10 @@ else
     /// <summary>The right rail, drawn beside the fields from the editor's state as it is on screen.</summary>
     [Parameter] public RenderFragment<State>? Aside { get; set; }
 
+    /// <summary>The pane to open on in a narrow window, where the editor and the aside take turns (the aside's, for a
+    /// tab beside the article the address asked for).</summary>
+    [Parameter] public string? StartPane { get; set; }
+
     /// <summary>The way through today's brief (BriefStepper), shown in place of the breadcrumbs while the article is on it.</summary>
     [Parameter] public RenderFragment? Stepper { get; set; }
 
@@ -666,8 +670,11 @@ else
     private volatile string _topic = "";
     private string? _changedBy;
 
-    protected override void OnInitialized() =>
+    protected override void OnInitialized()
+    {
         _live = new LiveChanges(Feed, Origin, c => c.Topic == _topic, InvokeAsync, OnChangedElsewhere);
+        if (StartPane == PreviewPane) _pane = PreviewPane;
+    }
 
     private async Task OnChangedElsewhere(IReadOnlyList<Change> changes)
     {

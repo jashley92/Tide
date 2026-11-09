@@ -183,7 +183,7 @@ else
                                 @foreach (var o in _open.Rows)
                                 {
                                     <tr>
-                                        <td><PriorityBadge Priority="o.Row.Priority" /> @ActionNum(o.Row.Number) @o.Row.Title <EscalatedBadge At="o.Row.EscalatedSince" /></td>
+                                        <td><PriorityBadge Priority="o.Row.Priority" /> @ActionTitle(o.Row.Number, o.Row.Title) <EscalatedBadge At="o.Row.EscalatedSince" /></td>
                                         <td>@o.Row.TeamName</td>
                                         <td>@(o.NoOneToOwn ? "No one: the team has no members" : o.Row.AssigneeName ?? "Unassigned")</td>
                                         <td class="tide-slide-late">@o.Late</td>
@@ -453,27 +453,27 @@ else
                                     @{ var raised = ea.Actions; }
                                     @if (raised.Count > 0)
                                     {
-                                        <ul>
+                                        <ul class="tide-slide-actlist">
                                             @foreach (var r in raised)
                                             {
                                                 <li>
-                                                    @ActionNum(r.Number) @r.Title
+                                                    @ActionTitle(r.Number, r.Title)
                                                     <span class="tide-present-help">@r.TeamName@(r.AssigneeName is { } who ? " · " + who : "")@(r.DueDate is { } due ? " · due " + Ui.ShortDay(due) : "")</span>
                                                     @if (CanWork(r))
                                                     {
                                                         <span class="tide-action-assign">
-                                                            @if (r.AssigneeId != _me)
-                                                            {
-                                                                <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="() => Take(r)">Take it</button>
-                                                            }
+                                                            <input type="date" class="form-control form-control-sm" aria-label="Due date for @Ui.ActionLabel(r.Number)" value="@DueShown(r)" disabled="@_busy"
+                                                                   @key="(r.Id, DueResets(r.Id))" @onchange="e => _dueTyped[r.Id] = e.Value as string" @onfocusout="() => SetDue(r)" />
                                                             <select class="form-select form-select-sm" aria-label="Assign @Ui.ActionLabel(r.Number)" value="@(r.AssigneeId ?? "")" disabled="@_busy"
                                                                     @key="AssignKey(r.Id)" @onchange="e => Assign(r, e.Value as string)">
                                                                 <option value="">Nobody</option>
                                                                 @foreach (var member in MembersOf(r.TeamId)) { <option value="@member.UserId">@member.DisplayName</option> }
                                                                 @if (r.AssigneeId is { } held && MembersOf(r.TeamId).All(member => member.UserId != held)) { <option value="@held">@r.AssigneeName</option> }
                                                             </select>
-                                                            <input type="date" class="form-control form-control-sm" aria-label="Due date for @Ui.ActionLabel(r.Number)" value="@DueShown(r)" disabled="@_busy"
-                                                                   @key="(r.Id, DueResets(r.Id))" @onchange="e => _dueTyped[r.Id] = e.Value as string" @onfocusout="() => SetDue(r)" />
+                                                            @if (r.AssigneeId != _me)
+                                                            {
+                                                                <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="() => Take(r)">Take it</button>
+                                                            }
                                                         </span>
                                                     }
                                                 </li>
@@ -565,7 +565,7 @@ else
                                 <ul>
                                     @foreach (var r in allRaised)
                                     {
-                                        <li>@ActionNum(r.Number) @r.Title <span class="tide-present-help">@r.TeamName · @ActionService.StatusName(r.Status)@(r.DueDate is { } due ? " · due " + Ui.ShortDay(due) : "")</span></li>
+                                        <li>@ActionTitle(r.Number, r.Title) <span class="tide-present-help">@r.TeamName · @ActionService.StatusName(r.Status)@(r.DueDate is { } due ? " · due " + Ui.ShortDay(due) : "")</span></li>
                                     }
                                 </ul>
                             </div>
@@ -1414,8 +1414,7 @@ else
     }
 
     // The edition article's recommended lines that no action on it has the title of.
-    private static List<string> Unraised(EditionArticle x) =>
-        RecommendedActions.Lines(x.Article.RecommendedActions).Where(l => !x.Actions.Any(r => RecommendedActions.Raised(l, r.Title))).ToList();
+    private static IReadOnlyList<string> Unraised(EditionArticle x) => RecommendedActions.Unraised(x.Article.RecommendedActions, x.Actions.Select(r => r.Title));
 
     private async Task Raise(Guid articleId, string line, RaiseDraft draft)
     {
@@ -2071,6 +2070,11 @@ else
     /// <summary>Whether this page can open an action: on the team edition, and not held by the presenter's lock.</summary>
     private bool CanOpenAction => TeamEdition && !Held && _readsTeam;
 
+    // An action's title in a slide's list: it opens the action over the slide where this page can (its number after it).
+    private RenderFragment ActionTitle(int number, string title) =>
+        @<ActionRef Number="number" Title="@title" Link="false" OnOpen="@(CanOpenAction ? EventCallback.Factory.Create(this, () => ShowAction(number)) : default)" />;
+
+    // An action's number alone, where it's what's quoted ("Raised as A-6"): it opens the action too.
     private RenderFragment ActionNum(int number) =>
         @<text>@if (CanOpenAction)
         {
