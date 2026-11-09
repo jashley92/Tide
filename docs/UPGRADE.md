@@ -176,6 +176,15 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
+### v1.10.1
+
+Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). No migrations.
+
+**Fixes**
+- **The meeting's quick add is one row again.** In v1.10.0 its controls (what needs doing, kind, team, due date, Add)
+  stacked one per line, full width, on every article slide: a stylesheet edit had dropped their layout. A test now
+  checks each row of controls on a slide keeps its own.
+
 ### v1.10.0
 
 Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds two migrations: `OpeningNoteReviewed` and
