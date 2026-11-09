@@ -52,7 +52,8 @@ public class NavMenuTests(TideApp app) : IClassFixture<TideApp>
         var nav = await RenderedNav.GetAsync(app.CreateClient(), "/articles");
         nav.Groups.Select(g => (g.Label, string.Join(",", g.Links))).Should().Equal(
             ("Daily", ",triage,articles,actions,search"),
-            ("Intelligence", "stories,briefs,trends,stack,adversaries,reports,coverage,metrics"),
+            ("Intelligence", "stories,briefs,stack,adversaries"),
+            ("Insight", "trends,metrics,coverage,reports"),
             ("Team", "rotation,workload,hunts/saved,outreach/templates,playbooks,board-rules"),
             ("Company-wide", "published"),
             ("Administration", "admin"));
@@ -77,7 +78,7 @@ public class NavMenuTests(TideApp app) : IClassFixture<TideApp>
     public void TheGroups_AreInSidebarOrder_AndEachPageInOne()
     {
         NavPages.All().Select(p => p.Group).Distinct().Should().Equal(
-            NavPages.Daily, NavPages.Intelligence, NavPages.Team, NavPages.CompanyWide, NavPages.Administration);
+            NavPages.Daily, NavPages.Intelligence, NavPages.Insight, NavPages.Team, NavPages.CompanyWide, NavPages.Administration);
         NavPages.All().Take(5).Should().OnlyContain(p => p.Group == NavPages.Daily);
     }
 
@@ -126,7 +127,8 @@ public class ActionOwnerNavTests(ActionOwnerApp app) : IClassFixture<ActionOwner
         var nav = await RenderedNav.GetAsync(app.CreateClient(), "/actions");
         nav.Groups.Select(g => (g.Label, string.Join(",", g.Links))).Should().Equal(
             ("Daily", ",articles,actions,search"),
-            ("Intelligence", "stories,briefs,trends,stack,adversaries"),
+            ("Intelligence", "stories,briefs,stack,adversaries"),
+            ("Insight", "trends"),
             ("Team", "workload,hunts/saved,outreach/templates,playbooks,board-rules"),
             ("Company-wide", "published"));
         nav.Html.Should().NotContain("aria-label=\"Triage").And.NotContain("Administration");

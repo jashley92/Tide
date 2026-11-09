@@ -31,8 +31,9 @@ Every route, its component and the permission it needs are in the [route table](
 
 ## The frame around every page
 
-- **The sidebar** lists every page the person may open, under small group labels: **Daily**, **Intelligence**,
-  **Team**, **Company-wide** and **Administration**. A group with nothing in it for that person isn't shown. Triage
+- **The sidebar** lists every page the person may open, under small group labels: **Daily**, **Intelligence** (stories,
+  the brief archive, our stack, adversaries), **Insight** (trends, metrics, coverage, reports), **Team**, **Company-wide**
+  and **Administration**. A group with nothing in it for that person isn't shown. Triage
   carries a count of new items, and Actions a count of the person's overdue actions (in red). The sidebar collapses
   to icons from the button at its top, and remembers that per browser.
 - **The top bar** has the team's name, the search box (for anyone on the team edition), the **Go to** button

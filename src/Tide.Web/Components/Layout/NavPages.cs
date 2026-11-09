@@ -24,9 +24,11 @@ public static class NavPages
     public const string Triage = "triage";
     public const string Actions = "actions";
 
-    // The sidebar's groups: a small label over each, the daily pages first.
+    // The sidebar's groups: a small label over each, the daily pages first. Intelligence is what's known about the
+    // threat; Insight is how we're doing (trends, the numbers, detection coverage) and the reports made from it.
     public const string Daily = "Daily";
     public const string Intelligence = "Intelligence";
+    public const string Insight = "Insight";
     public const string Team = "Team";
     public const string CompanyWide = "Company-wide";
     public const string Administration = "Administration";
@@ -41,12 +43,12 @@ public static class NavPages
         new("search", "Search", "bi-search", "search", Daily, [Permission.ReadTeamEdition], Keywords: "indicator lookup cve ioc"),
         new("stories", "Stories", "bi-bezier2", "stories", Intelligence, [Permission.ReadTeamEdition]),
         new("archive", "Brief archive", "bi-archive", "briefs", Intelligence, [Permission.ReadTeamEdition], NavLinkMatch.All, "past briefs"),
-        new("trends", "Trends", "bi-bar-chart-line", "trends", Intelligence, [Permission.ReadTeamEdition]),
         new("stack", "Our stack", "bi-hdd-stack", "stack", Intelligence, [Permission.ReadTeamEdition], Keywords: "what we run products inventory versions"),
         new("adversaries", "Adversaries", "bi-incognito", "adversaries", Intelligence, [Permission.ReadTeamEdition], Keywords: "threat actors groups campaigns apt aliases mitre"),
-        new("reports", "Reports", "bi-file-earmark-bar-graph", "reports", Intelligence, [Permission.ReadTeamEdition, Permission.WriteArticles], Keywords: "weekly monthly quarterly board report"),
-        new("coverage", "Coverage", "bi-shield-check", "coverage", Intelligence, [Permission.WriteArticles], Keywords: "detection rules gaps sigma sentinel attack"),
-        new("metrics", "Metrics", "bi-graph-up", "metrics", Intelligence, [Permission.ReadTeamEdition, Permission.WriteArticles]),   // listed for those who make the brief; the page stays open to action owners
+        new("trends", "Trends", "bi-bar-chart-line", "trends", Insight, [Permission.ReadTeamEdition]),
+        new("metrics", "Metrics", "bi-graph-up", "metrics", Insight, [Permission.ReadTeamEdition, Permission.WriteArticles]),   // listed for those who make the brief; the page stays open to action owners
+        new("coverage", "Coverage", "bi-shield-check", "coverage", Insight, [Permission.WriteArticles], Keywords: "detection rules gaps sigma sentinel attack"),
+        new("reports", "Reports", "bi-file-earmark-bar-graph", "reports", Insight, [Permission.ReadTeamEdition, Permission.WriteArticles], Keywords: "weekly monthly quarterly board report"),
         new("rotation", "Brief rotation", "bi-calendar3", "rotation", Team, [Permission.ReadTeamEdition, Permission.WriteArticles], Keywords: "rota schedule"),
         new("workload", "Workload", "bi-people", "workload", Team, [Permission.ReadActions]),
         new("saved-queries", "Saved queries", "bi-bookmark", "hunts/saved", Team, [Permission.ReadActions], Keywords: "hunt query library siem kql xql"),
