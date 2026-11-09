@@ -75,9 +75,13 @@ public sealed record SettingRow(SettingInfo Info, string? Shown, string Source, 
 /// <summary>The settings Administration › System lists, each resolved. Administrators only: the pages say so, and so does
 /// each method here, as the app's other services do.</summary>
 public sealed class SystemSettings(IConfiguration config, IAppDbContextFactory dbs, IUserDirectory users, IWebHostEnvironment env,
-    Application.Admin.RoleMappingService roles, Application.Org.OrgClock org, ICurrentUser user, TimeProvider time)
+    Application.Admin.RoleMappingService roles, Application.Org.OrgClock org, ICurrentUser user, TimeProvider time,
+    Application.Settings.StoredSecrets secrets)
 {
     public const string SavedInApp = "Saved in Administration";
+
+    /// <summary>A secret the server leaves blank, saved in Administration › Secrets (encrypted) and in force.</summary>
+    public const string SavedSecretInApp = "Saved in Administration, encrypted";
 
     public IReadOnlyList<SettingRow> Server()
     {
@@ -89,6 +93,9 @@ public sealed class SystemSettings(IConfiguration config, IAppDbContextFactory d
     {
         RequireAdmin();
         var r = ConfigSource.Resolve(config, s.Key);
+        // A secret the server leaves blank may be saved in the app, which is then the one in force.
+        if (string.IsNullOrWhiteSpace(r.Value) && Application.Settings.StoredSecretDefinition.Find(s.Key) is { } secret && secrets.TryGet(secret, out _))
+            return new SettingRow(s, SecretMask.SetSecret, SavedSecretInApp);
         return new SettingRow(s, SecretMask.Display(s.Key, s.Kind, r.Value), r.Source);
     }
 

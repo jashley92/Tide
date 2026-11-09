@@ -313,7 +313,7 @@ The brief is emailed through your organization's SMTP relay. In `appsettings.Pro
 | `SmtpHost`, `SmtpPort` | The relay. |
 | `EnableSsl` | `true` (STARTTLS) unless the relay is on this host or doesn't offer it. |
 | `SmtpUseDefaultCredentials` | `true` to sign in as the app-pool account (on-premises Exchange), with no password anywhere. |
-| `SmtpUsername` | An account to sign in as instead. Put its password in the `Email__SmtpPassword` environment variable on the app pool, not in the file. Leave both blank for a relay that accepts this host without signing in. |
+| `SmtpUsername` | An account to sign in as instead. Save its password in Administration › Secrets (encrypted), or put it in the `Email__SmtpPassword` environment variable on the app pool, never in the file. Leave both blank for a relay that accepts this host without signing in. |
 | `From`, `FromName` | The sender. The relay must allow the app to send as it. |
 
 Set `App:BaseUrl` to the site's address so the email links back to TIDE. Then send yourself a test copy from the **Send**
@@ -352,7 +352,7 @@ and size limits, the CVE addresses and the NVD key stay on the server. The keys 
 | Key | What it does |
 |---|---|
 | `Intake:Enabled` | Polls each enabled source on its own interval. `Intake:Proxy` sets an outbound proxy (read at startup); `AllowPrivateNetworks` lets feeds and CVE mirrors on private addresses be fetched (loopback and link-local never are); `TimeoutSeconds`, `MaxResponseKB` and `MinPollMinutes` bound each request; `RetentionDays` is how long items nobody kept are retained; an item published longer ago than that isn't taken in, so a pruned item doesn't come back; `SkipSponsored` (on), `SponsoredMarkers` and `SponsoredExceptions` (semicolon-separated phrases) skip feed items that read as sponsored; `ReadingDays` (7, 1 to 30) is how long an article read in triage's reading pane is kept for colleagues and the editor (it's never sent or exported); `ReadSeconds` (6, 2 to 60) is how long reading an article's page may take before it's refused (raise it on a slow server); `PullNowMinutes` (15, 1 to 1440) is the analyst pull-now window, how soon after a source's last poll an analyst may pull it again from Triage's Sources tab; `GroupWindowHours` (48, 12 to 96) is how far apart two reports of one event can be for triage to group them, and `GroupIgnoredWords` (semicolon-separated) adds words triage's grouping ignores besides the built-in ones. An administrator changes all but the proxy, private-network and request limits on Sources. |
-| `Cve:Enabled` | Refreshes CISA KEV and EPSS every `RefreshHours`, and NVD weekly, for the CVEs on articles and recent feed items. Put an NVD API key in the `Cve__NvdApiKey` environment variable for faster NVD lookups. `KevUrl`, `EpssUrl` and `NvdUrl` can point at an internal mirror. |
+| `Cve:Enabled` | Refreshes CISA KEV and EPSS every `RefreshHours`, and NVD weekly, for the CVEs on articles and recent feed items. Save an NVD API key in Administration › Secrets, or in the `Cve__NvdApiKey` environment variable, for faster NVD lookups. `KevUrl`, `EpssUrl` and `NvdUrl` can point at an internal mirror. |
 
 The server needs outbound HTTPS to each source, `www.cisa.gov`, `api.first.org` and `services.nvd.nist.gov` (or your
 proxy or mirror). **Administration > Sources** shows each source's last poll and error, polls one by hand, and refreshes
@@ -368,7 +368,7 @@ analysts can still copy a prompt to run in an AI tool your organisation has appr
 | `Ai:Provider` | `AzureOpenAI`, or blank for none. |
 | `Ai:Endpoint` | The Azure OpenAI resource, `https://<name>.openai.azure.com`. TIDE calls its v1 Responses API (`/openai/v1/responses`). |
 | `Ai:Deployment` | The model deployment's name. It must support structured outputs (for example `gpt-5-mini` or `gpt-4.1`). |
-| `Ai:ApiKey` | Set it as the `Ai__ApiKey` environment variable, or in protected configuration, never in `appsettings.json`. |
+| `Ai:ApiKey` | Save it in Administration › Secrets (encrypted), or set it as the `Ai__ApiKey` environment variable, never in `appsettings.json`. |
 | `Ai:MaxTlp` | The highest TLP ever sent: `Green` by default. Our notes on what we run count as AMBER, so they go with a draft only at `Amber` or above. |
 | `Ai:WebGrounding` | `false` by default. When `true`, and TIDE can't fetch an article from a source marked Open, Azure's web search looks it up. Only the article's address and title are sent, and only for TLP:CLEAR articles. It uses Grounding with Bing, which is billed separately and handles data **outside** your Azure compliance and geographic boundary, so check it with whoever approves your data flows. |
 | `Ai:TimeoutSeconds` | How long a draft may take (default 120). |

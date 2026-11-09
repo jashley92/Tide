@@ -3205,6 +3205,49 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.ToTable("Files");
                 });
 
+            modelBuilder.Entity("Tide.Domain.Entities.StoredSecret", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Protected")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("SavedByName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Key")
+                        .IsUnique();
+
+                    b.ToTable("StoredSecrets");
+                });
+
             modelBuilder.Entity("Tide.Domain.Entities.Story", b =>
                 {
                     b.Property<Guid>("Id")

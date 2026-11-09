@@ -464,7 +464,7 @@ public sealed class SettingSourceBadge : ComponentBase
 
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
-        var tone = Source == Services.SystemSettings.SavedInApp ? BadgeTone.Info
+        var tone = Source is Services.SystemSettings.SavedInApp or Services.SystemSettings.SavedSecretInApp ? BadgeTone.Info
             : Source.EndsWith("(installer)", StringComparison.Ordinal) ? BadgeTone.Purple
             : Source == "Environment variable" ? BadgeTone.Warn
             : BadgeTone.Neutral;

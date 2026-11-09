@@ -71,6 +71,11 @@ public static class DependencyInjection
         Overlay<DistributionOptions>(services, OperationalSettings.Apply);
         Overlay<FileStoreOptions>(services, OperationalSettings.Apply);
         Overlay<EmailBoundaryOptions>(services, OperationalSettings.Apply);
+        // Secrets saved in the app fill in what the server's configuration leaves blank.
+        services.AddSingleton<StoredSecrets>();
+        services.AddScoped<StoredSecretService>();
+        SecretOverlay<CveOptions>(services, StoredSecretDefinition.NvdApiKey, o => o.NvdApiKey, (o, v) => o.NvdApiKey = v);
+        SecretOverlay<AiOptions>(services, StoredSecretDefinition.AiApiKey, o => o.ApiKey, (o, v) => o.ApiKey = v);
         // The organization's email boundary: every list that sends mail outward checks its addresses against it.
         services.AddSingleton(sp => new EmailBoundary(sp.GetRequiredService<IOptionsMonitor<EmailBoundaryOptions>>()));
         services.AddSingleton(sp => new OrgClock(sp.GetRequiredService<IOptionsMonitor<OrgOptions>>(), sp.GetRequiredService<TimeProvider>()));
@@ -132,10 +137,20 @@ public static class DependencyInjection
         return services;
     }
 
-    private static void Overlay<T>(IServiceCollection services, Action<SavedSettings, T> apply) where T : class
+    /// <summary>Fills in <typeparamref name="T"/>'s <paramref name="secret"/> from the one saved in the app, where the
+    /// server's configuration leaves it blank (the server's always wins).</summary>
+    public static void SecretOverlay<T>(IServiceCollection services, StoredSecretDefinition secret, Func<T, string> get, Action<T, string> set) where T : class =>
+        Overlay<StoredSecrets, T>(services, (s, o) =>
+        {
+            if (string.IsNullOrWhiteSpace(get(o)) && s.TryGet(secret, out var saved)) set(o, saved);
+        });
+
+    private static void Overlay<T>(IServiceCollection services, Action<SavedSettings, T> apply) where T : class => Overlay<SavedSettings, T>(services, apply);
+
+    private static void Overlay<TSource, T>(IServiceCollection services, Action<TSource, T> apply) where TSource : IOverlaySource where T : class
     {
-        services.AddSingleton(sp => new OperationalSettingsOverlay<T>(sp.GetRequiredService<SavedSettings>(), apply));
-        services.AddSingleton<IPostConfigureOptions<T>>(sp => sp.GetRequiredService<OperationalSettingsOverlay<T>>());
-        services.AddSingleton<IOptionsChangeTokenSource<T>>(sp => sp.GetRequiredService<OperationalSettingsOverlay<T>>());
+        services.AddSingleton(sp => new OptionsOverlay<TSource, T>(sp.GetRequiredService<TSource>(), apply));
+        services.AddSingleton<IPostConfigureOptions<T>>(sp => sp.GetRequiredService<OptionsOverlay<TSource, T>>());
+        services.AddSingleton<IOptionsChangeTokenSource<T>>(sp => sp.GetRequiredService<OptionsOverlay<TSource, T>>());
     }
 }

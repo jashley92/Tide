@@ -108,7 +108,7 @@ builder.Services.AddAuthentication()
     .AddPolicyScheme(ApiTokenAuthenticationHandler.ApiScheme, "TIDE API", o => o.ForwardDefaultSelector = ctx =>
         ApiTokenAuthenticationHandler.Bearer(ctx.Request) is not null ? ApiTokenAuthenticationHandler.SchemeName
         : useWindows ? NegotiateDefaults.AuthenticationScheme : DevAuthenticationHandler.SchemeName);
-builder.Services.AddSingleton<Tide.Application.Api.ISecretProtector, DataProtectionSecrets>();
+builder.Services.AddSingleton<Tide.Application.Abstractions.ISecretProtector, Tide.Web.Security.DataProtectionSecrets>();
 builder.Services.AddScoped<Tide.Application.Api.IWebhookPoster, HttpWebhookPoster>();
 builder.Services.AddHttpClient(HttpWebhookPoster.Client, c => c.Timeout = TimeSpan.FromSeconds(15))
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
@@ -189,6 +189,7 @@ using (var scope = app.Services.CreateScope())
 {
     await scope.ServiceProvider.GetRequiredService<DatabaseInitializer>().InitializeAsync();
     await app.Services.GetRequiredService<SavedSettings>().RefreshAsync(scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>());
+    await app.Services.GetRequiredService<StoredSecrets>().RefreshAsync(scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>());
     await app.Services.GetRequiredService<EmailTemplateStore>().RefreshAsync(scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>());
     await app.Services.GetRequiredService<EmailCopyStore>().RefreshAsync(scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>());
     // Each job's latest run from the job history, so Diagnostics and /health/jobs know when it last went well.

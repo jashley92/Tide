@@ -13,11 +13,11 @@ namespace Tide.Application.Settings;
 /// <summary>
 /// The <see cref="OperationalSettings"/> saved in Administration, kept in memory: read from the database at start-up and
 /// again whenever one is saved or imported. A saved value is laid over the server's in the options it belongs to
-/// (<see cref="OperationalSettingsOverlay{T}"/>), and a change reloads those options, so whatever reads them through
+/// (<see cref="OptionsOverlay{TSource, T}"/>), and a change reloads those options, so whatever reads them through
 /// <see cref="IOptionsMonitor{T}"/> (the background services on each pass, <see cref="Org.OrgClock"/>, the pages) has
 /// the new value at once, with no restart. Singleton.
 /// </summary>
-public sealed class SavedSettings : IDisposable
+public sealed class SavedSettings : IOverlaySource, IDisposable
 {
     private IReadOnlyDictionary<string, string> _values = new Dictionary<string, string>();
     private ConfigurationReloadToken _changed = new();
@@ -65,18 +65,26 @@ public sealed class SavedSettings : IDisposable
     }
 }
 
-/// <summary>Lays the saved settings over the server's values in <typeparamref name="T"/>, and reloads it when they
-/// change.</summary>
-public sealed class OperationalSettingsOverlay<T>(SavedSettings saved, Action<SavedSettings, T> apply) : IPostConfigureOptions<T>, IOptionsChangeTokenSource<T>
+/// <summary>What's saved in Administration and laid over the server's options (<see cref="SavedSettings"/>,
+/// <see cref="StoredSecrets"/>): its change reloads them.</summary>
+public interface IOverlaySource
+{
+    IChangeToken GetChangeToken();
+}
+
+/// <summary>Lays what <typeparamref name="TSource"/> holds over the server's values in <typeparamref name="T"/>, and
+/// reloads it when that changes.</summary>
+public sealed class OptionsOverlay<TSource, T>(TSource source, Action<TSource, T> apply) : IPostConfigureOptions<T>, IOptionsChangeTokenSource<T>
+    where TSource : IOverlaySource
     where T : class
 {
     public string? Name => Options.DefaultName;
 
-    public IChangeToken GetChangeToken() => saved.GetChangeToken();
+    public IChangeToken GetChangeToken() => source.GetChangeToken();
 
     public void PostConfigure(string? name, T options)
     {
-        if (name == Options.DefaultName) apply(saved, options);
+        if (name == Options.DefaultName) apply(source, options);
     }
 }
 

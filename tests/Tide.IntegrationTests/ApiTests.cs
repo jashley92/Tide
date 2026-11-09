@@ -334,11 +334,12 @@ public class ApiMoreTests(TideApp app) : IClassFixture<TideApp>
     [Fact]
     public async Task TheServersSecretsAndPoster_RoundTripAndPost()
     {
-        var secrets = app.Services.GetRequiredService<ISecretProtector>();
-        var kept = secrets.Protect("s3cret");
+        var secrets = app.Services.GetRequiredService<Tide.Application.Abstractions.ISecretProtector>();
+        var kept = secrets.Protect(WebhookService.SecretPurpose, "s3cret");
         kept.Should().NotContain("s3cret");
-        secrets.Unprotect(kept).Should().Be("s3cret");
-        secrets.Unprotect("not protected").Should().BeNull();
+        secrets.Unprotect(WebhookService.SecretPurpose, kept).Should().Be("s3cret");
+        secrets.Unprotect(WebhookService.SecretPurpose, "not protected").Should().BeNull();
+        secrets.Unprotect("Tide.Secrets.NvdApiKey.v1", kept).Should().BeNull("one purpose never opens another's");
 
         var handler = new Answering(HttpStatusCode.Accepted);
         var poster = new Tide.Web.Api.HttpWebhookPoster(new OneClient(handler));

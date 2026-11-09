@@ -59,6 +59,7 @@ role holds it; an administrator also holds every other permission
 | System › Diagnostics | `/admin/system` | nothing: health checks, this server, database, email delivery, storage, connections, background jobs | `SystemDiagnostics` | |
 | System › Server configuration | `/admin/system/server` | nothing: what's set on the server, secrets shown only as set or not | `SystemSettings` | |
 | System › Setting sources | `/admin/system/sources` | nothing: where each setting's value comes from now | `SystemSettings` | |
+| System › Secrets | `/admin/system/secrets` | the mail relay password, the NVD key and the Azure OpenAI key, saved encrypted; replace or remove each | `StoredSecretService` | `StoredSecrets` |
 | System › Configuration bundle | `/admin/system/bundle` | imports another TIDE's setup; downloads this one's and the install answers file | `ConfigBundleService` | many |
 | System › Audit log | `/admin/system/audit` | nothing: every change saved, with a CSV export | `AuditLogService` | `AuditLog` |
 | System › Updates | `/admin/system/updates` | the update check's switch and interval | `UpdateCheckService`, `UpdateSettings` | `Settings` |
@@ -138,7 +139,7 @@ sequenceDiagram
 
 `OperationalSettings` checks every value on save and on bundle import: HH:mm times, numbers within the bounds the
 services apply, an IANA time zone, email addresses, domain names. Nothing needs a restart. The mechanism (`SavedSettings`,
-`OperationalSettingsOverlay<T>`) and the list of keys are in [configuration.md](../operations/configuration.md).
+`OptionsOverlay<TSource, T>`) and the list of keys are in [configuration.md](../operations/configuration.md).
 
 **Addresses outside the organization.** Access & distribution sets the organization's email domains
 (`Email:OrganizationDomains`, each including its subdomains; empty uses the domain of `Email:From`, and the page says
@@ -363,6 +364,8 @@ System › Updates (`UpdateCheckService`) says whether a newer TIDE release is p
 | A bundle import that fails partway | Nothing is saved (all or nothing). |
 | The update check with no internet | "Couldn't check" and why; nothing else is affected. |
 | A setting saved in the app and also set on the server | The app's value wins; Setting sources shows which. |
+| A secret saved in the app and also set on the server | The server's wins (the reverse of a setting); Secrets says *Set on the server*. |
+| A saved secret after a restore without the key ring | It won't decrypt: Secrets marks it *Won't decrypt*, the log says so once, and TIDE goes without it until it's saved again. |
 | Escalation steps with two the same, or more than 8 | Refused on save, naming the steps; skipped on import. |
 | An escalation steps value on the server that doesn't read | The ladder climbs nothing until one that reads is saved. |
 

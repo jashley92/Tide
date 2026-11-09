@@ -1,22 +1,7 @@
-using Microsoft.AspNetCore.DataProtection;
 using Tide.Application.Api;
 using Tide.Application.Operations;
 
 namespace Tide.Web.Api;
-
-/// <summary>A webhook's signing secret, encrypted with the server's data protection keys (DataProtection:KeyPath).</summary>
-public sealed class DataProtectionSecrets(IDataProtectionProvider provider) : ISecretProtector
-{
-    private readonly IDataProtector _protector = provider.CreateProtector("Tide.Webhooks.Secret.v1");
-
-    public string Protect(string secret) => _protector.Protect(secret);
-
-    public string? Unprotect(string protectedSecret)
-    {
-        try { return _protector.Unprotect(protectedSecret); }
-        catch (System.Security.Cryptography.CryptographicException) { return null; }
-    }
-}
 
 /// <summary>Posts a webhook: 15 seconds at most, no redirects followed (a redirect is reported, not obeyed).</summary>
 public sealed class HttpWebhookPoster(IHttpClientFactory clients) : IWebhookPoster
