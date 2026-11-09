@@ -624,3 +624,14 @@ internal sealed class RetryingStrategy(Microsoft.EntityFrameworkCore.Storage.Exe
     protected override bool ShouldRetryOn(Exception exception) =>
         Dependencies.CurrentContext.Context.Database.IsSqlServer() && base.ShouldRetryOn(exception);
 }
+
+public static class ConfigBundleTestExtensions
+{
+    /// <summary>What an administrator does on the page: preview, read the warnings, import that preview.</summary>
+    public static async Task<Tide.Application.Operations.BundlePreview> PreviewAndImportAsync(this Tide.Application.Operations.ConfigBundleService service,
+        Tide.Application.Operations.ConfigBundle bundle, CancellationToken ct = default)
+    {
+        var preview = await service.PreviewAsync(bundle, ct);
+        return await service.ImportAsync(bundle, preview.Fingerprint(), acknowledged: true, ct);
+    }
+}

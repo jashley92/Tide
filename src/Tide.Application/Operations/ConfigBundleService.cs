@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Tide.Application.Abstractions;
 using Tide.Application.Actions;
 using Tide.Application.Articles;
@@ -19,7 +20,8 @@ namespace Tide.Application.Operations;
 /// Administrators only.
 /// </summary>
 public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser user, IRoleDirectory directory, TimeProvider time,
-    SavedSettings? saved = null, Distribution.EmailTemplateStore? emailTemplates = null, Org.OrgClock? clock = null)
+    SavedSettings? saved = null, Distribution.EmailTemplateStore? emailTemplates = null, Org.OrgClock? clock = null,
+    IOptions<DistributionOptions>? distribution = null, IOptions<ReminderOptions>? reminders = null)
 {
     private const string SettingsArea = "Settings";
     private const string GroupsArea = "AD groups";
@@ -69,12 +71,22 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
         return new BundlePreview(bundle, await PlanAsync(db, bundle, apply: false, ct));
     }
 
-    /// <summary>Imports the bundle and says what it did.</summary>
-    public async Task<BundlePreview> ImportAsync(ConfigBundle bundle, CancellationToken ct = default)
+    /// <summary>Imports the bundle and says what it did. <paramref name="fingerprint"/> is the
+    /// <see cref="BundlePreview.Fingerprint"/> of the preview the administrator read: when the plan worked out now differs
+    /// (the configuration here changed since, or another bundle), nothing is written and they're asked to preview again.
+    /// A plan with a warning is imported only when <paramref name="acknowledged"/> says the warnings were read.</summary>
+    public async Task<BundlePreview> ImportAsync(ConfigBundle bundle, string fingerprint, bool acknowledged, CancellationToken ct = default)
     {
         RequireAdmin();
         await using var db = await dbs.CreateAsync(ct);
         var changes = await PlanAsync(db, bundle, apply: true, ct);
+        // Refused before anything is saved: the context's pending changes go with it.
+        var planned = new BundlePreview(bundle, changes);
+        if (!string.Equals(planned.Fingerprint(), fingerprint, StringComparison.Ordinal))
+            throw new StaleEditException("The configuration changed since you previewed it: preview again.");
+        if (planned.Warnings > 0 && !acknowledged)
+            throw new InvalidOperationException(
+                $"{planned.NeedALook} a careful look: confirm you've read the warnings, then import.");
         await db.SaveChangesAsync(ct);
         if (changes.Any(c => c.Area == GroupsArea && c.Kind == BundleChangeKind.Add)) directory.Invalidate();
         // An operational setting imported takes effect at once, as one saved on its page does.
@@ -87,7 +99,7 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
         // And the holidays: the rota, deadlines and reminders follow them at once.
         if (clock is not null && changes.Any(c => c.Area == HolidaysArea && c.Kind is BundleChangeKind.Add or BundleChangeKind.Update))
             await Org.HolidayService.LoadAsync(db, clock, ct);
-        return new BundlePreview(bundle, changes);
+        return planned;
     }
 
     private async Task<List<BundleChange>> PlanAsync(IAppDbContext db, ConfigBundle bundle, bool apply, CancellationToken ct)
@@ -126,13 +138,93 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
                 changes.Add(new(SettingsArea, s.Key, BundleChangeKind.Unchanged));
                 continue;
             }
-            changes.Add(new(SettingsArea, s.Key, row is null ? BundleChangeKind.Add : BundleChangeKind.Update, Clip(value)));
+            var kind = row is null ? BundleChangeKind.Add : BundleChangeKind.Update;
+            var risk = Widens(s.Key, row?.Value ?? ServerValue(s.Key), value);
+            changes.Add(new(SettingsArea, s.Key, kind, risk ?? Clip(value), Warning: risk is not null));
             if (!apply) continue;
             if (row is null) db.Settings.Add(rows[s.Key] = row = new AppSetting { Key = s.Key });
             row.Value = value;
             row.UpdatedAtUtc = time.GetUtcNow();
             row.UpdatedBy = user.UserId;
         }
+    }
+
+    // What a setting is when no row is saved for it: the server's value (or the built-in default), written as a row
+    // would be. Only for the settings Widens looks at; null for the rest.
+    private string? ServerValue(string key)
+    {
+        var d = distribution?.Value ?? new DistributionOptions();
+        var r = reminders?.Value ?? new ReminderOptions();
+        return key switch
+        {
+            DistributionSettings.TeamMaxTlpKey => d.TeamMaxTlp.ToString(),
+            DistributionSettings.PublicMaxTlpKey => d.PublicMaxTlp.ToString(),
+            DistributionSettings.TeamRecipientsKey => string.Join("; ", d.TeamRecipients ?? []),
+            DistributionSettings.PublicRecipientsKey => string.Join("; ", d.PublicRecipients ?? []),
+            OperationalSettings.BriefNotReadyRecipients => string.Join("; ", r.BriefNotReady.Recipients ?? []),
+            OperationalSettings.ExternalReminders => r.ExternalReminders.Enabled ? "true" : "false",
+            OperationalSettings.Escalation => r.Escalation.Enabled ? "true" : "false",
+            OperationalSettings.EscalationSteps => r.Escalation.Steps,
+            _ => Distribution.EmailTemplateCatalog.Parse(key) is { } t ? t.Template.Default(t.Part) : null,
+        };
+    }
+
+    // The address lists whose recipients get mail from TIDE, and who they are, for the warning.
+    private static readonly Dictionary<string, string> RecipientLists = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [DistributionSettings.TeamRecipientsKey] = "the team edition",
+        [DistributionSettings.PublicRecipientsKey] = "the company-wide edition",
+        [OperationalSettings.BriefNotReadyRecipients] = "those told when there's no brief",
+        [Rotation.RotationService.ManagerEmailsKey] = "the managers told about rotation swaps",
+    };
+
+    /// <summary>Why an incoming setting widens what leaves the organization, or null when it doesn't: it raises an
+    /// edition's ceiling, adds recipients to a list TIDE mails, turns on email to people outside TIDE, or rewords an email
+    /// that goes to them. <paramref name="current"/> is the value in force (saved, or the server's); <paramref name="value"/>
+    /// the incoming one, as it would be stored.</summary>
+    internal static string? Widens(string key, string? current, string value)
+    {
+        if (key is DistributionSettings.TeamMaxTlpKey or DistributionSettings.PublicMaxTlpKey)
+        {
+            var edition = key == DistributionSettings.TeamMaxTlpKey ? "team edition" : "company-wide edition";
+            var to = Tlp.Parse(value);
+            var from = Tlp.Parse(current);
+            if (to is not { } raised || raised <= from) return null;   // no ceiling in force reads: any is warned
+            return $"Raises the {edition}'s ceiling {(from is { } f ? $"from {Tlp.Label(f)} " : "")}to {Tlp.Label(raised)}.";
+        }
+        if (RecipientLists.TryGetValue(key, out var list))
+        {
+            var have = OperationalSettings.SplitAddresses(current).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var added = OperationalSettings.SplitAddresses(value).Distinct(StringComparer.OrdinalIgnoreCase).Where(a => !have.Contains(a)).ToList();
+            if (added.Count == 0) return null;
+            var named = string.Join(", ", added.Take(5)) + (added.Count > 5 ? $" and {added.Count - 5} more" : "");
+            return $"Adds {Content.Words.Plural(added.Count, "recipient")} to {list}: {named}.";
+        }
+        if (key is OperationalSettings.ExternalReminders or OperationalSettings.Escalation)
+        {
+            var on = bool.TryParse(value, out var v) && v;
+            var was = bool.TryParse(current, out var c) && c;
+            if (!on || was) return null;
+            return key == OperationalSettings.ExternalReminders
+                ? "Turns on reminders to external teams, emailed to their contacts outside TIDE."
+                : "Turns on the escalation ladder, which emails escalation contacts, outside TIDE included.";
+        }
+        if (key == OperationalSettings.EscalationSteps)
+        {
+            // A step that copies the escalation contact emails them, and one that reminds emails an external team's contacts:
+            // both can reach people outside TIDE. One that wasn't there at that day, or that does more of it, is warned.
+            const EscalationDoes mails = EscalationDoes.CopyContact | EscalationDoes.Remind;
+            var had = new Dictionary<int, EscalationDoes>();
+            foreach (var s in EscalationLadder.ParseOrNone(current)) had[s.Offset] = had.GetValueOrDefault(s.Offset) | (s.Does & mails);
+            var added = EscalationLadder.ParseOrNone(value)
+                .Where(s => (s.Does & mails & ~had.GetValueOrDefault(s.Offset)) != 0).Select(s => s.Text).ToList();
+            return added.Count == 0 ? null
+                : $"Adds escalation steps that email people outside TIDE (escalation contacts, external teams): {string.Join("; ", added)}.";
+        }
+        if (Distribution.EmailTemplateCatalog.Parse(key) is { } t && Distribution.EmailCopyRules.GoesOutside(t.Template)
+            && Distribution.EmailTemplateCatalog.Normalize(t.Part, current) != value)
+            return $"Changes the {t.Part.ToString().ToLowerInvariant()} of the {t.Template.Title} email, which goes to people outside TIDE: {Clip(value)}";
+        return null;
     }
 
     // A setting's key as the catalogue (or the email templates) names it; any other as it came.
@@ -251,7 +343,13 @@ public sealed class ConfigBundleService(IAppDbContextFactory dbs, ICurrentUser u
             var detail = !b.UrlHidden ? null : row is null
                 ? "comes in turned off: enter its address again (the bundle hides a key in it)"
                 : "keeps its own address (the bundle hides a key in it)";
-            changes.Add(new(SourcesArea, name, row is null ? BundleChangeKind.Add : BundleChangeKind.Update, detail));
+            // A lower default TLP lets the source's items into a wider edition, and to the AI provider (its limit is checked
+            // against the source's TLP).
+            var risk = row is not null && tlp < row.DefaultTlp
+                ? $"Lowers its default TLP from {Tlp.Label(row.DefaultTlp)} to {Tlp.Label(tlp)}: its items can go in a wider edition, and to the AI provider."
+                : null;
+            changes.Add(new(SourcesArea, name, row is null ? BundleChangeKind.Add : BundleChangeKind.Update,
+                risk is null ? detail : detail is null ? risk : $"{risk} It {detail}.", Warning: risk is not null));
             if (!apply) continue;
             if (row is null) db.Sources.Add(row = new Source { Name = name });
             if (row.Url != url) { row.ETag = null; row.LastModified = null; }

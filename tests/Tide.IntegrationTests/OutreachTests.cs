@@ -492,7 +492,7 @@ public class OutreachServiceTests : IDisposable
 
         var bundle = new ConfigBundle(ConfigBundle.FormatName, ConfigBundle.CurrentVersion, DateTimeOffset.UtcNow, "x", "1.5.4",
             [new BundleSetting("Actions:Sla:Kind:VendorInquiry", "6")], [], [], [], []);
-        var preview = await new ConfigBundleService(_db, _db.User, new CountingRoleDirectory(), TimeProvider.System).ImportAsync(bundle);
+        var preview = await new ConfigBundleService(_db, _db.User, new CountingRoleDirectory(), TimeProvider.System).PreviewAndImportAsync(bundle);
         preview.Changes.Should().Contain(c => c.Item == "Actions:Sla:Kind:Outreach" && c.Kind == BundleChangeKind.Add);
         (await _db.Sla().GetAsync()).ByKind[ActionKind.Outreach].Should().Be(6);
     }

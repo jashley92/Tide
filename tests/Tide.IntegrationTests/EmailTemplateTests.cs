@@ -148,7 +148,7 @@ public class EmailTemplateServiceTests : IDisposable
                 new BundleSetting("EmailTemplate:overdue:Footer", "x"),
             ],
         };
-        var done = await bundles.ImportAsync(incoming);
+        var done = await bundles.PreviewAndImportAsync(incoming);
         done.Changes.Single(c => c.Item == "EmailTemplate:brief-not-ready:Subject").Kind.Should().Be(BundleChangeKind.Update);
         done.Changes.Single(c => c.Item == "EmailTemplate:overdue:Body").Kind.Should().Be(BundleChangeKind.Skipped);
         done.Changes.Single(c => c.Item == "EmailTemplate:overdue:Footer").Kind.Should().Be(BundleChangeKind.Skipped);

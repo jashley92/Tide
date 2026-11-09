@@ -76,8 +76,9 @@ public sealed record ConfigBundle(
 public enum BundleChangeKind { Add, Update, Unchanged, Skipped }
 
 /// <param name="Area">"Settings", "AD groups", "Sources", "Scorecard", "Query templates", "Holidays".</param>
-/// <param name="Warning">The change needs a careful look before importing (it gives Admin, or a role to everyone);
-/// <see cref="Detail"/> says why.</param>
+/// <param name="Warning">The change needs a careful look before importing: it gives Admin or a role to everyone, or it
+/// widens what leaves the organization (a higher edition ceiling, more recipients, a lower source TLP, email turned on or
+/// reworded for people outside TIDE). <see cref="Detail"/> says why, and the import page asks for the warnings to be read.</param>
 public sealed record BundleChange(string Area, string Item, BundleChangeKind Kind, string? Detail = null, bool Warning = false);
 
 /// <summary>What importing a bundle would do (or did), item by item.</summary>
@@ -89,4 +90,13 @@ public sealed record BundlePreview(ConfigBundle Bundle, IReadOnlyList<BundleChan
 
     /// <summary>The changes flagged for a careful look.</summary>
     public int Warnings => Changes.Count(c => c.Warning);
+
+    /// <summary>"1 change needs", "3 changes need": how the page and the import's refusal count the warnings.</summary>
+    public string NeedALook => Warnings == 1 ? "1 change needs" : $"{Warnings} changes need";
+
+    /// <summary>What this preview showed, as a hash: the bundle and every planned change (its warning included). The import
+    /// is given it back and refuses when the plan it works out differs, so what's imported is what was read. A method, not
+    /// a property: it serializes the whole bundle, so a record's ToString mustn't.</summary>
+    public string Fingerprint() => Distribution.SendOutcome.Fingerprint(
+        [Bundle.ToJson(), .. Changes.Select(c => string.Join('\u001f', c.Area, c.Item, (int)c.Kind, c.Detail, c.Warning))]);
 }

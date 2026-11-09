@@ -114,10 +114,10 @@ public class HolidayTests : IDisposable
         var import = new ConfigBundleService(other, other.User, new CountingRoleDirectory(), TimeProvider.System, clock: other.Clock);
         var parsed = ConfigBundle.Parse(Encoding.UTF8.GetBytes(bundle.ToJson()));
         (await import.PreviewAsync(parsed)).Changes.Should().Contain(c => c.Area == "Holidays" && c.Kind == BundleChangeKind.Add);
-        await import.ImportAsync(parsed);
+        await import.PreviewAndImportAsync(parsed);
 
         other.Clock.Days.HolidayOn(Thu).Should().Be("Founders' Day");
-        (await import.ImportAsync(parsed)).Changes.Single(c => c.Area == "Holidays").Kind.Should().Be(BundleChangeKind.Unchanged);
+        (await import.PreviewAndImportAsync(parsed)).Changes.Single(c => c.Area == "Holidays").Kind.Should().Be(BundleChangeKind.Unchanged);
     }
 
     [Fact]

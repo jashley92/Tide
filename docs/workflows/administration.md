@@ -264,6 +264,31 @@ removed. Every item is checked as the app's own editor checks it, and one that i
 The page shows a preview of everything first (`PreviewAsync`, nothing written); *Import* then saves the changes together,
 all or nothing, audited like any change (`ImportAsync`), and reloads the saved settings, email templates and holidays.
 
+**Warnings.** Some changes are marked in the preview for a careful look, with the reason beside them, because they
+change who uses TIDE or widen what leaves the organization:
+
+| Change | Warning, for example |
+|---|---|
+| An AD group mapping that gives Admin, or maps a group everyone is in (Everyone, Authenticated Users, Domain Users and their SIDs) | "Check this: members of CONTOSO\Ops would administer this TIDE." |
+| `Distribution:TeamMaxTlp` or `Distribution:PublicMaxTlp` raised | "Raises the team edition's ceiling from TLP:AMBER to TLP:RED." |
+| New addresses in `Distribution:TeamRecipients`, `Distribution:PublicRecipients`, `Notifications:BriefNotReady:Recipients` or `Rotation:ManagerEmails` | "Adds 2 recipients to the company-wide edition: a@x.org, b@x.org." (five named, then how many more) |
+| An existing source's default TLP lowered | "Lowers its default TLP from TLP:AMBER to TLP:CLEAR: its items can go in a wider edition, and to the AI provider." |
+| `Notifications:ExternalReminders:Enabled` or `Notifications:Escalation:Enabled` turned on | "Turns on reminders to external teams, emailed to their contacts outside TIDE." |
+| Any part of the `external-reminder` or `escalation` email template reworded (the templates `EmailCopyRules.GoesOutside` names) | "Changes the body of the External team reminder email, which goes to people outside TIDE: …" |
+| `Notifications:Escalation:Steps` with a `contact` step (copies the escalation contact) or a `remind` step (emails an external team's contacts) that wasn't there at that day before | "Adds escalation steps that email people outside TIDE (escalation contacts, external teams): after 1: contact." |
+
+Each is compared with the value in force here: the saved one, or the server's when none is saved
+(`ConfigBundleService.Widens`). Lowering a ceiling, removing recipients, raising a source's TLP, turning email off, a new
+source, or a template set back to its default wording isn't warned. `Ai:MaxTlp` stays on the server and is never in a
+bundle. When the preview has a warning, *Import* stays off until the administrator ticks "I've read the warnings and want
+these changes". A warning doesn't stop the change: once ticked, it imports like the rest.
+
+The service enforces both, not only the page. `ImportAsync` takes the preview's `Fingerprint` (a SHA-256 of the bundle
+and every planned change, warnings included) and whether the warnings were acknowledged. It works the plan out again and,
+before saving anything, refuses with "The configuration changed since you previewed it: preview again." when the plan
+differs (the page then shows the new preview, its tick cleared), and refuses a plan with a warning that wasn't
+acknowledged.
+
 ## The audit log page
 
 System › Audit log (`/admin/system/audit`, `AuditLogService`) reads every change saved across TIDE: who, when, the
