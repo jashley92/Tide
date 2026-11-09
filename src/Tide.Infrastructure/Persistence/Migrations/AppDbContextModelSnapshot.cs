@@ -1728,6 +1728,13 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("DismissKeptAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("DismissKeptByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("DismissReason")
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");

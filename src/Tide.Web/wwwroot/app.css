@@ -1863,6 +1863,7 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-likely-count { font-family: var(--tide-font-data); font-weight: 700; color: var(--tide-accent-text); margin-right: var(--tide-space-1); }
 .tide-missed { font-size: var(--tide-text-sm); }
 .tide-missed-list { margin: var(--tide-space-1) 0; padding-left: 1.2rem; }
+.tide-missed-acts { display: inline-flex; gap: var(--tide-space-3); margin-left: var(--tide-space-1); white-space: nowrap; }
 
 /* The editor's "Add a report link". */
 .tide-add-link { display: flex; flex-wrap: wrap; gap: var(--tide-space-2); align-items: flex-end; margin-top: var(--tide-space-2); }

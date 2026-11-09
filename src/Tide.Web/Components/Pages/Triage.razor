@@ -87,19 +87,26 @@ else
     </ChildContent>
 </FilterBar>
 
-@if (_status == FeedItemStatus.New && !_older && _missed.Count > 0 && !_missedHidden)
+@if (_status == FeedItemStatus.New && !_older && _missed.Count > 0)
 {
     @* EP-81: a story dismissed this week that names a KEV-listed CVE or a watched adversary, and reached no brief. *@
+    var shown = _missed.Take(MissedShown).ToList();
     <div class="alert alert-warning tide-missed" role="status">
         <div><strong>Missed this week?</strong> @_missed.Count dismissed item@(_missed.Count == 1 ? "" : "s") name@(_missed.Count == 1 ? "s" : "") something we track, and no brief covered @(_missed.Count == 1 ? "it" : "them").</div>
         <ul class="tide-missed-list">
-            @foreach (var m in _missed.Take(5))
+            @foreach (var m in shown)
             {
                 <li><span class="fw-semibold">@m.Item.Title</span> <span class="tide-muted">· @m.SourceName · @m.Why.</span>
-                    <button type="button" class="btn btn-link btn-sm p-0 ms-1" disabled="@_busy" @onclick="() => PutBack(m)">Put back in New</button></li>
+                    <span class="tide-missed-acts">
+                        <button type="button" class="btn btn-link btn-sm p-0" disabled="@_busy" @onclick="() => PutBack(m)">Put back in New</button>
+                        <button type="button" class="btn btn-link btn-sm p-0" disabled="@_busy" @onclick="() => KeepDismissed([m])">Right to dismiss</button>
+                    </span></li>
             }
         </ul>
-        <button type="button" class="btn btn-link btn-sm p-0" @onclick="HideMissed">Hide until next week</button>
+        @if (shown.Count > 1)
+        {
+            <button type="button" class="btn btn-link btn-sm p-0" disabled="@_busy" @onclick="() => KeepDismissed(shown)">@(shown.Count == _missed.Count ? $"All {shown.Count} were right to dismiss" : $"These {shown.Count} were right to dismiss")</button>
+        }
     </div>
 }
 
@@ -241,6 +248,10 @@ else
                                 <Badge Tone="BadgeTone.Info" Class="tide-badge-wrap">@c.Why covered@(c.BriefDate is { } d ? $" {Ui.ShortDay(d)}" : ""): <a href="articles/@c.ArticleId" @onclick:stopPropagation="true">@Short(c.ArticleTitle)</a></Badge>
                             }
                             @if (item.Status == FeedItemStatus.Dismissed && item.DismissReason is not null) { <span>Dismissed: @item.DismissReason</span> }
+                            @if (item.DismissKept)
+                            {
+                                <span title="Said right to dismiss when Missed this week? asked">kept by @item.DismissKeptByName, @Ui.When(Clock, item.DismissKeptAtUtc!.Value)</span>
+                            }
                             @if (item.Status != FeedItemStatus.New && item.StatusByName is not null)
                             {
                                 <span>by @item.StatusByName@(item.StatusAtUtc is { } decidedAt ? ", " + Ui.When(Clock, decidedAt) : "")</span>
@@ -648,7 +659,6 @@ else
     private bool _sinceLast;
     private InboxSort _sort;
     private IReadOnlyList<MissedItem> _missed = [];
-    private bool _missedHidden;
     private DateTimeOffset? _lastBriefAt;
     private readonly TypingPause _typing = new(SearchPauseMs);
 
@@ -722,14 +732,45 @@ else
         await Refilter();
     }
 
-    // The ISO week, so "Hide until next week" lasts until Monday.
-    private static string ThisWeek => System.Globalization.ISOWeek.GetYear(DateTime.UtcNow) + "-" + System.Globalization.ISOWeek.GetWeekOfYear(DateTime.UtcNow);
+    // How many missed stories the notice lists at once; the rest follow as these are dealt with.
+    private const int MissedShown = 5;
 
-    private async Task HideMissed()
+    // "Right to dismiss": one click, no dialog. The check stops asking about them for everyone, colleagues' pages hear it,
+    // and the toast's Undo asks again. Only the notice changes, so it's not read again.
+    private async Task KeepDismissed(IReadOnlyList<MissedItem> items)
     {
-        _missedHidden = true;
-        try { await JS.InvokeVoidAsync("tideTriage.pref", "missed-hidden", ThisWeek); }
-        catch (JSDisconnectedException) { }
+        if (_busy) return;
+        _busy = true;
+        var ids = items.Select(m => m.Item.Id).ToList();
+        try
+        {
+            var (n, at) = await Intake.KeepDismissedAsync(ids);
+            _missed = [.. _missed.Where(m => !ids.Contains(m.Item.Id))];
+            Announce();
+            if (n == 0) Toasts.Show("Nothing changed: a colleague got to those first.");
+            else Toasts.Show(items is [var one] ? $"Kept dismissed: {Short(one.Item.Title)}" : $"Kept {n} dismissed.", async () =>
+            {
+                // From the toast: this page re-renders itself, as the click wasn't on it.
+                await UndoKeepDismissed(ids, at);
+                StateHasChanged();
+            });
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+    }
+
+    private async Task UndoKeepDismissed(IReadOnlyCollection<Guid> ids, DateTimeOffset at)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            if (await Intake.UndoKeepDismissedAsync(ids, at) == 0) Toasts.Show("Nothing to undo: a colleague already changed them.");
+            Announce();
+            await Load();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
     }
 
     private async Task PutBack(MissedItem missed)
@@ -739,6 +780,7 @@ else
         try
         {
             await Intake.RestoreAsync(missed.Item.Id);
+            Announce();
             Toasts.Show($"Put back in New: {Short(missed.Item.Title)}");
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
@@ -1109,8 +1151,7 @@ else
             {
                 _ref = DotNetObjectReference.Create(this);
                 await JS.InvokeVoidAsync("tideTriage.start", _ref);
-                // This browser's choices: the order, and the missed-stories notice hidden for this week.
-                _missedHidden = await JS.InvokeAsync<string?>("tideTriage.pref", "missed-hidden") == ThisWeek;
+                // This browser's choice of order.
                 if (await JS.InvokeAsync<string?>("tideTriage.pref", "sort") == nameof(InboxSort.Likely))
                 {
                     _sort = InboxSort.Likely;

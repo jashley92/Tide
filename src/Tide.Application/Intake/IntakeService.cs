@@ -776,7 +776,8 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
 
     /// <summary>
     /// Stories that reached triage in the last <see cref="MissedDays"/> days but no brief: dismissed items naming a
-    /// KEV-listed CVE no article covers, or a watched adversary no recent article is tagged with.
+    /// KEV-listed CVE no article covers, or a watched adversary no recent article is tagged with. Those someone has said
+    /// were right to dismiss (<see cref="KeepDismissedAsync"/>) aren't asked about again.
     /// </summary>
     public async Task<IReadOnlyList<MissedItem>> MissedAsync(CancellationToken ct = default)
     {
@@ -785,6 +786,7 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         var since = time.GetUtcNow().AddDays(-MissedDays);
         var dismissed = await db.FeedItems.AsNoTracking().Include(i => i.Source)
             .Where(i => i.Status == FeedItemStatus.Dismissed && i.FetchedAtUtc >= since)
+            .Where(NotKept)
             .OrderByDescending(i => i.FetchedAtUtc).ToListAsync(ct);
         if (dismissed.Count == 0) return [];
         var kev = await KevAsync(db, dismissed, ct);
@@ -953,6 +955,36 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
 
     /// <summary>Puts an item back in the inbox as new (undoes a shortlist, dismissal or duplicate; never a promotion).</summary>
     public Task RestoreAsync(Guid id, CancellationToken ct = default) => SetAsync(id, FeedItemStatus.New, null, null, ct);
+
+    // FeedItem.DismissKept as a query: a dismissal no one has said was right since it was made.
+    private static readonly System.Linq.Expressions.Expression<Func<FeedItem, bool>> NotKept =
+        i => i.DismissKeptAtUtc == null || (i.StatusAtUtc != null && i.DismissKeptAtUtc < i.StatusAtUtc);
+
+    /// <summary>
+    /// "Right to dismiss": the missed-stories check stops asking about these dismissed items, for everyone, with who said
+    /// so and when kept on each. Only those still dismissed and not kept since. How many changed, and the time they were
+    /// kept at (which <see cref="UndoKeepDismissedAsync"/> takes back).
+    /// </summary>
+    public async Task<(int Count, DateTimeOffset At)> KeepDismissedAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default)
+    {
+        RequireTriage();
+        await using var db = await dbs.CreateAsync(ct);
+        var by = Content.Words.Clip(user.DisplayName, FeedItem.MaxName);
+        var at = time.GetUtcNow();
+        var n = await db.FeedItems.Where(i => ids.Contains(i.Id) && i.Status == FeedItemStatus.Dismissed).Where(NotKept)
+            .ExecuteUpdateAsync(u => u.SetProperty(i => i.DismissKeptByName, by).SetProperty(i => i.DismissKeptAtUtc, at), ct);
+        return (n, at);
+    }
+
+    /// <summary>Undoes <see cref="KeepDismissedAsync"/> (its toast's Undo): the check asks about them again. Only the
+    /// keep made <paramref name="at"/> that time, so a colleague's since stands. How many it took back.</summary>
+    public async Task<int> UndoKeepDismissedAsync(IReadOnlyCollection<Guid> ids, DateTimeOffset at, CancellationToken ct = default)
+    {
+        RequireTriage();
+        await using var db = await dbs.CreateAsync(ct);
+        return await db.FeedItems.Where(i => ids.Contains(i.Id) && i.DismissKeptAtUtc == at)
+            .ExecuteUpdateAsync(u => u.SetProperty(i => i.DismissKeptByName, (string?)null).SetProperty(i => i.DismissKeptAtUtc, (DateTimeOffset?)null), ct);
+    }
 
     /// <summary>Shortlists several items at once (a group's "Shortlist the N"): only those still new, so a colleague's
     /// decision on one since isn't undone. Returns how many changed.</summary>
