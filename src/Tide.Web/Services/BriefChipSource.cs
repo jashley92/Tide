@@ -13,24 +13,38 @@ namespace Tide.Web.Services;
 /// <summary>
 /// What the top bar's brief chip says: the brief Today shows (<see cref="Day"/>), when it meets, and the step it's on
 /// (<see cref="BriefSteps.On"/> over the same steps as Today's strip). <see cref="Step"/> is null while the brief
-/// hasn't been started.
+/// hasn't been started. <see cref="Met"/> is the strip's own fact that the meeting is over (its Present step is done):
+/// from then the chip says "presented" where the time was, as Today says when the brief met.
 /// </summary>
-public sealed record BriefChipView(DateOnly Day, Guid? BriefId, string Meets, int Number, int Of, BriefStep? Step)
+public sealed record BriefChipView(DateOnly Day, Guid? BriefId, string Meets, int Number, int Of, BriefStep? Step, bool Met = false)
 {
-    /// <summary>"step 3 of 5 · Order"; what Send says once it's done ("Sent"); "not started" with no brief yet.</summary>
-    public string Where => Step switch
+    // Send done: nothing is left, and the chip says what the strip's last step says ("Sent", "Distributed", "Not sent").
+    private bool Finished => Step is { State: StepState.Done };
+
+    /// <summary>What's seen in a wide window: "Brief 10:30 AM · step 3 of 5 · Order", "Brief 10:30 AM · not started",
+    /// "Brief presented · step 5 of 5 · Send", "Brief · Sent".</summary>
+    public string Full => Step switch
     {
-        null => "not started",
-        { State: StepState.Done } done => done.Detail,
-        _ => $"step {Number} of {Of} · {Step.Label}",
+        null => $"Brief {Meets} · not started",
+        _ when Finished => $"Brief · {Step.Detail}",
+        _ => $"Brief {(Met ? "presented" : Meets)} · step {Number} of {Of} · {Step.Label}",
     };
 
-    /// <summary>The same in a narrow window: "3/5", "done", or nothing with no brief yet.</summary>
-    public string? WhereShort => Step switch
+    /// <summary>What's seen in a narrow one: "10:30 AM · 3/5", "10:30 AM", "Presented · 5/5", "Sent".</summary>
+    public string Short => Step switch
     {
-        null => null,
-        { State: StepState.Done } => "done",
-        _ => $"{Number}/{Of}",
+        null => Meets,
+        _ when Finished => Step.Detail.Split(" · ")[0],
+        _ => $"{(Met ? "Presented" : Meets)} · {Number}/{Of}",
+    };
+
+    /// <summary>The link's name at every width, which the short text alone wouldn't carry: "Brief at 10:30 AM, step 3
+    /// of 5, Order".</summary>
+    public string Name => Step switch
+    {
+        null => $"Brief at {Meets}, not started",
+        _ when Finished => $"Brief, {Step.Detail.Replace(" · ", ", ")}",
+        _ => $"Brief {(Met ? "presented" : "at " + Meets)}, step {Number} of {Of}, {Step.Label}",
     };
 
     /// <summary>When the brief meets, as the chip says it: "10:30 AM", with the day in front ("Mon 10:30 AM") when
@@ -113,7 +127,8 @@ public sealed class BriefChipSource : IDisposable
         var steps = BriefSteps.For(brief, newInFeed: null, missingNumbers: 0, meets, await _sends.SendsAsync(day),
             BriefSteps.NothingToSend(brief, teamMax, publicMax), _sends.SharePointRequired);
         var (number, step) = BriefSteps.On(steps);
-        return new BriefChipView(day, brief.Id, meets, number, steps.Count, step);
+        var met = steps.Any(s => s is { Kind: BriefStepKind.Present, State: StepState.Done });
+        return new BriefChipView(day, brief.Id, meets, number, steps.Count, step, met);
     }
 
     public void Dispose() => _feed.Changed -= OnChanged;

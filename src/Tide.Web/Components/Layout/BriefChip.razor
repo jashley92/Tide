@@ -1,7 +1,8 @@
 @* The brief chip in the top bar: when the brief Today shows meets and which of its five steps it's on ("Brief 10:30 AM ·
    step 3 of 5 · Order"), as a link to Today. For those who read the team edition and write the brief, as Today's step
    strip is; nothing is drawn for anyone else. While the meeting is live it says so and leaves joining to the banner
-   (LiveMeetingJoin). A narrow window shows the short form ("10:30 AM · 3/5"); app.css says where.
+   (LiveMeetingJoin). A narrow window shows the short form ("10:30 AM · 3/5"); app.css says where. The link's name
+   is the full wording at every width, and on Today it's marked as the current page.
    What it says comes from BriefChipSource, which keeps it for the circuit: drawing the top bar reads nothing. It's read
    again when the change feed says the brief changed (a colleague's save, or this circuit's own), and checked on each
    navigation, which costs nothing unless the day has turned. *@
@@ -16,7 +17,7 @@
     _liveDrawn = Live(view);
     @if (_liveDrawn)
     {
-        <a class="tide-brief-chip is-live" href="" title="Open Today">
+        <a class="tide-brief-chip is-live" href="" aria-label="Brief is live" aria-current="@Current" title="Open Today">
             <span class="tide-live-dot" aria-hidden="true"></span>
             <span class="tide-brief-chip-full">Brief is live</span>
             <span class="tide-brief-chip-short">Live</span>
@@ -24,16 +25,17 @@
     }
     else
     {
-        <a class="tide-brief-chip" href="" title="Open Today">
+        <a class="tide-brief-chip" href="" aria-label="@view.Name" aria-current="@Current" title="Open Today">
             <span class="bi bi-journal-text" aria-hidden="true"></span>
-            <span class="tide-brief-chip-full">Brief @view.Meets &middot; @view.Where</span>
-            <span class="tide-brief-chip-short">@view.Meets@(view.WhereShort is { } step ? " · " + step : "")</span>
+            <span class="tide-brief-chip-full">@view.Full</span>
+            <span class="tide-brief-chip-short">@view.Short</span>
         </a>
     }
 }
 
 @code {
     private BriefChipView? _view;
+    private bool _onToday;
     private LiveChanges? _changes;
     private bool _liveDrawn;
 
@@ -43,16 +45,23 @@
         _changes = new LiveChanges(Feed, new ChangeOrigin(), Source.Follows, InvokeAsync, _ => Refresh());
         Meetings.Changed += OnMeetingChanged;
         Nav.LocationChanged += OnLocationChanged;
+        _onToday = OnToday();
         _view = await Source.GetAsync();
     }
+
+    // Today is the app's start page, whatever its query (?tab=distribute opens its Send dialog).
+    private bool OnToday() => Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].Length == 0;
+
+    // On Today the chip links to the page you're on, and says so as the sidebar's link does.
+    private string? Current => _onToday ? "page" : null;
 
     private bool Live(BriefChipView view) => view.BriefId is { } brief && Meetings.IsLive(brief);
 
     private async Task Refresh()
     {
-        var view = await Source.GetAsync();
-        if (view == _view) return;
-        _view = view;
+        var (view, onToday) = (await Source.GetAsync(), OnToday());
+        if (view == _view && onToday == _onToday) return;
+        (_view, _onToday) = (view, onToday);
         StateHasChanged();
     }
 
