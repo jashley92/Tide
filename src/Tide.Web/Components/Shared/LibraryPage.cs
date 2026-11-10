@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using Microsoft.JSInterop;
 using Tide.Application.Abstractions;
 using Tide.Application.Org;
 using Tide.Web.Services;
@@ -19,6 +20,7 @@ public sealed record LibraryEntry(Guid Id, string Name, string? Description, str
 public abstract class LibraryPage<TRow> : ComponentBase, IDisposable where TRow : class
 {
     [Inject] protected NavigationManager Nav { get; set; } = default!;
+    [Inject] private IJSRuntime JS { get; set; } = default!;
     [Inject] protected ToastService Toasts { get; set; } = default!;
     [Inject] protected OrgClock Clock { get; set; } = default!;
     [Inject] private ChangeFeed Feed { get; set; } = default!;
@@ -30,7 +32,14 @@ public abstract class LibraryPage<TRow> : ComponentBase, IDisposable where TRow 
     private protected IReadOnlyList<TRow> _shown = [];
     private protected IReadOnlyList<TRow> _onPage = [];
     private IReadOnlyList<LibraryEntry> _entries = [];
-    private Guid? _selectedId, _reveal;
+    private Guid? _selectedId, _reveal, _rowSaid;
+
+    // Where focus goes once the next render is on screen: a form that opened, or back to the list when one closed or the
+    // entry shown left it. The library's markup captures the three places.
+    private enum FocusOn { Form, List }
+    private FocusOn? _focus;
+    private protected LibraryBrowser? _browser;
+    private protected ElementReference _formStart, _empty;
     private string? _pageAsked, _rowAsked;
     private protected int _page = 1;
     private protected bool _busy, _showRetired;
@@ -60,8 +69,8 @@ public abstract class LibraryPage<TRow> : ComponentBase, IDisposable where TRow 
     // change, keeps the page, or shows the last one when a delete or retire took this page away.
     [SupplyParameterFromQuery(Name = "page")] public string? PageParam { get; set; }
 
-    // The selected entry, so a link to one opens it (on whichever page of the list it's on). Choosing another keeps the
-    // address in step in the browser (library.js), without a navigation, so focus stays in the list.
+    // The selected entry, so a link to one opens it (on whichever page of the list it's on). The address is kept in step
+    // with the one shown in the browser (SayRow), without a navigation, so focus stays in the list.
     [SupplyParameterFromQuery(Name = "row")] public string? RowParam { get; set; }
 
     /// <summary>The Library page's: called after a step here changed the rows, so the tab's count is read again.</summary>
@@ -105,6 +114,7 @@ public abstract class LibraryPage<TRow> : ComponentBase, IDisposable where TRow 
     {
         _page = TableView.PageFrom(PageParam);
         (_pageAsked, _rowAsked, _selectedId) = (PageParam, RowParam, RowId(RowParam));
+        _rowSaid = _selectedId;
         // A link to an entry alone (no page): the page of the list it's on.
         if (PageParam is null) _reveal = _selectedId;
         _live = new LiveChanges(Feed, Origin, c => c.Topic == Topic, InvokeAsync, OnChangedElsewhere);
@@ -127,7 +137,7 @@ public abstract class LibraryPage<TRow> : ComponentBase, IDisposable where TRow 
     {
         if (PageParam == _pageAsked && RowParam == _rowAsked) return;
         var sameRow = RowParam == _rowAsked;
-        (_pageAsked, _rowAsked) = (PageParam, RowParam);
+        (_pageAsked, _rowAsked, _rowSaid) = (PageParam, RowParam, RowId(RowParam));
         var page = TableView.PageFrom(PageParam);
         if (page == _page && sameRow) return;
         (_page, _selectedId) = (page, RowId(RowParam));
@@ -181,10 +191,39 @@ public abstract class LibraryPage<TRow> : ComponentBase, IDisposable where TRow 
     // "1–20 of 34 playbooks", or "12 playbooks" on one page.
     protected string CountText => TableView.Count((_page - 1) * PageSize + 1, _onPage.Count, _shown.Count, null, false, Names.One, Names.Many);
 
-    // A page's address: this tab's, with no entry named. An entry's: on this page.
+    // A page's address: this tab's, with no entry named.
     protected string PageHref(int page) => Address(page, null);
 
-    protected string RowHref(Guid id) => Address(_page, id);
+    /// <summary>The address of what's shown: this page of the list with the selected entry, or no entry when nothing is.</summary>
+    internal string AddressShown => Address(_page, _selectedId);
+
+    /// <summary>A form opened (New, Edit): its first box takes focus.</summary>
+    protected void FocusForm() => _focus = FocusOn.Form;
+
+    /// <summary>
+    /// A form closed (Save, Cancel) or the entry shown left the list (Delete, Retire): focus goes to the selected row,
+    /// so J and K carry on from it, or to the empty state when the list has none.
+    /// </summary>
+    protected void FocusList() => _focus = FocusOn.List;
+
+    // Once a render is on screen: focus where a step left it owing (not while the step still runs, when the form or the
+    // old row is still drawn), and the address made to name the entry shown, in place (tideLibrary.remember, as Triage
+    // remembers its row), when it names another or one that's gone.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focus is { } to && !_busy)
+        {
+            _focus = null;
+            if (to == FocusOn.Form) await _formStart.TryFocusAsync(orGone: true);
+            else if (_onPage.Count == 0) await _empty.TryFocusAsync(orGone: true);
+            else if (_browser is not null) await _browser.FocusSelectedAsync();
+        }
+        if (_selectedId == _rowSaid || _rows is null) return;
+        _rowSaid = _selectedId;
+        try { await JS.InvokeVoidAsync("tideLibrary.remember", AddressShown); }
+        catch (JSDisconnectedException) { /* the tab has gone */ }
+        catch (InvalidOperationException) { /* not rendered interactively */ }
+    }
 
     private string Address(int page, Guid? row) =>
         Nav.GetUriWithQueryParameters(new Dictionary<string, object?> { ["page"] = page == 1 ? null : page, ["row"] = row });
@@ -266,6 +305,7 @@ public abstract class LibraryPage<TRow> : ComponentBase, IDisposable where TRow 
     {
         await change();
         Toasts.Show(retired ? $"{name} retired. It's no longer offered on actions." : $"{name} restored.");
+        if (retired && !_showRetired) FocusList();   // it left the list, and its buttons with it
     });
 
     // "Not used yet", or how often it was ("Used on 3 actions", "Used for 1 email").

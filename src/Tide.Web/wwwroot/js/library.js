@@ -3,10 +3,10 @@
 // single-key shortcuts are off); the up and down arrows do the same while a row has focus, so they still scroll the
 // page from anywhere else. The rows are one tab stop (a roving tabindex, as .NET renders them): moving focuses the row,
 // and focus chooses it (.NET, @onfocus), so the highlight and focus are always the same row.
-// A chosen row's address (its data-href: this page of the list, ?row= its entry) replaces the address shown, in place:
-// a copied link or a reload opens the same entry, with no navigation to take focus out of the list.
+// .NET keeps the address naming the entry shown (tideLibrary.remember, after each change of it): the address is
+// replaced in place, so a copied link or a reload opens the same entry, with no navigation to take focus out of the list.
 // CSP-safe (an external file, no inline handlers); one listener for every list.
-(function () {
+window.tideLibrary = (function () {
     const rowOf = function (target) { return target && target.closest ? target.closest('.tide-library-row') : null; };
 
     document.addEventListener('keydown', function (e) {
@@ -33,12 +33,11 @@
         else if (from && from !== document.activeElement) from.focus();
     });
 
-    function remember(e) {
-        const row = rowOf(e.target);
-        if (!row || !row.dataset.href) return;
-        const address = new URL(row.dataset.href, document.baseURI).href;
-        if (address !== location.href) history.replaceState(history.state, '', address);
-    }
-    document.addEventListener('focusin', remember);
-    document.addEventListener('click', remember);
+    return {
+        // This history entry's address becomes the page and entry shown (the page's own state is kept).
+        remember: function (url) {
+            const address = new URL(url, document.baseURI).href;
+            if (address !== location.href) history.replaceState(history.state, '', address);
+        }
+    };
 })();

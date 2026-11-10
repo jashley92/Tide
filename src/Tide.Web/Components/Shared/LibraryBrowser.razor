@@ -1,8 +1,7 @@
 @* A library's list and the entry chosen from it, side by side (one column on a narrow screen): the page's entries by
    name on the left, each with what it's for, its kind and how often it was used; the selected one in full on the
    right (ChildContent). The rows are chosen as Triage's are: the selected row is the list's one tab stop
-   (aria-current), a click or focus chooses a row, and J/K or the arrow keys move to the next (library.js, which also
-   keeps the address's ?row= in step from each row's data-href, so a copied link opens the same entry). *@
+   (aria-current), a click or focus chooses a row, and J/K or the arrow keys move to the next (library.js). *@
 <div class="tide-paged">
 <p class="small tide-muted mb-2" role="status">@Count</p>
 <div class="tide-library">
@@ -11,8 +10,8 @@
             @foreach (var e in Entries)
             {
                 var on = e.Id == Selected;
-                <li class="tide-library-row@(on ? " selected" : "")" aria-current="@(on ? "true" : null)" tabindex="@(on ? "0" : "-1")" data-href="@Href(e.Id)"
-                    @key="e.Id" @onclick="() => OnPick.InvokeAsync(e.Id)" @onfocus="() => OnPick.InvokeAsync(e.Id)">
+                <li class="tide-library-row@(on ? " selected" : "")" aria-current="@(on ? "true" : null)" tabindex="@(on ? "0" : "-1")"
+                    @ref="_rows[e.Id]" @key="e.Id" @onclick="() => OnPick.InvokeAsync(e.Id)" @onfocus="() => OnPick.InvokeAsync(e.Id)">
                     <span class="tide-library-row-name">@e.Name</span>
                     @if (e.Description is { } about) { <span class="tide-library-row-about">@about</span> }
                     <span class="tide-library-row-meta">@(e.Retired ? "Retired · " : "")@e.Kind · @e.Used</span>
@@ -38,9 +37,6 @@
     /// <summary>The list's accessible name ("Saved queries").</summary>
     [Parameter, EditorRequired] public string Label { get; set; } = "";
 
-    /// <summary>An entry's address (this page of the list, with it selected).</summary>
-    [Parameter, EditorRequired] public Func<Guid, string> Href { get; set; } = default!;
-
     [Parameter] public EventCallback<Guid> OnPick { get; set; }
 
     /// <summary>The selected entry in full: its card, or its edit form.</summary>
@@ -48,4 +44,10 @@
 
     /// <summary>Under the list: its pager.</summary>
     [Parameter] public RenderFragment? Below { get; set; }
+
+    private readonly Dictionary<Guid, ElementReference> _rows = [];
+
+    /// <summary>Puts focus on the selected row (after a form closed, or the entry shown before left the list).</summary>
+    public Task FocusSelectedAsync() =>
+        Selected is { } id && _rows.TryGetValue(id, out var row) ? row.TryFocusAsync(orGone: true) : Task.CompletedTask;
 }

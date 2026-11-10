@@ -65,13 +65,13 @@ else if (EditingAway)
 }
 else if (_rows.Count == 0)
 {
-    <div class="tide-card">
+    <div class="tide-card" tabindex="-1" @ref="_empty">
         <EmptyState Icon="bi-journal-check" Title="No playbooks yet.">@(_canWrite ? "Add one here, then choose it when you raise an action." : "Someone who works actions can add one.")</EmptyState>
     </div>
 }
 else if (Shown.Count == 0)
 {
-    <div class="tide-card">
+    <div class="tide-card" tabindex="-1" @ref="_empty">
         <EmptyState Icon="bi-search" Title="No playbook matches these filters." />
     </div>
 }
@@ -80,7 +80,7 @@ else
     var r = Selected!;
     var p = r.Playbook;
     var id = "pb-" + p.Id.ToString("N");
-    <LibraryBrowser Count="@CountText" Entries="Entries" Selected="SelectedId" Label="Playbooks" Href="RowHref" OnPick="Pick">
+    <LibraryBrowser Count="@CountText" Entries="Entries" Selected="SelectedId" Label="Playbooks" OnPick="Pick" @ref="_browser">
         <ChildContent>
             <article class="tide-hunt tide-library-entry @(p.IsRetired ? "tide-retired" : "")" aria-labelledby="@(id + "-h")" @key="p.Id">
                 @if (_form?.Id == p.Id)
@@ -183,7 +183,7 @@ else
         <div class="row g-2">
             <div class="col-md-7">
                 <label class="tide-field-label" for="pb-f-name">Name</label>
-                <input id="pb-f-name" class="form-control form-control-sm" maxlength="@Playbook.MaxName" placeholder="Ransomware IOC sweep" @bind="f.Name" />
+                <input id="pb-f-name" @ref="_formStart" class="form-control form-control-sm" maxlength="@Playbook.MaxName" placeholder="Ransomware IOC sweep" @bind="f.Name" />
             </div>
             <div class="col-md-5">
                 <label class="tide-field-label" for="pb-f-kind">For</label>
@@ -205,7 +205,7 @@ else
         </div>
         <div class="d-flex gap-2 mt-2">
             <button class="btn btn-primary btn-sm" data-submit disabled="@_busy" @onclick="Save">Save</button>
-            <button class="btn btn-outline-secondary btn-sm" @onclick="() => _form = null">Cancel</button>
+            <button class="btn btn-outline-secondary btn-sm" @onclick="Cancel">Cancel</button>
         </div>
         </div>
     };
@@ -220,13 +220,21 @@ else
     {
         _form = new PlaybookForm { Kind = _kind };
         _steps = null;
+        FocusForm();
         StateHasChanged();
+    }
+
+    private void Cancel()
+    {
+        _form = null;
+        FocusList();
     }
 
     internal void Edit(Playbook p)
     {
         _form = PlaybookForm.From(p);
         _steps = string.Join("\n", _form.Steps);
+        FocusForm();
         StateHasChanged();
     }
 
@@ -237,6 +245,7 @@ else
         Reveal(await PlaybookSvc.SaveAsync(_form));
         Toasts.Show(_form.Id is null ? $"{_form.Name.Trim()} saved for the team." : "Saved.");
         _form = null;
+        FocusList();
     });
 
     // Not while a form is open: a move changes the two it swaps, so an edit open on either would be refused as stale.
@@ -251,6 +260,7 @@ else
         {
             await PlaybookSvc.DeleteAsync(p.Id);
             Toasts.Show($"{p.Name} deleted.");
+            FocusList();
         });
     }
 }

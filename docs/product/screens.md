@@ -771,7 +771,9 @@ action a playbook is for) and how often it was used ("Used on 3 actions", "Not u
 selected entry in full, with its buttons (**Copy**, **Edit**, **Retire** or **Restore**, **Delete**). Choose an
 entry with a click, with `J` and `K` from anywhere on the page, or with the up and down arrows while the list has
 focus, as on Triage. The selected entry is in the address (`?row=`), so a copied link opens the same entry on
-whichever page of the list it's on. An entry just saved is the one shown. On a window narrower than about 1000px
+whichever page of the list it's on; when nothing is selected (a filter matches nothing) the address names none. An
+entry just saved is the one shown. Opening a form puts the cursor in its first box; Save, Cancel and a confirmed
+Delete put focus back on the selected row, so `J` and `K` carry on from there. On a window narrower than about 1000px
 the list sits above the entry.
 
 A colleague's change re-reads the list in place; an edit under way keeps what's typed, and its save is refused if

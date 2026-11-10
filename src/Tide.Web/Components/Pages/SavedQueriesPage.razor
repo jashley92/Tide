@@ -63,13 +63,13 @@ else if (EditingAway)
 }
 else if (_rows.Count == 0)
 {
-    <div class="tide-card">
+    <div class="tide-card" tabindex="-1" @ref="_empty">
         <EmptyState Icon="bi-bookmark" Title="No saved queries yet.">Save one from any hunt on an action with Save for the team@(_canWrite ? ", or add one here" : "").</EmptyState>
     </div>
 }
 else if (Shown.Count == 0)
 {
-    <div class="tide-card">
+    <div class="tide-card" tabindex="-1" @ref="_empty">
         <EmptyState Icon="bi-search" Title="No saved query matches these filters." />
     </div>
 }
@@ -79,7 +79,7 @@ else
     var r = Selected!;
     var q = r.Query;
     var id = "sq-" + q.Id.ToString("N");
-    <LibraryBrowser Count="@CountText" Entries="Entries" Selected="SelectedId" Label="Saved queries" Href="RowHref" OnPick="Pick">
+    <LibraryBrowser Count="@CountText" Entries="Entries" Selected="SelectedId" Label="Saved queries" OnPick="Pick" @ref="_browser">
         <ChildContent>
             <article class="tide-hunt tide-library-entry @(q.IsRetired ? "tide-retired" : "")" aria-labelledby="@(id + "-h")" @key="q.Id">
                 @if (_form?.Id == q.Id)
@@ -162,7 +162,7 @@ else
             <div class="row g-2">
                 <div class="col-md-7">
                     <label class="tide-field-label" for="sq-f-name">Name</label>
-                    <input id="sq-f-name" class="form-control form-control-sm" maxlength="@SavedQuery.MaxName" placeholder="Encoded PowerShell from Office" @bind="f.Name" />
+                    <input id="sq-f-name" @ref="_formStart" class="form-control form-control-sm" maxlength="@SavedQuery.MaxName" placeholder="Encoded PowerShell from Office" @bind="f.Name" />
                 </div>
                 <div class="col-md-5">
                     <label class="tide-field-label" for="sq-f-language">Language</label>
@@ -182,7 +182,7 @@ else
             </div>
             <div class="d-flex gap-2 mt-2">
                 <button class="btn btn-primary btn-sm" disabled="@_busy" data-submit @onclick="Save">Save</button>
-                <button class="btn btn-outline-secondary btn-sm" @onclick="() => _form = null">Cancel</button>
+                <button class="btn btn-outline-secondary btn-sm" @onclick="Cancel">Cancel</button>
             </div>
         </div>
     };
@@ -193,12 +193,23 @@ else
         await base.OnInitializedAsync();
     }
 
-    private void New() => _form = new SavedQueryForm { Dialect = _language.Length > 0 ? _language : QueryDialects.All[0].Key };
+    private void New()
+    {
+        _form = new SavedQueryForm { Dialect = _language.Length > 0 ? _language : QueryDialects.All[0].Key };
+        FocusForm();
+    }
 
     internal void Edit(SavedQuery q)
     {
         _form = SavedQueryForm.From(q);
+        FocusForm();
         StateHasChanged();
+    }
+
+    private void Cancel()
+    {
+        _form = null;
+        FocusList();
     }
 
     internal Task Save() => Run(async () =>
@@ -206,6 +217,7 @@ else
         Reveal(await SavedSvc.SaveAsync(_form!));
         Toasts.Show(_form!.Id is null ? $"{_form.Name.Trim()} saved for the team." : "Saved.");
         _form = null;
+        FocusList();
     });
 
     internal Task Retire(SavedQuery q, bool retired) => Retiring(q.Name, retired, () => SavedSvc.SetRetiredAsync(q.Id, retired));
@@ -217,6 +229,7 @@ else
         {
             await SavedSvc.DeleteAsync(q.Id);
             Toasts.Show($"{q.Name} deleted.");
+            FocusList();
         });
     }
 }

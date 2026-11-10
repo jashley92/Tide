@@ -153,11 +153,12 @@ public partial class LibraryTests(TideApp app) : IClassFixture<TideApp>
         html.Should().Contain("<ul class=\"tide-library-list\" aria-label=\"Outreach templates\">");
         Regex.Matches(html, "<li class=\"tide-library-row").Should().HaveCount(20, "the list is the page's entries");
         Regex.Matches(html, "aria-current=\"true\"").Should().HaveCount(1);
-        html.Should().MatchRegex($"<li class=\"tide-library-row selected\" aria-current=\"true\" tabindex=\"0\" data-href=\"http://localhost/library/templates\\?row={ids[0]}\">\\s*<span class=\"tide-library-row-name\">Picked {tag} 00</span>")
-            .And.MatchRegex($"<li class=\"tide-library-row\" tabindex=\"-1\" data-href=\"http://localhost/library/templates\\?row={ids[1]}\">", "the selected row is the one tab stop")
+        html.Should().MatchRegex($"<li class=\"tide-library-row selected\" aria-current=\"true\" tabindex=\"0\">\\s*<span class=\"tide-library-row-name\">Picked {tag} 00</span>")
+            .And.MatchRegex($"<li class=\"tide-library-row\" tabindex=\"-1\">\\s*<span class=\"tide-library-row-name\">Picked {tag} 01</span>", "the selected row is the one tab stop")
             .And.Contain("<span class=\"tide-library-row-about\">For the vendor 1</span>").And.Contain("TLP:CLEAR · Not used yet");
         html.Should().Contain("Body of 0</pre>").And.NotContain("Body of 1</pre>", "only the selected entry is shown in full");
         html.Should().Contain("href=\"http://localhost/library/templates?page=2\" aria-label=\"Page 2\"", "a page's link is the tab's own, without the row");
+        r.Component.AddressShown.Should().Be($"http://localhost/library/templates?row={ids[0]}", "the address names the entry shown, not the one the link named");
 
         // Choosing another, as a click or the keys do.
         await r.Click(c => { c.Pick(ids[3]); return Task.CompletedTask; });
@@ -173,7 +174,18 @@ public partial class LibraryTests(TideApp app) : IClassFixture<TideApp>
             return Task.CompletedTask;
         });
         r.Component.Selected!.Template.Id.Should().Be(ids[20]);
-        WebUtility.HtmlDecode(await r.Html()).Should().Contain($"data-href=\"http://localhost/library/templates?row={ids[21]}&page=2\"", "an entry's address is on its page");
+        r.Component.AddressShown.Should().Be($"http://localhost/library/templates?row={ids[20]}&page=2", "an entry's address is on its page");
+
+        // A filter that matches nothing: nothing is selected, the address names no entry, and the empty state can take focus.
+        await Do(r, c =>
+        {
+            typeof(OutreachTemplatesPage).GetField("_words", Private)!.SetValue(c, "zzqx-" + tag);
+            c.Refilter();
+            return Task.CompletedTask;
+        });
+        r.Component.Selected.Should().BeNull();
+        r.Component.AddressShown.Should().Be("http://localhost/library/templates");
+        (await r.Html()).Should().Contain("<div class=\"tide-card\" tabindex=\"-1\">").And.Contain("No template matches these filters.");
     }
 
     [Fact]
@@ -190,6 +202,8 @@ public partial class LibraryTests(TideApp app) : IClassFixture<TideApp>
 
         await r.Click(c => c.Retire(saved, true));
         r.Component.Selected?.Query.Id.Should().NotBe(saved.Id, "it left the list");
+        r.Component.AddressShown.Should().NotContain(saved.Id.ToString(), "the address names the entry shown now")
+            .And.Contain("row=" + r.Component.Selected!.Query.Id);
     }
 
     [Fact]
