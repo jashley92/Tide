@@ -11,7 +11,7 @@ public sealed record ShortcutGroup(string Title, IReadOnlyList<Shortcut> Keys);
 
 /// <summary>
 /// The keyboard shortcuts the "?" overlay lists (ShortcutsOverlay): those of the page you're on, then those that work
-/// everywhere. They describe the handlers in wwwroot/js (palette.js, theme.js, triage.js, library.js, present.js, chart.js, editor.js, submitkeys.js) and the dialogs'
+/// everywhere. They describe the handlers in wwwroot/js (palette.js, theme.js, rows.js, triage.js, library.js, present.js, chart.js, editor.js, submitkeys.js) and the dialogs'
 /// own keys, so a change to one of those changes this too.
 /// </summary>
 public static class Shortcuts

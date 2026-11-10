@@ -248,6 +248,7 @@ In `src/Tide.Web/Components/Shared`. Use these rather than drawing a new version
 | `DataTable` | The one list table: a filter that narrows as you type, a count ("Showing 8 of 12 articles"), sortable headings (real buttons with `aria-sort`), optional group headings, an empty state that names the filter, and numbered pages (`Pager`) rather than a silent cut-off. `PageInAddress` keeps `?page=`; `ServerSide` reads one page at a time. Logic in `TableView`. |
 | `FilterBar` | Every filtered list's one filter bar (EP-87): the page's search box (`Search`), quick **pills**, a **chip** per filter in force (choose it to change it; its ✕ has `aria-label="Remove filter Team: Network Engineering"`), **+ Filter** (a menu of the filters with `InMenu`, listed under their `Section` headings in the order the first of each comes: `Single`, `Multi` with Apply, or `Text`, with options, groups, suggestions and a hint; a filter with more than `FilterDef.FindAbove` options gets a find box above them, `tide-filter-find`, focused as they open, narrowing them by name as you type, the one in force kept; Down goes to the first match and Enter picks it), the count (`role="status"`, so a change is announced) and **Clear**. Each `FilterDef` carries what it's set to (`Values`) and how to set it (`Apply`); the bar applies a choice and then calls the page's one refilter step (`OnChanged`: back to page 1, read again, the address). A `FilterPill` is a preset of a filter (`FilterKey` and its `Values`): it's on while that filter holds exactly those values (`aria-pressed`, the `tide-chip-pick` selected tint), pressing it sets them or clears the filter, so pills of one filter take turns, and while it's on that filter's chip isn't shown. The page keeps its own state and address; a page whose filters are links (Articles, the audit log) passes its own `Chips` with `RemoveHref` and a `ClearHref`, and its filters' `Apply` goes to the new address. Several values go in one parameter, comma-separated (`FilterValues.Split`, `Join`); enum options come from `FilterOption.ForEnum`. The menu is a `tide-popover`, as the account menu is. From the keyboard: Enter, Space or the down arrow on + Filter opens it with focus on its first choice, the arrows and Home/End move (`filters.js`), Esc closes it and focus returns to + Filter, Tab leaves it closed (a typed filter's form, its box, Remove and Apply, is moved through with Tab and closes only once focus is past either end, so Tab and Shift+Tab still step through a date box's month, day and year). On a phone the pills scroll sideways and the menu rises from the bottom. Used by Actions, Triage, Articles, the audit log, Saved queries, Outreach templates and Metric history. Model in `FilterBarModel.cs`. |
 | `Pager` | Previous, numbered pages (with … gaps) and Next, `aria-current` on the current page. Given `Href`, the pages are links to their own addresses (`?page=`), so a reload, Back, a copied link or a middle-click keeps the page; without it they're buttons that call `OnPage`. Used by `DataTable` (with `Href` when `PageInAddress`), Triage, Saved queries and Outreach templates. `pager.js` brings the list's top back into view. |
+| `RowKeys`, `RowSelection` | A list page's selected row: the keys that move it, and how it's read from the address, moved and drawn. See [a list with a selected row](#a-list-with-a-selected-row). Used by Triage. |
 | `LibraryPage<TRow>` | The base of the team libraries (Saved queries, Outreach templates, Playbooks, each a tab of the `Library` page; `@inherits LibraryPage<…>`): the rows read with or without the retired ones, the words typed, 20 entries a page with the page in the address, the selected entry (`Selected`, `Pick`; `?row=` in the address, and a link to an entry opens the page of the list it's on), Clear, Show retired, a colleague's change re-read in place (its `ChangeFeed` topic), one step at a time (then `OnChanged`, so the Library counts the tab again), Retire and Restore with their toasts, "Used on …" and "Saved by …, changed by …", and `EditingAway` (the entry being edited isn't the one shown, so the library draws its form above the list; when a colleague's change moved the shown entry to another page, the page goes there instead). A library supplies how it reads its rows, the filter that leaves some, what it calls them, a row's id, how the list names it (`LibraryEntry`) and the one being edited, and its own form and the selected entry's card. Focus follows the work, set after the render as elsewhere (`FocusForm`, `FocusList`): a form that opens takes it in its first box; Save, Cancel, a confirmed Delete and a Retire that takes the entry off the list put it on the selected row, or on the empty state when the list has none. After each render the address is made to name the entry shown, or none (`tideLibrary.remember`). |
 | `LibraryBrowser` | A library's list beside the entry chosen from it (one column below 1000px): the page's entries as rows (name, what it's for, kind, use), the selected one `aria-current="true"` and the list's one tab stop, a click or focus choosing a row, the pager under the list, and the selected entry (`ChildContent`) in a column that stays in view. `library.js` moves between rows; `FocusSelectedAsync` puts focus back on the selected row. |
 | `CardRuleCells` | A card rule's label in its colour (marked when off) and what it matches in words, as two table cells: Board rules and Administration › Card rules. |
@@ -282,6 +283,77 @@ In `src/Tide.Web/Components/Shared`. Use these rather than drawing a new version
 
 Two helpers keep interop from ending a circuit: `Focus` (moving focus where that can't happen isn't an error) and
 `JsTeardown` (telling a script a component has gone, where a disposal that throws would end the whole circuit).
+
+### A list with a selected row
+
+A list page can keep one row selected: highlighted, moved with `J` and `K` or the arrows, opened with `Enter`, and named
+in the address (`?row=`), so the page can show more about it beside the list. Triage does, and the pieces are shared so
+that the next list behaves the same: `RowSelection` (`RowSelection.cs`: how the place is read, moved and drawn),
+`RowKeys` (`RowKeys.razor`: wires the keys) and `rows.js` (`tideRows`: the keys and focus in the browser).
+
+A page adopts it with a number, three attributes on its rows and one component:
+
+```razor
+@foreach (var (item, i) in _items.Select((item, i) => (item, i)))
+{
+    var selected = i == _selected;
+    <li class="tide-thing-row @RowSelection.Css(selected)" aria-current="@RowSelection.Current(selected)"
+        tabindex="@RowSelection.TabIndex(selected)" @key="item.Id"
+        @onclick="() => _selected = i" @onfocus="() => _selected = i">…</li>
+}
+<RowKeys RowClass="tide-thing-row" Count="_items.Count" @bind-Selected="_selected" OnOpen="Open" />
+
+@code {
+    [SupplyParameterFromQuery(Name = RowSelection.Param)] public string? RowParam { get; set; }
+    private int _selected;
+
+    // Once the rows are read:
+    //     _selected = RowSelection.Clamp(RowSelection.From(RowParam), _items.Count);
+}
+```
+
+The page styles `.tide-thing-row.selected` itself, and lists the keys for its address in `Shortcuts.For`.
+
+- **The selection is .NET's.** It's the row's place on the page, from 0, kept by the page. The script never decides
+  which row is selected: it sends "next", "prev" or "open", and .NET draws the answer.
+- **`?row=` in.** `RowSelection.From` reads the parameter as a whole number and nothing else. No value, or one that
+  isn't a place (`-3`, `abc`, markup), is the first row; one past the end is the last, once `Clamp` has the count. The
+  value is never written into markup or a selector. The parameter is text (`string?`), as every address parameter is,
+  so a bad value can't fail the page.
+- **`?row=` out.** `RowSelection.Query(row)` is the parameter for an address the page builds (`row=3`; nothing for the
+  first row). Given `Address` (the page's address at a row), `RowKeys` keeps this history entry's address in step with
+  the selection through `tideRows.remember` (`history.replaceState`: no navigation, no new entry), however the
+  selection moved. Triage instead writes its address as it leaves for the editor, so Back returns to the row.
+- **Keys.** `J` or `↓` is next, `K` or `↑` previous, and `Enter` with focus on a row opens it (`OnOpen`). None of them
+  fires while typing in a field, with focus in a menu or dialog, under an open confirmation (`.tide-modal`), or with
+  `Ctrl`, `Alt` or `⌘` held. `J` and `K` obey the letter-shortcut switch; the arrows and `Enter` don't. Letters match
+  in either case.
+- **The ends of a page.** On a list of one page the selection stops at the first and last rows. A paged list gives
+  `Page`, `Pages` and `OnPage`: `J` on the last row asks for `RowMove.NextPage` and `K` on the first for
+  `RowMove.PreviousPage`. The page reads that page and selects its first row, or after `PreviousPage` its last
+  (`RowSelection.Last`), so the list reads on as one. On the last page's last row `J` stops.
+- **Something that follows the selection** (a reading pane, the context rail) is drawn from `_selected`. A page that
+  has to read something first does it in `@bind-Selected:after`.
+- **One list has the keys at a time.** `tideRows.start` hands back a token, and `stop` lets go only for the list that
+  holds it, so going from one list page to another never leaves the new one without keys.
+
+The accessibility contract, which a page keeps by using the attributes as above:
+
+- **The rows are one tab stop.** The selected row has `tabindex="0"` and every other row `-1` (a roving tabindex), so
+  Tab reaches the rows once, then goes on through the controls in the selected row and past the list.
+- **The selected row says so.** It has `aria-current="true"`; the others have no `aria-current`. The `selected` class
+  is the highlight, and never the only sign.
+- **Focus stays where the user put it.** Opening the page doesn't move focus into the list. A key that moves the
+  selection moves focus with it, so the focus ring and the highlight are the same row, scrolled into view
+  (`block: "nearest"`). Focusing or clicking a row selects it. After an action that takes the selected row away, focus
+  goes to the row now selected only if it was lost with the row; a control that took focus keeps it.
+  `tideRows.focusSelected` is for arriving at a row from a link: it focuses the row and centres it.
+
+A page whose rows have more keys than these starts `rows.js` from a script of its own in place of `RowKeys`, as
+`triage.js` does: `tideRows.start(ref, options)` with its extra `keys`, the actions after which focus follows the
+selection (`follow`), and functions for a form that holds the keys (`held`), for keys that depend on what has focus
+(`key`) and for a row that opens in the browser (`open`). The actions go to the page's own `[JSInvokable]` method
+(`method`), which moves the selection with `RowSelection.Step`.
 
 ## Working together on screen
 
@@ -366,7 +438,8 @@ loads in `<head>`. Each exposes at most one `window.tide*` object for .NET to ca
 | `theme.js` | `tideTheme`, `tideNav`, `tideShortcuts`, `tideRoving`, `tidePrefs`, `tideRail`, `tideCopy` | `tideRail`: the context rail's Context button, Close, `]` and Escape (`toggle`, `start`). `tideRoving`: the arrow keys, Home and End over a menu, tablist or toolbar, shared by `filters.js`, `board.js`, `tabs.js` and `markdown-toolbar.js`. Theme toggle; sidebar collapse and the phone menu (`tideNav.toggle`, `setOpen`, `start`, which keeps `aria-expanded` and the tooltip right); the letter-shortcut switch (WCAG 2.1.4) with the shared `isLetter`, `typing` and `inMenu` checks; small per-browser choices (the hunt panel's last query language); copying text to the clipboard. Also wires the reconnect dialog's Try again and Reload buttons. |
 | `palette.js` | `tidePalette` | `Ctrl+K` / `⌘K` opens the command palette and `?` the shortcuts overlay. Keeps what was typed between `Ctrl+K` and the box appearing. Combobox keys go to .NET, which owns the list. |
 | `dialog.js` | `tideDialog` | Remembers what had focus when a dialog opened (confirmation, lightbox, ATT&CK picker, palette) and gives it back when it closes. Keeps Tab inside a confirmation or the ATT&CK picker, cycling between the first and last controls that can take focus (a control inside an `inert` part, such as a folded ATT&CK column, is left out). Each modal that hears keys has `tabindex="-1"`, so a click on its text keeps focus in it (Escape still closes it) and Tab from there goes to its first control. In the lightbox only its own keys lose their default, so the browser's zoom and find still work. |
-| `triage.js` | `tideTriage` | The triage inbox's keys (J, K, S, X, D, P, O, V, R, arrows, Enter, Esc). A roving tabindex: the selected row is the one tab stop and focus moves with the selection. "Promote and write" rewrites the current history entry so Back returns to the same row. |
+| `rows.js` | `tideRows` | A list's selected row from the keyboard ([a list with a selected row](#a-list-with-a-selected-row)): J, K and the arrows go to .NET as "next" and "prev", Enter on a row as "open"; then focus goes to the row .NET selected (a roving tabindex: the selected row is the one tab stop), scrolled into view. `remember` rewrites the current history entry's address without a navigation. Loaded before `triage.js`. |
+| `triage.js` | `tideTriage` | The triage inbox's own keys (S, X, D, P, O, V, R, Esc, and Enter and the side arrows on a group) on top of `rows.js`, which it starts with them. Focus into and out of the promote form. The inbox order kept per browser. "Promote and write" rewrites the current history entry (`tideRows.remember`) so Back returns to the same row. |
 | `present.js` | `tidePresent` | Present mode's keys and full screen; fits a tall slide by shrinking it (to no less than 80%), then scrolls its body with fades at the edges; shares the presenter's scroll with the room (at most ten times a second). |
 | `editor.js` | `tideEditor` | The article editor's section pills (scroll to a heading below the sticky bars, then focus it); `BriefStepper`'s J and K; the reader preview's 1 and 2, kept in the address (`?edition=company`) without a navigation. |
 | `markdown-toolbar.js` | (`tideMarkdown.transforms`, for tests) | The Markdown toolbar and its keys: `Ctrl+B`, `Ctrl+I`, Tab and Shift+Tab on a list line, Enter to continue or end a list. Edits go through `execCommand('insertText')` so `Ctrl+Z` undoes them, and fire input events so Blazor's binding sees them. |
@@ -421,7 +494,7 @@ Letter keys never fire while typing in a field, or while focus is in a menu or d
 | **Forced colours** | Under Windows high contrast, badges and TLP chips get an outline, and the current sidebar link a `Highlight` outline. |
 | **Live regions** | Toasts are `role="status"` (polite) or `role="alert"` (errors). `LoadingBlock`, `ChangedElsewhere`, `PresenceNote` and triage's change line announce through status regions. |
 | **Contrast** | Token values carry their contrast ratio in comments; the focus ring is at least 4.6:1 on every background, chart series at least 3:1. |
-| **ARIA patterns** | Combobox with `aria-activedescendant` (`SearchCombobox`, the palette); tabs (`TabBar` + `tabs.js`); a menu button (`MenuButton`, the action page's More: `aria-haspopup`, `aria-expanded`, a `menu` of `menuitem`s with the arrow keys); `aria-sort` on table headings; `aria-current` on the current page, step and pager page; a roving tabindex in triage; counts in the sidebar links' accessible names. |
+| **ARIA patterns** | Combobox with `aria-activedescendant` (`SearchCombobox`, the palette); tabs (`TabBar` + `tabs.js`); a menu button (`MenuButton`, the action page's More: `aria-haspopup`, `aria-expanded`, a `menu` of `menuitem`s with the arrow keys); `aria-sort` on table headings; `aria-current` on the current page, step and pager page; a roving tabindex and `aria-current="true"` on a list's selected row (Triage; see [a list with a selected row](#a-list-with-a-selected-row)); counts in the sidebar links' accessible names. |
 
 ## Phone layout
 
