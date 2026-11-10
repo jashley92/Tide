@@ -145,8 +145,8 @@ else
                    to the reports themselves, each a row with all its actions. X and S (or their buttons) dismiss or
                    shortlist all its reports after a confirmation; nothing is merged or set aside without a click. *@
                 var groupNew = line.Members.Any(m => _marks.IsUnseen(m.Item.Id));
-                <li class="tide-triage-row tide-triage-group @(selected ? "selected" : "") @GroupCss(line)" aria-current="@(selected ? "true" : null)"
-                    aria-label="@(GroupLabel(line) + (groupNew ? NewNote : ""))" tabindex="@(selected ? "0" : "-1")" @key="@("group-" + group.Newest)"
+                <li class="tide-triage-row tide-triage-group @RowSelection.Css(selected) @GroupCss(line)" aria-current="@RowSelection.Current(selected)"
+                    aria-label="@(GroupLabel(line) + (groupNew ? NewNote : ""))" tabindex="@RowSelection.TabIndex(selected)" @key="@("group-" + group.Newest)"
                     @onclick="() => Pick(i)" @onfocus="() => Pick(i)">
                     <div class="tide-triage-head">
                         <button type="button" class="tide-group-toggle" aria-expanded="@Ui.Aria(open)"
@@ -193,11 +193,11 @@ else
             }
             var row = line.Row!;
             var item = row.Item;
-            @* The rows are one tab stop, the selected one (triage.js moves focus with the selection); focusing a row,
+            @* The rows are one tab stop, the selected one (rows.js moves focus with the selection); focusing a row,
                by Tab or a click, selects it. A report in an open group is indented under it, its excerpt always shown. *@
             var unseen = _marks.IsUnseen(item.Id);
-            <li class="tide-triage-row@(line.Group is not null ? " tide-triage-member" : "") @(selected ? "selected" : "") @_marks.Css(item.Id)" aria-current="@(selected ? "true" : null)" aria-label="@(item.Title + (unseen ? NewNote : ""))"
-                tabindex="@(selected ? "0" : "-1")" @key="item.Id" @onclick="() => Pick(i)" @onfocus="() => Pick(i)">
+            <li class="tide-triage-row@(line.Group is not null ? " tide-triage-member" : "") @RowSelection.Css(selected) @_marks.Css(item.Id)" aria-current="@RowSelection.Current(selected)" aria-label="@(item.Title + (unseen ? NewNote : ""))"
+                tabindex="@RowSelection.TabIndex(selected)" @key="item.Id" @onclick="() => Pick(i)" @onfocus="() => Pick(i)">
                 <div class="d-flex gap-2 align-items-start">
                     <div class="flex-grow-1">
                         @* The title does what the tab is for: in New and Shortlisted it opens the row's promote form (as P
@@ -557,7 +557,7 @@ else
     {
         var address = _sourcesTab ? "triage?tab=sources" : PageHref(_page);
         _addressPage = _sourcesTab ? 1 : _page;
-        try { await JS.InvokeVoidAsync("tideTriage.remember", address); }
+        try { await JS.InvokeVoidAsync("tideRows.remember", address); }
         catch (JSDisconnectedException) { }
         catch (InvalidOperationException) { }   // rendered without a browser (prerendering, tests)
     }
@@ -625,10 +625,10 @@ else
         _attaching = false;
         _marks.Clear();
         await Load();
-        if (last) _selected = Math.Max(0, _lines.Count - 1);
+        if (last) _selected = RowSelection.Last(_lines.Count);
         Select(_selected);
         _said = $"Page {_page} of {Pages}.";
-        _focus = "tideTriage.focusSelected";
+        _focus = "tideRows.focusSelected";
         await RememberTab();
         await Follow();
     }
@@ -1002,7 +1002,7 @@ else
     [SupplyParameterFromQuery(Name = "q")] public string? SearchParam { get; set; }
     [SupplyParameterFromQuery(Name = "since")] public string? SinceParam { get; set; }
     [SupplyParameterFromQuery(Name = "at")] public string? AtParam { get; set; }
-    [SupplyParameterFromQuery(Name = "row")] public string? RowParam { get; set; }
+    [SupplyParameterFromQuery(Name = RowSelection.Param)] public string? RowParam { get; set; }
     [SupplyParameterFromQuery(Name = "promote")] public string? PromoteParam { get; set; }
 
     // The page (text, so "?page=abc" is the first page, not a broken one), the CVE and Our stack filters, and New's Older view.
@@ -1025,7 +1025,7 @@ else
         if (older && status == FeedItemStatus.New) query.Add("older=true");
         if (page > 1) query.Add("page=" + page);
         if (at is { } id) query.Add("at=" + id);
-        if (row > 0) query.Add("row=" + row);
+        if (RowSelection.Query(row) is { } place) query.Add(place);
         return "triage?" + string.Join("&", query);
     }
 
@@ -1053,7 +1053,7 @@ else
         Use(Asked());
         _ticking = Time.CreateTimer(_ => { if (_sourcesTab && !_disposed) _ = InvokeAsync(StateHasChanged); }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
         _page = _addressPage = TableView.PageFrom(PageParam);
-        if (!adopted) _selected = Math.Max(0, FilterValues.Number(RowParam) ?? 0);   // adopted, the row Arrive selected stays while it's read again
+        if (!adopted) _selected = RowSelection.From(RowParam);   // adopted, the row Arrive selected stays while it's read again
         if (read) await Load();
         Arrive();
         if (!_failed) PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
@@ -1093,7 +1093,7 @@ else
         if (Asked() is var asked && asked != Shown)
         {
             Use(asked);
-            (_page, _addressPage, _selected) = (page, page, Math.Max(0, FilterValues.Number(RowParam) ?? 0));
+            (_page, _addressPage, _selected) = (page, page, RowSelection.From(RowParam));
             (_promoting, _promotingGroup, _attaching) = (null, null, false);
             _marks.Clear();
             await Load();
@@ -1140,7 +1140,7 @@ else
         }
         SelectItem(at);
         if (FilterValues.Flag(PromoteParam) && Current?.Row is { } row && row.Item.Id == at && Promotable(row.Item.Status)) OpenPromote(row);
-        else _focus = "tideTriage.focusSelected";
+        else _focus = "tideRows.focusSelected";
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -1317,7 +1317,7 @@ else
             _readAt = reading;
             BuildLines();
             var kept = keep is { } k && SelectItem(k.Id, k.Head);
-            if (!kept && (keep is null || !SelectNextOf(linesWere, selectedWas))) _selected = Math.Clamp(_selected, 0, Math.Max(0, _lines.Count - 1));
+            if (!kept && (keep is null || !SelectNextOf(linesWere, selectedWas))) _selected = RowSelection.Clamp(_selected, _lines.Count);
             if (heard is null) _waiting.Clear();   // read afresh: whatever was waiting is in it
             else await ShowChanges(heard, rowsWere, countsWere, readWas, kept ? null : keep?.Id);
             // Someone else promoted or set aside the item being promoted, or one of the group's reports: its form goes,
@@ -1444,10 +1444,14 @@ else
         {
             // J on the last row goes on to the next page's first, K on the first back to the previous page's last: the
             // list reads on as one, and the status line says which page it is.
-            case "next" when _selected >= _lines.Count - 1 && _page < Pages: await GoToPage(_page + 1); break;
-            case "prev" when _selected == 0 && _page > 1: await GoToPage(_page - 1, last: true); break;
-            case "next": _selected = Math.Min(_selected + 1, Math.Max(0, _lines.Count - 1)); await Follow(); break;
-            case "prev": _selected = Math.Max(_selected - 1, 0); await Follow(); break;
+            case "next" or "prev":
+                switch (RowSelection.Step(action == "next", ref _selected, _lines.Count, _page, Pages))
+                {
+                    case RowMove.NextPage: await GoToPage(_page + 1); break;
+                    case RowMove.PreviousPage: await GoToPage(_page - 1, last: true); break;
+                    default: await Follow(); break;
+                }
+                break;
             case "read": await Read(); break;
             case "close-reading": _reading = false; break;
             // On a group's line, Enter opens or closes it and → opens it; ← closes the group a line is in.
@@ -1563,7 +1567,7 @@ else
             Announce();
             Toasts.Show(group is null ? "Promoted to a draft article." : $"Promoted {group.Ids.Count} reports as one draft article.");
             // The browser's Back comes back here, to this tab, these filters and this row (or the one that took its place).
-            try { await JS.InvokeVoidAsync("tideTriage.remember", Address(_status, _sourceId, _search, _sinceLast, id, _selected, _page, _cveFilter, _named, _older)); }
+            try { await JS.InvokeVoidAsync("tideRows.remember", Address(_status, _sourceId, _search, _sinceLast, id, _selected, _page, _cveFilter, _named, _older)); }
             catch (JSDisconnectedException) { }
             catch (InvalidOperationException) { }   // rendered without a browser (prerendering, tests)
             Nav.NavigateTo($"articles/{articleId}");
