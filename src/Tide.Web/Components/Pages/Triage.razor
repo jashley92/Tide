@@ -26,7 +26,7 @@
         @* The keys in one line: the ones used most. Every other key (S, X, D, O, R, Esc, Enter and the arrows) is on its
            button and in the shortcuts list that ? opens (Shortcuts.Triage). *@
         <div class="tide-sub tide-triage-keys"><span class="tide-kbd">J</span>/<span class="tide-kbd">K</span> move, <span class="tide-kbd">P</span> promote,
-            <span class="tide-kbd">V</span> read it here, <span class="tide-kbd">?</span> every key. Times are @ZoneLabel.</div>
+            <span class="tide-kbd">V</span> read it here or close it, <span class="tide-kbd">?</span> every key. Times are @ZoneLabel.</div>
     </div>
     <div class="d-flex gap-2 align-items-center">
         <a class="btn btn-outline-secondary" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> Write one by hand</a>
@@ -185,10 +185,11 @@ else
                                 @* Covered by an article that can still take reports: attaching them all is the main button, one step. *@
                                 @if (attachAll is not null)
                                 {
-                                    <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => AttachCovered(i)">
-                                        <span class="bi bi-link-45deg" aria-hidden="true"></span> Attach all @line.Members.Count to “@Short(attachAll.ArticleTitle)”</button>
+                                    <button class="btn btn-primary btn-sm tide-triage-attach" disabled="@_busy" title="@($"Attach all {line.Members.Count} to “{attachAll.ArticleTitle}”")"
+                                            @onclick:stopPropagation="true" @onclick="() => AttachCovered(i)">
+                                        <span class="bi bi-link-45deg" aria-hidden="true"></span> Attach all @line.Members.Count to <span class="tide-triage-attach-title">“@attachAll.ArticleTitle”</span></button>
                                 }
-                                <button class="btn @(attachAll is null ? "btn-primary" : "btn-outline-secondary") btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => OpenGroupPromote(line)">
+                                <button class="btn @(attachAll is null ? "btn-primary" : "btn-outline-secondary") btn-sm tide-triage-promote" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => OpenGroupPromote(line)">
                                     <span class="bi bi-file-earmark-plus" aria-hidden="true"></span> Promote as one article (@line.Members.Count sources) <span class="tide-kbd">P</span></button>
                                 @* Only new reports are shortlisted or dismissed as a group, as the S and X keys are. *@
                                 @if (_status == FeedItemStatus.New)
@@ -325,10 +326,11 @@ else
                                 @* Covered by an article that can still take it: attaching it there is the main button; P still promotes. *@
                                 @if (attachTo is not null)
                                 {
-                                    <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => AttachCovered(i)">
-                                        <span class="bi bi-link-45deg" aria-hidden="true"></span> Attach to “@Short(attachTo.ArticleTitle)”</button>
+                                    <button class="btn btn-primary btn-sm tide-triage-attach" disabled="@_busy" title="@($"Attach to “{attachTo.ArticleTitle}”")"
+                                            @onclick:stopPropagation="true" @onclick="() => AttachCovered(i)">
+                                        <span class="bi bi-link-45deg" aria-hidden="true"></span> Attach to <span class="tide-triage-attach-title">“@attachTo.ArticleTitle”</span></button>
                                 }
-                                <button class="btn @(attachTo is null ? "btn-primary" : "btn-outline-secondary") btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Promote)"><span class="bi bi-file-earmark-plus" aria-hidden="true"></span> Promote <span class="tide-kbd">P</span></button>
+                                <button class="btn @(attachTo is null ? "btn-primary" : "btn-outline-secondary") btn-sm tide-triage-promote" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Promote)"><span class="bi bi-file-earmark-plus" aria-hidden="true"></span> Promote <span class="tide-kbd">P</span></button>
                                 @if (item.Status != FeedItemStatus.Shortlisted) { <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Shortlist)">Shortlist <span class="tide-kbd">S</span></button> }
                                 @if (item.Status != FeedItemStatus.Dismissed)
                                 {
@@ -455,6 +457,14 @@ else
             finally { _fetching = null; }
         }
         finally { await kept; }
+    }
+
+    /// <summary>V with the pane shown (triage.js knows; below 1400px one open by itself isn't): it reads the item when
+    /// it hasn't been read, and otherwise closes, so V opens and closes the pane in turn.</summary>
+    internal Task ToggleReading()
+    {
+        if (_fetching is not null) return Task.CompletedTask;
+        return _read is null && ReadableRow is not null ? Read() : CloseReading();
     }
 
     /// <summary>Esc or the pane's close button: closed, and kept closed.</summary>
@@ -1328,7 +1338,8 @@ else
     }
 
     // What this tab did, for the others: who, from which circuit (so this one skips it).
-    private void Announce() => Changes.Publish(new Change(ChangeFeed.Triage, Me.UserId, Me.IsAuthenticated ? Me.DisplayName : "", Origin.Id));
+    private void Announce(IReadOnlyCollection<Guid>? attached = null) =>
+        Changes.Publish(new Change(ChangeFeed.Triage, Me.UserId, Me.IsAuthenticated ? Me.DisplayName : "", Origin.Id) { Attached = attached ?? [] });
 
     private static (Guid Id, bool Head) KeyOf(Line line) => (line.Row?.Item.Id ?? line.Group!.Newest, line.Row is null);
 
@@ -1416,7 +1427,8 @@ else
         var colleagues = LiveChanges.Who(heard.Where(c => c.ActorId != "system"));
         var now = diff.Left.Count == 0 ? new Dictionary<Guid, FeedItem>() : (await Intake.ItemsAsync(diff.Left)).ToDictionary(i => i.Id);
         var titles = was.GroupBy(r => r.Item.Id).ToDictionary(g => g.Key, g => g.First().Item.Title);
-        string Gone(Guid id) => TriageNews.Left(_status, titles[id], now.GetValueOrDefault(id), colleagues);
+        var attached = heard.SelectMany(c => c.Attached).ToHashSet();
+        string Gone(Guid id) => TriageNews.Left(_status, titles[id], now.GetValueOrDefault(id), colleagues, attached.Contains(id));
         _marks.Apply(diff, Gone, unseen: true);
 
         var polled = heard.Any(c => c.ActorId == "system");
@@ -1425,7 +1437,7 @@ else
         var arrived = diff.Arrived.Select(id => _rows.First(r => r.Item.Id == id).Item).ToList();
         var leftNow = diff.Left.Select(id => now.GetValueOrDefault(id)).ToList();
         var entered = _counts.GetValueOrDefault(_status) - countsWere.GetValueOrDefault(_status) + leftNow.Count(i => i is not null && i.Status != _status);
-        var summary = TriageNews.Summary(_status, leftNow, arrived, readWas, colleagues, newElsewhere, entered);
+        var summary = TriageNews.Summary(_status, leftNow, arrived, readWas, colleagues, newElsewhere, entered, attached);
         if (summary is not null && !heard.All(c => c.ActorId == Me.UserId)) Toasts.Show(summary);
 
         var said = new List<string>();
@@ -1511,6 +1523,7 @@ else
                 }
                 break;
             case "read": await Read(); break;
+            case "toggle-reading": await ToggleReading(); break;
             case "close-reading": await CloseReading(); break;
             // On a group's line, Enter opens or closes it and → opens it; ← closes the group a line is in.
             case "toggle": if (Current is { Row: null }) Toggle(_selected); break;
@@ -1621,9 +1634,11 @@ else
         _busy = true;
         try
         {
-            var articleId = group is null ? await Intake.PromoteAsync(id, _pf) : await Intake.PromoteAsOneAsync(group.Ids, _pf);
+            var outcome = await Intake.PromoteOrJoinAsync(group?.Ids ?? [id], _pf);
+            var articleId = outcome.ArticleId;
             Announce();
-            Toasts.Show(group is null ? "Promoted to a draft article." : $"Promoted {group.Ids.Count} reports as one draft article.");
+            if (outcome.Made) Toasts.Show(group is null ? "Promoted to a draft article." : $"Promoted {group.Ids.Count} reports as one draft article.");
+            else Toasts.Show($"Not promoted: {outcome.By ?? "Someone"} already put {(group is null ? "it" : "them")} in this article.");
             // The browser's Back comes back here, to this tab, these filters and this row (or the one that took its place).
             try { await JS.InvokeVoidAsync("tideRows.remember", Address(_status, _sourceId, _search, _sinceLast, id, _selected, _page, _cveFilter, _named, _older)); }
             catch (JSDisconnectedException) { }
@@ -1668,7 +1683,7 @@ else
         try
         {
             var n = await Intake.AttachAllAsync(ids, articleId);
-            Announce();
+            Announce(attached: ids);
             Toasts.Show(n == 1 ? $"Added as a source of “{Short(title)}”." : $"Added {Ui.Plural(n, "report")} as sources of “{Short(title)}”.");
             _focus = "tideTriage.focusRow";
             await Load();

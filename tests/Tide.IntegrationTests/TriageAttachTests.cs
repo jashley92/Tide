@@ -76,10 +76,9 @@ public class TriageAttachTests(TideApp app) : IClassFixture<TideApp>
         await using var r = await ComponentHarness.RenderAsync<Triage>(app, $"/triage?source={source}", @as: Someone());
 
         var row = Selected(await r.HtmlOnce("Lantern VPN bug now used by two gangs"));
-        row.Should().Contain("<button class=\"btn btn-primary btn-sm\"").And.Contain("Attach to “Lantern VPN flaw exploited in the wild”")
-            .And.Contain("<button class=\"btn btn-outline-secondary btn-sm\"");
-        Regex.IsMatch(row, "class=\"btn btn-primary btn-sm\"[^>]*>(<span[^>]*></span>)? Attach to").Should().BeTrue("Attach is the main (primary) button");
-        Regex.IsMatch(row, "class=\"btn btn-outline-secondary btn-sm\"[^>]*>(<span[^>]*></span>)? Promote <span class=\"tide-kbd\">P</span>")
+        row.Should().Contain("Attach to <span class=\"tide-triage-attach-title\">“Lantern VPN flaw exploited in the wild”</span>");
+        Regex.IsMatch(row, "class=\"btn btn-primary btn-sm tide-triage-attach\"[^>]*>(<span[^>]*></span>)? Attach to").Should().BeTrue("Attach is the main (primary) button");
+        Regex.IsMatch(row, "class=\"btn btn-outline-secondary btn-sm tide-triage-promote\"[^>]*>(<span[^>]*></span>)? Promote <span class=\"tide-kbd\">P</span>")
             .Should().BeTrue("Promote is still there, with its key");
         row.Should().NotContain("Add as a source of “Lantern VPN flaw", "the main button says it once");
 
@@ -101,7 +100,7 @@ public class TriageAttachTests(TideApp app) : IClassFixture<TideApp>
 
         var row = Selected(await r.HtmlOnce("Kestrel routers still unpatched"));
         row.Should().NotContain("Attach to “").And.Contain("covered");
-        Regex.IsMatch(row, "class=\"btn btn-primary btn-sm\"[^>]*>(<span[^>]*></span>)? Promote <span class=\"tide-kbd\">P</span>").Should().BeTrue();
+        Regex.IsMatch(row, "class=\"btn btn-primary btn-sm tide-triage-promote\"[^>]*>(<span[^>]*></span>)? Promote <span class=\"tide-kbd\">P</span>").Should().BeTrue();
     }
 
     [Fact]
@@ -136,8 +135,8 @@ public class TriageAttachTests(TideApp app) : IClassFixture<TideApp>
 
         var line = Selected(await r.HtmlOnce("Looks like one event"));
         line.Should().Contain("tide-triage-group");
-        Regex.IsMatch(line, "class=\"btn btn-primary btn-sm\"[^>]*>(<span[^>]*></span>)? Attach all 3 to “Quorvexz theft, first report”").Should().BeTrue();
-        Regex.IsMatch(line, "class=\"btn btn-outline-secondary btn-sm\"[^>]*>(<span[^>]*></span>)? Promote as one article \\(3 sources\\) <span class=\"tide-kbd\">P</span>")
+        Regex.IsMatch(line, "class=\"btn btn-primary btn-sm tide-triage-attach\"[^>]*>(<span[^>]*></span>)? Attach all 3 to <span class=\"tide-triage-attach-title\">“Quorvexz theft, first report”</span>").Should().BeTrue();
+        Regex.IsMatch(line, "class=\"btn btn-outline-secondary btn-sm tide-triage-promote\"[^>]*>(<span[^>]*></span>)? Promote as one article \\(3 sources\\) <span class=\"tide-kbd\">P</span>")
             .Should().BeTrue("promoting the group is still there, and P");
 
         await r.Click(t => t.AttachCovered(0));
@@ -179,6 +178,51 @@ public class TriageAttachTests(TideApp app) : IClassFixture<TideApp>
             .And.NotContain("<span class=\"tide-kbd\">R</span>", "the rest are in the shortcuts list");
         var listed = Tide.Web.Components.Layout.Shortcuts.For("triage").SelectMany(g => g.Keys).SelectMany(k => k.Keys).ToList();
         listed.Should().Contain(["J", "K", "S", "X", "D", "P", "O", "V", "R", "Esc", "Enter", "→", "←", "↓", "↑", "?"], "every key still works and is listed");
+    }
+
+    [Fact]
+    public async Task TheAttachButton_KeepsTheArticlesWholeTitle_ToBeCutShortOnlyOnScreen()
+    {
+        const string title = "Heron hypervisor escape chained with a sandbox bypass in three managed hosting providers";
+        await Article(title, "CVE-2026-7205");
+        var (source, _) = await Items(("Heron escape used against hosting providers", "CVE-2026-7205"));
+        await using var r = await ComponentHarness.RenderAsync<Triage>(app, $"/triage?source={source}", @as: Someone());
+
+        var row = Selected(await r.HtmlOnce("Heron escape used against hosting providers"));
+        var at = row.IndexOf("tide-triage-attach", StringComparison.Ordinal);
+        at.Should().BePositive();
+        var button = System.Net.WebUtility.HtmlDecode(row[row.LastIndexOf("<button", at, StringComparison.Ordinal)..row.IndexOf("</button>", at, StringComparison.Ordinal)]);
+        button.Should().Contain($"title=\"Attach to “{title}”\"", "the whole title on hover")
+            .And.Contain($"<span class=\"tide-triage-attach-title\">“{title}”</span>", "and in the button's name; the stylesheet cuts it short on screen");
+    }
+
+    [Fact]
+    public async Task AnAttach_TellsColleagues_WhichItemsWereAttached()
+    {
+        await Article("Bittern mail gateway flaw", "CVE-2026-7206");
+        var (source, ids) = await Items(("Bittern gateways exploited", "CVE-2026-7206"));
+        var heard = new List<Tide.Application.Abstractions.Change>();
+        var feed = app.Services.GetRequiredService<Tide.Application.Abstractions.ChangeFeed>();
+        void Hear(Tide.Application.Abstractions.Change c) { lock (heard) heard.Add(c); }
+        feed.Changed += Hear;
+        try
+        {
+            await using var r = await ComponentHarness.RenderAsync<Triage>(app, $"/triage?source={source}", @as: Someone());
+            await r.HtmlOnce("Bittern gateways exploited");
+            await r.Click(t => t.AttachCovered(0));
+        }
+        finally { feed.Changed -= Hear; }
+        lock (heard) heard.Should().Contain(c => c.Topic == Tide.Application.Abstractions.ChangeFeed.Triage && c.Attached.Contains(ids[0]));
+    }
+
+    [Fact]
+    public void TheLiveNotice_SaysAnAttachedItemWasAdded_NotPromoted()
+    {
+        var item = new FeedItem { Title = "Flaw", Status = FeedItemStatus.Promoted, StatusByName = "Blake" };
+        Tide.Web.Services.TriageNews.Left(FeedItemStatus.New, "Flaw", item, "Blake", attached: true).Should().Be("Blake added “Flaw” to an article");
+        Tide.Web.Services.TriageNews.Left(FeedItemStatus.New, "Flaw", item, "Blake").Should().Be("Blake promoted “Flaw”");
+        Tide.Web.Services.TriageNews.Summary(FeedItemStatus.New, [item], [], DateTimeOffset.UtcNow, "Blake", attached: new HashSet<Guid> { item.Id })
+            .Should().Be("Blake added 1 item to an article");
     }
 
     [Fact]
