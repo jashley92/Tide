@@ -74,6 +74,11 @@ const visible = selector => ({
 const pages = [
   { name: 'today', route: '/', widths: [1440, 1000, 780],
     rules: [noSidewaysScroll, visible('.tide-steps'), fits('.tide-steps > li'), fits('.tide-page-head')] },
+  // The top bar with the brief chip in it: one row from a narrow window up, the chip in view and nothing pushed out of
+  // its group (the Go to button under the chip); on a phone the chip is gone and nothing pushes the page sideways.
+  { name: 'top-bar', route: '/articles', widths: [1440, 1000, 780, 740, 375],
+    rules: [noSidewaysScroll, [740, visible('.tide-brief-chip')], [740, oneRow('.top-row')], [740, oneRow('.tide-top-end')],
+      [740, fits('.top-row')], [740, fits('.tide-top-find')]] },
   { name: 'article', route: '/articles/{vpnArticle}', widths: [1440, 1000],
     rules: [noSidewaysScroll, visible('.tide-reader-sum'), visible('[role=tablist][aria-label="Beside the article"]')] },
   { name: 'article-actions-tab', route: '/articles/{vpnArticle}?side=actions', widths: [1440, 800],

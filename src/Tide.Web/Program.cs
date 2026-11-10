@@ -133,6 +133,8 @@ builder.Services.AddSingleton<BoardDrags>();
 builder.Services.AddSingleton<LiveMeetings>();
 builder.Services.AddSingleton<PrerenderStore>();
 builder.Services.AddScoped<PrerenderHandoff>();
+// What the top bar's brief chip says, kept per circuit so a navigation reads nothing for it.
+builder.Services.AddScoped<BriefChipSource>();
 builder.Services.AddSingleton<Tide.Application.Briefs.IMeetingsInProgress>(sp => sp.GetRequiredService<LiveMeetings>());
 // Clears a closed tab's presence: the circuit's handler, and the circuit id presence notes join with. It also keeps the
 // transport the circuit is on, for Diagnostics.

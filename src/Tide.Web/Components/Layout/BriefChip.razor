@@ -1,0 +1,77 @@
+@* The brief chip in the top bar: when the brief Today shows meets and which of its five steps it's on ("Brief 10:30 AM ·
+   step 3 of 5 · Order"), as a link to Today. For those who read the team edition and write the brief, as Today's step
+   strip is; nothing is drawn for anyone else. While the meeting is live it says so and leaves joining to the banner
+   (LiveMeetingJoin). A narrow window shows the short form ("10:30 AM · 3/5"); app.css says where.
+   What it says comes from BriefChipSource, which keeps it for the circuit: drawing the top bar reads nothing. It's read
+   again when the change feed says the brief changed (a colleague's save, or this circuit's own), and checked on each
+   navigation, which costs nothing unless the day has turned. *@
+@implements IDisposable
+@inject BriefChipSource Source
+@inject ChangeFeed Feed
+@inject LiveMeetings Meetings
+@inject NavigationManager Nav
+
+@if (_view is { } view)
+{
+    _liveDrawn = Live(view);
+    @if (_liveDrawn)
+    {
+        <a class="tide-brief-chip is-live" href="" title="Open Today">
+            <span class="tide-live-dot" aria-hidden="true"></span>
+            <span class="tide-brief-chip-full">Brief is live</span>
+            <span class="tide-brief-chip-short">Live</span>
+        </a>
+    }
+    else
+    {
+        <a class="tide-brief-chip" href="" title="Open Today">
+            <span class="bi bi-journal-text" aria-hidden="true"></span>
+            <span class="tide-brief-chip-full">Brief @view.Meets &middot; @view.Where</span>
+            <span class="tide-brief-chip-short">@view.Meets@(view.WhereShort is { } step ? " · " + step : "")</span>
+        </a>
+    }
+}
+
+@code {
+    private BriefChipView? _view;
+    private LiveChanges? _changes;
+    private bool _liveDrawn;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // An origin of its own: unlike a page, the chip hears this circuit's saves too (Today marking the brief ready).
+        _changes = new LiveChanges(Feed, new ChangeOrigin(), Source.Follows, InvokeAsync, _ => Refresh());
+        Meetings.Changed += OnMeetingChanged;
+        Nav.LocationChanged += OnLocationChanged;
+        _view = await Source.GetAsync();
+    }
+
+    private bool Live(BriefChipView view) => view.BriefId is { } brief && Meetings.IsLive(brief);
+
+    private async Task Refresh()
+    {
+        var view = await Source.GetAsync();
+        if (view == _view) return;
+        _view = view;
+        StateHasChanged();
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => _ = InvokeAsync(Refresh);
+
+    // A meeting starting or ending redraws; a slide moving changes nothing here.
+    private void OnMeetingChanged(MeetingChange change)
+    {
+        if (_view is not { } view || change.Day != view.Day) return;
+        _ = InvokeAsync(() =>
+        {
+            if (Live(view) != _liveDrawn) StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        _changes?.Dispose();
+        Meetings.Changed -= OnMeetingChanged;
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+}

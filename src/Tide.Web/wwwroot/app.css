@@ -2399,3 +2399,21 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
     .tide-library-list { max-height: 45vh; overflow-y: auto; }
     .tide-library-detail { position: static; max-height: none; overflow-y: visible; }
 }
+
+/* ---- Brief chip (BriefChip, in the top bar): when the brief meets and the step it's on, a link to Today ----
+   In full from 1200px ("Brief 10:30 AM · step 3 of 5 · Order") and short below that ("10:30 AM · 3/5"). It never wraps
+   or shrinks, so the top bar stays one row: under 1000px the team's name gives way to it (only for those who have a
+   chip), and under 740px, where the search box and the Go to button need the room, the chip itself is gone. */
+.tide-brief-chip { flex: none; display: inline-flex; align-items: center; gap: var(--tide-space-2); height: 2rem; padding: 0 var(--tide-space-3);
+    border: 1px solid var(--tide-border); border-radius: var(--tide-radius-pill); background: var(--tide-surface); color: var(--tide-text-muted);
+    font-size: var(--tide-text-sm); white-space: nowrap; text-decoration: none; }
+.tide-brief-chip:hover { color: var(--tide-text); border-color: var(--tide-text-muted); }
+.tide-brief-chip:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
+.tide-brief-chip.is-live { border-color: var(--tide-accent); background: var(--tide-accent-soft); color: var(--tide-text); }
+.tide-brief-chip-short { display: none; }
+@media (max-width: 1199.98px) {
+    .tide-brief-chip-full { display: none; }
+    .tide-brief-chip-short { display: inline; }
+}
+@media (min-width: 740px) and (max-width: 999.98px) { .top-row:has(.tide-brief-chip) > span:first-child { display: none; } }
+@media (max-width: 739.98px) { .tide-brief-chip { display: none; } }
