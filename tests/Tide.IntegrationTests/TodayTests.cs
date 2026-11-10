@@ -120,6 +120,14 @@ public class TodayTests(TideApp app) : IClassFixture<TideApp>
 
         var strip = html[At(html, "aria-label=\"Brief progress\"")..At(html, "id=\"running-order-h\"")];
         strip.Should().MatchRegex($@"\d+ new in the feed &#xB7; {expected} on KEV<");
+
+        // Another day's brief keeps the feed's count, as it always had, without the KEV count: that is today's work.
+        var past = WorkingDays.Weekdays.Previous(WorkingDays.Weekdays.Previous(WorkingDays.Weekdays.Previous(WorkingDays.Weekdays.Previous(Today))));
+        await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+            await scope.ServiceProvider.GetRequiredService<Tide.Application.Briefs.BriefService>().GetOrStartAsync(past);
+        html = await app.CreateClient().GetStringAsync($"/briefs/{past:yyyy-MM-dd}");
+        strip = html[At(html, "aria-label=\"Brief progress\"")..At(html, "id=\"running-order-h\"")];
+        strip.Should().MatchRegex(@"\d+ new in the feed<").And.NotContain("on KEV");
     }
 
     [Fact]

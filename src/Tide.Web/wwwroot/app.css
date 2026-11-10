@@ -1809,7 +1809,8 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-ed-title { color: var(--tide-text); overflow-wrap: anywhere; }
 .tide-ed-list li.is-out .tide-ed-title { color: var(--tide-text-muted); text-decoration: line-through; }
 .tide-ed-why { display: block; color: var(--tide-text-muted); }
-.tide-ed-whole { margin: 0; font-size: var(--tide-text-xs); color: var(--tide-ok); }
+.tide-ed-whole { margin: 0; font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
+.tide-ed-whole.is-all { color: var(--tide-ok); }
 .tide-ed-whole + .tide-ed-list { margin-top: var(--tide-space-2); }
 .tide-ed-warn { display: block; color: var(--tide-warn); }
 .tide-ed-warn .bi { margin-right: var(--tide-space-1); }

@@ -241,7 +241,10 @@ public class BriefProgressTests
         // Numbers still to enter, or a title slide line above the ceiling, are exceptions.
         var late = EditionChecks.Rows(brief, Edition.Team, TlpLevel.AmberStrict, hasNumbers: true, missingNumbers: 2);
         EditionChecks.Exceptions(late).Should().ContainSingle().Which.Title.Should().Be("Today's numbers");
-        EditionChecks.Whole(late).Should().Be("All 4 articles go out whole.", "the articles do, whatever else is listed");
+        EditionChecks.Whole(late).Should().Be("All 4 articles go out whole, but not everything else:",
+            "the line leads into what is listed under it, and doesn't say everything is whole above an exception");
+        var one = EditionChecks.Rows(BriefWith(BriefStatus.Draft, Ready("only")), Edition.Team, TlpLevel.AmberStrict, hasNumbers: true, missingNumbers: 1);
+        EditionChecks.Whole(one).Should().Be("The article goes out whole, but not everything else:");
         brief.IntroTlp = TlpLevel.Amber;
         EditionChecks.Exceptions(EditionChecks.Rows(brief, Edition.Public, TlpLevel.Green))[0].Title.Should().Be("Title slide line");
 

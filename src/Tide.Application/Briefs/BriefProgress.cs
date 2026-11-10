@@ -210,18 +210,20 @@ public static class EditionChecks
     public static IReadOnlyList<EditionCheckRow> Exceptions(IReadOnlyList<EditionCheckRow> rows) => rows.Where(IsException).ToList();
 
     /// <summary>The line that says every article goes out whole, with no warning ("All 3 articles go out whole."), or
-    /// null when one doesn't or there are none.</summary>
+    /// null when one doesn't or there are none. When something else is an exception (numbers not entered, the title
+    /// slide line left out) it leads into that list instead ("All 3 articles go out whole, but not everything else:"),
+    /// so it never says all is whole above a row that isn't.</summary>
     public static string? Whole(IReadOnlyList<EditionCheckRow> rows)
     {
         var articles = rows.Where(r => r.ArticleId is not null).ToList();
-        if (articles.Any(IsException)) return null;
-        return articles.Count switch
+        if (articles.Count == 0 || articles.Any(IsException)) return null;
+        var whole = articles.Count switch
         {
-            0 => null,
-            1 => "The article goes out whole.",
-            2 => "Both articles go out whole.",
-            var n => $"All {n} articles go out whole.",
+            1 => "The article goes out whole",
+            2 => "Both articles go out whole",
+            var n => $"All {n} articles go out whole",
         };
+        return whole + (rows.Any(IsException) ? ", but not everything else:" : ".");
     }
 
     private static bool IsException(EditionCheckRow r) => r.Fit != EditionFit.Included || r.Warning is not null;

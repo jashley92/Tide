@@ -63,13 +63,14 @@ What sits behind this is in [frontend](../architecture/frontend.md#layout-and-na
 Where the presenting analyst starts. Today's brief shows a strip of its five steps (**Triage, Write, Order,
 Present, Send**), each saying where it stands, with one main button for whichever step is next. Triage says how many
 new items wait in the feed and, when any name a CVE on CISA's known exploited list, how many ("4 new in the feed ·
-2 on KEV"). Beside it:
+2 on KEV"; the KEV count is on Today only, not another day's brief). Beside it:
 
 - **the running order**, which you drag, or move up and down, with removal you can undo;
 - **today's numbers**, each box with the value it's compared with;
 - **the edition check**: how many of the articles each edition carries, then only the exceptions (what is partly
   included, left out, or goes out with a warning). When every article goes out whole it says so, and doesn't list
-  them again;
+  them again; if something else is listed (numbers not entered, say) the line reads "All 3 articles go out whole, but
+  not everything else:";
 - **the meeting**: its time, and who the rotation names to present.
 
 Beside them, **Not on a brief yet** lists what hasn't been on any brief: Ready articles (anyone's) first, then your own

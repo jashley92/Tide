@@ -288,7 +288,7 @@ else
     private IReadOnlyList<ActionRow>? _mine;
     private TeamQueue? _queue;
     private int? _newInFeed;
-    private int _newOnKev;   // of the feed's new items, those naming a CVE on the known exploited list
+    private int _newOnKev;   // of the feed's new items, those naming a CVE on the known exploited list (Today only)
 
     // Null until the numbers have been read (and when no metrics are defined), so the edition check leaves them out.
     private int? _missingNumbers;
@@ -685,7 +685,8 @@ else
             _actions = await BriefSvc.EditionActionsAsync(_brief);
             _meeting = await MeetingSvc.GetAsync(_brief.Id);
             _newInFeed = _canWrite ? await Intake.NewCountAsync() : null;
-            _newOnKev = _newInFeed > 0 ? await Intake.NewKevCountAsync() : 0;
+            // Another day's brief keeps the feed's count, as it had; what is on KEV is today's work.
+            _newOnKev = AsToday && _newInFeed > 0 ? await Intake.NewKevCountAsync() : 0;
             // The send log, for the Send step; the latest real send of each edition, for the "as sent" links on a sent brief.
             _sends = await Sends.SendsAsync(_date);
             _nothingToSend = _brief.Items.Count == 0 ? []
