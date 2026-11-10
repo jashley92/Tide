@@ -1,0 +1,51 @@
+@* A library's list and the entry chosen from it, side by side (one column on a narrow screen): the page's entries by
+   name on the left, each with what it's for, its kind and how often it was used; the selected one in full on the
+   right (ChildContent). The rows are chosen as Triage's are: the selected row is the list's one tab stop
+   (aria-current), a click or focus chooses a row, and J/K or the arrow keys move to the next (library.js, which also
+   keeps the address's ?row= in step from each row's data-href, so a copied link opens the same entry). *@
+<div class="tide-paged">
+<p class="small tide-muted mb-2" role="status">@Count</p>
+<div class="tide-library">
+    <div class="tide-library-side">
+        <ul class="tide-library-list" aria-label="@Label">
+            @foreach (var e in Entries)
+            {
+                var on = e.Id == Selected;
+                <li class="tide-library-row@(on ? " selected" : "")" aria-current="@(on ? "true" : null)" tabindex="@(on ? "0" : "-1")" data-href="@Href(e.Id)"
+                    @key="e.Id" @onclick="() => OnPick.InvokeAsync(e.Id)" @onfocus="() => OnPick.InvokeAsync(e.Id)">
+                    <span class="tide-library-row-name">@e.Name</span>
+                    @if (e.Description is { } about) { <span class="tide-library-row-about">@about</span> }
+                    <span class="tide-library-row-meta">@(e.Retired ? "Retired · " : "")@e.Kind · @e.Used</span>
+                </li>
+            }
+        </ul>
+        @Below
+    </div>
+    <div class="tide-library-detail">@ChildContent</div>
+</div>
+</div>
+
+@code {
+    /// <summary>What the list holds, said above it ("1–20 of 34 playbooks").</summary>
+    [Parameter, EditorRequired] public string Count { get; set; } = "";
+
+    /// <summary>The page's entries, in the list's order.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<LibraryEntry> Entries { get; set; } = [];
+
+    /// <summary>The entry shown in full.</summary>
+    [Parameter, EditorRequired] public Guid? Selected { get; set; }
+
+    /// <summary>The list's accessible name ("Saved queries").</summary>
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+
+    /// <summary>An entry's address (this page of the list, with it selected).</summary>
+    [Parameter, EditorRequired] public Func<Guid, string> Href { get; set; } = default!;
+
+    [Parameter] public EventCallback<Guid> OnPick { get; set; }
+
+    /// <summary>The selected entry in full: its card, or its edit form.</summary>
+    [Parameter, EditorRequired] public RenderFragment ChildContent { get; set; } = default!;
+
+    /// <summary>Under the list: its pager.</summary>
+    [Parameter] public RenderFragment? Below { get; set; }
+}

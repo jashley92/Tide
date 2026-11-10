@@ -1685,7 +1685,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         await RequireWork(db, user, a, ct);
         var saved = await db.SavedQueries.AsNoTracking().FirstOrDefaultAsync(q => q.Id == savedQueryId, ct)
                     ?? throw new KeyNotFoundException("That saved query no longer exists.");
-        if (saved.IsRetired) throw new InvalidOperationException($"{saved.Name} is retired. Restore it on Saved queries to use it.");
+        if (saved.IsRetired) throw new InvalidOperationException($"{saved.Name} is retired. Restore it in the Library, on Saved queries, to use it.");
         var d = QueryDialects.Find(saved.Dialect) ?? throw new ArgumentException("That saved query's language isn't one TIDE knows.");
         var inputs = await HuntInputsAsync(db, a, fromStory: false, ct);
         // TIDE wrote all of it (the saved query is held to its own limit), so however long the indicators make it, it's added.

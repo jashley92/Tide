@@ -1,21 +1,21 @@
-@page "/outreach/templates"
-@attribute [Authorize(Policy = Policies.ReadActions)]
 @inject OutreachTemplateService TemplateSvc
 @inherits LibraryPage<OutreachTemplateRow>
 
-@* The team's outreach emails (ADR 0019): a question to a vendor, a partner, an ISAC or another team, kept for a
-   colleague to fill from their own Outreach action with Write the email. Kept as the saved hunt queries are: whoever
-   works actions saves, edits, retires and restores them, and deletes one they saved (an administrator, any); everyone
-   else who reads actions reads them. Each shows how many emails were written from it. A colleague's change re-reads the
-   list in place; an edit under way keeps what's typed, and its save is refused if the template changed since it began. *@
+@* The team's outreach emails (ADR 0019), a tab of the Library page (which checks who may open it): a question to a
+   vendor, a partner, an ISAC or another team, kept for a colleague to fill from their own Outreach action with Write
+   the email. Kept as the saved hunt queries are: whoever works actions saves, edits, retires and restores them, and
+   deletes one they saved (an administrator, any); everyone else who reads actions reads them. The list names each with
+   its TLP ceiling and how many emails were written from it; the one chosen is shown in full. A colleague's change
+   re-reads the list in place; an edit under way keeps what's typed, and its save is refused if the template changed
+   since it began. *@
 
-<PageTitle>Outreach templates · TIDE</PageTitle>
+<PageTitle>Outreach templates · Library · TIDE</PageTitle>
 
 <ConfirmDialog @ref="_confirm" />
 
-<div class="tide-page-head">
+<div class="tide-page-head tide-library-head">
     <div>
-        <h1>Outreach templates</h1>
+        <h2>Outreach templates</h2>
         <div class="tide-sub">Emails kept for the team, for asking a vendor, a partner, an ISAC or another team for information.
             Fill one on an Outreach action with Write the email: <span class="tide-data">{{article.title}}</span>,
             <span class="tide-data">{{indicators}}</span> and the other placeholders take the action's details, held to the
@@ -34,10 +34,10 @@
         @EditForm
     </section>
 }
-else if (EditingOffPage)
+else if (EditingAway)
 {
-    @* The template being edited left this page (a colleague retired, deleted or renamed it, or a filter hides it): its
-       form stays here, so what's typed can be saved or cancelled. *@
+    @* The template being edited isn't the one shown (another was chosen, or a colleague retired, deleted or renamed it, or
+       a filter hides it): its form stays here, so what's typed can be saved or cancelled. *@
     <section class="tide-card tide-card-form" aria-labelledby="ot-edit-h">
         <h2 id="ot-edit-h">Edit template</h2>
         @EditForm
@@ -76,14 +76,12 @@ else if (Shown.Count == 0)
 }
 else
 {
-    <section class="tide-card" aria-labelledby="ot-list-h">
-        <h2 id="ot-list-h">Templates <span class="tide-count tide-muted fw-normal">(@Shown.Count)</span></h2>
-        <p class="small tide-muted mb-2" role="status">@CountText</p>
-        @foreach (var r in OnPage)
-        {
-            var t = r.Template;
-            var id = "ot-" + t.Id.ToString("N");
-            <article class="tide-hunt tide-outreach-template @(t.IsRetired ? "tide-retired" : "")" aria-labelledby="@(id + "-h")" @key="t.Id">
+    var r = Selected!;
+    var t = r.Template;
+    var id = "ot-" + t.Id.ToString("N");
+    <LibraryBrowser Count="@CountText" Entries="Entries" Selected="SelectedId" Label="Outreach templates" Href="RowHref" OnPick="Pick">
+        <ChildContent>
+            <article class="tide-hunt tide-library-entry @(t.IsRetired ? "tide-retired" : "")" aria-labelledby="@(id + "-h")" @key="t.Id">
                 @if (_form?.Id == t.Id)
                 {
                     <h3 class="tide-subhead mt-0" id="@(id + "-h")">Edit @t.Name</h3>
@@ -119,9 +117,9 @@ else
                     </div>
                 }
             </article>
-        }
-        <Pager Page="_page" Pages="TableView.Pages(_shown.Count, PageSize)" Many="templates" Href="PageHref" />
-    </section>
+        </ChildContent>
+        <Below><Pager Page="_page" Pages="TableView.Pages(_shown.Count, PageSize)" Many="templates" Href="PageHref" /></Below>
+    </LibraryBrowser>
 }
 
 @code {
@@ -138,6 +136,9 @@ else
     protected override async Task<IReadOnlyList<OutreachTemplateRow>> ReadAsync(bool includeRetired) => await TemplateSvc.ListAsync(includeRetired);
 
     protected override Guid IdOf(OutreachTemplateRow row) => row.Template.Id;
+
+    protected override LibraryEntry Entry(OutreachTemplateRow row) =>
+        new(row.Template.Id, row.Template.Name, row.Template.Description, Tlp.Label(row.Template.Ceiling), Used(row.Emails, "for", "email"), row.Template.IsRetired);
 
     protected override Guid? EditingId => _form?.Id;
 
@@ -223,7 +224,7 @@ else
 
     internal Task Save() => Run(async () =>
     {
-        await TemplateSvc.SaveAsync(_form!);
+        Reveal(await TemplateSvc.SaveAsync(_form!));
         Toasts.Show(_form!.Id is null ? $"{_form.Name.Trim()} saved for the team." : "Saved.");
         _form = null;
     });

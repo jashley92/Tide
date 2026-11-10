@@ -6,16 +6,16 @@ using Tide.Web.Components.Shared;
 
 namespace Tide.Web.Components.Layout;
 
-/// <summary>What a palette entry opens: a page, a "New …" command, a search hit, or the search page itself.</summary>
-public enum PaletteKind { Page, Command, Article, Action, Story, Search }
+/// <summary>What a palette entry opens: a page, a tab of one (the Library's), a "New …" command, a search hit, or the search page itself.</summary>
+public enum PaletteKind { Page, Tab, Command, Article, Action, Story, Search }
 
 /// <summary>One line in the command palette: what it says, where it goes, and a word or two about what it is.</summary>
 public sealed record PaletteEntry(string Label, string Href, string Icon, PaletteKind Kind, string Detail, string? Keywords = null);
 
 /// <summary>
 /// The command palette's entries (CommandPalette): the pages someone may open, as the sidebar lists them (NavPages),
-/// the "New …" commands they may use, and what SearchService finds as they type. Nothing here grants anything; each page
-/// still checks its own policy.
+/// the Library's tabs under its page (LibraryTabs), the "New …" commands they may use, and what SearchService finds as
+/// they type. Nothing here grants anything; each page still checks its own policy.
 /// </summary>
 public static class PaletteEntries
 {
@@ -28,6 +28,9 @@ public static class PaletteEntries
         var list = NavPages.For(user)
             .Select(p => new PaletteEntry(p.Label, p.Href, p.Icon, PaletteKind.Page, "Page", p.Keywords))
             .ToList();
+        // Each Library tab after its page, found by the words its own page had ("kql", "checklist", "card colour").
+        if (list.FindIndex(e => e.Href == LibraryTabs.Root) is var library and >= 0)
+            list.InsertRange(library + 1, LibraryTabs.For(user).Select(t => new PaletteEntry(t.Label, t.Href, t.Icon, PaletteKind.Tab, "Library", t.Keywords)));
         // The same checks as the buttons these stand for (Articles' New article, the board's New action).
         if (user.Has(Permission.WriteArticles) && user.Has(Permission.ReadTeamEdition))
             list.Insert(0, new("New article", "articles?new=1", "bi-plus-lg", PaletteKind.Command, "Command", "create write draft"));

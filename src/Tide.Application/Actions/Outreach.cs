@@ -132,7 +132,7 @@ public sealed class OutreachService(IAppDbContextFactory dbs, ICurrentUser user,
         await ActionService.RequireWork(db, user, a, ct);
         var template = await db.OutreachTemplates.AsNoTracking().FirstOrDefaultAsync(t => t.Id == templateId, ct)
                        ?? throw new KeyNotFoundException("That template no longer exists.");
-        if (template.IsRetired) throw new InvalidOperationException($"{template.Name} is retired. Restore it on Outreach templates to use it.");
+        if (template.IsRetired) throw new InvalidOperationException($"{template.Name} is retired. Restore it in the Library, on Outreach templates, to use it.");
 
         // The article's parts the cut reads, beside the indicators the hunt loader brought.
         if (a.Article is { } article)

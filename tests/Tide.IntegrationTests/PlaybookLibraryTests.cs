@@ -249,10 +249,11 @@ public class PlaybookPageTests(TideApp app) : IClassFixture<TideApp>
         var tag = Guid.NewGuid().ToString("N")[..6];
         await Saved("Sweep " + tag, ActionKind.IocSweep, Robin, "Pull the indicators", "Sweep proxy logs");
 
-        await using var r = await RenderAsync<PlaybooksPage>(app, "/playbooks", @as: Robin);
+        await using var r = await RenderAsync<PlaybooksPage>(app, "/library/playbooks", @as: Robin);
         await Set(r, "_words", tag, "Refilter");
         var html = WebUtility.HtmlDecode(await r.Html());
-        html.Should().Contain("<h1>Playbooks</h1>").And.Contain(" New playbook</button>")
+        html.Should().Contain("<h2>Playbooks</h2>").And.NotContain("<h1", "the Library page has the title").And.Contain(" New playbook</button>")
+            .And.Contain("IOC sweep · Not used yet", "the list says what kind of action it's for")
             .And.Contain("Sweep " + tag).And.Contain("Saved by Robin").And.Contain("<li>Sweep proxy logs</li>").And.Contain("Not used yet")
             .And.Contain("aria-label=\"Retire Sweep " + tag + "\"").And.Contain("aria-label=\"Delete Sweep " + tag + "\"", "Robin made it")
             .And.NotContain("aria-label=\"Move Sweep " + tag, "moving is on the whole list, not a filtered one");
@@ -296,7 +297,7 @@ public class PlaybookPageTests(TideApp app) : IClassFixture<TideApp>
     {
         var tag = Guid.NewGuid().ToString("N")[..6];
         await Saved("Viewer's read " + tag, null);
-        await using var r = await RenderAsync<PlaybooksPage>(app, "/playbooks", @as: Viewer);
+        await using var r = await RenderAsync<PlaybooksPage>(app, "/library/playbooks", @as: Viewer);
         var html = WebUtility.HtmlDecode(await r.Html());
         html.Should().Contain("Viewer's read " + tag).And.Contain("Any kind")
             .And.NotContain("New playbook</button>").And.NotContain("aria-label=\"Edit ").And.NotContain("aria-label=\"Retire ").And.NotContain("aria-label=\"Delete ");
@@ -309,7 +310,7 @@ public class PlaybookPageTests(TideApp app) : IClassFixture<TideApp>
         for (var i = 0; i < 22; i++) await Saved($"Paged {tag} {i:00}", i < 15 ? ActionKind.Block : ActionKind.PatchRemediate);
         await Saved($"Paged {tag} any", null);
 
-        await using var r = await RenderAsync<PlaybooksPage>(app, "/playbooks?page=2");
+        await using var r = await RenderAsync<PlaybooksPage>(app, "/library/playbooks?page=2");
         r.Component.Page.Should().Be(2, "the page is the address's");
         await Set(r, "_words", tag, "Refilter");
         r.Component.Page.Should().Be(1, "a new filter starts from the first page");
@@ -329,7 +330,10 @@ public class PlaybookPageTests(TideApp app) : IClassFixture<TideApp>
         html = WebUtility.HtmlDecode(await r.Html());
         html.Should().MatchRegex($"aria-label=\"Move {System.Text.RegularExpressions.Regex.Escape(first.Name)} up\" disabled");
         var second = r.Component.OnPage[1].Playbook;
+        await r.Click(p => { p.Pick(second.Id); return Task.CompletedTask; });
+        WebUtility.HtmlDecode(await r.Html()).Should().MatchRegex($"aria-label=\"Move {System.Text.RegularExpressions.Regex.Escape(second.Name)} up\"(?! disabled)", "the second can go up");
         await r.Click(p => p.Move(second, -1));
+        r.Component.Selected!.Playbook.Id.Should().Be(second.Id, "the one moved stays the one shown");
         r.Component.OnPage[0].Playbook.Id.Should().Be(second.Id);
         await r.Click(p => p.Move(second, 1));   // and back, for the other tests
         await r.Click(p => p.OnChangedElsewhere([]));
@@ -337,11 +341,11 @@ public class PlaybookPageTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task TheOldAdminAddress_GoesToThePlaybooksPage()
+    public async Task TheOldAdminAddress_GoesToThePlaybooksTab()
     {
         var res = await app.CreateClient(new() { AllowAutoRedirect = false }).GetAsync("/admin/playbooks");
         res.StatusCode.Should().Be(HttpStatusCode.Redirect);
-        new Uri(new Uri("http://localhost/"), res.Headers.Location!).AbsolutePath.Should().Be("/playbooks");
+        new Uri(new Uri("http://localhost/"), res.Headers.Location!).AbsolutePath.Should().Be("/library/playbooks");
         (await app.CreateClient().GetStringAsync("/admin")).Should().NotContain("href=\"admin/playbooks\"", "Administration has no Playbooks tab now");
     }
 
@@ -359,10 +363,10 @@ public class PlaybookPageTests(TideApp app) : IClassFixture<TideApp>
             await rules.SaveAsync(new ActionCardRule { Name = "Off " + tag, Unassigned = true, IsActive = false });
         }
 
-        await using (var r = await RenderAsync<BoardRulesPage>(app, "/board-rules", @as: Viewer))
+        await using (var r = await RenderAsync<BoardRulesPage>(app, "/library/board-rules", @as: Viewer))
         {
             var html = WebUtility.HtmlDecode(await r.Html());
-            html.Should().Contain("<h1>Board rules</h1>")
+            html.Should().Contain("<h2>Board rules</h2>")
                 .And.Contain("<span class=\"tide-rule-label tide-rule-red\">Late " + tag + "</span>")
                 .And.Contain("P2 or higher · overdue").And.Contain(">Red</td>").And.Contain(">Teal</td>")
                 .And.NotContain("Off " + tag, "a rule turned off marks nothing")
@@ -372,9 +376,9 @@ public class PlaybookPageTests(TideApp app) : IClassFixture<TideApp>
             html.Should().MatchRegex($"Ours {tag}</span></td>\\s*<td class=\"small\">[^<]+</td>\\s*<td class=\"small\">Teal</td>\\s*<td class=\"small\">No</td>");
         }
 
-        await using var admin = await RenderAsync<BoardRulesPage>(app, "/board-rules");
-        (await admin.Html()).Should().Contain("href=\"admin/card-rules\"");
-        (await app.CreateClient().GetStringAsync("/actions")).Should().Contain("href=\"board-rules\"", "the Actions page links to them");
+        await using var admin = await RenderAsync<BoardRulesPage>(app, "/library/board-rules");
+        (await admin.Html()).Should().Contain("href=\"admin/card-rules\"", "editing them stays in Administration");
+        (await app.CreateClient().GetStringAsync("/actions")).Should().Contain("href=\"library/board-rules\"", "the Actions page links to them");
     }
 
     [Fact]

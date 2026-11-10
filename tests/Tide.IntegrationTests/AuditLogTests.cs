@@ -165,7 +165,7 @@ public class AuditLogServiceTests : IDisposable
         rows[nameof(BriefItem)].Should().Match<AuditRow>(r => r.Record == "Brief for Mon Oct 26, 2026" && r.Href == "briefs/2026-10-26");
         foreach (var part in new[] { nameof(ActionEvent), nameof(ActionComment), nameof(ActionChecklistItem), nameof(HuntQuery), nameof(ActionItem) })
             rows[part].Should().Match<AuditRow>(r => r.Record == "A-42 Sweep for the IOCs" && r.Href == "actions/42", part);
-        rows[nameof(PlaybookStep)].Href.Should().Be("playbooks");
+        rows[nameof(PlaybookStep)].Href.Should().Be("library/playbooks");
         rows[nameof(MetricValue)].Should().Match<AuditRow>(r => r.Record == "Open alerts" && r.Href == "admin/metrics");
         rows[nameof(Story)].Href.Should().Be($"stories/{story.Id}");
         rows[nameof(Source)].Should().Match<AuditRow>(r => r.Record == "CISA KEV" && r.Href == "admin/sources");

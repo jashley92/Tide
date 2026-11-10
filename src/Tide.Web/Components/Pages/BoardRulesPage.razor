@@ -1,18 +1,17 @@
-@page "/board-rules"
-@attribute [Authorize(Policy = Policies.ReadActions)]
 @inject CardRuleService RuleSvc
 @inject TeamService TeamSvc
 @inject ICurrentUser CurrentUser
 @inject ToastService Toasts
 
-@* The administrators' card rules, read-only, for everyone who reads actions: why a card on the board is red, what its
-   label means, and which rules + Filter offers. Administrators change them on Administration › Card rules. *@
+@* The administrators' card rules, read-only, for everyone who reads actions, a tab of the Library page (which checks who
+   may open it): why a card on the board is red, what its label means, and which rules + Filter offers. Administrators
+   change them on Administration › Card rules. *@
 
-<PageTitle>Board rules · TIDE</PageTitle>
+<PageTitle>Board rules · Library · TIDE</PageTitle>
 
-<div class="tide-page-head">
+<div class="tide-page-head tide-library-head">
     <div>
-        <h1>Board rules</h1>
+        <h2>Board rules</h2>
         <div class="tide-sub">How the Actions board and list mark actions: one that matches all of a rule's conditions gets its
             label, and the first matching rule, in this order, gives it its colour. Rules offered as a filter are under
             + Filter on the Actions page, with their counts. Administrators set them.</div>

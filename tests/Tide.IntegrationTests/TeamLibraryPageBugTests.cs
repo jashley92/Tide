@@ -8,7 +8,7 @@ using static Tide.IntegrationTests.ComponentHarness;
 
 namespace Tide.IntegrationTests;
 
-/// <summary>Bugs found in the team libraries' pages (EP-89): an open edit whose card leaves the page, and moving while editing.</summary>
+/// <summary>Bugs found in the team libraries (EP-89; tabs of the Library page now): an open edit whose entry leaves the list, and moving while editing.</summary>
 public class TeamLibraryPageBugTests(TideApp app) : IClassFixture<TideApp>
 {
     private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
@@ -33,7 +33,7 @@ public class TeamLibraryPageBugTests(TideApp app) : IClassFixture<TideApp>
         await using (var scope = SignedIn(app, Robin))
             id = await scope.ServiceProvider.GetRequiredService<PlaybookService>().SaveAsync(new PlaybookForm { Name = "Leaving " + tag, Steps = ["Pull the indicators"] });
 
-        await using var r = await RenderAsync<PlaybooksPage>(app, "/playbooks", @as: Robin);
+        await using var r = await RenderAsync<PlaybooksPage>(app, "/library/playbooks", @as: Robin);
         await Set(r, "_words", tag, "Refilter");
         var p = r.Component.Rows!.Single(x => x.Playbook.Id == id).Playbook;
         await r.Click(c => { c.Edit(p); return Task.CompletedTask; });
@@ -55,7 +55,7 @@ public class TeamLibraryPageBugTests(TideApp app) : IClassFixture<TideApp>
     [Fact]
     public async Task WhileAPlaybookIsBeingEdited_MovingWaits_SoItsSaveIsntRefusedAsSomeoneElses()
     {
-        await using var r = await RenderAsync<PlaybooksPage>(app, "/playbooks", @as: Robin);
+        await using var r = await RenderAsync<PlaybooksPage>(app, "/library/playbooks", @as: Robin);
         var (first, second) = (r.Component.OnPage[0].Playbook, r.Component.OnPage[1].Playbook);
         await r.Click(c => { c.Edit(second); return Task.CompletedTask; });
 

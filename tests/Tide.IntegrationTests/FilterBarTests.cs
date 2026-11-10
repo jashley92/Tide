@@ -425,7 +425,7 @@ public class FilterBarTests(TideApp app) : IClassFixture<TideApp>
     [Fact]
     public async Task SavedQueries_APillPerLanguage_OneAtATime_AndClear()
     {
-        await using var r = await ComponentHarness.RenderAsync<SavedQueriesPage>(app, "/hunts/saved?page=2");
+        await using var r = await ComponentHarness.RenderAsync<SavedQueriesPage>(app, "/library/queries?page=2");
         SavedQueriesPage.Pills.Select(p => p.Label).Should().Equal("XQL", "KQL", "Falcon");
         bool On(string key) => SavedQueriesPage.Pills.Single(p => p.Key == key).OnFor(r.Component.Defs.Single());
         Task Press(SavedQueriesPage p, string key)
@@ -454,7 +454,7 @@ public class FilterBarTests(TideApp app) : IClassFixture<TideApp>
     [Fact]
     public async Task OutreachTemplates_ClearEmptiesTheWords()
     {
-        await using var r = await ComponentHarness.RenderAsync<OutreachTemplatesPage>(app, "/outreach/templates");
+        await using var r = await ComponentHarness.RenderAsync<OutreachTemplatesPage>(app, "/library/templates");
         typeof(OutreachTemplatesPage).GetField("_words", Private)!.SetValue(r.Component, "zzqx");
         WebUtility.HtmlDecode(await r.Html()).Should().Contain("id=\"ot-retired\"");
         await Do(r, p => { p.ClearFilters(); return Task.CompletedTask; });

@@ -1,0 +1,93 @@
+@page "/library"
+@page "/library/{Tab}"
+@attribute [Authorize(Policy = Policies.ReadActions)]
+@implements IDisposable
+@inject ICurrentUser CurrentUser
+@inject SavedQueryService SavedSvc
+@inject OutreachTemplateService TemplateSvc
+@inject PlaybookService PlaybookSvc
+@inject CardRuleService RuleSvc
+@inject ChangeFeed Feed
+@inject ChangeOrigin Origin
+@inject ToastService Toasts
+
+@* What the team keeps to reuse on actions, on one page: Saved queries, Outreach templates, Playbooks and Board rules, a
+   tab each (LibraryTabs), each tab counting its entries (those in use: not retired, not turned off). A tab is an
+   address of its own (library/queries), so its page and selected entry (?page=, ?row=) are its alone and a link to
+   another tab carries neither. Each tab asks for the permission its page asked when it was a page of its own: someone
+   without it gets neither the tab nor what's in it. The pages' old addresses lead here (LibraryMoved). *@
+
+<PageTitle>Library · TIDE</PageTitle>
+
+<div class="tide-page-head">
+    <div>
+        <h1>Library</h1>
+        <div class="tide-sub">What the team keeps to use again on actions: hunt queries, outreach emails, playbooks, and the rules that mark the board.</div>
+    </div>
+</div>
+
+@if (_tab is null)
+{
+    <div class="tide-card">
+        <EmptyState Icon="bi-lock" Title="Nothing in the Library is open to you." />
+    </div>
+}
+else
+{
+    <TabBar Items="Items" Active="@_tab.Key" Label="Library" />
+    @switch (_tab.Key)
+    {
+        case LibraryTabs.Queries: <SavedQueriesPage OnChanged="() => Count(LibraryTabs.Queries)" /> break;
+        case LibraryTabs.Templates: <OutreachTemplatesPage OnChanged="() => Count(LibraryTabs.Templates)" /> break;
+        case LibraryTabs.Playbooks: <PlaybooksPage OnChanged="() => Count(LibraryTabs.Playbooks)" /> break;
+        default: <BoardRulesPage /> break;
+    }
+}
+
+@code {
+    /// <summary>The tab's key (library/playbooks). None, or one that isn't a tab this person has, shows their first.</summary>
+    [Parameter] public string? Tab { get; set; }
+
+    private IReadOnlyList<LibraryTab> _tabs = [];
+    private LibraryTab? _tab;
+    private readonly Dictionary<string, int> _counts = [];
+    private LiveChanges? _live;
+
+    private IReadOnlyList<TabBarItem> Items =>
+        [.. _tabs.Select(t => new TabBarItem(t.Label, t.Href, t.Icon, t.Key, _counts.TryGetValue(t.Key, out var n) ? n : null))];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _tabs = LibraryTabs.For(CurrentUser);
+        // A colleague's change to a library: its tab's count, whichever tab is open (the open tab re-reads its own list).
+        _live = new LiveChanges(Feed, Origin, c => LibraryTabs.All.Any(t => t.Topic == c.Topic), InvokeAsync, async heard =>
+        {
+            foreach (var t in _tabs.Where(t => heard.Any(c => c.Topic == t.Topic))) await Count(t.Key);
+            StateHasChanged();
+        });
+        // Each count is its own read (a service opens its own database context), so they run together.
+        await Task.WhenAll(_tabs.Select(t => Count(t.Key)));
+    }
+
+    protected override void OnParametersSet() =>
+        _tab = _tabs.FirstOrDefault(t => string.Equals(t.Key, Tab, StringComparison.OrdinalIgnoreCase)) ?? _tabs.FirstOrDefault();
+
+    public void Dispose() => _live?.Dispose();
+
+    // How many entries a tab holds, of those in use: what an action is offered, and the rules that mark the board.
+    private async Task Count(string key)
+    {
+        if (_tabs.All(t => t.Key != key)) return;
+        try
+        {
+            _counts[key] = key switch
+            {
+                LibraryTabs.Queries => (await SavedSvc.OfferedAsync()).Count,
+                LibraryTabs.Templates => (await TemplateSvc.OfferedAsync()).Count,
+                LibraryTabs.Playbooks => (await PlaybookSvc.ListAsync()).Count,
+                _ => (await RuleSvc.ListAsync()).Count,
+            };
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+}
