@@ -9,7 +9,7 @@
 // Each failure names the page, the width and the rule. Add a page or a rule below; README.md says how.
 
 import { chromium } from 'playwright';
-import { openPage, pick, readDemo, startTide, toArticleSlide } from './tide.mjs';
+import { openPage, pick, readDemo, settle, startTide, toArticleSlide } from './tide.mjs';
 
 // --- the rules: each runs in the page and returns what's wrong (nothing, when it holds). A box is shown when it has
 // width and height. --------------------------------------------------------------------------------------------------
@@ -81,6 +81,45 @@ const visible = selector => ({
     els.some(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; }) ? [] : [`${selector} isn't shown`], selector),
 });
 
+/** No match is visible (none there, or each hidden). */
+const hidden = selector => ({
+  name: `hidden: ${selector}`,
+  check: page => page.$$eval(selector, (els, selector) =>
+    els.some(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; }) ? [`${selector} is shown`] : [], selector),
+});
+
+/** The list's last row is the one selected, and has focus: after J pressed once for every row below the first. */
+const selectedLast = (row = '.tide-triage-row') => ({
+  name: `selected: the last ${row}`,
+  check: page => page.$$eval(row, rows => {
+    const at = rows.findIndex(r => r.classList.contains('selected'));
+    const focused = rows.indexOf(document.activeElement);
+    return at === rows.length - 1 && focused === at ? [] : [`row ${at + 1} of ${rows.length} is selected and row ${focused + 1} has focus, not the last`];
+  }),
+});
+
+/**
+ * Setup: J pressed quickly once for each row below the first, over a connection that takes 50ms each way, as a server
+ * across a network does. The keys go faster than the answers come back, which is when a row's focus could select an
+ * older row again.
+ */
+async function pressJQuickly(page) {
+  await page.routeWebSocket(/_blazor/, ws => {
+    const server = ws.connectToServer();
+    ws.onMessage(m => setTimeout(() => server.send(m), 50));
+    server.onMessage(m => setTimeout(() => ws.send(m), 50));
+  });
+  await page.reload({ waitUntil: 'networkidle' });
+  await settle(page);
+  const rows = await page.locator('.tide-triage-row').count();
+  await page.locator('.tide-triage-row.selected').focus();
+  for (let i = 1; i < rows; i++) {
+    await page.keyboard.press('j');
+    await page.waitForTimeout(25);
+  }
+  await page.waitForTimeout(2500);
+}
+
 // --- the pages: route, optional setup, widths (each 900px tall) and rules ([minWidth, rule] from that width up) ------
 
 const pages = [
@@ -103,6 +142,13 @@ const pages = [
   // A sweep's query is read whole, in the wide column: its long lines wrap, so nothing scrolls sideways inside its box.
   { name: 'action-hunt', route: '/actions/{huntAction}', widths: [1920, 1440],
     rules: [noSidewaysScroll, visible('.tide-action-main .tide-hunt pre.tide-query'), fits('.tide-hunt pre.tide-query')] },
+  // Triage: the keys on one line, each row's flags fitting its line, and the reading pane open by itself from 1400px.
+  { name: 'triage', route: '/triage', widths: [1920, 1440, 780],
+    rules: [noSidewaysScroll, fits('.tide-page-head'), visible('.tide-triage-keys'), oneRow('.tide-triage-keys'), visible('.tide-triage-row.selected'), fits('.tide-triage-row'),
+      fits('.tide-triage-flags'), [1400, visible('.tide-reading')]] },
+  { name: 'triage-narrow', route: '/triage', widths: [1300, 780], rules: [hidden('.tide-reading')] },
+  // J pressed quickly lands on the row it was pressed for (the selection isn't pulled back by a row's focus).
+  { name: 'triage-keys', route: '/triage', setup: pressJQuickly, widths: [1440], rules: [selectedLast()] },
   { name: 'trends', route: '/trends', widths: [1920], rules: [noSidewaysScroll, widerThan('.content', 1400)] },
   { name: 'slide-article', route: '/present/{today}', setup: toArticleSlide, widths: [1440, 1100, 900],
     rules: [

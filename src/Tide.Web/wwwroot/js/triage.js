@@ -7,7 +7,7 @@
 // While a row's promote form is open the keys are the form's: only Esc, which closes it and focuses the row again.
 // A suggested group ("Looks like one event") is a line of its own: Enter on it opens or closes it, the right arrow opens
 // it, and the left arrow (on it or on a report under it) closes it. J/K and the up and down arrows move over it.
-// "v" reads the selected item in the reading pane (EP-76); Esc closes the pane.
+// "v" reads the selected item in the reading pane (EP-76); Esc closes the pane. Both are remembered for the person.
 window.tideTriage = (function () {
     const rows = window.tideRows;
     let started = 0;
@@ -25,8 +25,10 @@ window.tideTriage = (function () {
 
     // What a key means here, given what the shared keys made of it.
     function actionFor(e, action, onRow) {
-        // Esc closes the reading pane (when no form is open).
-        if (e.key === 'Escape' && document.querySelector('.tide-reading')) return 'close-reading';
+        // Esc closes the reading pane (when no form is open), only when it's shown: one open by itself is hidden on a
+        // narrow window, and Esc there closes nothing.
+        const pane = document.querySelector('.tide-reading');
+        if (e.key === 'Escape' && pane && pane.getClientRects().length > 0) return 'close-reading';
         const onGroup = onRow && e.target.classList.contains('tide-triage-group');
         if (e.key === 'Enter' && onRow) return onGroup ? 'toggle' : 'open';
         if (e.key === 'ArrowRight' && onGroup) return 'expand';
