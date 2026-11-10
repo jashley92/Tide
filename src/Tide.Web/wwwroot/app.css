@@ -2413,8 +2413,8 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 /* ---- Brief chip (BriefChip, in the top bar): when the brief meets and the step it's on, a link to Today ----
    In full from 1200px ("Brief 10:30 AM · step 3 of 5 · Order") and short below that ("10:30 AM · 3/5"). It never wraps
    or shrinks, so the top bar stays one row, and the search box matters more than it does: the chip shows only where the
-   search box keeps about 200px beside it. Under 1050px that takes the team's name giving way (only for those who have
-   a chip), and under 880px the chip itself is gone and the name is back. */
+   search box keeps about 200px beside it. Under 1100px that takes the team's name giving way (only for those who have
+   a chip), and under 900px the chip itself is gone and the name is back. */
 .tide-brief-chip { flex: none; display: inline-flex; align-items: center; gap: var(--tide-space-2); height: 2rem; padding: 0 var(--tide-space-3);
     border: 1px solid var(--tide-border); border-radius: var(--tide-radius-pill); background: var(--tide-surface); color: var(--tide-text-muted);
     font-size: var(--tide-text-sm); white-space: nowrap; text-decoration: none; }
@@ -2426,5 +2426,5 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
     .tide-brief-chip-full { display: none; }
     .tide-brief-chip-short { display: inline; }
 }
-@media (min-width: 880px) and (max-width: 1049.98px) { .top-row:has(.tide-brief-chip) > span:first-child { display: none; } }
-@media (max-width: 879.98px) { .tide-brief-chip { display: none; } }
+@media (min-width: 900px) and (max-width: 1099.98px) { .top-row:has(.tide-brief-chip) > span:first-child { display: none; } }
+@media (max-width: 899.98px) { .tide-brief-chip { display: none; } }

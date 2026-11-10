@@ -87,10 +87,10 @@ const pages = [
   { name: 'today', route: '/', widths: [1440, 1000, 780],
     rules: [noSidewaysScroll, visible('.tide-steps'), fits('.tide-steps > li'), fits('.tide-page-head')] },
   // The top bar with the brief chip in it: one row from a narrow window up, nothing pushed out of its group (the Go to
-  // button under the chip), and the search box never squeezed for the chip: the chip is in view from 880px, and
+  // button under the chip), and the search box never squeezed for the chip: the chip is in view from 900px, and
   // wherever it shows the search box keeps 200px. On a phone nothing pushes the page sideways.
-  { name: 'top-bar', route: '/articles', widths: [1440, 1050, 1000, 880, 780, 375],
-    rules: [noSidewaysScroll, [880, visible('.tide-brief-chip')], [780, oneRow('.top-row')], [780, oneRow('.tide-top-end')],
+  { name: 'top-bar', route: '/articles', widths: [1440, 1100, 1000, 900, 780, 375],
+    rules: [noSidewaysScroll, [900, visible('.tide-brief-chip')], [780, oneRow('.top-row')], [780, oneRow('.tide-top-end')],
       [780, fits('.top-row')], [780, fits('.tide-top-find')], roomBeside('.tide-top-search', 200, '.tide-brief-chip')] },
   { name: 'article', route: '/articles/{vpnArticle}', widths: [1440, 1000],
     rules: [noSidewaysScroll, visible('.tide-reader-sum'), visible('[role=tablist][aria-label="Beside the article"]')] },
