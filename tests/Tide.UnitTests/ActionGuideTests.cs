@@ -168,6 +168,41 @@ public class ActionGuideTests
     }
 
     [Fact]
+    public void ASweepOrHunt_SaysNobodyHasIt_ThenToRunItsQuery_ThenToRecordWhatItFound()
+    {
+        NextStep? Next(HuntFacts hunt, ActionStatus status = ActionStatus.Open, DateOnly? due = null, bool canWork = true) =>
+            ActionGuide.Next(On(status, due ?? Fri, canWork) with { Hunt = hunt });
+
+        var unowned = Next(new HuntFacts(Takeable: true, Mine: false, HasQuery: true))!;
+        unowned.Kind.Should().Be(NextKind.Unowned);
+        unowned.Text.Should().Be("Nobody has it yet.");
+        unowned.Links.Should().Equal(new NextLink(ActionFlow.TakeIt, "Take it"));
+
+        var mine = Next(new HuntFacts(false, Mine: true, HasQuery: true))!;
+        (mine.Kind, mine.Text).Should().Be((NextKind.RunQuery, "Copy the query and run it in your SIEM."));
+        mine.Links.Should().BeEmpty("Copy is on the query, just below");
+        Next(new HuntFacts(false, Mine: true, HasQuery: false))!.Text.Should().Be("Add indicators or write a query by hand, then run it in your SIEM.");
+
+        var copied = Next(new HuntFacts(false, Mine: true, HasQuery: true, Copied: true))!;
+        (copied.Kind, copied.Text).Should().Be((NextKind.AwaitingResult, "Query copied. Once it has run, record what it found."));
+
+        Next(new HuntFacts(false, Mine: true, HasQuery: true, Copied: true, HasResult: true)).Should().BeNull("a result is recorded: the query isn't what's next");
+        Next(new HuntFacts(false, Mine: false, HasQuery: true)).Should().BeNull("a colleague has it");
+        Next(new HuntFacts(true, false, true), canWork: false).Should().BeNull();
+        Next(new HuntFacts(true, false, true), ActionStatus.Done).Should().BeNull();
+        Next(new HuntFacts(true, false, true), ActionStatus.Blocked)!.Kind.Should().Be(NextKind.Blocked, "what's wrong comes before what's routine");
+        Next(new HuntFacts(false, true, true), due: Mon)!.Kind.Should().Be(NextKind.Overdue);
+        ActionGuide.Next(On(ActionStatus.Open, Fri)).Should().BeNull("another kind of action has no hunt to speak of");
+    }
+
+    [Fact]
+    public void OnlyASweepOrAHunt_IsAHunt()
+    {
+        foreach (var kind in Enum.GetValues<ActionKind>())
+            ActionGuide.IsHunt(kind).Should().Be(kind is ActionKind.IocSweep or ActionKind.ThreatHunt);
+    }
+
+    [Fact]
     public void TheDrawer_HasTheChecklistAlways_AndEachOtherToolWhereItBelongs()
     {
         ActionGuide.Tools(ActionKind.Block, false, 0, 0).Should().Equal(ActionTool.Checklist);
