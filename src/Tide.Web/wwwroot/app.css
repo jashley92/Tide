@@ -2447,8 +2447,8 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 /* The view tabs, each with its count, stay one row in a narrow window: closer together, with smaller counts. */
 @media (max-width: 1099.98px) {
     .tide-actions-views { gap: 0; }
-    .tide-actions-views .tide-tabbar-item { padding-inline: .45rem; gap: .25rem; }
-    .tide-actions-views .tide-tabbar-count { padding: .1rem .35rem; font-size: .7rem; }
+    .tide-actions-views .tide-tabbar-item { padding-inline: .3rem; gap: .25rem; font-size: .9rem; }
+    .tide-actions-views .tide-tabbar-count { padding: .1rem .3rem; font-size: .68rem; }
 }
 .tide-row-progress { margin-top: var(--tide-space-1); max-width: 7rem; display: flex; align-items: center; gap: .4rem; color: var(--tide-text-muted); }
 .tide-row-progress > .tide-kcard-bar { min-width: 2.5rem; }

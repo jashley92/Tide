@@ -14,14 +14,15 @@ import { openPage, pick, readDemo, startTide, toArticleSlide } from './tide.mjs'
 // --- the rules: each runs in the page and returns what's wrong (nothing, when it holds). A box is shown when it has
 // width and height. --------------------------------------------------------------------------------------------------
 
-/** Every element matching `selector` lays its visible children out on one line (they share a horizontal band). */
+/** Every element matching `selector` lays its visible children out on one line (they share a horizontal band, more than
+ * the pixel or two of a border two wrapped lines can overlap by). */
 const oneRow = selector => ({
   name: `one row: ${selector}`,
   check: page => page.$$eval(selector, (rows, selector) => rows.flatMap((row, i) => {
     const kids = [...row.children].map(c => c.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0);
     if (kids.length < 2) return [];
     const top = Math.max(...kids.map(r => r.top)), bottom = Math.min(...kids.map(r => r.bottom));
-    return top < bottom ? [] : [`${selector} #${i + 1}: its ${kids.length} parts are on more than one line (${Math.round(row.getBoundingClientRect().height)}px tall)`];
+    return top < bottom - 2 ? [] : [`${selector} #${i + 1}: its ${kids.length} parts are on more than one line (${Math.round(row.getBoundingClientRect().height)}px tall)`];
   }), selector),
 });
 
