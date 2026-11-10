@@ -28,10 +28,12 @@ window.tideTriage = (function () {
     function actionFor(e, action, onRow) {
         // Esc closes the reading pane (when no form is open), and V reads or closes it, only when it's shown: one open by
         // itself is hidden on a narrow window, where Esc closes nothing and V opens it.
-        const pane = document.querySelector('.tide-reading');
-        const shown = !!pane && pane.getClientRects().length > 0;
-        if (e.key === 'Escape' && shown) return 'close-reading';
-        if (action === 'read' && shown) return 'toggle-reading';
+        if (e.key === 'Escape' || action === 'read') {
+            const pane = document.querySelector('.tide-reading');
+            const shown = !!pane && pane.getClientRects().length > 0;
+            if (e.key === 'Escape' && shown) return 'close-reading';
+            if (action === 'read' && shown) return 'toggle-reading';
+        }
         const onGroup = onRow && e.target.classList.contains('tide-triage-group');
         if (e.key === 'Enter' && onRow) return onGroup ? 'toggle' : 'open';
         if (e.key === 'ArrowRight' && onGroup) return 'expand';

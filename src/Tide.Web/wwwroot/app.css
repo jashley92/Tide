@@ -2443,5 +2443,5 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 }
 /* The main button names the article in full (its name and title), cut short on screen so Promote still fits beside it. */
 .tide-triage-attach { display: inline-flex; align-items: center; gap: var(--tide-space-1); white-space: nowrap; min-width: 0; max-width: calc(100% - 8rem); }
-.tide-triage-attach-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tide-triage-attach-title { min-width: 0; }
 /* ---- end Triage 2.4 ---- */

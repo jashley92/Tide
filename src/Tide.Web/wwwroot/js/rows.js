@@ -78,7 +78,6 @@ window.tideRows = (function () {
     function done() {
         answering = false;
         if (ref && waiting.length > 0) { reveal(); next(); return; }
-        waiting = [];
         const then = moved ? follow : settle;
         moved = false;
         then();

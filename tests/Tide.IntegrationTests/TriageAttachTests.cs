@@ -76,7 +76,7 @@ public class TriageAttachTests(TideApp app) : IClassFixture<TideApp>
         await using var r = await ComponentHarness.RenderAsync<Triage>(app, $"/triage?source={source}", @as: Someone());
 
         var row = Selected(await r.HtmlOnce("Lantern VPN bug now used by two gangs"));
-        row.Should().Contain("Attach to <span class=\"tide-triage-attach-title\">“Lantern VPN flaw exploited in the wild”</span>");
+        row.Should().Contain("Attach to <span class=\"tide-triage-attach-title text-truncate\">“Lantern VPN flaw exploited in the wild”</span>");
         Regex.IsMatch(row, "class=\"btn btn-primary btn-sm tide-triage-attach\"[^>]*>(<span[^>]*></span>)? Attach to").Should().BeTrue("Attach is the main (primary) button");
         Regex.IsMatch(row, "class=\"btn btn-outline-secondary btn-sm tide-triage-promote\"[^>]*>(<span[^>]*></span>)? Promote <span class=\"tide-kbd\">P</span>")
             .Should().BeTrue("Promote is still there, with its key");
@@ -135,7 +135,7 @@ public class TriageAttachTests(TideApp app) : IClassFixture<TideApp>
 
         var line = Selected(await r.HtmlOnce("Looks like one event"));
         line.Should().Contain("tide-triage-group");
-        Regex.IsMatch(line, "class=\"btn btn-primary btn-sm tide-triage-attach\"[^>]*>(<span[^>]*></span>)? Attach all 3 to <span class=\"tide-triage-attach-title\">“Quorvexz theft, first report”</span>").Should().BeTrue();
+        Regex.IsMatch(line, "class=\"btn btn-primary btn-sm tide-triage-attach\"[^>]*>(<span[^>]*></span>)? Attach all 3 to <span class=\"tide-triage-attach-title text-truncate\">“Quorvexz theft, first report”</span>").Should().BeTrue();
         Regex.IsMatch(line, "class=\"btn btn-outline-secondary btn-sm tide-triage-promote\"[^>]*>(<span[^>]*></span>)? Promote as one article \\(3 sources\\) <span class=\"tide-kbd\">P</span>")
             .Should().BeTrue("promoting the group is still there, and P");
 
@@ -193,7 +193,7 @@ public class TriageAttachTests(TideApp app) : IClassFixture<TideApp>
         at.Should().BePositive();
         var button = System.Net.WebUtility.HtmlDecode(row[row.LastIndexOf("<button", at, StringComparison.Ordinal)..row.IndexOf("</button>", at, StringComparison.Ordinal)]);
         button.Should().Contain($"title=\"Attach to “{title}”\"", "the whole title on hover")
-            .And.Contain($"<span class=\"tide-triage-attach-title\">“{title}”</span>", "and in the button's name; the stylesheet cuts it short on screen");
+            .And.Contain($"<span class=\"tide-triage-attach-title text-truncate\">“{title}”</span>", "and in the button's name; the stylesheet cuts it short on screen");
     }
 
     [Fact]

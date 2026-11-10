@@ -1125,8 +1125,8 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     /// </summary>
     public async Task<Guid> PromoteAsOneAsync(IReadOnlyCollection<Guid> ids, PromoteForm form, CancellationToken ct = default)
     {
-        if (ids.Distinct().Count() is < 2) throw new ArgumentException($"Promote 2 to {TriageGroups.MaxSize} reports as one article.");
-        return (await PromoteOrJoinAsync(ids, form, ct)).ArticleId;
+        if (ids.Distinct().Count() < 2) throw new ArgumentException($"Promote 2 to {TriageGroups.MaxSize} reports as one article.");
+        return (await PromoteManyAsync(ids, form, ct)).ArticleId;
     }
 
     /// <summary>
@@ -1135,11 +1135,8 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     /// reports first, all into one article, that's the article given, with <see cref="PromoteOutcome.Made"/> false and who
     /// put them there, so the page never says it promoted what it didn't.
     /// </summary>
-    public Task<PromoteOutcome> PromoteOrJoinAsync(IReadOnlyCollection<Guid> ids, PromoteForm form, CancellationToken ct = default)
-    {
-        if (ids.Distinct().Count() is < 1 or > TriageGroups.MaxSize) throw new ArgumentException($"Promote 1 to {TriageGroups.MaxSize} reports as one article.");
-        return PromoteManyAsync(ids, form, ct);
-    }
+    public Task<PromoteOutcome> PromoteOrJoinAsync(IReadOnlyCollection<Guid> ids, PromoteForm form, CancellationToken ct = default) =>
+        PromoteManyAsync(ids, form, ct);
 
     private async Task<PromoteOutcome> PromoteManyAsync(IReadOnlyCollection<Guid> ids, PromoteForm form, CancellationToken ct)
     {
@@ -1150,13 +1147,14 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         if (form.Priority is { } p && !Enum.IsDefined(p)) throw new ArgumentException("That isn't a priority.");
         var chosenTlp = form.Tlp is { } t ? Tlp.Checked(t) : (TlpLevel?)null;
         var wanted = ids.Distinct().ToList();
+        if (wanted.Count is < 1 or > TriageGroups.MaxSize) throw new ArgumentException($"Promote 1 to {TriageGroups.MaxSize} reports as one article.");
         var single = wanted.Count == 1;
         List<FeedItem> items;
         await using (var db = await dbs.CreateAsync(ct))
         {
             items = await db.FeedItems.AsNoTracking().Include(i => i.Source).Where(i => wanted.Contains(i.Id)).ToListAsync(ct);
             if (items.Count != wanted.Count) throw new KeyNotFoundException(single ? "That item is gone." : "One of those items is gone.");
-            if (OneArticle(items) is { } existing) return new(existing, Made: false, items[0].StatusByName);
+            if (OneArticle(items) is { } existing) return new(existing, Made: false, Who(items[0]));
             // Claim them first, in one statement: of two analysts promoting the same item at once, one makes the article
             // and the other is sent to it, rather than both making one. A group is claimed whole or not at all (the
             // transaction gives back a part claim), so no report is left in someone else's article and this one too. A
@@ -1184,9 +1182,9 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
             if (!all)
             {
                 var others = await db.FeedItems.AsNoTracking().Where(i => wanted.Contains(i.Id)).ToListAsync(ct);
-                if (OneArticle(others) is { } made) return new(made, Made: false, others[0].StatusByName);
+                if (OneArticle(others) is { } made) return new(made, Made: false, Who(others[0]));
                 if (single)
-                    throw new InvalidOperationException($"{others[0].StatusByName ?? "Someone"} is promoting this item now. It'll be on the Promoted tab in a moment.");
+                    throw new InvalidOperationException($"{Who(others[0])} is promoting this item now. It'll be on the Promoted tab in a moment.");
                 throw new InvalidOperationException("Someone has just promoted or attached one of these reports, so none of them was promoted. Look at the group again.");
             }
         }
@@ -1242,6 +1240,9 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     }
 
     // The article every one of these items already made (a promote someone else, or an earlier click, finished).
+    // Who decided an item (promoted, attached, set aside), for a message: their name, or "Someone" when it isn't known.
+    private static string Who(FeedItem? item) => string.IsNullOrWhiteSpace(item?.StatusByName) ? "Someone" : item.StatusByName;
+
     private static Guid? OneArticle(List<FeedItem> items) =>
         items.Count > 0 && items.TrueForAll(i => i.Status == FeedItemStatus.Promoted && i.ArticleId is not null && i.ArticleId == items[0].ArticleId)
             ? items[0].ArticleId : null;
@@ -1300,20 +1301,18 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         if (wanted.Count is < 1 or > TriageGroups.MaxSize) throw new ArgumentException($"Attach 1 to {TriageGroups.MaxSize} reports at once.");
         var single = wanted.Count == 1;
         string Refused(FeedItem item, string why) => single ? $"That item {why}." : $"“{item.Title}” {why}, so none of the {wanted.Count} was attached.";
-        static string By(FeedItem item) => string.IsNullOrWhiteSpace(item.StatusByName) ? "" : $" by {item.StatusByName}";
         await using var db = await dbs.CreateAsync(ct);
         var items = await db.FeedItems.Include(i => i.Source).Where(i => wanted.Contains(i.Id)).ToListAsync(ct);
         if (items.Count != wanted.Count) throw new KeyNotFoundException(single ? "That item is gone." : "One of those reports is gone, so none was attached.");
         var article = await db.Articles.Include(a => a.Cves).FirstOrDefaultAsync(a => a.Id == articleId, ct) ?? throw new KeyNotFoundException("That article no longer exists.");
         if (items.FirstOrDefault(i => i.Status == FeedItemStatus.Promoted && i.ArticleId != articleId) is { } taken)
-            throw new InvalidOperationException(Refused(taken, taken.ArticleId is null ? $"is being promoted{By(taken)} now" : $"already made another article{By(taken)}"));
+            throw new InvalidOperationException(Refused(taken, taken.ArticleId is null ? $"is being promoted by {Who(taken)} now" : $"already made another article ({Who(taken)})"));
         // Reports already on this article stay as they are: the rest are attached.
         var fresh = items.Where(i => i.Status != FeedItemStatus.Promoted).ToList();
         if (fresh.Count == 0)
         {
             if (!saidOnce) return 0;
-            var by = items.Select(i => i.StatusByName).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)) ?? "Someone";
-            throw new InvalidOperationException($"{by} already added {(single ? "it" : "these reports")} to that article.");
+            throw new InvalidOperationException($"{Who(items.FirstOrDefault(i => !string.IsNullOrWhiteSpace(i.StatusByName)))} already added {(single ? "it" : "these reports")} to that article.");
         }
         if (!evenIfPresented && !await db.Articles.Where(a => a.Id == articleId).Where(Unfrozen(db)).AnyAsync(ct))
             throw new InvalidOperationException(single ? "That article has already been presented. Promote this item as a follow-up instead."
@@ -1352,8 +1351,8 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         _learned = null;   // a decision changes what's learned
         if (claimed) return ids.Count;
         // Who got there first, from the reports as they are now.
-        var lost = (await db.FeedItems.AsNoTracking().Where(i => ids.Contains(i.Id) && i.Status == FeedItemStatus.Promoted).ToListAsync(ct)).FirstOrDefault();
-        var who = lost?.StatusByName is { Length: > 0 } name ? name : "Someone";
+        var lost = await db.FeedItems.AsNoTracking().FirstOrDefaultAsync(i => ids.Contains(i.Id) && i.Status == FeedItemStatus.Promoted, ct);
+        var who = Who(lost);
         throw new InvalidOperationException(single ? $"{who} has just promoted or attached that item. Look at it again."
             : $"“{lost?.Title ?? "One of them"}” was just promoted or attached by {who}, so none of the {wanted.Count} was attached. Look at the group again.");
     }

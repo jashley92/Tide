@@ -57,7 +57,7 @@ public static class TriageNews
         }
         else
         {
-            parts.AddRange(arrived.GroupBy(i => Who(i, colleagues)).Select(g => $"{g.Key} {Did(tab, Items(g.Count()), g.Count())}"));
+            parts.AddRange(arrived.GroupBy(i => Who(i, colleagues)).Select(g => $"{g.Key} {Did(tab, Items(g.Count()), g.Count(), attached: false)}"));
             feeds = Math.Max(0, newElsewhere);
         }
         if (feeds > 0) parts.Add(parts.Count == 0 ? $"{feeds} new {(feeds == 1 ? "item" : "items")} from the feeds" : $"{feeds} new from the feeds");
@@ -69,7 +69,7 @@ public static class TriageNews
 
     // "dismissed 3 items", "marked “…” as a duplicate": what was done, to what. An item attached to an existing article
     // reads as promoted, as one that made an article does; the change heard says which it was (Change.Attached).
-    private static string Did(FeedItemStatus status, string what, int n, bool attached = false) => status switch
+    private static string Did(FeedItemStatus status, string what, int n, bool attached) => status switch
     {
         FeedItemStatus.Shortlisted => $"shortlisted {what}",
         FeedItemStatus.Dismissed => $"dismissed {what}",

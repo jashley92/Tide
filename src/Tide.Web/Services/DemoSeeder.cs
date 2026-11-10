@@ -89,10 +89,11 @@ public static class DemoSeeder
         {
             var url = $"https://example.com/filler/k{n:000}";
             var title = $"Filler k{n:000}";
+            var at = now.AddHours(-8).AddMinutes(-10 * n);
             db.FeedItems.Add(new FeedItem
             {
                 Source = source, Title = title, Url = url, UrlHash = Application.Intake.UrlCanonicalizer.Hash(url),
-                TitleKey = Application.Intake.TitleMatch.Key(title), PublishedAtUtc = now.AddHours(-8).AddMinutes(-10 * n), FetchedAtUtc = now.AddHours(-8).AddMinutes(-10 * n),
+                TitleKey = Application.Intake.TitleMatch.Key(title), PublishedAtUtc = at, FetchedAtUtc = at,
             });
         }
         await db.SaveChangesAsync(ct);

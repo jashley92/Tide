@@ -187,7 +187,7 @@ else
                                 {
                                     <button class="btn btn-primary btn-sm tide-triage-attach" disabled="@_busy" title="@($"Attach all {line.Members.Count} to “{attachAll.ArticleTitle}”")"
                                             @onclick:stopPropagation="true" @onclick="() => AttachCovered(i)">
-                                        <span class="bi bi-link-45deg" aria-hidden="true"></span> Attach all @line.Members.Count to <span class="tide-triage-attach-title">“@attachAll.ArticleTitle”</span></button>
+                                        <span class="bi bi-link-45deg" aria-hidden="true"></span> Attach all @line.Members.Count to <span class="tide-triage-attach-title text-truncate">“@attachAll.ArticleTitle”</span></button>
                                 }
                                 <button class="btn @(attachAll is null ? "btn-primary" : "btn-outline-secondary") btn-sm tide-triage-promote" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => OpenGroupPromote(line)">
                                     <span class="bi bi-file-earmark-plus" aria-hidden="true"></span> Promote as one article (@line.Members.Count sources) <span class="tide-kbd">P</span></button>
@@ -328,7 +328,7 @@ else
                                 {
                                     <button class="btn btn-primary btn-sm tide-triage-attach" disabled="@_busy" title="@($"Attach to “{attachTo.ArticleTitle}”")"
                                             @onclick:stopPropagation="true" @onclick="() => AttachCovered(i)">
-                                        <span class="bi bi-link-45deg" aria-hidden="true"></span> Attach to <span class="tide-triage-attach-title">“@attachTo.ArticleTitle”</span></button>
+                                        <span class="bi bi-link-45deg" aria-hidden="true"></span> Attach to <span class="tide-triage-attach-title text-truncate">“@attachTo.ArticleTitle”</span></button>
                                 }
                                 <button class="btn @(attachTo is null ? "btn-primary" : "btn-outline-secondary") btn-sm tide-triage-promote" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Promote)"><span class="bi bi-file-earmark-plus" aria-hidden="true"></span> Promote <span class="tide-kbd">P</span></button>
                                 @if (item.Status != FeedItemStatus.Shortlisted) { <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Shortlist)">Shortlist <span class="tide-kbd">S</span></button> }
@@ -1635,15 +1635,14 @@ else
         try
         {
             var outcome = await Intake.PromoteOrJoinAsync(group?.Ids ?? [id], _pf);
-            var articleId = outcome.ArticleId;
             Announce();
             if (outcome.Made) Toasts.Show(group is null ? "Promoted to a draft article." : $"Promoted {group.Ids.Count} reports as one draft article.");
-            else Toasts.Show($"Not promoted: {outcome.By ?? "Someone"} already put {(group is null ? "it" : "them")} in this article.");
+            else Toasts.Show($"Not promoted: {outcome.By} already put {(group is null ? "it" : "them")} in this article.");
             // The browser's Back comes back here, to this tab, these filters and this row (or the one that took its place).
             try { await JS.InvokeVoidAsync("tideRows.remember", Address(_status, _sourceId, _search, _sinceLast, id, _selected, _page, _cveFilter, _named, _older)); }
             catch (JSDisconnectedException) { }
             catch (InvalidOperationException) { }   // rendered without a browser (prerendering, tests)
-            Nav.NavigateTo($"articles/{articleId}");
+            Nav.NavigateTo($"articles/{outcome.ArticleId}");
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _busy = false; }
