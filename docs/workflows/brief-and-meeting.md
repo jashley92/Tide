@@ -58,7 +58,8 @@ current brief date (`BriefPage` with `AsToday`, the date from `OrgClock.CurrentB
 zone). Someone without the team edition (a Reader, a Visitor) is sent to `/published` instead. It shows:
 
 - the step strip, with one main button for whichever step is next (`BriefSteps.Next`: Mark ready, Present, Send, Post
-  to SharePoint, or read it as sent);
+  to SharePoint, or read it as sent). The step it's on also shows in the top bar of every page, as a link back to
+  Today ("Brief 10:30 AM · step 3 of 5 · Order"; see [the brief chip](../architecture/frontend.md#layout-and-navigation));
 - the running order, today's numbers, what each edition will carry, and the meeting (its time and who the rotation
   names to present);
 - reviews asked of you, and, for anyone who works actions, the team's queue (see

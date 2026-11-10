@@ -88,7 +88,7 @@ Three layouts, in `src/Tide.Web/Components/Layout`:
 
 | Layout | Used by | What it draws |
 |---|---|---|
-| `MainLayout` | Every page by default | A skip link to `#main-content`; the sidebar (`NavMenu`); the top bar with the team name, `TopSearch` (team edition only), `CommandPalette`, `ShortcutsOverlay` and `ProfileMenu`; the live meeting banner (`LiveMeetingJoin`); the page inside `PageBoundary`; the page's context rail and its Context button, when it has one; `ToastHost`; Blazor's `#blazor-error-ui`. |
+| `MainLayout` | Every page by default | A skip link to `#main-content`; the sidebar (`NavMenu`); the top bar with the team name, `TopSearch` (team edition only), `CommandPalette`, the brief chip (`BriefChip`, for those who make the brief), `ShortcutsOverlay` and `ProfileMenu`; the live meeting banner (`LiveMeetingJoin`); the page inside `PageBoundary`; the page's context rail and its Context button, when it has one; `ToastHost`; Blazor's `#blazor-error-ui`. |
 | `AdminLayout` | Every page under `/admin` (`@layout AdminLayout`) | Nested in `MainLayout`. An "Administration" title (drawn as large as an `h1` but not a heading, so the page's own title is the `h1`), the groups as page-level tabs, a group's pages as sub-tabs (`TabBar`), then the page. "new" shows beside Updates when the update check found a release. |
 | `BlankLayout` | Present mode (`/present/{day}`) | No sidebar or top bar. `PageBoundary` (contained), `ToastHost`, and the `CommandPalette` and `ShortcutsOverlay` with keys only, no buttons. |
 
@@ -129,12 +129,38 @@ fills it by placing one `ContextRail` anywhere in its markup:
 - **An overlay.** Below 1500px, and at any width on the pages that take the whole window (the board, metric history,
   trends), the rail starts closed and opens over the content from the right, which keeps its width. It isn't
   remembered: `theme.js` (`tideRail`) sets `data-rail-over` on `<html>` while it's open, and a new page starts with it
-  closed. Opening it moves focus into the rail; Escape or Close closes it and focus returns to the Context button. It
-  isn't modal, so Tab can leave it. On a phone it covers the window and never widens the page.
+  closed. Opening it moves focus into the rail; Escape or Close closes it and focus returns to the Context button.
+  Beside the page it isn't modal, so Tab can leave it.
+- **Over the whole window.** On a phone the open rail covers the window (and never widens the page), so the page
+  under it is made `inert` until it closes: the skip link, the sidebar, the top bar and the content are out of the tab
+  order and hidden from assistive technology, and Tab stays in the rail. `app.css` says where that is
+  (`--tide-rail-covers` on the rail), and `tideRail` sets and clears the attribute. Toasts, the error bar and the
+  reconnect dialog stay live. While it holds the page, `tideRail` watches the markup: if the rail goes (a link in it
+  opened a page with none) nothing stays inert, and a dialog opened in the page under it (the palette, from Ctrl+K)
+  closes the rail so the dialog can be used. There is no backdrop to click, as the phone menu has none.
 - **Which of the two** is decided in `app.css` alone (the "Context rail" section), which sets `--tide-rail-docks` on the
   rail where it docks; `tideRail` reads that, so the breakpoint and the list of whole-window pages aren't repeated in
   script. Blazor draws the Context button as closed (`aria-expanded="false"`), and `tideRail` keeps it right, as
   `tideNav` does for the sidebar's button.
+
+**The brief chip.** `BriefChip`, in the top bar, is a link to Today that says when the brief meets and which of its five
+steps it's on: "Brief 10:30 AM · step 3 of 5 · Order". It's drawn for those who read the team edition and write the
+brief (`ReadTeamEdition` and `WriteArticles`, as Today's step strip is) and for nobody else; present mode's layout has
+no top bar, so none there.
+
+- **What it says.** The brief is the one Today shows (`OrgClock.CurrentBriefDate`), so on a weekend or a holiday it
+  names the day ("Mon 10:30 AM"). The step is `BriefSteps.On` over the same `BriefSteps.For` steps as Today's strip: the
+  current one, or what Send says once nothing is left ("Sent"). With no brief started it says "not started". While the
+  brief's meeting is live it says "Brief is live" and nothing else: joining is the banner's (`LiveMeetingJoin`).
+- **What it costs.** `BriefChipSource` (`src/Tide.Web/Services/BriefChipSource.cs`, one per circuit) reads the brief,
+  its sends and the edition ceilings once and keeps the answer, so drawing the top bar on a navigation reads nothing.
+  It leaves out the feed's count and the day's numbers, which never move the current step. The reading is dropped
+  when the change feed publishes one of the topics Today's page re-reads on (`BriefPage.Follow`: the day's brief, the
+  brief, each article on it; a send publishes as its brief), from any circuit including its own, or when the day
+  turns. The chip then reads again after `LiveChanges`' pause, and checks on each navigation (free unless something
+  changed). A failed read shows no chip and is tried again on the next page; it never ends the session.
+- **Width.** In full from 1200px; "10:30 AM · 3/5" below that; under 1000px the team's name gives way to it; under
+  740px the chip is gone, so the search box and the Go to button keep their room (`app.css`, "Brief chip").
 
 **The account menu.** `ProfileMenu` (the initials avatar, top right) shows who you are and your roles, the theme and
 letter-shortcut switches as segmented toggles (through `tideTheme` and `tideShortcuts`), My notifications, your brief
@@ -263,6 +289,7 @@ In `src/Tide.Web/Components/Shared`. Use these rather than drawing a new version
 | `StepStrip` | Today's five steps (Triage · Write · Order · Present · Send), the current one `aria-current="step"`. |
 | `BriefStepper` | On an article that's on today's brief: "4 of 5 ‹ Previous Next › Back to Today". |
 | `LiveMeetingJoin` | The live-meeting banner on every page, or a Join button in place of the brief's Present button. |
+| `BriefChip` (in `Layout/`) | The top bar's link to Today: when the brief meets and the step it's on, or that it's live. |
 | `ProfileMenu` | The account menu. |
 | `TimeBox` | A time input bound to a `TimeOnly` that can actually be typed into in Chromium browsers. |
 | `HistoryPanel` | Who changed what and when on an article or a brief, from the audit log (`HistoryService`). |
@@ -384,6 +411,7 @@ palette and the shortcuts overlay with the same tokens only.
 | Type | `--tide-font-ui` (Segoe UI Variable), `--tide-font-data` (Cascadia Mono), `--tide-text-xs` … `--tide-text-xl`, `--tide-weight-*` | Data (indicators, hashes, ids) uses the mono font through `.tide-data`. |
 | Space and shape | `--tide-space-1` … `--tide-space-8` (4px steps), `--tide-radius-xs` … `--tide-radius-xl`, `--tide-radius-pill` | Radii run from TLP labels (xs) to cards and dialogs (xl). |
 | Widths | `--tide-width-xs` … `--tide-width-form`, `--tide-width-rail` | For fields and panels that shouldn't stretch the whole row, and the context rail. |
+| Heights | `--tide-height-top` | The top bar, and where what sticks or sits under it starts (section pills, the numbers bar, the context rail). |
 | Surfaces and text | `--tide-bg`, `--tide-surface`, `--tide-surface-2`, `--tide-border`, `--tide-text`, `--tide-text-muted` | Redefined for dark. |
 | Accent and action | `--tide-accent` (teal: where you are, links, focus), `--tide-action-bg` (navy primary button), `--tide-focus-ring` | The focus ring is 4.9:1 on the light surface, 7.8:1 on the dark one. |
 | Meaning | `--tide-threat`, `--tide-info`, `--tide-ok`, `--tide-warn`, `--tide-purple`, each with a `-soft` fill | Redefined for dark. |
@@ -435,7 +463,7 @@ loads in `<head>`. Each exposes at most one `window.tide*` object for .NET to ca
 | File | Global | What it does |
 |---|---|---|
 | `theme-init.js` | (none) | Before first paint: applies the saved theme (or the OS preference), the collapsed sidebar, a closed context rail, and letter shortcuts off, as attributes on `<html>`. |
-| `theme.js` | `tideTheme`, `tideNav`, `tideShortcuts`, `tideRoving`, `tidePrefs`, `tideRail`, `tideCopy` | `tideRail`: the context rail's Context button, Close, `]` and Escape (`toggle`, `start`). `tideRoving`: the arrow keys, Home and End over a menu, tablist or toolbar, shared by `filters.js`, `board.js`, `tabs.js` and `markdown-toolbar.js`. Theme toggle; sidebar collapse and the phone menu (`tideNav.toggle`, `setOpen`, `start`, which keeps `aria-expanded` and the tooltip right); the letter-shortcut switch (WCAG 2.1.4) with the shared `isLetter`, `typing` and `inMenu` checks; small per-browser choices (the hunt panel's last query language); copying text to the clipboard. Also wires the reconnect dialog's Try again and Reload buttons. |
+| `theme.js` | `tideTheme`, `tideNav`, `tideShortcuts`, `tideRoving`, `tidePrefs`, `tideRail`, `tideCopy` | `tideRail`: the context rail's Context button, Close, `]` and Escape (`toggle`, `start`), and the page made inert under a rail that covers the window. `tideRoving`: the arrow keys, Home and End over a menu, tablist or toolbar, shared by `filters.js`, `board.js`, `tabs.js` and `markdown-toolbar.js`. Theme toggle; sidebar collapse and the phone menu (`tideNav.toggle`, `setOpen`, `start`, which keeps `aria-expanded` and the tooltip right); the letter-shortcut switch (WCAG 2.1.4) with the shared `isLetter`, `typing` and `inMenu` checks; small per-browser choices (the hunt panel's last query language); copying text to the clipboard. Also wires the reconnect dialog's Try again and Reload buttons. |
 | `palette.js` | `tidePalette` | `Ctrl+K` / `⌘K` opens the command palette and `?` the shortcuts overlay. Keeps what was typed between `Ctrl+K` and the box appearing. Combobox keys go to .NET, which owns the list. |
 | `dialog.js` | `tideDialog` | Remembers what had focus when a dialog opened (confirmation, lightbox, ATT&CK picker, palette) and gives it back when it closes. Keeps Tab inside a confirmation or the ATT&CK picker, cycling between the first and last controls that can take focus (a control inside an `inert` part, such as a folded ATT&CK column, is left out). Each modal that hears keys has `tabindex="-1"`, so a click on its text keeps focus in it (Escape still closes it) and Tab from there goes to its first control. In the lightbox only its own keys lose their default, so the browser's zoom and find still work. |
 | `rows.js` | `tideRows` | A list's selected row from the keyboard ([a list with a selected row](#a-list-with-a-selected-row)): J, K and the arrows go to .NET as "next" and "prev", Enter on a row as "open"; then focus goes to the row .NET selected (a roving tabindex: the selected row is the one tab stop), scrolled into view. `remember` rewrites the current history entry's address without a navigation. Loaded before `triage.js`. |
@@ -489,7 +517,7 @@ Letter keys never fire while typing in a field, or while focus is in a menu or d
 | **Focus return** | Every dialog gives focus back to whatever opened it (`dialog.js`): confirmations, the leave dialog, the lightbox and screenshot dialog, the palette, the shortcuts overlay. After a board move focus goes to the card's Move button in its new column; after a running-order move it stays on the moved row's button, and after a warning's one-click fix there (the button goes with the warning) it moves to the row's title; after a comment's edit it returns to that comment's Edit button. |
 | **Focus after navigation** | `FocusOnNavigate` puts focus on the page's `h1`. A skip link goes to `#main-content`. |
 | **Focus inside dialogs** | Tab stays inside a modal; focus outside an open dialog goes into it, not behind it. |
-| **The context rail is a landmark** | An `<aside>` named by its title (a `complementary` region), after the content in reading order, so the skip link and the content come first. Its button says whether it's open (`aria-expanded`, `aria-controls`). It's never a focus trap; closing it with focus inside puts focus on the button. |
+| **The context rail is a landmark** | An `<aside>` named by its title (a `complementary` region), after the content in reading order, so the skip link and the content come first. Its button says whether it's open (`aria-expanded`, `aria-controls`). Docked or beside the page it's never a focus trap; covering the window on a phone, the page under it is `inert`, so Tab and a screen reader stay in the rail until it closes. Closing it with focus inside puts focus on the button. |
 | **Not by colour alone** | Presence shows a pencil for "editing"; a metric past a threshold has an icon and words (`LevelMark`); action status shows a tick on the current option; a part in the lineage and the timeline says its state in words, and Tracking is dashed or striped as well as purple. |
 | **Forced colours** | Under Windows high contrast, badges and TLP chips get an outline, and the current sidebar link a `Highlight` outline. |
 | **Live regions** | Toasts are `role="status"` (polite) or `role="alert"` (errors). `LoadingBlock`, `ChangedElsewhere`, `PresenceNote` and triage's change line announce through status regions. |
@@ -504,7 +532,8 @@ At 640px or narrower (`@media (max-width: 640.98px)` in `app.css`):
   links under it; it isn't remembered, so it starts closed on every page load, closes when a link is followed, and
   closes on Escape. The desktop collapse-to-icons state doesn't apply.
 - The search box in the top bar is hidden; the Go to button shrinks to an icon in its place, and so does the Context
-  button. The context rail opens over the whole window.
+  button. The brief chip is gone (from 740px down). The context rail opens over the whole window, with the page under
+  it inert.
 - Wide tables scroll inside their card rather than pushing the page sideways, with a shadow at the edge that has more.
 - Breadcrumbs keep only the way back ("‹ Actions").
 - The audit log draws each change as a card instead of a row.
@@ -582,10 +611,10 @@ flowchart TD
 |---|---|
 | Root document, scripts, reconnect dialog | `src/Tide.Web/Components/App.razor` |
 | Router, authorization, focus on navigate | `src/Tide.Web/Components/Routes.razor` |
-| Layouts, sidebar, context rail, palette, shortcuts, boundary | `src/Tide.Web/Components/Layout/` (`MainLayout`, `AdminLayout`, `BlankLayout`, `ContextRail`, `NavMenu`, `NavPages`, `CommandPalette`, `PaletteEntries`, `ShortcutsOverlay`, `Shortcuts`, `TopSearch`, `PageBoundary`) |
+| Layouts, sidebar, context rail, palette, shortcuts, boundary | `src/Tide.Web/Components/Layout/` (`MainLayout`, `AdminLayout`, `BlankLayout`, `ContextRail`, `BriefChip`, `NavMenu`, `NavPages`, `CommandPalette`, `PaletteEntries`, `ShortcutsOverlay`, `Shortcuts`, `TopSearch`, `PageBoundary`) |
 | Pages | `src/Tide.Web/Components/Pages/`, admin pages under `Pages/Admin/` |
 | Shared components | `src/Tide.Web/Components/Shared/` |
-| Live updates, presence, toasts, prerender hand-off | `src/Tide.Web/Services/` (`Together.cs`, `LiveRows.cs`, `Services.cs`, `PrerenderHandoff.cs`, `LiveMeetings.cs`, `TriageNews.cs`, `TypingPause.cs`) |
+| Live updates, presence, toasts, prerender hand-off | `src/Tide.Web/Services/` (`Together.cs`, `LiveRows.cs`, `Services.cs`, `PrerenderHandoff.cs`, `LiveMeetings.cs`, `TriageNews.cs`, `TypingPause.cs`, `BriefChipSource.cs`) |
 | Tokens and styles | `src/Tide.Web/wwwroot/app.css`, `palette.css` |
 | Scripts | `src/Tide.Web/wwwroot/js/` |
 | CSP and headers | `src/Tide.Web/Security/SecurityHeadersMiddleware.cs`, `CircuitOriginMiddleware.cs`, `FileDownloads.cs` |
