@@ -66,6 +66,12 @@ else
     var primary = _primary;
     var more = _moreItems;
     var next = _next;
+    // The tools, drawn once: in the wide column for a sweep or hunt (ActionGuide.IsHunt), else beside the work.
+    var toolsWide = ActionGuide.IsHunt(a.Kind);
+    RenderFragment tools = @<div class="tide-ord-3">
+        <ActionToolDrawer @key="a.Id" @ref="_drawer" Detail="_detail" Asked="@ToolParam" Today="ActionSvc.Today"
+                          Changed="Reload" ToolChanged="KeepTool" HuntCopied="OnHuntCopied" />
+    </div>;
     @* The header: what it is, how it stands (the status badge changes it, for whoever may work it), who has it, and the
        one thing to do first, with everything else under More. *@
     <div class="tide-page-head tide-action-head">
@@ -123,7 +129,7 @@ else
     }
 
     @* Two columns: the work (Next, details, lineage, what's happened) and beside it the facts, the tools, the article and
-       files. Under lg the columns open into one (display: contents), reordered by the tide-ord-N classes so the tools
+       files; a sweep's or hunt's tools are in the first, under its details. Under lg the columns open into one (display: contents), reordered by the tide-ord-N classes so the tools
        come straight after the details on a phone. *@
     <div class="tide-action-layout">
         <div class="tide-action-main">
@@ -156,6 +162,9 @@ else
                     <p class="mb-0"><strong>@ActionService.OutcomeName(a.Outcome)</strong>@if (a.OutcomeNote is not null) { <span>: @a.OutcomeNote</span> }</p>
                 </div>
             }
+
+            @* A sweep's or hunt's tools are its work: here, at full width, above what's happened. *@
+            @if (toolsWide) { @tools }
 
             @* A split action's lineage, from its article to each part. On the parent it is the Parts card too, with the
                board link and splitting off more under it; its parts' timeline is a tool in the drawer. *@
@@ -349,10 +358,7 @@ else
                 </dl>
             </section>
 
-            <div class="tide-ord-3">
-                <ActionToolDrawer @key="a.Id" @ref="_drawer" Detail="_detail" Asked="@ToolParam" Today="ActionSvc.Today"
-                                  Changed="Reload" ToolChanged="KeepTool" />
-            </div>
+            @if (!toolsWide) { @tools }
 
             @if (a.Article is { } article)
             {
@@ -521,7 +527,7 @@ else
             // step, query or email included).
             if (_shownNumber != Number)
             {
-                _feedAll = false;
+                (_feedAll, _huntCopied) = (false, false);
                 (_editing, _editingComment, _commentEdit, _comment, _prompting, _shot) = (null, null, null, null, false, null);
                 (_commentTheirs, _commentTheirsBy, _focusEditOf) = (null, null, null);
                 _attachments.Clear();
@@ -706,11 +712,25 @@ else
             : new MenuButton.Item(ActionGuide.Label(f), ActionGuide.Icon(f), EventCallback.Factory.Create(this, () => Run(f))))];
         var waiting = d.Waiting is { } m ? new WaitingEmail(m.To, OutreachDates.SentOn(m.SentAtUtc, Clock), OutreachSvc.FollowUpOn(m)) : null;
         _next = ActionGuide.Next(new NextFacts(a.Status, ActionSla.StateOf(a, ActionSvc.Today, Clock.Days), a.DueDate, ActionSvc.Today, d.CanWork,
-            d.Lineage is { } l && l.Parent.Id == a.Id ? l.Parts : null, waiting, a.EscalatedSince is { } at ? Clock.DayOf(at) : null));
+            d.Lineage is { } l && l.Parent.Id == a.Id ? l.Parts : null, waiting, a.EscalatedSince is { } at ? Clock.DayOf(at) : null,
+            ActionGuide.IsHunt(a.Kind)
+                ? new HuntFacts(!facts.Assigned && ActionGuide.CanTake(facts), facts.Mine,
+                    a.Hunts.Count > 0 || a.Indicators.Count > 0 || a.Article is { Indicators.Count: > 0 }, _huntCopied, a.Hunts.Any(h => h.Result != HuntResult.NotRun))
+                : null));
         _feed = ActionFeed.Of(a.Comments, a.Events);
         // What runs: the primary button, More's flows, and the Next line's own (not those on another action).
         _offered = [.. more, _primary, .. (_next?.Links ?? []).Where(l => l.On is null).Select(l => l.Flow)];
         _offered.Remove(ActionFlow.None);
+    }
+
+    // A hunt query was copied from this page since it opened: the Next line asks for its result. Not kept anywhere: a
+    // reload asks for the copy again, as "No hits, close" does.
+    private bool _huntCopied;
+
+    private void OnHuntCopied()
+    {
+        _huntCopied = true;
+        Derive();
     }
 
     private static string SplitOffHref(ActionItem a) => $"actions/new?parent={a.Id}";

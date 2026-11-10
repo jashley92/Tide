@@ -524,7 +524,7 @@ public class SavedQueryPageTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task TheHuntPanel_AddsIndicatorsToAnActionWithNoArticle_AndItsGenerateButtonFollows_TheActionReadAgain()
+    public async Task TheHuntPanel_AddsIndicatorsToAnActionWithNoArticle_AndItsQueryFollows_TheActionReadAgain()
     {
         var number = await HuntAction("Hunt for the beacon " + Guid.NewGuid().ToString("N")[..6]);
         await using var r = await RenderAsync<HuntPanel>(app, "/actions/" + number, new() { ["Action"] = await Read(number), ["CanWork"] = true });
@@ -542,7 +542,9 @@ public class SavedQueryPageTests(TideApp app) : IClassFixture<TideApp>
         action.Indicators.Should().ContainSingle().Which.Value.Should().Be("198.51.100.7");
         // The page reads the action again (the panel's Changed) and hands it over, and the card reads its counts once, then.
         await using var again = await RenderAsync<HuntPanel>(app, "/actions/" + number, new() { ["Action"] = action, ["CanWork"] = true });
-        (await again.Html()).Should().Contain("Generate from 1 indicator</button>");
+        // A hunt with indicators and no query yet shows the generated one as a preview, in place of the Generate button.
+        (await again.Html()).Should().Contain("id=\"hunt-preview\"").And.Contain("198.51.100.7").And.Contain("Keep this query</button>")
+            .And.NotContain("Generate from 1 indicator</button>");
     }
 
     [Fact]

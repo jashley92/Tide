@@ -5,7 +5,11 @@
    with the values it left out acknowledged. A query can also come from the team's saved ones (in the chosen language,
    or any), its window and indicators filled in; and any query here can be saved for the team (one added from a saved
    query offers that query's own text, its placeholders kept). Indicators
-   can be added here too: to the article the action was raised from (for an analyst), or, with no article, to the action. *@
+   can be added here too: to the article the action was raised from (for an analyst), or, with no article, to the action.
+   An open sweep or hunt with indicators and no query yet shows the generated one straight away, as a preview, to whoever
+   may work it (ActionService.PreviewHuntAsync, which writes nothing). Copy or "Keep this query" saves it, through
+   GenerateHuntAsync like the Generate button; until then the result buttons beside Copy are disabled and say why, so a
+   result is only ever recorded against a query the action's history shows. *@
 @inject ActionService ActionSvc
 @inject SavedQueryService SavedSvc
 @inject IJSRuntime JS
@@ -23,7 +27,8 @@
             <select class="tide-maxw-md form-select form-select-sm" aria-label="Query language" @bind="_dialect" @bind:after="DialectChosen">
                 @foreach (var d in QueryDialects.All) { <option value="@d.Key">@d.Name</option> }
             </select>
-            @if (_sources.Indicators > 0)
+            @* The preview is this button's query already; Keep this query is the button then. *@
+            @if (_sources.Indicators > 0 && _preview is null)
             {
                 <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Generate(false)"><span class="bi bi-terminal" aria-hidden="true"></span> Generate from @Ui.Plural(_sources.Indicators, "indicator")</button>
             }
@@ -117,6 +122,26 @@
                 }
             </div>
         }
+        @if (_preview is { } preview)
+        {
+            <div class="tide-hunt tide-hunt-preview">
+                <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
+                    <strong>@HuntQueryBuilder.DialectName(_dialect)</strong>
+                    <Badge>Preview</Badge>
+                    <span class="small tide-muted">Not on the action yet. Copying or keeping it puts it there.</span>
+                </div>
+                <pre id="hunt-preview" class="tide-query">@preview</pre>
+                <div class="d-flex gap-2 align-items-center flex-wrap">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="hunt-preview" data-copy-status="hunt-preview-status" data-copy-done="Copied." disabled="@_busy" @onclick="CopyPreview"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="KeepPreview"><span class="bi bi-plus-lg" aria-hidden="true"></span> Keep this query</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" disabled aria-describedby="hunt-preview-why"><span class="bi bi-check2-circle" aria-hidden="true"></span> No hits, close</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" disabled aria-describedby="hunt-preview-why"><span class="bi bi-check2-square" aria-hidden="true"></span> Record hits</button>
+                    <span id="hunt-preview-why" class="small tide-muted">Copy or keep the query first.</span>
+                </div>
+            </div>
+        }
+        @* Outside the preview, which has gone by the time the browser says the copy worked. *@
+        <span id="hunt-preview-status" class="small tide-muted" role="status" aria-live="polite"></span>
     }
     @foreach (var h in Action.Hunts)
     {
@@ -145,7 +170,7 @@
             {
                 <pre id="@id" class="tide-query">@h.Text</pre>
                 <div class="d-flex gap-2 align-items-center flex-wrap">
-                    <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="@id" data-copy-status="@(id + "-status")" @onclick="() => _copied.Add(h.Id)"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="@id" data-copy-status="@(id + "-status")" @onclick="() => MarkCopied(h.Id)"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
                     @if (CanWork)
                     {
                         <button class="btn btn-outline-secondary btn-sm" @onclick="() => EditText(h)"><span class="bi bi-pencil" aria-hidden="true"></span> Edit</button>
@@ -260,6 +285,9 @@
     [Parameter] public bool CanWork { get; set; }
     [Parameter] public EventCallback Changed { get; set; }
 
+    /// <summary>A query was copied here: the page's Next line then asks for its result.</summary>
+    [Parameter] public EventCallback Copied { get; set; }
+
     private const string DialectPref = "hunt-dialect";
 
     // The language this person used last, from the browser (theme.js's tidePrefs), once the panel is drawn.
@@ -272,6 +300,7 @@
             {
                 _dialect = d.Key;
                 Offer();
+                await ReadPreview();
                 StateHasChanged();
             }
         }
@@ -279,11 +308,69 @@
         catch (JSException) { }   // the script isn't there (an old cached page): the first language stands
     }
 
-    // A language chosen: the picker offers that language's, and the browser remembers it.
-    private Task DialectChosen()
+    // A language chosen: the picker offers that language's, the preview is written in it, and the browser remembers it.
+    private async Task DialectChosen()
     {
         Offer();
-        return RememberDialect();
+        await ReadPreview();
+        await RememberDialect();
+    }
+
+    // --- the preview -----------------------------------------------------------------------------------------------
+
+    // The query Generate would save in the language picked, shown before anyone asks. Null when there's none to show.
+    private string? _preview;
+
+    /// <summary>The previewed query's text, or null when the panel shows none.</summary>
+    internal string? Preview => _preview;
+
+    // For whoever may work an open sweep or hunt that has no query yet: with one, the page is as it was.
+    private bool PreviewWanted => CanWork && Action.IsOpen && ActionGuide.IsHunt(Action.Kind) && Action.Hunts.Count == 0;
+
+    // Read only: nothing is saved or logged for looking. A refusal (too many indicators for one query, say) is said, and
+    // leaves the Generate button. One read in another language, overtaken by a change of language, is dropped.
+    private async Task ReadPreview()
+    {
+        _preview = null;
+        if (!PreviewWanted || _sources.Indicators == 0) return;
+        var dialect = _dialect;
+        try
+        {
+            var text = await ActionSvc.PreviewHuntAsync(Action.Id, dialect);
+            if (dialect == _dialect) _preview = text;
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    /// <summary>Copy on the preview: the query goes on the action as a generated one does, and counts as copied here.
+    /// The browser's own click copies the text (clipboard.js).</summary>
+    internal Task CopyPreview() => SavePreview(copied: true);
+
+    /// <summary>Keep this query: the same, without the copy.</summary>
+    internal Task KeepPreview() => SavePreview(copied: false);
+
+    private async Task SavePreview(bool copied)
+    {
+        if (_preview is not { } shown) return;   // saved already: a second click finds the preview gone
+        await Run(async () =>
+        {
+            var hunt = await ActionSvc.GenerateHuntAsync(Action.Id, _dialect);
+            _preview = null;
+            // The indicators or the templates changed since it was shown: what was copied isn't what was saved.
+            if (hunt.Text != shown)
+            {
+                Toasts.Error("The query changed since it was shown. Copy it again before you run it.");
+                return;
+            }
+            if (copied) await MarkCopied(hunt.Id);
+            Toasts.Show("Query kept on the action.");
+        });
+    }
+
+    private Task MarkCopied(Guid huntId)
+    {
+        _copied.Add(huntId);
+        return Copied.InvokeAsync();
     }
 
     private async Task RememberDialect()
@@ -314,7 +401,7 @@
     }
 
     private bool CanClose(HuntQuery h) =>
-        CanWork && h.Result == HuntResult.NotRun && Action.IsOpen && Action.Kind is ActionKind.IocSweep or ActionKind.ThreatHunt;
+        CanWork && h.Result == HuntResult.NotRun && Action.IsOpen && ActionGuide.IsHunt(Action.Kind);
 
     private bool Ready(HuntQuery h, CloseDraft d, int leftOut) =>
         (h.GeneratedText.Length == 0 || _copied.Contains(h.Id)) && d.Window is >= 1 and <= 3650 && (leftOut == 0 || d.Checked);
@@ -355,7 +442,7 @@
         // Nothing saved since the prerender read them: they're still what a read gives.
         if (Handoff.Take<HuntPanel>(RendererInfo, PrerenderedState, out var current) is { } prerendered && prerendered.Action.Id == Action.Id)
         {
-            _sources = prerendered._sources;
+            (_sources, _preview) = (prerendered._sources, prerendered._preview);
             if (current) (_sourcesFor, _have) = (Action, HaveIndicators(Action));
         }
         if (ReferenceEquals(Action, _sourcesFor)) return;
@@ -367,6 +454,7 @@
             Toasts.Error(UserFacingError.For(ex));
             return;
         }
+        await ReadPreview();
         PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
     }
     private Guid? _editingHunt, _recording;
