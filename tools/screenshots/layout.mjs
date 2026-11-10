@@ -62,6 +62,18 @@ const widerThan = (selector, px) => ({
   }, [selector, px]),
 });
 
+/** While a match of `beside` is shown, the first match of `selector` is at least `px` wide: what `beside` adds to a
+ *  row mustn't squeeze what matters more (the brief chip and the search box). Holds when `beside` isn't shown. */
+const roomBeside = (selector, px, beside) => ({
+  name: `at least ${px}px beside ${beside}: ${selector}`,
+  check: page => page.evaluate(([selector, px, beside]) => {
+    const box = s => [...document.querySelectorAll(s)].map(e => e.getBoundingClientRect()).find(r => r.width > 0 && r.height > 0);
+    if (!box(beside)) return [];
+    const width = Math.round(box(selector)?.width ?? 0);
+    return width >= px ? [] : [`${selector} is ${width}px wide beside ${beside}, under ${px}px`];
+  }, [selector, px, beside]),
+});
+
 /** At least one match is visible. */
 const visible = selector => ({
   name: `visible: ${selector}`,
@@ -74,6 +86,12 @@ const visible = selector => ({
 const pages = [
   { name: 'today', route: '/', widths: [1440, 1000, 780],
     rules: [noSidewaysScroll, visible('.tide-steps'), fits('.tide-steps > li'), fits('.tide-page-head')] },
+  // The top bar with the brief chip in it: one row from a narrow window up, nothing pushed out of its group (the Go to
+  // button under the chip), and the search box never squeezed for the chip: the chip is in view from 900px, and
+  // wherever it shows the search box keeps 200px. On a phone nothing pushes the page sideways.
+  { name: 'top-bar', route: '/articles', widths: [1440, 1100, 1000, 900, 780, 375],
+    rules: [noSidewaysScroll, [900, visible('.tide-brief-chip')], [780, oneRow('.top-row')], [780, oneRow('.tide-top-end')],
+      [780, fits('.top-row')], [780, fits('.tide-top-find')], roomBeside('.tide-top-search', 200, '.tide-brief-chip')] },
   { name: 'article', route: '/articles/{vpnArticle}', widths: [1440, 1000],
     rules: [noSidewaysScroll, visible('.tide-reader-sum'), visible('[role=tablist][aria-label="Beside the article"]')] },
   { name: 'article-actions-tab', route: '/articles/{vpnArticle}?side=actions', widths: [1440, 800],

@@ -103,9 +103,14 @@ window.tidePrefs = (function () {
 // The context rail (ContextRail): the region on the right of a page that has one. Where the stylesheet docks it beside
 // the content (a wide window, a page held to the usual width), open or closed is remembered per browser as tide-rail
 // and applied before paint by theme-init.js as data-rail="closed". Elsewhere it's an overlay, opened with
-// data-rail-over and not remembered, as the phone menu isn't.
+// data-rail-over and not remembered, as the phone menu isn't. On a phone the open overlay covers the whole window, and
+// the page under it is inert until it closes.
 window.tideRail = (function () {
     var root = document.documentElement;
+    // The page under a rail that covers the window: everything in the layout but the rail. Toasts, the error bar and
+    // the reconnect dialog aren't the page's, and stay live.
+    var UNDER = '.tide-skip-link, .sidebar, .top-row, #main-content';
+    var held = false, watch = new MutationObserver(changed);
     function rail() { return document.getElementById('tide-rail'); }
     function toggleBtn() { return document.getElementById('tide-rail-toggle'); }
     // app.css decides where the rail docks, and says so with --tide-rail-docks.
@@ -115,12 +120,37 @@ window.tideRail = (function () {
     }
     function over() { return root.hasAttribute('data-rail-over'); }
     function isOpen() { return docks() ? root.getAttribute('data-rail') !== 'closed' : over(); }
-    // Blazor draws the button once, as closed; this keeps what it says right: on load, when a page with a rail starts,
-    // on each toggle, and when the window's width changes where the rail sits.
+    // app.css also says where the open overlay covers the whole window, with --tide-rail-covers.
+    function covers() {
+        var r = rail();
+        return !!r && over() && getComputedStyle(r).getPropertyValue('--tide-rail-covers').trim() === '1';
+    }
+    // While the rail covers the window, the page under it is inert: out of the tab order and hidden from assistive
+    // technology, so Tab stays in the rail. A side overlay and a docked rail leave the page in view, and as it is.
+    // The markup is watched meanwhile, so nothing is left inert under a rail that has gone (a link in it opened a page
+    // with none), and a dialog opened in the page under it (the palette, from Ctrl+K) closes the rail to be usable.
+    function hold() {
+        var on = covers();
+        if (on === held) return;
+        held = on;
+        document.querySelectorAll(UNDER).forEach(function (el) { el.toggleAttribute('inert', on); });
+        if (on) watch.observe(document.body, { childList: true, subtree: true });
+        else watch.disconnect();
+    }
+    function changed() {
+        var r = rail();
+        var dialogUnder = !!r && Array.prototype.some.call(document.querySelectorAll('[role="dialog"], [role="alertdialog"]'),
+            function (d) { return !r.contains(d); });
+        if (!r || dialogUnder) root.removeAttribute('data-rail-over');
+        sync();
+    }
+    // Blazor draws the button once, as closed; this keeps what it says right, and the page under a covering rail inert:
+    // on load, when a page with a rail starts, on each toggle, and when the window's width changes where the rail sits.
     function sync() {
         if (over() && docks()) root.removeAttribute('data-rail-over');
         var btn = toggleBtn();
         if (btn) btn.setAttribute('aria-expanded', isOpen() ? 'true' : 'false');
+        hold();
     }
     // Opens or closes the overlay. Focus goes into it as it opens, since it covers the page, and back to the button
     // as it closes.

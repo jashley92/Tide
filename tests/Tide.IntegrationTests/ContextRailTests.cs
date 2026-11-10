@@ -7,44 +7,44 @@ using Tide.Web.Components.Layout;
 
 namespace Tide.IntegrationTests;
 
+/// <summary>A page in <typeparamref name="TLayout"/>, with a context rail when it's given a title for one. The
+/// layout's AuthorizeViews are told who's signed in, as the circuit tells them in the app.</summary>
+internal sealed class PageIn<TLayout> : ComponentBase where TLayout : LayoutComponentBase
+{
+    [Inject] private IHttpContextAccessor Http { get; set; } = default!;
+    [Parameter] public string? RailTitle { get; set; }
+
+    protected override void BuildRenderTree(RenderTreeBuilder builder)
+    {
+        builder.OpenComponent<CascadingValue<Task<AuthenticationState>>>(0);
+        builder.AddComponentParameter(1, "Value", Task.FromResult(new AuthenticationState(Http.HttpContext!.User)));
+        builder.AddComponentParameter(2, "ChildContent", (RenderFragment)InLayout);
+        builder.CloseComponent();
+    }
+
+    private void InLayout(RenderTreeBuilder builder)
+    {
+        builder.OpenComponent<LayoutView>(0);
+        builder.AddComponentParameter(1, nameof(LayoutView.Layout), typeof(TLayout));
+        builder.AddComponentParameter(2, nameof(LayoutView.ChildContent), (RenderFragment)(page =>
+        {
+            page.AddMarkupContent(0, "<h1>A page</h1>");
+            if (RailTitle is null) return;
+            page.OpenComponent<ContextRail>(1);
+            page.AddComponentParameter(2, nameof(ContextRail.Title), RailTitle);
+            page.AddComponentParameter(3, nameof(ContextRail.ChildContent), (RenderFragment)(rail => rail.AddMarkupContent(0, "<p>What we know about it.</p>")));
+            page.CloseComponent();
+        }));
+        builder.CloseComponent();
+    }
+}
+
 /// <summary>
 /// The context rail: the region on the right of the main layout that a page fills by placing a ContextRail. A page
 /// that places none gets no rail and no button, in either layout; one that does gets a labelled region and its button.
 /// </summary>
 public class ContextRailTests(TideApp app) : IClassFixture<TideApp>
 {
-    /// <summary>A page in <typeparamref name="TLayout"/>, with a context rail when it's given a title for one. The
-    /// layout's AuthorizeViews are told who's signed in, as the circuit tells them in the app.</summary>
-    private sealed class PageIn<TLayout> : ComponentBase where TLayout : LayoutComponentBase
-    {
-        [Inject] private IHttpContextAccessor Http { get; set; } = default!;
-        [Parameter] public string? RailTitle { get; set; }
-
-        protected override void BuildRenderTree(RenderTreeBuilder builder)
-        {
-            builder.OpenComponent<CascadingValue<Task<AuthenticationState>>>(0);
-            builder.AddComponentParameter(1, "Value", Task.FromResult(new AuthenticationState(Http.HttpContext!.User)));
-            builder.AddComponentParameter(2, "ChildContent", (RenderFragment)InLayout);
-            builder.CloseComponent();
-        }
-
-        private void InLayout(RenderTreeBuilder builder)
-        {
-            builder.OpenComponent<LayoutView>(0);
-            builder.AddComponentParameter(1, nameof(LayoutView.Layout), typeof(TLayout));
-            builder.AddComponentParameter(2, nameof(LayoutView.ChildContent), (RenderFragment)(page =>
-            {
-                page.AddMarkupContent(0, "<h1>A page</h1>");
-                if (RailTitle is null) return;
-                page.OpenComponent<ContextRail>(1);
-                page.AddComponentParameter(2, nameof(ContextRail.Title), RailTitle);
-                page.AddComponentParameter(3, nameof(ContextRail.ChildContent), (RenderFragment)(rail => rail.AddMarkupContent(0, "<p>What we know about it.</p>")));
-                page.CloseComponent();
-            }));
-            builder.CloseComponent();
-        }
-    }
-
     private async Task<string> Page<TLayout>(string? railTitle) where TLayout : LayoutComponentBase
     {
         await using var page = await ComponentHarness.RenderAsync<PageIn<TLayout>>(app, "/articles", new() { ["RailTitle"] = railTitle });

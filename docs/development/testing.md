@@ -158,7 +158,9 @@ a SQLite file in its own temp folder (`Pooling=False`), and `Files:RootPath` and
 too. So it runs `DatabaseInitializer`, migrations and the sample data exactly as `dotnet run` does. Subclasses change
 who is signed in by overriding `Role`: `ReaderApp` (Reader) and `ActionOwnerApp` (ActionOwner) beside it, and in
 `Audit/AdversarialTests.cs` `AnalystApp` and others. Reuse one of these rather than declaring another with the same
-role. `PathBase` runs it under a sub-path. Use it as a class fixture
+role. `CountingApp` (`BriefChipTests.cs`) counts the app's SQL commands with `TestDb.CommandLog` and runs none of the
+background jobs, for a test that something drawn on every page reads nothing the second time. `PathBase` runs it under
+a sub-path. Use it as a class fixture
 (`IClassFixture<TideApp>`); `WebAppTests.Pages_Render_ForTheDevUser` reads every main page.
 
 `ComponentHarness` renders one component in the real app's services, signed in as someone (`SignIn`), and hands the

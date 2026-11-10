@@ -254,6 +254,47 @@ public class BriefProgressTests
     }
 
     [Fact]
+    public void TheStepABriefIsOn_IsTheCurrentOne_ThenSendOnceNoneIs()
+    {
+        BriefSteps.On(BriefSteps.For(BriefWith(BriefStatus.Draft, Ready("a"), NoBluf("b")), 4, 2, "10:30 AM")).Should().Match<(int Number, BriefStep Step)>(
+            on => on.Number == 2 && on.Step.Kind == BriefStepKind.Write);
+        BriefSteps.On(BriefSteps.For(BriefWith(BriefStatus.Draft, Ready("a")), 0, 0, "10:30 AM")).Should().Match<(int Number, BriefStep Step)>(
+            on => on.Number == 3 && on.Step.Label == "Order");
+        BriefSteps.On(BriefSteps.For(BriefWith(BriefStatus.Ready, Ready("a"), NoBluf("b")), 0, 0, "10:30 AM")).Number.Should().Be(4, "a gap left behind doesn't hold the brief back");
+        BriefSteps.On(BriefSteps.For(BriefWith(BriefStatus.Presented, Ready("a")), 0, 0, "10:30 AM")).Number.Should().Be(5);
+
+        var sent = BriefSteps.On(BriefSteps.For(BriefWith(BriefStatus.Sent, Ready("a")), 0, 0, "10:30 AM"));
+        sent.Should().Be((5, new BriefStep(BriefStepKind.Send, "Send", "Sent", StepState.Done)), "with nothing left to do, it's on the last step, done");
+        var failed = new BriefSend { Edition = Edition.Team, Status = SendStatus.Failed, SentAtUtc = DateTimeOffset.UtcNow };
+        BriefSteps.On(BriefSteps.For(BriefWith(BriefStatus.Presented, Ready("a")), 0, 0, "10:30 AM", [failed])).Should().Match<(int Number, BriefStep Step)>(
+            on => on.Number == 5 && on.Step.State == StepState.Attention);
+    }
+
+    [Theory]
+    [InlineData(BriefStatus.Draft)]
+    [InlineData(BriefStatus.Ready)]
+    [InlineData(BriefStatus.Presented)]
+    [InlineData(BriefStatus.Sent)]
+    public void TheStepABriefIsOn_IsTheSame_WithoutTheFeedsCountAndTheDaysNumbers(BriefStatus status)
+    {
+        // The top bar's chip reads the steps without them, and must name the step Today's strip marks.
+        foreach (var brief in new[] { BriefWith(status), BriefWith(status, Ready("a")), BriefWith(status, Ready("a"), NoBluf("b")) })
+        {
+            var asToday = BriefSteps.On(BriefSteps.For(brief, 7, 3, "10:30 AM", []));
+            var asTheChip = BriefSteps.On(BriefSteps.For(brief, null, 0, "10:30 AM", []));
+            (asTheChip.Number, asTheChip.Step.Kind).Should().Be((asToday.Number, asToday.Step.Kind));
+        }
+    }
+
+    [Fact]
+    public void AnEditionEveryArticleIsAbove_HasNothingToSend()
+    {
+        BriefSteps.NothingToSend(BriefWith(BriefStatus.Draft), TlpLevel.AmberStrict, TlpLevel.Green).Should().BeEmpty("no articles yet");
+        BriefSteps.NothingToSend(BriefWith(BriefStatus.Draft, Ready("a")), TlpLevel.AmberStrict, TlpLevel.Green).Should().BeEmpty();
+        BriefSteps.NothingToSend(BriefWith(BriefStatus.Draft, Ready("a", TlpLevel.Amber)), TlpLevel.AmberStrict, TlpLevel.Green).Should().Equal(Edition.Public);
+    }
+
+    [Fact]
     public void ADroppedRow_LandsBeforeOrAfterItsTarget()
     {
         Guid a = Guid.NewGuid(), b = Guid.NewGuid(), c = Guid.NewGuid();

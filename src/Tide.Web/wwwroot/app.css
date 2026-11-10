@@ -39,6 +39,7 @@
     --tide-width-narrow: 40rem;  /* a message card: an error, access denied */
     --tide-width-form: 56rem;    /* a form card */
     --tide-width-rail: 23.75rem; /* the context rail (380px) */
+    --tide-height-top: 3.25rem;  /* the top bar, and where what sticks or sits under it starts */
 
     --tide-bg: #f5f7f9;
     --tide-surface: #ffffff;
@@ -240,7 +241,7 @@ a, .btn-link { color: var(--tide-accent-text); }
 .sidebar { background: var(--tide-side-bg); color: var(--tide-side-text); width: 232px; flex-shrink: 0; height: 100vh; position: sticky; top: 0; display: flex; flex-direction: column; transition: width .15s ease; }
 html[data-nav="collapsed"] .sidebar { width: 64px; }
 main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.top-row { height: 3.25rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0 1.5rem 0 2rem; background: var(--tide-surface); border-bottom: 1px solid var(--tide-border); position: sticky; top: 0; z-index: 1020; }
+.top-row { height: var(--tide-height-top); display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0 1.5rem 0 2rem; background: var(--tide-surface); border-bottom: 1px solid var(--tide-border); position: sticky; top: 0; z-index: 1020; }
 .content { padding: 1.25rem 1.5rem 3rem 2rem; max-width: 1400px; width: 100%; }
 /* A page with a wide board or table (the actions board, the metric history and trends tables) takes the whole window,
    so it scrolls sideways only when it's wider than that. */
@@ -595,7 +596,7 @@ html:has(.tide-sticky-save) { scroll-padding-bottom: 5rem; } /* keeps focused or
 }
 /* The editor's section pills: they stay under the top bar as you scroll, and a section you jump to stops below them. */
 html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
-.tide-section-pills { position: sticky; top: 3.25rem; z-index: 4; background: var(--tide-bg); padding: var(--tide-space-2) 0; margin-bottom: var(--tide-space-2); }
+.tide-section-pills { position: sticky; top: var(--tide-height-top); z-index: 4; background: var(--tide-bg); padding: var(--tide-space-2) 0; margin-bottom: var(--tide-space-2); }
 .tide-section-pills ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--tide-space-1); }
 .tide-section-pills button { display: inline-flex; align-items: center; gap: var(--tide-space-2); white-space: nowrap; border: 1px solid var(--tide-border);
     background: var(--tide-surface); color: var(--tide-text); border-radius: var(--tide-radius-pill); padding: .2rem var(--tide-space-3); font-size: var(--tide-text-sm); }
@@ -2050,8 +2051,8 @@ button.tide-cite[aria-expanded="true"] { border-color: var(--tide-accent); }
 @media (forced-colors: active) { .tide-adv-heat span { border: 1px solid CanvasText; } }
 
 /* Many metric groups. The day's numbers form (MetricEntry): a progress bar that stays in view under the page's own
-   sticky header (.top-row, 3.25rem), a bordered panel per group with its count, and finished groups folded to a line. */
-.tide-mentry-bar { position: sticky; top: 3.25rem; z-index: 6; background: var(--tide-surface); border-bottom: 1px solid var(--tide-border);
+   sticky header (.top-row), a bordered panel per group with its count, and finished groups folded to a line. */
+.tide-mentry-bar { position: sticky; top: var(--tide-height-top); z-index: 6; background: var(--tide-surface); border-bottom: 1px solid var(--tide-border);
     margin: 0 calc(-1 * var(--tide-space-2)) var(--tide-space-3); padding: var(--tide-space-2); }
 .tide-mentry-overall { display: flex; align-items: center; gap: var(--tide-space-3); font-size: var(--tide-text-sm); margin-bottom: var(--tide-space-2); }
 .tide-mentry-meter { flex: 1; max-width: 16rem; height: .4rem; appearance: none; border: 0; border-radius: var(--tide-radius-pill); background: var(--tide-chip-bg); overflow: hidden; }
@@ -2343,8 +2344,9 @@ button.tide-chip-chosen:focus-visible { outline: 2px solid var(--tide-focus-ring
      (remembered per browser), and the content gives it its width.
    - An overlay everywhere else (a narrower window, and the pages that take the whole window: the board, metric history,
      trends): open only while data-rail-over is set, over the content, which keeps its width.
-   theme.js (tideRail) reads --tide-rail-docks to know which of the two it is. */
-.tide-rail { display: none; position: fixed; top: 3.25rem; right: 0; bottom: 0; z-index: 1010; width: min(var(--tide-width-rail), 100%);
+   theme.js (tideRail) reads --tide-rail-docks to know which of the two it is, and --tide-rail-covers to know that the
+   open overlay covers the whole window (a phone), where it makes the page under it inert. */
+.tide-rail { display: none; position: fixed; top: var(--tide-height-top); right: 0; bottom: 0; z-index: 1010; width: min(var(--tide-width-rail), 100%);
     flex-direction: column; background: var(--tide-surface); border-left: 1px solid var(--tide-border); box-shadow: -8px 0 24px var(--tide-shadow); }
 html[data-rail-over] .tide-rail { display: flex; }
 .tide-rail:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: -2px; }
@@ -2356,13 +2358,15 @@ html[data-rail-over] .tide-rail { display: flex; }
 /* The Context button in the top bar (a .tide-palette-btn), while the rail is open. */
 .tide-rail-toggle[aria-expanded="true"] { background: var(--tide-accent-soft); border-color: var(--tide-accent); color: var(--tide-text); }
 @media (min-width: 1500px) {
-    main:not(:has(.tide-kanban, .tide-mh-scroll, .tide-trend-table)) > .tide-rail { --tide-rail-docks: 1; box-shadow: none; }
-    html:not([data-rail="closed"]) main:not(:has(.tide-kanban, .tide-mh-scroll, .tide-trend-table)) > .tide-rail { display: flex; }
-    html:not([data-rail="closed"]) main:not(:has(.tide-kanban, .tide-mh-scroll, .tide-trend-table)) > .content:has(+ .tide-rail) {
-        max-width: min(1400px, calc(100% - var(--tide-width-rail))); }
+    /* Nested, so the pages that take the whole window (.content's own rule, above) are named once here. */
+    main:not(:has(.tide-kanban, .tide-mh-scroll, .tide-trend-table)) {
+        & > .tide-rail { --tide-rail-docks: 1; box-shadow: none; }
+        html:not([data-rail="closed"]) & > .tide-rail { display: flex; }
+        html:not([data-rail="closed"]) & > .content:has(+ .tide-rail) { max-width: min(1400px, calc(100% - var(--tide-width-rail))); }
+    }
 }
 /* On a phone the top bar scrolls with the page, so the overlay takes the whole window, over the top bar. */
-@media (max-width: 640.98px) { .tide-rail { top: 0; z-index: 1030; } }
+@media (max-width: 640.98px) { .tide-rail { top: 0; z-index: 1030; --tide-rail-covers: 1; } }
 @media print { .tide-rail, .tide-rail-toggle { display: none !important; } }
 
 /* ---- Search: an indicator or CVE lookup (Search.razor). The first line that answers it, "Seen with", the one list of
@@ -2405,3 +2409,22 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
     .tide-library-list { max-height: 45vh; overflow-y: auto; }
     .tide-library-detail { position: static; max-height: none; overflow-y: visible; }
 }
+
+/* ---- Brief chip (BriefChip, in the top bar): when the brief meets and the step it's on, a link to Today ----
+   In full from 1200px ("Brief 10:30 AM · step 3 of 5 · Order") and short below that ("10:30 AM · 3/5"). It never wraps
+   or shrinks, so the top bar stays one row, and the search box matters more than it does: the chip shows only where the
+   search box keeps about 200px beside it. Under 1100px that takes the team's name giving way (only for those who have
+   a chip), and under 900px the chip itself is gone and the name is back. */
+.tide-brief-chip { flex: none; display: inline-flex; align-items: center; gap: var(--tide-space-2); height: 2rem; padding: 0 var(--tide-space-3);
+    border: 1px solid var(--tide-border); border-radius: var(--tide-radius-pill); background: var(--tide-surface); color: var(--tide-text-muted);
+    font-size: var(--tide-text-sm); white-space: nowrap; text-decoration: none; }
+.tide-brief-chip:hover { color: var(--tide-text); border-color: var(--tide-text-muted); }
+.tide-brief-chip:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
+.tide-brief-chip.is-live { border-color: var(--tide-accent); background: var(--tide-accent-soft); color: var(--tide-text); }
+.tide-brief-chip-short { display: none; }
+@media (max-width: 1199.98px) {
+    .tide-brief-chip-full { display: none; }
+    .tide-brief-chip-short { display: inline; }
+}
+@media (min-width: 900px) and (max-width: 1099.98px) { .top-row:has(.tide-brief-chip) > span:first-child { display: none; } }
+@media (max-width: 899.98px) { .tide-brief-chip { display: none; } }
