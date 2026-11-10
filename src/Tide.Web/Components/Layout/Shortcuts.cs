@@ -11,7 +11,7 @@ public sealed record ShortcutGroup(string Title, IReadOnlyList<Shortcut> Keys);
 
 /// <summary>
 /// The keyboard shortcuts the "?" overlay lists (ShortcutsOverlay): those of the page you're on, then those that work
-/// everywhere. They describe the handlers in wwwroot/js (palette.js, triage.js, present.js, chart.js, editor.js, submitkeys.js) and the dialogs'
+/// everywhere. They describe the handlers in wwwroot/js (palette.js, theme.js, triage.js, present.js, chart.js, editor.js, submitkeys.js) and the dialogs'
 /// own keys, so a change to one of those changes this too.
 /// </summary>
 public static class Shortcuts
@@ -20,6 +20,7 @@ public static class Shortcuts
     [
         new(["Ctrl K", "⌘ K"], "Go to a page, article or action"),
         new(["?"], "This list of shortcuts", Letter: true),
+        new(["]"], "Show or hide the context rail, on a page that has one", Letter: true),
         new(["Ctrl Enter", "⌘ Enter"], "Post or save the text box you're in"),
         new(["Esc"], "Close a dialog or menu"),
         new(["Alt Z", "⌥ Z"], "Undo, while a toast offers it (the newest)"),
