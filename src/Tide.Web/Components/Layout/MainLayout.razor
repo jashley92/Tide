@@ -1,4 +1,5 @@
 @inherits LayoutComponentBase
+@using Microsoft.AspNetCore.Components.Sections
 
 <a class="tide-skip-link" href="#main-content">Skip to content</a>
 
@@ -20,6 +21,8 @@
             <AuthorizeView>
                 <Authorized>
                     <div class="tide-top-end">
+                        @* The Context button, when the page has a context rail (ContextRail). *@
+                        <SectionOutlet SectionId="ContextRail.ToggleSection" />
                         <ShortcutsOverlay />
                         <ProfileMenu />
                     </div>
@@ -31,6 +34,8 @@
             <LiveMeetingJoin />
             <PageBoundary>@Body</PageBoundary>
         </article>
+        @* The page's context rail, when it has one: nothing is drawn here otherwise. *@
+        <SectionOutlet SectionId="ContextRail.RegionSection" />
     </main>
 </div>
 

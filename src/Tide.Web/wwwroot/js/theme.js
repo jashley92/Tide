@@ -100,6 +100,59 @@ window.tidePrefs = (function () {
     return { get: get, set: set };
 })();
 
+// The context rail (ContextRail): the region on the right of a page that has one. Where the stylesheet docks it beside
+// the content (a wide window, a page held to the usual width), open or closed is remembered per browser as tide-rail
+// and applied before paint by theme-init.js as data-rail="closed". Elsewhere it's an overlay, opened with
+// data-rail-over and not remembered, as the phone menu isn't.
+window.tideRail = (function () {
+    var root = document.documentElement;
+    function rail() { return document.getElementById('tide-rail'); }
+    function toggleBtn() { return document.getElementById('tide-rail-toggle'); }
+    // app.css decides where the rail docks, and says so with --tide-rail-docks.
+    function docks() {
+        var r = rail();
+        return !!r && getComputedStyle(r).getPropertyValue('--tide-rail-docks').trim() === '1';
+    }
+    function over() { return root.hasAttribute('data-rail-over'); }
+    function isOpen() { return docks() ? root.getAttribute('data-rail') !== 'closed' : over(); }
+    // Blazor draws the button once, as closed; this keeps what it says right: on load, when a page with a rail starts,
+    // on each toggle, and when the window's width changes where the rail sits.
+    function sync() {
+        if (over() && docks()) root.removeAttribute('data-rail-over');
+        var btn = toggleBtn();
+        if (btn) btn.setAttribute('aria-expanded', isOpen() ? 'true' : 'false');
+    }
+    // Opens or closes the overlay. Focus goes into it as it opens, since it covers the page, and back to the button
+    // as it closes.
+    function setOver(open) {
+        if (open) root.setAttribute('data-rail-over', '');
+        else root.removeAttribute('data-rail-over');
+        sync();
+        var to = open ? rail() : toggleBtn();
+        if (to) to.focus();
+    }
+    function toggle() {
+        var r = rail();
+        if (!r) return;
+        if (!docks()) { setOver(!over()); return; }
+        var close = root.getAttribute('data-rail') !== 'closed', btn = toggleBtn();
+        // Focus inside a rail that's about to go would be lost: it goes to the button.
+        if (close && btn && r.contains(document.activeElement)) btn.focus();
+        if (close) root.setAttribute('data-rail', 'closed');
+        else root.removeAttribute('data-rail');
+        window.tidePrefs.set('rail', close ? 'closed' : 'open');
+        sync();
+    }
+    // A page with a rail has started: an overlay left open on the page before doesn't open over this one.
+    function start() {
+        root.removeAttribute('data-rail-over');
+        sync();
+    }
+    window.addEventListener('resize', function () { if (rail()) sync(); });
+    sync();
+    return { toggle: toggle, start: start, over: over };
+})();
+
 // Copies text to the clipboard (the Copy buttons on indicators). Returns whether it worked.
 window.tideCopy = async function (text) {
     try { await navigator.clipboard.writeText(text); return true; }
@@ -111,6 +164,8 @@ document.addEventListener('click', function (e) {
     if (!e.target || !e.target.closest) return;
     if (e.target.closest('#nav-collapse-toggle')) { window.tideNav.toggle(); return; }
     if (e.target.closest('#nav-menu-toggle')) { window.tideNav.setOpen(!window.tideNav.isOpen()); return; }
+    // The Context button, and the rail's own Close (shown only while the rail is, so toggling closes it).
+    if (e.target.closest('#tide-rail-toggle, #tide-rail-close')) { window.tideRail.toggle(); return; }
     // Choosing a link closes the phone menu, so the page it opens is what you see.
     if (window.tideNav.isOpen() && e.target.closest('#tide-nav-links a')) window.tideNav.setOpen(false);
     // The circuit-disconnect modal: retry the connection, or reload when the server lost the session.
@@ -132,4 +187,21 @@ document.addEventListener('keydown', function (e) {
     window.tideNav.setOpen(false);
     var btn = document.getElementById('nav-menu-toggle');
     if (btn) btn.focus();
+});
+
+// The context rail's keys. "]" shows or hides it: a single character, so it's off with the letter shortcuts and while
+// typing or in a menu or dialog (the top bar's Context button still works). AltGr counts as no modifier, for the
+// keyboards that type "]" with it. Escape closes the rail while it's an overlay, unless a menu or dialog has the key.
+document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' && e.key !== ']') return;
+    if (e.isComposing || e.defaultPrevented || window.tideShortcuts.inMenu(e.target)) return;
+    if (e.key === 'Escape') {
+        if (window.tideRail.over()) window.tideRail.toggle();
+        return;
+    }
+    if (e.metaKey || ((e.ctrlKey || e.altKey) && !e.getModifierState('AltGraph'))) return;
+    if (!window.tideShortcuts.on() || window.tideShortcuts.typing(e.target)) return;
+    if (!document.getElementById('tide-rail')) return;
+    e.preventDefault();
+    window.tideRail.toggle();
 });

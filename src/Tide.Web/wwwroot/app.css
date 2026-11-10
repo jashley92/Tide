@@ -38,6 +38,7 @@
     --tide-width-2xl: 37.5rem;   /* the search page's box */
     --tide-width-narrow: 40rem;  /* a message card: an error, access denied */
     --tide-width-form: 56rem;    /* a form card */
+    --tide-width-rail: 23.75rem; /* the context rail (380px) */
 
     --tide-bg: #f5f7f9;
     --tide-surface: #ffffff;
@@ -2321,3 +2322,31 @@ button.tide-chip-chosen:focus-visible { outline: 2px solid var(--tide-focus-ring
     .tide-remtl-row { grid-template-columns: var(--remtl-label) 1fr; }
     .tide-remtl-label { grid-row: auto; grid-column: 1 / -1; }
 }
+
+/* ---- Context rail (ContextRail, drawn by MainLayout after .content): what a page shows on its right ----
+   Fixed to the window's right edge under the top bar, scrolling in itself. Closed unless a rule below shows it.
+   - Docked: in a window 1500px or wider, on a page held to the usual width, it's open unless data-rail="closed"
+     (remembered per browser), and the content gives it its width.
+   - An overlay everywhere else (a narrower window, and the pages that take the whole window: the board, metric history,
+     trends): open only while data-rail-over is set, over the content, which keeps its width.
+   theme.js (tideRail) reads --tide-rail-docks to know which of the two it is. */
+.tide-rail { display: none; position: fixed; top: 3.25rem; right: 0; bottom: 0; z-index: 1010; width: min(var(--tide-width-rail), 100%);
+    flex-direction: column; background: var(--tide-surface); border-left: 1px solid var(--tide-border); box-shadow: -8px 0 24px var(--tide-shadow); }
+html[data-rail-over] .tide-rail { display: flex; }
+.tide-rail:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: -2px; }
+.tide-rail-head { display: flex; align-items: center; justify-content: space-between; gap: var(--tide-space-2);
+    padding: var(--tide-space-3) var(--tide-space-4); border-bottom: 1px solid var(--tide-border); }
+.tide-rail-title { margin: 0; font-size: var(--tide-text-md); font-weight: var(--tide-weight-semibold); }
+.tide-rail-close { font-size: var(--tide-text-xs); }
+.tide-rail-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--tide-space-4); }
+/* The Context button in the top bar (a .tide-palette-btn), while the rail is open. */
+.tide-rail-toggle[aria-expanded="true"] { background: var(--tide-accent-soft); border-color: var(--tide-accent); color: var(--tide-text); }
+@media (min-width: 1500px) {
+    main:not(:has(.tide-kanban, .tide-mh-scroll, .tide-trend-table)) > .tide-rail { --tide-rail-docks: 1; box-shadow: none; }
+    html:not([data-rail="closed"]) main:not(:has(.tide-kanban, .tide-mh-scroll, .tide-trend-table)) > .tide-rail { display: flex; }
+    html:not([data-rail="closed"]) main:not(:has(.tide-kanban, .tide-mh-scroll, .tide-trend-table)) > .content:has(+ .tide-rail) {
+        max-width: min(1400px, calc(100% - var(--tide-width-rail))); }
+}
+/* On a phone the top bar scrolls with the page, so the overlay takes the whole window, over the top bar. */
+@media (max-width: 640.98px) { .tide-rail { top: 0; z-index: 1030; } }
+@media print { .tide-rail, .tide-rail-toggle { display: none !important; } }

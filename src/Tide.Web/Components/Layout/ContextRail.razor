@@ -1,0 +1,45 @@
+@* The context rail: what a page shows on its right, beside the content. A page places one <ContextRail> anywhere in
+   its markup; its two parts are drawn by MainLayout's outlets: the Context button in the top bar and the region after
+   the content. A page that places none leaves both outlets empty, so the layout is as it was without a rail. Present
+   mode's layout has no outlets, so nothing is drawn there.
+   Open or closed is the browser's own state (theme.js, tideRail; app.css says where the rail docks and where it's an
+   overlay), so the server draws the button as closed and the script corrects it. *@
+@using Microsoft.AspNetCore.Components.Sections
+@inject IJSRuntime JS
+
+<SectionContent SectionId="ToggleSection">
+    <button type="button" id="tide-rail-toggle" class="tide-palette-btn tide-rail-toggle" aria-expanded="false" aria-controls="tide-rail"
+            aria-keyshortcuts="]" title="Show or hide the context rail (])">
+        <span class="bi bi-layout-sidebar-inset-reverse" aria-hidden="true"></span>
+        <span class="tide-palette-btn-label">Context</span>
+        <kbd class="tide-palette-kbd" aria-hidden="true">]</kbd>
+    </button>
+</SectionContent>@* No space between the two: this component draws nothing where the page placed it. *@<SectionContent SectionId="RegionSection">
+    <aside id="tide-rail" class="tide-rail" aria-label="@Title" tabindex="-1">
+        <div class="tide-rail-head">
+            <h2 class="tide-rail-title">@Title</h2>
+            <button type="button" id="tide-rail-close" class="btn-close tide-rail-close" aria-label="Close"></button>
+        </div>
+        <div class="tide-rail-body">@ChildContent</div>
+    </aside>
+</SectionContent>
+
+@code {
+    /// <summary>MainLayout's outlet in the top bar, for the button.</summary>
+    public static readonly object ToggleSection = new();
+
+    /// <summary>MainLayout's outlet after the content, for the region.</summary>
+    public static readonly object RegionSection = new();
+
+    /// <summary>The region's name, for its heading and for screen readers ("About this item").</summary>
+    [Parameter] public string Title { get; set; } = "Context";
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try { await JS.InvokeVoidAsync("tideRail.start"); }
+        catch (JSDisconnectedException) { /* the circuit has gone */ }
+    }
+}

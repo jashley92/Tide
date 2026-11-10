@@ -88,7 +88,7 @@ Three layouts, in `src/Tide.Web/Components/Layout`:
 
 | Layout | Used by | What it draws |
 |---|---|---|
-| `MainLayout` | Every page by default | A skip link to `#main-content`; the sidebar (`NavMenu`); the top bar with the team name, `TopSearch` (team edition only), `CommandPalette`, `ShortcutsOverlay` and `ProfileMenu`; the live meeting banner (`LiveMeetingJoin`); the page inside `PageBoundary`; `ToastHost`; Blazor's `#blazor-error-ui`. |
+| `MainLayout` | Every page by default | A skip link to `#main-content`; the sidebar (`NavMenu`); the top bar with the team name, `TopSearch` (team edition only), `CommandPalette`, `ShortcutsOverlay` and `ProfileMenu`; the live meeting banner (`LiveMeetingJoin`); the page inside `PageBoundary`; the page's context rail and its Context button, when it has one; `ToastHost`; Blazor's `#blazor-error-ui`. |
 | `AdminLayout` | Every page under `/admin` (`@layout AdminLayout`) | Nested in `MainLayout`. An "Administration" title (drawn as large as an `h1` but not a heading, so the page's own title is the `h1`), the groups as page-level tabs, a group's pages as sub-tabs (`TabBar`), then the page. "new" shows beside Updates when the update check found a release. |
 | `BlankLayout` | Present mode (`/present/{day}`) | No sidebar or top bar. `PageBoundary` (contained), `ToastHost`, and the `CommandPalette` and `ShortcutsOverlay` with keys only, no buttons. |
 
@@ -106,6 +106,35 @@ The sidebar's visibility rule is only a hint: each page's own `[Authorize]` poli
 - **Collapse.** The button at the top collapses the sidebar to icons. `theme.js` (`tideNav.toggle`) sets
   `data-nav="collapsed"` on `<html>` and remembers it in `localStorage`; `theme-init.js` applies it before paint.
 - **Phone menu.** See [phone layout](#phone-layout).
+
+**The context rail.** A region on the right of a page for what belongs beside its content. No page uses it yet. A page
+fills it by placing one `ContextRail` anywhere in its markup:
+
+```razor
+<ContextRail Title="About this item">
+    <p>What TIDE knows about the selected item.</p>
+</ContextRail>
+```
+
+- **How it reaches the layout.** `ContextRail` draws nothing where it's placed. It holds two `SectionContent`s, and
+  `MainLayout` has the two matching `SectionOutlet`s: one in the top bar for the Context button, one after `.content`
+  for the region (`<aside id="tide-rail" aria-label="…">`, with the title as its heading and a Close button). A page
+  that places no `ContextRail` leaves both outlets empty, so its markup and widths are what they were before the rail
+  existed. `BlankLayout` has no outlets, so present mode never draws one, and no page under `/admin` places one.
+- **Docked.** In a window 1500px or wider the rail is open beside the content: 380px (`--tide-width-rail`), fixed under
+  the top bar, scrolling in itself. The content gives up that width and is still held to 1400px. The Context button,
+  the rail's Close or `]` closes it, and the content takes the width back. Closed or open is remembered per browser
+  (`localStorage` key `tide-rail`); `theme-init.js` applies a remembered close as `data-rail="closed"` on `<html>`
+  before paint.
+- **An overlay.** Below 1500px, and at any width on the pages that take the whole window (the board, metric history,
+  trends), the rail starts closed and opens over the content from the right, which keeps its width. It isn't
+  remembered: `theme.js` (`tideRail`) sets `data-rail-over` on `<html>` while it's open, and a new page starts with it
+  closed. Opening it moves focus into the rail; Escape or Close closes it and focus returns to the Context button. It
+  isn't modal, so Tab can leave it. On a phone it covers the window and never widens the page.
+- **Which of the two** is decided in `app.css` alone (the "Context rail" section), which sets `--tide-rail-docks` on the
+  rail where it docks; `tideRail` reads that, so the breakpoint and the list of whole-window pages aren't repeated in
+  script. Blazor draws the Context button as closed (`aria-expanded="false"`), and `tideRail` keeps it right, as
+  `tideNav` does for the sidebar's button.
 
 **The account menu.** `ProfileMenu` (the initials avatar, top right) shows who you are and your roles, the theme and
 letter-shortcut switches as segmented toggles (through `tideTheme` and `tideShortcuts`), My notifications, your brief
@@ -283,7 +312,7 @@ palette and the shortcuts overlay with the same tokens only.
 |---|---|---|
 | Type | `--tide-font-ui` (Segoe UI Variable), `--tide-font-data` (Cascadia Mono), `--tide-text-xs` … `--tide-text-xl`, `--tide-weight-*` | Data (indicators, hashes, ids) uses the mono font through `.tide-data`. |
 | Space and shape | `--tide-space-1` … `--tide-space-8` (4px steps), `--tide-radius-xs` … `--tide-radius-xl`, `--tide-radius-pill` | Radii run from TLP labels (xs) to cards and dialogs (xl). |
-| Widths | `--tide-width-xs` … `--tide-width-form` | For fields and panels that shouldn't stretch the whole row. |
+| Widths | `--tide-width-xs` … `--tide-width-form`, `--tide-width-rail` | For fields and panels that shouldn't stretch the whole row, and the context rail. |
 | Surfaces and text | `--tide-bg`, `--tide-surface`, `--tide-surface-2`, `--tide-border`, `--tide-text`, `--tide-text-muted` | Redefined for dark. |
 | Accent and action | `--tide-accent` (teal: where you are, links, focus), `--tide-action-bg` (navy primary button), `--tide-focus-ring` | The focus ring is 4.9:1 on the light surface, 7.8:1 on the dark one. |
 | Meaning | `--tide-threat`, `--tide-info`, `--tide-ok`, `--tide-warn`, `--tide-purple`, each with a `-soft` fill | Redefined for dark. |
@@ -334,8 +363,8 @@ loads in `<head>`. Each exposes at most one `window.tide*` object for .NET to ca
 
 | File | Global | What it does |
 |---|---|---|
-| `theme-init.js` | (none) | Before first paint: applies the saved theme (or the OS preference), the collapsed sidebar, and letter shortcuts off, as attributes on `<html>`. |
-| `theme.js` | `tideTheme`, `tideNav`, `tideShortcuts`, `tideRoving`, `tidePrefs`, `tideCopy` | `tideRoving`: the arrow keys, Home and End over a menu, tablist or toolbar, shared by `filters.js`, `board.js`, `tabs.js` and `markdown-toolbar.js`. Theme toggle; sidebar collapse and the phone menu (`tideNav.toggle`, `setOpen`, `start`, which keeps `aria-expanded` and the tooltip right); the letter-shortcut switch (WCAG 2.1.4) with the shared `isLetter`, `typing` and `inMenu` checks; small per-browser choices (the hunt panel's last query language); copying text to the clipboard. Also wires the reconnect dialog's Try again and Reload buttons. |
+| `theme-init.js` | (none) | Before first paint: applies the saved theme (or the OS preference), the collapsed sidebar, a closed context rail, and letter shortcuts off, as attributes on `<html>`. |
+| `theme.js` | `tideTheme`, `tideNav`, `tideShortcuts`, `tideRoving`, `tidePrefs`, `tideRail`, `tideCopy` | `tideRail`: the context rail's Context button, Close, `]` and Escape (`toggle`, `start`). `tideRoving`: the arrow keys, Home and End over a menu, tablist or toolbar, shared by `filters.js`, `board.js`, `tabs.js` and `markdown-toolbar.js`. Theme toggle; sidebar collapse and the phone menu (`tideNav.toggle`, `setOpen`, `start`, which keeps `aria-expanded` and the tooltip right); the letter-shortcut switch (WCAG 2.1.4) with the shared `isLetter`, `typing` and `inMenu` checks; small per-browser choices (the hunt panel's last query language); copying text to the clipboard. Also wires the reconnect dialog's Try again and Reload buttons. |
 | `palette.js` | `tidePalette` | `Ctrl+K` / `⌘K` opens the command palette and `?` the shortcuts overlay. Keeps what was typed between `Ctrl+K` and the box appearing. Combobox keys go to .NET, which owns the list. |
 | `dialog.js` | `tideDialog` | Remembers what had focus when a dialog opened (confirmation, lightbox, ATT&CK picker, palette) and gives it back when it closes. Keeps Tab inside a confirmation or the ATT&CK picker, cycling between the first and last controls that can take focus (a control inside an `inert` part, such as a folded ATT&CK column, is left out). Each modal that hears keys has `tabindex="-1"`, so a click on its text keeps focus in it (Escape still closes it) and Tab from there goes to its first control. In the lightbox only its own keys lose their default, so the browser's zoom and find still work. |
 | `triage.js` | `tideTriage` | The triage inbox's keys (J, K, S, X, D, P, O, V, R, arrows, Enter, Esc). A roving tabindex: the selected row is the one tab stop and focus moves with the selection. "Promote and write" rewrites the current history entry so Back returns to the same row. |
@@ -364,7 +393,7 @@ that the letter-shortcut switch turns off.
 
 | Where | Keys |
 |---|---|
-| Everywhere | `Ctrl K` or `⌘ K`: Go to a page, article or action. `?` (letter): this list. `Ctrl Enter` or `⌘ Enter`: post or save the text box you're in (where its form or dialog has one main action). `Esc`: close a dialog or menu. `Alt Z` or `⌥ Z`: undo, while a toast offers Undo (the newest). |
+| Everywhere | `Ctrl K` or `⌘ K`: Go to a page, article or action. `?` (letter): this list. `]` (letter): show or hide the context rail, on a page that has one. `Ctrl Enter` or `⌘ Enter`: post or save the text box you're in (where its form or dialog has one main action). `Esc`: close a dialog or menu. `Alt Z` or `⌥ Z`: undo, while a toast offers Undo (the newest). |
 | The Go to box | `↓` `↑`: next and previous result. `Enter`: open it. `Esc`: close, back where you were. |
 | Triage | `↓` `↑`, or `J` `K`: next and previous item; `J` on a page's last row goes on to the next page, and `K` on its first back to the previous page's last row. `S` shortlist, `X` dismiss, `D` mark a duplicate of the similar article, `P` promote, `O` open the source in a new tab, `V` read it here, `R` put back in New (all letters). `Esc`: close the promote form or reading pane. On a group, `Enter` or `→` opens it and `←` closes it. |
 | Present mode | `→` or `Enter`: next slide. `←` or `Backspace`: previous. `Space` / `Page Down` and `Shift Space` / `Page Up`: scroll a long slide, then change slide at its end. `Home` `End`: first and last slide. `D` (letter): mark discussed. `F` (letter): full screen. `Esc`: leave full screen, then close a zoomed screenshot. |
@@ -386,6 +415,7 @@ Letter keys never fire while typing in a field, or while focus is in a menu or d
 | **Focus return** | Every dialog gives focus back to whatever opened it (`dialog.js`): confirmations, the leave dialog, the lightbox and screenshot dialog, the palette, the shortcuts overlay. After a board move focus goes to the card's Move button in its new column; after a running-order move it stays on the moved row's button; after a comment's edit it returns to that comment's Edit button. |
 | **Focus after navigation** | `FocusOnNavigate` puts focus on the page's `h1`. A skip link goes to `#main-content`. |
 | **Focus inside dialogs** | Tab stays inside a modal; focus outside an open dialog goes into it, not behind it. |
+| **The context rail is a landmark** | An `<aside>` named by its title (a `complementary` region), after the content in reading order, so the skip link and the content come first. Its button says whether it's open (`aria-expanded`, `aria-controls`). It's never a focus trap; closing it with focus inside puts focus on the button. |
 | **Not by colour alone** | Presence shows a pencil for "editing"; a metric past a threshold has an icon and words (`LevelMark`); action status shows a tick on the current option; a part in the lineage and the timeline says its state in words, and Tracking is dashed or striped as well as purple. |
 | **Forced colours** | Under Windows high contrast, badges and TLP chips get an outline, and the current sidebar link a `Highlight` outline. |
 | **Live regions** | Toasts are `role="status"` (polite) or `role="alert"` (errors). `LoadingBlock`, `ChangedElsewhere`, `PresenceNote` and triage's change line announce through status regions. |
@@ -399,7 +429,8 @@ At 640px or narrower (`@media (max-width: 640.98px)` in `app.css`):
 - The sidebar becomes a bar across the top with the brand and a menu button. The button (`tideNav.setOpen`) opens the
   links under it; it isn't remembered, so it starts closed on every page load, closes when a link is followed, and
   closes on Escape. The desktop collapse-to-icons state doesn't apply.
-- The search box in the top bar is hidden; the Go to button shrinks to an icon in its place.
+- The search box in the top bar is hidden; the Go to button shrinks to an icon in its place, and so does the Context
+  button. The context rail opens over the whole window.
 - Wide tables scroll inside their card rather than pushing the page sideways, with a shadow at the edge that has more.
 - Breadcrumbs keep only the way back ("‹ Actions").
 - The audit log draws each change as a card instead of a row.
@@ -477,7 +508,7 @@ flowchart TD
 |---|---|
 | Root document, scripts, reconnect dialog | `src/Tide.Web/Components/App.razor` |
 | Router, authorization, focus on navigate | `src/Tide.Web/Components/Routes.razor` |
-| Layouts, sidebar, palette, shortcuts, boundary | `src/Tide.Web/Components/Layout/` (`MainLayout`, `AdminLayout`, `BlankLayout`, `NavMenu`, `NavPages`, `CommandPalette`, `PaletteEntries`, `ShortcutsOverlay`, `Shortcuts`, `TopSearch`, `PageBoundary`) |
+| Layouts, sidebar, context rail, palette, shortcuts, boundary | `src/Tide.Web/Components/Layout/` (`MainLayout`, `AdminLayout`, `BlankLayout`, `ContextRail`, `NavMenu`, `NavPages`, `CommandPalette`, `PaletteEntries`, `ShortcutsOverlay`, `Shortcuts`, `TopSearch`, `PageBoundary`) |
 | Pages | `src/Tide.Web/Components/Pages/`, admin pages under `Pages/Admin/` |
 | Shared components | `src/Tide.Web/Components/Shared/` |
 | Live updates, presence, toasts, prerender hand-off | `src/Tide.Web/Services/` (`Together.cs`, `LiveRows.cs`, `Services.cs`, `PrerenderHandoff.cs`, `LiveMeetings.cs`, `TriageNews.cs`, `TypingPause.cs`) |

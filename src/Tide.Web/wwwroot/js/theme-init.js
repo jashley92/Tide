@@ -13,6 +13,9 @@
         if (localStorage.getItem('tide-nav') === 'collapsed') root.setAttribute('data-nav', 'collapsed');
     } catch (e) { /* private mode: leave the sidebar expanded */ }
     try {
+        if (localStorage.getItem('tide-rail') === 'closed') root.setAttribute('data-rail', 'closed');
+    } catch (e) { /* private mode: the context rail open where it docks */ }
+    try {
         if (localStorage.getItem('tide-shortcuts') === 'off') root.setAttribute('data-shortcuts', 'off');
     } catch (e) { /* private mode: shortcuts on */ }
 })();
