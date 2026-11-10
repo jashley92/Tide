@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Tide.Application.Stack;
 using Tide.Domain.Enums;
 using Tide.Infrastructure.Persistence;
 using Tide.Web.Services;
@@ -39,14 +40,16 @@ public class DemoSeederTests(DemoTideApp app) : IClassFixture<DemoTideApp>
         return JsonSerializer.Deserialize<DemoSeeder.Seeded>(File.ReadAllText(app.InfoFile))!;
     }
 
+    private static DateOnly Day(string day) => DateOnly.Parse(day, System.Globalization.CultureInfo.InvariantCulture);
+
     private AppDbContext Db() => app.Services.CreateScope().ServiceProvider.GetRequiredService<AppDbContext>();
 
     [Fact]
     public async Task Seeds_yesterdays_brief_sent_in_both_editions_and_names_it()
     {
         var info = Info();
-        var sent = DateOnly.Parse(info.Sent, System.Globalization.CultureInfo.InvariantCulture);
-        DateOnly.Parse(info.Today, System.Globalization.CultureInfo.InvariantCulture).Should().BeAfter(sent);
+        var sent = Day(info.Sent);
+        Day(info.Today).Should().BeAfter(sent);
 
         await using var db = Db();
         var brief = await db.Briefs.SingleAsync(b => b.BriefDate == sent);
@@ -71,6 +74,69 @@ public class DemoSeederTests(DemoTideApp app) : IClassFixture<DemoTideApp>
     }
 
     [Fact]
+    public async Task Seeds_products_on_our_stack_in_each_state_the_page_shows()
+    {
+        var info = Info();
+        await using var db = Db();
+        var products = await db.StackProducts.ToListAsync();
+        products.Should().HaveCount(5).And.OnlyContain(p => !p.IsRetired);
+
+        var tagged = await db.ArticleProducts.SingleAsync(t => t.ArticleId == Guid.Parse(info.VpnArticle));
+        tagged.ProductId.ToString().Should().Be(info.StackProduct, "the product the tool opens is the one on the edge VPN article");
+
+        var entries = products.Select(StackService.Entry).ToList();
+        var item = await db.FeedItems.SingleAsync(i => i.Cves == "CVE-2026-0003");
+        StackService.Match(entries, item.Title, item.Excerpt)!.Name.Should().Be("File Transfer Server");
+
+        var today = Day(info.Today);
+        products.Should().ContainSingle(p => p.CheckedOn < today.AddYears(-1), "one hasn't been checked for over a year");
+        products.Should().ContainSingle(p => p.TeamId == null, "one has no owning team");
+    }
+
+    [Fact]
+    public async Task Seeds_a_metric_group_with_the_previous_briefs_numbers_and_one_missing_today()
+    {
+        var info = Info();
+        var today = Day(info.Today);
+        var sent = Day(info.Sent);
+        await using var db = Db();
+        var group = await db.MetricGroups.Include(g => g.Metrics).SingleAsync(g => g.Key == "exposed-services");
+        var ids = group.Metrics.Select(m => m.Id).ToList();
+        ids.Should().HaveCount(3);
+        (await db.MetricValues.CountAsync(v => ids.Contains(v.DefinitionId) && v.BriefDate == sent)).Should().Be(3);
+        (await db.MetricValues.CountAsync(v => ids.Contains(v.DefinitionId) && v.BriefDate == today)).Should().Be(2, "one is left to be entered");
+    }
+
+    [Fact]
+    public async Task Seeds_an_escalated_and_an_overdue_action_still_open_from_an_earlier_brief()
+    {
+        var info = Info();
+        var today = Day(info.Today);
+        var sent = Day(info.Sent);
+        await using var db = Db();
+        var briefs = db.Briefs.Where(b => b.BriefDate < sent).Select(b => b.Id);
+        var earlier = db.BriefItems.Where(i => briefs.Contains(i.BriefId)).Select(i => i.ArticleId);
+        var open = (await db.Actions.Where(a => a.ArticleId != null && earlier.Contains(a.ArticleId!.Value)).ToListAsync()).Where(a => a.IsOpen).ToList();
+        open.Should().HaveCount(2).And.OnlyContain(a => a.RaisedOn < sent && a.DueDate < today);
+        open.Should().ContainSingle(a => a.IsEscalated);
+        open.Select(a => a.ArticleId).Distinct().Should().ContainSingle("both came from one article");
+    }
+
+    [Fact]
+    public async Task Seeds_a_second_person_who_can_follow_a_live_meeting()
+    {
+        var info = Info();
+        await using var db = Db();
+        var follower = await db.Users.SingleAsync(u => u.DisplayName == info.Follower);
+        follower.Sid.Should().Be("dev:" + info.Follower.ToLowerInvariant(), "the dev sign-in's ?as= resolves to this row");
+        follower.RolesCsv.Should().Be(nameof(AppRole.Viewer));
+
+        using var client = app.CreateClient();
+        var response = await client.GetAsync($"/present/{info.Today}?as={info.Follower}&roles={follower.RolesCsv}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task Runs_once_per_database()
     {
         var info = Info();
@@ -86,11 +152,14 @@ public class DemoSeederTests(DemoTideApp app) : IClassFixture<DemoTideApp>
     [InlineData("/published/{sent}")]
     [InlineData("/actions/{detail}")]
     [InlineData("/trends")]
+    [InlineData("/stack")]
+    [InlineData("/stack/{product}")]
     public async Task The_captured_pages_render(string route)
     {
         var info = Info();
         using var client = app.CreateClient();
-        var response = await client.GetAsync(route.Replace("{sent}", info.Sent).Replace("{detail}", info.DetailAction.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        var response = await client.GetAsync(route.Replace("{sent}", info.Sent).Replace("{detail}", info.DetailAction.ToString(System.Globalization.CultureInfo.InvariantCulture))
+            .Replace("{product}", info.StackProduct));
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 }
