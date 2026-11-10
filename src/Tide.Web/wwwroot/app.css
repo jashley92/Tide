@@ -1787,10 +1787,12 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
     .tide-order-ctrl { grid-column: 2; }
 }
 /* What an article still needs, inline: dashed chips, red when it stops the brief being ready. */
-.tide-needs { display: flex; flex-wrap: wrap; gap: var(--tide-space-1); margin-top: var(--tide-space-2); }
+.tide-needs { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1); margin-top: var(--tide-space-2); }
 .tide-need { display: inline-flex; align-items: center; gap: var(--tide-space-1); font-size: var(--tide-text-xs); font-weight: var(--tide-weight-medium);
     padding: 0 var(--tide-space-2); border-radius: var(--tide-radius-sm); background: var(--tide-warn-soft); color: var(--tide-warn); border: 1px dashed var(--tide-warn); }
 .tide-need.is-blocking { background: var(--tide-threat-soft); color: var(--tide-threat); border-color: var(--tide-threat); }
+/* A need's one-click fix, beside its chip. */
+.tide-need-fix { font-size: var(--tide-text-xs); padding: var(--tide-space-1) var(--tide-space-2); margin-right: var(--tide-space-2); }
 
 /* The edition check: Included, Partly included or Left out for each part of the brief, per edition. */
 .tide-ed-cols { display: grid; grid-template-columns: 1fr 1fr; gap: var(--tide-space-3); }
@@ -1807,10 +1809,10 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-ed-title { color: var(--tide-text); overflow-wrap: anywhere; }
 .tide-ed-list li.is-out .tide-ed-title { color: var(--tide-text-muted); text-decoration: line-through; }
 .tide-ed-why { display: block; color: var(--tide-text-muted); }
-.tide-ed-warn { display: block; color: var(--tide-warn); }
-.tide-ed-warn .bi { margin-right: var(--tide-space-1); }
 .tide-ed-whole { margin: 0; font-size: var(--tide-text-xs); color: var(--tide-ok); }
 .tide-ed-whole + .tide-ed-list { margin-top: var(--tide-space-2); }
+.tide-ed-warn { display: block; color: var(--tide-warn); }
+.tide-ed-warn .bi { margin-right: var(--tide-space-1); }
 .tide-ed-note { margin: var(--tide-space-3) 0 0; padding-top: var(--tide-space-2); border-top: 1px solid var(--tide-border); font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
 
 /* Preview both editions: side by side for proofreading the whole brief; at 900px or narrower, one at a time, picked

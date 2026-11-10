@@ -82,6 +82,14 @@ window.tideOrder = (function () {
             const target = b && !b.disabled ? b : pick(other);
             if (target && target.focus) target.focus();
         },
+        // After a warning's one-click fix, whose button has gone with the warning: the row's title. A fix that was
+        // refused leaves its button, and focus on it.
+        focusTitle: function (el, id) {
+            const row = el && el.querySelector('[data-id="' + id + '"]');
+            if (!row || row.contains(document.activeElement)) return;
+            const title = row.querySelector('.tide-run-title');
+            if (title) title.focus();
+        },
         // After a row is taken off: its Undo, which the toast draws a moment later.
         focusUndo: function () {
             let tries = 0;

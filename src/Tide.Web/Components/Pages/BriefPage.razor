@@ -735,6 +735,23 @@ else
     private Task Reorder((IReadOnlyList<Guid> Order, Guid Moved) drop) => Run(() => BriefSvc.ReorderAsync(_brief!.Id, drop.Order), null,
         () => Toasts.Show($"Moved to {Ordered().ToList().FindIndex(i => i.Id == drop.Moved) + 1} of {_brief!.Items.Count}."));
 
+    // A warning's one-click fix, from the running order: the article as this page showed it (its edit version), so a
+    // colleague's save in between is refused, not written over. An article edit has no undo, so the toast offers none.
+    internal Task Fix(Guid articleId, ArticleFix fix)
+    {
+        if (!CanFix || fix != ArticleFix.WhyItMattersAmber
+            || _brief!.Items.FirstOrDefault(i => i.ArticleId == articleId)?.Article is not { } article) return Task.CompletedTask;
+        var changed = false;
+        return Run(async () => changed = await ArticleSvc.MarkWhyItMattersAmberAsync(article.Id, article.EditVersion, _brief.Id), null,
+            () => Toasts.Show(changed
+                ? $"Why it matters on “{article.Title}” is now {Tlp.Label(TlpLevel.Amber)}. The company-wide edition leaves it out."
+                : $"Why it matters on “{article.Title}” was already {Tlp.Label(TlpLevel.Amber)} or stricter."));
+    }
+
+    // Who may edit the articles (as the editor has it), on a brief that hasn't gone out: after a send, what went out is
+    // changed by a correction.
+    private bool CanFix => _canWrite && _brief is { Status: not BriefStatus.Sent };
+
     private Task MarkReady(bool ready) =>
         Run(() => BriefSvc.MarkReadyAsync(_brief!.Id, ready), ready ? "Ready for the meeting." : "Back to draft.");
 
@@ -883,6 +900,7 @@ else
                             }
                             <RunningOrder Items="Ordered().ToList()" Readiness="@(_canWrite ? _readiness : NoReadiness)" CanEdit="@(_canWrite && _brief.Status != BriefStatus.Sent)" Busy="_busy"
                                           PublicMax="_publicMax" ShowDiscussed="@(_brief.Status is BriefStatus.Presented or BriefStatus.Sent)"
+                                          CanFix="CanFix" OnFix="f => Fix(f.Article, f.Fix)"
                                           OnMove="m => Move(m.Item, m.By)" OnRemove="Remove" OnReorder="Reorder" />
                             <div class="tide-order-foot">
                                 @if (_canWrite && _brief.Status != BriefStatus.Sent)

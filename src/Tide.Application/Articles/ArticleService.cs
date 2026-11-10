@@ -368,6 +368,39 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
         return await SaveAsync(form, ct);
     }
 
+    /// <summary>
+    /// Marks an article's "Why it matters" TLP:AMBER, from the running order of <paramref name="briefId"/>: the one-click
+    /// fix for <see cref="ArticleChecks.WhyReachesCompany"/>, so the company-wide edition leaves the paragraph out. Analysts
+    /// only, as any edit; refused (<see cref="StaleEditException"/>) when the article changed since
+    /// <paramref name="editVersion"/>, the copy the page showed; refused when the article isn't on that brief, or the brief
+    /// has been sent (what went out is changed by a correction). It only ever raises that one marking: where the paragraph
+    /// already counts as AMBER or stricter (its own marking, or the article's), nothing is saved and it returns false.
+    /// The save is the article's own, so it is audited and heard like any other, and moves the edit version.
+    /// </summary>
+    public async Task<bool> MarkWhyItMattersAmberAsync(Guid id, Guid editVersion, Guid briefId, CancellationToken ct = default)
+    {
+        RequireWrite();
+        await using var db = await dbs.CreateAsync(ct);
+        var a = await db.Articles.FirstOrDefaultAsync(x => x.Id == id, ct)
+                ?? throw new KeyNotFoundException("That article no longer exists.");
+        if (a.EditVersion != editVersion) throw new StaleEditException(SavedMeanwhile);
+        var brief = await db.Briefs.AsNoTracking().Where(b => b.Id == briefId && b.Items.Any(i => i.ArticleId == id))
+            .Select(b => (BriefStatus?)b.Status).FirstOrDefaultAsync(ct)
+            ?? throw new InvalidOperationException("That article is no longer on this brief.");
+        if (brief == BriefStatus.Sent)
+            throw new InvalidOperationException("This brief has been sent. Send a correction to change what went out.");
+        if (a.Effective(a.WhyItMattersTlp) >= TlpLevel.Amber) return false;
+
+        a.WhyItMattersTlp = TlpLevel.Amber;
+        a.EditVersion = Guid.NewGuid();
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new StaleEditException(SavedMeanwhile);
+        }
+        return true;
+    }
+
     private const string SavedMeanwhile = "Someone else saved this article while you were editing. Reload it to see their changes.";
 
     /// <summary>
