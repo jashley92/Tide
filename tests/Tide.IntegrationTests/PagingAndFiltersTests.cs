@@ -506,6 +506,14 @@ public partial class PagingAndFiltersPageTests(TideApp app) : IClassFixture<Tide
 
     private static int Cards(string column) => Regex.Count(column, "<article ");
 
+    // The board's one Closed column, which holds Done, Cancelled and Not applicable.
+    private static string Closed(string html)
+    {
+        var at = html.IndexOf("class=\"tide-kclosed\"", StringComparison.Ordinal);
+        at.Should().BePositive();
+        return html[at..];
+    }
+
     [Fact]
     public async Task TheBoard_ShowsEachColumnsFirst20_ThenTwentyMoreAtATime()
     {
@@ -541,9 +549,9 @@ public partial class PagingAndFiltersPageTests(TideApp app) : IClassFixture<Tide
             ["Board"] = Board(), ["Today"] = DateOnly.FromDateTime(DateTime.UtcNow),
             ["OnShowOlder"] = EventCallback.Factory.Create(new object(), () => older++),
         });
-        var done = Column(WebUtility.HtmlDecode(await r.Html()), ActionStatus.Done);
-        done.Should().Contain("Last 7 days").And.Contain("Show older: the last 30 days");
-        Column(await r.Html(), ActionStatus.Open).Should().NotContain("Show older", "only under Done");
+        var closed = Closed(WebUtility.HtmlDecode(await r.Html()));
+        closed.Should().Contain("Last 7 days").And.Contain("Show older: the last 30 days");
+        Column(await r.Html(), ActionStatus.Open).Should().NotContain("Show older", "only under the closed column");
         await r.Click(k => (Task)typeof(ActionKanban).GetMethod("ShowOlder", Private)!.Invoke(k, null)!);
         older.Should().Be(1, "the page reads the board again, further back");
 
@@ -551,7 +559,7 @@ public partial class PagingAndFiltersPageTests(TideApp app) : IClassFixture<Tide
         {
             ["Board"] = Board(ActionService.BoardOlderDays), ["Today"] = DateOnly.FromDateTime(DateTime.UtcNow),
         });
-        Column(WebUtility.HtmlDecode(await month.Html()), ActionStatus.Done).Should().Contain("Last 30 days").And.NotContain("Show older");
+        Closed(WebUtility.HtmlDecode(await month.Html())).Should().Contain("Last 30 days").And.NotContain("Show older");
     }
 
     // 60 open actions of the test's own, P1 every third, blocked every fifth, undated every fourth; found by their words.

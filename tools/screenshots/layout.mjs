@@ -96,10 +96,15 @@ const pages = [
     rules: [noSidewaysScroll, visible('.tide-reader-sum'), visible('[role=tablist][aria-label="Beside the article"]')] },
   { name: 'article-actions-tab', route: '/articles/{vpnArticle}?side=actions', widths: [1440, 800],
     rules: [noSidewaysScroll, visible('#reader-panel .tide-action-ref')] },
-  { name: 'actions-list', route: '/actions?tab=open&layout=list', widths: [1440, 1000],
-    rules: [noSidewaysScroll, visible('.tide-action-ref')] },
-  { name: 'actions-board', route: '/actions?tab=open&layout=board', widths: [1920, 1440],
-    rules: [visible('.tide-kcard'), oneRow('.tide-kcard-head'), [1800, widerThan('.content', 1400)]] },
+  // The page reads the tab from ?view= (each tab with its count, the row of them on one line).
+  { name: 'actions-list', route: '/actions?view=open&layout=list', widths: [1920, 1440, 1000],
+    rules: [noSidewaysScroll, visible('.tide-action-ref'), visible('.tide-tabbar-count'), oneRow('[role=group][aria-label="Views"]'),
+      fits('[role=group][aria-label="Views"]'), visible('.tide-progress-cell')] },
+  // The four working columns share the width and Closed folds into one narrow column: nothing scrolls sideways, the
+  // board included, on a laptop's window.
+  { name: 'actions-board', route: '/actions?view=open&layout=board', widths: [1920, 1440],
+    rules: [noSidewaysScroll, fits('.tide-kanban'), visible('.tide-kcard'), visible('.tide-kclosed .tide-kcol[data-status="Done"]'),
+      oneRow('.tide-kcard-head'), fits('.tide-kcard-article'), [1800, widerThan('.content', 1400)]] },
   // A sweep's query is read whole, in the wide column: its long lines wrap, so nothing scrolls sideways inside its box.
   { name: 'action-hunt', route: '/actions/{huntAction}', widths: [1920, 1440],
     rules: [noSidewaysScroll, visible('.tide-action-main .tide-hunt pre.tide-query'), fits('.tide-hunt pre.tide-query')] },

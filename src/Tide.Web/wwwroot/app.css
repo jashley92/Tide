@@ -2428,3 +2428,26 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 }
 @media (min-width: 900px) and (max-width: 1099.98px) { .top-row:has(.tide-brief-chip) > span:first-child { display: none; } }
 @media (max-width: 899.98px) { .tide-brief-chip { display: none; } }
+
+/* ---- Actions list and board (ActionsBoard.razor, ActionTable.razor, ActionKanban.razor). The board's four working
+   columns share the width, with the closed statuses folded into one narrow Closed column after them (each still its own
+   .tide-kcol to drop on), so a laptop's window shows it all without scrolling sideways; a narrower window scrolls the
+   board itself, as before. A card's article on one line and its time in column; a row's Take it and checklist progress;
+   the line an empty Mine shows when the person's teams have work nobody owns. ---- */
+.tide-kanban { grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(11rem, 13rem); overflow-x: visible; }
+@media (max-width: 1199.98px) { .tide-kanban { grid-template-columns: repeat(4, minmax(14rem, 1fr)) minmax(11rem, 13rem); overflow-x: auto; } }
+.tide-kanban .tide-kcol, .tide-kcard { min-width: 0; }
+.tide-kclosed { display: flex; flex-direction: column; gap: var(--tide-space-2); min-width: 0; }
+.tide-kclosed > .tide-kcol-head, .tide-kclosed > .tide-kcol-sub { margin: 0; padding: 0 var(--tide-space-1); }
+.tide-kclosed .tide-kcol { min-height: 4.5rem; padding: var(--tide-space-2); }
+.tide-kclosed .tide-kcol .tide-kcol-head { font-size: var(--tide-text-sm); margin-bottom: var(--tide-space-1); }
+.tide-kclosed .tide-kcol-empty { padding: var(--tide-space-2); }
+.tide-kcard-article { display: flex; align-items: center; gap: .3rem; min-width: 0; font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
+.tide-kcard-article > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tide-kcard-since { font-size: var(--tide-text-xs); }
+.tide-progress-cell { width: 7rem; }
+.tide-progress { display: flex; align-items: center; gap: .4rem; color: var(--tide-text-muted); }
+.tide-progress > .tide-kcard-bar { flex: 1 1 auto; min-width: 2.5rem; }
+.tide-row-take { display: block; margin-top: var(--tide-space-1); padding: .05rem .5rem; font-size: var(--tide-text-xs); }
+.tide-actions-unowned { margin: 0 0 var(--tide-space-3); padding: var(--tide-space-2) var(--tide-space-3); background: var(--tide-info-soft);
+    border-radius: var(--tide-radius-lg); font-size: var(--tide-text-sm); }

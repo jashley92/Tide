@@ -356,9 +356,10 @@ public class FilterBarTests(TideApp app) : IClassFixture<TideApp>
         menu.Should().NotContain("parent", "set by a link, so a chip only");
         r.Component.Defs.Single(d => d.Key == "assignee").Options.Take(2).Select(o => o.Label).Should().Equal("You", "Nobody (the team's)");
         r.Component.Defs.Single(d => d.Key == "team").Options.Should().Contain(o => o.Value == teamId.ToString() && o.Label == teamName, "built as the teams are read");
-        foreach (var chip in new[] { $"Team: {teamName}", "Priority: P3", "Due: No due date", "Status: In progress", "Part of A-12", "Held by nobody (the team's)" })
+        foreach (var chip in new[] { $"Team: {teamName}", "Priority: P3", "Due: No due date", "Status: In progress", "Part of A-12" })
             html.Should().Contain($"aria-label=\"Remove filter {chip}\"");
         FilterBarHtml.Pressed(html, "P1–P2").Should().BeFalse();
+        FilterBarHtml.Pressed(html, "No owner").Should().BeTrue("Held by: nobody is the No owner pill, which says it in place of a chip");
 
         Task Set(ActionsBoard a, string key, params string[] values)
         {
