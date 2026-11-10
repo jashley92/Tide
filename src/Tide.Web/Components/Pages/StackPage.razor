@@ -12,8 +12,11 @@
 @inject ChangeOrigin Origin
 @implements IDisposable
 
-@* Our stack (EP-25): the products the organization runs, kept by analysts. The list shows each product's versions, team
-   and how much has been written about it; a product's page has its other names, versions and notes, and its history:
+@* Our stack (EP-25): the products the organization runs, kept by analysts. The list puts the products that need a look
+   first (StackRow.NeedsLook) and says why: "Right now" has the CVEs on the last week's briefs' articles about the
+   product (held to the team edition's ceiling: one seen only above it is counted, not named) and, for those who
+   triage, how many new items name it; an old or missing check is flagged. A filter box, quick filters with counts and
+   a team narrow it; Add a product opens the add form. A product's page has its other names, versions and notes, and its history:
    the articles tagged with it or naming it, and their actions. Triage lifts items that name a product, and an article
    can be tagged with any number of them from the editor. A product's history is held to the team edition's TLP ceiling:
    articles above it, and actions raised from them, are counted but not named. A colleague's change to a product
@@ -28,8 +31,12 @@
             <h1>Our stack</h1>
             <div class="tide-sub">Triage raises new items that name a product or one of its aliases; those items never age out. Changes are audited.</div>
         </div>
+        @if (_canWrite)
+        {
+            <button type="button" class="btn btn-primary btn-sm" aria-expanded="@Ui.Aria(_adding)" @onclick="ToggleAdd">Add a product</button>
+        }
     </div>
-    @if (_canWrite)
+    @if (_canWrite && _adding)
     {
         <div class="tide-card">
             <h2>Add a product</h2>
@@ -38,7 +45,8 @@
                     <input id="new-name" class="form-control form-control-sm" maxlength="100" placeholder="GitLab" @bind="_newName" /></div>
                 <div class="col-md-5"><label class="tide-field-label" for="new-others">Other names it's reported under</label>
                     <input id="new-others" class="form-control form-control-sm" maxlength="500" placeholder="GitLab CE; GitLab Runner" @bind="_newOthers" /></div>
-                <div class="col-md-3"><button class="btn btn-primary btn-sm w-100" disabled="@_busy" @onclick="Add">Add</button></div>
+                <div class="col-md-3 d-flex gap-2"><button class="btn btn-primary btn-sm flex-fill" disabled="@_busy" @onclick="Add">Add</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="ToggleAdd">Cancel</button></div>
             </div>
         </div>
     }
@@ -53,28 +61,52 @@
         }
         else
         {
-            <div class="table-responsive">
-                <table class="tide-table">
-                    <caption class="visually-hidden">Our stack</caption>
-                    <thead><tr><th scope="col">Product</th><th scope="col">Versions</th><th scope="col">Team</th><th scope="col">Checked</th>
-                        <th scope="col" class="tide-table-num">Articles</th><th scope="col" class="tide-table-num">Open actions</th></tr></thead>
-                    <tbody>
-                        @foreach (var r in _list)
-                        {
-                            <tr class="@(r.Product.IsRetired ? "tide-muted" : "")" @key="r.Product.Id">
-                                <td><a href="@($"stack/{r.Product.Id}")">@r.Product.Name</a>
-                                    @if (r.Product.OtherNames is { } o) { <div class="small tide-muted">also @o</div> }
-                                    @if (r.Product.IsRetired) { <Badge Tone="BadgeTone.Neutral">Retired</Badge> }</td>
-                                <td>@(r.Product.Versions ?? "—")</td>
-                                <td>@(r.TeamName ?? "—")</td>
-                                <td>@(r.Product.CheckedOn is { } c ? Ui.ShortDay(c) : "—")</td>
-                                <td class="tide-table-num">@r.Articles</td>
-                                <td class="tide-table-num">@r.OpenActions</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
+            var shown = Shown;
+            <FilterBar Pills="Pills" Filters="Filters" Active="Narrowed" OnClear="ClearFilters" OnChanged="Refiltered"
+                       Count="@TableView.Count(1, shown.Count, shown.Count, _list.Count, Narrowed, "product", "products")">
+                <Search>
+                    <input id="stack-q" type="search" class="tide-maxw-md form-control form-control-sm" placeholder="Product, other name or version" aria-label="Filter products"
+                           @bind:get="_words" @bind:set="SetWords" @bind:event="oninput" />
+                </Search>
+            </FilterBar>
+            @if (shown.Count == 0)
+            {
+                <EmptyState Icon="bi-funnel" Title="No product matches these filters." Compact="true" />
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="tide-table">
+                        <caption class="visually-hidden">Our stack: products that need a look first</caption>
+                        <thead><tr><th scope="col">Product</th><th scope="col">Right now</th><th scope="col">Versions</th><th scope="col">Team</th><th scope="col">Checked</th>
+                            <th scope="col" class="tide-table-num">Articles</th><th scope="col" class="tide-table-num">Open actions</th></tr></thead>
+                        <tbody>
+                            @foreach (var r in shown)
+                            {
+                                <tr class="@(r.Product.IsRetired ? "tide-muted" : "")" @key="r.Product.Id">
+                                    <td><a href="@($"stack/{r.Product.Id}")">@r.Product.Name</a>
+                                        @if (r.Product.OtherNames is { } o) { <div class="small tide-muted">also @o</div> }
+                                        @if (r.Product.IsRetired) { <Badge Tone="BadgeTone.Neutral">Retired</Badge> }</td>
+                                    <td class="tide-stack-now">
+                                        @foreach (var c in r.Now.Cves.Take(CvesShown)) { <CveChip CveId="@c.Id" Record="c.Record" /> }
+                                        @if (r.Now.Cves.Count > CvesShown) { <a class="small" href="@($"stack/{r.Product.Id}")">+@(r.Now.Cves.Count - CvesShown) more</a> }
+                                        @if (r.Now.CvesAbove > 0) { <div class="small tide-muted">@AboveLine(r.Now.CvesAbove, "CVE", _ceiling)</div> }
+                                        @if (r.Now.TriageItems is > 0 and var n) { <div class="small"><a href="triage?named=true">@n new in triage</a></div> }
+                                        @if (!r.Now.Any) { <span class="small tide-muted">Nothing new</span> }
+                                    </td>
+                                    <td>@(r.Product.Versions ?? "—")</td>
+                                    <td>@(r.TeamName ?? "—")</td>
+                                    <td>@if (r.Product.CheckedOn is { } on) { @Ui.ShortDay(on) }
+                                        @if (r.CheckOld) { <Badge Tone="BadgeTone.Warn" Icon="bi-clock-history">@(r.Product.CheckedOn is null ? "Never checked" : $"Over {StackService.CheckOldAfterDays} days ago")</Badge> }
+                                        else if (r.Product.CheckedOn is null) { <text>—</text> }</td>
+                                    <td class="tide-table-num">@r.Articles</td>
+                                    <td class="tide-table-num">@r.OpenActions</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
             <div class="form-check mt-2">
                 <input class="form-check-input" type="checkbox" id="show-retired" checked="@_showRetired" @onchange="ToggleRetired" />
                 <label class="form-check-label small" for="show-retired">Show retired products</label>
@@ -184,8 +216,63 @@ else
     private StackDetail? _detail;
     private StackForm? _form;
     private IReadOnlyList<Tide.Domain.Entities.Team> _teams = [];
-    private bool _canWrite, _busy, _loaded, _showRetired;
+    private bool _canWrite, _busy, _loaded, _showRetired, _adding;
     private string? _newName, _newOthers;
+
+    // --- the list's filters: what's typed, the quick filters pressed (each narrows further) and one owning team ---
+
+    /// <summary>How many CVEs a row's "Right now" shows before "+2 more" (the worst are first).</summary>
+    internal const int CvesShown = 3;
+
+    /// <summary>A quick filter: its key, what its pill says, and the rows it keeps.</summary>
+    internal sealed record QuickFilter(string Key, string Label, string Title, Func<StackRow, bool> Matches);
+
+    internal static readonly IReadOnlyList<QuickFilter> Quick =
+    [
+        new("look", "Needs a look", "Something is happening right now, the check is old or missing, or no team owns it", r => r.NeedsLook),
+        new("old", "Check is old", $"Never checked, or checked more than {StackService.CheckOldAfterDays} days ago", r => r.CheckOld),
+        new("noteam", "No owning team", "In use, with no team that owns it", r => r.NoTeam),
+    ];
+
+    private TlpLevel _ceiling;
+    private string _words = "";
+    private string? _team;
+    private readonly HashSet<string> _quick = [];
+
+    private bool Narrowed => _words.Trim().Length > 0 || _team is not null || _quick.Count > 0;
+
+    // The bar's pills, each with how many products it would keep, and its filters: a switch behind each pill, and the team.
+    private IReadOnlyList<FilterPill> Pills =>
+        [.. Quick.Select(q => new FilterPill(q.Key, $"{q.Label} ({_list!.Count(q.Matches)})", q.Key, FilterValues.Of(true)) { Title = q.Title })];
+
+    private IReadOnlyList<FilterDef> Filters =>
+    [
+        .. Quick.Select(q => new FilterDef(q.Key, q.Label, FilterKind.Single, v => SetQuick(q.Key, v.Count > 0)) { InMenu = false, Values = FilterValues.Of(_quick.Contains(q.Key)) }),
+        new("team", "Owning team", FilterKind.Single, v => SetTeam(FilterValues.First(v)))
+        {
+            Values = FilterValues.Of(_team),
+            Options = [.. _list!.Where(r => r.Product.TeamId is not null).Select(r => new FilterOption(r.Product.TeamId!.Value.ToString(), r.TeamName ?? "")).Distinct().OrderBy(o => o.Label, StringComparer.OrdinalIgnoreCase)],
+        },
+    ];
+
+    /// <summary>The rows the filters leave, in the list's order.</summary>
+    internal IReadOnlyList<StackRow> Shown
+    {
+        get
+        {
+            var words = _words.Trim();
+            return (_list ?? []).Where(r => Quick.All(q => !_quick.Contains(q.Key) || q.Matches(r))
+                && (_team is null || r.Product.TeamId?.ToString() == _team)
+                && (words.Length == 0 || new[] { r.Product.Name, r.Product.OtherNames, r.Product.Versions }.Any(x => x?.Contains(words, StringComparison.OrdinalIgnoreCase) == true))).ToList();
+        }
+    }
+
+    internal void ToggleAdd() => _adding = !_adding;
+    internal void SetWords(string? words) => _words = words ?? "";
+    internal void SetTeam(string? team) => _team = string.IsNullOrEmpty(team) ? null : team;
+    internal void SetQuick(string key, bool on) { if (on) _quick.Add(key); else _quick.Remove(key); }
+    private void ClearFilters() { (_words, _team) = ("", null); _quick.Clear(); }
+    private static void Refiltered() { }   // nothing to read again: the bar's call draws the page with the filter it set
 
     private string TeamValue
     {
@@ -234,7 +321,7 @@ else
             }
             else
             {
-                _list = await Stack.ListAsync(_showRetired);
+                await ReadList();
                 Toasts.Show($"{who} updated Our stack.");
             }
         }
@@ -257,6 +344,12 @@ else
     internal StackDetail? Detail => _detail;
     internal IReadOnlyList<StackRow>? List => _list;
 
+    private async Task ReadList()
+    {
+        var list = await Stack.OverviewAsync(_showRetired);
+        (_list, _ceiling) = (list.Rows, list.Ceiling);
+    }
+
     private async Task Load()
     {
         try
@@ -268,7 +361,7 @@ else
                 _changedBy = null;
                 if (_canWrite && _teams.Count == 0) _teams = await TeamSvc.ListAsync();
             }
-            else _list = await Stack.ListAsync(_showRetired);
+            else await ReadList();
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         _loaded = true;

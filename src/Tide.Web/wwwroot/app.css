@@ -1969,6 +1969,10 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-stack-facts dd { margin: 0; }
 .tide-stack-row { padding: .3rem 0; border-top: 1px solid var(--tide-border); font-size: var(--tide-text-sm); }
 .tide-stack-row:first-child { border-top: 0; }
+/* ---- Our stack list (option E 2.9): the "Right now" cell, wide enough for a CVE chip on one line ---- */
+.tide-stack-now { min-width: 12rem; }
+.tide-stack-now .tide-chip { margin-bottom: var(--tide-space-1); }
+/* ---- end Our stack list ---- */
 a.tide-werun-chip { text-decoration: none; }
 /* A badge that's a button (Triage's "Same CVE as …", which searches for the CVE). */
 button.tide-chip-button { border: 0; font-family: inherit; cursor: pointer; }
