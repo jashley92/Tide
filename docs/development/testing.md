@@ -267,7 +267,7 @@ TIDE's central promise is that nothing leaves the app above the ceiling of the a
 | Exports | `ExportTests` (integration and unit) |
 | The API and webhooks | `ApiTests.ABrief_IsCutAsTheTeamEditionIs_AtTheLowerCeiling`, `ActionsFromAnArticleAboveTheTokensCeiling_AreWithheld`, `Webhooks_LeaveOutActionsAboveTheTeamCeiling_AndMarkEachWithItsArticlesTlp` |
 | Outreach emails and AI drafting | `OutreachTests.WritingTheEmail_HoldsTheArticleToTheTemplatesCeiling_…`, `AssistTests.AboveTheLimit_NothingIsSent_NorCopied` |
-| Our stack | `CommentsAndStackDecisionTests.AProductsPage_NamesOnlyArticlesAtOrBelowTheTeamCeiling_AndCountsTheRest` |
+| Our stack | `CommentsAndStackDecisionTests.AProductsPage_NamesOnlyArticlesAtOrBelowTheTeamCeiling_AndCountsTheRest`, `StackTests.RightNow_NeverNamesACve_ThatComesOnlyFromAnArticleAboveTheTeamEditionsCeiling` (the list) |
 | Screenshots for a Reader | `ReaderTests` in `WebAppTests.cs` (a Reader never gets the sample brief's unsent screenshots) |
 
 A change to anything that renders or sends a brief, an export, the API or a webhook should add a case here.

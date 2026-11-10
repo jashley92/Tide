@@ -234,6 +234,9 @@ digests) list action titles with each article's TLP beside it and the highest in
 Our stack is the exception inside the app. A product's page (`StackService.GetAsync`) and present mode's product card
 (`StackService.CardAsync`) name only the articles at or below the team edition's ceiling, and the actions raised from
 them, and count the rest ("2 articles above TLP:AMBER+STRICT"), even for an analyst. The list's counts name no titles, so they count every article.
+The list's "Right now" column (`StackService.OverviewAsync`, `RightNow`) names a CVE only when an article at or below
+the ceiling carries it; one seen only above it is counted ("1 CVE above TLP:AMBER+STRICT") and its id, scores and KEV
+listing are not kept.
 
 ## Readiness checks
 
@@ -278,7 +281,7 @@ lists only the rows that aren't whole or carry a warning (`EditionChecks.Excepti
 | Webhooks hold to the team ceiling | `ApiTests.Webhooks_LeaveOutActionsAboveTheTeamCeiling_AndMarkEachWithItsArticlesTlp` |
 | Outreach holds to the template's ceiling | `tests/Tide.UnitTests/OutreachFillTests.cs` `AnArticleAboveTheCeiling_IsLeftOutWhole_IndicatorsWithIt_AndSaidSo`, `APartAboveTheCeiling_IsLeftOutAlone_ByItsOwnTlp_AsTheEditionsCutIt` |
 | Exports leave out articles above the ceiling | `tests/Tide.IntegrationTests/ExportTests.cs` `Brief_InRunningOrder_LeavesOutArticlesAboveTheCeiling` |
-| Our stack names only articles within the team ceiling | `CommentsAndStackDecisionTests.AProductsPage_NamesOnlyArticlesAtOrBelowTheTeamCeiling_AndCountsTheRest`; `StackTests.APresentModeCard_LeavesOutArticlesAboveTheTeamEditionsCeiling` |
+| Our stack names only articles within the team ceiling | `CommentsAndStackDecisionTests.AProductsPage_NamesOnlyArticlesAtOrBelowTheTeamCeiling_AndCountsTheRest`; `StackTests.APresentModeCard_LeavesOutArticlesAboveTheTeamEditionsCeiling`; `StackTests.RightNow_NeverNamesACve_ThatComesOnlyFromAnArticleAboveTheTeamEditionsCeiling`; `StackAttentionTests.RightNow_CountsButNeverNamesACve_ThatComesOnlyFromAnArticleAboveTheCeiling` |
 | An undefined TLP is never stored | `ArticleAndBriefTests.Save_AnUndefinedTlp_IsRefused_NotStoredBelowEveryCeiling`; `DistributionTests.Ceilings_AnUndefinedTlp_IsRefused` |
 | The "why it matters" default | `tests/Tide.UnitTests/WhyItMattersDefaultTests.cs`; `IntakeTests.Promote_AsAThreat_StartsWhyItMattersAtAmber_OrTheArticlesTlp_AndInformationalKeepsClear` |
 
@@ -315,7 +318,7 @@ out. Before merging one:
 | API and webhooks | `src/Tide.Application/Api/ApiService.cs`, `Webhooks.cs`, `src/Tide.Web/Security/ApiTokenAuthentication.cs` (`Ceiling`) |
 | Outreach | `src/Tide.Application/Actions/OutreachFill.cs` (`Cut`) |
 | Exports | `src/Tide.Application/Exports/ExportService.cs`, `Stix.cs`, `IndicatorCsv.cs` |
-| Our stack | `src/Tide.Application/Stack/StackService.cs` (`GetAsync`, `CardAsync`) |
+| Our stack | `src/Tide.Application/Stack/StackService.cs` (`GetAsync`, `CardAsync`, `OverviewAsync`) |
 
 Related: [security.md](security.md), [distribution.md](../workflows/distribution.md),
 [writing-articles.md](../workflows/writing-articles.md), [business-rules.md](../reference/business-rules.md).
