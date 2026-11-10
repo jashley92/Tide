@@ -31,6 +31,11 @@ What happens:
    - actions in every state, one with a hunt query and one with a checklist and a comment
    - three adversaries, extra sources, and triage items with their text kept for the reading pane
    - three API tokens
+   - five products on Our stack: one tagged on the edge VPN article, one a triage item names, one not checked for over a
+     year, one with no owning team and one never checked
+   - a fourth metric group, Exposed services, with six weeks of numbers and one left to enter today
+   - the brief before the previous one, with two actions from its article still open: one escalated, one overdue
+   - Jordan, a second person, to follow a live meeting (see "Two people in a meeting")
    - the previous working day's brief, presented and sent in both editions through the app's own send
 
    The seeder writes `.demo/demo.json`, which names the days and records that routes refer to.
@@ -77,7 +82,7 @@ Add an entry to the `shots` array in `capture.mjs`:
 | Field | Meaning |
 | --- | --- |
 | `name` | The file name, `docs/screenshots/<name>.png`. Shots made for the docs start with `doc-`. |
-| `route` | The page. `{today}`, `{sent}`, `{huntAction}`, `{detailAction}`, `{vpnArticle}` and `{sentArticle}` are filled from `demo.json`. |
+| `route` | The page. `{today}`, `{sent}`, `{huntAction}`, `{detailAction}`, `{vpnArticle}`, `{sentArticle}` and `{stackProduct}` are filled from `demo.json`. |
 | `viewport` | `{ width, height }`. Add `fullPage: true` to capture the whole page at that width. |
 | `setup` | Optional. `async (page, demo) => {}` runs after the page settles: clicks, keys, scrolling. `scrollTo(selector, top)` scrolls a match to `top` px from the top of the window. |
 | `clip` | Optional. A selector: the image is cut to the box around its matches, plus `pad` pixels (default 16). |
@@ -127,3 +132,36 @@ the `widths` to check at (900px tall) and its `rules`:
 `[minWidth, rule]` applies a rule only at that width or wider (the slide's rows wrap below 1001px, as designed). A
 failure names the page, the width and the rule: `slide-article at 1440px: .tide-quick-add #1: its 5 parts are on more
 than one line (135px tall)`. When you add a screen with a row or a column that has to hold, add its rule here.
+
+## Before and after pictures
+
+`baseline.mjs` uses the same demo database and server to take a picture of each main screen before a change to the UI,
+and again after it, so the two can be compared. It doesn't write to `docs/screenshots/`. Its images go to
+`artifacts/ux-baseline/<label>/`, which is git-ignored.
+
+```bash
+node tools/screenshots/baseline.mjs before
+# ...change the UI...
+node tools/screenshots/baseline.mjs after
+```
+
+The label is a folder name (letters, digits, dots, hyphens and underscores) and defaults to `before`. A run with a label
+that already exists replaces that folder's images.
+
+Each screen in its `screens` list is captured at 1920×1080, 1440×900 and 780×900, in the light and the dark theme, as
+`<screen>-<width>x<height>-<theme>.png`. That is 96 images for the 16 screens: Today, Triage, an article in the editor,
+Search with an indicator looked up, the Actions list and board, an action, Our stack and one product, Saved queries,
+Outreach templates, Playbooks, Board rules, and present mode's title slide, an article slide and the wrap-up.
+
+`ONLY`, `REUSE`, `PORT` and `BASE_URL` work as above (`ONLY` names screens). `FULL=1` captures the whole page instead of
+what the window shows. The run exits non-zero if any screen fails, and names it.
+
+To add a screen, add an entry to `screens`: a `name`, a `route` and an optional `setup`, as for a shot.
+
+## Two people in a meeting
+
+The seed adds Jordan, who holds the Viewer role and so can follow a live meeting. To check present mode as a presenter
+and a follower, start TIDE in Development on a demo database (`Demo:Seed=true`, as `tide.mjs` starts it). Open
+`/present/<today>` in one browser. In a second browser, or a private window, open
+`/present/<today>?as=Jordan&roles=Viewer`. The dev sign-in keeps both choices in cookies for that browser. `demo.json`
+names the follower as `Follower`.

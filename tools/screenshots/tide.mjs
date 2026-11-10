@@ -1,5 +1,6 @@
-// TIDE on a freshly seeded demo database, for the scripts in this folder (capture.mjs, layout.mjs): build it, seed it
-// (Demo:Seed, Development only), start it on its own port and wait until it answers. Your own dev database isn't touched.
+// TIDE on a freshly seeded demo database, for the scripts in this folder (capture.mjs, layout.mjs, baseline.mjs): build
+// it, seed it (Demo:Seed, Development only), start it on its own port and wait until it answers. Your own dev database
+// isn't touched.
 
 import { spawn, execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, createWriteStream } from 'node:fs';
@@ -44,17 +45,18 @@ export function pick(list, noun) {
 
 /**
  * Opens `route` in a fresh browser context, settled and set up: the same window settings for every script (reduced
- * motion, US English, New York time), the light theme and an expanded sidebar whatever a previous visit chose, and any
- * `extra` context options. `fixedTime` stops the browser's clock there. Returns { context, page }: close the context.
+ * motion, US English, New York time), the `theme` ('light' unless 'dark' is asked for) and an expanded sidebar whatever a
+ * previous visit chose, and any `extra` context options. `fixedTime` stops the browser's clock there. Returns
+ * { context, page }: close the context.
  */
-export async function openPage(browser, { route, viewport, setup }, demo, { fixedTime, ...extra } = {}) {
+export async function openPage(browser, { route, viewport, setup }, demo, { fixedTime, theme = 'light', ...extra } = {}) {
   const context = await browser.newContext({
-    viewport, reducedMotion: 'reduce', colorScheme: 'light', locale: 'en-US', timezoneId: 'America/New_York', ...extra,
+    viewport, reducedMotion: 'reduce', colorScheme: theme, locale: 'en-US', timezoneId: 'America/New_York', ...extra,
   });
   try {
-    await context.addInitScript(() => {
-      try { localStorage.setItem('tide-theme', 'light'); localStorage.removeItem('tide-nav'); } catch { /* none */ }
-    });
+    await context.addInitScript(theme => {
+      try { localStorage.setItem('tide-theme', theme); localStorage.removeItem('tide-nav'); } catch { /* none */ }
+    }, theme);
     const page = await context.newPage();
     if (fixedTime) await page.clock.setFixedTime(fixedTime);
     await page.goto(baseUrl() + fill(route, demo), { waitUntil: 'networkidle' });
@@ -64,6 +66,14 @@ export async function openPage(browser, { route, viewport, setup }, demo, { fixe
   } catch (e) {
     await context.close();
     throw e;
+  }
+}
+
+/** In present mode: steps through the slides to the first article's (the one with its recommended lines and actions). */
+export async function toArticleSlide(page) {
+  for (let i = 0; i < 15 && !(await page.locator('.tide-quick-add').count()); i++) {
+    await page.keyboard.press('ArrowRight');
+    await page.waitForTimeout(250);
   }
 }
 

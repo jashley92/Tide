@@ -9,7 +9,7 @@
 // Each failure names the page, the width and the rule. Add a page or a rule below; README.md says how.
 
 import { chromium } from 'playwright';
-import { openPage, pick, readDemo, startTide } from './tide.mjs';
+import { openPage, pick, readDemo, startTide, toArticleSlide } from './tide.mjs';
 
 // --- the rules: each runs in the page and returns what's wrong (nothing, when it holds). A box is shown when it has
 // width and height. --------------------------------------------------------------------------------------------------
@@ -70,14 +70,6 @@ const visible = selector => ({
 });
 
 // --- the pages: route, optional setup, widths (each 900px tall) and rules ([minWidth, rule] from that width up) ------
-
-/** Steps through the slides to the first article's (the one with its recommended lines and actions). */
-const toArticleSlide = async page => {
-  for (let i = 0; i < 15 && !(await page.locator('.tide-quick-add').count()); i++) {
-    await page.keyboard.press('ArrowRight');
-    await page.waitForTimeout(250);
-  }
-};
 
 const pages = [
   { name: 'today', route: '/', widths: [1440, 1000, 780],
