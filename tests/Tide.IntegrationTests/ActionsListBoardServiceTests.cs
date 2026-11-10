@@ -129,7 +129,7 @@ public class ActionsListBoardServiceTests : IDisposable
         _db.User.Roles = new HashSet<AppRole> { AppRole.Viewer };
         Offered(await _db.Actions().PageAsync(new ActionFilter(ActionView.Open))).Should().BeEmpty();
 
-        static List<(Guid, string?)> Offered(ActionListPage p) => [.. p.Rows.Where(p.CanTake).Select(r => (r.TeamId, r.AssigneeId))];
+        static List<(Guid, string?)> Offered(ActionListPage p) => [.. p.Rows.Where(p.Workers.CanTake).Select(r => (r.TeamId, r.AssigneeId))];
     }
 
     [Fact]

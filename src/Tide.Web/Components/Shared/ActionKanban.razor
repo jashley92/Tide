@@ -27,7 +27,7 @@
         @Column(status, drags)
     }
     <div class="tide-kclosed" role="group" aria-labelledby="kcol-closed">
-        <h2 class="tide-kcol-head" id="kcol-closed">Closed <span class="tide-count tide-muted fw-normal">@Board.Cards.Count(c => !c.IsOpen)</span></h2>
+        <div class="tide-kcol-head" id="kcol-closed">Closed <span class="tide-count tide-muted fw-normal">@Board.Cards.Count(c => !c.IsOpen)</span></div>
         <div class="tide-kcol-sub">Last @Board.ClosedDays days</div>
         @foreach (var status in ClosedStatuses)
         {
@@ -110,7 +110,7 @@
                         <div><ActionRef Number="r.Number" Title="@r.Title" TitleClass="tide-kcard-title" Draggable="false" /></div>
                         @if (r.ArticleTitle is not null && !closed)
                         {
-                            <div class="tide-kcard-article" title="@r.ArticleTitle"><span class="bi bi-newspaper" aria-hidden="true"></span> <span>@r.ArticleTitle</span></div>
+                            <div class="tide-kcard-article" title="@r.ArticleTitle"><span class="bi bi-newspaper" aria-hidden="true"></span> <span class="text-truncate">@r.ArticleTitle</span></div>
                         }
                         @if (!closed)
                         {
@@ -159,9 +159,9 @@
                                 {
                                     <span class="tide-muted">@Age(r)</span>
                                 }
-                                @if (InColumn(r) is { } since)
+                                @if (InColumn(r) is var (text, since))
                                 {
-                                    <span class="tide-muted tide-kcard-since" title="@($"In {ActionService.StatusName(r.Status)} since {Ui.ShortDay(DayOf(r.InStatusSinceUtc!.Value))}")">@since</span>
+                                    <span class="tide-muted tide-kcard-since" title="@($"In {ActionService.StatusName(r.Status)} since {Ui.ShortDay(since)}")">@text</span>
                                 }
                             }
                             @if (canMove)
@@ -200,16 +200,14 @@
         </section>
     };
 
-    // The organization's day an instant falls on (Today is the organization's day too).
-    private DateOnly DayOf(DateTimeOffset at) => DateOnly.FromDateTime(Clock.ToLocal(at).DateTime);
-
-    // How long an open card has been in its column, from its last move there; nothing when it never moved (it has been in
-    // Open since it was raised, which "Opened" says).
-    private string? InColumn(ActionRow r)
+    // How long an open card has been in its column, from its last move there (the organization's day), and that day;
+    // nothing when it never moved (it has been in Open since it was raised, which "Opened" says).
+    private (string Text, DateOnly Since)? InColumn(ActionRow r)
     {
-        if (r.InStatusSinceUtc is not { } since) return null;
-        var days = Today.DayNumber - DayOf(since).DayNumber;
-        return days <= 0 ? "In column today" : $"In column {days}d";
+        if (r.InStatusSinceUtc is not { } at) return null;
+        var since = Clock.DayOf(at);
+        var days = Today.DayNumber - since.DayNumber;
+        return (days <= 0 ? "In column today" : $"In column {days}d", since);
     }
 
     [Parameter, EditorRequired] public ActionBoard Board { get; set; } = default!;
@@ -346,7 +344,7 @@
     {
         // Today is the organization's day, so the day it was opened is too (not the UTC date, a day out every evening
         // west of Greenwich and every morning east of it).
-        var days = Today.DayNumber - DayOf(r.CreatedAtUtc).DayNumber;
+        var days = Today.DayNumber - Clock.DayOf(r.CreatedAtUtc).DayNumber;
         return days <= 0 ? "Opened today" : $"Opened {days}d ago";
     }
 

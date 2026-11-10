@@ -1171,7 +1171,9 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
     .tide-filterbar-pills { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; padding-bottom: 2px; scrollbar-width: thin; }
     .tide-popover.tide-filter-pop { position: fixed; top: auto; left: .75rem; right: .75rem; bottom: .75rem; width: auto; max-height: 70vh; }
 }
-.tide-kanban { display: grid; grid-template-columns: repeat(7, minmax(15rem, 1fr)); gap: .75rem; overflow-x: auto; padding-bottom: .5rem; align-items: start; }
+/* Four working columns sharing the width, then the narrow Closed column (ActionKanban); a narrower window scrolls the board. */
+.tide-kanban { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(11rem, 13rem); gap: .75rem; padding-bottom: .5rem; align-items: start; }
+@media (max-width: 1199.98px) { .tide-kanban { grid-template-columns: repeat(4, minmax(14rem, 1fr)) minmax(11rem, 13rem); overflow-x: auto; } }
 .tide-kcol { background: var(--tide-surface-2); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl); padding: .6rem; min-height: 12rem; }
 .tide-kcol.over { border-color: var(--tide-accent); background: var(--tide-drop); box-shadow: inset 0 0 0 1px var(--tide-accent); }
 .tide-kcol-head { font-size: .9rem; font-weight: var(--tide-weight-semibold); margin: 0 0 .5rem; display: flex; align-items: center; gap: .4rem; }
@@ -2431,11 +2433,9 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 
 /* ---- Actions list and board (ActionsBoard.razor, ActionTable.razor, ActionKanban.razor). The board's four working
    columns share the width, with the closed statuses folded into one narrow Closed column after them (each still its own
-   .tide-kcol to drop on), so a laptop's window shows it all without scrolling sideways; a narrower window scrolls the
-   board itself, as before. A card's article on one line and its time in column; a row's Take it and checklist progress;
-   the line an empty Mine shows when the person's teams have work nobody owns. ---- */
-.tide-kanban { grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(11rem, 13rem); overflow-x: visible; }
-@media (max-width: 1199.98px) { .tide-kanban { grid-template-columns: repeat(4, minmax(14rem, 1fr)) minmax(11rem, 13rem); overflow-x: auto; } }
+   .tide-kcol to drop on; the grid itself is .tide-kanban's, above). A card's article on one line and its time in
+   column; a row's Take it and checklist progress; the line an empty Mine shows when the person's teams have work
+   nobody owns. ---- */
 .tide-kanban .tide-kcol, .tide-kcard { min-width: 0; }
 .tide-kclosed { display: flex; flex-direction: column; gap: var(--tide-space-2); min-width: 0; }
 .tide-kclosed > .tide-kcol-head, .tide-kclosed > .tide-kcol-sub { margin: 0; padding: 0 var(--tide-space-1); }
@@ -2443,11 +2443,10 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-kclosed .tide-kcol .tide-kcol-head { font-size: var(--tide-text-sm); margin-bottom: var(--tide-space-1); }
 .tide-kclosed .tide-kcol-empty { padding: var(--tide-space-2); }
 .tide-kcard-article { display: flex; align-items: center; gap: .3rem; min-width: 0; font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
-.tide-kcard-article > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tide-kcard-since { font-size: var(--tide-text-xs); }
 .tide-progress-cell { width: 7rem; }
-.tide-progress { display: flex; align-items: center; gap: .4rem; color: var(--tide-text-muted); }
-.tide-progress > .tide-kcard-bar { flex: 1 1 auto; min-width: 2.5rem; }
+.tide-row-progress { display: flex; align-items: center; gap: .4rem; color: var(--tide-text-muted); }
+.tide-row-progress > .tide-kcard-bar { min-width: 2.5rem; }
 .tide-row-take { display: block; margin-top: var(--tide-space-1); padding: .05rem .5rem; font-size: var(--tide-text-xs); }
 .tide-actions-unowned { margin: 0 0 var(--tide-space-3); padding: var(--tide-space-2) var(--tide-space-3); background: var(--tide-info-soft);
     border-radius: var(--tide-radius-lg); font-size: var(--tide-text-sm); }

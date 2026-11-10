@@ -48,7 +48,7 @@
         <td class="tide-progress-cell">
             @if (r.ChecklistTotal > 0)
             {
-                <span class="tide-progress" role="img" aria-label="@($"Checklist: {r.ChecklistDone} of {r.ChecklistTotal} done")">
+                <span class="tide-row-progress" role="img" aria-label="@($"Checklist: {r.ChecklistDone} of {r.ChecklistTotal} done")">
                     <span class="tide-kcard-bar" aria-hidden="true"><span style="width: @(r.ChecklistDone * 100 / r.ChecklistTotal)%"></span></span>
                     <span class="small" aria-hidden="true">@r.ChecklistDone/@r.ChecklistTotal</span>
                 </span>

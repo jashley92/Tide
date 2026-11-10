@@ -217,9 +217,6 @@ public enum ActionGrouping
 public sealed record ActionListPage(IReadOnlyList<ActionRow> Rows, int Total, int Page, IReadOnlyDictionary<string, int> Groups)
 {
     public ActionWorkers Workers { get; init; } = ActionWorkers.None;
-
-    /// <summary>Whether the reader may take this row on (<see cref="ActionWorkers.CanTake"/>).</summary>
-    public bool CanTake(ActionRow row) => Workers.CanTake(row);
 }
 
 /// <summary>Which teams' actions the reader works: all of them (an analyst), or the teams they're on with WorkActions
@@ -416,7 +413,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     // An article's title (and what's read from it) is shown only to someone who may open the article: whoever reads the
     // team edition, as the article pages require. Someone who only works actions sees the action without it.
     private List<ActionRow> Readable(List<ActionRow> rows) =>
-        user.Has(Permission.ReadTeamEdition) ? rows : [.. rows.Select(r => r with { ArticleTitle = null, ArticleKev = false })];
+        user.Has(Permission.ReadTeamEdition) ? rows : [.. rows.Select(r => r with { ArticleTitle = null })];
 
     /// <summary>
     /// How many actions each view tab shows under <paramref name="filter"/>'s other filters (and the card
@@ -433,7 +430,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (rule is not null) q = WhereRule(q, rule);
         var open = ActionItem.OpenStatuses;
         // Each action once, with whether it's on one of the reader's teams (a membership is one row per team and person).
-        var rows = from a in q.Where(a => open.Contains(a.Status) || (a.ClosedAtUtc != null && a.ClosedAtUtc >= closedSince))
+        var rows = from a in q.WhereOpenOrClosedSinceUtc(closedSince)
                    join m in db.TeamMembers.Where(m => m.UserId == me) on a.TeamId equals m.TeamId into ms
                    from m in ms.DefaultIfEmpty()
                    select new
@@ -1507,7 +1504,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             a.ClosedDate = null;
         }
         a.EditVersion = Guid.NewGuid();
-        var text = (lead is null ? "" : lead + " ") + $"Status: {StatusName(was)} → {StatusName(status)}";
+        var text = (lead is null ? "" : lead + " ") + $"{StatusLine}{StatusName(was)} → {StatusName(status)}";
         if (a.Outcome != ActionOutcome.None) text += $" ({OutcomeName(a.Outcome)})";
         text += a.OutcomeNote is null ? "." : $": {a.OutcomeNote}";
         var line = Event(user, a.Id, text);

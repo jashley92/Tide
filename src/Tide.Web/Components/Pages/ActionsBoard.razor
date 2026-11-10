@@ -734,7 +734,7 @@ else
 
     // --- Counts, No owner and Take it ---------------------------------------------------------------------------------
 
-    // How many each tab shows, and which teams' actions this person works (for Take it): read with the list or board.
+    // How many each tab shows (read with the list or board), and which teams' actions this person works (the list's Take it).
     private ActionViewCounts? _counts;
     private ActionWorkers _workers = ActionWorkers.None;
     private bool _taking;
@@ -817,7 +817,7 @@ else
         {
             var board = ActionSvc.BoardAsync(filter, _closedDays);
             await Task.WhenAll(active, board, counts);
-            (_board, _active, _counts, _workers) = (board.Result, active.Result, counts.Result, new ActionWorkers(board.Result.CanWorkAll, board.Result.WorkTeams));
+            (_board, _active, _counts) = (board.Result, active.Result, counts.Result);
             _ruleCounts = _rules.Where(r => r.ShowAsFilter).ToDictionary(r => r.Id, r => _board.Cards.Count(c => ActionRules.Matches(r, c, ActionSvc.Today, ActionSvc.Days)));
             return;
         }
