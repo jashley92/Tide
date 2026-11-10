@@ -87,10 +87,11 @@ public sealed record NextFacts(ActionStatus Status, SlaState Sla, DateOnly? Due,
 /// <summary>Where a sweep's or hunt's query stands for whoever is looking, for its Next line.</summary>
 /// <param name="Takeable">Nobody has the action, and the viewer may take it (<see cref="ActionGuide.CanTake"/>).</param>
 /// <param name="Mine">The viewer has it.</param>
-/// <param name="HasQuery">There's a query to copy: a saved one, or the preview its indicators give.</param>
-/// <param name="Copied">A query was copied from the page since it opened.</param>
+/// <param name="OnAction">A query is saved on the action and has no result yet. Stored, so the line reads the same
+/// after a reload.</param>
+/// <param name="HasIndicators">There are indicators to build a query from (the preview, or Generate).</param>
 /// <param name="HasResult">A query's result is recorded, so the query is no longer what's next.</param>
-public sealed record HuntFacts(bool Takeable, bool Mine, bool HasQuery, bool Copied = false, bool HasResult = false);
+public sealed record HuntFacts(bool Takeable, bool Mine, bool OnAction, bool HasIndicators = false, bool HasResult = false);
 
 /// <summary>A link on the Next line: a flow, in words that fit the line. With <paramref name="On"/> it goes to that
 /// action's page, running the flow there (with <see cref="ActionFlow.None"/>, only opening it).</summary>
@@ -204,8 +205,8 @@ public static class ActionGuide
     /// The Next line, or null when nothing needs doing (or the viewer can't work it, or it's closed). Only the most
     /// important one is said, in this order: a part overdue (the latest of them, with how many more), an email past its
     /// follow-up day with no reply, escalated, blocked, then past its own due date (its SLA Overdue). After those, a
-    /// sweep or hunt with no result yet says where its query stands: nobody has it; it's the viewer's, to copy and run;
-    /// copied, and waiting for what it found.
+    /// sweep or hunt with no result yet says where its query stands: nobody has it (and whether a query is already on
+    /// it); it's the viewer's, to copy and run; a query is saved on it, to run and record.
     /// </summary>
     public static NextStep? Next(NextFacts f)
     {
@@ -237,11 +238,15 @@ public static class ActionGuide
                 [new(ActionFlow.RecordUpdate, "Record an update"), new(ActionFlow.Edit, "Move the due date")]);
         if (f.Hunt is { HasResult: false } hunt)
         {
-            if (hunt.Takeable) return new NextStep(NextKind.Unowned, "Nobody has it yet.", [new(ActionFlow.TakeIt, "Take it")]);
-            if (hunt.Mine && hunt.Copied) return new NextStep(NextKind.AwaitingResult, "Query copied. Once it has run, record what it found.", []);
+            if (hunt.Takeable)
+                return new NextStep(NextKind.Unowned,
+                    hunt.OnAction ? "Nobody has it yet. Take it, then run the query that's on the action." : "Nobody has it yet.",
+                    [new(ActionFlow.TakeIt, "Take it")]);
+            if (hunt.Mine && hunt.OnAction)
+                return new NextStep(NextKind.AwaitingResult, "Run the query that's on the action, then record what it found.", []);
             if (hunt.Mine)
                 return new NextStep(NextKind.RunQuery,
-                    hunt.HasQuery ? "Copy the query and run it in your SIEM." : "Add indicators or write a query by hand, then run it in your SIEM.", []);
+                    hunt.HasIndicators ? "Copy the query and run it in your SIEM." : "Add indicators or write a query by hand, then run it in your SIEM.", []);
         }
         return null;
     }

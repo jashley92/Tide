@@ -132,7 +132,7 @@
                 </div>
                 <pre id="hunt-preview" class="tide-query">@preview</pre>
                 <div class="d-flex gap-2 align-items-center flex-wrap">
-                    <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="hunt-preview" data-copy-status="hunt-preview-status" disabled="@_busy" @onclick="CopyPreview"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="hunt-preview" data-copy-status="hunt-preview-status" data-copy-done="Copied. The query is now on the action." disabled="@_busy" @onclick="CopyPreview"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
                     <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="KeepPreview"><span class="bi bi-plus-lg" aria-hidden="true"></span> Keep this query</button>
                     <button type="button" class="btn btn-outline-secondary btn-sm" disabled aria-describedby="hunt-preview-why"><span class="bi bi-check2-circle" aria-hidden="true"></span> No hits, close</button>
                     <button type="button" class="btn btn-outline-secondary btn-sm" disabled aria-describedby="hunt-preview-why"><span class="bi bi-check2-square" aria-hidden="true"></span> Record hits</button>
@@ -170,7 +170,7 @@
             {
                 <pre id="@id" class="tide-query">@h.Text</pre>
                 <div class="d-flex gap-2 align-items-center flex-wrap">
-                    <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="@id" data-copy-status="@(id + "-status")" @onclick="() => MarkCopied(h.Id)"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="@id" data-copy-status="@(id + "-status")" @onclick="() => _copied.Add(h.Id)"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
                     @if (CanWork)
                     {
                         <button class="btn btn-outline-secondary btn-sm" @onclick="() => EditText(h)"><span class="bi bi-pencil" aria-hidden="true"></span> Edit</button>
@@ -285,9 +285,6 @@
     [Parameter] public bool CanWork { get; set; }
     [Parameter] public EventCallback Changed { get; set; }
 
-    /// <summary>A query was copied here: the page's Next line then asks for its result.</summary>
-    [Parameter] public EventCallback Copied { get; set; }
-
     private const string DialectPref = "hunt-dialect";
 
     // The language this person used last, from the browser (theme.js's tidePrefs), once the panel is drawn.
@@ -343,10 +340,11 @@
     }
 
     /// <summary>Copy on the preview: the query goes on the action as a generated one does, and counts as copied here.
-    /// The browser's own click copies the text (clipboard.js).</summary>
+    /// The browser's own click copies the text and says so beside the query (clipboard.js, the button's data-copy-done):
+    /// it knows the copy worked, so that's the one confirmation, with no toast as well.</summary>
     internal Task CopyPreview() => SavePreview(copied: true);
 
-    /// <summary>Keep this query: the same, without the copy.</summary>
+    /// <summary>Keep this query: the same, without the copy; a toast confirms it.</summary>
     internal Task KeepPreview() => SavePreview(copied: false);
 
     private async Task SavePreview(bool copied)
@@ -362,15 +360,9 @@
                 Toasts.Error("The query changed since it was shown. Copy it again before you run it.");
                 return;
             }
-            if (copied) await MarkCopied(hunt.Id);
-            Toasts.Show("Query kept on the action.");
+            if (copied) _copied.Add(hunt.Id);
+            else Toasts.Show("Query kept on the action.");
         });
-    }
-
-    private Task MarkCopied(Guid huntId)
-    {
-        _copied.Add(huntId);
-        return Copied.InvokeAsync();
     }
 
     private async Task RememberDialect()
@@ -396,7 +388,7 @@
 
     private CloseDraft Draft(HuntQuery h)
     {
-        if (!_drafts.TryGetValue(h.Id, out var d)) _drafts[h.Id] = d = new CloseDraft { Window = HuntQueryBuilder.WindowOf(h.GeneratedText) };
+        if (!_drafts.TryGetValue(h.Id, out var d)) _drafts[h.Id] = d = new CloseDraft { Window = HuntQueryBuilder.WindowToStartFrom(h.GeneratedText) };
         return d;
     }
 

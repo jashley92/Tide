@@ -40,7 +40,7 @@
         @if (_opened.Contains(ActionTool.Hunt))
         {
             <div hidden="@(Tool != ActionTool.Hunt)">
-                <HuntPanel @key="A.Id" @ref="_hunt" Action="A" CanWork="Detail.CanWork" Changed="Changed" Copied="HuntCopied" />
+                <HuntPanel @key="A.Id" @ref="_hunt" Action="A" CanWork="Detail.CanWork" Changed="Changed" />
             </div>
         }
         @if (_opened.Contains(ActionTool.Outreach))
@@ -75,9 +75,6 @@
     private bool _addingChecklist;
     private OutreachPanel? _outreach;
     private HuntPanel? _hunt;
-
-    /// <summary>A hunt query was copied from its panel: the page's Next line follows.</summary>
-    [Parameter] public EventCallback HuntCopied { get; set; }
 
     /// <summary>The hunt panel, once its tab has shown.</summary>
     internal HuntPanel? Hunt => _hunt;

@@ -173,21 +173,26 @@ public class ActionGuideTests
         NextStep? Next(HuntFacts hunt, ActionStatus status = ActionStatus.Open, DateOnly? due = null, bool canWork = true) =>
             ActionGuide.Next(On(status, due ?? Fri, canWork) with { Hunt = hunt });
 
-        var unowned = Next(new HuntFacts(Takeable: true, Mine: false, HasQuery: true))!;
+        var unowned = Next(new HuntFacts(Takeable: true, Mine: false, OnAction: false, HasIndicators: true))!;
         unowned.Kind.Should().Be(NextKind.Unowned);
         unowned.Text.Should().Be("Nobody has it yet.");
         unowned.Links.Should().Equal(new NextLink(ActionFlow.TakeIt, "Take it"));
+        // A query kept on it and nobody to run it: both are said.
+        var kept = Next(new HuntFacts(Takeable: true, Mine: false, OnAction: true))!;
+        (kept.Kind, kept.Text).Should().Be((NextKind.Unowned, "Nobody has it yet. Take it, then run the query that's on the action."));
+        kept.Links.Should().Equal(new NextLink(ActionFlow.TakeIt, "Take it"));
 
-        var mine = Next(new HuntFacts(false, Mine: true, HasQuery: true))!;
+        var mine = Next(new HuntFacts(false, Mine: true, OnAction: false, HasIndicators: true))!;
         (mine.Kind, mine.Text).Should().Be((NextKind.RunQuery, "Copy the query and run it in your SIEM."));
         mine.Links.Should().BeEmpty("Copy is on the query, just below");
-        Next(new HuntFacts(false, Mine: true, HasQuery: false))!.Text.Should().Be("Add indicators or write a query by hand, then run it in your SIEM.");
+        Next(new HuntFacts(false, Mine: true, OnAction: false))!.Text.Should().Be("Add indicators or write a query by hand, then run it in your SIEM.");
 
-        var copied = Next(new HuntFacts(false, Mine: true, HasQuery: true, Copied: true))!;
-        (copied.Kind, copied.Text).Should().Be((NextKind.AwaitingResult, "Query copied. Once it has run, record what it found."));
+        // A saved query with no result yet is a stored fact: the line reads the same after a reload.
+        var saved = Next(new HuntFacts(false, Mine: true, OnAction: true, HasIndicators: true))!;
+        (saved.Kind, saved.Text).Should().Be((NextKind.AwaitingResult, "Run the query that's on the action, then record what it found."));
 
-        Next(new HuntFacts(false, Mine: true, HasQuery: true, Copied: true, HasResult: true)).Should().BeNull("a result is recorded: the query isn't what's next");
-        Next(new HuntFacts(false, Mine: false, HasQuery: true)).Should().BeNull("a colleague has it");
+        Next(new HuntFacts(false, Mine: true, OnAction: true, HasResult: true)).Should().BeNull("a result is recorded: the query isn't what's next");
+        Next(new HuntFacts(false, Mine: false, OnAction: true)).Should().BeNull("a colleague has it");
         Next(new HuntFacts(true, false, true), canWork: false).Should().BeNull();
         Next(new HuntFacts(true, false, true), ActionStatus.Done).Should().BeNull();
         Next(new HuntFacts(true, false, true), ActionStatus.Blocked)!.Kind.Should().Be(NextKind.Blocked, "what's wrong comes before what's routine");
