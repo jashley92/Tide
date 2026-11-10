@@ -96,9 +96,15 @@ before the change is refused. Once the brief is Sent, its running order, present
 (`BriefService.Editable`, `SetDetailsAsync`). Its articles stay editable; a mistake after a send is put right by a
 [correction](distribution.md#corrections-after-a-send).
 
-The **edition check** beside the running order shows what each edition will carry, per article, and the readiness
-gaps (`BriefService.Readiness`, which runs `ArticleChecks.For` with the company-wide ceiling). How the editions are cut
-is on [architecture/editions-and-tlp.md](../architecture/editions-and-tlp.md).
+The running order shows each article's readiness gaps (`BriefService.Readiness`, which runs `ArticleChecks.For` with
+the company-wide ceiling). A gap with a one-click fix has its button beside it: **Set to AMBER**, for a threat whose
+"why it matters" would reach the company-wide edition, calls `ArticleService.MarkWhyItMattersAmberAsync` with the
+article's edit version as the page showed it. It is for people with `WriteArticles`, on a brief that isn't Sent, and
+is audited and heard like any save of the article.
+
+The **edition check** beside the running order counts the articles each edition will carry and lists only the
+exceptions (`EditionChecks.Exceptions`): what is partly included, left out, or goes out with a warning. How the
+editions are cut is on [architecture/editions-and-tlp.md](../architecture/editions-and-tlp.md).
 
 Colleagues see changes live: the brief's topic on `ChangeFeed` re-reads the page, the "Add article (N available)" count
 and an open Add articles picker (which keeps what's ticked).

@@ -241,12 +241,15 @@ them, and count the rest ("2 articles above TLP:AMBER+STRICT"), even for an anal
 blocking gaps (bottom line, a bullet, a threat's priority) and warnings, it calls `ArticleChecks.WhyReachesCompany`:
 a threat whose "why it matters" has text and an effective marking at or below the company-wide ceiling is warned
 about, because it will reach everyone. The warning carries a one-click fix (`ArticleFix.WhyItMattersAmber`, offered
-only when AMBER is above the ceiling, so marking it does leave it out) that the editor applies to its form. The
-warning shows in the editor's preview, the running order, and the company-wide column of the edition check
+only when AMBER is above the ceiling, so marking it does leave it out). The editor applies it to its form, saved with
+the rest; the running order saves it at once (`ArticleService.MarkWhyItMattersAmberAsync`), which only ever raises that
+one marking, refuses a stale edit version and a sent brief, and is audited as the article's own save. The warning
+shows in the editor's preview, the running order, and the company-wide column of the edition check
 (`EditionChecks.Rows`).
 
 The edition check itself is the edition's own cut (`BuildArticle`), so what it says goes in can't disagree with what's
-sent: each article is In, Part ("2 parts above TLP:GREEN left out") or Left out ("The article is TLP:RED").
+sent: each article is In, Part ("2 parts above TLP:GREEN left out") or Left out ("The article is TLP:RED"). Today
+lists only the rows that aren't whole or carry a warning (`EditionChecks.Exceptions`); the counts are of every row.
 
 ## The leak tests
 
