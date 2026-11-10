@@ -250,6 +250,18 @@ retired). Analysts keep it; the team edition reads it.
 - **A product's page** (`GetAsync`) lists the articles tagged with it and the actions raised from them, but names only
   articles at or below the team edition's ceiling and counts the rest ("2 articles above TLP:AMBER"). Present mode's
   product card (`CardAsync`) follows the same rule. The list's counts name no titles, so they count every article.
+- **The list** (`OverviewAsync`) puts the products that need a look first. `StackRow.NeedsLook` is the one
+  definition, read by the order and by the page's "Needs a look" filter: the product is in use and has something in
+  "Right now", a check that is missing or more than `CheckOldAfterDays` (90) old, or no owning team. "Right now"
+  (`StackService.RightNow`) holds the CVEs on the product's articles from briefs of the last `RecentBriefDays` (7),
+  the worst first, and the number of new triage items that name it. It follows the ceiling too: a CVE seen only on an
+  article above it is counted and not named. The triage count is read only for someone with `WriteArticles`; for
+  anyone else it is absent and doesn't order the list. An item counts for the first product it names, as its "We run"
+  mark in Triage does.
+- **Cost of the list.** It runs a fixed number of queries whatever the number of products: every article's title
+  and the start of its bottom line are matched against all the names in one pass (`StackNames`, an index of the names
+  by first word), and the new triage items once with `StackService.Matcher`.
+  `StackListScaleTests` holds the query count. `ListAsync` (the API's read) is the same rows by name, without "Right now".
 - **Outreach.** A product's contact is offered on an Outreach action's To line
   ([actions-and-hunting.md](actions-and-hunting.md#outreach)).
 - **Live.** The list and a product's page follow the `stack` topic; a product's edit form keeps what's typed in it and

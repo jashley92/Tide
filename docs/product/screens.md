@@ -580,8 +580,22 @@ off, or changes one of its articles; changes to other articles don't touch it. T
 
 **Routes:** `/stack`, `/stack/{id}` · **Workflow:** [search, exports and adversaries](../workflows/search-exports-and-adversaries.md)
 
-The products the organization runs, kept by analysts. The list shows each product's versions, team and how much has
-been written about it. A product's page has its other names, versions and notes (AMBER), a vendor contact for
+The products the organization runs, kept by analysts. The list answers "which of our products need attention today":
+products that need a look come first, then the rest by name. A product needs a look when something is in its **Right
+now** column, its check is old or missing, or no team owns it.
+
+- **Right now** shows the CVEs on articles about the product (tagged with it or naming it) from the last seven days'
+  briefs, the worst first, each with its CVSS score, EPSS score and a KEV mark where known, and for analysts the
+  number of new triage items that name it, linked to Triage's **We run it** filter. It says "Nothing new" otherwise.
+  A CVE seen only on an article above the team edition's TLP ceiling is counted ("1 CVE above TLP:AMBER+STRICT") and
+  not named.
+- **Checked** flags a date more than 90 days old, and a product never checked.
+- A filter box narrows the list by product, other name or version. The quick filters **Needs a look**, **Check is
+  old** and **No owning team** each show how many products they match, and **+ Filter** keeps one owning team's products.
+  **Show retired products** adds the retired ones, last.
+- **Add a product** opens the add form; it stays out of the way until asked for.
+
+The list also shows each product's versions, team, and how many articles and open actions it has. A product's page has its other names, versions and notes (AMBER), a vendor contact for
 outreach emails, and its history: the articles tagged with it or naming it, and their actions. Triage lifts items
 that name a product, and an article is tagged with any number of them from the editor's **We run**. A product's
 history is held to the team edition's TLP ceiling: articles above it, and actions raised from them, are counted but
