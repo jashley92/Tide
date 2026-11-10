@@ -15,10 +15,16 @@ public sealed record ArticleHit(
     Guid Id, string Title, string? SourceName, TlpLevel Tlp, Classification Classification, Priority? Priority,
     ArticleStatus Status, string AuthorName, DateTimeOffset CreatedAtUtc, IReadOnlyList<DateOnly> BriefDates, string? Snippet);
 
-/// <summary>An action that matched, with how its hunts went (null when it has none).</summary>
+/// <summary>An action that matched, with how its hunts went (null when it has none), its kind and the article it's from.</summary>
 public sealed record ActionHit(
     Guid Id, int Number, string Title, ActionStatus Status, Priority Priority, string TeamName, string? AssigneeName,
-    DateOnly? DueDate, HuntResult? Hunted, string? Snippet);
+    DateOnly? DueDate, HuntResult? Hunted, string? Snippet, ActionKind Kind = ActionKind.Other, Guid? ArticleId = null)
+{
+    public bool IsOpen => !ActionItem.IsClosedStatus(Status);
+
+    /// <summary>A sweep or a hunt: an action that searches logs for indicators.</summary>
+    public bool Hunts => Kind is ActionKind.IocSweep or ActionKind.ThreatHunt;
+}
 
 /// <summary>A story that matched.</summary>
 public sealed record StoryHit(Guid Id, string Name, StoryStatus Status, int Articles, string? Snippet);
@@ -32,25 +38,97 @@ public sealed record HitList<T>(IReadOnlyList<T> Items, int Total)
     public bool More => Total > Items.Count;
 }
 
-/// <summary>Which page of each kind of hit to show, from 1, <see cref="Size"/> hits a page (<see cref="SearchService.MaxHits"/>).</summary>
-public sealed record SearchPages(int Articles = 1, int Actions = 1, int Stories = 1, int Size = SearchService.MaxHits)
+/// <summary>
+/// Which page of each kind of hit to show, from 1, <see cref="Size"/> hits a page (<see cref="SearchService.MaxHits"/>).
+/// With <see cref="LookupOnce"/>, the articles a lookup lists are left out of the article hits (and their count), for a
+/// page that shows both and lists each article once.
+/// </summary>
+public sealed record SearchPages(int Articles = 1, int Actions = 1, int Stories = 1, int Size = SearchService.MaxHits, bool LookupOnce = false)
 {
     public static readonly SearchPages First = new();
 }
+
+/// <summary>A brief an article is on: its day, and whether it was presented (its meeting was ended, or it was sent).</summary>
+public sealed record LookupBrief(DateOnly Day, bool Presented);
+
+/// <summary>
+/// An article a lookup found, as its one row shows it: its badges, when it was written, the briefs it's on (oldest
+/// first), and the story it belongs to, if any.
+/// </summary>
+public sealed record LookupArticle(
+    Guid Id, string Title, TlpLevel Tlp, Classification Classification, Priority? Priority, ArticleStatus Status,
+    DateTimeOffset CreatedAtUtc, IReadOnlyList<LookupBrief> Briefs, SeenStory? Story = null);
 
 /// <summary>
 /// An article an indicator is on. <see cref="Related"/> is set when it's a different indicator on the same host (a
 /// subdomain, a URL or email address on the domain), not the indicator itself.
 /// </summary>
-public sealed record Sighting(
-    Guid ArticleId, string ArticleTitle, TlpLevel Tlp, ArticleStatus Status, DateTimeOffset CreatedAtUtc,
-    IReadOnlyList<DateOnly> BriefDates, IndicatorType Type, string Value, string? Note, bool Related);
+public sealed record Sighting(LookupArticle Article, IndicatorType Type, string Value, string? Note, bool Related)
+{
+    public Guid ArticleId => Article.Id;
+}
 
-/// <summary>Where an indicator has been seen, and the actions raised from those articles.</summary>
-public sealed record IndicatorLookup(IndicatorType Type, string Value, string? Host, HitList<Sighting> Sightings, HitList<ActionHit> Actions);
+/// <summary>Another indicator on an article a lookup found.</summary>
+public sealed record SeenIndicator(IndicatorType Type, string Value);
 
-/// <summary>What's known about a CVE, and the actions raised from the articles about it.</summary>
-public sealed record CveLookup(string CveId, CveRecord? Record, int Articles, HitList<ActionHit> Actions);
+/// <summary>The story an article a lookup found belongs to.</summary>
+public sealed record SeenStory(Guid Id, string Name);
+
+/// <summary>
+/// What else is on the articles a lookup found (the ones carrying the indicator itself, or about the CVE): their other
+/// indicators, CVEs, ATT&amp;CK techniques and stories, the most shared first, at most <see cref="SearchService.MaxSeenWith"/> of each.
+/// </summary>
+public sealed record SeenWith(
+    IReadOnlyList<SeenIndicator> Indicators, IReadOnlyList<string> Cves, IReadOnlyList<string> Techniques, IReadOnlyList<SeenStory> Stories)
+{
+    public static readonly SeenWith None = new([], [], [], []);
+
+    public bool Any => Indicators.Count + Cves.Count + Techniques.Count + Stories.Count > 0;
+}
+
+/// <summary>
+/// A lookup's answer in a line: how many articles it's on, the last presented brief any of them was on
+/// (<see cref="LastBriefed"/>), the latest brief one is on that hasn't been presented (<see cref="OnBrief"/>), the
+/// actions raised (how many in all, and how many of those listed are open) and, for an indicator, how the hunts for it
+/// went: hits if any found some, else no hits if any came back clean, else not run when a hunt is waiting or a sweep is
+/// open, and null when nothing hunts for it. A CVE has no hunt result: a hunt searches for indicators.
+/// </summary>
+public sealed record LookupSummary(int Articles, DateOnly? LastBriefed, DateOnly? OnBrief, int Actions, int OpenActions, HuntResult? Hunted)
+{
+    /// <summary>No article has it and no action was raised about it.</summary>
+    public bool Unseen => Articles == 0 && Actions == 0;
+
+    public static LookupSummary Of(IReadOnlyCollection<LookupArticle> articles, HitList<ActionHit> actions, bool hunted) => new(
+        articles.Count,
+        Latest(articles, presented: true),
+        Latest(articles, presented: false),
+        actions.Total,
+        actions.Items.Count(a => a.IsOpen),
+        !hunted ? null
+            : actions.Items.Any(a => a.Hunted == HuntResult.Hits) ? HuntResult.Hits
+            : actions.Items.Any(a => a.Hunted == HuntResult.NoHits) ? HuntResult.NoHits
+            : actions.Items.Any(a => a.Hunted is not null || (a.IsOpen && a.Hunts)) ? HuntResult.NotRun : null);
+
+    private static DateOnly? Latest(IEnumerable<LookupArticle> articles, bool presented) =>
+        articles.SelectMany(a => a.Briefs).Where(b => b.Presented == presented).Select(b => (DateOnly?)b.Day).Max();
+}
+
+/// <summary>
+/// Where an indicator has been seen, and the actions raised from those articles or carrying it themselves.
+/// <see cref="Sweeping"/> are the open sweeps and hunts among them that search for the indicator itself: raised from an
+/// article that carries it, or carrying it.
+/// </summary>
+public sealed record IndicatorLookup(
+    IndicatorType Type, string Value, string? Host, HitList<Sighting> Sightings, HitList<ActionHit> Actions,
+    IReadOnlyList<ActionHit> Sweeping, SeenWith SeenWith, LookupSummary Summary);
+
+/// <summary>What's known about a CVE, the articles about it (newest first), and the actions raised from them.</summary>
+public sealed record CveLookup(
+    string CveId, CveRecord? Record, HitList<LookupArticle> Articles, HitList<ActionHit> Actions, SeenWith SeenWith, LookupSummary Summary)
+{
+    /// <summary>The sweeps and hunts among the actions: they searched for the articles' indicators, not for the CVE.</summary>
+    public IReadOnlyList<ActionHit> Sweeps => Actions.Items.Where(a => a.Hunts || a.Hunted is not null).ToList();
+}
 
 /// <summary>The answer to a search: an indicator or CVE lookup when the query is one, and the text hits.</summary>
 public sealed record SearchResults(
@@ -74,6 +152,11 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
     /// <summary>How far into one kind of hit the pages go; past it, the search wants narrowing.</summary>
     public const int MaxTake = 1000;
 
+    /// <summary>The most of each kind (indicators, CVEs, techniques, stories) a lookup's "Seen with" names.</summary>
+    public const int MaxSeenWith = 12;
+
+    // The newest articles "Seen with" reads, and the most rows of each kind it reads from them.
+    private const int SeenWithArticles = 50, SeenWithRows = 2000;
 
     public Task<SearchResults> SearchAsync(string? query, CancellationToken ct = default) => SearchAsync(query, SearchPages.First, ct);
 
@@ -94,8 +177,10 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
         }
         // A lone digit is an action's number; as text it would match nearly everything, so only actions are looked in.
         var numberOnly = terms is [{ Length: 1 }];
+        List<Guid> listed = !pages.LookupOnce ? []
+            : (indicator?.Sightings.Items.Select(s => s.ArticleId) ?? cve?.Articles.Items.Select(a => a.Id) ?? []).Distinct().ToList();
         return new SearchResults(q, terms, indicator, cve,
-            numberOnly ? HitList<ArticleHit>.None : await ArticlesAsync(db, terms, Skip(pages.Articles, pages.Size), Size(pages.Size), ct),
+            numberOnly ? HitList<ArticleHit>.None : await ArticlesAsync(db, terms, listed, Skip(pages.Articles, pages.Size), Size(pages.Size), ct),
             await ActionsAsync(db, terms, Skip(pages.Actions, pages.Size), Size(pages.Size), ct),
             numberOnly ? HitList<StoryHit>.None : await StoriesAsync(db, terms, Skip(pages.Stories, pages.Size), Size(pages.Size), ct));
     }
@@ -107,9 +192,10 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
 
     // ---- Text search ----
 
-    private static async Task<HitList<ArticleHit>> ArticlesAsync(IAppDbContext db, IReadOnlyList<string> terms, int skip, int take, CancellationToken ct)
+    private static async Task<HitList<ArticleHit>> ArticlesAsync(IAppDbContext db, IReadOnlyList<string> terms, List<Guid> except, int skip, int take, CancellationToken ct)
     {
         IQueryable<Article> q = db.Articles.AsNoTracking();
+        if (except.Count > 0) q = q.Where(a => !except.Contains(a.Id));
         var adversaryTags = db.ArticleAdversaries;
         foreach (var term in terms)
         {
@@ -235,26 +321,82 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
 
         var all = rows.Select(r => (Row: r, Related: false)).Concat(related.Select(r => (Row: r, Related: true))).ToList();
         var articleIds = all.Select(x => x.Row.ArticleId).Distinct().ToList();
-        var articles = await db.Articles.AsNoTracking().Where(a => articleIds.Contains(a.Id))
-            .Select(a => new { a.Id, a.Title, a.Tlp, a.Status, a.CreatedAtUtc }).ToDictionaryAsync(a => a.Id, ct);
-        var dates = await Lookups.BriefDatesAsync(db, articleIds, ct);
+        var articles = (await LookupArticlesAsync(db, db.Articles.AsNoTracking().Where(a => articleIds.Contains(a.Id)), ct)).ToDictionary(a => a.Id);
         var sightings = all.Where(x => articles.ContainsKey(x.Row.ArticleId))
             .Select(x => (x, a: articles[x.Row.ArticleId]))
             .OrderBy(t => t.x.Related).ThenByDescending(t => t.a.CreatedAtUtc).ThenBy(t => t.x.Row.Value, StringComparer.OrdinalIgnoreCase)
-            .Select(t => new Sighting(t.a.Id, t.a.Title, t.a.Tlp, t.a.Status, t.a.CreatedAtUtc, dates.GetValueOrDefault(t.a.Id) ?? [],
-                t.x.Row.Type, t.x.Row.Value, t.x.Row.Note, t.x.Related))
+            .Select(t => new Sighting(t.a, t.x.Row.Type, t.x.Row.Value, t.x.Row.Note, t.x.Related))
             .ToList();
+        // The articles carrying the indicator itself, newest first: what the first line counts and "Seen with" reads.
+        var on = sightings.Where(s => !s.Related).Select(s => s.Article).DistinctBy(a => a.Id).ToList();
+
+        // An action can carry indicators of its own (one raised with no article): it's on this one too.
+        var carrying = await db.ActionIndicators.AsNoTracking()
+            .Where(i => family.Contains(i.Type) && EF.Functions.Like(i.Value, exact, SearchText.Escape))
+            .Select(i => i.ActionId).Distinct().Take(MaxHits).ToListAsync(ct);
+        var actions = await Lookups.ActionsOnAsync(db, articleIds, carrying, MaxHits, ct);
+        var sweeping = actions.Items
+            .Where(a => a.IsOpen && a.Hunts && (carrying.Contains(a.Id) || on.Any(x => x.Id == a.ArticleId)))
+            .ToList();
+        var seenWith = await SeenWithAsync(db, on, i => family.Contains(i.Type) && string.Equals(i.Value, value, StringComparison.OrdinalIgnoreCase), null, ct);
         return new IndicatorLookup(type, value, host,
             new HitList<Sighting>(sightings.Take(MaxSightings).ToList(), sightings.Count + exactTotal - rows.Count),
-            await Lookups.ActionsOnAsync(db, articleIds, MaxHits, ct));
+            actions, sweeping, seenWith, LookupSummary.Of(on, actions, hunted: true));
     }
 
     private static async Task<CveLookup> CveAsync(IAppDbContext db, string cveId, CancellationToken ct)
     {
         var record = await db.CveRecords.AsNoTracking().FirstOrDefaultAsync(c => c.CveId == cveId, ct);
         var articleIds = await db.ArticleCves.AsNoTracking().Where(c => c.CveId == cveId).Select(c => c.ArticleId).Distinct().ToListAsync(ct);
-        return new CveLookup(cveId, record, articleIds.Count, await Lookups.ActionsOnAsync(db, articleIds, MaxHits, ct));
+        List<LookupArticle> newest = articleIds.Count == 0 ? [] : await LookupArticlesAsync(db,
+            db.Articles.AsNoTracking().Where(a => articleIds.Contains(a.Id)).OrderByDescending(a => a.CreatedAtUtc).ThenBy(a => a.Id).Take(MaxSightings), ct);
+        var actions = await Lookups.ActionsOnAsync(db, articleIds, [], MaxHits, ct);
+        return new CveLookup(cveId, record, new HitList<LookupArticle>(newest, articleIds.Count), actions,
+            await SeenWithAsync(db, newest, null, cveId, ct), LookupSummary.Of(newest, actions, hunted: false));
     }
+
+    // The articles of <paramref name="q"/> as a lookup lists them, in its order.
+    private static async Task<List<LookupArticle>> LookupArticlesAsync(IAppDbContext db, IQueryable<Article> q, CancellationToken ct)
+    {
+        var rows = await q.Select(a => new
+        {
+            a.Id, a.Title, a.Tlp, a.Classification, a.Priority, a.Status, a.CreatedAtUtc, a.StoryId,
+            StoryName = db.Stories.Where(s => s.Id == a.StoryId).Select(s => s.Name).FirstOrDefault(),
+        }).ToListAsync(ct);
+        var dates = await Lookups.BriefsAsync(db, rows.Select(a => a.Id).ToList(), ct);
+        return rows.Select(a => new LookupArticle(a.Id, a.Title, a.Tlp, a.Classification, a.Priority, a.Status, a.CreatedAtUtc,
+            dates.GetValueOrDefault(a.Id) ?? [], a.StoryId is { } story && a.StoryName is { } name ? new SeenStory(story, name) : null)).ToList();
+    }
+
+    /// <summary>
+    /// What else is on <paramref name="articles"/> (newest first; the newest <see cref="SeenWithArticles"/> are read): one
+    /// query each for their indicators, CVEs and techniques, whatever their number. The value looked up is left out
+    /// (<paramref name="lookedUp"/>, <paramref name="cveId"/>).
+    /// </summary>
+    private static async Task<SeenWith> SeenWithAsync(IAppDbContext db, IReadOnlyList<LookupArticle> articles,
+        Func<SeenIndicator, bool>? lookedUp, string? cveId, CancellationToken ct)
+    {
+        var read = articles.Take(SeenWithArticles).ToList();
+        if (read.Count == 0) return SeenWith.None;
+        var ids = read.Select(a => a.Id).ToList();
+        var indicators = (await db.ArticleIndicators.AsNoTracking().Where(i => ids.Contains(i.ArticleId))
+                .Select(i => new { i.Type, i.Value }).Take(SeenWithRows).ToListAsync(ct))
+            .Select(i => new SeenIndicator(i.Type, i.Value.Trim()))
+            .Where(i => i.Value.Length > 0 && lookedUp?.Invoke(i) != true);
+        var cves = (await db.ArticleCves.AsNoTracking().Where(c => ids.Contains(c.ArticleId)).Select(c => c.CveId).Take(SeenWithRows).ToListAsync(ct))
+            .Where(c => c != cveId);
+        var techniques = await db.ArticleTechniques.AsNoTracking().Where(t => ids.Contains(t.ArticleId)).Select(t => t.TechniqueId).Take(SeenWithRows).ToListAsync(ct);
+        return new SeenWith(
+            MostShared(indicators, i => (i.Type, i.Value.ToLowerInvariant()), i => i.Value),
+            MostShared(cves, c => c, c => c),
+            MostShared(techniques, t => t, t => t),
+            MostShared(read.Select(a => a.Story).OfType<SeenStory>(), s => s.Id, s => s.Name));
+    }
+
+    // Each of <paramref name="items"/> once, those on the most articles first, then by name: the first MaxSeenWith.
+    private static List<T> MostShared<T, TKey>(IEnumerable<T> items, Func<T, TKey> key, Func<T, string> name) => items
+        .GroupBy(key).OrderByDescending(g => g.Count()).ThenBy(g => name(g.First()), StringComparer.OrdinalIgnoreCase)
+        .Take(MaxSeenWith).Select(g => g.First()).ToList();
 
     // ---- Shared ----
 

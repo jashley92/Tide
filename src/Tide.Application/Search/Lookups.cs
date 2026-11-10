@@ -8,10 +8,10 @@ namespace Tide.Application.Search;
 /// <summary>An action as the lookups read it: who has it, when it's due, how its hunts went, and the article it's from.</summary>
 internal sealed record ActionRow(Guid Id, int Number, string Title, ActionStatus Status, Priority Priority, string TeamName,
     string? AssigneeName, DateOnly? DueDate, bool AnyHits, bool AnyNoHits, bool AnyHunt, string? Description, string? OutcomeNote, string? TicketRef,
-    Guid? ArticleId)
+    Guid? ArticleId, ActionKind Kind)
 {
     public ActionHit Hit(string? snippet) => new(Id, Number, Title, Status, Priority, TeamName, AssigneeName, DueDate,
-        AnyHits ? HuntResult.Hits : AnyNoHits ? HuntResult.NoHits : AnyHunt ? HuntResult.NotRun : null, snippet);
+        AnyHits ? HuntResult.Hits : AnyNoHits ? HuntResult.NoHits : AnyHunt ? HuntResult.NotRun : null, snippet, Kind, ArticleId);
 }
 
 /// <summary>
@@ -25,18 +25,29 @@ internal static class Lookups
                 db.HuntQueries.Any(h => h.ActionId == a.Id && h.Result == HuntResult.Hits),
                 db.HuntQueries.Any(h => h.ActionId == a.Id && h.Result == HuntResult.NoHits),
                 db.HuntQueries.Any(h => h.ActionId == a.Id),
-                a.Description, a.OutcomeNote, a.TicketRef, a.ArticleId))
+                a.Description, a.OutcomeNote, a.TicketRef, a.ArticleId, a.Kind))
             .ToListAsync(ct);
 
-    /// <summary>The actions raised from <paramref name="articleIds"/>, newest first: the first <paramref name="take"/>, and how many in all.</summary>
-    public static async Task<HitList<ActionHit>> ActionsOnAsync(IAppDbContext db, List<Guid> articleIds, int take, CancellationToken ct)
+    /// <summary>
+    /// The actions raised from <paramref name="articleIds"/>, and those named by <paramref name="actionIds"/> (the ones
+    /// carrying a looked-up indicator themselves), newest first: the first <paramref name="take"/>, and how many in all.
+    /// </summary>
+    public static async Task<HitList<ActionHit>> ActionsOnAsync(IAppDbContext db, List<Guid> articleIds, List<Guid> actionIds, int take, CancellationToken ct)
     {
-        if (articleIds.Count == 0) return HitList<ActionHit>.None;
-        var q = db.Actions.AsNoTracking().Where(a => a.ArticleId != null && articleIds.Contains(a.ArticleId.Value));
+        if (articleIds.Count == 0 && actionIds.Count == 0) return HitList<ActionHit>.None;
+        var q = db.Actions.AsNoTracking().Where(a => (a.ArticleId != null && articleIds.Contains(a.ArticleId.Value)) || actionIds.Contains(a.Id));
         var rows = await ActionRows(db, q.OrderByDescending(a => a.Number).Take(take + 1), ct);
         var total = rows.Count > take ? await q.CountAsync(ct) : rows.Count;
         return new HitList<ActionHit>(rows.Take(take).Select(r => r.Hit(null)).ToList(), total);
     }
+
+    /// <summary>The briefs each article is on, oldest first, each with whether it was presented (or sent).</summary>
+    public static async Task<Dictionary<Guid, IReadOnlyList<LookupBrief>>> BriefsAsync(IAppDbContext db, List<Guid> articleIds, CancellationToken ct) =>
+        (await db.BriefItems.AsNoTracking().Where(i => articleIds.Contains(i.ArticleId))
+            .Join(db.Briefs, i => i.BriefId, b => b.Id, (i, b) => new { i.ArticleId, b.BriefDate, b.Status }).ToListAsync(ct))
+        .GroupBy(d => d.ArticleId).ToDictionary(g => g.Key, g => (IReadOnlyList<LookupBrief>)g
+            .GroupBy(d => d.BriefDate).OrderBy(day => day.Key)
+            .Select(day => new LookupBrief(day.Key, day.Any(d => d.Status is BriefStatus.Presented or BriefStatus.Sent))).ToList());
 
     /// <summary>The days of the briefs each article was on, oldest first.</summary>
     public static async Task<Dictionary<Guid, IReadOnlyList<DateOnly>>> BriefDatesAsync(IAppDbContext db, List<Guid> articleIds, CancellationToken ct) =>
