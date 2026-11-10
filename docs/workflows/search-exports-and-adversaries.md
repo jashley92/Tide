@@ -250,7 +250,9 @@ retired). Analysts keep it; the team edition reads it.
 - **A product's page** (`GetAsync`) lists the articles tagged with it and the actions raised from them, but names only
   articles at or below the team edition's ceiling and counts the rest ("2 articles above TLP:AMBER"). Present mode's
   product card (`CardAsync`) follows the same rule. The list's counts name no titles, so they count every article.
-- **The list** (`OverviewAsync`) puts the products that need a look first. `StackRow.NeedsLook` is the one
+- **The list** (`OverviewAsync`) puts the products that need a look first, the most pressing at the top
+  (`StackService.MostPressingFirst`, by `StackRow.Urgency`: a CVE on KEV, any other CVE named or counted, new triage
+  items, then housekeeping; within those the worst CVSS score, then the more triage items, then the name). `StackRow.NeedsLook` is the one
   definition, read by the order and by the page's "Needs a look" filter: the product is in use and has something in
   "Right now", a check that is missing or more than `CheckOldAfterDays` (90) old, or no owning team. "Right now"
   (`StackService.RightNow`) holds the CVEs on the product's articles from briefs of the last `RecentBriefDays` (7),
