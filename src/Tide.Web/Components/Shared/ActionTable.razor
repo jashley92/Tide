@@ -102,8 +102,17 @@
     /// <summary>While a take is under way, the buttons wait.</summary>
     [Parameter] public bool Busy { get; set; }
 
-    // Each row's title, to put focus on (the page keeps the person's place when a row changes or leaves).
+    // Each drawn row's title, to put focus on (the page keeps the person's place when a row changes or leaves): only the
+    // rows given now, so a page, filter or view left behind keeps none.
     private readonly Dictionary<Guid, ActionRef> _refs = [];
+    private IReadOnlyList<ActionRow>? _refsFor;
+
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(Rows, _refsFor)) return;
+        _refsFor = Rows;
+        _refs.Clear();
+    }
 
     /// <summary>Puts focus on this row's title; false when the row isn't drawn.</summary>
     public async Task<bool> FocusRowAsync(Guid id)

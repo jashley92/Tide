@@ -105,8 +105,10 @@ const focused = selector => ({
 
 /** Takes on the first action the list offers with Take it, as a click on it does. */
 async function takeFirst(page) {
-  await page.locator('.tide-row-take').first().click();
-  await page.waitForTimeout(1500);
+  const take = await page.locator('.tide-row-take').first().elementHandle();
+  await take.click();
+  // Its row leaves the No owner list once the take is saved (settle then waits for the page to be still).
+  await page.waitForFunction(el => !el.isConnected, take, { timeout: 5000 }).catch(() => { });
 }
 
 // --- the pages: route, optional setup, widths (each 900px tall) and rules ([minWidth, rule] from that width up) ------

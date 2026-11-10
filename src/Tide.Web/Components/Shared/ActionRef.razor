@@ -40,7 +40,7 @@ else
     private ElementReference _link;
 
     /// <summary>Puts focus on the title's link (nothing when it's drawn as a button or text, or has gone).</summary>
-    public Task FocusAsync() => Link && !OnOpen.HasDelegate ? _link.TryFocusAsync(orGone: true) : Task.CompletedTask;
+    public Task FocusAsync() => _link.Context is null ? Task.CompletedTask : _link.TryFocusAsync(orGone: true);
 
     private RenderFragment TitleContent => ChildContent ?? (b => b.AddContent(0, Title));
 }
