@@ -46,6 +46,48 @@ public class StackAttentionTests
     }
 
     [Fact]
+    public void TheList_PutsTheMostPressingFirst_ThenHousekeeping_ThenWhatNeedsNothing()
+    {
+        static StackCve Cve(decimal? cvss, bool kev = false) => new("CVE-2026-1", cvss is null && !kev ? null : new CveRecord { CvssScore = cvss, IsKev = kev });
+        StackRow Row(string name, StackNow now, int? checkedDaysAgo = 1, bool owned = true, bool retired = false)
+        {
+            var p = Product(checkedDaysAgo, owned, retired);
+            p.Name = name;
+            return new StackRow(p, null, 0, 0, now, !retired && StackService.CheckIsOld(p.CheckedOn, Today));
+        }
+        // As the service reads them: by name, the retired last.
+        var byName = new[]
+        {
+            Row("A never checked", Quiet, checkedDaysAgo: null),
+            Row("B quiet", Quiet),
+            Row("C triage 1", Quiet with { TriageItems = 1 }),
+            Row("D cve unscored", Quiet with { Cves = [Cve(null)] }),
+            Row("E cve 9.8", Quiet with { Cves = [Cve(5m), Cve(9.8m)] }),
+            Row("F counted only", Quiet with { CvesAbove = 1 }),
+            Row("G kev 7.5", Quiet with { Cves = [Cve(7.5m, kev: true)] }),
+            Row("H no team", Quiet, owned: false),
+            Row("I triage 3", Quiet with { TriageItems = 3 }),
+            Row("J kev 9.0 never checked", Quiet with { Cves = [Cve(9m, kev: true)] }, checkedDaysAgo: null),
+            Row("K cve 9.8 and triage", Quiet with { Cves = [Cve(9.8m)], TriageItems = 2 }),
+            Row("L quiet too", Quiet),
+            Row("M retired", Quiet with { Cves = [Cve(10m, kev: true)], TriageItems = 5 }, checkedDaysAgo: null, owned: false, retired: true),
+        };
+
+        StackService.MostPressingFirst(byName).Select(r => r.Product.Name).Should().Equal(
+            "J kev 9.0 never checked", "G kev 7.5",                                        // on KEV, the worse score first
+            "K cve 9.8 and triage", "E cve 9.8", "D cve unscored", "F counted only",       // a CVE: worst score, then more in triage, then name
+            "I triage 3", "C triage 1",                                                    // new in triage, more first
+            "A never checked", "H no team",                                                // housekeeping, by name
+            "B quiet", "L quiet too", "M retired");                                        // nothing to do, by name; retired last
+
+        // Someone who can't triage has no counts, so triage plays no part in their order.
+        var blind = byName.Select(r => r with { Now = r.Now with { TriageItems = null } }).ToList();
+        StackService.MostPressingFirst(blind).Select(r => r.Product.Name).Should().Equal(
+            "J kev 9.0 never checked", "G kev 7.5", "E cve 9.8", "K cve 9.8 and triage", "D cve unscored", "F counted only",
+            "A never checked", "H no team", "B quiet", "C triage 1", "I triage 3", "L quiet too", "M retired");
+    }
+
+    [Fact]
     public void RightNow_NamesEachCveOnce_TheWorstFirst()
     {
         var kev = new CveRecord { CveId = "CVE-2026-0003", CvssScore = 7.5m, EpssScore = 0.2m, IsKev = true };

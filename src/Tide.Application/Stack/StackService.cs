@@ -96,7 +96,21 @@ public sealed record StackRow(StackProduct Product, string? TeamName, int Articl
     /// missing, or no team owns it. The one definition: the list's order and its "Needs a look" filter both read it.
     /// </summary>
     public bool NeedsLook => !Product.IsRetired && (Now.Any || CheckOld || NoTeam);
+
+    /// <summary>How pressing it is, the most first: the order of the list (<see cref="StackService.MostPressingFirst"/>).</summary>
+    public StackUrgency Urgency =>
+        !NeedsLook ? StackUrgency.Nothing
+        : Now.Cves.Any(c => c.Record?.IsKev == true) ? StackUrgency.Kev
+        : Now.Cves.Count > 0 || Now.CvesAbove > 0 ? StackUrgency.Cve
+        : Now.TriageItems > 0 ? StackUrgency.Triage
+        : StackUrgency.Housekeeping;
 }
+
+/// <summary>
+/// Why a product needs a look, the most pressing first: a CVE on KEV; any CVE, named or counted; new triage items; or
+/// only housekeeping (a check that's old or missing, no owning team). <see cref="Nothing"/> for one that needs none.
+/// </summary>
+public enum StackUrgency { Kev, Cve, Triage, Housekeeping, Nothing }
 
 /// <summary>The Our stack list: its rows, those that need a look first, and the team edition's ceiling "Right now" is held to.</summary>
 public sealed record StackList(IReadOnlyList<StackRow> Rows, TlpLevel Ceiling);
@@ -258,9 +272,19 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
     {
         RequireRead();
         var ceiling = (await editions.GetAsync(ct)).Team;
-        // A stable sort: the rows are read by name with the retired last, and a retired product never needs a look.
-        return new StackList((await RowsAsync(includeRetired, ceiling, ct)).OrderBy(r => !r.NeedsLook).ToList(), ceiling);
+        return new StackList(MostPressingFirst(await RowsAsync(includeRetired, ceiling, ct)), ceiling);
     }
+
+    /// <summary>
+    /// The list's order, for rows read by name with the retired last: by <see cref="StackRow.Urgency"/>; then the worst
+    /// CVSS score among the CVEs named, where one is known; then the more new triage items; then as they came, by name
+    /// (the sort is stable). A product that needs nothing is last, a retired one after those, whatever is written about
+    /// it. Someone who can't triage has no triage counts, so they play no part; a CVE that's only counted lends no score.
+    /// </summary>
+    public static IReadOnlyList<StackRow> MostPressingFirst(IEnumerable<StackRow> byName) =>
+        byName.OrderBy(r => r.Urgency)
+            .ThenByDescending(r => r.NeedsLook ? r.Now.Cves.Max(c => c.Record?.CvssScore) ?? -1 : 0)
+            .ThenByDescending(r => r.NeedsLook ? r.Now.TriageItems ?? 0 : 0).ToList();
 
     // The rows by name, retired last; with "Right now" held to nowCeiling when one is given.
     private async Task<List<StackRow>> RowsAsync(bool includeRetired, TlpLevel? nowCeiling, CancellationToken ct)
