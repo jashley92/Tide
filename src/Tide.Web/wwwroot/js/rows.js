@@ -53,9 +53,18 @@ window.tideRows = (function () {
         if (lost) follow(); else reveal();
     }
 
+    // Keys sent and not yet answered. Focus moves only once the last one is answered: a row taking focus selects itself
+    // (its focus handler in .NET), so focusing the row an earlier answer drew, while later keys are still on their way,
+    // would arrive after them and pull the selection back to that older row. Meanwhile the selected row is only
+    // scrolled into view.
+    let pending = 0;
+
     function send(action) {
         if (!ref) return;
-        ref.invokeMethodAsync(opt.method, action).then(opt.follow.indexOf(action) >= 0 ? follow : settle).catch(function () { });
+        const then = opt.follow.indexOf(action) >= 0 ? follow : settle;
+        pending++;
+        function done() { if (--pending === 0) then(); else reveal(); }
+        ref.invokeMethodAsync(opt.method, action).then(done, done);
     }
 
     function onKey(e) {
