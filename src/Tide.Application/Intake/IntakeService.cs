@@ -1259,35 +1259,61 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     /// presented, or on a brief that was presented or sent, is refused unless <paramref name="evenIfPresented"/>: what was
     /// shown stays as it was, and a follow-up to it usually wants its own article.
     /// </summary>
-    public async Task AttachAsync(Guid itemId, Guid articleId, bool evenIfPresented = false, CancellationToken ct = default)
+    public Task AttachAsync(Guid itemId, Guid articleId, bool evenIfPresented = false, CancellationToken ct = default) =>
+        AttachReportsAsync([itemId], articleId, evenIfPresented, ct);
+
+    /// <summary>
+    /// "Attach all": a suggested group's reports added to an article together, each as <see cref="AttachAsync"/> adds
+    /// one (the same checks and the same save), in one transaction: every report is attached or none is. When one stops
+    /// it (gone, taken by another article, being promoted, or the article presented meanwhile), nothing changes and the
+    /// message names that report and why. Returns how many were attached.
+    /// </summary>
+    public async Task<int> AttachAllAsync(IReadOnlyCollection<Guid> itemIds, Guid articleId, CancellationToken ct = default)
+    {
+        var count = itemIds.Distinct().Count();
+        if (count is < 1 or > TriageGroups.MaxSize) throw new ArgumentException($"Attach 1 to {TriageGroups.MaxSize} reports at once.");
+        await AttachReportsAsync(itemIds, articleId, evenIfPresented: false, ct);
+        return count;
+    }
+
+    // One attach, of one report or a group's: the checks, then each report's link and CVEs added and every report claimed
+    // for the article in one transaction. A single report's messages say "that item"; a group's name the report.
+    private async Task AttachReportsAsync(IReadOnlyCollection<Guid> itemIds, Guid articleId, bool evenIfPresented, CancellationToken ct)
     {
         RequireTriage();
+        var wanted = itemIds.Distinct().ToList();
+        var single = wanted.Count == 1;
+        string Refused(FeedItem item, string why) => single ? $"That item {why}." : $"“{item.Title}” {why}, so none of the {wanted.Count} was attached.";
         await using var db = await dbs.CreateAsync(ct);
-        var item = await db.FeedItems.Include(i => i.Source).FirstOrDefaultAsync(i => i.Id == itemId, ct) ?? throw new KeyNotFoundException("That item is gone.");
+        var items = await db.FeedItems.Include(i => i.Source).Where(i => wanted.Contains(i.Id)).ToListAsync(ct);
+        if (items.Count != wanted.Count) throw new KeyNotFoundException(single ? "That item is gone." : "One of those reports is gone, so none was attached.");
         var article = await db.Articles.Include(a => a.Cves).FirstOrDefaultAsync(a => a.Id == articleId, ct) ?? throw new KeyNotFoundException("That article no longer exists.");
-        if (item.Status == FeedItemStatus.Promoted && item.ArticleId != articleId)
-            throw new InvalidOperationException(item.ArticleId is null ? "That item is being promoted now." : "That item already made another article.");
-        if (!evenIfPresented && item.ArticleId != articleId && !await db.Articles.Where(a => a.Id == articleId).Where(Unfrozen(db)).AnyAsync(ct))
-            throw new InvalidOperationException("That article has already been presented. Promote this item as a follow-up instead.");
+        if (items.FirstOrDefault(i => i.Status == FeedItemStatus.Promoted && i.ArticleId != articleId) is { } taken)
+            throw new InvalidOperationException(Refused(taken, taken.ArticleId is null ? "is being promoted now" : "already made another article"));
+        if (!evenIfPresented && items.Any(i => i.ArticleId != articleId) && !await db.Articles.Where(a => a.Id == articleId).Where(Unfrozen(db)).AnyAsync(ct))
+            throw new InvalidOperationException(single ? "That article has already been presented. Promote this item as a follow-up instead."
+                : "That article has already been presented, so none was attached. Promote these reports as a follow-up instead.");
         var known = (await db.ArticleLinks.AsNoTracking().Where(l => l.ArticleId == articleId).Select(l => l.Url).ToListAsync(ct))
             .Append(article.SourceUrl).Select(UrlCanonicalizer.Canonicalize).ToHashSet(StringComparer.Ordinal);
+        var cves = article.Cves.Select(c => c.CveId).ToHashSet(StringComparer.OrdinalIgnoreCase);
         // The CVEs are part of the editor's form: an editor open on the article now has a stale copy, and is told so,
         // rather than saving over them.
-        if (AddReport(db, item, articleId, known, article.Cves.Select(c => c.CveId).ToHashSet(StringComparer.OrdinalIgnoreCase)))
-            article.EditVersion = Guid.NewGuid();
-        // The item is claimed for the article in one statement that checks it isn't someone else's article now (read
-        // above, a colleague's promotion could claim it meanwhile: this save then pointed it here, leaving their article
-        // without it), and in the same transaction as the report it adds, so neither is kept without the other.
+        var cvesAdded = false;
+        foreach (var item in items) cvesAdded |= AddReport(db, item, articleId, known, cves);
+        if (cvesAdded) article.EditVersion = Guid.NewGuid();
+        // The items are claimed for the article in one statement that checks none is someone else's article now (read
+        // above, a colleague's promotion could claim one meanwhile: this save then pointed it here, leaving their article
+        // without it), and in the same transaction as the reports it adds, so nothing is kept without the rest.
         var now = time.GetUtcNow();
         var strategy = db.Database.CreateExecutionStrategy();
         var claimed = await strategy.ExecuteAsync(async () =>
         {
             await using var tx = await db.Database.BeginTransactionAsync(ct);
-            var n = await db.FeedItems.Where(i => i.Id == itemId && (i.Status != FeedItemStatus.Promoted || i.ArticleId == articleId))
+            var n = await db.FeedItems.Where(i => wanted.Contains(i.Id) && (i.Status != FeedItemStatus.Promoted || i.ArticleId == articleId))
                 .ExecuteUpdateAsync(u => u.SetProperty(i => i.Status, FeedItemStatus.Promoted).SetProperty(i => i.ArticleId, articleId)
                     .SetProperty(i => i.StatusByName, user.DisplayName).SetProperty(i => i.StatusAtUtc, now)
                     .SetProperty(i => i.DismissReason, (string?)null).SetProperty(i => i.DuplicateOfId, (Guid?)null), ct);
-            if (n == 0)
+            if (n < wanted.Count)
             {
                 await tx.RollbackAsync(ct);
                 return false;
@@ -1297,7 +1323,9 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
             return true;
         });
         _learned = null;   // a decision changes what's learned
-        if (!claimed) throw new InvalidOperationException("Someone has just promoted or attached that item elsewhere. Look at it again.");
+        if (!claimed)
+            throw new InvalidOperationException(single ? "Someone has just promoted or attached that item elsewhere. Look at it again."
+                : "Someone has just promoted or attached one of these reports elsewhere, so none was attached. Look at the group again.");
     }
 
     // Adds an item to an article as another report of it: its link, unless the article already has that address
