@@ -22,9 +22,9 @@ Every route, its component and the permission it needs are in the [route table](
   [Adversary profiles](#adversary-profiles) · [Detection coverage](#detection-coverage) ·
   [Indicator exports](#indicator-exports) · [Threat trends and the board scorecard](#threat-trends-and-the-board-scorecard) ·
   [Reports](#reports) · [Team commitments](#team-commitments) · [Opening metrics](#opening-metrics)
-- Team: [Brief rotation](#brief-rotation) · [Workload](#workload) · [Saved queries](#saved-queries) ·
-  [Outreach templates](#outreach-templates) · [Playbooks](#playbooks) · [Board rules](#board-rules) ·
-  [External teams](#external-teams) · [My notifications](#my-notifications)
+- Team: [Brief rotation](#brief-rotation) · [Workload](#workload) · [Library](#library)
+  ([Saved queries](#saved-queries) · [Outreach templates](#outreach-templates) · [Playbooks](#playbooks) ·
+  [Board rules](#board-rules)) · [External teams](#external-teams) · [My notifications](#my-notifications)
 - [The API, for the SOC's other tools](#the-api-for-the-socs-other-tools)
 - [Administration](#administration)
 - [When something's wrong](#when-somethings-wrong)
@@ -752,54 +752,79 @@ open actions on the Actions list. The numbers update live as actions change.
 
 ![Workload](../screenshots/workload.png)
 
-## Saved queries
+## Library
 
-**Route:** `/hunts/saved` (under Team in the sidebar) · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md)
+**Route:** `/library` (under Team in the sidebar) · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md)
+
+What the team keeps to use again on actions, on one page with four tabs: **Saved queries**, **Outreach templates**,
+**Playbooks** and **Board rules**. Each tab shows how many entries it holds (those in use: not retired, and for
+board rules not turned off), and the count follows a colleague's change. Each tab has its own address
+(`/library/queries`, `/library/templates`, `/library/playbooks`, `/library/board-rules`), so a link or a bookmark
+opens the right one, and a tab's page and selected entry stay its own. The addresses the four had as separate pages
+(`/hunts/saved`, `/outreach/templates`, `/playbooks`, `/board-rules`, and the older `/admin/playbooks`) lead to
+their tabs. The command palette (`Ctrl+K`) still finds each tab by its name and its other words ("kql",
+"checklist", "card colour"). Everyone who reads actions opens the Library.
+
+The first three tabs work the same way. On the left is the list, 20 entries to a page with the page in the address:
+each entry's name, what it's for in one line, its kind (a query's language, a template's TLP ceiling, the kind of
+action a playbook is for) and how often it was used ("Used on 3 actions", "Not used yet"). On the right is the
+selected entry in full, with its buttons (**Copy**, **Edit**, **Retire** or **Restore**, **Delete**). Choose an
+entry with a click, with `J` and `K` from anywhere on the page, or with the up and down arrows while the list has
+focus, as on Triage. The selected entry is in the address (`?row=`), so a copied link opens the same entry on
+whichever page of the list it's on. An entry just saved is the one shown. On a window narrower than about 1000px
+the list sits above the entry.
+
+A colleague's change re-reads the list in place; an edit under way keeps what's typed, and its save is refused if
+the entry changed since it began. When a colleague's change moves the entry being edited to another page (one added
+before it pushes it on), the page goes with it; when you choose another entry while editing, or the edited one
+leaves the list altogether, its form stays above the list.
+
+### Saved queries
+
+**Route:** `/library/queries` · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md)
 
 The team's library of hunt queries: a tuned sweep or a behavioural hunt kept for a colleague to add to their own
-action. The page lists them by language, with how many actions used each, 20 to a page with the page in the address.
-A language that runs on to the next page is headed there too ("continued"). Whoever works actions saves, edits,
-retires and restores them; whoever saved one, or an administrator, deletes it. Everyone else who reads actions reads
-them. A colleague's change re-reads the list in place; an edit under way keeps what's typed, and its save is refused
-if the query changed since it began. When a colleague's change moves the card being edited to another page (one added
-before it pushes it on), the page goes with it; when the card leaves the list altogether, its form stays above the list. The filter bar has the search box and a pill per language (**XQL**, **KQL**,
-**Falcon**), one at a time; **Show retired** stays a switch beside them, since it widens the list rather than
-narrowing it.
+action. The list keeps each language's queries together and says each one's language and how many actions used it.
+Whoever works actions saves, edits, retires and restores them; whoever saved one, or an administrator, deletes it.
+Everyone else who reads actions reads them. The filter bar has the search box and a pill per language (**XQL**,
+**KQL**, **Falcon**), one at a time; **Show retired** stays a switch beside them, since it widens the list rather
+than narrowing it.
 
 A new install, or an upgrade whose library is still empty, starts with 13 starter sweeps saved by "TIDE": IP,
 domain, file hash, URL and every-indicator sweeps in KQL and XQL, and IP, domain and file hash sweeps for Falcon.
 They're added once. The team edits, retires or deletes them like any other, and deleted ones don't come back.
 
-## Outreach templates
+### Outreach templates
 
-**Route:** `/outreach/templates` (under Team in the sidebar) · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md)
+**Route:** `/library/templates` · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md)
 
 The team's outreach emails, kept beside Saved queries and in the same way, 20 to a page: a name, a subject and a body
 with placeholders, an optional fixed To address, and a TLP ceiling. `{{article.title}}`, `{{article.cves}}` (with KEV
 and EPSS), `{{indicators}}` (defanged; `{{indicators:domain}}` and the like take one kind), `{{product.versions}}`,
-`{{action.link}}`, `{{sender.name}}` and the rest are filled from the action. Whoever works actions keeps them. Each
-shows how many emails were written from it. Its filter bar is the search box with **Show retired** as a switch, as on
-Saved queries.
+`{{action.link}}`, `{{sender.name}}` and the rest are filled from the action. Whoever works actions keeps them. The
+list says each one's TLP ceiling and how many emails were written from it. Its filter bar is the search box with
+**Show retired** as a switch, as on Saved queries.
 
 A new install, or an upgrade whose library is still empty, starts with 5 starter templates saved by "TIDE", added
 once: *Vendor: are we affected?*, *Internal: action required*, *ISAC / partner: share and ask*, *Follow-up / chase*
 and *Internal inquiry: are we impacted?*.
 
-## Playbooks
+### Playbooks
 
-**Route:** `/playbooks` (under Team in the sidebar) · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md#playbooks)
+**Route:** `/library/playbooks` · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md#playbooks)
 
 The team's checklists, kept beside Saved queries and in the same way, 20 to a page: a name, the kind of action it's
 for (or any kind), a description and its steps. Choose one when raising an action, or apply one from an action's
 checklist; the steps are copied. Whoever works actions adds, edits, reorders, retires and restores them; whoever made
 one, or an administrator, deletes it, unless an action was started from it (then only Retire). The 7 starters are
-made by "TIDE": an administrator deletes them. Each card says how many actions were started from it, and who saved
-and changed it. The filter bar has the search box, a pill per kind of action and **Show retired**. The old
-`/admin/playbooks` address comes here.
+made by "TIDE": an administrator deletes them. The list says how many actions were started from each, and the
+selected one who saved and changed it. The up and down arrow buttons on the selected playbook change the order the
+pickers offer them in. The filter bar has the search box, a pill per kind of action and **Show retired**. The old
+`/playbooks` and `/admin/playbooks` addresses come here.
 
-## Board rules
+### Board rules
 
-**Route:** `/board-rules` (under Team in the sidebar, and a button on the Actions page) · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md#board-rules)
+**Route:** `/library/board-rules` (and a button on the Actions page) · **Workflow:** [actions and hunting](../workflows/actions-and-hunting.md#board-rules)
 
 The card rules, read-only, for everyone who reads actions: each rule's label in its colour, what it matches, the
 colour and whether + Filter on the Actions page offers it. An administrator gets a link to edit them on
