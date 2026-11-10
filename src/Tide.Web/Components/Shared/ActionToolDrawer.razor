@@ -1,4 +1,4 @@
-@* The action page's tool drawer: one card in the side column whose tabs (TabBar with a panel; tabs.js) hold the existing
+@* The action page's tool drawer: one card (in the side column; in the wide one for a sweep or hunt) whose tabs (TabBar with a panel; tabs.js) hold the existing
    panels: the checklist, the parts' timeline on a parent with dated parts, hunt queries and outreach, where each belongs
    (ActionGuide.Tools). Which one shows comes from the address alone: the tool ?tool= asks for, else the kind's own
    (ActionGuide.Opening); a tab only asks the page to put its tool in the address. A panel is drawn the first time its
@@ -40,7 +40,7 @@
         @if (_opened.Contains(ActionTool.Hunt))
         {
             <div hidden="@(Tool != ActionTool.Hunt)">
-                <HuntPanel @key="A.Id" Action="A" CanWork="Detail.CanWork" Changed="Changed" />
+                <HuntPanel @key="A.Id" @ref="_hunt" Action="A" CanWork="Detail.CanWork" Changed="Changed" />
             </div>
         }
         @if (_opened.Contains(ActionTool.Outreach))
@@ -74,6 +74,10 @@
     private readonly HashSet<ActionTool> _opened = [];
     private bool _addingChecklist;
     private OutreachPanel? _outreach;
+    private HuntPanel? _hunt;
+
+    /// <summary>The hunt panel, once its tab has shown.</summary>
+    internal HuntPanel? Hunt => _hunt;
 
     // What to do with the outreach panel once it's drawn (the page's Write the email or Record the reply).
     private Func<OutreachPanel, Task>? _onOutreach;

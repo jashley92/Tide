@@ -16,10 +16,10 @@
         return el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement;
     }
 
-    // Where the clipboard API isn't there or is refused: select the text and copy it the old way, a box's own text or a
-    // block's contents, and say whether that worked (with `done`) or how to do it by hand. With `text`, that exact text
-    // is what goes on the clipboard, not the selection as the browser writes it (CRLF line breaks on Windows).
-    function legacyCopy(btn, el, done, text) {
+    // Selects the text and copies it through the copy command, a box's own text or a block's contents, and says whether
+    // that worked. With `text`, that exact text is what goes on the clipboard (the copy event sets it), not the selection
+    // as the browser writes it (CRLF line breaks on Windows).
+    function selectAndCopy(el, text) {
         let ok = false;
         function exact(e) {
             e.clipboardData.setData('text/plain', text);
@@ -40,12 +40,25 @@
             sel.removeAllRanges();
         }
         document.removeEventListener('copy', exact);
-        say(btn, ok ? done : 'Select the text and press Ctrl+C.');
+        return ok;
     }
 
-    // Plain text: a box's text as it stands, edits included, or a block's text with LF line breaks.
+    // Where the clipboard API isn't there or is refused: the copy command, saying whether it worked (with `done`) or how
+    // to do it by hand.
+    function legacyCopy(btn, el, done, text) {
+        say(btn, selectAndCopy(el, text) ? done : 'Select the text and press Ctrl+C.');
+    }
+
+    // Plain text: a box's text as it stands, edits included, or a block's text with LF line breaks. A block goes through
+    // the copy command first: on Windows the clipboard API writes every line break as CRLF whatever text it's given,
+    // and the copy event keeps the text exactly (a query pasted into a console is then the query as it was generated).
+    // It's also done before the click returns, while the block is still on the page.
     function copyText(btn, el, done) {
         const text = isField(el) ? el.value : el.textContent.replace(/\r\n?/g, '\n');
+        if (!isField(el) && selectAndCopy(el, text)) {
+            say(btn, done);
+            return;
+        }
         if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(text).then(function () { say(btn, done); }, function () { legacyCopy(btn, el, done, text); });
         } else {

@@ -341,6 +341,11 @@ public static class Ui
 
     public static string ShortDay(DateOnly d) => d.ToString("ddd MMM d", System.Globalization.CultureInfo.InvariantCulture);
 
+    /// <summary><see cref="ShortDay(DateOnly)"/>, with its year when that isn't <paramref name="today"/>'s ("Tue Sep 16, 2025"):
+    /// for a date that may be long past, where the day alone would read as this year's.</summary>
+    public static string ShortDay(DateOnly d, DateOnly today) =>
+        d.Year == today.Year ? ShortDay(d) : $"{ShortDay(d)}, {d.Year.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+
     /// <summary>A UTC instant in the organization's zone, e.g. "Oct 24, 9:41 AM".</summary>
     public static string When(Application.Org.OrgClock clock, DateTimeOffset utc) => clock.ToLocal(utc).ToString("MMM d, h:mm tt", System.Globalization.CultureInfo.InvariantCulture);
 

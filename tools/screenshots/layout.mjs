@@ -87,6 +87,9 @@ const pages = [
     rules: [noSidewaysScroll, visible('.tide-action-ref')] },
   { name: 'actions-board', route: '/actions?tab=open&layout=board', widths: [1920, 1440],
     rules: [visible('.tide-kcard'), oneRow('.tide-kcard-head'), [1800, widerThan('.content', 1400)]] },
+  // A sweep's query is read whole, in the wide column: its long lines wrap, so nothing scrolls sideways inside its box.
+  { name: 'action-hunt', route: '/actions/{huntAction}', widths: [1920, 1440],
+    rules: [noSidewaysScroll, visible('.tide-action-main .tide-hunt pre.tide-query'), fits('.tide-hunt pre.tide-query')] },
   { name: 'trends', route: '/trends', widths: [1920], rules: [noSidewaysScroll, widerThan('.content', 1400)] },
   { name: 'slide-article', route: '/present/{today}', setup: toArticleSlide, widths: [1440, 1100, 900],
     rules: [

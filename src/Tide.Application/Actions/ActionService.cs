@@ -1641,7 +1641,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             throw new InvalidOperationException(fromStory ? "No article in the story has indicators to hunt for."
                 : a.Article is null ? "The action has no indicators to hunt for. Add them on this card, or write a query by hand."
                 : "The action's article has no indicators to hunt for. Add them on the article first, or build it from the story.");
-        var text = Filled(await queries.BuildAsync(dialect, inputs.Indicators, inputs.Days, ct));
+        var text = await GeneratedTextAsync(dialect, inputs, ct);
         var hunt = new HuntQuery
         {
             ActionId = a.Id, Dialect = dialect, GeneratedText = text, Text = text, CreatedAtUtc = DateTimeOffset.UtcNow, CreatedByName = user.DisplayName,
@@ -1651,6 +1651,25 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         await db.SaveChangesAsync(ct);
         return hunt;
     }
+
+    /// <summary>
+    /// The query <see cref="GenerateHuntAsync"/> would save for the action in <paramref name="dialect"/>, from its
+    /// article's indicators and its own, without saving it: the action's page shows it as a preview when a sweep or hunt
+    /// opens. It writes nothing (no hunt query, no history line), and is for whoever may generate one: anyone else is
+    /// refused as Generate refuses them. Null when the action has no indicators to hunt for.
+    /// </summary>
+    public async Task<string?> PreviewHuntAsync(Guid actionId, string dialect, CancellationToken ct = default)
+    {
+        await using var db = await dbs.CreateAsync(ct);
+        var a = await HuntActionAsync(db, actionId, tracked: false, ct);
+        await RequireWork(db, user, a, ct);
+        var inputs = await HuntInputsAsync(db, a, fromStory: false, ct);
+        return inputs.Indicators.Count == 0 ? null : await GeneratedTextAsync(dialect, inputs, ct);
+    }
+
+    // A generated query's text, the one saved and its preview alike: one builder, the same templates and the same limit.
+    private async Task<string> GeneratedTextAsync(string dialect, HuntInputs inputs, CancellationToken ct) =>
+        Filled(await queries.BuildAsync(dialect, inputs.Indicators, inputs.Days, ct));
 
     /// <summary>
     /// Adds a query the analyst wrote (a behavioural hunt, say, "php-fpm spawning sh") rather than one built from
