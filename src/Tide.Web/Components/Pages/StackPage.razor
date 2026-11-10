@@ -96,7 +96,7 @@
                                     </td>
                                     <td>@(r.Product.Versions ?? "—")</td>
                                     <td>@(r.TeamName ?? "—")</td>
-                                    <td>@if (r.Product.CheckedOn is { } on) { @Ui.ShortDay(on) }
+                                    <td>@if (r.Product.CheckedOn is { } on) { @Ui.ShortDay(on, Clock.Today) }
                                         @if (r.CheckOld) { <Badge Tone="BadgeTone.Warn" Icon="bi-clock-history">@(r.Product.CheckedOn is null ? "Never checked" : $"Over {StackService.CheckOldAfterDays} days ago")</Badge> }
                                         else if (r.Product.CheckedOn is null) { <text>—</text> }</td>
                                     <td class="tide-table-num">@r.Articles</td>

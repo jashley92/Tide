@@ -8,6 +8,7 @@ using Tide.Application.Stack;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 using Tide.Web.Components.Pages;
+using Tide.Web.Components.Shared;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tide.IntegrationTests;
@@ -265,8 +266,8 @@ public class StackServiceTests : IDisposable
 
         var list = await stack.OverviewAsync(includeRetired: true);
 
-        list.Rows.Select(r => r.Product.Name).Should().Equal(["Aardvark Mail", "GitLab", "Okta", "Pillow", "Zebra Proxy", "Beta Old"],
-            "every product in use needs a look here, by name; the retired one is last");
+        list.Rows.Select(r => r.Product.Name).Should().Equal(["GitLab", "Aardvark Mail", "Okta", "Pillow", "Zebra Proxy", "Beta Old"],
+            "the product with a CVE on KEV, then the one new in triage, then the housekeeping by name; the retired one is last");
         var row = list.Rows.Single(r => r.Product.Id == gitlab);
         row.Now.Cves.Select(c => c.Id).Should().Equal(["CVE-2026-0003", "CVE-2026-0002", "CVE-2026-0001"], "this week's, each once, the worst first; not last quarter's");
         (row.Now.Cves[0].Record!.IsKev, row.Now.Cves[1].Record!.CvssScore, row.Now.Cves[2].Record).Should().Be((true, 9.8m, null));
@@ -392,22 +393,27 @@ public class StackPageTests(TideApp app) : IClassFixture<TideApp>
     public async Task TheList_PutsWhatNeedsALookFirst_FlagsOldChecks_AndItsFiltersNarrowItWithCounts()
     {
         Guid team;
+        DateOnly today;
         await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
         {
             var sp = scope.ServiceProvider;
-            var today = sp.GetRequiredService<Tide.Application.Org.OrgClock>().Today;
+            today = sp.GetRequiredService<Tide.Application.Org.OrgClock>().Today;
             team = await sp.GetRequiredService<TeamService>().AddAsync("Stack Filter Team", null, null);
             var stack = sp.GetRequiredService<StackService>();
             await stack.SaveAsync(new StackForm { Name = "Sift Alpha Fresh", TeamId = team, CheckedOn = today, Versions = "7.7-sift" });
             await stack.SaveAsync(new StackForm { Name = "Sift Beta Never", TeamId = team, OtherNames = "Siftware" });
             await stack.SaveAsync(new StackForm { Name = "Sift Mid Orphan", CheckedOn = today });
-            await stack.SaveAsync(new StackForm { Name = "Sift Zeta Old", TeamId = team, CheckedOn = today.AddDays(-StackService.CheckOldAfterDays - 1) });
+            await stack.SaveAsync(new StackForm { Name = "Sift Zeta Old", TeamId = team, CheckedOn = today.AddYears(-1) });
         }
         await using var page = await ComponentHarness.RenderAsync<StackPage>(app, "/stack");
 
         var html = await After(page, p => p.SetWords("sift"));
         Names(html).Should().Equal(["Sift Beta Never", "Sift Mid Orphan", "Sift Zeta Old", "Sift Alpha Fresh"], "those that need a look, by name, then the rest");
         html.Should().Contain("<th scope=\"col\">Right now</th>").And.Contain("Never checked").And.Contain($"Over {StackService.CheckOldAfterDays} days ago").And.Contain("Nothing new");
+        var lastYear = today.AddYears(-1);
+        html.Should().Contain($"{Ui.ShortDay(lastYear)}, {lastYear.Year}", "a check from another year says which").And.NotContain($"{Ui.ShortDay(today)}, {today.Year}", "this year's doesn't");
+        Ui.ShortDay(new DateOnly(2025, 9, 16), new DateOnly(2026, 11, 10)).Should().Be("Tue Sep 16, 2025");
+        Ui.ShortDay(new DateOnly(2026, 1, 2), new DateOnly(2026, 11, 10)).Should().Be("Fri Jan 2");
         var all = page.Component.List!;
         foreach (var q in StackPage.Quick)
             html.Should().MatchRegex($"aria-pressed=\"false\"[^>]*>{q.Label} \\({all.Count(q.Matches)}\\)</button>", "each quick filter says how many it would leave");
