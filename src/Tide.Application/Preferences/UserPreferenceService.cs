@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Tide.Application.Abstractions;
+using Tide.Application.Actions;
 using Tide.Application.Security;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
@@ -21,6 +22,10 @@ public static class UserPreferences
     public const string ActionsView = "actions.view";
 
     public const string Mine = "mine", MyTeams = "myteams", AllOpen = "open";
+
+    /// <summary>The query language a lookup's hunt query is written in on the Search page: the one the person chose
+    /// there last (a dialect's key; the first dialect until they choose).</summary>
+    public const string HuntDialect = "hunt.dialect";
 
     // --- My notifications (NotificationPreferenceService) ----------------------------------------------------------
 
@@ -57,7 +62,11 @@ public static class UserPreferences
 
     // The notification kinds' values and permissions are theirs (NotificationKinds).
     private static readonly Dictionary<string, Definition> Known =
-        new Definition[] { new(ActionsLayout, [Board, List], Permission.ReadActions), new(ActionsView, [Mine, MyTeams, AllOpen], Permission.ReadActions) }
+        new Definition[]
+            {
+                new(ActionsLayout, [Board, List], Permission.ReadActions), new(ActionsView, [Mine, MyTeams, AllOpen], Permission.ReadActions),
+                new(HuntDialect, QueryDialects.All.Select(d => d.Key).ToList(), Permission.ReadTeamEdition),
+            }
             .Concat(NotificationKinds.All.Select(k => new Definition(k.Name, k.Values, k.Needs)))
             .ToDictionary(d => d.Name, StringComparer.Ordinal);
 
