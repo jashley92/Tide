@@ -2350,3 +2350,19 @@ html[data-rail-over] .tide-rail { display: flex; }
 /* On a phone the top bar scrolls with the page, so the overlay takes the whole window, over the top bar. */
 @media (max-width: 640.98px) { .tide-rail { top: 0; z-index: 1030; } }
 @media print { .tide-rail, .tide-rail-toggle { display: none !important; } }
+
+/* ---- Search: an indicator or CVE lookup (Search.razor). The first line that answers it, "Seen with", the one list of
+   articles, and the hunt query beside the results on a wide window (under them on a narrow one). ---- */
+.tide-lookup-summary { font-size: var(--tide-text-md); font-weight: var(--tide-weight-semibold); margin: 0 0 var(--tide-space-2); }
+.tide-lookup-summary a { font-weight: inherit; }
+.tide-lookup-sweeping { margin: 0 0 var(--tide-space-2); }
+.tide-lookup-sweep + .tide-lookup-sweep::before { content: "\00b7"; margin: 0 var(--tide-space-1); color: var(--tide-text-muted); }
+.tide-seen-with { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); margin-top: var(--tide-space-3); }
+.tide-seen-with-label { font-size: var(--tide-text-sm); font-weight: var(--tide-weight-semibold); color: var(--tide-text-muted); }
+a.tide-seen { margin: 0; max-width: 100%; text-decoration: none; }
+a.tide-seen:hover, a.tide-seen:focus-visible { border-color: var(--tide-accent); text-decoration: none; }
+.tide-lookup { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 30rem); gap: 0 var(--tide-space-4); align-items: start; }
+@media (max-width: 1100px) { .tide-lookup { grid-template-columns: minmax(0, 1fr); } }
+.tide-lookup-matched { margin: var(--tide-space-1) 0; }
+.tide-lookup-query { min-height: 0; max-height: 28rem; overflow: auto; }
+a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
