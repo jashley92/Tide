@@ -30,3 +30,5 @@ tide.config.psd1
 # Generated production config (written on the target host by Install-Tide.ps1).
 appsettings.Production.json
 .claude/
+# Before and after pictures of the UI (tools/screenshots/baseline.mjs).
+artifacts/ux-baseline/
