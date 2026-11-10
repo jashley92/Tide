@@ -171,6 +171,33 @@
                 <pre id="@id" class="tide-query">@h.Text</pre>
                 <div class="d-flex gap-2 align-items-center flex-wrap">
                     <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="@id" data-copy-status="@(id + "-status")" @onclick="() => _copied.Add(h.Id)"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
+                    @* Closing clean comes straight after Copy, on the page and in the tab order: the days box is the next
+                       stop, so a query that sets no range of its own gets its days said before anything else. *@
+                    @if (CanClose(h))
+                    {
+                        var draft = Draft(h);
+                        var leftOut = HuntQueryBuilder.LeftOut(h.GeneratedText);
+                        var ready = Ready(h, draft, leftOut);
+                        <div class="tide-hunt-close">
+                            <label class="tide-field-label mb-0" for="@(id + "-days")">Searched</label>
+                            <input id="@(id + "-days")" type="number" min="1" max="3650" class="form-control form-control-sm tide-w-count" @bind="draft.Window" />
+                            <span class="small">days</span>
+                            @if (leftOut > 0)
+                            {
+                                <div class="form-check mb-0">
+                                    <input class="form-check-input" type="checkbox" id="@(id + "-checked")" @bind="draft.Checked" />
+                                    <label class="form-check-label small" for="@(id + "-checked")">I've checked the @(leftOut == 1 ? "value" : $"{leftOut} values") the query left out</label>
+                                </div>
+                            }
+                            <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_busy || !ready)" aria-describedby="@(ready ? null : id + "-why")" @onclick="() => CloseClean(h)">
+                                <span class="bi bi-check2-circle" aria-hidden="true"></span> No hits, close
+                            </button>
+                            @if (!ready)
+                            {
+                                <span id="@(id + "-why")" class="small tide-muted">@Why(h, draft, leftOut)</span>
+                            }
+                        </div>
+                    }
                     @if (CanWork)
                     {
                         <button class="btn btn-outline-secondary btn-sm" @onclick="() => EditText(h)"><span class="bi bi-pencil" aria-hidden="true"></span> Edit</button>
@@ -186,31 +213,6 @@
                     }
                     <span id="@(id + "-status")" class="small tide-muted" role="status" aria-live="polite"></span>
                 </div>
-                @if (CanClose(h))
-                {
-                    var draft = Draft(h);
-                    var leftOut = HuntQueryBuilder.LeftOut(h.GeneratedText);
-                    var ready = Ready(h, draft, leftOut);
-                    <div class="tide-hunt-close">
-                        <label class="tide-field-label mb-0" for="@(id + "-days")">Searched</label>
-                        <input id="@(id + "-days")" type="number" min="1" max="3650" class="form-control form-control-sm tide-w-count" @bind="draft.Window" />
-                        <span class="small">days</span>
-                        @if (leftOut > 0)
-                        {
-                            <div class="form-check mb-0">
-                                <input class="form-check-input" type="checkbox" id="@(id + "-checked")" @bind="draft.Checked" />
-                                <label class="form-check-label small" for="@(id + "-checked")">I've checked the @(leftOut == 1 ? "value" : $"{leftOut} values") the query left out</label>
-                            </div>
-                        }
-                        <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_busy || !ready)" aria-describedby="@(ready ? null : id + "-why")" @onclick="() => CloseClean(h)">
-                            <span class="bi bi-check2-circle" aria-hidden="true"></span> No hits, close
-                        </button>
-                        @if (!ready)
-                        {
-                            <span id="@(id + "-why")" class="small tide-muted">@Why(h, draft, leftOut)</span>
-                        }
-                    </div>
-                }
             }
             @if (h.Result != HuntResult.NotRun)
             {
@@ -388,7 +390,7 @@
 
     private CloseDraft Draft(HuntQuery h)
     {
-        if (!_drafts.TryGetValue(h.Id, out var d)) _drafts[h.Id] = d = new CloseDraft { Window = HuntQueryBuilder.WindowToStartFrom(h.GeneratedText) };
+        if (!_drafts.TryGetValue(h.Id, out var d)) _drafts[h.Id] = d = new CloseDraft { Window = HuntQueryBuilder.WindowOf(h.GeneratedText) };
         return d;
     }
 
@@ -400,9 +402,12 @@
 
     private string Why(HuntQuery h, CloseDraft d, int leftOut) =>
         h.GeneratedText.Length > 0 && !_copied.Contains(h.Id) ? "Copy the query and run it first."
-        : d.Window is not (>= 1 and <= 3650) ? "Say how many days it searched."
-        : leftOut > 0 && !d.Checked ? "Tick that you've checked the values it left out."
-        : "";
+        : d.Window is >= 1 and <= 3650 ? (leftOut > 0 && !d.Checked ? "Tick that you've checked the values it left out." : "")
+        // TIDE wrote the query but the query sets no range (its language leaves that to the console): only the analyst
+        // knows what was searched, so the days start blank and this says what to enter.
+        : h.GeneratedText.Length > 0 && h.SavedQueryId is null && HuntQueryBuilder.WindowOf(h.GeneratedText) is null
+            ? "Enter the days you searched: this query sets no time range of its own."
+        : "Say how many days it searched.";
 
     private Task CloseClean(HuntQuery h) => Run(async () =>
     {

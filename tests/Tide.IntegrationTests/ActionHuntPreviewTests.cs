@@ -127,12 +127,17 @@ public class ActionHuntPreviewTests(TideApp app) : IClassFixture<TideApp>
         action.Events.Should().Contain(e => e.Text == $"Generated a {language.Name} hunt query.");
 
         var html = WebUtility.HtmlDecode(await page.Html());
-        // Copied here, and its days start from the window the query names, so "No hits, close" is one click away.
-        html.Should().NotContain("id=\"hunt-preview\"").And.NotContain("Copy the query and run it first.", "it was copied here")
-            .And.Contain("class=\"tide-hunt-close\"").And.NotContain("Say how many days it searched.");
-        shown.Should().Contain("set it to the last 30 days", "this language's query leaves the range to the console, and says which");
-        html.Should().Contain("class=\"form-control form-control-sm tide-w-count\" value=\"30\"");
-        Button(html, " No hits, close").Should().NotContain("aria-describedby", "nothing is left to say before it can be pressed");
+        // Copied here, so closing clean no longer asks for the copy. This language's query sets no time range of its own,
+        // so the days aren't TIDE's to claim: the box is blank, and the reason says what to enter.
+        html.Should().NotContain("id=\"hunt-preview\"").And.NotContain("Copy the query and run it first.", "it was copied here");
+        shown.Should().Contain("with no time range of its own");
+        var close = html[html.IndexOf("class=\"tide-hunt-close\"", StringComparison.Ordinal)..];
+        close[..close.IndexOf("No hits, close", StringComparison.Ordinal)].Should().Contain("class=\"form-control form-control-sm tide-w-count\" />", "no days filled in");
+        Button(html, " No hits, close").Should().Contain("disabled").And.Contain("aria-describedby");
+        html.Should().Contain("Enter the days you searched: this query sets no time range of its own.");
+        // The days box is the next stop after Copy: before Edit and the rest of the query's buttons.
+        int At(string text) => html.IndexOf(text, StringComparison.Ordinal);
+        At("-days\" type=\"number\"").Should().BeGreaterThan(At($"data-copy-target=\"hunt-{hunt.Id:N}\"")).And.BeLessThan(At(" Edit</button>"));
         // One confirmation: the browser's, beside the query (it knows the copy worked). No toast as well.
         Toasts(page).Should().BeEmpty();
 
