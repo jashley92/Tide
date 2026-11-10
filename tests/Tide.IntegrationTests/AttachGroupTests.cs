@@ -157,12 +157,130 @@ public class AttachGroupTests : IDisposable
     }
 
     [Fact]
-    public async Task AttachingTheGroupAgain_ChangesNothingMore()
+    public async Task AttachingTheGroupAgain_ChangesNothingMore_AndSaysWhoAlreadyDidIt()
     {
         var (items, article) = await Seed();
         var ids = items.Select(i => i.Id).ToList();
-        await _db.Intake().AttachAllAsync(ids, article);
-        await _db.Intake().AttachAllAsync(ids, article);
+        await As("Robin", () => _db.Intake().AttachAllAsync(ids, article));
+
+        var again = () => _db.Intake().AttachAllAsync(ids, article);
+        await again.Should().ThrowAsync<InvalidOperationException>().WithMessage("Robin already added these reports to that article*");
         (await _db.Articles().LinksAsync(article)).Should().HaveCount(2, "a link the article has isn't added twice");
+    }
+
+    // --- two people at once: a colleague's operation lands between this one's checks and its claim -------------------
+
+    // Runs `what` as Robin, then goes back to the test analyst.
+    private async Task<T> As<T>(string name, Func<Task<T>> what)
+    {
+        var was = _db.User.DisplayName;
+        _db.User.DisplayName = name;
+        try { return await what(); }
+        finally { _db.User.DisplayName = was; }
+    }
+
+    private Task As(string name, Func<Task> what) => As(name, async () => { await what(); return 0; });
+
+    // Robin's `what` runs, to the end, just after this attach has read the reports and the article (its read of the
+    // article's links), before it claims them.
+    private void RobinFirst(Func<Task> what) => _db.Commands.Before(sql => sql.Contains("FROM \"ArticleLinks\"", StringComparison.Ordinal),
+        () => As("Robin", what).GetAwaiter().GetResult());
+
+    private async Task<int> LinkCount(Guid article)
+    {
+        await using var ctx = _db.Context();
+        return await ctx.ArticleLinks.CountAsync(l => l.ArticleId == article);
+    }
+
+    [Fact]
+    public async Task TwoAttachesOfOneReportAtOnce_AddOneLink_AndTheSecondIsToldWhoGotThereFirst()
+    {
+        var (items, article) = await Seed();
+        RobinFirst(() => _db.Intake().AttachAsync(items[0].Id, article));
+
+        var attach = () => _db.Intake().AttachAllAsync([items[0].Id], article);
+        await attach.Should().ThrowAsync<InvalidOperationException>().WithMessage("Robin has just*");
+
+        (await LinkCount(article)).Should().Be(1, "the report is on the article once");
+        (await Items([items[0].Id])).Single().StatusByName.Should().Be("Robin");
+    }
+
+    [Fact]
+    public async Task TwoAttachAllsOfOneGroupAtOnce_AddEachLinkOnce_AndTheSecondIsToldWho()
+    {
+        var (items, article) = await Seed();
+        var ids = items.Select(i => i.Id).ToList();
+        RobinFirst(() => _db.Intake().AttachAllAsync(ids, article));
+
+        var attach = () => _db.Intake().AttachAllAsync(ids, article);
+        await attach.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Robin*none of the 2 was attached*");
+
+        (await LinkCount(article)).Should().Be(2, "each report is on the article once");
+        (await Items(ids)).Should().AllSatisfy(i => i.StatusByName.Should().Be("Robin"));
+    }
+
+    [Fact]
+    public async Task AnAttachAllLandingJustAfterAPromote_AttachesNone_AndSaysWhichAndWho()
+    {
+        var (items, article) = await Seed();
+        Guid made = default;
+        RobinFirst(async () => made = await _db.Intake().PromoteAsync(items[1].Id));
+
+        var attach = () => _db.Intake().AttachAllAsync(items.Select(i => i.Id).ToList(), article);
+        await attach.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Wallet theft, day two (CVE-2026-7102)*Robin*none of the 2 was attached*");
+
+        (await Items([items[0].Id])).Single().Status.Should().Be(FeedItemStatus.New, "the other report wasn't attached alone");
+        (await Items([items[1].Id])).Single().ArticleId.Should().Be(made);
+        (await LinkCount(article)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task APromoteOfReportsAlreadyAttached_SaysItWasntPromoted_AndWhoAttachedThem()
+    {
+        var (items, article) = await Seed();
+        var ids = items.Select(i => i.Id).ToList();
+        await As("Robin", () => _db.Intake().AttachAllAsync(ids, article));
+
+        var outcome = await _db.Intake().PromoteOrJoinAsync(ids, new PromoteForm());
+        outcome.Should().Be(new PromoteOutcome(article, Made: false, By: "Robin"));
+        var single = await _db.Intake().PromoteOrJoinAsync([ids[0]], new PromoteForm());
+        single.Made.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task AnAttachAllAndAPromoteAtOnce_OneWins_AndNeitherClaimsWhatItDidntDo()
+    {
+        // Run at once: whichever claims the reports first, the other is told, and neither says it did what it didn't.
+        {
+            var (items, article) = await Seed();
+            var ids = items.Select(i => i.Id).ToList();
+
+            var attach = Task.Run(async () =>
+            {
+                try { return (int?)await _db.Intake().AttachAllAsync(ids, article); }
+                catch (InvalidOperationException) { return null; }
+            });
+            var promote = Task.Run(async () =>
+            {
+                try { return await _db.Intake().PromoteOrJoinAsync(ids, new PromoteForm()); }
+                catch (InvalidOperationException) { return null; }
+            });
+            var (attached, promoted) = (await attach, await promote);
+
+            var now = await Items(ids);
+            if (attached is not null)
+            {
+                now.Should().AllSatisfy(i => i.ArticleId.Should().Be(article));
+                promoted?.Made.Should().BeFalse("the reports went to the article attached to, so nothing was promoted");
+            }
+            else
+            {
+                promoted.Should().NotBeNull().And.Match<PromoteOutcome>(p => p.Made);
+                now.Should().AllSatisfy(i => i.ArticleId.Should().Be(promoted!.ArticleId));
+                (await LinkCount(article)).Should().Be(0);
+            }
+            await using var ctx = _db.Context();
+            (await ctx.ArticleLinks.Select(l => new { l.ArticleId, l.Url }).ToListAsync()).Should().OnlyHaveUniqueItems("no report is on an article twice");
+        }
     }
 }
