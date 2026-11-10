@@ -2434,8 +2434,8 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 /* ---- Actions list and board (ActionsBoard.razor, ActionTable.razor, ActionKanban.razor). The board's four working
    columns share the width, with the closed statuses folded into one narrow Closed column after them (each still its own
    .tide-kcol to drop on; the grid itself is .tide-kanban's, above). A card's article on one line and its time in
-   column; a row's Take it and checklist progress; the line an empty Mine shows when the person's teams have work
-   nobody owns. ---- */
+   column; a row's Take it and checklist progress; the views' tabs on a narrow window; the line an empty Mine shows
+   when the person's teams have work nobody owns. ---- */
 .tide-kanban .tide-kcol, .tide-kcard { min-width: 0; }
 .tide-kclosed { display: flex; flex-direction: column; gap: var(--tide-space-2); min-width: 0; }
 .tide-kclosed > .tide-kcol-head, .tide-kclosed > .tide-kcol-sub { margin: 0; padding: 0 var(--tide-space-1); }
@@ -2444,8 +2444,13 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-kclosed .tide-kcol-empty { padding: var(--tide-space-2); }
 .tide-kcard-article { display: flex; align-items: center; gap: .3rem; min-width: 0; font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
 .tide-kcard-since { font-size: var(--tide-text-xs); }
-.tide-progress-cell { width: 7rem; }
-.tide-row-progress { display: flex; align-items: center; gap: .4rem; color: var(--tide-text-muted); }
+/* The view tabs, each with its count, stay one row in a narrow window: closer together, with smaller counts. */
+@media (max-width: 1099.98px) {
+    .tide-actions-views { gap: 0; }
+    .tide-actions-views .tide-tabbar-item { padding-inline: .45rem; gap: .25rem; }
+    .tide-actions-views .tide-tabbar-count { padding: .1rem .35rem; font-size: .7rem; }
+}
+.tide-row-progress { margin-top: var(--tide-space-1); max-width: 7rem; display: flex; align-items: center; gap: .4rem; color: var(--tide-text-muted); }
 .tide-row-progress > .tide-kcard-bar { min-width: 2.5rem; }
 .tide-row-take { display: block; margin-top: var(--tide-space-1); padding: .05rem .5rem; font-size: var(--tide-text-xs); }
 .tide-actions-unowned { margin: 0 0 var(--tide-space-3); padding: var(--tide-space-2) var(--tide-space-3); background: var(--tide-info-soft);

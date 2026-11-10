@@ -8,7 +8,7 @@
 }
 else if (Link)
 {
-    <a class="tide-action-ref @TitleClass" href="@Ui.ActionUrl(Number)" draggable="@(Draggable ? null : "false")">@TitleContent</a>
+    <a @ref="_link" class="tide-action-ref @TitleClass" href="@Ui.ActionUrl(Number)" draggable="@(Draggable ? null : "false")">@TitleContent</a>
 }
 else
 {
@@ -36,6 +36,11 @@ else
     [Parameter] public bool Draggable { get; set; } = true;
 
     private string Label => Ui.ActionLabel(Number);
+
+    private ElementReference _link;
+
+    /// <summary>Puts focus on the title's link (nothing when it's drawn as a button or text, or has gone).</summary>
+    public Task FocusAsync() => Link && !OnOpen.HasDelegate ? _link.TryFocusAsync(orGone: true) : Task.CompletedTask;
 
     private RenderFragment TitleContent => ChildContent ?? (b => b.AddContent(0, Title));
 }

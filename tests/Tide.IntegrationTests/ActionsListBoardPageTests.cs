@@ -132,7 +132,7 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
     }
 
     [Fact]
-    public async Task EachRow_ShowsItsChecklistProgress_InACompactCell()
+    public async Task EachRow_ShowsItsChecklistProgress_UnderItsStatus_WithoutAColumnOfItsOwn()
     {
         var token = $"alprog{Guid.NewGuid():N}"[..14];
         var number = await Raise(await Team("AL progress"), $"{token} checklist");
@@ -148,8 +148,48 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
         });
         await using var r = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=list&q={token}");
         var html = WebUtility.HtmlDecode(await r.HtmlOnce(token));
-        html.Should().Contain("<th").And.Contain(">Checklist<");
-        html.Should().Contain("aria-label=\"Checklist: 1 of 2 done\"").And.Contain("tide-progress-cell");
+        html.Should().NotMatchRegex(@"<th[^>]*>\s*Checklist\s*</th>", "most rows have no checklist, so a column of its own would only narrow the title");
+        var row = html[html.LastIndexOf("<tr", html.IndexOf($"{token} checklist</a>", StringComparison.Ordinal), StringComparison.Ordinal)..];
+        row = row[..row.IndexOf("</tr>", StringComparison.Ordinal)];
+        Regex.Count(row, "<td").Should().Be(5);
+        var status = row[row.LastIndexOf("<td", StringComparison.Ordinal)..];
+        status.Should().Contain("Open").And.Contain("tide-row-progress").And.Contain("aria-label=\"Checklist: 1 of 2 done\"");
+    }
+
+    [Fact]
+    public async Task NoOwner_IsCountedAsAFilter_LikeTheOthers()
+    {
+        await Raise(await Team("AL matching"), "AL matching nobody's");
+        await using var r = await RenderAsync<ActionsBoard>(app, "/actions?view=open&layout=list&assignee=none");
+        WebUtility.HtmlDecode(await r.HtmlOnce("tide-dt-count")).Should().MatchRegex("class=\"tide-dt-count\" role=\"status\">[^<]*matching action");
+    }
+
+    [Fact]
+    public async Task AfterTakeIt_FocusGoesToTheNextRow_OrTheHeadingWhenTheListIsEmpty()
+    {
+        var token = $"alfocus{Guid.NewGuid():N}"[..15];
+        var team = await Team("AL focus");
+        var first = await Raise(team, $"{token} first");
+        var second = await Raise(team, $"{token} second");
+        await using var r = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=list&assignee=none&q={token}");
+        await r.HtmlOnce(token);
+        await r.Click(p => p.Take(p.Rows.Single(x => x.Number == first)));
+        r.Component.Rows.Select(x => x.Number).Should().Equal([second], "the row taken has an owner now, so No owner leaves it out");
+        r.Component.Focusing.Should().Be($"A-{second}", "focus goes to the next row, not the page");
+        await r.Click(p => p.Take(p.Rows.Single(x => x.Number == second)));
+        r.Component.Focusing.Should().Be("heading", "with no rows left, to the list's heading");
+    }
+
+    [Fact]
+    public async Task ShowThem_OpensTheTeamsUnownedWork_InPlace_WithFocusOnTheList()
+    {
+        var owner = Owner();
+        var number = await Raise(await Team("AL show", owner), "AL show nobody has this");
+        await using var r = await RenderAsync<ActionsBoard>(app, "/actions?view=mine&layout=list", @as: owner);
+        await r.HtmlOnce("mine-unowned");
+        (await Went(r, p => p.ShowUnowned())).Should().Contain("view=myteams").And.Contain("assignee=none");
+        r.Component.Rows.Select(x => x.Number).Should().Equal(number);
+        r.Component.Focusing.Should().Be($"A-{number}", "focus lands on the list's first row");
     }
 
     [Fact]

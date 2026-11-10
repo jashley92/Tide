@@ -81,6 +81,34 @@ const visible = selector => ({
     els.some(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; }) ? [] : [`${selector} isn't shown`], selector),
 });
 
+/** In each element matching `cell`, the first `b` sits on the line `a` ends on (their boxes share a horizontal band):
+ * a badge that stays beside the title rather than dropping to a line of its own. Cells without both are skipped. */
+const sameLine = (cell, a, b) => ({
+  name: `same line: ${a} and ${b} in ${cell}`,
+  check: page => page.$$eval(cell, (cells, [a, b]) => cells.flatMap((c, i) => {
+    const ea = c.querySelector(a), eb = c.querySelector(b);
+    if (!ea || !eb) return [];
+    const ra = [...ea.getClientRects()].pop(), rb = eb.getBoundingClientRect();
+    return rb.top < ra.bottom && rb.bottom > ra.top ? [] : [`#${i + 1}: ${b} is on another line from ${a} (${Math.round(rb.top - ra.top)}px lower)`];
+  }), [a, b]),
+});
+
+/** What has the keyboard focus matches `selector` (after a setup step that moved it, it wasn't lost to the page). */
+const focused = selector => ({
+  name: `focused: ${selector}`,
+  check: page => page.evaluate(selector => {
+    const el = document.activeElement;
+    if (el && el !== document.body && el.matches(selector)) return [];
+    return [`focus is on ${el === document.body || !el ? 'the page body' : `<${el.tagName.toLowerCase()} class="${el.className}">`}, not ${selector}`];
+  }, selector),
+});
+
+/** Takes on the first action the list offers with Take it, as a click on it does. */
+async function takeFirst(page) {
+  await page.locator('.tide-row-take').first().click();
+  await page.waitForTimeout(1500);
+}
+
 // --- the pages: route, optional setup, widths (each 900px tall) and rules ([minWidth, rule] from that width up) ------
 
 const pages = [
@@ -96,10 +124,15 @@ const pages = [
     rules: [noSidewaysScroll, visible('.tide-reader-sum'), visible('[role=tablist][aria-label="Beside the article"]')] },
   { name: 'article-actions-tab', route: '/articles/{vpnArticle}?side=actions', widths: [1440, 800],
     rules: [noSidewaysScroll, visible('#reader-panel .tide-action-ref')] },
-  // The page reads the tab from ?view= (each tab with its count, the row of them on one line).
-  { name: 'actions-list', route: '/actions?view=open&layout=list', widths: [1920, 1440, 1000],
-    rules: [noSidewaysScroll, visible('.tide-action-ref'), visible('.tide-tabbar-count'), oneRow('[role=group][aria-label="Views"]'),
-      fits('[role=group][aria-label="Views"]'), visible('.tide-progress-cell')] },
+  // The page reads the tab from ?view= (each tab with its count, the row of them on one line, down to a narrow window).
+  // A row's checklist progress doesn't cost its title width: the Escalated badge stays beside the title.
+  { name: 'actions-list', route: '/actions?view=open&layout=list', widths: [1920, 1440, 1000, 780],
+    rules: [noSidewaysScroll, visible('.tide-action-ref'), visible('.tide-tabbar-count'), [780, oneRow('[role=group][aria-label="Views"]')],
+      [780, fits('[role=group][aria-label="Views"]')], visible('.tide-row-progress'),
+      [1440, sameLine('.tide-table td:first-child', '.tide-action-num', '[title^="Escalated"]')]] },
+  // Take it on a row of the No owner view: the row leaves the list, and focus goes to the next row's title, not the page.
+  { name: 'actions-take-focus', route: '/actions?view=open&layout=list&assignee=none', setup: takeFirst, widths: [1440],
+    rules: [focused('.tide-table .tide-action-ref, h1')] },
   // The four working columns share the width and Closed folds into one narrow column: nothing scrolls sideways, the
   // board included, on a laptop's window.
   { name: 'actions-board', route: '/actions?view=open&layout=board', widths: [1920, 1440],

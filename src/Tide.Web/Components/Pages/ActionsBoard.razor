@@ -19,7 +19,7 @@
 
 <div class="tide-page-head">
     <div>
-        <h1>Actions</h1>
+        <h1 @ref="_heading" tabindex="-1">Actions</h1>
     </div>
     <div class="d-flex gap-2">
         <a class="btn btn-outline-secondary" href="workload"><span class="bi bi-people" aria-hidden="true"></span> Workload</a>
@@ -39,7 +39,7 @@
     @* Each tab says how many it shows under the filters set (one grouped count, ActionService.ViewCountsAsync); on the
        board, its open ones. *@
     <TabBar Label="Views" Items="@(Views.Where(v => !_asBoard || OnBoard(v.Item1)).Select(v => new TabBarItem(v.Item2, "", Key: v.Item1.ToString(), Count: _counts?.For(v.Item1))).ToList())"
-            Active="@_view.ToString()" OnSelect="k => SetView(Enum.Parse<ActionView>(k!))" />
+            Active="@_view.ToString()" OnSelect="k => SetView(Enum.Parse<ActionView>(k!))" Class="tide-actions-views" />
     @if (DefaultFor(_view) is { } shown)
     {
         @* The tab this page opens on when a link doesn't say: the person's own, set here. *@
@@ -113,7 +113,7 @@
     <p class="tide-actions-unowned" id="mine-unowned">
         <span class="bi bi-person-dash" aria-hidden="true"></span>
         Nothing open is assigned to you. Your teams have @unowned action@(unowned == 1 ? "" : "s") with no owner.
-        <a href="@NoOwnerLink">Show them</a>
+        <a href="@NoOwnerLink" @onclick="ShowUnowned" @onclick:preventDefault>Show them</a>
     </p>
 }
 
@@ -132,7 +132,7 @@ else
 {
 <div class="tide-card">
     @* The server filters, sorts, groups and pages the list, 50 rows a page; the page is ?page=, its pager links. *@
-    <ActionTable PageInAddress="true" ServerSide="true" Total="_total" GroupTotals="_groups" PageSize="ActionService.ListPageSize" OnQuery="Query" Filtered="Filtered"
+    <ActionTable @ref="_table" PageInAddress="true" ServerSide="true" Total="_total" GroupTotals="_groups" PageSize="ActionService.ListPageSize" OnQuery="Query" Filtered="Filtered"
                  Rows="@(_loading ? null : _rows)" Today="ActionSvc.Today" Live="_marks" Rules="_rules" Filter="@_search" GroupByKind="_groupByKind" GroupByUrgency="ByUrgency"
                  CanTake="_workers.CanTake" OnTake="Take" Busy="_taking"
                  DefaultSort="@DefaultSort(_view)" Caption="@(ViewName + (_view == ActionView.Closed ? ", most recently closed first" : ByUrgency ? ", grouped by when they're due" : ""))">
@@ -307,8 +307,8 @@ else
     private bool Narrowed => _search is not null || _priorities.Count > 0 || _due is not null || _status is not null || _parentNumber is not null
         || _side is not null || _raised;
 
-    // What the list's own empty state counts as filtered.
-    private bool Filtered => Narrowed || _ruleId is not null;
+    // Whether the list's count says "matching": any filter in the bar, a pill (No owner, P1–P2) as much as a chip.
+    private bool Filtered => AnyFilter;
 
     // Every filter but the card rule, which the empty message counts only off the board. AnyFilter is these or the rule.
     private bool FilteredBesidesRule => Narrowed || _teamId is not null || _kind is not null || _assignee is not null;
@@ -586,8 +586,14 @@ else
         await Load();
     }
 
-    protected override void OnAfterRender(bool firstRender)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_focusNext is not null && !_loading)
+        {
+            var row = FocusRow;
+            _focusNext = null;
+            if (row is null || _table is null || !await _table.FocusRowAsync(row.Id)) await _heading.TryFocusAsync(orGone: true);
+        }
         if (!_sayLayout) return;
         _sayLayout = false;
         // Only the layout is added (the team, holder and the rest stay as they were), and recorded first so it isn't re-read.
@@ -741,6 +747,25 @@ else
 
     internal IReadOnlyList<ActionRow> Rows => _rows;
 
+    // Where focus goes once the list is drawn again, so the person keeps their place: a row (Row), the first row (First),
+    // or with neither, the heading (an empty list). Null: nowhere new.
+    private (Guid? Row, bool First)? _focusNext;
+    private ActionTable? _table;
+    private ElementReference _heading;
+
+    private ActionRow? FocusRow => _focusNext is { } f ? f.First ? _rows.FirstOrDefault() : _rows.FirstOrDefault(r => r.Id == f.Row) : null;
+
+    /// <summary>Where focus is going next ("A-12", or "heading"), until it has gone there.</summary>
+    internal string? Focusing => _focusNext is null ? null : FocusRow is { } row ? Ui.ActionLabel(row.Number) : "heading";
+
+    // "Show them" on an empty Mine: My teams with No owner, in place (the link's address, for a new tab), focus on the list.
+    internal Task ShowUnowned()
+    {
+        (_view, _assignee, _sort) = (ActionView.MyTeams, ActionFilter.Unassigned, DefaultSort(ActionView.MyTeams));
+        _focusNext = (null, true);
+        return Refilter();
+    }
+
     // On an empty Mine: how many open actions of the person's teams have nobody, when there are any.
     private int? UnownedInMyTeams => _view == ActionView.Mine && _counts is { Mine: 0, MyTeamsUnowned: > 0 and var n } ? n : null;
 
@@ -768,7 +793,14 @@ else
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _taking = false; }
+        var was = _rows;
         await Read(quiet: true);
+        // Focus stays on the row, or when it has left the list (No owner), goes to the next row, else the one before,
+        // else the heading.
+        var at = was.ToList().FindIndex(r => r.Id == row.Id);
+        var still = _rows.Select(r => r.Id).ToHashSet();
+        var next = was.Skip(at).Concat(was.Take(Math.Max(at, 0)).Reverse()).FirstOrDefault(r => still.Contains(r.Id));
+        _focusNext = (next?.Id, false);
     }
 
     // A new sort from the list's headings, or "Clear the filter" from its empty state: from the first page.
