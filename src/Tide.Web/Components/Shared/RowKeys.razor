@@ -1,0 +1,81 @@
+@* The keys of a list with a selected row (rows.js): J/K and the arrows move it, Enter on a row opens it, focus follows.
+   It draws nothing. The page keeps the selected place and draws its rows with RowSelection; this binds the place
+   (@bind-Selected), so the page draws again after every move:
+
+     <RowKeys RowClass="tide-x-row" Count="_rows.Count" @bind-Selected="_selected" OnOpen="Open" />
+
+   A paged list also gives Page, Pages and OnPage; one that keeps the row in its address gives Address. One list on a
+   page: the last one drawn has the keys. *@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+@code {
+    /// <summary>The class every row of the list carries, and no other element.</summary>
+    [Parameter, EditorRequired] public string RowClass { get; set; } = "";
+
+    /// <summary>How many rows are shown.</summary>
+    [Parameter] public int Count { get; set; }
+
+    /// <summary>The selected row's place, from 0.</summary>
+    [Parameter] public int Selected { get; set; }
+    [Parameter] public EventCallback<int> SelectedChanged { get; set; }
+
+    /// <summary>Enter on the selected row: its place.</summary>
+    [Parameter] public EventCallback<int> OnOpen { get; set; }
+
+    /// <summary>A paged list: the page shown and how many there are. J on the last row then asks <see cref="OnPage"/>
+    /// for the next page and K on the first for the previous one; the page reads it and sets the selection to its first
+    /// row, or after <see cref="RowMove.PreviousPage"/> its last.</summary>
+    [Parameter] public int Page { get; set; } = 1;
+    [Parameter] public int Pages { get; set; } = 1;
+    [Parameter] public EventCallback<RowMove> OnPage { get; set; }
+
+    /// <summary>The page's address with a row selected. Given, this history entry's address follows the selection (no
+    /// navigation), so a reload or a copied link comes back to the row.</summary>
+    [Parameter] public Func<int, string>? Address { get; set; }
+
+    private DotNetObjectReference<RowKeys>? _ref;
+    private int _started, _addressed;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (firstRender)
+            {
+                _ref = DotNetObjectReference.Create(this);
+                _addressed = Selected;   // the address the page opened at says this row already
+                _started = await JS.InvokeAsync<int>("tideRows.start", _ref, new { row = RowClass });
+            }
+            // However the selection moved (a key, a click, the page itself), the address says it.
+            else if (Address is not null && Selected != _addressed)
+            {
+                _addressed = Selected;
+                await JS.InvokeVoidAsync("tideRows.remember", Address(Selected));
+            }
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    [JSInvokable]
+    public async Task OnRowKey(string action)
+    {
+        if (action == "open")
+        {
+            if (Selected < Count) await OnOpen.InvokeAsync(Selected);
+            return;
+        }
+        if (action is not ("next" or "prev")) return;
+        var selected = Selected;
+        var move = RowSelection.Step(action == "next", ref selected, Count, Page, OnPage.HasDelegate ? Pages : 1);
+        if (move != RowMove.Within) await OnPage.InvokeAsync(move);
+        else if (selected != Selected) await SelectedChanged.InvokeAsync(selected);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_ref is null) return;
+        await JS.StopAsync("tideRows.stop", _started);
+        _ref.Dispose();
+    }
+}
