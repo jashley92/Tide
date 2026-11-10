@@ -60,6 +60,7 @@ public static class DemoSeeder
         try
         {
             var seeded = await new Run(sp, dbs, clock, dev).AllAsync(ct);
+            await TriageFillerAsync(dbs, config.GetValue<int>("Demo:TriageFiller"), ct);
             if (!string.IsNullOrWhiteSpace(info))
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(info))!);
@@ -71,6 +72,30 @@ public static class DemoSeeder
         {
             accessor.HttpContext = null;
         }
+    }
+
+    /// <summary>
+    /// <c>Demo:TriageFiller</c> (none unless set): that many more new items, "Filler k001" onwards, older than the demo's
+    /// own, from one feed so they never group, for the layout checks that need Triage to have a second page.
+    /// </summary>
+    private static async Task TriageFillerAsync(IAppDbContextFactory dbs, int count, CancellationToken ct)
+    {
+        if (count <= 0) return;
+        await using var db = await dbs.CreateAsync(ct);
+        var source = new Source { Name = "Example filler feed", Url = "https://example.com/filler.xml", Enabled = false };
+        db.Sources.Add(source);
+        var now = DateTimeOffset.UtcNow;
+        for (var n = 1; n <= Math.Min(count, 500); n++)
+        {
+            var url = $"https://example.com/filler/k{n:000}";
+            var title = $"Filler k{n:000}";
+            db.FeedItems.Add(new FeedItem
+            {
+                Source = source, Title = title, Url = url, UrlHash = Application.Intake.UrlCanonicalizer.Hash(url),
+                TitleKey = Application.Intake.TitleMatch.Key(title), PublishedAtUtc = now.AddHours(-8).AddMinutes(-10 * n), FetchedAtUtc = now.AddHours(-8).AddMinutes(-10 * n),
+            });
+        }
+        await db.SaveChangesAsync(ct);
     }
 
     private static ClaimsPrincipal Principal(DevAuthOptions dev)
