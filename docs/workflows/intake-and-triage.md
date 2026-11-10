@@ -285,7 +285,7 @@ state: the items are still `New`.
 
 ### Keyboard
 
-Keys are handled by `wwwroot/js/triage.js`, which calls `Triage.OnTriageKey`. Letters work in either case and pause
+Keys are handled by `wwwroot/js/triage.js` (on the shared `rows.js`), which calls `Triage.OnTriageKey`. Letters work in either case and pause
 while a confirmation is open or letter shortcuts are turned off (WCAG 2.1.4).
 
 | Key | Does |
@@ -364,7 +364,7 @@ item itself.
 
 Clicking a title, or pressing P, opens the inline promote form (`PromoteForm`): title, classification, priority (the
 suggested one preselected, with its reason) and TLP. **Promote and write** promotes and opens the draft. Before it
-navigates, `triage.js` (`remember`) rewrites the current history entry with the tab, filters and row, so Back returns to
+navigates, `rows.js` (`remember`) rewrites the current history entry with the tab, filters and row, so Back returns to
 the same place.
 
 What the draft gets (`IntakeService.PromoteManyAsync`, then `ArticleService.CreateAsync`):
@@ -580,5 +580,5 @@ shortlisted since it was read stays. Its `FeedItemText` and `TriageSplit` rows g
 | Promote form | `src/Tide.Application/Intake/PromoteForm.cs` |
 | Background poller | `src/Tide.Web/Services/IntakeHostedService.cs` |
 | Outbound client | `src/Tide.Infrastructure/Notifications/OutboundHttp.cs` |
-| Triage page and keys | `src/Tide.Web/Components/Pages/Triage.razor`; `src/Tide.Web/wwwroot/js/triage.js` |
+| Triage page and keys | `src/Tide.Web/Components/Pages/Triage.razor`; `src/Tide.Web/wwwroot/js/triage.js`, `rows.js` |
 | Sources administration | `src/Tide.Web/Components/Pages/Admin/SourcesAdmin.razor`, `SourceHealthAdmin.razor` |
