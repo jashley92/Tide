@@ -148,6 +148,7 @@ else
                    to the reports themselves, each a row with all its actions. X and S (or their buttons) dismiss or
                    shortlist all its reports after a confirmation; nothing is merged or set aside without a click. *@
                 var groupNew = line.Members.Any(m => _marks.IsUnseen(m.Item.Id));
+                var attachAll = AttachTo(line);
                 <li class="tide-triage-row tide-triage-group @RowSelection.Css(selected) @GroupCss(line)" aria-current="@RowSelection.Current(selected)"
                     aria-label="@(GroupLabel(line) + (groupNew ? NewNote : ""))" tabindex="@RowSelection.TabIndex(selected)" @key="@("group-" + group.Newest)"
                     @onclick="() => Pick(i)" @onfocus="() => Pick(i)">
@@ -166,14 +167,11 @@ else
                         @if (group.Shared.Count > 0) { <span>In common: @string.Join(", ", group.Shared)</span> }
                         @foreach (var cve in group.Cves.Take(6)) { <CveChip CveId="@cve" Record="@_cves.GetValueOrDefault(cve)" /> }
                         @if (group.Cves.Count > 6) { <span>+@(group.Cves.Count - 6) more CVEs</span> }
-                        @if (WeRunOf(line) is not null || AttachTo(line) is not null)
-                        {
-                            @* The group's flags, in the rows' order (see a row's flags). *@
-                            <span class="tide-triage-flags">
-                                @if (WeRunOf(line) is { } runs) { @WeRunChip(runs) }
-                                @if (AttachTo(line) is { } covered) { <Badge Tone="BadgeTone.Info" Class="tide-badge-wrap">@covered.Why covered: <a href="articles/@covered.ArticleId" @onclick:stopPropagation="true">@Short(covered.ArticleTitle)</a></Badge> }
-                            </span>
-                        }
+                        @* The group's flags, in the rows' order (see a row's flags). *@
+                        <span class="tide-triage-flags">
+                            @if (WeRunOf(line) is { } groupRuns) { @WeRunChip(groupRuns) }
+                            @if (attachAll is not null) { <Badge Tone="BadgeTone.Info" Class="tide-badge-wrap">@attachAll.Why covered: <a href="articles/@attachAll.ArticleId" @onclick:stopPropagation="true">@Short(attachAll.ArticleTitle)</a></Badge> }
+                        </span>
                     </div>
                     @if (selected)
                     {
@@ -183,7 +181,6 @@ else
                         }
                         else
                         {
-                            var attachAll = AttachTo(line);
                             <div class="d-flex gap-2 flex-wrap mt-2">
                                 @* Covered by an article that can still take reports: attaching them all is the main button, one step. *@
                                 @if (attachAll is not null)
@@ -270,26 +267,23 @@ else
                                order, from what most changes the decision to what least: we run it (we're exposed), a watched
                                adversary, already covered (attach rather than promote), the same CVE as other new items (decide
                                them together), and looks like an earlier item (maybe a duplicate). *@
-                            @if (row.WeRun is not null || row.Watching is not null || row.Coverage.Count > 0 || row.SameCve.Count > 0 || row.Similar is not null)
-                            {
-                                <span class="tide-triage-flags">
-                                    @if (row.WeRun is { } runs) { @WeRunChip(runs) }
-                                    @if (row.Watching is { } watching)
-                                    {
-                                        <a class="tide-badge tide-badge-warn tide-werun-chip" href="@($"adversaries/{watching.Id}")" title="A watched adversary: open its profile" @onclick:stopPropagation="true">Watching: @watching.Name</a>
-                                    }
-                                    @foreach (var c in row.Coverage)
-                                    {
-                                        <Badge Tone="BadgeTone.Info" Class="tide-badge-wrap">@c.Why covered@(c.BriefDate is { } d ? $" {Ui.ShortDay(d)}" : ""): <a href="articles/@c.ArticleId" @onclick:stopPropagation="true">@Short(c.ArticleTitle)</a></Badge>
-                                    }
-                                    @if (row.SameCve.Count > 0)
-                                    {
-                                        <button type="button" class="tide-badge tide-badge-warn tide-badge-wrap tide-chip-button" title="@($"Show the items with {row.SharedCve}")"
-                                                @onclick:stopPropagation="true" @onclick="() => ShowSameCve(row)">Same CVE as @row.SameCve.Count other new item@(row.SameCve.Count == 1 ? "" : "s")</button>
-                                    }
-                                    @if (row.Similar is { } sim) { <Badge Tone="BadgeTone.Warn" Title="@sim.Title" Class="tide-badge-wrap">Looks like: @Short(sim.Title)</Badge> }
-                                </span>
-                            }
+                            <span class="tide-triage-flags">
+                                @if (row.WeRun is { } runs) { @WeRunChip(runs) }
+                                @if (row.Watching is { } watching)
+                                {
+                                    <a class="tide-badge tide-badge-warn tide-werun-chip" href="@($"adversaries/{watching.Id}")" title="A watched adversary: open its profile" @onclick:stopPropagation="true">Watching: @watching.Name</a>
+                                }
+                                @foreach (var c in row.Coverage)
+                                {
+                                    <Badge Tone="BadgeTone.Info" Class="tide-badge-wrap">@c.Why covered@(c.BriefDate is { } d ? $" {Ui.ShortDay(d)}" : ""): <a href="articles/@c.ArticleId" @onclick:stopPropagation="true">@Short(c.ArticleTitle)</a></Badge>
+                                }
+                                @if (row.SameCve.Count > 0)
+                                {
+                                    <button type="button" class="tide-badge tide-badge-warn tide-badge-wrap tide-chip-button" title="@($"Show the items with {row.SharedCve}")"
+                                            @onclick:stopPropagation="true" @onclick="() => ShowSameCve(row)">Same CVE as @row.SameCve.Count other new item@(row.SameCve.Count == 1 ? "" : "s")</button>
+                                }
+                                @if (row.Similar is { } sim) { <Badge Tone="BadgeTone.Warn" Title="@sim.Title" Class="tide-badge-wrap">Looks like: @Short(sim.Title)</Badge> }
+                            </span>
                         </div>
                         @if (item.Status != FeedItemStatus.Promoted && FollowUp(row) is { } followUp) { <div class="tide-triage-follow">@followUp</div> }
                         @if (row.Likely is { } likely) { <div class="tide-triage-likely"><span class="tide-likely-count">@likely.Promoted/@likely.Decided</span> @likely.Why</div> }
@@ -301,7 +295,7 @@ else
                     @if (!string.IsNullOrWhiteSpace(item.Excerpt)) { <div class="tide-triage-excerpt">@item.Excerpt</div> }
                     @if (!string.IsNullOrWhiteSpace(row.Source.LicenseNote)) { <div class="small text-danger mb-2"><span class="bi bi-shield-exclamation" aria-hidden="true"></span> @row.Source.LicenseNote</div> }
                     var attachTo = AttachTo(line);
-                    var otherArticles = row.Coverage.Where(c => c.Attachable).DistinctBy(c => c.ArticleId).Skip(1).Take(2).ToList();
+                    var otherArticles = attachTo is null ? new List<Coverage>() : row.Coverage.Where(c => c.Attachable && c.ArticleId != attachTo.ArticleId).DistinctBy(c => c.ArticleId).Take(2).ToList();
                     @if (item.Status != FeedItemStatus.Promoted && (otherArticles.Count > 0 || (item.Status == FeedItemStatus.New && row.SameCve.Count > 0)))
                     {
                         @* One story, many reports: keep a follow-up's link on the article that covers it (the first is the
@@ -309,7 +303,7 @@ else
                         <div class="d-flex gap-2 flex-wrap mb-2">
                             @foreach (var c in otherArticles)
                             {
-                                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Attach(row, c.ArticleId, c.ArticleTitle)">
+                                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Attach([row.Item.Id], c.ArticleId, c.ArticleTitle)">
                                     <span class="bi bi-link-45deg" aria-hidden="true"></span> Add as a source of “@Short(c.ArticleTitle)”</button>
                             }
                             @if (item.Status == FeedItemStatus.New && row.SameCve.Count > 0)
@@ -345,7 +339,7 @@ else
                                 @if (item.Status != FeedItemStatus.Dismissed) { <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Dismiss)">Dismiss <span class="tide-kbd">X</span></button> }
                                 @if (row.Similar is not null && item.Status != FeedItemStatus.Duplicate) { <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Duplicate)">Duplicate <span class="tide-kbd">D</span></button> }
                                 @if (item.Status != FeedItemStatus.New) { <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Restore)">Put back <span class="tide-kbd">R</span></button> }
-                                @if (Promotable(item.Status)) { <AttachPicker Disabled="_busy" OnPick="t => Attach(row, t.Id, t.Title)" OpenChanged="open => _attaching = open" /> }
+                                @if (Promotable(item.Status)) { <AttachPicker Disabled="_busy" OnPick="t => Attach([row.Item.Id], t.Id, t.Title)" OpenChanged="open => _attaching = open" /> }
                                 @if (row.WeRun is null)
                                 {
                                     @if (_addingStack == item.Id)
@@ -408,8 +402,8 @@ else
     // the prerender reads it, so the first paint already has the pane or not, with no flash. Until they choose, it's open
     // by itself where the window is wide (reading-auto, by width in app.css); V opens it at every width, and Esc or its
     // close button closes it, each remembered.
-    private bool _reading = true;
     private string _readingPref = UserPreferences.ReadingAuto;
+    private bool _reading => _readingPref != UserPreferences.ReadingClosed;
 
     private string ReadingCss => !_reading ? "" : _readingPref == UserPreferences.ReadingAuto ? " reading reading-auto" : " reading";
     private Guid? _fetching;   // the item being fetched, one at a time
@@ -447,26 +441,26 @@ else
     internal async Task Read(bool again = false)
     {
         if (ReadableRow is not { } row || _fetching is not null) return;
-        _reading = true;
-        await KeepReading(UserPreferences.ReadingOpen);
-        if (!again && _readRow?.Item.Id == row.Item.Id && _read is { HasText: true }) return;
-        _readRow = row;
-        _read = null;
-        _fetching = row.Item.Id;
-        StateHasChanged();
-        try { await Show(await Reading.ReadAsync(row.Item.Id, again)); }
-        catch (Exception ex) when (ex is ArgumentException or ForbiddenException) { await Show(ReadingText.Failed(row.Item.Id, UserFacingError.For(ex))); }
-        finally { _fetching = null; }
+        // Open from here on (kept for the next visit while the text is read, not before it).
+        var kept = KeepReading(UserPreferences.ReadingOpen);
+        try
+        {
+            if (!again && _readRow?.Item.Id == row.Item.Id && _read is { HasText: true }) return;
+            _readRow = row;
+            _read = null;
+            _fetching = row.Item.Id;
+            StateHasChanged();
+            try { await Show(await Reading.ReadAsync(row.Item.Id, again)); }
+            catch (Exception ex) when (ex is ArgumentException or ForbiddenException) { await Show(ReadingText.Failed(row.Item.Id, UserFacingError.For(ex))); }
+            finally { _fetching = null; }
+        }
+        finally { await kept; }
     }
 
     /// <summary>Esc or the pane's close button: closed, and kept closed.</summary>
-    internal async Task CloseReading()
-    {
-        _reading = false;
-        await KeepReading(UserPreferences.ReadingClosed);
-    }
+    internal Task CloseReading() => KeepReading(UserPreferences.ReadingClosed);
 
-    // The person's choice, kept for their next visit (a failure to keep it changes nothing on screen).
+    // The person's choice: shown at once, and kept for their next visit (a failure to keep it changes nothing on screen).
     private async Task KeepReading(string pref)
     {
         if (_readingPref == pref) return;
@@ -1108,7 +1102,6 @@ else
             _sourceOptions = [.. _sources.Select(s => new FilterOption(s.Id.ToString(), s.Name))];
             _lastBriefAt = await Intake.LastBriefAtAsync();
             _readingPref = await Prefs.GetAsync(UserPreferences.TriageReading);
-            _reading = _readingPref != UserPreferences.ReadingClosed;
         }
         Use(Asked());
         _ticking = Time.CreateTimer(_ => { if (_sourcesTab && !_disposed) _ = InvokeAsync(StateHasChanged); }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
@@ -1186,7 +1179,7 @@ else
         (_olderCount, _readAt, _selected) = (p._olderCount, p._readAt, p._selected);
         (_page, _addressPage, _total, _cveFilter, _named, _older) = (p._page, p._addressPage, p._total, p._cveFilter, p._named, p._older);
         (_promoting, _promotingGroup, _pf, _suggested) = (p._promoting, p._promotingGroup, p._pf, p._suggested);
-        (_reading, _readingPref, _readRow, _read, _readCves) = (p._reading, p._readingPref, p._readRow, p._read, p._readCves);
+        (_readingPref, _readRow, _read, _readCves) = (p._readingPref, p._readRow, p._read, p._readCves);
         _open.UnionWith(p._open);
         _loaded = true;
     }
@@ -1668,14 +1661,15 @@ else
         return $"Follow-up to {Ui.ShortDay(first)}: " + (open.Count == 0 ? "no actions open" : string.Join(", ", open) + " open");
     }
 
-    private async Task Attach(InboxRow row, Guid articleId, string title)
+    // A report (a row's buttons and picker), or every report of a group (its main button, all or none), attached.
+    private async Task Attach(IReadOnlyList<Guid> ids, Guid articleId, string title)
     {
         _busy = true;
         try
         {
-            await Intake.AttachAsync(row.Item.Id, articleId);
+            var n = await Intake.AttachAllAsync(ids, articleId);
             Announce();
-            Toasts.Show($"Added as a source of “{Short(title)}”.");
+            Toasts.Show(n == 1 ? $"Added as a source of “{Short(title)}”." : $"Added {Ui.Plural(n, "report")} as sources of “{Short(title)}”.");
             _focus = "tideTriage.focusRow";
             await Load();
         }
@@ -1700,22 +1694,7 @@ else
     {
         if (_busy || i >= _lines.Count || AttachTo(_lines[i]) is not { } to) return;
         var line = _lines[i];
-        if (line.Row is { } row)
-        {
-            await Attach(row, to.ArticleId, to.ArticleTitle);
-            return;
-        }
-        _busy = true;
-        try
-        {
-            var n = await Intake.AttachAllAsync(line.Members.Select(m => m.Item.Id).ToList(), to.ArticleId);
-            Announce();
-            Toasts.Show($"Added {n} reports as sources of “{Short(to.ArticleTitle)}”.");
-            _focus = "tideTriage.focusRow";
-            await Load();
-        }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
-        finally { _busy = false; }
+        await Attach(line.Row is { } row ? [row.Item.Id] : [.. line.Members.Select(m => m.Item.Id)], to.ArticleId, to.ArticleTitle);
     }
 
     private async Task DismissSameCve(InboxRow row)

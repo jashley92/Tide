@@ -2432,6 +2432,7 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 /* ---- Triage 2.4: each row's flags at the end of its line, in one order, and the reading pane open by itself on a wide
    window (reading-auto: the person hasn't chosen; below 1400px it's not shown and the list has the width). ---- */
 .tide-triage-flags { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: .35rem; margin-left: auto; min-width: 0; max-width: 100%; }
+.tide-triage-flags:empty { display: none; }
 @media (max-width: 1399.98px) {
     .tide-triage-layout.reading-auto { display: block; }
     .tide-triage-layout.reading-auto > .tide-reading { display: none; }

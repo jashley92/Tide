@@ -77,15 +77,17 @@ const roomBeside = (selector, px, beside) => ({
 /** At least one match is visible. */
 const visible = selector => ({
   name: `visible: ${selector}`,
-  check: page => page.$$eval(selector, (els, selector) =>
-    els.some(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; }) ? [] : [`${selector} isn't shown`], selector),
+  check: async page => (await anyShown(page, selector)) ? [] : [`${selector} isn't shown`],
 });
+
+/** Whether any match of `selector` is shown (has width and height). */
+const anyShown = (page, selector) => page.$$eval(selector, els =>
+  els.some(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; }));
 
 /** No match is visible (none there, or each hidden). */
 const hidden = selector => ({
   name: `hidden: ${selector}`,
-  check: page => page.$$eval(selector, (els, selector) =>
-    els.some(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; }) ? [`${selector} is shown`] : [], selector),
+  check: async page => (await anyShown(page, selector)) ? [`${selector} is shown`] : [],
 });
 
 /** The list's last row is the one selected, and has focus: after J pressed once for every row below the first. */

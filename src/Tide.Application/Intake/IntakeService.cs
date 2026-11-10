@@ -1268,20 +1268,17 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     /// it (gone, taken by another article, being promoted, or the article presented meanwhile), nothing changes and the
     /// message names that report and why. Returns how many were attached.
     /// </summary>
-    public async Task<int> AttachAllAsync(IReadOnlyCollection<Guid> itemIds, Guid articleId, CancellationToken ct = default)
-    {
-        var count = itemIds.Distinct().Count();
-        if (count is < 1 or > TriageGroups.MaxSize) throw new ArgumentException($"Attach 1 to {TriageGroups.MaxSize} reports at once.");
-        await AttachReportsAsync(itemIds, articleId, evenIfPresented: false, ct);
-        return count;
-    }
+    public Task<int> AttachAllAsync(IReadOnlyCollection<Guid> itemIds, Guid articleId, CancellationToken ct = default) =>
+        AttachReportsAsync(itemIds, articleId, evenIfPresented: false, ct);
 
     // One attach, of one report or a group's: the checks, then each report's link and CVEs added and every report claimed
-    // for the article in one transaction. A single report's messages say "that item"; a group's name the report.
-    private async Task AttachReportsAsync(IReadOnlyCollection<Guid> itemIds, Guid articleId, bool evenIfPresented, CancellationToken ct)
+    // for the article in one transaction. A single report's messages say "that item"; a group's name the report. Returns
+    // how many were attached.
+    private async Task<int> AttachReportsAsync(IReadOnlyCollection<Guid> itemIds, Guid articleId, bool evenIfPresented, CancellationToken ct)
     {
         RequireTriage();
         var wanted = itemIds.Distinct().ToList();
+        if (wanted.Count is < 1 or > TriageGroups.MaxSize) throw new ArgumentException($"Attach 1 to {TriageGroups.MaxSize} reports at once.");
         var single = wanted.Count == 1;
         string Refused(FeedItem item, string why) => single ? $"That item {why}." : $"“{item.Title}” {why}, so none of the {wanted.Count} was attached.";
         await using var db = await dbs.CreateAsync(ct);
@@ -1326,6 +1323,7 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         if (!claimed)
             throw new InvalidOperationException(single ? "Someone has just promoted or attached that item elsewhere. Look at it again."
                 : "Someone has just promoted or attached one of these reports elsewhere, so none was attached. Look at the group again.");
+        return wanted.Count;
     }
 
     // Adds an item to an article as another report of it: its link, unless the article already has that address
