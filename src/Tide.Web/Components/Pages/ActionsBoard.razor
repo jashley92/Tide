@@ -113,7 +113,7 @@
     <p class="tide-actions-unowned" id="mine-unowned">
         <span class="bi bi-person-dash" aria-hidden="true"></span>
         Nothing open is assigned to you. Your teams have @unowned action@(unowned == 1 ? "" : "s") with no owner.
-        <a href="@NoOwnerLink" @onclick="ShowUnowned" @onclick:preventDefault>Show them</a>
+        <a href="@NoOwnerLink" @onclick="ShowThemClicked">Show them</a>
     </p>
 }
 
@@ -413,6 +413,7 @@ else
         var quiet = _adopted;
         _adopted = false;
         if (await Read(quiet)) PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
+        if (_focusOnArrival) (_focusOnArrival, _refocus, _focusId) = (false, true, null);
     }
 
     private static ActionDue? DueFrom(string? text) => text?.Trim().ToLowerInvariant() switch
@@ -567,10 +568,12 @@ else
     // Grouping by kind is the list's own order: from its first page too.
     private Task Regroup() => Refilter();
 
-    // Search as you type, once typing pauses.
+    // Search as you type, once typing pauses. A box emptied (or only spaces) is no search: no filter, nothing in the address.
     private async Task SearchChanged()
     {
-        if (await _typing.Settled()) await Refilter();
+        if (!await _typing.Settled()) return;
+        if (string.IsNullOrWhiteSpace(_search)) _search = null;
+        await Refilter();
     }
 
     private async Task SetView(ActionView view)
@@ -743,6 +746,7 @@ else
     private bool _taking;
 
     internal IReadOnlyList<ActionRow> Rows => _rows;
+    internal ActionViewCounts? Counts => _counts;
 
     // Once the list is drawn again, focus goes to a row (_focusId's, or else the first), or with none, to the heading: the
     // person keeps their place.
@@ -756,12 +760,16 @@ else
     /// <summary>Where focus is going next ("A-12", or "heading"), until it has gone there.</summary>
     internal string? Focusing => !_refocus ? null : FocusRow is { } row ? Ui.ActionLabel(row.Number) : "heading";
 
-    // "Show them" on an empty Mine: No owner, which on Mine is My teams' (Refilter), in place (the link's address is for a
-    // new tab), with focus on the list's first row.
-    internal Task ShowUnowned()
+    // "Show them" on an empty Mine is a link the browser follows as it would any other: Ctrl, Cmd or Shift+click and the
+    // middle button open it elsewhere and leave this page alone. A plain click or Enter brings the list here, and focus
+    // goes to its first row once it has arrived (the click and the new address reach the page in either order).
+    private bool _focusOnArrival;
+
+    internal void ShowThemClicked(MouseEventArgs e)
     {
-        (_assignee, _refocus, _focusId) = (ActionFilter.Unassigned, true, null);
-        return Refilter();
+        if (e.Button != 0 || e.CtrlKey || e.MetaKey || e.ShiftKey || e.AltKey) return;
+        if (_view == ActionView.MyTeams && _assignee == ActionFilter.Unassigned) (_refocus, _focusId) = (true, null);
+        else _focusOnArrival = true;
     }
 
     // On an empty Mine: how many open actions of the person's teams have nobody, when there are any.

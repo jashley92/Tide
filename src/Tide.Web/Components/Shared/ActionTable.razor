@@ -111,7 +111,9 @@
     {
         if (ReferenceEquals(Rows, _refsFor)) return;
         _refsFor = Rows;
-        _refs.Clear();
+        // Only the rows that went: a row still drawn keeps its title's component, which isn't captured again.
+        var drawn = Rows?.Select(r => r.Id).ToHashSet() ?? [];
+        foreach (var gone in _refs.Keys.Where(id => !drawn.Contains(id)).ToList()) _refs.Remove(gone);
     }
 
     /// <summary>Puts focus on this row's title; false when the row isn't drawn.</summary>

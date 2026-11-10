@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Web;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Actions;
 using Tide.Application.Preferences;
@@ -164,32 +165,111 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
         WebUtility.HtmlDecode(await r.HtmlOnce("tide-dt-count")).Should().MatchRegex("class=\"tide-dt-count\" role=\"status\">[^<]*matching action");
     }
 
+    // Whether the list can put focus on this row's title now: a ref to it is held (a test render can't move focus itself).
+    private static Task<bool> CanFocus(Rendered<ActionsBoard> r, int number) => r.Renderer.Dispatcher.InvokeAsync(() =>
+    {
+        var table = (ActionTable)typeof(ActionsBoard).GetField("_table", Private)!.GetValue(r.Component)!;
+        return table.FocusRowAsync(r.Component.Rows.Single(x => x.Number == number).Id);
+    });
+
     [Fact]
-    public async Task AfterTakeIt_FocusGoesToTheNextRow_OrTheHeadingWhenTheListIsEmpty()
+    public async Task AfterTakeIt_FocusGoesToTheNextRow_ThePreviousOne_OrTheHeadingWhenTheListIsEmpty()
     {
         var token = $"alfocus{Guid.NewGuid():N}"[..15];
         var team = await Team("AL focus");
         var first = await Raise(team, $"{token} first");
         var second = await Raise(team, $"{token} second");
+        var third = await Raise(team, $"{token} third");
         await using var r = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=list&assignee=none&q={token}");
         await r.HtmlOnce(token);
         await r.Click(p => p.Take(p.Rows.Single(x => x.Number == first)));
-        r.Component.Rows.Select(x => x.Number).Should().Equal([second], "the row taken has an owner now, so No owner leaves it out");
+        r.Component.Rows.Select(x => x.Number).Should().Equal([second, third], "the row taken has an owner now, so No owner leaves it out");
         r.Component.Focusing.Should().Be($"A-{second}", "focus goes to the next row, not the page");
+        (await CanFocus(r, second)).Should().BeTrue("the row is still drawn, so its title can take focus");
+
+        await r.Click(p => p.Take(p.Rows.Single(x => x.Number == third)));
+        r.Component.Focusing.Should().Be($"A-{second}", "the last row taken: focus goes to the one before");
+        (await CanFocus(r, second)).Should().BeTrue();
+
         await r.Click(p => p.Take(p.Rows.Single(x => x.Number == second)));
         r.Component.Focusing.Should().Be("heading", "with no rows left, to the list's heading");
     }
 
     [Fact]
-    public async Task ShowThem_OpensTheTeamsUnownedWork_InPlace_WithFocusOnTheList()
+    public async Task AfterTakeIt_OnARowThatStaysListed_FocusStaysOnIt()
+    {
+        var token = $"alstay{Guid.NewGuid():N}"[..14];
+        var team = await Team("AL stay");
+        var first = await Raise(team, $"{token} first");
+        await Raise(team, $"{token} second");
+        await using var r = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=list&q={token}");
+        await r.HtmlOnce(token);
+        await r.Click(p => p.Take(p.Rows.Single(x => x.Number == first)));
+        r.Component.Rows.Select(x => x.Number).Should().Contain(first, "All open still lists it, now held");
+        r.Component.Focusing.Should().Be($"A-{first}");
+        (await CanFocus(r, first)).Should().BeTrue("its title is still drawn: focus goes there, not to the heading");
+    }
+
+    // The link's address arriving, as the router hands the page the new query when the browser follows it.
+    private static Task Arrive(Rendered<ActionsBoard> r, string view, string? assignee) => r.Click(async p =>
+    {
+        typeof(ActionsBoard).GetProperty(nameof(ActionsBoard.ViewParam))!.SetValue(p, view);
+        typeof(ActionsBoard).GetProperty(nameof(ActionsBoard.AssigneeParam))!.SetValue(p, assignee);
+        await (Task)typeof(ComponentBase).GetMethod("OnParametersSetAsync", Private)!.Invoke(p, null)!;
+    });
+
+    [Fact]
+    public async Task ShowThem_IsALinkThatNavigates_AndOnlyAPlainClickMovesFocusOnArrival()
     {
         var owner = Owner();
         var number = await Raise(await Team("AL show", owner), "AL show nobody has this");
-        await using var r = await RenderAsync<ActionsBoard>(app, "/actions?view=mine&layout=list", @as: owner);
-        await r.HtmlOnce("mine-unowned");
-        (await Went(r, p => p.ShowUnowned())).Should().Contain("view=myteams").And.Contain("assignee=none");
-        r.Component.Rows.Select(x => x.Number).Should().Equal(number);
-        r.Component.Focusing.Should().Be($"A-{number}", "focus lands on the list's first row");
+        await using (var r = await RenderAsync<ActionsBoard>(app, "/actions?view=mine&layout=list", @as: owner))
+        {
+            WebUtility.HtmlDecode(await r.HtmlOnce("mine-unowned")).Should().Contain("href=\"actions?view=myteams&layout=list&assignee=none\"");
+            // Ctrl, Cmd or Shift+click, or another button: the browser opens it elsewhere, and this page's focus is left alone.
+            foreach (var modified in new[] { new MouseEventArgs { CtrlKey = true }, new MouseEventArgs { MetaKey = true }, new MouseEventArgs { ShiftKey = true }, new MouseEventArgs { Button = 1 } })
+                await r.Click(p => { p.ShowThemClicked(modified); return Task.CompletedTask; });
+            r.Component.Focusing.Should().BeNull();
+        }
+
+        // A plain click (or Enter): the browser follows the link here, and once the list arrives focus goes to its first row.
+        await using (var r = await RenderAsync<ActionsBoard>(app, "/actions?view=mine&layout=list", @as: owner))
+        {
+            await r.HtmlOnce("mine-unowned");
+            await r.Click(p => { p.ShowThemClicked(new MouseEventArgs { Button = 0, Detail = 1 }); return Task.CompletedTask; });
+            await Arrive(r, "myteams", "none");
+            r.Component.Rows.Select(x => x.Number).Should().Equal(number);
+            r.Component.Focusing.Should().Be($"A-{number}", "focus lands on the list's first row");
+        }
+
+        // The address can arrive before the click is heard: focus still goes there.
+        await using (var r = await RenderAsync<ActionsBoard>(app, "/actions?view=mine&layout=list", @as: owner))
+        {
+            await r.HtmlOnce("mine-unowned");
+            await Arrive(r, "myteams", "none");
+            r.Component.Focusing.Should().BeNull("nothing asked for focus yet");
+            await r.Click(p => { p.ShowThemClicked(new MouseEventArgs { Button = 0 }); return Task.CompletedTask; });
+            r.Component.Focusing.Should().Be($"A-{number}");
+        }
+    }
+
+    [Fact]
+    public async Task AClearedSearch_IsNoFilter_AndLeavesTheAddress()
+    {
+        await using var r = await RenderAsync<ActionsBoard>(app, "/actions?view=open&layout=list&q=MFA");
+        await r.HtmlOnce("tide-dt-count");
+        var went = await Went(r, async p =>
+        {
+            typeof(ActionsBoard).GetField("_search", Private)!.SetValue(p, "");   // the box emptied, as typing does
+            await (Task)typeof(ActionsBoard).GetMethod("SearchChanged", Private)!.Invoke(p, null)!;
+        });
+        went.Should().NotContain("q=", "a blank search is no search");
+        r.Component.ShownQuery().Should().NotContain("q=");
+        await r.Click(c => { typeof(ComponentBase).GetMethod("StateHasChanged", Private)!.Invoke(c, null); return Task.CompletedTask; });
+        var html = WebUtility.HtmlDecode(await r.Html());
+        html.Should().NotMatchRegex("class=\"tide-dt-count\" role=\"status\">[^<]*matching", "nothing narrows the list");
+        r.Component.Counts!.Open.Should().Be(int.Parse(Regex.Match(html, "class=\"tide-dt-count\" role=\"status\">(\\d+) action").Groups[1].Value,
+            System.Globalization.CultureInfo.InvariantCulture), "the All open tab counts what the list shows");
     }
 
     [Fact]

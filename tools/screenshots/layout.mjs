@@ -94,23 +94,34 @@ const sameLine = (cell, a, b) => ({
   }), [a, b]),
 });
 
-/** What has the keyboard focus matches `selector` (after a setup step that moved it, it wasn't lost to the page). */
-const focused = selector => ({
-  name: `focused: ${selector}`,
-  check: page => page.evaluate(selector => {
-    const el = document.activeElement;
-    if (el && el !== document.body && el.matches(selector)) return [];
-    return [`focus is on ${el === document.body || !el ? 'the page body' : `<${el.tagName.toLowerCase()} class="${el.className}">`}, not ${selector}`];
-  }, selector),
-});
+/** Focus is on the title of the row `take` named (its `data-expect-focus`): the person's place in the list is kept. */
+const focusedOnExpectedRow = {
+  name: 'focused: the expected row\'s title',
+  check: page => page.evaluate(() => {
+    const want = document.body.dataset.expectFocus, el = document.activeElement;
+    const got = el && el !== document.body ? `<${el.tagName.toLowerCase()} class="${el.className}">${el.closest('tr')?.querySelector('.tide-action-num')?.innerText ?? ''}` : 'the page body';
+    return el?.matches('.tide-table .tide-action-ref') && el.closest('tr').querySelector('.tide-action-num').innerText === want
+      ? [] : [`focus is on ${got}, not ${want}'s title`];
+  }),
+};
 
-/** Takes on the first action the list offers with Take it, as a click on it does. */
-async function takeFirst(page) {
-  const take = await page.locator('.tide-row-take').first().elementHandle();
-  await take.click();
-  // Its row leaves the No owner list once the take is saved (settle then waits for the page to be still).
-  await page.waitForFunction(el => !el.isConnected, take, { timeout: 5000 }).catch(() => { });
-}
+/**
+ * Takes on an action from the keyboard (Tab to its Take it, Enter): the `which` ('first' or 'last') row offering it.
+ * The row focus should land on is noted on the body: `expect` 'same' (it stays listed), 'next' or 'previous' (it leaves).
+ */
+const take = (which, expect) => async page => {
+  const rows = page.locator('.tide-table tbody tr:has(.tide-row-take)');
+  const row = which === 'last' ? rows.last() : rows.first();
+  const all = await page.$$eval('.tide-table tbody tr .tide-action-num', ns => ns.map(n => n.innerText));
+  const mine = await row.locator('.tide-action-num').innerText(), at = all.indexOf(mine);
+  const want = expect === 'same' ? mine : expect === 'next' ? all[at + 1] : all[at - 1];
+  await page.evaluate(w => { document.body.dataset.expectFocus = w; }, want);
+  const button = await row.locator('.tide-row-take').elementHandle();
+  await button.focus();
+  await page.keyboard.press('Enter');
+  // The button goes once the take is saved (settle then waits for the page to be still).
+  await page.waitForFunction(el => !el.isConnected, button, { timeout: 5000 }).catch(() => { });
+};
 
 // --- the pages: route, optional setup, widths (each 900px tall) and rules ([minWidth, rule] from that width up) ------
 
@@ -133,9 +144,14 @@ const pages = [
     rules: [noSidewaysScroll, visible('.tide-action-ref'), visible('.tide-tabbar-count'), [780, oneRow('[role=group][aria-label="Views"]')],
       [780, fits('[role=group][aria-label="Views"]')], visible('.tide-row-progress'),
       [1440, sameLine('.tide-table td:first-child', '.tide-action-num', '[title^="Escalated"]')]] },
-  // Take it on a row of the No owner view: the row leaves the list, and focus goes to the next row's title, not the page.
-  { name: 'actions-take-focus', route: '/actions?view=open&layout=list&assignee=none', setup: takeFirst, widths: [1440],
-    rules: [focused('.tide-table .tide-action-ref, h1')] },
+  // Take it from the keyboard keeps the person's place: on a row that stays listed (All open), focus stays on its title;
+  // in No owner the row leaves, and focus goes to the next row's title, or for the last row, the one before.
+  { name: 'actions-take-focus-stays', route: '/actions?view=open&layout=list', setup: take('first', 'same'), widths: [1920],
+    rules: [focusedOnExpectedRow] },
+  { name: 'actions-take-focus', route: '/actions?view=open&layout=list&assignee=none', setup: take('first', 'next'), widths: [1440],
+    rules: [focusedOnExpectedRow] },
+  { name: 'actions-take-focus-last', route: '/actions?view=open&layout=list&assignee=none', setup: take('last', 'previous'), widths: [780],
+    rules: [focusedOnExpectedRow] },
   // The four working columns share the width and Closed folds into one narrow column: nothing scrolls sideways, the
   // board included, on a laptop's window.
   { name: 'actions-board', route: '/actions?view=open&layout=board', widths: [1920, 1440],
