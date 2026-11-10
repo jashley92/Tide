@@ -61,11 +61,15 @@ What sits behind this is in [frontend](../architecture/frontend.md#layout-and-na
 **Route:** `/` · **Workflow:** [the brief and the meeting](../workflows/brief-and-meeting.md)
 
 Where the presenting analyst starts. Today's brief shows a strip of its five steps (**Triage, Write, Order,
-Present, Send**), each saying where it stands, with one main button for whichever step is next. Beside it:
+Present, Send**), each saying where it stands, with one main button for whichever step is next. Triage says how many
+new items wait in the feed and, when any name a CVE on CISA's known exploited list, how many ("4 new in the feed ·
+2 on KEV"). Beside it:
 
 - **the running order**, which you drag, or move up and down, with removal you can undo;
 - **today's numbers**, each box with the value it's compared with;
-- **what each edition will carry**;
+- **the edition check**: how many of the articles each edition carries, then only the exceptions (what is partly
+  included, left out, or goes out with a warning). When every article goes out whole it says so, and doesn't list
+  them again;
 - **the meeting**: its time, and who the rotation names to present.
 
 Beside them, **Not on a brief yet** lists what hasn't been on any brief: Ready articles (anyone's) first, then your own
@@ -75,7 +79,10 @@ article*). It reads the same candidates as Add article, so the two agree. Someon
 ceiling, so never a draft's title or one marked above what the team edition carries.
 
 Readiness checks say what's missing on each article before the meeting. A threat whose "why it matters to us" would
-reach the company-wide edition is flagged.
+reach the company-wide edition is flagged, and the flag has its fix beside it: **Set to AMBER** marks that paragraph
+TLP:AMBER in one click, so the company-wide edition leaves it out. The button is there for people who can edit
+articles, until the brief is sent; the change is in the article's history under their name. To let the paragraph go to
+everyone, leave it: the warning doesn't stop the brief being marked ready.
 
 Anyone who works actions also gets their **team's queue**: their teams' open actions that are theirs or nobody's,
 theirs first, by due date, with *Take it*. An action owner's Today leads with it. When the escalation ladder has
