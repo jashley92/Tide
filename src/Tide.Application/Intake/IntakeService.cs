@@ -873,6 +873,22 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         return await db.FeedItems.AsNoTracking().CountAsync(i => i.Status == FeedItemStatus.New && !i.Source!.IsRetired, ct) - await OlderCount(db, ct);
     }
 
+    /// <summary>
+    /// How many new items name a CVE on CISA's known exploited list, as the CVE records TIDE keeps say it (the row's KEV
+    /// chip reads the same records): Today's Triage step. Only the new items' CVE lists are read, then those CVEs' records.
+    /// A KEV item never ages into Older, so every one counted is in New.
+    /// </summary>
+    public async Task<int> NewKevCountAsync(CancellationToken ct = default)
+    {
+        RequireTriage();
+        await using var db = await dbs.CreateAsync(ct);
+        var items = (await db.FeedItems.AsNoTracking()
+            .Where(i => i.Status == FeedItemStatus.New && !i.Source!.IsRetired && i.Cves != null && i.Cves != "")
+            .Select(i => i.Cves).ToListAsync(ct)).Select(c => new FeedItem { Cves = c }).ToList();
+        var kev = await KevAsync(db, items, ct);
+        return items.Count(i => i.CveList.Any(kev.Contains));
+    }
+
     /// <summary>Items as they are now, by id: where the rows that left Triage's list went, and who sent them. An item
     /// pruned since isn't there.</summary>
     public async Task<IReadOnlyList<FeedItem>> ItemsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default)

@@ -1809,6 +1809,8 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-ed-why { display: block; color: var(--tide-text-muted); }
 .tide-ed-warn { display: block; color: var(--tide-warn); }
 .tide-ed-warn .bi { margin-right: var(--tide-space-1); }
+.tide-ed-whole { margin: 0; font-size: var(--tide-text-xs); color: var(--tide-ok); }
+.tide-ed-whole + .tide-ed-list { margin-top: var(--tide-space-2); }
 .tide-ed-note { margin: var(--tide-space-3) 0 0; padding-top: var(--tide-space-2); border-top: 1px solid var(--tide-border); font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
 
 /* Preview both editions: side by side for proofreading the whole brief; at 900px or narrower, one at a time, picked

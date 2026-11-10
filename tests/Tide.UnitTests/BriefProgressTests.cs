@@ -137,7 +137,6 @@ public class BriefProgressTests
         var company = EditionChecks.Rows(brief, Edition.Public, TlpLevel.Green, hasNumbers: true);
         company.Select(r => (r.Title, r.Fit, r.Why)).Should().Equal(
             ("Title slide line", EditionFit.LeftOut, "The line is TLP:AMBER"),
-            ("Today's numbers", EditionFit.LeftOut, "Never in this edition"),
             ("open", EditionFit.Included, null),
             ("mixed", EditionFit.Part, "1 part above TLP:GREEN left out"),
             ("amber", EditionFit.LeftOut, "The article is TLP:AMBER"));
@@ -207,6 +206,48 @@ public class BriefProgressTests
             (EditionFit.Part, null));
         EditionChecks.Rows(brief, Edition.Team, TlpLevel.AmberStrict).Should().OnlyContain(r => r.Warning == null,
             "the team edition is meant to carry it");
+    }
+
+    [Fact]
+    public void TheTriageStep_SaysHowManyNewItemsAreOnKev()
+    {
+        var brief = BriefWith(BriefStatus.Draft, Ready("a"));
+        Step(BriefSteps.For(brief, 4, 0, "9:00 AM", newOnKev: 2), BriefStepKind.Triage).Should().Be((StepState.Attention, "4 new in the feed · 2 on KEV"));
+        Step(BriefSteps.For(brief, 4, 0, "9:00 AM", newOnKev: 0), BriefStepKind.Triage).Should().Be((StepState.Attention, "4 new in the feed"));
+        Step(BriefSteps.For(brief, 0, 0, "9:00 AM", newOnKev: 0), BriefStepKind.Triage).Should().Be((StepState.Done, "Feed clear"));
+        Step(BriefSteps.For(brief, null, 0, "9:00 AM", newOnKev: 3), BriefStepKind.Triage).Detail.Should().Be("Sorting the feed", "someone who doesn't triage gets no count");
+    }
+
+    [Fact]
+    public void EditionCheck_ListsOnlyTheExceptions_AndSaysWhenEveryArticleGoesOutWhole()
+    {
+        var mixed = Ready("mixed");
+        mixed.Bullets.Add(new ArticleBullet { Text = "isac only", Tlp = TlpLevel.Amber, SortOrder = 1 });
+        var brief = BriefWith(BriefStatus.Draft, Ready("open"), mixed, Ready("amber", TlpLevel.Amber), Threat());
+        brief.Intro = "A quiet day.";
+
+        var team = EditionChecks.Rows(brief, Edition.Team, TlpLevel.AmberStrict, hasNumbers: true);
+        EditionChecks.Exceptions(team).Should().BeEmpty("the title slide line, the numbers and all four articles go out whole");
+        EditionChecks.Whole(team).Should().Be("All 4 articles go out whole.");
+
+        var company = EditionChecks.Rows(brief, Edition.Public, TlpLevel.Green, hasNumbers: true);
+        EditionChecks.Exceptions(company).Select(r => (r.Title, r.Fit)).Should().Equal(
+            ("mixed", EditionFit.Part), ("amber", EditionFit.LeftOut), ("threat", EditionFit.Included));
+        EditionChecks.Exceptions(company)[2].Warning.Should().NotBeNull("an article that goes out whole with a warning is still listed");
+        EditionChecks.Whole(company).Should().BeNull();
+        company.Should().HaveCount(5, "every article still has its row, for the counts")
+            .And.NotContain(r => r.Title == "Today's numbers", "the numbers never go to the company: said once under the check, not a row every day");
+
+        // Numbers still to enter, or a title slide line above the ceiling, are exceptions.
+        var late = EditionChecks.Rows(brief, Edition.Team, TlpLevel.AmberStrict, hasNumbers: true, missingNumbers: 2);
+        EditionChecks.Exceptions(late).Should().ContainSingle().Which.Title.Should().Be("Today's numbers");
+        EditionChecks.Whole(late).Should().Be("All 4 articles go out whole.", "the articles do, whatever else is listed");
+        brief.IntroTlp = TlpLevel.Amber;
+        EditionChecks.Exceptions(EditionChecks.Rows(brief, Edition.Public, TlpLevel.Green))[0].Title.Should().Be("Title slide line");
+
+        EditionChecks.Whole(EditionChecks.Rows(BriefWith(BriefStatus.Draft, Ready("only")), Edition.Team, TlpLevel.AmberStrict)).Should().Be("The article goes out whole.");
+        EditionChecks.Whole(EditionChecks.Rows(BriefWith(BriefStatus.Draft, Ready("a"), Ready("b")), Edition.Team, TlpLevel.AmberStrict)).Should().Be("Both articles go out whole.");
+        EditionChecks.Whole(EditionChecks.Rows(BriefWith(BriefStatus.Draft), Edition.Team, TlpLevel.AmberStrict, hasNumbers: true)).Should().BeNull("there are no articles to speak of");
     }
 
     [Fact]

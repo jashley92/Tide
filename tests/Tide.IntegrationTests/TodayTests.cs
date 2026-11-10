@@ -81,6 +81,48 @@ public class TodayTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task TheEditionCheck_ListsOnlyTheExceptions_NotEveryArticleAgain()
+    {
+        var html = await app.CreateClient().GetStringAsync("/");
+
+        var check = html[At(html, "id=\"edition-check-h\"")..At(html, "id=\"meeting-h\"")];
+        var team = check[At(check, "Team edition")..At(check, "Company-wide edition")];
+        var company = check[At(check, "Company-wide edition")..];
+        team.Should().Contain("3 of 3 articles").And.Contain("All 3 articles go out whole.")
+            .And.NotContain("href=\"articles/", "an article that goes out whole is named by the running order, not again here");
+        company.Should().Contain("2 of 3 articles").And.NotContain("go out whole")
+            .And.NotContain("Never in this edition", "the standing rule is the note under the check");
+        System.Text.RegularExpressions.Regex.Count(company, "href=\"articles/")
+            .Should().BePositive("the AMBER article is left out").And.BeLessThan(3, "only what is cut or warned about is listed");
+        System.Text.RegularExpressions.Regex.Count(company, "is-included")
+            .Should().BeLessThanOrEqualTo(System.Text.RegularExpressions.Regex.Count(company, "tide-ed-warn"), "an article that goes out whole is listed only with a warning");
+        check.Should().Contain("never carries the numbers, indicators or actions");
+    }
+
+    [Fact]
+    public async Task TheTriageStep_CountsTheNewItemsOnKev()
+    {
+        int expected;
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var source = await db.Sources.FirstAsync(s => !s.IsRetired);
+            db.CveRecords.Add(new CveRecord { CveId = "CVE-2026-7701", IsKev = true });
+            db.FeedItems.Add(new FeedItem { SourceId = source.Id, Title = "Exploited edge device flaw", Url = "https://news.example.com/kev-step", UrlHash = "kev-step", FetchedAtUtc = DateTimeOffset.UtcNow, Cves = "CVE-2026-7701, CVE-2026-7702" });
+            db.FeedItems.Add(new FeedItem { SourceId = source.Id, Title = "Same flaw, already dismissed", Url = "https://news.example.com/kev-step-2", UrlHash = "kev-step-2", FetchedAtUtc = DateTimeOffset.UtcNow, Cves = "CVE-2026-7701", Status = FeedItemStatus.Dismissed });
+            await db.SaveChangesAsync();
+            var kev = (await db.CveRecords.Where(c => c.IsKev).Select(c => c.CveId).ToListAsync()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            expected = (await db.FeedItems.Where(i => i.Status == FeedItemStatus.New && !i.Source!.IsRetired).ToListAsync()).Count(i => i.CveList.Any(kev.Contains));
+        }
+        expected.Should().BePositive();
+
+        var html = await app.CreateClient().GetStringAsync("/");
+
+        var strip = html[At(html, "aria-label=\"Brief progress\"")..At(html, "id=\"running-order-h\"")];
+        strip.Should().MatchRegex($@"\d+ new in the feed &#xB7; {expected} on KEV<");
+    }
+
+    [Fact]
     public async Task TodaysBriefAddress_RedirectsToToday_ButItsPreviewStays()
     {
         var client = app.CreateClient(new() { AllowAutoRedirect = false });

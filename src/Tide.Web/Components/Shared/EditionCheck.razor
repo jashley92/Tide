@@ -1,7 +1,9 @@
-@* What each edition will carry, from the running order as it stands (EditionChecks, the editions' own cut): the
-   title slide line, the day's numbers and each article, marked Included, Partly included or Left out, with why when not all
-   of it goes, and a warning where the company-wide edition carries a threat's "Why it matters". Links open the brief's
-   preview of both editions, each edition's heading with that one picked for a narrow screen. *@
+@* What each edition will carry, from the running order as it stands (EditionChecks, the editions' own cut): how many
+   of the articles go out, then only the exceptions (EditionChecks.Exceptions): the title slide line, the day's numbers
+   or an article that is Partly included or Left out, with why, and an article the company-wide edition carries with a
+   warning (a threat's "Why it matters"). When every article goes out whole it says so; the running order beside it
+   already names them. Links open the brief's preview of both editions, each edition's heading with that one picked for
+   a narrow screen. *@
 
 <section class="tide-card" aria-labelledby="edition-check-h">
     <h2 id="edition-check-h">Edition check <span class="ms-auto small fw-normal tide-muted">From the running order</span></h2>
@@ -40,17 +42,22 @@
         var rows = EditionChecks.Rows(Brief, edition, ceiling, HasNumbers, MissingNumbers);
         var articles = rows.Where(r => r.ArticleId is not null).ToList();
         var kept = articles.Count(r => r.Fit != EditionFit.LeftOut);
+        var exceptions = EditionChecks.Exceptions(rows);
         return @<div class="tide-ed-col">
             <h3><a href="@(Ui.BriefUrl(Day) + "?tab=" + tab)">@name</a>
                 <span class="tide-ed-sub">Up to <TlpBadge Level="ceiling" /> &middot; @kept of @articles.Count article@(articles.Count == 1 ? "" : "s")</span></h3>
-            @if (rows.Count == 0)
+            @if (articles.Count == 0 && exceptions.Count == 0)
             {
                 <p class="small tide-muted mb-0">Nothing on it yet.</p>
             }
-            else
+            @if (EditionChecks.Whole(rows) is { } whole)
+            {
+                <p class="tide-ed-whole"><span class="bi bi-check2" aria-hidden="true"></span> @whole</p>
+            }
+            @if (exceptions.Count > 0)
             {
                 <ul class="tide-ed-list">
-                    @foreach (var r in rows)
+                    @foreach (var r in exceptions)
                     {
                         <li class="@(r.Fit == EditionFit.LeftOut ? "is-out" : "")">
                             <span class="tide-ed-mark is-@r.Fit.ToString().ToLowerInvariant()">@Mark(r.Fit)<span class="visually-hidden">:</span></span>

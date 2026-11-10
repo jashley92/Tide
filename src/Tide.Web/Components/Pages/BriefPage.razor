@@ -288,6 +288,7 @@ else
     private IReadOnlyList<ActionRow>? _mine;
     private TeamQueue? _queue;
     private int? _newInFeed;
+    private int _newOnKev;   // of the feed's new items, those naming a CVE on the known exploited list
 
     // Null until the numbers have been read (and when no metrics are defined), so the edition check leaves them out.
     private int? _missingNumbers;
@@ -328,7 +329,7 @@ else
     private Guid? FirstNeedingWork => Ordered().Where(i => Blocked(i.ArticleId)).Select(i => (Guid?)i.ArticleId).FirstOrDefault();
 
     // Drawn from what's loaded, so a number saved below the strip (MissingChanged) shows in it straight away.
-    private IReadOnlyList<BriefStep> Steps => BriefSteps.For(_brief!, _newInFeed, _missingNumbers ?? 0, MeetsAt, _sends, _nothingToSend, Sends.SharePointRequired);
+    private IReadOnlyList<BriefStep> Steps => BriefSteps.For(_brief!, _newInFeed, _missingNumbers ?? 0, MeetsAt, _sends, _nothingToSend, Sends.SharePointRequired, _newOnKev);
 
     /// <summary>What a ?tab= opens: the preview of both editions (Preview, with Shown the one a narrow screen shows), or
     /// the running order with the Send dialog open (Send), or just the running order.</summary>
@@ -656,7 +657,7 @@ else
         (_publicMax, _teamMax, _people, _recent, _upcoming) = (p._publicMax, p._teamMax, p._people, p._recent, p._upcoming);
         (_brief, _follow, _rotaDay, _mine, _queue) = (p._brief, p._follow, p._rotaDay, p._mine, p._queue);
         (_readiness, _analystId, _intro, _introTlp, _teamNote) = (p._readiness, p._analystId, p._intro, p._introTlp, p._teamNote);
-        (_candidates, _shortlist, _actions, _meeting, _newInFeed) = (p._candidates, p._shortlist, p._actions, p._meeting, p._newInFeed);
+        (_candidates, _shortlist, _actions, _meeting, _newInFeed, _newOnKev) = (p._candidates, p._shortlist, p._actions, p._meeting, p._newInFeed, p._newOnKev);
         (_sends, _nothingToSend, _asSent, _metrics, _missingNumbers) = (p._sends, p._nothingToSend, p._asSent, p._metrics, p._missingNumbers);
         _loading = false;
     }
@@ -684,6 +685,7 @@ else
             _actions = await BriefSvc.EditionActionsAsync(_brief);
             _meeting = await MeetingSvc.GetAsync(_brief.Id);
             _newInFeed = _canWrite ? await Intake.NewCountAsync() : null;
+            _newOnKev = _newInFeed > 0 ? await Intake.NewKevCountAsync() : 0;
             // The send log, for the Send step; the latest real send of each edition, for the "as sent" links on a sent brief.
             _sends = await Sends.SendsAsync(_date);
             _nothingToSend = _brief.Items.Count == 0 ? []

@@ -24,10 +24,12 @@ public static class BriefSteps
     /// numbers not entered yet; <paramref name="meetsAt"/> the meeting time as people read it ("9:00 AM");
     /// <paramref name="sends"/> the day's send log, when it has been read, for where the Send step stands (<see cref="Send"/>);
     /// <paramref name="nothingToSend"/> the editions with nothing in them to send; <paramref name="sharePointRequired"/>
-    /// whether the brief isn't finished until its SharePoint copy is confirmed posted.
+    /// whether the brief isn't finished until its SharePoint copy is confirmed posted; <paramref name="newOnKev"/> how
+    /// many of the feed's new items name a CVE on CISA's known exploited list, said beside the count when there are any.
     /// </summary>
     public static IReadOnlyList<BriefStep> For(Brief brief, int? newInFeed, int missingNumbers, string meetsAt,
-        IReadOnlyList<BriefSend>? sends = null, IReadOnlyCollection<Edition>? nothingToSend = null, bool sharePointRequired = false)
+        IReadOnlyList<BriefSend>? sends = null, IReadOnlyCollection<Edition>? nothingToSend = null, bool sharePointRequired = false,
+        int newOnKev = 0)
     {
         var articles = brief.Items.Where(i => i.Article is not null).ToList();
         var total = articles.Count;
@@ -41,7 +43,7 @@ public static class BriefSteps
             newInFeed switch
             {
                 null => new(BriefStepKind.Triage, "Triage", "Sorting the feed", StepState.Todo),
-                > 0 => new(BriefStepKind.Triage, "Triage", $"{newInFeed} new in the feed", StepState.Attention),
+                > 0 => new(BriefStepKind.Triage, "Triage", $"{newInFeed} new in the feed{(newOnKev > 0 ? $" · {newOnKev} on KEV" : "")}", StepState.Attention),
                 _ => new(BriefStepKind.Triage, "Triage", "Feed clear", StepState.Done),
             },
             (total, needWork) switch
@@ -171,7 +173,8 @@ public static class EditionChecks
 {
     /// <summary>
     /// The rows for <paramref name="edition"/> under <paramref name="ceiling"/>: the title slide line (when there is one),
-    /// the day's numbers (when any are kept; <paramref name="missingNumbers"/> of them not entered), then each article in
+    /// the day's numbers on the team edition (when any are kept; <paramref name="missingNumbers"/> of them not entered;
+    /// the company-wide edition never carries them, which the check says once, not as a row), then each article in
     /// the running order. On the company-wide edition, an article whose "Why it matters" it carries is warned about.
     /// </summary>
     public static IReadOnlyList<EditionCheckRow> Rows(Brief brief, Edition edition, TlpLevel ceiling, bool hasNumbers = false, int missingNumbers = 0)
@@ -181,13 +184,10 @@ public static class EditionChecks
             rows.Add(brief.IntroTlp <= ceiling
                 ? new(null, "Title slide line", EditionFit.Included)
                 : new(null, "Title slide line", EditionFit.LeftOut, $"The line is {Tlp.Label(brief.IntroTlp)}"));
-        if (hasNumbers)
-            rows.Add((edition, missingNumbers) switch
-            {
-                (not Edition.Team, _) => new(null, "Today's numbers", EditionFit.LeftOut, "Never in this edition"),
-                (_, > 0) => new(null, "Today's numbers", EditionFit.Part, $"{BriefSteps.Numbers(missingNumbers)} not entered"),
-                _ => new(null, "Today's numbers", EditionFit.Included),
-            });
+        if (hasNumbers && edition == Edition.Team)
+            rows.Add(missingNumbers > 0
+                ? new(null, "Today's numbers", EditionFit.Part, $"{BriefSteps.Numbers(missingNumbers)} not entered")
+                : new(null, "Today's numbers", EditionFit.Included));
         foreach (var item in brief.Items.OrderBy(i => i.SortOrder))
         {
             if (item.Article is not { } a) continue;
@@ -202,6 +202,29 @@ public static class EditionChecks
         }
         return rows;
     }
+
+    /// <summary>
+    /// The rows worth a look, which is all the edition check lists: what goes out in part or not at all, and what goes
+    /// out with a warning. What goes out whole isn't listed: the running order already names every article.
+    /// </summary>
+    public static IReadOnlyList<EditionCheckRow> Exceptions(IReadOnlyList<EditionCheckRow> rows) => rows.Where(IsException).ToList();
+
+    /// <summary>The line that says every article goes out whole, with no warning ("All 3 articles go out whole."), or
+    /// null when one doesn't or there are none.</summary>
+    public static string? Whole(IReadOnlyList<EditionCheckRow> rows)
+    {
+        var articles = rows.Where(r => r.ArticleId is not null).ToList();
+        if (articles.Any(IsException)) return null;
+        return articles.Count switch
+        {
+            0 => null,
+            1 => "The article goes out whole.",
+            2 => "Both articles go out whole.",
+            var n => $"All {n} articles go out whole.",
+        };
+    }
+
+    private static bool IsException(EditionCheckRow r) => r.Fit != EditionFit.Included || r.Warning is not null;
 }
 
 /// <summary>The running order's moves that aren't one step up or down.</summary>
