@@ -375,8 +375,8 @@ refused and sees the card as before), and writes nothing: no `HuntQuery`, no his
 
 | On the preview | What it does |
 |---|---|
-| *Copy* | Copies the text and saves the query through `GenerateHuntAsync` (its permission check, its "Generated a … hunt query" history line). The saved query counts as copied, so *No hits, close* is open to it. |
-| *Keep this query* | Saves it the same way without copying, to edit it first, say. |
+| *Copy* | Copies the text and saves the query through `GenerateHuntAsync` (its permission check, its "Generated a … hunt query" history line). The page says "Copied. The query is now on the action." beside the query. The saved query counts as copied, so *No hits, close* is open to it in one click. |
+| *Keep this query* | Saves it the same way without copying, to edit it first, say. A toast says "Query kept on the action." |
 | *No hits, close*, *Record hits* | Disabled, with "Copy or keep the query first." |
 
 A result is only ever recorded against a saved query, so an action's history always shows the query was produced
@@ -435,7 +435,9 @@ saved; past that it's refused as too many indicators for one query.
 ### Closing a clean sweep in one step
 
 *No hits, close* (`ActionService.CloseWithNoHitsAsync`) records the query as run with no hits and closes the action
-Done (No hits) in one save and one history line that names the days searched. The panel offers it only once the
+Done (No hits) in one save and one history line that names the days searched. The days start from the window the
+query's first line names (`HuntQueryBuilder.WindowToStartFrom`: the window it sets, or the one it asks to be set in
+the console when its language can't set one), and the analyst can change them. The panel offers it only once the
 query was copied from the card (or is hand-written). It's refused when:
 
 - the action isn't an open IOC sweep or Threat hunt;

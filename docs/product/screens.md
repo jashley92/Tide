@@ -351,7 +351,7 @@ that fits its kind.
   won't be done is closed Cancelled or Not applicable instead. A deleted action leaves every list, count, reminder and
   report; an administrator can restore it. The status badge opens the status choices. A *Next* line says what most needs doing, with links that do it: a part that's late (chase them, or
   record their reply), an email past its follow-up day, escalated, blocked, or late; on a sweep or hunt with none of
-  those, where its query stands (nobody has it; copy the query and run it; copied, record what it found). Beside the work, the facts (once
+  those, where its query stands (nobody has it, and whether a query is already on it; copy the query and run it; run the query that's on the action and record what it found). Beside the work, the facts (once
   the due date has moved, "Originally due Mon Nov 9 · moved 2 times" under it) and a card of tools in tabs: the checklist, the parts' timeline, hunt queries, outreach, opening on the action's own (the
   address can name one: `?tool=hunt`). On a sweep or hunt the tools are in the wide column instead, above *What's
   happened*, so a query has room. *What's happened* is one feed of its comments and history, newest at the
