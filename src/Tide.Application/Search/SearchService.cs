@@ -48,13 +48,16 @@ public sealed record SearchPages(int Articles = 1, int Actions = 1, int Stories 
     public static readonly SearchPages First = new();
 }
 
+/// <summary>A brief an article is on: its day, and whether it was presented (its meeting was ended, or it was sent).</summary>
+public sealed record LookupBrief(DateOnly Day, bool Presented);
+
 /// <summary>
-/// An article a lookup found, as its one row shows it: its badges, when it was written, the briefs it was on (oldest
+/// An article a lookup found, as its one row shows it: its badges, when it was written, the briefs it's on (oldest
 /// first), and the story it belongs to, if any.
 /// </summary>
 public sealed record LookupArticle(
     Guid Id, string Title, TlpLevel Tlp, Classification Classification, Priority? Priority, ArticleStatus Status,
-    DateTimeOffset CreatedAtUtc, IReadOnlyList<DateOnly> BriefDates, SeenStory? Story = null);
+    DateTimeOffset CreatedAtUtc, IReadOnlyList<LookupBrief> Briefs, SeenStory? Story = null);
 
 /// <summary>
 /// An article an indicator is on. <see cref="Related"/> is set when it's a different indicator on the same host (a
@@ -84,23 +87,30 @@ public sealed record SeenWith(
 }
 
 /// <summary>
-/// A lookup's answer in a line: how many articles it's on, the last brief any of them was on, the actions raised (how
-/// many in all, and how many of those listed are open) and how their hunts went: hits if any found some, else no hits
-/// if any came back clean, else not run when a hunt is waiting or a sweep is open, and null when nothing hunts for it.
+/// A lookup's answer in a line: how many articles it's on, the last presented brief any of them was on
+/// (<see cref="LastBriefed"/>), the latest brief one is on that hasn't been presented (<see cref="OnBrief"/>), the
+/// actions raised (how many in all, and how many of those listed are open) and, for an indicator, how the hunts for it
+/// went: hits if any found some, else no hits if any came back clean, else not run when a hunt is waiting or a sweep is
+/// open, and null when nothing hunts for it. A CVE has no hunt result: a hunt searches for indicators.
 /// </summary>
-public sealed record LookupSummary(int Articles, DateOnly? LastBriefed, int Actions, int OpenActions, HuntResult? Hunted)
+public sealed record LookupSummary(int Articles, DateOnly? LastBriefed, DateOnly? OnBrief, int Actions, int OpenActions, HuntResult? Hunted)
 {
     /// <summary>No article has it and no action was raised about it.</summary>
     public bool Unseen => Articles == 0 && Actions == 0;
 
-    public static LookupSummary Of(IReadOnlyCollection<LookupArticle> articles, HitList<ActionHit> actions) => new(
+    public static LookupSummary Of(IReadOnlyCollection<LookupArticle> articles, HitList<ActionHit> actions, bool hunted) => new(
         articles.Count,
-        articles.SelectMany(a => a.BriefDates).Select(d => (DateOnly?)d).Max(),
+        Latest(articles, presented: true),
+        Latest(articles, presented: false),
         actions.Total,
         actions.Items.Count(a => a.IsOpen),
-        actions.Items.Any(a => a.Hunted == HuntResult.Hits) ? HuntResult.Hits
+        !hunted ? null
+            : actions.Items.Any(a => a.Hunted == HuntResult.Hits) ? HuntResult.Hits
             : actions.Items.Any(a => a.Hunted == HuntResult.NoHits) ? HuntResult.NoHits
             : actions.Items.Any(a => a.Hunted is not null || (a.IsOpen && a.Hunts)) ? HuntResult.NotRun : null);
+
+    private static DateOnly? Latest(IEnumerable<LookupArticle> articles, bool presented) =>
+        articles.SelectMany(a => a.Briefs).Where(b => b.Presented == presented).Select(b => (DateOnly?)b.Day).Max();
 }
 
 /// <summary>
@@ -114,7 +124,11 @@ public sealed record IndicatorLookup(
 
 /// <summary>What's known about a CVE, the articles about it (newest first), and the actions raised from them.</summary>
 public sealed record CveLookup(
-    string CveId, CveRecord? Record, HitList<LookupArticle> Articles, HitList<ActionHit> Actions, SeenWith SeenWith, LookupSummary Summary);
+    string CveId, CveRecord? Record, HitList<LookupArticle> Articles, HitList<ActionHit> Actions, SeenWith SeenWith, LookupSummary Summary)
+{
+    /// <summary>The sweeps and hunts among the actions: they searched for the articles' indicators, not for the CVE.</summary>
+    public IReadOnlyList<ActionHit> Sweeps => Actions.Items.Where(a => a.Hunts || a.Hunted is not null).ToList();
+}
 
 /// <summary>The answer to a search: an indicator or CVE lookup when the query is one, and the text hits.</summary>
 public sealed record SearchResults(
@@ -327,7 +341,7 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
         var seenWith = await SeenWithAsync(db, on, i => family.Contains(i.Type) && string.Equals(i.Value, value, StringComparison.OrdinalIgnoreCase), null, ct);
         return new IndicatorLookup(type, value, host,
             new HitList<Sighting>(sightings.Take(MaxSightings).ToList(), sightings.Count + exactTotal - rows.Count),
-            actions, sweeping, seenWith, LookupSummary.Of(on, actions));
+            actions, sweeping, seenWith, LookupSummary.Of(on, actions, hunted: true));
     }
 
     private static async Task<CveLookup> CveAsync(IAppDbContext db, string cveId, CancellationToken ct)
@@ -338,7 +352,7 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
             db.Articles.AsNoTracking().Where(a => articleIds.Contains(a.Id)).OrderByDescending(a => a.CreatedAtUtc).ThenBy(a => a.Id).Take(MaxSightings), ct);
         var actions = await Lookups.ActionsOnAsync(db, articleIds, [], MaxHits, ct);
         return new CveLookup(cveId, record, new HitList<LookupArticle>(newest, articleIds.Count), actions,
-            await SeenWithAsync(db, newest, null, cveId, ct), LookupSummary.Of(newest, actions));
+            await SeenWithAsync(db, newest, null, cveId, ct), LookupSummary.Of(newest, actions, hunted: false));
     }
 
     // The articles of <paramref name="q"/> as a lookup lists them, in its order.
@@ -349,7 +363,7 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
             a.Id, a.Title, a.Tlp, a.Classification, a.Priority, a.Status, a.CreatedAtUtc, a.StoryId,
             StoryName = db.Stories.Where(s => s.Id == a.StoryId).Select(s => s.Name).FirstOrDefault(),
         }).ToListAsync(ct);
-        var dates = await Lookups.BriefDatesAsync(db, rows.Select(a => a.Id).ToList(), ct);
+        var dates = await Lookups.BriefsAsync(db, rows.Select(a => a.Id).ToList(), ct);
         return rows.Select(a => new LookupArticle(a.Id, a.Title, a.Tlp, a.Classification, a.Priority, a.Status, a.CreatedAtUtc,
             dates.GetValueOrDefault(a.Id) ?? [], a.StoryId is { } story && a.StoryName is { } name ? new SeenStory(story, name) : null)).ToList();
     }

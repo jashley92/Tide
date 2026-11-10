@@ -59,8 +59,12 @@ lookup above the hits:
 | A CVE | its `CveRecord` (CVSS, EPSS, KEV), the articles about it (newest first), and the actions raised from them |
 
 Both lookups open with one line (`LookupSummary`): how many articles the value is on, the last brief any of them
-was on, how many of the actions are open, and how the hunts went ("Not seen before" when no article has it and no
-action was raised). Under it:
+was on, how many of the actions are open, and for an indicator how the hunts went ("Not seen before" when no
+article has it and no action was raised). "Briefed" counts only a brief that was presented or sent
+(`Lookups.BriefsAsync`); an article on a brief that hasn't been reads "on today's brief, not presented yet" or "on
+the brief for Mon Nov 9, not presented yet", and one on no brief "not on a brief yet". A CVE's line states no hunt
+result, because a hunt searches for indicators; the sweeps and hunts on its articles are named under it
+(`CveLookup.Sweeps`). Under it:
 
 - **Who is sweeping** (`IndicatorLookup.Sweeping`): the open IOC sweeps and threat hunts raised from an article that
   carries the indicator, or carrying it themselves, each named with a link for someone who may read actions.
@@ -72,7 +76,9 @@ action was raised). Under it:
 - **The hunt query** is built with the results, in memory (`HuntQueryBuilder.BuildAsync`), in the person's
   `hunt.dialect` preference (`UserPreferenceService`; the first dialect until they choose one on this page).
   Building it writes no `HuntQuery`, no action event and no preference; only changing the language saves the
-  preference. Every value goes in as a quoted string literal (`QueryDialects.Quote`).
+  preference. Every value goes in as a quoted string literal (`QueryDialects.Quote`). When the dialect has no
+  template for the value's kind (`HuntQueryBuilder.SearchesNothing`), the page says the language can't search for
+  it and Copy is disabled. Copy puts the query on the clipboard as plain text with LF line breaks (`clipboard.js`).
 
 The lookup shows what the page shows: every TLP, to the team edition only (`ReadTeamEdition`), as the article pages
 do. Nobody below it gets the summary, "Seen with" or the query.

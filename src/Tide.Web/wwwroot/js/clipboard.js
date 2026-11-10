@@ -1,7 +1,9 @@
-// One-click copy of a rendered block (the SharePoint copy) as rich HTML with a plain-text alternative, so it pastes into
-// a SharePoint page with its headings and lists; or of a text box's value as plain text. data-copy-done says what a
-// copy that worked says. CSP-safe: a delegated listener on [data-copy-target]; the result is
-// written to the element named by data-copy-status (never to the button, whose markup Blazor owns).
+// One-click copy. A text box's value (an outreach email's subject and body) or a block's text (a hunt query, a command,
+// an indicator) goes as plain text, a block's line breaks as LF whatever the page was served with. A button with
+// data-copy-rich copies its block as rich HTML with a plain-text alternative instead, so the SharePoint view pastes with
+// its headings and lists. data-copy-done says what a copy that worked says ("Copied." without it). CSP-safe: a delegated
+// listener on [data-copy-target]; the result is written to the element named by data-copy-status (never to the button,
+// whose markup Blazor owns).
 (function () {
     function say(btn, text) {
         const status = document.getElementById(btn.getAttribute('data-copy-status') || '');
@@ -15,9 +17,15 @@
     }
 
     // Where the clipboard API isn't there or is refused: select the text and copy it the old way, a box's own text or a
-    // block's contents, and say whether that worked (with `done`) or how to do it by hand.
-    function legacyCopy(btn, el, done) {
+    // block's contents, and say whether that worked (with `done`) or how to do it by hand. With `text`, that exact text
+    // is what goes on the clipboard, not the selection as the browser writes it (CRLF line breaks on Windows).
+    function legacyCopy(btn, el, done, text) {
         let ok = false;
+        function exact(e) {
+            e.clipboardData.setData('text/plain', text);
+            e.preventDefault();
+        }
+        if (text !== undefined) document.addEventListener('copy', exact);
         if (isField(el)) {
             el.focus();
             el.select();
@@ -31,30 +39,22 @@
             try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
             sel.removeAllRanges();
         }
+        document.removeEventListener('copy', exact);
         say(btn, ok ? done : 'Select the text and press Ctrl+C.');
     }
 
-    // A box's text as it stands, edits included (an outreach email's subject and body): plain text only.
-    function copyField(btn, el) {
-        const done = btn.getAttribute('data-copy-done') || 'Copied.';
+    // Plain text: a box's text as it stands, edits included, or a block's text with LF line breaks.
+    function copyText(btn, el, done) {
+        const text = isField(el) ? el.value : el.textContent.replace(/\r\n?/g, '\n');
         if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(el.value).then(function () { say(btn, done); }, function () { legacyCopy(btn, el, done); });
+            navigator.clipboard.writeText(text).then(function () { say(btn, done); }, function () { legacyCopy(btn, el, done, text); });
         } else {
-            legacyCopy(btn, el, done);
+            legacyCopy(btn, el, done, text);
         }
     }
 
-    document.addEventListener('click', function (e) {
-        const btn = e.target.closest('[data-copy-target]');
-        if (!btn) return;
-        const el = document.getElementById(btn.getAttribute('data-copy-target'));
-        if (!el) return;
-        e.preventDefault();
-        if (isField(el)) {
-            copyField(btn, el);
-            return;
-        }
-        const done = btn.getAttribute('data-copy-done') || 'Copied. Paste it into the SharePoint page.';
+    // A block as it's drawn, with its text as the alternative.
+    function copyRich(btn, el, done) {
         if (navigator.clipboard && window.ClipboardItem) {
             const item = new ClipboardItem({
                 'text/html': new Blob([el.innerHTML], { type: 'text/html' }),
@@ -66,5 +66,16 @@
         } else {
             legacyCopy(btn, el, 'Copied.');
         }
+    }
+
+    document.addEventListener('click', function (e) {
+        const btn = e.target.closest('[data-copy-target]');
+        if (!btn) return;
+        const el = document.getElementById(btn.getAttribute('data-copy-target'));
+        if (!el) return;
+        e.preventDefault();
+        const done = btn.getAttribute('data-copy-done') || 'Copied.';
+        if (btn.hasAttribute('data-copy-rich') && !isField(el)) copyRich(btn, el, done);
+        else copyText(btn, el, done);
     });
 })();

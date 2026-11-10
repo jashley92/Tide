@@ -41,6 +41,14 @@ internal static class Lookups
         return new HitList<ActionHit>(rows.Take(take).Select(r => r.Hit(null)).ToList(), total);
     }
 
+    /// <summary>The briefs each article is on, oldest first, each with whether it was presented (or sent).</summary>
+    public static async Task<Dictionary<Guid, IReadOnlyList<LookupBrief>>> BriefsAsync(IAppDbContext db, List<Guid> articleIds, CancellationToken ct) =>
+        (await db.BriefItems.AsNoTracking().Where(i => articleIds.Contains(i.ArticleId))
+            .Join(db.Briefs, i => i.BriefId, b => b.Id, (i, b) => new { i.ArticleId, b.BriefDate, b.Status }).ToListAsync(ct))
+        .GroupBy(d => d.ArticleId).ToDictionary(g => g.Key, g => (IReadOnlyList<LookupBrief>)g
+            .GroupBy(d => d.BriefDate).OrderBy(day => day.Key)
+            .Select(day => new LookupBrief(day.Key, day.Any(d => d.Status is BriefStatus.Presented or BriefStatus.Sent))).ToList());
+
     /// <summary>The days of the briefs each article was on, oldest first.</summary>
     public static async Task<Dictionary<Guid, IReadOnlyList<DateOnly>>> BriefDatesAsync(IAppDbContext db, List<Guid> articleIds, CancellationToken ct) =>
         (await db.BriefItems.AsNoTracking().Where(i => articleIds.Contains(i.ArticleId))

@@ -42,6 +42,7 @@ else if (_results is { Terms.Count: > 0 } r)
     {
         var related = ind.Sightings.Items.Count(s => s.Related);
         var byArticle = ind.Sightings.Items.GroupBy(s => s.ArticleId).ToList();
+        var nothingToRun = HuntQueryBuilder.SearchesNothing(_query);
         <div class="tide-card">
             <h2 class="d-flex gap-2 align-items-center flex-wrap">
                 <span class="tide-chip mb-0">@Ui.IndicatorLabel(ind.Type)</span>
@@ -62,7 +63,7 @@ else if (_results is { Terms.Count: > 0 } r)
                     {
                         <span class="tide-lookup-sweep"><ActionRef Number="a.Number" Title="@a.Title" Link="_canOpenActions" /> <span class="tide-muted">(@a.TeamName, @(a.AssigneeName ?? "unassigned"))</span></span>
                     }
-                    <span>already @(ind.Sweeping.Count == 1 ? "sweeps" : "sweep") for this.</span>
+                    <span> already @(ind.Sweeping.Count == 1 ? "sweeps" : "sweep") for this.</span>
                 </p>
             }
             @SeenWithRow(ind.SeenWith)
@@ -98,19 +99,23 @@ else if (_results is { Terms.Count: > 0 } r)
             </div>
             <div class="tide-card">
                 <h2>Hunt query</h2>
-                <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
+                <div id="lookup-query-tools" class="d-flex gap-2 align-items-center flex-wrap mb-2">
                     <select class="tide-maxw-md form-select form-select-sm" aria-label="Query language" @bind:get="_dialect" @bind:set="ChooseDialect">
                         @foreach (var d in QueryDialects.All) { <option value="@d.Key" selected="@(d.Key == _dialect)">@d.Name</option> }
                     </select>
                     @if (_query is not null)
                     {
-                        <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="lookup-query" data-copy-status="lookup-query-status"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="lookup-query" data-copy-status="lookup-query-status" data-copy-done="Query copied." disabled="@nothingToRun"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
                         <span id="lookup-query-status" class="small tide-muted" role="status"></span>
                     }
                 </div>
                 @if (related > 0)
                 {
                     <label class="form-check-label small d-block mb-2"><input type="checkbox" class="form-check-input me-1" @bind:get="_withRelated" @bind:set="IncludeRelated" /> With the @Words.Plural(related, "related indicator")</label>
+                }
+                @if (nothingToRun)
+                {
+                    <p id="lookup-query-none" class="small mb-2"><span class="bi bi-exclamation-triangle" aria-hidden="true"></span> @HuntQueryBuilder.DialectName(_dialect) can't search for this kind of value (@Ui.IndicatorLabel(ind.Type)), so there's nothing to copy. Choose another language.</p>
                 }
                 @if (_query is not null)
                 {
@@ -128,6 +133,17 @@ else if (_results is { Terms.Count: > 0 } r)
             @SummaryLine(cve.Summary, cve.Summary.Unseen, cve.Actions.More)
             @if (cve.Record?.Description is { } desc) { <p>@desc</p> }
             @if (cve.Record is null) { <p class="small tide-muted">Not enriched yet: CVSS, EPSS and KEV are fetched for CVEs that are on an article.</p> }
+            @if (cve.Sweeps.Count > 0)
+            {
+                <p id="lookup-swept" class="tide-lookup-sweeping">
+                    <span class="bi bi-search" aria-hidden="true"></span>
+                    <span>A hunt doesn't search for a CVE. The indicators on these articles: </span>
+                    @foreach (var a in cve.Sweeps)
+                    {
+                        <span class="tide-lookup-sweep"><ActionRef Number="a.Number" Title="@a.Title" Link="_canOpenActions" /> @if (a.Hunted is null) { <span class="tide-muted">(no query yet)</span> } else { <HuntBadge Result="a.Hunted" /> }</span>
+                    }
+                </p>
+            }
             @SeenWithRow(cve.SeenWith)
         </div>
         @if (cve.Articles.Items.Count > 0)
@@ -170,7 +186,7 @@ else if (_results is { Terms.Count: > 0 } r)
                         @a.AuthorName &middot; @Ui.When(Clock, a.CreatedAtUtc)
                         @if (a.BriefDates.Count > 0)
                         {
-                            <span> &middot; Briefed @foreach (var (d, i) in a.BriefDates.Select((d, i) => (d, i))) { @(i > 0 ? ", " : " ")<a href="@Ui.BriefUrl(d)">@Ui.ShortDay(d)</a> }</span>
+                            <span> &middot; On the brief for @foreach (var (d, i) in a.BriefDates.Select((d, i) => (d, i))) { @(i > 0 ? ", " : " ")<a href="@Ui.BriefUrl(d)">@Ui.ShortDay(d)</a> }</span>
                         }
                     </div>
                 </div>
@@ -331,7 +347,7 @@ else if (_results is { Terms.Count: > 0 } r)
         "search?q=" + Uri.EscapeDataString(value.Any(char.IsWhiteSpace) && !value.Contains('"') ? $"\"{value}\"" : value);
 
     // The lookup's first line: is it known, was it briefed, is anyone on it, did a hunt come back.
-    private static RenderFragment SummaryLine(LookupSummary s, bool unseen, bool moreActions) => @<p id="lookup-summary" class="tide-lookup-summary">
+    private RenderFragment SummaryLine(LookupSummary s, bool unseen, bool moreActions) => @<p id="lookup-summary" class="tide-lookup-summary">
         @if (unseen)
         {
             <span>Not seen before</span>
@@ -341,7 +357,10 @@ else if (_results is { Terms.Count: > 0 } r)
             <span>@(s.Articles == 0 ? "Not on any article" : $"On {Words.Plural(s.Articles, "article")}")</span>
             @if (s.Articles > 0)
             {
-                <span> &middot; @if (s.LastBriefed is { } day) { <text>briefed <a href="@Ui.BriefUrl(day)">@Ui.ShortDay(day)</a></text> } else { <text>not briefed yet</text> }</span>
+                <span> &middot; @if (s.LastBriefed is { } day) { <text>briefed <a href="@Ui.BriefUrl(day)">@Ui.ShortDay(day)</a></text> }
+                    else if (s.OnBrief == Clock.Today) { <text>on <a href="@Ui.BriefUrl(Clock.Today)">today's brief</a>, not presented yet</text> }
+                    else if (s.OnBrief is { } planned) { <text>on the brief for <a href="@Ui.BriefUrl(planned)">@Ui.ShortDay(planned)</a>, not presented yet</text> }
+                    else { <text>not on a brief yet</text> }</span>
             }
             <span> &middot; @ActionsSaid(s, moreActions)</span>
             @if (s.Hunted is { } hunted)
@@ -379,6 +398,10 @@ else if (_results is { Terms.Count: > 0 } r)
         }
     </div>;
 
+    private static RenderFragment BriefLinks(IEnumerable<LookupBrief> briefs) => @<text>
+        @foreach (var (b, i) in briefs.Select((b, i) => (b, i))) { @(i > 0 ? ", " : "")<a href="@Ui.BriefUrl(b.Day)">@Ui.ShortDay(b.Day)</a> }
+    </text>;
+
     // An article a lookup found, in its one row: badges, what matched, when it was briefed and written.
     private RenderFragment ArticleRow(LookupArticle a, RenderFragment matched) => @<text>
         <div class="d-flex gap-2 align-items-center flex-wrap">
@@ -389,14 +412,11 @@ else if (_results is { Terms.Count: > 0 } r)
         </div>
         <div class="tide-lookup-matched">@matched</div>
         <div class="small tide-muted">
-            @if (a.BriefDates.Count > 0)
-            {
-                <span>Briefed @foreach (var (d, i) in a.BriefDates.Select((d, i) => (d, i))) { @(i > 0 ? ", " : " ")<a href="@Ui.BriefUrl(d)">@Ui.ShortDay(d)</a> }</span>
-            }
-            else
-            {
-                <span>Not briefed yet</span>
-            }
+            @{ var briefed = a.Briefs.Where(b => b.Presented).ToList(); var planned = a.Briefs.Where(b => !b.Presented).ToList(); }
+            @if (briefed.Count > 0) { <span>Briefed @BriefLinks(briefed)</span> }
+            @if (briefed.Count > 0 && planned.Count > 0) { <span> &middot; </span> }
+            @if (planned.Count > 0) { <span>On the brief for @BriefLinks(planned), not presented yet</span> }
+            @if (a.Briefs.Count == 0) { <span>Not on a brief yet</span> }
             <span> &middot; Written @Ui.When(Clock, a.CreatedAtUtc)</span>
         </div>
     </text>;

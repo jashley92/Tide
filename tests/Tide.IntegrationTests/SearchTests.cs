@@ -210,19 +210,24 @@ public class SearchServiceTests : IDisposable
 
         var ind = (await Search().SearchAsync("203.0.113.45")).Indicator!;
 
-        ind.Summary.Should().Be(new LookupSummary(1, _db.Clock.CurrentBriefDate, 2, 2, HuntResult.NotRun));
+        ind.Summary.Should().Be(new LookupSummary(1, null, _db.Clock.CurrentBriefDate, 2, 2, HuntResult.NotRun), "a brief still being written hasn't briefed anyone");
         ind.Summary.Unseen.Should().BeFalse();
         ind.Sweeping.Select(x => x.Number).Should().Equal([sweep], "the block isn't a sweep");
+
+        await _db.Briefs().MarkPresentedAsync(brief.Id);
+        var after = (await Search().SearchAsync("203.0.113.45")).Indicator!;
+        after.Summary.Should().Be(new LookupSummary(1, _db.Clock.CurrentBriefDate, null, 2, 2, HuntResult.NotRun), "the meeting was held");
+        after.Sightings.Items[0].Article.Briefs.Should().Equal(new LookupBrief(_db.Clock.CurrentBriefDate, true));
     }
 
     [Fact]
     public async Task Lookup_Summary_NeverSeen_AndWrittenButNotBriefed_AndAHuntThatCameBack()
     {
-        (await Search().SearchAsync("198.51.100.99")).Indicator!.Summary.Should().Be(new LookupSummary(0, null, 0, 0, null));
+        (await Search().SearchAsync("198.51.100.99")).Indicator!.Summary.Should().Be(new LookupSummary(0, null, null, 0, 0, null));
         (await Search().SearchAsync("198.51.100.99")).Indicator!.Summary.Unseen.Should().BeTrue();
 
         var a = await Article("Draft only", indicators: [(IndicatorType.Domain, "draft-only.example.net")]);
-        (await Search().SearchAsync("draft-only.example.net")).Indicator!.Summary.Should().Be(new LookupSummary(1, null, 0, 0, null));
+        (await Search().SearchAsync("draft-only.example.net")).Indicator!.Summary.Should().Be(new LookupSummary(1, null, null, 0, 0, null));
 
         var team = await _db.Teams().AddAsync("Cyber Defense", null, null);
         var number = await _db.Actions().CreateAsync(new ActionForm { Title = "Sweep", Kind = ActionKind.IocSweep, TeamId = team, ArticleId = a });
@@ -244,7 +249,7 @@ public class SearchServiceTests : IDisposable
 
         ind.Sweeping.Select(x => x.Number).Should().Equal(own);
         ind.Actions.Items.Select(x => x.Number).Should().Equal([own], "an action that carries the indicator is what was done about it");
-        ind.Summary.Should().Be(new LookupSummary(0, null, 1, 1, HuntResult.NotRun));
+        ind.Summary.Should().Be(new LookupSummary(0, null, null, 1, 1, HuntResult.NotRun));
         ind.Summary.Unseen.Should().BeFalse("someone is on it, though no article has it");
 
         await using (var db = _db.Context())
@@ -306,9 +311,26 @@ public class SearchServiceTests : IDisposable
         var r = await Search().SearchAsync("CVE-2026-12345", Once);
 
         r.Cve!.Articles.Items.Select(x => x.Title).Should().BeEquivalentTo("Firewall bug, exploited", "Firewall bug");
-        r.Cve.Summary.Should().Be(new LookupSummary(2, null, 1, 1, null));
+        r.Cve.Summary.Should().Be(new LookupSummary(2, null, null, 1, 1, null));
         r.Articles.Items.Should().BeEmpty("both are listed with the CVE");
         (await Search().SearchAsync("CVE-2026-00001")).Cve!.Summary.Unseen.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Lookup_Cve_ClaimsNoHuntResult_ButNamesTheSweepOfItsArticlesIndicators()
+    {
+        var a = await Article("Firewall bug", indicators: [(IndicatorType.IpAddress, "203.0.113.45")], cves: ["CVE-2026-12345"]);
+        var team = await _db.Teams().AddAsync("Cyber Defense", null, null);
+        var sweep = await _db.Actions().CreateAsync(new ActionForm { Title = "Sweep", Kind = ActionKind.IocSweep, TeamId = team, ArticleId = a });
+        await _db.Actions().CreateAsync(new ActionForm { Title = "Patch", Kind = ActionKind.PatchRemediate, TeamId = team, ArticleId = a });
+        var hunt = await _db.Actions().GenerateHuntAsync((await _db.Actions().GetAsync(sweep))!.Action.Id, QueryDialects.All[0].Key);
+        await _db.Actions().RecordHuntResultAsync(hunt.Id, HuntResult.NoHits, null, "Clean.", null);
+
+        var cve = (await Search().SearchAsync("CVE-2026-12345")).Cve!;
+
+        cve.Summary.Hunted.Should().BeNull("a hunt searches for indicators, not for a CVE");
+        cve.Sweeps.Select(x => (x.Number, x.Hunted)).Should().Equal((sweep, HuntResult.NoHits));
+        (await Search().SearchAsync("203.0.113.45")).Indicator!.Summary.Hunted.Should().Be(HuntResult.NoHits, "the indicator was hunted for");
     }
 
     [Fact]
@@ -349,10 +371,23 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
 
     private static string NewCve() => $"CVE-2031-{Random.Shared.Next(100000, 999999)}";
 
-    private DateOnly Today => app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;
+    private OrgClock Clock => app.Services.GetRequiredService<OrgClock>();
+
+    private DateOnly Today => Clock.CurrentBriefDate;
+
+    // A working day before today, a brief of this test's own.
+    private DateOnly Past(int days)
+    {
+        var day = Today;
+        for (var i = 0; i < days; i++) day = WorkingDays.Weekdays.Previous(day);
+        return day;
+    }
+
+    // How the first line names a brief that hasn't been presented.
+    private string NotPresented(DateOnly day) => day == Clock.Today ? "on today's brief, not presented yet" : $"on the brief for {day:ddd MMM d}, not presented yet";
 
     private async Task<Guid> Article(string title, IEnumerable<(IndicatorType Type, string Value)> indicators, IEnumerable<string>? cves = null,
-        IEnumerable<string>? techniques = null, bool briefed = false)
+        IEnumerable<string>? techniques = null, DateOnly? brief = null, bool presented = false)
     {
         await using var scope = SignedIn(app, SignIn.Analyst);
         var svc = scope.ServiceProvider.GetRequiredService<ArticleService>();
@@ -363,10 +398,12 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
         form.Cves = (cves ?? []).ToList();
         form.TechniqueIds = (techniques ?? []).ToList();
         await svc.SaveAsync(form);
-        if (briefed)
+        if (brief is { } day)
         {
             var briefs = scope.ServiceProvider.GetRequiredService<BriefService>();
-            await briefs.AddArticleAsync((await briefs.GetOrStartAsync(Today)).Id, id);
+            var on = (await briefs.GetOrStartAsync(day)).Id;
+            await briefs.AddArticleAsync(on, id);
+            if (presented) await briefs.MarkPresentedAsync(on);
         }
         return id;
     }
@@ -394,7 +431,9 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
         return m.Groups[2].Value;
     }
 
-    private static string Summary(string html) => Spaces().Replace(Text(html, "lookup-summary"), " ");
+    // The first line as it reads: a link's words run on into the comma after it.
+    private static string Summary(string html) =>
+        Spaces().Replace(WebUtility.HtmlDecode(Tags().Replace(Inside(html, "lookup-summary"), "")), " ").Trim();
 
     [GeneratedRegex("<[^>]+>")]
     private static partial Regex Tags();
@@ -408,17 +447,73 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
     public async Task TheFirstLine_SaysItsKnown_WhenItWasBriefed_AndWhoIsOnIt()
     {
         var domain = Unique("briefed") + ".example.net";
-        var id = await Article("Lookup briefed article", [(IndicatorType.Domain, domain)], briefed: true);
+        var day = Past(41);
+        var id = await Article("Lookup briefed article", [(IndicatorType.Domain, domain)], brief: day, presented: true);
         var sweep = await Action("Lookup sweep for it", ActionKind.IocSweep, id);
         await Action("Lookup block for it", ActionKind.Block, id);
 
         var html = await Page(domain);
 
-        Summary(html).Should().Be($"On 1 article · briefed {Today:ddd MMM d} · 2 actions open · no hunt result yet");
-        Inside(html, "lookup-summary").Should().Contain($"href=\"briefs/{Today:yyyy-MM-dd}\"");
+        Summary(html).Should().Be($"On 1 article · briefed {day:ddd MMM d} · 2 actions open · no hunt result yet");
+        Inside(html, "lookup-summary").Should().Contain($"href=\"briefs/{day:yyyy-MM-dd}\"");
         var sweeping = Inside(html, "lookup-sweeping");
         sweeping.Should().Contain("Lookup sweep for it").And.Contain("already sweeps for this").And.NotContain("Lookup block for it")
             .And.Contain($"href=\"actions/{sweep}\"");
+        WebUtility.HtmlDecode(Tags().Replace(sweeping, "")).Should().MatchRegex(@"unassigned\)\s+already sweeps for this\.", "the words don't run together");
+    }
+
+    [Fact]
+    public async Task ABriefThatHasntBeenPresented_IsntCalledBriefed()
+    {
+        var today = Unique("today") + ".example.net";
+        var id = await Article("Lookup on today's brief", [(IndicatorType.Domain, today)], brief: Today);
+        var html = await Page(today);
+        Summary(html).Should().Be($"On 1 article · {NotPresented(Today)} · no action raised");
+        var row = html[html.IndexOf($"href=\"articles/{id}\"", StringComparison.Ordinal)..];
+        row = WebUtility.HtmlDecode(Tags().Replace(row[..row.IndexOf("</li>", StringComparison.Ordinal)], " "));
+        row.Should().Contain("On the brief for").And.Contain("not presented yet").And.NotContain("Briefed");
+
+        var earlier = Unique("earlier") + ".example.net";
+        var day = Past(43);
+        await Article("Lookup on an unpresented brief", [(IndicatorType.Domain, earlier)], brief: day);
+        Summary(await Page(earlier)).Should().Be($"On 1 article · on the brief for {day:ddd MMM d}, not presented yet · no action raised");
+    }
+
+    [Fact]
+    public async Task ACveLookup_ClaimsNoHuntResult_AndNamesTheSweepOfItsArticlesIndicators()
+    {
+        var cve = NewCve();
+        var id = await Article("Lookup CVE with a sweep", [(IndicatorType.Domain, Unique("cvesweep") + ".example.net")], cves: [cve]);
+        var sweep = await Action("Lookup CVE article sweep", ActionKind.IocSweep, id);
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+        {
+            var actions = scope.ServiceProvider.GetRequiredService<ActionService>();
+            var hunt = await actions.GenerateHuntAsync((await actions.GetAsync(sweep))!.Action.Id, QueryDialects.All[0].Key);
+            await actions.RecordHuntResultAsync(hunt.Id, HuntResult.NoHits, null, "Clean.", null);
+        }
+
+        var html = await Page(cve);
+
+        Summary(html).Should().Be("On 1 article · not on a brief yet · 1 action open");
+        var swept = Inside(html, "lookup-swept");
+        swept.Should().Contain("Lookup CVE article sweep").And.Contain($"href=\"actions/{sweep}\"");
+        WebUtility.HtmlDecode(Tags().Replace(swept, " ")).Should().Contain("indicators on these articles");
+    }
+
+    [Fact]
+    public async Task ALanguageWithNoQueryForTheValue_SaysSo_AndOffersNoCopy()
+    {
+        var url = $"https://{Unique("nofql")}.example.net/payload.bin";
+        await Article("Lookup URL no Falcon query", [(IndicatorType.Url, url)]);
+        var who = Person();
+        Inside(await Page(url, who), "lookup-query-tools").Should().NotContain("disabled");
+        await using (var scope = SignedIn(app, who))
+            await scope.ServiceProvider.GetRequiredService<UserPreferenceService>().SetAsync(UserPreferences.HuntDialect, "fql");
+
+        var html = await Page(url, who);
+
+        Inside(html, "lookup-query-tools").Should().MatchRegex("<button[^>]*data-copy-target=\"lookup-query\"[^>]*disabled", "there's nothing to run");
+        Text(html, "lookup-query-none").Should().Contain("can't search for this kind of value");
     }
 
     [Fact]
@@ -428,19 +523,20 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
 
         var domain = Unique("written") + ".example.net";
         await Article("Lookup written, not briefed", [(IndicatorType.Domain, domain)]);
-        Summary(await Page(domain)).Should().Be("On 1 article · not briefed yet · no action raised");
+        Summary(await Page(domain)).Should().Be("On 1 article · not on a brief yet · no action raised");
 
         var cve = NewCve();
         Summary(await Page(cve)).Should().Be("Not seen before");
         await Article("Lookup CVE article", [], cves: [cve]);
-        Summary(await Page(cve)).Should().Be("On 1 article · not briefed yet · no action raised");
+        Summary(await Page(cve)).Should().Be("On 1 article · not on a brief yet · no action raised");
     }
 
     [Fact]
     public async Task TheArticle_IsListedOnce_WithItsBadges_WhatMatched_AndWhen()
     {
         var domain = Unique("once") + ".example.net";
-        var id = await Article("Lookup listed once", [(IndicatorType.Domain, domain)], briefed: true);
+        var day = Past(42);
+        var id = await Article("Lookup listed once", [(IndicatorType.Domain, domain)], brief: day, presented: true);
 
         var html = await Page(domain);
 
@@ -448,7 +544,7 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
         var row = html[html.IndexOf($"href=\"articles/{id}\"", StringComparison.Ordinal)..];
         row = WebUtility.HtmlDecode(row[..row.IndexOf("</li>", StringComparison.Ordinal)]);
         row.Should().Contain("TLP:AMBER").And.Contain("Informational").And.Contain("This indicator")
-            .And.Contain("Briefed").And.Contain($"{Today:ddd MMM d}").And.Contain("Written");
+            .And.Contain("Briefed").And.Contain($"{day:ddd MMM d}").And.Contain("Written");
 
         var cve = NewCve();
         var about = await Article("Lookup CVE listed once", [], cves: [cve]);
@@ -549,7 +645,7 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
     {
         var domain = Unique("reader") + ".example.net";
         var cve = NewCve();
-        var id = await Article("Lookup restricted article", [(IndicatorType.Domain, domain)], cves: [cve], briefed: true);
+        var id = await Article("Lookup restricted article", [(IndicatorType.Domain, domain)], cves: [cve], brief: Today);
         await Action("Lookup restricted sweep", ActionKind.IocSweep, id);
 
         foreach (var role in new[] { "Reader", "Visitor" })
