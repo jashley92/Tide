@@ -201,7 +201,7 @@ the tables and columns are in [data model](../architecture/data-model.md).
 
 | Term | Meaning | Code name |
 |---|---|---|
-| **Saved query** | A hunt query kept in the team's library, by language, with `{{days}}` and `{{values}}` placeholders, to add to any action. | `SavedQuery`, `SavedQueryService`, `/hunts/saved` |
+| **Saved query** | A hunt query kept in the team's library, by language, with `{{days}}` and `{{values}}` placeholders, to add to any action. | `SavedQuery`, `SavedQueryService`, `/library/queries` |
 | **Scorecard** | The board's taxonomy of what the team reports on: categories and tags articles are counted by in Trends. Tags are retired, never deleted, once used. | `ScorecardCategory`, `ScorecardTag`, `ScorecardService` |
 | **Seat** | A place in a live meeting. A *Visitor* reads team-edition content only from a seat, only for that meeting's brief, and only while it runs. | `LiveMeetings.Join`, `MeetingAccess` |
 | **Send** | Emailing one edition of a brief to its recipient list, after a confirmation showing the marking and every recipient. It's frozen first; only a send the relay took marks the brief Sent. A test send goes to the sender only and isn't frozen. | `BriefSend`, `SendStatus` (`Sending`, `Sent`, `Failed`, `Unknown`), `DistributionService`, `SendPlan`, `BriefSend.IsTest` |

@@ -89,10 +89,11 @@ public class CapabilitiesTests : IDisposable
         ["Join and follow a live meeting"] = [typeof(Present)],
         ["Raise a hand in a meeting"] = [typeof(Present)],
         ["Read actions: their pages, the board, Workload"] = [typeof(ActionPage), typeof(ActionsBoard), typeof(Workload)],
-        ["Read the saved hunt queries"] = [typeof(SavedQueriesPage)],
-        ["Read the outreach templates"] = [typeof(OutreachTemplatesPage)],
-        ["Read the playbooks"] = [typeof(PlaybooksPage)],
-        ["Read the board rules (the card rules, read-only)"] = [typeof(BoardRulesPage)],
+        // Each a tab of the Library page; the addresses they had (LibraryMoved) lead to their tabs.
+        ["Read the saved hunt queries"] = [typeof(Library), typeof(LibraryMoved)],
+        ["Read the outreach templates"] = [typeof(Library), typeof(LibraryMoved)],
+        ["Read the playbooks"] = [typeof(Library), typeof(LibraryMoved)],
+        ["Read the board rules (the card rules, read-only)"] = [typeof(Library), typeof(LibraryMoved)],
         ["Triage the inbox"] = [typeof(Triage)],
         ["Review articles"] = [typeof(ReviewPage)],
         ["Read the team edition: briefs, the brief archive, Today"] = [typeof(BriefPage), typeof(BriefsArchive)],
@@ -158,6 +159,18 @@ public class CapabilitiesTests : IDisposable
                 row.Grants[0].Needs.Should().Equal([Policies.Required[policy]], $"{activity} is {page.Name}, whose policy is {policy}");
             }
         }
+    }
+
+    // The Library's tabs each ask for what their row says, as their pages' policies did.
+    [Theory]
+    [InlineData("Read the saved hunt queries", Tide.Web.Components.Layout.LibraryTabs.Queries)]
+    [InlineData("Read the outreach templates", Tide.Web.Components.Layout.LibraryTabs.Templates)]
+    [InlineData("Read the playbooks", Tide.Web.Components.Layout.LibraryTabs.Playbooks)]
+    [InlineData("Read the board rules (the card rules, read-only)", Tide.Web.Components.Layout.LibraryTabs.BoardRules)]
+    public void EachLibraryRow_NeedsWhatItsTabRequires(string activity, string tab)
+    {
+        Capabilities.All.Single(c => c.Activity == activity).Grants[0].Needs.Should()
+            .Equal([Tide.Web.Components.Layout.LibraryTabs.All.Single(t => t.Key == tab).Requires]);
     }
 
     [Fact]

@@ -1370,7 +1370,6 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-hunt-picker { border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl); padding: .6rem .9rem; }
 .tide-hunt-picks { list-style: none; margin: 0; padding: 0; max-height: 22rem; overflow-y: auto; }
 .tide-hunt-picks li { display: flex; gap: var(--tide-space-2); align-items: flex-start; padding: var(--tide-space-2) 0; border-top: 1px solid var(--tide-border); }
-.tide-saved-query .tide-query { min-height: 0; max-height: 16rem; }
 /* Outreach emails: a template's body, an email being written (prose, so it wraps), and one marked sent. */
 .tide-email-text { font-family: var(--tide-font-data); font-size: .84rem; background: var(--tide-surface-2); color: var(--tide-text); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-lg); padding: .7rem .8rem; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 18rem; overflow-y: auto; margin-bottom: .5rem; }
 .tide-email-body { min-height: 16rem; white-space: pre-wrap; }
@@ -2366,3 +2365,28 @@ a.tide-seen:hover, a.tide-seen:focus-visible { border-color: var(--tide-accent);
 .tide-lookup-matched { margin: var(--tide-space-1) 0; }
 .tide-lookup-query { min-height: 0; max-height: 28rem; overflow: auto; }
 a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
+
+/* ── Library (the Team › Library page): each tab's own heading under the page's, and a library's list beside the entry
+   chosen from it. The rows are chosen as Triage's are (.selected, one tab stop). One column below 1000px. ── */
+.tide-library-head h2 { font-size: 1.15rem; font-weight: var(--tide-weight-semibold); margin: 0; }
+.tide-library { display: grid; grid-template-columns: minmax(16rem, 24rem) minmax(0, 1fr); gap: var(--tide-space-4); align-items: start; }
+.tide-library-side { min-width: 0; }
+.tide-library-list { list-style: none; margin: 0 0 var(--tide-space-3); padding: 0; background: var(--tide-surface); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl); overflow: hidden; }
+.tide-library-row { display: grid; gap: .1rem; padding: .5rem .7rem; border-bottom: 1px solid var(--tide-border); border-left: 3px solid transparent; cursor: pointer; }
+.tide-library-row:last-child { border-bottom: 0; }
+.tide-library-row:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: -2px; }
+.tide-library-row.selected { background: var(--tide-accent-soft); border-left-color: var(--tide-accent); cursor: default; }
+.tide-library-row-name { font-weight: var(--tide-weight-semibold); overflow-wrap: anywhere; }
+.tide-library-row-about { font-size: var(--tide-text-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tide-library-row-meta { font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
+/* The chosen entry stays in view while a long list scrolls, and scrolls within itself when it's longer than the window. */
+.tide-library-detail { position: sticky; top: var(--tide-space-4); max-height: calc(100vh - var(--tide-space-8)); overflow-y: auto; min-width: 0; }
+.tide-library-entry { background: var(--tide-surface); margin-bottom: 0; }
+/* In full: the query no taller than its lines, the email's body not cut short. */
+.tide-library-entry .tide-query { min-height: 0; }
+.tide-library-entry .tide-email-text { max-height: none; }
+@media (max-width: 1000px) {
+    .tide-library { grid-template-columns: minmax(0, 1fr); }
+    .tide-library-list { max-height: 45vh; overflow-y: auto; }
+    .tide-library-detail { position: static; max-height: none; overflow-y: visible; }
+}

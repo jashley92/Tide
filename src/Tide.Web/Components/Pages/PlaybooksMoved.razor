@@ -1,9 +1,0 @@
-@page "/admin/playbooks"
-@inject NavigationManager Nav
-
-@* Playbooks were an administrator's page; they're the team's now, on Team › Playbooks. A bookmark or an old link to the
-   admin address goes there (a redirect when the page is first loaded, a navigation inside the app). *@
-
-@code {
-    protected override void OnInitialized() => Nav.NavigateTo("playbooks", replace: true);
-}

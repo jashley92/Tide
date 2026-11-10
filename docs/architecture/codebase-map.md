@@ -180,8 +180,7 @@ API endpoints and hosted services.
 | `/published`, `/published/{day}` | `Published.razor` | The published archive that Readers see. |
 | `/actions`, `/actions/new`, `/actions/{number}` | `ActionsBoard.razor`, `ActionPage.razor` | The board and list, and one action. |
 | `/workload` | `Workload.razor` | Load by team and person. |
-| `/hunts/saved` | `SavedQueriesPage.razor` | Saved hunt queries. |
-| `/outreach/templates` | `OutreachTemplatesPage.razor` | Outreach email templates. |
+| `/library`, `/library/{tab}` | `Library.razor` (tabs: `SavedQueriesPage.razor`, `OutreachTemplatesPage.razor`, `PlaybooksPage.razor`, `BoardRulesPage.razor`) | The team's library: saved hunt queries, outreach email templates, playbooks and the board rules. The old addresses redirect (`LibraryMoved.razor`). |
 | `/stories`, `/stories/{id}` | `Stories.razor` | Threat stories. |
 | `/adversaries`, `/adversaries/{id}` | `AdversariesPage.razor` | Actor and campaign profiles. |
 | `/stack`, `/stack/{id}` | `StackPage.razor` | Our stack. |

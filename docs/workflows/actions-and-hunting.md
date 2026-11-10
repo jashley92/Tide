@@ -445,7 +445,7 @@ sequenceDiagram
 
 ## Saved queries
 
-The team's library of hunt queries (`SavedQuery`, `SavedQueryService`, the Saved queries page at `/hunts/saved`): a
+The team's library of hunt queries (`SavedQuery`, `SavedQueryService`, the Library's Saved queries tab at `/library/queries`): a
 name, a language, the text, an optional description, who saved it and last changed it, and whether it's retired. The
 page sits under Team in the sidebar, after Brief rotation and Workload. It lists the queries by language, with how
 many actions used each, 20 cards a page with the page in the address (`?page=`). A language that runs on to the next
@@ -477,7 +477,7 @@ page is headed there too, its heading counting every match; a page that a delete
 
 ## Playbooks
 
-The team's checklists (`Playbook`, `PlaybookService`, the Playbooks page at `/playbooks`, under Team in the sidebar),
+The team's checklists (`Playbook`, `PlaybookService`, the Library's Playbooks tab at `/library/playbooks`),
 kept as saved queries are (EP-89, business rule A26). A playbook has a name, an optional description, the kind of
 action it's for (or any kind), up to 40 steps, who made it and last changed it, and whether it's retired. A new action
 can start its checklist from one for its kind or for any kind; an action already open applies one from its checklist.
@@ -498,14 +498,14 @@ The steps are copied, so a later edit doesn't change actions already started.
   offered that way (a retired one between them stays put), and a move is a change like any other, so it moves the
   version and names who made it (an edit open on either would then be refused, so moving waits until it's saved or
   cancelled). An edit whose playbook leaves the page (a colleague retires, deletes or renames it, or a filter hides it)
-  keeps its form above the list, with what's typed, as Saved queries and Outreach templates do. The old address,
-  `/admin/playbooks`, redirects here.
+  keeps its form above the list, with what's typed, as Saved queries and Outreach templates do. The old addresses,
+  `/playbooks` and `/admin/playbooks`, redirect here.
 - **Not in the configuration bundle**, as the other libraries aren't.
 
 ## Board rules
 
-The administrators' card rules, read-only, for everyone with `ReadActions` (`BoardRulesPage` at `/board-rules`, under
-Team in the sidebar and linked from the Actions page): each rule turned on, in order, with its label in its colour,
+The administrators' card rules, read-only, for everyone with `ReadActions` (`BoardRulesPage`, the Library's Board rules tab at
+`/library/board-rules`, linked from the Actions page): each rule turned on, in order, with its label in its colour,
 what it matches (`ActionRules.Describe`), the colour's name and whether it's offered as a filter. Administrators keep
 them on Administration › Card rules.
 
@@ -515,13 +515,13 @@ An Outreach action asks someone (a vendor, a partner, an ISAC, an internal team,
 email. TIDE writes the email; the analyst sends it from their own mail
 ([ADR 0019](../decisions/0019-outreach-emails-are-written-never-sent.md)).
 
-**Templates** (`OutreachTemplate`, `OutreachTemplateService`, the Outreach templates page at `/outreach/templates`)
+**Templates** (`OutreachTemplate`, `OutreachTemplateService`, the Library's Outreach templates tab at `/library/templates`)
 are kept exactly as saved queries are: `WorkActions` adds, edits, retires and restores; whoever saved one, or an
 administrator, deletes it; `ReadActions` reads; edits carry an `EditVersion`; writes are audited and published on
 `outreach-templates`. A template has a name, description, subject (300), body (8,000) with `{{placeholders}}`, an
 optional fixed To address and a TLP ceiling (CLEAR by default). `OutreachFill.Check` refuses an unknown placeholder or
 kind on save, and double braces that don't parse as a placeholder at all (`{{today: +2}}`, `{{article_title}}`), which
-would otherwise go out in every email as typed. The page sits under Team in the sidebar and shows 20 templates a page, as Saved queries does.
+would otherwise go out in every email as typed. The tab is in the Library (under Team in the sidebar) and lists 20 templates a page, as Saved queries does.
 
 A new install, or an upgrade whose library is still empty, gets 5 starter templates saved by "TIDE"
 (`StarterOutreachTemplates`), none with a fixed To address: *Vendor: are we affected?*, *Internal: action required*,

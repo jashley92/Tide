@@ -53,7 +53,7 @@ public class PaletteEntryTests
     }
 
     [Theory]
-    [InlineData("", 24)]
+    [InlineData("", 25)]
     [InlineData("triage", 1)]
     [InlineData("TRIAGE", 1)]
     [InlineData("ioc", 1)]
@@ -62,7 +62,7 @@ public class PaletteEntryTests
     public void Match_NeedsEveryWord_InTheNameOrItsOtherWords(string query, int expected)
     {
         var all = PaletteEntries.For(new FakeUser(AppRole.Admin), Day);
-        all.Should().HaveCount(24, "every page, the team's libraries and Board rules among them, and the shortcuts");
+        all.Should().HaveCount(25, "every page, the Library's four tabs, and the shortcuts");
         PaletteEntries.Match(all, query).Should().HaveCount(expected);
     }
 
@@ -78,8 +78,58 @@ public class PaletteEntryTests
     public void Match_FindsThePlaybooksAndBoardRules_ByTheirOtherWords_ForAViewerToo()
     {
         var all = PaletteEntries.For(new FakeUser(AppRole.Viewer), Day);
-        PaletteEntries.Match(all, "checklist").Select(e => (e.Label, e.Href)).Should().Equal(("Playbooks", "playbooks"));
-        PaletteEntries.Match(all, "card colour").Select(e => (e.Label, e.Href)).Should().Equal(("Board rules", "board-rules"));
+        PaletteEntries.Match(all, "checklist").Select(e => (e.Label, e.Href)).Should().Equal(("Playbooks", "library/playbooks"));
+        PaletteEntries.Match(all, "card colour").Select(e => (e.Label, e.Href)).Should().Equal(("Board rules", "library/board-rules"));
+    }
+
+    // The four pages are one Library page now: each is still found by its name and by every other word it had, and
+    // opens its own tab.
+    [Theory]
+    [InlineData("saved queries", "Saved queries", "library/queries")]
+    [InlineData("kql", "Saved queries", "library/queries")]
+    [InlineData("hunt query", "Saved queries", "library/queries")]
+    [InlineData("siem", "Saved queries", "library/queries")]
+    [InlineData("xql", "Saved queries", "library/queries")]
+    [InlineData("outreach templates", "Outreach templates", "library/templates")]
+    [InlineData("vendor", "Outreach templates", "library/templates")]
+    [InlineData("isac", "Outreach templates", "library/templates")]
+    [InlineData("partner ask", "Outreach templates", "library/templates")]
+    [InlineData("playbooks", "Playbooks", "library/playbooks")]
+    [InlineData("runbook", "Playbooks", "library/playbooks")]
+    [InlineData("steps", "Playbooks", "library/playbooks")]
+    [InlineData("board rules", "Board rules", "library/board-rules")]
+    [InlineData("color label", "Board rules", "library/board-rules")]
+    public void Match_FindsEachLibraryTab_ByItsNameAndTheWordsItsPageHad(string query, string label, string href)
+    {
+        var all = PaletteEntries.For(new FakeUser(AppRole.ActionOwner), Day);
+        PaletteEntries.Match(all, query).Select(e => (e.Label, e.Href, e.Kind)).Should().Equal((label, href, PaletteKind.Tab));
+    }
+
+    [Fact]
+    public void TheLibrarysLists_HaveTriagesKeys_AndTheBoardRulesTabNone()
+    {
+        foreach (var path in new[] { "library", "library/queries?page=2", "library/templates", "Library/Playbooks" })
+        {
+            var group = Shortcuts.For(path)[0];
+            group.Title.Should().Be("Library", path);
+            var keys = group.Keys;
+            keys.Where(k => k.Letter).SelectMany(k => k.Keys).Should().Equal("J", "K");
+            keys.Where(k => !k.Letter).SelectMany(k => k.Keys).Should().Equal("↓", "↑");
+        }
+        Shortcuts.For("library/board-rules").Should().Equal(Shortcuts.Everywhere, Shortcuts.Palette);
+    }
+
+    [Fact]
+    public void TheLibrary_IsOnePage_WithItsTabsListedAfterIt_AndOnlyForThoseWhoMayOpenIt()
+    {
+        var all = PaletteEntries.For(new FakeUser(AppRole.Viewer), Day);
+        PaletteEntries.Match(all, "library").Select(e => (e.Label, e.Href, e.Kind)).Should().Equal(
+            ("Library", "library", PaletteKind.Page),
+            ("Saved queries", "library/queries", PaletteKind.Tab),
+            ("Outreach templates", "library/templates", PaletteKind.Tab),
+            ("Playbooks", "library/playbooks", PaletteKind.Tab),
+            ("Board rules", "library/board-rules", PaletteKind.Tab));
+        PaletteEntries.For(new FakeUser(AppRole.Reader), Day).Should().NotContain(e => e.Href.StartsWith("library", StringComparison.Ordinal));
     }
 
     [Fact]

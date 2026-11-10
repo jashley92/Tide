@@ -1,22 +1,21 @@
-@page "/playbooks"
-@attribute [Authorize(Policy = Policies.ReadActions)]
 @inject PlaybookService PlaybookSvc
 @inherits LibraryPage<PlaybookRow>
 
-@* The team's playbooks: a checklist for a kind of action, or for any, that an action's checklist starts from when it's
-   raised, or that's applied from the checklist later. Kept as the saved queries are: whoever works actions adds, edits,
-   reorders, retires and restores them, and deletes one they made (an administrator, any, the starters too); everyone
-   else who reads actions reads them. One an action was started from is retired, not deleted. A colleague's change
-   re-reads the list in place; an edit under way keeps what's typed, and its save is refused if the playbook changed
-   since it began. *@
+@* The team's playbooks, a tab of the Library page (which checks who may open it): a checklist for a kind of action, or
+   for any, that an action's checklist starts from when it's raised, or that's applied from the checklist later. Kept as
+   the saved queries are: whoever works actions adds, edits, reorders, retires and restores them, and deletes one they
+   made (an administrator, any, the starters too); everyone else who reads actions reads them. One an action was started
+   from is retired, not deleted. The list names each with the kind of action it's for and how many actions started from
+   it; the one chosen is shown in full. A colleague's change re-reads the list in place; an edit under way keeps what's
+   typed, and its save is refused if the playbook changed since it began. *@
 
-<PageTitle>Playbooks · TIDE</PageTitle>
+<PageTitle>Playbooks · Library · TIDE</PageTitle>
 
 <ConfirmDialog @ref="_confirm" />
 
-<div class="tide-page-head">
+<div class="tide-page-head tide-library-head">
     <div>
-        <h1>Playbooks</h1>
+        <h2>Playbooks</h2>
         <div class="tide-sub">Checklists kept for the team, for each kind of action or for any. Choose one when you raise an
             action, or apply one from its checklist: the steps are copied, so editing a playbook doesn't change actions
             already started from it. Changes are audited.</div>
@@ -34,10 +33,10 @@
         @EditForm
     </section>
 }
-else if (EditingOffPage)
+else if (EditingAway)
 {
-    @* The playbook being edited left this page (a colleague retired, deleted or renamed it, or a filter hides it): its
-       form stays here, so what's typed can be saved or cancelled. *@
+    @* The playbook being edited isn't the one shown (another was chosen, or a colleague retired, deleted or renamed it, or
+       a filter hides it): its form stays here, so what's typed can be saved or cancelled. *@
     <section class="tide-card tide-card-form" aria-labelledby="pb-edit-h">
         <h2 id="pb-edit-h">Edit playbook</h2>
         @EditForm
@@ -66,26 +65,24 @@ else if (EditingOffPage)
 }
 else if (_rows.Count == 0)
 {
-    <div class="tide-card">
+    <div class="tide-card" tabindex="-1" @ref="_empty">
         <EmptyState Icon="bi-journal-check" Title="No playbooks yet.">@(_canWrite ? "Add one here, then choose it when you raise an action." : "Someone who works actions can add one.")</EmptyState>
     </div>
 }
 else if (Shown.Count == 0)
 {
-    <div class="tide-card">
+    <div class="tide-card" tabindex="-1" @ref="_empty">
         <EmptyState Icon="bi-search" Title="No playbook matches these filters." />
     </div>
 }
 else
 {
-    <section class="tide-card" aria-labelledby="pb-list-h">
-        <h2 id="pb-list-h">Playbooks <span class="tide-count tide-muted fw-normal">(@Shown.Count)</span></h2>
-        <p class="small tide-muted mb-2" role="status">@CountText</p>
-        @foreach (var r in OnPage)
-        {
-            var p = r.Playbook;
-            var id = "pb-" + p.Id.ToString("N");
-            <article class="tide-hunt tide-playbook @(p.IsRetired ? "tide-retired" : "")" aria-labelledby="@(id + "-h")" @key="p.Id">
+    var r = Selected!;
+    var p = r.Playbook;
+    var id = "pb-" + p.Id.ToString("N");
+    <LibraryBrowser Count="@CountText" Entries="Entries" Selected="SelectedId" Label="Playbooks" OnPick="Pick" @ref="_browser">
+        <ChildContent>
+            <article class="tide-hunt tide-library-entry @(p.IsRetired ? "tide-retired" : "")" aria-labelledby="@(id + "-h")" @key="p.Id">
                 @if (_form?.Id == p.Id)
                 {
                     <h3 class="tide-subhead mt-0" id="@(id + "-h")">Edit @p.Name</h3>
@@ -95,7 +92,7 @@ else
                 {
                     <div class="d-flex gap-2 align-items-center flex-wrap">
                         <h3 class="tide-subhead my-0" id="@(id + "-h")">@p.Name</h3>
-                        <Badge>@(p.Kind is { } k ? ActionService.KindName(k) : "Any kind")</Badge>
+                        <Badge>@KindName(p)</Badge>
                         @if (p.IsRetired) { <Badge>Retired</Badge> }
                         <span class="ms-auto small tide-muted">@Used(r.Actions, "on", "action")</span>
                     </div>
@@ -123,9 +120,9 @@ else
                     </div>
                 }
             </article>
-        }
-        <Pager Page="_page" Pages="TableView.Pages(_shown.Count, PageSize)" Many="playbooks" Href="PageHref" />
-    </section>
+        </ChildContent>
+        <Below><Pager Page="_page" Pages="TableView.Pages(_shown.Count, PageSize)" Many="playbooks" Href="PageHref" /></Below>
+    </LibraryBrowser>
 }
 
 @code {
@@ -154,6 +151,11 @@ else
 
     protected override Guid IdOf(PlaybookRow row) => row.Playbook.Id;
 
+    protected override LibraryEntry Entry(PlaybookRow row) =>
+        new(row.Playbook.Id, row.Playbook.Name, row.Playbook.Description, KindName(row.Playbook), Used(row.Actions, "on", "action"), row.Playbook.IsRetired);
+
+    private static string KindName(Playbook p) => p.Kind is { } k ? ActionService.KindName(k) : "Any kind";
+
     protected override Guid? EditingId => _form?.Id;
 
     protected override void Filtering()
@@ -181,7 +183,7 @@ else
         <div class="row g-2">
             <div class="col-md-7">
                 <label class="tide-field-label" for="pb-f-name">Name</label>
-                <input id="pb-f-name" class="form-control form-control-sm" maxlength="@Playbook.MaxName" placeholder="Ransomware IOC sweep" @bind="f.Name" />
+                <input id="pb-f-name" @ref="_formStart" class="form-control form-control-sm" maxlength="@Playbook.MaxName" placeholder="Ransomware IOC sweep" @bind="f.Name" />
             </div>
             <div class="col-md-5">
                 <label class="tide-field-label" for="pb-f-kind">For</label>
@@ -203,7 +205,7 @@ else
         </div>
         <div class="d-flex gap-2 mt-2">
             <button class="btn btn-primary btn-sm" data-submit disabled="@_busy" @onclick="Save">Save</button>
-            <button class="btn btn-outline-secondary btn-sm" @onclick="() => _form = null">Cancel</button>
+            <button class="btn btn-outline-secondary btn-sm" @onclick="Cancel">Cancel</button>
         </div>
         </div>
     };
@@ -218,13 +220,21 @@ else
     {
         _form = new PlaybookForm { Kind = _kind };
         _steps = null;
+        FocusForm();
         StateHasChanged();
+    }
+
+    private void Cancel()
+    {
+        _form = null;
+        FocusList();
     }
 
     internal void Edit(Playbook p)
     {
         _form = PlaybookForm.From(p);
         _steps = string.Join("\n", _form.Steps);
+        FocusForm();
         StateHasChanged();
     }
 
@@ -232,9 +242,10 @@ else
     internal Task Save() => Run(async () =>
     {
         _form!.Steps = [.. (_steps ?? "").Split('\n')];
-        await PlaybookSvc.SaveAsync(_form);
+        Reveal(await PlaybookSvc.SaveAsync(_form));
         Toasts.Show(_form.Id is null ? $"{_form.Name.Trim()} saved for the team." : "Saved.");
         _form = null;
+        FocusList();
     });
 
     // Not while a form is open: a move changes the two it swaps, so an edit open on either would be refused as stale.
@@ -249,6 +260,7 @@ else
         {
             await PlaybookSvc.DeleteAsync(p.Id);
             Toasts.Show($"{p.Name} deleted.");
+            FocusList();
         });
     }
 }

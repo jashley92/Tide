@@ -11,7 +11,7 @@ public sealed record ShortcutGroup(string Title, IReadOnlyList<Shortcut> Keys);
 
 /// <summary>
 /// The keyboard shortcuts the "?" overlay lists (ShortcutsOverlay): those of the page you're on, then those that work
-/// everywhere. They describe the handlers in wwwroot/js (palette.js, theme.js, triage.js, present.js, chart.js, editor.js, submitkeys.js) and the dialogs'
+/// everywhere. They describe the handlers in wwwroot/js (palette.js, theme.js, triage.js, library.js, present.js, chart.js, editor.js, submitkeys.js) and the dialogs'
 /// own keys, so a change to one of those changes this too.
 /// </summary>
 public static class Shortcuts
@@ -47,6 +47,10 @@ public static class Shortcuts
             case "present":
                 groups.Add(Present);
                 break;
+            // A tab that lists entries (the first, when the address names none).
+            case LibraryTabs.Root when LibraryTabs.All.FirstOrDefault(t => segments.Length == 1 || t.Key.Equals(segments[1], StringComparison.OrdinalIgnoreCase)) is { Topic: not null }:
+                groups.Add(Library);
+                break;
             case "actions" when segments.Length == 1:
                 groups.Add(Board);
                 break;
@@ -81,6 +85,13 @@ public static class Shortcuts
         new(["R"], "Put back in New", Letter: true),
         new(["Enter", "→"], "On a group: open it"),
         new(["←"], "Close the group"),
+    ]);
+
+    private static readonly ShortcutGroup Library = new("Library",
+    [
+        new(["J"], "Next entry in the list", Letter: true),
+        new(["K"], "Previous entry", Letter: true),
+        new(["↓", "↑"], "With the list focused: next and previous entry"),
     ]);
 
     private static readonly ShortcutGroup Present = new("Present mode",

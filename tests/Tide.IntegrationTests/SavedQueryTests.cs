@@ -408,7 +408,7 @@ public class SavedQueryPageTests(TideApp app) : IClassFixture<TideApp>
             html.Should().Contain("id=\"hunt-saved-picker\"").And.Contain("Office spawning PowerShell " + tag).And.Contain("Macro droppers")
                 .And.Contain("aria-label=\"Add Office spawning PowerShell " + tag + "\"")
                 .And.NotContain("Sign-ins from new countries " + tag, "only the chosen language's, until All languages is ticked")
-                .And.Contain("href=\"hunts/saved\"", "relative, so it works under a sub-path");
+                .And.Contain("href=\"library/queries\"", "relative, so it works under a sub-path");
             r.Component.Offered.Should().Contain(q => q.Id == xql);
 
             await r.Click(p => p.AddSaved(r.Component.Offered.Single(q => q.Id == xql)));
@@ -479,19 +479,19 @@ public class SavedQueryPageTests(TideApp app) : IClassFixture<TideApp>
         await using (var scope = SignedIn(app, SignIn.Analyst))
             await scope.ServiceProvider.GetRequiredService<ActionService>().AddSavedHuntAsync(action.Id, id);
 
-        await using (var r = await RenderAsync<SavedQueriesPage>(app, "/hunts/saved"))
+        await using (var r = await RenderAsync<SavedQueriesPage>(app, "/library/queries?row=" + id))
         {
             var html = await r.Html();
-            html.Should().Contain("<h1>Saved queries</h1>").And.Contain("<h2 id=\"sq-fql\">CrowdStrike Falcon / Next-Gen SIEM")
+            html.Should().Contain("<h2>Saved queries</h2>").And.Contain("CrowdStrike Falcon / Next-Gen SIEM</span>").And.Contain("Falcon · Used on 1 action</span>")
                 .And.Contain("Rare parent processes " + tag).And.Contain("Odd parents of cmd.exe").And.Contain("Used on 1 action<")
                 .And.Contain("Saved by Tester, ").And.Contain("New saved query</button>")
                 .And.Contain($"aria-label=\"Edit Rare parent processes {tag}\"").And.Contain($"aria-label=\"Retire Rare parent processes {tag}\"")
                 .And.Contain($"aria-label=\"Delete Rare parent processes {tag}\"", "the tester saved it (and is an administrator)")
                 .And.NotContain("style=");
-            html.Split("<h1").Length.Should().Be(2);
+            html.Should().NotContain("<h1", "the Library page has the title");
         }
 
-        await using var viewer = await RenderAsync<SavedQueriesPage>(app, "/hunts/saved", @as: Viewer);
+        await using var viewer = await RenderAsync<SavedQueriesPage>(app, "/library/queries?row=" + id, @as: Viewer);
         var read = await viewer.Html();
         read.Should().Contain("Rare parent processes " + tag).And.Contain(" Copy</button>")
             .And.NotContain("New saved query").And.NotContain("aria-label=\"Edit ").And.NotContain("aria-label=\"Retire ").And.NotContain("aria-label=\"Delete ");
@@ -503,8 +503,8 @@ public class SavedQueryPageTests(TideApp app) : IClassFixture<TideApp>
         var tag = Guid.NewGuid().ToString("N")[..6];
         var id = await Saved("Beaconing to new domains " + tag, "kql");
 
-        await using var r = await RenderAsync<SavedQueriesPage>(app, "/hunts/saved");
-        await r.Click(p => { p.Edit(p.Rows!.Single(x => x.Query.Id == id).Query); return Task.CompletedTask; });
+        await using var r = await RenderAsync<SavedQueriesPage>(app, "/library/queries?row=" + id);
+        await r.Click(p => { p.Edit(p.Selected!.Query); return Task.CompletedTask; });
         (await r.Html()).Should().Contain($"Edit Beaconing to new domains {tag}</h3>").And.Contain("id=\"sq-f-text\"");
         r.Component.Form!.Description = "Mine";
 
