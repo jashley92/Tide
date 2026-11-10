@@ -136,6 +136,27 @@ public static class BriefSteps
         : brief.DistributedAtUtc is not null ? "distributed"
         : "emailed";
 
+    /// <summary>
+    /// The step a brief is on, of <paramref name="steps"/> as <see cref="For"/> gives them, and its number from 1: the
+    /// current one, or the last (Send, finished or needing a look) once none is. The top bar's brief chip reads this
+    /// off the same steps as the strip. It never depends on the feed's count or the day's numbers, which change what
+    /// Triage and Order say but not which step is current.
+    /// </summary>
+    public static (int Number, BriefStep Step) On(IReadOnlyList<BriefStep> steps)
+    {
+        var at = steps.Count - 1;
+        for (var i = 0; i < steps.Count; i++)
+            if (steps[i].State == StepState.Current) { at = i; break; }
+        return (at + 1, steps[at]);
+    }
+
+    /// <summary>The editions with nothing in them to send: every article on <paramref name="brief"/> is above the
+    /// edition's ceiling. None for a brief with no articles yet.</summary>
+    public static IReadOnlyList<Edition> NothingToSend(Brief brief, TlpLevel teamMax, TlpLevel publicMax) =>
+        brief.Items.Count == 0 ? []
+        : new[] { (Edition.Team, teamMax), (Edition.Public, publicMax) }
+            .Where(e => BriefEditions.Build(brief, e.Item1, e.Item2).Articles.Count == 0).Select(e => e.Item1).ToList();
+
     /// <summary>"1 number" or "3 numbers".</summary>
     public static string Numbers(int count) => count == 1 ? "1 number" : $"{count} numbers";
 

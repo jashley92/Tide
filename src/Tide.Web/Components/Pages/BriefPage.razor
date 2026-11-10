@@ -689,9 +689,7 @@ else
             _newOnKev = AsToday && _newInFeed > 0 ? await Intake.NewKevCountAsync() : 0;
             // The send log, for the Send step; the latest real send of each edition, for the "as sent" links on a sent brief.
             _sends = await Sends.SendsAsync(_date);
-            _nothingToSend = _brief.Items.Count == 0 ? []
-                : new[] { (Edition.Team, _teamMax), (Edition.Public, _publicMax) }
-                    .Where(e => BriefEditions.Build(_brief, e.Item1, e.Item2).Articles.Count == 0).Select(e => e.Item1).ToList();
+            _nothingToSend = BriefSteps.NothingToSend(_brief, _teamMax, _publicMax);
             if (_tab == 1) await LoadNumbers();
             _asSent = _brief.Status == BriefStatus.Sent
                 ? _sends.Where(x => !x.IsTest && x.Status == SendStatus.Sent)
