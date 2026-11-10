@@ -474,6 +474,35 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task TheTools_AreInTheWideColumnAboveWhatsHappened_ForASweepOrAHunt_AndBesideTheWork_ForEveryOtherKind()
+    {
+        var team = await Team("Layout tools place team");
+        const string drawer = "class=\"tide-card tide-drawer\"", side = "<div class=\"tide-action-side\">", main = "<div class=\"tide-action-main\">";
+        foreach (var kind in Enum.GetValues<ActionKind>())
+        {
+            var wide = kind is ActionKind.IocSweep or ActionKind.ThreatHunt;
+            await using var page = await Open(await Raise(team, $"Layout tools place {kind}", kind, description: "Layout tools place details"));
+            var html = await page.Html();
+            int At(string text) => html.IndexOf(text, StringComparison.Ordinal);
+            At(drawer).Should().BeGreaterThan(At(main));
+            html.Should().Contain("<div class=\"tide-ord-3\">", "on a phone the tools still come straight after the details");
+            if (wide)
+            {
+                At(drawer).Should().BeLessThan(At(side), $"a {kind}'s tools are in the wide column")
+                    .And.BeGreaterThan(At("Layout tools place details"), "under its details")
+                    .And.BeLessThan(At("id=\"feed-h\""), "above what's happened");
+                html.Should().Contain("data-tool=\"hunt\"", "opened on its hunt queries");
+            }
+            else
+            {
+                At(drawer).Should().BeGreaterThan(At(side), $"a {kind}'s tools stay beside the work")
+                    .And.BeGreaterThan(At("aria-label=\"Facts\""), "under the facts")
+                    .And.BeGreaterThan(At("id=\"feed-h\""));
+            }
+        }
+    }
+
+    [Fact]
     public async Task AParentAndAPart_ShowTheirLineage_AndOnlyTheParentHasTheTimeline()
     {
         var owner = await Team("Layout lineage owner");

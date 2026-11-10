@@ -293,7 +293,8 @@ before this was kept start from the date they had at the upgrade (the migration 
 2. The facts: team, assignee, kind, external ticket, when it was created, and its due date with how close it is (and,
    once the date has moved, "Originally due … · moved N times" under it).
 3. The tool drawer: the checklist, each item ticked by name, and beside it the parts' timeline, hunt queries or
-   outreach, where the action has them.
+   outreach, where the action has them. On an IOC sweep or Threat hunt (`ActionGuide.IsHunt`) the drawer is in the
+   wide column, under the details and above *What's happened*, open on its hunt queries.
 4. *What's happened*: its comments, in Markdown with screenshots or evidence, and its history, in one feed.
 5. *From the article*: the article it came from, with its CVEs.
 6. Files on the action: picked, dropped or pasted, each with its SHA-256.
@@ -364,6 +365,28 @@ to add one:
 | *Add a saved query* | One of the team's saved queries, filled from the action | `AddSavedHuntAsync` |
 | *Write one by hand* | A query the analyst writes (a behavioural hunt) | `AddHandWrittenHuntAsync` |
 
+### The preview on a sweep or hunt
+
+An open IOC sweep or Threat hunt that has indicators and no query yet doesn't wait for *Generate*: the card shows
+the generated query when the page opens, marked *Preview*, in the language picked (changing it rewrites the preview).
+`ActionService.PreviewHuntAsync` builds it from the same inputs, templates and builder as `GenerateHuntAsync`
+(`HuntInputsAsync`, `HuntQueryBuilder.BuildAsync`), for the same people (whoever may work the action; anyone else is
+refused and sees the card as before), and writes nothing: no `HuntQuery`, no history line, no audit entry.
+
+| On the preview | What it does |
+|---|---|
+| *Copy* | Copies the text and saves the query through `GenerateHuntAsync` (its permission check, its "Generated a … hunt query" history line). The page says "Copied. The query is now on the action." beside the query. The saved query counts as copied, so *No hits, close* is open to it: in one click when the query sets its own window, after the days are entered when it doesn't. |
+| *Keep this query* | Saves it the same way without copying, to edit it first, say. A toast says "Query kept on the action." |
+| *No hits, close*, *Record hits* | Disabled, with "Copy or keep the query first." |
+
+A result is only ever recorded against a saved query, so an action's history always shows the query was produced
+before its result. Copy saves because a copied query is about to be run outside TIDE, and the record of what was run
+has to exist by then. If the indicators or templates changed between the preview being shown and the save, the saved
+text differs from what was copied: the card says to copy it again, and the query doesn't count as copied.
+
+With a query on the action (kept, hand-written or from a saved one), or on any other kind of action, there is no
+preview and *Generate* is offered as before.
+
 **What a hunt searches for** (`ActionService.HuntInputsAsync`): the indicators on the action's article (or on every
 article in its story), plus any the action keeps itself, each once. **How far back** (`HuntQueryBuilder.WindowDays`):
 a week before the earliest of those articles was published, at least 30 days and at most 180.
@@ -412,7 +435,10 @@ saved; past that it's refused as too many indicators for one query.
 ### Closing a clean sweep in one step
 
 *No hits, close* (`ActionService.CloseWithNoHitsAsync`) records the query as run with no hits and closes the action
-Done (No hits) in one save and one history line that names the days searched. The panel offers it only once the
+Done (No hits) in one save and one history line that names the days searched. Its controls sit beside the query's *Copy*, the days box the next stop after it. The days are filled in only
+when the query itself sets its window (`HuntQueryBuilder.WindowOf`, a KQL query's). A query whose language leaves the
+range to the console (XQL, Falcon) leaves them blank, because TIDE can't know what was searched, and says "Enter the
+days you searched: this query sets no time range of its own." The panel offers it only once the
 query was copied from the card (or is hand-written). It's refused when:
 
 - the action isn't an open IOC sweep or Threat hunt;
@@ -427,15 +453,17 @@ sequenceDiagram
     participant AS as ActionService
     participant HQ as HuntQueryBuilder
     participant DB as AppDbContext
-    A->>HP: Generate KQL
-    HP->>AS: GenerateHuntAsync(action, kql)
+    A->>HP: Open the sweep
+    HP->>AS: PreviewHuntAsync(action, kql)
     AS->>DB: action, article and own indicators
     AS->>HQ: BuildAsync(kql, indicators, window days)
     HQ->>DB: saved QueryTemplates for kql
     HQ-->>AS: query text with header and left-out comments
-    AS->>DB: add HuntQuery, ActionEvent
-    HP-->>A: query shown with Copy
+    HP-->>A: preview shown with Copy, nothing saved
     A->>HP: Copy, then run it in the SIEM
+    HP->>AS: GenerateHuntAsync(action, kql)
+    AS->>HQ: BuildAsync, as for the preview
+    AS->>DB: add HuntQuery, ActionEvent
     A->>HP: No hits, close (days searched, left-out checked)
     HP->>AS: CloseWithNoHitsAsync(hunt, days, checked)
     AS->>AS: refuse if not an open sweep or hunt, other hunts unrun or with hits, or left-out unchecked

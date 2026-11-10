@@ -350,9 +350,11 @@ that fits its kind.
   for an analyst or administrator: for an action raised by mistake or twice, it asks why and says that work that
   won't be done is closed Cancelled or Not applicable instead. A deleted action leaves every list, count, reminder and
   report; an administrator can restore it. The status badge opens the status choices. A *Next* line says what most needs doing, with links that do it: a part that's late (chase them, or
-  record their reply), an email past its follow-up day, escalated, blocked, or late. Beside the work, the facts (once
+  record their reply), an email past its follow-up day, escalated, blocked, or late; on a sweep or hunt with none of
+  those, where its query stands (nobody has it, and whether a query is already on it; copy the query and run it; run the query that's on the action and record what it found). Beside the work, the facts (once
   the due date has moved, "Originally due Mon Nov 9 · moved 2 times" under it) and a card of tools in tabs: the checklist, the parts' timeline, hunt queries, outreach, opening on the action's own (the
-  address can name one: `?tool=hunt`). *What's happened* is one feed of its comments and history, newest at the
+  address can name one: `?tool=hunt`). On a sweep or hunt the tools are in the wide column instead, above *What's
+  happened*, so a query has room. *What's happened* is one feed of its comments and history, newest at the
   bottom by the comment box, with *Show N earlier* for the rest. On a phone it's one column: the header, Next,
   details, the tools, the lineage, what's happened, the facts, the article and the files.
 - **Splitting.** A long remediation splits into parts, one per team: one at a time (*Split off a part*, prefilled from
@@ -399,6 +401,10 @@ that fits its kind.
 ### Hunt queries
 
 - **Where they come from.** They're generated from the article's indicators, or from every article in its story.
+- **Ready when the page opens.** An open sweep or hunt with indicators and no query yet shows the generated query
+  straight away, marked *Preview*, to anyone who may work the action. Looking saves nothing and leaves no line in the
+  action's history. *Copy* or *Keep this query* puts it on the action, as *Generate* does; until then *No hits, close*
+  and *Record hits* beside it are disabled and say why. Changing the language rewrites the preview.
 - **Which SIEMs.** **Cortex XSIAM (XQL)**, **Microsoft Sentinel / Defender (KQL)** and **CrowdStrike Falcon /
   Next-Gen SIEM**.
 - **Templates.** Administrators edit a template per kind of indicator.

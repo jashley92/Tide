@@ -53,7 +53,7 @@ public enum ActionFlow
 public enum ActionTool { Checklist = 0, Timeline, Hunt, Outreach }
 
 /// <summary>What the page's Next line is about. The order is the order of importance.</summary>
-public enum NextKind { PartLate = 0, NoReply, Escalated, Blocked, Overdue }
+public enum NextKind { PartLate = 0, NoReply, Escalated, Blocked, Overdue, Unowned, RunQuery, AwaitingResult }
 
 /// <summary>What the page knows about an action and who's looking, to choose its primary button and More.</summary>
 /// <param name="CanWork">Whether the viewer may work it (ActionDetail.CanWork).</param>
@@ -80,8 +80,18 @@ public sealed record WaitingEmail(string To, DateOnly SentOn, DateOnly? FollowUp
 /// <param name="Sla">Its standing against its due date (ActionSla.StateOf): Overdue is what's late.</param>
 /// <param name="Parts">The parts of the action whose page this is (none on a part's page, or with none).</param>
 /// <param name="EscalatedOn">The day it was escalated, while it still is.</param>
+/// <param name="Hunt">Where its query stands, on a sweep or a hunt; null on every other kind.</param>
 public sealed record NextFacts(ActionStatus Status, SlaState Sla, DateOnly? Due, DateOnly Today, bool CanWork,
-    IReadOnlyList<LineageNode>? Parts = null, WaitingEmail? Waiting = null, DateOnly? EscalatedOn = null);
+    IReadOnlyList<LineageNode>? Parts = null, WaitingEmail? Waiting = null, DateOnly? EscalatedOn = null, HuntFacts? Hunt = null);
+
+/// <summary>Where a sweep's or hunt's query stands for whoever is looking, for its Next line.</summary>
+/// <param name="Takeable">Nobody has the action, and the viewer may take it (<see cref="ActionGuide.CanTake"/>).</param>
+/// <param name="Mine">The viewer has it.</param>
+/// <param name="OnAction">A query is saved on the action and has no result yet. Stored, so the line reads the same
+/// after a reload.</param>
+/// <param name="HasIndicators">There are indicators to build a query from (the preview, or Generate).</param>
+/// <param name="HasResult">A query's result is recorded, so the query is no longer what's next.</param>
+public sealed record HuntFacts(bool Takeable, bool Mine, bool OnAction, bool HasIndicators = false, bool HasResult = false);
 
 /// <summary>A link on the Next line: a flow, in words that fit the line. With <paramref name="On"/> it goes to that
 /// action's page, running the flow there (with <see cref="ActionFlow.None"/>, only opening it).</summary>
@@ -194,7 +204,9 @@ public static class ActionGuide
     /// <summary>
     /// The Next line, or null when nothing needs doing (or the viewer can't work it, or it's closed). Only the most
     /// important one is said, in this order: a part overdue (the latest of them, with how many more), an email past its
-    /// follow-up day with no reply, escalated, blocked, then past its own due date (its SLA Overdue).
+    /// follow-up day with no reply, escalated, blocked, then past its own due date (its SLA Overdue). After those, a
+    /// sweep or hunt with no result yet says where its query stands: nobody has it (and whether a query is already on
+    /// it); it's the viewer's, to copy and run; a query is saved on it, to run and record.
     /// </summary>
     public static NextStep? Next(NextFacts f)
     {
@@ -224,6 +236,18 @@ public static class ActionGuide
         if (f.Sla == SlaState.Overdue && f.Due is { } was)
             return new NextStep(NextKind.Overdue, $"It's {ActionSla.LateText(was, f.Today)}: it was due {Words.MonthDay(was)}.",
                 [new(ActionFlow.RecordUpdate, "Record an update"), new(ActionFlow.Edit, "Move the due date")]);
+        if (f.Hunt is { HasResult: false } hunt)
+        {
+            if (hunt.Takeable)
+                return new NextStep(NextKind.Unowned,
+                    hunt.OnAction ? "Nobody has it yet. Take it, then run the query that's on the action." : "Nobody has it yet.",
+                    [new(ActionFlow.TakeIt, "Take it")]);
+            if (hunt.Mine && hunt.OnAction)
+                return new NextStep(NextKind.AwaitingResult, "Run the query that's on the action, then record what it found.", []);
+            if (hunt.Mine)
+                return new NextStep(NextKind.RunQuery,
+                    hunt.HasIndicators ? "Copy the query and run it in your SIEM." : "Add indicators or write a query by hand, then run it in your SIEM.", []);
+        }
         return null;
     }
 
@@ -243,10 +267,15 @@ public static class ActionGuide
     {
         var tools = new List<ActionTool> { ActionTool.Checklist };
         if (timeline) tools.Add(ActionTool.Timeline);
-        if (hunts > 0 || kind is ActionKind.IocSweep or ActionKind.ThreatHunt) tools.Add(ActionTool.Hunt);
+        if (hunts > 0 || IsHunt(kind)) tools.Add(ActionTool.Hunt);
         if (emails > 0 || kind == ActionKind.Outreach) tools.Add(ActionTool.Outreach);
         return tools;
     }
+
+    /// <summary>Whether the action is a sweep or a hunt. Its query is the work: its tools sit in the page's wide column,
+    /// above what's happened (a query wraps badly in the side column, where every other kind's stay), the query is
+    /// previewed when the page opens, and the Next line follows it.</summary>
+    public static bool IsHunt(ActionKind kind) => kind is ActionKind.IocSweep or ActionKind.ThreatHunt;
 
     /// <summary>
     /// The tool the drawer shows: the one the address asks for (<paramref name="asked"/>, a <see cref="Key{T}"/>) when it's

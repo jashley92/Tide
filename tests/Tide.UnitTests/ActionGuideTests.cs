@@ -168,6 +168,46 @@ public class ActionGuideTests
     }
 
     [Fact]
+    public void ASweepOrHunt_SaysNobodyHasIt_ThenToRunItsQuery_ThenToRecordWhatItFound()
+    {
+        NextStep? Next(HuntFacts hunt, ActionStatus status = ActionStatus.Open, DateOnly? due = null, bool canWork = true) =>
+            ActionGuide.Next(On(status, due ?? Fri, canWork) with { Hunt = hunt });
+
+        var unowned = Next(new HuntFacts(Takeable: true, Mine: false, OnAction: false, HasIndicators: true))!;
+        unowned.Kind.Should().Be(NextKind.Unowned);
+        unowned.Text.Should().Be("Nobody has it yet.");
+        unowned.Links.Should().Equal(new NextLink(ActionFlow.TakeIt, "Take it"));
+        // A query kept on it and nobody to run it: both are said.
+        var kept = Next(new HuntFacts(Takeable: true, Mine: false, OnAction: true))!;
+        (kept.Kind, kept.Text).Should().Be((NextKind.Unowned, "Nobody has it yet. Take it, then run the query that's on the action."));
+        kept.Links.Should().Equal(new NextLink(ActionFlow.TakeIt, "Take it"));
+
+        var mine = Next(new HuntFacts(false, Mine: true, OnAction: false, HasIndicators: true))!;
+        (mine.Kind, mine.Text).Should().Be((NextKind.RunQuery, "Copy the query and run it in your SIEM."));
+        mine.Links.Should().BeEmpty("Copy is on the query, just below");
+        Next(new HuntFacts(false, Mine: true, OnAction: false))!.Text.Should().Be("Add indicators or write a query by hand, then run it in your SIEM.");
+
+        // A saved query with no result yet is a stored fact: the line reads the same after a reload.
+        var saved = Next(new HuntFacts(false, Mine: true, OnAction: true, HasIndicators: true))!;
+        (saved.Kind, saved.Text).Should().Be((NextKind.AwaitingResult, "Run the query that's on the action, then record what it found."));
+
+        Next(new HuntFacts(false, Mine: true, OnAction: true, HasResult: true)).Should().BeNull("a result is recorded: the query isn't what's next");
+        Next(new HuntFacts(false, Mine: false, OnAction: true)).Should().BeNull("a colleague has it");
+        Next(new HuntFacts(true, false, true), canWork: false).Should().BeNull();
+        Next(new HuntFacts(true, false, true), ActionStatus.Done).Should().BeNull();
+        Next(new HuntFacts(true, false, true), ActionStatus.Blocked)!.Kind.Should().Be(NextKind.Blocked, "what's wrong comes before what's routine");
+        Next(new HuntFacts(false, true, true), due: Mon)!.Kind.Should().Be(NextKind.Overdue);
+        ActionGuide.Next(On(ActionStatus.Open, Fri)).Should().BeNull("another kind of action has no hunt to speak of");
+    }
+
+    [Fact]
+    public void OnlyASweepOrAHunt_IsAHunt()
+    {
+        foreach (var kind in Enum.GetValues<ActionKind>())
+            ActionGuide.IsHunt(kind).Should().Be(kind is ActionKind.IocSweep or ActionKind.ThreatHunt);
+    }
+
+    [Fact]
     public void TheDrawer_HasTheChecklistAlways_AndEachOtherToolWhereItBelongs()
     {
         ActionGuide.Tools(ActionKind.Block, false, 0, 0).Should().Equal(ActionTool.Checklist);
