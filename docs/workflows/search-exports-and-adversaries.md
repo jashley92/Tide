@@ -55,8 +55,27 @@ lookup above the hits:
 
 | Query | The lookup shows |
 |---|---|
-| An IP, domain, URL, hash or email address (defanged or not) | every article carrying it (exact, case-insensitive, on the stored live value in its type family) and when it was briefed; indicators on the same host (`SearchText.HostOf`: subdomains, URLs and email addresses on the domain, a URL's domain); the actions raised from those articles with how their hunts went; a ready hunt query from `HuntQueryBuilder` |
-| A CVE | its `CveRecord` (CVSS, EPSS, KEV), how many articles are about it, and the actions raised from them |
+| An IP, domain, URL, hash or email address (defanged or not) | every article carrying it (exact, case-insensitive, on the stored live value in its type family) and when it was briefed; indicators on the same host (`SearchText.HostOf`: subdomains, URLs and email addresses on the domain, a URL's domain); the actions raised from those articles, or carrying the indicator themselves (`ActionIndicator`), with how their hunts went; the hunt query from `HuntQueryBuilder` |
+| A CVE | its `CveRecord` (CVSS, EPSS, KEV), the articles about it (newest first), and the actions raised from them |
+
+Both lookups open with one line (`LookupSummary`): how many articles the value is on, the last brief any of them
+was on, how many of the actions are open, and how the hunts went ("Not seen before" when no article has it and no
+action was raised). Under it:
+
+- **Who is sweeping** (`IndicatorLookup.Sweeping`): the open IOC sweeps and threat hunts raised from an article that
+  carries the indicator, or carrying it themselves, each named with a link for someone who may read actions.
+- **Seen with** (`SeenWith`): the other indicators, CVEs, techniques and stories on the articles that carry the value
+  (the newest 50 are read), the most shared first, at most 12 of each. Each is a link that looks that value up; a
+  story opens its page. It costs one query each for indicators, CVEs and techniques, whatever the number of articles.
+- **Each article once.** The page asks with `SearchPages.LookupOnce`, so the article hits leave out the articles the
+  lookup lists and count only the rest ("Also mentioned in"). Other callers (the Go to palette) get every hit.
+- **The hunt query** is built with the results, in memory (`HuntQueryBuilder.BuildAsync`), in the person's
+  `hunt.dialect` preference (`UserPreferenceService`; the first dialect until they choose one on this page).
+  Building it writes no `HuntQuery`, no action event and no preference; only changing the language saves the
+  preference. Every value goes in as a quoted string literal (`QueryDialects.Quote`).
+
+The lookup shows what the page shows: every TLP, to the team edition only (`ReadTeamEdition`), as the article pages
+do. Nobody below it gets the summary, "Seen with" or the query.
 
 ```mermaid
 sequenceDiagram

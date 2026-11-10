@@ -432,12 +432,21 @@ One box at the top of every page.
 
 - **Words.** Words or "phrases" search across articles, actions and stories. That covers bullets, indicators, CVEs,
   ATT&CK techniques by name and captions, with the matches marked.
-- **An indicator.** Paste an IP address, domain, URL, hash or email address, defanged or not, to see:
-  - every article it's on, and when it was briefed;
-  - other indicators on the same host;
+- **An indicator.** Paste an IP address, domain, URL, hash or email address, defanged or not. The lookup opens with
+  one line that says whether the team knows it and whether anyone is on it ("On 1 article · briefed Mon Nov 9 ·
+  2 actions open · no hunt result yet", or "Not seen before"), then:
+  - an open sweep or hunt that already searches for it, named with a link;
+  - **Seen with**: the other indicators, CVEs, ATT&CK techniques and the story on the same articles. Each looks that
+    value up (a story opens its page);
+  - each article once, with its kind, priority and TLP, what matched (this indicator, or another on the same host),
+    when it was briefed and when it was written. Other articles that only mention the value in their text follow
+    under **Also mentioned in**;
   - the actions raised, and whether their hunts found anything;
-  - a ready hunt query.
-- **A CVE.** Paste a CVE for its CVSS, EPSS and KEV status, the articles about it, and what was done.
+  - the hunt query, already built beside the results (under them on a narrow window) in the query language the
+    person chose last, with **Copy**. Changing the language rebuilds it and is remembered. Looking a value up saves
+    nothing: a query is kept only when it's added to an action.
+- **A CVE.** Paste a CVE for the same first line, its CVSS, EPSS and KEV status, **Seen with**, the articles about
+  it (each once) and what was done.
 
 **Go to** (`Ctrl+K`) jumps to a page, starts an article or action, or opens one by title or number ("A-12"). `?`
 lists the page's keyboard shortcuts, with the switch that turns single-letter shortcuts off. In a text box,
