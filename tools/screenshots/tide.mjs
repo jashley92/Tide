@@ -45,9 +45,9 @@ export function pick(list, noun) {
 
 /**
  * Opens `route` in a fresh browser context, settled and set up: the same window settings for every script (reduced
- * motion, US English, New York time), the `theme` ('light' unless 'dark' is asked for) and an expanded sidebar whatever a
- * previous visit chose, and any `extra` context options. `fixedTime` stops the browser's clock there. Returns
- * { context, page }: close the context.
+ * motion, US English, New York time), the `theme` ('light' unless 'dark' is asked for), an expanded sidebar and the context
+ * rail as it starts whatever a previous visit chose, and any `extra` context options. `fixedTime` stops the browser's clock
+ * there. Returns { context, page }: close the context.
  */
 export async function openPage(browser, { route, viewport, setup }, demo, { fixedTime, theme = 'light', ...extra } = {}) {
   const context = await browser.newContext({
@@ -55,7 +55,7 @@ export async function openPage(browser, { route, viewport, setup }, demo, { fixe
   });
   try {
     await context.addInitScript(theme => {
-      try { localStorage.setItem('tide-theme', theme); localStorage.removeItem('tide-nav'); } catch { /* none */ }
+      try { localStorage.setItem('tide-theme', theme); localStorage.removeItem('tide-nav'); localStorage.removeItem('tide-rail'); } catch { /* none */ }
     }, theme);
     const page = await context.newPage();
     if (fixedTime) await page.clock.setFixedTime(fixedTime);

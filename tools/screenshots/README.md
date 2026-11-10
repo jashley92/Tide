@@ -58,7 +58,7 @@ In that case it prints `annotation target(s) not found` with the selectors, and 
 Every shot uses the same settings:
 
 - a fixed viewport and a device scale of 1
-- the light theme and an expanded sidebar
+- the light theme, an expanded sidebar, and the context rail as it starts (docked open in a wide window)
 - reduced motion, with animations off and the caret hidden
 - en-US, America/New_York
 - the browser's clock frozen at the start of the run
