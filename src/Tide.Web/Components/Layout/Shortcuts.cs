@@ -36,8 +36,9 @@ public static class Shortcuts
     public static readonly Shortcut RailKey = new(["]"], "Show or hide the context rail", Letter: true);
 
     /// <summary>The groups for the page at <paramref name="relativePath"/> (relative to the app's base), then the global ones,
-    /// with "]" among them when the page has a context <paramref name="rail"/>.</summary>
-    public static IReadOnlyList<ShortcutGroup> For(string relativePath, bool rail = false)
+    /// with "]" among them when the page has a context <paramref name="rail"/>. The Actions list's T is listed only for
+    /// someone who <paramref name="canTake"/> actions on.</summary>
+    public static IReadOnlyList<ShortcutGroup> For(string relativePath, bool rail = false, bool canTake = true)
     {
         var path = relativePath.Split('?', '#')[0].Trim('/');
         var segments = path.Split('/');
@@ -56,7 +57,8 @@ public static class Shortcuts
                 break;
             // The list or the board, as the address says (it always names its layout once the page has drawn).
             case "actions" when segments.Length == 1:
-                groups.Add(relativePath.Contains("layout=list", StringComparison.OrdinalIgnoreCase) ? ActionsList : Board);
+                groups.Add(!relativePath.Contains("layout=list", StringComparison.OrdinalIgnoreCase) ? Board
+                    : canTake ? ActionsList : ActionsList with { Keys = [.. ActionsList.Keys.Where(k => k != TakeKey)] });
                 break;
             case "actions" when int.TryParse(segments[1], out _):
                 groups.Add(Screenshots);
@@ -111,12 +113,14 @@ public static class Shortcuts
         new(["Esc"], "Leave full screen, then close a zoomed screenshot"),
     ]);
 
+    private static readonly Shortcut TakeKey = new(["T"], "Take the selected action on, when it's yours to take", Letter: true);
+
     private static readonly ShortcutGroup ActionsList = new("Actions list",
     [
         new(["↓", "↑"], "Next and previous action"),
         new(["J"], "Next action, on to the next page at the end", Letter: true),
         new(["K"], "Previous action, back a page at the start", Letter: true),
-        new(["T"], "Take the selected action on, when it's yours to take", Letter: true),
+        TakeKey,
         new(["Enter"], "Open the selected action"),
         new(["Tab", "Enter"], "A row's status opens the statuses it can move to"),
     ]);

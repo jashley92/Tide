@@ -167,6 +167,11 @@ const dropOnEachChip = {
       await card.dragTo(page.locator(`.tide-kchip[data-status="${status}"]`));
       const dialog = page.getByRole('dialog', { name: `Move ${number} to ${name}` });
       try { await dialog.waitFor({ timeout: 5000 }); } catch { problems.push(`dropping ${number} on ${name} didn't ask how it closed`); continue; }
+      const dims = await page.evaluate(() => {
+        const s = document.querySelector('.tide-modal-scrim'), r = s?.getBoundingClientRect();
+        return !!s && r.width >= innerWidth - 20 && r.height >= innerHeight - 1 && getComputedStyle(s).backgroundColor !== 'rgba(0, 0, 0, 0)';
+      });
+      if (!dims) problems.push(`the ${name} dialog has no backdrop over the page`);
       await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
       await dialog.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => problems.push(`the ${name} dialog didn't close on Cancel`));
     }
@@ -261,6 +266,49 @@ const besideTheTabs = (tabs, ...selectors) => ({
       return problems;
     });
   }, [tabs, selectors]),
+});
+
+/** The KEV flag is an outlined pill (a border, rounded): the same on the board's cards and the list's rows. */
+const kevPill = selector => ({
+  name: `KEV is a pill: ${selector}`,
+  check: page => page.$$eval(selector, (els, selector) => {
+    const shown = els.filter(e => e.getBoundingClientRect().height > 0);
+    if (!shown.length) return [`nothing shown matches ${selector}`];
+    const cs = getComputedStyle(shown[0]);
+    return parseFloat(cs.borderTopWidth) > 0 && parseFloat(cs.borderTopLeftRadius) >= 6 ? [] : [`${selector} has no outlined pill (border ${cs.borderTopWidth}, radius ${cs.borderTopLeftRadius})`];
+  }, selector),
+});
+
+/**
+ * Closing a card keeps the person's place: from its Move menu by keyboard (`how` 'menu'), or dragged onto a chip while
+ * focus was on it ('drag'), then the outcome dialog's button: focus lands in the card that was next in its lane.
+ */
+const closeKeepsPlace = how => ({
+  name: `after closing a card (${how}), focus is on the next card in its lane`,
+  check: async page => {
+    const lane = page.locator('.tide-kcol[data-status="Open"] .tide-kcard[draggable="true"]');
+    if (await lane.count() < 2) return ['the Open lane has fewer than two cards to move'];
+    const card = lane.first(), next = await lane.nth(1).getAttribute('data-id');
+    if (how === 'menu') {
+      await card.locator('.tide-kcard-move').focus();
+      await page.keyboard.press('Enter');
+      await card.getByRole('menuitem', { name: 'Cancelled' }).focus();
+      await page.keyboard.press('Enter');
+    } else {
+      await card.locator('.tide-action-ref').focus();
+      await card.dragTo(page.locator('.tide-kchip[data-status="Cancelled"]'));
+    }
+    const confirm = page.getByRole('button', { name: 'Move to Cancelled' });
+    await confirm.waitFor({ timeout: 5000 });
+    await confirm.focus();
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(1500);
+    const at = await page.evaluate(() => {
+      const el = document.activeElement;
+      return el === document.body || !el ? 'the page body' : el.closest('.tide-kcard')?.dataset.id ?? `<${el.tagName.toLowerCase()} id="${el.id}">`;
+    });
+    return at === next ? [] : [`focus is on ${at}, not the next card ${next}`];
+  },
 });
 
 /** Setup: every letter spaced wider, as a font wider than this machine's would set it (CI's): a rule that holds then
@@ -588,7 +636,7 @@ const pages = [
   { name: 'actions-list', route: '/actions?view=open&layout=list', widths: [1920, 1440, 1000, 780],
     rules: [noSidewaysScroll, visible('.tide-action-ref'), visible('.tide-tabbar-count'), oneRow('[role=group][aria-label="Views"]'),
       visible('.tide-col-progress'), onTitleLine('.tide-table td:first-child', '.tide-action-num', '[title^="Escalated"]'),
-      notClippedBelow('[role=group][aria-label="Views"]'), visible('.tide-chip-count')] },
+      notClippedBelow('[role=group][aria-label="Views"]'), visible('.tide-chip-count'), fits('.tide-dt-scroll'), kevPill('.tide-action-row .tide-kev')] },
   // "Open here by default" (or "Opens here") and Save view sit on the view tabs' line, inside their row, as the design
   // has them: on the list and the board, at each width, and with wider letters.
   ...['list', 'board'].flatMap(layout => [false, true].map(wide => ({
@@ -598,7 +646,7 @@ const pages = [
   }))),
   // With wider letters (CI's fonts), the Progress column still leaves the title its line: the Escalated badge stays on it.
   { name: 'actions-list-wide-letters', route: '/actions?view=open&layout=list', setup: wider, widths: [[1920, 1080], [1440, 900]],
-    rules: [noSidewaysScroll, visible('.tide-col-progress'), onTitleLine('.tide-table td:first-child', '.tide-action-num', '[title^="Escalated"]')] },
+    rules: [noSidewaysScroll, visible('.tide-col-progress'), onTitleLine('.tide-table td:first-child', '.tide-action-num', '[title^="Escalated"]'), fits('.tide-dt-scroll')] },
   // Take it from the keyboard keeps the person's place: on a row that stays listed (All open), focus stays on its title;
   // in No owner the row leaves, and focus goes to the next row's title, or for the last row, the one before.
   { name: 'actions-take-focus-stays', route: '/actions?view=open&layout=list', setup: take('first', 'same'), widths: [1920],
@@ -625,7 +673,7 @@ const pages = [
   // smaller one and a narrow one (the lanes two by two), and with wider letters. Nothing scrolls sideways.
   ...['actions-board', 'actions-board-wide-letters'].map(name => ({
     name, route: '/actions?view=open&layout=board', setup: name.endsWith('letters') ? wider : undefined, widths: [[1920, 1080], [1440, 900], [780, 900]],
-    rules: [noSidewaysScroll, fits('.tide-kanban'), visible('.tide-kcard'), oneRow('.tide-kcard-head'), fits('.tide-kcard-article'),
+    rules: [noSidewaysScroll, fits('.tide-kanban'), visible('.tide-kcard'), oneRow('.tide-kcard-head'), fits('.tide-kcard-article'), kevPill('.tide-kcard .tide-kev'),
       onFirstScreen('.tide-kstrip'), lanesFillTheHeight, chipsAreDropTargets, [1440, oneRow('.tide-kstrip')], [1800, widerThan('.content', 1400)]],
   })),
   // A card dragged with the mouse onto each chip asks how it closed.
@@ -673,6 +721,10 @@ const pages = [
     ] },
   { name: 'metrics-grid', route: '/metrics?chart=group:alert-queue,group:vulnerability-sla&view=grid', widths: [1920, 1000, 700],
     rules: [noSidewaysScroll, visible('.tide-mc-cell'), visible('.tide-chart-band-warn'), oneRow('.tide-mc-cell-head'), [1800, widerThan('.content', 1400)]] },
+  // Closing a card from its Move menu, or by dragging it while it had focus, keeps the person's place in the lane.
+  // Last, as each closes one of the demo's actions.
+  { name: 'actions-board-close-menu', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [closeKeepsPlace('menu')] },
+  { name: 'actions-board-close-drag', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [closeKeepsPlace('drag')] },
 ];
 
 // --- the run -----------------------------------------------------------------------------------------------------------

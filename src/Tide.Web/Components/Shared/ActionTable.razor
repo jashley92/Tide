@@ -181,7 +181,7 @@
     [
         new("title", "Action") { SortBy = r => r.Title, FilterBy = r => r.Title + " " + Ui.ActionLabel(r.Number) + " " + r.ArticleTitle },
         new("kind", "Kind") { SortBy = r => r.Kind, FilterBy = r => ActionService.KindName(r.Kind) },
-        new("team", "Team") { SortBy = r => r.TeamName, FilterBy = r => r.TeamName + " " + (r.AssigneeName ?? "Unassigned") },
+        new("team", "Team and owner") { SortBy = r => r.TeamName, FilterBy = r => r.TeamName + " " + (r.AssigneeName ?? "Unassigned") },
         new("progress", "Progress"),
         new("due", "Due") { SortBy = r => r.DueDate },
         new("status", "Status") { SortBy = r => r.Status },

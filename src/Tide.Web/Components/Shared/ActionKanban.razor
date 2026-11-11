@@ -11,8 +11,8 @@
    CVE on CISA's known exploited list, its checklist's progress, how its hunt went (a sweep or hunt) and how long it has
    been in its lane.
    A lane shows its first 20 cards, then "Show N more" adds 20 at a time; a card moved here (by this person or someone
-   else) stays shown whatever its place. The strip counts a week back; "Show the last 30 days" takes it to 30. Both are
-   for this visit only. *@
+   else) stays shown whatever its place. The strip counts a week back; "Show the last 30 days" takes it to 30, and "Show the
+   last 7 days" back again. Both are for this visit only. *@
 @implements IAsyncDisposable
 @inject ActionService ActionSvc
 @inject ToastService Toasts
@@ -48,10 +48,8 @@
             </div>
         }
         <span class="tide-kstrip-hint">Drop a card on one to close it that way</span>
-        @if (ClosedDays < ActionService.BoardOlderDays)
-        {
-            <button type="button" class="btn btn-link btn-sm tide-kstrip-more" @onclick="ShowOlder">Show the last @ActionService.BoardOlderDays days</button>
-        }
+        @* The strip's reach, a week or a month, either way. *@
+        <button type="button" class="btn btn-link btn-sm tide-kstrip-more" @onclick="ShowOlder">Show the last @(ClosedDays < ActionService.BoardOlderDays ? ActionService.BoardOlderDays : ActionService.BoardClosedDays) days</button>
     </section>
 </div>
 <div class="visually-hidden" role="status">@_said</div>
@@ -71,7 +69,7 @@
         var shown = Shown(status, cards);
         var incoming = drags.Where(d => d.Over == status).ToList();
         <section class="@(incoming.Count > 0 ? "tide-kcol tide-kcol-incoming" : "tide-kcol")" data-status="@status" aria-labelledby="kcol-@status">
-            <h2 class="tide-kcol-head" id="kcol-@status">
+            <h2 class="tide-kcol-head" id="kcol-@status" tabindex="-1">
                 <ActionStatusBadge Status="status" /> <span class="tide-count tide-muted fw-normal">@cards.Count</span>
                 @foreach (var d in incoming)
                 {
@@ -95,6 +93,8 @@
                                 <span class="tide-kev" title="Its article names a CVE on CISA's known exploited list">KEV</span>
                             }
                             <span class="tide-muted small ms-auto text-truncate">@ActionService.KindName(r.Kind)</span>
+                            @* The number at the head's end, to quote, as the design has it. *@
+                            <span class="tide-action-num">@Ui.ActionLabel(r.Number)</span>
                         </div>
                         @if (held is not null)
                         {
@@ -110,7 +110,7 @@
                                 <span class="bi bi-arrow-return-right" aria-hidden="true"></span> Part of @Ui.ActionLabel(parent)
                             </a>
                         }
-                        <div><ActionRef Number="r.Number" Title="@r.Title" TitleClass="tide-kcard-title" Draggable="false" /></div>
+                        <div><ActionRef Number="r.Number" Title="@r.Title" TitleClass="tide-kcard-title" Draggable="false" ShowNumber="false" /></div>
                         @if (r.ArticleTitle is not null)
                         {
                             <div class="tide-kcard-article" title="@r.ArticleTitle"><span class="bi bi-newspaper" aria-hidden="true"></span> <span class="text-truncate">@r.ArticleTitle</span></div>
@@ -131,7 +131,7 @@
                             <button type="button" class="tide-kcard-progress" aria-expanded="@(open ? "true" : "false")"
                                     aria-label="Checklist for @Ui.ActionLabel(r.Number): @r.ChecklistDone of @r.ChecklistTotal done" @onclick="() => ToggleChecklist(r.Id)">
                                 <span class="bi @(r.ChecklistDone == r.ChecklistTotal ? "bi-check2-square" : "bi-list-check")" aria-hidden="true"></span>
-                                <span>@r.ChecklistDone/@r.ChecklistTotal</span>
+                                <span class="text-nowrap">@r.ChecklistDone of @r.ChecklistTotal</span>
                                 <span class="tide-kcard-bar" aria-hidden="true"><span style="width: @(r.ChecklistDone * 100 / r.ChecklistTotal)%"></span></span>
                                 <span class="bi @(open ? "bi-chevron-up" : "bi-chevron-down")" aria-hidden="true"></span>
                             </button>
@@ -222,7 +222,7 @@
     /// <summary>After a move (or a refused one): the page reloads the board.</summary>
     [Parameter] public EventCallback OnChanged { get; set; }
 
-    /// <summary>"Show older" under Done: the page reads the board again with its closed columns reaching further back.</summary>
+    /// <summary>"Show the last 30 days" (or 7) under the lanes: the page counts the closed strip again, reaching that far.</summary>
     [Parameter] public EventCallback OnShowOlder { get; set; }
 
     /// <summary>Who last changed each card, from the changes a live reload heard: a card that changed column says so.</summary>
@@ -259,7 +259,8 @@
     private Guid? _menuFor;
     // The card whose Move menu just opened (focus goes to its first option), or that the menu just moved (focus goes
     // back to its Move button, in its new column).
-    private Guid? _focusMenu, _focusMove;
+    private Guid? _focusMenu;
+    private bool _focusPlace;
 
     // The columns the cards were in at the last render, to see which moved; the cards this tab moved itself (its own
     // reload isn't news); the ones someone else moved, saying so for a moment; and the slides still to play.
@@ -361,10 +362,19 @@
         if (e.Key is "Escape" or "Tab") _menuFor = null;
     }
 
+    /// <summary>After a move from a card's Move menu: the card, and the cards beside it in its lane then, where focus goes
+    /// if it has left (the next, else the one before, else the lane's heading).</summary>
+    internal (Guid Card, Guid? Next, Guid? Previous, ActionStatus Lane)? Place { get; private set; }
+
+    // From the Move menu: once moved (or not), focus goes back to the card's Move button wherever it is now, or when it
+    // has left the board (closed), to the card that was after it in its lane, else the one before, else the lane's heading.
     private async Task MoveFromMenu(ActionRow card, ActionStatus to)
     {
+        var lane = Shown(card.Status, Board.In(card.Status));
+        var at = lane.FindIndex(c => c.Id == card.Id);
+        Place = (card.Id, at + 1 < lane.Count ? lane[at + 1].Id : null, at > 0 ? lane[at - 1].Id : null, card.Status);
         await Move(card, to);
-        _focusMove = card.Id;
+        _focusPlace = true;
         StateHasChanged();
     }
 
@@ -409,10 +419,10 @@
                 _focusMenu = null;
                 await JS.InvokeVoidAsync("tideBoard.focusMenu", open.ToString());
             }
-            if (_focusMove is { } moved)
+            if (_focusPlace && Place is { } p)
             {
-                _focusMove = null;
-                await JS.InvokeVoidAsync("tideBoard.focusMove", moved.ToString());
+                _focusPlace = false;
+                await JS.InvokeVoidAsync("tideBoard.focusPlace", p.Card.ToString(), p.Next?.ToString(), p.Previous?.ToString(), $"kcol-{p.Lane}");
             }
             if (_toPlay.Count > 0)
             {

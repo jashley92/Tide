@@ -185,7 +185,7 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
         await using var r = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=list&q={token}");
         var html = WebUtility.HtmlDecode(await r.HtmlOnce(token));
         var head = html[html.IndexOf("<thead", StringComparison.Ordinal)..html.IndexOf("</thead>", StringComparison.Ordinal)];
-        Regex.Matches(head, "<th[^>]*>(?:<[^>]+>)*\\s*([A-Za-z ]+?)\\s*<").Select(m => m.Groups[1].Value).Should().Equal(["Action", "Kind", "Team", "Progress", "Due", "Status"]);
+        Regex.Matches(head, "<th[^>]*>(?:<[^>]+>)*\\s*([A-Za-z ]+?)\\s*<").Select(m => m.Groups[1].Value).Should().Equal(["Action", "Kind", "Team and owner", "Progress", "Due", "Status"]);
 
         var checklist = Row(html, $"{token} checklist");
         var progress = Regex.Matches(checklist, "<td[^>]*>([\\s\\S]*?)</td>")[3].Groups[1].Value;
@@ -452,7 +452,7 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
         row[..row.IndexOf('>')].Should().Contain("tide-action-row").And.Contain("selected").And.Contain("aria-current=\"true\"").And.Contain("tabindex=\"0\"");
         var other = html[html.LastIndexOf("<tr", html.IndexOf($"{token} 0</a>", StringComparison.Ordinal), StringComparison.Ordinal)..];
         other[..other.IndexOf('>')].Should().Contain("tabindex=\"-1\"").And.NotContain("aria-current");
-        html.Should().MatchRegex("<kbd class=\"tide-kbd\">J</kbd>\\s*<kbd class=\"tide-kbd\">K</kbd> move · <kbd class=\"tide-kbd\">T</kbd> take it · <kbd class=\"tide-kbd\">Enter</kbd> open",
+        html.Should().MatchRegex("<kbd class=\"tide-kbd\">J</kbd>\\s*<kbd class=\"tide-kbd\">K</kbd> move ·\\s*<kbd class=\"tide-kbd\">T</kbd>\\s*<span>take it ·</span>\\s*<kbd class=\"tide-kbd\">Enter</kbd> open",
             "the keys are said beside the heading");
 
         var numbers = r.Component.Rows.Select(x => x.Number).ToList();
@@ -465,6 +465,48 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
         keys.Should().Contain(k => k.Keys.Contains("J") && k.Letter).And.Contain(k => k.Keys.Contains("K") && k.Letter)
             .And.Contain(k => k.Keys.Contains("T") && k.Letter && k.What.Contains("Take", StringComparison.Ordinal))
             .And.Contain(k => k.Keys.Contains("Enter") && k.What.Contains("Open", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TheTakeKey_IsOfferedOnlyToSomeoneWhoMayTakeActions()
+    {
+        await using (var viewer = await RenderAsync<ActionsBoard>(app, "/actions?view=open&layout=list", @as: Viewer))
+        {
+            var html = WebUtility.HtmlDecode(await viewer.HtmlOnce("tide-actions-keys"));
+            html.Should().Contain("move").And.Contain(">Enter</kbd> open").And.NotContain("take it", "a viewer takes nothing on");
+        }
+        await using (var owner = await RenderAsync<ActionsBoard>(app, "/actions?view=open&layout=list", @as: Owner()))
+            WebUtility.HtmlDecode(await owner.HtmlOnce("tide-actions-keys")).Should().Contain(">T</kbd>").And.Contain("take it");
+
+        static IEnumerable<Tide.Web.Components.Layout.Shortcut> Keys(bool canTake) =>
+            Tide.Web.Components.Layout.Shortcuts.For("actions?view=open&layout=list", canTake: canTake).SelectMany(g => g.Keys);
+        Keys(canTake: false).Should().NotContain(k => k.Keys.Contains("T")).And.Contain(k => k.Keys.Contains("J")).And.Contain(k => k.Keys.Contains("Enter"));
+        Keys(canTake: true).Should().Contain(k => k.Keys.Contains("T"));
+    }
+
+    [Fact]
+    public async Task AfterTheStatusMenuMovesARowOutOfTheList_FocusGoesToTheNextRow()
+    {
+        var token = $"alleave{Guid.NewGuid():N}"[..15];
+        var team = await Team("AL leaves the list");
+        var first = await Raise(team, $"{token} 0");
+        var second = await Raise(team, $"{token} 1");
+        await using var r = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=list&q={token}&status=open");
+        await r.HtmlOnce(token);
+        var numbers = r.Component.Rows.Select(x => x.Number).ToList();
+        await r.Click(p => p.MoveRow(p.Rows[0], ActionStatus.Blocked));
+        r.Component.Rows.Select(x => x.Number).Should().Equal([numbers[1]], "Blocked isn't Open: the row left the list");
+        r.Component.Focusing.Should().Be($"A-{numbers[1]}", "focus goes to the next row, not the page");
+        new[] { first, second }.Should().BeEquivalentTo(numbers);
+    }
+
+    [Fact]
+    public async Task TheListsColumns_SayTeamAndOwner_AndItsKevFlagIsThePill()
+    {
+        await using var r = await RenderAsync<ActionsBoard>(app, "/actions?view=open&layout=list");
+        var html = WebUtility.HtmlDecode(await r.HtmlOnce("<thead"));
+        var head = html[html.IndexOf("<thead", StringComparison.Ordinal)..html.IndexOf("</thead>", StringComparison.Ordinal)];
+        head.Should().Contain(">Team and owner<", "the cell shows both");
     }
 
     [Fact]

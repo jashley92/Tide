@@ -155,7 +155,7 @@ public class BoardClosedStripTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task ShowTheLast30Days_AsksThePageToCountFurtherBack_AndThenGoes()
+    public async Task ShowTheLast30Days_AsksThePageToCountFurtherBack_AndTheLast7DaysComesBack()
     {
         var older = 0;
         var (_, _, board) = await OpenCard();
@@ -171,6 +171,7 @@ public class BoardClosedStripTests(TideApp app) : IClassFixture<TideApp>
         await using var month = await Render(board, ActionService.BoardOlderDays);
         var html = WebUtility.HtmlDecode(await month.Html());
         html.Should().Contain("Closed, last 30 days").And.NotContain("Show the last 30 days");
+        html.Should().MatchRegex("<button[^>]*tide-kstrip-more[^>]*>Show the last 7 days</button>", "and back again");
         html.Should().Contain("aria-label=\"Done: 4 closed in the last 30 days\"");
     }
 
@@ -239,10 +240,51 @@ public class BoardClosedStripTests(TideApp app) : IClassFixture<TideApp>
         var html = WebUtility.HtmlDecode(await r.Html());
         html.Should().Contain("class=\"tide-kcard-article\"").And.Contain("Edge VPN zero-day exploited in the wild");
         html.Should().Contain("class=\"tide-kev\"").And.Contain(">KEV<");
-        html.Should().Contain("1/4");
+        html.Should().Contain("1 of 4");
         html.Should().MatchRegex("In column [34]d");
         html.Should().Contain("title=\"In progress since ").And.NotContain("In In progress", "the status names itself: \"In progress since\", \"Blocked since\"");
         html.Should().NotContain("Hunt", "a patch has no hunt");
+    }
+
+    // Three open cards in one lane, the person's to move.
+    private static ActionBoard Lane(out ActionRow[] cards)
+    {
+        var team = Guid.NewGuid();
+        cards = [.. Enumerable.Range(0, 3).Select(i => new ActionRow(Guid.NewGuid(), 9200 + i, $"Card {i}", ActionKind.Block, Priority.P2, team, "SOC",
+            null, null, null, ActionStatus.Open, ActionOutcome.None, null, null, null, null, 0, DateTimeOffset.UtcNow))];
+        return new ActionBoard(cards, true, new HashSet<Guid>());
+    }
+
+    [Fact]
+    public async Task AfterTheMoveMenu_FocusKnowsTheCardsBesideIt_ForWhenTheCardHasLeft()
+    {
+        await using var r = await RenderAsync<ActionKanban>(app, "/actions?layout=board", new()
+        {
+            ["Board"] = Lane(out var cards), ["Today"] = DateOnly.FromDateTime(DateTime.UtcNow),
+        });
+        var move = typeof(ActionKanban).GetMethod("MoveFromMenu", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        // A move the service refuses (these cards aren't saved) still says where focus would go.
+        await r.Click(k => (Task)move.Invoke(k, [cards[1], ActionStatus.InProgress])!);
+        r.Component.Place.Should().Be((cards[1].Id, (Guid?)cards[2].Id, (Guid?)cards[0].Id, ActionStatus.Open));
+        await r.Click(k => (Task)move.Invoke(k, [cards[2], ActionStatus.InProgress])!);
+        r.Component.Place.Should().Be((cards[2].Id, (Guid?)null, (Guid?)cards[1].Id, ActionStatus.Open), "the last card: the one before");
+    }
+
+    [Fact]
+    public async Task ACard_HasItsNumberTopRight_AndItsChecklistReadsOneOfSeven()
+    {
+        var card = new ActionRow(Guid.NewGuid(), 9104, "Patch the gateways", ActionKind.PatchRemediate, Priority.P1, Guid.NewGuid(), "SOC", null, null, null,
+            ActionStatus.InProgress, ActionOutcome.None, null, null, null, null, 0, DateTimeOffset.UtcNow, ChecklistDone: 1, ChecklistTotal: 7);
+        await using var r = await RenderAsync<ActionKanban>(app, "/actions?layout=board", new()
+        {
+            ["Board"] = new ActionBoard([card], false, new HashSet<Guid>()), ["Today"] = DateOnly.FromDateTime(DateTime.UtcNow),
+        });
+        var html = WebUtility.HtmlDecode(await r.Html());
+        var head = html[html.IndexOf("class=\"tide-kcard-head\"", StringComparison.Ordinal)..];
+        head = head[..head.IndexOf("</div>", StringComparison.Ordinal)];
+        head.Should().Contain("A-9104", "the number sits at the head's end, as the design has it");
+        html.Should().NotMatchRegex("Patch the gateways</a>\\s*<span class=\"tide-action-num", "not again after the title");
+        html.Should().Contain("1 of 7");
     }
 
     [Theory]
@@ -259,6 +301,6 @@ public class BoardClosedStripTests(TideApp app) : IClassFixture<TideApp>
             ["Board"] = new ActionBoard([card], false, new HashSet<Guid>()), ["Today"] = DateOnly.FromDateTime(DateTime.UtcNow),
         });
         var html = WebUtility.HtmlDecode(await r.Html());
-        html.Should().Contain($">{says}<").And.Contain("1/7", "the checklist's progress stays");
+        html.Should().Contain($">{says}<").And.Contain("1 of 7", "the checklist's progress stays");
     }
 }

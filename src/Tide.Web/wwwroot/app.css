@@ -2501,6 +2501,11 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-kstrip-more { margin-left: auto; padding: 0; }
 .tide-chip-count { margin-left: var(--tide-space-1); color: var(--tide-text-muted); font-variant-numeric: tabular-nums; }
 .tide-col-progress { min-width: 7.5rem; }
+/* A card's number at its head's end, small and muted, to quote. */
+.tide-kcard-head .tide-action-num { flex: none; font-size: var(--tide-text-xs); font-weight: var(--tide-weight-regular); color: var(--tide-text-muted); }
+/* KEV on a card and a row: the design's outlined pill. */
+.tide-kcard .tide-kev, .tide-action-row .tide-kev { display: inline-block; padding: 0 var(--tide-space-1); border: 1px solid currentColor;
+    border-radius: var(--tide-radius-pill); line-height: 1.5; }
 .tide-action-row .tide-kev { margin-left: var(--tide-space-1); }
 /* The list's keys beside its heading; its selected row (rows.js moves it), marked as Triage's is; a status that is a
    menu, tinted as its badge; and a due group's heading saying how many of it nobody holds. */
@@ -2530,5 +2535,18 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 @media (max-width: 640.98px) {
     .tide-actions-viewrow { flex-wrap: wrap; row-gap: var(--tide-space-2); padding-bottom: var(--tide-space-2); }
     .tide-actions-viewrow > .tide-actions-views { flex-basis: 100%; }
+}
+/* A narrower window lays each row out in its box rather than scrolling the table sideways: the title on its own line,
+   the rest under it, wrapping as it needs; the headings, still the way to sort, wrap the same way above. */
+@media (max-width: 1199.98px) {
+    .tide-table:has(.tide-action-row), .tide-table:has(.tide-action-row) > thead, .tide-table:has(.tide-action-row) > tbody { display: block; }
+    .tide-table:has(.tide-action-row) > thead > tr, .tide-action-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--tide-space-1) var(--tide-space-4);
+        padding: var(--tide-space-2) var(--tide-space-3); border-bottom: 1px solid var(--tide-border); }
+    .tide-table:has(.tide-action-row) > thead > tr > th, .tide-action-row > td { display: block; padding: 0; border: 0; }
+    .tide-action-row > td:first-child { flex: 1 0 100%; }
+    .tide-table:has(.tide-action-row) .tide-dt-group, .tide-table:has(.tide-action-row) .tide-dt-group > th { display: block; }
+    .tide-action-row.selected > td:first-child { box-shadow: none; }
+    .tide-action-row.selected { background: var(--tide-accent-soft); box-shadow: inset 3px 0 0 var(--tide-accent); }
+    .tide-action-row.selected > td { background: none; }
 }
 /* ---- end Actions list and board, as designed ---- */

@@ -24,7 +24,8 @@
         @if (!_asBoard)
         {
             @* The list's keys (RowKeys, rows.js), as the ? overlay lists them. *@
-            <span class="tide-actions-keys"><kbd class="tide-kbd">J</kbd> <kbd class="tide-kbd">K</kbd> move · <kbd class="tide-kbd">T</kbd> take it · <kbd class="tide-kbd">Enter</kbd> open</span>
+            @* T only for someone who may take actions on. *@
+            <span class="tide-actions-keys"><kbd class="tide-kbd">J</kbd> <kbd class="tide-kbd">K</kbd> move · @if (CanHold) { <kbd class="tide-kbd">T</kbd> <span>take it ·</span> }<kbd class="tide-kbd">Enter</kbd> open</span>
         }
     </div>
     <div class="d-flex gap-2">
@@ -148,7 +149,7 @@ else
     </ActionTable>
 </div>
 @* J/K and the arrows move the selected row (on to the next page at the end), T takes it on, Enter opens it. *@
-<RowKeys RowClass="@ActionTable.RowClassName" Count="_rows.Count" @bind-Selected="_selected" OnOpen="OpenRow" Keys="ListKeys" OnKey="RowKey"
+<RowKeys RowClass="@ActionTable.RowClassName" Count="_rows.Count" @bind-Selected="_selected" OnOpen="OpenRow" Keys="@(CanHold ? ListKeys : null)" OnKey="RowKey"
          Page="_page" Pages="@TableView.Pages(_total, ActionService.ListPageSize)" OnPage="TurnPage" Address="RowAddress" />
 @* The Status menu's moves: checked, recorded and asked about as the board's are. *@
 <ActionMover @ref="_mover" Id="list-close" OnChanged="ReadAgain" />
@@ -833,7 +834,10 @@ else
     /// <summary>The Status menu's choice: the action moves there as the board's Move menu moves it (ActionMover).</summary>
     internal async Task MoveRow(ActionRow row, ActionStatus to)
     {
-        if (_mover is not null) await _mover.MoveAsync(row, to);
+        if (_mover is null) return;
+        var was = _rows;
+        await _mover.MoveAsync(row, to);
+        KeepPlace(was, row);
     }
 
     // After a move from the list, or one refused as stale: the list is read again in place.
@@ -908,8 +912,13 @@ else
         finally { _taking = false; }
         var was = _rows;
         await Read(quiet: true);
-        // Focus stays on the row, or when it has left the list (No owner), goes to the next row, else the one before,
-        // else the heading.
+        KeepPlace(was, row);
+    }
+
+    // After a row's action was taken or moved and the list read again: focus stays on the row, or when it has left the
+    // list (No owner, a status filter), goes to the next row, else the one before, else the heading.
+    private void KeepPlace(IReadOnlyList<ActionRow> was, ActionRow row)
+    {
         var at = was.ToList().FindIndex(r => r.Id == row.Id);
         bool Still(ActionRow r) => _rows.Any(x => x.Id == r.Id);
         var next = was.Skip(at).FirstOrDefault(Still) ?? was.Take(at).LastOrDefault(Still);
@@ -927,10 +936,10 @@ else
         Remember();
     }
 
-    // "Show the last 30 days" under the board: its closed strip counts 30 days back, for this visit.
+    // "Show the last 30 days" under the board, or "the last 7 days" back again: how far its closed strip counts, for this visit.
     private async Task ShowOlder()
     {
-        _closedDays = ActionService.BoardOlderDays;
+        _closedDays = _closedDays < ActionService.BoardOlderDays ? ActionService.BoardOlderDays : ActionService.BoardClosedDays;
         await Load();
     }
 
