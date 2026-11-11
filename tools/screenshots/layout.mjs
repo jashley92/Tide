@@ -1830,6 +1830,11 @@ const pages = [
     rules: [visible('#tide-rail .tide-lib-facts'), visible('#tide-rail #lib-fills-h'), visible('#tide-rail #lib-used-h'), ...libraryFitsBesideRail.slice(0, 6), chipHasRoom, ...rowsTwoLines] },
   { name: 'library-rail-playbooks', route: '/library/playbooks', setup: wideFont, widths: [1920, 1500],
     rules: [visible('#tide-rail .tide-lib-facts'), visible('#tide-rail #lib-used-h'), ...libraryFitsBesideRail.slice(0, 6), chipHasRoom, ...rowsTwoLines] },
+  // Someone who works actions but has none open of the entry's kind (a new sign-in, in no team): Try it says so in its
+  // section, one short line within the rail, rather than the section going.
+  ...['queries', 'templates', 'playbooks'].map(tab => ({ name: `library-rail-none-${tab}`, route: `/library/${tab}?as=Nobody${run}&roles=ActionOwner`,
+    setup: wideFont, widths: [1920, 1440, 780], rules: [[1500, visible('#tide-rail #lib-try-h')], [1500, visible('#tide-rail .tide-lib-try-none')],
+      [1500, oneLine('#tide-rail .tide-lib-try-none', 2)], [1500, fits('#tide-rail .tide-lib-try')], hidden('#lib-try-action'), noSidewaysScroll] })),
   // Copy filled in puts exactly the preview on the clipboard.
   { name: 'library-rail-copy', route: '/library/queries', setup: everyIndicatorSweep, widths: [1920], context: clipboard,
     rules: [copiesExactly('[data-copy-target="lib-try-text"]', '#lib-try-text')] },

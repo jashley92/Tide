@@ -1,8 +1,9 @@
 @* The Library's context rail: the selected entry's facts, the placeholders an action fills in, the entry tried on an
    open action (a preview, read only: nothing is saved until Add, and Copy records nothing), and the actions it was used
    on. Each tab that lists entries places one for its selected entry.
-   - Try it is offered only to someone who works an action of the kind the entry is for (LibraryUseService.WorkableAsync),
-     and never on a retired entry. Choosing an action only reads: the preview is ActionService's or OutreachService's
+   - Try it is for someone who works actions (LibraryUseService.CanTry), never on a retired entry, and lists only the open
+     actions of the kind the entry is for that they work (WorkableAsync); with none, it says so. An action closed after its
+     preview is refused by Add (ActionService) and the list is read again without it. Choosing an action only reads: the preview is ActionService's or OutreachService's
      read-only fill, which refuses whom the real step refuses. Add runs the action page's own step (Add a saved query,
      Apply a playbook), with its checks and its line in the action's history.
    - Used on lists the actions the entry was used on, for whoever reads actions (a deleted one isn't listed). *@
@@ -10,6 +11,7 @@
 @inject ActionService ActionSvc
 @inject OutreachService OutreachSvc
 @inject ToastService Toasts
+@inject ICurrentUser CurrentUser
 
 <ContextRail Title="@($"About this {Noun}")">
     <section class="tide-card" aria-label="Facts">
@@ -34,10 +36,16 @@
         </section>
     }
 
-    @if (_offered.Count > 0 && !Retired)
+    @if (LibraryUseService.CanTry(CurrentUser) && !Retired)
     {
         <section class="tide-card tide-lib-try" aria-labelledby="lib-try-h">
             <h2 id="lib-try-h">Try it on an open action</h2>
+            @if (_offered.Count == 0)
+            {
+                <p class="small tide-muted mb-0 tide-lib-try-none">@NoneToTry</p>
+            }
+            else
+            {
             <select id="lib-try-action" class="form-select form-select-sm" aria-label="The action to try it on" value="@_actionId" @onchange="e => Choose(Guid.TryParse(e.Value as string, out var id) ? id : null)">
                 @foreach (var a in _offered)
                 {
@@ -88,6 +96,7 @@
                         <span id="lib-try-status" class="small tide-muted" role="status" aria-live="polite"></span>
                     </div>
                 }
+            }
             }
         </section>
     }
@@ -165,18 +174,34 @@
 
     private WorkableAction? Chosen => _offered.FirstOrDefault(a => a.Id == _actionId);
 
-    protected override async Task OnInitializedAsync()
+    protected override Task OnInitializedAsync() => ReadWorkable();
+
+    private async Task ReadWorkable()
     {
         try { _workable = await UseSvc.WorkableAsync(); }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
     }
 
+    // What the section says when there's no open action of the entry's kind to try it on.
+    private string NoneToTry => Kind switch
+    {
+        LibraryKind.SavedQuery => "No open sweep or hunt to try it on.",
+        LibraryKind.OutreachTemplate => "No open Outreach action to try it on.",
+        _ => For is { } kind ? $"No open {ActionService.KindName(kind)} action to try it on." : "No open action to try it on.",
+    };
+
+    // The actions it suits, the one chosen kept when it still does (else the first, one with indicators to fill it with
+    // first, as most entries need them).
+    private void Offer()
+    {
+        _offered = [.. _workable.Where(a => LibraryUseService.Suits(Kind, a.Kind, For))];
+        if (Chosen is null) _actionId = (_offered.FirstOrDefault(a => a.HasIndicators) ?? _offered.FirstOrDefault())?.Id;
+    }
+
     // Another entry: its uses, and the action chosen kept when it suits this one too (else the first that does).
     protected override async Task OnParametersSetAsync()
     {
-        _offered = [.. _workable.Where(a => LibraryUseService.Suits(Kind, a.Kind, For))];
-        // First, one with indicators to fill it with, as most entries need them.
-        if (Chosen is null) _actionId = (_offered.FirstOrDefault(a => a.HasIndicators) ?? _offered.FirstOrDefault())?.Id;
+        Offer();
         if (_shown == (EntryId, Retired)) return;
         var other = _shown?.Entry != EntryId;
         _shown = (EntryId, Retired);
@@ -263,8 +288,15 @@
         catch (Exception ex)
         {
             Toasts.Error(UserFacingError.For(ex));
-            // The action changed since the preview: what Add would do now is shown, to be tried again.
+            // The action changed since the preview: what Add would do now is shown, to be tried again. One that closed
+            // meanwhile is no longer offered: the open actions are read again, and the next one shown.
             if (ex is StaleEditException) await Preview();
+            else if (ex is InvalidOperationException)
+            {
+                await ReadWorkable();
+                Offer();
+                await Preview();
+            }
         }
         finally
         {

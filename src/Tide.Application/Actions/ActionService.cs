@@ -1771,11 +1771,13 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         {
             var found = await FindAsync(check, actionId, ct);
             await RequireWork(check, user, found, ct);
+            RequireOpen(found);
             playbook = await PlaybookFor(check, playbookId, found.Kind, ct);
         }
         return await dbs.SerializedAsync(async db =>
         {
             var a = await db.Actions.Include(x => x.Checklist).FirstOrDefaultAsync(x => x.Id == actionId, ct) ?? throw new KeyNotFoundException("That action no longer exists.");
+            RequireOpen(a);   // again here: it may have closed since the check above
             if (previewed is not null && (previewed.EditVersion != a.EditVersion || !previewed.Steps.SequenceEqual(StepsToAdd(a, playbook).Select(s => s.Text))))
                 throw StalePreview();
             var added = AddSteps(a, playbook);
@@ -1798,7 +1800,15 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var a = await db.Actions.AsNoTracking().Include(x => x.Checklist).FirstOrDefaultAsync(x => x.Id == actionId, ct)
                 ?? throw new KeyNotFoundException("That action no longer exists.");
         await RequireWork(db, user, a, ct);
+        RequireOpen(a);
         return new PlaybookPreview([.. StepsToAdd(a, await PlaybookFor(db, playbookId, a.Kind, ct)).Select(s => s.Text)], a.EditVersion);
+    }
+
+    /// <summary>What adding a saved query or a playbook to a closed action (Done, Cancelled, Not applicable) says: nothing
+    /// from the Library is added to work that's finished.</summary>
+    private static void RequireOpen(ActionItem a)
+    {
+        if (!a.IsOpen) throw new InvalidOperationException($"A-{a.Number} is closed. Reopen it to add to it.");
     }
 
     private static async Task<Playbook> PlaybookFor(IAppDbContext db, Guid playbookId, ActionKind kind, CancellationToken ct)
@@ -1986,6 +1996,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     {
         var a = await HuntActionAsync(db, actionId, tracked: false, ct);
         await RequireWork(db, user, a, ct);
+        RequireOpen(a);
         var saved = await db.SavedQueries.AsNoTracking().FirstOrDefaultAsync(q => q.Id == savedQueryId, ct)
                     ?? throw new KeyNotFoundException("That saved query no longer exists.");
         if (saved.IsRetired) throw new InvalidOperationException($"{saved.Name} is retired. Restore it in the Library, on Saved queries, to use it.");

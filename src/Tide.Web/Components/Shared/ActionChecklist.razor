@@ -42,7 +42,8 @@ else
                    @ref="_newInput" @bind="_newItem" @bind:event="oninput" @onkeydown="OnNewKey" />
             <button class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@(_busy || string.IsNullOrWhiteSpace(_newItem))" @onclick="Add">Add</button>
         </div>
-        @if (_playbooks.Count > 0)
+        @* A closed action takes no playbook (ActionService refuses it): it's offered only while the action is open. *@
+        @if (_playbooks.Count > 0 && Open)
         {
             <div class="d-flex gap-2 mt-2 align-items-center">
                 <select class="form-select form-select-sm" aria-label="Playbook to apply" @bind="_playbookId">
@@ -61,6 +62,9 @@ else
     [Parameter, EditorRequired] public ActionKind Kind { get; set; }
     [Parameter] public bool CanWork { get; set; }
     [Parameter] public bool Compact { get; set; }
+
+    /// <summary>Whether the action is open: a closed one isn't offered a playbook.</summary>
+    [Parameter] public bool Open { get; set; } = true;
 
     /// <summary>Focus the new item's box once it's drawn: the page's empty checklist was just opened to add one.</summary>
     [Parameter] public bool Autofocus { get; set; }
