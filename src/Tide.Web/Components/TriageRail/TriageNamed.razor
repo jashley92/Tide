@@ -1,0 +1,76 @@
+@* Triage's context rail, last: whether the selected item names a product on Our stack or a watched adversary (the row's
+   own signals), each a link to its page; a dashed flag for each it doesn't name. Where it names nothing we run, Add to
+   what we run… names a product (the page adds it, as StackService.AddByNameAsync does from anywhere). *@
+
+<section class="tide-card" aria-labelledby="rail-named-h">
+    <h2 id="rail-named-h">@(WeRun is null && Watching is null ? "Not found" : "What it names")</h2>
+    <div class="tide-rail-badges">
+        @if (WeRun is { } runs) { @WeRunChip(runs) }
+        else { <Badge Class="tide-badge-off" Title="It names no product on Our stack">We run it</Badge> }
+        @if (Watching is { } watched) { @WatchingChip(watched) }
+        else { <Badge Class="tide-badge-off" Title="It names no watched adversary">Watched adversary</Badge> }
+    </div>
+    @if (WeRun is null && Watching is null) { <p class="small tide-muted mb-0 mt-2">Nothing on Our stack or a watched adversary's profile is named.</p> }
+    @if (WeRun is null && Add is not null)
+    {
+        @if (_adding)
+        {
+            <div class="tide-triage-rail-acts mt-2">
+                <label class="visually-hidden" for="rail-stack-add">Product we run</label>
+                <input id="rail-stack-add" class="form-control form-control-sm" maxlength="100" placeholder="Product, e.g. GitLab" @ref="_input"
+                       @bind="_name" @bind:event="oninput" @onkeydown="Key" />
+                <button type="button" class="btn btn-primary btn-sm" disabled="@(Busy || string.IsNullOrWhiteSpace(_name))" @onclick="Submit">Add</button>
+                <button type="button" class="btn btn-link btn-sm" @onclick="() => _adding = false">Cancel</button>
+            </div>
+        }
+        else
+        {
+            <button type="button" class="btn btn-link btn-sm p-0 mt-2" disabled="@Busy" @onclick="Open">Add to what we run…</button>
+        }
+    }
+</section>
+
+@code {
+    /// <summary>The chip naming a product on Our stack, opening its page: here and on a row's line in the list (a click
+    /// on it there doesn't select the row).</summary>
+    public static RenderFragment WeRunChip(Tide.Application.Stack.StackEntry e) => __builder =>
+    {
+        <a class="tide-badge tide-badge-ok tide-werun-chip" href="@($"stack/{e.Id}")" title="On Our stack: open its notes and history" @onclick:stopPropagation="true">We run: @e.Name</a>
+    };
+
+    /// <summary>The chip naming a watched adversary, opening its profile, as <see cref="WeRunChip"/>.</summary>
+    public static RenderFragment WatchingChip(Tide.Application.Stack.StackEntry e) => __builder =>
+    {
+        <a class="tide-badge tide-badge-warn tide-werun-chip" href="@($"adversaries/{e.Id}")" title="A watched adversary: open its profile" @onclick:stopPropagation="true">Watching: @e.Name</a>
+    };
+
+    [Parameter] public Tide.Application.Stack.StackEntry? WeRun { get; set; }
+    [Parameter] public Tide.Application.Stack.StackEntry? Watching { get; set; }
+    [Parameter] public bool Busy { get; set; }
+
+    /// <summary>Adds a product to Our stack by its name; true when it was. Null where nothing is offered (a promoted item).</summary>
+    [Parameter] public Func<string, Task<bool>>? Add { get; set; }
+
+    private bool _adding, _focus;
+    private string? _name;
+    private ElementReference _input;
+
+    private void Open() => (_adding, _name, _focus) = (true, null, true);
+
+    private Task Key(KeyboardEventArgs e) => e.Key == "Enter" ? Submit() : Task.CompletedTask;
+
+    private async Task Submit()
+    {
+        if (Busy || Add is null || string.IsNullOrWhiteSpace(_name)) return;
+        if (await Add(_name.Trim())) _adding = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focus || !_adding) return;
+        _focus = false;
+        try { await _input.FocusAsync(); }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+}
