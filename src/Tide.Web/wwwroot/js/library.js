@@ -16,6 +16,7 @@ window.tideLibrary = (function () {
         const list = document.querySelector('.tide-library-list');
         if (!list || document.querySelector('.tide-modal')) return;
         if (window.tideShortcuts.typing(e.target) || window.tideShortcuts.inMenu(e.target)) return;
+        if (window.tideShortcuts.inRail(e.target)) return;   // the context rail's, pressed in it or open over the list
         const focused = rowOf(e.target);
         let by = 0;
         if (key === 'j' || key === 'k') {

@@ -51,7 +51,7 @@ public class RailOverlayTests
         vm.runInThisContext(fs.readFileSync(process.argv[2], 'utf8'));
 
         const changed = () => observers.slice().forEach(f => f());   // the page's markup changed
-        const key = k => listeners.keydown.forEach(f => f({ key: k, target: document.activeElement, getModifierState: () => false, preventDefault() {} }));
+        const key = k => listeners.keydown.forEach(f => f({ key: k, target: document.activeElement, getModifierState: () => false, preventDefault() {}, stopImmediatePropagation() {} }));
         const state = () => ({
             inert: Object.values(under).filter(e => e.hasAttribute('inert')).map(e => e.id).join(','),
             railInert: rail.hasAttribute('inert'),

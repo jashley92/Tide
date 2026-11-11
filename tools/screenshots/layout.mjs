@@ -298,6 +298,67 @@ async function holdV(page) {
   await page.waitForTimeout(500);
 }
 
+/**
+ * Setup: a context rail on the page, as ContextRail draws one (no page places one yet): its button in the top bar and
+ * its region with a link in it, opened (as an overlay below 1500px) the way the button opens it. Focus goes into it.
+ */
+async function openRail(page) {
+  await page.evaluate(() => {
+    const button = document.createElement('button');
+    button.id = 'tide-rail-toggle';
+    button.type = 'button';
+    button.textContent = 'Context';
+    document.querySelector('.tide-top-end')?.prepend(button);
+    const rail = document.createElement('aside');
+    rail.id = 'tide-rail';
+    rail.className = 'tide-rail';
+    rail.tabIndex = -1;
+    rail.innerHTML = '<div class="tide-rail-body"><a href="#" id="rail-link">A link in the rail</a></div>';
+    document.body.append(rail);   // fixed in place as an overlay, wherever it sits
+    window.tideRail.start();
+  });
+  await page.click('#tide-rail-toggle');
+  await page.locator('#tide-rail').waitFor();
+  await page.focus('#rail-link');
+}
+
+const selectedRow = page => page.evaluate(() => [...document.querySelectorAll('.tide-triage-row')].findIndex(r => r.classList.contains('selected')));
+
+/** The keys pressed in the open rail are the rail's: J and the down arrow there leave the list's selection where it is. */
+const railKeysStayInTheRail = {
+  name: 'keys in the rail leave the list alone',
+  check: async page => {
+    const problems = [], before = await selectedRow(page);
+    if (before < 0) return ['no row is selected to begin with'];
+    for (const key of ['j', 'ArrowDown']) {
+      await page.focus('#rail-link');
+      await page.keyboard.press(key);
+      await page.waitForTimeout(600);
+      const now = await selectedRow(page);
+      if (now !== before) problems.push(`${key} in the rail moved the selection from row ${before + 1} to row ${now + 1}`);
+    }
+    return problems;
+  },
+};
+
+/** Escape in the open rail closes the rail, and only the rail: the reading pane stays, and so does its kept state
+ * (the page opened again still opens the pane by itself). */
+const escapeClosesTheRailOnly = {
+  name: 'Escape closes the rail only',
+  check: async page => {
+    await page.focus('#rail-link');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(800);
+    const problems = [];
+    if (await anyShown(page, '#tide-rail')) problems.push('the rail is still open after Escape');
+    if (!await anyShown(page, '.tide-reading')) problems.push('Escape in the rail closed the reading pane too');
+    await page.reload({ waitUntil: 'networkidle' });
+    await settle(page);
+    if (!await anyShown(page, '.tide-reading')) problems.push('the reading pane is kept closed after Escape in the rail');
+    return problems;
+  },
+};
+
 // The reading pane's open or closed is kept for the person, so the pages that press V sign in as someone of their own
 // for this run (the dev sign-in's ?as=), and everyone else's Triage opens as it always does.
 const run = Date.now().toString(36);
@@ -374,6 +435,10 @@ const pages = [
   { name: 'triage-v-closes', route: `/triage?as=v1${run}`, setup: pressV(1), widths: [1440], rules: [hidden('.tide-reading')] },
   { name: 'triage-v-reopens', route: `/triage?as=v2${run}`, setup: pressV(2), widths: [1440], rules: [visible('.tide-reading')] },
   { name: 'triage-v-narrow', route: `/triage?as=v3${run}`, setup: pressV(1), widths: [780], rules: [visible('.tide-reading')] },
+  // The context rail as an overlay over Triage: the keys pressed in it are its own. J and the arrows there don't move
+  // the list, and Escape closes the rail without closing the reading pane (or keeping it closed).
+  { name: 'triage-rail-keys', route: `/triage?as=r1${run}`, setup: openRail, widths: [1440],
+    rules: [visible('#tide-rail'), visible('.tide-reading'), railKeysStayInTheRail, escapeClosesTheRailOnly] },
   // J and K pressed quickly land on the row they were pressed for: on the page (the selection isn't pulled back by a
   // row's focus), and across a page boundary both ways (the demo has a second page: Demo:TriageFiller below).
   { name: 'triage-keys', route: '/triage', setup: pressQuickly('j', 10), widths: [1440], rules: [selectedAsAimed()] },

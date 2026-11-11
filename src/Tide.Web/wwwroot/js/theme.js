@@ -68,7 +68,11 @@ window.tideShortcuts = (function () {
     function inMenu(target) {
         return !!(target && target.closest && target.closest('[role="menu"], [role="dialog"], [role="alertdialog"]'));
     }
-    return { on: on, set: set, toggle: toggle, isLetter: isLetter, typing: typing, inMenu: inMenu };
+    // A key for the context rail, not the page's list: pressed in the rail, or while the rail is open over the page.
+    function inRail(target) {
+        return document.documentElement.hasAttribute('data-rail-over') || !!(target && target.closest && target.closest('#tide-rail'));
+    }
+    return { on: on, set: set, toggle: toggle, isLetter: isLetter, typing: typing, inMenu: inMenu, inRail: inRail };
 })();
 
 // Arrow keys, Home and End over a row or column of controls (a menu, a tablist, a toolbar), alike everywhere: the
@@ -221,12 +225,16 @@ document.addEventListener('keydown', function (e) {
 
 // The context rail's keys. "]" shows or hides it: a single character, so it's off with the letter shortcuts and while
 // typing or in a menu or dialog (the top bar's Context button still works). AltGr counts as no modifier, for the
-// keyboards that type "]" with it. Escape closes the rail while it's an overlay, unless a menu or dialog has the key.
+// keyboards that type "]" with it. Escape closes the rail while it's an overlay, unless a menu or dialog has the key;
+// that Escape is the rail's alone, so the page under it (a list's Esc, Triage's reading pane) doesn't hear it as well.
 document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape' && e.key !== ']') return;
     if (e.isComposing || e.defaultPrevented || window.tideShortcuts.inMenu(e.target)) return;
     if (e.key === 'Escape') {
-        if (window.tideRail.over()) window.tideRail.toggle();
+        if (!window.tideRail.over()) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        window.tideRail.toggle();
         return;
     }
     if (e.metaKey || ((e.ctrlKey || e.altKey) && !e.getModifierState('AltGraph'))) return;

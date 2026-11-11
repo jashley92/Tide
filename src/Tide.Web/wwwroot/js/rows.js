@@ -86,6 +86,7 @@ window.tideRows = (function () {
     function onKey(e) {
         if (!ref || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
         if (document.querySelector('.tide-modal')) return;   // a confirmation is open: its keys are its own
+        if (shortcuts.inRail(e.target)) return;               // so is the context rail, pressed in it or open over the list
         if (opt.held && opt.held(e)) return;
         if (shortcuts.typing(e.target) || shortcuts.inMenu(e.target)) return;
         if (!shortcuts.on() && shortcuts.isLetter(e)) return;
