@@ -2679,3 +2679,17 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
     .tide-action-row.selected > td { background: none; }
 }
 /* ---- end Actions list and board, as designed ---- */
+
+/* ---- Action page 3.5: the facts, the article it was raised from, what else was raised from that, and the Files in the
+   context rail (its flat sections are Today 3.1's); the page one column for the work ---- */
+/* The article: its title, its class and marking, its bottom line, then its CVEs, each a chip that wraps whole. */
+.tide-rail-article { display: flex; flex-direction: column; gap: var(--tide-space-2); }
+.tide-rail-article > h2 { margin-bottom: 0; }
+.tide-rail-article-title { font-weight: var(--tide-weight-semibold); overflow-wrap: anywhere; }
+.tide-rail-badges, .tide-rail-cves { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); }
+.tide-rail-cves .tide-chip { margin: 0; max-width: 100%; }
+/* Also raised from it: each its title and number, then its team and how it stands. */
+.tide-rail-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--tide-space-2); font-size: var(--tide-text-sm); }
+.tide-rail-list-title { display: block; overflow-wrap: anywhere; }
+.tide-rail-list-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); color: var(--tide-text-muted); font-size: var(--tide-text-xs); }
+/* ---- end Action page 3.5 ---- */

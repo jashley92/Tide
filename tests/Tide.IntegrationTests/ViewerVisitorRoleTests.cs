@@ -271,6 +271,9 @@ public class ViewerVisitorRoleTests : IDisposable
     public async Task Visitor_Seated_SeesOnlyTheCardsThePresenterOpens()
     {
         var s = await Seed();
+        AsAdmin();
+        var sibling = await _db.Actions().CreateAsync(new ActionForm { Title = "Patch the gateway", Kind = ActionKind.PatchRemediate, TeamId = s.Team, ArticleId = s.Article });
+        (await _db.Actions().GetAsync(s.Action))!.RaisedWith.Should().ContainSingle(r => r.Number == sibling, "the team sees what else was raised");
         using var presenter = Present(s.Brief);
         As(AppRole.Visitor);
         using var seat = Sit();
@@ -281,6 +284,7 @@ public class ViewerVisitorRoleTests : IDisposable
         _meetings.Open(presenter, s.Action);
         var detail = (await _db.Actions().GetAsync(s.Action))!;
         (detail.CanWork, detail.CanComment).Should().Be((false, false));
+        detail.RaisedWith.Should().BeEmpty("the presenter opened this action, not the others raised from its article");
         await Refused(() => _db.Actions().ChecklistAsync(s.ActionId));
         await Refused(() => _db.Actions().AddCommentAsync(s.ActionId, "Hello from elsewhere"));
 

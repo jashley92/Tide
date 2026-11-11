@@ -345,7 +345,7 @@ public static class DemoSeeder
                     var article = new Article
                     {
                         Title = title, SourceName = source, Classification = kind, Status = ArticleStatus.Presented,
-                        Tlp = (TlpLevel)_rng.Next(0, 3), Priority = kind == Classification.Threat ? (Priority)_rng.Next(0, 4) : null,
+                        Tlp = (TlpLevel)_rng.Next(0, 3), Priority = kind == Classification.Threat ? (Priority)_rng.Next((int)Priority.P1, (int)Priority.P4 + 1) : null,
                         Bluf = "Sample data for the trends page.", AuthorId = who.Item1, AuthorName = who.Item2,
                     };
                     article.Bullets.Add(new ArticleBullet { Text = "Sample data: a past article, briefed and sent.", Tlp = TlpLevel.Clear });

@@ -347,10 +347,15 @@ public class ActionHuntPreviewTests(TideApp app) : IClassFixture<TideApp>
         var hunt = page.Component.Drawer!.Hunt!;
         var html = WebUtility.HtmlDecode(await page.Html());
         html.Should().Contain("Use the whole story's").And.NotContain("later-report");
+        Button(html, "Use the whole story's").Should().Contain("aria-pressed=\"false\"");
 
         await page.Click(_ => hunt.UseStory(true));
         hunt.Preview.Should().Contain("\"later-report.example.net\"").And.Contain("\"203.0.113.45\"");
-        WebUtility.HtmlDecode(await page.Html()).Should().Contain("later-report[.]example[.]net", "the chips are what the query is built from");
+        html = WebUtility.HtmlDecode(await page.Html());
+        html.Should().Contain("later-report[.]example[.]net", "the chips are what the query is built from");
+        // One label, its state in aria-pressed: a screen reader hears "Use the whole story's, pressed", never the opposite.
+        Button(html, "Use the whole story's").Should().Contain("aria-pressed=\"true\"");
+        html.Should().NotContain("Only this article's");
         (await Trace(id)).Should().Be(before);
 
         await page.Click(_ => hunt.CopyPreview());
