@@ -78,6 +78,25 @@ public class ActionPageDesignTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task AnActionWithNoDueDate_SaysSoOnceInTheRail()
+    {
+        var (article, team) = await Article("Design no due article");
+        var number = await Raise(team, "Design no due sweep", article);
+        await As(async sp =>
+        {
+            var actions = sp.GetRequiredService<ActionService>();
+            var form = ActionForm.From((await actions.GetAsync(number))!.Action);
+            form.DueDate = null;
+            await actions.SaveAsync(form);
+            return true;
+        });
+
+        await using var page = await Open(number);
+        var (_, rail) = Split(await page.Html());
+        System.Text.RegularExpressions.Regex.Matches(rail, "No due date").Should().HaveCount(1, "the value says it; no badge says it again");
+    }
+
+    [Fact]
     public async Task AlsoRaisedFromIt_LeadsWithTheNumber_AndEndsWithTheStatus()
     {
         var (article, team) = await Article("Design raised article");

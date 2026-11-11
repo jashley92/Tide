@@ -8,6 +8,9 @@
 //
 // Each failure names the page, the width and the rule. Add a page or a rule below; README.md says how.
 
+import { writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { chromium } from 'playwright';
 import { openPage, pick, readDemo, settle, startTide, toArticleSlide } from './tide.mjs';
 
@@ -1594,6 +1597,110 @@ const libraryKeys = {
   },
 };
 
+/**
+ * A real file dragged from the desktop and dropped at (700, 500), through the browser's own input (CDP), where nothing on
+ * the page takes files: the browser doesn't open it, in this tab or another.
+ */
+const fileDropStays = {
+  name: 'a file dropped where nothing takes it doesn\'t open in the browser',
+  check: async page => {
+    const file = path.join(os.tmpdir(), 'tide-dropme.txt');
+    writeFileSync(file, 'dropped by the layout check');
+    const [before, tabs] = [page.url(), page.context().pages().length];
+    const cdp = await page.context().newCDPSession(page);
+    const data = { items: [], files: [file], dragOperationsMask: 1 };
+    for (const type of ['dragEnter', 'dragOver', 'drop']) await cdp.send('Input.dispatchDragEvent', { type, x: 700, y: 500, data });
+    await page.waitForTimeout(1500);
+    const problems = [];
+    if (page.url() !== before) problems.push(`the tab went to ${page.url()}`);
+    if (page.context().pages().length !== tabs) problems.push('the file opened in another tab');
+    await cdp.detach();
+    return problems;
+  },
+};
+
+/** Setup: wider letters, then a file dropped on the action page, waiting in Files (the rail opening for it below 1500px). */
+const fileStaged = async page => {
+  await wideFont(page);
+  await fire(page, 'drop', '.tide-feed-head', [['staged.log', 'text/plain']]);
+  await waitForPending(page, 'staged.log');
+};
+
+/** A file waiting in Files isn't dropped without a word: leaving the page by a link (`link`) asks first, and Stay stays,
+ *  the file still there. */
+const stagedFilesAsk = link => ({
+  name: 'leaving with a file waiting in Files asks first',
+  check: async page => {
+    const at = page.url();
+    await page.locator(link).first().click();
+    const leave = page.locator('.tide-modal[role="alertdialog"]');
+    if (!(await leave.waitFor({ timeout: 3000 }).then(() => true, () => false))) return ['leaving with a file waiting in Files didn\'t ask'];
+    await leave.getByRole('button', { name: 'Stay', exact: true }).click();
+    await page.waitForTimeout(300);
+    const problems = [];
+    if (page.url() !== at) problems.push(`Stay left the page for ${page.url()}`);
+    if (!(await pendingFiles(page)).includes('staged.log')) problems.push('Stay lost the file waiting in Files');
+    return problems;
+  },
+});
+
+/** A dialog opened from inside the open overlay (`how`: a rail link that asks before leaving, or Ctrl K's palette)
+ *  closes the overlay; Escape then closes the dialog, and focus is back on the Context button, not dropped on <body>. */
+const dialogFromOverlay = how => ({
+  name: `Escape from the ${how === 'link' ? 'leave dialog' : 'palette'} opened in the overlay: focus on Context`,
+  check: async page => {
+    if (how === 'link') await page.locator('#tide-rail .tide-rail-article-title').click();
+    else { await page.locator(railLink).first().focus(); await page.keyboard.press('Control+k'); }
+    const dialog = page.locator(how === 'link' ? '.tide-modal[role="alertdialog"]' : '.tide-palette');
+    if (!(await dialog.waitFor({ timeout: 3000 }).then(() => true, () => false))) return [`no ${how === 'link' ? 'leave dialog' : 'palette'} opened`];
+    await page.waitForTimeout(300);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(400);
+    const at = await page.evaluate(() => document.activeElement === document.body ? '<body>' : document.activeElement?.id || document.activeElement?.tagName);
+    return at === 'tide-rail-toggle' ? [] : [`focus is on ${at}, not the Context button`];
+  },
+});
+
+/** Write one by hand, typed and not left: the first real click on Add the query adds it (the button was enabled as the
+ *  text was typed, not only once the box lost focus). Changes the demo: run late. */
+const writtenQueryAddsOnFirstClick = {
+  name: 'Add the query works on the first click',
+  check: async page => {
+    const before = await page.locator('.tide-hunt pre.tide-query').count();
+    await page.locator('#hunt-write').click();
+    await page.locator('textarea[aria-label="Your query"]').click();
+    await page.keyboard.type('DeviceProcessEvents | where FileName == "php-fpm"');
+    const add = await page.getByRole('button', { name: 'Add the query', exact: true }).boundingBox();
+    await page.mouse.click(add.x + add.width / 2, add.y + add.height / 2);
+    await page.waitForTimeout(1500);
+    const after = await page.locator('.tide-hunt pre.tide-query').count();
+    return after > before ? [] : ['the first click on Add the query added nothing'];
+  },
+};
+
+/** One way to add a query open at a time: opening another closes the first, and Escape closes the one open, focus back
+ *  on its button. */
+const oneAdderAtATime = {
+  name: 'one way to add a query open at a time; Escape closes it',
+  check: async page => {
+    const problems = [];
+    await page.locator('#hunt-write').click();
+    await page.locator('#hunt-pick').click();
+    await page.locator('#hunt-saved-picker').waitFor({ timeout: 3000 }).catch(() => { });
+    if (await anyShown(page, 'textarea[aria-label="Your query"]')) problems.push('Write one by hand stays open beside Add a saved query');
+    await page.locator('#hunt-add-iocs').click();
+    await page.waitForTimeout(300);
+    if (await anyShown(page, '#hunt-saved-picker')) problems.push('Add a saved query stays open beside Add indicators');
+    await page.locator('#hunt-indicators :is(textarea, input)').first().focus();
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+    if (await anyShown(page, '#hunt-indicators')) problems.push('Escape leaves Add indicators open');
+    const at = await page.evaluate(() => document.activeElement?.id);
+    if (at !== 'hunt-add-iocs') problems.push(`after Escape focus is on ${at || 'the page'}, not Add indicators`);
+    return problems;
+  },
+};
+
 /** "Also raised from it": each row leads with its number, its title beside it, and its status at the row's right. */
 const raisedRows = holds('raised-from-it rows: number first, status at the right', () => {
   const rows = [...document.querySelectorAll('#tide-rail section[aria-labelledby="rail-raised-h"] li')].filter(li => li.getClientRects().length);
@@ -1870,6 +1977,14 @@ const pages = [
       ...huntAsDesigned, ...actionHeadAsDesigned, raisedRows, sameLine('#files-h', '#tide-rail .tide-files-head [data-pick]')] },
   // Files from anywhere on the page: docked, and where the rail is closed until it opens over the page to show them.
   { name: 'action-page-files', route: '/actions/{huntAction}', setup: wideFont, widths: [[1920, 1000], [1440, 900]], rules: [pageTakesFiles] },
+  // A file waiting in Files asks before the page is left; a dialog opened from the overlay gives focus back to Context.
+  { name: 'action-staged-leave', route: '/actions/{huntAction}', setup: fileStaged, widths: [[1920, 1000]], rules: [stagedFilesAsk('.sidebar a[href="triage"]')] },
+  { name: 'action-overlay-leave', route: '/actions/{huntAction}', setup: fileStaged, widths: [[1440, 900]], rules: [dialogFromOverlay('link')] },
+  { name: 'action-overlay-palette', route: '/actions/{huntAction}', setup: openRail, widths: [[1440, 900]], rules: [dialogFromOverlay('palette')] },
+  { name: 'action-hunt-adders', route: '/actions/{huntAction}', setup: wideFont, widths: [[1440, 900]], rules: [oneAdderAtATime] },
+  // A file dropped where nothing takes it stays put: on pages with no drop target, and for whoever can't add files.
+  ...[['drop-today', '/'], ['drop-triage', '/triage'], ['drop-action-viewer', '/actions/{huntAction}?as=dropviewer&roles=Viewer']].map(([name, route]) => (
+    { name, route, widths: [[1440, 900]], rules: [fileDropStays] })),
   { name: 'action-rail-other', route: '/actions/{detailAction}', setup: wideFont, widths: [[1920, 1000], [1500, 1000]],
     rules: [visible('#tide-rail'), visible('#tide-rail .tide-facts'), visible('#tide-rail #files'), hidden('.content #files'), fits('.tide-rail-body > *'),
       ...actionPageFits] },
@@ -2071,6 +2186,8 @@ const pages = [
   { name: 'triage-click-dismiss', route: '/triage', setup: selectReport, widths: [1440], rules: [clickFocusesNextRow('Dismiss')] },
   { name: 'actions-board-close-menu', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [closeKeepsPlace('menu')] },
   { name: 'actions-board-close-drag', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [closeKeepsPlace('drag')] },
+  // Last: it adds a query to the demo's sweep.
+  { name: 'action-hunt-write', route: '/actions/{huntAction}', widths: [[1440, 900]], rules: [writtenQueryAddsOnFirstClick] },
 ];
 
 // --- the run -----------------------------------------------------------------------------------------------------------
