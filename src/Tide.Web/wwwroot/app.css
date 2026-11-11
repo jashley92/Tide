@@ -451,28 +451,23 @@ li > .tide-tlp, .tide-md + .tide-tlp { margin-left: .4rem; }
 .tide-ioc { font-family: var(--tide-font-data); font-size: .86rem; word-break: break-all; }
 
 /* ---- Article editor ---- */
-.tide-editor { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 1rem; align-items: start; }
-@media (max-width: 1100px) { .tide-editor { grid-template-columns: 1fr; } }
-.tide-editor-side { position: sticky; top: 4.25rem; }
-.tide-editor-main { min-width: 0; }   /* lets the pills' row scroll sideways on a phone instead of widening the page */
-/* Beside the editor, what readers get (ReaderPreview): wider than the old rail, scrolling on its own below the top bar.
-   At 900px or narrower it's one or the other, as the Edit | Preview switch says (data-pane), never one under the other. */
-.tide-editor:has(.tide-reader) { grid-template-columns: minmax(0, 1fr) minmax(18rem, 30rem); }
-.tide-editor-side:has(.tide-reader) { max-height: calc(100vh - 5.25rem); overflow-y: auto; border-radius: var(--tide-radius-xl); }
-@media (max-width: 1100px) { .tide-editor:has(.tide-reader) { grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem); } }
+/* The form takes the page; what readers get is in the context rail (ArticleEditorPanel), or is the page itself for
+   someone who can't edit (data-readonly, further down). */
+.tide-editor-main { min-width: 0; }   /* lets the index's row scroll sideways on a phone instead of widening the page */
 .tide-tabbar.tide-ws-switch { display: none; }   /* over .tide-tabbar, further down */
+/* At 900px or narrower it's one or the other, as the Edit | Preview switch says (data-pane), never one beside the other.
+   Preview puts the rail in the page's flow, in place of the fields, without its head (the switch is the way back), unless
+   ] has it open over the page; the save bar stays at the foot of the window, beside the sidebar where there is one. */
 @media (max-width: 900px) {
-    .tide-editor:has(.tide-reader) { grid-template-columns: 1fr; }
-    .tide-editor-side:has(.tide-reader) { position: static; max-height: none; overflow: visible; }
     .tide-tabbar.tide-ws-switch { display: flex; margin-bottom: var(--tide-space-3); }
-    .tide-editor[data-pane="edit"] > .tide-editor-side:has(.tide-reader) { display: none; }
-    /* In Preview the fields go, but the sticky bar stays, at the foot of the preview: the edit column gives its box up
-       (display: contents) so the bar is the workspace's own, sticking to the bottom of the screen all the way down. */
-    .tide-editor[data-pane="preview"]:has(.tide-reader) { display: flex; flex-direction: column; }
-    .tide-editor[data-pane="preview"]:has(.tide-reader) > .tide-editor-main { display: contents; }
-    .tide-editor[data-pane="preview"]:has(.tide-reader) > .tide-editor-main > :not(.tide-sticky-save) { display: none; }
-    .tide-editor[data-pane="preview"]:has(.tide-reader) .tide-sticky-save { order: 1; }
+    html:not([data-rail-over]) main:has(.tide-editor[data-pane="preview"]) > .tide-rail { display: flex; position: static; width: auto; border-left: 0; box-shadow: none; z-index: auto; }
+    html:not([data-rail-over]) main:has(.tide-editor[data-pane="preview"]) > .tide-rail > .tide-rail-head { display: none; }
+    html:not([data-rail-over]) main:has(.tide-editor[data-pane="preview"]) > .tide-rail > .tide-rail-body { padding-bottom: 6rem; }
+    .tide-editor[data-pane="preview"] > .tide-editor-main > :not(.tide-sticky-save) { display: none; }
+    .tide-editor[data-pane="preview"] .tide-sticky-save { position: fixed; bottom: 0; right: 0; left: 232px; padding-inline: var(--tide-space-4); }
+    html[data-nav="collapsed"] .tide-editor[data-pane="preview"] .tide-sticky-save { left: 64px; }
 }
+@media (max-width: 640.98px) { .tide-editor[data-pane="preview"] .tide-sticky-save, html[data-nav="collapsed"] .tide-editor[data-pane="preview"] .tide-sticky-save { left: 0; } }
 /* On today's brief, the way to the article before and after it (BriefStepper), where the breadcrumbs would be. */
 .tide-stepper { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-4); margin: 0 0 var(--tide-space-1);
     font-size: var(--tide-text-sm); color: var(--tide-text-muted); }
@@ -583,18 +578,17 @@ li > .tide-tlp, .tide-md + .tide-tlp { margin-left: .4rem; }
 .tide-atkm-foot { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .6rem 1rem; border-top: 1px solid var(--tide-border); }
 @media (max-width: 640px) { .tide-atkm-panel { inset: 0; border-radius: 0; } .tide-atkm-search { flex-basis: 100%; } }
 html:has(.tide-sticky-save) { scroll-padding-bottom: 5rem; } /* keeps focused or scrolled-to controls clear of the bar */
-.tide-sticky-save { position: sticky; bottom: 0; background: var(--tide-bg); padding: .7rem 0; border-top: 1px solid var(--tide-border); display: flex; gap: .5rem; align-items: center; z-index: 5; }
+.tide-sticky-save { position: sticky; bottom: 0; background: var(--tide-bg); padding: .7rem 0; border-top: 1px solid var(--tide-border); display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; z-index: 5; }
 .tide-dirty { color: var(--tide-warn); font-size: .86rem; }
 .tide-saved { color: var(--tide-text-muted); font-size: .86rem; }
 .tide-on-brief { color: var(--tide-text-muted); font-size: .86rem; white-space: nowrap; }
 /* On a phone the bar wraps: the save state takes a line of its own above the buttons, and buttons keep their words whole. */
 @media (max-width: 640px) {
     html:has(.tide-sticky-save) { scroll-padding-bottom: 9rem; }
-    .tide-sticky-save { flex-wrap: wrap; }
     .tide-sticky-save .btn { white-space: nowrap; }
     .tide-sticky-save .tide-dirty, .tide-sticky-save .tide-saved { flex-basis: 100%; }
 }
-/* The editor's section pills: they stay under the top bar as you scroll, and a section you jump to stops below them. */
+/* The editor's section index: it stays under the top bar as you scroll, and a section you jump to stops below them. */
 html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 .tide-section-pills { position: sticky; top: var(--tide-height-top); z-index: 4; background: var(--tide-bg); padding: var(--tide-space-2) 0; margin-bottom: var(--tide-space-2); }
 .tide-section-pills ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--tide-space-1); }
@@ -606,8 +600,8 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 @media (max-width: 640px) {
     .tide-section-pills ul { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
 }
-.tide-section h2[tabindex="-1"]:focus { outline: none; }
-/* A section folded away (Tags & ATT&CK): the heading is the button, with how much is chosen beside it. */
+.tide-section h2[tabindex="-1"]:focus, .tide-section h3[tabindex="-1"]:focus { outline: none; }
+/* A section folded away (Draft from the sources, History): the heading is the button, with how much is in it beside it. */
 .tide-disclosure { display: flex; align-items: center; flex-wrap: wrap; gap: var(--tide-space-2); width: 100%; border: 0; background: none; padding: 0;
     color: inherit; font: inherit; text-align: left; }
 .tide-disclosure:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; border-radius: var(--tide-radius-sm); }
@@ -645,7 +639,7 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 .tide-edition h3 { font-size: 1.08rem; font-weight: var(--tide-weight-semibold); margin: .3rem 0; }
 .tide-edition .tide-bluf { font-weight: var(--tide-weight-medium); }
 .tide-edition ul { margin: .4rem 0; }
-.tide-edition img { max-width: 100%; max-height: 300px; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-md); margin: .3rem .4rem .3rem 0; }
+.tide-edition img { max-width: calc(100% - .4rem); max-height: 300px; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-md); margin: .3rem .4rem .3rem 0; }
 .tide-withheld { font-size: .86rem; color: var(--tide-text-muted); font-style: italic; }
 /* Written text can hold a word longer than its card is wide (a pasted URL, a hash): it breaks rather than run out of the
    card and make the page scroll sideways. A code block keeps its lines and scrolls in itself. */
@@ -1957,10 +1951,10 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 /* Triage: a heading inside the list ("Matches what we run", "Everything else", the Older fold's note). */
 .tide-triage-section { list-style: none; padding: .45rem .6rem .25rem; font-size: var(--tide-text-xs); text-transform: uppercase; letter-spacing: .06em; color: var(--tide-text-muted); background: var(--tide-surface-2); border-bottom: 1px solid var(--tide-border); }
 
-/* The article page for someone who can't write: the reader preview, with the article's actions, is the page. */
-.tide-editor[data-readonly] { display: block; max-width: 48rem; }
+/* The article page for someone who can't write: the reader preview, with the article's actions, is the page, in the
+   page's column as the Review card above it is. */
 .tide-editor[data-readonly] .tide-editor-main { display: none; }
-.tide-editor[data-readonly] > .tide-editor-side { position: static; max-height: none; overflow: visible; display: block; }
+.tide-editor[data-readonly] > .tide-editor-side { display: block; }
 
 /* Trends' tiles open what they count; the outcomes row has a small heading of its own. */
 .tide-trend-tiles > a { color: inherit; text-decoration: none; display: block; background: var(--tide-surface-2); border-radius: var(--tide-radius-lg); padding: .4rem; }
@@ -2751,6 +2745,31 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-rail-list-title { display: block; overflow-wrap: anywhere; }
 .tide-rail-list-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); color: var(--tide-text-muted); font-size: var(--tide-text-xs); }
 /* ---- end Action page 3.5 ---- */
+
+/* ---- Option E 3.3, the article editor: the form as pairs of cards, two columns where there's room for both and one
+   under the other where there isn't (so it holds whatever the fonts make of each card), under a section index that
+   says where each stands. "Why it matters" is marked while the company-wide edition would carry it, with its answers
+   in the card. The save bar wraps rather than run past the page. ---- */
+.tide-editor-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr)); gap: var(--tide-space-3);
+    align-items: stretch; margin-bottom: var(--tide-space-3); }
+.tide-editor-pair > .tide-card { margin-bottom: 0; min-width: 0; }
+.tide-assess-row { display: flex; flex-wrap: wrap; gap: var(--tide-space-2) var(--tide-space-3); margin-bottom: var(--tide-space-2); }
+.tide-assess-row > * { flex: 1 1 8rem; min-width: 0; }
+.tide-assess-row > .tide-assess-class { flex: 0 1 auto; }
+.tide-assess-row > .tide-assess-url { flex: 3 1 14rem; }
+.tide-assess-class .btn-group { flex-wrap: wrap; }
+.tide-section-warn { border-color: var(--tide-warn); }
+.tide-why-check { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); margin-top: var(--tide-space-2);
+    font-size: var(--tide-text-sm); }
+.tide-why-check-text { color: var(--tide-warn); font-weight: var(--tide-weight-semibold); }
+.tide-section-pills button.is-warn { border-color: var(--tide-warn); }
+.tide-pill-state { font-size: var(--tide-text-xs); }
+.tide-section-pills ul { position: relative; }   /* holds the items' hidden commas inside the row that scrolls on a phone */
+.tide-pill-state.is-done { color: var(--tide-ok); font-weight: var(--tide-weight-semibold); }
+.tide-ind-table { table-layout: fixed; width: 100%; }
+.tide-ind-table td, .tide-ind-table th { overflow-wrap: anywhere; }
+.tide-ind-table th:last-child { width: 2.5rem; }
+/* ---- end Option E 3.3 ---- */
 
 /* ---- Library 3.8: the selected entry's context in the rail (its facts, what an action fills in, the entry tried on an
    open action, and where it was used; flat sections as Today 3.1's); the entry's name as its card's heading and the

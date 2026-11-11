@@ -1,0 +1,39 @@
+@* The article editor's section index, across the top of the form: one button per section, in the order the cards run,
+   each saying where that section stands (Needed where the readiness checks find a gap, ✓ when it's done, how many it
+   holds, "check TLP" where "Why it matters" will reach everyone) and taking you to it (ArticleEditorPanel.FocusAsync).
+   It stays under the top bar as the form scrolls (app.css); its items wrap as a row, and scroll sideways on a phone. *@
+
+<nav class="tide-section-pills" aria-label="Article sections">
+    <ul>
+        @foreach (var item in Items)
+        {
+            <li @key="item.Part">
+                <button type="button" class="@(item.Kind == Kind.Warn ? "is-warn" : null)" @onclick="() => OnJump.InvokeAsync(item.Part)">@item.Label@if (item.State is { } state)
+                    {
+                        <span class="visually-hidden">,</span><span class="tide-pill-state @KindClass(item.Kind)">@state</span>
+                    }
+                </button>
+            </li>
+        }
+    </ul>
+</nav>
+
+@code {
+    /// <summary>What an item says of its section: a gap, done, a count, or a warning to look at.</summary>
+    public enum Kind { Needed, Done, Count, Warn }
+
+    /// <summary>A section's item: its part, its label, and what it says of the section (none when there's nothing to say).</summary>
+    public sealed record Item(ArticlePart Part, string Label, string? State = null, Kind Kind = Kind.Count);
+
+    [Parameter, EditorRequired] public IReadOnlyList<Item> Items { get; set; } = [];
+
+    /// <summary>Takes you to a section.</summary>
+    [Parameter] public EventCallback<ArticlePart> OnJump { get; set; }
+
+    private static string KindClass(Kind kind) => kind switch
+    {
+        Kind.Needed or Kind.Warn => "tide-needed",
+        Kind.Done => "is-done",
+        _ => "tide-muted",
+    };
+}
