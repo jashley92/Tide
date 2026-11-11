@@ -28,6 +28,7 @@ public class BriefsBugRound2Tests : IDisposable
         form = ArticleForm.From((await articles.GetAsync(id))!);
         form.Screenshots.Single(s => s.Id == shots[0].Id).Caption = "lost caption";
         form.Screenshots.Single(s => s.Id == shots[1].Id).Caption = "kept caption";
+        foreach (var s in form.Screenshots) s.Tlp = TlpLevel.Clear;   // a new one starts at AMBER: lowered on purpose
         await articles.SaveAsync(form);
         var brief = await _db.Briefs().GetOrStartAsync(Day);
         await _db.Briefs().AddArticleAsync(brief.Id, id);

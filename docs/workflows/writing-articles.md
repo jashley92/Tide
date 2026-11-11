@@ -222,7 +222,9 @@ Paste anywhere on the page (Ctrl+V) or drop files (`wwwroot/js/paste-drop.js` ha
    (`ImageSniffer.RasterContentType`), or over `Files:MaxImageMB`;
 2. writes each file to the on-disk store (`DiskFileStore`, under `Files:RootPath`, outside the web root) with its SHA-256
    in `StoredFile`;
-3. adds an `ArticleScreenshot` at the article's TLP, at the end of the order;
+3. adds an `ArticleScreenshot` at the end of the order, marked AMBER or the article's TLP when that's higher
+   (`ArticleScreenshot.NewMarking`; owner decision 2026-11-11). Lowering it is a marking change, held for an explicit
+   Save;
 4. stamps `Article.ScreenshotsChangedAtUtc`, before the save, so a failed save leaves an approval out of date rather
    than one standing that shouldn't.
 
