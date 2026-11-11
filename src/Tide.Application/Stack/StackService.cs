@@ -130,6 +130,13 @@ public sealed record CveSighting(string Cve, bool Above, CveRecord? Record);
 public sealed record StackNow(IReadOnlyList<StackCve> Cves, int CvesAbove, int? TriageItems)
 {
     public bool Any => Cves.Count > 0 || CvesAbove > 0 || TriageItems > 0;
+
+    /// <summary>One of its articles at or below the team edition's ceiling is on today's brief.</summary>
+    public bool BriefedToday { get; init; }
+
+    /// <summary>New triage items name it, and no article about it was written in the last
+    /// <see cref="StackService.RecentBriefDays"/> days: the news hasn't been written up. Only for those who triage.</summary>
+    public bool NotWrittenUp { get; init; }
 }
 
 /// <summary>An article in a product's history: tagged with it, or found because it names it.</summary>
@@ -295,7 +302,7 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
             .OrderBy(p => p.IsRetired).ThenByName(p => p.Name).ToListAsync(ct);
 
         // Each product's articles: those naming it, then those tagged with it.
-        var articles = await db.Articles.AsNoTracking().Select(a => new { a.Id, a.Title, Bluf = a.Bluf.Substring(0, SummaryStart), a.Tlp }).ToListAsync(ct);
+        var articles = await db.Articles.AsNoTracking().Select(a => new { a.Id, a.Title, Bluf = a.Bluf.Substring(0, SummaryStart), a.Tlp, a.CreatedAtUtc }).ToListAsync(ct);
         var mine = products.ToDictionary(p => p.Id, _ => new HashSet<Guid>());
         var names = new StackNames(products.Select(Entry));
         foreach (var a in articles)
@@ -307,12 +314,19 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
 
         var sightings = Enumerable.Empty<(Guid ArticleId, CveSighting Cve)>().ToLookup(s => s.ArticleId, s => s.Cve);
         Dictionary<Guid, int>? triage = null;
+        HashSet<Guid> briefedToday = [], written = [];
         if (nowCeiling is { } ceiling)
         {
             // The CVEs on the recent briefs' articles, each with what's known about it and whether its article is above the ceiling.
             var from = today.AddDays(-RecentBriefDays);
             var recent = db.BriefItems.Where(i => db.Briefs.Any(b => b.Id == i.BriefId && b.BriefDate >= from)).Select(i => i.ArticleId);
             var above = articles.Where(a => a.Tlp > ceiling).Select(a => a.Id).ToHashSet();
+            // Today's brief's articles, those the team edition carries; and the articles written lately, whatever their TLP
+            // (the list counts every article a product has, so "written up" says nothing a count doesn't).
+            briefedToday = (await db.BriefItems.Where(i => db.Briefs.Any(b => b.Id == i.BriefId && b.BriefDate == today)).Select(i => i.ArticleId).ToListAsync(ct))
+                .Where(id => !above.Contains(id)).ToHashSet();
+            var lately = DateTimeOffset.UtcNow.AddDays(-RecentBriefDays);
+            written = articles.Where(a => a.CreatedAtUtc >= lately).Select(a => a.Id).ToHashSet();
             sightings = (await (from c in db.ArticleCves.AsNoTracking()
                                 where recent.Contains(c.ArticleId)
                                 join r in db.CveRecords.AsNoTracking() on c.CveId equals r.CveId into records
@@ -325,8 +339,12 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         return products.Select(p =>
         {
             var ids = mine[p.Id];
-            return new StackRow(p, p.Team?.Name, ids.Count, ids.Sum(id => open.GetValueOrDefault(id)),
-                RightNow(ids.SelectMany(id => sightings[id]), triage?.GetValueOrDefault(p.Id)), !p.IsRetired && CheckIsOld(p.CheckedOn, today));
+            var now = RightNow(ids.SelectMany(id => sightings[id]), triage?.GetValueOrDefault(p.Id)) with
+            {
+                BriefedToday = ids.Overlaps(briefedToday),
+                NotWrittenUp = triage?.GetValueOrDefault(p.Id) > 0 && !ids.Overlaps(written),
+            };
+            return new StackRow(p, p.Team?.Name, ids.Count, ids.Sum(id => open.GetValueOrDefault(id)), now, !p.IsRetired && CheckIsOld(p.CheckedOn, today));
         }).ToList();
     }
 

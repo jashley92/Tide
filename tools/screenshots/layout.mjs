@@ -53,6 +53,19 @@ const noSidewaysScroll = {
   }),
 };
 
+/** The first shown match of `selector` starts within `px` of the bottom of the first shown match of `above`: nothing big
+ *  (a repeated heading or paragraph) sits between them, whatever the fonts make of the rows above both. */
+const closeBelow = (selector, above, px) => ({
+  name: `within ${px}px below ${above}: ${selector}`,
+  check: page => page.evaluate(([selector, above, px]) => {
+    const box = s => [...document.querySelectorAll(s)].map(e => e.getBoundingClientRect()).find(r => r.width > 0 && r.height > 0);
+    const b = box(selector), a = box(above);
+    if (!b || !a) return [`nothing shown matches ${!b ? selector : above}`];
+    const gap = Math.round(b.top - a.bottom);
+    return gap <= px ? [] : [`${selector} starts ${gap}px below ${above}, more than ${px}px`];
+  }, [selector, above, px]),
+});
+
 /** The first visible match of each selector starts at the same x (within 2px): a column that lines up. */
 const lineUp = (...selectors) => ({
   name: `line up: ${selectors.join(' / ')}`,
@@ -496,7 +509,7 @@ const pressQuickly = (key, times) => async page => {
  */
 const selectCovered = (group = false) => async page => {
   await wider(page);
-  const line = page.locator(group ? '.tide-triage-group' : '.tide-triage-row:not(.tide-triage-group)', { has: page.locator('.tide-triage-flags .tide-badge-info') }).first();
+  const line = page.locator(group ? '.tide-triage-group' : '.tide-triage-row:not(.tide-triage-group):not(.tide-triage-member)', { has: page.locator('.tide-triage-flags .tide-badge-info') }).first();
   await line.locator(group ? '.tide-group-label' : '.tide-triage-meta > span').first().click();
   await page.locator('.tide-triage-row.selected .tide-triage-attach').waitFor();
 };
@@ -706,6 +719,117 @@ const insideWindow = selector => ({
   }, selector),
 });
 
+/** The first visible match of `selector` starts no lower than `px` from the top of the page: what a page is for isn't
+ * pushed down by headings above it. */
+const startsAbove = (selector, px) => ({
+  name: `starts above ${px}px: ${selector}`,
+  check: page => page.evaluate(([selector, px]) => {
+    const box = [...document.querySelectorAll(selector)].map(e => e.getBoundingClientRect()).find(r => r.width > 0 && r.height > 0);
+    if (!box) return [`nothing shown matches ${selector}`];
+    const top = Math.round(box.top + window.scrollY);
+    return top <= px ? [] : [`${selector} starts at ${top}px, below ${px}px`];
+  }, [selector, px]),
+});
+
+/** In each visible match of `card`, its first child starts within `px` of the card's top: no empty band above it. */
+const headAtTop = (card, px) => ({
+  name: `first line at the top: ${card}`,
+  check: page => page.$$eval(card, (cards, [card, px]) => {
+    const shown = cards.filter(e => e.getBoundingClientRect().height > 0);
+    if (!shown.length) return [`nothing shown matches ${card}`];
+    return shown.flatMap((c, i) => {
+      const gap = Math.round(c.firstElementChild.getBoundingClientRect().top - c.getBoundingClientRect().top);
+      return gap <= px ? [] : [`${card} #${i + 1}: its first line is ${gap}px below its top`];
+    });
+  }, [card, px]),
+});
+
+/** Pressing `button` puts exactly the text of `block` on the clipboard, its line breaks as LF (the page is opened with
+ * clipboard permissions: `context` below). */
+const copiesExactly = (button, block) => ({
+  name: `copies exactly: ${block}`,
+  check: async page => {
+    const want = await page.$eval(block, el => el.textContent.replace(/\r\n?/g, '\n'));
+    await page.evaluate(() => navigator.clipboard.writeText(''));
+    await page.click(button);
+    await page.waitForTimeout(400);
+    const got = await page.evaluate(() => navigator.clipboard.readText());
+    if (got.includes('\r')) return ['the clipboard has CR line breaks'];
+    return got === want && want.length > 0 ? [] : [`the clipboard holds ${JSON.stringify(got.slice(0, 60))}, not the ${want.length} characters of ${block}`];
+  },
+});
+
+/** Setup: every letter spaced wider, as a font wider than this machine's would set it (CI's), so a rule holds by the
+ * page's construction rather than by pixels to spare. */
+const wideFonts = async page => { await page.addStyleTag({ content: '* { letter-spacing: .07em !important; }' }); };
+
+const clipboard = { permissions: ['clipboard-read', 'clipboard-write'] };
+
+/** A rule run in the page: `fn(arg)` returns what's wrong (nothing, when it holds). */
+const holds = (name, fn, arg) => ({ name, check: page => page.evaluate(fn, arg) });
+
+/** Each item of the open menu is wholly visible: the point at each corner, just inside, is the item (or inside it),
+ * not a box that clips it or something drawn over it. */
+const menuItemsVisible = holds('the open menu\'s items are wholly visible', () => {
+  const items = [...document.querySelectorAll('[role=menu] [role=menuitem]')];
+  if (!items.length) return ['no open menu has items'];
+  return items.flatMap(el => {
+    const r = el.getBoundingClientRect();
+    const corners = [[r.left + 2, r.top + 2], [r.right - 2, r.top + 2], [r.left + 2, r.bottom - 2], [r.right - 2, r.bottom - 2]];
+    const hidden = corners.filter(([x, y]) => !el.contains(document.elementFromPoint(x, y)));
+    return hidden.length ? [`"${el.innerText.trim()}" is cut off or covered (${hidden.length} of 4 corners)`] : [];
+  });
+});
+
+/** The first visible match of `inner` is inside a match of `outer` that also holds the first visible match of `other`. */
+const sameBox = (outer, inner, other) => holds(`${inner} and ${other} in one ${outer}`, ([outer, inner, other]) => {
+  const shown = s => [...document.querySelectorAll(s)].find(e => e.getBoundingClientRect().height > 0);
+  const a = shown(inner), b = shown(other);
+  if (!a || !b) return [`nothing visible: ${!a ? inner : other}`];
+  const box = a.closest(outer);
+  return box && box.contains(b) ? [] : [`${inner} and ${other} aren't in one ${outer}`];
+}, [outer, inner, other]);
+
+/** The first visible match of `first` starts above the first visible match of `then`. */
+const above = (first, then) => holds(`above: ${first} / ${then}`, ([first, then]) => {
+  const top = s => [...document.querySelectorAll(s)].map(e => e.getBoundingClientRect()).find(r => r.height > 0)?.top;
+  const a = top(first), b = top(then);
+  if (a === undefined || b === undefined) return [`nothing visible: ${a === undefined ? first : then}`];
+  return a < b ? [] : [`${first} (${Math.round(a)}px) isn't above ${then} (${Math.round(b)}px)`];
+}, [first, then]);
+
+/** No visible match of `selector` is inside a match of `outside`. */
+const notInside = (selector, outside) => holds(`not inside ${outside}: ${selector}`, ([selector, outside]) => {
+  const shown = [...document.querySelectorAll(selector)].filter(e => e.getBoundingClientRect().height > 0);
+  if (!shown.length) return [`nothing shown matches ${selector}`];
+  return shown.some(e => e.closest(outside)) ? [`${selector} is inside ${outside}`] : [];
+}, [selector, outside]);
+
+/** The visible text of the first match of `selector` matches `pattern`. */
+const says = (selector, pattern) => holds(`says ${pattern}: ${selector}`, ([selector, source]) => {
+  const el = [...document.querySelectorAll(selector)].find(e => e.getBoundingClientRect().height > 0);
+  if (!el) return [`nothing shown matches ${selector}`];
+  const text = el.innerText.replace(/\s+/g, ' ').trim();
+  return new RegExp(source).test(text) ? [] : [`${selector} says "${text.slice(0, 80)}"`];
+}, [selector, pattern.source]);
+
+/** The first visible match of `selector` reaches within `px` of the window's bottom: a panel the height of the page. */
+const reachesBottom = (selector, px) => holds(`reaches the bottom: ${selector}`, ([selector, px]) => {
+  const r = [...document.querySelectorAll(selector)].map(e => e.getBoundingClientRect()).find(b => b.height > 0);
+  if (!r) return [`nothing shown matches ${selector}`];
+  return r.bottom >= window.innerHeight - px ? [] : [`${selector} ends at ${Math.round(r.bottom)}px, ${Math.round(window.innerHeight - r.bottom)}px above the window's bottom`];
+}, [selector, px]);
+
+/** `rule`, checked once the page has had `ms` more to settle: what the live page draws, after the prerendered one. */
+const later = (rule, ms) => ({ name: rule.name, check: async page => { await page.waitForTimeout(ms); return rule.check(page); } });
+
+/** Setup: wider letters, then the selected library entry's More menu opened. */
+const openEntryMore = async page => {
+  await wideFonts(page);
+  await page.locator('.tide-library-entry .tide-menubutton-btn').first().click();
+  await page.locator('[role=menu] [role=menuitem]').first().waitFor();
+};
+
 // The reading pane's open or closed is kept for the person, so the pages that press V sign in as someone of their own
 // for this run (the dev sign-in's ?as=), and everyone else's Triage opens as it always does.
 const run = Date.now().toString(36);
@@ -782,7 +906,13 @@ const pages = [
   { name: 'actions-board-drop', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [dropOnEachChip] },
   // A sweep's query is read whole, in the wide column: its long lines wrap, so nothing scrolls sideways inside its box.
   { name: 'action-hunt', route: '/actions/{huntAction}', widths: [1920, 1440],
-    rules: [noSidewaysScroll, visible('.tide-action-main .tide-hunt pre.tide-query'), fits('.tide-hunt pre.tide-query')] },
+    rules: [noSidewaysScroll, visible('.tide-action-main .tide-hunt pre.tide-query'), fits('.tide-hunt pre.tide-query'),
+      visible('.tide-hunt-sweeping'), visible('[role=group][aria-label="Query language"]'), visible('#hunt-window'),
+      // The language and the window on the tab row, at its right; the whole story's indicators on offer; Copy on the first screen.
+      sameLine('.tide-drawer-tabs', '[role=group][aria-label="Query language"]'), sameLine('.tide-drawer-tabs', '#hunt-window'),
+      visible('.tide-hunt-story'), startsAbove('.tide-hunt [data-copy-target]', 900),
+      // A-1's query is KQL: the control says the language of the query on the action, on the live page too.
+      later(says('.tide-drawer-head [aria-label="Query language"] [aria-pressed="true"]', '^KQL$'), 2500)] },
   // Triage: the keys on one line, each row's flags fitting its line, and the reading pane open by itself from 1400px.
   { name: 'triage', route: '/triage', widths: [1920, 1440, 780],
     rules: [noSidewaysScroll, fits('.tide-page-head'), visible('.tide-triage-keys'), oneRow('.tide-triage-keys'), visible('.tide-triage-row.selected'), fits('.tide-triage-row'),
@@ -829,7 +959,34 @@ const pages = [
   { name: 'triage-keys', route: '/triage', setup: pressQuickly('j', 10), widths: [1440], rules: [selectedAsAimed()] },
   { name: 'triage-keys-next-page', route: '/triage?row=45', setup: pressQuickly('j', 10), widths: [1440], rules: [selectedAsAimed()] },
   { name: 'triage-keys-previous-page', route: '/triage?page=2&row=4', setup: pressQuickly('k', 10), widths: [1440], rules: [selectedAsAimed()] },
-  { name: 'stack-add-focus', route: '/stack', widths: [1440], rules: [addFormTakesFocus] },  { name: 'trends', route: '/trends', widths: [1920], rules: [noSidewaysScroll, widerThan('.content', 1400)] },
+  { name: 'stack-add-focus', route: '/stack', widths: [1440], rules: [addFormTakesFocus] },
+  // Our stack: a product no team owns says so in its Team cell, as the No owning team filter does.
+  // The filters above the table, outside its card, with a team to choose and the count said as the order; Right now the
+  // fifth column; and on a narrow window each row's cells stacked, so the table never scrolls sideways inside its card.
+  { name: 'stack', route: '/stack', setup: wideFonts, widths: [1920, 1440, 780],
+    rules: [noSidewaysScroll, visible('.tide-table .tide-badge-off'), notInside('.tide-filterbar', '.tide-card'), visible('#stack-team'),
+      says('.tide-filterbar .tide-dt-count', 'products · most pressing first'), [1000, says('.tide-stack-table thead th:nth-child(5)', '^Right now$')],
+      fits('.tide-stack-list')] },
+  // The Library: one header, the one search on the tab row beside the tabs, and the list high on the page; its findings,
+  // tab by tab, for a search's words.
+  { name: 'library', route: '/library/queries', setup: wideFonts, widths: [1920, 1440, 780],
+    rules: [noSidewaysScroll, visible('#library-find'), [1440, sameLine('.tide-library-tabrow .tide-tabbar-page', '#library-find')],
+      [1440, closeBelow('.tide-library-list', '.tide-library-tabrow', 120)], visible('.tide-library-group'),
+      // The entry's Copy, Edit and More at its top right, the entry the height of the window, and Show retired a checkbox.
+      [1000, sameLine('.tide-library-entry h3', '.tide-library-entry [data-copy-target]')], [1440, reachesBottom('.tide-library-entry', 24)],
+      visible('#sq-retired'), hidden('.form-switch #sq-retired')] },
+  // The entry's More menu opens wholly in view: Retire and Delete aren't cut off by the scrolling detail panel.
+  { name: 'library-more', route: '/library/queries', setup: openEntryMore, widths: [1920, 1440], rules: [menuItemsVisible] },
+  { name: 'library-search', route: '/library/queries?q=sweep', setup: wideFonts, widths: [1440, 780], rules: [noSidewaysScroll, visible('#library-find'), visible('.tide-library-list')] },
+  // Search for an indicator: the hunt query wraps rather than scrolling sideways, Copy puts exactly its text on the
+  // clipboard, and the cards' headings start at their tops.
+  { name: 'search-lookup', route: '/search?q=update-check.example.net', setup: wideFonts, widths: [1920, 1440, 780], context: clipboard,
+    rules: [noSidewaysScroll, fits('.tide-lookup-query'), headAtTop('.tide-lookup .tide-card', 24), visible('.tide-lookup-articles'),
+      copiesExactly('[data-copy-target="lookup-query"]', '#lookup-query'),
+      // The language as the action page's segmented control; the article, the actions raised and "Seen with" in one card.
+      visible('#lookup-query-tools [role=group][aria-label="Query language"]'), sameBox('.tide-card', '.tide-lookup-articles', '#lookup-actions'),
+      sameBox('.tide-card', '#lookup-actions', '#lookup-seen-with'), above('#lookup-actions', '#lookup-seen-with')] },
+  { name: 'trends', route: '/trends', widths: [1920], rules: [noSidewaysScroll, widerThan('.content', 1400)] },
   { name: 'slide-article', route: '/present/{today}', setup: toArticleSlide, widths: [1440, 1100, 900],
     rules: [
       visible('.tide-quick-add'),
@@ -879,7 +1036,7 @@ async function check(list, demo) {
         let context;
         try {
           let page;
-          ({ context, page } = await openPage(browser, { ...p, viewport: { width, height } }, demo));
+          ({ context, page } = await openPage(browser, { ...p, viewport: { width, height } }, demo, p.context));
           const before = problems.length;
           for (const rule of rules) problems.push(...(await rule.check(page)).map(f => `${p.name} at ${width}px: ${f}`));
           console.log(`  ${p.name} at ${width}x${height}: ${rules.length - (problems.length - before)}/${rules.length} rules hold`);

@@ -13,19 +13,10 @@
 
 <ConfirmDialog @ref="_confirm" />
 
-<div class="tide-page-head tide-library-head">
-    <div>
-        <h2>Outreach templates</h2>
-        <div class="tide-sub">Emails kept for the team, for asking a vendor, a partner, an ISAC or another team for information.
-            Fill one on an Outreach action with Write the email: <span class="tide-data">{{article.title}}</span>,
-            <span class="tide-data">{{indicators}}</span> and the other placeholders take the action's details, held to the
-            template's TLP ceiling. TIDE never sends them. Changes are audited.</div>
-    </div>
-    @if (_canWrite && _form is null)
-    {
-        <button class="btn btn-primary" @onclick="New"><span class="bi bi-plus-lg" aria-hidden="true"></span> New template</button>
-    }
-</div>
+@if (_canWrite && _form is null)
+{
+    <LibraryHead><button class="btn btn-primary" @onclick="New"><span class="bi bi-plus-lg" aria-hidden="true"></span> New template</button></LibraryHead>
+}
 
 @if (_form is { Id: null })
 {
@@ -44,19 +35,13 @@ else if (EditingAway)
     </section>
 }
 
-@* The filter bar: the words, and Show retired as the switch it was, as on Saved queries. *@
-<FilterBar Active="@(!string.IsNullOrWhiteSpace(_words))" OnClear="ClearFilters">
-    <Search>
-        <input id="ot-find" type="search" class="tide-maxw-md form-control form-control-sm" placeholder="Name, description, subject or body" aria-label="Find templates"
-               @bind="_words" @bind:event="oninput" @bind:after="Refilter" />
-    </Search>
-    <ChildContent>
-        <div class="form-check form-switch mb-0">
-            <input class="form-check-input" type="checkbox" id="ot-retired" checked="@_showRetired" @onchange="ToggleRetired" />
-            <label class="form-check-label small" for="ot-retired">Show retired</label>
-        </div>
-    </ChildContent>
-</FilterBar>
+@* Show retired, as on Saved queries. The words are the Library's search's. *@
+<div class="tide-library-filters">
+    <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="ot-retired" checked="@_showRetired" @onchange="ToggleRetired" />
+        <label class="form-check-label small" for="ot-retired">Show retired</label>
+    </div>
+</div>
 
 @if (_rows is null)
 {
@@ -89,32 +74,30 @@ else
                 }
                 else
                 {
-                    <div class="d-flex gap-2 align-items-center flex-wrap">
-                        <h3 class="tide-subhead my-0" id="@(id + "-h")">@t.Name</h3>
-                        <TlpBadge Level="t.Ceiling" />
-                        @if (t.IsRetired) { <Badge>Retired</Badge> }
-                        <span class="ms-auto small tide-muted">@Used(r.Emails, "for", "email")</span>
+                    <div class="tide-library-entry-head">
+                        <div class="tide-library-entry-title">
+                            <h3 class="tide-subhead my-0" id="@(id + "-h")">@t.Name</h3>
+                            <div class="small tide-muted"><TlpBadge Level="t.Ceiling" /> @if (t.IsRetired) { <Badge>Retired</Badge> } @Provenance(t) · <span>@Used(r.Emails, "for", "email")</span></div>
+                        </div>
+                        <div class="tide-library-entry-tools">
+                            <span id="@(id + "-status")" class="small tide-muted" role="status" aria-live="polite"></span>
+                            <button type="button" class="btn btn-primary btn-sm" data-copy-target="@(id + "-text")" data-copy-status="@(id + "-status")" data-copy-done="Copied."><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
+                            @if (_canWrite)
+                            {
+                                <button class="btn btn-outline-secondary btn-sm" disabled="@(_form is not null)" aria-label="Edit @t.Name" @onclick="() => Edit(t)"><span class="bi bi-pencil" aria-hidden="true"></span> Edit</button>
+                            }
+                            @if (MoreItems(t) is { Count: > 0 } more)
+                            {
+                                <MenuButton Label="More" MenuLabel="@($"More for {t.Name}")" Items="more" ButtonClass="btn btn-outline-secondary btn-sm" Disabled="_busy" />
+                            }
+                        </div>
                     </div>
                     @if (t.Description is { } about) { <p class="small mb-1">@about</p> }
-                    <div class="small tide-muted mb-2">@Provenance(t)</div>
                     <div class="small mb-1">Filled up to @Tlp.Label(t.Ceiling)@(t.To is { } to ? $", always to {to}" : "").</div>
                     <div class="tide-field-label mb-0">Subject</div>
                     <div class="tide-data mb-2">@t.Subject</div>
                     <div class="tide-field-label mb-0">Body</div>
                     <pre id="@(id + "-text")" class="tide-email-text">@t.Body</pre>
-                    <div class="d-flex gap-2 align-items-center flex-wrap">
-                        <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="@(id + "-text")" data-copy-status="@(id + "-status")" data-copy-done="Copied."><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
-                        @if (_canWrite)
-                        {
-                            <button class="btn btn-outline-secondary btn-sm" disabled="@(_form is not null)" aria-label="Edit @t.Name" @onclick="() => Edit(t)"><span class="bi bi-pencil" aria-hidden="true"></span> Edit</button>
-                            <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" aria-label="@((t.IsRetired ? "Restore " : "Retire ") + t.Name)" @onclick="() => Retire(t, !t.IsRetired)">@(t.IsRetired ? "Restore" : "Retire")</button>
-                        }
-                        @if (TemplateSvc.CanDelete(t))
-                        {
-                            <button class="btn btn-link btn-sm text-danger" disabled="@_busy" aria-label="Delete @t.Name" @onclick="() => Delete(t)">Delete</button>
-                        }
-                        <span id="@(id + "-status")" class="small tide-muted" role="status" aria-live="polite"></span>
-                    </div>
                 }
             </article>
         </ChildContent>
@@ -237,6 +220,10 @@ else
         _form = null;
         FocusList();
     });
+
+    /// <summary>The template's More menu: Retire or Restore, and Delete, for whoever may.</summary>
+    internal IReadOnlyList<MenuButton.Item> MoreItems(OutreachTemplate t) =>
+        MoreMenu(t.IsRetired, _canWrite, () => Retire(t, !t.IsRetired), TemplateSvc.CanDelete(t), () => Delete(t));
 
     internal Task Retire(OutreachTemplate t, bool retired) => Retiring(t.Name, retired, () => TemplateSvc.SetRetiredAsync(t.Id, retired));
 

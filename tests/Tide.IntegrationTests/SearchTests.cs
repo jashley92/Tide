@@ -447,6 +447,14 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
         return m.Groups[2].Value;
     }
 
+    // The hunt query's tools, from the language control to Copy's status (the control has boxes of its own inside).
+    private static string QueryTools(string html)
+    {
+        var at = html.IndexOf("id=\"lookup-query-tools\"", StringComparison.Ordinal);
+        at.Should().BePositive("the page has the query's tools");
+        return html[at..html.IndexOf("id=\"lookup-query-status\"", at, StringComparison.Ordinal)];
+    }
+
     // The first line as it reads: a link's words run on into the comma after it.
     private static string Summary(string html) =>
         Spaces().Replace(WebUtility.HtmlDecode(Tags().Replace(Inside(html, "lookup-summary"), "")), " ").Trim();
@@ -486,7 +494,7 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
         var html = await Page(today);
         Summary(html).Should().Be($"On 1 article · {NotPresented(Today)} · no action raised");
         var row = html[html.IndexOf($"href=\"articles/{id}\"", StringComparison.Ordinal)..];
-        row = WebUtility.HtmlDecode(Tags().Replace(row[..row.IndexOf("</li>", StringComparison.Ordinal)], " "));
+        row = WebUtility.HtmlDecode(Tags().Replace(row[..row.IndexOf("</tr>", StringComparison.Ordinal)], " "));
         row.Should().Contain("On the brief for").And.Contain("not presented yet").And.NotContain("Briefed");
 
         var earlier = Unique("earlier") + ".example.net";
@@ -522,13 +530,13 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
         var url = $"https://{Unique("nofql")}.example.net/payload.bin";
         await Article("Lookup URL no Falcon query", [(IndicatorType.Url, url)]);
         var who = Person();
-        Inside(await Page(url, who), "lookup-query-tools").Should().NotContain("disabled");
+        QueryTools(await Page(url, who)).Should().NotContain("disabled");
         await using (var scope = SignedIn(app, who))
             await scope.ServiceProvider.GetRequiredService<UserPreferenceService>().SetAsync(UserPreferences.HuntDialect, "fql");
 
         var html = await Page(url, who);
 
-        Inside(html, "lookup-query-tools").Should().MatchRegex("<button[^>]*data-copy-target=\"lookup-query\"[^>]*disabled", "there's nothing to run");
+        QueryTools(html).Should().MatchRegex("<button[^>]*data-copy-target=\"lookup-query\"[^>]*disabled", "there's nothing to run");
         Text(html, "lookup-query-none").Should().Contain("can't search for this kind of value");
     }
 
@@ -557,10 +565,13 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
         var html = await Page(domain);
 
         Count(html, $"href=\"articles/{id}\"").Should().Be(1, "the article is in one list, not two");
+        html.Should().MatchRegex("<table class=\"tide-table tide-lookup-articles\">\\s*<thead><tr><th scope=\"col\">Article</th><th scope=\"col\">Indicator</th><th scope=\"col\">Briefed</th><th scope=\"col\">Written</th></tr></thead>",
+            "the article is a row of a table: what matched, when it was briefed and when it was written each a column");
         var row = html[html.IndexOf($"href=\"articles/{id}\"", StringComparison.Ordinal)..];
-        row = WebUtility.HtmlDecode(row[..row.IndexOf("</li>", StringComparison.Ordinal)]);
+        row = WebUtility.HtmlDecode(row[..row.IndexOf("</tr>", StringComparison.Ordinal)]);
         row.Should().Contain("TLP:AMBER").And.Contain("Informational").And.Contain("This indicator")
-            .And.Contain("Briefed").And.Contain($"{day:ddd MMM d}").And.Contain("Written");
+            .And.Contain($"{day:ddd MMM d}").And.Contain("</td><td");
+        html.Should().Contain("<h3 class=\"tide-card-title\">Actions raised</h3>", "the card's heading starts at its top, with no band above it");
 
         var cve = NewCve();
         var about = await Article("Lookup CVE listed once", [], cves: [cve]);
@@ -593,7 +604,7 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
             await scope.ServiceProvider.GetRequiredService<UserPreferenceService>().SetAsync(UserPreferences.HuntDialect, "kql");
         var again = await Page(domain, who);
         Text(again, "lookup-query").Should().Contain("DeviceNetworkEvents").And.NotContain("dataset = xdr_data");
-        again.Should().MatchRegex("<option value=\"kql\" selected[^>]*>");
+        again.Should().MatchRegex("(?s)role=\"group\" aria-label=\"Query language\">.*?aria-pressed=\"true\">\\s*<span>KQL</span>", "the language is a segmented control, as on an action").And.NotContain("<option value=\"kql\"");
     }
 
     [Fact]

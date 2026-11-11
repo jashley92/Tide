@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.RegularExpressions;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -129,14 +130,14 @@ public class ActionHuntPreviewTests(TideApp app) : IClassFixture<TideApp>
         action.Events.Should().Contain(e => e.Text == $"Generated a {language.Name} hunt query.");
 
         var html = WebUtility.HtmlDecode(await page.Html());
-        // Copied here, so closing clean no longer asks for the copy. This language's query sets no time range of its own,
-        // so the days aren't TIDE's to claim: the box is blank, and the reason says what to enter.
+        // Copied here, so closing clean no longer asks for the copy. The query enforces its window, so the days searched
+        // start from it and closing clean is ready.
         html.Should().NotContain("id=\"hunt-preview\"").And.NotContain("Copy the query and run it first.", "it was copied here");
-        shown.Should().Contain("with no time range of its own");
+        shown.Should().Contain("looking back 30 days");
         var close = html[html.IndexOf("class=\"tide-hunt-close\"", StringComparison.Ordinal)..];
-        close[..close.IndexOf("No hits, close", StringComparison.Ordinal)].Should().Contain("class=\"form-control form-control-sm tide-w-count\" />", "no days filled in");
-        Button(html, " No hits, close").Should().Contain("disabled").And.Contain("aria-describedby");
-        html.Should().Contain("Enter the days you searched: this query sets no time range of its own.");
+        close[..close.IndexOf("No hits, close", StringComparison.Ordinal)].Should().Contain("value=\"30\"", "the days the query enforced");
+        html.Should().NotContain($"id=\"hunt-{hunt.Id:N}-why\"", "nothing more is asked before closing clean");
+        html.Should().NotContain("this query sets no time range of its own.");
         // The days box is the next stop after Copy: before Edit and the rest of the query's buttons.
         int At(string text) => html.IndexOf(text, StringComparison.Ordinal);
         At("-days\" type=\"number\"").Should().BeGreaterThan(At($"data-copy-target=\"hunt-{hunt.Id:N}\"")).And.BeLessThan(At(" Edit</button>"));
@@ -274,5 +275,113 @@ public class ActionHuntPreviewTests(TideApp app) : IClassFixture<TideApp>
         await As(async sp => { await sp.GetRequiredService<ActionService>().RecordHuntResultAsync(hunt.Id, HuntResult.Hits, 2, null, null); return true; });
         await using (var page = await Open(number))
             page.Component.Next.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task TheHuntCard_IsFirst_SaysWhatItSweepsFor_AndCopyIsItsPrimaryButton()
+    {
+        var (number, id) = await Raise("Hunt card layout sweep");
+        var before = await Trace(id);
+        await using var page = await Open(number);
+        var html = WebUtility.HtmlDecode(await page.Html());
+
+        var tabs = Regex.Matches(html, "role=\"tab\" id=\"tool-panel-tab-([a-z]+)\"").Select(m => m.Groups[1].Value).ToList();
+        tabs.Should().StartWith(["hunt"], "a sweep's query is its work: its tab comes first");
+        html.Should().MatchRegex("Sweeping for</span>\\s*<span class=\"tide-chip[^\"]*\"[^>]*>[^<]*203\\.0\\.113\\[\\.\\]45", "the indicators the query is built from, as chips");
+        html.Should().MatchRegex("<div class=\"[^\"]*\" role=\"group\" aria-label=\"Query language\">", "the language is a segmented control")
+            .And.NotContain("form-select form-select-sm\" aria-label=\"Query language\"");
+        foreach (var name in new[] { "XQL", "KQL", "Falcon" }) html.Should().MatchRegex($"aria-pressed=\"(true|false)\"[^>]*>\\s*<span>{name}</span>");
+        html.Should().MatchRegex("<input id=\"hunt-window\" type=\"number\"[^>]*value=\"30\"", "the window, 30 days by default");
+        Button(html, " Copy</button>").Should().Contain("class=\"btn btn-primary btn-sm\"", "Copy is the card's first step");
+        Button(html, " Keep this query</button>").Should().Contain("btn-outline-secondary");
+        page.Component.Drawer!.Hunt!.Preview.Should().Contain("config timeframe = 30d").And.Contain("looking back 30 days");
+        (await Trace(id)).Should().Be(before, "opening the page saves and logs nothing");
+    }
+
+    [Fact]
+    public async Task TheWindow_IsEnforcedInEveryLanguage_TheDaysSearchedFollowIt_AndChangingItSavesNothing()
+    {
+        var (number, id) = await Raise("Hunt window sweep");
+        var before = await Trace(id);
+        await using var page = await Open(number);
+        var hunt = page.Component.Drawer!.Hunt!;
+
+        await page.Click(_ => hunt.SetDays(45));
+        hunt.Preview.Should().Contain("config timeframe = 45d").And.Contain("looking back 45 days");
+        await page.Click(_ => hunt.ChooseDialect("fql"));
+        hunt.Preview.Should().Contain("setTimeInterval(start=45d)").And.Contain("looking back 45 days").And.NotContain("no time range of its own");
+        await page.Click(_ => hunt.ChooseDialect("kql"));
+        hunt.Preview.Should().Contain("ago(45d)");
+        (await Trace(id)).Should().Be(before, "a preview in another window or language is still only a preview");
+
+        await page.Click(_ => hunt.ChooseDialect("fql"));
+        await page.Click(_ => hunt.CopyPreview());
+        var saved = (await Read(number)).Hunts.Single();
+        HuntQueryBuilder.WindowOf(saved.GeneratedText).Should().Be(45, "the window the query enforces is the one it claims");
+        var html = WebUtility.HtmlDecode(await page.Html());
+        html.Should().MatchRegex($"<input id=\"hunt-{saved.Id:N}-days\" type=\"number\"[^>]*value=\"45\"", "the days searched start from the window, in every language")
+            .And.NotContain("this query sets no time range of its own");
+    }
+
+    [Fact]
+    public async Task UseTheWholeStorys_WidensThePreview_AndSavesNothingUntilCopied()
+    {
+        var (number, id) = await Raise("Hunt story sweep");
+        await As(async sp =>
+        {
+            var articles = sp.GetRequiredService<ArticleService>();
+            var action = (await sp.GetRequiredService<ActionService>().GetAsync(number))!.Action;
+            var later = await articles.CreateAsync("Hunt story sweep, a later report", "Vendor", null, TlpLevel.Clear);
+            var form = ArticleForm.From((await articles.GetAsync(later))!);
+            form.Bluf = "More indicators.";
+            form.Indicators = [new() { Type = IndicatorType.Domain, Value = "later-report.example.net" }];
+            await articles.SaveAsync(form);
+            var stories = sp.GetRequiredService<Tide.Application.Intake.StoryService>();
+            var story = await stories.CreateAsync("Hunt story sweep story", null);
+            await stories.LinkAsync(action.ArticleId!.Value, story);
+            await stories.LinkAsync(later, story);
+            return true;
+        });
+        var before = await Trace(id);
+        await using var page = await Open(number);
+        var hunt = page.Component.Drawer!.Hunt!;
+        var html = WebUtility.HtmlDecode(await page.Html());
+        html.Should().Contain("Use the whole story's").And.NotContain("later-report");
+
+        await page.Click(_ => hunt.UseStory(true));
+        hunt.Preview.Should().Contain("\"later-report.example.net\"").And.Contain("\"203.0.113.45\"");
+        WebUtility.HtmlDecode(await page.Html()).Should().Contain("later-report[.]example[.]net", "the chips are what the query is built from");
+        (await Trace(id)).Should().Be(before);
+
+        await page.Click(_ => hunt.CopyPreview());
+        (await Read(number)).Hunts.Single().Text.Should().Contain("later-report.example.net", "what was copied is what's kept");
+    }
+
+    [Fact]
+    public async Task AnActionWithAQuery_ShowsItsLanguageAndWindow_AndAnotherIsAPreview_UntilKept()
+    {
+        var (number, id) = await Raise("Hunt with a query already");
+        await As(async sp => await sp.GetRequiredService<ActionService>().GenerateHuntAsync(id, "kql", days: 45));
+        var before = await Trace(id);
+        await using var page = await Open(number);
+        var hunt = page.Component.Drawer!.Hunt!;
+        var html = WebUtility.HtmlDecode(await page.Html());
+
+        html.Should().MatchRegex("aria-pressed=\"true\">\\s*<span>KQL</span>", "the control says the language of the query on the action")
+            .And.MatchRegex("<input id=\"hunt-window\" type=\"number\"[^>]*value=\"45\"", "and the window it enforces")
+            .And.NotContain("id=\"hunt-preview\"");
+        hunt.Preview.Should().BeNull("the query on the action is what's shown");
+
+        await page.Click(_ => hunt.ChooseDialect("xql"));
+        hunt.Preview.Should().Contain("config timeframe = 45d", "another language shows the query regenerated in it");
+        WebUtility.HtmlDecode(await page.Html()).Should().Contain("id=\"hunt-preview\"");
+        await page.Click(_ => hunt.SetDays(20));
+        hunt.Preview.Should().Contain("config timeframe = 20d");
+        (await Trace(id)).Should().Be(before, "a preview of another language or window saves and logs nothing");
+
+        await page.Click(_ => hunt.KeepPreview());
+        var hunts = (await Read(number)).Hunts;
+        hunts.Should().HaveCount(2, "Keep puts the regenerated query on the action");
+        hunts.Should().Contain(h => h.Dialect == "xql" && HuntQueryBuilder.WindowOf(h.GeneratedText) == 20);
     }
 }

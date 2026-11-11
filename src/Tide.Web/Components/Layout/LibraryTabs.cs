@@ -14,6 +14,9 @@ public sealed record LibraryTab(string Key, string Label, string Icon, Permissio
     /// <summary>The tab's address: each tab has its own, so its page and selected entry (?page=, ?row=) are its alone.</summary>
     public string Href => LibraryTabs.Root + "/" + Key;
 
+    /// <summary>What the tab holds, in a line: the page header says it under the Library's name.</summary>
+    public string About { get; init; } = "";
+
     public bool VisibleTo(ICurrentUser user) => user.Has(Requires);
 }
 
@@ -31,10 +34,14 @@ public static class LibraryTabs
 
     public static readonly IReadOnlyList<LibraryTab> All =
     [
-        new(Queries, "Saved queries", "bi-bookmark", Permission.ReadActions, "hunt query library siem kql xql", ["hunts/saved"], ChangeFeed.SavedQueries),
-        new(Templates, "Outreach templates", "bi-envelope-paper", Permission.ReadActions, "email vendor partner isac ask template library", ["outreach/templates"], ChangeFeed.OutreachTemplates),
-        new(Playbooks, "Playbooks", "bi-journal-check", Permission.ReadActions, "checklist steps runbook library", ["playbooks", "admin/playbooks"], ChangeFeed.Playbooks),
-        new(BoardRules, "Board rules", "bi-palette", Permission.ReadActions, "card rules colour color label library", ["board-rules"]),
+        new(Queries, "Saved queries", "bi-bookmark", Permission.ReadActions, "hunt query library siem kql xql", ["hunts/saved"], ChangeFeed.SavedQueries)
+            { About = "Hunt queries for actions: {{days}} becomes the action's window and {{values}} its indicators. TIDE never runs one." },
+        new(Templates, "Outreach templates", "bi-envelope-paper", Permission.ReadActions, "email vendor partner isac ask template library", ["outreach/templates"], ChangeFeed.OutreachTemplates)
+            { About = "Emails to ask a vendor, partner or ISAC, filled from an action up to their TLP. TIDE never sends them." },
+        new(Playbooks, "Playbooks", "bi-journal-check", Permission.ReadActions, "checklist steps runbook library", ["playbooks", "admin/playbooks"], ChangeFeed.Playbooks)
+            { About = "Checklists an action starts from. Their steps are copied, so an edit leaves started actions alone." },
+        new(BoardRules, "Board rules", "bi-palette", Permission.ReadActions, "card rules colour color label library", ["board-rules"])
+            { About = "How the Actions board and list mark actions: the first rule that matches sets the colour. Administrators set them." },
     ];
 
     /// <summary>The tabs <paramref name="user"/> may open, in order.</summary>

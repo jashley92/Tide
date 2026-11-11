@@ -429,45 +429,6 @@ public class FilterBarTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task SavedQueries_APillPerLanguage_OneAtATime_AndClear()
-    {
-        await using var r = await ComponentHarness.RenderAsync<SavedQueriesPage>(app, "/library/queries?page=2");
-        SavedQueriesPage.Pills.Select(p => p.Label).Should().Equal("XQL", "KQL", "Falcon");
-        bool On(string key) => SavedQueriesPage.Pills.Single(p => p.Key == key).OnFor(r.Component.Defs.Single());
-        Task Press(SavedQueriesPage p, string key)
-        {
-            FilterBarHtml.Press(SavedQueriesPage.Pills, p.Defs, key);
-            p.Refilter();
-            return Task.CompletedTask;
-        }
-        await Do(r, p => Press(p, "kql"));
-        r.Component.Page.Should().Be(1);
-        r.Component.Shown.Should().OnlyContain(q => q.Query.Dialect == "kql");
-        var html = WebUtility.HtmlDecode(await r.Html());
-        FilterBarHtml.Pressed(html, "KQL").Should().BeTrue();
-        FilterBarHtml.Pressed(html, "XQL").Should().BeFalse();
-        html.Should().Contain("id=\"sq-retired\"", "Show retired stays a switch");
-        await Do(r, p => Press(p, "fql"));
-        On("fql").Should().BeTrue();
-        On("kql").Should().BeFalse("one language at a time");
-        await Do(r, p => Press(p, "fql"));
-        On("fql").Should().BeFalse();
-        await Do(r, p => { FilterBarHtml.Press(SavedQueriesPage.Pills, p.Defs, "kql"); p.ClearFilters(); return Task.CompletedTask; });
-        On("kql").Should().BeFalse();
-        WebUtility.HtmlDecode(await r.Html()).Should().NotContain("tide-filterbar-clear");
-    }
-
-    [Fact]
-    public async Task OutreachTemplates_ClearEmptiesTheWords()
-    {
-        await using var r = await ComponentHarness.RenderAsync<OutreachTemplatesPage>(app, "/library/templates");
-        typeof(OutreachTemplatesPage).GetField("_words", Private)!.SetValue(r.Component, "zzqx");
-        WebUtility.HtmlDecode(await r.Html()).Should().Contain("id=\"ot-retired\"");
-        await Do(r, p => { p.ClearFilters(); return Task.CompletedTask; });
-        typeof(OutreachTemplatesPage).GetField("_words", Private)!.GetValue(r.Component).Should().BeNull();
-    }
-
-    [Fact]
     public async Task Articles_DraftAndReadyArePills_TheMenuSetsTheRest_IntoTheAddress()
     {
         await using var r = await ComponentHarness.RenderAsync<Articles>(app, "/articles?status=draft&tactic=TA0001&technique=T1566&page=3");
