@@ -595,23 +595,24 @@ const focusIn = selector => ({
   }, selector),
 });
 
-/** Tab pressed `times` from where focus is: it never lands outside `selector` (leaving the document for the browser's
- *  own controls, where focus is on <body>, is allowed). For an overlay that must hold focus, as a dialog does. Run last
- *  on its page: it moves focus. */
-const tabStaysIn = (selector, times) => ({
-  name: `Tab stays in: ${selector}`,
+/** `key` (Tab, or Shift+Tab) pressed `times` from where focus is: it never lands outside `selector`, nor on <body> (where
+ *  focus is once it has left the document for the browser's own controls): it wraps within, as a dialog's does. For an
+ *  overlay that must hold focus. Run last on its page: it moves focus. */
+const tabStaysIn = (selector, times, key = 'Tab') => ({
+  name: `${key} stays in: ${selector}`,
   check: async page => {
     const out = new Set();
     for (let i = 0; i < times; i++) {
-      await page.keyboard.press('Tab');
+      await page.keyboard.press(key);
       const where = await page.evaluate(selector => {
         const at = document.activeElement;
-        if (!at || at === document.body || at.closest(selector)) return null;
+        if (!at || at === document.body) return 'the page (<body>)';
+        if (at.closest(selector)) return null;
         return `${at.tagName.toLowerCase()} "${(at.getAttribute('aria-label') || at.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40)}"`;
       }, selector);
       if (where) out.add(where);
     }
-    return [...out].map(w => `Tab reached ${w}, outside ${selector}`);
+    return [...out].map(w => `${key} reached ${w}, outside ${selector}`);
   },
 });
 
@@ -665,20 +666,31 @@ const allBesides = (selector, other) => ({
 });
 
 /**
- * The open overlay's backdrop dims the page under it: the average brightness of a patch of the page left of the rail,
- * measured from screenshots with the rail closed and open, drops by at least `percent`. Run on a page whose setup opened
- * the overlay; it closes it, measures, and opens it again.
+ * The open overlay's backdrop dims everything under it: the average brightness of each patch, measured from screenshots
+ * with the rail closed and open, drops by at least `percent`. The patches: the page between the sidebar and the rail,
+ * and, with `all`, the left navigation, the top bar beside the rail and the strip of top bar above it, wherever each is
+ * shown. Run on a page whose setup opened the overlay; it closes it, measures, and opens it again.
  */
-const dims = percent => ({
-  name: `backdrop dims the page by ${percent}%`,
+const dims = (percent, all = false) => ({
+  name: `backdrop dims ${all ? 'everything under it' : 'the page'} by ${percent}%`,
   check: async page => {
-    // A patch of the page between the sidebar and the rail.
-    const left = await page.evaluate(() => {
-      const side = document.querySelector('.sidebar')?.getBoundingClientRect().right ?? 0;
-      return { side, rail: document.getElementById('tide-rail').getBoundingClientRect().left };
-    });
-    const clip = { x: left.side + 10, y: 300, width: Math.max(40, Math.min(200, left.rail - left.side - 20)), height: 200 };
-    const shot = async () => (await page.screenshot({ clip })).toString('base64');
+    const patches = await page.evaluate(all => {
+      const box = s => [...document.querySelectorAll(s)].map(e => e.getBoundingClientRect()).find(r => r.width > 0 && r.height > 0);
+      const side = box('.sidebar'), bar = box('.top-row'), rail = document.getElementById('tide-rail').getBoundingClientRect();
+      const left = side && side.right < rail.left ? side.right : 0;
+      const found = { 'the page': { x: left + 10, y: 300, width: Math.max(40, Math.min(200, rail.left - left - 20)), height: 200 } };
+      if (!all) return found;
+      // A strip of the navigation's own colour, beside its links' text (which a backdrop of its colour would still dim).
+      if (side && side.width > 40 && side.right < rail.left) found['the left navigation'] = { x: side.right - 8, y: 300, width: 4, height: 200 };
+      if (bar && rail.top >= bar.bottom - 1) {
+        const h = Math.max(8, Math.min(30, bar.height - 10));
+        found['the top bar'] = { x: left + 10, y: bar.top + 5, width: Math.max(40, Math.min(200, rail.left - left - 20)), height: h };
+        found['the top bar above the rail'] = { x: rail.left + 4, y: bar.top + 5, width: Math.max(20, Math.min(100, rail.width - 8)), height: h };
+      }
+      return found;
+    }, all);
+    const names = Object.keys(patches);
+    const shot = async () => Promise.all(names.map(async n => (await page.screenshot({ clip: patches[n] })).toString('base64')));
     await page.keyboard.press('Escape');
     await page.waitForTimeout(300);
     const closed = await shot();
@@ -688,7 +700,7 @@ const dims = percent => ({
     // Decoded in a page of its own: the browser reads PNGs, so no library is needed.
     const scratch = await page.context().newPage();
     try {
-      const [a, b] = await scratch.evaluate(async shots => Promise.all(shots.map(async s => {
+      const light = await scratch.evaluate(async shots => Promise.all(shots.map(async s => {
         const img = new Image();
         img.src = `data:image/png;base64,${s}`;
         await img.decode();
@@ -699,14 +711,24 @@ const dims = percent => ({
         let sum = 0;
         for (let i = 0; i < d.length; i += 4) sum += .2126 * d[i] + .7152 * d[i + 1] + .0722 * d[i + 2];
         return sum / (d.length / 4);
-      })), [closed, open]);
-      const drop = (a - b) / Math.max(a, 1) * 100;
-      return drop >= percent ? [] : [`the page under the open overlay is ${drop.toFixed(1)}% darker (${a.toFixed(0)} to ${b.toFixed(0)}), under ${percent}%`];
+      })), [...closed, ...open]);
+      return names.flatMap((n, i) => {
+        const [a, b] = [light[i], light[i + names.length]];
+        const drop = (a - b) / Math.max(a, 1) * 100;
+        return drop >= percent ? [] : [`${n} under the open overlay is ${drop.toFixed(1)}% darker (${a.toFixed(0)} to ${b.toFixed(0)}), under ${percent}%`];
+      });
     } finally {
       await scratch.close();
     }
   },
 });
+
+/** While the overlay is open, the top bar and the left navigation are inert: out of the tab order and unclickable. */
+const underIsInert = {
+  name: 'the top bar and the navigation are inert under the overlay',
+  check: page => page.evaluate(() => ['.top-row', '.sidebar'].filter(s => document.querySelector(s) && !document.querySelector(s).closest('[inert]'))
+    .map(s => `${s} isn't inert while the overlay is open`)),
+};
 
 /** Setup: every letter spaced wider, as a font wider than this machine's would set it (see selectCovered). */
 // LETTER_SPACING=.12em widens it further by hand, near what a Linux runner's fonts do.
@@ -1390,6 +1412,81 @@ const actionRailHolds = [visible('#tide-rail .tide-facts'), visible('#tide-rail 
 /** The action page's own column: its head, the tools and the query fit it, the query wrapping rather than scrolling. */
 const actionPageFits = [noSidewaysScroll, fits('.tide-action-head'), fits('.tide-drawer'), visible('.tide-feed')];
 
+/** A drag or paste event with `files` (and `text`, if given) fired at the first match of `selector`; whether the page took it. */
+const fire = (page, type, selector, files, text) => page.evaluate(([type, selector, files, text]) => {
+  const dt = new DataTransfer();
+  if (text) dt.setData('text/plain', text);
+  for (const [name, mime] of files) {
+    const bytes = mime === 'image/png'
+      ? Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='), c => c.charCodeAt(0))
+      : new TextEncoder().encode('proxy log line');
+    dt.items.add(new File([bytes], name, { type: mime }));
+  }
+  const el = selector === 'body' ? document.body : document.querySelector(selector);
+  const e = type === 'paste' ? new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt })
+    : new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt });
+  el.dispatchEvent(e);
+  return e.defaultPrevented;
+}, [type, selector, files, text]);
+
+/** What waits to be added in the rail's Files box. */
+const pendingFiles = page => page.locator('#tide-rail .tide-file-pending').innerText().catch(() => '');
+
+/**
+ * Files go to the action's Files from anywhere on the page, as the design says ("Drop them anywhere on the page, or
+ * paste"): text pasted into a text field stays text there; a file dragged over the page shows the drop hint, and dropped
+ * on the page (not on a Files or comment box) waits in Files, the rail opening to show it where it was closed; an image
+ * pasted with nothing focused waits there too.
+ */
+const pageTakesFiles = {
+  name: 'files dropped on the page, or pasted with nothing focused, wait in Files',
+  check: async page => {
+    const problems = [];
+    await page.locator('#comment-new').focus();
+    if (await fire(page, 'paste', '#comment-new', [['image.png', 'image/png']], 'IOC 203.0.113.45')) problems.push('text pasted into the comment box was taken as a file');
+    await page.evaluate(() => document.activeElement?.blur());
+    if (!(await fire(page, 'dragover', '.tide-feed-head', [['page-drop.log', 'text/plain']]))) problems.push('a file dragged over the page isn\'t taken');
+    await page.waitForTimeout(100);
+    if (!(await anyShown(page, '.tide-page-drop'))) problems.push('no drop hint shows while a file is dragged over the page');
+    await fire(page, 'drop', '.tide-feed-head', [['page-drop.log', 'text/plain']]);
+    await page.waitForTimeout(1500);
+    if (await anyShown(page, '.tide-page-drop')) problems.push('the drop hint stays after the drop');
+    if (!(await anyShown(page, '#tide-rail .tide-file-pending'))) problems.push('the dropped file isn\'t shown waiting in the rail');
+    if (!(await pendingFiles(page)).includes('page-drop.log')) problems.push('a file dropped on the page isn\'t waiting in Files');
+    if ((await pendingFiles(page)).includes('image.png') || (await pendingFiles(page)).includes('pasted-screenshot')) problems.push('the comment box\'s pasted text left a file in Files');
+    await page.evaluate(() => document.activeElement?.blur());
+    await fire(page, 'paste', 'body', [['image.png', 'image/png']]);
+    await page.waitForTimeout(1500);
+    if (!(await pendingFiles(page)).includes('pasted-screenshot')) problems.push('an image pasted with nothing focused isn\'t waiting in Files');
+    return problems;
+  },
+};
+
+/** "Also raised from it": each row leads with its number, its title beside it, and its status at the row's right. */
+const raisedRows = holds('raised-from-it rows: number first, status at the right', () => {
+  const rows = [...document.querySelectorAll('#tide-rail section[aria-labelledby="rail-raised-h"] li')].filter(li => li.getClientRects().length);
+  if (!rows.length) return ['no "Also raised from it" row is shown'];
+  return rows.flatMap((li, i) => {
+    const box = li.getBoundingClientRect();
+    const num = li.querySelector('.tide-action-num')?.getBoundingClientRect(), title = li.querySelector('a')?.getBoundingClientRect();
+    const status = [...li.querySelectorAll('.tide-badge')].at(-1)?.getBoundingClientRect();
+    if (!num || !title || !status) return [`row ${i + 1} lacks a number, a title or a status`];
+    const found = [];
+    if (!(num.right <= title.left + 1 && num.top < title.bottom && title.top < num.bottom)) found.push(`row ${i + 1}: the number isn't first, beside the title`);
+    if (box.right - status.right > 2 || status.left < title.left) found.push(`row ${i + 1}: the status isn't at the right (${Math.round(box.right - status.right)}px short)`);
+    return found;
+  });
+});
+
+/** The hunt drawer as designed: Write one by hand, Add a saved query and Add indicators beside Copy; "What did it find?"
+ *  under them, with Attach a screenshot. */
+const huntAsDesigned = [sameLine('.tide-hunt [data-copy-target]', '#hunt-write', '#hunt-pick', '#hunt-add-iocs'), visible('.tide-hunt-found > h3'),
+  above('.tide-hunt [data-copy-target]', '.tide-hunt-found > h3'), visible('.tide-hunt-found [data-pick="files-input"]')];
+
+/** The header's badges: its kind, and its due date said with how it stands ("Due Thu Nov 12 · due soon"), one badge. */
+const actionHeadAsDesigned = [visible('.tide-action-badges .tide-action-kind'), says('.tide-action-badges .tide-action-due', '^Due \\w{3} \\w{3} \\d+ · '),
+  hidden('.tide-action-badges > .tide-badge-warn:not(.tide-action-due)')];
+
 /** No word in a visible match of `selector` is split across lines: each word's text sits on one line box (a line
  *  ending at a hyphen doesn't split a word). */
 const wordsWhole = selector => holds(`no word split across lines: ${selector}`, selector => {
@@ -1500,8 +1597,8 @@ const pages = [
   { name: 'today-note-cancelled', route: '/', setup: noteEdited('Cancel'), widths: [1920],
     rules: [focusOn('section[aria-labelledby="team-note-h"] button.tide-note-edit')] },
   // The open overlay's backdrop visibly dims the page under it, light and dark.
-  { name: 'today-scrim', route: '/', setup: toggleRail, widths: [1440, 780], rules: [dims(15)] },
-  { name: 'today-scrim-dark', route: '/', setup: darkWide, widths: [1440, 780], rules: [dims(15)] },
+  { name: 'today-scrim', route: '/', setup: toggleRail, widths: [1440, 780], rules: [dims(15, true)] },
+  { name: 'today-scrim-dark', route: '/', setup: darkWide, widths: [1440, 780], rules: [dims(15, true)] },
   { name: 'today-rail-closed', route: '/', setup: toggleRail, widths: [1920, 1500],
     rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), oneRow('.tide-steps'), fits('.tide-page-head')] },
   { name: 'today-rail-shut', route: '/', setup: wideFont, widths: [1440, 780],
@@ -1510,7 +1607,7 @@ const pages = [
   { name: 'today-rail-over', route: '/', setup: toggleRail, widths: [1440, 780, 400],
     rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), fits('.tide-rail-body'), fits('#tide-rail .tide-card'), focusIn('#tide-rail'),
       attr('#tide-rail', 'role', 'dialog'), attr('#tide-rail', 'aria-modal', 'true'), attr('#tide-rail', 'aria-label', 'Beside the brief'),
-      tabStaysIn('#tide-rail', 40)] },
+      underIsInert, tabStaysIn('#tide-rail', 40), tabStaysIn('#tide-rail', 40, 'Shift+Tab')] },
   // Another day's brief draws the same panel in its rail.
   { name: 'day-rail', route: '/briefs/{sent}', setup: wideFont, widths: [1920, 1500],
     rules: [noSidewaysScroll, visible('#tide-rail .tide-card[aria-labelledby="meeting-h"]'), besides('#main-content', '#tide-rail'), fits('.tide-page-head'), fits('#tide-rail .tide-card')] },
@@ -1585,19 +1682,24 @@ const pages = [
   // card: the query wraps, nothing scrolls sideways and Copy is on the first screen. Below 1500px it's closed until `]`
   // opens it over the page. A sweep (its query) and an action of another kind (its checklist).
   { name: 'action-rail-sweep', route: '/actions/{huntAction}', setup: wideFont, widths: [[1920, 1000], [1600, 1000], [1500, 1000]],
-    rules: [visible('#tide-rail'), ...actionRailHolds, ...actionPageFits, fits('.tide-hunt pre.tide-query'), onFirstScreen('.tide-hunt [data-copy-target]')] },
+    rules: [visible('#tide-rail'), ...actionRailHolds, ...actionPageFits, fits('.tide-hunt pre.tide-query'), onFirstScreen('.tide-hunt [data-copy-target]'),
+      ...huntAsDesigned, ...actionHeadAsDesigned, raisedRows, sameLine('#files-h', '#tide-rail .tide-files-head [data-pick]')] },
+  // Files from anywhere on the page: docked, and where the rail is closed until it opens over the page to show them.
+  { name: 'action-page-files', route: '/actions/{huntAction}', setup: wideFont, widths: [[1920, 1000], [1440, 900]], rules: [pageTakesFiles] },
   { name: 'action-rail-other', route: '/actions/{detailAction}', setup: wideFont, widths: [[1920, 1000], [1500, 1000]],
     rules: [visible('#tide-rail'), visible('#tide-rail .tide-facts'), visible('#tide-rail #files'), hidden('.content #files'), fits('.tide-rail-body > *'),
       ...actionPageFits] },
   { name: 'action-rail-narrow', route: '/actions/{huntAction}', setup: wideFont, widths: [[1440, 900], [780, 900]],
-    rules: [hidden('#tide-rail'), visible('#tide-rail-toggle'), ...actionPageFits, fits('.tide-hunt pre.tide-query')] },
+    rules: [hidden('#tide-rail'), visible('#tide-rail-toggle'), ...actionPageFits, fits('.tide-hunt pre.tide-query'), ...actionHeadAsDesigned,
+      [1440, huntAsDesigned[0]], ...huntAsDesigned.slice(1), hidden('.tide-page-drop')] },
   { name: 'action-rail-closed', route: '/actions/{huntAction}', setup: toggleRail, widths: [[1600, 1000]],
     rules: [hidden('#tide-rail'), widerThan('.tide-action-main', 1100), ...actionPageFits] },
   // Open over the page it's a modal dialog: named, the page dimmed behind it, Tab held in it; Escape, Close and a click
   // on the backdrop each close it and give focus back to the Context button; its Files box still takes a drop and a paste.
   { name: 'action-rail-overlay', route: '/actions/{huntAction}', setup: toggleRail, widths: [[1440, 900], [780, 900], [400, 800]],
     rules: [visible('#tide-rail'), ...actionRailHolds, noSidewaysScroll, focusIn('#tide-rail'), attr('#tide-rail', 'role', 'dialog'),
-      attr('#tide-rail', 'aria-modal', 'true'), attr('#tide-rail', 'aria-label', 'About this action'), [780, dims(15)], tabStaysIn('#tide-rail', 40)] },
+      attr('#tide-rail', 'aria-modal', 'true'), attr('#tide-rail', 'aria-label', 'About this action'), underIsInert, [780, dims(15, true)],
+      tabStaysIn('#tide-rail', 40), tabStaysIn('#tide-rail', 40, 'Shift+Tab')] },
   ...['Escape', 'Close', 'backdrop'].map(how => ({ name: `action-rail-overlay-${how.toLowerCase()}`, route: '/actions/{huntAction}', setup: toggleRail,
     widths: how === 'backdrop' ? [[1440, 900], [780, 900]] : [[1440, 900], [780, 900], [400, 800]], rules: [overlayClosesBy(how)] })),
   { name: 'action-rail-overlay-files', route: '/actions/{detailAction}', setup: toggleRail, widths: [[1440, 900]], rules: [railFilesTakeDropAndPaste] },
@@ -1681,7 +1783,8 @@ const pages = [
   // and give focus back to the Context button (and Escape leaves the reading pane alone: triage-rail-keys).
   { name: 'triage-rail-overlay', route: '/triage', setup: railOverOn('covered'), widths: [[1440, 900], [780, 900]],
     rules: [noSidewaysScroll, visible('#tide-rail'), ...triageRailFits, visible('#tide-rail #rail-covered-h'), focusIn('#tide-rail'),
-      attr('#tide-rail', 'role', 'dialog'), attr('#tide-rail', 'aria-label', 'What TIDE knows'), [780, dims(15)], tabStaysIn('#tide-rail', 30)] },
+      attr('#tide-rail', 'role', 'dialog'), attr('#tide-rail', 'aria-label', 'What TIDE knows'), underIsInert, [780, dims(15, true)],
+      tabStaysIn('#tide-rail', 30), tabStaysIn('#tide-rail', 30, 'Shift+Tab')] },
   ...['Escape', 'Close', 'backdrop'].map(how => ({ name: `triage-rail-overlay-${how.toLowerCase()}`, route: '/triage', setup: railOverOn('covered'),
     widths: [[1440, 900], [780, 900]], rules: [overlayClosesBy(how), visible('.tide-triage-row.selected')] })),
   // J and K pressed quickly land on the row they were pressed for: on the page (the selection isn't pulled back by a
@@ -1723,7 +1826,7 @@ const pages = [
     rules: [hidden('#tide-rail'), widerThan('.content', 1100), ...searchPageFits] },
   { name: 'search-rail-overlay', route: '/search?q=203.0.113.45', setup: toggleRail, widths: [[1440, 900], [780, 900]], context: clipboard,
     rules: [visible('#tide-rail'), ...searchRailHolds(), noSidewaysScroll, focusIn('#tide-rail'), attr('#tide-rail', 'role', 'dialog'),
-      attr('#tide-rail', 'aria-label', 'Do something with it'), tabStaysIn('#tide-rail', 30),
+      attr('#tide-rail', 'aria-label', 'Do something with it'), underIsInert, tabStaysIn('#tide-rail', 30), tabStaysIn('#tide-rail', 30, 'Shift+Tab'),
       copiesExactly('#tide-rail [data-copy-target="lookup-query"]', '#lookup-query')] },
   // A search for words has no rail, and its page is as before.
   { name: 'search-words', route: '/search?q=gateway', widths: [1920, 780], rules: [noSidewaysScroll, hidden('#tide-rail'), hidden('#tide-rail-toggle')] },
