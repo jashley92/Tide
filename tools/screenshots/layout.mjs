@@ -511,7 +511,7 @@ const selectCovered = (group = false) => async page => {
   await wider(page);
   const line = page.locator(group ? '.tide-triage-group' : '.tide-triage-row:not(.tide-triage-group):not(.tide-triage-member)', { has: page.locator('.tide-triage-flags .tide-badge-info') }).first();
   await line.locator(group ? '.tide-group-label' : '.tide-triage-meta > span').first().click();
-  await page.locator('.tide-triage-row.selected .tide-triage-attach').waitFor();
+  await page.locator('.tide-triage-decide .tide-triage-attach').waitFor();
 };
 
 /** No visible match of `selector` overlaps the first visible match of `other` sideways: two regions side by side. */
@@ -1139,6 +1139,167 @@ const openEntryMore = async page => {
 // for this run (the dev sign-in's ?as=), and everyone else's Triage opens as it always does.
 const run = Date.now().toString(36);
 
+/** The first visible match of `selector` is `px` wide, give or take `slack`. */
+const widthNear = (selector, px, slack) => holds(`about ${px}px wide: ${selector}`, ([selector, px, slack]) => {
+  const r = [...document.querySelectorAll(selector)].map(e => e.getBoundingClientRect()).find(b => b.height > 0);
+  if (!r) return [`nothing shown matches ${selector}`];
+  return Math.abs(r.width - px) <= slack ? [] : [`${selector} is ${Math.round(r.width)}px wide, not about ${px}px`];
+}, [selector, px, slack]);
+
+/**
+ * Tab from the selected row goes through the row's own controls, then the reading pane's head tools (Read it here or
+ * Read again, Open the site), then Triage's decision bar, its main button first and the rest in the order they're
+ * shown (not past every other row's links on the way). From the bar's last control Tab goes on to the next row, as it
+ * did when the buttons were in the row, and Shift+Tab from there comes back to the bar; Shift+Tab from the bar's
+ * first goes back to the head tools.
+ */
+const tabReachesBar = {
+  name: 'Tab from the selected row: head tools, then the decision bar, then the next row',
+  check: async page => {
+    const where = () => page.evaluate(() => {
+      const a = document.activeElement, r = a.getBoundingClientRect();
+      const row = a.closest('.tide-triage-row');
+      return { inRow: !!a.closest('.tide-triage-row.selected'), inTools: !!a.closest('.tide-reading-tools'), inBar: !!a.closest('.tide-triage-decide'),
+        nextRow: !!row && row.previousElementSibling?.classList.contains('selected'), primary: a.classList.contains('btn-primary'),
+        x: Math.round(r.left), y: Math.round(r.top), text: (a.innerText || a.getAttribute('aria-label') || a.tagName).replace(/\s+/g, ' ').trim().slice(0, 40) };
+    });
+    await page.locator('.tide-triage-row.selected').focus();
+    const seen = [];
+    for (let i = 0; i < 40; i++) {
+      await page.keyboard.press('Tab');
+      const at = await where();
+      if (!at.inRow) seen.push(at);
+      if (!at.inRow && !at.inTools && !at.inBar) break;
+    }
+    const tools = seen.filter(s => s.inTools), bar = seen.filter(s => s.inBar), last = seen[seen.length - 1];
+    const order = seen.map(s => s.inTools ? 'tools' : s.inBar ? 'bar' : 'other');
+    if (!tools.length || order.indexOf('bar') < order.lastIndexOf('tools') || order[0] !== 'tools')
+      return [`Tab from the selected row goes: ${seen.map(s => `"${s.text}"`).join(', ')}; not the head tools, then the bar`];
+    if (!bar.length || !bar[0].primary) return [`the first of the bar Tab reaches is "${bar[0]?.text}", not its main button`];
+    const backwards = bar.slice(1).filter((s, i) => s.y === bar[i].y && s.x <= bar[i].x);
+    if (backwards.length) return [`Tab goes back along the bar's row: "${bar.map(s => s.text).join('", "')}"`];
+    if (!last?.nextRow) return [`after the bar's last control Tab goes to "${last?.text}", not the next row`];
+    await page.keyboard.press('Shift+Tab');
+    const fromNext = await where();
+    if (!fromNext.inBar) return [`Shift+Tab from the next row goes to "${fromNext.text}", not back to the bar`];
+    await page.locator('.tide-triage-decide .btn-primary').first().focus();
+    await page.keyboard.press('Shift+Tab');
+    const back = await where();
+    return back.inTools ? [] : [`Shift+Tab from the bar's main button goes to "${back.text}", not back to the pane's head tools`];
+  },
+};
+
+/**
+ * The decision bar's main button keeps its words: its visible text starts with its whole verb ("Attach to", "Attach
+ * all 2 to", "Promote"), the button itself isn't cut, the article's title in it ends in an ellipsis when it's cut, and
+ * the button is at least as wide as any other button in the bar: the others give way first.
+ */
+const mainButtonKeepsItsWords = holds('the main button keeps its verb, cuts only the title, and is the widest', () => {
+  const bar = [...document.querySelectorAll('.tide-reading .tide-triage-decide')].find(e => e.getBoundingClientRect().height > 0);
+  const main = bar?.querySelector('.tide-triage-acts .btn-primary');
+  if (!main) return ['no main button in a shown decision bar'];
+  const problems = [];
+  const verb = /^(Attach all \d+ to|Attach to|Promote)/;
+  const range = document.createRange();
+  // What's on screen of the button's own words (outside the title): each text node, wholly inside the button's box.
+  for (const node of [...main.childNodes].filter(n => n.nodeType === 3 && n.textContent.trim())) {
+    range.selectNodeContents(node);
+    const r = range.getBoundingClientRect(), b = main.getBoundingClientRect();
+    if (r.right > b.right - 2) problems.push(`the main button's words "${node.textContent.trim()}" are cut off (they end at ${Math.round(r.right)}px, the button at ${Math.round(b.right)}px)`);
+  }
+  const text = main.innerText.replace(/\s+/g, ' ').trim();
+  if (!verb.test(text)) problems.push(`the main button reads "${text}", not its whole verb`);
+  if (main.scrollWidth > main.clientWidth + 1) problems.push(`the main button's content is ${main.scrollWidth - main.clientWidth}px wider than it`);
+  const title = main.querySelector('.tide-triage-attach-title');
+  if (title && title.scrollWidth > title.clientWidth + 1) {
+    if (getComputedStyle(title).textOverflow !== 'ellipsis') problems.push('the article title is cut without an ellipsis');
+    if (title.clientWidth < 16) problems.push(`the article title has ${title.clientWidth}px, too little to show its ellipsis`);
+  }
+  const width = main.getBoundingClientRect().width;
+  for (const other of bar.querySelectorAll('.btn:not(.btn-primary)')) {
+    const w = other.getBoundingClientRect().width;
+    if (w > width + 1) problems.push(`"${other.innerText.replace(/\s+/g, ' ').trim()}" is ${Math.round(w)}px wide, wider than the main button's ${Math.round(width)}px`);
+  }
+  return problems;
+});
+
+/** In the full-height page the window doesn't scroll: the document is no taller than the window (give or take 4px). */
+const windowDoesntScroll = holds('the window does not scroll', () => {
+  const over = document.scrollingElement.scrollHeight - window.innerHeight;
+  return over <= 4 ? [] : [`the document is ${document.scrollingElement.scrollHeight}px tall, ${over}px more than the window`];
+});
+
+/**
+ * Setup: a colleague's presence on a row far down the list, as PresenceNote draws it (its words for screen readers in a
+ * visually hidden span, positioned absolutely), then End pressed and the wheel turned over the pane's head and over the
+ * page's header.
+ */
+async function endAndWheel(page) {
+  await page.$eval('.tide-triage-row:last-of-type .tide-triage-head', head => {
+    const note = document.createElement('span');
+    note.className = 'visually-hidden';
+    note.textContent = 'Robin is looking at this item';
+    head.append(note);
+  });
+  await page.keyboard.press('End');
+  await page.waitForTimeout(200);
+  for (const s of ['.tide-reading-head', '.tide-page-head']) {
+    const box = await page.locator(s).first().boundingBox();
+    if (box) { await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.wheel(0, 1500); await page.waitForTimeout(300); }
+  }
+}
+
+/**
+ * A clicked decision behaves as its key: after a click on the bar's `label` button (Shortlist, Dismiss), focus is on the
+ * row selected next, not left on the bar's button (which now belongs to the next item) or dropped on the page.
+ */
+const clickFocusesNextRow = label => ({
+  name: `a click on ${label} puts focus on the next selected row`,
+  check: async page => {
+    const before = await page.locator('.tide-triage-row.selected').getAttribute('aria-label');
+    await page.locator('.tide-reading .tide-triage-acts button', { hasText: new RegExp(`^${label}`) }).first().click();
+    await page.waitForFunction(was => document.querySelector('.tide-triage-row.selected')?.getAttribute('aria-label') !== was, before, { timeout: 10000 });
+    await page.waitForTimeout(800);
+    const focus = await page.evaluate(() => {
+      const a = document.activeElement;
+      return a.classList.contains('selected') && a.classList.contains('tide-triage-row') ? null : `${a.tagName}${a.className ? '.' + a.className.split(' ').join('.') : ''} "${(a.innerText || '').trim().slice(0, 30)}"`;
+    });
+    return focus ? [`after the click on ${label} focus is on ${focus}, not the next selected row`] : [];
+  },
+});
+
+/** Setup: the first single report (not a group) selected, by a click on its line. */
+async function selectReport(page) {
+  await page.locator('.tide-triage-row:not(.tide-triage-group):not(.tide-triage-member) .tide-triage-meta > span').first().click();
+  await page.locator('.tide-reading .tide-triage-acts').waitFor();
+}
+
+/**
+ * Setup: a long kept text in the reading pane, as an article read in full leaves (the demo keeps only short ones): the
+ * selected item's text is filled out to a few thousand words in the page. Letters spaced wider too.
+ */
+async function longKeptText(page) {
+  await wider(page);
+  await page.locator('.tide-reading .tide-reading-text').waitFor();
+  await page.$eval('.tide-reading .tide-reading-text', text => {
+    const paragraph = 'The vendor has released fixed builds for an authentication bypass in the web interface of its managed file '
+      + 'transfer server. An unauthenticated attacker who can reach the interface can create an administrator session. ';
+    text.textContent = Array.from({ length: 40 }, () => paragraph).join('\n\n');
+  });
+  // And a long title, which wraps beside the head's tools.
+  await page.$eval('.tide-reading .tide-reading-title', title => {
+    title.textContent = 'Vendor patches an authentication bypass in its managed file transfer server, exploited against manufacturers in three countries';
+  });
+  await page.waitForTimeout(200);
+}
+
+/** The first visible match of `selector` scrolls inside itself (its content is taller than its box). */
+const scrollsInside = selector => holds(`scrolls inside itself: ${selector}`, selector => {
+  const el = [...document.querySelectorAll(selector)].find(e => e.getBoundingClientRect().height > 0);
+  if (!el) return [`nothing shown matches ${selector}`];
+  return el.scrollHeight > el.clientHeight + 1 ? [] : [`${selector} is as tall as its content (${el.clientHeight}px): it doesn't scroll inside itself`];
+}, selector);
+
 /** Setup: the page scrolled well down, past the top of the list. */
 async function scrollDown(page) {
   await page.mouse.wheel(0, 1500);
@@ -1368,18 +1529,48 @@ const pages = [
     rules: [noSidewaysScroll, fits('.tide-page-head'), visible('.tide-triage-keys'), oneRow('.tide-triage-keys'), visible('.tide-triage-row.selected'), fits('.tide-triage-row'),
       fits('.tide-triage-flags'), [1400, visible('.tide-reading')]] },
   { name: 'triage-narrow', route: '/triage', widths: [1300, 780], rules: [hidden('.tide-reading')] },
-  // The reading pane open by itself stays below the top bar as the page scrolls; a covered row's Attach and Promote
-  // share a line beside it.
+  // The reading pane open by itself stays below the top bar as the page scrolls.
   { name: 'triage-scrolled', route: '/triage', setup: scrollDown, widths: [1440], rules: [visible('.tide-reading'), belowTopBar('.tide-reading')] },
+  // The decision bar, as designed: the list a column of about 440px, the selected item's buttons in a bar at the foot of
+  // the reading pane (not in the row), opening with the line that says why its main button is the main one; the bar's
+  // buttons one row, by construction (letters spaced wider); Tab from the row goes to them.
+  { name: 'triage-decision', route: '/triage', setup: wider, widths: [[1920, 1080], [1440, 900]],
+    rules: [noSidewaysScroll, widthNear('.tide-triage-layout > .tide-card:first-child', 440, 16), visible('.tide-reading .tide-triage-decide'),
+      sameBox('.tide-reading', '.tide-triage-decide', '.tide-reading-title'), above('.tide-reading-title', '.tide-triage-decide'),
+      above('.tide-triage-why', '.tide-triage-acts'), oneRow('.tide-triage-decide .tide-triage-acts'), fits('.tide-triage-decide'), fits('.tide-triage-acts'),
+      hidden('.tide-triage-row.selected .tide-triage-decide'), fits('.tide-triage-row'), tabReachesBar,
+      // The pane the window's height under the top bar, the bar at its foot on the first screen; Read it here or Read
+      // again and Open the site in its head, beside the title.
+      reachesBottom('.tide-reading', 24), belowTopBar('.tide-reading'), onFirstScreen('.tide-reading .tide-triage-decide'),
+      sameBox('.tide-reading-head', '.tide-reading-title', '.tide-reading-tools .btn'), above('.tide-reading-tools', '.tide-triage-decide')] },
+  // With a long text read, the text scrolls inside the pane and the bar stays at its foot on the first screen.
+  { name: 'triage-decision-long', route: '/triage', setup: longKeptText, widths: [[1920, 1080], [1440, 900]],
+    rules: [noSidewaysScroll, reachesBottom('.tide-reading', 24), belowTopBar('.tide-reading'), scrollsInside('.tide-reading-text'),
+      onFirstScreen('.tide-reading .tide-triage-decide'), oneRow('.tide-triage-decide .tide-triage-acts'), fits('.tide-reading'),
+      sameBox('.tide-reading-head', '.tide-reading-title', '.tide-reading-tools .btn'), oneRow('.tide-reading-tools'), fits('.tide-reading-head'),
+      windowDoesntScroll] },
+  // The full-height page doesn't scroll the window into blank space: not by End, nor the wheel over the pane or the
+  // header; the bar stays on the first screen. At 1600x1000 too.
+  { name: 'triage-decision-still', route: '/triage', setup: endAndWheel, widths: [[1920, 1080], [1600, 1000], [1440, 900]],
+    rules: [windowDoesntScroll, onFirstScreen('.tide-reading .tide-triage-decide'), belowTopBar('.tide-reading'), onFirstScreen('.top-row')] },
+  // A covered row's Attach and Promote, and a covered group's Attach all and Promote as one, share the bar's one row.
   { name: 'triage-covered', route: '/triage', setup: selectCovered(), widths: [1440, 1920],
-    rules: [visible('.tide-reading'), sameLine('.tide-triage-row.selected .tide-triage-attach', '.tide-triage-row.selected .tide-triage-promote'), fits('.tide-triage-row.selected')] },
+    rules: [visible('.tide-reading'), sameLine('.tide-triage-decide .tide-triage-attach', '.tide-triage-decide .tide-triage-promote'),
+      oneRow('.tide-triage-decide .tide-triage-acts'), fits('.tide-triage-decide'), fits('.tide-triage-row.selected'), mainButtonKeepsItsWords] },
   // A covered group's Attach all and Promote as one share a line too (the demo's covered group: Demo:TriageFiller below).
   { name: 'triage-covered-group', route: '/triage', setup: selectCovered(true), widths: [1440, 1920],
-    rules: [visible('.tide-reading'), sameLine('.tide-triage-group.selected .tide-triage-attach', '.tide-triage-group.selected .tide-triage-promote'), fits('.tide-triage-group.selected')] },
+    rules: [visible('.tide-reading'), sameLine('.tide-triage-decide .tide-triage-attach', '.tide-triage-decide .tide-triage-promote'),
+      oneRow('.tide-triage-decide .tide-triage-acts'), fits('.tide-triage-decide'), fits('.tide-triage-group.selected'), mainButtonKeepsItsWords] },
+  // Below 1400px the pane that opened by itself is hidden and the decision stays in the selected row, reason and all.
+  { name: 'triage-decision-narrow', route: '/triage', setup: wider, widths: [1000, 780],
+    rules: [noSidewaysScroll, hidden('.tide-reading'), visible('.tide-triage-row.selected .tide-triage-decide'), visible('.tide-triage-row.selected .tide-triage-why'),
+      visible('.tide-triage-row.selected .tide-triage-promote'), fits('.tide-triage-row.selected')] },
   // V closes the pane that opened by itself, and opens it again; on a narrow window, where it's hidden, V opens it.
   // Held down, V is one press: the keyboard's repeats don't open and close the pane over and over.
   { name: 'triage-v-held', route: `/triage?as=v4${run}`, setup: holdV, widths: [1440], rules: [hidden('.tide-reading')] },
-  { name: 'triage-v-closes', route: `/triage?as=v1${run}`, setup: pressV(1), widths: [1440], rules: [hidden('.tide-reading')] },
+  // Closed by the person, the pane takes the decision bar with it: the buttons are in the selected row again.
+  { name: 'triage-v-closes', route: `/triage?as=v1${run}`, setup: pressV(1), widths: [1440],
+    rules: [hidden('.tide-reading'), visible('.tide-triage-row.selected .tide-triage-decide'), visible('.tide-triage-row.selected .tide-triage-promote')] },
   { name: 'triage-v-reopens', route: `/triage?as=v2${run}`, setup: pressV(2), widths: [1440], rules: [visible('.tide-reading')] },
   { name: 'triage-v-narrow', route: `/triage?as=v3${run}`, setup: pressV(1), widths: [780], rules: [visible('.tide-reading')] },
   // The context rail as an overlay over Triage: the keys pressed in it are its own. J and the arrows there don't move
@@ -1445,6 +1636,10 @@ const pages = [
     rules: [focusIn('section[aria-labelledby="recent-h"] li')] },
   // Closing a card from its Move menu, or by dragging it while it had focus, keeps the person's place in the lane.
   // Last, as each closes one of the demo's actions.
+  // A clicked decision in Triage's bar moves focus on to the next selected row, as its key does. Late, as each sets
+  // one of the demo's new items aside.
+  { name: 'triage-click-shortlist', route: '/triage', setup: selectReport, widths: [1440], rules: [clickFocusesNextRow('Shortlist')] },
+  { name: 'triage-click-dismiss', route: '/triage', setup: selectReport, widths: [1440], rules: [clickFocusesNextRow('Dismiss')] },
   { name: 'actions-board-close-menu', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [closeKeepsPlace('menu')] },
   { name: 'actions-board-close-drag', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [closeKeepsPlace('drag')] },
 ];
