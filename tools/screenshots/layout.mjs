@@ -14,14 +14,15 @@ import { openPage, pick, readDemo, settle, startTide, toArticleSlide } from './t
 // --- the rules: each runs in the page and returns what's wrong (nothing, when it holds). A box is shown when it has
 // width and height. --------------------------------------------------------------------------------------------------
 
-/** Every element matching `selector` lays its visible children out on one line (they share a horizontal band). */
+/** Every element matching `selector` lays its visible children out on one line (they share a horizontal band, more than
+ * the pixel or two of a border two wrapped lines can overlap by). */
 const oneRow = selector => ({
   name: `one row: ${selector}`,
   check: page => page.$$eval(selector, (rows, selector) => rows.flatMap((row, i) => {
     const kids = [...row.children].map(c => c.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0);
     if (kids.length < 2) return [];
     const top = Math.max(...kids.map(r => r.top)), bottom = Math.min(...kids.map(r => r.bottom));
-    return top < bottom ? [] : [`${selector} #${i + 1}: its ${kids.length} parts are on more than one line (${Math.round(row.getBoundingClientRect().height)}px tall)`];
+    return top < bottom - 2 ? [] : [`${selector} #${i + 1}: its ${kids.length} parts are on more than one line (${Math.round(row.getBoundingClientRect().height)}px tall)`];
   }), selector),
 });
 
@@ -78,6 +79,106 @@ const roomBeside = (selector, px, beside) => ({
 const visible = selector => ({
   name: `visible: ${selector}`,
   check: async page => (await anyShown(page, selector)) ? [] : [`${selector} isn't shown`],
+});
+
+/** In each element matching `cell`, the first `b` sits on the line `a` ends on (their boxes share a horizontal band):
+ * a badge that stays beside the title rather than dropping to a line of its own. Cells without both are skipped. */
+const onTitleLine = (cell, a, b) => ({
+  name: `same line: ${a} and ${b} in ${cell}`,
+  check: page => page.$$eval(cell, (cells, [a, b]) => cells.flatMap((c, i) => {
+    const ea = c.querySelector(a), eb = c.querySelector(b);
+    if (!ea || !eb) return [];
+    const ra = [...ea.getClientRects()].pop(), rb = eb.getBoundingClientRect();
+    return rb.top < ra.bottom && rb.bottom > ra.top ? [] : [`#${i + 1}: ${b} is on another line from ${a} (${Math.round(rb.top - ra.top)}px lower)`];
+  }), [a, b]),
+});
+
+/** Focus is on the title of the row `take` named (its `data-expect-focus`): the person's place in the list is kept. */
+const focusedOnExpectedRow = {
+  name: 'focused: the expected row\'s title',
+  check: page => page.evaluate(() => {
+    const want = document.body.dataset.expectFocus, el = document.activeElement;
+    const num = el?.closest('tr')?.querySelector('.tide-action-num')?.innerText;
+    if (el?.matches('.tide-table .tide-action-ref') && num === want) return [];
+    return [`focus is on ${el && el !== document.body ? `<${el.tagName.toLowerCase()} class="${el.className}">${num ?? ''}` : 'the page body'}, not ${want}'s title`];
+  }),
+};
+
+/**
+ * Takes on an action from the keyboard (Tab to its Take it, Enter): the `which` ('first' or 'last') row offering it.
+ * The row focus should land on is noted on the body: `expect` 'same' (it stays listed), 'next' or 'previous' (it leaves).
+ */
+const take = (which, expect) => async page => {
+  const rows = page.locator('.tide-table tbody tr:has(.tide-row-take)');
+  const row = which === 'last' ? rows.last() : rows.first();
+  const all = await page.$$eval('.tide-table tbody tr .tide-action-num', ns => ns.map(n => n.innerText));
+  const mine = await row.locator('.tide-action-num').innerText(), at = all.indexOf(mine);
+  const want = expect === 'same' ? mine : expect === 'next' ? all[at + 1] : all[at - 1];
+  await page.evaluate(w => { document.body.dataset.expectFocus = w; }, want);
+  const button = await row.locator('.tide-row-take').elementHandle();
+  await button.focus();
+  await page.keyboard.press('Enter');
+  // The button goes once the take is saved (settle then waits for the page to be still).
+  await page.waitForFunction(el => !el.isConnected, button, { timeout: 5000 }).catch(() => { });
+};
+
+/** The first visible child of the row `selector` matching `which` (in the page): whether it's wholly inside the row's
+ * visible box, within a pixel, as a row that scrolls sideways inside itself must bring it there. */
+const inRow = (page, selector, which) => page.$eval(selector, (row, which) => {
+  const el = which === 'focused' ? document.activeElement : row.querySelector('[aria-pressed="true"], [aria-current="page"], [aria-selected="true"]');
+  if (!el || el.parentElement !== row) return [which === 'focused' ? `focus isn't on one of its tabs (it's on ${el?.tagName ?? 'nothing'})` : 'no current tab'];
+  const e = el.getBoundingClientRect(), r = row.getBoundingClientRect();
+  return e.left >= r.left - 1 && e.right <= r.right + 1 ? [] : [`"${el.innerText.replace(/\s+/g, ' ').trim()}" (${which}) is only partly in view`];
+}, which);
+
+/** Tabbing from the first button of the row `selector` to its last, each one is wholly in view as it takes focus. */
+const tabsInView = selector => ({
+  name: `each tab in view as it's focused: ${selector}`,
+  check: async page => {
+    const count = await page.$$eval(`${selector} > *`, ks => ks.length);
+    await page.$eval(`${selector} > *`, b => b.focus());
+    const problems = [];
+    for (let i = 0; i < count; i++) {
+      if (i > 0) await page.keyboard.press('Tab');
+      await page.waitForTimeout(150);
+      problems.push(...await inRow(page, selector, 'focused'));
+    }
+    return problems;
+  },
+});
+
+/** The current item of the row `selector` (aria-pressed, aria-current or aria-selected) is wholly in view inside it. */
+const activeInView = selector => ({ name: `current tab in view: ${selector}`, check: page => inRow(page, selector, 'current') });
+
+/** A mouse click on the visible edge of the row `selector`'s tab that its right edge cuts (or covers with its fade)
+ * chooses that tab: the address then says its `?view=` (a row that scrolls to show the tab mustn't swallow the click). */
+const clickAtEdgeChooses = selector => ({
+  name: `a click at the edge chooses that tab: ${selector}`,
+  check: async page => {
+    const hit = await page.$eval(selector, row => {
+      const r = row.getBoundingClientRect(), x = r.right - 6, y = r.top + r.height / 2;
+      const tab = [...row.children].find(t => { const b = t.getBoundingClientRect(); return b.left <= x && b.right >= x; });
+      return tab ? { x, y, name: tab.innerText.replace(/\s+/g, ' ').trim() } : null;
+    });
+    if (!hit) return ['no tab at the row\'s right edge'];
+    await page.mouse.click(hit.x, hit.y);
+    await page.waitForTimeout(1500);
+    const pressed = await page.$eval(`${selector} [aria-pressed="true"]`, t => t.innerText.replace(/\s+/g, ' ').trim());
+    return pressed === hit.name ? [] : [`clicked "${hit.name}" at its visible edge, but "${pressed}" is still the view`];
+  },
+});
+
+/** Nothing of the row `selector`'s children (their borders, the current tab's underline, a focus ring drawn inside them)
+ * is cut off at the bottom of the row: a row that scrolls sideways clips whatever hangs below its box. */
+const notClippedBelow = selector => ({
+  name: `nothing clipped below: ${selector}`,
+  check: page => page.$eval(selector, row => {
+    const bottom = row.getBoundingClientRect().top + row.clientTop + row.clientHeight;
+    return [...row.children].flatMap(t => {
+      const over = t.getBoundingClientRect().bottom - bottom;
+      return over > 0.5 ? [`"${t.innerText.replace(/\s+/g, ' ').trim()}" hangs ${over.toFixed(1)}px below the row's box, where it's cut off`] : [];
+    });
+  }),
 });
 
 /** Whether any match of `selector` is shown (has width and height). */
@@ -222,10 +323,35 @@ const pages = [
     rules: [noSidewaysScroll, visible('.tide-reader-sum'), visible('[role=tablist][aria-label="Beside the article"]')] },
   { name: 'article-actions-tab', route: '/articles/{vpnArticle}?side=actions', widths: [1440, 800],
     rules: [noSidewaysScroll, visible('#reader-panel .tide-action-ref')] },
-  { name: 'actions-list', route: '/actions?tab=open&layout=list', widths: [1440, 1000],
-    rules: [noSidewaysScroll, visible('.tide-action-ref')] },
-  { name: 'actions-board', route: '/actions?tab=open&layout=board', widths: [1920, 1440],
-    rules: [visible('.tide-kcard'), oneRow('.tide-kcard-head'), [1800, widerThan('.content', 1400)]] },
+  // The page reads the tab from ?view= (each tab with its count). The tabs are one row at every width: when wider fonts
+  // don't leave room, the row scrolls sideways inside itself, so there's no fits() on it; noSidewaysScroll checks that the
+  // page never does. The Escalated badge stays on the number's line, the title wrapping before them.
+  { name: 'actions-list', route: '/actions?view=open&layout=list', widths: [1920, 1440, 1000, 780],
+    rules: [noSidewaysScroll, visible('.tide-action-ref'), visible('.tide-tabbar-count'), oneRow('[role=group][aria-label="Views"]'),
+      visible('.tide-row-progress'), onTitleLine('.tide-table td:first-child', '.tide-action-num', '[title^="Escalated"]'),
+      notClippedBelow('[role=group][aria-label="Views"]')] },
+  // Take it from the keyboard keeps the person's place: on a row that stays listed (All open), focus stays on its title;
+  // in No owner the row leaves, and focus goes to the next row's title, or for the last row, the one before.
+  { name: 'actions-take-focus-stays', route: '/actions?view=open&layout=list', setup: take('first', 'same'), widths: [1920],
+    rules: [focusedOnExpectedRow] },
+  { name: 'actions-take-focus', route: '/actions?view=open&layout=list&assignee=none', setup: take('first', 'next'), widths: [1440],
+    rules: [focusedOnExpectedRow] },
+  // The view tabs scroll sideways inside their row when they don't fit (a phone, wider fonts): a tab taking focus comes
+  // wholly into view, and the current one is in view when the page opens on it.
+  { name: 'actions-tabs-focus', route: '/actions?view=open&layout=list', widths: [375, 780],
+    rules: [tabsInView('[role=group][aria-label="Views"]')] },
+  { name: 'actions-tabs-current', route: '/actions?view=closed&layout=list', widths: [375, 320],
+    rules: [activeInView('[role=group][aria-label="Views"]')] },
+  // A mouse click on a tab the row's edge cuts or fades still chooses it (the row doesn't scroll away under the pointer).
+  { name: 'actions-tabs-click', route: '/actions?view=open&layout=list', widths: [375, 320],
+    rules: [clickAtEdgeChooses('[role=group][aria-label="Views"]')] },
+  { name: 'actions-take-focus-last', route: '/actions?view=open&layout=list&assignee=none', setup: take('last', 'previous'), widths: [780],
+    rules: [focusedOnExpectedRow] },
+  // The four working columns share the width and Closed folds into one narrow column: nothing scrolls sideways, the
+  // board included, on a laptop's window.
+  { name: 'actions-board', route: '/actions?view=open&layout=board', widths: [1920, 1440],
+    rules: [noSidewaysScroll, fits('.tide-kanban'), visible('.tide-kcard'), visible('.tide-kclosed .tide-kcol[data-status="Done"]'),
+      oneRow('.tide-kcard-head'), fits('.tide-kcard-article'), [1800, widerThan('.content', 1400)]] },
   // A sweep's query is read whole, in the wide column: its long lines wrap, so nothing scrolls sideways inside its box.
   { name: 'action-hunt', route: '/actions/{huntAction}', widths: [1920, 1440],
     rules: [noSidewaysScroll, visible('.tide-action-main .tide-hunt pre.tide-query'), fits('.tide-hunt pre.tide-query')] },

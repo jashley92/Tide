@@ -1,6 +1,7 @@
 @inject OrgClock Clock
 
-@* A list of actions: title (its number after it, and its article), kind and priority, team and assignee, due date and SLA, status.
+@* A list of actions: title (its number after it, and its article), kind and priority, team and assignee (with Take it on
+   a row the person may take), due date and SLA, status and checklist progress.
    One DataTable: filtered as you type, sorted by any heading, grouped by kind or by urgency when asked. *@
 
 <DataTable TItem="ActionRow" Items="Rows" Columns="Columns" Key="r => r.Id" One="action" Many="actions" Caption="@Caption"
@@ -13,17 +14,17 @@
             {
                 <a class="tide-kcard-parent small d-block" href="@Ui.ActionUrl(parent)"><span class="bi bi-arrow-return-right" aria-hidden="true"></span> Part of @Ui.ActionLabel(parent)</a>
             }
-            <ActionRef Number="r.Number" Title="@r.Title" />
-            <EscalatedBadge At="r.EscalatedSince" />
-            <FileCount Count="r.Files" />
+            <ActionRef @ref="_refs[r.Id]" Number="r.Number" Title="@r.Title">
+                @* The Escalated badge and the paperclip stay on the number's line; the title wraps before them. *@
+                <AfterNumber>
+                    <EscalatedBadge At="r.EscalatedSince" />
+                    <FileCount Count="r.Files" />
+                </AfterNumber>
+            </ActionRef>
             <PresenceNote Place="@Tide.Web.Components.Pages.ActionPage.ActionPlace(r.Number)" Join="false" Compact="true" />
             @if (ActionRules.For(Rules, r, Today, Clock.Days) is { Count: > 0 } matched)
             {
                 <div class="tide-kcard-labels">@foreach (var rule in matched) { <span class="tide-rule-label @Ui.RuleClass(rule.Colour)">@rule.Name</span> }</div>
-            }
-            @if (r.ChecklistTotal > 0)
-            {
-                <div class="small tide-muted"><span class="bi bi-list-check" aria-hidden="true"></span> @r.ChecklistDone/@r.ChecklistTotal on the checklist</div>
             }
             @if (r.ArticleTitle is not null)
             {
@@ -35,12 +36,30 @@
             }
         </td>
         <td class="small text-nowrap">@ActionService.KindName(r.Kind) <PriorityBadge Priority="r.Priority" /></td>
-        <td class="small">@r.TeamName<div class="tide-muted">@(r.AssigneeName ?? "Unassigned")</div></td>
+        <td class="small">
+            @r.TeamName<div class="tide-muted">@(r.AssigneeName ?? "Unassigned")</div>
+            @if (CanTake?.Invoke(r) == true)
+            {
+                <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap tide-row-take" disabled="@Busy" @onclick="() => OnTake.InvokeAsync(r)"
+                        aria-label="@($"Take {Ui.ActionLabel(r.Number)} on: {r.Title}")">Take it</button>
+            }
+        </td>
         <td class="small text-nowrap">
             @if (r.DueDate is { } d) { <div>@Ui.ShortDay(d)</div> }
             <SlaBadge State="r.Sla(Today, Clock.Days)" Due="r.DueDate" Today="Today" />
         </td>
-        <td class="small"><ActionStatusBadge Status="r.Status" />@if (r.Outcome != ActionOutcome.None) { <div class="tide-muted">@ActionService.OutcomeName(r.Outcome)</div> }</td>
+        <td class="small">
+            <ActionStatusBadge Status="r.Status" />@if (r.Outcome != ActionOutcome.None) { <div class="tide-muted">@ActionService.OutcomeName(r.Outcome)</div> }
+            @* The checklist's progress under the status: most rows have none, so a column of its own would only take the
+               title's width. *@
+            @if (r.ChecklistTotal > 0)
+            {
+                <span class="tide-row-progress" role="img" aria-label="@($"Checklist: {r.ChecklistDone} of {r.ChecklistTotal} done")">
+                    <span class="tide-kcard-bar" aria-hidden="true"><span style="width: @(r.ChecklistDone * 100 / r.ChecklistTotal)%"></span></span>
+                    <span aria-hidden="true">@r.ChecklistDone/@r.ChecklistTotal</span>
+                </span>
+            }
+        </td>
     </RowTemplate>
 </DataTable>
 
@@ -77,6 +96,35 @@
     [Parameter] public bool Filtered { get; set; }
 
     [Parameter] public RenderFragment? Toolbar { get; set; }
+
+    /// <summary>Whether a row offers Take it (the page asks the service's rule); none when not set.</summary>
+    [Parameter] public Func<ActionRow, bool>? CanTake { get; set; }
+
+    /// <summary>Take it on a row: the page takes the action on for the person.</summary>
+    [Parameter] public EventCallback<ActionRow> OnTake { get; set; }
+
+    /// <summary>While a take is under way, the buttons wait.</summary>
+    [Parameter] public bool Busy { get; set; }
+
+    // Each row's title, to put focus on (the page keeps the person's place when a row changes or leaves). Blazor hands a
+    // title over once, when it's first drawn, so a new list of rows drops only the ones that went.
+    private readonly Dictionary<Guid, ActionRef> _refs = [];
+    private IReadOnlyList<ActionRow>? _refsFor;
+
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(Rows, _refsFor)) return;
+        _refsFor = Rows;
+        foreach (var gone in _refs.Keys.Except(Rows?.Select(r => r.Id) ?? []).ToList()) _refs.Remove(gone);
+    }
+
+    /// <summary>Puts focus on this row's title; false when the row isn't drawn.</summary>
+    public async Task<bool> FocusRowAsync(Guid id)
+    {
+        if (!_refs.TryGetValue(id, out var row)) return false;
+        await row.FocusAsync();
+        return true;
+    }
     [Parameter] public RenderFragment? Empty { get; set; }
 
     /// <summary>The list's order: soonest due first (no date last), as the open views come.</summary>

@@ -1,6 +1,7 @@
 @* An action in a list or on a card: its title first, as the link to it (or the button that opens it over a slide), then its
    number, small and muted, to quote. Where the number is what's quoted (the action's own page and card, a "Part of" chip,
-   "Raised as", a toast) it leads as before, with Ui.ActionLabel alone. *@
+   "Raised as", a toast) it leads as before, with Ui.ActionLabel alone. AfterNumber (a badge) is kept on the number's
+   line: the title wraps before the number rather than leaving the badge on a line of its own. *@
 
 @if (OnOpen.HasDelegate)
 {
@@ -8,13 +9,20 @@
 }
 else if (Link)
 {
-    <a class="tide-action-ref @TitleClass" href="@Ui.ActionUrl(Number)" draggable="@(Draggable ? null : "false")">@TitleContent</a>
+    <a @ref="_link" class="tide-action-ref @TitleClass" href="@Ui.ActionUrl(Number)" draggable="@(Draggable ? null : "false")">@TitleContent</a>
 }
 else
 {
     <span class="@TitleClass">@TitleContent</span>
 }
-<span class="tide-action-num tide-action-num-after">@Label</span>
+@if (AfterNumber is null)
+{
+    <span class="tide-action-num tide-action-num-after">@Label</span>
+}
+else
+{
+    <span class="text-nowrap"><span class="tide-action-num tide-action-num-after">@Label</span> @AfterNumber</span>
+}
 
 @code {
     [Parameter, EditorRequired] public int Number { get; set; }
@@ -32,10 +40,18 @@ else
 
     [Parameter] public string? TitleClass { get; set; }
 
+    /// <summary>What goes right after the number, on its line whatever the width (the Escalated badge in a list).</summary>
+    [Parameter] public RenderFragment? AfterNumber { get; set; }
+
     /// <summary>False on a board card: dragging the card mustn't drag its link.</summary>
     [Parameter] public bool Draggable { get; set; } = true;
 
     private string Label => Ui.ActionLabel(Number);
+
+    private ElementReference _link;
+
+    /// <summary>Puts focus on the title's link (nothing when it's drawn as a button or text, or has gone).</summary>
+    public Task FocusAsync() => _link.Context is null ? Task.CompletedTask : _link.TryFocusAsync(orGone: true);
 
     private RenderFragment TitleContent => ChildContent ?? (b => b.AddContent(0, Title));
 }

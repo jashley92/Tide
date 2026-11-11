@@ -14,12 +14,13 @@
 @inject UserPreferenceService Prefs
 @inject SavedViewService SavedViews
 @inject PrerenderHandoff Handoff
+@inject IJSRuntime JS
 
 <PageTitle>Actions · TIDE</PageTitle>
 
 <div class="tide-page-head">
     <div>
-        <h1>Actions</h1>
+        <h1 @ref="_heading" tabindex="-1">Actions</h1>
     </div>
     <div class="d-flex gap-2">
         <a class="btn btn-outline-secondary" href="workload"><span class="bi bi-people" aria-hidden="true"></span> Workload</a>
@@ -36,8 +37,10 @@
 </div>
 
 <div class="d-flex flex-wrap align-items-end gap-2">
-    <TabBar Label="Views" Items="@(Views.Where(v => !_asBoard || OnBoard(v.Item1)).Select(v => new TabBarItem(v.Item2, "", Key: v.Item1.ToString())).ToList())"
-            Active="@_view.ToString()" OnSelect="k => SetView(Enum.Parse<ActionView>(k!))" />
+    @* Each tab says how many it shows under the filters set (one grouped count, ActionService.ViewCountsAsync); on the
+       board, its open ones. *@
+    <TabBar Label="Views" Items="@(Views.Where(v => !_asBoard || OnBoard(v.Item1)).Select(v => new TabBarItem(v.Item2, "", Key: v.Item1.ToString(), Count: _counts?.For(v.Item1))).ToList())"
+            Active="@_view.ToString()" OnSelect="k => SetView(Enum.Parse<ActionView>(k!))" Class="tide-actions-views" />
     @if (DefaultFor(_view) is { } shown)
     {
         @* The tab this page opens on when a link doesn't say: the person's own, set here. *@
@@ -105,6 +108,16 @@
     </ChildContent>
 </FilterBar>
 
+@if (UnownedInMyTeams is { } unowned)
+{
+    @* Mine is empty, but work in the person's teams has nobody: say so, with the way to it. *@
+    <p class="tide-actions-unowned" id="mine-unowned">
+        <span class="bi bi-person-dash" aria-hidden="true"></span>
+        Nothing open is assigned to you. Your teams have @unowned action@(unowned == 1 ? "" : "s") with no owner.
+        <a href="@NoOwnerLink" @onclick="ShowThemClicked">Show them</a>
+    </p>
+}
+
 @if (_asBoard)
 {
     @if (_board is null)
@@ -120,8 +133,9 @@ else
 {
 <div class="tide-card">
     @* The server filters, sorts, groups and pages the list, 50 rows a page; the page is ?page=, its pager links. *@
-    <ActionTable PageInAddress="true" ServerSide="true" Total="_total" GroupTotals="_groups" PageSize="ActionService.ListPageSize" OnQuery="Query" Filtered="Filtered"
-                 Rows="@(_loading ? null : _rows)" Today="ActionSvc.Today" Live="_marks" Rules="_rules" Filter="@_search" GroupByKind="_groupByKind" GroupByUrgency="ByUrgency"
+    <ActionTable @ref="_table" PageInAddress="true" ServerSide="true" Total="_total" GroupTotals="_groups" PageSize="ActionService.ListPageSize" OnQuery="Query" Filtered="AnyFilter"
+                 Rows="@(_loading ? null : _rows)" Today="ActionSvc.Today" Live="_marks" Rules="_rules" Filter="@Words" GroupByKind="_groupByKind" GroupByUrgency="ByUrgency"
+                 CanTake="_workers.CanTake" OnTake="Take" Busy="_taking"
                  DefaultSort="@DefaultSort(_view)" Caption="@(ViewName + (_view == ActionView.Closed ? ", most recently closed first" : ByUrgency ? ", grouped by when they're due" : ""))">
         <Empty><EmptyState Icon="@(_view == ActionView.Overdue ? "bi-check2-circle" : "bi-list-check")" Title="@Empty" /></Empty>
     </ActionTable>
@@ -271,6 +285,10 @@ else
     private bool _raised;   // only the ones this person raised
     private IReadOnlyList<ActionHolder> _holders = [];
     private string? _search;
+
+    // The words searched for: none for an empty box or spaces (_search is the box as typed, so it isn't trimmed under the
+    // cursor). What filters, what the address says and what counts as a filter all read this.
+    private string? Words => string.IsNullOrWhiteSpace(_search) ? null : _search.Trim();
     private IReadOnlyList<Priority> _priorities = [];
     private ActionDue? _due;
     private ActionStatus? _status;
@@ -291,11 +309,8 @@ else
     private readonly TypingPause _typing = new(300);
 
     // The filters besides the card rule and the bar's Team, Kind and Held by.
-    private bool Narrowed => _search is not null || _priorities.Count > 0 || _due is not null || _status is not null || _parentNumber is not null
+    private bool Narrowed => Words is not null || _priorities.Count > 0 || _due is not null || _status is not null || _parentNumber is not null
         || _side is not null || _raised;
-
-    // What the list's own empty state counts as filtered.
-    private bool Filtered => Narrowed || _ruleId is not null;
 
     // Every filter but the card rule, which the empty message counts only off the board. AnyFilter is these or the rule.
     private bool FilteredBesidesRule => Narrowed || _teamId is not null || _kind is not null || _assignee is not null;
@@ -403,6 +418,7 @@ else
         var quiet = _adopted;
         _adopted = false;
         if (await Read(quiet)) PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
+        FocusIfArrived();
     }
 
     private static ActionDue? DueFrom(string? text) => text?.Trim().ToLowerInvariant() switch
@@ -429,7 +445,7 @@ else
         (_search, _kind, _priorities, _due, _status) = (p._search, p._kind, p._priorities, p._due, p._status);
         (_parentNumber, _active, _side, _raised, _holders) = (p._parentNumber, p._active, p._side, p._raised, p._holders);
         (_total, _page, _groups, _sort, _ruleCounts) = (p._total, p._page, p._groups, p._sort, p._ruleCounts);
-        (_saved, _loading, _adopted) = (p._saved, false, true);
+        (_saved, _loading, _adopted, _counts, _workers) = (p._saved, false, true, p._counts, p._workers);
     }
 
     // The priorities in the address ("p1,p2"), each once, in order; a name that isn't one is dropped.
@@ -457,6 +473,8 @@ else
         new("blocked", "Blocked", "status", [nameof(ActionStatus.Blocked)]),
         new("tracking", "Tracking", "status", [nameof(ActionStatus.Tracking)]) { Title = "Handed to others and followed until it's done" },
         new("raised", "Raised by me", "raised", [Me]) { Title = "The actions you raised, wherever they are now: what you asked others for" },
+        // Held by: nobody, as a pill. From Mine (the person's own) it shows their teams' instead (Refilter).
+        new("noowner", "No owner", "assignee", [ActionFilter.Unassigned]) { Title = "Open work nobody has taken on yet" },
     ];
 
     // raised=me: the only value the Raised by filter takes.
@@ -531,7 +549,7 @@ else
         }
     }
 
-    // Clear shows while anything narrows the list: a pill, a filter, the words.
+    // Clear shows while anything narrows the list: a pill, a filter, the words. The list's count then says "matching".
     private bool AnyFilter => FilteredBesidesRule || _ruleId is not null;
 
     // Clear: every filter and the words; the view, layout and grouping stay.
@@ -542,9 +560,11 @@ else
         return Refilter();
     }
 
-    // A filter changed (the bar, Clear, the words): read from the list's first page, and the address says so.
+    // A filter changed (the bar, Clear, the words): read from the list's first page, and the address says so. Nobody's
+    // actions are never Mine: No owner chosen on Mine shows the person's teams' work nobody has.
     internal async Task Refilter()
     {
+        if (_view == ActionView.Mine && _assignee == ActionFilter.Unassigned) (_view, _sort) = (ActionView.MyTeams, DefaultSort(ActionView.MyTeams));
         _page = 1;
         await Load();
         Remember();
@@ -569,8 +589,24 @@ else
         await Load();
     }
 
-    protected override void OnAfterRender(bool firstRender)
+    // The view whose tab was last brought into view (the tab row scrolls sideways inside itself when it doesn't fit).
+    private ActionView? _revealed;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_revealed != _view)
+        {
+            _revealed = _view;
+            try { await JS.InvokeVoidAsync("tideTabs.revealCurrent"); }
+            catch (JSDisconnectedException) { /* the tab has gone */ }
+            catch (JSException) { /* an older tabs.js still cached: the row just doesn't scroll to it */ }
+        }
+        if (_refocus && !_loading)
+        {
+            var row = FocusRow;
+            _refocus = false;
+            if (row is null || _table is null || !await _table.FocusRowAsync(row.Id)) await _heading.TryFocusAsync(orGone: true);
+        }
         if (!_sayLayout) return;
         _sayLayout = false;
         // Only the layout is added (the team, holder and the rest stay as they were), and recorded first so it isn't re-read.
@@ -597,7 +633,7 @@ else
     private void Remember()
     {
         var shown = ShownParameters();
-        _applied = new Address(Text("view"), _teamId, _assignee, Text("layout"), _ruleId, Text("group"), _search, Text("kind"), Text("priority"), Text("due"),
+        _applied = new Address(Text("view"), _teamId, _assignee, Text("layout"), _ruleId, Text("group"), Words, Text("kind"), Text("priority"), Text("due"),
             Text("status"), Text("page"), _parentNumber, Text("teams"), Text("raised"));
         Nav.NavigateTo(Nav.GetUriWithQueryParameters("actions", shown), replace: true);
 
@@ -617,7 +653,7 @@ else
         return new()
         {
             ["view"] = view, ["layout"] = layout, ["group"] = group, ["rule"] = _ruleId, ["team"] = _teamId, ["assignee"] = _assignee,
-            ["q"] = _search, ["kind"] = kind, ["priority"] = priority, ["due"] = DueKey(_due), ["status"] = status, ["page"] = page, ["parent"] = _parentNumber,
+            ["q"] = Words, ["kind"] = kind, ["priority"] = priority, ["due"] = DueKey(_due), ["status"] = status, ["page"] = page, ["parent"] = _parentNumber,
             ["teams"] = teams, ["raised"] = raised,
         };
     }
@@ -635,7 +671,10 @@ else
 
     /// <summary>The query a view of what's shown keeps (what the address says, but never the list's page), in the order a
     /// stored one has; null when it's more than a view can hold (a link's very long search).</summary>
-    internal string? ShownQuery() => SavedViewService.TryNormalize(string.Join('&', ShownParameters()
+    internal string? ShownQuery() => QueryOf(ShownParameters());
+
+    // These parameters as a view keeps them (SavedViewService's order, no blanks); null when too long for one.
+    private static string? QueryOf(Dictionary<string, object?> parameters) => SavedViewService.TryNormalize(string.Join('&', parameters
         .Select(p => p.Key + "=" + Uri.EscapeDataString(Convert.ToString(p.Value, System.Globalization.CultureInfo.InvariantCulture)!))));
 
     /// <summary>The saved view that is what's shown, if one is: the first, when two keep the same filters.</summary>
@@ -712,6 +751,83 @@ else
 
     private ConfirmDialog _confirm = default!;
 
+    // --- Counts, No owner and Take it ---------------------------------------------------------------------------------
+
+    // How many each tab shows (read with the list or board), and which teams' actions this person works (the list's Take it).
+    private ActionViewCounts? _counts;
+    private ActionWorkers _workers = ActionWorkers.None;
+    private bool _taking;
+
+    internal IReadOnlyList<ActionRow> Rows => _rows;
+    internal ActionViewCounts? Counts => _counts;
+
+    // Once the list is drawn again, focus goes to a row (_focusId's, or else the first), or with none, to the heading: the
+    // person keeps their place.
+    private bool _refocus;
+    private Guid? _focusId;
+    private ActionTable? _table;
+    private ElementReference _heading;
+
+    private ActionRow? FocusRow => _rows.FirstOrDefault(r => r.Id == _focusId) ?? _rows.FirstOrDefault();
+
+    /// <summary>Where focus is going next ("A-12", or "heading"), until it has gone there.</summary>
+    internal string? Focusing => !_refocus ? null : FocusRow is { } row ? Ui.ActionLabel(row.Number) : "heading";
+
+    // "Show them" on an empty Mine is a link the browser follows as it would any other: Ctrl, Cmd or Shift+click and the
+    // middle button open it elsewhere and leave this page alone. A plain click or Enter brings the list here, and focus
+    // goes to its first row once it has arrived (the click and the new address reach the page in either order).
+    private bool _focusOnArrival;
+
+    internal void ShowThemClicked(MouseEventArgs e)
+    {
+        if (e.Button != 0 || e.CtrlKey || e.MetaKey || e.ShiftKey || e.AltKey) return;
+        _focusOnArrival = true;
+        FocusIfArrived();
+    }
+
+    // Once My teams with No owner is shown after a plain click on Show them, focus goes to its first row.
+    private void FocusIfArrived()
+    {
+        if (_focusOnArrival && _view == ActionView.MyTeams && _assignee == ActionFilter.Unassigned) (_focusOnArrival, _refocus, _focusId) = (false, true, null);
+    }
+
+    // On an empty Mine: how many open actions of the person's teams have nobody, when there are any.
+    private int? UnownedInMyTeams => _view == ActionView.Mine && _counts is { MineOpen: 0, MyTeamsUnowned: > 0 and var n } ? n : null;
+
+    // Those actions: My teams with No owner, the other filters as they are.
+    private string NoOwnerLink
+    {
+        get
+        {
+            var shown = ShownParameters();
+            (shown["view"], shown["assignee"], shown["page"]) = (ActionView.MyTeams.ToString().ToLowerInvariant(), ActionFilter.Unassigned, null);
+            return "actions?" + (QueryOf(shown) ?? "view=myteams&assignee=none");
+        }
+    }
+
+    // Take it on a row: the action is this person's, through the same checked and recorded take as its page's; refused
+    // when someone took it since the list was read. The list is read again either way.
+    internal async Task Take(ActionRow row)
+    {
+        if (_taking) return;
+        _taking = true;
+        try
+        {
+            await ActionSvc.TakeAsync(row.Id, onlyIfNobodys: true);
+            Toasts.Show($"You took {Ui.ActionLabel(row.Number)} on.");
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _taking = false; }
+        var was = _rows;
+        await Read(quiet: true);
+        // Focus stays on the row, or when it has left the list (No owner), goes to the next row, else the one before,
+        // else the heading.
+        var at = was.ToList().FindIndex(r => r.Id == row.Id);
+        bool Still(ActionRow r) => _rows.Any(x => x.Id == r.Id);
+        var next = was.Skip(at).FirstOrDefault(Still) ?? was.Take(at).LastOrDefault(Still);
+        (_refocus, _focusId) = (true, next?.Id);
+    }
+
     // A new sort from the list's headings, or "Clear the filter" from its empty state: from the first page.
     private async Task Query(TableQuery q)
     {
@@ -733,7 +849,7 @@ else
 
     private ActionFilter Filter() => new ActionFilter(_view, _teamId, _kind, AssigneeId: _assignee)
     {
-        Search = _search, Priorities = _priorities, Due = _due, Status = _status, ParentNumber = _parentNumber, Teams = _side, RaisedByMe = _raised,
+        Search = Words, Priorities = _priorities, Due = _due, Status = _status, ParentNumber = _parentNumber, Teams = _side, RaisedByMe = _raised,
     };
 
     private ActionSort SortOf(TableSort? sort) => sort?.Key switch
@@ -751,21 +867,22 @@ else
     private async Task Fetch()
     {
         var filter = Filter();
-        // The team's count against its limit is read alongside, on its own context.
+        // The team's count against its limit and the tabs' counts are read alongside, each on its own context.
         var active = _teamId is { } team ? ActionSvc.TeamActiveAsync(team) : Task.FromResult<TeamActive?>(null);
+        var counts = ActionSvc.ViewCountsAsync(filter, _rules.FirstOrDefault(r => r.Id == _ruleId), _asBoard ? _closedDays : null);
         if (_asBoard)
         {
             var board = ActionSvc.BoardAsync(filter, _closedDays);
-            await Task.WhenAll(active, board);
-            (_board, _active) = (board.Result, active.Result);
+            await Task.WhenAll(active, board, counts);
+            (_board, _active, _counts) = (board.Result, active.Result, counts.Result);
             _ruleCounts = _rules.Where(r => r.ShowAsFilter).ToDictionary(r => r.Id, r => _board.Cards.Count(c => ActionRules.Matches(r, c, ActionSvc.Today, ActionSvc.Days)));
             return;
         }
         var grouping = _groupByKind ? ActionGrouping.Kind : ByUrgency ? ActionGrouping.Urgency : ActionGrouping.None;
         var read = ActionSvc.PageAsync(filter with { RuleId = _ruleId }, SortOf(_sort), _sort?.Descending ?? false, grouping, _page);
-        await Task.WhenAll(active, read);
+        await Task.WhenAll(active, read, counts);
         var page = read.Result;
-        _active = active.Result;
+        (_active, _counts, _workers) = (active.Result, counts.Result, page.Workers);
         // A page past the end (an old link, or the list shrank) shows the last one; the pager says which, and so does the
         // address (in place, recorded first so it isn't read again; a prerender can't move it, and the live page does).
         var asked = _page;

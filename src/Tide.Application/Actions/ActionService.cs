@@ -63,8 +63,11 @@ public sealed record ActionRow(Guid Id, int Number, string Title, ActionKind Kin
     Guid? ArticleId, string? ArticleTitle, Guid? ParentId, int Children, DateTimeOffset CreatedAtUtc,
     int? ParentNumber = null, string? PlaybookName = null, int ChecklistDone = 0, int ChecklistTotal = 0, DateOnly? RaisedOn = null,
     int Files = 0, bool TeamExternal = false, Guid? HandedFromTeamId = null, int ChildrenClosed = 0, int ChildrenOverdue = 0,
-    DateOnly? ChildrenNextDue = null, DateOnly? EscalatedForDue = null, DateTimeOffset? EscalatedAtUtc = null)
+    DateOnly? ChildrenNextDue = null, DateOnly? EscalatedForDue = null, DateTimeOffset? EscalatedAtUtc = null,
+    bool ArticleKev = false, DateTimeOffset? InStatusSinceUtc = null)
 {
+    // The board fills ArticleKev (its article names a CVE on CISA's KEV list). InStatusSinceUtc is when it moved to the
+    // status it's in (ActionItem.StatusChangedAtUtc).
     public SlaState Sla(DateOnly today, WorkingDays? workingDays = null) => ActionSla.StateOf(Status, DueDate, ClosedDate, today, workingDays);
     public ActionUrgency Urgency(DateOnly today, WorkingDays? workingDays = null) => ActionSla.UrgencyOf(Status, DueDate, today, workingDays);
     public bool IsOpen => !ActionItem.IsClosedStatus(Status);
@@ -80,6 +83,10 @@ public sealed record ActionRow(Guid Id, int Number, string Title, ActionKind Kin
 
     /// <summary>How many of its parts are still open.</summary>
     public int ChildrenOpen => Children - ChildrenClosed;
+
+    /// <summary>Whether someone who <paramref name="canWork"/> it may take it on from a list: nobody has it, and taking
+    /// is allowed (<see cref="ActionGuide.CanTake"/>, the action page's rule).</summary>
+    public bool TakeableBy(bool canWork) => AssigneeId is null && ActionGuide.CanTake(new ActionFacts(Status, Kind, canWork, Assigned: false, TeamExternal));
 }
 
 /// <summary>A deleted action on the administrators' list: who deleted it, when and why, and whether its parent is deleted
@@ -205,8 +212,41 @@ public enum ActionGrouping
 }
 
 /// <summary>A page of the actions list: its rows, how many match in all, which page it is (the last, when the one asked
-/// for is past the end), and how many matching actions each group holds (named as its heading is) when grouped.</summary>
-public sealed record ActionListPage(IReadOnlyList<ActionRow> Rows, int Total, int Page, IReadOnlyDictionary<string, int> Groups);
+/// for is past the end), and how many matching actions each group holds (named as its heading is) when grouped.
+/// <see cref="Workers"/> says which rows the reader may work, so the list offers Take it where taking is allowed.</summary>
+public sealed record ActionListPage(IReadOnlyList<ActionRow> Rows, int Total, int Page, IReadOnlyDictionary<string, int> Groups)
+{
+    public ActionWorkers Workers { get; init; } = ActionWorkers.None;
+}
+
+/// <summary>Which teams' actions the reader works: all of them (an analyst), or the teams they're on with WorkActions
+/// (ActionService.CanWork's rule, read once for a whole list or board).</summary>
+public sealed record ActionWorkers(bool All, IReadOnlySet<Guid> Teams)
+{
+    public static readonly ActionWorkers None = new(false, new HashSet<Guid>());
+
+    public bool CanWork(Guid teamId) => All || Teams.Contains(teamId);
+
+    /// <summary>Whether the reader may take this row on (<see cref="ActionRow.TakeableBy"/>).</summary>
+    public bool CanTake(ActionRow row) => row.TakeableBy(CanWork(row.TeamId));
+}
+
+/// <summary>
+/// How many actions each view tab shows under the same filters (Mine lets go of Held by, as choosing it does): the list's
+/// open actions, or on the board its cards, Closed lane included. And for an empty Mine to point at, how many open actions
+/// are the reader's (<see cref="MineOpen"/>) and how many of the reader's teams' nobody has (<see cref="MyTeamsUnowned"/>).
+/// </summary>
+public sealed record ActionViewCounts(int Mine, int MyTeams, int Open, int Overdue, int Closed, int MyTeamsUnowned, int MineOpen)
+{
+    public int For(ActionView view) => view switch
+    {
+        ActionView.Mine => Mine,
+        ActionView.MyTeams => MyTeams,
+        ActionView.Overdue => Overdue,
+        ActionView.Closed => Closed,
+        _ => Open,
+    };
+}
 
 /// <summary>
 /// The actions board: open actions and those closed in the last <see cref="ClosedDays"/> days, a column per status, and
@@ -319,7 +359,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var q = Narrow(db, db.Actions.AsNoTracking(), filter);
         if (filter.View == ActionView.Closed)
         {
-            var since = DateTimeOffset.UtcNow.AddDays(-90);
+            var since = DateTimeOffset.UtcNow.AddDays(-ClosedListDays);
             q = q.Where(a => a.ClosedAtUtc != null && a.ClosedAtUtc >= since);
         }
         else q = q.WhereOpen();
@@ -328,6 +368,9 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             ? rows.OrderByDescending(r => r.ClosedDate).ThenByDescending(r => r.Number).ToList()
             : rows.OrderBy(r => r.DueDate ?? DateOnly.MaxValue).ThenBy(r => r.Priority).ThenBy(r => r.Number).ToList();
     }
+
+    /// <summary>How far back the Recently closed view reaches.</summary>
+    public const int ClosedListDays = 90;
 
     /// <summary>Rows on a page of the actions list.</summary>
     public const int ListPageSize = 50;
@@ -356,7 +399,68 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             _ => new Dictionary<string, int>(),
         };
         var rows = await RowsAsync(db, Ordered(q, sort, descending, group, urgency).Skip((page - 1) * size).Take(size), ct);
-        return new ActionListPage(rows, total, page, groups);
+        return new ActionListPage(Readable(rows), total, page, groups) { Workers = await WorkersAsync(db, ct) };
+    }
+
+    // Which teams' actions the reader works (CanWork's rule, for every row at once): all for an analyst, none without
+    // WorkActions, otherwise the teams they're on.
+    private async Task<ActionWorkers> WorkersAsync(IAppDbContext db, CancellationToken ct)
+    {
+        if (user.Has(Permission.WriteArticles)) return new ActionWorkers(true, new HashSet<Guid>());
+        if (!user.Has(Permission.WorkActions)) return ActionWorkers.None;
+        return new ActionWorkers(false, (await db.TeamMembers.AsNoTracking().Where(m => m.UserId == user.UserId).Select(m => m.TeamId).ToListAsync(ct)).ToHashSet());
+    }
+
+    // An article's title (and what's read from it) is shown only to someone who may open the article: whoever reads the
+    // team edition, as the article pages require. Someone who only works actions sees the action without it.
+    private List<ActionRow> Readable(List<ActionRow> rows) =>
+        user.Has(Permission.ReadTeamEdition) ? rows : [.. rows.Select(r => r with { ArticleTitle = null })];
+
+    /// <summary>
+    /// How many actions each view tab shows under <paramref name="filter"/>'s other filters (and the card
+    /// <paramref name="rule"/> chosen as one, already read), in one grouped query: each count is the total that tab's
+    /// <see cref="PageAsync"/> would give, or with <paramref name="closedDays"/>, the cards its <see cref="BoardAsync"/>
+    /// would draw, those closed in that many days included. Mine lets go of Held by, as choosing the tab does.
+    /// </summary>
+    public async Task<ActionViewCounts> ViewCountsAsync(ActionFilter filter, ActionCardRule? rule = null, int? closedDays = null, CancellationToken ct = default)
+    {
+        RequireRead(user);
+        await using var db = await dbs.CreateAsync(ct);
+        var (me, held, today) = (user.UserId, filter.AssigneeId, clock.Today);
+        var closedSince = DateTimeOffset.UtcNow.AddDays(-ClosedListDays);
+        // The board's Closed lane (BoardAsync's window); the list has none. Within the closed list's 90 days, as the board's
+        // longest reach (BoardOlderDays) is.
+        var boardSince = closedDays is { } days ? BoardClosedSince(days) : DateTimeOffset.MaxValue;
+        var q = Narrow(db, db.Actions.AsNoTracking(), filter with { View = ActionView.Open, AssigneeId = null });
+        if (rule is not null) q = WhereRule(q, rule);
+        var open = ActionItem.OpenStatuses;
+        // Each action once, with whether it's on one of the reader's teams (a membership is one row per team and person).
+        var rows = from a in q.WhereOpenOrClosedSinceUtc(closedSince)
+                   join m in db.TeamMembers.Where(m => m.UserId == me) on a.TeamId equals m.TeamId into ms
+                   from m in ms.DefaultIfEmpty()
+                   select new
+                   {
+                       Open = open.Contains(a.Status),
+                       // On the board: a card, open or in its Closed lane (BoardAsync's WhereOpenOrClosedSinceUtc).
+                       Shown = open.Contains(a.Status) || a.ClosedAtUtc >= boardSince,
+                       Closed = a.ClosedAtUtc != null && a.ClosedAtUtc >= closedSince,
+                       Mine = a.AssigneeId == me,
+                       Nobodys = a.AssigneeId == null,
+                       Held = held == null || (held == ActionFilter.Unassigned ? a.AssigneeId == null : a.AssigneeId == held),
+                       Team = m != null,
+                       Late = a.DueDate != null && a.DueDate < today,
+                   };
+        var c = await rows.GroupBy(_ => 1).Select(g => new
+        {
+            Mine = g.Count(x => x.Shown && x.Mine),
+            MyTeams = g.Count(x => x.Shown && x.Team && x.Held),
+            Open = g.Count(x => x.Shown && x.Held),
+            Overdue = g.Count(x => x.Open && x.Late && x.Held),
+            Closed = g.Count(x => x.Closed && x.Held),
+            Unowned = g.Count(x => x.Open && x.Team && x.Nobodys),
+            MineOpen = g.Count(x => x.Open && x.Mine),
+        }).FirstOrDefaultAsync(ct);
+        return c is null ? new(0, 0, 0, 0, 0, 0, 0) : new(c.Mine, c.MyTeams, c.Open, c.Overdue, c.Closed, c.Unowned, c.MineOpen);
     }
 
     /// <summary>How many of the list's actions for <paramref name="filter"/> each rule matches (its own rule left out): the
@@ -377,7 +481,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var q = Narrow(db, db.Actions.AsNoTracking(), filter);
         if (filter.View == ActionView.Closed)
         {
-            var since = DateTimeOffset.UtcNow.AddDays(-90);
+            var since = DateTimeOffset.UtcNow.AddDays(-ClosedListDays);
             q = q.Where(a => a.ClosedAtUtc != null && a.ClosedAtUtc >= since);
         }
         else q = q.WhereOpen();
@@ -472,17 +576,33 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (filter.View is ActionView.Overdue or ActionView.Closed) filter = filter with { View = ActionView.Open };
         closedDays = Math.Clamp(closedDays, 1, BoardOlderDays);
         await using var db = await dbs.CreateAsync(ct);
-        var since = DateTimeOffset.UtcNow.AddDays(-closedDays);
+        var since = BoardClosedSince(closedDays);
         var q = Narrow(db, db.Actions.AsNoTracking(), filter).WhereOpenOrClosedSinceUtc(since);
-        var rows = await RowsAsync(db, q, ct);
+        var rows = await CardsAsync(db, q, ct);
         // Open columns by due date then priority; closed ones most recently closed first.
         var cards = rows.Where(r => r.IsOpen).OrderBy(r => r.DueDate ?? DateOnly.MaxValue).ThenBy(r => r.Priority).ThenBy(r => r.Number)
             .Concat(rows.Where(r => !r.IsOpen).OrderByDescending(r => r.ClosedDate).ThenByDescending(r => r.Number)).ToList();
-        var all = user.Has(Permission.WriteArticles);
-        var teams = all || !user.Has(Permission.WorkActions)
-            ? []
-            : (await db.TeamMembers.AsNoTracking().Where(m => m.UserId == user.UserId).Select(m => m.TeamId).ToListAsync(ct)).ToHashSet();
-        return new ActionBoard(cards, all, teams) { ClosedDays = closedDays };
+        var workers = await WorkersAsync(db, ct);
+        return new ActionBoard(cards, workers.All, workers.Teams) { ClosedDays = closedDays };
+    }
+
+    // How far back the board's Closed lane reaches: the last closedDays days, a day to BoardOlderDays.
+    private static DateTimeOffset BoardClosedSince(int closedDays) => DateTimeOffset.UtcNow.AddDays(-Math.Clamp(closedDays, 1, BoardOlderDays));
+
+    // The board's cards: the rows, with whether each one's article names a CVE on CISA's KEV list, in one read for all the
+    // cards, on the cards' own query (so no list of ids is sent).
+    private async Task<List<ActionRow>> CardsAsync(IAppDbContext db, IQueryable<ActionItem> q, CancellationToken ct)
+    {
+        var rows = Readable(await RowsAsync(db, q, ct));
+        if (rows.Count == 0) return rows;
+        var kev = new HashSet<Guid>();
+        if (user.Has(Permission.ReadTeamEdition) && rows.Any(r => r.ArticleId is not null))
+        {
+            var articles = q.Where(a => a.ArticleId != null).Select(a => a.ArticleId!.Value);
+            kev = (await db.ArticleCves.AsNoTracking().Where(c => articles.Contains(c.ArticleId))
+                .Where(c => db.CveRecords.Any(r => r.CveId == c.CveId && r.IsKev)).Select(c => c.ArticleId).Distinct().ToListAsync(ct)).ToHashSet();
+        }
+        return kev.Count == 0 ? rows : [.. rows.Select(r => r.ArticleId is { } article && kev.Contains(article) ? r with { ArticleKev = true } : r)];
     }
 
     // The holder, team, kind, article, assignee, words, priority, due date and status parts of a filter; the caller says
@@ -726,7 +846,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         db.Actions.Where(p => p.Id == a.ParentId).Select(p => (int?)p.Number).FirstOrDefault(), a.PlaybookName,
         a.Checklist.Count(i => i.IsDone), a.Checklist.Count, a.RaisedOn,
         a.Files.Count(f => f.RemovedAtUtc == null) + a.Comments.SelectMany(c => c.Files).Count(f => f.RemovedAtUtc == null),
-        a.Team!.IsExternal, a.HandedFromTeamId, 0, 0, null, a.EscalatedForDue, a.EscalatedAtUtc));
+        a.Team!.IsExternal, a.HandedFromTeamId, 0, 0, null, a.EscalatedForDue, a.EscalatedAtUtc, false, a.StatusChangedAtUtc));
 
     // The rows, and each parent's rollup ("3 of 5 done · 1 overdue · next due Nov 20") from one grouped read of their parts.
     private async Task<List<ActionRow>> RowsAsync(IAppDbContext db, IQueryable<ActionItem> q, CancellationToken ct)
@@ -1158,11 +1278,15 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         }
     }
 
-    /// <summary>Takes the action on (assigns it to me), starting it if it was open.</summary>
-    public async Task TakeAsync(Guid id, CancellationToken ct = default)
+    /// <summary>Takes the action on (assigns it to me), starting it if it was open. From a list that showed it as nobody's
+    /// (<paramref name="onlyIfNobodys"/>), it's refused as stale when someone else has taken it since.</summary>
+    public async Task TakeAsync(Guid id, bool onlyIfNobodys = false, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
         var a = await WorkableAsync(db, id, ct);
+        // Taken from a list that showed it as nobody's: someone who took it meanwhile keeps it.
+        if (onlyIfNobodys && a.AssigneeId is not null && a.AssigneeId != user.UserId)
+            throw new StaleEditException($"{a.AssigneeName ?? "Someone"} took A-{a.Number} on in the meantime.");
         a.AssigneeId = user.UserId;
         a.AssigneeName = user.DisplayName;
         var started = a.Status == ActionStatus.Open;
@@ -1364,7 +1488,8 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             a.OutcomeNote = cleanNote;
             if (!ActionItem.IsClosedStatus(was))
             {
-                a.ClosedAtUtc = DateTimeOffset.UtcNow;
+                // The same moment the status setter just recorded: closed, and in its Closed lane, at one time.
+                a.ClosedAtUtc = a.StatusChangedAtUtc;
                 a.ClosedDate = clock.Today;
             }
         }

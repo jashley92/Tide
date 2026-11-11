@@ -325,13 +325,14 @@ public static class DemoSeeder
                     var due = clock.Days.Next(clock.Days.Next(day));
                     var closed = _rng.NextDouble() < 0.8 ? due : clock.Days.Next(clock.Days.Next(due));
                     var owner = people[_rng.Next(people.Length)];
+                    var closedAt = clock.MeetingStart(closed).ToUniversalTime().AddHours(4);
                     db.Actions.Add(new ActionItem
                     {
                         Number = ++number, Title = "Check exposure: " + title.ToLowerInvariant(), Kind = (ActionKind)_rng.Next(0, 5),
                         Priority = article.Priority ?? Priority.P3, TeamId = teamList[_rng.Next(teamList.Count)].Id, ArticleId = article.Id,
                         AssigneeId = owner.Item1, AssigneeName = owner.Item2, RaisedOn = day, DueDate = due,
                         Status = ActionStatus.Done, Outcome = ActionOutcome.None, ClosedDate = closed,
-                        ClosedAtUtc = clock.MeetingStart(closed).ToUniversalTime().AddHours(4),
+                        ClosedAtUtc = closedAt, StatusChangedAtUtc = closedAt,
                     });
                 }
                 db.Briefs.Add(brief);
@@ -413,29 +414,34 @@ public static class DemoSeeder
             var (rmm, token, helpdesk) = (sent[0], sent[1], sent[3]);
             var day = Sent;
             DateOnly Bd(int n) { var d = _today; for (var i = 0; i < Math.Abs(n); i++) d = n > 0 ? clock.Days.Next(d) : clock.Days.Previous(d); return d; }
+            // Each in its status since it was raised at that day's meeting, unless a later move is given (a seeded action is made
+            // now with its past written in, so the time the Status setter gives it isn't its own).
+            var meeting = clock.MeetingStart(day).ToUniversalTime();
             ActionItem Add(string title, ActionKind kind, Priority p, string team, Article? article, (string Id, string Name)? who, DateOnly due,
-                ActionStatus status, string? description = null)
+                ActionStatus status, string? description = null, DateTimeOffset? movedAt = null)
             {
                 var a = new ActionItem
                 {
                     Number = ++number, Title = title, Kind = kind, Priority = p, TeamId = teams[team].Id, ArticleId = article?.Id,
                     AssigneeId = who?.Id, AssigneeName = who?.Name, RaisedOn = day, DueDate = due, Status = status, Description = description,
                 };
+                a.StatusChangedAtUtc = movedAt ?? meeting;
                 db.Actions.Add(a);
                 return a;
             }
             var robin = Analysts[0];
             var sam = Analysts[1];
             var me = (dev.UserId, dev.DisplayName);
+            var raised = DateTimeOffset.UtcNow.AddHours(-20);
             var detail = Add("Block the remote monitoring relay and alert on unapproved agents", ActionKind.Block, Priority.P2, "cyber-defense", rmm, robin,
                 Bd(1), ActionStatus.InProgress,
-                "Block **rmm-relay.example.org** at the proxy and add a detection for remote monitoring agents other than the two we approve.");
+                "Block **rmm-relay.example.org** at the proxy and add a detection for remote monitoring agents other than the two we approve.",
+                movedAt: raised.AddHours(17));
             detail.Checklist.AddRange([
                 new ActionChecklistItem { SortOrder = 0, Text = "Block the relay domain at the proxy", IsDone = true, DoneByName = robin.Name, DoneAtUtc = DateTimeOffset.UtcNow.AddHours(-3) },
                 new ActionChecklistItem { SortOrder = 1, Text = "Add the detection rule for unapproved agents" },
                 new ActionChecklistItem { SortOrder = 2, Text = "Confirm no hits in the last 30 days of proxy logs" },
             ]);
-            var raised = DateTimeOffset.UtcNow.AddHours(-20);
             detail.Events.AddRange([
                 new ActionEvent { AtUtc = raised, ByName = robin.Name, Text = "Raised from the brief." },
                 new ActionEvent { AtUtc = raised.AddMinutes(5), ByName = robin.Name, Text = "Took the action." },
@@ -449,7 +455,11 @@ public static class DemoSeeder
             Add("Rotate integration tokens for the cloud storage tenants", ActionKind.ConfigChange, Priority.P3, "identity-access", token, sam, Bd(3), ActionStatus.Open);
             Add("Require call-back verification before MFA resets", ActionKind.ConfigChange, Priority.P2, "identity-access", helpdesk, null, Bd(2), ActionStatus.Open);
             Add("Brief the service desk on MFA reset pretexting", ActionKind.Awareness, Priority.P3, "fraud-operations", helpdesk, me, Bd(-1), ActionStatus.Open);
-            Add("Confirm the vendor's patch window for the file transfer server", ActionKind.PatchRemediate, Priority.P2, "vulnerability-management", null, sam, Bd(-2), ActionStatus.Blocked);
+            // Blocked three days ago: the board says how long it has waited there.
+            var blockedAt = DateTimeOffset.UtcNow.AddDays(-3);
+            var blocked = Add("Confirm the vendor's patch window for the file transfer server", ActionKind.PatchRemediate, Priority.P2, "vulnerability-management", null, sam, Bd(-2), ActionStatus.Blocked,
+                movedAt: blockedAt);
+            blocked.Events.Add(new ActionEvent { AtUtc = blockedAt, ByName = sam.Name, Text = "Status: Open → Blocked: waiting on the vendor's window." });
             Add("Hunt for unapproved remote monitoring agents on servers", ActionKind.ThreatHunt, Priority.P2, "cyber-defense", rmm, me, Bd(2), ActionStatus.Open);
             return detail.Number;
         }
@@ -492,7 +502,8 @@ public static class DemoSeeder
                     Number = ++number, Title = title, Kind = kind, Priority = p, TeamId = teams["identity-access"].Id, ArticleId = article.Id,
                     AssigneeId = who?.Id, AssigneeName = who?.Name, RaisedOn = day, DueDate = due,
                 };
-                a.Events.Add(new ActionEvent { AtUtc = held.AddMinutes(10), ByName = sam.Name, Text = "Raised from the brief." });
+                a.StatusChangedAtUtc = held.AddMinutes(10);
+                a.Events.Add(new ActionEvent { AtUtc = a.StatusChangedAtUtc.Value, ByName = sam.Name, Text = "Raised from the brief." });
                 db.Actions.Add(a);
                 return a;
             }
