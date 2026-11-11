@@ -806,6 +806,17 @@ const notClipped = selector => ({
   }), selector),
 });
 
+/** The first visible match of each selector comes lower on the page than the one before: the page's order. */
+const inOrder = (...selectors) => ({
+  name: `in order: ${selectors.join(' / ')}`,
+  check: page => page.evaluate(selectors => {
+    const tops = selectors.map(s => [...document.querySelectorAll(s)].map(e => e.getBoundingClientRect()).find(r => r.height > 0)?.top);
+    const missing = selectors.filter((_, i) => tops[i] === undefined);
+    if (missing.length) return [`nothing visible: ${missing.join(', ')}`];
+    return tops.slice(1).flatMap((t, i) => t > tops[i] ? [] : [`${selectors[i + 1]} (at ${Math.round(t)}px) isn't below ${selectors[i]} (at ${Math.round(tops[i])}px)`]);
+  }, selectors),
+});
+
 /** Each visible match of `selector` lies within the first match of `box`, top to bottom. */
 const insideOf = (selector, box) => ({
   name: `inside ${box}: ${selector}`,
@@ -1164,6 +1175,9 @@ const pages = [
     .map(route => ({ name: `narrow ${route}`, route, setup: wideFont, widths: [700, 641], rules: [noSidewaysScroll] })),
   // Each step's detail stays within two lines at every width (the strip compact where it's narrow), and Triage's KEV
   // flag sits on the line of its words where there's room.
+  // Today's page, top to bottom: the running order, the opening note, My actions and Not on a brief yet, the numbers.
+  { name: 'today-order', route: '/', widths: [1920, 780],
+    rules: [inOrder('#running-order-h', '#team-note-h', '#my-actions-h', '.content .tide-card:has(.tide-collapse-btn[aria-controls$="-body"])')] },
   { name: 'today-steps', route: '/', setup: wideFont, widths: [1920, 1600, 1500, 1440, 1000, 780, 641, 400],
     rules: [oneRow('.tide-steps'), oneLine('.tide-step-detail', 2), [1001, inlineIn('.tide-step-flag', '.tide-step-detail')],
       visible('.tide-steps .tide-step-flag'), notClipped('.tide-steps .tide-step-flag')] },

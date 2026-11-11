@@ -163,6 +163,18 @@ public class TodayTests(TideApp app) : IClassFixture<TideApp>
             .And.Contain("<div class=\"tide-fact\"><dt>Presenter</dt>").And.Contain("<div class=\"tide-fact tide-fact-wide\">");
     }
 
+    [Fact]
+    public async Task TodaysPage_RunsOrderNoteCardsThenNumbers()
+    {
+        await using var r = await ComponentHarness.RenderAsync<BriefPage>(app, "/", new() { ["Day"] = $"{Today:yyyy-MM-dd}", ["AsToday"] = true });
+        var html = await r.Html();
+        var rail = At(html, "<aside id=\"tide-rail\"");
+        // The running order, the opening note, then My actions beside Not on a brief yet (the day's numbers after them is
+        // the layout check's: this app has no metrics to show).
+        new[] { "id=\"running-order-h\"", "id=\"team-note-h\"", "id=\"my-actions-h\"", "id=\"recent-h\"" }
+            .Select(h => At(html, h)).Should().BeInAscendingOrder().And.OnlyContain(at => at < rail);
+    }
+
     // The section headed by the heading with this id, whole.
     private static string Section(string html, string headingId)
     {

@@ -218,7 +218,6 @@ else
                 </Actions>
             </EmptyState>
         </div>
-        @if (AsToday && _canWrite) { <MetricEntry Date="_date" Collapsible="true" MissingChanged="n => _missingNumbers = n" /> }
     }
     else
     {
@@ -239,9 +238,14 @@ else
             </div>
         }
     }
-    @* Today's My actions and Not on a brief yet: drawn here, after either branch, so they're the same cards whether or not
-       the brief is started (Add can start it, and the card keeps focus in its list). *@
-    @if (AsToday && !(_loading && _brief is null)) { @PageCards() }
+    @* Today's My actions and Not on a brief yet, then its numbers: drawn here, after either branch (the brief's running
+       order and opening note, or its start), so they're the same components whether or not the brief is started. Add
+       can start it, and the card keeps focus in its list. *@
+    @if (AsToday && !(_loading && _brief is null))
+    {
+        @PageCards()
+        @if (_canWrite) { <MetricEntry Date="_date" Collapsible="true" MissingChanged="n => _missingNumbers = n" /> }
+    }
 }
 
 @if (HasRail)
@@ -966,7 +970,8 @@ else
                     </div>
                 </section>
                 @TeamNoteCard()
-                <MetricEntry Date="_date" Collapsible="true" MissingChanged="n => _missingNumbers = n" />
+                @* Today draws its numbers after My actions and Not on a brief yet, outside this panel. *@
+                @if (!AsToday) { <MetricEntry Date="_date" Collapsible="true" MissingChanged="n => _missingNumbers = n" /> }
             }
             else
             {
