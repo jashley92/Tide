@@ -1024,6 +1024,37 @@ const addFormTakesFocus = {
   },
 };
 
+/** In each visible match of `row`, every cell's text starts at least `px` right of the row's left edge: clear of an
+ * accent drawn inside the row's edge. */
+const clearOfEdge = (row, px) => holds(`text clear of the edge: ${row}`, ([row, px]) => {
+  const rows = [...document.querySelectorAll(row)].filter(e => e.getBoundingClientRect().height > 0);
+  if (!rows.length) return [`nothing shown matches ${row}`];
+  return rows.flatMap(r => [...r.children].flatMap((cell, i) => {
+    const box = cell.getBoundingClientRect();
+    if (box.width === 0) return [];
+    const start = box.left + parseFloat(getComputedStyle(cell).paddingLeft) - r.getBoundingClientRect().left;
+    return start >= px ? [] : [`cell ${i + 1}'s text starts ${Math.round(start)}px from the row's edge, under its accent`];
+  }));
+}, [row, px]);
+
+/** Every visible link matching `selector` is drawn alike: the same colour and the same underline (or none). */
+const linksAlike = selector => holds(`links alike: ${selector}`, selector => {
+  const links = [...document.querySelectorAll(selector)].filter(e => e.getBoundingClientRect().height > 0);
+  if (links.length < 2) return [`fewer than two links shown match ${selector}`];
+  const look = a => { const s = getComputedStyle(a); return `${s.color} ${s.textDecorationLine}`; };
+  const first = look(links[0]);
+  return links.filter(a => look(a) !== first).map(a => `"${a.textContent.trim().slice(0, 40)}" is ${look(a)}, not ${first}`);
+}, selector);
+
+/** Setup: wider letters, then the rail's Mark checked pressed from the keyboard. */
+async function markCheckedFromRail(page) {
+  await wideFont(page);
+  await page.locator('#tide-rail').getByRole('button', { name: 'Mark checked' }).focus();
+  await page.keyboard.press('Enter');
+  await page.locator('#tide-rail').getByRole('button', { name: 'Mark checked' }).waitFor({ state: 'detached', timeout: 10000 });
+  await page.waitForTimeout(500);
+}
+
 /** Our stack's selected row, as the keys move it: J selects the next product (the row marked, focused and named in the
  * address, the rail named for it and its sections read once it rests), K the one before, a click selects the row
  * clicked, and Enter on the selected row opens the product's page. */
@@ -1646,7 +1677,10 @@ const pages = [
       fits('.tide-rail-body'), fits('#tide-rail .tide-rail-body > section'), fits('#tide-rail .tide-stack-rail-buttons'), fits('#tide-rail .tide-facts'),
       visible('#tide-rail section[aria-labelledby="rail-triage-h"]'), visible('#tide-rail section[aria-labelledby="rail-articles-h"]'),
       visible('#tide-rail section[aria-labelledby="rail-open-actions-h"]'), visible('#tide-rail section[aria-labelledby="rail-notes-h"]'),
+      linksAlike('#tide-rail .tide-rail-list a'),
       ringOnFocus('#tide-rail .tide-stack-rail-buttons a, #tide-rail .tide-stack-rail-buttons button')] },
+  // Stacked on a narrow window, the selected row's accent sits clear of the text of each of its lines.
+  { name: 'stack-rail-stacked', route: '/stack', setup: wideFont, widths: [780, 641], rules: [clearOfEdge('.tide-stack-item.selected', 5)] },
   { name: 'stack-rail-shut', route: '/stack', setup: wideFont, widths: [1440, 780],
     rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), fits('.tide-stack-list'), visible('.tide-stack-item.selected'),
       [901, fits('.tide-stack-table td')]] },
@@ -1707,6 +1741,9 @@ const pages = [
   // one of the demo's new items aside.
   { name: 'triage-click-shortlist', route: '/triage', setup: selectReport, widths: [1440], rules: [clickFocusesNextRow('Shortlist')] },
   { name: 'triage-click-dismiss', route: '/triage', setup: selectReport, widths: [1440], rules: [clickFocusesNextRow('Dismiss')] },
+  // Mark checked in the rail: the button goes (it's checked today), and focus goes to the Checked fact it changed, not to
+  // the page's body. Late, as it marks the demo's first product checked.
+  { name: 'stack-mark-checked', route: '/stack', setup: markCheckedFromRail, widths: [1920], rules: [focusIn('#tide-rail [data-rail-checked]')] },
   { name: 'actions-board-close-menu', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [closeKeepsPlace('menu')] },
   { name: 'actions-board-close-drag', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [closeKeepsPlace('drag')] },
 ];

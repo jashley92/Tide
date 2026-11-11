@@ -150,10 +150,18 @@ public sealed record StackAction(int Number, string Title, Priority Priority, Ac
 
 /// <summary>
 /// A product with its history, newest first, held to the team edition's <paramref name="Ceiling"/>: articles above it, and
-/// actions raised from them, are counted (<paramref name="ArticlesAbove"/>, <paramref name="ActionsAbove"/>) but not named.
+/// actions raised from them, are counted (<paramref name="ArticlesAbove"/>, <paramref name="ActionsAbove"/>, of those
+/// <paramref name="OpenActionsAbove"/> still open) but not named.
 /// </summary>
 public sealed record StackDetail(StackProduct Product, string? TeamName, IReadOnlyList<StackArticle> Articles, IReadOnlyList<StackAction> Actions,
-    TlpLevel Ceiling, int ArticlesAbove = 0, int ActionsAbove = 0);
+    TlpLevel Ceiling, int ArticlesAbove = 0, int ActionsAbove = 0, int OpenActionsAbove = 0)
+{
+    /// <summary>The open actions shown, those not raised from an article above the ceiling.</summary>
+    public IReadOnlyList<StackAction> OpenActions { get; } = [.. Actions.Where(a => !ActionItem.IsClosedStatus(a.Status))];
+
+    /// <summary>How many actions about it are open, those above the ceiling included: what Our stack's row counts.</summary>
+    public int OpenActionCount => OpenActions.Count + OpenActionsAbove;
+}
 
 /// <summary>
 /// A product as present mode shows it over an article's slide (team edition only: its notes are internal): its facts, and
@@ -312,8 +320,16 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
             foreach (var e in names.In(Words(a.Title, a.Bluf))) mine[e.Id].Add(a.Id);
         foreach (var t in await db.ArticleProducts.AsNoTracking().Select(t => new { t.ArticleId, t.ProductId }).ToListAsync(ct))
             if (mine.TryGetValue(t.ProductId, out var ids)) ids.Add(t.ArticleId);
-        var open = (await db.Actions.AsNoTracking().WhereOpen().Where(a => a.ArticleId != null).GroupBy(a => a.ArticleId!.Value)
-            .Select(g => new { ArticleId = g.Key, Count = g.Count() }).ToListAsync(ct)).ToDictionary(x => x.ArticleId, x => x.Count);
+        // Each product's open actions, by the product page's rule (DetailAsync): raised from one of its articles, or naming
+        // it in their title, an action with no article included; read once and matched in one pass, as the articles are.
+        var byArticle = mine.SelectMany(m => m.Value.Select(a => (Article: a, Product: m.Key))).ToLookup(x => x.Article, x => x.Product);
+        var open = products.ToDictionary(p => p.Id, _ => 0);
+        foreach (var a in await db.Actions.AsNoTracking().WhereOpen().Select(a => new { a.ArticleId, a.Title }).ToListAsync(ct))
+        {
+            var about = names.In(Words(a.Title, null)).Select(e => e.Id);
+            if (a.ArticleId is { } article) about = about.Concat(byArticle[article]);
+            foreach (var product in about.Distinct()) open[product]++;
+        }
 
         var sightings = Enumerable.Empty<(Guid ArticleId, CveSighting Cve)>().ToLookup(s => s.ArticleId, s => s.Cve);
         Dictionary<Guid, int>? triage = null;
@@ -347,7 +363,7 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
                 BriefedToday = ids.Overlaps(briefedToday),
                 NotWrittenUp = triage?.GetValueOrDefault(p.Id) > 0 && !ids.Overlaps(written),
             };
-            return new StackRow(p, p.Team?.Name, ids.Count, ids.Sum(id => open.GetValueOrDefault(id)), now, !p.IsRetired && CheckIsOld(p.CheckedOn, today));
+            return new StackRow(p, p.Team?.Name, ids.Count, open[p.Id], now, !p.IsRetired && CheckIsOld(p.CheckedOn, today));
         }).ToList();
     }
 
@@ -454,7 +470,8 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
             .OrderBy(a => ActionItem.IsClosedStatus(a.Status)).ThenBy(a => a.DueDate ?? DateOnly.MaxValue).ThenBy(a => a.Number)
             .Select(a => new StackAction(a.Number, a.Title, a.Priority, a.Status, a.Team ?? "", a.AssigneeName, a.DueDate)).ToList();
         var articles = history.Where(h => h.Tlp <= ceiling).Select(h => h.Article).ToList();
-        return new StackDetail(p, p.Team?.Name, articles, shownActions, ceiling, history.Count - articles.Count, actions.Count - shownActions.Count);
+        var openAbove = actions.Count(a => a.ArticleId is { } aid && aboveIds.Contains(aid) && !ActionItem.IsClosedStatus(a.Status));
+        return new StackDetail(p, p.Team?.Name, articles, shownActions, ceiling, history.Count - articles.Count, actions.Count - shownActions.Count, openAbove);
     }
 
     /// <summary>How many other articles a present-mode card lists.</summary>
@@ -729,6 +746,8 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         await using var db = await dbs.CreateAsync(ct);
         var p = await db.StackProducts.FirstOrDefaultAsync(x => x.Id == id, ct) ?? throw new KeyNotFoundException("That product no longer exists.");
         if (p.EditVersion != editVersion) throw new StaleEditException(Stale(p));
+        // A retired product isn't in use: bring it back first (its page's Bring back), then check it.
+        if (p.IsRetired) throw new ArgumentException($"{p.Name} is retired. Bring it back before marking it checked.");
         p.CheckedOn = clock.Today;
         p.EditVersion = Guid.NewGuid();
         try { await db.SaveChangesAsync(ct); }

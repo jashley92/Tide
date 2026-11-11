@@ -238,6 +238,43 @@ public class StackRailTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task MarkChecked_IsRefused_OnARetiredProduct()
+    {
+        var id = await Product(Name("retired"));
+        await As(async sp => { await sp.GetRequiredService<StackService>().SetRetiredAsync(id, true); return true; });
+        var version = await As(async sp => (await sp.GetRequiredService<StackService>().GetAsync(id))!.Product.EditVersion);
+        await FluentActions.Invoking(() => As(async sp => { await sp.GetRequiredService<StackService>().MarkCheckedAsync(id, version); return true; }))
+            .Should().ThrowAsync<ArgumentException>().WithMessage("*retired*");
+        (await As(async sp => (await sp.GetRequiredService<StackService>().GetAsync(id))!.Product.CheckedOn)).Should().BeNull();
+    }
+
+    /// <summary>
+    /// The row's Open actions and the rail's count the same actions, by the product page's rule: those raised from its
+    /// articles and those whose title names it, an action with no article included; those from an article above the
+    /// team edition's ceiling are counted in both, and named in neither.
+    /// </summary>
+    [Fact]
+    public async Task TheRowsOpenActions_CountWhatTheRailCounts_AnActionWithNoArticleIncluded()
+    {
+        var name = Name("count");
+        var id = await Product(name);
+        await As(async sp =>
+        {
+            var team = await sp.GetRequiredService<TeamService>().AddAsync($"{name} other", null, null);
+            var actions = sp.GetRequiredService<ActionService>();
+            await actions.CreateAsync(new ActionForm { Title = $"Block {name} at the proxy", TeamId = team, Kind = ActionKind.Block });
+            var secret = await sp.GetRequiredService<ArticleService>().CreateAsync($"{name} hit at a supplier", "Vendor", null, TlpLevel.Red);
+            return await actions.CreateAsync(new ActionForm { Title = "Contain the supplier's foothold", TeamId = team, ArticleId = secret, Kind = ActionKind.Block });
+        });
+
+        await using var r = await Open(id);
+        r.Component.SelectedRow!.OpenActions.Should().Be(3, "the action raised from its article, the one naming it with no article, and the one above the ceiling");
+        var rail = await RailOnce(r, "rail-open-actions-h");
+        rail.Should().Contain("Open actions <span class=\"tide-count\">(3)</span>").And.Contain($"Block {name} at the proxy").And.Contain($"Sweep for {name} rail-open")
+            .And.Contain("1 open action from articles above TLP:AMBER+STRICT").And.NotContain("Contain the supplier's foothold");
+    }
+
+    [Fact]
     public async Task StartAnOutreach_OpensTheNewActionForm_AsAnOutreachAboutTheProduct()
     {
         var name = Name("outreach");

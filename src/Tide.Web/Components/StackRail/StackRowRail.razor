@@ -18,7 +18,8 @@
     <dl class="tide-facts tide-facts-side">
         <div class="tide-fact"><dt>Versions</dt><dd>@(p.Versions ?? "—")</dd></div>
         <div class="tide-fact"><dt>Team</dt><dd>@(Row.TeamName ?? "No team")</dd></div>
-        <div class="tide-fact"><dt>Checked</dt><dd>@Checked(p.CheckedOn)
+        @* Focus comes here after Mark checked, whose button then goes. *@
+        <div class="tide-fact"><dt>Checked</dt><dd tabindex="-1" data-rail-checked @ref="_checkedFact">@Checked(p.CheckedOn)
             @if (Row.CheckOld) { <Badge Tone="BadgeTone.Warn" Icon="bi-clock-history">@(p.CheckedOn is null ? "Never" : "Old")</Badge> }</dd></div>
         <div class="tide-fact tide-fact-wide"><dt>Contact</dt><dd class="tide-stack-rail-contact">@StackPage.Contact(p)</dd></div>
     </dl>
@@ -46,11 +47,11 @@
             <ul class="tide-rail-list">
                 @foreach (var i in _triage.Take(Shown))
                 {
-                    <li class="tide-stack-rail-item"><a class="tide-rail-list-title" href="@($"triage?at={i.Id}")">@i.Title</a>
+                    <li class="tide-stack-rail-item"><a class="tide-rail-list-title tide-stack-rail-link" href="@($"triage?at={i.Id}")">@i.Title</a>
                         @if (i.Kev) { <span class="tide-kev">KEV</span> }</li>
                 }
             </ul>
-            @if (_triage.Count > Shown) { <a class="small" href="triage?named=true">and @(_triage.Count - Shown) more in triage</a> }
+            @if (_triage.Count > Shown) { <a class="small tide-stack-rail-link" href="triage?named=true">and @(_triage.Count - Shown) more in triage</a> }
         }
     </section>
 }
@@ -64,22 +65,23 @@
         <ul class="tide-rail-list">
             @foreach (var a in _detail.Articles.Take(Shown))
             {
-                <li><a class="tide-rail-list-title" href="@($"articles/{a.Id}")">@a.Title</a>
+                <li><a class="tide-rail-list-title tide-stack-rail-link" href="@($"articles/{a.Id}")">@a.Title</a>
                     <span class="tide-rail-list-meta">@Ui.ShortDay(a.On, Clock.Today) · @(a.Tagged ? "tagged" : "names it")</span></li>
             }
         </ul>
-        @if (_detail.Articles.Count > Shown) { <a class="small" href="@($"stack/{p.Id}")">and @(_detail.Articles.Count - Shown) more</a> }
+        @if (_detail.Articles.Count > Shown) { <a class="small tide-stack-rail-link" href="@($"stack/{p.Id}")">and @(_detail.Articles.Count - Shown) more</a> }
         @if (_detail.ArticlesAbove > 0) { <div class="small tide-muted">@StackPage.AboveLine(_detail.ArticlesAbove, "article", _detail.Ceiling)</div> }
     }
 </section>
 
 <section class="tide-card" aria-labelledby="rail-open-actions-h">
-    @{ var open = _detail?.Actions.Where(a => !ActionItem.IsClosedStatus(a.Status)).ToList(); }
-    <h2 id="rail-open-actions-h">Open actions @Count(open?.Count)</h2>
+    @* Counted as the list's row counts them (StackDetail.OpenActionCount): those above the ceiling too, not named. *@
+    @{ var open = _detail?.OpenActions; }
+    <h2 id="rail-open-actions-h">Open actions @Count(_detail?.OpenActionCount)</h2>
     @if (open is null) { <p class="small tide-muted mb-0">Loading…</p> }
     else
     {
-        @if (open.Count == 0) { <p class="small tide-muted mb-0">No open actions.</p> }
+        @if (_detail!.OpenActionCount == 0) { <p class="small tide-muted mb-0">No open actions.</p> }
         <ul class="tide-rail-list">
             @foreach (var a in open.Take(Shown))
             {
@@ -87,8 +89,8 @@
                     <ActionStatusBadge Status="a.Status" /></li>
             }
         </ul>
-        @if (open.Count > Shown) { <a class="small" href="@($"stack/{p.Id}")">and @(open.Count - Shown) more</a> }
-        @if (_detail!.ActionsAbove > 0) { <div class="small tide-muted">@StackPage.AboveLine(_detail.ActionsAbove, "action", _detail.Ceiling, "from articles ")</div> }
+        @if (open.Count > Shown) { <a class="small tide-stack-rail-link" href="@($"stack/{p.Id}")">and @(open.Count - Shown) more</a> }
+        @if (_detail.OpenActionsAbove > 0) { <div class="small tide-muted">@StackPage.AboveLine(_detail.OpenActionsAbove, "open action", _detail.Ceiling, "from articles ")</div> }
     }
 </section>
 
@@ -161,10 +163,23 @@
         {
             await Stack.MarkCheckedAsync(Row.Product.Id, Row.Product.EditVersion);
             Toasts.Show($"{Row.Product.Name}: marked checked today.");
+            _focusChecked = true;   // the button goes: focus to the date it changed, not the page's body
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _marking = false; }
         await OnChanged.InvokeAsync();
+    }
+
+    private ElementReference _checkedFact;
+    private bool _focusChecked;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusChecked) return;
+        _focusChecked = false;
+        try { await _checkedFact.FocusAsync(); }
+        catch (JSDisconnectedException) { /* the tab has gone */ }
+        catch (JSException) { /* the rail went before focus reached it */ }
     }
 
     // "Nov 9", or "Nov 9 today"; a dash when it's never been checked.

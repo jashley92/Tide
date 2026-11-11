@@ -87,7 +87,7 @@ public class StackServiceTests : IDisposable
         d.Articles.Select(a => (a.Title, a.Tagged)).Should().BeEquivalentTo([("GitLab patches a max-severity RCE", false), ("Runner token leak in CI", true)]);
         d.Actions.Select(a => a.Title).Should().BeEquivalentTo("Patch the hosts", "Rotate GitLab runner tokens");
         var row = (await stack.ListAsync()).Single();
-        (row.Articles, row.OpenActions).Should().Be((2, 1), "one open action raised from its articles; the other names it");
+        (row.Articles, row.OpenActions).Should().Be((2, 2), "the row counts what the product's page lists: one raised from its articles, one naming it with no article");
     }
 
     [Fact]
