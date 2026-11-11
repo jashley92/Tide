@@ -96,7 +96,7 @@ public class TriageSplitPageTests(TideApp app) : IClassFixture<TideApp>
                 await r.Drawn();
                 r.Scope.ServiceProvider.GetRequiredService<ToastService>().Toasts.Should().NotContain(t => t.IsError);
                 var html = await r.Html();
-                html.Should().NotContain("tide-triage-group");
+                html.Should().NotContain("Looks like one event: 3 reports", "the split group is gone (the samples' own pair of reports still groups)");
                 Row(html, "Vexmoraa links $4.1 billion theft").Should().Contain("selected", "the newest report is selected")
                     .And.Contain("Split by Tester, ").And.Contain("aria-label=\"Undo the split of 3 reports\"");
                 Row(html, "Vexmoraa hit by $4.1 billion hack").Should().NotContain("Split by", "the note is on the newest report only");

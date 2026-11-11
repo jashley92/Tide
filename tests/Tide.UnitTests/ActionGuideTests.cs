@@ -212,7 +212,7 @@ public class ActionGuideTests
     {
         ActionGuide.Tools(ActionKind.Block, false, 0, 0).Should().Equal(ActionTool.Checklist);
         ActionGuide.Tools(ActionKind.PatchRemediate, true, 0, 0).Should().Equal(ActionTool.Checklist, ActionTool.Timeline);
-        ActionGuide.Tools(ActionKind.IocSweep, false, 0, 0).Should().Equal(ActionTool.Checklist, ActionTool.Hunt);
+        ActionGuide.Tools(ActionKind.IocSweep, false, 0, 0).Should().Equal([ActionTool.Hunt, ActionTool.Checklist], "a sweep's query is its work: its tab is first");
         ActionGuide.Tools(ActionKind.Block, false, 2, 0).Should().Equal([ActionTool.Checklist, ActionTool.Hunt], "it has hunts, whatever its kind");
         ActionGuide.Tools(ActionKind.Outreach, false, 0, 0).Should().Equal(ActionTool.Checklist, ActionTool.Outreach);
         ActionGuide.Tools(ActionKind.Other, true, 1, 1).Should().Equal(ActionTool.Checklist, ActionTool.Timeline, ActionTool.Hunt, ActionTool.Outreach);

@@ -9,7 +9,9 @@
    An open sweep or hunt with indicators and no query yet shows the generated one straight away, as a preview, to whoever
    may work it (ActionService.PreviewHuntAsync, which writes nothing). Copy or "Keep this query" saves it, through
    GenerateHuntAsync like the Generate button; until then the result buttons beside Copy are disabled and say why, so a
-   result is only ever recorded against a query the action's history shows. *@
+   result is only ever recorded against a query the action's history shows. The card says what the query sweeps for (the
+   indicators, as chips, the whole story's when chosen) and over how many days: every built-in template enforces that
+   window in its own language, so the days a clean result searched start from it. *@
 @inject ActionService ActionSvc
 @inject SavedQueryService SavedSvc
 @inject IJSRuntime JS
@@ -23,17 +25,35 @@
     <h2>Hunt queries <span class="tide-count tide-muted fw-normal">(@Action.Hunts.Count)</span></h2>
     @if (CanWork)
     {
+        @* The language, as a segmented control (the one used last is remembered), and the window every query generated
+           here enforces, in that language's own syntax. *@
         <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
-            <select class="tide-maxw-md form-select form-select-sm" aria-label="Query language" @bind="_dialect" @bind:after="DialectChosen">
-                @foreach (var d in QueryDialects.All) { <option value="@d.Key">@d.Name</option> }
-            </select>
+            <TabBar Items="DialectItems" Active="@_dialect" Label="Query language" Level="TabLevel.Sub" OnSelect="ChooseDialect" />
+            <label class="small tide-muted mb-0" for="hunt-window">Last</label>
+            <input id="hunt-window" type="number" min="1" max="@ActionService.MaxHuntDays" class="form-control form-control-sm tide-w-count" value="@Days" disabled="@_busy"
+                   @onchange="e => SetDays(int.TryParse(e.Value as string, out var d) ? d : null)" />
+            <span class="small tide-muted">days</span>
+        </div>
+        @if (Sweeping.Count > 0)
+        {
+            <div class="tide-hunt-sweeping">
+                <span class="tide-hunt-sweeping-label">Sweeping for</span>
+                @foreach (var i in Sweeping) { <span class="tide-chip tide-ioc mb-0" title="@Ui.IndicatorLabel(i.Type)">@IocObservable.Defang(i.Type, i.Value)</span> }
+                @if (StoryOffersMore)
+                {
+                    <button type="button" class="btn btn-link btn-sm" aria-pressed="@Ui.Aria(_fromStory)" disabled="@_busy" @onclick="() => UseStory(!_fromStory)">
+                        @(_fromStory ? "Only this article's" : "Use the whole story's")</button>
+                }
+            </div>
+        }
+        <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
             @* The preview is this button's query already; Keep this query is the button then. *@
             @if (_sources.Indicators > 0 && _preview is null)
             {
                 <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Generate(false)"><span class="bi bi-terminal" aria-hidden="true"></span> Generate from @Ui.Plural(_sources.Indicators, "indicator")</button>
             }
             @* Its count is every indicator it hunts for (the action's own among them), so it's said as a total, not as the articles'. *@
-            @if (_sources.StoryArticles > 1 && _sources.StoryIndicators > _sources.Indicators)
+            @if (StoryOffersMore && _preview is null)
             {
                 <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Generate(true)"><span class="bi bi-diagram-3" aria-hidden="true"></span> Generate from @Ui.Plural(_sources.StoryIndicators, "indicator"), with the story's @_sources.StoryArticles articles</button>
             }
@@ -132,7 +152,7 @@
                 </div>
                 <pre id="hunt-preview" class="tide-query">@preview</pre>
                 <div class="d-flex gap-2 align-items-center flex-wrap">
-                    <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="hunt-preview" data-copy-status="hunt-preview-status" disabled="@_busy" @onclick="CopyPreview"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
+                    <button type="button" class="btn btn-primary btn-sm" data-copy-target="hunt-preview" data-copy-status="hunt-preview-status" disabled="@_busy" @onclick="CopyPreview"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
                     <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="KeepPreview"><span class="bi bi-plus-lg" aria-hidden="true"></span> Keep this query</button>
                     <button type="button" class="btn btn-outline-secondary btn-sm" disabled aria-describedby="hunt-preview-why"><span class="bi bi-check2-circle" aria-hidden="true"></span> No hits, close</button>
                     <button type="button" class="btn btn-outline-secondary btn-sm" disabled aria-describedby="hunt-preview-why"><span class="bi bi-check2-square" aria-hidden="true"></span> Record hits</button>
@@ -172,7 +192,7 @@
             {
                 <pre id="@id" class="tide-query">@h.Text</pre>
                 <div class="d-flex gap-2 align-items-center flex-wrap">
-                    <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="@id" data-copy-status="@(id + "-status")" @onclick="() => _copied.Add(h.Id)"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
+                    <button type="button" class="btn @(h.Result == HuntResult.NotRun ? "btn-primary" : "btn-outline-secondary") btn-sm" data-copy-target="@id" data-copy-status="@(id + "-status")" @onclick="() => _copied.Add(h.Id)"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
                     @* Closing clean comes straight after Copy, on the page and in the tab order: the days box is the next
                        stop, so a query that sets no range of its own gets its days said before anything else. *@
                     @if (CanClose(h))
@@ -309,12 +329,50 @@
         catch (JSException) { }   // the script isn't there (an old cached page): the first language stands
     }
 
-    // A language chosen: the picker offers that language's, the preview is written in it, and the browser remembers it.
-    private async Task DialectChosen()
+    /// <summary>A language chosen: the picker offers that language's, the preview is written in it, and the browser
+    /// remembers it.</summary>
+    internal async Task ChooseDialect(string? key)
     {
+        if (QueryDialects.Find(key) is not { } d || d.Key == _dialect) return;
+        _dialect = d.Key;
         Offer();
         await ReadPreview();
+        StateHasChanged();
         await RememberDialect();
+    }
+
+    private static readonly IReadOnlyList<TabBarItem> DialectItems =
+        [.. QueryDialects.All.Select(d => new TabBarItem(QueryDialects.ShortName(d.Key), "", null, d.Key))];
+
+    // --- what the query sweeps for, and over how long -----------------------------------------------------------------
+
+    // The analyst's window, when they set one; else the one worked out from the articles (a week before the earliest).
+    private int? _days;
+    private bool _fromStory;
+
+    private int Days => _days ?? (_fromStory ? _sources.StoryDays : _sources.Days);
+
+    // The indicators the query is built from: the article's and the action's, or with the whole story's.
+    private IReadOnlyList<ArticleIndicator> Sweeping => _fromStory ? _sources.Story : _sources.Own;
+
+    // The story holds indicators the article doesn't.
+    private bool StoryOffersMore => _sources.StoryArticles > 1 && _sources.StoryIndicators > _sources.Indicators;
+
+    /// <summary>The window chosen, in days (1 to <see cref="ActionService.MaxHuntDays"/>; none, back to the worked-out
+    /// one): the preview is written over it, and so is a query generated or kept here.</summary>
+    internal async Task SetDays(int? days)
+    {
+        _days = days is { } d ? Math.Clamp(d, 1, ActionService.MaxHuntDays) : null;
+        await ReadPreview();
+        StateHasChanged();
+    }
+
+    /// <summary>The whole story's indicators, or only the article's: the chips, the preview and what Copy keeps follow.</summary>
+    internal async Task UseStory(bool story)
+    {
+        _fromStory = story && StoryOffersMore;
+        await ReadPreview();
+        StateHasChanged();
     }
 
     // --- the preview -----------------------------------------------------------------------------------------------
@@ -333,12 +391,12 @@
     private async Task ReadPreview()
     {
         _preview = null;
-        if (!PreviewWanted || _sources.Indicators == 0) return;
-        var dialect = _dialect;
+        if (!PreviewWanted || Sweeping.Count == 0) return;
+        var (dialect, story, days) = (_dialect, _fromStory, _days);
         try
         {
-            var text = await ActionSvc.PreviewHuntAsync(Action.Id, dialect);
-            if (dialect == _dialect) _preview = text;
+            var text = await ActionSvc.PreviewHuntAsync(Action.Id, dialect, story, days);
+            if ((dialect, story, days) == (_dialect, _fromStory, _days)) _preview = text;
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
     }
@@ -360,7 +418,7 @@
         _previewSaved = null;
         var saved = await Run(async () =>
         {
-            var hunt = await ActionSvc.GenerateHuntAsync(Action.Id, _dialect);
+            var hunt = await ActionSvc.GenerateHuntAsync(Action.Id, _dialect, _fromStory, _days);
             _preview = null;
             // The indicators or the templates changed since it was shown: what was copied isn't what was saved.
             if (hunt.Text != shown)
@@ -387,6 +445,7 @@
         try { await JS.InvokeVoidAsync("tidePrefs.set", DialectPref, _dialect); }
         catch (JSDisconnectedException) { }
         catch (JSException) { }
+        catch (InvalidOperationException) { /* not rendered interactively */ }
     }
 
     // --- "No hits, close" ------------------------------------------------------------------------------------------
@@ -508,7 +567,7 @@
     private Task Generate(bool fromStory) => Run(async () =>
     {
         await RememberDialect();
-        await ActionSvc.GenerateHuntAsync(Action.Id, _dialect, fromStory);
+        await ActionSvc.GenerateHuntAsync(Action.Id, _dialect, fromStory, _days);
         Toasts.Show("Query generated.");
     });
 

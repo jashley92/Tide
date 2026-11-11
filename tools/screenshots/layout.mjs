@@ -288,7 +288,7 @@ const pressQuickly = (key, times) => async page => {
  */
 const selectCovered = (group = false) => async page => {
   await page.addStyleTag({ content: '* { letter-spacing: .07em !important; }' });
-  const line = page.locator(group ? '.tide-triage-group' : '.tide-triage-row:not(.tide-triage-group)', { has: page.locator('.tide-triage-flags .tide-badge-info') }).first();
+  const line = page.locator(group ? '.tide-triage-group' : '.tide-triage-row:not(.tide-triage-group):not(.tide-triage-member)', { has: page.locator('.tide-triage-flags .tide-badge-info') }).first();
   await line.locator(group ? '.tide-group-label' : '.tide-triage-meta > span').first().click();
   await page.locator('.tide-triage-row.selected .tide-triage-attach').waitFor();
 };
@@ -396,6 +396,52 @@ const addFormTakesFocus = {
   },
 };
 
+/** The first visible match of `selector` starts no lower than `px` from the top of the page: what a page is for isn't
+ * pushed down by headings above it. */
+const startsAbove = (selector, px) => ({
+  name: `starts above ${px}px: ${selector}`,
+  check: page => page.evaluate(([selector, px]) => {
+    const box = [...document.querySelectorAll(selector)].map(e => e.getBoundingClientRect()).find(r => r.width > 0 && r.height > 0);
+    if (!box) return [`nothing shown matches ${selector}`];
+    const top = Math.round(box.top + window.scrollY);
+    return top <= px ? [] : [`${selector} starts at ${top}px, below ${px}px`];
+  }, [selector, px]),
+});
+
+/** In each visible match of `card`, its first child starts within `px` of the card's top: no empty band above it. */
+const headAtTop = (card, px) => ({
+  name: `first line at the top: ${card}`,
+  check: page => page.$$eval(card, (cards, [card, px]) => {
+    const shown = cards.filter(e => e.getBoundingClientRect().height > 0);
+    if (!shown.length) return [`nothing shown matches ${card}`];
+    return shown.flatMap((c, i) => {
+      const gap = Math.round(c.firstElementChild.getBoundingClientRect().top - c.getBoundingClientRect().top);
+      return gap <= px ? [] : [`${card} #${i + 1}: its first line is ${gap}px below its top`];
+    });
+  }, [card, px]),
+});
+
+/** Pressing `button` puts exactly the text of `block` on the clipboard, its line breaks as LF (the page is opened with
+ * clipboard permissions: `context` below). */
+const copiesExactly = (button, block) => ({
+  name: `copies exactly: ${block}`,
+  check: async page => {
+    const want = await page.$eval(block, el => el.textContent.replace(/\r\n?/g, '\n'));
+    await page.evaluate(() => navigator.clipboard.writeText(''));
+    await page.click(button);
+    await page.waitForTimeout(400);
+    const got = await page.evaluate(() => navigator.clipboard.readText());
+    if (got.includes('\r')) return ['the clipboard has CR line breaks'];
+    return got === want && want.length > 0 ? [] : [`the clipboard holds ${JSON.stringify(got.slice(0, 60))}, not the ${want.length} characters of ${block}`];
+  },
+});
+
+/** Setup: every letter spaced wider, as a font wider than this machine's would set it (CI's), so a rule holds by the
+ * page's construction rather than by pixels to spare. */
+const wideFonts = async page => { await page.addStyleTag({ content: '* { letter-spacing: .07em !important; }' }); };
+
+const clipboard = { permissions: ['clipboard-read', 'clipboard-write'] };
+
 // The reading pane's open or closed is kept for the person, so the pages that press V sign in as someone of their own
 // for this run (the dev sign-in's ?as=), and everyone else's Triage opens as it always does.
 const run = Date.now().toString(36);
@@ -452,7 +498,8 @@ const pages = [
       oneRow('.tide-kcard-head'), fits('.tide-kcard-article'), [1800, widerThan('.content', 1400)]] },
   // A sweep's query is read whole, in the wide column: its long lines wrap, so nothing scrolls sideways inside its box.
   { name: 'action-hunt', route: '/actions/{huntAction}', widths: [1920, 1440],
-    rules: [noSidewaysScroll, visible('.tide-action-main .tide-hunt pre.tide-query'), fits('.tide-hunt pre.tide-query')] },
+    rules: [noSidewaysScroll, visible('.tide-action-main .tide-hunt pre.tide-query'), fits('.tide-hunt pre.tide-query'),
+      visible('.tide-hunt-sweeping'), visible('[role=group][aria-label="Query language"]'), visible('#hunt-window')] },
   // Triage: the keys on one line, each row's flags fitting its line, and the reading pane open by itself from 1400px.
   { name: 'triage', route: '/triage', widths: [1920, 1440, 780],
     rules: [noSidewaysScroll, fits('.tide-page-head'), visible('.tide-triage-keys'), oneRow('.tide-triage-keys'), visible('.tide-triage-row.selected'), fits('.tide-triage-row'),
@@ -481,7 +528,21 @@ const pages = [
   { name: 'triage-keys', route: '/triage', setup: pressQuickly('j', 10), widths: [1440], rules: [selectedAsAimed()] },
   { name: 'triage-keys-next-page', route: '/triage?row=45', setup: pressQuickly('j', 10), widths: [1440], rules: [selectedAsAimed()] },
   { name: 'triage-keys-previous-page', route: '/triage?page=2&row=4', setup: pressQuickly('k', 10), widths: [1440], rules: [selectedAsAimed()] },
-  { name: 'stack-add-focus', route: '/stack', widths: [1440], rules: [addFormTakesFocus] },  { name: 'trends', route: '/trends', widths: [1920], rules: [noSidewaysScroll, widerThan('.content', 1400)] },
+  { name: 'stack-add-focus', route: '/stack', widths: [1440], rules: [addFormTakesFocus] },
+  // Our stack: a product no team owns says so in its Team cell, as the No owning team filter does.
+  { name: 'stack', route: '/stack', setup: wideFonts, widths: [1920, 1440, 780], rules: [noSidewaysScroll, visible('.tide-table .tide-badge-off')] },
+  // The Library: one header, the one search on the tab row beside the tabs, and the list high on the page; its findings,
+  // tab by tab, for a search's words.
+  { name: 'library', route: '/library/queries', setup: wideFonts, widths: [1920, 1440, 780],
+    rules: [noSidewaysScroll, visible('#library-find'), [1440, sameLine('.tide-library-tabrow .tide-tabbar-page', '#library-find')],
+      [1440, startsAbove('.tide-library-list', 300)], visible('.tide-library-group')] },
+  { name: 'library-search', route: '/library/queries?q=sweep', setup: wideFonts, widths: [1440, 780], rules: [noSidewaysScroll, visible('#library-find'), visible('.tide-library-list')] },
+  // Search for an indicator: the hunt query wraps rather than scrolling sideways, Copy puts exactly its text on the
+  // clipboard, and the cards' headings start at their tops.
+  { name: 'search-lookup', route: '/search?q=update-check.example.net', setup: wideFonts, widths: [1920, 1440, 780], context: clipboard,
+    rules: [noSidewaysScroll, fits('.tide-lookup-query'), headAtTop('.tide-lookup .tide-card', 24), visible('.tide-lookup-articles'),
+      copiesExactly('[data-copy-target="lookup-query"]', '#lookup-query')] },
+  { name: 'trends', route: '/trends', widths: [1920], rules: [noSidewaysScroll, widerThan('.content', 1400)] },
   { name: 'slide-article', route: '/present/{today}', setup: toArticleSlide, widths: [1440, 1100, 900],
     rules: [
       visible('.tide-quick-add'),
@@ -526,7 +587,7 @@ async function check(list, demo) {
         let context;
         try {
           let page;
-          ({ context, page } = await openPage(browser, { ...p, viewport: { width, height: 900 } }, demo));
+          ({ context, page } = await openPage(browser, { ...p, viewport: { width, height: 900 } }, demo, p.context));
           const before = problems.length;
           for (const rule of rules) problems.push(...(await rule.check(page)).map(f => `${p.name} at ${width}px: ${f}`));
           console.log(`  ${p.name} at ${width}px: ${rules.length - (problems.length - before)}/${rules.length} rules hold`);

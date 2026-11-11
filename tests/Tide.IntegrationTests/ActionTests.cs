@@ -349,7 +349,7 @@ public class ActionServiceTests : IDisposable
         var svc = _db.Actions();
         var action = (await svc.GetAsync(await svc.CreateAsync(new ActionForm { Title = "Hunt", Kind = ActionKind.IocSweep, TeamId = team, ArticleId = first })))!.Action;
 
-        (await svc.HuntSourcesAsync(action.Id)).Should().Be(new HuntSources(0, 2, 2));
+        (await svc.HuntSourcesAsync(action.Id) with { Own = [], Story = [], Days = HuntQueryBuilder.DefaultDays, StoryDays = HuntQueryBuilder.DefaultDays }).Should().Be(new HuntSources(0, 2, 2));
         var own = () => svc.GenerateHuntAsync(action.Id, "kql");
         await own.Should().ThrowAsync<InvalidOperationException>().WithMessage("*build it from the story*");
 

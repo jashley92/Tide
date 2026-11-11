@@ -236,6 +236,12 @@ public static class DemoSeeder
                     "Researchers describe a loader that installs a legitimately signed but vulnerable driver, then uses it to stop endpoint protection processes.\n\n" +
                     "The loader arrives in archives named like invoices and is linked to an affiliate of the Ember Lynx ransomware operation.\n\n" +
                     "The report lists the driver's hash and a staging server at 203.0.113.77."),
+                // The briefed edge VPN article's own advisory, revised: one report on its own (no other headline shares its
+                // words), covered by that article through its link, so Attach is its main button.
+                (0, "Vendor revises guidance for its remote-access gateway flaw", "https://example.com/advisories/vpn-zero-day",
+                    "The advisory now lists a second fixed firmware build and drops one workaround.", 5,
+                    "The vendor has revised its advisory for the remote-access gateway flaw: a second fixed firmware build is listed, and the " +
+                    "workaround of disabling the web portal is withdrawn because it did not block the attack."),
                 (2, "ISAC members report help-desk calls asking to reset MFA", "https://example.net/isac/helpdesk-mfa-resets",
                     "Several member organizations received calls to their help desks from people posing as employees who had lost their phones.", 6,
                     "Several member organizations have received calls to their IT help desks from people posing as employees who say they have lost their phones and need multi-factor authentication reset.\n\n" +

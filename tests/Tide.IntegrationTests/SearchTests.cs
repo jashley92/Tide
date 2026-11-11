@@ -486,7 +486,7 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
         var html = await Page(today);
         Summary(html).Should().Be($"On 1 article · {NotPresented(Today)} · no action raised");
         var row = html[html.IndexOf($"href=\"articles/{id}\"", StringComparison.Ordinal)..];
-        row = WebUtility.HtmlDecode(Tags().Replace(row[..row.IndexOf("</li>", StringComparison.Ordinal)], " "));
+        row = WebUtility.HtmlDecode(Tags().Replace(row[..row.IndexOf("</tr>", StringComparison.Ordinal)], " "));
         row.Should().Contain("On the brief for").And.Contain("not presented yet").And.NotContain("Briefed");
 
         var earlier = Unique("earlier") + ".example.net";
@@ -557,10 +557,13 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
         var html = await Page(domain);
 
         Count(html, $"href=\"articles/{id}\"").Should().Be(1, "the article is in one list, not two");
+        html.Should().MatchRegex("<table class=\"tide-table tide-lookup-articles\">\\s*<thead><tr><th scope=\"col\">Article</th><th scope=\"col\">Indicator</th><th scope=\"col\">Briefed</th><th scope=\"col\">Written</th></tr></thead>",
+            "the article is a row of a table: what matched, when it was briefed and when it was written each a column");
         var row = html[html.IndexOf($"href=\"articles/{id}\"", StringComparison.Ordinal)..];
-        row = WebUtility.HtmlDecode(row[..row.IndexOf("</li>", StringComparison.Ordinal)]);
+        row = WebUtility.HtmlDecode(row[..row.IndexOf("</tr>", StringComparison.Ordinal)]);
         row.Should().Contain("TLP:AMBER").And.Contain("Informational").And.Contain("This indicator")
-            .And.Contain("Briefed").And.Contain($"{day:ddd MMM d}").And.Contain("Written");
+            .And.Contain($"{day:ddd MMM d}").And.Contain("</td><td");
+        html.Should().Contain("<h3 class=\"tide-card-title\">Actions raised</h3>", "the card's heading starts at its top, with no band above it");
 
         var cve = NewCve();
         var about = await Article("Lookup CVE listed once", [], cves: [cve]);

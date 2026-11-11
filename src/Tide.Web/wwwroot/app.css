@@ -2487,3 +2487,23 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-triage-attach { display: inline-flex; align-items: center; gap: var(--tide-space-1); white-space: nowrap; min-width: 0; }
 .tide-triage-attach-title { min-width: 0; }
 /* ---- end Triage 2.4 ---- */
+
+/* ---- Option E 2.x, pages matched to their designs: the Library's one header, its one search on the tab row, saved
+   queries grouped under their platform; Search's hunt query wrapping and its articles as a
+   table; Our stack's "No team" flag; the action's hunt card (what it sweeps for, its window and language). ---- */
+.tide-library-tabrow { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--tide-space-2) var(--tide-space-4);
+    border-bottom: 1px solid var(--tide-border); margin-bottom: var(--tide-space-3); }
+.tide-library-tabrow > .tide-tabbar-page { border-bottom: 0; margin-bottom: 0; }
+.tide-library-find { flex: 0 1 18rem; min-width: 12rem; margin-bottom: var(--tide-space-1); }
+.tide-library-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2) var(--tide-space-3); margin-bottom: var(--tide-space-3); }
+.tide-library-filters > .form-switch { margin: 0 0 0 auto; }
+.tide-library-group { padding: .35rem .7rem; font-size: var(--tide-text-xs); font-weight: var(--tide-weight-semibold); color: var(--tide-text-muted);
+    background: var(--tide-surface-2); border-bottom: 1px solid var(--tide-border); }
+/* The hunt query is read whole: its long lines wrap, as an action's do (copying takes its text, not its wrapping). */
+.tide-lookup-query { white-space: pre-wrap; overflow-wrap: anywhere; }
+.tide-lookup-articles td:first-child .tide-badge, .tide-lookup-articles td:first-child .tide-tlp { margin-left: var(--tide-space-1); }
+/* A flag for what's missing (no team owns it): dashed, no fill. */
+.tide-badge-off { background: transparent; outline: 1px dashed var(--tide-border-strong); outline-offset: -1px; }
+.tide-hunt-sweeping { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); margin-bottom: var(--tide-space-2); }
+.tide-hunt-sweeping-label { font-size: var(--tide-text-sm); font-weight: var(--tide-weight-semibold); color: var(--tide-text-muted); }
+/* ---- end Option E 2.x ---- */

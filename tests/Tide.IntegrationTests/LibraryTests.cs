@@ -102,19 +102,20 @@ public partial class LibraryTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Theory]
-    [InlineData("queries", "Saved queries", "id=\"sq-find\"")]
-    [InlineData("templates", "Outreach templates", "id=\"ot-find\"")]
-    [InlineData("playbooks", "Playbooks", "id=\"pb-find\"")]
+    [InlineData("queries", "Saved queries", "id=\"sq-retired\"")]
+    [InlineData("templates", "Outreach templates", "id=\"ot-retired\"")]
+    [InlineData("playbooks", "Playbooks", "id=\"pb-retired\"")]
     [InlineData("board-rules", "Board rules", "Administrators set them.")]
     public async Task EachTab_HasItsOwnAddress_AndItsLinksCarryNothingOfAnotherTabs(string key, string label, string marker)
     {
         // The page and the row are this tab's: a link to another tab starts that tab from its own first page.
         var html = WebUtility.HtmlDecode(await app.CreateClient().GetStringAsync($"/library/{key}?page=2&row={Guid.NewGuid()}"));
-        html.Should().Contain(marker).And.Contain($"<h2>{label}</h2>").And.NotContain("Something went wrong on this page");
+        html.Should().Contain(marker).And.NotContain("Something went wrong on this page");
+        html.Should().NotContain($"<h2>{label}</h2>", "the page has one header: the tab doesn't repeat its name under the tabs");
         var tabs = Tabs(html);
         tabs.Single(t => t.Current).Label.Should().Be(label);
         tabs.Select(t => t.Href).Should().Equal("library/queries", "library/templates", "library/playbooks", "library/board-rules");
-        foreach (var other in new[] { "id=\"sq-find\"", "id=\"ot-find\"", "id=\"pb-find\"", "Administrators set them." }.Where(m => m != marker))
+        foreach (var other in new[] { "id=\"sq-retired\"", "id=\"ot-retired\"", "id=\"pb-retired\"", "Administrators set them." }.Where(m => m != marker))
             html.Should().NotContain(other, "one tab's content at a time");
     }
 

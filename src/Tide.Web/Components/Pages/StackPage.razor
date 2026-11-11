@@ -91,11 +91,14 @@
                                         @foreach (var c in r.Now.Cves.Take(CvesShown)) { <CveChip CveId="@c.Id" Record="c.Record" /> }
                                         @if (r.Now.Cves.Count > CvesShown) { <a class="small" href="@($"stack/{r.Product.Id}")">+@(r.Now.Cves.Count - CvesShown) more</a> }
                                         @if (r.Now.CvesAbove > 0) { <div class="small tide-muted">@AboveLine(r.Now.CvesAbove, "CVE", _ceiling)</div> }
-                                        @if (r.Now.TriageItems is > 0 and var n) { <div class="small"><a href="triage?named=true">@n new in triage</a></div> }
-                                        @if (!r.Now.Any) { <span class="small tide-muted">Nothing new</span> }
+                                        @if (r.Now.TriageItems is > 0 || r.Now.BriefedToday)
+                                        {
+                                            <div class="small">@if (r.Now.TriageItems is > 0 and var n) { <a href="triage?named=true">@n new in triage</a> }@Said(r.Now)</div>
+                                        }
+                                        @if (!r.Now.Any && !r.Now.BriefedToday) { <span class="small tide-muted">Nothing new</span> }
                                     </td>
                                     <td>@(r.Product.Versions ?? "—")</td>
-                                    <td>@(r.TeamName ?? "—")</td>
+                                    <td>@if (r.TeamName is { } owner) { @owner } else if (r.NoTeam) { <Badge Tone="BadgeTone.Neutral" Class="tide-badge-off">No team</Badge> } else { <text>—</text> }</td>
                                     <td>@if (r.Product.CheckedOn is { } on) { @Ui.ShortDay(on, Clock.Today) }
                                         @if (r.CheckOld) { <Badge Tone="BadgeTone.Warn" Icon="bi-clock-history">@(r.Product.CheckedOn is null ? "Never checked" : $"Over {StackService.CheckOldAfterDays} days ago")</Badge> }
                                         else if (r.Product.CheckedOn is null) { <text>—</text> }</td>
@@ -302,6 +305,13 @@ else
     /// <summary>"2 articles above TLP:AMBER": what the page counts but doesn't name.</summary>
     internal static string AboveLine(int count, string noun, TlpLevel ceiling, string via = "") =>
         $"{count} {noun}{(count == 1 ? "" : "s")} {via}above {Tlp.Label(ceiling)}";
+
+    // After the triage count: whether it's on today's brief, or the news about it isn't written up yet.
+    private static string Said(StackNow now)
+    {
+        var said = now.BriefedToday ? "briefed today" : now.NotWrittenUp ? "not written up" : "";
+        return said.Length == 0 ? "" : now.TriageItems > 0 ? " · " + said : said;
+    }
 
     // A colleague added, edited or retired a product: re-read in place. The edit form keeps what's typed in it, and says
     // who saved it meanwhile (saving it then is refused by the product's edit version); one not touched takes their change.
