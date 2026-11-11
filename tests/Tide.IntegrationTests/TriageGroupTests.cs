@@ -85,7 +85,9 @@ public class TriageGroupTests(TideApp app) : IClassFixture<TideApp>
             // The group's buttons are in the decision bar under the reading pane, not on its line.
             Bar(html).Should().Contain("Promote as one article (3 sources)").And.Contain("Not the same: split")
                 .And.Contain("Dismiss the 3").And.Contain("Shortlist the 3", "X and S act on the whole group, once confirmed");
-            html.Should().NotContain("tide-triage-member", "the reports wait until it's opened")
+            // (The context rail, after the page, names them as the same event.)
+            var list = html[..html.IndexOf("<aside id=\"tide-rail\"", StringComparison.Ordinal)];
+            list.Should().NotContain("tide-triage-member", "the reports wait until it's opened")
                 .And.NotContain("Quorvexa hit by $6.3 billion hack");
 
             await r.Click(t => t.OnTriageKey("expand"));

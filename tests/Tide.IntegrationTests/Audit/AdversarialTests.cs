@@ -375,7 +375,7 @@ public class HeadersAndHostileUrlTests(TideApp app) : IClassFixture<TideApp>
     [InlineData("/files/00000000-0000-0000-0000-000000000000/inline")]
     [InlineData("/metrics/export.csv")]
     [InlineData("/trends/export.csv")]
-    [InlineData("/exports/brief/{day}?format=csv")]
+    [InlineData("/exports/brief/{day}?format=csv&tlp=clear")]
     [InlineData("/access-denied")]
     public async Task EveryResponse_CarriesTheHardeningHeaders(string path)
     {
@@ -486,7 +486,7 @@ public class HeadersAndHostileUrlTests(TideApp app) : IClassFixture<TideApp>
         var id = await WebSeed.ArticleAsync(app, "=HYPERLINK(\"http://evil.example/\",\"click\")", TlpLevel.Clear,
             (IndicatorType.Other, "+cmd|' /C calc'!A0"), (IndicatorType.Other, "@SUM(1+1)"), (IndicatorType.Other, "-2+3+cmd|' /C calc'!A0"),
             (IndicatorType.Domain, "evil.example"));
-        var csv = await app.CreateClient().GetStringAsync($"/exports/article/{id}?format=csv");
+        var csv = await app.CreateClient().GetStringAsync($"/exports/article/{id}?format=csv&tlp=clear");
         csv.Should().NotContain("\n=HYPERLINK").And.NotContain(",=HYPERLINK").And.Contain("'=HYPERLINK");
         csv.Should().NotContain(",+cmd").And.Contain("'+cmd");
         csv.Should().NotContain(",@SUM").And.Contain("'@SUM");
@@ -1921,7 +1921,7 @@ public class RateLimitChallengeTests(RateLimitApp app) : IClassFixture<RateLimit
     {
         var client = app.CreateClient();
         var day = WebSeed.Day(app);
-        var paths = new[] { "/metrics/export.csv", $"/exports/brief/{day}?format=csv", "/trends/export.csv", $"/briefs/{day}/email/team", $"/briefs/{day}/sharepoint-images.zip", "/rotation/my.ics" };
+        var paths = new[] { "/metrics/export.csv", $"/exports/brief/{day}?format=csv&tlp=clear", "/trends/export.csv", $"/briefs/{day}/email/team", $"/briefs/{day}/sharepoint-images.zip", "/rotation/my.ics" };
         var statuses = new List<HttpStatusCode>();
         for (var i = 0; i < 400 && !statuses.Contains(HttpStatusCode.TooManyRequests); i++)
             statuses.Add((await client.GetAsync(paths[i % paths.Length] + (paths[i % paths.Length].Contains('?') ? "&" : "?") + "as=Export%20Probe")).StatusCode);

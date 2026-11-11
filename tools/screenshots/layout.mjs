@@ -942,27 +942,53 @@ async function holdV(page) {
 }
 
 /**
- * Setup: a context rail on the page, as ContextRail draws one (no page places one yet): its button in the top bar and
- * its region with a link in it, opened (as an overlay below 1500px) the way the button opens it. Focus goes into it.
+ * Setup: the page's context rail opened (as an overlay below 1500px) the way its button opens it, and focus on the first
+ * control in its sections.
  */
 async function openRail(page) {
-  await page.evaluate(() => {
-    const button = document.createElement('button');
-    button.id = 'tide-rail-toggle';
-    button.type = 'button';
-    button.textContent = 'Context';
-    document.querySelector('.tide-top-end')?.prepend(button);
-    const rail = document.createElement('aside');
-    rail.id = 'tide-rail';
-    rail.className = 'tide-rail';
-    rail.tabIndex = -1;
-    rail.innerHTML = '<div class="tide-rail-body"><a href="#" id="rail-link">A link in the rail</a></div>';
-    document.body.append(rail);   // fixed in place as an overlay, wherever it sits
-    window.tideRail.start();
-  });
-  await page.click('#tide-rail-toggle');
+  if (!(await page.locator('#tide-rail').isVisible())) await page.click('#tide-rail-toggle');
   await page.locator('#tide-rail').waitFor();
-  await page.focus('#rail-link');
+  await page.locator(railLink).first().focus();
+}
+
+/** A control in the rail's sections (Triage's: a CVE's link, an article's, Add to what we run…). */
+const railLink = '#tide-rail .tide-rail-body :is(a[href], button)';
+
+// --- Triage's context rail (option E 3.2) ------------------------------------------------------------------------------
+
+/** Lines of Triage's list by what the rail says of them: a report an article covers, a group one covers, one naming a
+ *  CVE TIDE has a record of. */
+const triageLines = {
+  covered: '.tide-triage-row:not(.tide-triage-group):not(.tide-triage-member):has(.tide-triage-flags .tide-badge-info)',
+  group: '.tide-triage-group:has(.tide-triage-flags .tide-badge-info)',
+  cve: '.tide-triage-row:not(.tide-triage-group):has(.tide-cvss)',
+};
+
+/** Setup: wider letters (LETTER_SPACING), then the first line of `kind` (triageLines) selected by a click on its source's
+ *  name; the rail follows it. */
+const railOn = kind => async page => {
+  await wideFont(page);
+  await page.locator(triageLines[kind]).first().locator('.tide-group-label, .tide-triage-meta > span').first().click();
+  await page.waitForFunction(kind => document.querySelector('.tide-triage-row.selected')?.matches(kind), triageLines[kind], { timeout: 10000 });
+  await page.waitForTimeout(600);
+};
+
+/** Setup: wider letters, the rail opened over the page with `]` (below 1500px), then `kind`'s line selected from the list
+ *  first, as railOn. */
+const railOverOn = kind => async page => {
+  await railOn(kind)(page);
+  await page.locator('.tide-triage-row.selected').focus();
+  await page.keyboard.press(']');
+  await page.locator('#tide-rail').waitFor();
+  await page.waitForTimeout(300);
+};
+
+/** Setup: Escape pressed on the selected row, where the rail is docked: Triage's own Escape, which closes the pane. */
+async function escapeOnRow(page) {
+  await wideFont(page);
+  await page.locator('.tide-triage-row.selected').focus();
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(800);
 }
 
 const selectedRow = page => page.evaluate(() => [...document.querySelectorAll('.tide-triage-row')].findIndex(r => r.classList.contains('selected')));
@@ -974,7 +1000,7 @@ const railKeysStayInTheRail = {
     const problems = [], before = await selectedRow(page);
     if (before < 0) return ['no row is selected to begin with'];
     for (const key of ['j', 'ArrowDown']) {
-      await page.focus('#rail-link');
+      await page.locator(railLink).first().focus();
       await page.keyboard.press(key);
       await page.waitForTimeout(600);
       const now = await selectedRow(page);
@@ -989,7 +1015,7 @@ const railKeysStayInTheRail = {
 const escapeClosesTheRailOnly = {
   name: 'Escape closes the rail only',
   check: async page => {
-    await page.focus('#rail-link');
+    await page.locator(railLink).first().focus();
     await page.keyboard.press('Escape');
     await page.waitForTimeout(800);
     const problems = [];
@@ -1472,6 +1498,57 @@ const libraryOverlay = async page => {
   await page.waitForTimeout(300);
 };
 
+/** No word in a visible match of `selector` is split across lines: each word's text sits on one line box (a line
+ *  ending at a hyphen doesn't split a word). */
+const wordsWhole = selector => holds(`no word split across lines: ${selector}`, selector => {
+  const found = [];
+  for (const el of document.querySelectorAll(selector)) {
+    if (!el.getClientRects().length) continue;
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let node = walk.nextNode(); node; node = walk.nextNode()) {
+      // A hyphen is a place a line may break ("remote-/access"), as in print: the parts either side are the words here.
+      for (const m of node.data.matchAll(/[^\s-]+-?/g)) {
+        const range = document.createRange();
+        range.setStart(node, m.index);
+        range.setEnd(node, m.index + m[0].length);
+        const lines = new Set([...range.getClientRects()].filter(r => r.width > 0).map(r => Math.round(r.top)));
+        if (lines.size > 1) found.push(`"${m[0]}" in ${selector} is split across ${lines.size} lines`);
+      }
+    }
+  }
+  return found;
+}, selector);
+
+/** Triage's rail: its sections flat under its header (with the ] key), each within the rail's column; the rail's, not the
+ *  page's. */
+const triageRailFits = [visible('#tide-rail .tide-rail-head kbd'), flat('#tide-rail .tide-rail-body > section'), fits('.tide-rail-body'),
+  fits('#tide-rail .tide-rail-body > section'), visible('#tide-rail #rail-named-h'), hidden('.content #rail-named-h')];
+
+/** Beside Triage's docked rail, the list, the reading pane and the rail sit side by side, and the pane's decision bar is
+ *  on the first screen, its buttons within it. From 1800px the bar is one row and the list 440px; under that the list
+ *  takes up to 42% of the page and the bar's buttons wrap to a second row, as the design has them. */
+const triageBesideTheRail = [noSidewaysScroll, visible('#tide-rail'), attr('#tide-rail', 'role', null), besides('#main-content', '#tide-rail'),
+  besides('.tide-reading', '#tide-rail'), besides('.tide-triage-layout > .tide-card:first-child', '.tide-reading'), visible('.tide-reading'),
+  widerThan('.tide-triage-layout > .tide-card:first-child', 340), widerThan('.tide-reading', 440), onFirstScreen('.tide-reading .tide-triage-decide'),
+  fits('.tide-triage-decide'), fits('.tide-triage-acts'), fits('.tide-reading-head'), fits('.tide-triage-row'), windowDoesntScroll,
+  // The pane's title has the pane's width (its tools under it where the pane is narrow): whole words, three lines at most.
+  wordsWhole('.tide-reading-title'), oneLine('.tide-reading-title', 3),
+  [1800, oneRow('.tide-triage-decide .tide-triage-acts')], [1800, widthNear('.tide-triage-layout > .tide-card:first-child', 440, 16)]];
+// --- Search's context rail (option E 3.6) ------------------------------------------------------------------------------
+
+/** What a lookup's rail holds, in the rail and not the page: the hunt query (for an indicator), who is sweeping for it,
+ * and the export, each section within the rail's column; the query wrapping rather than scrolling sideways. */
+const searchRailHolds = (query = true) => [
+  ...(query ? [visible('#tide-rail #lookup-query'), fits('#tide-rail #lookup-query'), visible('#tide-rail [role=group][aria-label="Query language"]')] : []),
+  visible('#tide-rail #lookup-sweeps-h'), visible('#tide-rail #lookup-export-h'), hidden('.content #lookup-query'), hidden('.content #lookup-sweeps-h'),
+  hidden('.content #lookup-export-h'), fits('.tide-rail-body'), fits('.tide-rail-body > *')];
+
+/** The lookup's own column: its one card (the answer, the articles, the actions and "Seen with") fits, the articles'
+ * table too, and nothing scrolls sideways. */
+const searchPageFits = [noSidewaysScroll, visible('.content #lookup-summary'), visible('.tide-lookup-articles'), fits('.content .tide-card'),
+  fits('.tide-lookup-articles'), headAtTop('.content .tide-card', 24), sameBox('.tide-card', '#lookup-summary', '.tide-lookup-articles'),
+  sameBox('.tide-card', '.tide-lookup-articles', '#lookup-actions'), sameBox('.tide-card', '#lookup-actions', '#lookup-seen-with'), above('#lookup-actions', '#lookup-seen-with')];
+
 // --- the pages: route, optional setup, widths (each 900px tall, or [width, height]) and rules ([minWidth, rule] from that
 // width up) -------------------------------------------------------------------------------------------------------------
 
@@ -1685,6 +1762,36 @@ const pages = [
   // the list, and Escape closes the rail without closing the reading pane (or keeping it closed).
   { name: 'triage-rail-keys', route: `/triage?as=r1${run}`, setup: openRail, widths: [1440],
     rules: [visible('#tide-rail'), visible('.tide-reading'), railKeysStayInTheRail, escapeClosesTheRailOnly] },
+  // Triage's context rail: what TIDE knows about the selected item. From 1500px it's docked open beside the list and the
+  // reading pane (triageBesideTheRail): for a covered report its coverage and story, for a covered group the other
+  // reports with Attach all and Not the same, for a report naming a CVE its facts.
+  { name: 'triage-rail', route: '/triage', setup: railOn('covered'), widths: [[1920, 1080], [1600, 1000], [1500, 1000]],
+    rules: [...triageBesideTheRail, ...triageRailFits, visible('#tide-rail #rail-covered-h'), visible('#tide-rail #rail-story-h'),
+      visible('#tide-rail section[aria-labelledby="rail-covered-h"] .tide-rail-list a')] },
+  { name: 'triage-rail-group', route: '/triage', setup: railOn('group'), widths: [[1920, 1080], [1600, 1000], [1500, 1000]],
+    rules: [...triageBesideTheRail, ...triageRailFits, visible('#tide-rail #rail-same-h'),
+      visible('#tide-rail section[aria-labelledby="rail-same-h"] .tide-triage-rail-acts button'), oneRow('#tide-rail .tide-triage-rail-acts')] },
+  { name: 'triage-rail-cve', route: '/triage', setup: railOn('cve'), widths: [[1920, 1080], [1500, 1000]],
+    rules: [...triageBesideTheRail, ...triageRailFits, visible('#tide-rail #rail-cve-h'), oneRow('#tide-rail .tide-triage-rail-facts')] },
+  { name: 'triage-rail-dark', route: '/triage', setup: railOn('covered'), context: { theme: 'dark' }, widths: [[1600, 1000]],
+    rules: [...triageBesideTheRail, ...triageRailFits] },
+  // `]` closes the docked rail, and the page takes the width back: the list 440px again and the bar one row.
+  { name: 'triage-rail-closed', route: '/triage', setup: toggleRail, widths: [[1600, 1000], [1500, 1000]],
+    rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), visible('.tide-reading'),
+      widthNear('.tide-triage-layout > .tide-card:first-child', 440, 16), oneRow('.tide-triage-decide .tide-triage-acts'), onFirstScreen('.tide-reading .tide-triage-decide')] },
+  // Where it's docked, Escape on the list is still Triage's own: it closes the reading pane, and the rail stays.
+  { name: 'triage-rail-docked-escape', route: `/triage?as=r2${run}`, setup: escapeOnRow, widths: [[1600, 1000]],
+    rules: [hidden('.tide-reading'), visible('#tide-rail'), visible('.tide-triage-row.selected .tide-triage-decide')] },
+  // Below 1500px it's closed until `]` opens it over the page, as Triage was before it.
+  { name: 'triage-rail-shut', route: '/triage', setup: wideFont, widths: [[1440, 900], [780, 900]],
+    rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), [1400, visible('.tide-reading')], [1400, oneRow('.tide-triage-decide .tide-triage-acts')]] },
+  // Open over the page it's a modal dialog, named, holding focus; Escape, Close and a click on the backdrop each close it
+  // and give focus back to the Context button (and Escape leaves the reading pane alone: triage-rail-keys).
+  { name: 'triage-rail-overlay', route: '/triage', setup: railOverOn('covered'), widths: [[1440, 900], [780, 900]],
+    rules: [noSidewaysScroll, visible('#tide-rail'), ...triageRailFits, visible('#tide-rail #rail-covered-h'), focusIn('#tide-rail'),
+      attr('#tide-rail', 'role', 'dialog'), attr('#tide-rail', 'aria-label', 'What TIDE knows'), [780, dims(15)], tabStaysIn('#tide-rail', 30)] },
+  ...['Escape', 'Close', 'backdrop'].map(how => ({ name: `triage-rail-overlay-${how.toLowerCase()}`, route: '/triage', setup: railOverOn('covered'),
+    widths: [[1440, 900], [780, 900]], rules: [overlayClosesBy(how), visible('.tide-triage-row.selected')] })),
   // J and K pressed quickly land on the row they were pressed for: on the page (the selection isn't pulled back by a
   // row's focus), and across a page boundary both ways (the demo has a second page: Demo:TriageFiller below).
   { name: 'triage-keys', route: '/triage', setup: pressQuickly('j', 10), widths: [1440], rules: [selectedAsAimed()] },
@@ -1730,14 +1837,25 @@ const pages = [
   { name: 'library-keys', route: '/library/queries', widths: [1920, 1440], rules: [libraryKeys] },
   // The More menu opens wholly in view beside the docked rail, and at the overlay's widths.
   { name: 'library-more-rail', route: '/library/queries', setup: openEntryMore, widths: [1600, 1500, 1440], rules: [menuItemsVisible] },
-  // Search for an indicator: the hunt query wraps rather than scrolling sideways, Copy puts exactly its text on the
-  // clipboard, and the cards' headings start at their tops.
-  { name: 'search-lookup', route: '/search?q=update-check.example.net', setup: wideFonts, widths: [1920, 1440, 780], context: clipboard,
-    rules: [noSidewaysScroll, fits('.tide-lookup-query'), headAtTop('.tide-lookup .tide-card', 24), visible('.tide-lookup-articles'),
-      copiesExactly('[data-copy-target="lookup-query"]', '#lookup-query'),
-      // The language as the action page's segmented control; the article, the actions raised and "Seen with" in one card.
-      visible('#lookup-query-tools [role=group][aria-label="Query language"]'), sameBox('.tide-card', '.tide-lookup-articles', '#lookup-actions'),
-      sameBox('.tide-card', '#lookup-actions', '#lookup-seen-with'), above('#lookup-actions', '#lookup-seen-with')] },
+  // Search for an indicator or a CVE: the answer in the page, in one card, and the hunt query, who is sweeping for it and
+  // the export in the context rail. From 1500px the rail is docked open and the page has about 873px, which the articles'
+  // table fits; the query wraps, and Copy puts exactly its text on the clipboard. Below 1500px the rail is closed until
+  // `]` opens it over the page, as a modal dialog. Wider letters throughout.
+  ...[['search-rail-ip', '203.0.113.45'], ['search-rail-domain', 'update-check.example.net']].map(([name, q]) => (
+    { name, route: `/search?q=${q}`, setup: wideFont, widths: [[1920, 1000], [1600, 1000], [1500, 1000]], context: clipboard,
+      rules: [visible('#tide-rail'), ...searchRailHolds(), ...searchPageFits, copiesExactly('#tide-rail [data-copy-target="lookup-query"]', '#lookup-query')] })),
+  { name: 'search-rail-cve', route: '/search?q=CVE-2026-0001', setup: wideFont, widths: [[1920, 1000], [1600, 1000], [1500, 1000]],
+    rules: [visible('#tide-rail'), ...searchRailHolds(false), ...searchPageFits, hidden('#lookup-query')] },
+  { name: 'search-rail-narrow', route: '/search?q=203.0.113.45', setup: wideFont, widths: [[1440, 900], [780, 900]],
+    rules: [hidden('#tide-rail'), visible('#tide-rail-toggle'), ...searchPageFits] },
+  { name: 'search-rail-closed', route: '/search?q=203.0.113.45', setup: toggleRail, widths: [[1600, 1000]],
+    rules: [hidden('#tide-rail'), widerThan('.content', 1100), ...searchPageFits] },
+  { name: 'search-rail-overlay', route: '/search?q=203.0.113.45', setup: toggleRail, widths: [[1440, 900], [780, 900]], context: clipboard,
+    rules: [visible('#tide-rail'), ...searchRailHolds(), noSidewaysScroll, focusIn('#tide-rail'), attr('#tide-rail', 'role', 'dialog'),
+      attr('#tide-rail', 'aria-label', 'Do something with it'), tabStaysIn('#tide-rail', 30),
+      copiesExactly('#tide-rail [data-copy-target="lookup-query"]', '#lookup-query')] },
+  // A search for words has no rail, and its page is as before.
+  { name: 'search-words', route: '/search?q=gateway', widths: [1920, 780], rules: [noSidewaysScroll, hidden('#tide-rail'), hidden('#tide-rail-toggle')] },
   { name: 'trends', route: '/trends', widths: [1920], rules: [noSidewaysScroll, widerThan('.content', 1400)] },
   { name: 'slide-article', route: '/present/{today}', setup: toArticleSlide, widths: [1440, 1100, 900],
     rules: [
