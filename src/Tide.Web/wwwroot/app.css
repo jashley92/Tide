@@ -2444,7 +2444,10 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-kclosed .tide-kcol-empty { padding: var(--tide-space-2); }
 .tide-kcard-article { display: flex; align-items: center; gap: .3rem; min-width: 0; font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
 .tide-kcard-since { font-size: var(--tide-text-xs); }
-/* The view tabs, each with its count, stay one row in a narrow window: closer together, with smaller counts. */
+/* The view tabs, each with its count, are one row whatever the window or the fonts: closer together in a narrow window,
+   and when they still don't fit, the row scrolls sideways inside itself (never the page). Focus rings sit inside it. */
+.tide-actions-views { flex-wrap: nowrap; max-width: 100%; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+.tide-actions-views .tide-tabbar-item:focus-visible { outline-offset: -2px; }
 @media (max-width: 1099.98px) {
     .tide-actions-views { gap: 0; }
     .tide-actions-views .tide-tabbar-item { padding-inline: .3rem; gap: .25rem; font-size: .9rem; }
@@ -2452,6 +2455,7 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 }
 .tide-row-progress { margin-top: var(--tide-space-1); max-width: 7rem; display: flex; align-items: center; gap: .4rem; color: var(--tide-text-muted); }
 .tide-row-progress > .tide-kcard-bar { min-width: 2.5rem; }
+.tide-action-num-tail { white-space: nowrap; }
 .tide-row-take { display: block; margin-top: var(--tide-space-1); padding: .05rem .5rem; font-size: var(--tide-text-xs); }
 .tide-actions-unowned { margin: 0 0 var(--tide-space-3); padding: var(--tide-space-2) var(--tide-space-3); background: var(--tide-info-soft);
     border-radius: var(--tide-radius-lg); font-size: var(--tide-text-sm); }

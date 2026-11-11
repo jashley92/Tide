@@ -138,12 +138,12 @@ const pages = [
     rules: [noSidewaysScroll, visible('.tide-reader-sum'), visible('[role=tablist][aria-label="Beside the article"]')] },
   { name: 'article-actions-tab', route: '/articles/{vpnArticle}?side=actions', widths: [1440, 800],
     rules: [noSidewaysScroll, visible('#reader-panel .tide-action-ref')] },
-  // The page reads the tab from ?view= (each tab with its count, the row of them on one line, down to a narrow window).
-  // A row's checklist progress doesn't cost its title width: the Escalated badge stays beside the title.
+  // The page reads the tab from ?view= (each tab with its count). The tabs are one row at every width: when wider fonts
+  // don't leave room, the row scrolls sideways inside itself, so there's no fits() on it; noSidewaysScroll checks that the
+  // page never does. The Escalated badge stays on the number's line, the title wrapping before them.
   { name: 'actions-list', route: '/actions?view=open&layout=list', widths: [1920, 1440, 1000, 780],
-    rules: [noSidewaysScroll, visible('.tide-action-ref'), visible('.tide-tabbar-count'), [780, oneRow('[role=group][aria-label="Views"]')],
-      [780, fits('[role=group][aria-label="Views"]')], visible('.tide-row-progress'),
-      [1440, sameLine('.tide-table td:first-child', '.tide-action-num', '[title^="Escalated"]')]] },
+    rules: [noSidewaysScroll, visible('.tide-action-ref'), visible('.tide-tabbar-count'), oneRow('[role=group][aria-label="Views"]'),
+      visible('.tide-row-progress'), sameLine('.tide-table td:first-child', '.tide-action-num', '[title^="Escalated"]')] },
   // Take it from the keyboard keeps the person's place: on a row that stays listed (All open), focus stays on its title;
   // in No owner the row leaves, and focus goes to the next row's title, or for the last row, the one before.
   { name: 'actions-take-focus-stays', route: '/actions?view=open&layout=list', setup: take('first', 'same'), widths: [1920],
