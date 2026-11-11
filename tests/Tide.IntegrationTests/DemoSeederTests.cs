@@ -45,6 +45,17 @@ public class DemoSeederTests(DemoTideApp app) : IClassFixture<DemoTideApp>
     private AppDbContext Db() => app.Services.CreateScope().ServiceProvider.GetRequiredService<AppDbContext>();
 
     [Fact]
+    public async Task EverySeededActionAndArticle_HasADefinedPriority()
+    {
+        Info();
+        await using var db = Db();
+        var actions = await db.Actions.AsNoTracking().Select(a => new { a.Number, a.Priority }).ToListAsync();
+        actions.Should().NotBeEmpty().And.OnlyContain(a => Enum.IsDefined(a.Priority), "P1 to P4: no action shows a \"0\" badge");
+        var articles = await db.Articles.AsNoTracking().Where(a => a.Priority != null).Select(a => a.Priority!.Value).ToListAsync();
+        articles.Should().NotBeEmpty().And.OnlyContain(p => Enum.IsDefined(p), "an article's priority, which its actions take, is P1 to P4");
+    }
+
+    [Fact]
     public async Task SeededActions_AreDatedInTheirStatusAsTheirHistoryHasIt_NotWhenTheSeedRan()
     {
         Info();

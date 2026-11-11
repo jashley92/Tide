@@ -45,8 +45,9 @@
                 @foreach (var i in Sweeping) { <span class="tide-chip tide-ioc mb-0" title="@Ui.IndicatorLabel(i.Type)">@IocObservable.Defang(i.Type, i.Value)</span> }
                 @if (StoryOffersMore)
                 {
-                    <button type="button" class="btn btn-link btn-sm tide-hunt-story" aria-pressed="@Ui.Aria(_fromStory)" disabled="@_busy" @onclick="() => UseStory(!_fromStory)">
-                        @(_fromStory ? "Only this article's" : "Use the whole story's")</button>
+                    @* One label, its state in aria-pressed (and a tick while it's on): a label that changed with it would be
+                       heard as its opposite, "Only this article's, pressed". *@
+                    <button type="button" class="btn btn-link btn-sm tide-hunt-story" aria-pressed="@Ui.Aria(_fromStory)" disabled="@_busy" @onclick="() => UseStory(!_fromStory)"><span class="bi @(_fromStory ? "bi-check2-square" : "bi-square")" aria-hidden="true"></span> Use the whole story's</button>
                 }
             </div>
         }

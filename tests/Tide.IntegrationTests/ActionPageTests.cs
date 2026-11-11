@@ -193,7 +193,7 @@ public class ActionPageTests(TideApp app) : IClassFixture<TideApp>
             .And.Contain("<h2>Hunt queries", "a sweep's queries are its work: the panel is open, ready to generate one")
             .And.Contain("aria-label=\"Query language\"").And.NotContain("Split off a part for a team");
         html.IndexOf("aria-label=\"Facts\"", StringComparison.Ordinal).Should().BeGreaterThan(html.IndexOf("id=\"feed-h\"", StringComparison.Ordinal),
-            "the facts are in the side column, after the work");
+            "the facts are in the context rail, after the page");
         r.Component.MoreItems.Should().Contain(i => i.Label == "Split off a part" && i.Href == $"actions/new?parent={a.Id}");
 
         // Its checklist tab: empty, the button that starts one.
