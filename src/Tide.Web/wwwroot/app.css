@@ -2752,16 +2752,47 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-rail-list-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); color: var(--tide-text-muted); font-size: var(--tide-text-xs); }
 /* ---- end Action page 3.5 ---- */
 
+/* ---- Search 3.6: an indicator or CVE lookup with the context rail (Search.razor, SearchRail/LookupSweeps.razor) ----
+   The page keeps the answer in one card: the value and its first line, then, under a rule, the articles, the actions
+   raised and "Seen with". Beside a docked rail it has about 873px, which the articles' table fits: a long title wraps
+   in its cell, and the dates keep to theirs. The rail holds the hunt query (its name and language on one row, Copy and
+   "Include what it travels with" under it), who is sweeping for it, and the export. */
+.tide-lookup-card > div.tide-lookup-part:first-of-type { margin-top: var(--tide-space-3); padding-top: var(--tide-space-3); border-top: 1px solid var(--tide-border); }
+.tide-lookup-articles td:first-child { overflow-wrap: anywhere; }
+/* On a narrow window the actions' table keeps to the card too: a badge ("Hunt: no hits") wraps in its cell there. */
+#lookup-actions td:first-child { overflow-wrap: anywhere; }
+@media (max-width: 900px) { #lookup-actions td .tide-badge { white-space: normal; } }
+.tide-lookup-rail-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--tide-space-2); margin-bottom: var(--tide-space-2); }
+.tide-lookup-rail-head > h2 { margin: 0; }
+.tide-lookup-rail-head > .tide-tabbar-sub { margin: 0; }
+.tide-rail .tide-lookup-query { max-height: 22rem; margin-bottom: var(--tide-space-2); }
+.tide-lookup-rail-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); margin-bottom: var(--tide-space-2); }
+.tide-lookup-travels { padding-left: 0; padding-right: 0; text-align: left; }
+.tide-lookup-sweep-do { display: flex; flex-wrap: wrap; gap: var(--tide-space-2); margin-top: var(--tide-space-1); }
+/* ---- end Search 3.6 ---- */
+
 /* ---- Our stack 3.7: a selected row, and the selected product in the context rail (its flat sections are Today 3.1's) ----
    The selected row is marked as the Actions list's is (rows.js moves it). Beside the docked rail the page has about
-   873px: the headings wrap onto two lines rather than holding the table wide, and a CVE's chip wraps between its parts
-   (the id, the scores, KEV), never inside a word, so the table fits with no sideways scroll. */
+   873px. The table is laid out by its columns' shares of its width, not by its words, so it is the card's width
+   whatever the fonts: the headings and cells wrap, a word longer than its column breaks, and a CVE's chip wraps
+   between its parts (the id, the scores, KEV). So it never scrolls sideways. */
 .tide-stack-item.selected > td { background: var(--tide-accent-soft); }
 .tide-stack-item.selected > td:first-child { box-shadow: inset 3px 0 0 var(--tide-accent); }
 .tide-stack-item:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: -2px; }
 .tide-stack-table th { white-space: normal; }
-@media (min-width: 900.02px) { .tide-stack-table th, .tide-stack-table td { padding-left: .45rem; padding-right: .45rem; } }
-.tide-stack-table td { overflow-wrap: break-word; }
+.tide-stack-table th, .tide-stack-table td { overflow-wrap: anywhere; }
+@media (min-width: 900.02px) {
+    .tide-stack-table { table-layout: fixed; width: 100%; }
+    .tide-stack-table th, .tide-stack-table td { padding-left: .45rem; padding-right: .45rem; }
+    .tide-stack-table th:nth-child(1) { width: 19%; }
+    .tide-stack-table th:nth-child(2) { width: 12%; }
+    .tide-stack-table th:nth-child(3) { width: 15%; }
+    .tide-stack-table th:nth-child(4) { width: 14%; }
+    .tide-stack-table th:nth-child(5) { width: 20%; }
+    .tide-stack-table th:nth-child(6), .tide-stack-table th:nth-child(7) { width: 10%; }
+    /* A flag ("Over 90 days ago") wraps in its column rather than reaching past it. */
+    .tide-stack-table td .tide-badge { white-space: normal; max-width: 100%; }
+}
 .tide-stack-table .tide-stack-now { min-width: 0; }
 .tide-stack-now .tide-chip { flex-wrap: wrap; white-space: nowrap; max-width: 100%; }
 /* Stacked, every row keeps its text clear of the left edge, where the selected row's accent is drawn. */
