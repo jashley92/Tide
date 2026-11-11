@@ -28,7 +28,7 @@
                         @if (A.Checklist.Count > 0) { <span class="tide-count tide-muted">@done of @A.Checklist.Count done</span> }
                         @if (A.PlaybookName is not null) { <Badge Class="ms-auto">@A.PlaybookName playbook</Badge> }
                     </div>
-                    <ActionChecklist @key="A.Id" ActionId="A.Id" Kind="A.Kind" CanWork="Detail.CanWork" Autofocus="_addingChecklist" OnChanged="Changed" />
+                    <ActionChecklist @key="A.Id" ActionId="A.Id" Kind="A.Kind" CanWork="Detail.CanWork" Open="A.IsOpen" Autofocus="_addingChecklist" OnChanged="Changed" />
                 }
                 else
                 {

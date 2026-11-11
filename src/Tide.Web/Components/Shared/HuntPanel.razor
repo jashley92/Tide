@@ -277,7 +277,11 @@
 
     private RenderFragment Adders => @<text>
         <button id="hunt-write" type="button" class="btn btn-link btn-sm" aria-expanded="@Ui.Aria(_writing)" @ref="_writeBtn" @onclick="ToggleWriting">Write one by hand</button>
-        <button id="hunt-pick" type="button" class="btn btn-link btn-sm" aria-expanded="@Ui.Aria(_picking)" aria-controls="hunt-saved-picker" @ref="_pickBtn" @onclick="TogglePicker">Add a saved query</button>
+        @* A closed action takes no saved query (ActionService refuses it). *@
+        @if (Action.IsOpen)
+        {
+            <button id="hunt-pick" type="button" class="btn btn-link btn-sm" aria-expanded="@Ui.Aria(_picking)" aria-controls="hunt-saved-picker" @ref="_pickBtn" @onclick="TogglePicker">Add a saved query</button>
+        }
         <button id="hunt-add-iocs" type="button" class="btn btn-link btn-sm" aria-expanded="@Ui.Aria(_addingIndicators)" aria-controls="hunt-indicators" @ref="_iocsBtn" @onclick="ToggleIndicators">Add indicators</button>
     </text>;
 
@@ -325,7 +329,7 @@
                 </div>
             </div>
         }
-        @if (_picking)
+        @if (_picking && Action.IsOpen)
         {
             <div class="tide-hunt-picker mb-3" id="hunt-saved-picker">
                 <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
