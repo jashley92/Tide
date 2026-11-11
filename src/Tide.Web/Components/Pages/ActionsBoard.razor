@@ -413,8 +413,11 @@ else
         _parentNumber = query.Parent is > 0 ? query.Parent : null;
         _side = EnumNames.OrNull<ActionTeams>(TeamsParam, ignoreCase: true);
         _raised = string.Equals(RaisedParam, Me, StringComparison.OrdinalIgnoreCase);
+        var heldToMine = HoldMine();
         // Only another view resets the sort: another page (or filter) keeps the one chosen.
-        if (was is null || !string.Equals(was.View, query.View, StringComparison.OrdinalIgnoreCase)) _sort = DefaultSort(_view);
+        if (was is null || heldToMine || !string.Equals(was.View, query.View, StringComparison.OrdinalIgnoreCase)) _sort = DefaultSort(_view);
+        // The address then says what's shown, in place (a prerender shows it, and the circuit that follows writes it).
+        if (heldToMine && RendererInfo.IsInteractive) Remember();
         var quiet = _adopted;
         _adopted = false;
         if (await Read(quiet)) PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
@@ -558,6 +561,16 @@ else
         (_search, _teamId, _kind, _assignee, _due, _status, _ruleId, _parentNumber, _side, _raised) = (null, null, null, null, null, null, null, null, null, false);
         _priorities = [];
         return Refilter();
+    }
+
+    // Mine from an address, held to the rule choosing it keeps (Refilter, SetView): nobody's is the person's teams' work
+    // nobody has (My teams), and another holder is let go. Whether it changed anything.
+    private bool HoldMine()
+    {
+        if (_view != ActionView.Mine || _assignee is null) return false;
+        if (_assignee == ActionFilter.Unassigned) _view = ActionView.MyTeams;
+        else _assignee = null;
+        return true;
     }
 
     // A filter changed (the bar, Clear, the words): read from the list's first page, and the address says so. Nobody's

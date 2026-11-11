@@ -111,6 +111,19 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
             (await Went(r, a => PressPill(a, "noowner"))).Should().Contain("view=myteams").And.Contain("assignee=none");
     }
 
+    [Theory]
+    [InlineData("/actions?view=mine&layout=list&assignee=none", "MyTeams", "none")]
+    [InlineData("/actions?view=mine&layout=list&assignee=dev:someone-else", "Mine", null)]
+    public async Task Mine_FromAnAddress_IsHeldToTheSameRule_AsChoosingIt(string path, string view, string? assignee)
+    {
+        // Mine is what the person holds: nobody's is never Mine (it's their teams' work nobody has), and another holder's
+        // would show nothing. An address (a link, a bookmark) opens what choosing the tab and the filter would show.
+        await using var r = await RenderAsync<ActionsBoard>(app, path);
+        var shown = typeof(ActionsBoard).GetField("_view", Private)!.GetValue(r.Component)!.ToString();
+        var held = (string?)typeof(ActionsBoard).GetField("_assignee", Private)!.GetValue(r.Component);
+        (shown, held).Should().Be((view, assignee));
+    }
+
     [Fact]
     public async Task TakeIt_IsOnTheRowsThePersonMayTake_AndTakesIt()
     {
