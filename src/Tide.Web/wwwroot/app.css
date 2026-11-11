@@ -2819,4 +2819,11 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
         & .tide-action-kind { display: block; }
     }
 }
+/* Wherever the view row is short of room (beside the docked rail, or with fonts wider than this machine's), a view's
+   name wraps onto a second line inside its tab, its count kept whole, rather than the row scrolling: every view stays
+   in view by construction, not by pixels to spare. Under 641px the row has a line of its own and scrolls as before. */
+@media (min-width: 641px) {
+    .tide-actions-views .tide-tabbar-item { flex: 0 1 auto; white-space: normal; line-height: 1.15; }
+    .tide-actions-views .tide-tabbar-count { flex: none; white-space: nowrap; }
+}
 /* ---- end Actions 3.4 ---- */
