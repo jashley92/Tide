@@ -142,6 +142,7 @@ public static class DemoSeeder
             await db.SaveChangesAsync(ct);
 
             Triage(db, sources);
+            StoryFollowUp(db, vpn);
             await HistoryAsync(db, tags, teams, ct);
             var sent = SentBriefArticles(db, tags, adversaries);
             db.ArticleAdversaries.Add(new ArticleAdversary { ArticleId = vpn.Id, AdversaryId = adversaries[0].Id });
@@ -203,6 +204,24 @@ public static class DemoSeeder
             ];
             db.Adversaries.AddRange(list);
             return list;
+        }
+
+        // A later report in the edge VPN story with indicators the first article lacks, not on any brief: a sweep raised
+        // from the first article can then hunt for the whole story's.
+        private static void StoryFollowUp(IAppDbContext db, Article vpn)
+        {
+            var later = new Article
+            {
+                Title = "Second staging host seen in the edge VPN exploitation", SourceName = "Research blog",
+                SourceUrl = "https://example.org/research/edge-vpn-second-wave", Tlp = TlpLevel.Clear, Classification = Classification.Threat,
+                Priority = Priority.P2, Bluf = "The group behind the edge VPN zero-day now stages tools on a second host.",
+                Status = ArticleStatus.Draft, AuthorId = "system", AuthorName = "Sample data", StoryId = vpn.StoryId,
+            };
+            later.Indicators.AddRange([
+                new ArticleIndicator { Type = IndicatorType.IpAddress, Value = "198.51.100.61" },
+                new ArticleIndicator { Type = IndicatorType.Domain, Value = "cdn-sync.example.net" },
+            ]);
+            db.Articles.Add(later);
         }
 
         private static List<Source> Sources(IAppDbContext db)

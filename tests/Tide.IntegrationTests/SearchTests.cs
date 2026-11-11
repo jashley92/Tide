@@ -447,6 +447,14 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
         return m.Groups[2].Value;
     }
 
+    // The hunt query's tools, from the language control to Copy's status (the control has boxes of its own inside).
+    private static string QueryTools(string html)
+    {
+        var at = html.IndexOf("id=\"lookup-query-tools\"", StringComparison.Ordinal);
+        at.Should().BePositive("the page has the query's tools");
+        return html[at..html.IndexOf("id=\"lookup-query-status\"", at, StringComparison.Ordinal)];
+    }
+
     // The first line as it reads: a link's words run on into the comma after it.
     private static string Summary(string html) =>
         Spaces().Replace(WebUtility.HtmlDecode(Tags().Replace(Inside(html, "lookup-summary"), "")), " ").Trim();
@@ -522,13 +530,13 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
         var url = $"https://{Unique("nofql")}.example.net/payload.bin";
         await Article("Lookup URL no Falcon query", [(IndicatorType.Url, url)]);
         var who = Person();
-        Inside(await Page(url, who), "lookup-query-tools").Should().NotContain("disabled");
+        QueryTools(await Page(url, who)).Should().NotContain("disabled");
         await using (var scope = SignedIn(app, who))
             await scope.ServiceProvider.GetRequiredService<UserPreferenceService>().SetAsync(UserPreferences.HuntDialect, "fql");
 
         var html = await Page(url, who);
 
-        Inside(html, "lookup-query-tools").Should().MatchRegex("<button[^>]*data-copy-target=\"lookup-query\"[^>]*disabled", "there's nothing to run");
+        QueryTools(html).Should().MatchRegex("<button[^>]*data-copy-target=\"lookup-query\"[^>]*disabled", "there's nothing to run");
         Text(html, "lookup-query-none").Should().Contain("can't search for this kind of value");
     }
 
@@ -596,7 +604,7 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
             await scope.ServiceProvider.GetRequiredService<UserPreferenceService>().SetAsync(UserPreferences.HuntDialect, "kql");
         var again = await Page(domain, who);
         Text(again, "lookup-query").Should().Contain("DeviceNetworkEvents").And.NotContain("dataset = xdr_data");
-        again.Should().MatchRegex("<option value=\"kql\" selected[^>]*>");
+        again.Should().MatchRegex("(?s)role=\"group\" aria-label=\"Query language\">.*?aria-pressed=\"true\">\\s*<span>KQL</span>", "the language is a segmented control, as on an action").And.NotContain("<option value=\"kql\"");
     }
 
     [Fact]

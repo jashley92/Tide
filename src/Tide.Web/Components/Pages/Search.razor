@@ -66,15 +66,15 @@ else if (_results is { Terms.Count: > 0 } r)
                     <span> already @(ind.Sweeping.Count == 1 ? "sweeps" : "sweep") for this.</span>
                 </p>
             }
-            @SeenWithRow(ind.SeenWith)
         </div>
 
+        @* The article, the actions raised from it and what it was seen with, in one card; the hunt query beside it. *@
         <div class="tide-lookup">
-            <div>
+            <div class="tide-card">
                 @if (byArticle.Count > 0)
                 {
-                    <div class="tide-card">
-                        <h2>Articles <span class="tide-count tide-muted fw-normal">(@N(byArticle.Count))</span></h2>
+                    <div class="tide-lookup-part">
+                        <h3 class="tide-card-title">@(byArticle.Count == 1 ? "Article" : "Articles") <span class="tide-count">(@N(byArticle.Count))</span></h3>
                         @ArticleTable(byArticle.Select(g => (g.First().Article, (RenderFragment)(@<text>
                             @foreach (var s in g)
                             {
@@ -88,14 +88,13 @@ else if (_results is { Terms.Count: > 0 } r)
                         @if (ind.Sightings.More) { <p class="small tide-muted mt-2 mb-0">Showing the first @ind.Sightings.Items.Count of @N(ind.Sightings.Total) mentions.</p> }
                     </div>
                 }
-                <div class="tide-card"><ActionsDone Actions="ind.Actions" CanOpen="_canOpenActions" /></div>
+                <div id="lookup-actions" class="tide-lookup-part"><ActionsDone Actions="ind.Actions" CanOpen="_canOpenActions" /></div>
+                @SeenWithRow(ind.SeenWith)
             </div>
             <div class="tide-card">
                 <h2>Hunt query</h2>
                 <div id="lookup-query-tools" class="d-flex gap-2 align-items-center flex-wrap mb-2">
-                    <select class="tide-maxw-md form-select form-select-sm" aria-label="Query language" @bind:get="_dialect" @bind:set="ChooseDialect">
-                        @foreach (var d in QueryDialects.All) { <option value="@d.Key" selected="@(d.Key == _dialect)">@d.Name</option> }
-                    </select>
+                    <TabBar Items="DialectItems" Active="@_dialect" Label="Query language" Level="TabLevel.Sub" OnSelect="ChooseDialect" />
                     @if (_query is not null)
                     {
                         <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="lookup-query" data-copy-status="lookup-query-status" data-copy-done="Query copied." disabled="@nothingToRun"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
@@ -137,17 +136,19 @@ else if (_results is { Terms.Count: > 0 } r)
                     }
                 </p>
             }
-            @SeenWithRow(cve.SeenWith)
         </div>
+        <div class="tide-card">
         @if (cve.Articles.Items.Count > 0)
         {
-            <div class="tide-card">
-                <h2>Articles <span class="tide-count tide-muted fw-normal">(@N(cve.Articles.Total))</span></h2>
+            <div class="tide-lookup-part">
+                <h3 class="tide-card-title">@(cve.Articles.Total == 1 ? "Article" : "Articles") <span class="tide-count">(@N(cve.Articles.Total))</span></h3>
                 @ArticleTable(cve.Articles.Items.Select(a => (a, (RenderFragment)(@<span class="tide-muted">This CVE</span>))), "CVE")
                 @if (cve.Articles.More) { <p class="small tide-muted mt-2 mb-0">Showing the newest @cve.Articles.Items.Count of @N(cve.Articles.Total).</p> }
             </div>
         }
-        <div class="tide-card"><ActionsDone Actions="cve.Actions" CanOpen="_canOpenActions" /></div>
+        <div id="lookup-actions" class="tide-lookup-part"><ActionsDone Actions="cve.Actions" CanOpen="_canOpenActions" /></div>
+        @SeenWithRow(cve.SeenWith)
+        </div>
     }
 
     @if (r.Empty)
@@ -430,6 +431,9 @@ else if (_results is { Terms.Count: > 0 } r)
 
     private static RenderFragment? Beyond<T>(HitList<T> list) => list.Total <= SearchService.MaxTake ? null :
         @<p class="small tide-muted text-center mb-0 mt-1">The pages go to the first @N(SearchService.MaxTake); add a word to find the rest.</p>;
+
+    private static readonly IReadOnlyList<TabBarItem> DialectItems =
+        [.. QueryDialects.All.Select(d => new TabBarItem(QueryDialects.ShortName(d.Key), "", null, d.Key))];
 
     private static string N(int n) => n.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
 }

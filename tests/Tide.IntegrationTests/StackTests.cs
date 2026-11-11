@@ -518,7 +518,7 @@ public class StackPageTests(TideApp app) : IClassFixture<TideApp>
             .And.NotContain("<td>—</td>");
         var owned = html[html.IndexOf(">Flagpole Owned</a>", StringComparison.Ordinal)..];
         owned = owned[..owned.IndexOf("</tr>", StringComparison.Ordinal)];
-        owned.Should().Contain("<td>Flagged Owners</td>").And.Contain("briefed today").And.NotContain("No team");
+        owned.Should().Contain("<td data-label=\"Team\">Flagged Owners</td>").And.Contain("briefed today").And.NotContain("No team");
     }
 
     // An article's open "we run" card shows a colleague's tag and untag: they're heard on the article's tags topic.

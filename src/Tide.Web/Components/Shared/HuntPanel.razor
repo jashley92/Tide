@@ -12,6 +12,7 @@
    result is only ever recorded against a query the action's history shows. The card says what the query sweeps for (the
    indicators, as chips, the whole story's when chosen) and over how many days: every built-in template enforces that
    window in its own language, so the days a clean result searched start from it. *@
+@using Microsoft.AspNetCore.Components.Sections
 @inject ActionService ActionSvc
 @inject SavedQueryService SavedSvc
 @inject IJSRuntime JS
@@ -25,15 +26,18 @@
     <h2>Hunt queries <span class="tide-count tide-muted fw-normal">(@Action.Hunts.Count)</span></h2>
     @if (CanWork)
     {
-        @* The language, as a segmented control (the one used last is remembered), and the window every query generated
-           here enforces, in that language's own syntax. *@
-        <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
-            <TabBar Items="DialectItems" Active="@_dialect" Label="Query language" Level="TabLevel.Sub" OnSelect="ChooseDialect" />
-            <label class="small tide-muted mb-0" for="hunt-window">Last</label>
-            <input id="hunt-window" type="number" min="1" max="@ActionService.MaxHuntDays" class="form-control form-control-sm tide-w-count" value="@Days" disabled="@_busy"
-                   @onchange="e => SetDays(int.TryParse(e.Value as string, out var d) ? d : null)" />
-            <span class="small tide-muted">days</span>
-        </div>
+        @* On the drawer's tab row, at its right: the language, as a segmented control, and the window the query enforces,
+           in that language's own syntax. They say the query on the action, if there is one; another language or window
+           shows that query regenerated, as a preview. *@
+        <SectionContent SectionName="@ToolsSection">
+            <div class="tide-hunt-tools">
+                <TabBar Items="DialectItems" Active="@_dialect" Label="Query language" Level="TabLevel.Sub" OnSelect="ChooseDialect" />
+                <label class="small tide-muted mb-0" for="hunt-window">Last</label>
+                <input id="hunt-window" type="number" min="1" max="@ActionService.MaxHuntDays" class="form-control form-control-sm tide-w-days" value="@Days" disabled="@_busy"
+                       @onchange="e => SetDays(int.TryParse(e.Value as string, out var d) ? d : null)" />
+                <span class="small tide-muted">days</span>
+            </div>
+        </SectionContent>
         @if (Sweeping.Count > 0)
         {
             <div class="tide-hunt-sweeping">
@@ -41,7 +45,7 @@
                 @foreach (var i in Sweeping) { <span class="tide-chip tide-ioc mb-0" title="@Ui.IndicatorLabel(i.Type)">@IocObservable.Defang(i.Type, i.Value)</span> }
                 @if (StoryOffersMore)
                 {
-                    <button type="button" class="btn btn-link btn-sm" aria-pressed="@Ui.Aria(_fromStory)" disabled="@_busy" @onclick="() => UseStory(!_fromStory)">
+                    <button type="button" class="btn btn-link btn-sm tide-hunt-story" aria-pressed="@Ui.Aria(_fromStory)" disabled="@_busy" @onclick="() => UseStory(!_fromStory)">
                         @(_fromStory ? "Only this article's" : "Use the whole story's")</button>
                 }
             </div>
@@ -311,10 +315,14 @@
 
     private const string DialectPref = "hunt-dialect";
 
+    /// <summary>The outlet on the drawer's tab row the language and window are drawn in.</summary>
+    public const string ToolsSection = "hunt-tools";
+
     // The language this person used last, from the browser (theme.js's tidePrefs), once the panel is drawn.
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender || !CanWork) return;
+        // An action with a query says that query's language, not the one this person used last.
+        if (!firstRender || !CanWork || Action.Hunts.Count > 0) return;
         try
         {
             if (QueryDialects.Find(await JS.InvokeAsync<string?>("tidePrefs.get", DialectPref)) is { } d && d.Key != _dialect)
@@ -334,7 +342,7 @@
     internal async Task ChooseDialect(string? key)
     {
         if (QueryDialects.Find(key) is not { } d || d.Key == _dialect) return;
-        _dialect = d.Key;
+        (_dialect, _asked) = (d.Key, true);
         Offer();
         await ReadPreview();
         StateHasChanged();
@@ -362,7 +370,7 @@
     /// one): the preview is written over it, and so is a query generated or kept here.</summary>
     internal async Task SetDays(int? days)
     {
-        _days = days is { } d ? Math.Clamp(d, 1, ActionService.MaxHuntDays) : null;
+        (_days, _asked) = (days is { } d ? Math.Clamp(d, 1, ActionService.MaxHuntDays) : null, true);
         await ReadPreview();
         StateHasChanged();
     }
@@ -370,7 +378,7 @@
     /// <summary>The whole story's indicators, or only the article's: the chips, the preview and what Copy keeps follow.</summary>
     internal async Task UseStory(bool story)
     {
-        _fromStory = story && StoryOffersMore;
+        (_fromStory, _asked) = (story && StoryOffersMore, true);
         await ReadPreview();
         StateHasChanged();
     }
@@ -383,8 +391,12 @@
     /// <summary>The previewed query's text, or null when the panel shows none.</summary>
     internal string? Preview => _preview;
 
-    // For whoever may work an open sweep or hunt that has no query yet: with one, the page is as it was.
-    private bool PreviewWanted => CanWork && Action.IsOpen && ActionGuide.IsHunt(Action.Kind) && Action.Hunts.Count == 0;
+    // For whoever may work an open sweep or hunt that has no query yet, or one whose language, window or indicators
+    // were changed here from the query on it: that query regenerated, shown before it's kept.
+    private bool PreviewWanted => CanWork && Action.IsOpen && ActionGuide.IsHunt(Action.Kind) && (Action.Hunts.Count == 0 || _asked);
+
+    // The language, window or indicators were changed here, on an action that already has a query.
+    private bool _asked;
 
     // Read only: nothing is saved or logged for looking. A refusal (too many indicators for one query, say) is said, and
     // leaves the Generate button. One read in another language, overtaken by a change of language, is dropped.
@@ -419,7 +431,7 @@
         var saved = await Run(async () =>
         {
             var hunt = await ActionSvc.GenerateHuntAsync(Action.Id, _dialect, _fromStory, _days);
-            _preview = null;
+            (_preview, _asked) = (null, false);
             // The indicators or the templates changed since it was shown: what was copied isn't what was saved.
             if (hunt.Text != shown)
             {
@@ -501,7 +513,7 @@
 
     // Read when the action is read (the page hands over a new one after each save, an indicator added or removed here
     // among them), not on every redraw of the page around it, which happens on each keystroke in its comment box.
-    private ActionItem? _sourcesFor;
+    private ActionItem? _sourcesFor, _controlsFor;
 
     /// <summary>The key the prerender kept what it read under (<see cref="PrerenderHandoff"/>), for the interactive draw.</summary>
     [PersistentState]
@@ -509,6 +521,14 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        // With a query on the action, the controls say its language and window, until they're changed here (each time the
+        // action is read again, the prerendered draw's included).
+        if (!ReferenceEquals(Action, _controlsFor))
+        {
+            _controlsFor = Action;
+            if (!_asked && Action.Hunts.OrderByDescending(h => h.CreatedAtUtc).FirstOrDefault() is { } latest && QueryDialects.Find(latest.Dialect) is { } stored)
+                (_dialect, _days) = (stored.Key, HuntQueryBuilder.WindowOf(latest.GeneratedText));
+        }
         // The first interactive draw has the prerendered panel's buttons, not "no indicators" until they're read again.
         // Nothing saved since the prerender read them: they're still what a read gives.
         if (Handoff.Take<HuntPanel>(RendererInfo, PrerenderedState, out var current) is { } prerendered && prerendered.Action.Id == Action.Id)

@@ -356,4 +356,32 @@ public class ActionHuntPreviewTests(TideApp app) : IClassFixture<TideApp>
         await page.Click(_ => hunt.CopyPreview());
         (await Read(number)).Hunts.Single().Text.Should().Contain("later-report.example.net", "what was copied is what's kept");
     }
+
+    [Fact]
+    public async Task AnActionWithAQuery_ShowsItsLanguageAndWindow_AndAnotherIsAPreview_UntilKept()
+    {
+        var (number, id) = await Raise("Hunt with a query already");
+        await As(async sp => await sp.GetRequiredService<ActionService>().GenerateHuntAsync(id, "kql", days: 45));
+        var before = await Trace(id);
+        await using var page = await Open(number);
+        var hunt = page.Component.Drawer!.Hunt!;
+        var html = WebUtility.HtmlDecode(await page.Html());
+
+        html.Should().MatchRegex("aria-pressed=\"true\">\\s*<span>KQL</span>", "the control says the language of the query on the action")
+            .And.MatchRegex("<input id=\"hunt-window\" type=\"number\"[^>]*value=\"45\"", "and the window it enforces")
+            .And.NotContain("id=\"hunt-preview\"");
+        hunt.Preview.Should().BeNull("the query on the action is what's shown");
+
+        await page.Click(_ => hunt.ChooseDialect("xql"));
+        hunt.Preview.Should().Contain("config timeframe = 45d", "another language shows the query regenerated in it");
+        WebUtility.HtmlDecode(await page.Html()).Should().Contain("id=\"hunt-preview\"");
+        await page.Click(_ => hunt.SetDays(20));
+        hunt.Preview.Should().Contain("config timeframe = 20d");
+        (await Trace(id)).Should().Be(before, "a preview of another language or window saves and logs nothing");
+
+        await page.Click(_ => hunt.KeepPreview());
+        var hunts = (await Read(number)).Hunts;
+        hunts.Should().HaveCount(2, "Keep puts the regenerated query on the action");
+        hunts.Should().Contain(h => h.Dialect == "xql" && HuntQueryBuilder.WindowOf(h.GeneratedText) == 20);
+    }
 }
