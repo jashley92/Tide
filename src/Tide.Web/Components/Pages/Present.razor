@@ -81,6 +81,59 @@ else
                 <span>@Clock.TeamName daily brief <small>&middot; @Ui.Day(_date)</small></span>
                 @if (_past) { <span class="tide-present-help" title="This brief is being presented or recorded after its day">past day</span> }
             </div>
+            @* Who is here and whose hands are up, for the presenter and everyone following alike: the dots (a status region,
+               so arrivals and hands are read out), how many are here, the hands in the order they went up (the presenter
+               lowers one), and a follower's own Raise hand. With no meeting, who else has the brief open. *@
+            <div class="tide-present-people" style="--hands: @(_view?.Hands.Count ?? 0)">
+                @if (_view is { } meeting)
+                {
+                    var raised = meeting.Hands.Select(h => h.UserId).ToHashSet();
+                    <span class="tide-presence tide-presence-sm" role="status">
+                        @foreach (var p in meeting.People)
+                        {
+                            var away = meeting.Away(p);
+                            var up = raised.Contains(p.UserId);
+                            <span class="tide-presence-dot tide-avatar-@Ui.AvatarSwatch(p.UserId) @(away ? "is-away" : "") @(up ? "has-hand" : meeting.IsPresenter(p.UserId) ? "is-presenting" : "")" @key="p.UserId" title="@Says(meeting, p)" aria-hidden="true">
+                                @MainLayout.Initials(p.Name)
+                                @if (up) { <span class="tide-presence-edit bi bi-hand-index-thumb-fill"></span> }
+                                else if (away) { <span class="tide-presence-slide">@(p.Slide + 1)</span> }
+                            </span>
+                        }
+                        <span class="visually-hidden">In the meeting: @string.Join(", ", meeting.People.Select(p => Says(meeting, p))).</span>
+                    </span>
+                    <span class="tide-present-here" aria-hidden="true">@Here(meeting)</span>
+                    @if (meeting.Hands.Count > 0)
+                    {
+                        <ol class="tide-hands" aria-label="Hands up, in order">
+                            @foreach (var h in meeting.Hands)
+                            {
+                                <li @key="h.UserId">
+                                    @if (Presenting)
+                                    {
+                                        <button class="btn btn-sm btn-outline-secondary tide-hand-up" title="Lower @h.Name's hand" @onclick="() => ClearHand(h.UserId)"><span class="bi bi-hand-index-thumb" aria-hidden="true"></span> <span class="tide-hand-name">@h.Name</span> <span class="bi bi-x" aria-hidden="true"></span></button>
+                                    }
+                                    else
+                                    {
+                                        <span class="tide-hand-up"><span class="bi bi-hand-index-thumb" aria-hidden="true"></span> <span class="tide-hand-name">@h.Name</span></span>
+                                    }
+                                </li>
+                            }
+                        </ol>
+                        @if (Presenting && meeting.Hands.Count > 1) { <button class="btn btn-sm btn-link" @onclick="() => ClearHand(null)">Clear all</button> }
+                    }
+                    @if (!Presenting)
+                    {
+                        var mine = raised.Contains(_me);
+                        <button class="btn btn-sm @(mine ? "btn-primary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(mine)" @onclick="ToggleHand">
+                            <span class="bi bi-hand-index-thumb" aria-hidden="true"></span> @(mine ? "Lower hand" : "Raise hand")
+                        </button>
+                    }
+                }
+                else
+                {
+                    <PresenceNote Place="@($"brief:{Ui.IsoDay(_date)}")" Editing="NoteDirty" Compact="true" />
+                }
+            </div>
             <div class="tide-present-tools">
                 @* Whom this page follows, as a pill among the tools: it takes no height from the slide. When there's something to
                    do (back to the presenter, take over) it holds that one button; it's a live region, so a change is read out. *@
@@ -680,60 +733,24 @@ else
             </nav>
             <button class="btn btn-sm btn-outline-secondary" disabled="@(_slide == last || Held)" @onclick="() => Move(_slide + 1)" aria-label="Next slide"><span class="bi bi-chevron-right" aria-hidden="true"></span></button>
             <span>@Elapsed</span>
-            @if (_view is { } meeting)
+            @* The presenter's controls over the room; who is here and the hands are in the top bar. *@
+            @if (_view is { } room && Presenting)
             {
-                <span class="tide-presence tide-presence-sm" role="status">
-                    @foreach (var p in meeting.People)
-                    {
-                        var away = meeting.Away(p);
-                        var up = meeting.Hands.Any(h => h.UserId == p.UserId);
-                        <span class="tide-presence-dot tide-avatar-@Ui.AvatarSwatch(p.UserId) @(away ? "is-away" : "")" @key="p.UserId" title="@Says(meeting, p)" aria-hidden="true">
-                            @MainLayout.Initials(p.Name)
-                            @if (up) { <span class="tide-presence-edit bi bi-hand-index-thumb-fill"></span> }
-                            else if (away) { <span class="tide-presence-slide">@(p.Slide + 1)</span> }
-                        </span>
-                    }
-                    <span class="visually-hidden">In the meeting: @string.Join(", ", meeting.People.Select(p => Says(meeting, p))).</span>
-                </span>
-                @if (Presenting)
+                @if (room.People.Any(room.Away))
                 {
-                    @if (meeting.Hands.Count > 0)
-                    {
-                        <span class="tide-hands">
-                            @foreach (var h in meeting.Hands)
-                            {
-                                <button class="btn btn-sm btn-outline-secondary" title="Lower @h.Name's hand" @onclick="() => ClearHand(h.UserId)"><span class="bi bi-hand-index-thumb" aria-hidden="true"></span> @h.Name <span class="bi bi-x" aria-hidden="true"></span></button>
-                            }
-                            @if (meeting.Hands.Count > 1) { <button class="btn btn-sm btn-link" @onclick="() => ClearHand(null)">Clear all</button> }
-                        </span>
-                    }
-                    @if (meeting.People.Any(meeting.Away))
-                    {
-                        <button class="btn btn-sm btn-outline-secondary" @onclick="Summon">Bring everyone here</button>
-                    }
-                    <button class="btn btn-sm @(meeting.Locked ? "btn-primary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(meeting.Locked)"
-                            title="@(meeting.Locked ? "Let everyone browse the slides again" : "Everyone follows your slide, and can't browse off")" @onclick="ToggleLock">
-                        <span class="bi @(meeting.Locked ? "bi-lock-fill" : "bi-unlock")" aria-hidden="true"></span> @(meeting.Locked ? "Unlock" : "Lock to me")
-                    </button>
-                    @if (meeting.People.Any(p => p.CanPresent && !meeting.IsPresenter(p.UserId)))
-                    {
-                        <select class="form-select form-select-sm w-auto" aria-label="Hand presenting to" value="" @key="HandOffResets" @onchange="HandOff">
-                            <option value="">Hand off to…</option>
-                            @foreach (var p in meeting.People.Where(p => p.CanPresent && !meeting.IsPresenter(p.UserId))) { <option value="@p.UserId">@p.Name</option> }
-                        </select>
-                    }
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="Summon">Bring everyone here</button>
                 }
-                else
+                <button class="btn btn-sm @(room.Locked ? "btn-primary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(room.Locked)"
+                        title="@(room.Locked ? "Let everyone browse the slides again" : "Everyone follows your slide, and can't browse off")" @onclick="ToggleLock">
+                    <span class="bi @(room.Locked ? "bi-lock-fill" : "bi-unlock")" aria-hidden="true"></span> @(room.Locked ? "Unlock" : "Lock to me")
+                </button>
+                @if (room.People.Any(p => p.CanPresent && !room.IsPresenter(p.UserId)))
                 {
-                    var mine = meeting.Hands.Any(h => h.UserId == _me);
-                    <button class="btn btn-sm @(mine ? "btn-primary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(mine)" @onclick="ToggleHand">
-                        <span class="bi bi-hand-index-thumb" aria-hidden="true"></span> @(mine ? "Lower hand" : "Raise hand")
-                    </button>
+                    <select class="form-select form-select-sm w-auto" aria-label="Hand presenting to" value="" @key="HandOffResets" @onchange="HandOff">
+                        <option value="">Hand off to…</option>
+                        @foreach (var p in room.People.Where(p => p.CanPresent && !room.IsPresenter(p.UserId))) { <option value="@p.UserId">@p.Name</option> }
+                    </select>
                 }
-            }
-            else
-            {
-                <PresenceNote Place="@($"brief:{Ui.IsoDay(_date)}")" Editing="NoteDirty" Compact="true" />
             }
             <span class="d-none d-md-inline"><span class="tide-kbd">&larr;</span> <span class="tide-kbd">&rarr;</span> move &middot; <span class="tide-kbd">Space</span> scroll, then next &middot; <span class="tide-kbd">F</span> full screen</span>
         </footer>
@@ -2012,7 +2029,7 @@ else
         Refresh();
     }
 
-    private void ClearHand(string? userId)
+    internal void ClearHand(string? userId)
     {
         if (_seat is not null && Meetings.ClearHands(_seat, userId)) Refresh();
     }
@@ -2363,6 +2380,13 @@ else
         var where = m.IsPresenter(p.UserId) ? " (presenting)" : m.Away(p) ? $" (on slide {p.Slide + 1})" : "";
         var hand = m.Hands.Any(h => h.UserId == p.UserId) ? ", hand raised" : "";
         return p.Name + where + hand;
+    }
+
+    /// <summary>How many are in the meeting, and whether they're all on the presenter's slide.</summary>
+    private static string Here(LiveMeetingView m)
+    {
+        var away = m.People.Count(m.Away);
+        return $"{m.People.Count} here · " + (away == 0 ? "all on the same slide" : $"{away} on another slide");
     }
 
     // --- actions, given to someone at the meeting ----------------------------------------------------------------

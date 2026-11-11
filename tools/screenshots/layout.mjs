@@ -835,6 +835,54 @@ const insideOf = (selector, box) => ({
   }, [selector, box]),
 });
 
+/** Browsers of the meeting's other people, open while a page's rules run; the next setup closes them. */
+let meetingGuests = [];
+
+/**
+ * Setup: a live meeting on today's brief, with Olive's then Robin's hand up. `as` 'presenter': this page (the dev
+ * analyst) starts it, or takes it up again, and the two join in browsers of their own. 'follower': the dev analyst
+ * presents from another browser, Robin joins from a third, and this page joins as Olive, following. Wider letters, on
+ * the first article's slide.
+ */
+const meetingWithHands = as => async (page, demo) => {
+  for (const c of meetingGuests) await c.close().catch(() => {});
+  meetingGuests = [];
+  const browser = page.context().browser();
+  const join = async query => {
+    const { context, page: theirs } = await openPage(browser, { route: `/present/{today}${query}`, viewport: { width: 1440, height: 900 } }, demo);
+    meetingGuests.push(context);
+    return theirs;
+  };
+  const start = async p => {
+    const button = p.getByRole('button', { name: 'Start the meeting' });
+    if (await button.count()) await button.click();
+    await p.locator('.tide-present-people').waitFor();
+  };
+  const raise = async p => {
+    const button = p.locator('.tide-present-people').getByRole('button', { name: 'Raise hand' });
+    await button.waitFor();
+    await button.click();
+    await p.locator('.tide-present-people').getByRole('button', { name: 'Lower hand' }).waitFor();
+  };
+  if (as === 'presenter') {
+    await start(page);
+    await raise(await join('?as=Olive&roles=ActionOwner'));
+    await raise(await join('?as=Robin&roles=Analyst'));
+  } else {
+    const presenter = await join('');
+    await start(presenter);
+    await toArticleSlide(presenter);
+    await page.goto(`${page.url()}?as=Olive&roles=ActionOwner`, { waitUntil: 'networkidle' });
+    await settle(page);
+    await raise(page);
+    await raise(await join('?as=Robin&roles=Analyst'));
+  }
+  await page.locator('.tide-present-people .tide-hands > li').nth(1).waitFor();
+  await wideFont(page);
+  if (as === 'presenter') await toArticleSlide(page);
+  await page.waitForTimeout(600);
+};
+
 /** Setup: a toast shown while the rail is docked (the opening note saved; whatever the toast says, it's placed alike). */
 async function toastBesideRail(page) {
   await noteEdited(null)(page);
@@ -1098,6 +1146,16 @@ const clipboard = { permissions: ['clipboard-read', 'clipboard-write'] };
 
 /** A rule run in the page: `fn(arg)` returns what's wrong (nothing, when it holds). */
 const holds = (name, fn, arg) => ({ name, check: page => page.evaluate(fn, arg) });
+
+/** The slide's body fits, shrunk (present.js's --tide-fit) to no less than 80%, and scrolls only once it's at 80%. */
+const slideFits = holds('the slide fits, or scrolls only at 80%', () => {
+  const body = document.querySelector('[data-slide-body]');
+  if (!body) return ['no slide body'];
+  const fit = parseFloat(getComputedStyle(body).getPropertyValue('--tide-fit') || '1');
+  const over = body.scrollHeight - body.clientHeight;
+  if (fit < 0.799) return [`the slide is shrunk to ${fit}, below 80%`];
+  return over > 1 && fit > 0.801 ? [`the slide's body is ${over}px too tall at ${fit}, and could shrink further`] : [];
+});
 
 /** Each item of the open menu is wholly visible: the point at each corner, just inside, is the item (or inside it),
  * not a box that clips it or something drawn over it. */
@@ -1966,6 +2024,16 @@ const pages = [
   { name: 'triage-click-dismiss', route: '/triage', setup: selectReport, widths: [1440], rules: [clickFocusesNextRow('Dismiss')] },
   { name: 'actions-board-close-menu', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [closeKeepsPlace('menu')] },
   { name: 'actions-board-close-drag', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [closeKeepsPlace('drag')] },
+  // A live meeting with two hands up, seen by the presenter and by someone following: who is here and whose hands are
+  // up sit in the top bar, which keeps to one line from 901px (it wraps below, as before) and spills nowhere; the footer
+  // no longer has them; the slide still fits between the two. Wider letters. Last of all: the meeting stays live after.
+  ...['presenter', 'follower'].map(as => (
+    { name: `present-people-${as}`, route: '/present/{today}', setup: meetingWithHands(as), widths: [1920, 1440, 1100, 900, 780],
+      rules: [noSidewaysScroll, visible('.tide-present-top .tide-present-people .tide-presence-dot'), visible('.tide-present-top .tide-hands'),
+        fits('.tide-present-top'), fits('.tide-present-title'), fits('.tide-present-people'), fits('.tide-hands'), insideOf('.tide-present-people .tide-presence-dot', '.tide-present-top'),
+        insideOf('.tide-present-people .btn', '.tide-present-top'), [901, oneRow('.tide-present-top')], [901, oneRow('.tide-present-people')],
+        hidden('.tide-present-bottom .tide-presence'), hidden('.tide-present-bottom .tide-hands'),
+        inOrder('.tide-present-top', '.tide-slide', '.tide-present-bottom'), slideFits] })),
 ];
 
 // --- the run -----------------------------------------------------------------------------------------------------------
