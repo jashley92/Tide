@@ -164,7 +164,7 @@ public class RailOverlayTests
         said["widened"].Over.Should().BeFalse("where it docks, it isn't an overlay");
         said["dialogUnder"].Inert.Should().BeEmpty("a dialog opened in the page must be usable");
         said["dialogUnder"].Over.Should().BeFalse("so the rail closes for it");
-        said["dialogUnder"].Focus.Should().Be("tide-rail", "and focus is left for the dialog to take");
+        said["dialogUnder"].Focus.Should().Be("tide-rail-toggle", "focus that was in it goes to the Context button, for the dialog to take and give back there");
         said["dialogInRail"].Should().Be(new State(Everything, false, true, "true", "tide-rail", 1, "dialog", "true"), "a dialog in the rail is the rail's own");
         said["hiddenDialog"].Over.Should().BeTrue("a hidden dialog in the markup doesn't close the rail");
     }
