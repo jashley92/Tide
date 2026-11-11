@@ -652,6 +652,10 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 .tide-md { overflow-wrap: anywhere; }
 .tide-md pre { max-width: 100%; overflow-x: auto; }
 .tide-md p:last-child { margin-bottom: 0; }
+/* A quote in rendered Markdown (a team's recorded reply, or any "> " line) reads as someone else's words: a rule down
+   its left and muted text, as the email templates draw it. Bootstrap's reboot gives a bare blockquote only a margin. */
+.tide-md blockquote { margin: 0 0 .75rem; padding: .1rem 0 .1rem .75rem; border-left: 3px solid var(--tide-border); color: var(--tide-text-muted); }
+.tide-md blockquote:last-child { margin-bottom: 0; }
 
 /* ---- Toasts, reconnect ---- */
 .tide-toasts { position: fixed; right: 1rem; bottom: 1rem; z-index: 2000; display: grid; gap: .5rem; max-width: 420px; }
