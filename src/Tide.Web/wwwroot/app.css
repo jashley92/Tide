@@ -2770,3 +2770,51 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-ind-table td, .tide-ind-table th { overflow-wrap: anywhere; }
 .tide-ind-table th:last-child { width: 2.5rem; }
 /* ---- end Option E 3.3 ---- */
+
+/* ---- Triage 3.2: what TIDE knows about the selected item, in the context rail (its flat sections are Today 3.1's) ----
+   Its CVEs' facts three across, the covering article (Action page 3.5's .tide-rail-article) with its open actions, the
+   same event's other reports with Attach all and Not the same, the story, and what it names of Our stack. */
+.tide-triage-rail-cve + .tide-triage-rail-cve { margin-top: var(--tide-space-3); }
+.tide-triage-rail-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); margin: var(--tide-space-2) 0; }
+.tide-triage-rail-critical { color: var(--tide-threat); }
+.tide-triage-rail-desc { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; margin-bottom: var(--tide-space-2); }
+.tide-triage-rail-cves > p:last-child { margin-top: var(--tide-space-2); }
+.tide-rail-list .btn.tide-rail-list-title { font-size: inherit; line-height: inherit; text-align: start; white-space: normal; }
+.tide-triage-rail-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); margin-top: var(--tide-space-2); }
+.tide-triage-rail-acts > input { flex: 1 1 10rem; min-width: 0; width: auto; }
+/* Docked beside the rail under 1800px, the page has about 873 to 1170px: the list takes up to 42% of it (its own rule,
+   Triage's decision bar) and the bar's buttons wrap to a second row, as the design has them, rather than the pane
+   closing. From 1800px the pane has the room for them in one row again. */
+@media (min-width: 1500px) and (max-width: 1799.98px) {
+    html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-reading .tide-triage-acts { flex-wrap: wrap; }
+    /* Dismiss keeps its reason beside it, at its full width, and the two go to the next row together, at its end. */
+    html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-reading .tide-triage-end { display: inline-flex; margin-left: auto; }
+    html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-reading .tide-triage-end > select { flex: none; max-width: none; }
+    /* The bar's second row comes out of the text's share of the pane, which scrolls in less room, so the bar stays on
+       the first screen. */
+    html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-reading > .tide-reading-text { min-height: 3rem; }
+    /* The pane's title takes its whole width, breaking only between words, and Read it here (or again), Open the site
+       and Close go on a row of their own under it, Close at its end. */
+    html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-reading-head { flex-wrap: wrap; }
+    html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-reading-head > .tide-reading-title { flex: 1 0 100%; overflow-wrap: break-word; }
+    html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-reading-head > .btn-close { margin-left: auto; }
+}
+/* ---- end Triage 3.2 ---- */
+/* ---- Search 3.6: an indicator or CVE lookup with the context rail (Search.razor, SearchRail/LookupSweeps.razor) ----
+   The page keeps the answer in one card: the value and its first line, then, under a rule, the articles, the actions
+   raised and "Seen with". Beside a docked rail it has about 873px, which the articles' table fits: a long title wraps
+   in its cell, and the dates keep to theirs. The rail holds the hunt query (its name and language on one row, Copy and
+   "Include what it travels with" under it), who is sweeping for it, and the export. */
+.tide-lookup-card > div.tide-lookup-part:first-of-type { margin-top: var(--tide-space-3); padding-top: var(--tide-space-3); border-top: 1px solid var(--tide-border); }
+.tide-lookup-articles td:first-child { overflow-wrap: anywhere; }
+/* On a narrow window the actions' table keeps to the card too: a badge ("Hunt: no hits") wraps in its cell there. */
+#lookup-actions td:first-child { overflow-wrap: anywhere; }
+@media (max-width: 900px) { #lookup-actions td .tide-badge { white-space: normal; } }
+.tide-lookup-rail-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--tide-space-2); margin-bottom: var(--tide-space-2); }
+.tide-lookup-rail-head > h2 { margin: 0; }
+.tide-lookup-rail-head > .tide-tabbar-sub { margin: 0; }
+.tide-rail .tide-lookup-query { max-height: 22rem; margin-bottom: var(--tide-space-2); }
+.tide-lookup-rail-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); margin-bottom: var(--tide-space-2); }
+.tide-lookup-travels { padding-left: 0; padding-right: 0; text-align: left; }
+.tide-lookup-sweep-do { display: flex; flex-wrap: wrap; gap: var(--tide-space-2); margin-top: var(--tide-space-1); }
+/* ---- end Search 3.6 ---- */

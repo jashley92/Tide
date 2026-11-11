@@ -268,6 +268,26 @@ public class WebAppTests(TideApp app) : IClassFixture<TideApp>
         (await app.CreateClient().GetAsync($"/briefs/{day:yyyy-MM-dd}/email/nonsense")).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    // An indicator export names its TLP ceiling and its format, for every scope: with no ceiling, or a format it doesn't
+    // write, it's refused rather than given the most sensitive ceiling or another format. No format is STIX, as documented.
+    [Theory]
+    [InlineData("brief")]
+    [InlineData("lookup")]
+    public async Task AnIndicatorExport_WithNoCeilingOrAnUnknownFormat_IsRefused(string scope)
+    {
+        var day = app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;
+        var key = scope == "brief" ? $"{day:yyyy-MM-dd}" : Tide.Application.Exports.ExportService.LookupKey("203.0.113.45");
+        var client = app.CreateClient();
+        (await client.GetAsync($"/exports/{scope}/{key}")).StatusCode.Should().Be(HttpStatusCode.BadRequest, "no ceiling isn't every level");
+        (await client.GetAsync($"/exports/{scope}/{key}?format=csv")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await client.GetAsync($"/exports/{scope}/{key}?format=xml&tlp=clear")).StatusCode.Should().Be(HttpStatusCode.BadRequest, "xml isn't a format it writes");
+        (await client.GetAsync($"/exports/{scope}/{key}?format=&tlp=clear")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var stix = await client.GetAsync($"/exports/{scope}/{key}?tlp=clear");
+        stix.StatusCode.Should().Be(HttpStatusCode.OK, "no format is STIX");
+        stix.Content.Headers.ContentType!.MediaType.Should().Be("application/stix+json");
+        (await client.GetAsync($"/exports/{scope}/{key}?format=CSV&tlp=clear")).Content.Headers.ContentType!.MediaType.Should().Be("text/csv");
+    }
+
     [Fact]
     public async Task SharePointPage_AndMetricsCsv_Answer()
     {
@@ -281,10 +301,16 @@ public class WebAppTests(TideApp app) : IClassFixture<TideApp>
         stix.Content.Headers.ContentType!.MediaType.Should().Be("application/stix+json");
         stix.Content.Headers.ContentDisposition!.FileNameStar.Should().Be($"tide-brief-{day:yyyy-MM-dd}-amber.stix.json");
         (await stix.Content.ReadAsStringAsync()).Should().Contain("\"type\": \"bundle\"");
-        var indicators = await app.CreateClient().GetAsync($"/exports/brief/{day:yyyy-MM-dd}?format=csv");
+        var indicators = await app.CreateClient().GetAsync($"/exports/brief/{day:yyyy-MM-dd}?format=csv&tlp=clear");
         (await indicators.Content.ReadAsStringAsync()).Should().Contain("type,value,defanged");
         (await app.CreateClient().GetAsync($"/exports/brief/{day:yyyy-MM-dd}?tlp=purple")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await app.CreateClient().GetAsync($"/exports/nothing/{day:yyyy-MM-dd}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // A lookup's export: the articles the sample's VPN address is on, named for it and the ceiling.
+        var lookup = await app.CreateClient().GetAsync($"/exports/lookup/{Tide.Application.Exports.ExportService.LookupKey("203.0.113.45")}?format=stix&tlp=amber");
+        lookup.StatusCode.Should().Be(HttpStatusCode.OK);
+        lookup.Content.Headers.ContentDisposition!.FileNameStar.Should().Be("tide-lookup-203-0-113-45-amber.stix.json");
+        (await lookup.Content.ReadAsStringAsync()).Should().Contain("[ipv4-addr:value = '203.0.113.45']").And.Contain("update-check.example.net");
+        (await app.CreateClient().GetAsync($"/exports/lookup/{Tide.Application.Exports.ExportService.LookupKey("just words")}?tlp=red")).StatusCode.Should().Be(HttpStatusCode.NotFound);
         var trends = await app.CreateClient().GetAsync("/trends/export.csv?p=2026-Q3");
         trends.Content.Headers.ContentDisposition!.FileNameStar.Should().Be("tide-trends-2026-Q3.csv");
         (await trends.Content.ReadAsStringAsync()).Should().Contain("section,group,line,key,2025-Q3,2025-Q4,2026-Q1,2026-Q2,2026-Q3,change");
@@ -320,6 +346,7 @@ public class ReaderTests(ReaderApp app) : IClassFixture<ReaderApp>
         (await client.GetAsync("/published")).StatusCode.Should().Be(HttpStatusCode.OK);
         (await client.GetAsync("/metrics/export.csv")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await client.GetAsync("/exports/brief/2026-10-26?format=csv")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await client.GetAsync($"/exports/lookup/{Tide.Application.Exports.ExportService.LookupKey("203.0.113.45")}?format=stix")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await client.GetAsync("/trends/export.csv")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         var page = await client.GetAsync("/actions");
         page.StatusCode.Should().Be(HttpStatusCode.Redirect, "a page they can't open goes to the friendly access-denied page");

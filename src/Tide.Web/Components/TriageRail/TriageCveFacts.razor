@@ -1,0 +1,69 @@
+@* Triage's context rail, first: what TIDE's CVE records say of the CVEs the selected item names (CVSS, EPSS, whether
+   CISA lists it as exploited, the record's description), and the priority the promote form would suggest from them.
+   Only the records TIDE keeps (the page read them with the list); nothing is looked up anywhere. Nothing is drawn for
+   an item naming no CVE. *@
+@using System.Globalization
+
+@if (Cves.Count > 0)
+{
+    <section class="tide-card tide-triage-rail-cves" aria-labelledby="rail-cve-h">
+        <h2 id="rail-cve-h">@(Cves.Count == 1 ? "Its CVE" : $"Its {Cves.Count} CVEs")</h2>
+        @foreach (var id in Cves.Take(Shown))
+        {
+            var r = Records.GetValueOrDefault(id);
+            <div class="tide-triage-rail-cve" @key="id">
+                <div class="tide-rail-badges">
+                    <a class="tide-data fw-semibold" href="@($"search?q={Uri.EscapeDataString(id)}")" title="Search TIDE for it">@id</a>
+                    @if (r?.IsKev == true) { <Badge Tone="BadgeTone.Danger" Title="@CveChip.KevLine(r)">KEV</Badge> }
+                </div>
+                @if (r is null)
+                {
+                    <p class="small tide-muted mb-0">Not enriched yet: TIDE has no CVSS, EPSS or KEV record of it.</p>
+                }
+                else
+                {
+                    <dl class="tide-facts tide-facts-side tide-triage-rail-facts">
+                        <div class="tide-fact"><dt>CVSS</dt><dd class="@(r.CvssScore >= 9 ? "tide-triage-rail-critical" : null)">@(r.CvssScore?.ToString("0.0", CultureInfo.InvariantCulture) ?? "Not known")</dd></div>
+                        <div class="tide-fact"><dt>EPSS</dt><dd>@(r.EpssScore?.ToString("P0", CultureInfo.InvariantCulture).Replace(" ", "", StringComparison.Ordinal) ?? "Not known")</dd></div>
+                        <div class="tide-fact"><dt>On KEV</dt><dd>@(r.IsKev ? "Yes" : "No")</dd></div>
+                    </dl>
+                    @if (!string.IsNullOrWhiteSpace(r.Description)) { <p class="small tide-muted tide-triage-rail-desc" title="@r.Description">@r.Description</p> }
+                }
+            </div>
+        }
+        @if (Cves.Count > Shown) { <p class="small tide-muted mb-0">And @(Cves.Count - Shown) more, on its line in the list.</p> }
+        @if (_known.Count > 0)
+        {
+            <p class="small mb-0">
+                Promote would suggest <PriorityBadge Priority="@(_suggested?.Priority ?? Priority.P3)" />
+                (@(_suggested?.Reason ?? "nothing in its CVE records raises it")).
+            </p>
+        }
+    </section>
+}
+
+@code {
+    /// <summary>How many CVEs are set out before "And N more".</summary>
+    public const int Shown = 3;
+
+    /// <summary>The CVEs the selected item (or every report of its group) names.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<string> Cves { get; set; } = [];
+
+    /// <summary>TIDE's records of them, as the page read them for the list.</summary>
+    [Parameter, EditorRequired] public IReadOnlyDictionary<string, CveRecord> Records { get; set; } = new Dictionary<string, CveRecord>();
+
+    /// <summary>The item's title, which the suggestion reads for "exploit", as the promote form's does.</summary>
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+
+    [Parameter, EditorRequired] public DateOnly Today { get; set; }
+
+    private List<CveRecord> _known = [];
+    private PrioritySuggestion? _suggested;
+
+    // The promote form's own suggestion (Triage.OpenPromote), from the same records.
+    protected override void OnParametersSet()
+    {
+        _known = [.. Cves.Select(c => Records.GetValueOrDefault(c)).OfType<CveRecord>()];
+        _suggested = _known.Count > 0 ? CveService.SuggestedPriority(_known, Title, Today) : null;
+    }
+}

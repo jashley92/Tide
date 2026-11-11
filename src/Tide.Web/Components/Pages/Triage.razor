@@ -16,6 +16,7 @@
 @inject PrerenderHandoff Handoff
 @inject UserPreferenceService Prefs
 @using Tide.Application.Preferences
+@using Tide.Web.Components.TriageRail
 @implements IAsyncDisposable
 
 <PageTitle>Triage · TIDE</PageTitle>
@@ -169,7 +170,7 @@ else
                         @if (group.Cves.Count > 6) { <span>+@(group.Cves.Count - 6) more CVEs</span> }
                         @* The group's flags, in the rows' order (see a row's flags). *@
                         <span class="tide-triage-flags">
-                            @if (WeRunOf(line) is { } groupRuns) { @WeRunChip(groupRuns) }
+                            @if (WeRunOf(line) is { } groupRuns) { @TriageNamed.WeRunChip(groupRuns) }
                             @if (attachAll is not null) { <Badge Tone="BadgeTone.Info" Class="tide-badge-wrap">@attachAll.Why covered: <a href="articles/@attachAll.ArticleId" @onclick:stopPropagation="true">@Short(attachAll.ArticleTitle)</a></Badge> }
                         </span>
                     </div>
@@ -240,11 +241,8 @@ else
                                adversary, already covered (attach rather than promote), the same CVE as other new items (decide
                                them together), and looks like an earlier item (maybe a duplicate). *@
                             <span class="tide-triage-flags">
-                                @if (row.WeRun is { } runs) { @WeRunChip(runs) }
-                                @if (row.Watching is { } watching)
-                                {
-                                    <a class="tide-badge tide-badge-warn tide-werun-chip" href="@($"adversaries/{watching.Id}")" title="A watched adversary: open its profile" @onclick:stopPropagation="true">Watching: @watching.Name</a>
-                                }
+                                @if (row.WeRun is { } runs) { @TriageNamed.WeRunChip(runs) }
+                                @if (row.Watching is { } watching) { @TriageNamed.WatchingChip(watching) }
                                 @foreach (var c in row.Coverage)
                                 {
                                     <Badge Tone="BadgeTone.Info" Class="tide-badge-wrap">@c.Why covered@(c.BriefDate is { } d ? $" {Ui.ShortDay(d)}" : ""): <a href="articles/@c.ArticleId" @onclick:stopPropagation="true">@Short(c.ArticleTitle)</a></Badge>
@@ -286,6 +284,8 @@ else
 @if (_reading) { @ReadingPane() }
 </div>
 </div>
+@* What TIDE knows about the selected line, in the context rail (MainLayout draws it after the content). *@
+<ContextRail Title="What TIDE knows">@Rail()</ContextRail>
 }
 @* What changed live, in words: the toast says what a colleague did; this says what it did to the list here. *@
 <div class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">@_said</div>
@@ -584,8 +584,8 @@ else
                 </span>
             }
         </div>
-        @* One story, many reports: keep a follow-up's link on another article that covers it, set the rest aside, attach it
-           to an article being written, or name what we run. *@
+        @* One story, many reports: keep a follow-up's link on another article that covers it, set the rest aside, or attach
+           it to an article being written. (What we run is named from the context rail.) *@
         List<Coverage> otherArticles = attachTo is null ? [] : row.Coverage.Where(c => c.Attachable && c.ArticleId != attachTo.ArticleId).DistinctBy(c => c.ArticleId).Take(2).ToList();
         <div class="tide-triage-more">
             @foreach (var c in otherArticles)
@@ -599,23 +599,6 @@ else
                     Dismiss the @row.SameCve.Count other@(row.SameCve.Count == 1 ? "" : "s") with its CVE as covered</button>
             }
             @if (Promotable(item.Status)) { <AttachPicker Disabled="_busy" OnPick="t => Attach([row.Item.Id], t.Id, t.Title)" OpenChanged="open => _attaching = open" /> }
-            @if (row.WeRun is null)
-            {
-                @if (_addingStack == item.Id)
-                {
-                    <span class="d-inline-flex gap-1 align-items-center" @onclick:stopPropagation="true">
-                        <label class="visually-hidden" for="stack-add-@item.Id">Product we run</label>
-                        <input id="stack-add-@item.Id" class="form-control form-control-sm w-auto" maxlength="100" placeholder="Product, e.g. GitLab"
-                               @bind="_stackName" @bind:event="oninput" @onkeydown="StackKey" />
-                        <button type="button" class="btn btn-primary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_stackName))" @onclick="AddToStack">Add</button>
-                        <button type="button" class="btn btn-link btn-sm" @onclick="() => _addingStack = null">Cancel</button>
-                    </span>
-                }
-                else
-                {
-                    <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => { _addingStack = item.Id; _stackName = null; }">Add to what we run…</button>
-                }
-            }
         </div>
     };
 
@@ -635,6 +618,62 @@ else
                 + (one ? "promote it as a new article." : $"promote the {reports} as one new article.");
         return one ? "Nothing TIDE has covers it yet, so the suggested step is to promote it."
             : $"Nothing TIDE has covers them yet, so the suggested step is to promote the {reports} as one article.";
+    }
+
+    // The context rail: what TIDE already keeps about the selected line (a report, or every report of a group's line). It
+    // reads only what's stored, never a source: the CVE records the list read, the coverage the list's flags show (and,
+    // through their services, that article's open actions and story), the group, and what it names of Our stack and the
+    // watched adversaries. Its buttons are the page's own paths.
+    private RenderFragment Rail() => __builder =>
+    {
+        if (Current is not { } line)
+        {
+            <section class="tide-card"><p class="small tide-muted mb-0">Choose an item to see what TIDE knows about it.</p></section>
+            return;
+        }
+        IReadOnlyList<InboxRow> reports = line.Row is { } one ? [one] : line.Members;
+        var first = reports[0].Item;
+        <TriageCveFacts Cves="@([.. reports.SelectMany(r => r.Item.CveList).Distinct(StringComparer.OrdinalIgnoreCase)])" Records="_cves" Title="@first.Title" Today="Clock.Today" />
+        <TriageCovered Coverage="@Covering(line, reports)">
+            <Then>
+                @if (SameEventLine is { } head)
+                {
+                    <TriageSameEvent Members="head.Members" Selected="line.Row?.Item.Id" AttachTo="AttachTo(head)" Busy="_busy"
+                                     OnAttach="AttachSameEvent" OnSplit="SplitSameEvent" OnPick="PickReport" />
+                }
+            </Then>
+        </TriageCovered>
+        <TriageNamed @key="KeyOf(line)" WeRun="WeRunOf(line)" Watching="reports.Select(r => r.Watching).FirstOrDefault(w => w is not null)" Busy="_busy"
+                     Add="@(first.Status == FeedItemStatus.Promoted && line.Row is not null ? null : AddToStack)" />
+    };
+
+    // The articles covering a line, one each: the one its main button attaches it to first, then the rest as its flags
+    // list them.
+    private static List<Coverage> Covering(Line line, IReadOnlyList<InboxRow> reports)
+    {
+        var all = reports.SelectMany(r => r.Coverage);
+        if (AttachTo(line) is { } to) all = all.Prepend(to);
+        return [.. all.DistinctBy(c => c.ArticleId)];
+    }
+
+    // The group's line for the selected line (itself, or the group a report under it is in): what the rail's Same event acts on.
+    private Line? SameEventLine => Current is { Group: { } g } ? _lines.Find(l => l.Row is null && l.Group!.Newest == g.Newest) : null;
+
+    /// <summary>The rail's Attach both (all N): the group's own all-or-none attach, as its main button.</summary>
+    internal Task AttachSameEvent() => SameEventLine is { } head && AttachTo(head) is { } to ? AttachLine(head, to) : Task.CompletedTask;
+
+    /// <summary>The rail's Not the same: the group split for everyone, as its bar's button does.</summary>
+    internal Task SplitSameEvent() => SameEventLine is { } head ? Split(_lines.IndexOf(head)) : Task.CompletedTask;
+
+    /// <summary>A report chosen in the rail's Same event: its group opens to it, and it's selected (the pane follows).</summary>
+    internal async Task PickReport(Guid id)
+    {
+        if (_rows.FirstOrDefault(r => r.Item.Id == id)?.Group is { } group && !IsOpen(group))
+        {
+            _open.UnionWith(group.Ids);
+            BuildLines();
+        }
+        if (_lines.FindIndex(l => l.Row?.Item.Id == id) is >= 0 and var at) await Pick(at);
     }
 
     private string ReadingDaysText => Math.Clamp(IntakeOpts.CurrentValue.ReadingDays, 1, 30) is var d && d == 7 ? "a week" : $"{d} day{(d == 1 ? "" : "s")}";
@@ -827,33 +866,27 @@ else
     private static Tide.Application.Stack.StackEntry? WeRunOf(Line line) => line.Row?.WeRun ?? line.Members.Select(m => m.WeRun).FirstOrDefault(w => w is not null);
     private bool AnyWeRun => !_older && _rows.Any(r => r.WeRun is not null);
 
-    // "Add to what we run…" on a row: the product's name, added to Our stack (or found there), and the list read again.
-    private Guid? _addingStack;
-    private string? _stackName;
-
-    private Task StackKey(KeyboardEventArgs e) => e.Key == "Enter" ? AddToStack() : Task.CompletedTask;
-
-    internal async Task AddToStack()
+    // "Add to what we run…" in the rail: the product's name, added to Our stack (or found there), and the list read again.
+    // True when it was added.
+    internal async Task<bool> AddToStack(string name)
     {
-        if (_busy || string.IsNullOrWhiteSpace(_stackName)) return;
+        if (_busy || string.IsNullOrWhiteSpace(name)) return false;
         _busy = true;
         try
         {
-            var name = _stackName.Trim();
+            name = name.Trim();
             await Stack.AddByNameAsync(name);
-            _addingStack = null;
             Toasts.Show($"{name} added to Our stack.");
             await Load();
+            return true;
         }
-        catch (Exception ex) when (ex is ArgumentException or ForbiddenException) { Toasts.Error(UserFacingError.For(ex)); }
-        finally { _busy = false; }
+        catch (Exception ex) when (ex is ArgumentException or ForbiddenException) { Toasts.Error(UserFacingError.For(ex)); return false; }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();   // called from the rail's own handler: the page draws the list read again
+        }
     }
-
-    // The chip on a row naming what we run: it opens the product's page (its notes, versions and history).
-    private RenderFragment WeRunChip(Tide.Application.Stack.StackEntry e) => __builder =>
-    {
-        <a class="tide-badge tide-badge-ok tide-werun-chip" href="@($"stack/{e.Id}")" title="On Our stack: open its notes and history" @onclick:stopPropagation="true">We run: @e.Name</a>
-    };
 
     // The New tab's fold of items that aged out (IntakeOptions.AgeDays), and whether it's what's shown.
     private bool _older;

@@ -184,7 +184,7 @@ correctly (`ExportEndpoints.CsvFile`).
 | GET `/trends/articles.csv?p=&line=&subs=` | `TrendsService.ArticlesAsync` | `AsExport` | `exports` | `private, no-store` | The articles one trend line counted. |
 | GET `/reports/export.csv?p=` | `ReportService.BuildAsync` | `AsExport` | `exports` | `private, no-store` | The period report. |
 | GET `/reports/teams/export.csv?days=&parts=&external=` | `TeamScorecardService.BuildAsync`, `ToCsv` | `AsExport(ReadActions)` | `exports` | `private, no-store` | The team commitments scorecard, a row per team. |
-| GET `/exports/{scope}/{key}?format=&tlp=` | `ExportService.GatherAsync`, `Stix.Write`, `IndicatorCsv.Write` | `AsExport` | `exports` | `private, no-store` | `scope` is `article`, `brief` or `story`; STIX 2.1 (`application/stix+json;version=2.1`) or `format=csv`; `tlp` is the ceiling, every level by default. |
+| GET `/exports/{scope}/{key}?format=&tlp=` | `ExportService.GatherAsync`, `Stix.Write`, `IndicatorCsv.Write` | `AsExport` | `exports` | `private, no-store` | `scope` is `article`, `brief`, `story` or `lookup`; STIX 2.1 (`application/stix+json;version=2.1`, no `format` or `format=stix`) or `format=csv`, any other 400; `tlp` is the ceiling, required (400 without it). |
 | GET `/admin/system/tide.config.psd1` | `InstallAnswers.Write` | Administer | none | `no-store` | The install answers file for this server. No secrets. |
 | GET `/admin/system/config-bundle.json` | `ConfigBundleService.ExportAsync` | Administer | none | `no-store` | The administered settings. No secrets. |
 | GET `/admin/system/audit.csv` | `AuditLogService.ExportAsync` | `AsExport(Administer)` | `exports` | `private, no-store` | The audit rows the page's filters match, secrets masked. |

@@ -161,7 +161,7 @@ GREEN and an outreach template at CLEAR:
 | Webhook `action.raised` | AMBER+STRICT (team) | A-12 posted, marked GREEN | A-13 never posted | n/a | n/a | n/a |
 | Outreach email from A-12 | CLEAR (template) | Left out whole, its indicators with it, and said so | n/a | n/a | n/a | n/a |
 | Export `?tlp=green` | GREEN (chosen) | Its indicators, marked GREEN | Left out | n/a | n/a | n/a |
-| Export with no `tlp` | RED (default) | Its indicators | Its indicators, marked RED | n/a | n/a | n/a |
+| Export with no `tlp` | none: refused (400) | Nothing | Nothing | n/a | n/a | n/a |
 
 ## Ceilings
 
@@ -172,7 +172,7 @@ GREEN and an outreach template at CLEAR:
 | An API token | `ApiToken.MaxTlp`, capped by the team ceiling | Administrator, per token | Chosen at issue | `ApiTokenService`, `ApiService` |
 | Webhooks | The team ceiling | (follows it) | AMBER+STRICT | `WebhookService` |
 | An outreach email | `OutreachTemplate.Ceiling` | Whoever works actions, per template | Chosen | `OutreachFill.Cut` |
-| An indicator export | `?tlp=` | The person exporting | RED (every level) | `ExportService.GatherAsync` |
+| An indicator export | `?tlp=` (required) | The person exporting | CLEAR in the Export panel; none on the address (refused) | `ExportService.GatherAsync` |
 | AI drafting | `Ai:MaxTlp` | Server configuration | GREEN | `AssistService` ([security.md](security.md#ai-data-handling)) |
 
 ### The edition ceilings
@@ -209,8 +209,9 @@ TLP of what it filled in, and each thing left out is named for the analyst.
 
 ### Exports
 
-`GET /exports/{article|brief|story}/{key}?format=stix|csv&tlp=` (team edition and above) leaves out every article
-marked above the chosen TLP, whole, as the editions do. With no `tlp` it's RED, so everything. Every STIX object
+`GET /exports/{article|brief|story|lookup}/{key}?format=stix|csv&tlp=` (team edition and above) leaves out every article
+marked above the chosen TLP, whole, as the editions do. The ceiling is required: with no `tlp`, or a format other than
+stix or csv, the request is refused (400), and the Export panel starts at TLP:CLEAR, so a wider ceiling is always chosen. Every STIX object
 carries its article's OASIS TLP 2.0 marking-definition (an object shared by several articles takes the highest), each
 CSV row its article's TLP, and the file name carries the ceiling (`tide-brief-2026-11-06-green.csv`)
 (ADR [0012](../decisions/0012-exports-carry-tlp-and-stable-ids.md)). The person exporting decides who it's for.
