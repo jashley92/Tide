@@ -6,9 +6,10 @@ namespace Tide.UnitTests;
 
 /// <summary>
 /// The context rail's script (tideRail in wwwroot/js/theme.js), run in Node over a small stand-in for the page, as
-/// <see cref="DialogTabTests"/> runs dialog.js. On a phone the open rail covers the whole window, so the page under it
-/// is made inert (out of the tab order, hidden from assistive technology) until it closes; a side overlay and a docked
-/// rail leave the page as it is. Focus goes into the rail as an overlay opens and back to its button as it closes.
+/// <see cref="DialogTabTests"/> runs dialog.js. The open overlay is modal at every width it's an overlay (a phone, or a
+/// window narrower than where the rail docks): the page under it is made inert (out of the tab order, hidden from
+/// assistive technology) until it closes. A docked rail leaves the page as it is. Focus goes into the rail as the overlay
+/// opens and back to its button as it closes.
 /// </summary>
 public class RailOverlayTests
 {
@@ -25,7 +26,7 @@ public class RailOverlayTests
         const vm = require('vm'), fs = require('fs');
         function el(id) {
             const attrs = {};
-            return { id, attrs, isConnected: true,
+            return { id, attrs, isConnected: true, getClientRects: () => [{}],
                 getAttribute: n => (n in attrs ? attrs[n] : null), hasAttribute: n => n in attrs,
                 setAttribute: (n, v) => { attrs[n] = String(v); }, removeAttribute: n => { delete attrs[n]; },
                 toggleAttribute(n, on) { if (on) attrs[n] = ''; else delete attrs[n]; },
@@ -33,7 +34,7 @@ public class RailOverlayTests
         }
         const root = el('html'), rail = el('tide-rail'), button = el('tide-rail-toggle');
         const under = { '.tide-skip-link': el('skip'), '.sidebar': el('sidebar'), '.top-row': el('top'), '#main-content': el('content') };
-        const where = { docks: false, covers: false };
+        const where = { docks: false };
         let railThere = true, dialog = null;
         const listeners = { keydown: [], click: [], resize: [] }, observers = [];
         global.document = {
@@ -45,8 +46,7 @@ public class RailOverlayTests
         global.window = global;
         global.addEventListener = (t, f) => { (listeners[t] || (listeners[t] = [])).push(f); };
         global.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
-        global.getComputedStyle = e => ({ getPropertyValue: name => e !== rail ? '' : name === '--tide-rail-docks' ? (where.docks ? '1' : '')
-            : name === '--tide-rail-covers' ? (where.covers ? '1' : '') : '' });
+        global.getComputedStyle = e => ({ getPropertyValue: name => e !== rail ? '' : name === '--tide-rail-docks' ? (where.docks ? '1' : '') : '' });
         global.MutationObserver = function (f) { this.observe = () => { observers.push(f); }; this.disconnect = () => { observers.splice(observers.indexOf(f), 1); }; };
         vm.runInThisContext(fs.readFileSync(process.argv[2], 'utf8'));
 
@@ -59,46 +59,53 @@ public class RailOverlayTests
             expanded: button.getAttribute('aria-expanded'),
             focus: document.activeElement ? document.activeElement.id : null,
             watching: observers.length,
+            role: rail.getAttribute('role'),
+            modal: rail.getAttribute('aria-modal'),
         });
         function reset(at) {
-            Object.assign(where, { docks: false, covers: false }, at);
+            Object.assign(where, { docks: false }, at);
             railThere = true; dialog = null; document.activeElement = button;
             root.removeAttribute('data-rail'); tideRail.start();
         }
         const out = {};
 
-        reset({ covers: true });
-        tideRail.toggle(); out.phoneOpen = state();
-        tideRail.toggle(); out.phoneClosed = state();
-        tideRail.toggle(); key('Escape'); out.phoneEscape = state();
-
         reset({});
-        tideRail.toggle(); out.sideOpen = state();
+        tideRail.toggle(); out.overOpen = state();
+        tideRail.toggle(); out.overClosed = state();
+        tideRail.toggle(); key('Escape'); out.overEscape = state();
 
         reset({ docks: true });
         out.docked = state();
         tideRail.toggle(); out.dockedClosed = state();
 
-        // Open on a phone, then the page changes to one with no rail.
-        reset({ covers: true });
+        // Open, then the page changes to one with no rail.
+        reset({});
         tideRail.toggle(); railThere = false; changed(); out.railGone = state();
 
-        // Open on a phone, then the window widens to where the rail is a side overlay.
-        reset({ covers: true });
-        tideRail.toggle(); where.covers = false; listeners.resize.forEach(f => f()); out.widened = state();
+        // Open, then the window widens to where the rail docks.
+        reset({});
+        tideRail.toggle(); where.docks = true; listeners.resize.forEach(f => f()); out.widened = state();
 
-        // Open on a phone, then a dialog opens in the page under it (the palette, from Ctrl+K).
-        reset({ covers: true });
+        // Open, then a dialog opens in the page under it (the palette, from Ctrl+K).
+        reset({});
         tideRail.toggle(); dialog = el('palette'); changed(); out.dialogUnder = state();
 
         // A dialog inside the rail itself is the rail's own.
-        reset({ covers: true });
+        reset({});
         tideRail.toggle(); dialog = rail; changed(); out.dialogInRail = state();
+
+        // A dialog that's in the markup but not showing (the reconnect dialog) is nothing: the rail's markup changing
+        // (its form opening) leaves it open.
+        reset({});
+        tideRail.toggle(); dialog = Object.assign(el('reconnect'), { getClientRects: () => [] }); changed(); out.hiddenDialog = state();
 
         console.log(JSON.stringify(out));
         """;
 
-    private sealed record State(string Inert, bool RailInert, bool Over, string? Expanded, string? Focus, int Watching);
+    // Role and Modal: the rail's role and aria-modal, set only while it's an open overlay (a dialog); a docked or closed
+    // rail is the aside's own complementary landmark.
+    private sealed record State(string Inert, bool RailInert, bool Over, string? Expanded, string? Focus, int Watching,
+        string? Role = null, string? Modal = null);
 
     private static async Task<Dictionary<string, State>> Run()
     {
@@ -128,37 +135,37 @@ public class RailOverlayTests
     private const string Everything = "skip,sidebar,top,content";
 
     [Fact]
-    public async Task OnAPhone_TheOpenRail_MakesThePageUnderItInert_AndClosingGivesItBack()
+    public async Task TheOpenOverlay_MakesThePageUnderItInert_AndClosingGivesItBack()
     {
         var said = await Run();
 
-        said["phoneOpen"].Should().Be(new State(Everything, RailInert: false, Over: true, "true", "tide-rail", 1),
-            "the rail covers the window: Tab stays in it, and focus moves into it");
-        said["phoneClosed"].Should().Be(new State("", false, false, "false", "tide-rail-toggle", 0), "closed, the page is back and focus is on the button");
-        said["phoneEscape"].Should().Be(new State("", false, false, "false", "tide-rail-toggle", 0), "Escape closes it the same way");
+        said["overOpen"].Should().Be(new State(Everything, RailInert: false, Over: true, "true", "tide-rail", 1, "dialog", "true"),
+            "the overlay is modal, and says so: Tab stays in it, and focus moves into it");
+        said["overClosed"].Should().Be(new State("", false, false, "false", "tide-rail-toggle", 0), "closed, the page is back and focus is on the button");
+        said["overEscape"].Should().Be(new State("", false, false, "false", "tide-rail-toggle", 0), "Escape closes it the same way");
     }
 
     [Fact]
-    public async Task ASideOverlay_AndADockedRail_LeaveThePageAsItIs()
+    public async Task ADockedRail_LeavesThePageAsItIs()
     {
         var said = await Run();
 
-        said["sideOpen"].Should().Be(new State("", false, true, "true", "tide-rail", 0), "the page is still in view beside a side overlay");
         said["docked"].Should().Be(new State("", false, false, "true", "tide-rail-toggle", 0));
         said["dockedClosed"].Should().Be(new State("", false, false, "false", "tide-rail-toggle", 0));
     }
 
     [Fact]
-    public async Task NothingStaysInert_WhenTheRailGoes_TheWindowWidens_OrADialogOpensUnderIt()
+    public async Task NothingStaysInert_WhenTheRailGoes_ItDocks_OrADialogOpensUnderIt()
     {
         var said = await Run();
 
-        said["railGone"].Should().Be(new State("", false, false, "false", "tide-rail", 0), "a page with no rail has nothing over it");
-        said["widened"].Inert.Should().BeEmpty("a side overlay leaves the page in view");
-        said["widened"].Over.Should().BeTrue();
+        (said["railGone"] with { Role = null, Modal = null }).Should().Be(new State("", false, false, "false", "tide-rail", 0), "a page with no rail has nothing over it (the rail that went keeps its attributes, gone with it)");
+        said["widened"].Inert.Should().BeEmpty("a docked rail leaves the page as it is");
+        said["widened"].Over.Should().BeFalse("where it docks, it isn't an overlay");
         said["dialogUnder"].Inert.Should().BeEmpty("a dialog opened in the page must be usable");
         said["dialogUnder"].Over.Should().BeFalse("so the rail closes for it");
         said["dialogUnder"].Focus.Should().Be("tide-rail", "and focus is left for the dialog to take");
-        said["dialogInRail"].Should().Be(new State(Everything, false, true, "true", "tide-rail", 1), "a dialog in the rail is the rail's own");
+        said["dialogInRail"].Should().Be(new State(Everything, false, true, "true", "tide-rail", 1, "dialog", "true"), "a dialog in the rail is the rail's own");
+        said["hiddenDialog"].Over.Should().BeTrue("a hidden dialog in the markup doesn't close the rail");
     }
 }

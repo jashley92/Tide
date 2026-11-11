@@ -1,35 +1,32 @@
 @inject ActionService ActionSvc
 @inject OrgClock Clock
 
-@* One row of a Today action list (the queue, the team's unassigned, the escalated): its number, title and files, a
-   line about it with how late it is, then Take it (when it's nobody's and offered) or its due-date badge. *@
+@* One row of a Today action list (the teams' queue, an action owner's queue, the escalated): its title and files, a row
+   of badges (its number, status, priority and when it's due, or how late), then a line saying whose it is, and Take it
+   when it's nobody's and offered. *@
 
-<div class="tide-queue-row @Marks?.Css(Row.Id)">
-    <span class="tide-queue-title">
+<div class="tide-queue-row @Marks?.Css(Row.Id)" @onfocusin="() => Focused?.Invoke(Row.Id, true)" @onfocusout="() => Focused?.Invoke(Row.Id, false)">
+    <div class="tide-queue-title">
         <ActionRef Number="Row.Number" Title="@Row.Title" /> <FileCount Count="Row.Files" />
-        <span class="tide-queue-meta">
-            @Meta
-            @if (ActionSla.LateText(Row.DueDate, ActionSvc.Today) is { } late)
-            {
-                <span>&middot; <span class="tide-queue-late">@late</span></span>
-            }
-        </span>
-    </span>
-    @if (OfferTake && Row.AssigneeId is null)
+        <div class="tide-queue-badges">
+            <span class="tide-action-num">@Ui.ActionLabel(Row.Number)</span>
+            <ActionStatusBadge Status="Row.Status" />
+            <PriorityBadge Priority="Row.Priority" />
+            <SlaBadge State="Row.Sla(ActionSvc.Today, Clock.Days)" Due="Row.DueDate" Today="ActionSvc.Today" ShowDate="true" />
+        </div>
+        <div class="tide-queue-meta">@Meta</div>
+    </div>
+    @if (Offers)
     {
-        <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@Busy" @onclick="() => OnTake.InvokeAsync(Row)"
+        <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@Busy" @onclick="() => OnTake.InvokeAsync(Row)" @ref="_take"
                 aria-label="@($"Take {Ui.ActionLabel(Row.Number)} on: {Row.Title}")">Take it</button>
-    }
-    else
-    {
-        <SlaBadge State="Row.Sla(ActionSvc.Today, Clock.Days)" Due="Row.DueDate" />
     }
 </div>
 
 @code {
     [Parameter, EditorRequired] public ActionRow Row { get; set; } = default!;
 
-    /// <summary>The line under the title: its kind or priority, its team, whose it is.</summary>
+    /// <summary>The line under the badges: its team, and whose it is ("nobody has it").</summary>
     [Parameter, EditorRequired] public string Meta { get; set; } = "";
 
     /// <summary>Offer Take it when the action is nobody's.</summary>
@@ -42,4 +39,15 @@
     [Parameter] public LiveMarks<Guid>? Marks { get; set; }
 
     [Parameter] public EventCallback<ActionRow> OnTake { get; set; }
+
+    /// <summary>Focus came into the row (true) or left it (false): the card keeps its place when a colleague's change
+    /// takes the focused row away (KeepPlace). A plain delegate, so moving focus doesn't redraw the card.</summary>
+    [Parameter] public Action<Guid, bool>? Focused { get; set; }
+
+    private bool Offers => OfferTake && Row.AssigneeId is null;
+
+    private ElementReference _take;
+
+    /// <summary>The Take it button, for the card to give focus to (KeepPlace); null while the row doesn't offer it.</summary>
+    public ElementReference? TakeButton => Offers ? _take : null;
 }

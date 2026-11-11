@@ -283,7 +283,9 @@ public class BriefProgressTests
     public void TheTriageStep_SaysHowManyNewItemsAreOnKev()
     {
         var brief = BriefWith(BriefStatus.Draft, Ready("a"));
-        Step(BriefSteps.For(brief, 4, 0, "9:00 AM", newOnKev: 2), BriefStepKind.Triage).Should().Be((StepState.Attention, "4 new in the feed · 2 on KEV"));
+        // The KEV count is a flag of its own beside the detail, not more words in it.
+        var triage = BriefSteps.For(brief, 4, 0, "9:00 AM", newOnKev: 2).Single(s => s.Kind == BriefStepKind.Triage);
+        (triage.State, triage.Detail, triage.Kev).Should().Be((StepState.Attention, "4 new in the feed", 2));
         Step(BriefSteps.For(brief, 4, 0, "9:00 AM", newOnKev: 0), BriefStepKind.Triage).Should().Be((StepState.Attention, "4 new in the feed"));
         Step(BriefSteps.For(brief, 0, 0, "9:00 AM", newOnKev: 0), BriefStepKind.Triage).Should().Be((StepState.Done, "Feed clear"));
         Step(BriefSteps.For(brief, null, 0, "9:00 AM", newOnKev: 3), BriefStepKind.Triage).Detail.Should().Be("Sorting the feed", "someone who doesn't triage gets no count");

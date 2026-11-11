@@ -310,6 +310,9 @@ public static class DemoSeeder
             ("QR-code phishing reaches executive mailboxes", "Industry ISAC", Classification.Threat, ["phishing"], ["T1566.002"]),
         ];
 
+        // How many of the past briefs' latest stories a new one can't repeat: fewer than the pool holds.
+        private const int RecentlyDrawn = 10;
+
         private async Task HistoryAsync(IAppDbContext db, Dictionary<string, Guid> tags, Dictionary<string, Team> teams, CancellationToken ct)
         {
             var number = await db.Actions.IgnoreQueryFilters([ActionItem.DeletedFilter]).Select(a => (int?)a.Number).MaxAsync(ct) ?? 0;   // a deleted one's number isn't reused
@@ -317,6 +320,7 @@ public static class DemoSeeder
             var start = _today.AddDays(-190);
             var people = new[] { (dev.UserId, dev.DisplayName) }.Concat(Analysts).ToArray();
             var seen = 0;
+            var recent = new Queue<int>();
             for (var day = start; day < clock.Days.Previous(Sent); day = day.AddDays(1))
             {
                 if (!clock.Days.IsWorkingDay(day) || _rng.NextDouble() < 0.35) continue;
@@ -331,7 +335,13 @@ public static class DemoSeeder
                 var count = _rng.Next(1, 4);
                 for (var i = 0; i < count; i++)
                 {
-                    var (title, source, kind, tagKeys, techniques) = Pool[_rng.Next(Pool.Length)];
+                    // A story the recent briefs carried isn't drawn again so soon, so lists of the latest articles
+                    // (Recently presented) don't show the same title twice.
+                    int pick;
+                    do pick = _rng.Next(Pool.Length); while (recent.Contains(pick));
+                    recent.Enqueue(pick);
+                    if (recent.Count > RecentlyDrawn) recent.Dequeue();
+                    var (title, source, kind, tagKeys, techniques) = Pool[pick];
                     var article = new Article
                     {
                         Title = title, SourceName = source, Classification = kind, Status = ArticleStatus.Presented,

@@ -12,8 +12,9 @@ using static Tide.IntegrationTests.ComponentHarness;
 namespace Tide.IntegrationTests;
 
 /// <summary>
-/// Today's "Not on a brief yet", for whoever writes the brief: ready articles (anyone's) and their own drafts that have
-/// never been on a brief, ready first, each with Add. Its own app, so adding to today's brief reaches no other test.
+/// Today's "Not on a brief yet", for whoever writes the brief: the ready articles (anyone's) that have never been on a
+/// brief, each with Add, whether or not today's brief is started (Add starts it). No drafts, nothing presented. Its own
+/// app, so adding to today's brief reaches no other test.
 /// </summary>
 public class TodayNotYetBriefedTests(TideApp app) : IClassFixture<TideApp>
 {
@@ -37,26 +38,51 @@ public class TodayNotYetBriefedTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task ReadyArticlesThenMyDrafts_NotOnAnyBrief_AreListed_AndAddPutsOneOnTodaysBrief()
+    public async Task OnlyReadyArticles_NotOnAnyBrief_AreListed_AndAddPutsOneOnTodaysBrief()
     {
         var ready = await Article("NYB ready vendor advisory", Analyst, ArticleStatus.Ready);
-        var mine = await Article("NYB my draft", Analyst);
-        await Article("NYB someone else's draft", new SignIn("dev:nyb-other", "Other Analyst", "Analyst"));
+        var later = await Article("NYB ready, later", Analyst, ArticleStatus.Ready);
+        await Article("NYB my draft", Analyst);
+        await Article("NYB presented already", Analyst, ArticleStatus.Presented);
 
         await using var r = await RenderAsync<BriefPage>(app, "/", new() { ["Day"] = $"{Today:yyyy-MM-dd}", ["AsToday"] = true });
         var html = WebUtility.HtmlDecode(await r.Html());
         html.Should().Contain("Not on a brief yet").And.NotContain("Recently written");
         var listed = r.Component.NotYetBriefed.Select(c => c.Title).ToList();
-        listed.Should().Contain(["NYB ready vendor advisory", "NYB my draft"]).And.NotContain("NYB someone else's draft");
-        listed.IndexOf("NYB ready vendor advisory").Should().BeLessThan(listed.IndexOf("NYB my draft"), "ready ones first");
-        r.Component.NotYetBriefed.Should().OnlyContain(c => c.LastBriefed == null && c.Available);
+        listed.Should().Contain(["NYB ready vendor advisory", "NYB ready, later"])
+            .And.NotContain("NYB my draft", "no drafts").And.NotContain("NYB presented already", "nothing presented");
+        r.Component.NotYetBriefed.Should().OnlyContain(c => c.LastBriefed == null && c.Available && c.Status == ArticleStatus.Ready);
         html.Should().Contain("aria-label=\"Add NYB ready vendor advisory to today's brief\"");
 
         await r.Click(c => c.AddFromCard(c.NotYetBriefed.Single(x => x.Id == ready)));
-        r.Component.NotYetBriefed.Select(c => c.Id).Should().NotContain(ready, "it's on today's brief now").And.Contain(mine);
+        r.Component.NotYetBriefed.Select(c => c.Id).Should().NotContain(ready, "it's on today's brief now").And.Contain(later);
         await using var scope = app.Services.CreateAsyncScope();
         await using var db = await scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>().CreateAsync();
         (await db.BriefItems.AnyAsync(i => i.ArticleId == ready && db.Briefs.Any(b => b.Id == i.BriefId && b.BriefDate == Today))).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task WithNoBriefYet_ItsStillListed_AndAddStartsTheBriefWithIt()
+    {
+        var ready = await Article("NYB ready before the brief", Analyst, ArticleStatus.Ready);
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            // Today's brief moved to a long-gone day: today has none.
+            await using var db = await scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>().CreateAsync();
+            foreach (var b in await db.Briefs.Where(b => b.BriefDate == Today).ToListAsync()) b.BriefDate = b.BriefDate.AddYears(-7);
+            await db.SaveChangesAsync();
+        }
+
+        await using var r = await RenderAsync<BriefPage>(app, "/", new() { ["Day"] = $"{Today:yyyy-MM-dd}", ["AsToday"] = true });
+        var html = WebUtility.HtmlDecode(await r.Html());
+        html.Should().Contain("Start the brief").And.Contain("Not on a brief yet").And.NotContain("Recently written")
+            .And.Contain("aria-label=\"Add NYB ready before the brief to today's brief\"");
+
+        await r.Click(c => c.AddFromCard(c.NotYetBriefed.Single(x => x.Id == ready)));
+        await using var check = app.Services.CreateAsyncScope();
+        await using var db2 = await check.ServiceProvider.GetRequiredService<IAppDbContextFactory>().CreateAsync();
+        (await db2.BriefItems.AnyAsync(i => i.ArticleId == ready && db2.Briefs.Any(b => b.Id == i.BriefId && b.BriefDate == Today)))
+            .Should().BeTrue("Add started today's brief, with the article on it");
     }
 
     [Fact]
