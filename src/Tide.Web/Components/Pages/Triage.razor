@@ -186,7 +186,7 @@ else
                                 @if (attachAll is not null)
                                 {
                                     <button class="btn btn-primary btn-sm tide-triage-attach" disabled="@_busy" title="@($"Attach all {line.Members.Count} to “{attachAll.ArticleTitle}”")"
-                                            @onclick:stopPropagation="true" @onclick="() => AttachCovered(i)">
+                                            @onclick:stopPropagation="true" @onclick="() => AttachLine(line, attachAll)">
                                         <span class="bi bi-link-45deg" aria-hidden="true"></span> Attach all @line.Members.Count to <span class="tide-triage-attach-title text-truncate">“@attachAll.ArticleTitle”</span></button>
                                 }
                                 <button class="btn @(attachAll is null ? "btn-primary" : "btn-outline-secondary") btn-sm tide-triage-promote" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => OpenGroupPromote(line)">
@@ -327,7 +327,7 @@ else
                                 @if (attachTo is not null)
                                 {
                                     <button class="btn btn-primary btn-sm tide-triage-attach" disabled="@_busy" title="@($"Attach to “{attachTo.ArticleTitle}”")"
-                                            @onclick:stopPropagation="true" @onclick="() => AttachCovered(i)">
+                                            @onclick:stopPropagation="true" @onclick="() => AttachLine(line, attachTo)">
                                         <span class="bi bi-link-45deg" aria-hidden="true"></span> Attach to <span class="tide-triage-attach-title text-truncate">“@attachTo.ArticleTitle”</span></button>
                                 }
                                 <button class="btn @(attachTo is null ? "btn-primary" : "btn-outline-secondary") btn-sm tide-triage-promote" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Promote)"><span class="bi bi-file-earmark-plus" aria-hidden="true"></span> Promote <span class="tide-kbd">P</span></button>
@@ -447,7 +447,9 @@ else
         var kept = KeepReading(UserPreferences.ReadingOpen);
         try
         {
-            if (!again && _readRow?.Item.Id == row.Item.Id && _read is { HasText: true }) return;
+            // One fetch per item from V: once it has been tried (its text, or why it failed, shown), V doesn't fetch it again;
+            // "Read again" and the pane's "Read it here" after a failure do.
+            if (!again && _readRow?.Item.Id == row.Item.Id && _read is not null) return;
             _readRow = row;
             _read = null;
             _fetching = row.Item.Id;
@@ -549,7 +551,7 @@ else
                     }
                     else
                     {
-                        <button type="button" class="btn btn-primary btn-sm" disabled="@(_fetching is not null)" @onclick="() => Read()"><span class="bi bi-book" aria-hidden="true"></span> Read it here <span class="tide-kbd">V</span></button>
+                        <button type="button" class="btn btn-primary btn-sm" disabled="@(_fetching is not null)" @onclick="() => Read(again: _read is not null)"><span class="bi bi-book" aria-hidden="true"></span> Read it here <span class="tide-kbd">V</span></button>
                     }
                     @if (!string.IsNullOrWhiteSpace(row.Item.Url))
                     {
@@ -1704,12 +1706,12 @@ else
 
     /// <summary>The main button on a covered line: the report, or every report of the group, attached to its article (a
     /// group's in one step, all or none).</summary>
-    internal async Task AttachCovered(int i)
-    {
-        if (_busy || i >= _lines.Count || AttachTo(_lines[i]) is not { } to) return;
-        var line = _lines[i];
-        await Attach(line.Row is { } row ? [row.Item.Id] : [.. line.Members.Select(m => m.Item.Id)], to.ArticleId, to.ArticleTitle);
-    }
+    internal Task AttachCovered(int i) => i < _lines.Count && AttachTo(_lines[i]) is { } to ? AttachLine(_lines[i], to) : Task.CompletedTask;
+
+    // The line as it was drawn, with the article its button named: a colleague's change can reload the list between the
+    // click and this, and then the line's place may hold another one. Their attach first is said, by the service.
+    private Task AttachLine(Line line, Coverage to) =>
+        _busy ? Task.CompletedTask : Attach(line.Row is { } row ? [row.Item.Id] : [.. line.Members.Select(m => m.Item.Id)], to.ArticleId, to.ArticleTitle);
 
     private async Task DismissSameCve(InboxRow row)
     {
