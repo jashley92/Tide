@@ -356,13 +356,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     {
         RequireRead(user);
         await using var db = await dbs.CreateAsync(ct);
-        var q = Narrow(db, db.Actions.AsNoTracking(), filter);
-        if (filter.View == ActionView.Closed)
-        {
-            var since = DateTimeOffset.UtcNow.AddDays(-ClosedListDays);
-            q = q.Where(a => a.ClosedAtUtc != null && a.ClosedAtUtc >= since);
-        }
-        else q = q.WhereOpen();
+        var q = InList(Narrow(db, db.Actions.AsNoTracking(), filter), filter.View);
         var rows = await RowsAsync(db, q, ct);
         return filter.View == ActionView.Closed
             ? rows.OrderByDescending(r => r.ClosedDate).ThenByDescending(r => r.Number).ToList()
@@ -371,6 +365,14 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
 
     /// <summary>How far back the Recently closed view reaches.</summary>
     public const int ClosedListDays = 90;
+
+    // The list's actions for a view: the open ones, or for Closed, those closed in the last ClosedListDays.
+    private static IQueryable<ActionItem> InList(IQueryable<ActionItem> q, ActionView view)
+    {
+        if (view != ActionView.Closed) return q.WhereOpen();
+        var since = DateTimeOffset.UtcNow.AddDays(-ClosedListDays);
+        return q.Where(a => a.ClosedAtUtc != null && a.ClosedAtUtc >= since);
+    }
 
     /// <summary>Rows on a page of the actions list.</summary>
     public const int ListPageSize = 50;
@@ -478,13 +480,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     // The list's actions: the filter's, open (or for Closed, closed in the last 90 days), and its rule's.
     private async Task<IQueryable<ActionItem>> ListQuery(IAppDbContext db, ActionFilter filter, CancellationToken ct)
     {
-        var q = Narrow(db, db.Actions.AsNoTracking(), filter);
-        if (filter.View == ActionView.Closed)
-        {
-            var since = DateTimeOffset.UtcNow.AddDays(-ClosedListDays);
-            q = q.Where(a => a.ClosedAtUtc != null && a.ClosedAtUtc >= since);
-        }
-        else q = q.WhereOpen();
+        var q = InList(Narrow(db, db.Actions.AsNoTracking(), filter), filter.View);
         if (filter.RuleId is { } ruleId)
         {
             // A rule taken away meanwhile filters nothing out, as it no longer shows as a filter.
