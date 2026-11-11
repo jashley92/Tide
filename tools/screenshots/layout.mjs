@@ -358,6 +358,26 @@ const focusIn = selector => ({
   }, selector),
 });
 
+/** Tab pressed `times` from where focus is: it never lands outside `selector` (leaving the document for the browser's
+ *  own controls, where focus is on <body>, is allowed). For an overlay that must hold focus, as a dialog does. Run last
+ *  on its page: it moves focus. */
+const tabStaysIn = (selector, times) => ({
+  name: `Tab stays in: ${selector}`,
+  check: async page => {
+    const out = new Set();
+    for (let i = 0; i < times; i++) {
+      await page.keyboard.press('Tab');
+      const where = await page.evaluate(selector => {
+        const at = document.activeElement;
+        if (!at || at === document.body || at.closest(selector)) return null;
+        return `${at.tagName.toLowerCase()} "${(at.getAttribute('aria-label') || at.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40)}"`;
+      }, selector);
+      if (where) out.add(where);
+    }
+    return [...out].map(w => `Tab reached ${w}, outside ${selector}`);
+  },
+});
+
 /** Setup: every letter spaced wider, as a font wider than this machine's would set it (see selectCovered). */
 const wideFont = async page => { await page.addStyleTag({ content: '* { letter-spacing: .07em !important; }' }); };
 
@@ -521,8 +541,10 @@ const pages = [
     rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), oneRow('.tide-steps'), fits('.tide-page-head')] },
   { name: 'today-rail-shut', route: '/', setup: wideFont, widths: [1440, 780],
     rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), oneRow('.tide-steps'), fits('.tide-page-head')] },
-  { name: 'today-rail-over', route: '/', setup: toggleRail, widths: [1440, 780],
-    rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), fits('.tide-rail-body'), fits('#tide-rail .tide-card'), focusIn('#tide-rail')] },
+  // The open overlay holds focus as a dialog does, at every width it's an overlay: Tab never reaches the page under it.
+  { name: 'today-rail-over', route: '/', setup: toggleRail, widths: [1440, 780, 400],
+    rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), fits('.tide-rail-body'), fits('#tide-rail .tide-card'), focusIn('#tide-rail'),
+      tabStaysIn('#tide-rail', 40)] },
   // Another day's brief draws the same panel in its rail.
   { name: 'day-rail', route: '/briefs/{sent}', setup: wideFont, widths: [1920, 1500],
     rules: [noSidewaysScroll, visible('#tide-rail .tide-card[aria-labelledby="meeting-h"]'), besides('#main-content', '#tide-rail'), fits('.tide-page-head'), fits('#tide-rail .tide-card')] },

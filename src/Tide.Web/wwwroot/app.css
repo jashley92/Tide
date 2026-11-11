@@ -2345,12 +2345,17 @@ button.tide-chip-chosen:focus-visible { outline: 2px solid var(--tide-focus-ring
    - Docked: in a window 1500px or wider, on a page held to the usual width, it's open unless data-rail="closed"
      (remembered per browser), and the content gives it its width.
    - An overlay everywhere else (a narrower window, and the pages that take the whole window: the board, metric history,
-     trends): open only while data-rail-over is set, over the content, which keeps its width.
-   theme.js (tideRail) reads --tide-rail-docks to know which of the two it is, and --tide-rail-covers to know that the
-   open overlay covers the whole window (a phone), where it makes the page under it inert. */
+     trends): open only while data-rail-over is set, over the content, which keeps its width. The open overlay is modal:
+     theme.js makes the page under it inert, and a backdrop over the rest of the window, which closes it on a click,
+     says so.
+   theme.js (tideRail) reads --tide-rail-docks to know which of the two it is. */
 .tide-rail { display: none; position: fixed; top: var(--tide-height-top); right: 0; bottom: 0; z-index: 1010; width: min(var(--tide-width-rail), 100%);
     flex-direction: column; background: var(--tide-surface); border-left: 1px solid var(--tide-border); box-shadow: -8px 0 24px var(--tide-shadow); }
-html[data-rail-over] .tide-rail { display: flex; }
+html[data-rail-over] .tide-rail { display: flex; z-index: 1025; }
+/* The overlay's backdrop: the rest of the window, top bar included, dimmed a little. Part of the rail, so a click on it
+   reaches the rail (theme.js closes it). */
+html[data-rail-over] .tide-rail::before { content: ""; position: fixed; inset: 0 min(var(--tide-width-rail), 100%) 0 0;
+    background: var(--tide-overlay); opacity: .5; }
 .tide-rail:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: -2px; }
 .tide-rail-head { display: flex; align-items: center; justify-content: space-between; gap: var(--tide-space-2);
     padding: var(--tide-space-3) var(--tide-space-4); border-bottom: 1px solid var(--tide-border); }
@@ -2368,7 +2373,7 @@ html[data-rail-over] .tide-rail { display: flex; }
     }
 }
 /* On a phone the top bar scrolls with the page, so the overlay takes the whole window, over the top bar. */
-@media (max-width: 640.98px) { .tide-rail { top: 0; z-index: 1030; --tide-rail-covers: 1; } }
+@media (max-width: 640.98px) { .tide-rail { top: 0; z-index: 1030; } }
 @media print { .tide-rail, .tide-rail-toggle { display: none !important; } }
 
 /* ---- Search: an indicator or CVE lookup (Search.razor). The first line that answers it, "Seen with", the one list of
