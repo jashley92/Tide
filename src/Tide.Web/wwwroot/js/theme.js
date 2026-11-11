@@ -169,7 +169,9 @@ window.tideRail = (function () {
     }
     function toggle() {
         var r = rail();
-        if (!r) return;
+        // A rail the page lays out in its own flow (the article editor's Preview on a narrow window) is the page's: there's
+        // nothing to show or hide, and an overlay would cover the switch that put it there.
+        if (!r || (!over() && getComputedStyle(r).position === 'static')) return;
         if (!docks()) { setOver(!over()); return; }
         var close = root.getAttribute('data-rail') !== 'closed', btn = toggleBtn();
         // Focus inside a rail that's about to go would be lost: it goes to the button.
