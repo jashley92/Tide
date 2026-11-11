@@ -74,6 +74,10 @@ public sealed class ToastService(TimeProvider? time = null)
         return undo();
     }
 
+    /// <summary>A notice of what someone else did, heard live. It isn't the outcome of this person's own attempt, so an
+    /// error from that attempt stays (often it's the reason the colleague's work is news: they got there first).</summary>
+    public void Tell(string message) => Add(message, false, clearsErrors: false);
+
     public void Error(string message) => Add(message, true);
 
     public void Dismiss(Guid id)
@@ -86,13 +90,13 @@ public sealed class ToastService(TimeProvider? time = null)
         Changed?.Invoke();
     }
 
-    private void Add(string message, bool isError, Func<Task>? undo = null)
+    private void Add(string message, bool isError, Func<Task>? undo = null, bool clearsErrors = true)
     {
         var toast = new Toast(Guid.NewGuid(), message, isError, undo);
         lock (_lock)
         {
             // A confirmation means the last attempt worked, so errors left from earlier attempts no longer apply.
-            if (!isError) _toasts.RemoveAll(t => t.IsError);
+            if (!isError && clearsErrors) _toasts.RemoveAll(t => t.IsError);
             _toasts.Add(toast);
             if (_toasts.Count > 4)
             {

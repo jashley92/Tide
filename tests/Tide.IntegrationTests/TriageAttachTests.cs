@@ -216,6 +216,19 @@ public class TriageAttachTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public void ANoticeOfAColleaguesWork_LeavesTheErrorThatSaysWhyYourAttachFailed()
+    {
+        // Two people press Attach all at once: the one who lost is told why, and the live notice of the other's attach
+        // that follows a moment later doesn't take that away (a confirmation of one's own work still does).
+        var toasts = new Tide.Web.Services.ToastService();
+        toasts.Error("Blake already added these reports to that article.");
+        toasts.Tell("Blake added 2 items to an article");
+        toasts.Toasts.Select(t => t.Message).Should().Equal("Blake already added these reports to that article.", "Blake added 2 items to an article");
+        toasts.Show("Added as a source of “X”.");
+        toasts.Toasts.Should().NotContain(t => t.IsError);
+    }
+
+    [Fact]
     public void TheLiveNotice_SaysAnAttachedItemWasAdded_NotPromoted()
     {
         var item = new FeedItem { Title = "Flaw", Status = FeedItemStatus.Promoted, StatusByName = "Blake" };

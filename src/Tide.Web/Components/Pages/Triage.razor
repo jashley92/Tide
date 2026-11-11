@@ -1440,7 +1440,7 @@ else
         var leftNow = diff.Left.Select(id => now.GetValueOrDefault(id)).ToList();
         var entered = _counts.GetValueOrDefault(_status) - countsWere.GetValueOrDefault(_status) + leftNow.Count(i => i is not null && i.Status != _status);
         var summary = TriageNews.Summary(_status, leftNow, arrived, readWas, colleagues, newElsewhere, entered, attached);
-        if (summary is not null && !heard.All(c => c.ActorId == Me.UserId)) Toasts.Show(summary);
+        if (summary is not null && !heard.All(c => c.ActorId == Me.UserId)) Toasts.Tell(summary);
 
         var said = new List<string>();
         if (diff.Arrived.Count > 0) said.Add($"{Items(diff.Arrived.Count)} arrived.");
