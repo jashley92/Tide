@@ -305,10 +305,25 @@ public class ArticleAutosaveTests(TideApp app) : IClassFixture<TideApp>
         await r.Click(p => p.AutosaveNowAsync());   // stopped: it doesn't try again
 
         var html = await r.Html();
-        Bar(html).Should().Contain("Not saved automatically: someone else saved this article.");
+        Bar(html).Should().Contain("Not saved automatically: Someone else saved this article. What you typed is still here.");
         html.Should().Contain("My paragraph.&#xA;And more after.</textarea>", "the typing stays in the form");
         (await Saved(id)).Bluf.Should().Be("Sam's bottom line.");
         r.Component.Dirty.Should().BeTrue();
+    }
+
+    // Heard before the pause is over (the colleague's save announced live), it stops autosave just the same, and the bar says so.
+    [Fact]
+    public async Task TheEditor_StopsWhenAColleaguesSaveIsHeard_AndSaysSoInTheBar()
+    {
+        var id = await NewArticle();
+        await using var r = await Editor(id);
+        await r.Click(p => p.MentionAsync("My paragraph."));
+        app.Services.GetRequiredService<ChangeFeed>().Publish(new Change(ChangeFeed.Article(id), Colleague.UserId, Colleague.Name, Guid.NewGuid()));
+
+        Bar(await r.HtmlOnce("Not saved automatically: Sam Colleague saved this article.")).Should().Contain("What you typed is still here.");
+        var version = (await Saved(id)).EditVersion;
+        await r.Click(p => p.AutosaveNowAsync());
+        (await Saved(id)).EditVersion.Should().Be(version, "stopped: nothing is saved over theirs");
     }
 
     [Fact]

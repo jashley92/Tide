@@ -442,7 +442,7 @@ else
                     @if (_dirty)
                     {
                         <span class="tide-dirty"><span class="bi bi-dot" aria-hidden="true"></span>Unsaved changes</span>
-                        @if (_autosaveNote is { } note)
+                        @if (AutosaveNote is { } note)
                         {
                             <span class="tide-autosave tide-autosave-note @(_busy ? null : "is-held")" role="status">@note</span>
                         }
@@ -861,6 +861,12 @@ else
     private DateTimeOffset? _autosavedAt;
     private bool _disposed;
 
+    // What the bar says of autosave while something is unsaved: a colleague's save, heard or refused as stale, first,
+    // since it stops autosave; else "Saving…" or why it held off.
+    private string? AutosaveNote => _changedBy is { } who
+        ? $"Not saved automatically: {who} saved this article. What you typed is still here."
+        : _autosaveNote;
+
     private void ScheduleAutosave()
     {
         if (!_canWrite || _changedBy is not null) return;
@@ -899,11 +905,7 @@ else
                 ? "On a sent brief, so not saved automatically: Save to correct it."
                 : "A marking changed, or something now reaches everyone: Save to keep it.";
         }
-        catch (StaleEditException)
-        {
-            _changedBy ??= "Someone else";
-            _autosaveNote = "Not saved automatically: someone else saved this article. What you typed is still here.";
-        }
+        catch (StaleEditException) { _changedBy ??= "Someone else"; }
         catch (Exception ex) { _autosaveNote = $"Not saved automatically: {UserFacingError.For(ex)}"; }
         finally
         {
