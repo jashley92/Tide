@@ -1,0 +1,24 @@
+@* The escalation ladder's flagged actions that are mine to chase: mine, my teams', or parts of mine. Drawn only when
+   there are any. *@
+
+@if (Rows is { Count: > 0 } rows)
+{
+    <section class="tide-card tide-escalated" aria-labelledby="escalated-h">
+        <h2 id="escalated-h"><span class="bi bi-arrow-up-circle-fill text-danger" aria-hidden="true"></span> Escalated <span class="tide-count">(@rows.Count)</span>
+            <a class="ms-auto small fw-normal" href="actions?view=overdue">Overdue</a></h2>
+        <p class="small tide-muted mb-1">Slipping long enough that the escalation ladder flagged them. Each stays until it closes or its due date moves.</p>
+        @foreach (var r in rows)
+        {
+            <QueueRow @key="r.Id" Row="r" Meta="@($"{r.Priority} · {r.TeamName} · {r.AssigneeName ?? "Unassigned"}"
+                                                  + (r.ParentNumber is { } parent ? $" · part of {Ui.ActionLabel(parent)}" : ""))" Marks="Marks" />
+        }
+    </section>
+}
+
+@code {
+    /// <summary>The escalated rows (TeamQueue.Escalated); none, or null, draws nothing.</summary>
+    [Parameter] public IReadOnlyList<ActionRow>? Rows { get; set; }
+
+    /// <summary>Rows a colleague's change brought or changed, highlighted a moment.</summary>
+    [Parameter] public LiveMarks<Guid>? Marks { get; set; }
+}

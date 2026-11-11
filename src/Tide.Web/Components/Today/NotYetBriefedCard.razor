@@ -1,0 +1,60 @@
+@inject OrgClock Clock
+
+@* For whoever writes the brief: what hasn't been on any brief yet (the page picks them, from the same candidates as
+   Add article), each with Add while today's brief can still change, and the rest in Add article. *@
+
+<section class="tide-card" aria-labelledby="recent-h">
+    <h2 id="recent-h">Not on a brief yet <span class="tide-count">(@Articles.Count)</span></h2>
+    <p class="small tide-muted mb-2">Ready articles first, then your own drafts. None has been on a brief.</p>
+    @if (Articles.Count == 0)
+    {
+        <EmptyState Icon="bi-check2-circle" Title="Everything ready is on a brief." Compact="true" />
+    }
+    <ul class="list-unstyled mb-0">
+        @foreach (var c in Articles.Take(Shown))
+        {
+            <li class="mb-2 d-flex gap-2 align-items-start" @key="c.Id">
+                <div class="flex-grow-1">
+                    <a href="articles/@c.Id" class="fw-semibold text-decoration-none">@c.Title</a>
+                    <div class="tide-run-meta">
+                        <ClassBadge Classification="c.Classification" Priority="c.Priority" />
+                        <StatusBadge Status="@c.Status.ToString()" />
+                        <span>@c.AuthorName &middot; @Ui.When(Clock, c.CreatedAtUtc)</span>
+                    </div>
+                </div>
+                @if (CanAdd)
+                {
+                    <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@Busy" aria-label="Add @c.Title to today's brief" @onclick="() => OnAdd.InvokeAsync(c)">
+                        <span class="bi bi-plus-lg" aria-hidden="true"></span> Add
+                    </button>
+                }
+            </li>
+        }
+    </ul>
+    <div class="d-flex gap-2 mt-2">
+        @if (Articles.Count > Shown && CanAdd)
+        {
+            <button type="button" class="btn btn-link btn-sm p-0" disabled="@Busy" @onclick="OnAddMore">All @Articles.Count in Add article</button>
+        }
+        <a class="btn btn-outline-secondary btn-sm ms-auto" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article</a>
+    </div>
+</section>
+
+@code {
+    private const int Shown = 8;
+
+    /// <summary>The articles not yet on any brief, in the order to list them.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<BriefCandidate> Articles { get; set; } = default!;
+
+    /// <summary>Today's brief can still change: each article offers Add.</summary>
+    [Parameter] public bool CanAdd { get; set; }
+
+    /// <summary>The page is saving: Add waits.</summary>
+    [Parameter] public bool Busy { get; set; }
+
+    /// <summary>One article onto the end of the running order.</summary>
+    [Parameter] public EventCallback<BriefCandidate> OnAdd { get; set; }
+
+    /// <summary>Opens Add article, for the ones not listed.</summary>
+    [Parameter] public EventCallback OnAddMore { get; set; }
+}

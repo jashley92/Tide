@@ -1,0 +1,39 @@
+@* The open actions of my teams that are mine or nobody's, mine first, each by due date; Take it on an unassigned one. *@
+
+<section class="tide-card" aria-labelledby="team-queue-h">
+    <h2 id="team-queue-h">My team's queue <span class="tide-count">(@Queue.Total)</span>
+        <a class="ms-auto small fw-normal" href="actions?view=myteams">My teams</a></h2>
+    @if (!Queue.OnATeam)
+    {
+        <EmptyState Icon="bi-people" Title="You're not on a team." Compact="true" />
+    }
+    else if (Queue.Rows.Count == 0)
+    {
+        <EmptyState Icon="bi-check2-circle" Title="Nothing waiting for you or your team." Compact="true" />
+    }
+    else
+    {
+        <p class="small tide-muted mb-1">@Queue.Mine yours and @Queue.Unassigned unassigned.</p>
+    }
+    @foreach (var r in Queue.Rows)
+    {
+        <QueueRow @key="r.Id" Row="r" Meta="@($"{ActionService.KindName(r.Kind)} · {r.TeamName} · {(r.AssigneeId is null ? "Unassigned" : "Yours")}")"
+                  OfferTake="true" Busy="Busy" Marks="Marks" OnTake="OnTake" />
+    }
+    @if (Queue.Total > Queue.Rows.Count)
+    {
+        <a class="small d-inline-block mt-2" href="actions?view=myteams">All @Queue.Total in My teams</a>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public TeamQueue Queue { get; set; } = default!;
+
+    /// <summary>The page is saving: Take it waits.</summary>
+    [Parameter] public bool Busy { get; set; }
+
+    /// <summary>Rows a colleague's change brought or changed, highlighted a moment.</summary>
+    [Parameter] public LiveMarks<Guid>? Marks { get; set; }
+
+    [Parameter] public EventCallback<ActionRow> OnTake { get; set; }
+}

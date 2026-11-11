@@ -1,0 +1,16 @@
+@inject ActionService ActionSvc
+@inject OrgClock Clock
+
+@* One of my actions on Today: its number, title and files, then its due-date badge. *@
+
+<div class="d-flex gap-2 align-items-start py-1 border-bottom small @Marks?.Css(Row.Id)">
+    <span class="flex-grow-1"><ActionRef Number="Row.Number" Title="@Row.Title" /> <FileCount Count="Row.Files" /></span>
+    <SlaBadge State="Row.Sla(ActionSvc.Today, Clock.Days)" Due="Row.DueDate" Today="ActionSvc.Today" />
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ActionRow Row { get; set; } = default!;
+
+    /// <summary>Rows a colleague's change brought or changed, highlighted a moment.</summary>
+    [Parameter] public LiveMarks<Guid>? Marks { get; set; }
+}

@@ -1,0 +1,128 @@
+@inject OrgClock Clock
+@inject ICurrentUser CurrentUser
+
+@* The brief's meeting: when it meets, who the rotation has, the presenter and the title slide line (editable by
+   whoever writes the brief until it's sent, read by everyone else), then who attended and the notes. The presenter
+   and the line as typed are the page's (bound), so it can say they're unsaved and keep them through a reload. *@
+
+<section class="tide-card" aria-labelledby="meeting-h" data-submit-scope>
+    <h2 id="meeting-h">Meeting <span class="ms-auto small fw-normal tide-muted">@Ui.ShortDay(Day) &middot; @MeetsAt @Zone</span></h2>
+    @if (RotaDay is { AnalystName: { } rota } && !Past)
+    {
+        <p class="small mb-2">The rotation has <strong>@rota</strong>@(RotaDay.IsChanged ? $", covering {RotaDay.RegularName}" : "") for this day.</p>
+    }
+    @if (CanEdit)
+    {
+        <label class="tide-field-label" for="analyst">Presenting analyst</label>
+        <select id="analyst" class="form-select form-select-sm mb-2" @bind:get="AnalystId" @bind:set="v => AnalystIdChanged.InvokeAsync(v)">
+            @if (!People.Any(p => p.Sid == AnalystId))
+            {
+                <option value="@AnalystId">@Brief.AnalystName</option>
+            }
+            @foreach (var p in People)
+            {
+                <option value="@p.Sid">@p.DisplayName@(p.Sid == CurrentUser.UserId ? " (you)" : "")</option>
+            }
+        </select>
+        <div class="d-flex gap-2 align-items-center justify-content-between">
+            <label class="tide-field-label" for="intro">Title slide line (optional)</label>
+            <TlpSelect Value="IntroTlp" ValueChanged="IntroTlpChanged" Label="The title slide line's TLP" Class="w-auto mb-1" />
+        </div>
+        <textarea id="intro" class="form-control form-control-sm tide-autogrow tide-grow-2" rows="2" maxlength="2000" @bind:get="Intro" @bind:set="v => IntroChanged.InvokeAsync(v)"
+                  placeholder="Shown on the title slide: a quiet day, a theme, a reminder."></textarea>
+        <div class="small tide-muted mt-1">An edition whose ceiling is below its TLP leaves it out.</div>
+        <button class="btn btn-outline-secondary btn-sm mt-2" disabled="@Busy" data-submit @onclick="OnSave">Save</button>
+    }
+    else
+    {
+        <dl class="tide-dl mb-0">
+            <dt>Presenter</dt><dd>@Brief.AnalystName</dd>
+            <dt>Title slide line</dt>
+            <dd>
+                @if (string.IsNullOrWhiteSpace(Brief.Intro))
+                {
+                    <span class="tide-muted">None</span>
+                }
+                else
+                {
+                    <TlpBadge Level="Brief.IntroTlp" /> @Brief.Intro
+                }
+            </dd>
+        </dl>
+    }
+    @if (Meeting.Attendees.Count > 0)
+    {
+        <h3 class="tide-subhead">Attended</h3>
+        <div class="small">@string.Join(", ", Meeting.Attendees.Select(a => a.Name))</div>
+    }
+    @if (Meeting.Notes.Count > 0)
+    {
+        <h3 class="tide-subhead">Meeting notes</h3>
+        @foreach (var (title, notes) in NoteGroups())
+        {
+            <div class="tide-meeting-notes-group">
+                <div class="tide-muted small">@title</div>
+                <ul class="tide-meeting-notes small">
+                    @foreach (var n in notes)
+                    {
+                        <li><strong>@n.AuthorName</strong> <span class="tide-muted">@Ui.Time(Clock, n.AtUtc)</span> @n.Text</li>
+                    }
+                </ul>
+            </div>
+        }
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public Brief Brief { get; set; } = default!;
+
+    /// <summary>The brief's day.</summary>
+    [Parameter, EditorRequired] public DateOnly Day { get; set; }
+
+    /// <summary>When it meets: "10:30 AM".</summary>
+    [Parameter, EditorRequired] public string MeetsAt { get; set; } = "";
+
+    /// <summary>The organization's zone as it is now: "Eastern Standard Time".</summary>
+    [Parameter] public string? Zone { get; set; }
+
+    /// <summary>The brief rotation's day, for who it has; not said of a past day.</summary>
+    [Parameter] public Tide.Application.Rotation.RotationDay? RotaDay { get; set; }
+
+    [Parameter] public bool Past { get; set; }
+
+    /// <summary>The presenter and the title slide line can be changed (whoever writes the brief, until it's sent).</summary>
+    [Parameter] public bool CanEdit { get; set; }
+
+    /// <summary>Who can present, for the presenter picker.</summary>
+    [Parameter] public IReadOnlyList<AppUser> People { get; set; } = [];
+
+    [Parameter] public string AnalystId { get; set; } = "";
+
+    [Parameter] public EventCallback<string> AnalystIdChanged { get; set; }
+
+    [Parameter] public string? Intro { get; set; }
+
+    [Parameter] public EventCallback<string?> IntroChanged { get; set; }
+
+    [Parameter] public TlpLevel IntroTlp { get; set; }
+
+    [Parameter] public EventCallback<TlpLevel> IntroTlpChanged { get; set; }
+
+    /// <summary>Who attended and the notes, as the meeting recorded them.</summary>
+    [Parameter, EditorRequired] public MeetingRecord Meeting { get; set; } = default!;
+
+    /// <summary>The page is saving: Save waits.</summary>
+    [Parameter] public bool Busy { get; set; }
+
+    [Parameter] public EventCallback OnSave { get; set; }
+
+    // The notes grouped by the article on screen when each was written, in the running order; the meeting's own last.
+    private IEnumerable<(string Title, IEnumerable<MeetingNote> Notes)> NoteGroups()
+    {
+        var items = Brief.Items.ToDictionary(i => i.ArticleId);
+        return Meeting.Notes.GroupBy(n => n.ArticleId)
+            .Select(g => (Item: g.Key is { } id ? items.GetValueOrDefault(id) : null, Notes: g))
+            .OrderBy(g => g.Notes.Key is null ? int.MaxValue : g.Item?.SortOrder ?? int.MaxValue - 1)
+            .Select(g => (g.Notes.Key is null ? "The meeting" : g.Item?.Article?.Title ?? "An article since taken off", (IEnumerable<MeetingNote>)g.Notes));
+    }
+}

@@ -51,11 +51,18 @@ public partial class TodaySideColumnTests(CountingApp app) : IClassFixture<Count
                 foreach (var (route, day, asToday) in new[] { ("today", Today, true), ("day", Past, false) })
                 {
                     var key = $"{state} / {who.Roles[0]} {who.Name} / {route}";
-                    app.Commands.Reset();
-                    await using var r = await RenderAsync<BriefPage>(app, asToday ? "/" : $"/briefs/{day:yyyy-MM-dd}",
-                        new() { ["Day"] = $"{day:yyyy-MM-dd}", ["AsToday"] = asToday }, who);
-                    var reads = app.Commands.Count;
-                    var side = Normalise(Side(await r.Html()), app.Services.GetRequiredService<OrgClock>().Zone);
+                    // Drawn twice, counting the fewer: on a busy machine a command that isn't the page's (the app's own
+                    // housekeeping) can land inside one draw.
+                    string? side = null;
+                    var reads = int.MaxValue;
+                    for (var draw = 0; draw < 2; draw++)
+                    {
+                        app.Commands.Reset();
+                        await using var r = await RenderAsync<BriefPage>(app, asToday ? "/" : $"/briefs/{day:yyyy-MM-dd}",
+                            new() { ["Day"] = $"{day:yyyy-MM-dd}", ["AsToday"] = asToday }, who);
+                        reads = Math.Min(reads, app.Commands.Count);
+                        side ??= Normalise(Side(await r.Html()), app.Services.GetRequiredService<OrgClock>().Zone);
+                    }
                     golden.Append("=== ").Append(key).Append(" (").Append(reads).Append(" commands)\n");
                     if (seen.TryGetValue(side, out var same)) golden.Append("same as ").Append(same).Append('\n');
                     else
@@ -122,7 +129,7 @@ public partial class TodaySideColumnTests(CountingApp app) : IClassFixture<Count
         // The sample articles share a moment; a minute apart, the lists of them come in one order every run.
         var articles = await db.Articles.OrderBy(a => a.Title).ToListAsync();
         for (var i = 0; i < articles.Count; i++) articles[i].CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-i);
-        past.Items.Add(new BriefItem { ArticleId = (await db.Articles.OrderBy(a => a.Title).FirstAsync()).Id, SortOrder = 0 });
+        past.Items.Add(new BriefItem { ArticleId = articles[0].Id, SortOrder = 0 });
         await db.SaveChangesAsync();
         foreach (var (_, id) in await BriefIds())
         {
@@ -136,70 +143,53 @@ public partial class TodaySideColumnTests(CountingApp app) : IClassFixture<Count
 
     private async Task<List<(DateOnly Day, Guid Id)>> BriefIds()
     {
-        await using var scope = app.Services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var days = new[] { Today, Past };
-        return [.. (await db.Briefs.Where(b => days.Contains(b.BriefDate)).ToListAsync()).Select(b => (b.BriefDate, b.Id))];
+        List<(DateOnly, Guid)> ids = [];
+        await EachBrief(b => ids.Add((b.BriefDate, b.Id)));
+        return ids;
     }
 
-    private async Task SetState(BriefStatus status)
+    private Task SetState(BriefStatus status) => EachBrief(brief =>
     {
-        await using var scope = app.Services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var days = new[] { Today, Past };
-        foreach (var brief in await db.Briefs.Where(b => days.Contains(b.BriefDate)).ToListAsync())
-        {
-            brief.Status = status;
-            var held = status is BriefStatus.Presented or BriefStatus.Sent ? DateTimeOffset.UtcNow : (DateTimeOffset?)null;
-            (brief.PresentedAtUtc, brief.MeetingHeldAtUtc) = (held, held);
-        }
-        await db.SaveChangesAsync();
-    }
+        brief.Status = status;
+        var held = status is BriefStatus.Presented or BriefStatus.Sent ? DateTimeOffset.UtcNow : (DateTimeOffset?)null;
+        (brief.PresentedAtUtc, brief.MeetingHeldAtUtc) = (held, held);
+    });
 
     // Both briefs moved to long-gone days: today and the other day have none.
-    private async Task NoBriefs()
+    private Task NoBriefs() => EachBrief(brief => brief.BriefDate = brief.BriefDate.AddYears(-3));
+
+    // Today's brief and the other day's, each changed and saved.
+    private async Task EachBrief(Action<Brief> change)
     {
         await using var scope = app.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var days = new[] { Today, Past };
-        foreach (var brief in await db.Briefs.Where(b => days.Contains(b.BriefDate)).ToListAsync())
-            brief.BriefDate = brief.BriefDate.AddYears(-3);
+        foreach (var brief in await db.Briefs.Where(b => days.Contains(b.BriefDate)).ToListAsync()) change(brief);
         await db.SaveChangesAsync();
     }
 
-    /// <summary>The side column (the second column of the page's grid), and the queue and escalated cards wherever
-    /// they are drawn (an action owner's lead the page).</summary>
+    /// <summary>The side column's cards, wherever the page draws them (an action owner's queue leads the page; a later
+    /// change moves the column out of the page's grid), in the order they come: each card whole, found by its heading.</summary>
     internal static string Side(string html)
     {
-        var parts = new List<string>();
-        var grid = html.IndexOf("<div class=\"tide-today-grid\">", StringComparison.Ordinal);
-        if (grid >= 0)
-        {
-            var first = Element(html, html.IndexOf("<div", grid + 1, StringComparison.Ordinal), "div");
-            var secondAt = html.IndexOf("<div", first.End, StringComparison.Ordinal);
-            parts.Add(html[secondAt..Element(html, secondAt, "div").End]);
-            foreach (var id in new[] { "escalated-h", "team-queue-h" })
-            {
-                var label = html.IndexOf($"aria-labelledby=\"{id}\"", first.Start, StringComparison.Ordinal);
-                if (label < 0 || label > first.End) continue;
-                var at = html.LastIndexOf("<section", label, StringComparison.Ordinal);
-                parts.Add(html[at..Element(html, at, "section").End]);
-            }
-        }
-        return parts.Count == 0 ? "(no grid)" : string.Join("\n---\n", parts);
+        var cards = Card().Matches(html).Select(m => html[m.Index..Close(html, m.Index, "section")]).ToList();
+        return cards.Count == 0 ? "(no cards)" : string.Join("\n---\n", cards);
     }
 
-    // The element of this tag opening at <paramref name="at"/>, to its matching close.
-    private static (int Start, int End) Element(string html, int at, string tag)
+    // Where the element of this tag opening at <paramref name="at"/> ends, after its matching close.
+    private static int Close(string html, int at, string tag)
     {
         var depth = 0;
-        foreach (Match m in Regex.Matches(html[at..], $"<{tag}[\\s>]|</{tag}>"))
+        for (var m = new Regex($"<{tag}[\\s>]|</{tag}>").Match(html, at); m.Success; m = m.NextMatch())
         {
             depth += m.Value.StartsWith("</", StringComparison.Ordinal) ? -1 : 1;
-            if (depth == 0) return (at, at + m.Index + m.Length);
+            if (depth == 0) return m.Index + m.Length;
         }
         throw new InvalidOperationException($"No close for the {tag} at {at}.");
     }
+
+    [GeneratedRegex(@"<section[^>]*aria-labelledby=""(reviews-h|escalated-h|team-queue-h|actions-card-h|my-actions-h|edition-check-h|meeting-h|hist-[0-9a-f]{8}-head|coming-up-h|recent-h)""")]
+    private static partial Regex Card();
 
     /// <summary>The markup with what differs from run to run, or with Blazor's own bookkeeping, taken out.</summary>
     internal static string Normalise(string html, TimeZoneInfo zone)
