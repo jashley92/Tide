@@ -94,10 +94,10 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
         var badges = Section(head, "<div class=\"tide-action-badges\">", "<div class=\"tide-sub tide-action-who\">");
         badges.Should().Contain("class=\"tide-status-badge\" aria-expanded=\"false\" aria-controls=\"status-choices\"")
             .And.Contain("aria-label=\"Status: Open. Change it\"").And.Contain("title=\"Priority P2\"")
-            .And.Contain("Due " + Ui.ShortDay(Today.AddDays(-2))).And.Contain("Overdue · 2 days").And.Contain(">Escalated</span>");
+            .And.Contain("Due " + Ui.ShortDay(Today.AddDays(-2)) + " · overdue · 2 days", "the date and how it stands, one badge").And.Contain(">Escalated</span>");
         badges.IndexOf("tide-status-badge", StringComparison.Ordinal).Should().BeLessThan(badges.IndexOf("Priority P2", StringComparison.Ordinal),
             "status, then priority, then the due date, then escalated");
-        badges.IndexOf("Overdue", StringComparison.Ordinal).Should().BeLessThan(badges.IndexOf(">Escalated<", StringComparison.Ordinal));
+        badges.IndexOf("overdue", StringComparison.Ordinal).Should().BeLessThan(badges.IndexOf(">Escalated<", StringComparison.Ordinal));
         head.Should().Contain("<span>Layout header team</span> · <span>Unassigned</span>");
 
         Regex.Matches(head, "btn btn-primary").Should().HaveCount(1, "one primary button");

@@ -16,7 +16,7 @@
             </dd>
         </div>
         <div class="tide-fact"><dt>Created</dt><dd>@Ui.When(Clock, A.CreatedAtUtc)</dd></div>
-        <div class="tide-fact"><dt>Due</dt><dd>@(A.DueDate is { } due ? Ui.ShortDay(due) : "No due date") <SlaBadge State="State" Due="A.DueDate" Today="ActionSvc.Today" />
+        <div class="tide-fact"><dt>Due</dt><dd>@(A.DueDate is { } due ? Ui.ShortDay(due) : "No due date") @if (A.DueDate is not null) { <SlaBadge State="State" Due="A.DueDate" Today="ActionSvc.Today" /> }
             @if (MovedNote(A) is { } moved) { <div class="small tide-muted tide-due-moved">@moved</div> }</dd></div>
         @if (A.RaisedOn is { } raised)
         {

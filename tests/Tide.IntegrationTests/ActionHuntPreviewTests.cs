@@ -138,9 +138,10 @@ public class ActionHuntPreviewTests(TideApp app) : IClassFixture<TideApp>
         close[..close.IndexOf("No hits, close", StringComparison.Ordinal)].Should().Contain("value=\"30\"", "the days the query enforced");
         html.Should().NotContain($"id=\"hunt-{hunt.Id:N}-why\"", "nothing more is asked before closing clean");
         html.Should().NotContain("this query sets no time range of its own.");
-        // The days box is the next stop after Copy: before Edit and the rest of the query's buttons.
+        // Under "What did it find?", after the query's buttons, the days box is the first stop: before closing clean.
         int At(string text) => html.IndexOf(text, StringComparison.Ordinal);
-        At("-days\" type=\"number\"").Should().BeGreaterThan(At($"data-copy-target=\"hunt-{hunt.Id:N}\"")).And.BeLessThan(At(" Edit</button>"));
+        At("-days\" type=\"number\"").Should().BeGreaterThan(At("What did it find?")).And.BeGreaterThan(At(" Edit</button>"))
+            .And.BeLessThan(At("No hits, close"));
         // The browser says the copy worked; the page says the query is saved, once it is. No toast as well.
         html.Should().Contain("role=\"status\" aria-live=\"polite\">The query is now on the action.</span>");
         Toasts(page).Should().BeEmpty();
