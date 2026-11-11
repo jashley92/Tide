@@ -10,20 +10,13 @@ window.tideTabs = (function () {
     // Room left beside a tab brought into view, so the fade on that edge doesn't cover it.
     const fade = 24;
 
-    function overflows(bar) { return bar.scrollWidth > bar.clientWidth + 1; }
-
     function mark(bar) {
-        const more = [];
-        if (overflows(bar)) {
-            if (bar.scrollLeft > 1) more.push('start');
-            if (bar.scrollLeft + bar.clientWidth < bar.scrollWidth - 1) more.push('end');
-        }
-        const text = more.join(' ');
+        const text = [bar.scrollLeft > 1 && 'start', bar.scrollLeft + bar.clientWidth < bar.scrollWidth - 1 && 'end'].filter(Boolean).join(' ');
         if (bar.dataset.more !== text) bar.dataset.more = text;
     }
 
     function reveal(bar, el) {
-        if (el && overflows(bar)) {
+        if (el && bar.scrollWidth > bar.clientWidth + 1) {
             const b = bar.getBoundingClientRect(), e = el.getBoundingClientRect();
             if (e.left < b.left + fade) bar.scrollLeft -= b.left + fade - e.left;
             else if (e.right > b.right - fade) bar.scrollLeft += e.right - (b.right - fade);
@@ -32,12 +25,12 @@ window.tideTabs = (function () {
     }
 
     document.addEventListener('focusin', function (e) {
-        const bar = e.target && e.target.closest ? e.target.closest('.tide-tabbar') : null;
-        if (bar && e.target.parentElement === bar) reveal(bar, e.target);
+        const bar = e.target && e.target.parentElement;
+        if (bar && bar.classList.contains('tide-tabbar')) reveal(bar, e.target);
     });
     document.addEventListener('scroll', function (e) {
         if (e.target && e.target.classList && e.target.classList.contains('tide-tabbar')) mark(e.target);
-    }, true);
+    }, { capture: true, passive: true });
     window.addEventListener('resize', function () { document.querySelectorAll('.tide-tabbar[data-more]').forEach(mark); });
 
     return {

@@ -2449,9 +2449,11 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-actions-views { flex-wrap: nowrap; max-width: 100%; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
 .tide-actions-views .tide-tabbar-item:focus-visible { outline-offset: -2px; }
 /* When it does scroll, the edge with more beyond it fades out (tabs.js sets data-more; a mask uses only the alpha). */
-.tide-tabbar[data-more="end"] { mask-image: linear-gradient(to left, transparent, var(--tide-text) 1.5rem); }
-.tide-tabbar[data-more="start"] { mask-image: linear-gradient(to right, transparent, var(--tide-text) 1.5rem); }
-.tide-tabbar[data-more="start end"] { mask-image: linear-gradient(to right, transparent, var(--tide-text) 1.5rem, var(--tide-text) calc(100% - 1.5rem), transparent); }
+.tide-tabbar[data-more~="start"], .tide-tabbar[data-more~="end"] { --tide-more-start: var(--tide-text); --tide-more-end: var(--tide-text);
+    mask-image: linear-gradient(to right, var(--tide-more-start), var(--tide-text) 1.5rem, var(--tide-text) calc(100% - 1.5rem), var(--tide-more-end)); }
+.tide-tabbar[data-more~="start"] { --tide-more-start: transparent; }
+.tide-tabbar[data-more~="end"] { --tide-more-end: transparent; }
+@media (forced-colors: active) { .tide-tabbar[data-more] { mask-image: none; } }
 @media (max-width: 1099.98px) {
     .tide-actions-views { gap: 0; }
     .tide-actions-views .tide-tabbar-item { padding-inline: .3rem; gap: .25rem; font-size: .9rem; }
