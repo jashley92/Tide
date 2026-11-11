@@ -19,6 +19,7 @@
 @inject ChangeOrigin Origin
 @inject LiveMeetings Meetings
 @inject PrerenderHandoff Handoff
+@using Tide.Web.Components.Today
 @implements IDisposable
 
 @* A day's brief. Today's is the start page (Home renders this with AsToday): the step strip, the running order, the
@@ -479,16 +480,6 @@ else
         StateHasChanged();
     }
 
-    // The notes grouped by the article on screen when each was written, in the running order; the meeting's own last.
-    private IEnumerable<(string Title, IEnumerable<MeetingNote> Notes)> NoteGroups()
-    {
-        var items = _brief!.Items.ToDictionary(i => i.ArticleId);
-        return _meeting.Notes.GroupBy(n => n.ArticleId)
-            .Select(g => (Item: g.Key is { } id ? items.GetValueOrDefault(id) : null, Notes: g))
-            .OrderBy(g => g.Notes.Key is null ? int.MaxValue : g.Item?.SortOrder ?? int.MaxValue - 1)
-            .Select(g => (g.Notes.Key is null ? "The meeting" : g.Item?.Article?.Title ?? "An article since taken off", (IEnumerable<MeetingNote>)g.Notes));
-    }
-
     private async Task OnAroundChanged(IReadOnlyList<Change> changes)
     {
         if (_busy) return;   // this page's own action reloads when it's done, and reads theirs with it
@@ -627,7 +618,7 @@ else
         _mine = await ActionSvc.ListAsync(new ActionFilter(ActionView.Mine));
         _queue = await ActionSvc.TeamQueueAsync(ladderOn: ReminderOptions.CurrentValue.Escalation.Enabled);
         if (!live || _actionMarks is null) return;
-        if (mine is not null) _actionMarks.Apply(LiveDiff.Of(mine.Take(6), _mine.Take(6), r => r.Id, r => r));
+        if (mine is not null) _actionMarks.Apply(LiveDiff.Of(mine.Take(MyActionsCard.Shown), _mine.Take(MyActionsCard.Shown), r => r.Id, r => r));
         if (queue is not null) _actionMarks.Apply(LiveDiff.Of(queue.Rows, _queue.Rows, r => r.Id, r => r));
     }
 
@@ -894,9 +885,6 @@ else
                         <section class="tide-card" aria-labelledby="running-order-h">
                             <h2 id="running-order-h">Running order
                                 <span class="ms-auto small fw-normal tide-muted">@Ordered().Count() article@(_brief.Items.Count == 1 ? "" : "s") &middot; @Count(Classification.Threat) threat@(Count(Classification.Threat) == 1 ? "" : "s") &middot; @Count(Classification.Informational) informational</span></h2>
-                            @if (_canWrite && _brief.Status != BriefStatus.Sent)
-                            {
-                            }
                             <RunningOrder Items="Ordered().ToList()" Readiness="@(_canWrite ? _readiness : NoReadiness)" CanEdit="@(_canWrite && _brief.Status != BriefStatus.Sent)" Busy="_busy"
                                           PublicMax="_publicMax" ShowDiscussed="@(_brief.Status is BriefStatus.Presented or BriefStatus.Sent)"
                                           CanFix="CanFix" OnFix="f => Fix(f.Article, f.Fix)"
@@ -993,73 +981,9 @@ else
     // The presenter, when it meets and the title slide line: editable by analysts, read by everyone else.
     private RenderFragment Meeting() => __builder =>
     {
-        <section class="tide-card" aria-labelledby="meeting-h" data-submit-scope>
-            <h2 id="meeting-h">Meeting <span class="ms-auto small fw-normal tide-muted">@Ui.ShortDay(_date) &middot; @MeetsAt @ZoneLabel</span></h2>
-            @if (_rotaDay is { AnalystName: { } rota } && !_past)
-            {
-                <p class="small mb-2">The rotation has <strong>@rota</strong>@(_rotaDay.IsChanged ? $", covering {_rotaDay.RegularName}" : "") for this day.</p>
-            }
-            @if (_canWrite && _brief!.Status != BriefStatus.Sent)
-            {
-                <label class="tide-field-label" for="analyst">Presenting analyst</label>
-                <select id="analyst" class="form-select form-select-sm mb-2" @bind="_analystId">
-                    @if (!_people.Any(p => p.Sid == _analystId))
-                    {
-                        <option value="@_analystId">@_brief.AnalystName</option>
-                    }
-                    @foreach (var p in _people)
-                    {
-                        <option value="@p.Sid">@p.DisplayName@(p.Sid == CurrentUser.UserId ? " (you)" : "")</option>
-                    }
-                </select>
-                <div class="d-flex gap-2 align-items-center justify-content-between">
-                    <label class="tide-field-label" for="intro">Title slide line (optional)</label>
-                    <TlpSelect Value="_introTlp" ValueChanged="v => _introTlp = v" Label="The title slide line's TLP" Class="w-auto mb-1" />
-                </div>
-                <textarea id="intro" class="form-control form-control-sm tide-autogrow tide-grow-2" rows="2" maxlength="2000" @bind="_intro"
-                          placeholder="Shown on the title slide: a quiet day, a theme, a reminder."></textarea>
-                <div class="small tide-muted mt-1">An edition whose ceiling is below its TLP leaves it out.</div>
-                <button class="btn btn-outline-secondary btn-sm mt-2" disabled="@_busy" data-submit @onclick="SaveDetails">Save</button>
-            }
-            else
-            {
-                <dl class="tide-dl mb-0">
-                    <dt>Presenter</dt><dd>@_brief!.AnalystName</dd>
-                    <dt>Title slide line</dt>
-                    <dd>
-                        @if (string.IsNullOrWhiteSpace(_brief.Intro))
-                        {
-                            <span class="tide-muted">None</span>
-                        }
-                        else
-                        {
-                            <TlpBadge Level="_brief.IntroTlp" /> @_brief.Intro
-                        }
-                    </dd>
-                </dl>
-            }
-            @if (_meeting.Attendees.Count > 0)
-            {
-                <h3 class="tide-subhead">Attended</h3>
-                <div class="small">@string.Join(", ", _meeting.Attendees.Select(a => a.Name))</div>
-            }
-            @if (_meeting.Notes.Count > 0)
-            {
-                <h3 class="tide-subhead">Meeting notes</h3>
-                @foreach (var (title, notes) in NoteGroups())
-                {
-                    <div class="tide-meeting-notes-group">
-                        <div class="tide-muted small">@title</div>
-                        <ul class="tide-meeting-notes small">
-                            @foreach (var n in notes)
-                            {
-                                <li><strong>@n.AuthorName</strong> <span class="tide-muted">@Ui.Time(Clock, n.AtUtc)</span> @n.Text</li>
-                            }
-                        </ul>
-                    </div>
-                }
-            }
-        </section>
+        <MeetingCard Brief="_brief!" Day="_date" MeetsAt="@MeetsAt" Zone="@ZoneLabel" RotaDay="_rotaDay" Past="_past"
+                     CanEdit="@(_canWrite && _brief!.Status != BriefStatus.Sent)" People="_people"
+                     @bind-AnalystId="_analystId" @bind-Intro="_intro" @bind-IntroTlp="_introTlp" Meeting="_meeting" Busy="_busy" OnSave="SaveDetails" />
     };
 
     // Today for someone who works actions but can't write articles: their teams' queue first, then what's on today's
@@ -1069,7 +993,7 @@ else
     {
         <div class="tide-today-grid">
             <div>
-                @Escalated()
+                <EscalatedCard Rows="_queue?.Escalated" Marks="_actionMarks" />
                 @Queue()
                 @TeamNoteCard()
                 <section class="tide-card" aria-labelledby="todays-brief-h">
@@ -1102,136 +1026,11 @@ else
     {
         @if (_queue is { } q)
         {
-            <section class="tide-card" aria-labelledby="team-queue-h">
-                <h2 id="team-queue-h">My team's queue <span class="tide-count">(@q.Total)</span>
-                    <a class="ms-auto small fw-normal" href="actions?view=myteams">My teams</a></h2>
-                @if (!q.OnATeam)
-                {
-                    <EmptyState Icon="bi-people" Title="You're not on a team." Compact="true" />
-                }
-                else if (q.Rows.Count == 0)
-                {
-                    <EmptyState Icon="bi-check2-circle" Title="Nothing waiting for you or your team." Compact="true" />
-                }
-                else
-                {
-                    <p class="small tide-muted mb-1">@q.Mine yours and @q.Unassigned unassigned.</p>
-                }
-                @foreach (var r in q.Rows)
-                {
-                    @QueueRow(r, $"{ActionService.KindName(r.Kind)} · {r.TeamName} · {(r.AssigneeId is null ? "Unassigned" : "Yours")}", offerTake: true)
-                }
-                @if (q.Total > q.Rows.Count)
-                {
-                    <a class="small d-inline-block mt-2" href="actions?view=myteams">All @q.Total in My teams</a>
-                }
-            </section>
+            <TeamQueueCard Queue="q" Busy="_busy" Marks="_actionMarks" OnTake="Take" />
         }
     };
 
-    // The escalation ladder's flagged actions that are mine to chase: mine, my teams', or parts of mine. Only when there are any.
-    private RenderFragment Escalated() => __builder =>
-    {
-        @if (_queue?.Escalated is { Count: > 0 } rows)
-        {
-            <section class="tide-card tide-escalated" aria-labelledby="escalated-h">
-                <h2 id="escalated-h"><span class="bi bi-arrow-up-circle-fill text-danger" aria-hidden="true"></span> Escalated <span class="tide-count">(@rows.Count)</span>
-                    <a class="ms-auto small fw-normal" href="actions?view=overdue">Overdue</a></h2>
-                <p class="small tide-muted mb-1">Slipping long enough that the escalation ladder flagged them. Each stays until it closes or its due date moves.</p>
-                @foreach (var r in rows)
-                {
-                    @QueueRow(r, $"{r.Priority} · {r.TeamName} · {r.AssigneeName ?? "Unassigned"}"
-                                 + (r.ParentNumber is { } parent ? $" · part of {Ui.ActionLabel(parent)}" : ""), offerTake: false)
-                }
-            </section>
-        }
-    };
-
-    // One row of a Today action list (the queue, the team's unassigned, the escalated): its number, title and files, a
-    // line about it with how late it is, then Take it (when it's nobody's and offered) or its due-date badge.
-    private RenderFragment QueueRow(ActionRow r, string meta, bool offerTake) => __builder =>
-    {
-        <div class="tide-queue-row @_actionMarks?.Css(r.Id)" @key="r.Id">
-            <span class="tide-queue-title">
-                <ActionRef Number="r.Number" Title="@r.Title" /> <FileCount Count="r.Files" />
-                <span class="tide-queue-meta">
-                    @meta
-                    @if (ActionSla.LateText(r.DueDate, ActionSvc.Today) is { } late)
-                    {
-                        <span>&middot; <span class="tide-queue-late">@late</span></span>
-                    }
-                </span>
-            </span>
-            @if (offerTake && r.AssigneeId is null)
-            {
-                <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@_busy" @onclick="() => Take(r)"
-                        aria-label="@($"Take {Ui.ActionLabel(r.Number)} on: {r.Title}")">Take it</button>
-            }
-            else
-            {
-                <SlaBadge State="r.Sla(ActionSvc.Today, Clock.Days)" Due="r.DueDate" />
-            }
-        </div>
-    };
-
-    private RenderFragment MyActions() => __builder =>
-    {
-        @if (_mine is not null)
-        {
-            <section class="tide-card" aria-labelledby="my-actions-h">
-                <h2 id="my-actions-h">My actions <span class="tide-count">(@_mine.Count)</span> <a class="ms-auto small fw-normal" href="actions?view=mine">All</a></h2>
-                @if (_mine.Count == 0)
-                {
-                    <EmptyState Icon="bi-check2-circle" Title="Nothing assigned to you." Compact="true" />
-                }
-                @foreach (var r in _mine.Take(6))
-                {
-                    <div class="d-flex gap-2 align-items-start py-1 border-bottom small @_actionMarks?.Css(r.Id)" @key="r.Id">
-                        <span class="flex-grow-1"><ActionRef Number="r.Number" Title="@r.Title" /> <FileCount Count="r.Files" /></span>
-                        <SlaBadge State="r.Sla(ActionSvc.Today, Clock.Days)" Due="r.DueDate" Today="ActionSvc.Today" />
-                    </div>
-                }
-            </section>
-        }
-    };
-
-    // An analyst on a team: one Actions card, their own and the team's unassigned ones on two tabs, where My actions and
-    // the team queue used to list the same rows twice.
-    private RenderFragment ActionsCard() => __builder =>
-    {
-        @if (_mine is not null && _queue is { } q)
-        {
-            var unassigned = q.Rows.Where(r => r.AssigneeId is null).ToList();
-            var team = _actionsTab == "team";
-            <section class="tide-card" aria-labelledby="actions-card-h">
-                <h2 id="actions-card-h">Actions <a class="ms-auto small fw-normal" href="@(team ? "actions?view=myteams" : "actions?view=mine")">All</a></h2>
-                <div class="tide-seg mb-2" role="group" aria-label="Whose actions">
-                    <button type="button" class="tide-seg-opt @(team ? "" : "on")" aria-pressed="@(team ? "false" : "true")" @onclick="@(() => _actionsTab = "mine")">Mine <span class="tide-count">@_mine.Count</span></button>
-                    <button type="button" class="tide-seg-opt @(team ? "on" : "")" aria-pressed="@Ui.Aria(team)" @onclick="@(() => _actionsTab = "team")">Team, unassigned <span class="tide-count">@q.Unassigned</span></button>
-                </div>
-                @if (!team)
-                {
-                    @if (_mine.Count == 0) { <EmptyState Icon="bi-check2-circle" Title="Nothing assigned to you." Compact="true" /> }
-                    @foreach (var r in _mine.Take(6))
-                    {
-                        <div class="d-flex gap-2 align-items-start py-1 border-bottom small @_actionMarks?.Css(r.Id)" @key="r.Id">
-                            <span class="flex-grow-1"><ActionRef Number="r.Number" Title="@r.Title" /> <FileCount Count="r.Files" /></span>
-                            <SlaBadge State="r.Sla(ActionSvc.Today, Clock.Days)" Due="r.DueDate" Today="ActionSvc.Today" />
-                        </div>
-                    }
-                }
-                else
-                {
-                    @if (unassigned.Count == 0) { <EmptyState Icon="bi-check2-circle" Title="Nothing unassigned on your teams." Compact="true" /> }
-                    @foreach (var r in unassigned)
-                    {
-                        @QueueRow(r, $"{ActionService.KindName(r.Kind)} · {r.TeamName}", offerTake: true)
-                    }
-                }
-            </section>
-        }
-    };
-
+    // The Actions card's open tab, kept here so it survives the card being drawn afresh (the brief started, say).
     private string _actionsTab = "mine";
 
     // What a reader of the brief who can't write is shown of each article's readiness: nothing.
@@ -1244,59 +1043,21 @@ else
         @if (_canWrite)
         {
             <ReviewsForYou />
-            @Escalated()
-            @if (_queue is { OnATeam: true }) { @ActionsCard() } else { @MyActions() }
-        }
-        <section class="tide-card" aria-labelledby="coming-up-h">
-            <h2 id="coming-up-h">Coming up for you <a class="ms-auto small fw-normal" href="rotation">Rotation</a></h2>
-            @if (_upcoming is { } up)
+            <EscalatedCard Rows="_queue?.Escalated" Marks="_actionMarks" />
+            @if (_mine is { } mine)
             {
-                @if (up.ToApprove.Count > 0)
-                {
-                    <div class="small text-danger mb-1"><span class="bi bi-exclamation-circle" aria-hidden="true"></span> <a href="rotation">@up.ToApprove.Count swap or cover request@(up.ToApprove.Count == 1 ? "" : "s") waiting for you</a></div>
-                }
-                @if (up.MyRuns.Count == 0)
-                {
-                    <div class="small tide-muted">You're not on the rotation in the coming weeks.</div>
-                }
-                <ul class="list-unstyled small mb-0">
-                    @foreach (var run in up.MyRuns.Take(3))
-                    {
-                        <li>You present @(run.From == run.To ? Ui.ShortDay(run.From) : $"{Ui.ShortDay(run.From)} to {Ui.ShortDay(run.To)}")</li>
-                    }
-                </ul>
+                @if (_queue is { OnATeam: true } q) { <ActionsCard Mine="mine" Queue="q" @bind-Tab="_actionsTab" Busy="_busy" Marks="_actionMarks" OnTake="Take" /> }
+                else { <MyActionsCard Mine="mine" Marks="_actionMarks" /> }
             }
-        </section>
+        }
+        <ComingUpCard Upcoming="_upcoming" />
         @if (_canWrite && _brief is not null)
         {
-            @Unbriefed()
+            <NotYetBriefedCard Articles="NotYetBriefed" CanAdd="@(_brief.Status != BriefStatus.Sent)" Busy="_busy" OnAdd="AddFromCard" OnAddMore="AskAdd" />
         }
         else
         {
-        <section class="tide-card" aria-labelledby="recent-h">
-            <h2 id="recent-h">@(_canWrite ? "Recently written" : "Recently presented") <span class="tide-count">(@_recent.Count)</span></h2>
-            @if (_recent.Count == 0)
-            {
-                <EmptyState Icon="bi-file-earmark-text" Title="@(_canWrite ? "No articles yet." : "Nothing presented yet.")" Compact="true" />
-            }
-            <ul class="list-unstyled mb-0">
-                @foreach (var r in _recent)
-                {
-                    <li class="mb-2">
-                        <a href="articles/@r.Id" class="fw-semibold text-decoration-none">@r.Title</a>
-                        <div class="tide-run-meta">
-                            <ClassBadge Classification="r.Classification" Priority="r.Priority" />
-                            <StatusBadge Status="@r.Status.ToString()" />
-                            <span>@r.AuthorName &middot; @Ui.When(Clock, r.CreatedAtUtc)</span>
-                        </div>
-                    </li>
-                }
-            </ul>
-            @if (_canWrite)
-            {
-                <a class="btn btn-outline-secondary btn-sm mt-2" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article</a>
-            }
-        </section>
+            <RecentArticlesCard Articles="_recent" CanWrite="_canWrite" />
         }
     };
 
@@ -1309,54 +1070,10 @@ else
         [.. _candidates.Where(c => c.Available && c.LastBriefed is null && (c.Status == ArticleStatus.Ready || c.AuthorId == _me))
             .OrderBy(c => c.Status == ArticleStatus.Ready ? 0 : 1).ThenByDescending(c => c.CreatedAtUtc)];
 
-    private const int NotYetBriefedShown = 8;
-
     // Who's reading, as the page opened: their drafts are the ones listed.
     private string _me = "";
 
     // One article onto the end of today's running order, from the card.
     internal Task AddFromCard(BriefCandidate c) =>
         Run(() => BriefSvc.AddArticleAsync(_brief!.Id, c.Id), $"Added “{c.Title}” to the end of the running order.");
-
-    private RenderFragment Unbriefed() => __builder =>
-    {
-        var all = NotYetBriefed;
-        var canAdd = _brief is { Status: not BriefStatus.Sent };
-        <section class="tide-card" aria-labelledby="recent-h">
-            <h2 id="recent-h">Not on a brief yet <span class="tide-count">(@all.Count)</span></h2>
-            <p class="small tide-muted mb-2">Ready articles first, then your own drafts. None has been on a brief.</p>
-            @if (all.Count == 0)
-            {
-                <EmptyState Icon="bi-check2-circle" Title="Everything ready is on a brief." Compact="true" />
-            }
-            <ul class="list-unstyled mb-0">
-                @foreach (var c in all.Take(NotYetBriefedShown))
-                {
-                    <li class="mb-2 d-flex gap-2 align-items-start" @key="c.Id">
-                        <div class="flex-grow-1">
-                            <a href="articles/@c.Id" class="fw-semibold text-decoration-none">@c.Title</a>
-                            <div class="tide-run-meta">
-                                <ClassBadge Classification="c.Classification" Priority="c.Priority" />
-                                <StatusBadge Status="@c.Status.ToString()" />
-                                <span>@c.AuthorName &middot; @Ui.When(Clock, c.CreatedAtUtc)</span>
-                            </div>
-                        </div>
-                        @if (canAdd)
-                        {
-                            <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@_busy" aria-label="Add @c.Title to today's brief" @onclick="() => AddFromCard(c)">
-                                <span class="bi bi-plus-lg" aria-hidden="true"></span> Add
-                            </button>
-                        }
-                    </li>
-                }
-            </ul>
-            <div class="d-flex gap-2 mt-2">
-                @if (all.Count > NotYetBriefedShown && canAdd)
-                {
-                    <button type="button" class="btn btn-link btn-sm p-0" disabled="@_busy" @onclick="AskAdd">All @all.Count in Add article</button>
-                }
-                <a class="btn btn-outline-secondary btn-sm ms-auto" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article</a>
-            </div>
-        </section>
-    };
 }

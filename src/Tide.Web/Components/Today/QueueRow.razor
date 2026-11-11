@@ -1,0 +1,45 @@
+@inject ActionService ActionSvc
+@inject OrgClock Clock
+
+@* One row of a Today action list (the queue, the team's unassigned, the escalated): its number, title and files, a
+   line about it with how late it is, then Take it (when it's nobody's and offered) or its due-date badge. *@
+
+<div class="tide-queue-row @Marks?.Css(Row.Id)">
+    <span class="tide-queue-title">
+        <ActionRef Number="Row.Number" Title="@Row.Title" /> <FileCount Count="Row.Files" />
+        <span class="tide-queue-meta">
+            @Meta
+            @if (ActionSla.LateText(Row.DueDate, ActionSvc.Today) is { } late)
+            {
+                <span>&middot; <span class="tide-queue-late">@late</span></span>
+            }
+        </span>
+    </span>
+    @if (OfferTake && Row.AssigneeId is null)
+    {
+        <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@Busy" @onclick="() => OnTake.InvokeAsync(Row)"
+                aria-label="@($"Take {Ui.ActionLabel(Row.Number)} on: {Row.Title}")">Take it</button>
+    }
+    else
+    {
+        <SlaBadge State="Row.Sla(ActionSvc.Today, Clock.Days)" Due="Row.DueDate" />
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ActionRow Row { get; set; } = default!;
+
+    /// <summary>The line under the title: its kind or priority, its team, whose it is.</summary>
+    [Parameter, EditorRequired] public string Meta { get; set; } = "";
+
+    /// <summary>Offer Take it when the action is nobody's.</summary>
+    [Parameter] public bool OfferTake { get; set; }
+
+    /// <summary>The page is saving: Take it waits.</summary>
+    [Parameter] public bool Busy { get; set; }
+
+    /// <summary>Rows a colleague's change brought or changed, highlighted a moment.</summary>
+    [Parameter] public LiveMarks<Guid>? Marks { get; set; }
+
+    [Parameter] public EventCallback<ActionRow> OnTake { get; set; }
+}

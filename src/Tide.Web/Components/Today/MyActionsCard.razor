@@ -1,0 +1,23 @@
+@* My actions, for an analyst on no team: the first six, each with its due-date badge. *@
+
+<section class="tide-card" aria-labelledby="my-actions-h">
+    <h2 id="my-actions-h">My actions <span class="tide-count">(@Mine.Count)</span> <a class="ms-auto small fw-normal" href="actions?view=mine">All</a></h2>
+    @if (Mine.Count == 0)
+    {
+        <EmptyState Icon="bi-check2-circle" Title="Nothing assigned to you." Compact="true" />
+    }
+    @foreach (var r in Mine.Take(Shown))
+    {
+        <MyActionRow @key="r.Id" Row="r" Marks="Marks" />
+    }
+</section>
+
+@code {
+    /// <summary>How many of my actions Today lists (the page highlights changes among the same rows).</summary>
+    public const int Shown = 6;
+
+    [Parameter, EditorRequired] public IReadOnlyList<ActionRow> Mine { get; set; } = default!;
+
+    /// <summary>Rows a colleague's change brought or changed, highlighted a moment.</summary>
+    [Parameter] public LiveMarks<Guid>? Marks { get; set; }
+}

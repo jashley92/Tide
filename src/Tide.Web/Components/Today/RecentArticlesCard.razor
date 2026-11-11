@@ -1,0 +1,36 @@
+@inject OrgClock Clock
+
+@* The latest articles beside Today's brief: what's written, for someone who writes the brief and has none yet; what's
+   been presented, for anyone else (the page reads them, at or below the team edition's ceiling). *@
+
+<section class="tide-card" aria-labelledby="recent-h">
+    <h2 id="recent-h">@(CanWrite ? "Recently written" : "Recently presented") <span class="tide-count">(@Articles.Count)</span></h2>
+    @if (Articles.Count == 0)
+    {
+        <EmptyState Icon="bi-file-earmark-text" Title="@(CanWrite ? "No articles yet." : "Nothing presented yet.")" Compact="true" />
+    }
+    <ul class="list-unstyled mb-0">
+        @foreach (var r in Articles)
+        {
+            <li class="mb-2">
+                <a href="articles/@r.Id" class="fw-semibold text-decoration-none">@r.Title</a>
+                <div class="tide-run-meta">
+                    <ClassBadge Classification="r.Classification" Priority="r.Priority" />
+                    <StatusBadge Status="@r.Status.ToString()" />
+                    <span>@r.AuthorName &middot; @Ui.When(Clock, r.CreatedAtUtc)</span>
+                </div>
+            </li>
+        }
+    </ul>
+    @if (CanWrite)
+    {
+        <a class="btn btn-outline-secondary btn-sm mt-2" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article</a>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<ArticleSummary> Articles { get; set; } = default!;
+
+    /// <summary>Whoever's reading writes articles: the card lists what's written and offers New article.</summary>
+    [Parameter] public bool CanWrite { get; set; }
+}

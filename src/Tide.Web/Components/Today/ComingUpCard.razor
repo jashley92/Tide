@@ -1,0 +1,27 @@
+@* Coming up for you: swap or cover requests waiting for you, and your next runs on the brief rotation. *@
+
+<section class="tide-card" aria-labelledby="coming-up-h">
+    <h2 id="coming-up-h">Coming up for you <a class="ms-auto small fw-normal" href="rotation">Rotation</a></h2>
+    @if (Upcoming is { } up)
+    {
+        @if (up.ToApprove.Count > 0)
+        {
+            <div class="small text-danger mb-1"><span class="bi bi-exclamation-circle" aria-hidden="true"></span> <a href="rotation">@up.ToApprove.Count swap or cover request@(up.ToApprove.Count == 1 ? "" : "s") waiting for you</a></div>
+        }
+        @if (up.MyRuns.Count == 0)
+        {
+            <div class="small tide-muted">You're not on the rotation in the coming weeks.</div>
+        }
+        <ul class="list-unstyled small mb-0">
+            @foreach (var run in up.MyRuns.Take(3))
+            {
+                <li>You present @(run.From == run.To ? Ui.ShortDay(run.From) : $"{Ui.ShortDay(run.From)} to {Ui.ShortDay(run.To)}")</li>
+            }
+        </ul>
+    }
+</section>
+
+@code {
+    /// <summary>What's coming up on the rotation for whoever's reading; null until it's read.</summary>
+    [Parameter] public Tide.Application.Rotation.Upcoming? Upcoming { get; set; }
+}
