@@ -3,8 +3,8 @@
    on. Each tab that lists entries places one for its selected entry.
    - Try it is for someone who works actions (LibraryUseService.CanTry), never on a retired entry, and lists only the open
      actions of the kind the entry is for that they work (WorkableAsync); with none, it says so. An action closed after its
-     preview is refused by Add (ActionService) and the list is read again without it. Choosing an action only reads: the preview is ActionService's or OutreachService's
-     read-only fill, which refuses whom the real step refuses. Add runs the action page's own step (Add a saved query,
+     preview is refused by Add (ActionService) and the list is read again without it. Choosing an action only reads: the
+     preview is ActionService's or OutreachService's read-only fill, which refuses whom the real step refuses. Add runs the action page's own step (Add a saved query,
      Apply a playbook), with its checks and its line in the action's history.
    - Used on lists the actions the entry was used on, for whoever reads actions (a deleted one isn't listed). *@
 @inject LibraryUseService UseSvc
@@ -186,7 +186,7 @@
     private string NoneToTry => Kind switch
     {
         LibraryKind.SavedQuery => "No open sweep or hunt to try it on.",
-        LibraryKind.OutreachTemplate => "No open Outreach action to try it on.",
+        LibraryKind.OutreachTemplate => $"No open {ActionService.KindName(ActionKind.Outreach)} action to try it on.",
         _ => For is { } kind ? $"No open {ActionService.KindName(kind)} action to try it on." : "No open action to try it on.",
     };
 
@@ -291,7 +291,7 @@
             // The action changed since the preview: what Add would do now is shown, to be tried again. One that closed
             // meanwhile is no longer offered: the open actions are read again, and the next one shown.
             if (ex is StaleEditException) await Preview();
-            else if (ex is InvalidOperationException)
+            else if (ex is ActionClosedException)
             {
                 await ReadWorkable();
                 Offer();

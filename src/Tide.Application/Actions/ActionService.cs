@@ -1808,7 +1808,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// from the Library is added to work that's finished.</summary>
     private static void RequireOpen(ActionItem a)
     {
-        if (!a.IsOpen) throw new InvalidOperationException($"A-{a.Number} is closed. Reopen it to add to it.");
+        if (!a.IsOpen) throw new ActionClosedException($"A-{a.Number} is closed. Reopen it to add to it.");
     }
 
     private static async Task<Playbook> PlaybookFor(IAppDbContext db, Guid playbookId, ActionKind kind, CancellationToken ct)
@@ -2392,3 +2392,6 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         _ => o.ToString(),
     };
 }
+
+/// <summary>A step refused because the action is closed (Done, Cancelled, Not applicable): reopen it first.</summary>
+public sealed class ActionClosedException(string message) : InvalidOperationException(message);
