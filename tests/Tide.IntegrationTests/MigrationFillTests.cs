@@ -267,6 +267,41 @@ public class MigrationFillTests
         }
     }
 
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task WhyItMattersKept_LeavesEveryArticleUnkept_AndKeepsWhatIsKept(string provider)
+    {
+        using var database = new MigratedDatabase(provider);
+        var threat = new Article
+        {
+            Title = "Written before", AuthorId = "x", AuthorName = "X", Classification = Classification.Threat,
+            WhyItMatters = "We run two of these.", WhyItMattersTlp = TlpLevel.Clear,
+        };
+        await using (var ctx = database.Context())
+        {
+            ctx.Add(threat);
+            await ctx.SaveChangesAsync();
+        }
+
+        database.UpgradeAgainFrom("WhyItMattersKept");
+
+        await using (var ctx = database.Context())
+        {
+            var a = await ctx.Articles.SingleAsync();
+            (a.WhyItMattersKeptTlp, a.WhyItMattersKeptHash, a.WhyItMattersKeptById, a.WhyItMattersKeptByName, a.WhyItMattersKeptAtUtc)
+                .Should().Be(((TlpLevel?)null, (string?)null, (string?)null, (string?)null, (DateTimeOffset?)null), "nothing was kept before");
+            Tide.Application.Articles.ArticleChecks.WhyReachesCompany(a, TlpLevel.Green).Should().NotBeNull("so its warning still shows");
+            a.KeepWhyItMatters("dev:robin", "Robin", Decided);
+            await ctx.SaveChangesAsync();
+        }
+        await using (var ctx = database.Context())
+        {
+            var a = await ctx.Articles.SingleAsync();
+            (a.WhyItMattersKeptTlp, a.WhyItMattersKeptById, a.WhyItMattersKeptByName, a.WhyItMattersKeptAtUtc, a.WhyItMattersKept)
+                .Should().Be(((TlpLevel?)TlpLevel.Clear, "dev:robin", "Robin", (DateTimeOffset?)Decided, true));
+        }
+    }
+
     // A database on one provider, migrated as the app migrates its own, and dropped afterwards.
     private sealed class MigratedDatabase : IDisposable
     {

@@ -730,17 +730,29 @@ else
     private Task Reorder((IReadOnlyList<Guid> Order, Guid Moved) drop) => Run(() => BriefSvc.ReorderAsync(_brief!.Id, drop.Order), null,
         () => Toasts.Show($"Moved to {Ordered().ToList().FindIndex(i => i.Id == drop.Moved) + 1} of {_brief!.Items.Count}."));
 
-    // A warning's one-click fix, from the running order: the article as this page showed it (its edit version), so a
-    // colleague's save in between is refused, not written over. An article edit has no undo, so the toast offers none.
+    // A warning's one-click answer, from the running order: the article as this page showed it (its edit version), so a
+    // colleague's save in between is refused, not written over. "Set to AMBER" raises the paragraph's marking; "Keep it"
+    // changes none and only records that it is meant to go out as it is. Neither has an undo, so the toast offers none.
     internal Task Fix(Guid articleId, ArticleFix fix)
     {
-        if (!CanFix || fix != ArticleFix.WhyItMattersAmber
-            || _brief!.Items.FirstOrDefault(i => i.ArticleId == articleId)?.Article is not { } article) return Task.CompletedTask;
-        var changed = false;
-        return Run(async () => changed = await ArticleSvc.MarkWhyItMattersAmberAsync(article.Id, article.EditVersion, _brief.Id), null,
-            () => Toasts.Show(changed
-                ? $"Why it matters on “{article.Title}” is now {Tlp.Label(TlpLevel.Amber)}. The company-wide edition leaves it out."
-                : $"Why it matters on “{article.Title}” was already {Tlp.Label(TlpLevel.Amber)} or stricter."));
+        if (!CanFix || _brief!.Items.FirstOrDefault(i => i.ArticleId == articleId)?.Article is not { } article) return Task.CompletedTask;
+        switch (fix)
+        {
+            case ArticleFix.WhyItMattersAmber:
+                var changed = false;
+                return Run(async () => changed = await ArticleSvc.MarkWhyItMattersAmberAsync(article.Id, article.EditVersion, _brief.Id), null,
+                    () => Toasts.Show(changed
+                        ? $"Why it matters on “{article.Title}” is now {Tlp.Label(TlpLevel.Amber)}. The company-wide edition leaves it out."
+                        : $"Why it matters on “{article.Title}” was already {Tlp.Label(TlpLevel.Amber)} or stricter."));
+            case ArticleFix.KeepWhyItMatters:
+                TlpLevel? kept = null;
+                return Run(async () => kept = await ArticleSvc.KeepWhyItMattersAsync(article.Id, article.EditVersion, _brief.Id), null,
+                    () => Toasts.Show(kept is { } tlp
+                        ? $"Kept Why it matters on “{article.Title}” at {Tlp.Label(tlp)}. It goes to the company-wide edition as it is."
+                        : $"“{article.Title}” has no Why it matters to keep."));
+            default:
+                return Task.CompletedTask;
+        }
     }
 
     // Who may edit the articles (as the editor has it), on a brief that hasn't gone out: after a send, what went out is

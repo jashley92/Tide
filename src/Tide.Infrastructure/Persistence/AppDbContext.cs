@@ -179,6 +179,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Actors).HasMaxLength(500);
             e.Property(x => x.Sectors).HasMaxLength(500);
             Person(e, x => x.AuthorId, x => x.AuthorName);
+            e.Property(x => x.WhyItMattersKeptHash).HasMaxLength(64);
+            Person(e, x => x.WhyItMattersKeptById, x => x.WhyItMattersKeptByName);
             e.Property(x => x.EditVersion).IsConcurrencyToken();
             e.HasIndex(x => x.CreatedAtUtc);
             e.HasIndex(x => x.Status);

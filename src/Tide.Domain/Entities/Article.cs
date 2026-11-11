@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Tide.Domain.Common;
 using Tide.Domain.Enums;
 
@@ -40,6 +42,57 @@ public class Article : AuditableEntity
     /// <summary>The TLP of <see cref="WhyItMatters"/>: it often holds internal context, so it can be raised above the
     /// article's like a bullet can.</summary>
     public TlpLevel WhyItMattersTlp { get; set; } = TlpLevel.Clear;
+
+    /// <summary>
+    /// "Keep it": someone looked at "Why it matters" going to the company-wide edition and meant it to. It changes no
+    /// marking and no edition; it only answers the warning, and only while the paragraph and the marking it counts as are
+    /// what was kept (<see cref="WhyItMattersKept"/>). The marking kept, a fingerprint of that marking and the text
+    /// (<see cref="WhyItMattersFingerprint"/>), who and when.
+    /// </summary>
+    public TlpLevel? WhyItMattersKeptTlp { get; set; }
+
+    /// <inheritdoc cref="WhyItMattersKeptTlp"/>
+    public string? WhyItMattersKeptHash { get; set; }
+
+    /// <inheritdoc cref="WhyItMattersKeptTlp"/>
+    public string? WhyItMattersKeptById { get; set; }
+
+    /// <inheritdoc cref="WhyItMattersKeptTlp"/>
+    public string? WhyItMattersKeptByName { get; set; }
+
+    /// <inheritdoc cref="WhyItMattersKeptTlp"/>
+    public DateTimeOffset? WhyItMattersKeptAtUtc { get; set; }
+
+    /// <summary>Whether "Why it matters" is kept as it is now: the text and the marking it counts as haven't changed since.</summary>
+    public bool WhyItMattersKept =>
+        WhyItMattersKeptHash is { } kept && kept == WhyItMattersFingerprint(WhyItMatters, Effective(WhyItMattersTlp));
+
+    /// <summary>A fingerprint of "Why it matters" at <paramref name="marking"/>: SHA-256 of both, in hex.</summary>
+    public static string WhyItMattersFingerprint(string? text, TlpLevel marking) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{marking}\n{text}")));
+
+    /// <summary>Keeps "Why it matters" as it is now, for <paramref name="byId"/> at <paramref name="at"/>. Returns the
+    /// marking it counts as, which is the one kept. Nothing else changes.</summary>
+    public TlpLevel KeepWhyItMatters(string byId, string byName, DateTimeOffset at)
+    {
+        var marking = Effective(WhyItMattersTlp);
+        WhyItMattersKeptTlp = marking;
+        WhyItMattersKeptHash = WhyItMattersFingerprint(WhyItMatters, marking);
+        WhyItMattersKeptById = byId;
+        WhyItMattersKeptByName = byName;
+        WhyItMattersKeptAtUtc = at;
+        return marking;
+    }
+
+    /// <summary>Clears a keep that no longer holds (the text or its marking changed), so the record says what is kept
+    /// and keeping it again records the marking afresh.</summary>
+    public void ForgetLapsedKeep()
+    {
+        if (WhyItMattersKeptHash is null || WhyItMattersKept) return;
+        WhyItMattersKeptTlp = null;
+        WhyItMattersKeptHash = WhyItMattersKeptById = WhyItMattersKeptByName = null;
+        WhyItMattersKeptAtUtc = null;
+    }
 
     /// <summary>What the analyst recommends be done (Markdown). Becomes action items once those ship.</summary>
     public string? RecommendedActions { get; set; }
