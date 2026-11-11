@@ -448,7 +448,8 @@ One box at the top of every page.
   ATT&CK techniques by name and captions, with the matches marked.
 - **An indicator.** Paste an IP address, domain, URL, hash or email address, defanged or not. The lookup opens with
   one line that says whether the team knows it and whether anyone is on it ("On 1 article · briefed Mon Nov 9 ·
-  2 actions open · no hunt result yet", or "Not seen before"). "Briefed" means the brief was presented or sent; an
+  2 actions open · no hunt result yet", "Not on any article yet · no action raised · 1 new in triage" for a CVE in
+  Triage's inbox, or "Not seen before" when nothing in TIDE has it). "Briefed" means the brief was presented or sent; an
   article on a brief that hasn't been is "on today's brief, not presented yet". Then:
   - an open sweep or hunt that already searches for it, named with a link;
   - **Seen with**: the other indicators, CVEs, ATT&CK techniques and the story on the same articles. Each looks that

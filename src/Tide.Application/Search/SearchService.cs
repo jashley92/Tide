@@ -92,13 +92,17 @@ public sealed record SeenWith(
 /// actions raised (how many in all, and how many of those listed are open) and, for an indicator, how the hunts for it
 /// went: hits if any found some, else no hits if any came back clean, else not run when a hunt is waiting or a sweep is
 /// open, and null when nothing hunts for it. A CVE has no hunt result: a hunt searches for indicators.
+/// <see cref="NewInTriage"/> is how many new items in Triage's inbox name it, for someone who triages; null for anyone
+/// else, who can't see them.
 /// </summary>
-public sealed record LookupSummary(int Articles, DateOnly? LastBriefed, DateOnly? OnBrief, int Actions, int OpenActions, HuntResult? Hunted)
+public sealed record LookupSummary(int Articles, DateOnly? LastBriefed, DateOnly? OnBrief, int Actions, int OpenActions, HuntResult? Hunted,
+    int? NewInTriage = null)
 {
-    /// <summary>No article has it and no action was raised about it.</summary>
-    public bool Unseen => Articles == 0 && Actions == 0;
+    /// <summary>Nothing in TIDE has it: no article, no action, nothing new in Triage. Never said to someone who can't see
+    /// Triage, which may have it.</summary>
+    public bool Unseen => Articles == 0 && Actions == 0 && NewInTriage == 0;
 
-    public static LookupSummary Of(IReadOnlyCollection<LookupArticle> articles, HitList<ActionHit> actions, bool hunted) => new(
+    public static LookupSummary Of(IReadOnlyCollection<LookupArticle> articles, HitList<ActionHit> actions, bool hunted, int? newInTriage) => new(
         articles.Count,
         Latest(articles, presented: true),
         Latest(articles, presented: false),
@@ -107,7 +111,8 @@ public sealed record LookupSummary(int Articles, DateOnly? LastBriefed, DateOnly
         !hunted ? null
             : actions.Items.Any(a => a.Hunted == HuntResult.Hits) ? HuntResult.Hits
             : actions.Items.Any(a => a.Hunted == HuntResult.NoHits) ? HuntResult.NoHits
-            : actions.Items.Any(a => a.Hunted is not null || (a.IsOpen && a.Hunts)) ? HuntResult.NotRun : null);
+            : actions.Items.Any(a => a.Hunted is not null || (a.IsOpen && a.Hunts)) ? HuntResult.NotRun : null,
+        newInTriage);
 
     private static DateOnly? Latest(IEnumerable<LookupArticle> articles, bool presented) =>
         articles.SelectMany(a => a.Briefs).Where(b => b.Presented == presented).Select(b => (DateOnly?)b.Day).Max();
@@ -172,8 +177,10 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
         CveLookup? cve = null;
         if (terms.Count == 1)
         {
-            if (IocExtractor.NormalizeCve(terms[0]) is { } cveId) cve = await CveAsync(db, cveId, ct);
-            else indicator = await IndicatorAsync(db, terms[0], ct);
+            // Triage's inbox is only for those who triage (who write articles); anyone else is told nothing of it.
+            var triages = user.Has(Permission.WriteArticles);
+            if (IocExtractor.NormalizeCve(terms[0]) is { } cveId) cve = await CveAsync(db, cveId, triages, ct);
+            else indicator = await IndicatorAsync(db, terms[0], triages, ct);
         }
         // A lone digit is an action's number; as text it would match nearly everything, so only actions are looked in.
         var numberOnly = terms is [{ Length: 1 }];
@@ -291,7 +298,7 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
 
     // ---- Lookup ----
 
-    private static async Task<IndicatorLookup?> IndicatorAsync(IAppDbContext db, string term, CancellationToken ct)
+    private static async Task<IndicatorLookup?> IndicatorAsync(IAppDbContext db, string term, bool triages, CancellationToken ct)
     {
         var live = IocObservable.Refang(term);
         var type = IocObservable.DetectType(live);
@@ -345,10 +352,12 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
         var seenWith = await SeenWithAsync(db, on, i => family.Contains(i.Type) && string.Equals(i.Value, value, StringComparison.OrdinalIgnoreCase), null, ct);
         return new IndicatorLookup(type, value, host,
             new HitList<Sighting>(sightings.Take(MaxSightings).ToList(), sightings.Count + exactTotal - rows.Count),
-            actions, sweeping, seenWith, LookupSummary.Of(on, itself, hunted: true));
+            // Triage keeps no indicators of an item's own (it reads CVEs from a title and summary, not indicators), so for
+            // someone who triages there are none there to count.
+            actions, sweeping, seenWith, LookupSummary.Of(on, itself, hunted: true, triages ? 0 : null));
     }
 
-    private static async Task<CveLookup> CveAsync(IAppDbContext db, string cveId, CancellationToken ct)
+    private static async Task<CveLookup> CveAsync(IAppDbContext db, string cveId, bool triages, CancellationToken ct)
     {
         var record = await db.CveRecords.AsNoTracking().FirstOrDefaultAsync(c => c.CveId == cveId, ct);
         var articleIds = await db.ArticleCves.AsNoTracking().Where(c => c.CveId == cveId).Select(c => c.ArticleId).Distinct().ToListAsync(ct);
@@ -356,8 +365,16 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
             db.Articles.AsNoTracking().Where(a => articleIds.Contains(a.Id)).OrderByDescending(a => a.CreatedAtUtc).ThenBy(a => a.Id).Take(MaxSightings), ct);
         var actions = await Lookups.ActionsOnAsync(db, articleIds, [], MaxHits, ct);
         return new CveLookup(cveId, record, new HitList<LookupArticle>(newest, articleIds.Count), actions,
-            await SeenWithAsync(db, newest, null, cveId, ct), LookupSummary.Of(newest, actions, hunted: false));
+            await SeenWithAsync(db, newest, null, cveId, ct), LookupSummary.Of(newest, actions, hunted: false, triages ? await NewInTriageAsync(db, cveId, ct) : null));
     }
+
+    // The new items in Triage's inbox (of a source still read) whose title or summary names the CVE, up to MaxSightings.
+    // Their CVEs are a comma-separated list, so a longer id that starts with this one is told apart here.
+    private static async Task<int> NewInTriageAsync(IAppDbContext db, string cveId, CancellationToken ct) =>
+        (await db.FeedItems.AsNoTracking()
+            .Where(i => i.Status == FeedItemStatus.New && !i.Source!.IsRetired && EF.Functions.Like(i.Cves!, SearchText.Contains(cveId), SearchText.Escape))
+            .Select(i => i.Cves!).Take(MaxSightings).ToListAsync(ct))
+        .Count(cves => cves.Split(',').Contains(cveId, StringComparer.OrdinalIgnoreCase));
 
     // The articles of <paramref name="q"/> as a lookup lists them, in its order.
     private static async Task<List<LookupArticle>> LookupArticlesAsync(IAppDbContext db, IQueryable<Article> q, CancellationToken ct)
