@@ -53,6 +53,19 @@ const noSidewaysScroll = {
   }),
 };
 
+/** The first shown match of `selector` starts within `px` of the bottom of the first shown match of `above`: nothing big
+ *  (a repeated heading or paragraph) sits between them, whatever the fonts make of the rows above both. */
+const closeBelow = (selector, above, px) => ({
+  name: `within ${px}px below ${above}: ${selector}`,
+  check: page => page.evaluate(([selector, above, px]) => {
+    const box = s => [...document.querySelectorAll(s)].map(e => e.getBoundingClientRect()).find(r => r.width > 0 && r.height > 0);
+    const b = box(selector), a = box(above);
+    if (!b || !a) return [`nothing shown matches ${!b ? selector : above}`];
+    const gap = Math.round(b.top - a.bottom);
+    return gap <= px ? [] : [`${selector} starts ${gap}px below ${above}, more than ${px}px`];
+  }, [selector, above, px]),
+});
+
 /** The first visible match of each selector starts at the same x (within 2px): a column that lines up. */
 const lineUp = (...selectors) => ({
   name: `line up: ${selectors.join(' / ')}`,
@@ -610,7 +623,7 @@ const pages = [
   // tab by tab, for a search's words.
   { name: 'library', route: '/library/queries', setup: wideFonts, widths: [1920, 1440, 780],
     rules: [noSidewaysScroll, visible('#library-find'), [1440, sameLine('.tide-library-tabrow .tide-tabbar-page', '#library-find')],
-      [1440, startsAbove('.tide-library-list', 300)], visible('.tide-library-group'),
+      [1440, closeBelow('.tide-library-list', '.tide-library-tabrow', 120)], visible('.tide-library-group'),
       // The entry's Copy, Edit and More at its top right, the entry the height of the window, and Show retired a checkbox.
       [1000, sameLine('.tide-library-entry h3', '.tide-library-entry [data-copy-target]')], [1440, reachesBottom('.tide-library-entry', 24)],
       visible('#sq-retired'), hidden('.form-switch #sq-retired')] },
