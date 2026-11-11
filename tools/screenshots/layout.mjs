@@ -1882,12 +1882,13 @@ const pages = [
   // the list, and Escape closes the rail without closing the reading pane (or keeping it closed).
   { name: 'triage-rail-keys', route: `/triage?as=r1${run}`, setup: openRail, widths: [1440],
     rules: [visible('#tide-rail'), visible('.tide-reading'), railKeysStayInTheRail, escapeClosesTheRailOnly] },
-  // A row's Attach to… and the account menu close when done with, and their Escape is theirs alone: Triage's own (the
-  // reading pane's) doesn't hear it. A press on a part of one that takes no focus leaves it open. Signed in as someone
-  // of this run's own, as the pane's state is kept. The Attach panel stays inside the page, however narrow.
+  // The decision's Attach to… (in the selected row, or under the reading pane where the pane shows) and the account
+  // menu close when done with, and their Escape is theirs alone: Triage's own (the reading pane's) doesn't hear it. A
+  // press on a part of one that takes no focus leaves it open. Signed in as someone of this run's own, as the pane's
+  // state is kept. The Attach panel stays inside the page, however narrow.
   { name: 'triage-attach-popout', route: `/triage?as=a1${run}`, widths: [1440, 800],
-    rules: popoutCloses('Attach to…', { wrap: '.tide-triage-row.selected .tide-attach', opener: '> button', panel: '.tide-attach-panel', inside: 'input', bare: '.tide-attach-panel .form-text' }) },
-  { name: 'triage-attach-fits', route: '/triage', setup: openFirst('.tide-triage-row.selected .tide-attach > button', '.tide-attach-panel'),
+    rules: popoutCloses('Attach to…', { wrap: '.tide-triage-decide .tide-attach', opener: '> button', panel: '.tide-attach-panel', inside: 'input', bare: '.tide-attach-panel .form-text' }) },
+  { name: 'triage-attach-fits', route: '/triage', setup: openFirst('.tide-triage-decide .tide-attach > button', '.tide-attach-panel'),
     widths: [1920, 1440, 1000, 800, 400], rules: [insidePage('.tide-attach-panel')] },
   { name: 'triage-account-popout', route: `/triage?as=a2${run}`, widths: [1440, 800],
     rules: popoutCloses('the account menu', { wrap: '.tide-profile', opener: '.tide-profile-btn', panel: '.tide-popover', inside: '.tide-popover button' }) },
@@ -1903,7 +1904,7 @@ const pages = [
   // Each popout opens in place on a narrow or short window: no sideways scroll, nothing wider than what shows, inside
   // the window top to bottom (upward where there's more room above), never over its button, and nothing of it cut off.
   ...[
-    ['triage', '/triage', 'Attach to…', '.tide-triage-row.selected .tide-attach > button', '.tide-attach-panel'],
+    ['triage', '/triage', 'Attach to…', '.tide-triage-decide .tide-attach > button', '.tide-attach-panel'],
     ['account', '/triage', 'the account menu', '.tide-profile-btn', '.tide-profile .tide-popover'],
     ['export', '/briefs/{today}', 'Export indicators', '.tide-export > button', '.tide-export-panel'],
     ['status', '/actions?view=open&layout=list', 'the Status menu', '.tide-table .tide-menubutton-btn', '.tide-menubutton-pop'],
