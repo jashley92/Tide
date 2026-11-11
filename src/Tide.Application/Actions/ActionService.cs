@@ -1278,12 +1278,19 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         }
     }
 
-    /// <summary>Takes the action on (assigns it to me), starting it if it was open. From a list that showed it as nobody's
-    /// (<paramref name="onlyIfNobodys"/>), it's refused as stale when someone else has taken it since.</summary>
+    /// <summary>Takes the action on (assigns it to me), starting it if it was open. Held to <see cref="ActionGuide.CanTake"/>
+    /// as the action is now, so one closed or handed to an external team since the caller's copy was read is refused as
+    /// stale. From a list that showed it as nobody's (<paramref name="onlyIfNobodys"/>), it's also refused when someone
+    /// else has taken it since.</summary>
     public async Task TakeAsync(Guid id, bool onlyIfNobodys = false, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
         var a = await WorkableAsync(db, id, ct);
+        var external = await db.Teams.Where(t => t.Id == a.TeamId).Select(t => t.IsExternal).FirstOrDefaultAsync(ct);
+        if (!ActionGuide.CanTake(new ActionFacts(a.Status, a.Kind, CanWork: true, Assigned: a.AssigneeId is not null, external)))
+            throw new StaleEditException(external
+                ? $"A-{a.Number} is with an external team now, so nobody here takes it on."
+                : $"Someone else moved A-{a.Number} to {StatusName(a.Status)} in the meantime.");
         // Taken from a list that showed it as nobody's: someone who took it meanwhile keeps it.
         if (onlyIfNobodys && a.AssigneeId is not null && a.AssigneeId != user.UserId)
             throw new StaleEditException($"{a.AssigneeName ?? "Someone"} took A-{a.Number} on in the meantime.");

@@ -174,6 +174,23 @@ public class ActionsListBoardServiceTests : IDisposable
         taken.Events.Should().Contain(e => e.Text.StartsWith("Took it on", StringComparison.Ordinal), "taking is recorded as it always is");
     }
 
+    [Fact]
+    public async Task TakeIt_FromARow_IsRefused_WhenItWasClosedMeanwhile_EvenUnassigned()
+    {
+        var team = await _db.Teams().AddAsync("Cyber Defense", null, null);
+        // Offered as open and nobody's; a colleague then cancelled it without assigning it.
+        var a = await Add(team, x => (x.Status, x.Outcome, x.ClosedAtUtc) = (ActionStatus.Cancelled, ActionOutcome.None, DateTimeOffset.UtcNow));
+
+        var take = () => _db.Actions().TakeAsync(a.Id, onlyIfNobodys: true);
+        (await take.Should().ThrowAsync<StaleEditException>()).WithMessage("*Cancelled*");
+        // The action page's Take (from someone or nobody) is held to the same rule: a page left open doesn't take it either.
+        var fromPage = () => _db.Actions().TakeAsync(a.Id);
+        await fromPage.Should().ThrowAsync<StaleEditException>();
+        var after = await _db.Context().Actions.SingleAsync(x => x.Id == a.Id);
+        (after.AssigneeId, after.Status).Should().Be(((string?)null, ActionStatus.Cancelled), "a closed action isn't taken from a stale row");
+        (await _db.Context().ActionEvents.CountAsync(e => e.ActionId == a.Id && e.Text.StartsWith("Took it on"))).Should().Be(0);
+    }
+
     // An article on the board's cards: one about a CVE on CISA's KEV list, and one not.
     private async Task<(Guid Kev, Guid Plain)> Articles()
     {
