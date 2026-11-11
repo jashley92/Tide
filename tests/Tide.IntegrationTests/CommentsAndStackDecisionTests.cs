@@ -269,4 +269,23 @@ public class CommentsAndStackDecisionPageTests(TideApp app) : IClassFixture<Tide
         html.Should().Contain("Ceiling Decision Appliance flaw").And.NotContain("breach at a partner")
             .And.Contain($"1 article above {System.Net.WebUtility.HtmlEncode(Tlp.Label(page.Component.Detail!.Ceiling)).Replace("+", "&#x2B;")}").And.Contain(">Articles <span class=\"tide-count\">(2)</span>");
     }
+
+    [Fact]
+    public async Task OurStack_AProductAdded_ClosesTheAddForm_SoBackDoesntOpenItAgain()
+    {
+        // The list and a product's page are one component: Add goes to the product, and Back returns to the same one.
+        await using var page = await RenderAsync<StackPage>(app, "/stack");
+        var adding = typeof(StackPage).GetField("_adding", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        await page.Click(p =>
+        {
+            p.ToggleAdd();
+            typeof(StackPage).GetField("_newName", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(p, $"Back Button Gateway {Guid.NewGuid():N}"[..30]);
+            return Task.CompletedTask;
+        });
+        ((bool)adding.GetValue(page.Component)!).Should().BeTrue();
+
+        await page.Click(p => p.Add());   // here the move to the product's page throws, as navigating outside a circuit does
+
+        ((bool)adding.GetValue(page.Component)!).Should().BeFalse("the product was added: the form's work is done");
+    }
 }

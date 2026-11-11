@@ -59,8 +59,11 @@ lookup above the hits:
 | A CVE | its `CveRecord` (CVSS, EPSS, KEV), the articles about it (newest first), and the actions raised from them |
 
 Both lookups open with one line (`LookupSummary`): how many articles the value is on, the last brief any of them
-was on, how many of the actions are open, and for an indicator how the hunts went ("Not seen before" when no
-article has it and no action was raised). "Briefed" counts only a brief that was presented or sent
+was on, how many of the actions are open, and for an indicator how the hunts went. For someone who triages, a CVE's
+line also counts the new items in Triage's inbox that name it ("Not on any article yet · no action raised · 1 new in
+triage", linked to Triage). "Not seen before" is said only to someone who triages, and only when no article has the
+value, no action was raised and nothing new in Triage names it; anyone else reads "Not on any article yet", since
+Triage may have it. "Briefed" counts only a brief that was presented or sent
 (`Lookups.BriefsAsync`); an article on a brief that hasn't been reads "on today's brief, not presented yet" or "on
 the brief for Mon Nov 9, not presented yet", and one on no brief "not on a brief yet". A CVE's line states no hunt
 result, because a hunt searches for indicators; the sweeps and hunts on its articles are named under it

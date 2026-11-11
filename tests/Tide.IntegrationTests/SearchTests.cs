@@ -210,30 +210,46 @@ public class SearchServiceTests : IDisposable
 
         var ind = (await Search().SearchAsync("203.0.113.45")).Indicator!;
 
-        ind.Summary.Should().Be(new LookupSummary(1, null, _db.Clock.CurrentBriefDate, 2, 2, HuntResult.NotRun), "a brief still being written hasn't briefed anyone");
+        ind.Summary.Should().Be(new LookupSummary(1, null, _db.Clock.CurrentBriefDate, 2, 2, HuntResult.NotRun, 0), "a brief still being written hasn't briefed anyone");
         ind.Summary.Unseen.Should().BeFalse();
         ind.Sweeping.Select(x => x.Number).Should().Equal([sweep], "the block isn't a sweep");
 
         await _db.Briefs().MarkPresentedAsync(brief.Id);
         var after = (await Search().SearchAsync("203.0.113.45")).Indicator!;
-        after.Summary.Should().Be(new LookupSummary(1, _db.Clock.CurrentBriefDate, null, 2, 2, HuntResult.NotRun), "the meeting was held");
+        after.Summary.Should().Be(new LookupSummary(1, _db.Clock.CurrentBriefDate, null, 2, 2, HuntResult.NotRun, 0), "the meeting was held");
         after.Sightings.Items[0].Article.Briefs.Should().Equal(new LookupBrief(_db.Clock.CurrentBriefDate, true));
     }
 
     [Fact]
     public async Task Lookup_Summary_NeverSeen_AndWrittenButNotBriefed_AndAHuntThatCameBack()
     {
-        (await Search().SearchAsync("198.51.100.99")).Indicator!.Summary.Should().Be(new LookupSummary(0, null, null, 0, 0, null));
+        (await Search().SearchAsync("198.51.100.99")).Indicator!.Summary.Should().Be(new LookupSummary(0, null, null, 0, 0, null, 0));
         (await Search().SearchAsync("198.51.100.99")).Indicator!.Summary.Unseen.Should().BeTrue();
 
         var a = await Article("Draft only", indicators: [(IndicatorType.Domain, "draft-only.example.net")]);
-        (await Search().SearchAsync("draft-only.example.net")).Indicator!.Summary.Should().Be(new LookupSummary(1, null, null, 0, 0, null));
+        (await Search().SearchAsync("draft-only.example.net")).Indicator!.Summary.Should().Be(new LookupSummary(1, null, null, 0, 0, null, 0));
 
         var team = await _db.Teams().AddAsync("Cyber Defense", null, null);
         var number = await _db.Actions().CreateAsync(new ActionForm { Title = "Sweep", Kind = ActionKind.IocSweep, TeamId = team, ArticleId = a });
         var hunt = await _db.Actions().GenerateHuntAsync((await _db.Actions().GetAsync(number))!.Action.Id, QueryDialects.All[0].Key);
         await _db.Actions().RecordHuntResultAsync(hunt.Id, HuntResult.Hits, 3, "Two hosts.", null);
         (await Search().SearchAsync("draft-only.example.net")).Indicator!.Summary.Hunted.Should().Be(HuntResult.Hits);
+    }
+
+    [Fact]
+    public async Task Lookup_Summary_CountsOnlyWhatWasDoneAboutTheIndicatorItself_NotARelatedHost()
+    {
+        await Article("C2 domain", indicators: [(IndicatorType.Domain, "evil.example.net")]);
+        var sub = await Article("Subdomain", indicators: [(IndicatorType.Domain, "cdn.evil.example.net")]);
+        var team = await _db.Teams().AddAsync("Cyber Defense", null, null);
+        var number = await _db.Actions().CreateAsync(new ActionForm { Title = "Sweep the CDN", Kind = ActionKind.IocSweep, TeamId = team, ArticleId = sub });
+        var hunt = await _db.Actions().GenerateHuntAsync((await _db.Actions().GetAsync(number))!.Action.Id, QueryDialects.All[0].Key);
+        await _db.Actions().RecordHuntResultAsync(hunt.Id, HuntResult.Hits, 3, "Two hosts.", null);
+
+        var ind = (await Search().SearchAsync("evil.example.net")).Indicator!;
+
+        ind.Actions.Items.Select(x => x.Number).Should().Equal([number], "the full list still names what was done about the host");
+        ind.Summary.Should().Be(new LookupSummary(1, null, null, 0, 0, null, 0), "a sweep for cdn.evil.example.net didn't hunt for evil.example.net");
     }
 
     [Fact]
@@ -249,7 +265,7 @@ public class SearchServiceTests : IDisposable
 
         ind.Sweeping.Select(x => x.Number).Should().Equal(own);
         ind.Actions.Items.Select(x => x.Number).Should().Equal([own], "an action that carries the indicator is what was done about it");
-        ind.Summary.Should().Be(new LookupSummary(0, null, null, 1, 1, HuntResult.NotRun));
+        ind.Summary.Should().Be(new LookupSummary(0, null, null, 1, 1, HuntResult.NotRun, 0));
         ind.Summary.Unseen.Should().BeFalse("someone is on it, though no article has it");
 
         await using (var db = _db.Context())
@@ -311,7 +327,7 @@ public class SearchServiceTests : IDisposable
         var r = await Search().SearchAsync("CVE-2026-12345", Once);
 
         r.Cve!.Articles.Items.Select(x => x.Title).Should().BeEquivalentTo("Firewall bug, exploited", "Firewall bug");
-        r.Cve.Summary.Should().Be(new LookupSummary(2, null, null, 1, 1, null));
+        r.Cve.Summary.Should().Be(new LookupSummary(2, null, null, 1, 1, null, 0));
         r.Articles.Items.Should().BeEmpty("both are listed with the CVE");
         (await Search().SearchAsync("CVE-2026-00001")).Cve!.Summary.Unseen.Should().BeTrue();
     }
@@ -638,6 +654,37 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
             .And.Contain("href=\"search?q=T1566.001\"").And.Contain($"href=\"stories/{story}\"");
         seen.Should().NotContain("<x>").And.NotContain(Uri.EscapeDataString(domain), "the value looked up isn't seen with itself");
         WebUtility.HtmlDecode(seen).Should().Contain("hxxps://", "an indicator is shown defanged");
+    }
+
+    // A new item in Triage's inbox naming the CVE (and one already dismissed, and one naming a longer id), on no article.
+    private async Task InTriage(string cve)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<Tide.Infrastructure.Persistence.AppDbContext>();
+        var feed = new Source { Name = Unique("Lookup feed"), Url = $"https://{Unique("feed")}.example.net/rss" };
+        var now = DateTimeOffset.UtcNow;
+        FeedItem Item(string title, string cves, FeedItemStatus status) => new()
+        {
+            Source = feed, Title = title, Url = $"https://{Unique("item")}.example.net/", UrlHash = Unique("hash"), Cves = cves,
+            Status = status, PublishedAtUtc = now, FetchedAtUtc = now,
+        };
+        db.AddRange(Item($"Advisory for {cve}", $"CVE-2020-0001,{cve}", FeedItemStatus.New),
+            Item($"Old note on {cve}", cve, FeedItemStatus.Dismissed), Item("A longer id", cve + "1", FeedItemStatus.New));
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task ACveInTheTriageInbox_IsNotCalledUnseen_AndTriageIsNamedToThoseWhoTriage()
+    {
+        var cve = NewCve();
+        await InTriage(cve);
+
+        var analyst = await Page(cve);
+        Summary(analyst).Should().Be("Not on any article yet · no action raised · 1 new in triage");
+        Inside(analyst, "lookup-summary").Should().Contain($"href=\"triage?q={cve}\"");
+
+        // A viewer doesn't see Triage: nothing of it is named, and nothing is called unseen that someone might have.
+        Summary(await Page(cve, Person("Viewer"))).Should().Be("Not on any article yet · no action raised");
     }
 
     [Fact]

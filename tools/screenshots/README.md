@@ -129,6 +129,9 @@ the `widths` to check at (900px tall) and its `rules`:
 | `visible(selector)` | At least one match is shown. |
 | `widerThan(selector, px)` | The first match is wider than `px` (a data page isn't held to the usual 1400px). |
 
+A rule over every match (`oneRow`, `fits`, `onTitleLine`, `belowTopBar`) fails when nothing it matches is shown, so a
+renamed class or a seed without the case can't pass it unseen. `hidden(selector)` is the one rule that holds of nothing.
+
 `[minWidth, rule]` applies a rule only at that width or wider (the slide's rows wrap below 1001px, as designed). A
 failure names the page, the width and the rule: `slide-article at 1440px: .tide-quick-add #1: its 5 parts are on more
 than one line (135px tall)`. When you add a screen with a row or a column that has to hold, add its rule here.

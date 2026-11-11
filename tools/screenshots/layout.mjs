@@ -14,23 +14,34 @@ import { openPage, pick, readDemo, settle, startTide, toArticleSlide } from './t
 // --- the rules: each runs in the page and returns what's wrong (nothing, when it holds). A box is shown when it has
 // width and height. --------------------------------------------------------------------------------------------------
 
+// A rule over every match of a selector would hold of nothing when nothing matches (a renamed class, a page that drew
+// something else, a seed without the case), so each says so when it examined nothing shown, rather than holding.
+
 /** Every element matching `selector` lays its visible children out on one line (they share a horizontal band, more than
  * the pixel or two of a border two wrapped lines can overlap by). */
 const oneRow = selector => ({
   name: `one row: ${selector}`,
-  check: page => page.$$eval(selector, (rows, selector) => rows.flatMap((row, i) => {
-    const kids = [...row.children].map(c => c.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0);
-    if (kids.length < 2) return [];
-    const top = Math.max(...kids.map(r => r.top)), bottom = Math.min(...kids.map(r => r.bottom));
-    return top < bottom - 2 ? [] : [`${selector} #${i + 1}: its ${kids.length} parts are on more than one line (${Math.round(row.getBoundingClientRect().height)}px tall)`];
-  }), selector),
+  check: page => page.$$eval(selector, (rows, selector) => {
+    const shown = rows.filter(e => e.getBoundingClientRect().height > 0);
+    if (!shown.length) return [`nothing shown matches ${selector}`];
+    return shown.flatMap((row, i) => {
+      const kids = [...row.children].map(c => c.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0);
+      if (kids.length < 2) return [];
+      const top = Math.max(...kids.map(r => r.top)), bottom = Math.min(...kids.map(r => r.bottom));
+      return top < bottom - 2 ? [] : [`${selector} #${i + 1}: its ${kids.length} parts are on more than one line (${Math.round(row.getBoundingClientRect().height)}px tall)`];
+    });
+  }, selector),
 });
 
 /** Nothing inside an element matching `selector` spills out of it sideways. */
 const fits = selector => ({
   name: `fits: ${selector}`,
-  check: page => page.$$eval(selector, (els, selector) => els.flatMap((el, i) =>
-    el.scrollWidth > el.clientWidth + 1 ? [`${selector} #${i + 1}: its content is ${el.scrollWidth - el.clientWidth}px wider than it`] : []), selector),
+  check: page => page.$$eval(selector, (els, selector) => {
+    const shown = els.filter(e => e.getBoundingClientRect().height > 0);
+    if (!shown.length) return [`nothing shown matches ${selector}`];
+    return shown.flatMap((el, i) =>
+      el.scrollWidth > el.clientWidth + 1 ? [`${selector} #${i + 1}: its content is ${el.scrollWidth - el.clientWidth}px wider than it`] : []);
+  }, selector),
 });
 
 /** The page doesn't scroll sideways. */
@@ -82,15 +93,18 @@ const visible = selector => ({
 });
 
 /** In each element matching `cell`, the first `b` sits on the line `a` ends on (their boxes share a horizontal band):
- * a badge that stays beside the title rather than dropping to a line of its own. Cells without both are skipped. */
+ * a badge that stays beside the title rather than dropping to a line of its own. Cells without both are skipped, but
+ * at least one must have both. */
 const onTitleLine = (cell, a, b) => ({
   name: `same line: ${a} and ${b} in ${cell}`,
-  check: page => page.$$eval(cell, (cells, [a, b]) => cells.flatMap((c, i) => {
-    const ea = c.querySelector(a), eb = c.querySelector(b);
-    if (!ea || !eb) return [];
-    const ra = [...ea.getClientRects()].pop(), rb = eb.getBoundingClientRect();
-    return rb.top < ra.bottom && rb.bottom > ra.top ? [] : [`#${i + 1}: ${b} is on another line from ${a} (${Math.round(rb.top - ra.top)}px lower)`];
-  }), [a, b]),
+  check: page => page.$$eval(cell, (cells, [cell, a, b]) => {
+    const both = cells.map((c, i) => [i, c.querySelector(a), c.querySelector(b)]).filter(([, ea, eb]) => ea && eb);
+    if (!both.length) return [`no ${cell} has both ${a} and ${b}`];
+    return both.flatMap(([i, ea, eb]) => {
+      const ra = [...ea.getClientRects()].pop(), rb = eb.getBoundingClientRect();
+      return rb.top < ra.bottom && rb.bottom > ra.top ? [] : [`#${i + 1}: ${b} is on another line from ${a} (${Math.round(rb.top - ra.top)}px lower)`];
+    });
+  }, [cell, a, b]),
 });
 
 /** Focus is on the title of the row `take` named (its `data-expect-focus`): the person's place in the list is kept. */
@@ -217,8 +231,9 @@ const belowTopBar = selector => ({
   name: `below the top bar: ${selector}`,
   check: page => page.$$eval(selector, (els, selector) => {
     const bar = document.querySelector('.top-row')?.getBoundingClientRect().bottom ?? 0;
-    return els.map(e => e.getBoundingClientRect()).filter(r => r.height > 0 && r.top < bar - 1)
-      .map(r => `${selector} starts at ${Math.round(r.top)}px, under the top bar (to ${Math.round(bar)}px)`);
+    const shown = els.map(e => e.getBoundingClientRect()).filter(r => r.height > 0);
+    if (!shown.length) return [`nothing shown matches ${selector}`];
+    return shown.filter(r => r.top < bar - 1).map(r => `${selector} starts at ${Math.round(r.top)}px, under the top bar (to ${Math.round(bar)}px)`);
   }, selector),
 });
 
@@ -298,6 +313,89 @@ async function holdV(page) {
   await page.waitForTimeout(500);
 }
 
+/**
+ * Setup: a context rail on the page, as ContextRail draws one (no page places one yet): its button in the top bar and
+ * its region with a link in it, opened (as an overlay below 1500px) the way the button opens it. Focus goes into it.
+ */
+async function openRail(page) {
+  await page.evaluate(() => {
+    const button = document.createElement('button');
+    button.id = 'tide-rail-toggle';
+    button.type = 'button';
+    button.textContent = 'Context';
+    document.querySelector('.tide-top-end')?.prepend(button);
+    const rail = document.createElement('aside');
+    rail.id = 'tide-rail';
+    rail.className = 'tide-rail';
+    rail.tabIndex = -1;
+    rail.innerHTML = '<div class="tide-rail-body"><a href="#" id="rail-link">A link in the rail</a></div>';
+    document.body.append(rail);   // fixed in place as an overlay, wherever it sits
+    window.tideRail.start();
+  });
+  await page.click('#tide-rail-toggle');
+  await page.locator('#tide-rail').waitFor();
+  await page.focus('#rail-link');
+}
+
+const selectedRow = page => page.evaluate(() => [...document.querySelectorAll('.tide-triage-row')].findIndex(r => r.classList.contains('selected')));
+
+/** The keys pressed in the open rail are the rail's: J and the down arrow there leave the list's selection where it is. */
+const railKeysStayInTheRail = {
+  name: 'keys in the rail leave the list alone',
+  check: async page => {
+    const problems = [], before = await selectedRow(page);
+    if (before < 0) return ['no row is selected to begin with'];
+    for (const key of ['j', 'ArrowDown']) {
+      await page.focus('#rail-link');
+      await page.keyboard.press(key);
+      await page.waitForTimeout(600);
+      const now = await selectedRow(page);
+      if (now !== before) problems.push(`${key} in the rail moved the selection from row ${before + 1} to row ${now + 1}`);
+    }
+    return problems;
+  },
+};
+
+/** Escape in the open rail closes the rail, and only the rail: the reading pane stays, and so does its kept state
+ * (the page opened again still opens the pane by itself). */
+const escapeClosesTheRailOnly = {
+  name: 'Escape closes the rail only',
+  check: async page => {
+    await page.focus('#rail-link');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(800);
+    const problems = [];
+    if (await anyShown(page, '#tide-rail')) problems.push('the rail is still open after Escape');
+    if (!await anyShown(page, '.tide-reading')) problems.push('Escape in the rail closed the reading pane too');
+    await page.reload({ waitUntil: 'networkidle' });
+    await settle(page);
+    if (!await anyShown(page, '.tide-reading')) problems.push('the reading pane is kept closed after Escape in the rail');
+    return problems;
+  },
+};
+
+/** Our stack's Add a product, from the keyboard: opening the form puts focus in its first box, and Cancel puts it back
+ * on the button that opened it (not on the page's body, where the next Tab starts from the top). */
+const addFormTakesFocus = {
+  name: 'Add a product: focus into the form, and back to its button',
+  check: async page => {
+    const problems = [], focused = () => page.evaluate(() => {
+      const el = document.activeElement;
+      return !el || el === document.body ? 'the page body' : el.id || el.innerText.trim().slice(0, 40) || el.tagName;
+    });
+    const open = page.getByRole('button', { name: 'Add a product' });
+    await open.focus();
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(600);
+    if (await focused() !== 'new-name') problems.push(`opening the form left focus on ${await focused()}, not its Product box`);
+    await page.getByRole('button', { name: 'Cancel' }).focus();
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(600);
+    if (await focused() !== 'Add a product') problems.push(`Cancel left focus on ${await focused()}, not Add a product`);
+    return problems;
+  },
+};
+
 // The reading pane's open or closed is kept for the person, so the pages that press V sign in as someone of their own
 // for this run (the dev sign-in's ?as=), and everyone else's Triage opens as it always does.
 const run = Date.now().toString(36);
@@ -374,12 +472,16 @@ const pages = [
   { name: 'triage-v-closes', route: `/triage?as=v1${run}`, setup: pressV(1), widths: [1440], rules: [hidden('.tide-reading')] },
   { name: 'triage-v-reopens', route: `/triage?as=v2${run}`, setup: pressV(2), widths: [1440], rules: [visible('.tide-reading')] },
   { name: 'triage-v-narrow', route: `/triage?as=v3${run}`, setup: pressV(1), widths: [780], rules: [visible('.tide-reading')] },
+  // The context rail as an overlay over Triage: the keys pressed in it are its own. J and the arrows there don't move
+  // the list, and Escape closes the rail without closing the reading pane (or keeping it closed).
+  { name: 'triage-rail-keys', route: `/triage?as=r1${run}`, setup: openRail, widths: [1440],
+    rules: [visible('#tide-rail'), visible('.tide-reading'), railKeysStayInTheRail, escapeClosesTheRailOnly] },
   // J and K pressed quickly land on the row they were pressed for: on the page (the selection isn't pulled back by a
   // row's focus), and across a page boundary both ways (the demo has a second page: Demo:TriageFiller below).
   { name: 'triage-keys', route: '/triage', setup: pressQuickly('j', 10), widths: [1440], rules: [selectedAsAimed()] },
   { name: 'triage-keys-next-page', route: '/triage?row=45', setup: pressQuickly('j', 10), widths: [1440], rules: [selectedAsAimed()] },
   { name: 'triage-keys-previous-page', route: '/triage?page=2&row=4', setup: pressQuickly('k', 10), widths: [1440], rules: [selectedAsAimed()] },
-  { name: 'trends', route: '/trends', widths: [1920], rules: [noSidewaysScroll, widerThan('.content', 1400)] },
+  { name: 'stack-add-focus', route: '/stack', widths: [1440], rules: [addFormTakesFocus] },  { name: 'trends', route: '/trends', widths: [1920], rules: [noSidewaysScroll, widerThan('.content', 1400)] },
   { name: 'slide-article', route: '/present/{today}', setup: toArticleSlide, widths: [1440, 1100, 900],
     rules: [
       visible('.tide-quick-add'),

@@ -356,13 +356,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     {
         RequireRead(user);
         await using var db = await dbs.CreateAsync(ct);
-        var q = Narrow(db, db.Actions.AsNoTracking(), filter);
-        if (filter.View == ActionView.Closed)
-        {
-            var since = DateTimeOffset.UtcNow.AddDays(-ClosedListDays);
-            q = q.Where(a => a.ClosedAtUtc != null && a.ClosedAtUtc >= since);
-        }
-        else q = q.WhereOpen();
+        var q = InList(Narrow(db, db.Actions.AsNoTracking(), filter), filter.View);
         var rows = await RowsAsync(db, q, ct);
         return filter.View == ActionView.Closed
             ? rows.OrderByDescending(r => r.ClosedDate).ThenByDescending(r => r.Number).ToList()
@@ -371,6 +365,14 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
 
     /// <summary>How far back the Recently closed view reaches.</summary>
     public const int ClosedListDays = 90;
+
+    // The list's actions for a view: the open ones, or for Closed, those closed in the last ClosedListDays.
+    private static IQueryable<ActionItem> InList(IQueryable<ActionItem> q, ActionView view)
+    {
+        if (view != ActionView.Closed) return q.WhereOpen();
+        var since = DateTimeOffset.UtcNow.AddDays(-ClosedListDays);
+        return q.Where(a => a.ClosedAtUtc != null && a.ClosedAtUtc >= since);
+    }
 
     /// <summary>Rows on a page of the actions list.</summary>
     public const int ListPageSize = 50;
@@ -478,13 +480,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     // The list's actions: the filter's, open (or for Closed, closed in the last 90 days), and its rule's.
     private async Task<IQueryable<ActionItem>> ListQuery(IAppDbContext db, ActionFilter filter, CancellationToken ct)
     {
-        var q = Narrow(db, db.Actions.AsNoTracking(), filter);
-        if (filter.View == ActionView.Closed)
-        {
-            var since = DateTimeOffset.UtcNow.AddDays(-ClosedListDays);
-            q = q.Where(a => a.ClosedAtUtc != null && a.ClosedAtUtc >= since);
-        }
-        else q = q.WhereOpen();
+        var q = InList(Narrow(db, db.Actions.AsNoTracking(), filter), filter.View);
         if (filter.RuleId is { } ruleId)
         {
             // A rule taken away meanwhile filters nothing out, as it no longer shows as a filter.
@@ -1278,12 +1274,19 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         }
     }
 
-    /// <summary>Takes the action on (assigns it to me), starting it if it was open. From a list that showed it as nobody's
-    /// (<paramref name="onlyIfNobodys"/>), it's refused as stale when someone else has taken it since.</summary>
+    /// <summary>Takes the action on (assigns it to me), starting it if it was open. Held to <see cref="ActionGuide.CanTake"/>
+    /// as the action is now, so one closed or handed to an external team since the caller's copy was read is refused as
+    /// stale. From a list that showed it as nobody's (<paramref name="onlyIfNobodys"/>), it's also refused when someone
+    /// else has taken it since.</summary>
     public async Task TakeAsync(Guid id, bool onlyIfNobodys = false, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
         var a = await WorkableAsync(db, id, ct);
+        var external = await db.Teams.Where(t => t.Id == a.TeamId).Select(t => t.IsExternal).FirstOrDefaultAsync(ct);
+        if (!ActionGuide.CanTake(new ActionFacts(a.Status, a.Kind, CanWork: true, Assigned: a.AssigneeId is not null, external)))
+            throw new StaleEditException(external
+                ? $"A-{a.Number} is with an external team now, so nobody here takes it on."
+                : $"Someone else moved A-{a.Number} to {StatusName(a.Status)} in the meantime.");
         // Taken from a list that showed it as nobody's: someone who took it meanwhile keeps it.
         if (onlyIfNobodys && a.AssigneeId is not null && a.AssigneeId != user.UserId)
             throw new StaleEditException($"{a.AssigneeName ?? "Someone"} took A-{a.Number} on in the meantime.");

@@ -50,7 +50,7 @@ else if (_results is { Terms.Count: > 0 } r)
                 <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="lookup-value" data-copy-status="lookup-value-status" title="Copy (defanged)" aria-label="Copy (defanged)"><span class="bi bi-clipboard" aria-hidden="true"></span></button>
                 <span id="lookup-value-status" class="small tide-muted fw-normal" role="status"></span>
             </h2>
-            @SummaryLine(ind.Summary, ind.Summary.Unseen && related == 0, ind.Actions.More)
+            @SummaryLine(ind.Summary, ind.Summary.Unseen && related == 0, ind.Actions.More, ind.Value)
             @if (related > 0)
             {
                 <p class="small tide-muted mb-2">@Words.Plural(related, "other indicator") on <span class="tide-ioc">@IocObservable.Defang(ind.Host)</span>, listed with the articles.</p>
@@ -130,7 +130,7 @@ else if (_results is { Terms.Count: > 0 } r)
     {
         <div class="tide-card">
             <h2 class="d-flex gap-2 align-items-center flex-wrap"><CveChip CveId="@cve.CveId" Record="cve.Record" /></h2>
-            @SummaryLine(cve.Summary, cve.Summary.Unseen, cve.Actions.More)
+            @SummaryLine(cve.Summary, cve.Summary.Unseen, cve.Actions.More, cve.CveId)
             @if (cve.Record?.Description is { } desc) { <p>@desc</p> }
             @if (cve.Record is null) { <p class="small tide-muted">Not enriched yet: CVSS, EPSS and KEV are fetched for CVEs that are on an article.</p> }
             @if (cve.Sweeps.Count > 0)
@@ -346,15 +346,16 @@ else if (_results is { Terms.Count: > 0 } r)
     private static string LookupUrl(string value) =>
         "search?q=" + Uri.EscapeDataString(value.Any(char.IsWhiteSpace) && !value.Contains('"') ? $"\"{value}\"" : value);
 
-    // The lookup's first line: is it known, was it briefed, is anyone on it, did a hunt come back.
-    private RenderFragment SummaryLine(LookupSummary s, bool unseen, bool moreActions) => @<p id="lookup-summary" class="tide-lookup-summary">
+    // The lookup's first line: is it known, was it briefed, is anyone on it, did a hunt come back, and (for someone who
+    // triages) is it in Triage's inbox. "Not seen before" only when nothing in TIDE has it (LookupSummary.Unseen).
+    private RenderFragment SummaryLine(LookupSummary s, bool unseen, bool moreActions, string value) => @<p id="lookup-summary" class="tide-lookup-summary">
         @if (unseen)
         {
             <span>Not seen before</span>
         }
         else
         {
-            <span>@(s.Articles == 0 ? "Not on any article" : $"On {Words.Plural(s.Articles, "article")}")</span>
+            <span>@(s.Articles == 0 ? "Not on any article yet" : $"On {Words.Plural(s.Articles, "article")}")</span>
             @if (s.Articles > 0)
             {
                 <span> &middot; @if (s.LastBriefed is { } day) { <text>briefed <a href="@Ui.BriefUrl(day)">@Ui.ShortDay(day)</a></text> }
@@ -366,6 +367,10 @@ else if (_results is { Terms.Count: > 0 } r)
             @if (s.Hunted is { } hunted)
             {
                 <span> &middot; @(hunted switch { HuntResult.Hits => "a hunt found hits", HuntResult.NoHits => "hunted, no hits", _ => "no hunt result yet" })</span>
+            }
+            @if (s.NewInTriage is > 0 and var inTriage)
+            {
+                <span> &middot; <a href="@("triage?q=" + Uri.EscapeDataString(value))">@N(inTriage) new in triage</a></span>
             }
         }
     </p>;

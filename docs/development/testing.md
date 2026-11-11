@@ -326,6 +326,7 @@ Runs on pull requests and pushes to `main`, and is called by the release workflo
 | Test, with OpenCover coverage | Any test fails. |
 | Released migrations are immutable (`tools/ci/check-migrations-immutable.sh`) | A migration in any `v*` tag reachable from HEAD was edited, renamed or deleted, in either set (the model snapshots may change). |
 | No class the markup uses loses its style (`tools/ci/check-removed-css.sh`) | A change drops the last rule in `app.css` for a `tide-*` class a Razor component or C# file still uses (compared with the PR's base, or the commit before on `main`). Its element would fall back to the browser's defaults, which no HTML test sees. |
+| Every changed script and stylesheet has a new `?v=` (`tools/ci/check-asset-versions.sh`) | A file under `wwwroot/js` or a `wwwroot` stylesheet changed since the same base, but `App.razor` still loads it with the same `?v=`. Browsers would keep serving the old copy, and a call only the new copy has would throw. Run it locally with `bash tools/ci/check-asset-versions.sh ux/option-e` (or your base). |
 | No un-migrated model changes | `dotnet ef migrations has-pending-model-changes` finds a model change with no migration, for SQL Server or SQLite. |
 | Vulnerable package scan | `dotnet list package --vulnerable --include-transitive` reports one. |
 | Deprecated package report | Never; informational. |

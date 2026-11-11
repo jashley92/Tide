@@ -33,7 +33,7 @@
         </div>
         @if (_canWrite)
         {
-            <button type="button" class="btn btn-primary btn-sm" aria-expanded="@Ui.Aria(_adding)" @onclick="ToggleAdd">Add a product</button>
+            <button type="button" class="btn btn-primary btn-sm" aria-expanded="@Ui.Aria(_adding)" @onclick="ToggleAdd" @ref="_addButton">Add a product</button>
         }
     </div>
     @if (_canWrite && _adding)
@@ -42,7 +42,7 @@
             <h2>Add a product</h2>
             <div class="row g-2 align-items-end">
                 <div class="col-md-4"><label class="tide-field-label" for="new-name">Product</label>
-                    <input id="new-name" class="form-control form-control-sm" maxlength="100" placeholder="GitLab" @bind="_newName" /></div>
+                    <input id="new-name" class="form-control form-control-sm" maxlength="100" placeholder="GitLab" @bind="_newName" @ref="_nameBox" /></div>
                 <div class="col-md-5"><label class="tide-field-label" for="new-others">Other names it's reported under</label>
                     <input id="new-others" class="form-control form-control-sm" maxlength="500" placeholder="GitLab CE; GitLab Runner" @bind="_newOthers" /></div>
                 <div class="col-md-3 d-flex gap-2"><button class="btn btn-primary btn-sm flex-fill" disabled="@_busy" @onclick="Add">Add</button>
@@ -267,7 +267,20 @@ else
         }
     }
 
-    internal void ToggleAdd() => _adding = !_adding;
+    // Opening the add form puts focus in its first box, and closing it puts focus back on the button that opened it.
+    private ElementReference _addButton, _nameBox;
+    private bool _focusAdd;
+
+    internal void ToggleAdd() => (_adding, _focusAdd) = (!_adding, true);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusAdd) return;
+        _focusAdd = false;
+        try { await (_adding ? _nameBox : _addButton).FocusAsync(); }
+        catch (JSDisconnectedException) { /* the tab has gone */ }
+        catch (JSException) { /* the element went before focus reached it */ }
+    }
     internal void SetWords(string? words) => _words = words ?? "";
     internal void SetTeam(string? team) => _team = string.IsNullOrEmpty(team) ? null : team;
     internal void SetQuick(string key, bool on) { if (on) _quick.Add(key); else _quick.Remove(key); }
@@ -386,7 +399,8 @@ else
     {
         var id = await Stack.SaveAsync(new StackForm { Name = _newName ?? "", OtherNames = _newOthers });
         Toasts.Show($"{_newName?.Trim()} added.");
-        (_newName, _newOthers) = (null, null);
+        // Done with the form: the list and the product's page are one component, so Back would otherwise open it again.
+        (_newName, _newOthers, _adding) = (null, null, false);
         Nav.NavigateTo($"stack/{id}");
     });
 
