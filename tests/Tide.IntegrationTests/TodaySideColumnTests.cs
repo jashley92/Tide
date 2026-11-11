@@ -43,6 +43,7 @@ public partial class TodaySideColumnTests(CountingApp app) : IClassFixture<Count
         var meetings = app.Services.GetRequiredService<LiveMeetings>();
         var golden = new StringBuilder();
         var seen = new Dictionary<string, string>();
+        var outOfRail = new List<string>();
 
         async Task Capture(string state)
         {
@@ -61,7 +62,9 @@ public partial class TodaySideColumnTests(CountingApp app) : IClassFixture<Count
                         await using var r = await RenderAsync<BriefPage>(app, asToday ? "/" : $"/briefs/{day:yyyy-MM-dd}",
                             new() { ["Day"] = $"{day:yyyy-MM-dd}", ["AsToday"] = asToday }, who);
                         reads = Math.Min(reads, app.Commands.Count);
-                        side ??= Normalise(Side(await r.Html()), app.Services.GetRequiredService<OrgClock>().Zone);
+                        var html = await r.Html();
+                        side ??= Normalise(Side(html), app.Services.GetRequiredService<OrgClock>().Zone);
+                        if (draw == 0) outOfRail.AddRange(InPage(html, writes: who.Roles[0] is "Analyst").Select(card => $"{key}: {card}"));
                     }
                     golden.Append("=== ").Append(key).Append(" (").Append(reads).Append(" commands)\n");
                     if (seen.TryGetValue(side, out var same)) golden.Append("same as ").Append(same).Append('\n');
@@ -90,6 +93,7 @@ public partial class TodaySideColumnTests(CountingApp app) : IClassFixture<Count
         await NoBriefs();
         await Capture("no brief yet");
 
+        outOfRail.Should().BeEmpty("the side column's cards are drawn in the context rail, but for the two the page keeps");
         var actual = golden.ToString();
         if (Environment.GetEnvironmentVariable("TIDE_UPDATE_GOLDEN") == "1")
         {
@@ -176,6 +180,18 @@ public partial class TodaySideColumnTests(CountingApp app) : IClassFixture<Count
         return cards.Count == 0 ? "(no cards)" : string.Join("\n---\n", cards);
     }
 
+    /// <summary>The headings of the side column's cards drawn in the page itself, before the context rail, that belong in
+    /// the rail. Two stay in the page: for whoever writes the brief (<paramref name="writes"/>), My actions and the
+    /// articles not yet on a brief, under the running order; for anyone else, their escalated actions and their teams'
+    /// queue, which their Today leads with.</summary>
+    internal static IEnumerable<string> InPage(string html, bool writes)
+    {
+        var rail = html.IndexOf("<aside id=\"tide-rail\"", StringComparison.Ordinal);
+        var page = rail < 0 ? html : html[..rail];
+        return Card().Matches(page).Select(m => m.Groups[1].Value)
+            .Where(h => !(writes ? h is "my-actions-h" or "recent-h" : h is "escalated-h" or "team-queue-h"));
+    }
+
     // Where the element of this tag opening at <paramref name="at"/> ends, after its matching close.
     private static int Close(string html, int at, string tag)
     {
@@ -188,7 +204,7 @@ public partial class TodaySideColumnTests(CountingApp app) : IClassFixture<Count
         throw new InvalidOperationException($"No close for the {tag} at {at}.");
     }
 
-    [GeneratedRegex(@"<section[^>]*aria-labelledby=""(reviews-h|escalated-h|team-queue-h|actions-card-h|my-actions-h|edition-check-h|meeting-h|hist-[0-9a-f]{8}-head|coming-up-h|recent-h)""")]
+    [GeneratedRegex(@"<section[^>]*aria-labelledby=""(reviews-h|escalated-h|team-queue-h|teams-queue-h|actions-card-h|my-actions-h|edition-check-h|meeting-h|hist-[0-9a-f]{8}-head|coming-up-h|recent-h)""")]
     private static partial Regex Card();
 
     /// <summary>The markup with what differs from run to run, or with Blazor's own bookkeeping, taken out.</summary>

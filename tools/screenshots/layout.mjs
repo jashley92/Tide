@@ -514,6 +514,413 @@ const selectCovered = (group = false) => async page => {
   await page.locator('.tide-triage-row.selected .tide-triage-attach').waitFor();
 };
 
+/** No visible match of `selector` overlaps the first visible match of `other` sideways: two regions side by side. */
+const besides = (selector, other) => ({
+  name: `beside ${other}: ${selector}`,
+  check: page => page.evaluate(([selector, other]) => {
+    const box = s => [...document.querySelectorAll(s)].map(e => e.getBoundingClientRect()).find(r => r.width > 0 && r.height > 0);
+    const a = box(selector), b = box(other);
+    if (!a || !b) return [`nothing visible: ${!a ? selector : other}`];
+    return a.right <= b.left + 1 || b.right <= a.left + 1 ? [] : [`${selector} (to ${Math.round(a.right)}px) runs under ${other} (from ${Math.round(b.left)}px)`];
+  }, [selector, other]),
+});
+
+/** Each visible match of `selector` is at most `most` lines of text tall (one by default): it wraps no further. */
+const oneLine = (selector, most = 1) => ({
+  name: `${most === 1 ? 'one line' : `at most ${most} lines`}: ${selector}`,
+  check: page => page.$$eval(selector, (els, [selector, most]) => els.flatMap((el, i) => {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return [];
+    const s = getComputedStyle(el), line = parseFloat(s.lineHeight) || parseFloat(s.fontSize) * 1.5;
+    return r.height < line * (most + .5) ? [] : [`${selector} #${i + 1}: "${el.textContent.trim().slice(0, 50)}" is on ${Math.round(r.height / line)} lines`];
+  }), [selector, most]),
+});
+
+/** No visible match of `selector` draws a box of its own (a border or a background): flat, as a section in the rail. */
+const flat = selector => ({
+  name: `flat: ${selector}`,
+  check: page => page.$$eval(selector, (els, selector) => els.flatMap((el, i) => {
+    const s = getComputedStyle(el);
+    const box = ['Left', 'Right', 'Bottom'].some(side => parseFloat(s[`border${side}Width`]) > 0) || !/rgba\(0, 0, 0, 0\)|transparent/.test(s.backgroundColor);
+    return el.getBoundingClientRect().height > 0 && box ? [`${selector} #${i + 1} is drawn as a card (border or background)`] : [];
+  }), selector),
+});
+
+/** The first match of `selector` has `name` set to `value` (or, with null, doesn't have it). */
+const attr = (selector, name, value) => ({
+  name: `${name}=${value}: ${selector}`,
+  check: page => page.$eval(selector, (el, [name, value]) => el.getAttribute(name) === value ? [] : [`its ${name} is ${el.getAttribute(name)}, not ${value}`], [name, value]),
+});
+
+/** The children of each visible match of `selector` are stacked, one under another, not side by side. */
+const stacked = selector => ({
+  name: `stacked: ${selector}`,
+  check: page => page.$$eval(selector, (els, selector) => els.flatMap((el, i) => {
+    const kids = [...el.children].map(c => c.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0);
+    return kids.every((r, k) => k === 0 || r.top >= kids[k - 1].bottom - 1) ? [] : [`${selector} #${i + 1}: its parts sit side by side`];
+  }), selector),
+});
+
+/** Each visible match of `selector`, given focus from the keyboard, draws a focus ring (an outline or a box shadow). */
+const ringOnFocus = selector => ({
+  name: `focus ring: ${selector}`,
+  check: async page => {
+    const found = [];
+    for (const el of await page.$$(selector)) {
+      if (!(await el.isVisible())) continue;
+      // A key first, so the browser treats the focus that follows as the keyboard's (:focus-visible).
+      await page.keyboard.press('Shift');
+      await el.focus();
+      await page.waitForTimeout(250);   // Bootstrap fades the ring in
+      const ring = await el.evaluate(e => {
+        const s = getComputedStyle(e);
+        // A shadow counts when it's drawn: a colour that isn't transparent, and a spread.
+        const shadow = /^(rgba?\([^)]*\)) [\d.]+px [\d.]+px [\d.]+px ([\d.]+)px/.exec(s.boxShadow);
+        return (s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0)
+          || (!!shadow && parseFloat(shadow[2]) > 0 && !/rgba\([^)]*,\s*0\)$/.test(shadow[1]));
+      });
+      if (!ring) found.push(`${selector}: no focus ring when focused from the keyboard`);
+    }
+    return found;
+  },
+});
+
+/** Focus is inside a match of `selector` (after a button in it did its work), not dropped to the page. */
+const focusIn = selector => ({
+  name: `focus in: ${selector}`,
+  check: page => page.evaluate(selector => {
+    const at = document.activeElement;
+    return at && at !== document.body && [...document.querySelectorAll(selector)].some(box => box.contains(at)) ? []
+      : [`focus is on ${at === document.body ? 'the page (<body>)' : at?.outerHTML.slice(0, 80)}, not in ${selector}`];
+  }, selector),
+});
+
+/** Tab pressed `times` from where focus is: it never lands outside `selector` (leaving the document for the browser's
+ *  own controls, where focus is on <body>, is allowed). For an overlay that must hold focus, as a dialog does. Run last
+ *  on its page: it moves focus. */
+const tabStaysIn = (selector, times) => ({
+  name: `Tab stays in: ${selector}`,
+  check: async page => {
+    const out = new Set();
+    for (let i = 0; i < times; i++) {
+      await page.keyboard.press('Tab');
+      const where = await page.evaluate(selector => {
+        const at = document.activeElement;
+        if (!at || at === document.body || at.closest(selector)) return null;
+        return `${at.tagName.toLowerCase()} "${(at.getAttribute('aria-label') || at.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40)}"`;
+      }, selector);
+      if (where) out.add(where);
+    }
+    return [...out].map(w => `Tab reached ${w}, outside ${selector}`);
+  },
+});
+
+/** No two visible matches of `selector` overlap: controls in a row that each keep their own room. */
+const noOverlap = selector => ({
+  name: `no overlap: ${selector}`,
+  check: page => page.$$eval(selector, (els, selector) => {
+    const shown = els.filter(e => !els.some(o => o !== e && o.contains(e)))
+      .map(e => ({ e, r: e.getBoundingClientRect() })).filter(({ r }) => r.width > 0 && r.height > 0);
+    const name = e => (e.getAttribute('aria-label') || e.textContent || e.tagName).trim().replace(/\s+/g, ' ').slice(0, 24);
+    const found = [];
+    for (let i = 0; i < shown.length; i++) for (let j = i + 1; j < shown.length; j++) {
+      const [a, b] = [shown[i].r, shown[j].r];
+      if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1)
+        found.push(`"${name(shown[i].e)}" (${Math.round(a.left)}–${Math.round(a.right)}px) overlaps "${name(shown[j].e)}" (${Math.round(b.left)}–${Math.round(b.right)}px)`);
+    }
+    return found;
+  }, selector),
+});
+
+/** Each visible match of `selector` follows words on its line inside `within`: inline, never on a line of its own. */
+const inlineIn = (selector, within) => ({
+  name: `inline in ${within}: ${selector}`,
+  check: page => page.$$eval(selector, (els, [selector, within]) => els.flatMap((el, i) => {
+    const r = el.getBoundingClientRect(), box = el.closest(within)?.getBoundingClientRect();
+    if (r.height === 0 || !box) return [];
+    return r.left - box.left > 8 ? [] : [`${selector} #${i + 1} starts a line of its own in ${within}`];
+  }), [selector, within]),
+});
+
+/** Focus is on the first match of `selector`. */
+const focusOn = selector => ({
+  name: `focus on: ${selector}`,
+  check: page => page.evaluate(selector => {
+    const at = document.activeElement, want = document.querySelector(selector);
+    return want && at === want ? []
+      : [`focus is on ${at === document.body ? 'the page (<body>)' : at?.outerHTML.slice(0, 90)}, not ${selector}`];
+  }, selector),
+});
+
+/** Every visible match of `selector` is beside (not over) the first visible match of `other`. */
+const allBesides = (selector, other) => ({
+  name: `all beside ${other}: ${selector}`,
+  check: page => page.evaluate(([selector, other]) => {
+    const b = [...document.querySelectorAll(other)].map(e => e.getBoundingClientRect()).find(r => r.width > 0 && r.height > 0);
+    const items = [...document.querySelectorAll(selector)].map(e => e.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0);
+    if (!b || !items.length) return [`nothing visible: ${!b ? other : selector}`];
+    return items.filter(a => !(a.right <= b.left + 1 || b.right <= a.left + 1))
+      .map(a => `${selector} (${Math.round(a.left)}–${Math.round(a.right)}px) sits over ${other} (from ${Math.round(b.left)}px)`);
+  }, [selector, other]),
+});
+
+/**
+ * The open overlay's backdrop dims the page under it: the average brightness of a patch of the page left of the rail,
+ * measured from screenshots with the rail closed and open, drops by at least `percent`. Run on a page whose setup opened
+ * the overlay; it closes it, measures, and opens it again.
+ */
+const dims = percent => ({
+  name: `backdrop dims the page by ${percent}%`,
+  check: async page => {
+    // A patch of the page between the sidebar and the rail.
+    const left = await page.evaluate(() => {
+      const side = document.querySelector('.sidebar')?.getBoundingClientRect().right ?? 0;
+      return { side, rail: document.getElementById('tide-rail').getBoundingClientRect().left };
+    });
+    const clip = { x: left.side + 10, y: 300, width: Math.max(40, Math.min(200, left.rail - left.side - 20)), height: 200 };
+    const shot = async () => (await page.screenshot({ clip })).toString('base64');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+    const closed = await shot();
+    await page.locator('#tide-rail-toggle').click();
+    await page.waitForTimeout(400);
+    const open = await shot();
+    // Decoded in a page of its own: the browser reads PNGs, so no library is needed.
+    const scratch = await page.context().newPage();
+    try {
+      const [a, b] = await scratch.evaluate(async shots => Promise.all(shots.map(async s => {
+        const img = new Image();
+        img.src = `data:image/png;base64,${s}`;
+        await img.decode();
+        const c = Object.assign(document.createElement('canvas'), { width: img.width, height: img.height });
+        const g = c.getContext('2d');
+        g.drawImage(img, 0, 0);
+        const d = g.getImageData(0, 0, c.width, c.height).data;
+        let sum = 0;
+        for (let i = 0; i < d.length; i += 4) sum += .2126 * d[i] + .7152 * d[i + 1] + .0722 * d[i + 2];
+        return sum / (d.length / 4);
+      })), [closed, open]);
+      const drop = (a - b) / Math.max(a, 1) * 100;
+      return drop >= percent ? [] : [`the page under the open overlay is ${drop.toFixed(1)}% darker (${a.toFixed(0)} to ${b.toFixed(0)}), under ${percent}%`];
+    } finally {
+      await scratch.close();
+    }
+  },
+});
+
+/** Setup: every letter spaced wider, as a font wider than this machine's would set it (see selectCovered). */
+// LETTER_SPACING=.12em widens it further by hand, near what a Linux runner's fonts do.
+const wideFont = async page => { await page.addStyleTag({ content: `* { letter-spacing: ${process.env.LETTER_SPACING ?? '.07em'} !important; }` }); };
+
+/** Setup: wider letters, and `theme` (dark) set on the page as the app's theme switch would. */
+const darkWide = async page => {
+  await page.evaluate(() => document.documentElement.setAttribute('data-bs-theme', 'dark'));
+  await toggleRail(page);
+};
+
+/** Setup: the meeting's form opened from the keyboard (Change presenter), then `button` (Save or Cancel) pressed with Enter. */
+const meetingClosedBy = button => async page => {
+  await openMeeting(page);
+  if (button === 'Save') await page.locator('#tide-rail #intro').fill('A quiet day.');
+  await page.locator('#tide-rail section[aria-labelledby="meeting-h"]').getByRole('button', { name: button, exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await page.locator('#tide-rail #analyst').waitFor({ state: 'detached', timeout: 10000 });
+  await page.waitForTimeout(400);
+};
+
+/** Setup: the opening note's Edit pressed with Enter; then, with `then`, its Cancel or Save (after typing) the same way. */
+const noteEdited = then => async page => {
+  const note = page.locator('section[aria-labelledby="team-note-h"]');
+  await note.getByRole('button', { name: 'Edit', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await page.locator('#team-note').waitFor();
+  await page.waitForTimeout(300);
+  if (!then) return;
+  if (then === 'Save note') await page.locator('#team-note').fill(`Payroll lures are up (${Date.now()}).`);
+  await note.getByRole('button', { name: then, exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await page.locator('#team-note').waitFor({ state: 'detached', timeout: 10000 });
+  await page.waitForTimeout(400);
+};
+
+/**
+ * Setup: the analyst types into `field` (the meeting's title slide line, or the opening note) and stays in it; meanwhile
+ * a colleague (Cole, in a browser of their own) saves the same field. The analyst's page hears it.
+ */
+const colleagueSavesWhileTyping = field => async page => {
+  const origin = new URL(page.url()).origin;
+  const open = async p => {
+    if (field === 'intro') {
+      if (!(await p.locator('#tide-rail').isVisible())) await p.locator('#tide-rail-toggle').click();
+      await p.locator('#tide-rail').getByRole('button', { name: 'Title slide line', exact: true }).click();
+      await p.locator('#intro').waitFor();
+    } else {
+      await p.locator('section[aria-labelledby="team-note-h"]').getByRole('button', { name: 'Edit', exact: true }).click();
+      await p.locator('#team-note').waitFor();
+    }
+  };
+  await open(page);
+  await page.locator(`#${field}`).click();
+  await page.keyboard.type('Mine, typed and not saved');
+  const cole = await page.context().browser().newContext({ viewport: { width: 1920, height: 900 }, reducedMotion: 'reduce' });
+  try {
+    const theirs = await cole.newPage();
+    await theirs.goto(`${origin}/?as=Cole`, { waitUntil: 'networkidle' });
+    await settle(theirs);
+    await open(theirs);
+    await theirs.locator(`#${field}`).fill('Theirs, saved');
+    await theirs.locator(field === 'intro' ? '#tide-rail section[aria-labelledby="meeting-h"]' : 'section[aria-labelledby="team-note-h"]')
+      .getByRole('button', { name: field === 'intro' ? 'Save' : 'Save note', exact: true }).click();
+    await page.locator('.tide-changed-elsewhere, .tide-toast').first().waitFor({ timeout: 15000 });
+    await page.waitForTimeout(800);
+  } finally {
+    await cole.close();
+  }
+};
+
+/** What's typed in `field` is still there, and the page says a colleague changed it meanwhile. */
+/** What's typed in `field` is still there, and a "changed elsewhere" notice shows inside `near` (where it's typed). */
+const keptWhatsTyped = (field, near) => ({
+  name: `kept what's typed: #${field}, notice in ${near}`,
+  check: page => page.evaluate(([field, near]) => {
+    const box = document.getElementById(field), notice = document.querySelector(`${near} .tide-changed-elsewhere`);
+    return [
+      ...(box && box.value.includes('Mine, typed and not saved') ? [] : [`#${field} holds "${box?.value}", not what was typed`]),
+      ...(notice && notice.getClientRects().length ? [] : [`no "changed elsewhere" notice in ${near}`]),
+    ];
+  }, [field, near]),
+});
+
+/** Each visible match of `selector` is wholly in view: no ancestor that clips its overflow cuts any of it off. */
+/** No visible match of `selector` is drawn narrower than its content: it hasn't been squeezed. */
+const notSqueezed = selector => ({
+  name: `not squeezed: ${selector}`,
+  check: page => page.$$eval(selector, (els, selector) => els.flatMap((el, i) =>
+    el.getBoundingClientRect().width > 0 && el.scrollWidth > el.clientWidth + 1 ? [`${selector} #${i + 1} is ${el.scrollWidth - el.clientWidth}px narrower than its text`] : []), selector),
+});
+
+const notClipped = selector => ({
+  name: `not clipped: ${selector}`,
+  check: page => page.$$eval(selector, (els, selector) => els.flatMap((el, i) => {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0 || getComputedStyle(el).display === 'none') return [];
+    for (let a = el.parentElement; a; a = a.parentElement) {
+      if (getComputedStyle(a).overflow === 'visible') continue;
+      const b = a.getBoundingClientRect();
+      if (r.left < b.left - 1 || r.right > b.right + 1 || r.top < b.top - 1 || r.bottom > b.bottom + 1)
+        return [`${selector} #${i + 1} is cut off by ${a.tagName.toLowerCase()}.${a.className}`];
+    }
+    return [];
+  }), selector),
+});
+
+/** The first visible match of each selector comes lower on the page than the one before: the page's order. */
+const inOrder = (...selectors) => ({
+  name: `in order: ${selectors.join(' / ')}`,
+  check: page => page.evaluate(selectors => {
+    const tops = selectors.map(s => [...document.querySelectorAll(s)].map(e => e.getBoundingClientRect()).find(r => r.height > 0)?.top);
+    const missing = selectors.filter((_, i) => tops[i] === undefined);
+    if (missing.length) return [`nothing visible: ${missing.join(', ')}`];
+    return tops.slice(1).flatMap((t, i) => t > tops[i] ? [] : [`${selectors[i + 1]} (at ${Math.round(t)}px) isn't below ${selectors[i]} (at ${Math.round(tops[i])}px)`]);
+  }, selectors),
+});
+
+/** Each visible match of `selector` lies within the first match of `box`, top to bottom. */
+const insideOf = (selector, box) => ({
+  name: `inside ${box}: ${selector}`,
+  check: page => page.evaluate(([selector, box]) => {
+    const b = document.querySelector(box)?.getBoundingClientRect();
+    return [...document.querySelectorAll(selector)].map(e => e.getBoundingClientRect()).filter(r => r.height > 0 && b && (r.top < b.top - 1 || r.bottom > b.bottom + 1))
+      .map(r => `${selector} (${Math.round(r.top)}–${Math.round(r.bottom)}px) spills out of ${box} (${Math.round(b.top)}–${Math.round(b.bottom)}px)`);
+  }, [selector, box]),
+});
+
+/** Setup: a toast shown while the rail is docked (the opening note saved; whatever the toast says, it's placed alike). */
+async function toastBesideRail(page) {
+  await noteEdited(null)(page);
+  await page.locator('#team-note').fill(`Payroll lures are up (${Date.now()}).`);
+  await page.locator('section[aria-labelledby="team-note-h"]').getByRole('button', { name: 'Save note', exact: true }).click();
+  await page.locator('.tide-toast').first().waitFor();
+}
+
+/** Setup: wider letters, then `]` pressed: the context rail opens where it's an overlay, and closes where it docks. */
+const toggleRail = async page => {
+  await wideFont(page);
+  await page.locator('body').press(']');
+  await page.waitForTimeout(300);
+};
+
+/** Setup: the first two articles (both ready) taken off today's brief, so "Not on a brief yet" lists them; then the first one's Add
+ *  pressed from the keyboard, and the card read again. */
+async function addFromRail(page) {
+  const card = page.locator('section[aria-labelledby="recent-h"]');
+  for (let i = 0; i < 2; i++) {
+    const n = await card.locator('li').count();
+    await page.getByRole('button', { name: /off this brief$/ }).first().click();
+    await page.waitForFunction(([n]) => document.querySelectorAll('section[aria-labelledby="recent-h"] li').length > n, [n], { timeout: 10000 });
+  }
+  const before = await card.locator('li').count();
+  await card.getByRole('button', { name: /^Add / }).first().focus();
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(([n]) => document.querySelectorAll('section[aria-labelledby="recent-h"] li').length < n, [before], { timeout: 10000 });
+  await page.waitForTimeout(300);
+}
+
+/** Setup: wider letters, then the meeting's Change presenter pressed (opening its form, a docked rail or the overlay). */
+async function openMeeting(page) {
+  await wideFont(page);
+  if (!(await page.locator('#tide-rail').isVisible())) {
+    await page.locator('#tide-rail-toggle').click();
+    await page.waitForTimeout(300);
+  }
+  await page.locator('#tide-rail').getByRole('button', { name: 'Change presenter' }).click();
+  await page.locator('#tide-rail #analyst').waitFor({ state: 'attached' });
+  await page.waitForTimeout(500);
+}
+
+/**
+ * Setup: a colleague takes the action whose Take it has focus in the rail's queue. The demo's dev analyst and a second
+ * person (Olive, an action owner) go on the first team, with two actions nobody has; focus goes to the first one's
+ * Take it, and Olive takes that action from her own Today. The row leaves the analyst's queue, live.
+ */
+async function colleagueTakesFocusedRow(page) {
+  const browser = page.context().browser();
+  const olive = await browser.newContext({ viewport: { width: 1920, height: 900 }, reducedMotion: 'reduce' });
+  try {
+    const her = await olive.newPage();
+    await her.goto(`${new URL(page.url()).origin}/?as=Olive&roles=ActionOwner`, { waitUntil: 'networkidle' });
+    await page.goto(new URL('/admin/teams', page.url()).href, { waitUntil: 'networkidle' });
+    await settle(page);
+    const pick = page.locator('select[aria-label^="Person to add to"]').first();
+    const team = (await pick.getAttribute('aria-label')).replace('Person to add to ', '');
+    for (const who of ['Dev Analyst', 'Olive']) {
+      await pick.selectOption({ label: who });
+      await pick.locator('xpath=following::button[normalize-space()="Add"][1]').click();
+      await page.waitForTimeout(600);
+    }
+    for (const title of ['Live check one', 'Live check two']) {
+      await page.goto(new URL('/actions/new', page.url()).href, { waitUntil: 'networkidle' });
+      await settle(page);
+      await page.locator('#a-title').fill(title);
+      await page.locator('#a-team').selectOption({ label: team });
+      await page.waitForTimeout(300);
+      await page.getByRole('button', { name: 'Create action' }).click();
+      await page.waitForURL(/actions\/\d+/);
+    }
+    await page.goto(new URL('/', page.url()).href, { waitUntil: 'networkidle' });
+    await settle(page);
+    const queue = page.locator('#tide-rail section[aria-labelledby="teams-queue-h"]');
+    await queue.getByRole('button', { name: /Live check one/ }).focus();
+    await her.reload({ waitUntil: 'networkidle' });
+    await settle(her);
+    await her.locator('section[aria-labelledby="team-queue-h"]').getByRole('button', { name: /Live check one/ }).click();
+    await queue.getByRole('button', { name: /Live check one/ }).waitFor({ state: 'detached', timeout: 15000 });
+    await page.waitForTimeout(500);
+  } finally {
+    await olive.close();
+  }
+}
+
 /** Setup: V pressed `times`, a moment apart (each read or close reaching the page before the next). */
 const pressV = times => async page => {
   for (let i = 0; i < times; i++) {
@@ -847,6 +1254,73 @@ async function scrollDown(page) {
 const pages = [
   { name: 'today', route: '/', widths: [1440, 1000, 780],
     rules: [noSidewaysScroll, visible('.tide-steps'), fits('.tide-steps > li'), fits('.tide-page-head')] },
+  // Today's side cards are in the context rail. From 1500px it's docked beside the page, open, and the page keeps its
+  // step strip on one row and its head and rows within their boxes, in what's left (about 870px at 1500); below 1500
+  // it's closed until asked for. Wider letters throughout, so each holds by construction.
+  { name: 'today-rail', route: '/', setup: wideFont, widths: [1920, 1600, 1500],
+    rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), besides('#main-content', '#tide-rail'), oneRow('.tide-steps'), fits('.tide-steps > li'),
+      fits('.tide-page-head'), fits('.tide-order-row'), fits('.tide-rail-body'), fits('#tide-rail .tide-card'), hidden('.content .tide-card[aria-labelledby="meeting-h"]'),
+      ringOnFocus('#tide-rail #analyst, #tide-rail #intro, #tide-rail [data-submit], #tide-rail a.btn')] },
+  // Beside the docked rail, the page head keeps its buttons beside the title, and each step says where it stands in
+  // full on up to two lines, Triage's KEV count a flag beside it, the strip one row of steps. My actions and what's not
+  // on a brief yet sit in the page. The rail's sections are flat, under a header with the ] key, and laid out for a
+  // narrow column: the edition check's two editions one under the other.
+  { name: 'today-rail-fit', route: '/', setup: wideFont, widths: [1920, 1600, 1500],
+    rules: [oneRow('.tide-page-head'), oneRow('.tide-brief-head > :last-child'), oneRow('.tide-steps'), oneLine('.tide-step-detail', 2), visible('.tide-steps .tide-step-flag'),
+      visible('.content section[aria-labelledby="my-actions-h"]'), visible('.content section[aria-labelledby="recent-h"]'),
+      flat('#tide-rail .tide-rail-body > section'), visible('#tide-rail .tide-rail-head kbd'), attr('#tide-rail', 'role', null),
+      stacked('#tide-rail .tide-ed-cols'), fits('#tide-rail .tide-ed-col'),
+      fits('#tide-rail section[aria-labelledby="edition-check-h"]'), fits('#tide-rail section[aria-labelledby="meeting-h"]')] },
+  // The meeting's form, opened from Change presenter: the title slide line's label on one line, the form in its column.
+  { name: 'today-rail-meeting', route: '/', setup: openMeeting, widths: [1920, 1500, 1440],
+    rules: [visible('#tide-rail'), visible('#tide-rail #analyst'), oneLine('#tide-rail label[for="intro"]'), fits('#tide-rail section[aria-labelledby="meeting-h"]'), focusIn('#tide-rail #analyst'),
+      ringOnFocus('#tide-rail #analyst, #tide-rail #intro, #tide-rail [data-submit]')] },
+  // The top bar keeps each control in its own room, whatever the width and the fonts.
+  { name: 'top-bar-today', route: '/', setup: wideFont, widths: [1920, 1100, 900, 780, 726, 700, 660, 641, 400],
+    rules: [noSidewaysScroll, noOverlap('.top-row a, .top-row button, .top-row input'), fits('.top-row'),
+      oneLine('.top-row > span:first-child'), insideOf('.top-row > span:first-child', '.top-row')] },
+  // No page scrolls sideways where the top bar is at its tightest. Coverage (its matrix table) and an article's page (a
+  // table in the reader preview) are left out: their own content is wider than 700px with wider letters, not the bar.
+  ...['/triage', '/articles', '/actions', '/library', '/stack', '/briefs', '/search', '/rotation', '/workload', '/trends', '/published',
+    '/reports', '/stories', '/adversaries', '/notifications', '/briefs/{sent}', '/actions/{huntAction}']
+    .map(route => ({ name: `narrow ${route}`, route, setup: wideFont, widths: [700, 641], rules: [noSidewaysScroll] })),
+  // Each step's detail stays within two lines at every width (the strip compact where it's narrow), and Triage's KEV
+  // flag sits on the line of its words where there's room.
+  // Today's page, top to bottom: the running order, the opening note, My actions and Not on a brief yet, the numbers.
+  { name: 'today-order', route: '/', widths: [1920, 780],
+    rules: [inOrder('#running-order-h', '#team-note-h', '#my-actions-h', '.content .tide-card:has(.tide-collapse-btn[aria-controls$="-body"])')] },
+  { name: 'today-steps', route: '/', setup: wideFont, widths: [1920, 1600, 1500, 1440, 1000, 780, 641, 400],
+    rules: [oneRow('.tide-steps'), oneLine('.tide-step-detail', 2), [1001, inlineIn('.tide-step-flag', '.tide-step-detail')],
+      visible('.tide-steps .tide-step-flag'), notClipped('.tide-steps .tide-step-flag')] },
+  // In the rail's edition check, each edition's heading fits the column: its name on one line beside its TLP chip, the
+  // chip at full width, the count after it or under it.
+  { name: 'today-editions', route: '/', setup: wideFont, widths: [1920, 1500],
+    rules: [fits('#tide-rail .tide-ed-col > h3'), oneLine('#tide-rail .tide-ed-col > h3 > a'), sameLine('#tide-rail .tide-ed-col > h3 > a', '#tide-rail .tide-ed-sub .tide-tlp'),
+      notSqueezed('#tide-rail .tide-ed-sub .tide-tlp'), oneLine('#tide-rail .tide-ed-count')] },
+  // Focus after the meeting's form closes goes back to the button that opened it; the note's Edit puts it in the
+  // editor, and its Cancel and Save back on Edit.
+  { name: 'today-meeting-saved', route: '/', setup: meetingClosedBy('Save'), widths: [1920],
+    rules: [focusOn('#tide-rail section[aria-labelledby="meeting-h"] button.tide-meeting-presenter')] },
+  { name: 'today-meeting-cancelled', route: '/', setup: meetingClosedBy('Cancel'), widths: [1440],
+    rules: [focusOn('#tide-rail section[aria-labelledby="meeting-h"] button.tide-meeting-presenter')] },
+  { name: 'today-note-edit', route: '/', setup: noteEdited(null), widths: [1920], rules: [focusOn('#team-note')] },
+  { name: 'today-note-cancelled', route: '/', setup: noteEdited('Cancel'), widths: [1920],
+    rules: [focusOn('section[aria-labelledby="team-note-h"] button.tide-note-edit')] },
+  // The open overlay's backdrop visibly dims the page under it, light and dark.
+  { name: 'today-scrim', route: '/', setup: toggleRail, widths: [1440, 780], rules: [dims(15)] },
+  { name: 'today-scrim-dark', route: '/', setup: darkWide, widths: [1440, 780], rules: [dims(15)] },
+  { name: 'today-rail-closed', route: '/', setup: toggleRail, widths: [1920, 1500],
+    rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), oneRow('.tide-steps'), fits('.tide-page-head')] },
+  { name: 'today-rail-shut', route: '/', setup: wideFont, widths: [1440, 780],
+    rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), oneRow('.tide-steps'), fits('.tide-page-head')] },
+  // The open overlay holds focus as a dialog does, at every width it's an overlay: Tab never reaches the page under it.
+  { name: 'today-rail-over', route: '/', setup: toggleRail, widths: [1440, 780, 400],
+    rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), fits('.tide-rail-body'), fits('#tide-rail .tide-card'), focusIn('#tide-rail'),
+      attr('#tide-rail', 'role', 'dialog'), attr('#tide-rail', 'aria-modal', 'true'), attr('#tide-rail', 'aria-label', 'Beside the brief'),
+      tabStaysIn('#tide-rail', 40)] },
+  // Another day's brief draws the same panel in its rail.
+  { name: 'day-rail', route: '/briefs/{sent}', setup: wideFont, widths: [1920, 1500],
+    rules: [noSidewaysScroll, visible('#tide-rail .tide-card[aria-labelledby="meeting-h"]'), besides('#main-content', '#tide-rail'), fits('.tide-page-head'), fits('#tide-rail .tide-card')] },
   // The top bar with the brief chip in it: one row from a narrow window up, nothing pushed out of its group (the Go to
   // button under the chip), and the search box never squeezed for the chip: the chip is in view from 900px, and
   // wherever it shows the search box keeps 200px. On a phone nothing pushes the page sideways.
@@ -1002,6 +1476,19 @@ const pages = [
     ] },
   { name: 'metrics-grid', route: '/metrics?chart=group:alert-queue,group:vulnerability-sla&view=grid', widths: [1920, 1000, 700],
     rules: [noSidewaysScroll, visible('.tide-mc-cell'), visible('.tide-chart-band-warn'), oneRow('.tide-mc-cell-head'), [1800, widerThan('.content', 1400)]] },
+  // Add on "Not on a brief yet", from the keyboard: the article leaves the card and focus stays in it, on the next
+  // article's Add. Last, as it changes today's brief.
+  // A colleague takes the row that has focus in the rail's queue: focus moves to the next row's Take it. Last too: it
+  // puts people on a team.
+  { name: 'today-queue-live', route: '/', setup: colleagueTakesFocusedRow, widths: [1920],
+    rules: [focusIn('#tide-rail section[aria-labelledby="teams-queue-h"] .tide-queue-row')] },
+  // A colleague saves what the analyst is typing (not yet left the field): the analyst's text stays, and the page says
+  // so. Then a toast while the rail is docked sits beside it, not over its buttons. Late: these save the brief.
+  { name: 'today-typing-intro', route: '/', setup: colleagueSavesWhileTyping('intro'), widths: [1920], rules: [keptWhatsTyped('intro', '#tide-rail section[aria-labelledby="meeting-h"]')] },
+  { name: 'today-typing-note', route: '/', setup: colleagueSavesWhileTyping('team-note'), widths: [1920], rules: [keptWhatsTyped('team-note', '#main-content .tide-page-head')] },
+  { name: 'today-toast', route: '/', setup: toastBesideRail, widths: [1920, 1600], rules: [allBesides('.tide-toast', '#tide-rail')] },
+  { name: 'today-rail-add', route: '/', setup: addFromRail, widths: [1920],
+    rules: [focusIn('section[aria-labelledby="recent-h"] li')] },
   // Closing a card from its Move menu, or by dragging it while it had focus, keeps the person's place in the lane.
   // Last, as each closes one of the demo's actions.
   { name: 'actions-board-close-menu', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [closeKeepsPlace('menu')] },

@@ -8,8 +8,8 @@
 <section class="tide-card" aria-labelledby="edition-check-h">
     <h2 id="edition-check-h">Edition check <span class="ms-auto small fw-normal tide-muted">From the running order</span></h2>
     <div class="tide-ed-cols">
-        @Column("Team edition", Edition.Team, TeamMax, "team")
-        @Column("Company-wide edition", Edition.Public, PublicMax, "company")
+        @Column("Team", Edition.Team, TeamMax, "team")
+        @Column("Company-wide", Edition.Public, PublicMax, "company")
     </div>
     <p class="tide-ed-note">The company-wide edition never carries the numbers, indicators or actions.
         <a href="@(Ui.BriefUrl(Day) + "?tab=preview")">Preview both editions</a></p>
@@ -44,8 +44,9 @@
         var kept = articles.Count(r => r.Fit != EditionFit.LeftOut);
         var exceptions = EditionChecks.Exceptions(rows);
         return @<div class="tide-ed-col">
-            <h3><a href="@(Ui.BriefUrl(Day) + "?tab=" + tab)">@name</a>
-                <span class="tide-ed-sub">Up to <TlpBadge Level="ceiling" /> &middot; @kept of @articles.Count article@(articles.Count == 1 ? "" : "s")</span></h3>
+            @* "edition" and "Up to" in spans of their own, so a narrow column (the context rail) can say it in one row. *@
+            <h3><a href="@(Ui.BriefUrl(Day) + "?tab=" + tab)">@name<span class="tide-ed-word">@(" edition")</span></a>
+                <span class="tide-ed-sub"><span class="tide-ed-word">@("Up to ")</span><TlpBadge Level="ceiling" /> <span class="tide-ed-count">&middot; @kept of @articles.Count article@(articles.Count == 1 ? "" : "s")</span></span></h3>
             @if (articles.Count == 0 && exceptions.Count == 0)
             {
                 <p class="small tide-muted mb-0">Nothing on it yet.</p>

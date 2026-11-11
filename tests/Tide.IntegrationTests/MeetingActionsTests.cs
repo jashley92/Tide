@@ -218,7 +218,7 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
 
     private static string Header(string html)
     {
-        var start = html.IndexOf("<div class=\"tide-page-head\">", StringComparison.Ordinal);
+        var start = html.IndexOf("<div class=\"tide-page-head tide-brief-head\">", StringComparison.Ordinal);
         var end = html.IndexOf("aria-label=\"Brief progress\"", StringComparison.Ordinal);
         start.Should().BeGreaterThanOrEqualTo(0);
         return html[start..(end < 0 ? html.Length : end)];

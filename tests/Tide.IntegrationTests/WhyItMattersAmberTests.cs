@@ -183,8 +183,6 @@ public class WhyItMattersAmberTests(TideApp app) : IClassFixture<TideApp>
         html.Should().Contain("Needs: Why it matters TLP").And.Contain(">Set to AMBER</button>")
             .And.Contain($"aria-label=\"Set to AMBER: Why it matters on &#x201C;{s.Title}&#x201D;\"");
         html.Should().Contain("will reach the company-wide edition", "the edition check warns of it too");
-        html.Should().NotContain(">Keep it<");
-
         await r.Click(p => p.Fix(s.Article, ArticleFix.WhyItMattersAmber));
 
         // The page drawn again, as the button's click draws it (a test's call isn't an event, so it draws a fresh one).

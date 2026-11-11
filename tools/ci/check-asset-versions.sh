@@ -33,5 +33,16 @@ while IFS= read -r file; do
   fi
 done < <(git diff --name-only "$base" -- "$root/js/*.js" "$root/*.css")
 
+# A stylesheet or script App.razor loaded at the base and no longer loads, though the file is still there, was most
+# likely dropped by a merge: a page that needs it renders unstyled or throws.
+while IFS= read -r ref; do
+  [[ -z "$ref" ]] && continue
+  path="${ref%%\?*}"; [[ -f "$root/$path" ]] || continue
+  if [[ -z "$(loaded "$path" < "$app")" ]]; then
+    echo "::error file=$app::App.razor loaded $path at $base but no longer does: was its line dropped by a merge?"
+    bad=1
+  fi
+done < <(grep -oE '(href|src)="[^"]+[?]v=[^"]*"' <<<"$before_app" | sed -E 's/^(href|src)="//; s/"$//')
+
 if [[ $bad -eq 0 ]]; then echo "Every changed script and stylesheet has a new ?v= in App.razor."; fi
 exit $bad

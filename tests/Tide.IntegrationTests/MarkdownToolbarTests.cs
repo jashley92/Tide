@@ -93,7 +93,10 @@ public partial class MarkdownToolbarTests(TideApp app) : IClassFixture<TideApp>
         var path = $"/briefs/{day:yyyy-MM-dd}";
 
         await using (var analyst = await RenderAsync<BriefPage>(app, path, new() { ["Day"] = $"{day:yyyy-MM-dd}" }))
+        {
+            await analyst.Click(p => p.EditTeamNote());
             HasTheButtons(Toolbar(await analyst.Html(), "team-note")!, "Opening note", "team-note");
+        }
 
         await using var owner = await RenderAsync<BriefPage>(app, path, new() { ["Day"] = $"{day:yyyy-MM-dd}" }, Owner);
         var theirs = await owner.Html();

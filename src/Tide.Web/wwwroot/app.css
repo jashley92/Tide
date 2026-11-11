@@ -1802,7 +1802,11 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
     padding: 0 var(--tide-space-2); border-radius: var(--tide-radius-sm); background: var(--tide-warn-soft); color: var(--tide-warn); border: 1px dashed var(--tide-warn); }
 .tide-need.is-blocking { background: var(--tide-threat-soft); color: var(--tide-threat); border-color: var(--tide-threat); }
 /* A need's one-click fix, beside its chip. */
-.tide-need-fix { font-size: var(--tide-text-xs); padding: var(--tide-space-1) var(--tide-space-2); margin-right: var(--tide-space-2); }
+.tide-need-fix, .tide-need-keep { font-size: var(--tide-text-xs); padding: var(--tide-space-1) var(--tide-space-2); margin-right: var(--tide-space-2); }
+/* Its quiet partner, "Keep it", right after it: no frame, only the link colour, so the fix stays the obvious choice. */
+.tide-need-fix:has(+ .tide-need-keep) { margin-right: 0; }
+.tide-need-keep { text-decoration: none; }
+.tide-need-keep:hover { text-decoration: underline; }
 
 /* The edition check: Included, Partly included or Left out for each part of the brief, per edition. */
 .tide-ed-cols { display: grid; grid-template-columns: 1fr 1fr; gap: var(--tide-space-3); }
@@ -2346,16 +2350,22 @@ button.tide-chip-chosen:focus-visible { outline: 2px solid var(--tide-focus-ring
    - Docked: in a window 1500px or wider, on a page held to the usual width, it's open unless data-rail="closed"
      (remembered per browser), and the content gives it its width.
    - An overlay everywhere else (a narrower window, and the pages that take the whole window: the board, metric history,
-     trends): open only while data-rail-over is set, over the content, which keeps its width.
-   theme.js (tideRail) reads --tide-rail-docks to know which of the two it is, and --tide-rail-covers to know that the
-   open overlay covers the whole window (a phone), where it makes the page under it inert. */
+     trends): open only while data-rail-over is set, over the content, which keeps its width. The open overlay is modal:
+     theme.js makes the page under it inert, and a backdrop over the rest of the window, which closes it on a click,
+     says so.
+   theme.js (tideRail) reads --tide-rail-docks to know which of the two it is. */
 .tide-rail { display: none; position: fixed; top: var(--tide-height-top); right: 0; bottom: 0; z-index: 1010; width: min(var(--tide-width-rail), 100%);
     flex-direction: column; background: var(--tide-surface); border-left: 1px solid var(--tide-border); box-shadow: -8px 0 24px var(--tide-shadow); }
-html[data-rail-over] .tide-rail { display: flex; }
+html[data-rail-over] .tide-rail { display: flex; z-index: 1025; }
+/* The overlay's backdrop: the rest of the window, top bar included, dimmed a little. Part of the rail, so a click on it
+   reaches the rail (theme.js closes it). */
+html[data-rail-over] .tide-rail::before { content: ""; position: fixed; inset: 0 min(var(--tide-width-rail), 100%) 0 0;
+    background: var(--tide-scrim); }
 .tide-rail:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: -2px; }
 .tide-rail-head { display: flex; align-items: center; justify-content: space-between; gap: var(--tide-space-2);
     padding: var(--tide-space-3) var(--tide-space-4); border-bottom: 1px solid var(--tide-border); }
-.tide-rail-title { margin: 0; font-size: var(--tide-text-md); font-weight: var(--tide-weight-semibold); }
+.tide-rail-title { margin: 0 auto 0 0; font-size: var(--tide-text-xs); font-weight: var(--tide-weight-semibold); text-transform: uppercase;
+    letter-spacing: .06em; color: var(--tide-text-muted); }
 .tide-rail-close { font-size: var(--tide-text-xs); }
 .tide-rail-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--tide-space-4); }
 /* The Context button in the top bar (a .tide-palette-btn), while the rail is open. */
@@ -2369,7 +2379,7 @@ html[data-rail-over] .tide-rail { display: flex; }
     }
 }
 /* On a phone the top bar scrolls with the page, so the overlay takes the whole window, over the top bar. */
-@media (max-width: 640.98px) { .tide-rail { top: 0; z-index: 1030; --tide-rail-covers: 1; } }
+@media (max-width: 640.98px) { .tide-rail { top: 0; z-index: 1030; } }
 @media print { .tide-rail, .tide-rail-toggle { display: none !important; } }
 
 /* ---- Search: an indicator or CVE lookup (Search.razor). The first line that answers it, "Seen with", the one list of
@@ -2481,6 +2491,74 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-triage-attach-title { min-width: 0; }
 /* ---- end Triage 2.4 ---- */
 
+/* ---- Today 3.1: the side cards in the context rail ----
+   A Today card's heading takes focus when the row whose button was pressed (Take it, Add) has gone and no other row
+   offers the button (KeepPlace): the app's ring from the keyboard, none from a click. */
+.tide-card > h2[tabindex="-1"]:focus { outline: none; }
+.tide-card > h2[tabindex="-1"]:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; border-radius: var(--tide-radius-sm); }
+/* Beside a docked rail the page has about 870px. The brief's buttons stay beside its title, which wraps first. Each
+   step says where it stands in full, on up to two lines (Triage's KEV count a flag beside it); the strip stays one row
+   of steps. */
+@media (min-width: 1500px) {
+    .tide-brief-head { flex-wrap: nowrap; }
+    .tide-brief-head > :first-child { flex: 1 1 0; min-width: 0; }
+    /* The buttons keep their own width, up to most of the row; past that (a live meeting's note beside them) they wrap. */
+    .tide-brief-head > :last-child:not(:first-child) { flex: 0 0 auto; max-width: 70%; justify-content: flex-end; }
+}
+.tide-step-txt { grid-template-columns: minmax(0, 1fr); }
+.tide-step-detail { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.tide-step-flag { margin-left: var(--tide-space-1); padding: 0 var(--tide-space-1); font-size: .68rem; vertical-align: baseline; }
+/* The KEV flag follows the detail's words where the strip is wide; where it's compact, and the detail may be cut short,
+   it sits by the step's name instead, always in view. */
+.tide-step-flag-compact { display: none; }
+@container steps (max-width: 46rem) {
+    .tide-step-flag-compact { display: inline; }
+    .tide-step-flag-compact .tide-step-flag { margin-left: 0; }
+    .tide-step-flag-wide { display: none; }
+}
+/* Under the running order and the opening note: My actions beside what's not on a brief yet, one under the other where
+   there isn't room for both. */
+.tide-today-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 0 var(--tide-space-4); align-items: start; }
+/* The rail's sections: flat, divided by rules, not cards within the rail. Its narrow column lays them out for itself:
+   the edition check's two editions one under the other, and the title slide line's label on one line, its TLP picker
+   under it when they don't fit side by side. */
+.tide-rail-body > .tide-card { background: none; border: 0; border-radius: 0; box-shadow: none; margin: 0; padding: var(--tide-space-3) 0; }
+.tide-rail-body > .tide-card:first-child { padding-top: 0; }
+.tide-rail-body > .tide-card + .tide-card { border-top: 1px solid var(--tide-border); }
+.tide-rail .tide-ed-cols { grid-template-columns: minmax(0, 1fr); }
+/* Each edition in a row: its name on one line, its TLP chip at full width, then its count, which goes to the next line,
+   under the chip, when the column hasn't room ("edition" and "Up to" kept for screen readers alone). */
+.tide-rail .tide-ed-col > h3 { display: flex; flex-wrap: nowrap; align-items: baseline; gap: var(--tide-space-2); }
+.tide-rail .tide-ed-col > h3 > a { flex: 0 0 auto; min-width: 6.5rem; white-space: nowrap; }
+.tide-rail .tide-ed-sub { flex: 1 1 0; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--tide-space-1); }
+.tide-rail .tide-ed-sub .tide-tlp { flex: none; }
+.tide-rail .tide-ed-count { white-space: nowrap; }
+/* The opening note's head: its heading as a card's, then what it's for, whether it's been updated, and its buttons. */
+.tide-note-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); margin: 0 0 .75rem; }
+.tide-note-head > h2 { font-size: .95rem; font-weight: var(--tide-weight-semibold); margin: 0; }
+/* The meeting form's own "changed elsewhere": its icon in the line of text. */
+.tide-changed-elsewhere-short > span { flex: 1 1 0; min-width: 0; }
+.tide-rail .tide-ed-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.tide-rail .d-flex:has(> label[for="intro"]) { flex-wrap: wrap; }
+.tide-rail label[for="intro"] { white-space: nowrap; }
+/* A queue row (QueueRow): its title, then a row of badges (number, status, priority, due), then whose it is. The
+   number after the title is left to the badges. */
+.tide-queue-badges { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1); margin-top: 2px; }
+.tide-queue-row .tide-action-num-after { display: none; }
+/* The meeting's facts, as the action page's side column has its own (.tide-facts-side): when and who side by side. */
+.tide-meeting-facts { margin-bottom: var(--tide-space-3); }
+.tide-meeting-facts .tide-fact dd { font-size: var(--tide-text-sm); }
+/* The backdrop behind the open rail overlay: plainly a layer over the page, light or dark. */
+:root { --tide-scrim: rgba(15, 23, 42, .38); }
+[data-bs-theme="dark"] { --tide-scrim: rgba(0, 0, 0, .6); }
+/* Toasts sit left of a docked rail, never over its buttons. */
+@media (min-width: 1500px) {
+    /* Where the rail docks (its own rule above): a page with a rail, other than one that takes the whole window. */
+    html:not([data-rail="closed"]):has(main > .tide-rail):not(:has(.tide-kanban, .tide-mh-scroll, .tide-trend-table)) .tide-toasts {
+        right: calc(var(--tide-width-rail) + var(--tide-space-4));
+    }
+}
+/* ---- end Today 3.1 ---- */
 /* ---- Option E 2.x, pages matched to their designs: the Library's one header, its one search on the tab row, saved
    queries grouped under their platform; Search's hunt query wrapping and its articles as a
    table in one card with the actions raised; Our stack's filters above its list and its rows stacked on a narrow window;

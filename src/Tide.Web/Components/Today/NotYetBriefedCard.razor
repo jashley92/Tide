@@ -1,14 +1,15 @@
 @inject OrgClock Clock
 
-@* For whoever writes the brief: what hasn't been on any brief yet (the page picks them, from the same candidates as
-   Add article), each with Add while today's brief can still change, and the rest in Add article. *@
+@* For whoever writes the brief: the ready articles that haven't been on any brief yet (the page picks them, from the
+   same candidates as Add article), each with Add while today's brief can still change (or before it's started: Add
+   starts it), and the rest in Add article. After Add, focus goes to the next article's Add (KeepPlace). *@
 
 <section class="tide-card" aria-labelledby="recent-h">
-    <h2 id="recent-h">Not on a brief yet <span class="tide-count">(@Articles.Count)</span></h2>
-    <p class="small tide-muted mb-2">Ready articles first, then your own drafts. None has been on a brief.</p>
+    <h2 id="recent-h" tabindex="-1" @ref="_heading">Not on a brief yet <span class="tide-count">(@Articles.Count)</span>
+        <a class="ms-auto small fw-normal" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article</a></h2>
     @if (Articles.Count == 0)
     {
-        <EmptyState Icon="bi-check2-circle" Title="Everything ready is on a brief." Compact="true" />
+        <p class="small tide-muted mb-0">Everything ready is on a brief.</p>
     }
     <ul class="list-unstyled mb-0">
         @foreach (var c in Articles.Take(Shown))
@@ -24,20 +25,17 @@
                 </div>
                 @if (CanAdd)
                 {
-                    <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@Busy" aria-label="Add @c.Title to today's brief" @onclick="() => OnAdd.InvokeAsync(c)">
+                    <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@Busy" aria-label="Add @c.Title to today's brief" @onclick="() => Add(c)" @ref="_adds[c.Id]">
                         <span class="bi bi-plus-lg" aria-hidden="true"></span> Add
                     </button>
                 }
             </li>
         }
     </ul>
-    <div class="d-flex gap-2 mt-2">
-        @if (Articles.Count > Shown && CanAdd)
-        {
-            <button type="button" class="btn btn-link btn-sm p-0" disabled="@Busy" @onclick="OnAddMore">All @Articles.Count in Add article</button>
-        }
-        <a class="btn btn-outline-secondary btn-sm ms-auto" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article</a>
-    </div>
+    @if (Articles.Count > Shown && CanAdd)
+    {
+        <button type="button" class="btn btn-link btn-sm p-0 mt-1" disabled="@Busy" @onclick="OnAddMore">All @Articles.Count in Add article</button>
+    }
 </section>
 
 @code {
@@ -57,4 +55,21 @@
 
     /// <summary>Opens Add article, for the ones not listed.</summary>
     [Parameter] public EventCallback OnAddMore { get; set; }
+
+    private readonly KeepPlace _place = new();
+    private readonly Dictionary<Guid, ElementReference> _adds = [];
+    private ElementReference _heading;
+
+    // The articles listed with an Add.
+    private IEnumerable<Guid> Offering => CanAdd ? Articles.Take(Shown).Select(c => c.Id) : [];
+
+    private async Task Add(BriefCandidate c)
+    {
+        var before = Offering.ToList();
+        await OnAdd.InvokeAsync(c);
+        _place.Acted(before, c.Id);
+    }
+
+    protected override Task OnAfterRenderAsync(bool firstRender) =>
+        _place.FocusAsync(Offering, id => _adds.TryGetValue(id, out var add) ? add : (ElementReference?)null, _heading);
 }

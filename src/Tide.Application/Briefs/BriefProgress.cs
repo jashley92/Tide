@@ -11,8 +11,13 @@ public enum BriefStepKind { Triage, Write, Order, Present, Send }
 /// never finished); <see cref="Attention"/> is one that was passed with something left behind.</summary>
 public enum StepState { Todo, Current, Done, Attention }
 
-/// <summary>One step of the brief: what it is, a few words on where it stands ("2 of 5 need work"), and its state.</summary>
-public sealed record BriefStep(BriefStepKind Kind, string Label, string Detail, StepState State);
+/// <summary>One step of the brief: what it is, a few words on where it stands ("2 of 5 need work"), and its state.
+/// Triage also says how many of the feed's new items name a CVE on the known exploited list (<see cref="Kev"/>), which
+/// the strip shows as a flag beside the words.</summary>
+public sealed record BriefStep(BriefStepKind Kind, string Label, string Detail, StepState State)
+{
+    public int Kev { get; init; }
+}
 
 /// <summary>How far the day's brief has got: the step strip at the top of Today (Triage · Write · Order · Present ·
 /// Send), built from counts the page already has.</summary>
@@ -43,7 +48,7 @@ public static class BriefSteps
             newInFeed switch
             {
                 null => new(BriefStepKind.Triage, "Triage", "Sorting the feed", StepState.Todo),
-                > 0 => new(BriefStepKind.Triage, "Triage", $"{newInFeed} new in the feed{(newOnKev > 0 ? $" · {newOnKev} on KEV" : "")}", StepState.Attention),
+                > 0 => new(BriefStepKind.Triage, "Triage", $"{newInFeed} new in the feed", StepState.Attention) { Kev = newOnKev },
                 _ => new(BriefStepKind.Triage, "Triage", "Feed clear", StepState.Done),
             },
             (total, needWork) switch
