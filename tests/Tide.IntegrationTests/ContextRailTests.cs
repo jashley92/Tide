@@ -73,15 +73,25 @@ public class ContextRailTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task EveryRealPage_StillHasNoRail()
+    public async Task EveryRealPage_ButToday_StillHasNoRail()
     {
         var client = app.CreateClient();
-        foreach (var path in new[] { "/", "/articles", "/actions", "/admin" })
+        foreach (var path in new[] { "/articles", "/actions", "/admin", "/briefs/2019-01-07", "/briefs/2019-01-07?tab=preview" })
         {
             var html = await client.GetStringAsync(path);
             html.Should().Contain(Content, path);
             html.Should().NotContain("tide-rail", path).And.NotContain("<aside", path);
         }
+    }
+
+    [Fact]
+    public async Task Today_HasItsSideCardsInTheRail_AndItsButtonInTheTopBar()
+    {
+        var html = await app.CreateClient().GetStringAsync("/");
+        var rail = Between(html, "<aside id=\"tide-rail\"", "</aside>");
+        rail.Should().Contain("aria-label=\"Beside the brief\"").And.Contain("id=\"coming-up-h\"");
+        ContentArea(html).Should().NotContain("id=\"coming-up-h\"");
+        html.Should().Contain("id=\"tide-rail-toggle\"");
     }
 
     [Fact]

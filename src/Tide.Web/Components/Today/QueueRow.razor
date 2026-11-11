@@ -11,13 +11,15 @@
             @Meta
             @if (ActionSla.LateText(Row.DueDate, ActionSvc.Today) is { } late)
             {
-                <span>&middot; <span class="tide-queue-late">@late</span></span>
+                @* The space before the dot is written out: Razor drops the white space around a code block. It doesn't
+                   break, so a "·" never starts a line. *@
+                <span>@("\u00a0\u00b7 ")<span class="tide-queue-late">@late</span></span>
             }
         </span>
     </span>
-    @if (OfferTake && Row.AssigneeId is null)
+    @if (Offers)
     {
-        <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@Busy" @onclick="() => OnTake.InvokeAsync(Row)"
+        <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@Busy" @onclick="() => OnTake.InvokeAsync(Row)" @ref="_take"
                 aria-label="@($"Take {Ui.ActionLabel(Row.Number)} on: {Row.Title}")">Take it</button>
     }
     else
@@ -42,4 +44,11 @@
     [Parameter] public LiveMarks<Guid>? Marks { get; set; }
 
     [Parameter] public EventCallback<ActionRow> OnTake { get; set; }
+
+    private bool Offers => OfferTake && Row.AssigneeId is null;
+
+    private ElementReference _take;
+
+    /// <summary>The Take it button, for the card to give focus to (KeepPlace); null while the row doesn't offer it.</summary>
+    public ElementReference? TakeButton => Offers ? _take : null;
 }

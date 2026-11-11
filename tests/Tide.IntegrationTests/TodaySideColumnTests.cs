@@ -43,6 +43,7 @@ public partial class TodaySideColumnTests(CountingApp app) : IClassFixture<Count
         var meetings = app.Services.GetRequiredService<LiveMeetings>();
         var golden = new StringBuilder();
         var seen = new Dictionary<string, string>();
+        var outOfRail = new List<string>();
 
         async Task Capture(string state)
         {
@@ -61,7 +62,9 @@ public partial class TodaySideColumnTests(CountingApp app) : IClassFixture<Count
                         await using var r = await RenderAsync<BriefPage>(app, asToday ? "/" : $"/briefs/{day:yyyy-MM-dd}",
                             new() { ["Day"] = $"{day:yyyy-MM-dd}", ["AsToday"] = asToday }, who);
                         reads = Math.Min(reads, app.Commands.Count);
-                        side ??= Normalise(Side(await r.Html()), app.Services.GetRequiredService<OrgClock>().Zone);
+                        var html = await r.Html();
+                        side ??= Normalise(Side(html), app.Services.GetRequiredService<OrgClock>().Zone);
+                        if (draw == 0) outOfRail.AddRange(InPage(html, leads: who.Roles[0] is not "Analyst").Select(card => $"{key}: {card}"));
                     }
                     golden.Append("=== ").Append(key).Append(" (").Append(reads).Append(" commands)\n");
                     if (seen.TryGetValue(side, out var same)) golden.Append("same as ").Append(same).Append('\n');
@@ -90,6 +93,7 @@ public partial class TodaySideColumnTests(CountingApp app) : IClassFixture<Count
         await NoBriefs();
         await Capture("no brief yet");
 
+        outOfRail.Should().BeEmpty("the side column's cards are drawn in the context rail, not in the page");
         var actual = golden.ToString();
         if (Environment.GetEnvironmentVariable("TIDE_UPDATE_GOLDEN") == "1")
         {
@@ -174,6 +178,16 @@ public partial class TodaySideColumnTests(CountingApp app) : IClassFixture<Count
     {
         var cards = Card().Matches(html).Select(m => html[m.Index..Close(html, m.Index, "section")]).ToList();
         return cards.Count == 0 ? "(no cards)" : string.Join("\n---\n", cards);
+    }
+
+    /// <summary>The headings of the side column's cards drawn in the page itself, before the context rail: none, but
+    /// for someone who can't write the brief (<paramref name="leads"/>), whose Today leads with their escalated actions
+    /// and their teams' queue in the page.</summary>
+    internal static IEnumerable<string> InPage(string html, bool leads)
+    {
+        var rail = html.IndexOf("<aside id=\"tide-rail\"", StringComparison.Ordinal);
+        var page = rail < 0 ? html : html[..rail];
+        return Card().Matches(page).Select(m => m.Groups[1].Value).Where(h => !(leads && h is "escalated-h" or "team-queue-h"));
     }
 
     // Where the element of this tag opening at <paramref name="at"/> ends, after its matching close.

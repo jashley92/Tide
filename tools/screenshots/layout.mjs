@@ -293,6 +293,77 @@ const selectCovered = (group = false) => async page => {
   await page.locator('.tide-triage-row.selected .tide-triage-attach').waitFor();
 };
 
+/** No visible match of `selector` overlaps the first visible match of `other` sideways: two regions side by side. */
+const besides = (selector, other) => ({
+  name: `beside ${other}: ${selector}`,
+  check: page => page.evaluate(([selector, other]) => {
+    const box = s => [...document.querySelectorAll(s)].map(e => e.getBoundingClientRect()).find(r => r.width > 0 && r.height > 0);
+    const a = box(selector), b = box(other);
+    if (!a || !b) return [`nothing visible: ${!a ? selector : other}`];
+    return a.right <= b.left + 1 || b.right <= a.left + 1 ? [] : [`${selector} (to ${Math.round(a.right)}px) runs under ${other} (from ${Math.round(b.left)}px)`];
+  }, [selector, other]),
+});
+
+/** Each visible match of `selector`, given focus from the keyboard, draws a focus ring (an outline or a box shadow). */
+const ringOnFocus = selector => ({
+  name: `focus ring: ${selector}`,
+  check: async page => {
+    const found = [];
+    for (const el of await page.$$(selector)) {
+      if (!(await el.isVisible())) continue;
+      // A key first, so the browser treats the focus that follows as the keyboard's (:focus-visible).
+      await page.keyboard.press('Shift');
+      await el.focus();
+      await page.waitForTimeout(250);   // Bootstrap fades the ring in
+      const ring = await el.evaluate(e => {
+        const s = getComputedStyle(e);
+        // A shadow counts when it's drawn: a colour that isn't transparent, and a spread.
+        const shadow = /^(rgba?\([^)]*\)) [\d.]+px [\d.]+px [\d.]+px ([\d.]+)px/.exec(s.boxShadow);
+        return (s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0)
+          || (!!shadow && parseFloat(shadow[2]) > 0 && !/rgba\([^)]*,\s*0\)$/.test(shadow[1]));
+      });
+      if (!ring) found.push(`${selector}: no focus ring when focused from the keyboard`);
+    }
+    return found;
+  },
+});
+
+/** Focus is inside a match of `selector` (after a button in it did its work), not dropped to the page. */
+const focusIn = selector => ({
+  name: `focus in: ${selector}`,
+  check: page => page.evaluate(selector => {
+    const at = document.activeElement;
+    return at && at !== document.body && [...document.querySelectorAll(selector)].some(box => box.contains(at)) ? []
+      : [`focus is on ${at === document.body ? 'the page (<body>)' : at?.outerHTML.slice(0, 80)}, not in ${selector}`];
+  }, selector),
+});
+
+/** Setup: every letter spaced wider, as a font wider than this machine's would set it (see selectCovered). */
+const wideFont = async page => { await page.addStyleTag({ content: '* { letter-spacing: .07em !important; }' }); };
+
+/** Setup: wider letters, then `]` pressed: the context rail opens where it's an overlay, and closes where it docks. */
+const toggleRail = async page => {
+  await wideFont(page);
+  await page.locator('body').press(']');
+  await page.waitForTimeout(300);
+};
+
+/** Setup: the first two articles (both ready) taken off today's brief, so "Not on a brief yet" lists them; then the first one's Add
+ *  pressed from the keyboard, and the card read again. */
+async function addFromRail(page) {
+  const card = page.locator('#tide-rail section[aria-labelledby="recent-h"]');
+  for (let i = 0; i < 2; i++) {
+    const n = await card.locator('li').count();
+    await page.getByRole('button', { name: /off this brief$/ }).first().click();
+    await page.waitForFunction(([n]) => document.querySelectorAll('#tide-rail section[aria-labelledby="recent-h"] li').length > n, [n], { timeout: 10000 });
+  }
+  const before = await card.locator('li').count();
+  await card.getByRole('button', { name: /^Add / }).first().focus();
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(([n]) => document.querySelectorAll('#tide-rail section[aria-labelledby="recent-h"] li').length < n, [before], { timeout: 10000 });
+  await page.waitForTimeout(300);
+}
+
 /** Setup: V pressed `times`, a moment apart (each read or close reaching the page before the next). */
 const pressV = times => async page => {
   for (let i = 0; i < times; i++) {
@@ -411,6 +482,22 @@ async function scrollDown(page) {
 const pages = [
   { name: 'today', route: '/', widths: [1440, 1000, 780],
     rules: [noSidewaysScroll, visible('.tide-steps'), fits('.tide-steps > li'), fits('.tide-page-head')] },
+  // Today's side cards are in the context rail. From 1500px it's docked beside the page, open, and the page keeps its
+  // step strip on one row and its head and rows within their boxes, in what's left (about 870px at 1500); below 1500
+  // it's closed until asked for. Wider letters throughout, so each holds by construction.
+  { name: 'today-rail', route: '/', setup: wideFont, widths: [1920, 1600, 1500],
+    rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), besides('#main-content', '#tide-rail'), oneRow('.tide-steps'), fits('.tide-steps > li'),
+      fits('.tide-page-head'), fits('.tide-order-row'), fits('.tide-rail-body'), fits('#tide-rail .tide-card'), hidden('.content .tide-card[aria-labelledby="meeting-h"]'),
+      ringOnFocus('#tide-rail #analyst, #tide-rail #intro, #tide-rail [data-submit], #tide-rail a.btn')] },
+  { name: 'today-rail-closed', route: '/', setup: toggleRail, widths: [1920, 1500],
+    rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), oneRow('.tide-steps'), fits('.tide-page-head')] },
+  { name: 'today-rail-shut', route: '/', setup: wideFont, widths: [1440, 780],
+    rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), oneRow('.tide-steps'), fits('.tide-page-head')] },
+  { name: 'today-rail-over', route: '/', setup: toggleRail, widths: [1440, 780],
+    rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), fits('.tide-rail-body'), fits('#tide-rail .tide-card'), focusIn('#tide-rail')] },
+  // Another day's brief draws the same panel in its rail.
+  { name: 'day-rail', route: '/briefs/{sent}', setup: wideFont, widths: [1920, 1500],
+    rules: [noSidewaysScroll, visible('#tide-rail .tide-card[aria-labelledby="meeting-h"]'), besides('#main-content', '#tide-rail'), fits('.tide-page-head'), fits('#tide-rail .tide-card')] },
   // The top bar with the brief chip in it: one row from a narrow window up, nothing pushed out of its group (the Go to
   // button under the chip), and the search box never squeezed for the chip: the chip is in view from 900px, and
   // wherever it shows the search box keeps 200px. On a phone nothing pushes the page sideways.
@@ -493,6 +580,10 @@ const pages = [
     ] },
   { name: 'metrics-grid', route: '/metrics?chart=group:alert-queue,group:vulnerability-sla&view=grid', widths: [1920, 1000, 700],
     rules: [noSidewaysScroll, visible('.tide-mc-cell'), visible('.tide-chart-band-warn'), oneRow('.tide-mc-cell-head'), [1800, widerThan('.content', 1400)]] },
+  // Add on "Not on a brief yet", from the keyboard: the article leaves the card and focus stays in it, on the next
+  // article's Add. Last, as it changes today's brief.
+  { name: 'today-rail-add', route: '/', setup: addFromRail, widths: [1920],
+    rules: [focusIn('#tide-rail section[aria-labelledby="recent-h"] li')] },
 ];
 
 // --- the run -----------------------------------------------------------------------------------------------------------

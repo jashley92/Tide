@@ -45,7 +45,8 @@
                 }
                 else
                 {
-                    <TlpBadge Level="Brief.IntroTlp" /> @Brief.Intro
+                    @* The space is written out: Razor drops it between a component and an expression. *@
+                    <TlpBadge Level="Brief.IntroTlp" />@(" " + Brief.Intro)
                 }
             </dd>
         </dl>

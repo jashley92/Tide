@@ -2,12 +2,14 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.AspNetCore.Components.Routing;
+using Microsoft.AspNetCore.Components.Sections;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.Web.HtmlRendering;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Tide.Application.Security;
+using Tide.Web.Components.Layout;
 
 namespace Tide.IntegrationTests;
 
@@ -28,12 +30,20 @@ public static class ComponentHarness
     {
         [Parameter] public IReadOnlyDictionary<string, object?> Values { get; set; } = new Dictionary<string, object?>();
         [Parameter] public Action<T> Got { get; set; } = _ => { };
+        // A page drawn inside a layout (PageIn) gets the layout's own outlets.
+        private static readonly bool InLayout = typeof(T).IsGenericType && typeof(T).GetGenericTypeDefinition() == typeof(PageIn<>);
 
+        // The page, then its context rail where MainLayout draws it, after the content: a page that places a ContextRail
+        // has its region in the markup, and one that places none adds nothing.
         protected override void BuildRenderTree(RenderTreeBuilder builder)
         {
             builder.OpenComponent<T>(0);
             foreach (var (name, value) in Values) builder.AddComponentParameter(1, name, value);
             builder.AddComponentReferenceCapture(2, c => Got((T)c));
+            builder.CloseComponent();
+            if (InLayout) return;
+            builder.OpenComponent<SectionOutlet>(3);
+            builder.AddComponentParameter(4, nameof(SectionOutlet.SectionId), ContextRail.RegionSection);
             builder.CloseComponent();
         }
     }
@@ -104,7 +114,8 @@ public static class ComponentHarness
     }
 
     /// <summary>Renders <typeparamref name="T"/> at <paramref name="path"/>, signed in as <paramref name="as"/> (an analyst by default),
-    /// with the app at <paramref name="baseUri"/> (<c>http://localhost/tide/</c> for a sub-path).</summary>
+    /// with the app at <paramref name="baseUri"/> (<c>http://localhost/tide/</c> for a sub-path). The page's context rail, if
+    /// it has one, follows it, as MainLayout draws it.</summary>
     public static async Task<Rendered<T>> RenderAsync<T>(TideApp app, string path, Dictionary<string, object?>? values = null, SignIn? @as = null,
         string baseUri = "http://localhost/")
         where T : IComponent

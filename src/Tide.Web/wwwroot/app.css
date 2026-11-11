@@ -2487,3 +2487,10 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-triage-attach { display: inline-flex; align-items: center; gap: var(--tide-space-1); white-space: nowrap; min-width: 0; }
 .tide-triage-attach-title { min-width: 0; }
 /* ---- end Triage 2.4 ---- */
+
+/* ---- Today 3.1: the side cards in the context rail ----
+   A Today card's heading takes focus when the row whose button was pressed (Take it, Add) has gone and no other row
+   offers the button (KeepPlace): the app's ring from the keyboard, none from a click. */
+.tide-card > h2[tabindex="-1"]:focus { outline: none; }
+.tide-card > h2[tabindex="-1"]:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; border-radius: var(--tide-radius-sm); }
+/* ---- end Today 3.1 ---- */

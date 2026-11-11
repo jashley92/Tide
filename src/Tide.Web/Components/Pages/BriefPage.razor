@@ -30,7 +30,9 @@
    screen, and ?tab=distribute opens the Send dialog (the send log, for someone who can't send).
    Whoever works actions gets their teams' queue on Today. Someone who can't write articles (an action owner) can't act on
    the steps, the running order or the edition check, so their Today leads with the queue and keeps only a read-only
-   summary of the brief; it's drawn by permission, never by role name. *@
+   summary of the brief; it's drawn by permission, never by role name.
+   What sits beside the brief (the edition check, the meeting, the history and, on Today, the actions, the rotation and
+   the articles) is in the context rail (Rail), so the running order has the page's width. *@
 
 <PageTitle>@(AsToday ? "Today" : "Brief " + Ui.ShortDay(_date)) · TIDE</PageTitle>
 
@@ -199,31 +201,24 @@ else
     }
     else if (_brief is null)
     {
-        <div class="tide-today-grid">
-            <div>
-                @if (!_canWrite) { @Queue() }
-                <div class="tide-card">
-                    <EmptyState Icon="bi-journal-text" Title="@(IsToday ? "Nothing on today's brief yet." : "There's no brief for this day yet.")">
-                        <ChildContent>
-                            @if (Clock.Days.DayOffReason(_date) is { } why)
-                            {
-                                <span>@why, and briefs are held on working days. The next is @Ui.Day(Clock.Days.Next(_date)).</span>
-                            }
-                        </ChildContent>
-                        <Actions>
-                            @if (_canWrite && Clock.Days.IsWorkingDay(_date))
-                            {
-                                <button class="btn btn-primary" disabled="@_busy" @onclick="Start">Start the brief</button>
-                            }
-                        </Actions>
-                    </EmptyState>
-                </div>
-                @if (AsToday && _canWrite) { <MetricEntry Date="_date" Collapsible="true" MissingChanged="n => _missingNumbers = n" /> }
-            </div>
-            <div>
-                @if (AsToday) { @Side() }
-            </div>
+        @if (!_canWrite) { @Queue() }
+        <div class="tide-card">
+            <EmptyState Icon="bi-journal-text" Title="@(IsToday ? "Nothing on today's brief yet." : "There's no brief for this day yet.")">
+                <ChildContent>
+                    @if (Clock.Days.DayOffReason(_date) is { } why)
+                    {
+                        <span>@why, and briefs are held on working days. The next is @Ui.Day(Clock.Days.Next(_date)).</span>
+                    }
+                </ChildContent>
+                <Actions>
+                    @if (_canWrite && Clock.Days.IsWorkingDay(_date))
+                    {
+                        <button class="btn btn-primary" disabled="@_busy" @onclick="Start">Start the brief</button>
+                    }
+                </Actions>
+            </EmptyState>
         </div>
+        @if (AsToday && _canWrite) { <MetricEntry Date="_date" Collapsible="true" MissingChanged="n => _missingNumbers = n" /> }
     }
     else
     {
@@ -244,6 +239,11 @@ else
             </div>
         }
     }
+}
+
+@if (HasRail)
+{
+    <ContextRail Title="Beside the brief">@Rail()</ContextRail>
 }
 
 <AddArticlesDialog @ref="_add" Candidates="_candidates" Shortlist="_shortlist" />
@@ -864,8 +864,8 @@ else
         finally { _busy = false; }
     }
 
-    // The running order (with the steps, numbers, edition check and meeting) or the preview of both editions: Today
-    // draws the running order bare; /briefs/{day} draws either inside the tab panel.
+    // The running order (with the steps, the opening note and the numbers; the rail has the rest) or the preview of both
+    // editions: Today draws the running order bare; /briefs/{day} draws either inside the tab panel.
     private RenderFragment Panel() => __builder =>
     {
             if (_brief is null) return; // only drawn once the brief has loaded
@@ -879,39 +879,26 @@ else
                                CanMarkReady="@(_canWrite && _brief.Status == BriefStatus.Draft && _brief.Items.Count > 0)" OnMarkReady="AskReady" Busy="_busy"
                                OnSend="AskSend" />
                 }
-                <div class="tide-today-grid">
-                    <div>
-                        @TeamNoteCard()
-                        <section class="tide-card" aria-labelledby="running-order-h">
-                            <h2 id="running-order-h">Running order
-                                <span class="ms-auto small fw-normal tide-muted">@Ordered().Count() article@(_brief.Items.Count == 1 ? "" : "s") &middot; @Count(Classification.Threat) threat@(Count(Classification.Threat) == 1 ? "" : "s") &middot; @Count(Classification.Informational) informational</span></h2>
-                            <RunningOrder Items="Ordered().ToList()" Readiness="@(_canWrite ? _readiness : NoReadiness)" CanEdit="@(_canWrite && _brief.Status != BriefStatus.Sent)" Busy="_busy"
-                                          PublicMax="_publicMax" ShowDiscussed="@(_brief.Status is BriefStatus.Presented or BriefStatus.Sent)"
-                                          CanFix="CanFix" OnFix="f => Fix(f.Article, f.Fix)"
-                                          OnMove="m => Move(m.Item, m.By)" OnRemove="Remove" OnReorder="Reorder" />
-                            <div class="tide-order-foot">
-                                @if (_canWrite && _brief.Status != BriefStatus.Sent)
-                                {
-                                    <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="AskAdd">
-                                        <span class="bi bi-plus-lg" aria-hidden="true"></span> Add article@(Available > 0 ? $" ({Available} available)" : "")
-                                    </button>
-                                    <a class="btn btn-link btn-sm" href="articles?new=1">New article</a>
-                                }
-                                @if (_canWrite) { <span class="small tide-muted ms-auto">@ReadyCount of @Ordered().Count() ready</span> }
-                            </div>
-                        </section>
-                        <MetricEntry Date="_date" Collapsible="true" MissingChanged="n => _missingNumbers = n" />
-                    </div>
-                    <div>
-                        @if (_canWrite)
+                @TeamNoteCard()
+                <section class="tide-card" aria-labelledby="running-order-h">
+                    <h2 id="running-order-h">Running order
+                        <span class="ms-auto small fw-normal tide-muted">@Ordered().Count() article@(_brief.Items.Count == 1 ? "" : "s") &middot; @Count(Classification.Threat) threat@(Count(Classification.Threat) == 1 ? "" : "s") &middot; @Count(Classification.Informational) informational</span></h2>
+                    <RunningOrder Items="Ordered().ToList()" Readiness="@(_canWrite ? _readiness : NoReadiness)" CanEdit="@(_canWrite && _brief.Status != BriefStatus.Sent)" Busy="_busy"
+                                  PublicMax="_publicMax" ShowDiscussed="@(_brief.Status is BriefStatus.Presented or BriefStatus.Sent)"
+                                  CanFix="CanFix" OnFix="f => Fix(f.Article, f.Fix)"
+                                  OnMove="m => Move(m.Item, m.By)" OnRemove="Remove" OnReorder="Reorder" />
+                    <div class="tide-order-foot">
+                        @if (_canWrite && _brief.Status != BriefStatus.Sent)
                         {
-                            <EditionCheck Brief="_brief" Day="_date" TeamMax="_teamMax" PublicMax="_publicMax" HasNumbers="_missingNumbers is not null" MissingNumbers="_missingNumbers ?? 0" />
+                            <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="AskAdd">
+                                <span class="bi bi-plus-lg" aria-hidden="true"></span> Add article@(Available > 0 ? $" ({Available} available)" : "")
+                            </button>
+                            <a class="btn btn-link btn-sm" href="articles?new=1">New article</a>
                         }
-                        @Meeting()
-                        <HistoryPanel Id="_brief.Id" Brief="true" Version="_brief.EditVersion" />
-                        @if (AsToday) { @Side() }
+                        @if (_canWrite) { <span class="small tide-muted ms-auto">@ReadyCount of @Ordered().Count() ready</span> }
                     </div>
-                </div>
+                </section>
+                <MetricEntry Date="_date" Collapsible="true" MissingChanged="n => _missingNumbers = n" />
             }
             else
             {
@@ -986,39 +973,54 @@ else
                      @bind-AnalystId="_analystId" @bind-Intro="_intro" @bind-IntroTlp="_introTlp" Meeting="_meeting" Busy="_busy" OnSave="SaveDetails" />
     };
 
-    // Today for someone who works actions but can't write articles: their teams' queue first, then what's on today's
-    // brief (its state and headlines, read-only: the steps, the running order's controls and the edition check are the
-    // producers'), the meeting, and beside them the rotation and recent articles.
+    // Today for someone who works actions but can't write articles: their escalated actions and their teams' queue first,
+    // then what's on today's brief (its state and headlines, read-only: the steps, the running order's controls and the
+    // edition check are the producers'). The meeting, the rotation and recent articles are in the rail.
     private RenderFragment OwnerToday() => __builder =>
     {
-        <div class="tide-today-grid">
-            <div>
-                <EscalatedCard Rows="_queue?.Escalated" Marks="_actionMarks" />
-                @Queue()
-                @TeamNoteCard()
-                <section class="tide-card" aria-labelledby="todays-brief-h">
-                    <h2 id="todays-brief-h">Today's brief <StatusBadge Status="@StatusLabel" />
-                        <a class="ms-auto small fw-normal" href="@($"{Ui.BriefUrl(_date)}?tab=preview")">Read it</a></h2>
-                    @if (Ordered().Any())
+        <EscalatedCard Rows="_queue?.Escalated" Marks="_actionMarks" />
+        @Queue()
+        @TeamNoteCard()
+        <section class="tide-card" aria-labelledby="todays-brief-h">
+            <h2 id="todays-brief-h">Today's brief <StatusBadge Status="@StatusLabel" />
+                <a class="ms-auto small fw-normal" href="@($"{Ui.BriefUrl(_date)}?tab=preview")">Read it</a></h2>
+            @if (Ordered().Any())
+            {
+                <ol class="tide-published-heads mb-0">
+                    @foreach (var i in Ordered())
                     {
-                        <ol class="tide-published-heads mb-0">
-                            @foreach (var i in Ordered())
-                            {
-                                <li>@i.Article!.Title</li>
-                            }
-                        </ol>
+                        <li>@i.Article!.Title</li>
                     }
-                    else
-                    {
-                        <EmptyState Icon="bi-journal-text" Title="Nothing on today's brief yet." Compact="true" />
-                    }
-                </section>
-            </div>
-            <div>
-                @Meeting()
-                @Side()
-            </div>
-        </div>
+                </ol>
+            }
+            else
+            {
+                <EmptyState Icon="bi-journal-text" Title="Nothing on today's brief yet." Compact="true" />
+            }
+        </section>
+    };
+
+    /// <summary>Whether the page has a context rail: Today, and another day's running order once its brief is read.</summary>
+    private bool HasRail => _validDay && (_brief is not null ? AsToday || _tab == 0 : AsToday && !_loading);
+
+    // The context rail: what sits beside the brief, in the order the side column had it. With a brief, the edition check
+    // (for those who make it), the meeting and its history (only the meeting on an action owner's Today); then on Today
+    // the actions, the rotation and the articles.
+    private RenderFragment Rail() => __builder =>
+    {
+        @if (_brief is not null)
+        {
+            @if (_canWrite)
+            {
+                <EditionCheck Brief="_brief" Day="_date" TeamMax="_teamMax" PublicMax="_publicMax" HasNumbers="_missingNumbers is not null" MissingNumbers="_missingNumbers ?? 0" />
+            }
+            @Meeting()
+            @if (_canWrite || !AsToday)
+            {
+                <HistoryPanel Id="_brief.Id" Brief="true" Version="_brief.EditVersion" />
+            }
+        }
+        @if (AsToday) { @Side() }
     };
 
     // The open actions of my teams that are mine or nobody's, mine first, each by due date; Take it on an unassigned one.
@@ -1036,8 +1038,8 @@ else
     // What a reader of the brief who can't write is shown of each article's readiness: nothing.
     private static readonly IReadOnlyDictionary<Guid, IReadOnlyList<ArticleCheck>> NoReadiness = new Dictionary<Guid, IReadOnlyList<ArticleCheck>>();
 
-    // Beside today's brief: an analyst's actions (on a team, with the team's unassigned ones; action owners have the
-    // queue first), the rotation and recent articles.
+    // In the rail beside today's brief: an analyst's actions (on a team, with the team's unassigned ones; action owners
+    // have the queue in the page), the rotation and recent articles.
     private RenderFragment Side() => __builder =>
     {
         @if (_canWrite)

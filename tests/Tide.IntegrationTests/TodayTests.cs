@@ -276,6 +276,7 @@ public class TeamQueueTodayTests(TideApp app) : IClassFixture<TideApp>
             .And.Contain(">Take it</button>").And.MatchRegex(@"\d+ yours and \d+ unassigned\.","the other test in this class adds a team the owner is on too")
             .And.Contain("href=\"actions?view=myteams\">My teams</a>");
         html.Should().NotContain("aria-label=\"Brief progress\"").And.NotContain("id=\"edition-check-h\"");
+        System.Text.RegularExpressions.Regex.Replace(queue, "<[^>]+>", "").Should().Contain("Unassigned · 3 days late", "a space before the dot, which never starts a line");
     }
 
     [Fact]
