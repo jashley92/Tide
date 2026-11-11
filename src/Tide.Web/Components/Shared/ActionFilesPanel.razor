@@ -13,7 +13,7 @@
     @* Add files in the heading's row; for whoever works the action, files dropped anywhere on its page, or pasted with
        nothing focused, wait here too. *@
     <div class="tide-files-head">
-        <h2 id="files-h">Files <span class="tide-count tide-muted fw-normal">(@Files.Live.Count)</span></h2>
+        <h2 id="files-h" class="tide-card-title">Files <span class="tide-count tide-muted fw-normal">(@Files.Live.Count)</span></h2>
         @if (CanWork)
         {
             <button type="button" class="btn btn-outline-secondary btn-sm" data-pick="@PickInput"><span class="bi bi-paperclip" aria-hidden="true"></span> Add files</button>

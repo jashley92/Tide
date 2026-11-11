@@ -2762,7 +2762,6 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 /* ---- Action page 3.5b: the rest of the design ----
    Also raised from it: the number first, the title over its team and due date, the status at the right. */
 .tide-rail-list > .tide-rail-raised { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: var(--tide-space-2); align-items: start; }
-.tide-rail-raised-status { justify-self: end; }
 /* Files: Add files in the heading's row. */
 .tide-files-head { display: flex; align-items: center; justify-content: space-between; gap: var(--tide-space-2); margin-bottom: var(--tide-space-2); }
 .tide-files-head > h2 { margin: 0; min-width: 0; }

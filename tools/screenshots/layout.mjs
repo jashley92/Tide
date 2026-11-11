@@ -616,6 +616,9 @@ const tabStaysIn = (selector, times, key = 'Tab') => ({
   },
 });
 
+/** Tab and Shift+Tab each stay in `selector`, `times` presses apiece. Run last on its page. */
+const tabWraps = (selector, times) => [tabStaysIn(selector, times), tabStaysIn(selector, times, 'Shift+Tab')];
+
 /** No two visible matches of `selector` overlap: controls in a row that each keep their own room. */
 const noOverlap = selector => ({
   name: `no overlap: ${selector}`,
@@ -678,13 +681,14 @@ const dims = (percent, all = false) => ({
       const box = s => [...document.querySelectorAll(s)].map(e => e.getBoundingClientRect()).find(r => r.width > 0 && r.height > 0);
       const side = box('.sidebar'), bar = box('.top-row'), rail = document.getElementById('tide-rail').getBoundingClientRect();
       const left = side && side.right < rail.left ? side.right : 0;
-      const found = { 'the page': { x: left + 10, y: 300, width: Math.max(40, Math.min(200, rail.left - left - 20)), height: 200 } };
+      const width = Math.max(40, Math.min(200, rail.left - left - 20));
+      const found = { 'the page': { x: left + 10, y: 300, width, height: 200 } };
       if (!all) return found;
       // A strip of the navigation's own colour, beside its links' text (which a backdrop of its colour would still dim).
       if (side && side.width > 40 && side.right < rail.left) found['the left navigation'] = { x: side.right - 8, y: 300, width: 4, height: 200 };
       if (bar && rail.top >= bar.bottom - 1) {
         const h = Math.max(8, Math.min(30, bar.height - 10));
-        found['the top bar'] = { x: left + 10, y: bar.top + 5, width: Math.max(40, Math.min(200, rail.left - left - 20)), height: h };
+        found['the top bar'] = { x: left + 10, y: bar.top + 5, width, height: h };
         found['the top bar above the rail'] = { x: rail.left + 4, y: bar.top + 5, width: Math.max(20, Math.min(100, rail.width - 8)), height: h };
       }
       return found;
@@ -726,7 +730,7 @@ const dims = (percent, all = false) => ({
 /** While the overlay is open, the top bar and the left navigation are inert: out of the tab order and unclickable. */
 const underIsInert = {
   name: 'the top bar and the navigation are inert under the overlay',
-  check: page => page.evaluate(() => ['.top-row', '.sidebar'].filter(s => document.querySelector(s) && !document.querySelector(s).closest('[inert]'))
+  check: page => page.evaluate(() => ['.top-row', '.sidebar'].filter(s => document.querySelector(s)?.closest('[inert]') === null)
     .map(s => `${s} isn't inert while the overlay is open`)),
 };
 
@@ -1380,25 +1384,14 @@ const overlayClosesBy = how => ({
 const railFilesTakeDropAndPaste = {
   name: 'the rail\'s Files box takes a drop and a paste',
   check: async page => {
-    const zone = page.locator('#tide-rail .tide-file-pick').first();
-    const id = await zone.getAttribute('id');
-    await page.evaluate(id => {
-      const dt = new DataTransfer();
-      dt.items.add(new File(['proxy log line'], 'rail-drop.log', { type: 'text/plain' }));
-      const el = document.getElementById(id);
-      el.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
-      el.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
-    }, id);
-    await page.waitForTimeout(1000);
-    await zone.focus();
-    await page.evaluate(id => {
-      const dt = new DataTransfer();
-      const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='), c => c.charCodeAt(0));
-      dt.items.add(new File([png], 'image.png', { type: 'image/png' }));
-      document.getElementById(id).dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
-    }, id);
-    await page.waitForTimeout(1000);
-    const pending = await page.locator('#tide-rail .tide-file-pending').innerText().catch(() => '');
+    const zone = '#tide-rail .tide-file-pick';
+    await fire(page, 'dragover', zone, [['rail-drop.log', 'text/plain']]);
+    await fire(page, 'drop', zone, [['rail-drop.log', 'text/plain']]);
+    await waitForPending(page, 'rail-drop.log');
+    await page.locator(zone).first().focus();
+    await fire(page, 'paste', zone, [['image.png', 'image/png']]);
+    await waitForPending(page, 'pasted-screenshot');
+    const pending = await pendingFiles(page);
     return [!pending.includes('rail-drop.log') && 'a dropped file isn\'t waiting in the rail', !pending.includes('pasted-screenshot') && 'a pasted image isn\'t waiting in the rail']
       .filter(Boolean);
   },
@@ -1432,6 +1425,10 @@ const fire = (page, type, selector, files, text) => page.evaluate(([type, select
 /** What waits to be added in the rail's Files box. */
 const pendingFiles = page => page.locator('#tide-rail .tide-file-pending').innerText().catch(() => '');
 
+/** Waits (up to 5s) for `name` to be waiting in the rail's Files box; the rule then says whether it came. */
+const waitForPending = (page, name) => page.waitForFunction(name => document.querySelector('#tide-rail .tide-file-pending')?.textContent.includes(name), name,
+  { timeout: 5000 }).catch(() => { });
+
 /**
  * Files go to the action's Files from anywhere on the page, as the design says ("Drop them anywhere on the page, or
  * paste"): text pasted into a text field stays text there; a file dragged over the page shows the drop hint, and dropped
@@ -1449,14 +1446,15 @@ const pageTakesFiles = {
     await page.waitForTimeout(100);
     if (!(await anyShown(page, '.tide-page-drop'))) problems.push('no drop hint shows while a file is dragged over the page');
     await fire(page, 'drop', '.tide-feed-head', [['page-drop.log', 'text/plain']]);
-    await page.waitForTimeout(1500);
+    await waitForPending(page, 'page-drop.log');
     if (await anyShown(page, '.tide-page-drop')) problems.push('the drop hint stays after the drop');
     if (!(await anyShown(page, '#tide-rail .tide-file-pending'))) problems.push('the dropped file isn\'t shown waiting in the rail');
-    if (!(await pendingFiles(page)).includes('page-drop.log')) problems.push('a file dropped on the page isn\'t waiting in Files');
-    if ((await pendingFiles(page)).includes('image.png') || (await pendingFiles(page)).includes('pasted-screenshot')) problems.push('the comment box\'s pasted text left a file in Files');
+    const dropped = await pendingFiles(page);
+    if (!dropped.includes('page-drop.log')) problems.push('a file dropped on the page isn\'t waiting in Files');
+    if (dropped.includes('image.png') || dropped.includes('pasted-screenshot')) problems.push('the comment box\'s pasted text left a file in Files');
     await page.evaluate(() => document.activeElement?.blur());
     await fire(page, 'paste', 'body', [['image.png', 'image/png']]);
-    await page.waitForTimeout(1500);
+    await waitForPending(page, 'pasted-screenshot');
     if (!(await pendingFiles(page)).includes('pasted-screenshot')) problems.push('an image pasted with nothing focused isn\'t waiting in Files');
     return problems;
   },
@@ -1572,8 +1570,9 @@ const raisedRows = holds('raised-from-it rows: number first, status at the right
 
 /** The hunt drawer as designed: Write one by hand, Add a saved query and Add indicators beside Copy; "What did it find?"
  *  under them, with Attach a screenshot. */
-const huntAsDesigned = [sameLine('.tide-hunt [data-copy-target]', '#hunt-write', '#hunt-pick', '#hunt-add-iocs'), visible('.tide-hunt-found > h3'),
-  above('.tide-hunt [data-copy-target]', '.tide-hunt-found > h3'), visible('.tide-hunt-found [data-pick="files-input"]')];
+const huntCopyRow = sameLine('.tide-hunt [data-copy-target]', '#hunt-write', '#hunt-pick', '#hunt-add-iocs');
+const huntFound = [visible('.tide-hunt-found > h3'), above('.tide-hunt [data-copy-target]', '.tide-hunt-found > h3'), visible('.tide-hunt-found [data-pick="files-input"]')];
+const huntAsDesigned = [huntCopyRow, ...huntFound];
 
 /** The header's badges: its kind, and its due date said with how it stands ("Due Thu Nov 12 · due soon"), one badge. */
 const actionHeadAsDesigned = [visible('.tide-action-badges .tide-action-kind'), says('.tide-action-badges .tide-action-due', '^Due \\w{3} \\w{3} \\d+ · '),
@@ -1715,7 +1714,7 @@ const pages = [
   { name: 'today-rail-over', route: '/', setup: toggleRail, widths: [1440, 780, 400],
     rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), fits('.tide-rail-body'), fits('#tide-rail .tide-card'), focusIn('#tide-rail'),
       attr('#tide-rail', 'role', 'dialog'), attr('#tide-rail', 'aria-modal', 'true'), attr('#tide-rail', 'aria-label', 'Beside the brief'),
-      underIsInert, tabStaysIn('#tide-rail', 40), tabStaysIn('#tide-rail', 40, 'Shift+Tab')] },
+      underIsInert, ...tabWraps('#tide-rail', 40)] },
   // Another day's brief draws the same panel in its rail.
   { name: 'day-rail', route: '/briefs/{sent}', setup: wideFont, widths: [1920, 1500],
     rules: [noSidewaysScroll, visible('#tide-rail .tide-card[aria-labelledby="meeting-h"]'), besides('#main-content', '#tide-rail'), fits('.tide-page-head'), fits('#tide-rail .tide-card')] },
@@ -1799,7 +1798,7 @@ const pages = [
       ...actionPageFits] },
   { name: 'action-rail-narrow', route: '/actions/{huntAction}', setup: wideFont, widths: [[1440, 900], [780, 900]],
     rules: [hidden('#tide-rail'), visible('#tide-rail-toggle'), ...actionPageFits, fits('.tide-hunt pre.tide-query'), ...actionHeadAsDesigned,
-      [1440, huntAsDesigned[0]], ...huntAsDesigned.slice(1), hidden('.tide-page-drop')] },
+      [1440, huntCopyRow], ...huntFound, hidden('.tide-page-drop')] },
   { name: 'action-rail-closed', route: '/actions/{huntAction}', setup: toggleRail, widths: [[1600, 1000]],
     rules: [hidden('#tide-rail'), widerThan('.tide-action-main', 1100), ...actionPageFits] },
   // Open over the page it's a modal dialog: named, the page dimmed behind it, Tab held in it; Escape, Close and a click
@@ -1807,7 +1806,7 @@ const pages = [
   { name: 'action-rail-overlay', route: '/actions/{huntAction}', setup: toggleRail, widths: [[1440, 900], [780, 900], [400, 800]],
     rules: [visible('#tide-rail'), ...actionRailHolds, noSidewaysScroll, focusIn('#tide-rail'), attr('#tide-rail', 'role', 'dialog'),
       attr('#tide-rail', 'aria-modal', 'true'), attr('#tide-rail', 'aria-label', 'About this action'), underIsInert, [780, dims(15, true)],
-      tabStaysIn('#tide-rail', 40), tabStaysIn('#tide-rail', 40, 'Shift+Tab')] },
+      ...tabWraps('#tide-rail', 40)] },
   ...['Escape', 'Close', 'backdrop'].map(how => ({ name: `action-rail-overlay-${how.toLowerCase()}`, route: '/actions/{huntAction}', setup: toggleRail,
     widths: how === 'backdrop' ? [[1440, 900], [780, 900]] : [[1440, 900], [780, 900], [400, 800]], rules: [overlayClosesBy(how)] })),
   { name: 'action-rail-overlay-files', route: '/actions/{detailAction}', setup: toggleRail, widths: [[1440, 900]], rules: [railFilesTakeDropAndPaste] },
@@ -1892,7 +1891,7 @@ const pages = [
   { name: 'triage-rail-overlay', route: '/triage', setup: railOverOn('covered'), widths: [[1440, 900], [780, 900]],
     rules: [noSidewaysScroll, visible('#tide-rail'), ...triageRailFits, visible('#tide-rail #rail-covered-h'), focusIn('#tide-rail'),
       attr('#tide-rail', 'role', 'dialog'), attr('#tide-rail', 'aria-label', 'What TIDE knows'), underIsInert, [780, dims(15, true)],
-      tabStaysIn('#tide-rail', 30), tabStaysIn('#tide-rail', 30, 'Shift+Tab')] },
+      ...tabWraps('#tide-rail', 30)] },
   ...['Escape', 'Close', 'backdrop'].map(how => ({ name: `triage-rail-overlay-${how.toLowerCase()}`, route: '/triage', setup: railOverOn('covered'),
     widths: [[1440, 900], [780, 900]], rules: [overlayClosesBy(how), visible('.tide-triage-row.selected')] })),
   // J and K pressed quickly land on the row they were pressed for: on the page (the selection isn't pulled back by a
@@ -1930,7 +1929,7 @@ const pages = [
     rules: [noSidewaysScroll, ...libraryRailHolds, attr('#tide-rail', 'role', 'dialog'), overlayClosesBy('Escape')] },
   // Open over the Library, the page under it is dimmed and inert, and Tab and Shift+Tab wrap within the rail.
   { name: 'library-rail-overlay-focus', route: '/library/queries', setup: libraryOverlay, widths: [1440, 780],
-    rules: [underIsInert, dims(15, true), tabStaysIn('#tide-rail', 30), tabStaysIn('#tide-rail', 30, 'Shift+Tab')] },
+    rules: [underIsInert, dims(15, true), ...tabWraps('#tide-rail', 30)] },
   // Each tab's entry has its rail (the demo has no open outreach action, so a template's isn't tried there).
   { name: 'library-rail-templates', route: '/library/templates', setup: wideFont, widths: [1920, 1500],
     rules: [visible('#tide-rail .tide-lib-facts'), visible('#tide-rail #lib-fills-h'), visible('#tide-rail #lib-used-h'), ...libraryFitsBesideRail.slice(0, 6), chipHasRoom, ...rowsTwoLines] },
@@ -1958,7 +1957,7 @@ const pages = [
     rules: [hidden('#tide-rail'), widerThan('.content', 1100), ...searchPageFits] },
   { name: 'search-rail-overlay', route: '/search?q=203.0.113.45', setup: toggleRail, widths: [[1440, 900], [780, 900]], context: clipboard,
     rules: [visible('#tide-rail'), ...searchRailHolds(), noSidewaysScroll, focusIn('#tide-rail'), attr('#tide-rail', 'role', 'dialog'),
-      attr('#tide-rail', 'aria-label', 'Do something with it'), underIsInert, tabStaysIn('#tide-rail', 30), tabStaysIn('#tide-rail', 30, 'Shift+Tab'),
+      attr('#tide-rail', 'aria-label', 'Do something with it'), underIsInert, ...tabWraps('#tide-rail', 30),
       copiesExactly('#tide-rail [data-copy-target="lookup-query"]', '#lookup-query')] },
   // A search for words has no rail, and its page is as before.
   { name: 'search-words', route: '/search?q=gateway', widths: [1920, 780], rules: [noSidewaysScroll, hidden('#tide-rail'), hidden('#tide-rail-toggle')] },

@@ -4,12 +4,12 @@
 // 'change', so the files stream to .NET over the normal InputFile path (type check and size cap unchanged).
 // Registration is idempotent and supports several zones (paste goes to the one that's visible). A zone can take the
 // whole page (an action's Files): a drop anywhere outside another zone, and a paste with nothing focused, go to it, even
-// while it's hidden in a closed context rail, which then opens to show what came.
+// while it's hidden (in a closed context rail), and it asks to be shown (a 'tide:reveal' event, which the rail answers).
 window.tidePasteDrop = (function () {
     let attached = false;
     const zones = []; // { zoneId, pasteInputId, dropInputId|null, anyFile, focusOnly, page }
     const root = document.documentElement;
-    let dragEnds = 0;
+    let dragEnds = 0, lastDrag = 0;
 
     // A zone takes part only while its wrapper element is in the DOM and visible, so paste goes to the editor on
     // screen and the listeners stay registered harmlessly across pages. Visible is "has a box". A paste goes first to
@@ -32,40 +32,39 @@ window.tidePasteDrop = (function () {
     // The zone a drop on `target` goes to: the one it's in, else a zone that takes the whole page (not from inside a
     // dialog, whose own controls are what's being used).
     function zoneForTarget(target) {
-        if (!target || !target.closest) return null;
+        if (!target || !target.nodeType) return null;
+        let page = null;
         for (const z of zones) {
-            if (z.dropInputId && target.closest('#' + z.zoneId)) {
-                const el = document.getElementById(z.zoneId);
-                if (el) return { z, el };
-            }
+            const el = z.dropInputId && document.getElementById(z.zoneId);
+            if (!el) continue;
+            if (el.contains(target)) return { z, el };
+            if (z.page && !page) page = { z, el, page: true };
         }
-        if (target.closest('[role="dialog"]:not(#tide-rail), [role="alertdialog"]')) return null;
-        for (const z of zones) {
-            const el = z.page && z.dropInputId && document.getElementById(z.zoneId);
-            if (el) return { z, el, page: true };
-        }
-        return null;
+        const dialog = page && target.closest && target.closest('[role="dialog"], [role="alertdialog"]');
+        return dialog && !dialog.contains(page.el) ? null : page;
     }
 
     // While files are dragged over a page that takes them, html[data-file-drag] shows its drop hint (app.css). A drag
-    // fires dragover every few milliseconds, so the hint goes once they stop: dropped, or carried off the window.
+    // fires dragover every few milliseconds, so the hint goes once they stop for a moment: dropped, or carried off the
+    // window. One timer looks again until they have.
     function dragging(on) {
-        clearTimeout(dragEnds);
-        if (!on) { root.removeAttribute('data-file-drag'); return; }
+        if (!on) { clearTimeout(dragEnds); dragEnds = 0; root.removeAttribute('data-file-drag'); return; }
+        lastDrag = performance.now();
+        if (dragEnds) return;
         root.setAttribute('data-file-drag', '');
-        dragEnds = setTimeout(function () { root.removeAttribute('data-file-drag'); }, 300);
+        (function wait() {
+            const left = 300 - (performance.now() - lastDrag);
+            dragEnds = left > 0 ? setTimeout(wait, left) : (root.removeAttribute('data-file-drag'), 0);
+        })();
     }
 
-    // Files that reached a page zone hidden in the closed context rail: the rail opens to show them waiting.
+    // Files that reached a page zone while it's hidden: it asks to be shown, so they're seen waiting.
     function onChange(e) {
         const t = e.target;
         if (!t || t.type !== 'file') return;
         for (const z of zones) {
             const el = z.page && (z.pasteInputId === t.id || z.dropInputId === t.id) && document.getElementById(z.zoneId);
-            if (el && el.getClientRects().length === 0 && window.tideRail && el.closest('#tide-rail')) {
-                window.tideRail.show();
-                el.scrollIntoView({ block: 'nearest' });
-            }
+            if (el && el.getClientRects().length === 0) el.dispatchEvent(new CustomEvent('tide:reveal', { bubbles: true }));
         }
     }
 
@@ -170,8 +169,8 @@ window.tidePasteDrop = (function () {
         const v = zoneForTarget(e.target);
         if (!v || !carriesFiles(e)) return;
         e.preventDefault();
-        v.el.classList.remove('tide-dropping');
-        dragging(false);
+        if (v.page) dragging(false);
+        else v.el.classList.remove('tide-dropping');
         const files = e.dataTransfer && e.dataTransfer.files;
         if (files && files.length) push(v.z.dropInputId, files);
     }
@@ -180,7 +179,7 @@ window.tidePasteDrop = (function () {
         // pasteInputId: hidden InputFile that receives a pasted image. dropInputId: hidden InputFile that
         // receives dropped files (pass null to disable drop for this zone). anyFile: a pasted file that
         // isn't an image is taken too. focusOnly: the zone takes a paste only while it, or something in it, has the focus.
-        // page: the zone takes a drop anywhere on the page and, unless focusOnly, a paste with nothing focused.
+        // page: the zone takes a drop anywhere on the page, and a paste with nothing focused (so it isn't focusOnly).
         register: function (zoneId, pasteInputId, dropInputId, anyFile, focusOnly, page) {
             const existing = zones.find(z => z.zoneId === zoneId);
             if (existing) {

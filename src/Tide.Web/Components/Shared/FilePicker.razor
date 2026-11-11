@@ -30,15 +30,11 @@
         </ul>
     }
     <div class="d-flex gap-2 align-items-center flex-wrap">
-        @if (TakesThePage)
-        {
-            <span class="small tide-muted">Drop them anywhere on the page, or paste. @FileSvc.LimitsText@(_reading ? " Reading…" : "")</span>
-        }
-        else
+        @if (!TakesThePage)
         {
             <label for="@InputId" class="btn btn-outline-secondary btn-sm"><span class="bi bi-paperclip" aria-hidden="true"></span> @PickLabel</label>
-            <span class="small tide-muted">or drop them here, or paste while this box has focus. @FileSvc.LimitsText@(_reading ? " Reading…" : "")</span>
         }
+        <span class="small tide-muted">@(TakesThePage ? "Drop them anywhere on the page, or paste." : "or drop them here, or paste while this box has focus.") @FileSvc.LimitsText@(_reading ? " Reading…" : "")</span>
         <InputFile id="@InputId" class="d-none" multiple OnChange="OnPick" />
     </div>
     @ChildContent

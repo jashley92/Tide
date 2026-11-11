@@ -187,36 +187,23 @@ window.tideRail = (function () {
         root.removeAttribute('data-rail');
         sync();
     }
-    // Tab and Shift+Tab in the open overlay wrap round its own controls, as a dialog's do: the page under it is inert,
-    // and without this the browser would take focus out to its own controls (to <body>) once a cycle.
-    var FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), '
-        + 'textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
-    function trap(e) {
-        var r = rail();
-        if (!r || !over()) return;
-        // A dialog open inside the rail holds the keys itself (dialog.js).
-        var at = document.activeElement, holder = at && at.closest && at.closest('[role="dialog"], [role="alertdialog"]');
-        if (holder && holder !== r) return;
-        var stops = Array.prototype.filter.call(r.querySelectorAll(FOCUSABLE), function (el) {
-            return el.getClientRects().length > 0 && !el.closest('[inert], [hidden]');
-        });
-        if (!stops.length) { e.preventDefault(); r.focus(); return; }
-        var first = stops[0], last = stops[stops.length - 1];
-        var to = !r.contains(at) || at === r ? (e.shiftKey ? last : first)
-            : e.shiftKey && at === first ? last
-            : !e.shiftKey && at === last ? first : null;
-        if (to) { e.preventDefault(); to.focus(); }
-    }
     // A page with a rail has started: an overlay left open on the page before doesn't open over this one.
     function start() {
         root.removeAttribute('data-rail-over');
         sync();
     }
     window.addEventListener('resize', function () { if (rail()) sync(); });
+    // Something in the closed rail asks to be seen (files that came to its Files box: paste-drop.js).
+    document.addEventListener('tide:reveal', function (e) {
+        var r = rail();
+        if (!r || !r.contains(e.target)) return;
+        show();
+        e.target.scrollIntoView({ block: 'nearest' });
+    });
     sync();
     // Whether the page has a rail, so "]" does something (the "?" list names the key only then).
     function has() { return !!rail(); }
-    return { toggle: toggle, show: show, start: start, over: over, has: has, trap: trap };
+    return { toggle: toggle, show: show, start: start, over: over, has: has };
 })();
 
 // Copies text to the clipboard (the Copy buttons on indicators). Returns whether it worked.
@@ -233,7 +220,10 @@ document.addEventListener('click', function (e) {
     // The Context button, and the rail's own Close (shown only while the rail is, so toggling closes it). A click on the
     // overlay's backdrop (drawn by the rail itself, beside it) closes it too.
     if (e.target.closest('#tide-rail-toggle, #tide-rail-close')) { window.tideRail.toggle(); return; }
-    if (e.target.id === 'tide-rail' && window.tideRail.over() && outside(e, e.target.getBoundingClientRect())) { window.tideRail.toggle(); return; }
+    if (e.target.id === 'tide-rail' && window.tideRail.over()) {
+        var box = e.target.getBoundingClientRect();
+        if (e.clientX < box.left || e.clientX > box.right || e.clientY < box.top || e.clientY > box.bottom) { window.tideRail.toggle(); return; }
+    }
     // Choosing a link closes the phone menu, so the page it opens is what you see.
     if (window.tideNav.isOpen() && e.target.closest('#tide-nav-links a')) window.tideNav.setOpen(false);
     // The circuit-disconnect modal: retry the connection, or reload when the server lost the session.
@@ -247,16 +237,6 @@ document.addEventListener('click', function (e) {
         var bar = document.getElementById('blazor-error-ui');
         if (bar) bar.style.display = 'none';
     }
-});
-
-// Whether a click fell outside a box (on the overlay's backdrop, around the rail).
-function outside(e, box) {
-    return e.clientX < box.left || e.clientX > box.right || e.clientY < box.top || e.clientY > box.bottom;
-}
-
-// Tab in the open context rail overlay stays in it (tideRail.trap).
-document.addEventListener('keydown', function (e) {
-    if (e.key === 'Tab' && !e.altKey && !e.ctrlKey && !e.metaKey && !e.defaultPrevented) window.tideRail.trap(e);
 });
 
 // Escape closes the phone menu and returns focus to its button.

@@ -90,7 +90,7 @@ else
                 }
                 <PriorityBadge Priority="a.Priority" />
                 @* Its due date and how it stands, said together ("Due Thu Nov 12 · due soon"); then what kind of work it is. *@
-                <SlaBadge State="state" Due="a.DueDate" Today="ActionSvc.Today" WithDate="true" Class="tide-action-due" />
+                <SlaBadge State="state" Due="a.DueDate" Today="ActionSvc.Today" Date="SlaDate.Before" Class="tide-action-due" />
                 <Badge Class="tide-action-kind">@ActionService.KindName(a.Kind)</Badge>
                 <EscalatedBadge At="a.EscalatedSince" />
                 @if (a.Outcome != ActionOutcome.None) { <span>@ActionService.OutcomeName(a.Outcome)</span> }

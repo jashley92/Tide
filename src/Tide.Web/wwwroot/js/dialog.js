@@ -3,22 +3,29 @@
 window.tideDialog = (function () {
     let opener = null;
 
-    // The controls Tab can reach in a dialog, in order. One inside an inert part (a folded ATT&CK column) can't take
-    // focus, so it's left out: the Tab cycle's first and last are always controls the browser will actually focus.
+    // The controls Tab can reach in a dialog, in order. One inside an inert or hidden part (a folded ATT&CK column, a
+    // closed file's details) or not drawn can't take focus, so it's left out: the Tab cycle's first and last are always
+    // controls the browser will actually focus.
     function focusables(container) {
         return Array.prototype.filter.call(
-            container.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), select, textarea, [tabindex="0"]'),
-            function (el) { return !el.closest('[inert]'); });
+            container.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), '
+                + 'textarea:not([disabled]), summary, [tabindex="0"]'),
+            function (el) { return !el.closest('[inert], [hidden]') && el.getClientRects().length > 0; });
     }
+
+    // A modal dialog: a confirmation (ConfirmDialog) or the palette, the ATT&CK matrix picker, or the context rail while
+    // it's open over the page (theme.js marks it aria-modal then). The lightbox handles its own keys, below.
+    var MODAL = '.tide-modal, .tide-atkm-panel, .tide-rail[aria-modal="true"]';
 
     // Inside the lightbox, only the keys it handles lose their default (Tab stays on its one button; Enter, Space and
     // Escape close it), so the browser's own shortcuts (zoom, find, copy) still work over a screenshot.
     document.addEventListener('keydown', function (e) {
         if (!e.target || !e.target.closest) return;
-        // A confirmation (ConfirmDialog) or the ATT&CK matrix picker: Tab cycles through its controls and doesn't leave it.
-        var modal = e.target.closest('.tide-modal, .tide-atkm-panel');
+        // In a modal dialog (the innermost, for one opened inside another), Tab cycles through its controls and doesn't
+        // leave it.
+        var modal = e.target.closest(MODAL);
         // Focus outside an open dialog (it was on the page, or dropped to the body): Tab goes into the dialog, not behind it.
-        var open = !modal && e.key === 'Tab' ? document.querySelector('.tide-modal') : null;
+        var open = !modal && e.key === 'Tab' ? document.querySelector(MODAL) : null;
         if (open) {
             var into = focusables(open)[0];
             if (into) { e.preventDefault(); into.focus(); }

@@ -22,6 +22,7 @@
 @inject PrerenderHandoff Handoff
 @inject ICurrentUser CurrentUser
 
+@{ var (generate, addersOnTop, addersOnHunt) = (_preview is null && (_sources.Indicators > 0 || StoryOffersMore), AddersOnTop, AddersOnHunt); }
 <div class="tide-card">
     <h2>Hunt queries <span class="tide-count tide-muted fw-normal">(@Action.Hunts.Count)</span></h2>
     @if (CanWork)
@@ -51,7 +52,7 @@
                 }
             </div>
         }
-        @if (((_sources.Indicators > 0 || StoryOffersMore) && _preview is null) || AddersAt == TopHost)
+        @if (generate || addersOnTop)
         {
             <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
                 @* The preview is this button's query already; Keep this query is the button then. *@
@@ -64,14 +65,14 @@
                 {
                     <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Generate(true)"><span class="bi bi-diagram-3" aria-hidden="true"></span> Generate from @Ui.Plural(_sources.StoryIndicators, "indicator"), with the story's @_sources.StoryArticles articles</button>
                 }
-                @if (AddersAt == TopHost) { @Adders }
+                @if (addersOnTop) { @Adders }
             </div>
         }
         @if (_sources.StoryIndicators == 0)
         {
             <p class="small tide-muted">@(Action.Article is null ? "Not from an article, so there are no indicators yet. Add some, or write a query by hand." : "No indicators on the article. Add some, or write a query by hand.")</p>
         }
-        @if (AddersAt == TopHost) { @AdderPanels }
+        @if (addersOnTop) { @AdderPanels }
         @if (_preview is { } preview)
         {
             <div class="tide-hunt tide-hunt-preview">
@@ -106,6 +107,7 @@
     @foreach (var h in Action.Hunts)
     {
         var id = "hunt-" + h.Id.ToString("N");
+        var working = CanWork && _editingHunt != h.Id;
         <div class="tide-hunt" @key="h.Id">
             <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
                 <strong>@HuntQueryBuilder.DialectName(h.Dialect)</strong>
@@ -131,7 +133,7 @@
                 <pre id="@id" class="tide-query">@h.Text</pre>
                 <div class="d-flex gap-2 align-items-center flex-wrap">
                     <button type="button" class="btn @(h.Result == HuntResult.NotRun ? "btn-primary" : "btn-outline-secondary") btn-sm" data-copy-target="@id" data-copy-status="@(id + "-status")" @onclick="() => _copied.Add(h.Id)"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
-                    @if (AddersAt == h.Id.ToString()) { @Adders }
+                    @if (addersOnHunt == h.Id) { @Adders }
                     @if (CanWork)
                     {
                         <button class="btn btn-outline-secondary btn-sm" @onclick="() => EditText(h)"><span class="bi bi-pencil" aria-hidden="true"></span> Edit</button>
@@ -146,15 +148,15 @@
                     }
                     <span id="@(id + "-status")" class="small tide-muted" role="status" aria-live="polite"></span>
                 </div>
-                @if (AddersAt == h.Id.ToString()) { @AdderPanels }
+                @if (addersOnHunt == h.Id) { @AdderPanels }
             }
             @* What it found: closing clean (its days box first, so a query that sets no range of its own gets its days
                said before anything else) or recording hits, and a screenshot for the action's Files; or what was recorded. *@
-            @if ((CanWork && _editingHunt != h.Id) || h.Result != HuntResult.NotRun)
+            @if (working || h.Result != HuntResult.NotRun)
             {
                 <div class="tide-hunt-found">
                     <h3 class="tide-hunt-found-h">What did it find?</h3>
-                    @if (CanWork && _editingHunt != h.Id)
+                    @if (working)
                     {
                         <div class="d-flex gap-2 align-items-center flex-wrap">
                             @if (CanClose(h))
@@ -267,14 +269,11 @@
     private const string DialectPref = "hunt-dialect";
 
     // Where the ways to add a query (Write one by hand, Add a saved query, Add indicators) sit: beside the first Copy, the
-    // preview's or the first query's, with their panels under that row; above, by the Generate buttons, while there's
-    // nothing to copy (or the first query is being edited).
-    private const string TopHost = "top", PreviewHost = "preview";
+    // preview's (which always has them) or the first query's, with their panels under that row; else above, by the
+    // Generate buttons, while there's nothing to copy (or the first query is being edited).
+    private Guid? AddersOnHunt => CanWork && _preview is null && Action.Hunts.FirstOrDefault() is { } first && _editingHunt != first.Id ? first.Id : null;
 
-    private string? AddersAt => !CanWork ? null
-        : _preview is not null ? PreviewHost
-        : Action.Hunts.FirstOrDefault() is { } first && _editingHunt != first.Id ? first.Id.ToString()
-        : TopHost;
+    private bool AddersOnTop => CanWork && _preview is null && AddersOnHunt is null;
 
     private RenderFragment Adders => @<text>
         <button id="hunt-write" type="button" class="btn btn-link btn-sm" @onclick="() => _writing = !_writing">Write one by hand</button>
