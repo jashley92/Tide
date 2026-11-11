@@ -5,6 +5,7 @@
 @implements IAsyncDisposable
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject ICurrentUser CurrentUser
 
 @if (ShowButton)
 {
@@ -82,7 +83,8 @@
         }
         catch (JSException) { /* the defaults stand */ }
         catch (JSDisconnectedException) { return; }
-        _groups = Shortcuts.For(Nav.ToBaseRelativePath(Nav.Uri), rail);
+        // T on the Actions list is listed for whoever may be given actions (WorkActions, or WriteArticles for all of them).
+        _groups = Shortcuts.For(Nav.ToBaseRelativePath(Nav.Uri), rail, CurrentUser.Has(Permission.WorkActions) || CurrentUser.Has(Permission.WriteArticles));
         _open = true;
         StateHasChanged();
     }

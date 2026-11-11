@@ -19,8 +19,14 @@
 <PageTitle>Actions · TIDE</PageTitle>
 
 <div class="tide-page-head">
-    <div>
+    <div class="tide-actions-title">
         <h1 @ref="_heading" tabindex="-1">Actions</h1>
+        @if (!_asBoard)
+        {
+            @* The list's keys (RowKeys, rows.js), as the ? overlay lists them. *@
+            @* T only for someone who may take actions on. *@
+            <span class="tide-actions-keys"><kbd class="tide-kbd">J</kbd> <kbd class="tide-kbd">K</kbd> move · @if (CanHold) { <kbd class="tide-kbd">T</kbd> <span>take it ·</span> }<kbd class="tide-kbd">Enter</kbd> open</span>
+        }
     </div>
     <div class="d-flex gap-2">
         <a class="btn btn-outline-secondary" href="workload"><span class="bi bi-people" aria-hidden="true"></span> Workload</a>
@@ -36,58 +42,58 @@
     </div>
 </div>
 
-<div class="d-flex flex-wrap align-items-end gap-2">
-    @* Each tab says how many it shows under the filters set (one grouped count, ActionService.ViewCountsAsync); on the
-       board, its open ones. *@
+@* The view tabs, then on their line (as the design has them): the tab this page opens on, Save view, and at the end List
+   or Board. The tabs scroll sideways inside themselves when they don't fit; the rest stays where it is. *@
+<div class="tide-actions-viewrow">
+    @* Each tab says how many open actions it shows under the filters set (one grouped count, ActionService.ViewCountsAsync),
+       the same on the list and the board. *@
     <TabBar Label="Views" Items="@(Views.Where(v => !_asBoard || OnBoard(v.Item1)).Select(v => new TabBarItem(v.Item2, "", Key: v.Item1.ToString(), Count: _counts?.For(v.Item1))).ToList())"
             Active="@_view.ToString()" OnSelect="k => SetView(Enum.Parse<ActionView>(k!))" Class="tide-actions-views" />
-    @if (DefaultFor(_view) is { } shown)
-    {
-        @* The tab this page opens on when a link doesn't say: the person's own, set here. *@
-        <div class="mb-2 small">
+    <div class="tide-actions-viewtools small">
+        @if (DefaultFor(_view) is { } shown)
+        {
+            @* The tab this page opens on when a link doesn't say: the person's own, set here. *@
             @if (shown == SavedView)
             {
-                <span class="tide-muted" id="view-default"><span class="bi bi-star-fill" aria-hidden="true"></span> Opens here</span>
+                <span class="tide-muted" id="view-default" title="Actions opens on this tab when a link doesn't say which"><span class="bi bi-star-fill" aria-hidden="true"></span> <span class="tide-viewtool-text">Opens here</span></span>
             }
             else
             {
                 <button type="button" class="btn btn-link btn-sm p-0" id="view-default" disabled="@_busyDefault" @onclick="() => SetDefaultView(shown)"
-                        title="Open Actions on @ViewLabel(_view) when a link doesn't say which tab"><span class="bi bi-star" aria-hidden="true"></span> Open here by default</button>
+                        title="Open Actions on @ViewLabel(_view) when a link doesn't say which tab"><span class="bi bi-star" aria-hidden="true"></span> <span class="tide-viewtool-text">Open here by default</span></button>
             }
-        </div>
-    }
-    @* The person's own saved views: a link each to the tab, layout and filters it keeps, the one shown marked, with a
-       menu to rename, move or delete it; Save view keeps what's shown now. *@
-    <div class="tide-savedviews flex-grow-1 mb-2">
-        @if (_saved.Count > 0)
-        {
-            var current = ActiveSaved;
-            <nav class="tide-savedviews-list" aria-label="Saved views">
-                @foreach (var v in _saved)
-                {
-                    var on = v.Id == current?.Id;
-                    <span class="tide-savedview" @key="v.Id">
-                        <a class="tide-chip tide-chip-pick @(on ? "selected" : "")" href="@("actions?" + v.Query)" aria-current="@(on ? "page" : null)">@v.Name</a>
-                        <MenuButton Label="@($"{v.Name}: rename, move or delete")" IconOnly="true" Icon="bi-three-dots-vertical" ButtonClass="tide-savedview-menu"
-                                    Items="@SavedMenu(v)" />
-                    </span>
-                }
-            </nav>
         }
         <button type="button" class="tide-filter-add" id="save-view" disabled="@(_saved.Count >= SavedViewService.MaxViews)" @onclick="StartSave"
-                title="@(_saved.Count >= SavedViewService.MaxViews ? $"You can keep up to {SavedViewService.MaxViews} views: delete one to save another" : "Keep this tab, layout and filters as a view of your own, beside the tabs")">
-            <span class="bi bi-bookmark-plus" aria-hidden="true"></span> Save view
+                title="@(_saved.Count >= SavedViewService.MaxViews ? $"You can keep up to {SavedViewService.MaxViews} views: delete one to save another" : "Keep this tab, layout and filters as a view of your own, under the tabs")">
+            <span class="bi bi-bookmark-plus" aria-hidden="true"></span> <span class="tide-viewtool-text">Save view</span>
         </button>
     </div>
-    <TabBar Label="Layout" Level="TabLevel.Sub" Class="mb-2" Active="@(_asBoard ? "board" : "list")" OnSelect="SetLayout"
+    <TabBar Label="Layout" Level="TabLevel.Sub" Class="tide-actions-layout" Active="@(_asBoard ? "board" : "list")" OnSelect="SetLayout"
             Items="@([new TabBarItem("List", "", "bi-list-ul", "list"), new TabBarItem("Board", "", "bi-kanban", "board")])" />
 </div>
+@if (_saved.Count > 0)
+{
+    @* The person's own saved views: a link each to the tab, layout and filters it keeps, the one shown marked, with a
+       menu to rename, move or delete it. *@
+    var current = ActiveSaved;
+    <nav class="tide-savedviews-list tide-actions-saved" aria-label="Saved views">
+        @foreach (var v in _saved)
+        {
+            var on = v.Id == current?.Id;
+            <span class="tide-savedview" @key="v.Id">
+                <a class="tide-chip tide-chip-pick @(on ? "selected" : "")" href="@("actions?" + v.Query)" aria-current="@(on ? "page" : null)">@v.Name</a>
+                <MenuButton Label="@($"{v.Name}: rename, move or delete")" IconOnly="true" Icon="bi-three-dots-vertical" ButtonClass="tide-savedview-menu"
+                            Items="@SavedMenu(v)" />
+            </span>
+        }
+    </nav>
+}
 
 @* One bar for the list and the board (FilterBar): the words, the pills used most, a chip for each other filter and
    + Filter for the rest. They combine, go in the address as before, and a change starts the list again from its first
    page. Two pills on one parameter take turns (Overdue or Due this week, Blocked or Tracking); P1–P2 is the priority
    filter holding exactly those two. The board counts its cards here; the list counts its rows under its search. *@
-<FilterBar Pills="Pills" Filters="Defs" Active="AnyFilter" OnChanged="Refilter" OnClear="ClearFilters"
+<FilterBar Pills="PillsCounted" Filters="Defs" Active="AnyFilter" OnChanged="Refilter" OnClear="ClearFilters"
            Count="@(_asBoard ? $"{Count} action{(Count == 1 ? "" : "s")}" : null)">
     <Search>
         <input type="search" class="tide-maxw-sm form-control form-control-sm" placeholder="Title, A-number or article" aria-label="Search actions" maxlength="200"
@@ -126,7 +132,8 @@
     }
     else
     {
-        <ActionKanban Board="@(_board with { Cards = Matching(_board.Cards) })" Today="ActionSvc.Today" Rules="_rules" MovedBy="_movedBy" OnChanged="Load" OnShowOlder="ShowOlder" />
+        <ActionKanban Board="@(_board with { Cards = Matching(_board.Cards) })" Today="ActionSvc.Today" Rules="_rules" MovedBy="_movedBy" OnChanged="Load" OnShowOlder="ShowOlder"
+                      Counts="@(_counts ?? ActionViewCounts.None)" ClosedDays="_closedDays" />
     }
 }
 else
@@ -135,11 +142,17 @@ else
     @* The server filters, sorts, groups and pages the list, 50 rows a page; the page is ?page=, its pager links. *@
     <ActionTable @ref="_table" PageInAddress="true" ServerSide="true" Total="_total" GroupTotals="_groups" PageSize="ActionService.ListPageSize" OnQuery="Query" Filtered="AnyFilter"
                  Rows="@(_loading ? null : _rows)" Today="ActionSvc.Today" Live="_marks" Rules="_rules" Filter="@Words" GroupByKind="_groupByKind" GroupByUrgency="ByUrgency"
-                 CanTake="_workers.CanTake" OnTake="Take" Busy="_taking"
+                 CanTake="_workers.CanTake" OnTake="Take" Busy="@(_taking || _mover?.Busy == true)" CanWork="CanWorkRow" OnMove="MoveFromMenu"
+                 SelectedId="@SelectedRow?.Id" OnSelect="SelectRow" GroupsUnowned="_groupsUnowned"
                  DefaultSort="@DefaultSort(_view)" Caption="@(ViewName + (_view == ActionView.Closed ? ", most recently closed first" : ByUrgency ? ", grouped by when they're due" : ""))">
         <Empty><EmptyState Icon="@(_view == ActionView.Overdue ? "bi-check2-circle" : "bi-list-check")" Title="@Empty" /></Empty>
     </ActionTable>
 </div>
+@* J/K and the arrows move the selected row (on to the next page at the end), T takes it on, Enter opens it. *@
+<RowKeys RowClass="@ActionTable.RowClassName" Count="_rows.Count" @bind-Selected="_selected" OnOpen="OpenRow" Keys="@(CanHold ? ListKeys : null)" OnKey="RowKey"
+         Page="_page" Pages="@TableView.Pages(_total, ActionService.ListPageSize)" OnPage="TurnPage" Address="RowAddress" />
+@* The Status menu's moves: checked, recorded and asked about as the board's are. *@
+<ActionMover @ref="_mover" Id="list-close" OnChanged="ReadAgain" />
 }
 
 @* Save view and Rename: the view's name. Kept open, saying why, when it's refused (a name already used, the 12th view). *@
@@ -147,7 +160,7 @@ else
     <label class="tide-field-label" for="saved-view-name">Name</label>
     <input id="saved-view-name" class="form-control form-control-sm" maxlength="@SavedActionView.MaxName" @bind="_newName" @bind:event="oninput"
            placeholder="My team's P1s" autocomplete="off" />
-    <div class="form-text">@(_renaming is null ? "Keeps this tab, layout and filters beside the tabs. Only you see your views." : "Only the name changes: the view still opens the same filters.")</div>
+    <div class="form-text">@(_renaming is null ? "Keeps this tab, layout and filters under the tabs. Only you see your views." : "Only the name changes: the view still opens the same filters.")</div>
     @if (_nameError is not null) { <div class="text-danger small mt-2" role="alert">@_nameError</div> }
 </ConfirmDialog>
 <ConfirmDialog @ref="_confirm" />
@@ -265,8 +278,8 @@ else
     private IReadOnlyList<ActionRow> Unfiltered => _asBoard ? _board?.Cards ?? [] : _rows;
     private IReadOnlyList<ActionRow> Shown => _asBoard ? Matching(Unfiltered) : _rows;
     private int Count => Shown.Count;
-    // Mine is grouped by when it's due, unless it's asked to be by kind.
-    private bool ByUrgency => _view == ActionView.Mine && !_groupByKind;
+    // Mine, My teams and All open are grouped by when they're due, unless asked to be by kind.
+    private bool ByUrgency => _view is ActionView.Mine or ActionView.MyTeams or ActionView.Open && !_groupByKind;
     private string ViewName => Views.First(v => v.Item1 == _view).Item2 + " actions";
 
     // The administrators' card rules, and the one chosen as a filter (?rule=), with how many each matches: the list's are
@@ -299,7 +312,7 @@ else
     private IReadOnlyList<Team> _teams = [];
 
     // The list: this page's rows, how many match in all, and in each group; its page and sort. The board: how far back
-    // its closed columns reach (Show older takes them to 30 days, for this visit).
+    // its closed strip counts ("Show the last 30 days" takes it to 30, for this visit).
     private IReadOnlyList<ActionRow> _rows = [];
     private int _total, _page = 1, _closedDays = ActionService.BoardClosedDays;
     private IReadOnlyDictionary<string, int>? _groups;
@@ -410,6 +423,7 @@ else
         _due = DueFrom(DueParam);
         _status = EnumNames.OrNull<ActionStatus>(StatusParam, ignoreCase: true) is { } st && OpenStatuses.Contains(st) ? st : null;
         _page = TableView.PageFrom(PageParam);
+        _selected = RowSelection.From(RowParam);
         _parentNumber = query.Parent is > 0 ? query.Parent : null;
         _side = EnumNames.OrNull<ActionTeams>(TeamsParam, ignoreCase: true);
         _raised = string.Equals(RaisedParam, Me, StringComparison.OrdinalIgnoreCase);
@@ -449,6 +463,7 @@ else
         (_parentNumber, _active, _side, _raised, _holders) = (p._parentNumber, p._active, p._side, p._raised, p._holders);
         (_total, _page, _groups, _sort, _ruleCounts) = (p._total, p._page, p._groups, p._sort, p._ruleCounts);
         (_saved, _loading, _adopted, _counts, _workers) = (p._saved, false, true, p._counts, p._workers);
+        (_selected, _groupsUnowned) = (p._selected, p._groupsUnowned);
     }
 
     // The priorities in the address ("p1,p2"), each once, in order; a name that isn't one is dropped.
@@ -479,6 +494,10 @@ else
         // Held by: nobody, as a pill. From Mine (the person's own) it shows their teams' instead (Refilter).
         new("noowner", "No owner", "assignee", [ActionFilter.Unassigned]) { Title = "Open work nobody has taken on yet" },
     ];
+
+    // The pills as drawn: No owner says how many it would show (counted with the tabs).
+    private IReadOnlyList<FilterPill> PillsCounted => _counts is not { } counts ? Pills
+        : [.. Pills.Select(p => p.Key == "noowner" ? p with { Count = counts.NoOwner(_view) } : p)];
 
     // raised=me: the only value the Raised by filter takes.
     private const string Me = "me";
@@ -578,7 +597,7 @@ else
     internal async Task Refilter()
     {
         if (_view == ActionView.Mine && _assignee == ActionFilter.Unassigned) (_view, _sort) = (ActionView.MyTeams, DefaultSort(ActionView.MyTeams));
-        _page = 1;
+        (_page, _selected) = (1, 0);
         await Load();
         Remember();
     }
@@ -596,7 +615,7 @@ else
     {
         _view = view;
         if (view == ActionView.Mine) _assignee = null;   // Mine is held by you: another holder would show nothing
-        _page = 1;
+        (_page, _selected) = (1, 0);
         _sort = DefaultSort(view);
         Remember();
         await Load();
@@ -671,7 +690,7 @@ else
         };
     }
 
-    // --- Saved views (SavedViewService): the person's own, beside the tabs --------------------------------------------
+    // --- Saved views (SavedViewService): the person's own, under the tabs ---------------------------------------------
 
     private IReadOnlyList<ActionsSavedView> _saved = [];
     private ConfirmDialog _nameDialog = default!;
@@ -728,7 +747,7 @@ else
             else
             {
                 var saved = await SavedViews.SaveAsync(_newName ?? "", ShownQuery() ?? throw new ArgumentException("These filters are too long to keep as a view."));
-                Toasts.Show($"Saved \"{saved.Name}\" beside the tabs.");
+                Toasts.Show($"Saved \"{saved.Name}\" under the tabs.");
             }
             _saved = await SavedViews.ListAsync();
             return true;
@@ -763,6 +782,66 @@ else
     }
 
     private ConfirmDialog _confirm = default!;
+
+    // --- The selected row, its keys, and the Status menu ----------------------------------------------------------------
+
+    /// <summary>The selected row's place on the list's page, from 0 (?row=; RowSelection).</summary>
+    [SupplyParameterFromQuery(Name = RowSelection.Param)] public string? RowParam { get; set; }
+
+    private int _selected;
+    private ActionMover? _mover;
+    private IReadOnlyDictionary<string, int> _groupsUnowned = new Dictionary<string, int>();
+
+    internal int Selected => _selected;
+    private ActionRow? SelectedRow => _selected < _rows.Count ? _rows[_selected] : null;
+
+    // T takes the selected row on (rows.js leaves it alone while typing, in the rail, or with letter keys off).
+    private static readonly IReadOnlyDictionary<string, string> ListKeys = new Dictionary<string, string> { ["t"] = "take" };
+
+    private bool CanWorkRow(ActionRow r) => _workers.CanWork(r.TeamId);
+
+    private void SelectRow(ActionRow r)
+    {
+        for (var i = 0; i < _rows.Count; i++)
+            if (_rows[i].Id == r.Id) _selected = i;
+    }
+
+    // This history entry's address with the row selected (rows.js writes it in place, navigating nowhere).
+    private string RowAddress(int selected) => Nav.GetUriWithQueryParameter(RowSelection.Param, selected > 0 ? selected : null);
+
+    private void OpenRow(int at)
+    {
+        if (at < _rows.Count) Nav.NavigateTo(Ui.ActionUrl(_rows[at].Number));
+    }
+
+    /// <summary>A key of the list's own on the selected row: T takes it on, where taking is allowed.</summary>
+    internal async Task RowKey(string action)
+    {
+        if (action == "take" && SelectedRow is { } row && _workers.CanTake(row)) await Take(row);
+    }
+
+    // J past the page's last row, or K before its first: the next or previous page, its first or last row selected.
+    private async Task TurnPage(RowMove move)
+    {
+        _page += move == RowMove.NextPage ? 1 : -1;
+        await Read(quiet: true);
+        _selected = move == RowMove.NextPage ? 0 : RowSelection.Last(_rows.Count);
+        Remember();
+    }
+
+    private Task MoveFromMenu((ActionRow Row, ActionStatus To) move) => MoveRow(move.Row, move.To);
+
+    /// <summary>The Status menu's choice: the action moves there as the board's Move menu moves it (ActionMover).</summary>
+    internal async Task MoveRow(ActionRow row, ActionStatus to)
+    {
+        if (_mover is null) return;
+        var was = _rows;
+        await _mover.MoveAsync(row, to);
+        KeepPlace(was, row);
+    }
+
+    // After a move from the list, or one refused as stale: the list is read again in place.
+    private Task ReadAgain() => Read(quiet: true);
 
     // --- Counts, No owner and Take it ---------------------------------------------------------------------------------
 
@@ -833,12 +912,18 @@ else
         finally { _taking = false; }
         var was = _rows;
         await Read(quiet: true);
-        // Focus stays on the row, or when it has left the list (No owner), goes to the next row, else the one before,
-        // else the heading.
+        KeepPlace(was, row);
+    }
+
+    // After a row's action was taken or moved and the list read again: focus stays on the row, or when it has left the
+    // list (No owner, a status filter), goes to the next row, else the one before, else the heading.
+    private void KeepPlace(IReadOnlyList<ActionRow> was, ActionRow row)
+    {
         var at = was.ToList().FindIndex(r => r.Id == row.Id);
         bool Still(ActionRow r) => _rows.Any(x => x.Id == r.Id);
         var next = was.Skip(at).FirstOrDefault(Still) ?? was.Take(at).LastOrDefault(Still);
         (_refocus, _focusId) = (true, next?.Id);
+        if (next is not null) SelectRow(next);
     }
 
     // A new sort from the list's headings, or "Clear the filter" from its empty state: from the first page.
@@ -846,15 +931,15 @@ else
     {
         _sort = q.Sort;
         _search = string.IsNullOrWhiteSpace(q.Filter) ? null : q.Filter.Trim();
-        _page = 1;
+        (_page, _selected) = (1, 0);
         await Load();
         Remember();
     }
 
-    // Show older under the board's Done: the closed columns reach back 30 days, for this visit.
+    // "Show the last 30 days" under the board, or "the last 7 days" back again: how far its closed strip counts, for this visit.
     private async Task ShowOlder()
     {
-        _closedDays = ActionService.BoardOlderDays;
+        _closedDays = _closedDays < ActionService.BoardOlderDays ? ActionService.BoardOlderDays : ActionService.BoardClosedDays;
         await Load();
     }
 
@@ -885,7 +970,7 @@ else
         var counts = ActionSvc.ViewCountsAsync(filter, _rules.FirstOrDefault(r => r.Id == _ruleId), _asBoard ? _closedDays : null);
         if (_asBoard)
         {
-            var board = ActionSvc.BoardAsync(filter, _closedDays);
+            var board = ActionSvc.BoardAsync(filter);
             await Task.WhenAll(active, board, counts);
             (_board, _active, _counts) = (board.Result, active.Result, counts.Result);
             _ruleCounts = _rules.Where(r => r.ShowAsFilter).ToDictionary(r => r.Id, r => _board.Cards.Count(c => ActionRules.Matches(r, c, ActionSvc.Today, ActionSvc.Days)));
@@ -899,7 +984,8 @@ else
         // A page past the end (an old link, or the list shrank) shows the last one; the pager says which, and so does the
         // address (in place, recorded first so it isn't read again; a prerender can't move it, and the live page does).
         var asked = _page;
-        (_rows, _total, _page, _groups) = (page.Rows, page.Total, page.Page, page.Groups);
+        (_rows, _total, _page, _groups, _groupsUnowned) = (page.Rows, page.Total, page.Page, page.Groups, page.GroupsUnowned);
+        _selected = RowSelection.Clamp(_selected, _rows.Count);
         if (_page != asked && _applied is { } applied)
         {
             _applied = applied with { Page = _page > 1 ? _page.ToString(System.Globalization.CultureInfo.InvariantCulture) : null };

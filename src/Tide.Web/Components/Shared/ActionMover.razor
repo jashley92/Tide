@@ -1,0 +1,96 @@
+@* Moves an action to another status: the board's Move menu and drops, and the list's Status menu. ActionService.MoveAsync
+   makes the move, checking that the person may work the action and that it's still in the status they saw, and records
+   it in the action's history and the audit log. A move to a closed status asks for the outcome (required for Done) and
+   an optional note first; a parent closed while its parts are open is asked about first; a move over a team's limit,
+   when the team warns, asks why. A move refused because the action changed meanwhile says so, and the caller reads its
+   actions again. It draws only its dialogs. *@
+@inject ActionService ActionSvc
+@inject ToastService Toasts
+
+<ConfirmDialog @ref="_closeDialog" Form="true" Confirming="ConfirmClose"
+               ConfirmDisabled="@(_closing is { } closing && !ActionCloseFields.CanClose(closing.To, _outcome))">
+    @if (_closing is { } pending)
+    {
+        <ActionCloseFields Kind="pending.Card.Kind" Current="pending.Card.Outcome" To="pending.To" Id="@Id" @bind-Outcome="_outcome" @bind-Note="_note" />
+    }
+</ConfirmDialog>
+<ConfirmDialog @ref="_confirm" />
+<OverLimitDialog @ref="_overLimit" />
+
+@code {
+    /// <summary>After a move, or one refused as stale: the caller reads its actions again.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    /// <summary>The outcome fields' id prefix (one mover per page).</summary>
+    [Parameter] public string Id { get; set; } = "move";
+
+    /// <summary>While a move is being made, the caller's move controls wait.</summary>
+    public bool Busy { get; private set; }
+
+    private sealed record PendingClose(ActionRow Card, ActionStatus To, Action? Refused);
+
+    private ConfirmDialog _closeDialog = default!;
+    private ConfirmDialog _confirm = default!;
+    private OverLimitDialog _overLimit = default!;
+    private PendingClose? _closing;
+    private ActionOutcome _outcome;
+    private string? _note;
+    private bool _moved;
+
+    /// <summary>
+    /// Moves <paramref name="card"/> from the status it was shown in to <paramref name="to"/>, asking first what a move
+    /// there needs. True when it moved. <paramref name="refused"/> is called when it didn't (asked and cancelled, stale or
+    /// refused), before the caller reads again.
+    /// </summary>
+    public async Task<bool> MoveAsync(ActionRow card, ActionStatus to, Action? refused = null)
+    {
+        if (ActionItem.IsClosedStatus(to))
+        {
+            if (card.ChildrenOpen > 0 && !await ActionPrompts.ConfirmCloseParent(_confirm, card.Number, card.ChildrenOpen))
+            {
+                refused?.Invoke();
+                return false;
+            }
+            (_closing, _outcome, _note, _moved) = (new PendingClose(card, to, refused), ActionOutcome.None, null, false);   // Done: chosen in the dialog
+            StateHasChanged();   // a drop comes from script, not an event: draw the dialog's fields for this card first
+            var status = ActionService.StatusName(to);
+            await _closeDialog.Ask($"Move {Ui.ActionLabel(card.Number)} to {status}", card.Title, $"Move to {status}", danger: false);
+            _closing = null;
+            if (!_moved) refused?.Invoke();
+            return _moved;
+        }
+        var moved = await Run(card, to, ActionOutcome.None, null, refused);
+        if (!moved) refused?.Invoke();
+        return moved;
+    }
+
+    // The dialog's button: true closes it (moved, or the action changed underneath and the caller read again).
+    private async Task<bool> ConfirmClose() =>
+        _closing is not { } p || (_moved = await Run(p.Card, p.To, _outcome, _note, p.Refused)) || _closing is null;
+
+    private async Task<bool> Run(ActionRow card, ActionStatus to, ActionOutcome outcome, string? note, Action? refused)
+    {
+        Busy = true;
+        try
+        {
+            if (!await _overLimit.RunAsync(reason => ActionSvc.MoveAsync(card.Id, card.Status, to, outcome, note, reason))) return false;
+            Toasts.Show($"{Ui.ActionLabel(card.Number)} moved to {ActionService.StatusName(to)}.");
+            await OnChanged.InvokeAsync();
+            return true;
+        }
+        catch (StaleEditException ex)
+        {
+            Toasts.Error(ex.Message);
+            refused?.Invoke();   // before the caller reads again
+            _closing = null;
+            await OnChanged.InvokeAsync();
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            return false;
+        }
+        finally { Busy = false; }
+    }
+}

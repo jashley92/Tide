@@ -137,7 +137,8 @@ public class ContextRailTests(TideApp app) : IClassFixture<TideApp>
     public async Task TheShortcutsOverlay_ListsTheRailsKey_OnlyWhenThePageHasARail(bool rail)
     {
         await using var sp = new ServiceCollection().AddSingleton<Microsoft.JSInterop.IJSRuntime>(new Browser(rail))
-            .AddSingleton<NavigationManager, AtArticles>().BuildServiceProvider();
+            .AddSingleton<NavigationManager, AtArticles>()
+            .AddSingleton<Tide.Application.Abstractions.ICurrentUser>(new FakeUser(Tide.Domain.Enums.AppRole.Analyst)).BuildServiceProvider();
         using var renderer = new RecordingRenderer(sp);
         var overlay = await renderer.Mount<ShortcutsOverlay>();
         await renderer.Dispatcher.InvokeAsync(overlay.Open);

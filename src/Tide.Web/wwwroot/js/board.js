@@ -1,14 +1,16 @@
-// Actions board: drag a card to another column to move the action there. CSP-safe (an external file, no inline
-// handlers). The drop goes to .NET, which checks and makes the move (ActionService.MoveAsync); only cards the person may
-// move are draggable. Each card also has a Move menu, the way to do this from the keyboard.
+// Actions board: drag a card to another lane, or onto a chip on the closed strip, to move the action there. CSP-safe (an
+// external file, no inline handlers). The drop goes to .NET, which checks and makes the move (ActionService.MoveAsync);
+// only cards the person may move are draggable. Each card also has a Move menu, the way to do this from the keyboard.
 // While a card is held, .NET hears when the drag starts, each time it crosses into another column, and when it ends (a
 // few calls a drag, not the pointer's path), so everyone else's board can show who is moving it and where (BoardDrags).
 // When someone else's move arrives, play() slides the card in from the column it left.
 // The Move menu, from the keyboard: opening it focuses its first option (focusMenu), the arrows and Home/End move
 // between its options, and Esc gives focus back to the Move button (.NET closes the menu). After a move from it, focus
-// goes to the card's Move button in its new column (focusMove).
+// goes to the card's Move button in its new lane, or when it has left the board (closed), to the card that was after it
+// in its lane, else the one before, else the lane's heading (focusPlace). A card dragged while focus was in it does the
+// same once its drop is done.
 window.tideBoard = (function () {
-    let ref = null, root = null, dragging = null, over = null;
+    let ref = null, root = null, dragging = null, over = null, focusedAtPress = null;
 
     function tell(method) {
         if (!ref) return;
@@ -23,10 +25,11 @@ window.tideBoard = (function () {
         tell('OnDragging', dragging.dataset.id, status);
     }
 
-    function column(e) { return e.target && e.target.closest ? e.target.closest('.tide-kcol') : null; }
+    // Where a card is over: a lane, or a chip on the closed strip (both carry the status a drop moves it to).
+    function column(e) { return e.target && e.target.closest ? e.target.closest('.tide-kcol, .tide-kchip') : null; }
 
     function mark(col) {
-        root.querySelectorAll('.tide-kcol.over').forEach(function (c) { if (c !== col) c.classList.remove('over'); });
+        root.querySelectorAll('.over').forEach(function (c) { if (c !== col) c.classList.remove('over'); });
         if (col) col.classList.add('over');
     }
 
@@ -38,6 +41,12 @@ window.tideBoard = (function () {
         dragging = null;
         over = null;
         if (root) mark(null);
+    }
+
+    // The card that had focus in it as the pointer pressed on it (pressing moves focus off it before the drag starts).
+    function onPress(e) {
+        const c = e.target && e.target.closest ? e.target.closest('.tide-kcard') : null;
+        focusedAtPress = c && c.contains(document.activeElement) ? c : null;
     }
 
     function onDragStart(e) {
@@ -72,8 +81,12 @@ window.tideBoard = (function () {
         if (!col) return;
         e.preventDefault();
         const id = dragging.dataset.id, from = dragging.dataset.status, to = col.dataset.status;
+        const place = focusedAtPress === dragging ? beside(dragging) : null;
         end();
-        if (from !== to && ref) ref.invokeMethodAsync('OnCardDropped', id, from, to).catch(function () { });
+        if (from === to || !ref) return;
+        ref.invokeMethodAsync('OnCardDropped', id, from, to).then(function () {
+            if (place) requestAnimationFrame(function () { focusPlace(id, place.next, place.prev, place.heading); });
+        }, function () { });
     }
 
     // Someone else moved these cards: each slides in from the column it left (the card's glow and "Moved by" are
@@ -100,10 +113,24 @@ window.tideBoard = (function () {
         if (first) first.focus();
     }
 
-    function focusMove(id) {
-        const c = card(id);
-        const move = c && c.querySelector('.tide-kcard-move');
-        if (move) move.focus();
+    // The cards either side of this one in its lane, and its lane's heading.
+    function beside(c) {
+        const lane = c.closest('.tide-kcol'), cards = lane ? Array.prototype.slice.call(lane.querySelectorAll('.tide-kcard')) : [], at = cards.indexOf(c);
+        const id = function (x) { return x ? x.dataset.id : null; };
+        return { next: id(cards[at + 1]), prev: id(cards[at - 1]), heading: lane && lane.querySelector('.tide-kcol-head') ? lane.querySelector('.tide-kcol-head').id : null };
+    }
+
+    // Focus to a card's Move button (or its title, on a card the person can't move).
+    function focusCard(c) {
+        const el = c && (c.querySelector('.tide-kcard-move') || c.querySelector('.tide-action-ref'));
+        if (el) el.focus();
+        return !!el;
+    }
+
+    function focusPlace(id, next, prev, heading) {
+        if (focusCard(card(id)) || (next && focusCard(card(next))) || (prev && focusCard(card(prev)))) return;
+        const h = heading && document.getElementById(heading);
+        if (h) h.focus();
     }
 
     function onKeyDown(e) {
@@ -125,10 +152,11 @@ window.tideBoard = (function () {
     return {
         play: play,
         focusMenu: focusMenu,
-        focusMove: focusMove,
+        focusPlace: focusPlace,
         start: function (dotnetRef, el) {
             ref = dotnetRef;
             root = el;
+            root.addEventListener('mousedown', onPress, true);
             root.addEventListener('dragstart', onDragStart);
             root.addEventListener('dragover', onDragOver);
             root.addEventListener('dragleave', onDragLeave);
@@ -138,6 +166,7 @@ window.tideBoard = (function () {
         },
         stop: function () {
             if (root) {
+                root.removeEventListener('mousedown', onPress, true);
                 root.removeEventListener('dragstart', onDragStart);
                 root.removeEventListener('dragover', onDragOver);
                 root.removeEventListener('dragleave', onDragLeave);
@@ -149,6 +178,7 @@ window.tideBoard = (function () {
             root = null;
             dragging = null;
             over = null;
+            focusedAtPress = null;
         }
     };
 })();
