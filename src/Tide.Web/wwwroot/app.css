@@ -1802,7 +1802,11 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
     padding: 0 var(--tide-space-2); border-radius: var(--tide-radius-sm); background: var(--tide-warn-soft); color: var(--tide-warn); border: 1px dashed var(--tide-warn); }
 .tide-need.is-blocking { background: var(--tide-threat-soft); color: var(--tide-threat); border-color: var(--tide-threat); }
 /* A need's one-click fix, beside its chip. */
-.tide-need-fix { font-size: var(--tide-text-xs); padding: var(--tide-space-1) var(--tide-space-2); margin-right: var(--tide-space-2); }
+.tide-need-fix, .tide-need-keep { font-size: var(--tide-text-xs); padding: var(--tide-space-1) var(--tide-space-2); margin-right: var(--tide-space-2); }
+/* Its quiet partner, "Keep it", right after it: no frame, only the link colour, so the fix stays the obvious choice. */
+.tide-need-fix:has(+ .tide-need-keep) { margin-right: 0; }
+.tide-need-keep { text-decoration: none; }
+.tide-need-keep:hover { text-decoration: underline; }
 
 /* The edition check: Included, Partly included or Left out for each part of the brief, per edition. */
 .tide-ed-cols { display: grid; grid-template-columns: 1fr 1fr; gap: var(--tide-space-3); }

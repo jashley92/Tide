@@ -933,6 +933,24 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<string>("WhyItMatters")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<DateTimeOffset?>("WhyItMattersKeptAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("WhyItMattersKeptById")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("WhyItMattersKeptByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("WhyItMattersKeptHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int?>("WhyItMattersKeptTlp")
+                        .HasColumnType("int");
+
                     b.Property<int>("WhyItMattersTlp")
                         .HasColumnType("int");
 

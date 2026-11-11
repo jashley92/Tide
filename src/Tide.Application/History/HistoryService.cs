@@ -125,6 +125,8 @@ public static class HistoryFormatter
         nameof(AuditableEntity.CreatedAtUtc), nameof(AuditableEntity.CreatedBy), nameof(Article.AuthorId), nameof(Brief.AnalystId),
         nameof(ArticleTag.ArticleId), nameof(ArticleTag.TagId), nameof(ArticleTechnique.TechniqueId), nameof(ArticleCve.CveId),
         nameof(ActionComment.EditedByName),
+        // A "Keep it" on "Why it matters" reads as the entry's own line (Entry): the row says who and when.
+        nameof(Article.WhyItMattersKeptHash), nameof(Article.WhyItMattersKeptByName), nameof(Article.WhyItMattersKeptAtUtc),
     };
 
     private static readonly Dictionary<string, string> Labels = new(StringComparer.Ordinal)
@@ -139,6 +141,7 @@ public static class HistoryFormatter
         [nameof(Article.Bluf)] = "Bottom line",
         [nameof(Article.WhyItMatters)] = "Why it matters",
         [nameof(Article.WhyItMattersTlp)] = "Why it matters marking",
+        [nameof(Article.WhyItMattersKeptTlp)] = "Why it matters kept at",
         [nameof(Article.RecommendedActions)] = "Recommended actions",
         [nameof(Article.Actors)] = "Threat actors (earlier note)",
         [nameof(Article.Sectors)] = "Sectors",
@@ -196,6 +199,9 @@ public static class HistoryFormatter
         }
         var changes = Changes(row.ChangesJson);
         if (row.Action == "Modified" && changes.Count == 0) return null;
+        // "Keep it" changes nothing anyone wrote, so the entry says what it kept: "Kept “Why it matters” at TLP:CLEAR".
+        if (row.Action == "Modified" && changes is [{ After: { } kept } only] && only.Field == Label(nameof(Article.WhyItMattersKeptTlp)))
+            return new HistoryEntry(row.Id, row.AtUtc, row.UserName, $"Kept “Why it matters” at {kept}", []);
         var verb = row.Action switch { "Added" => "Created", "Deleted" => "Deleted", _ => "Changed" };
         return new HistoryEntry(row.Id, row.AtUtc, row.UserName, verb, row.Action == "Deleted" ? [] : changes);
     }
