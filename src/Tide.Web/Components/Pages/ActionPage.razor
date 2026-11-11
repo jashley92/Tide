@@ -68,7 +68,7 @@ else
     var next = _next;
     // The tools, drawn once: in the wide column for a sweep or hunt (ActionGuide.IsHunt), else beside the work.
     var toolsWide = ActionGuide.IsHunt(a.Kind);
-    RenderFragment tools = @<div class="tide-ord-3">
+    RenderFragment tools = @<div class="@(toolsWide ? "tide-ord-2" : "tide-ord-3")">
         <ActionToolDrawer @key="a.Id" @ref="_drawer" Detail="_detail" Asked="@ToolParam" Today="ActionSvc.Today"
                           Changed="Reload" ToolChanged="KeepTool" />
     </div>;
@@ -150,6 +150,9 @@ else
                 </div>
             }
 
+            @* A sweep's or hunt's tools are its work: here, at full width, first, so Copy is on the first screen. *@
+            @if (toolsWide) { @tools }
+
             @if (!string.IsNullOrWhiteSpace(a.Description))
             {
                 <div class="tide-card tide-ord-2"><h2>Details</h2><Md Text="@a.Description" /></div>
@@ -162,9 +165,6 @@ else
                     <p class="mb-0"><strong>@ActionService.OutcomeName(a.Outcome)</strong>@if (a.OutcomeNote is not null) { <span>: @a.OutcomeNote</span> }</p>
                 </div>
             }
-
-            @* A sweep's or hunt's tools are its work: here, at full width, above what's happened. *@
-            @if (toolsWide) { @tools }
 
             @* A split action's lineage, from its article to each part. On the parent it is the Parts card too, with the
                board link and splitting off more under it; its parts' timeline is a tool in the drawer. *@

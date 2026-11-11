@@ -296,7 +296,7 @@ public class SavedQueryServiceTests : IDisposable
         (await svc.AddIndicatorsAsync(action.Id, [new() { Type = IndicatorType.IpAddress, Value = "203.0.113[.]9" }, new() { Type = IndicatorType.IpAddress, Value = "203.0.113.9" }]))
             .Should().Be(1, "refanged and folded, as an article's are");
         (await svc.AddIndicatorsAsync(action.Id, [new() { Type = IndicatorType.IpAddress, Value = "203.0.113.9" }])).Should().Be(0);
-        (await svc.HuntSourcesAsync(action.Id)).Should().Be(new HuntSources(1, 1, 0));
+        (await svc.HuntSourcesAsync(action.Id) with { Own = [], Story = [], Days = HuntQueryBuilder.DefaultDays, StoryDays = HuntQueryBuilder.DefaultDays }).Should().Be(new HuntSources(1, 1, 0));
 
         (await svc.GenerateHuntAsync(action.Id, "kql")).Text.Should().Contain("\"203.0.113.9\"");
         (await svc.AddSavedHuntAsync(action.Id, await Save("Every value", text: "x in ({{values}})"))).Text.Should().Contain("x in (\"203.0.113.9\")");
@@ -351,7 +351,7 @@ public class SavedQueryServiceTests : IDisposable
 
         var article = (await _db.Articles().GetAsync(action.ArticleId.Value))!;
         article.Indicators.Select(i => i.Value).Should().BeEquivalentTo(["203.0.113.45", "evil.example"]);
-        (await _db.Actions().HuntSourcesAsync(action.Id)).Should().Be(new HuntSources(2, 2, 1), "on the article, not the action");
+        (await _db.Actions().HuntSourcesAsync(action.Id) with { Own = [], Story = [], Days = HuntQueryBuilder.DefaultDays, StoryDays = HuntQueryBuilder.DefaultDays }).Should().Be(new HuntSources(2, 2, 1), "on the article, not the action");
         (await _db.Actions().GetAsync(action.Number))!.Action.Indicators.Should().BeEmpty();
         (await _db.Actions().GetAsync(action.Number))!.Action.Events.Should().Contain(e => e.Text == "Added 1 indicator to the article.");
         editorOpen.Bluf = "Edited meanwhile";
@@ -482,11 +482,10 @@ public class SavedQueryPageTests(TideApp app) : IClassFixture<TideApp>
         await using (var r = await RenderAsync<SavedQueriesPage>(app, "/library/queries?row=" + id))
         {
             var html = await r.Html();
-            html.Should().Contain("<h2>Saved queries</h2>").And.Contain("CrowdStrike Falcon / Next-Gen SIEM</span>").And.Contain("Falcon · Used on 1 action</span>")
+            html.Should().NotContain("<h2>Saved queries</h2>").And.Contain("CrowdStrike Falcon / Next-Gen SIEM</span>").And.Contain("Falcon · Used on 1 action</span>")
                 .And.Contain("Rare parent processes " + tag).And.Contain("Odd parents of cmd.exe").And.Contain("Used on 1 action<")
-                .And.Contain("Saved by Tester, ").And.Contain("New saved query</button>")
-                .And.Contain($"aria-label=\"Edit Rare parent processes {tag}\"").And.Contain($"aria-label=\"Retire Rare parent processes {tag}\"")
-                .And.Contain($"aria-label=\"Delete Rare parent processes {tag}\"", "the tester saved it (and is an administrator)")
+                .And.Contain("Saved by Tester, ")
+                .And.Contain($"aria-label=\"Edit Rare parent processes {tag}\"").And.Contain("aria-haspopup=\"menu\"")
                 .And.NotContain("style=");
             html.Should().NotContain("<h1", "the Library page has the title");
         }

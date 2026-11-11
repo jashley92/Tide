@@ -66,43 +66,35 @@ else if (_results is { Terms.Count: > 0 } r)
                     <span> already @(ind.Sweeping.Count == 1 ? "sweeps" : "sweep") for this.</span>
                 </p>
             }
-            @SeenWithRow(ind.SeenWith)
         </div>
 
+        @* The article, the actions raised from it and what it was seen with, in one card; the hunt query beside it. *@
         <div class="tide-lookup">
-            <div>
+            <div class="tide-card">
                 @if (byArticle.Count > 0)
                 {
-                    <div class="tide-card">
-                        <h2>Articles <span class="tide-count tide-muted fw-normal">(@N(byArticle.Count))</span></h2>
-                        <ul class="list-unstyled mb-0">
-                            @foreach (var g in byArticle)
+                    <div class="tide-lookup-part">
+                        <h3 class="tide-card-title">@(byArticle.Count == 1 ? "Article" : "Articles") <span class="tide-count">(@N(byArticle.Count))</span></h3>
+                        @ArticleTable(byArticle.Select(g => (g.First().Article, (RenderFragment)(@<text>
+                            @foreach (var s in g)
                             {
-                                <li class="tide-hit" @key="g.Key">
-                                    @ArticleRow(g.First().Article, @<text>
-                                        @foreach (var s in g)
-                                        {
-                                            <div>
-                                                @if (s.Related) { <span class="tide-chip mb-0">@Ui.IndicatorLabel(s.Type)</span> <span class="tide-ioc">@IocObservable.Defang(s.Type, s.Value)</span> }
-                                                else { <span class="tide-chip mb-0">This indicator</span> }
-                                                @if (!string.IsNullOrWhiteSpace(s.Note)) { <span class="small tide-muted"> @s.Note</span> }
-                                            </div>
-                                        }
-                                    </text>)
-                                </li>
+                                <div>
+                                    @if (s.Related) { <span class="tide-chip mb-0">@Ui.IndicatorLabel(s.Type)</span> <span class="tide-ioc">@IocObservable.Defang(s.Type, s.Value)</span> }
+                                    else { <span class="tide-muted">This indicator</span> }
+                                    @if (!string.IsNullOrWhiteSpace(s.Note)) { <span class="small tide-muted"> @s.Note</span> }
+                                </div>
                             }
-                        </ul>
+                        </text>))), "Indicator")
                         @if (ind.Sightings.More) { <p class="small tide-muted mt-2 mb-0">Showing the first @ind.Sightings.Items.Count of @N(ind.Sightings.Total) mentions.</p> }
                     </div>
                 }
-                <div class="tide-card"><ActionsDone Actions="ind.Actions" CanOpen="_canOpenActions" /></div>
+                <div id="lookup-actions" class="tide-lookup-part"><ActionsDone Actions="ind.Actions" CanOpen="_canOpenActions" /></div>
+                @SeenWithRow(ind.SeenWith)
             </div>
             <div class="tide-card">
                 <h2>Hunt query</h2>
                 <div id="lookup-query-tools" class="d-flex gap-2 align-items-center flex-wrap mb-2">
-                    <select class="tide-maxw-md form-select form-select-sm" aria-label="Query language" @bind:get="_dialect" @bind:set="ChooseDialect">
-                        @foreach (var d in QueryDialects.All) { <option value="@d.Key" selected="@(d.Key == _dialect)">@d.Name</option> }
-                    </select>
+                    <TabBar Items="DialectItems" Active="@_dialect" Label="Query language" Level="TabLevel.Sub" OnSelect="ChooseDialect" />
                     @if (_query is not null)
                     {
                         <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="lookup-query" data-copy-status="lookup-query-status" data-copy-done="Query copied." disabled="@nothingToRun"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
@@ -144,22 +136,19 @@ else if (_results is { Terms.Count: > 0 } r)
                     }
                 </p>
             }
-            @SeenWithRow(cve.SeenWith)
         </div>
+        <div class="tide-card">
         @if (cve.Articles.Items.Count > 0)
         {
-            <div class="tide-card">
-                <h2>Articles <span class="tide-count tide-muted fw-normal">(@N(cve.Articles.Total))</span></h2>
-                <ul class="list-unstyled mb-0">
-                    @foreach (var a in cve.Articles.Items)
-                    {
-                        <li class="tide-hit" @key="a.Id">@ArticleRow(a, @<span class="tide-chip mb-0">This CVE</span>)</li>
-                    }
-                </ul>
+            <div class="tide-lookup-part">
+                <h3 class="tide-card-title">@(cve.Articles.Total == 1 ? "Article" : "Articles") <span class="tide-count">(@N(cve.Articles.Total))</span></h3>
+                @ArticleTable(cve.Articles.Items.Select(a => (a, (RenderFragment)(@<span class="tide-muted">This CVE</span>))), "CVE")
                 @if (cve.Articles.More) { <p class="small tide-muted mt-2 mb-0">Showing the newest @cve.Articles.Items.Count of @N(cve.Articles.Total).</p> }
             </div>
         }
-        <div class="tide-card"><ActionsDone Actions="cve.Actions" CanOpen="_canOpenActions" /></div>
+        <div id="lookup-actions" class="tide-lookup-part"><ActionsDone Actions="cve.Actions" CanOpen="_canOpenActions" /></div>
+        @SeenWithRow(cve.SeenWith)
+        </div>
     }
 
     @if (r.Empty)
@@ -407,24 +396,27 @@ else if (_results is { Terms.Count: > 0 } r)
         @foreach (var (b, i) in briefs.Select((b, i) => (b, i))) { @(i > 0 ? ", " : "")<a href="@Ui.BriefUrl(b.Day)">@Ui.ShortDay(b.Day)</a> }
     </text>;
 
-    // An article a lookup found, in its one row: badges, what matched, when it was briefed and written.
-    private RenderFragment ArticleRow(LookupArticle a, RenderFragment matched) => @<text>
-        <div class="d-flex gap-2 align-items-center flex-wrap">
-            <a class="tide-hit-title" href="articles/@a.Id">@a.Title</a>
-            <ClassBadge Classification="a.Classification" Priority="a.Priority" />
-            <TlpBadge Level="a.Tlp" />
-            @if (a.Status == ArticleStatus.Draft) { <StatusBadge Status="@a.Status.ToString()" /> }
-        </div>
-        <div class="tide-lookup-matched">@matched</div>
-        <div class="small tide-muted">
-            @{ var briefed = a.Briefs.Where(b => b.Presented).ToList(); var planned = a.Briefs.Where(b => !b.Presented).ToList(); }
-            @if (briefed.Count > 0) { <span>Briefed @BriefLinks(briefed)</span> }
-            @if (briefed.Count > 0 && planned.Count > 0) { <span> &middot; </span> }
-            @if (planned.Count > 0) { <span>On the brief for @BriefLinks(planned), not presented yet</span> }
-            @if (a.Briefs.Count == 0) { <span>Not on a brief yet</span> }
-            <span> &middot; Written @Ui.When(Clock, a.CreatedAtUtc)</span>
-        </div>
-    </text>;
+    // The articles a lookup found, a row each: the article with its badges, what matched (the column named
+    // matchedColumn), when it was briefed, and when it was written.
+    private RenderFragment ArticleTable(IEnumerable<(LookupArticle Article, RenderFragment Matched)> rows, string matchedColumn) => @<table class="tide-table tide-lookup-articles">
+        <thead><tr><th scope="col">Article</th><th scope="col">@matchedColumn</th><th scope="col">Briefed</th><th scope="col">Written</th></tr></thead>
+        <tbody>
+            @foreach (var (a, matched) in rows)
+            {
+                var briefed = a.Briefs.Where(b => b.Presented).ToList();
+                var planned = a.Briefs.Where(b => !b.Presented).ToList();
+                <tr @key="a.Id">
+                    <td><a class="tide-hit-title" href="articles/@a.Id">@a.Title</a>
+                        <ClassBadge Classification="a.Classification" Priority="a.Priority" />
+                        <TlpBadge Level="a.Tlp" />
+                        @if (a.Status == ArticleStatus.Draft) { <StatusBadge Status="@a.Status.ToString()" /> }</td><td class="small">@matched</td><td class="small">
+                        @if (briefed.Count > 0) { @BriefLinks(briefed) }
+                        @if (planned.Count > 0) { <div class="tide-muted">On the brief for @BriefLinks(planned), not presented yet</div> }
+                        @if (a.Briefs.Count == 0) { <span class="tide-muted">Not yet</span> }</td><td class="small tide-muted">@Ui.When(Clock, a.CreatedAtUtc)</td>
+                </tr>
+            }
+        </tbody>
+    </table>;
 
     // "51–100 of 132" on a page of several; "12" when they all fit.
     private static string Count<T>(HitList<T> list, int page)
@@ -439,6 +431,9 @@ else if (_results is { Terms.Count: > 0 } r)
 
     private static RenderFragment? Beyond<T>(HitList<T> list) => list.Total <= SearchService.MaxTake ? null :
         @<p class="small tide-muted text-center mb-0 mt-1">The pages go to the first @N(SearchService.MaxTake); add a word to find the rest.</p>;
+
+    private static readonly IReadOnlyList<TabBarItem> DialectItems =
+        [.. QueryDialects.All.Select(d => new TabBarItem(QueryDialects.ShortName(d.Key), "", null, d.Key))];
 
     private static string N(int n) => n.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
 }

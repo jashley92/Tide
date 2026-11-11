@@ -252,11 +252,14 @@ public class PlaybookPageTests(TideApp app) : IClassFixture<TideApp>
         await using var r = await RenderAsync<PlaybooksPage>(app, "/library/playbooks", @as: Robin);
         await Set(r, "_words", tag, "Refilter");
         var html = WebUtility.HtmlDecode(await r.Html());
-        html.Should().Contain("<h2>Playbooks</h2>").And.NotContain("<h1", "the Library page has the title").And.Contain(" New playbook</button>")
+        html.Should().NotContain("<h1", "the Library page has the title").And.NotContain("<h2>Playbooks</h2>", "and the one header")
             .And.Contain("IOC sweep · Not used yet", "the list says what kind of action it's for")
             .And.Contain("Sweep " + tag).And.Contain("Saved by Robin").And.Contain("<li>Sweep proxy logs</li>").And.Contain("Not used yet")
-            .And.Contain("aria-label=\"Retire Sweep " + tag + "\"").And.Contain("aria-label=\"Delete Sweep " + tag + "\"", "Robin made it")
+            .And.Contain("aria-haspopup=\"menu\"", "Retire and Delete are under More")
             .And.NotContain("aria-label=\"Move Sweep " + tag, "moving is on the whole list, not a filtered one");
+        IReadOnlyList<string> more = [];
+        await r.Click(p => { more = [.. p.MoreItems(p.Selected!).Select(i => i.Label)]; return Task.CompletedTask; });
+        more.Should().Equal(["Retire", "Delete"], "Robin made it");
 
         // A new one, from the page: its steps one a line, blank lines dropped.
         await r.Click(p => { p.New(); return Task.CompletedTask; });
@@ -323,6 +326,8 @@ public class PlaybookPageTests(TideApp app) : IClassFixture<TideApp>
         await Set(r, "_kind", ActionKind.Block, "Refilter");
         r.Component.Shown.Should().HaveCount(16, "its own 15, and the one for any kind").And.OnlyContain(x => x.Playbook.Kind == null || x.Playbook.Kind == ActionKind.Block);
         await Set(r, "_kind", null, "ClearFilters");
+        r.Component.Shown.Should().HaveCount(23, "Clear clears the tab's own filters; the words are the Library search's");
+        await Set(r, "_words", null, "Refilter");
         r.Component.Shown.Count.Should().BeGreaterThan(23, "the starters and the rest are back");
 
         // On the whole list, each offered one can move; the first can't go up.
@@ -366,7 +371,7 @@ public class PlaybookPageTests(TideApp app) : IClassFixture<TideApp>
         await using (var r = await RenderAsync<BoardRulesPage>(app, "/library/board-rules", @as: Viewer))
         {
             var html = WebUtility.HtmlDecode(await r.Html());
-            html.Should().Contain("<h2>Board rules</h2>")
+            html.Should().NotContain("<h2>Board rules</h2>", "the Library page has the one header")
                 .And.Contain("<span class=\"tide-rule-label tide-rule-red\">Late " + tag + "</span>")
                 .And.Contain("P2 or higher · overdue").And.Contain(">Red</td>").And.Contain(">Teal</td>")
                 .And.NotContain("Off " + tag, "a rule turned off marks nothing")
@@ -376,8 +381,8 @@ public class PlaybookPageTests(TideApp app) : IClassFixture<TideApp>
             html.Should().MatchRegex($"Ours {tag}</span></td>\\s*<td class=\"small\">[^<]+</td>\\s*<td class=\"small\">Teal</td>\\s*<td class=\"small\">No</td>");
         }
 
-        await using var admin = await RenderAsync<BoardRulesPage>(app, "/library/board-rules");
-        (await admin.Html()).Should().Contain("href=\"admin/card-rules\"", "editing them stays in Administration");
+        (await app.CreateClient().GetStringAsync("/library/board-rules")).Should().Contain("href=\"admin/card-rules\"",
+            "editing them stays in Administration, linked from the page's header");
         (await app.CreateClient().GetStringAsync("/actions")).Should().Contain("href=\"library/board-rules\"", "the Actions page links to them");
     }
 

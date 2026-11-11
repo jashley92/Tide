@@ -90,7 +90,7 @@ public class DemoSeederTests(DemoTideApp app) : IClassFixture<DemoTideApp>
         (await db.Actions.SingleAsync(a => a.Number == info.DetailAction)).Status.Should().Be(ActionStatus.InProgress);
         (await db.Adversaries.CountAsync()).Should().Be(3);
         (await db.ApiTokens.CountAsync()).Should().Be(3);
-        (await db.FeedItemTexts.CountAsync()).Should().Be(3);
+        (await db.FeedItemTexts.CountAsync()).Should().Be(4, "each of the demo's own triage items keeps its text for the reading pane");
     }
 
     [Fact]

@@ -2482,6 +2482,54 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-triage-attach-title { min-width: 0; }
 /* ---- end Triage 2.4 ---- */
 
+/* ---- Option E 2.x, pages matched to their designs: the Library's one header, its one search on the tab row, saved
+   queries grouped under their platform; Search's hunt query wrapping and its articles as a
+   table in one card with the actions raised; Our stack's filters above its list and its rows stacked on a narrow window;
+   the action's hunt card (what it sweeps for, and its language and window on the tab row). ---- */
+.tide-library-tabrow { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--tide-space-2) var(--tide-space-4);
+    border-bottom: 1px solid var(--tide-border); margin-bottom: var(--tide-space-3); }
+.tide-library-tabrow > .tide-tabbar-page { border-bottom: 0; margin-bottom: 0; }
+.tide-library-find { flex: 0 1 18rem; min-width: 12rem; margin-bottom: var(--tide-space-1); }
+.tide-library-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2) var(--tide-space-3); margin-bottom: var(--tide-space-3); }
+.tide-library-filters > .form-check { margin: 0 0 0 auto; }
+.tide-library-group { padding: .35rem .7rem; font-size: var(--tide-text-xs); font-weight: var(--tide-weight-semibold); color: var(--tide-text-muted);
+    background: var(--tide-surface-2); border-bottom: 1px solid var(--tide-border); }
+/* The hunt query is read whole: its long lines wrap, as an action's do (copying takes its text, not its wrapping). */
+.tide-lookup-query { white-space: pre-wrap; overflow-wrap: anywhere; }
+.tide-lookup-articles td:first-child .tide-badge, .tide-lookup-articles td:first-child .tide-tlp { margin-left: var(--tide-space-1); }
+/* A flag for what's missing (no team owns it): dashed, no fill. */
+.tide-badge-off { background: transparent; outline: 1px dashed var(--tide-border-strong); outline-offset: -1px; }
+.tide-hunt-sweeping { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); margin-bottom: var(--tide-space-2); }
+.tide-hunt-sweeping-label { font-size: var(--tide-text-sm); font-weight: var(--tide-weight-semibold); color: var(--tide-text-muted); }
+/* A library entry: its name and what it is on the left, Copy, Edit and More at the top right (a More menu opening down
+   from there stays inside the panel); the entry the height of the window beside a long list. */
+.tide-library-entry-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--tide-space-2) var(--tide-space-3); margin-bottom: var(--tide-space-2); }
+.tide-library-entry-title { flex: 1 1 16rem; min-width: 0; display: grid; gap: var(--tide-space-1); }
+.tide-library-entry-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--tide-space-2); }
+@media (min-width: 1000.02px) {
+    .tide-library-detail .tide-library-entry { min-height: calc(100vh - var(--tide-space-8)); }
+}
+/* The lookup's card: the article, the actions raised from it, and what it was seen with. */
+.tide-lookup-part + .tide-lookup-part { margin-top: var(--tide-space-4); }
+/* The action's tool drawer: the tabs, and the open tool's controls at the right of their row. */
+.tide-drawer .tide-drawer-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--tide-space-2) var(--tide-space-3);
+    margin: calc(-1 * var(--tide-space-2)) 0 var(--tide-space-3); border-bottom: 1px solid var(--tide-border); }
+.tide-drawer .tide-drawer-head > .tide-drawer-tabs { margin: 0; border-bottom: 0; }
+.tide-hunt-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); padding: var(--tide-space-1) 0; }
+.tide-w-days { width: 5rem; }
+/* Our stack: the team chosen from its own list; on a narrow window each row's cells stacked, each named, so the list
+   never scrolls sideways inside its card. */
+.tide-stack-team { width: auto; }
+@media (max-width: 900px) {
+    .tide-stack-table thead { display: none; }
+    .tide-stack-table tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--tide-space-1) var(--tide-space-3);
+        padding: var(--tide-space-2) 0; border-bottom: 1px solid var(--tide-border); }
+    .tide-stack-table td { display: block; padding: 0; border: 0; text-align: left; min-width: 0; overflow-wrap: anywhere; }
+    .tide-stack-table td:first-child, .tide-stack-table td.tide-stack-now { grid-column: 1 / -1; }
+    .tide-stack-table td[data-label]::before { content: attr(data-label); display: block; font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
+}
+/* ---- end Option E 2.x ---- */
+
 /* ---- Actions list and board, as designed (ActionsBoard.razor, ActionKanban.razor, ActionTable.razor). The board's page
    is a column the window's height under the top bar: the board takes what the head, tabs and filters leave, its lanes
    share that height, each scrolling on its own with room to drop under its cards, and the closed strip sits at the
