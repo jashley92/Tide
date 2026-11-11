@@ -94,6 +94,24 @@ public partial class SearchRailTests(TideApp app) : IClassFixture<TideApp>
             .And.NotContain("lookup-export").And.NotContain("exports/lookup").And.NotContain("tide-lookup\"", "the page is one column beside the rail");
     }
 
+    [Theory]
+    [InlineData("Analyst")]
+    [InlineData("Viewer")]
+    public async Task TheExport_StartsAtTheLeastSensitiveCeiling_SoAWiderOneIsChosen(string role)
+    {
+        var domain = Unique("ceiling") + ".example.net";
+        await Article("Rail ceiling article", [(IndicatorType.Domain, domain)], tlp: TlpLevel.Red);
+
+        await using var r = await Open(domain, Person(role));
+        var rail = Split(await r.Html()).Rail;
+
+        rail.Should().MatchRegex("<select[^>]*aria-label=\"Highest TLP to include\"[^>]*value=\"Clear\"|<select[^>]*value=\"Clear\"[^>]*aria-label=\"Highest TLP to include\"",
+            "the ceiling starts at TLP:CLEAR");
+        var key = ExportService.LookupKey(domain);
+        rail.Should().Contain($"exports/lookup/{key}?format=stix&amp;tlp=clear").And.Contain($"exports/lookup/{key}?format=csv&amp;tlp=clear")
+            .And.NotContain("tlp=red").And.NotContain("tlp=amber");
+    }
+
     [Fact]
     public async Task ACveLookup_PutsTheSweepsOfItsArticlesAndTheExportInTheRail_AndHasNoHuntQuery()
     {

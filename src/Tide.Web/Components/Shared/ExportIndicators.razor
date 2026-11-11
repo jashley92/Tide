@@ -26,7 +26,8 @@ else
     [Parameter] public bool Inline { get; set; }
 
     private bool _open;
-    private TlpLevel _ceiling = TlpLevel.Red;
+    // The least sensitive ceiling, so a wider one is always chosen, never the one a click gets.
+    private TlpLevel _ceiling = TlpLevel.Clear;
 
     private RenderFragment Panel => @<text>
         <label class="tide-field-label">Include articles marked up to</label>

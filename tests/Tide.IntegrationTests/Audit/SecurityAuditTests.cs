@@ -933,8 +933,8 @@ public class InlineImageAuditTests(TideApp app) : IClassFixture<TideApp>
 
     // A5-1 (Agent 5's acceptance test).
     [Theory]
-    [InlineData("/exports/brief/{day}?format=csv")]
-    [InlineData("/exports/brief/{day}")]
+    [InlineData("/exports/brief/{day}?format=csv&tlp=clear")]
+    [InlineData("/exports/brief/{day}?tlp=clear")]
     [InlineData("/metrics/export.csv")]
     [InlineData("/trends/export.csv")]
     [InlineData("/trends/articles.csv")]

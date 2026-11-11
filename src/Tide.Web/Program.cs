@@ -411,18 +411,24 @@ app.MapGet("/trends/articles.csv", async (string? p, string? line, bool? subs, T
     return CsvFile(TrendsService.ArticlesCsv(articles, appOptions.Value.BaseUrl), $"tide-articles-{period.Key}{stem}.csv");
 }).AsExport();
 
-// Indicators from an article, a brief or a story, as STIX 2.1 or CSV, with the articles above the TLP ceiling (?tlp=,
-// default every level) left out. One with a ceiling above TLP:GREEN is in the audit log as well as the access log.
+// Indicators from an article, a brief, a story or a lookup, as STIX 2.1 (?format=stix, or none) or CSV (?format=csv), with
+// the articles above the TLP ceiling (?tlp=) left out. The ceiling is always named: a request without one is refused, never
+// given the most sensitive one, and so is a format it doesn't write. One with a ceiling above TLP:GREEN is in the audit log
+// as well as the access log.
 app.MapGet("/exports/{scope}/{key}", async (string scope, string key, string? format, string? tlp, ExportService exports,
     OrgClock clock, IOptions<AppOptions> appOptions, HttpContext http, CancellationToken ct) =>
 {
     if (!EnumNames.TryParse<ExportScope>(scope, out var s, ignoreCase: true)) return Results.NotFound();
-    if ((tlp is null ? TlpLevel.Red : Tlp.Parse(tlp)) is not { } ceiling) return Results.BadRequest("Unknown TLP.");
+    if (tlp is null) return Results.BadRequest("Choose the highest TLP to include (?tlp=).");
+    if (Tlp.Parse(tlp) is not { } ceiling) return Results.BadRequest("Unknown TLP.");
+    var csv = string.Equals(format, "csv", StringComparison.OrdinalIgnoreCase);
+    if (!csv && format is not null && !string.Equals(format, "stix", StringComparison.OrdinalIgnoreCase))
+        return Results.BadRequest("Unknown format: stix or csv.");
     NoteCeiling(http, ceiling);
     var set = await exports.GatherAsync(s, key, ceiling, ct);
     if (set is null) return Results.NotFound();
     var name = $"tide-{set.FileStem}-{Tlp.Key(ceiling)}";
-    return string.Equals(format, "csv", StringComparison.OrdinalIgnoreCase)
+    return csv
         ? CsvFile(IndicatorCsv.Write(set, appOptions.Value.BaseUrl), name + ".csv")
         : Results.File(Stix.Write(set, clock.TeamName), "application/stix+json;version=2.1", name + ".stix.json");
 }).AsExport(audited: AuditedWhen.AboveGreen);
