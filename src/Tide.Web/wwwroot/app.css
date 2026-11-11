@@ -2501,6 +2501,7 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-kstrip-more { margin-left: auto; padding: 0; }
 .tide-chip-count { margin-left: var(--tide-space-1); color: var(--tide-text-muted); font-variant-numeric: tabular-nums; }
 .tide-col-progress { min-width: 7.5rem; }
+.tide-action-row .tide-kev { margin-left: var(--tide-space-1); }
 /* The list's keys beside its heading; its selected row (rows.js moves it), marked as Triage's is; a status that is a
    menu, tinted as its badge; and a due group's heading saying how many of it nobody holds. */
 .tide-actions-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--tide-space-1) var(--tide-space-3); }
