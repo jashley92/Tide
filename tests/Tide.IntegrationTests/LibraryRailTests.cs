@@ -447,4 +447,134 @@ public class LibraryRailTests(TideApp app) : IClassFixture<TideApp>
         File.Exists(Path.Combine(web, "wwwroot", "js", "library.js")).Should().BeFalse();
         File.ReadAllText(Path.Combine(web, "Components", "App.razor")).Should().NotContain("library.js").And.Contain("js/rows.js");
     }
+
+    // ---- Closed actions: nothing from the Library is added to them ----
+
+    private Task Close(Guid id) => As(sp => sp.GetRequiredService<ActionService>().SetStatusAsync(id, ActionStatus.Done, ActionOutcome.NoHits, null));
+
+    private Task<Guid> BlockPlaybook(string name) => As(sp => sp.GetRequiredService<PlaybookService>().SaveAsync(new PlaybookForm
+    {
+        Name = name, Kind = ActionKind.Block, Steps = ["Block it at the proxy"],
+    }));
+
+    [Theory]
+    [InlineData(ActionStatus.Done)]
+    [InlineData(ActionStatus.Cancelled)]
+    [InlineData(ActionStatus.NotApplicable)]
+    public async Task ASavedQueryOrAPlaybook_IsRefused_OnAClosedAction_AndItsPreviewToo(ActionStatus closed)
+    {
+        var team = await Team("Rail closed team " + closed);
+        var query = await Query("Rail closed query " + closed);
+        var playbook = await BlockPlaybook("Rail closed playbook " + closed);
+        var (sweep, sweepId) = await Raise(team, "Rail closed sweep " + closed);
+        var (block, blockId) = await Raise(team, "Rail closed block " + closed, ActionKind.Block);
+        await As(async sp =>
+        {
+            var actions = sp.GetRequiredService<ActionService>();
+            await actions.SetStatusAsync(sweepId, closed, closed == ActionStatus.Done ? ActionOutcome.NoHits : ActionOutcome.None, "Closed for the test.");
+            await actions.SetStatusAsync(blockId, closed, closed == ActionStatus.Done ? ActionOutcome.Blocked : ActionOutcome.None, "Closed for the test.");
+        });
+        var before = (await Trace(sweepId), await Trace(blockId));
+
+        foreach (var (attempt, number) in new (Func<ActionService, Task>, int)[]
+        {
+            (a => a.AddSavedHuntAsync(sweepId, query), sweep), (a => a.PreviewSavedHuntAsync(sweepId, query), sweep),
+            (a => a.ApplyPlaybookAsync(blockId, playbook), block), (a => a.PreviewPlaybookAsync(blockId, playbook), block),
+        })
+        {
+            var refused = () => As(sp => attempt(sp.GetRequiredService<ActionService>()));
+            await refused.Should().ThrowAsync<InvalidOperationException>().WithMessage($"A-{number} is closed. Reopen it to add to it.");
+        }
+        (await Trace(sweepId), await Trace(blockId)).Should().Be(before);
+    }
+
+    [Fact]
+    public async Task TheActionPage_OffersNoSavedQueryOrPlaybook_OnAClosedAction()
+    {
+        var team = await Team("Rail closed page team");
+        await BlockPlaybook("Rail closed page playbook");
+        var (openSweep, _) = await Raise(team, "Rail page open sweep");
+        var (closedSweep, closedSweepId) = await Raise(team, "Rail page closed sweep");
+        var (openBlock, openBlockId) = await Raise(team, "Rail page open block", ActionKind.Block);
+        var (closedBlock, closedBlockId) = await Raise(team, "Rail page closed block", ActionKind.Block);
+        // A step on each, so the drawer shows the checklist itself rather than the button that starts one.
+        await As(async sp =>
+        {
+            await sp.GetRequiredService<ActionService>().AddChecklistItemAsync(openBlockId, "Rail page step");
+            await sp.GetRequiredService<ActionService>().AddChecklistItemAsync(closedBlockId, "Rail page step");
+        });
+        await Close(closedSweepId);
+        await As(sp => sp.GetRequiredService<ActionService>().SetStatusAsync(closedBlockId, ActionStatus.Done, ActionOutcome.Blocked, null));
+
+        // The drawer opened on the tool each lives in, as ?tool= opens it, read once it shows `drawn` (the playbooks are
+        // read after the checklist).
+        async Task<string> Page(int number, string tool, string drawn)
+        {
+            await using var page = await RenderAsync<ActionPage>(app, $"/actions/{number}?tool={tool}", new() { ["Number"] = (int?)number });
+            await page.Until(_ => page.Html().Result.Contains(drawn), 5);
+            return await page.Html();
+        }
+
+        (await Page(openSweep, "hunt", "Add a saved query")).Should().Contain(">Add a saved query</button>", "an open sweep offers it");
+        (await Page(closedSweep, "hunt", "Add a saved query")).Should().Contain("Hunt queries").And.NotContain("Add a saved query");
+        (await Page(openBlock, "checklist", "Apply a playbook")).Should().Contain("Apply a playbook", "an open block offers it");
+        (await Page(closedBlock, "checklist", "Apply a playbook")).Should().Contain("Rail page step").And.NotContain("Apply a playbook");
+    }
+
+    [Fact]
+    public async Task AnActionClosed_AfterTheLibrarysPreview_IsRefusedCleanly_AndNoLongerOffered()
+    {
+        var team = await Team("Rail race team");
+        var query = await Query("Rail race query");
+        var (number, id) = await Raise(team, "Rail race sweep");
+
+        await using var rail = await RailFor(LibraryKind.SavedQuery, query, "Rail race query");
+        await rail.Click(c => c.Choose(id));
+        rail.Component.Text.Should().Contain("203.0.113.77", "the preview was read while it was open");
+        await Close(id);
+        var before = await Trace(id);
+
+        await rail.Click(c => c.Add());
+
+        (await Trace(id)).Should().Be(before, "nothing is added to a closed action");
+        rail.Scope.ServiceProvider.GetRequiredService<ToastService>().Toasts.Should()
+            .Contain(t => t.IsError && t.Message == $"A-{number} is closed. Reopen it to add to it.");
+        rail.Component.Offered.Select(a => a.Number).Should().NotContain(number, "the list is read again, without it");
+    }
+
+    [Theory]
+    [InlineData(LibraryKind.OutreachTemplate, null, "No open Outreach action to try it on.")]
+    [InlineData(LibraryKind.SavedQuery, null, "No open sweep or hunt to try it on.")]
+    [InlineData(LibraryKind.Playbook, ActionKind.Block, "No open Block action to try it on.")]
+    public async Task WithNoOpenActionToTryItOn_TheSectionSaysSo(LibraryKind kind, ActionKind? playbookFor, string note)
+    {
+        // Someone who works actions, in a team that has none open of the kind.
+        var who = new SignIn($"dev:librail-empty-{kind}", "Lib Empty", "ActionOwner");
+        var team = await Team("Rail empty team " + kind);
+        await As(sp => sp.GetRequiredService<TeamService>().AddMemberAsync(team, who.UserId, who.Name));
+        var entry = kind switch
+        {
+            LibraryKind.SavedQuery => await Query("Rail empty query"),
+            LibraryKind.Playbook => await BlockPlaybook("Rail empty playbook"),
+            _ => await As(sp => sp.GetRequiredService<OutreachTemplateService>().SaveAsync(new OutreachTemplateForm
+            {
+                Name = "Rail empty ask", Subject = "Asking", Body = "Hello", Ceiling = TlpLevel.Clear,
+            })),
+        };
+
+        await using (var rail = await RailFor(kind, entry, "Rail empty entry", who, playbookFor))
+        {
+            var html = WebUtility.HtmlDecode(await rail.Html());
+            html.Should().Contain("Try it on an open action").And.Contain(note).And.NotContain("lib-try-action");
+        }
+
+        // A viewer, and a retired entry, still get no section at all.
+        await using (var rail = await RailFor(kind, entry, "Rail empty entry", Viewer, playbookFor))
+            (await rail.Html()).Should().NotContain("Try it on an open action").And.NotContain(note);
+        await using (var retired = await RenderAsync<LibraryEntryRail>(app, "/library", new()
+        {
+            ["Kind"] = kind, ["EntryId"] = entry, ["Name"] = "Rail empty entry", ["Noun"] = "entry", ["For"] = playbookFor, ["Retired"] = true,
+        }, who))
+            (await retired.Html()).Should().NotContain("Try it on an open action").And.NotContain(note);
+    }
 }
