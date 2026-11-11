@@ -24,8 +24,17 @@ window.tideTriage = (function () {
         return true;
     }
 
+    // Keys that switch something one way and back (V the pane, Enter a group) or open something (Enter or O the source,
+    // in a new tab): held down, the keyboard's repeats are left alone, so one press is one switch or one tab.
+    const once = ['read', 'toggle-reading', 'toggle', 'open'];
+
     // What a key means here, given what the shared keys made of it.
     function actionFor(e, action, onRow) {
+        const meant = meaning(e, action, onRow);
+        return e.repeat && once.indexOf(meant) >= 0 ? null : meant;
+    }
+
+    function meaning(e, action, onRow) {
         // Esc closes the reading pane (when no form is open), and V reads or closes it, only when it's shown: one open by
         // itself is hidden on a narrow window, where Esc closes nothing and V opens it.
         if (e.key === 'Escape' || action === 'read') {

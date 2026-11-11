@@ -182,7 +182,9 @@ else
                         else
                         {
                             <div class="d-flex gap-2 flex-wrap mt-2">
-                                @* Covered by an article that can still take reports: attaching them all is the main button, one step. *@
+                                @* Covered by an article that can still take reports: attaching them all is the main button, one step.
+                                   It and Promote stay on one line: the article's title gives way (app.css, Triage 2.4). *@
+                                <span class="tide-triage-main">
                                 @if (attachAll is not null)
                                 {
                                     <button class="btn btn-primary btn-sm tide-triage-attach" disabled="@_busy" title="@($"Attach all {line.Members.Count} to “{attachAll.ArticleTitle}”")"
@@ -191,6 +193,7 @@ else
                                 }
                                 <button class="btn @(attachAll is null ? "btn-primary" : "btn-outline-secondary") btn-sm tide-triage-promote" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => OpenGroupPromote(line)">
                                     <span class="bi bi-file-earmark-plus" aria-hidden="true"></span> Promote as one article (@line.Members.Count sources) <span class="tide-kbd">P</span></button>
+                                </span>
                                 @* Only new reports are shortlisted or dismissed as a group, as the S and X keys are. *@
                                 @if (_status == FeedItemStatus.New)
                                 {
@@ -323,7 +326,9 @@ else
                         <div class="d-flex gap-2 flex-wrap">
                             @if (item.Status != FeedItemStatus.Promoted)
                             {
-                                @* Covered by an article that can still take it: attaching it there is the main button; P still promotes. *@
+                                @* Covered by an article that can still take it: attaching it there is the main button; P still promotes.
+                                   The two stay on one line, as a group's do. *@
+                                <span class="tide-triage-main">
                                 @if (attachTo is not null)
                                 {
                                     <button class="btn btn-primary btn-sm tide-triage-attach" disabled="@_busy" title="@($"Attach to “{attachTo.ArticleTitle}”")"
@@ -331,6 +336,7 @@ else
                                         <span class="bi bi-link-45deg" aria-hidden="true"></span> Attach to <span class="tide-triage-attach-title text-truncate">“@attachTo.ArticleTitle”</span></button>
                                 }
                                 <button class="btn @(attachTo is null ? "btn-primary" : "btn-outline-secondary") btn-sm tide-triage-promote" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Promote)"><span class="bi bi-file-earmark-plus" aria-hidden="true"></span> Promote <span class="tide-kbd">P</span></button>
+                                </span>
                                 @if (item.Status != FeedItemStatus.Shortlisted) { <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Shortlist)">Shortlist <span class="tide-kbd">S</span></button> }
                                 @if (item.Status != FeedItemStatus.Dismissed)
                                 {

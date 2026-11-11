@@ -76,26 +76,28 @@ public static class DemoSeeder
 
     /// <summary>
     /// <c>Demo:TriageFiller</c> (none unless set): that many more new items, "Filler k001" onwards, older than the demo's
-    /// own, from one feed so they never group, for the layout checks that need Triage to have a second page.
+    /// own, from one feed so they never group, for the layout checks that need Triage to have a second page; and one
+    /// event told by two feeds that the Edge VPN article covers (a CVE it names), for the checks on a covered group.
     /// </summary>
     private static async Task TriageFillerAsync(IAppDbContextFactory dbs, int count, CancellationToken ct)
     {
         if (count <= 0) return;
         await using var db = await dbs.CreateAsync(ct);
         var source = new Source { Name = "Example filler feed", Url = "https://example.com/filler.xml", Enabled = false };
-        db.Sources.Add(source);
+        var wire = new Source { Name = "Example filler wire", Url = "https://example.net/filler.xml", Enabled = false };
+        db.Sources.AddRange(source, wire);
         var now = DateTimeOffset.UtcNow;
-        for (var n = 1; n <= Math.Min(count, 500); n++)
+        void Add(Source from, string title, string url, DateTimeOffset at, string? cves = null) => db.FeedItems.Add(new FeedItem
         {
-            var url = $"https://example.com/filler/k{n:000}";
-            var title = $"Filler k{n:000}";
-            var at = now.AddHours(-8).AddMinutes(-10 * n);
-            db.FeedItems.Add(new FeedItem
-            {
-                Source = source, Title = title, Url = url, UrlHash = Application.Intake.UrlCanonicalizer.Hash(url),
-                TitleKey = Application.Intake.TitleMatch.Key(title), PublishedAtUtc = at, FetchedAtUtc = at,
-            });
-        }
+            Source = from, Title = title, Url = url, UrlHash = Application.Intake.UrlCanonicalizer.Hash(url),
+            TitleKey = Application.Intake.TitleMatch.Key(title), PublishedAtUtc = at, FetchedAtUtc = at, Cves = cves,
+        });
+        for (var n = 1; n <= Math.Min(count, 500); n++) Add(source, $"Filler k{n:000}", $"https://example.com/filler/k{n:000}", now.AddHours(-8).AddMinutes(-10 * n));
+        const string cve = "CVE-2026-0098";
+        var vpn = await db.Articles.FirstAsync(a => a.Title.StartsWith("Edge VPN"), ct);
+        db.ArticleCves.Add(new ArticleCve { ArticleId = vpn.Id, CveId = cve });
+        Add(source, $"Quillon Bank confirms $3.7 million theft ({cve})", "https://example.com/filler/quillon-theft", now.AddHours(-7), cve);
+        Add(wire, "Quillon Bank $3.7 million heist traced to stolen gateway keys", "https://example.net/filler/quillon-heist", now.AddHours(-7).AddMinutes(-20));
         await db.SaveChangesAsync(ct);
     }
 

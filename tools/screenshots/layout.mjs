@@ -155,12 +155,17 @@ const pressQuickly = (key, times) => async page => {
   }
 };
 
-/** Setup: the first report covered by an article (a coverage flag) is selected, by a click on its line. */
-async function selectCovered(page) {
-  const row = page.locator('.tide-triage-row:not(.tide-triage-group)', { has: page.locator('.tide-triage-flags .tide-badge-info') }).first();
-  await row.locator('.tide-triage-meta > span').first().click();
+/**
+ * Setup: the first line covered by an article (a coverage flag) is selected, by a click on it: a report's own line, or
+ * with `group` a suggested group's. Every letter is spaced wider, as a font wider than this machine's would set it, so
+ * a rule that holds holds by the page's construction (truncation, widths), not by pixels to spare.
+ */
+const selectCovered = (group = false) => async page => {
+  await page.addStyleTag({ content: '* { letter-spacing: .07em !important; }' });
+  const line = page.locator(group ? '.tide-triage-group' : '.tide-triage-row:not(.tide-triage-group)', { has: page.locator('.tide-triage-flags .tide-badge-info') }).first();
+  await line.locator(group ? '.tide-group-label' : '.tide-triage-meta > span').first().click();
   await page.waitForTimeout(500);
-}
+};
 
 /** Setup: V pressed `times`, a moment apart (each read or close reaching the page before the next). */
 const pressV = times => async page => {
@@ -169,6 +174,16 @@ const pressV = times => async page => {
     await page.waitForTimeout(700);
   }
 };
+
+/** Setup: V held down for a second and a half, the keyboard repeating it (20 keydowns, all but the first repeats). */
+async function holdV(page) {
+  for (let i = 0; i < 20; i++) {
+    await page.keyboard.down('v');
+    await page.waitForTimeout(75);
+  }
+  await page.keyboard.up('v');
+  await page.waitForTimeout(2500);
+}
 
 // The reading pane's open or closed is kept for the person, so the pages that press V sign in as someone of their own
 // for this run (the dev sign-in's ?as=), and everyone else's Triage opens as it always does.
@@ -210,9 +225,14 @@ const pages = [
   // The reading pane open by itself stays below the top bar as the page scrolls; a covered row's Attach and Promote
   // share a line beside it.
   { name: 'triage-scrolled', route: '/triage', setup: scrollDown, widths: [1440], rules: [visible('.tide-reading'), belowTopBar('.tide-reading')] },
-  { name: 'triage-covered', route: '/triage', setup: selectCovered, widths: [1440, 1920],
+  { name: 'triage-covered', route: '/triage', setup: selectCovered(), widths: [1440, 1920],
     rules: [visible('.tide-reading'), sameLine('.tide-triage-row.selected .tide-triage-attach', '.tide-triage-row.selected .tide-triage-promote'), fits('.tide-triage-row.selected')] },
+  // A covered group's Attach all and Promote as one share a line too (the demo's covered group: Demo:TriageFiller below).
+  { name: 'triage-covered-group', route: '/triage', setup: selectCovered(true), widths: [1440, 1920],
+    rules: [visible('.tide-reading'), sameLine('.tide-triage-group.selected .tide-triage-attach', '.tide-triage-group.selected .tide-triage-promote'), fits('.tide-triage-group.selected')] },
   // V closes the pane that opened by itself, and opens it again; on a narrow window, where it's hidden, V opens it.
+  // Held down, V is one press: the keyboard's repeats don't open and close the pane over and over.
+  { name: 'triage-v-held', route: `/triage?as=v4${run}`, setup: holdV, widths: [1440], rules: [hidden('.tide-reading')] },
   { name: 'triage-v-closes', route: `/triage?as=v1${run}`, setup: pressV(1), widths: [1440], rules: [hidden('.tide-reading')] },
   { name: 'triage-v-reopens', route: `/triage?as=v2${run}`, setup: pressV(2), widths: [1440], rules: [visible('.tide-reading')] },
   { name: 'triage-v-narrow', route: `/triage?as=v3${run}`, setup: pressV(1), widths: [780], rules: [visible('.tide-reading')] },
