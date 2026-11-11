@@ -1,0 +1,271 @@
+@* The Library's context rail: the selected entry's facts, the placeholders an action fills in, the entry tried on an
+   open action (a preview, read only: nothing is saved until Add, and Copy records nothing), and the actions it was used
+   on. Each tab that lists entries places one for its selected entry.
+   - Try it is offered only to someone who works an action of the kind the entry is for (LibraryUseService.WorkableAsync),
+     and never on a retired entry. Choosing an action only reads: the preview is ActionService's or OutreachService's
+     read-only fill, which refuses whom the real step refuses. Add runs the action page's own step (Add a saved query,
+     Apply a playbook), with its checks and its line in the action's history.
+   - Used on lists the actions the entry was used on, for whoever reads actions (a deleted one isn't listed). *@
+@inject LibraryUseService UseSvc
+@inject ActionService ActionSvc
+@inject OutreachService OutreachSvc
+@inject ToastService Toasts
+
+<ContextRail Title="@($"About this {Noun}")">
+    <section class="tide-card" aria-label="Facts">
+        <dl class="tide-facts tide-facts-side tide-lib-facts">
+            @foreach (var f in Facts)
+            {
+                <div class="tide-fact"><dt>@f.Label</dt><dd>@f.Value</dd></div>
+            }
+        </dl>
+    </section>
+
+    @if (Fills.Count > 0)
+    {
+        <section class="tide-card" aria-labelledby="lib-fills-h">
+            <h2 id="lib-fills-h">Fills in</h2>
+            <dl class="tide-lib-fills">
+                @foreach (var f in Fills)
+                {
+                    <div><dt><span class="tide-chip tide-data">@f.Written</span></dt><dd class="small tide-muted">@f.Means</dd></div>
+                }
+            </dl>
+        </section>
+    }
+
+    @if (_offered.Count > 0 && !Retired)
+    {
+        <section class="tide-card tide-lib-try" aria-labelledby="lib-try-h">
+            <h2 id="lib-try-h">Try it on an open action</h2>
+            <select id="lib-try-action" class="form-select form-select-sm" aria-label="The action to try it on" value="@_actionId" @onchange="e => Choose(Guid.TryParse(e.Value as string, out var id) ? id : null)">
+                @foreach (var a in _offered)
+                {
+                    <option value="@a.Id">@Ui.ActionLabel(a.Number) @a.Title</option>
+                }
+            </select>
+            @if (Chosen is { } chosen)
+            {
+                @if (_error is { } error)
+                {
+                    <p class="small tide-muted mb-0" role="status">@error</p>
+                }
+                else if (_text is null && _steps is null)
+                {
+                    <p class="small tide-muted mb-0" role="status">Filling it in…</p>
+                }
+                else
+                {
+                    @if (Kind == LibraryKind.Playbook)
+                    {
+                        @if (_steps!.Count == 0)
+                        {
+                            <p class="small mb-0">Its steps are all on @Ui.ActionLabel(chosen.Number)'s checklist already.</p>
+                        }
+                        else
+                        {
+                            <p class="small mb-1">Adds @Words.Plural(_steps.Count, "step") to @Ui.ActionLabel(chosen.Number)'s checklist:</p>
+                            <ol class="tide-playbook-preview small mb-0">@foreach (var s in _steps) { <li>@s</li> }</ol>
+                        }
+                    }
+                    else
+                    {
+                        @if (_subject is { } subject)
+                        {
+                            <div class="small"><span class="tide-field-label">Subject</span> <span class="tide-data">@subject</span></div>
+                        }
+                        <pre id="lib-try-text" class="@(Kind == LibraryKind.SavedQuery ? "tide-query" : "tide-email-text") tide-lib-try-text">@_text</pre>
+                    }
+                    <div class="tide-lib-try-tools">
+                        @if (Kind != LibraryKind.Playbook)
+                        {
+                            <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="lib-try-text" data-copy-status="lib-try-status" data-copy-done="Copied."><span class="bi bi-clipboard" aria-hidden="true"></span> Copy filled in</button>
+                        }
+                        @if (Kind == LibraryKind.OutreachTemplate)
+                        {
+                            <a class="btn btn-outline-secondary btn-sm" href="@Ui.ActionUrl(chosen.Number)">Write it on @Ui.ActionLabel(chosen.Number)</a>
+                        }
+                        else if (Kind == LibraryKind.SavedQuery || _steps!.Count > 0)
+                        {
+                            <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="Add">Add to @Ui.ActionLabel(chosen.Number)</button>
+                        }
+                        <span id="lib-try-status" class="small tide-muted" role="status" aria-live="polite"></span>
+                    </div>
+                }
+            }
+        </section>
+    }
+
+    <section class="tide-card" aria-labelledby="lib-used-h">
+        <h2 id="lib-used-h">Used on@(_uses is { Total: > 0 } used ? $" ({used.Total})" : "")</h2>
+        @if (_uses is null)
+        {
+            <p class="small tide-muted mb-0">Reading…</p>
+        }
+        else if (_uses.Total == 0)
+        {
+            <p class="small tide-muted mb-0">No actions yet. They'll be listed here@(Kind == LibraryKind.Playbook ? "" : " with what each found").</p>
+        }
+        else
+        {
+            <ul class="tide-rail-list tide-lib-used">
+                @foreach (var u in _uses.Rows)
+                {
+                    <li @key="u.Number">
+                        <span class="tide-rail-list-title"><ActionRef Number="u.Number" Title="@u.Title" /></span>
+                        <span class="tide-rail-list-meta"><ActionStatusBadge Status="u.Status" />@if (u.Found is { } found) { <span>@found</span> }</span>
+                    </li>
+                }
+            </ul>
+            @if (_uses.Total > _uses.Rows.Count)
+            {
+                <p class="small tide-muted mb-0 mt-2">And @(_uses.Total - _uses.Rows.Count) more.</p>
+            }
+        }
+    </section>
+</ContextRail>
+
+@code {
+    /// <summary>Which library the entry is in.</summary>
+    [Parameter, EditorRequired] public LibraryKind Kind { get; set; }
+
+    /// <summary>The entry shown.</summary>
+    [Parameter, EditorRequired] public Guid EntryId { get; set; }
+
+    /// <summary>Its name, as a toast says it.</summary>
+    [Parameter, EditorRequired] public string Name { get; set; } = "";
+
+    /// <summary>What one is called in the rail's heading ("query": "About this query").</summary>
+    [Parameter, EditorRequired] public string Noun { get; set; } = "";
+
+    /// <summary>Its facts, first.</summary>
+    [Parameter] public IReadOnlyList<LibraryFact> Facts { get; set; } = [];
+
+    /// <summary>The placeholders it uses (LibraryFills).</summary>
+    [Parameter] public IReadOnlyList<LibraryFill> Fills { get; set; } = [];
+
+    /// <summary>A retired entry isn't tried: it isn't offered on actions.</summary>
+    [Parameter] public bool Retired { get; set; }
+
+    /// <summary>A playbook's kind of action (none: any).</summary>
+    [Parameter] public ActionKind? For { get; set; }
+
+    /// <summary>After Add: the entry was used once more, so the tab reads its rows again.</summary>
+    [Parameter] public EventCallback OnAdded { get; set; }
+
+    private IReadOnlyList<WorkableAction> _workable = [];
+    private IReadOnlyList<WorkableAction> _offered = [];
+    private Guid? _actionId;
+    private (Guid Entry, bool Retired)? _shown;
+    private LibraryUses? _uses;
+    private string? _text, _subject, _error;
+    private IReadOnlyList<string>? _steps;
+    private bool _busy;
+    // Each read is for the entry and action chosen when it started: one that comes back after another was chosen is
+    // dropped (J held down runs through entries faster than the previews come back).
+    private int _asked;
+
+    private WorkableAction? Chosen => _offered.FirstOrDefault(a => a.Id == _actionId);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _workable = await UseSvc.WorkableAsync(); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    // Another entry: its uses, and the action chosen kept when it suits this one too (else the first that does).
+    protected override async Task OnParametersSetAsync()
+    {
+        _offered = [.. _workable.Where(a => LibraryUseService.Suits(Kind, a.Kind, For))];
+        // First, one with indicators to fill it with, as most entries need them.
+        if (Chosen is null) _actionId = (_offered.FirstOrDefault(a => a.HasIndicators) ?? _offered.FirstOrDefault())?.Id;
+        if (_shown == (EntryId, Retired)) return;
+        var other = _shown?.Entry != EntryId;
+        _shown = (EntryId, Retired);
+        if (other) _uses = null;
+        await Task.WhenAll(Preview(), other ? Uses() : Task.CompletedTask);
+    }
+
+    private async Task Uses()
+    {
+        var entry = EntryId;
+        try
+        {
+            var uses = await UseSvc.UsedOnAsync(Kind, entry);
+            if (entry == EntryId) _uses = uses;
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    /// <summary>The actions it can be tried on, the one chosen first until another is.</summary>
+    internal IReadOnlyList<WorkableAction> Offered => _offered;
+
+    /// <summary>The preview: the query or email filled in, or the steps a playbook would add.</summary>
+    internal string? Text => _text;
+    internal IReadOnlyList<string>? Steps => _steps;
+
+    /// <summary>An action chosen to try it on: the preview is read again for it. Nothing is written.</summary>
+    internal async Task Choose(Guid? id)
+    {
+        _actionId = id;
+        await Preview();
+    }
+
+    // The entry filled in for the action chosen, read only.
+    private async Task Preview()
+    {
+        var asked = ++_asked;
+        (_text, _subject, _steps, _error) = (null, null, null, null);
+        if (Retired || Chosen is not { } a) return;
+        try
+        {
+            switch (Kind)
+            {
+                case LibraryKind.SavedQuery:
+                    var text = await ActionSvc.PreviewSavedHuntAsync(a.Id, EntryId);
+                    if (asked == _asked) _text = text;
+                    break;
+                case LibraryKind.OutreachTemplate:
+                    var written = await OutreachSvc.WriteAsync(a.Id, EntryId);
+                    if (asked == _asked) (_subject, _text) = (written.Draft.Subject, written.Draft.Body);
+                    break;
+                default:
+                    var steps = await ActionSvc.PreviewPlaybookAsync(a.Id, EntryId);
+                    if (asked == _asked) _steps = steps;
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            if (asked == _asked) _error = UserFacingError.For(ex);
+        }
+    }
+
+    // The action page's own step, as Add a saved query or Apply a playbook runs it there.
+    internal async Task Add()
+    {
+        if (_busy || Chosen is not { } a) return;
+        _busy = true;
+        try
+        {
+            if (Kind == LibraryKind.SavedQuery)
+            {
+                await ActionSvc.AddSavedHuntAsync(a.Id, EntryId);
+                Toasts.Show($"{Name} added to {Ui.ActionLabel(a.Number)}.");
+            }
+            else
+            {
+                var added = await ActionSvc.ApplyPlaybookAsync(a.Id, EntryId);
+                Toasts.Show($"{Name} applied to {Ui.ActionLabel(a.Number)}: {Words.Plural(added, "step")} added.");
+            }
+            await Task.WhenAll(Preview(), Uses());
+            await OnAdded.InvokeAsync();
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+}

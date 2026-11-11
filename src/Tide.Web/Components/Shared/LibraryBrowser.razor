@@ -1,13 +1,17 @@
 @* A library's list and the entry chosen from it, side by side (one column on a narrow screen): the page's entries by
    name on the left, each with what it's for, its kind and how often it was used; the selected one in full on the
-   right (ChildContent). The rows are chosen as Triage's are: the selected row is the list's one tab stop
-   (aria-current), a click or focus chooses a row, and J/K or the arrow keys move to the next (library.js). *@
+   right (ChildContent). The rows are chosen as every list's are (RowKeys, rows.js): the selected row is the list's one
+   tab stop (aria-current), a click or focus chooses a row, J/K or the arrow keys move to the next (on to the next page
+   at the end), and Enter goes into the entry shown.
+   A grouped list that's long folds what's past the selected entry's group and two of the next into one line that says
+   what's there ("3 more KQL, then Falcon · 3"); moving into it shows it, as a click on the line does. *@
 <div class="tide-paged">
 <p class="small tide-muted mb-2" role="status">@Count</p>
 <div class="tide-library">
     <div class="tide-library-side">
         <ul class="tide-library-list" aria-label="@Label">
-            @for (var i = 0; i < Entries.Count; i++)
+            @{ var shown = Shown; }
+            @for (var i = 0; i < shown; i++)
             {
                 var e = Entries[i];
                 var on = e.Id == Selected;
@@ -16,19 +20,25 @@
                 {
                     <li class="tide-library-group">@($"{group} · {Groups.GetValueOrDefault(group)}")</li>
                 }
-                <li class="tide-library-row@(on ? " selected" : "")" aria-current="@(on ? "true" : null)" tabindex="@(on ? "0" : "-1")"
+                <li class="tide-library-row@(on ? " " + RowSelection.Css(on) : "")" aria-current="@RowSelection.Current(on)" tabindex="@RowSelection.TabIndex(on)"
                     @ref="_rows[e.Id]" @key="e.Id" @onclick="() => OnPick.InvokeAsync(e.Id)" @onfocus="() => OnPick.InvokeAsync(e.Id)">
                     <span class="tide-library-row-name">@e.Name</span>
                     @if (e.Description is { } about) { <span class="tide-library-row-about">@about</span> }
                     <span class="tide-library-row-meta">@(e.Retired ? "Retired · " : "")@e.Kind · @e.Used</span>
                 </li>
             }
+            @if (shown < Entries.Count)
+            {
+                <li class="tide-library-fold"><button type="button" class="btn btn-link btn-sm" aria-label="@($"Show the rest of the list: {Folded(shown)}")" @onclick="() => _unfolded = true">@Folded(shown)</button></li>
+            }
         </ul>
         @Below
     </div>
-    <div class="tide-library-detail">@ChildContent</div>
+    <div class="tide-library-detail" tabindex="-1" role="region" aria-label="@($"The selected entry of {Label}")" @ref="_detail">@ChildContent</div>
 </div>
 </div>
+<RowKeys RowClass="tide-library-row" Count="Entries.Count" Selected="SelectedPlace" SelectedChanged="i => OnPick.InvokeAsync(Entries[i].Id)"
+         OnOpen="_ => _detail.TryFocusAsync()" Page="Page" Pages="Pages" OnPage="OnPage" />
 
 @code {
     /// <summary>What the list holds, said above it ("1–20 of 34 playbooks").</summary>
@@ -48,13 +58,56 @@
     /// <summary>When the list is grouped (each entry's <see cref="LibraryEntry.Group"/>): how many each group holds.</summary>
     [Parameter] public IReadOnlyDictionary<string, int>? Groups { get; set; }
 
+    /// <summary>The page of the list shown and how many there are, for J on the last row and K on the first.</summary>
+    [Parameter] public int Page { get; set; } = 1;
+    [Parameter] public int Pages { get; set; } = 1;
+
+    /// <summary>J past the page's last row, or K before its first: the library turns the page.</summary>
+    [Parameter] public EventCallback<RowMove> OnPage { get; set; }
+
     /// <summary>The selected entry in full: its card, or its edit form.</summary>
     [Parameter, EditorRequired] public RenderFragment ChildContent { get; set; } = default!;
 
     /// <summary>Under the list: its pager.</summary>
     [Parameter] public RenderFragment? Below { get; set; }
 
+    /// <summary>A grouped page longer than this folds.</summary>
+    internal const int FoldAfter = 10;
+
+    /// <summary>The fewest rows a folded list shows.</summary>
+    internal const int FoldShows = 7;
+
     private readonly Dictionary<Guid, ElementReference> _rows = [];
+    private ElementReference _detail;
+    private bool _unfolded;
+
+    private int SelectedPlace => Math.Max(0, Entries.Select(e => e.Id).ToList().IndexOf(Selected ?? Guid.Empty));
+
+    // How many of the page's rows are drawn: all, unless a long grouped page folds after the selected entry's group and
+    // two rows of the next (at least FoldShows), when that leaves two or more folded.
+    private int Shown
+    {
+        get
+        {
+            if (_unfolded || Groups is null || Entries.Count <= FoldAfter) return Entries.Count;
+            var group = Entries[SelectedPlace].Group;
+            var end = SelectedPlace;
+            while (end + 1 < Entries.Count && Entries[end + 1].Group == group) end++;
+            var shown = Math.Max(end + 1 + 2, FoldShows);
+            return Entries.Count - shown >= 2 ? shown : Entries.Count;
+        }
+    }
+
+    // What the fold holds: the rest of the last group shown, then each group after it ("3 more KQL, then Falcon · 3").
+    private string Folded(int shown)
+    {
+        var rest = Entries.Skip(shown).GroupBy(e => e.Kind).Select(g => (Kind: g.Key, N: g.Count())).ToList();
+        var partial = rest[0].Kind == Entries[shown - 1].Kind;
+        var after = rest.Skip(partial ? 1 : 0).Select(g => $"{g.Kind} · {g.N}").ToList();
+        return partial
+            ? $"{rest[0].N} more {rest[0].Kind}" + string.Concat(after.Select(a => ", then " + a))
+            : "More: " + string.Join(", then ", after);
+    }
 
     /// <summary>Puts focus on the selected row (after a form closed, or the entry shown before left the list).</summary>
     public Task FocusSelectedAsync() =>

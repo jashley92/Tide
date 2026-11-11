@@ -196,6 +196,24 @@ public abstract class LibraryPage<TRow> : ComponentBase, IDisposable where TRow 
         StateHasChanged();
     }
 
+    /// <summary>
+    /// J on the page's last entry or K on its first (RowKeys): the next or previous page of the list, its first entry
+    /// selected after J and its last after K, and the address says the page.
+    /// </summary>
+    internal void Turn(RowMove move)
+    {
+        var page = _page + (move == RowMove.NextPage ? 1 : -1);
+        if (move == RowMove.Within || page < 1 || page > Pages) return;
+        (_page, _selectedId) = (page, null);
+        Slice();
+        if (move == RowMove.PreviousPage && _onPage.Count > 0) _selectedId = IdOf(_onPage[^1]);
+        SayPage();
+        StateHasChanged();
+    }
+
+    /// <summary>How many pages the list has.</summary>
+    protected int Pages => TableView.Pages(_shown.Count, PageSize);
+
     /// <summary>After a save: the entry saved is the one shown, once the rows are read again.</summary>
     protected void Reveal(Guid id) => _reveal = id;
 
@@ -218,7 +236,7 @@ public abstract class LibraryPage<TRow> : ComponentBase, IDisposable where TRow 
     protected void FocusList() => _focus = FocusOn.List;
 
     // Once a render is on screen: focus where a step left it owing (not while the step still runs, when the form or the
-    // old row is still drawn), and the address made to name the entry shown, in place (tideLibrary.remember, as Triage
+    // old row is still drawn), and the address made to name the entry shown, in place (tideRows.remember, as every list
     // remembers its row), when it names another or one that's gone.
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -231,7 +249,7 @@ public abstract class LibraryPage<TRow> : ComponentBase, IDisposable where TRow 
         }
         if (_selectedId == _rowSaid || _rows is null) return;
         _rowSaid = _selectedId;
-        try { await JS.InvokeVoidAsync("tideLibrary.remember", AddressShown); }
+        try { await JS.InvokeVoidAsync("tideRows.remember", AddressShown); }
         catch (JSDisconnectedException) { /* the tab has gone */ }
         catch (InvalidOperationException) { /* not rendered interactively */ }
     }
@@ -304,6 +322,9 @@ public abstract class LibraryPage<TRow> : ComponentBase, IDisposable where TRow 
         finally { _busy = false; }
     }
 
+    /// <summary>The rows read again after a step elsewhere used an entry (added to an action from the rail).</summary>
+    protected Task Reread() => Run(() => Task.CompletedTask);
+
     // Retires one (it's no longer offered on actions) or restores it, and says so.
     protected Task Retiring(string name, bool retired, Func<Task> change) => Run(async () =>
     {
@@ -322,8 +343,17 @@ public abstract class LibraryPage<TRow> : ComponentBase, IDisposable where TRow 
         return items;
     }
 
+    /// <summary>The entry's footnote's last words: what's under its More menu (" Retire and Delete are under More."), or
+    /// nothing when it has none.</summary>
+    protected static string UnderMore(IReadOnlyList<MenuButton.Item> more) => more.Count == 0 ? ""
+        : $" {string.Join(" and ", more.Select(i => i.Label))} {(more.Count == 1 ? "is" : "are")} under More.";
+
     // "Not used yet", or how often it was ("Used on 3 actions", "Used for 1 email").
     protected static string Used(int count, string how, string noun) => count == 0 ? "Not used yet" : $"Used {how} {Ui.Plural(count, noun)}";
+
+    /// <summary>The rail's "Saved by" fact: who saved it, and the day.</summary>
+    protected LibraryRail.LibraryFact SavedBy<T>(T entry) where T : Domain.Common.AuditableEntity, Domain.Common.ITeamLibraryEntry =>
+        new("Saved by", $"{(entry.CreatedByName.Length > 0 ? entry.CreatedByName : "someone")}, {Clock.ToLocal(entry.CreatedAtUtc).ToString("MMM d", System.Globalization.CultureInfo.InvariantCulture)}");
 
     // "Saved by …, changed by …". One saved before the library kept names has none for who saved it.
     protected string Provenance<T>(T entry) where T : Domain.Common.AuditableEntity, Domain.Common.ITeamLibraryEntry =>

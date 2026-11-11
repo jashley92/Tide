@@ -1364,6 +1364,87 @@ const actionRailHolds = [visible('#tide-rail .tide-facts'), visible('#tide-rail 
 /** The action page's own column: its head, the tools and the query fit it, the query wrapping rather than scrolling. */
 const actionPageFits = [noSidewaysScroll, fits('.tide-action-head'), fits('.tide-drawer'), visible('.tide-feed')];
 
+// --- the Library's context rail (option E 3.8) --------------------------------------------------------------------------
+
+/** What the Library's rail holds for the selected entry, each in the rail and laid out for its column: the facts, what
+ * it fills in, the entry tried on an open action (with its preview) and where it was used. */
+const libraryRailHolds = [visible('#tide-rail .tide-lib-facts'), visible('#tide-rail #lib-fills-h'), visible('#tide-rail #lib-try-h'),
+  visible('#tide-rail #lib-try-text'), visible('#tide-rail #lib-used-h'), hidden('.content #lib-try-h'), fits('.tide-rail-body'),
+  fits('.tide-rail-body > *'), fits('#tide-rail .tide-lib-try-tools'), flat('#tide-rail .tide-rail-body > section'), visible('#tide-rail .tide-rail-head kbd')];
+
+/** The list and the entry beside it fit what the docked rail leaves: neither spills, the entry's head keeps its tools,
+ * and both sit left of the rail. */
+const libraryFitsBesideRail = [noSidewaysScroll, besides('#main-content', '#tide-rail'), allBesides('.tide-library-detail', '#tide-rail'),
+  fits('.tide-library'), fits('.tide-library-list'), fits('.tide-library-detail'), fits('.tide-library-entry-head'), fits('.tide-library-filters'),
+  visible('.tide-library-entry-name'), visible('.tide-library-entry-foot')];
+
+/** The selected row's name, its place, whether it has focus, and the address's row. */
+const libraryRow = page => page.evaluate(() => {
+  const rows = [...document.querySelectorAll('.tide-library-row')];
+  const at = rows.findIndex(r => r.getAttribute('aria-current') === 'true');
+  return {
+    at, name: rows[at]?.querySelector('.tide-library-row-name')?.textContent, current: rows.filter(r => r.getAttribute('aria-current') === 'true').length,
+    focused: document.activeElement === rows[at], tabStops: rows.filter(r => r.tabIndex === 0).length, row: new URL(location.href).searchParams.get('row'),
+  };
+});
+
+/**
+ * The Library's keys are every list's (rows.js): J and K, and the arrows, move the selected row (aria-current, the one
+ * tab stop) and focus with it; the address names the entry in place, so a reload comes back to it; Enter goes into the
+ * entry shown. The rail's keys stay the rail's.
+ */
+const libraryKeys = {
+  name: 'J, K, the arrows and Enter move through the Library as through every list, and ?row= follows',
+  check: async page => {
+    const problems = [];
+    const expect = async (at, what) => {
+      await page.waitForTimeout(300);
+      const s = await libraryRow(page);
+      if (s.at !== at || !s.focused || s.current !== 1 || s.tabStops !== 1) problems.push(`${what}: row ${s.at} selected (focused ${s.focused}, ${s.current} current, ${s.tabStops} tab stops), not row ${at}`);
+      return s;
+    };
+    await page.locator('.tide-library-row.selected').focus();
+    await page.keyboard.press('j');
+    await expect(1, 'J');
+    await page.keyboard.press('j');
+    await expect(2, 'J again');
+    await page.keyboard.press('k');
+    await expect(1, 'K');
+    await page.keyboard.press('ArrowDown');
+    const s = await expect(2, 'the down arrow');
+    await page.keyboard.press('ArrowUp');
+    await expect(1, 'the up arrow');
+    await page.keyboard.press('ArrowDown');
+    await expect(2, 'the down arrow again');
+    if (!s.row) problems.push('the address names no row');
+    await page.reload({ waitUntil: 'networkidle' });
+    await settle(page);
+    const back = await libraryRow(page);
+    if (back.name !== s.name) problems.push(`a reload selects "${back.name}", not "${s.name}"`);
+    await page.locator('.tide-library-row.selected').focus();
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(300);
+    if (!(await page.evaluate(() => document.activeElement?.classList.contains('tide-library-detail')))) problems.push('Enter on a row doesn\'t go into the entry');
+    return problems;
+  },
+};
+
+/** Setup: wider letters, and the demo's "Every indicator sweep (XQL)" chosen from the list (it fills in from any action
+ * with indicators, as the design shows it). */
+const everyIndicatorSweep = async page => {
+  await wideFont(page);
+  await page.locator('.tide-library-row', { hasText: 'Every indicator sweep (XQL)' }).click();
+  await page.locator('#lib-try-text').waitFor({ timeout: 5000 }).catch(() => { });
+};
+
+/** Setup: that entry, then the rail opened where it's an overlay (the Context button). */
+const libraryOverlay = async page => {
+  await everyIndicatorSweep(page);
+  await page.locator('#tide-rail-toggle').click();
+  await page.locator('#tide-rail').waitFor();
+  await page.waitForTimeout(300);
+};
+
 // --- the pages: route, optional setup, widths (each 900px tall, or [width, height]) and rules ([minWidth, rule] from that
 // width up) -------------------------------------------------------------------------------------------------------------
 
@@ -1601,6 +1682,27 @@ const pages = [
   // The entry's More menu opens wholly in view: Retire and Delete aren't cut off by the scrolling detail panel.
   { name: 'library-more', route: '/library/queries', setup: openEntryMore, widths: [1920, 1440], rules: [menuItemsVisible] },
   { name: 'library-search', route: '/library/queries?q=sweep', setup: wideFonts, widths: [1440, 780], rules: [noSidewaysScroll, visible('#library-find'), visible('.tide-library-list')] },
+  // The selected entry's context in the rail: docked and open from 1500px, with the list and the entry fitting beside
+  // it (about 870px); closed below that until asked for, and never a sideways scroll. Wider letters (LETTER_SPACING).
+  { name: 'library-rail', route: '/library/queries', setup: everyIndicatorSweep, widths: [1920, 1600, 1500],
+    rules: [...libraryRailHolds, ...libraryFitsBesideRail, visible('.tide-library-fold')] },
+  { name: 'library-rail-closed', route: '/library/queries', setup: wideFont, widths: [1440, 780],
+    rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), visible('.tide-library-entry-name'), fits('.tide-library-detail')] },
+  // Below 1500px the rail opens over the page as a dialog, holds what it holds there too, and Escape closes it.
+  { name: 'library-rail-overlay', route: '/library/queries', setup: libraryOverlay, widths: [1440, 780],
+    rules: [noSidewaysScroll, ...libraryRailHolds, attr('#tide-rail', 'role', 'dialog'), overlayClosesBy('Escape')] },
+  // Each tab's entry has its rail (the demo has no open outreach action, so a template's isn't tried there).
+  { name: 'library-rail-templates', route: '/library/templates', setup: wideFont, widths: [1920, 1500],
+    rules: [visible('#tide-rail .tide-lib-facts'), visible('#tide-rail #lib-fills-h'), visible('#tide-rail #lib-used-h'), ...libraryFitsBesideRail.slice(0, 6)] },
+  { name: 'library-rail-playbooks', route: '/library/playbooks', setup: wideFont, widths: [1920, 1500],
+    rules: [visible('#tide-rail .tide-lib-facts'), visible('#tide-rail #lib-used-h'), ...libraryFitsBesideRail.slice(0, 6)] },
+  // Copy filled in puts exactly the preview on the clipboard.
+  { name: 'library-rail-copy', route: '/library/queries', setup: everyIndicatorSweep, widths: [1920], context: clipboard,
+    rules: [copiesExactly('[data-copy-target="lib-try-text"]', '#lib-try-text')] },
+  // The keys, as on Triage and the Actions list.
+  { name: 'library-keys', route: '/library/queries', widths: [1920, 1440], rules: [libraryKeys] },
+  // The More menu opens wholly in view beside the docked rail, and at the overlay's widths.
+  { name: 'library-more-rail', route: '/library/queries', setup: openEntryMore, widths: [1600, 1500, 1440], rules: [menuItemsVisible] },
   // Search for an indicator: the hunt query wraps rather than scrolling sideways, Copy puts exactly its text on the
   // clipboard, and the cards' headings start at their tops.
   { name: 'search-lookup', route: '/search?q=update-check.example.net', setup: wideFonts, widths: [1920, 1440, 780], context: clipboard,

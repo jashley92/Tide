@@ -1,5 +1,6 @@
 @inject SavedQueryService SavedSvc
 @inherits LibraryPage<SavedQueryRow>
+@using Tide.Web.Components.LibraryRail
 
 @* The team's saved hunt queries (ADR 0006), by language, a tab of the Library page (which checks who may open it): a
    tuned sweep or a behavioural hunt kept for a colleague to add to their own action from its Hunt queries card. Whoever
@@ -67,7 +68,7 @@ else
     var r = Selected!;
     var q = r.Query;
     var id = "sq-" + q.Id.ToString("N");
-    <LibraryBrowser Count="@CountText" Entries="Entries" Selected="SelectedId" Label="Saved queries" OnPick="Pick" Groups="_groups" @ref="_browser">
+    <LibraryBrowser Count="@CountText" Entries="Entries" Selected="SelectedId" Label="Saved queries" OnPick="Pick" Groups="_groups" Page="_page" Pages="Pages" OnPage="Turn" @ref="_browser">
         <ChildContent>
             <article class="tide-hunt tide-library-entry @(q.IsRetired ? "tide-retired" : "")" aria-labelledby="@(id + "-h")" @key="q.Id">
                 @if (_form?.Id == q.Id)
@@ -80,7 +81,7 @@ else
                     @* The entry's name and what it is on the left, its Copy, Edit and More at the top right; its query under. *@
                     <div class="tide-library-entry-head">
                         <div class="tide-library-entry-title">
-                            <h3 class="tide-subhead my-0" id="@(id + "-h")">@q.Name</h3>
+                            <h3 class="tide-library-entry-name" id="@(id + "-h")">@q.Name</h3>
                             <div class="small tide-muted"><Badge>@HuntQueryBuilder.DialectName(q.Dialect)</Badge> @if (q.IsRetired) { <Badge>Retired</Badge> } @Provenance(q) · <span>@Used(r.Actions, "on", "action")</span></div>
                         </div>
                         <div class="tide-library-entry-tools">
@@ -98,11 +99,14 @@ else
                     </div>
                     @if (q.Description is { } about) { <p class="small mb-2">@about</p> }
                     <pre id="@(id + "-text")" class="tide-query">@q.Text</pre>
+                    <p class="small tide-muted tide-library-entry-foot">TIDE never runs a query itself.@UnderMore(MoreItems(q))</p>
                 }
             </article>
         </ChildContent>
-        <Below><Pager Page="_page" Pages="TableView.Pages(_shown.Count, PageSize)" Many="saved queries" Href="PageHref" /></Below>
+        <Below><Pager Page="_page" Pages="Pages" Many="saved queries" Href="PageHref" /></Below>
     </LibraryBrowser>
+    <LibraryEntryRail Kind="LibraryKind.SavedQuery" EntryId="q.Id" Name="@q.Name" Noun="query" Retired="q.IsRetired" OnAdded="Reread"
+                      Facts="Facts(r)" Fills="LibraryFills.OfQuery(q.Text)" />
 }
 
 @code {
@@ -126,6 +130,10 @@ else
             _groups is null ? null : HuntQueryBuilder.DialectName(row.Query.Dialect));
 
     protected override Guid? EditingId => _form?.Id;
+
+    // The rail's facts: its platform, who saved it, and how many actions it was added to.
+    private List<LibraryFact> Facts(SavedQueryRow r) =>
+        [new("Platform", HuntQueryBuilder.DialectName(r.Query.Dialect)), SavedBy(r.Query), new("Used", r.Actions == 0 ? "Not yet" : "On " + Ui.Plural(r.Actions, "action"))];
 
     private const string All = "all", ByPlatform = "platform", MostUsed = "used";
 
