@@ -337,6 +337,9 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
         SaveIndicators(db, a, form.Indicators);
         SaveCves(db, a, form.Cves);
 
+        // A "Keep it" on "Why it matters" that this save's text or marking ended is cleared, so the record says what is kept.
+        a.ForgetLapsedKeep();
+
         // A Ready article that lost something it needs goes back to Draft.
         if (a.Status == ArticleStatus.Ready && ArticleChecks.For(a).Any(c => c.Blocking)) a.Status = ArticleStatus.Draft;
 
@@ -370,17 +373,55 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
 
     /// <summary>
     /// Marks an article's "Why it matters" TLP:AMBER, from the running order of <paramref name="briefId"/>: the one-click
-    /// fix for <see cref="ArticleChecks.WhyReachesCompany"/>, so the company-wide edition leaves the paragraph out. Analysts
-    /// only, as any edit; refused (<see cref="StaleEditException"/>) when the article changed since
-    /// <paramref name="editVersion"/>, the copy the page showed; refused when the article isn't on that brief, or the brief
-    /// has been sent (what went out is changed by a correction). It only ever raises that one marking: where the paragraph
-    /// already counts as AMBER or stricter (its own marking, or the article's), nothing is saved and it returns false.
-    /// The save is the article's own, so it is audited and heard like any other, and moves the edit version.
+    /// fix for <see cref="ArticleChecks.WhyReachesCompany"/>, so the company-wide edition leaves the paragraph out. Checked
+    /// as <see cref="OnOpenBriefAsync"/> says. It only ever raises that one marking: where the paragraph already counts as
+    /// AMBER or stricter (its own marking, or the article's), nothing is saved and it returns false. The save is the
+    /// article's own, so it is audited and heard like any other, and moves the edit version.
     /// </summary>
     public async Task<bool> MarkWhyItMattersAmberAsync(Guid id, Guid editVersion, Guid briefId, CancellationToken ct = default)
     {
-        RequireWrite();
         await using var db = await dbs.CreateAsync(ct);
+        var a = await OnOpenBriefAsync(db, id, editVersion, briefId, ct);
+        if (a.Effective(a.WhyItMattersTlp) >= TlpLevel.Amber) return false;
+
+        a.WhyItMattersTlp = TlpLevel.Amber;
+        a.ForgetLapsedKeep();
+        a.EditVersion = Guid.NewGuid();
+        await SaveCheckedAsync(db, ct);
+        return true;
+    }
+
+    /// <summary>
+    /// "Keep it": the other answer to <see cref="ArticleChecks.WhyReachesCompany"/>, from the running order of
+    /// <paramref name="briefId"/>. Records that the person looked at the article's "Why it matters" going to the
+    /// company-wide edition and meant it to (<see cref="Article.KeepWhyItMatters"/>): who, when, the marking and a
+    /// fingerprint of it and the text. It changes no marking and no edition, so the paragraph goes exactly where it went
+    /// before; the warning stays answered until the text or its marking changes. Checked as <see cref="OnOpenBriefAsync"/>
+    /// says. It leaves the edit version alone, since nothing written changed, so an editor open on the article can still
+    /// save. Returns the marking kept, or null when there is no "Why it matters" to keep. Already kept as it is, nothing
+    /// more is saved. The save is audited and heard like any other.
+    /// </summary>
+    public async Task<TlpLevel?> KeepWhyItMattersAsync(Guid id, Guid editVersion, Guid briefId, CancellationToken ct = default)
+    {
+        await using var db = await dbs.CreateAsync(ct);
+        var a = await OnOpenBriefAsync(db, id, editVersion, briefId, ct);
+        if (string.IsNullOrWhiteSpace(a.WhyItMatters)) return null;
+        if (a.WhyItMattersKept) return a.WhyItMattersKeptTlp;
+
+        var kept = a.KeepWhyItMatters(user.UserId, user.DisplayName, clock.Now.ToUniversalTime());
+        await SaveCheckedAsync(db, ct);
+        return kept;
+    }
+
+    /// <summary>
+    /// The article, tracked, for a one-click answer to a warning on the running order of <paramref name="briefId"/>.
+    /// Analysts only, as any edit; refused (<see cref="StaleEditException"/>) when the article changed since
+    /// <paramref name="editVersion"/>, the copy the page showed; refused when the article isn't on that brief, or the brief
+    /// has been sent (what went out is changed by a correction).
+    /// </summary>
+    private async Task<Article> OnOpenBriefAsync(IAppDbContext db, Guid id, Guid editVersion, Guid briefId, CancellationToken ct)
+    {
+        RequireWrite();
         var a = await db.Articles.FirstOrDefaultAsync(x => x.Id == id, ct)
                 ?? throw new KeyNotFoundException("That article no longer exists.");
         if (a.EditVersion != editVersion) throw new StaleEditException(SavedMeanwhile);
@@ -389,16 +430,17 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
             ?? throw new InvalidOperationException("That article is no longer on this brief.");
         if (brief == BriefStatus.Sent)
             throw new InvalidOperationException("This brief has been sent. Send a correction to change what went out.");
-        if (a.Effective(a.WhyItMattersTlp) >= TlpLevel.Amber) return false;
+        return a;
+    }
 
-        a.WhyItMattersTlp = TlpLevel.Amber;
-        a.EditVersion = Guid.NewGuid();
+    // A save of an article checked against the copy it was loaded from: a colleague's save in between is refused.
+    private static async Task SaveCheckedAsync(IAppDbContext db, CancellationToken ct)
+    {
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateConcurrencyException)
         {
             throw new StaleEditException(SavedMeanwhile);
         }
-        return true;
     }
 
     private const string SavedMeanwhile = "Someone else saved this article while you were editing. Reload it to see their changes.";

@@ -928,6 +928,24 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<string>("WhyItMatters")
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("WhyItMattersKeptAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("WhyItMattersKeptById")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WhyItMattersKeptByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WhyItMattersKeptHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("WhyItMattersKeptTlp")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("WhyItMattersTlp")
                         .HasColumnType("INTEGER");
 

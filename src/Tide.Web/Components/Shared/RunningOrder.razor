@@ -52,6 +52,9 @@
                             {
                                 <button type="button" class="btn btn-outline-secondary btn-sm tide-need-fix" disabled="@Busy"
                                         aria-label="Set to AMBER: Why it matters on “@a.Title”" @onclick="() => Fix(item, ArticleFix.WhyItMattersAmber)">Set to AMBER</button>
+                                <button type="button" class="btn btn-link btn-sm tide-need-keep" disabled="@Busy"
+                                        aria-label="Keep it: Why it matters on “@a.Title” goes to the company-wide edition at @Tlp.Label(a.Effective(a.WhyItMattersTlp))"
+                                        @onclick="() => Fix(item, ArticleFix.KeepWhyItMatters)">Keep it</button>
                             }
                         }
                     </div>

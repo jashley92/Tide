@@ -208,6 +208,77 @@ public class BriefProgressTests
             "the team edition is meant to carry it");
     }
 
+    private static readonly DateTimeOffset KeptAt = new(2026, 11, 11, 9, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public void KeepingWhyItMatters_AnswersTheWarning_UntilItsTextOrMarkingChanges()
+    {
+        Article Kept()
+        {
+            var a = Threat();
+            a.KeepWhyItMatters("u", "Robin", KeptAt).Should().Be(TlpLevel.Clear, "it is kept at the marking it counts as");
+            return a;
+        }
+
+        ArticleChecks.For(Kept(), TlpLevel.Green).Should().BeEmpty("kept: the warning is answered");
+        (Kept().WhyItMattersKeptTlp, Kept().WhyItMattersKeptByName, Kept().WhyItMattersKeptAtUtc).Should().Be((TlpLevel.Clear, "Robin", KeptAt));
+
+        var text = Kept();
+        text.WhyItMatters += " And a third.";
+        ArticleChecks.WhyReachesCompany(text, TlpLevel.Green).Should().NotBeNull("the text changed since it was kept");
+
+        var marking = Kept();
+        marking.WhyItMattersTlp = TlpLevel.Green;
+        ArticleChecks.WhyReachesCompany(marking, TlpLevel.Green).Should().NotBeNull("its marking changed since it was kept");
+
+        var article = Kept();
+        article.Tlp = TlpLevel.Green;
+        ArticleChecks.WhyReachesCompany(article, TlpLevel.Green).Should().NotBeNull("the article's marking raised what it counts as");
+
+        var back = Kept();
+        back.WhyItMatters += "x";
+        back.WhyItMatters = back.WhyItMatters[..^1];
+        ArticleChecks.WhyReachesCompany(back, TlpLevel.Green).Should().BeNull("the same text and marking again are what was kept");
+
+        var forgotten = Kept();
+        forgotten.ForgetLapsedKeep();
+        forgotten.WhyItMattersKeptHash.Should().NotBeNull("a keep that still holds isn't forgotten");
+        text.ForgetLapsedKeep();
+        (text.WhyItMattersKeptTlp, text.WhyItMattersKeptHash, text.WhyItMattersKeptById, text.WhyItMattersKeptByName, text.WhyItMattersKeptAtUtc)
+            .Should().Be(((TlpLevel?)null, (string?)null, (string?)null, (string?)null, (DateTimeOffset?)null));
+    }
+
+    [Fact]
+    public void KeepingWhyItMatters_ChangesNothingAnEditionCarries()
+    {
+        static Brief Day() => BriefWith(BriefStatus.Draft, Threat(), Threat(TlpLevel.Amber), Ready("open"));
+        var before = Day();
+        var after = Day();
+        foreach (var item in after.Items) item.Article!.KeepWhyItMatters("u", "Robin", KeptAt);
+        for (var i = 0; i < after.Items.Count; i++) after.Items[i].ArticleId = after.Items[i].Article!.Id = before.Items[i].Article!.Id;
+
+        foreach (var (edition, ceiling) in new[] { (Edition.Public, TlpLevel.Green), (Edition.Team, TlpLevel.AmberStrict) })
+        {
+            string Cut(Brief b) => string.Join(" | ", BriefEditions.Build(b, edition, ceiling).Articles.Select(x =>
+                $"{x.Article.Title} {x.ShowWhy} {x.WithheldParts} {x.Marking} {x.Bullets.Count} {x.Screenshots.Count}"));
+            Cut(after).Should().Be(Cut(before), "keeping it changes no edition's contents");
+            EditionChecks.Rows(after, edition, ceiling).Select(r => (r.Title, r.Fit, r.Why))
+                .Should().Equal(EditionChecks.Rows(before, edition, ceiling).Select(r => (r.Title, r.Fit, r.Why)));
+        }
+        BriefSteps.NothingToSend(after, TlpLevel.AmberStrict, TlpLevel.Green).Should().Equal(BriefSteps.NothingToSend(before, TlpLevel.AmberStrict, TlpLevel.Green));
+        BriefSteps.NothingToSend(BriefWith(BriefStatus.Draft, Kept(TlpLevel.Amber)), TlpLevel.AmberStrict, TlpLevel.Green)
+            .Should().Equal([Edition.Public], "an article above the ceiling stays out, kept or not");
+        EditionChecks.Rows(before, Edition.Public, TlpLevel.Green)[0].Warning.Should().NotBeNull();
+        EditionChecks.Rows(after, Edition.Public, TlpLevel.Green)[0].Warning.Should().BeNull("the one warning it answers");
+
+        static Article Kept(TlpLevel tlp)
+        {
+            var a = Threat(tlp);
+            a.KeepWhyItMatters("u", "Robin", KeptAt);
+            return a;
+        }
+    }
+
     [Fact]
     public void TheTriageStep_SaysHowManyNewItemsAreOnKev()
     {
