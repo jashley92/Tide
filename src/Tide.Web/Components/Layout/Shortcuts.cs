@@ -81,7 +81,7 @@ public static class Shortcuts
         new(["P"], "Promote to an article", Letter: true),
         new(["Esc"], "Close the promote form or the reading pane"),
         new(["O"], "Open the source in a new tab", Letter: true),
-        new(["V"], "Read it here", Letter: true),
+        new(["V"], "Read it here (fetched from its site only when nothing is kept); pressed again, close the reading pane", Letter: true),
         new(["R"], "Put back in New", Letter: true),
         new(["Enter", "→"], "On a group: open it"),
         new(["←"], "Close the group"),

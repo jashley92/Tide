@@ -53,9 +53,34 @@ window.tideRows = (function () {
         if (lost) follow(); else reveal();
     }
 
+    // Keys go to .NET one at a time, in the order pressed: each waits until the one before it is answered, so a key
+    // pressed while another is still on its way (one that turns the page and reads it, say) acts on what that one left,
+    // and none is lost. Focus moves only once the last is answered: a row taking focus selects itself (its focus handler
+    // in .NET), so focusing the row an earlier answer drew, with later keys still waiting, would pull the selection back
+    // to that older row. Meanwhile the selected row is only scrolled into view. Then focus follows the selection if any
+    // of the keys was a move.
+    let waiting = [], answering = false, moved = false;
+
+    function busy() { return answering || waiting.length > 0; }
+
     function send(action) {
         if (!ref) return;
-        ref.invokeMethodAsync(opt.method, action).then(opt.follow.indexOf(action) >= 0 ? follow : settle).catch(function () { });
+        waiting.push(action);
+        moved = moved || opt.follow.indexOf(action) >= 0;
+        if (!answering) next();
+    }
+
+    function next() {
+        answering = true;
+        ref.invokeMethodAsync(opt.method, waiting.shift()).then(done, done);
+    }
+
+    function done() {
+        answering = false;
+        if (ref && waiting.length > 0) { reveal(); next(); return; }
+        const then = moved ? follow : settle;
+        moved = false;
+        then();
     }
 
     function onKey(e) {
@@ -89,16 +114,19 @@ window.tideRows = (function () {
         stop: function (started) {
             if (started !== token) return;   // another list has the keys now
             document.removeEventListener('keydown', onKey);
+            waiting = [];
             ref = null;
             opt = null;
         },
         send: send,
-        follow: follow,
-        // Arriving at a row from the address: it takes focus and scrolls to the middle of the window, past the heading
-        // the router focused.
+        // The page's own calls to move focus to the selected row (after its own work, or a page of the list turned) are
+        // left to the last key's answer while keys are on their way: see send.
+        follow: function () { if (!busy()) follow(); },
+        // Arriving at a row from the address, or another page of the list: it takes focus and scrolls to the middle of
+        // the window, past the heading the router focused.
         focusSelected: function () {
             const row = selected();
-            if (!row) return;
+            if (!row || busy()) return;
             row.focus({ preventScroll: true });
             row.scrollIntoView({ block: 'center' });
         },

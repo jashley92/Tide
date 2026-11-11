@@ -85,10 +85,10 @@ export async function settle(page) {
 }
 
 /**
- * Builds TIDE, seeds the demo database (REUSE=1 keeps the last one) and starts it. Returns { stop }, or null when BASE_URL
- * names one already running.
+ * Builds TIDE, seeds the demo database (REUSE=1 keeps the last one) and starts it, with any `settings` added to its
+ * command line (`--Demo:TriageFiller=55`). Returns { stop }, or null when BASE_URL names one already running.
  */
-export async function startTide() {
+export async function startTide(settings = []) {
   if (process.env.BASE_URL) return null;
   const base = baseUrl();
   if (!process.env.REUSE) rmSync(demoDir, { recursive: true, force: true });
@@ -107,7 +107,7 @@ export async function startTide() {
     `--ConnectionStrings:Default=Data Source=${path.join(demoDir, 'tide.db')}`,
     `--Files:RootPath=${path.join(demoDir, 'files')}`,
     `--Email:PickupDirectory=${path.join(demoDir, 'mail')}`,
-    '--Logging:LogLevel:Default=Warning', '--Logging:LogLevel:Tide.Demo=Information',
+    '--Logging:LogLevel:Default=Warning', '--Logging:LogLevel:Tide.Demo=Information', ...settings,
   ], { cwd: web, env: { ...process.env, ASPNETCORE_ENVIRONMENT: 'Development' }, stdio: ['ignore', 'pipe', 'pipe'] });
   child.stdout.pipe(log);
   child.stderr.pipe(log);

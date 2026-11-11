@@ -7,7 +7,8 @@
 // While a row's promote form is open the keys are the form's: only Esc, which closes it and focuses the row again.
 // A suggested group ("Looks like one event") is a line of its own: Enter on it opens or closes it, the right arrow opens
 // it, and the left arrow (on it or on a report under it) closes it. J/K and the up and down arrows move over it.
-// "v" reads the selected item in the reading pane (EP-76); Esc closes the pane.
+// "v" reads the selected item in the reading pane (EP-76), and pressed again closes it; Esc closes it too. Open or closed
+// is remembered for the person.
 window.tideTriage = (function () {
     const rows = window.tideRows;
     let started = 0;
@@ -23,10 +24,25 @@ window.tideTriage = (function () {
         return true;
     }
 
+    // Keys that switch something one way and back (V the pane, Enter a group) or open something (Enter or O the source,
+    // in a new tab): held down, the keyboard's repeats are left alone, so one press is one switch or one tab.
+    const once = ['read', 'toggle-reading', 'toggle', 'open'];
+
     // What a key means here, given what the shared keys made of it.
     function actionFor(e, action, onRow) {
-        // Esc closes the reading pane (when no form is open).
-        if (e.key === 'Escape' && document.querySelector('.tide-reading')) return 'close-reading';
+        const meant = meaning(e, action, onRow);
+        return e.repeat && once.indexOf(meant) >= 0 ? null : meant;
+    }
+
+    function meaning(e, action, onRow) {
+        // Esc closes the reading pane (when no form is open), and V reads or closes it, only when it's shown: one open by
+        // itself is hidden on a narrow window, where Esc closes nothing and V opens it.
+        if (e.key === 'Escape' || action === 'read') {
+            const pane = document.querySelector('.tide-reading');
+            const shown = !!pane && pane.getClientRects().length > 0;
+            if (e.key === 'Escape' && shown) return 'close-reading';
+            if (action === 'read' && shown) return 'toggle-reading';
+        }
         const onGroup = onRow && e.target.classList.contains('tide-triage-group');
         if (e.key === 'Enter' && onRow) return onGroup ? 'toggle' : 'open';
         if (e.key === 'ArrowRight' && onGroup) return 'expand';
@@ -63,7 +79,7 @@ window.tideTriage = (function () {
             started = rows.start(dotnetRef, {
                 row: 'tide-triage-row', method: 'OnTriageKey',
                 keys: { s: 'shortlist', x: 'dismiss', d: 'duplicate', p: 'promote', r: 'restore', o: 'open', v: 'read' },
-                follow: ['toggle', 'expand', 'collapse', 'read', 'close-reading', 'cancel'],
+                follow: ['toggle', 'expand', 'collapse', 'read', 'toggle-reading', 'close-reading', 'cancel'],
                 held: held, key: actionFor, open: open
             });
         },
