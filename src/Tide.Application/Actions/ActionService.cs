@@ -428,8 +428,9 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         await using var db = await dbs.CreateAsync(ct);
         var (me, held, today) = (user.UserId, filter.AssigneeId, clock.Today);
         var closedSince = DateTimeOffset.UtcNow.AddDays(-ClosedListDays);
-        var board = closedDays is not null;
-        var boardSince = DateTimeOffset.UtcNow.AddDays(-Math.Clamp(closedDays ?? 0, 1, BoardOlderDays));
+        // The board's Closed lane (BoardAsync's window); the list has none. Within the closed list's 90 days, as the board's
+        // longest reach (BoardOlderDays) is.
+        var boardSince = closedDays is { } days ? BoardClosedSince(days) : DateTimeOffset.MaxValue;
         var q = Narrow(db, db.Actions.AsNoTracking(), filter with { View = ActionView.Open, AssigneeId = null });
         if (rule is not null) q = WhereRule(q, rule);
         var open = ActionItem.OpenStatuses;
@@ -441,7 +442,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
                    {
                        Open = open.Contains(a.Status),
                        // On the board: a card, open or in its Closed lane (BoardAsync's WhereOpenOrClosedSinceUtc).
-                       Shown = open.Contains(a.Status) || (board && a.ClosedAtUtc != null && a.ClosedAtUtc >= boardSince),
+                       Shown = open.Contains(a.Status) || a.ClosedAtUtc >= boardSince,
                        Closed = a.ClosedAtUtc != null && a.ClosedAtUtc >= closedSince,
                        Mine = a.AssigneeId == me,
                        Nobodys = a.AssigneeId == null,
@@ -575,7 +576,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (filter.View is ActionView.Overdue or ActionView.Closed) filter = filter with { View = ActionView.Open };
         closedDays = Math.Clamp(closedDays, 1, BoardOlderDays);
         await using var db = await dbs.CreateAsync(ct);
-        var since = DateTimeOffset.UtcNow.AddDays(-closedDays);
+        var since = BoardClosedSince(closedDays);
         var q = Narrow(db, db.Actions.AsNoTracking(), filter).WhereOpenOrClosedSinceUtc(since);
         var rows = await CardsAsync(db, q, ct);
         // Open columns by due date then priority; closed ones most recently closed first.
@@ -584,6 +585,9 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var workers = await WorkersAsync(db, ct);
         return new ActionBoard(cards, workers.All, workers.Teams) { ClosedDays = closedDays };
     }
+
+    // How far back the board's Closed lane reaches: the last closedDays days, a day to BoardOlderDays.
+    private static DateTimeOffset BoardClosedSince(int closedDays) => DateTimeOffset.UtcNow.AddDays(-Math.Clamp(closedDays, 1, BoardOlderDays));
 
     // The board's cards: the rows, with whether each one's article names a CVE on CISA's KEV list, in one read for all the
     // cards, on the cards' own query (so no list of ids is sent).
@@ -1484,7 +1488,8 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             a.OutcomeNote = cleanNote;
             if (!ActionItem.IsClosedStatus(was))
             {
-                a.ClosedAtUtc = DateTimeOffset.UtcNow;
+                // The same moment the status setter just recorded: closed, and in its Closed lane, at one time.
+                a.ClosedAtUtc = a.StatusChangedAtUtc;
                 a.ClosedDate = clock.Today;
             }
         }

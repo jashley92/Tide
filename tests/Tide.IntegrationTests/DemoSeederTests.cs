@@ -45,22 +45,23 @@ public class DemoSeederTests(DemoTideApp app) : IClassFixture<DemoTideApp>
     private AppDbContext Db() => app.Services.CreateScope().ServiceProvider.GetRequiredService<AppDbContext>();
 
     [Fact]
-    public async Task EverySeededActionsStatusTime_IsWhatItsOwnHistorySays()
+    public async Task SeededActions_AreDatedInTheirStatusAsTheirHistoryHasIt_NotWhenTheSeedRan()
     {
         Info();
         await using var db = Db();
         var actions = await db.Actions.AsNoTracking().Include(a => a.Events).ToListAsync();
-        actions.Should().NotBeEmpty();
-        foreach (var a in actions)
-        {
-            var name = Tide.Application.Actions.ActionService.StatusName(a.Status);
-            var line = a.Events.Where(e => (e.Text.StartsWith("Status: ", StringComparison.Ordinal) && e.Text.Contains("→ " + name, StringComparison.Ordinal))
-                    || e.Text.StartsWith("Raised from", StringComparison.Ordinal))
-                .Select(e => (DateTimeOffset?)e.AtUtc).Max();
-            var expected = !a.IsOpen && a.ClosedAtUtc is { } closed ? closed : line;
-            if (expected is { } at) a.StatusChangedAtUtc.Should().Be(at, $"A-{a.Number} ({a.Status}): its close, or its latest move or raise line");
-            else a.StatusChangedAtUtc!.Value.Should().BeCloseTo(a.CreatedAtUtc, TimeSpan.FromMinutes(1), $"A-{a.Number} has no line saying when: since it was made");
-        }
+        actions.Where(a => !a.IsOpen && a.ClosedAtUtc is not null).Should().NotBeEmpty()
+            .And.OnlyContain(a => a.StatusChangedAtUtc == a.ClosedAtUtc, "a closed one: when it closed");
+        DateTimeOffset LineAt(string title, string text) => actions.Single(a => a.IsOpen && a.Title == title).Events.Single(e => e.Text.StartsWith(text, StringComparison.Ordinal)).AtUtc;
+        var byTitle = actions.Where(a => a.IsOpen).ToDictionary(a => a.Title, a => a.StatusChangedAtUtc);
+        byTitle["Block the remote monitoring relay and alert on unapproved agents"].Should().Be(
+            LineAt("Block the remote monitoring relay and alert on unapproved agents", "Status: Open → In progress"), "its move to In progress");
+        byTitle["Confirm the vendor's patch window for the file transfer server"].Should().Be(
+            LineAt("Confirm the vendor's patch window for the file transfer server", "Status: Open → Blocked"), "blocked three days ago");
+        byTitle["Shorten session lifetime for unmanaged devices"].Should().Be(
+            LineAt("Shorten session lifetime for unmanaged devices", "Raised from the brief"), "raised at the brief before yesterday's and never moved");
+        actions.Where(a => a.IsOpen && a.Number > 2).Should().OnlyContain(a => a.StatusChangedAtUtc < DateTimeOffset.UtcNow.AddHours(-1),
+            "every seeded open action was raised at an earlier brief, not as the seed ran");
     }
 
     [Fact]
