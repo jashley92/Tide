@@ -174,6 +174,44 @@ public class ActionsListBoardServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task EachDueGroup_SaysHowManyNobodyHas_ReadWithTheGroupsTotals()
+    {
+        var (mine, other) = await Seed();
+        var today = _db.Clock.Today;
+        await Add(other, a => a.DueDate = today);
+        await Add(other, a => (a.DueDate, a.AssigneeId, a.AssigneeName) = (today, Colleague, "Colleague"));
+        var svc = _db.Actions();
+
+        _db.Commands.Reset();
+        await svc.PageAsync(new ActionFilter(ActionView.Open), group: ActionGrouping.Kind);
+        var byKind = _db.Commands.Count;
+        _db.Commands.Reset();
+        var page = await svc.PageAsync(new ActionFilter(ActionView.Open), group: ActionGrouping.Urgency);
+        _db.Commands.Count.Should().Be(byKind, "nobody's are counted in the groups' own query");
+
+        var expected = (await svc.ListAsync(new ActionFilter(ActionView.Open)))
+            .GroupBy(r => ActionSla.UrgencyName(r.Urgency(today, svc.Days)))
+            .ToDictionary(g => g.Key, g => g.Count(r => r.AssigneeId is null));
+        page.GroupsUnowned.Should().Equal(expected);
+        page.GroupsUnowned["Due today"].Should().Be(1);
+    }
+
+    [Fact]
+    public async Task TheListsRows_SayKev_AsTheBoardsCardsDo_OnlyToSomeoneWhoReadsArticles()
+    {
+        var team = await _db.Teams().AddAsync("Cyber Defense", null, null);
+        var (kev, plain) = await Articles();
+        var a = await Add(team, x => x.ArticleId = kev);
+        var b = await Add(team, x => x.ArticleId = plain);
+        var rows = (await _db.Actions().PageAsync(new ActionFilter(ActionView.Open))).Rows;
+        (rows.Single(r => r.Id == a.Id).ArticleKev, rows.Single(r => r.Id == b.Id).ArticleKev).Should().Be((true, false));
+
+        var worker = new OnlyUser("S-1-5-21-WORKER", Permission.WorkActions, Permission.ReadActions);
+        var svc = new ActionService(_db, worker, _db.Sla(), _db.Clock, _db.Queries(), _db.Screenshots(), _db.Articles());
+        (await svc.PageAsync(new ActionFilter(ActionView.Open))).Rows.Should().OnlyContain(r => !r.ArticleKev, "someone who can't open the article isn't told what it says");
+    }
+
+    [Fact]
     public async Task TakeIt_IsOfferedOnlyWhereTakingIsAllowed()
     {
         var (mine, other) = await Seed();
@@ -409,9 +447,10 @@ public class ActionsListBoardServiceTests : IDisposable
         await svc.PageAsync(new ActionFilter(ActionView.Open));
         var few = _db.Commands.Count;
 
+        var (kev, _) = await Articles();
         for (var i = 0; i < 15; i++)
         {
-            var a = await Add(team, x => x.Kind = ActionKind.IocSweep);
+            var a = await Add(team, x => (x.Kind, x.ArticleId) = (ActionKind.IocSweep, kev));
             await using var ctx = _db.Context();
             ctx.HuntQueries.Add(Hunt(a.Id, i % 2 == 0 ? HuntResult.Hits : HuntResult.NotRun));
             ctx.ActionEvents.Add(new ActionEvent { ActionId = a.Id, AtUtc = DateTimeOffset.UtcNow, ByName = "x", Text = "Changed it." });
@@ -419,7 +458,7 @@ public class ActionsListBoardServiceTests : IDisposable
         }
         _db.Commands.Reset();
         (await svc.PageAsync(new ActionFilter(ActionView.Open))).Rows.Should().HaveCount(16).And.OnlyContain(r => r.Hunted != null && r.LastActivityUtc != null);
-        _db.Commands.Count.Should().Be(few, "the hunt state and last activity are read with the rows, not row by row");
+        _db.Commands.Count.Should().Be(few + 1, "the hunt state and last activity are read with the rows, and the KEV flag for them all at once, not row by row");
     }
 
     [Fact]

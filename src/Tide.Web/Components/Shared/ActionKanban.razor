@@ -56,18 +56,8 @@
 </div>
 <div class="visually-hidden" role="status">@_said</div>
 
-@* A move to a closed column asks for the outcome (required for Done) and an optional note first. *@
-<ConfirmDialog @ref="_closeDialog" Form="true" Confirming="ConfirmClose"
-               ConfirmDisabled="@(_closing is { } closing && !ActionCloseFields.CanClose(closing.To, _outcome))">
-    @if (_closing is { } pending)
-    {
-        <ActionCloseFields Kind="pending.Card.Kind" Current="pending.Card.Outcome" To="pending.To" Id="kclose" @bind-Outcome="_outcome" @bind-Note="_note" />
-    }
-</ConfirmDialog>
-
-@* A parent closed while parts are open is asked about first; a move over a team's limit, when it warns, asks why. *@
-<ConfirmDialog @ref="_confirm" />
-<OverLimitDialog @ref="_overLimit" />
+@* A move asks what it needs first (the outcome, for a closed status) and is checked and recorded (ActionMover). *@
+<ActionMover @ref="_mover" Id="kclose" OnChanged="OnChanged" />
 
 @code {
     // The working statuses, a lane each, then the closed ones, a chip each on the strip under them.
@@ -176,7 +166,7 @@
                             {
                                 <button type="button" class="btn btn-link btn-sm tide-kcard-move ms-auto" aria-haspopup="menu" aria-expanded="@(_menuFor == r.Id ? "true" : "false")"
                                         aria-controls="@(_menuFor == r.Id ? $"move-menu-{r.Id}" : null)"
-                                        aria-label="Move @Ui.ActionLabel(r.Number)" disabled="@_busy" @onclick="() => ToggleMenu(r.Id)">
+                                        aria-label="Move @Ui.ActionLabel(r.Number)" disabled="@_mover?.Busy" @onclick="() => ToggleMenu(r.Id)">
                                     Move <span class="bi bi-chevron-down" aria-hidden="true"></span>
                                 </button>
                             }
@@ -188,7 +178,7 @@
                             <div class="tide-kcard-menu" id="move-menu-@r.Id" role="menu" aria-label="Move @Ui.ActionLabel(r.Number) to" @onkeydown="OnMenuKey">
                                 @foreach (var to in ActionItem.StatusOrder.Where(s => s != r.Status))
                                 {
-                                    <button type="button" role="menuitem" tabindex="-1" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => MoveFromMenu(r, to)">@ActionService.StatusName(to)</button>
+                                    <button type="button" role="menuitem" tabindex="-1" class="btn btn-outline-secondary btn-sm" disabled="@_mover?.Busy" @onclick="() => MoveFromMenu(r, to)">@ActionService.StatusName(to)</button>
                                 }
                             </div>
                         }
@@ -241,8 +231,6 @@
     /// <summary>How long a card someone else moved says who moved it.</summary>
     private static readonly TimeSpan ArrivedFor = TimeSpan.FromSeconds(6);
 
-    private sealed record PendingClose(ActionRow Card, ActionStatus To);
-
     /// <summary>The cards a column shows at first, and how many more each "Show more" adds.</summary>
     internal const int FirstCards = 20, MoreCards = 20;
 
@@ -266,18 +254,12 @@
     private Task ShowOlder() => OnShowOlder.InvokeAsync();
 
     private ElementReference _root;
-    private ConfirmDialog _closeDialog = default!;
-    private ConfirmDialog _confirm = default!;
-    private OverLimitDialog _overLimit = default!;
+    private ActionMover _mover = default!;
     private DotNetObjectReference<ActionKanban>? _self;
     private Guid? _menuFor;
     // The card whose Move menu just opened (focus goes to its first option), or that the menu just moved (focus goes
     // back to its Move button, in its new column).
     private Guid? _focusMenu, _focusMove;
-    private PendingClose? _closing;
-    private bool _busy;
-    private ActionOutcome _outcome;
-    private string? _note;
 
     // The columns the cards were in at the last render, to see which moved; the cards this tab moved itself (its own
     // reload isn't news); the ones someone else moved, saying so for a moment; and the slides still to play.
@@ -404,59 +386,13 @@
         StateHasChanged();
     }
 
+    // This tab's own move: its reload isn't news, and the card stays shown wherever it lands.
     private async Task Move(ActionRow card, ActionStatus to)
     {
         _menuFor = null;
-        if (ActionItem.IsClosedStatus(to) && card.ChildrenOpen > 0 && !await ActionPrompts.ConfirmCloseParent(_confirm, card.Number, card.ChildrenOpen)) return;
-        if (ActionItem.IsClosedStatus(to))
-        {
-            _closing = new PendingClose(card, to);
-            _outcome = ActionOutcome.None;   // Done: chosen in the dialog; otherwise optional
-            _note = null;
-            StateHasChanged();   // a drop comes from script, not an event: draw the dialog's fields for this card first
-            var column = ActionService.StatusName(to);
-            await _closeDialog.Ask($"Move {Ui.ActionLabel(card.Number)} to {column}", card.Title, $"Move to {column}", danger: false);
-            _closing = null;
-            return;
-        }
-        await Run(card, to, ActionOutcome.None, null);
-    }
-
-    // The dialog's button: true closes it (moved, or the card changed underneath and the board reloaded).
-    private async Task<bool> ConfirmClose() =>
-        _closing is not { } p || await Run(p.Card, p.To, _outcome, _note) || _closing is null;
-
-    private async Task<bool> Run(ActionRow card, ActionStatus to, ActionOutcome outcome, string? note)
-    {
-        _busy = true;
-        try
-        {
-            _mine.Add(card.Id);
-            _pinned.Add(card.Id);
-            if (!await _overLimit.RunAsync(reason => ActionSvc.MoveAsync(card.Id, card.Status, to, outcome, note, reason)))
-            {
-                _mine.Remove(card.Id);
-                return false;
-            }
-            Toasts.Show($"{Ui.ActionLabel(card.Number)} moved to {ActionService.StatusName(to)}.");
-            await OnChanged.InvokeAsync();
-            return true;
-        }
-        catch (StaleEditException ex)
-        {
-            _mine.Remove(card.Id);
-            Toasts.Error(ex.Message);
-            _closing = null;
-            await OnChanged.InvokeAsync();
-            return false;
-        }
-        catch (Exception ex)
-        {
-            _mine.Remove(card.Id);
-            Toasts.Error(UserFacingError.For(ex));
-            return false;
-        }
-        finally { _busy = false; }
+        _mine.Add(card.Id);
+        _pinned.Add(card.Id);
+        await _mover.MoveAsync(card, to, refused: () => _mine.Remove(card.Id));
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

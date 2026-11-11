@@ -217,6 +217,9 @@ public enum ActionGrouping
 public sealed record ActionListPage(IReadOnlyList<ActionRow> Rows, int Total, int Page, IReadOnlyDictionary<string, int> Groups)
 {
     public ActionWorkers Workers { get; init; } = ActionWorkers.None;
+
+    /// <summary>Grouped by when they're due: how many in each group nobody holds (named as <see cref="Groups"/> are).</summary>
+    public IReadOnlyDictionary<string, int> GroupsUnowned { get; init; } = new Dictionary<string, int>();
 }
 
 /// <summary>Which teams' actions the reader works: all of them (an analyst), or the teams they're on with WorkActions
@@ -422,16 +425,19 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         page = Math.Clamp(page, 1, Math.Max(1, (total + size - 1) / size));
         var today = clock.Today;
         var urgency = UrgencyOf(today, ActionSla.EndOfBusinessWeek(today, clock.Days));
-        IReadOnlyDictionary<string, int> groups = group switch
+        IReadOnlyDictionary<string, int> groups = new Dictionary<string, int>(), unowned = groups;
+        if (group == ActionGrouping.Kind)
+            groups = (await q.GroupBy(a => a.Kind).Select(g => new { g.Key, N = g.Count() }).ToListAsync(ct)).ToDictionary(g => KindName(g.Key), g => g.N);
+        else if (group == ActionGrouping.Urgency)
         {
-            ActionGrouping.Kind => (await q.GroupBy(a => a.Kind).Select(g => new { g.Key, N = g.Count() }).ToListAsync(ct))
-                .ToDictionary(g => KindName(g.Key), g => g.N),
-            ActionGrouping.Urgency => (await q.Select(urgency).GroupBy(u => u).Select(g => new { g.Key, N = g.Count() }).ToListAsync(ct))
-                .ToDictionary(g => ActionSla.UrgencyName((ActionUrgency)g.Key), g => g.N),
-            _ => new Dictionary<string, int>(),
-        };
-        var rows = await RowsAsync(db, Ordered(q, sort, descending, group, urgency).Skip((page - 1) * size).Take(size), ct);
-        return new ActionListPage(Readable(rows), total, page, groups) { Workers = await WorkersAsync(db, ct) };
+            // Each group's total and how many of it nobody holds, in the one grouped read.
+            var counts = await q.GroupBy(urgency).Select(g => new { g.Key, N = g.Count(), Nobodys = g.Count(a => a.AssigneeId == null) }).ToListAsync(ct);
+            groups = counts.ToDictionary(g => ActionSla.UrgencyName((ActionUrgency)g.Key), g => g.N);
+            unowned = counts.ToDictionary(g => ActionSla.UrgencyName((ActionUrgency)g.Key), g => g.Nobodys);
+        }
+        var shown = Ordered(q, sort, descending, group, urgency).Skip((page - 1) * size).Take(size);
+        var rows = await WithKevAsync(db, Readable(await RowsAsync(db, shown, ct)), shown, ct);
+        return new ActionListPage(rows, total, page, groups) { Workers = await WorkersAsync(db, ct), GroupsUnowned = unowned };
     }
 
     // Which teams' actions the reader works (CanWork's rule, for every row at once): all for an analyst, none without
@@ -616,7 +622,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (filter.View is ActionView.Overdue or ActionView.Closed) filter = filter with { View = ActionView.Open };
         await using var db = await dbs.CreateAsync(ct);
         var q = Narrow(db, db.Actions.AsNoTracking(), filter).WhereOpen();
-        var rows = await CardsAsync(db, q, ct);
+        var rows = await WithKevAsync(db, Readable(await RowsAsync(db, q, ct)), q, ct);
         // By due date then priority.
         var cards = rows.OrderBy(r => r.DueDate ?? DateOnly.MaxValue).ThenBy(r => r.Priority).ThenBy(r => r.Number).ToList();
         var workers = await WorkersAsync(db, ct);
@@ -626,12 +632,11 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     // How far back the board's closed strip counts: the last closedDays days, a day to BoardOlderDays.
     private static DateTimeOffset BoardClosedSince(int closedDays) => DateTimeOffset.UtcNow.AddDays(-Math.Clamp(closedDays, 1, BoardOlderDays));
 
-    // The board's cards: the rows, with whether each one's article names a CVE on CISA's KEV list, in one read for all the
-    // cards, on the cards' own query (so no list of ids is sent).
-    private async Task<List<ActionRow>> CardsAsync(IAppDbContext db, IQueryable<ActionItem> q, CancellationToken ct)
+    // The rows of q (the board's cards, or a page of the list) with whether each one's article names a CVE on CISA's KEV
+    // list, in one read for them all, on their own query (so no list of ids is sent). Only for someone who may read the
+    // article: Readable has left its title off for anyone else.
+    private async Task<List<ActionRow>> WithKevAsync(IAppDbContext db, List<ActionRow> rows, IQueryable<ActionItem> q, CancellationToken ct)
     {
-        var rows = Readable(await RowsAsync(db, q, ct));
-        if (rows.Count == 0) return rows;
         var kev = new HashSet<Guid>();
         if (user.Has(Permission.ReadTeamEdition) && rows.Any(r => r.ArticleId is not null))
         {

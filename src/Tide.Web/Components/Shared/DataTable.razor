@@ -93,6 +93,10 @@
                             <tr class="tide-dt-group">
                                 <th colspan="@Columns.Count" scope="rowgroup">
                                     @g.Name <span class="tide-count">@g.Total</span>
+                                    @if (GroupNote?.Invoke(g.Name) is { } note)
+                                    {
+                                        <span class="tide-dt-group-note">@note</span>
+                                    }
                                     @if (g.Hidden > 0)
                                     {
                                         <span class="tide-dt-group-more"><span aria-hidden="true">&middot; </span>@(g.Rows.Count == 0 ? "on other pages" : $"{g.Hidden} on other pages")</span>
@@ -121,6 +125,14 @@
     [Parameter, EditorRequired] public RenderFragment<TItem> RowTemplate { get; set; } = default!;
     [Parameter] public Func<TItem, object>? Key { get; set; }
     [Parameter] public Func<TItem, string?>? RowClass { get; set; }
+
+    /// <summary>A list with a selected row (RowSelection, the keys RowKeys's): whether this row is it. Rows a person
+    /// focuses become it through <see cref="OnSelect"/>.</summary>
+    [Parameter] public Func<TItem, bool>? Selected { get; set; }
+    [Parameter] public EventCallback<TItem> OnSelect { get; set; }
+
+    /// <summary>A few words after a group's heading and count ("2 have no owner"), or none.</summary>
+    [Parameter] public Func<string, string?>? GroupNote { get; set; }
 
     /// <summary>What the rows are, for the count and the empty state: "article", "articles".</summary>
     [Parameter, EditorRequired] public string One { get; set; } = "";
@@ -272,7 +284,15 @@
         _ => "bi-arrow-down-up",
     };
 
-    private RenderFragment Row(TItem r) => @<tr @key="Key is null ? r : Key(r)" class="@RowClass?.Invoke(r)">@RowTemplate(r)</tr>;
+    private RenderFragment Row(TItem r) => Selected is null
+        ? @<tr @key="Key is null ? r : Key(r)" class="@RowClass?.Invoke(r)">@RowTemplate(r)</tr>
+        : SelectableRow(r, Selected(r));
+
+    // A row of a list with a selected row (RowSelection): the selected one is the list's tab stop, and a row that takes
+    // focus (or something in it does) becomes the selected one.
+    private RenderFragment SelectableRow(TItem r, bool selected) =>
+        @<tr @key="Key is null ? r : Key(r)" class="@($"{RowClass?.Invoke(r)} {RowSelection.Css(selected)}".Trim())" aria-current="@RowSelection.Current(selected)"
+             tabindex="@RowSelection.TabIndex(selected)" @onfocusin="() => OnSelect.InvokeAsync(r)">@RowTemplate(r)</tr>;
 
     // Bound with @bind:get/@bind:set rather than value= with @oninput: Blazor then keeps its copy of the box's value in
     // step with what's typed, so a render after a keystroke never sends older text over newer typing, while a clear or a

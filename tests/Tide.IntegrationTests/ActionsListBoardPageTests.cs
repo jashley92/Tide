@@ -342,6 +342,131 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
             System.Globalization.CultureInfo.InvariantCulture), "the All open tab counts what the list shows");
     }
 
+    // Actions nobody holds, due today, on a team of their own, found by the token in their titles.
+    private async Task<List<int>> DueToday(string token, int count, SignIn? member = null)
+    {
+        var team = await Team("AL due today", member);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var numbers = new List<int>();
+        for (var i = 0; i < count; i++)
+            numbers.Add(await As(sp => sp.GetRequiredService<ActionService>().CreateAsync(new ActionForm
+            {
+                Title = $"{token} {i}", Kind = ActionKind.Block, TeamId = team,
+                DueDate = sp.GetRequiredService<Tide.Application.Org.OrgClock>().Today,
+            })));
+        return numbers;
+    }
+
+    [Theory]
+    [InlineData("open")]
+    [InlineData("myteams")]
+    public async Task AllOpenAndMyTeams_AreGroupedByWhenDue_EachHeadingSayingHowManyHaveNoOwner(string view)
+    {
+        var token = $"algroup{Guid.NewGuid():N}"[..15];
+        await DueToday(token, 2, SignIn.Analyst);
+        await using var r = await RenderAsync<ActionsBoard>(app, $"/actions?view={view}&layout=list&q={token}");
+        var html = WebUtility.HtmlDecode(await r.HtmlOnce(token));
+        html.Should().MatchRegex("<th colspan=\"\\d+\" scope=\"rowgroup\">\\s*Due today <span class=\"tide-count\">2</span>[\\s\\S]*?2 have no owner",
+            "the group's heading says how many of it nobody has");
+    }
+
+    [Fact]
+    public async Task TheStatusCell_IsAMenu_ForWhoeverMayWorkTheAction_AndAPlainBadgeForEveryoneElse()
+    {
+        var owner = Owner();
+        var token = $"alstat{Guid.NewGuid():N}"[..14];
+        var ours = await Raise(await Team("AL status ours", owner), $"{token} ours");
+        var theirs = await Raise(await Team("AL status theirs"), $"{token} theirs");
+
+        await using (var r = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=list&q={token}", @as: owner))
+        {
+            var html = WebUtility.HtmlDecode(await r.HtmlOnce(token));
+            html.Should().MatchRegex($"<button type=\"button\" class=\"[^\"]*tide-status-menu[^\"]*\"[^>]*aria-haspopup=\"menu\"[^>]*aria-label=\"Status of A-{ours}: Open\"");
+            html.Should().NotContain($"Status of A-{theirs}", "another team's action isn't theirs to move");
+        }
+        await using var viewer = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=list&q={token}", @as: Viewer);
+        (await viewer.HtmlOnce(token)).Should().NotContain("tide-status-menu", "a viewer works no action");
+    }
+
+    [Fact]
+    public async Task TheStatusMenu_MovesTheActionThroughTheBoardsCheckedPath_AsksHowItClosed_AndRefusesAStaleRow()
+    {
+        var token = $"almove{Guid.NewGuid():N}"[..14];
+        var team = await Team("AL move");
+        var number = await Raise(team, $"{token} move");
+        await using var r = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=list&q={token}");
+        await r.HtmlOnce(token);
+
+        await r.Click(p => p.MoveRow(p.Rows.Single(x => x.Number == number), ActionStatus.Blocked));
+        var moved = (await Detail(number)).Action;
+        moved.Status.Should().Be(ActionStatus.Blocked);
+        moved.Events.Should().Contain(e => e.Text == "Status: Open → Blocked.", "recorded as a move on the board is");
+        r.Component.Rows.Single(x => x.Number == number).Status.Should().Be(ActionStatus.Blocked, "the list is read again");
+
+        // Closing asks how, as the board does.
+        await r.Press(p => p.MoveRow(p.Rows.Single(x => x.Number == number), ActionStatus.Done));
+        WebUtility.HtmlDecode(await r.HtmlOnce("Move to Done")).Should().Contain($"Move A-{number} to Done");
+
+        // A row someone else moved meanwhile: refused, nothing changes, and the list is read again.
+        var stale = r.Component.Rows.Single(x => x.Number == number);
+        await As(async sp => { await sp.GetRequiredService<ActionService>().MoveAsync(stale.Id, ActionStatus.Blocked, ActionStatus.Tracking); return true; });
+        await r.Click(p => p.MoveRow(stale, ActionStatus.InProgress));
+        (await Detail(number)).Action.Status.Should().Be(ActionStatus.Tracking, "a stale row moves nothing");
+        r.Component.Rows.Single(x => x.Number == number).Status.Should().Be(ActionStatus.Tracking);
+    }
+
+    [Fact]
+    public async Task ARow_SaysKev_BesideItsArticle()
+    {
+        var token = $"alkev{Guid.NewGuid():N}"[..13];
+        var cve = $"CVE-2099-{Random.Shared.Next(10000, 99999)}";
+        Guid article;
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Tide.Infrastructure.Persistence.AppDbContext>();
+            var a = new Tide.Domain.Entities.Article { Title = $"{token} article", Tlp = TlpLevel.Amber, AuthorId = "dev:x", AuthorName = "X" };
+            db.Articles.Add(a);
+            db.ArticleCves.Add(new Tide.Domain.Entities.ArticleCve { ArticleId = a.Id, CveId = cve });
+            db.CveRecords.Add(new Tide.Domain.Entities.CveRecord { CveId = cve, IsKev = true });
+            await db.SaveChangesAsync();
+            article = a.Id;
+        }
+        var team = await Team("AL kev flags");
+        await As(sp => sp.GetRequiredService<ActionService>().CreateAsync(new ActionForm { Title = $"{token} action", Kind = ActionKind.Block, TeamId = team, ArticleId = article }));
+        await using var r = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=list&q={token}");
+        Row(WebUtility.HtmlDecode(await r.HtmlOnce(token)), $"{token} action").Should().MatchRegex($"{token} article\\s*<span class=\"tide-kev\"[^>]*>KEV</span>");
+    }
+
+    [Fact]
+    public async Task TheList_HasASelectedRow_TheAddressNamesIt_TTakesIt_AndTheKeysAreListed()
+    {
+        var owner = Owner();
+        var token = $"alkeys{Guid.NewGuid():N}"[..14];
+        var team = await Team("AL keys", owner);
+        var first = await Raise(team, $"{token} 0");
+        var second = await Raise(team, $"{token} 1");
+        await using var r = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=list&q={token}&row=1", @as: owner);
+        var html = WebUtility.HtmlDecode(await r.HtmlOnce(token));
+        r.Component.Selected.Should().Be(1, "?row= names the selected row by its place");
+        var row = html[html.LastIndexOf("<tr", html.IndexOf($"{token} 1</a>", StringComparison.Ordinal), StringComparison.Ordinal)..];
+        row[..row.IndexOf('>')].Should().Contain("tide-action-row").And.Contain("selected").And.Contain("aria-current=\"true\"").And.Contain("tabindex=\"0\"");
+        var other = html[html.LastIndexOf("<tr", html.IndexOf($"{token} 0</a>", StringComparison.Ordinal), StringComparison.Ordinal)..];
+        other[..other.IndexOf('>')].Should().Contain("tabindex=\"-1\"").And.NotContain("aria-current");
+        html.Should().MatchRegex("<kbd class=\"tide-kbd\">J</kbd>\\s*<kbd class=\"tide-kbd\">K</kbd> move · <kbd class=\"tide-kbd\">T</kbd> take it · <kbd class=\"tide-kbd\">Enter</kbd> open",
+            "the keys are said beside the heading");
+
+        var numbers = r.Component.Rows.Select(x => x.Number).ToList();
+        await r.Click(p => p.RowKey("take"));
+        (await Detail(numbers[1])).Action.AssigneeId.Should().Be(owner.UserId, "T takes the selected row on");
+        (await Detail(numbers[0])).Action.AssigneeId.Should().BeNull();
+        new[] { first, second }.Should().Contain(numbers);
+
+        var keys = Tide.Web.Components.Layout.Shortcuts.For("actions?view=open&layout=list").SelectMany(g => g.Keys).ToList();
+        keys.Should().Contain(k => k.Keys.Contains("J") && k.Letter).And.Contain(k => k.Keys.Contains("K") && k.Letter)
+            .And.Contain(k => k.Keys.Contains("T") && k.Letter && k.What.Contains("Take", StringComparison.Ordinal))
+            .And.Contain(k => k.Keys.Contains("Enter") && k.What.Contains("Open", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task AnEmptyMine_SaysWhenThePersonsTeamsHaveWorkNobodyOwns()
     {

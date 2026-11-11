@@ -229,15 +229,17 @@ public sealed class ActionStatusBadge : ComponentBase
 {
     [Parameter, EditorRequired] public ActionStatus Status { get; set; }
 
-    protected override void BuildRenderTree(RenderTreeBuilder b) =>
-        Badge.Write(b, Status switch
-        {
-            ActionStatus.InProgress => BadgeTone.Info,
-            ActionStatus.Blocked => BadgeTone.Warn,
-            ActionStatus.Tracking => BadgeTone.Purple,
-            ActionStatus.Done => BadgeTone.Ok,
-            _ => BadgeTone.Neutral,
-        }, false, Application.Actions.ActionService.StatusName(Status));
+    protected override void BuildRenderTree(RenderTreeBuilder b) => Badge.Write(b, Tone(Status), false, Application.Actions.ActionService.StatusName(Status));
+
+    /// <summary>A status's tone (the list's Status menu is tinted as its badge is).</summary>
+    public static BadgeTone Tone(ActionStatus status) => status switch
+    {
+        ActionStatus.InProgress => BadgeTone.Info,
+        ActionStatus.Blocked => BadgeTone.Warn,
+        ActionStatus.Tracking => BadgeTone.Purple,
+        ActionStatus.Done => BadgeTone.Ok,
+        _ => BadgeTone.Neutral,
+    };
 }
 
 /// <summary>How an action's hunts went, or one hunt did: hits, no hits, or not run yet. Nothing when it has no hunt.

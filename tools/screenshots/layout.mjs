@@ -174,6 +174,70 @@ const dropOnEachChip = {
   },
 };
 
+const selectedAction = page => page.evaluate(() => {
+  const rows = [...document.querySelectorAll('.tide-action-row')];
+  return { at: rows.findIndex(r => r.classList.contains('selected')), focused: rows.indexOf(document.activeElement), row: new URL(location.href).searchParams.get('row') };
+});
+
+/**
+ * The Actions list's keys: J and the down arrow move the selected row (it takes focus, and the address names it), K and
+ * the up arrow move it back, and T typed in the search box is only typed: it takes nothing on.
+ */
+const actionKeys = {
+  name: 'J and K move the selected action; T in a field is typing',
+  check: async page => {
+    const problems = [];
+    await page.locator('.tide-action-row.selected').focus();
+    for (const [key, at] of [['j', 1], ['ArrowDown', 2], ['k', 1], ['ArrowUp', 0]]) {
+      await page.keyboard.press(key);
+      await page.waitForTimeout(500);
+      const now = await selectedAction(page);
+      if (now.at !== at || now.focused !== at) problems.push(`after ${key} row ${now.at + 1} is selected and row ${now.focused + 1} has focus, not row ${at + 1}`);
+      if ((now.row ?? '0') !== String(at)) problems.push(`after ${key} the address says row=${now.row}, not ${at}`);
+    }
+    const takes = await page.locator('.tide-row-take').count();
+    const box = page.getByRole('searchbox', { name: 'Search actions' });
+    await box.focus();
+    await page.keyboard.press('t');
+    await page.waitForTimeout(800);
+    if (await page.locator('.tide-row-take').count() !== takes || await page.locator('.tide-toast').count()) problems.push('T typed in the search box took an action on');
+    return problems;
+  },
+};
+
+/** T on the selected row takes it on: the toast says so. */
+const takeKey = {
+  name: 'T takes the selected action on',
+  check: async page => {
+    const number = (await page.locator('.tide-action-row.selected .tide-action-num').innerText()).trim();
+    await page.locator('.tide-action-row.selected').focus();
+    await page.keyboard.press('t');
+    const toast = page.getByText(`You took ${number} on.`);
+    try { await toast.waitFor({ timeout: 5000 }); return []; } catch { return [`T on ${number} didn't take it on`]; }
+  },
+};
+
+/** A row's Status menu from the keyboard: Enter on it opens its menu with focus on the first status, and Esc closes it
+ * with focus back on the status. */
+const statusMenuByKeyboard = {
+  name: 'the Status menu opens and closes from the keyboard',
+  check: async page => {
+    const button = page.locator('.tide-status-menu').first();
+    if (!await button.count()) return ['no row has a Status menu'];
+    await button.focus();
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(500);
+    const problems = [];
+    const inMenu = await page.evaluate(() => !!document.activeElement?.closest('[role="menu"]'));
+    if (!inMenu) problems.push('Enter on the status left focus outside its menu');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(500);
+    if (await page.locator('.tide-menubutton-pop[role="menu"]').count()) problems.push('Esc left the menu open');
+    if (!await page.evaluate(() => document.activeElement?.classList.contains('tide-status-menu'))) problems.push('Esc didn\'t put focus back on the status');
+    return problems;
+  },
+};
+
 /** Setup: every letter spaced wider, as a font wider than this machine's would set it (CI's): a rule that holds then
  * holds by the page's construction, not by pixels to spare. */
 const wider = async page => { await page.addStyleTag({ content: '* { letter-spacing: .07em !important; }' }); };
@@ -520,6 +584,10 @@ const pages = [
     rules: [clickAtEdgeChooses('[role=group][aria-label="Views"]')] },
   { name: 'actions-take-focus-last', route: '/actions?view=open&layout=list&assignee=none', setup: take('last', 'previous'), widths: [780],
     rules: [focusedOnExpectedRow] },
+  // The list's selected row and its keys, the Status menu from the keyboard, and T taking the selected row on.
+  { name: 'actions-list-keys', route: '/actions?view=open&layout=list', widths: [[1440, 900]],
+    rules: [visible('.tide-action-row.selected'), visible('.tide-actions-keys'), oneRow('.tide-actions-keys'), actionKeys, statusMenuByKeyboard] },
+  { name: 'actions-list-take-key', route: '/actions?view=open&layout=list&assignee=none', widths: [[1440, 900]], rules: [takeKey] },
   // The four lanes share the width and fill the window's height, each with room to drop under its cards, and the closed
   // strip (a drop target for each way of closing) sits at the bottom of the first screen: on a laptop's window, a
   // smaller one and a narrow one (the lanes two by two), and with wider letters. Nothing scrolls sideways.

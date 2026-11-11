@@ -144,7 +144,9 @@ public class PagingAndFiltersServiceTests : IDisposable
         (await List(open with { Priorities = [Priority.P2], Due = ActionDue.ThisWeek })).Should().Equal("today P2");
         (await List(open with { Priorities = [Priority.P2], Status = ActionStatus.Blocked })).Should().BeEmpty();
 
-        (await Board(open with { Priorities = [Priority.P1] })).Should().BeEquivalentTo(["late P1", "closed late"], "the board's Done column is filtered too");
+        (await Board(open with { Priorities = [Priority.P1] })).Should().Equal(["late P1"], "the board draws open actions");
+        (await svc.ViewCountsAsync(open with { Priorities = [Priority.P1] }, closedDays: ActionService.BoardClosedDays)).ClosedAs(ActionStatus.Done)
+            .Should().Be(1, "and its closed strip is filtered too");
         (await Board(open with { Due = ActionDue.Overdue })).Should().Equal(["late P1"], "a closed action is never overdue");
         (await Board(open with { Search = "week end" })).Should().Equal("week end P3");
     }

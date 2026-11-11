@@ -1178,9 +1178,7 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
 .tide-kcol { background: var(--tide-surface-2); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl); padding: .6rem; min-height: 12rem; }
 .tide-kcol.over { border-color: var(--tide-accent); background: var(--tide-drop); box-shadow: inset 0 0 0 1px var(--tide-accent); }
 .tide-kcol-head { font-size: .9rem; font-weight: var(--tide-weight-semibold); margin: 0 0 .5rem; display: flex; align-items: center; gap: .4rem; }
-.tide-kcol-sub { font-size: .74rem; color: var(--tide-text-muted); margin: -.3rem 0 .5rem; }
 .tide-kcol-cards { display: flex; flex-direction: column; gap: .5rem; }
-.tide-kcol-empty { font-size: .82rem; color: var(--tide-text-muted); text-align: center; padding: 1.25rem .5rem; border: 1px dashed var(--tide-border-strong); border-radius: var(--tide-radius-lg); }
 /* A column's "Show N more" and Done's "Show older", under its cards. */
 .tide-kcol-more { align-self: center; }
 .tide-kcard { background: var(--tide-surface); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-lg); padding: .55rem .65rem; display: flex; flex-direction: column; gap: .3rem; }
@@ -1195,7 +1193,6 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
 .tide-kcard-arrived { animation: tide-kcard-glow 2.4s ease-out 1; }
 @keyframes tide-kcard-glow { from { box-shadow: 0 0 0 3px var(--tide-info); } to { box-shadow: 0 0 0 3px transparent; } }
 @media (prefers-reduced-motion: reduce) { .tide-kcard-arrived { animation: none; box-shadow: 0 0 0 2px var(--tide-info); } }
-.tide-kcol-closed .tide-kcard { background: var(--tide-bg); }
 .tide-kcard-head { display: flex; align-items: center; gap: .4rem; min-width: 0; }
 .tide-kcard-title { font-weight: var(--tide-weight-semibold); line-height: 1.3; color: var(--tide-text); overflow-wrap: anywhere; text-decoration: none; }
 .tide-kcard-title:hover, .tide-kcard-title:focus-visible { text-decoration: underline; }
@@ -2504,4 +2501,15 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-kstrip-more { margin-left: auto; padding: 0; }
 .tide-chip-count { margin-left: var(--tide-space-1); color: var(--tide-text-muted); font-variant-numeric: tabular-nums; }
 .tide-col-progress { min-width: 7.5rem; }
+/* The list's keys beside its heading; its selected row (rows.js moves it), marked as Triage's is; a status that is a
+   menu, tinted as its badge; and a due group's heading saying how many of it nobody holds. */
+.tide-actions-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--tide-space-1) var(--tide-space-3); }
+.tide-actions-keys { font-size: var(--tide-text-sm); color: var(--tide-text-muted); }
+.tide-action-row.selected > td { background: var(--tide-accent-soft); }
+.tide-action-row.selected > td:first-child { box-shadow: inset 3px 0 0 var(--tide-accent); }
+.tide-action-row:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: -2px; }
+.tide-status-menu { border: 0; cursor: pointer; white-space: nowrap; }
+.tide-status-menu:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
+.tide-dt-group-note { margin-left: var(--tide-space-2); padding: 0 var(--tide-space-2); border: 1px dashed var(--tide-border-strong); border-radius: var(--tide-radius-pill);
+    color: var(--tide-text-muted); font-size: var(--tide-text-xs); font-weight: var(--tide-weight-regular); }
 /* ---- end Actions list and board, as designed ---- */
