@@ -467,7 +467,8 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
             await drawer.Click(d => EventCallback.Factory.Create(d, () => d.Select(ActionTool.Hunt)).InvokeAsync());
             keyAsked.Should().Be("hunt");
             drawer.Component.Tool.Should().Be(ActionTool.Checklist, "the address hasn't changed yet");
-            (await drawer.Html()).Should().Contain("aria-label=\"Query language\"", "the hunt panel is drawn, hidden, ready to show");
+            (await drawer.Html()).Should().Contain("<h2>Hunt queries", "the hunt panel is drawn, hidden, ready to show")
+                .And.NotContain("aria-label=\"Query language\"", "its language and window are on the tab row only while its tab shows");
         }
         await using (var missing = await Open(block, tool: "outreach"))
             (await missing.Html()).Should().Contain("data-tool=\"checklist\"", "a tool it hasn't got falls back to the kind's own");
@@ -485,11 +486,11 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
             var html = await page.Html();
             int At(string text) => html.IndexOf(text, StringComparison.Ordinal);
             At(drawer).Should().BeGreaterThan(At(main));
-            html.Should().Contain("<div class=\"tide-ord-3\">", "on a phone the tools still come straight after the details");
+            html.Should().Contain(wide ? "<div class=\"tide-ord-2\">" : "<div class=\"tide-ord-3\">", "on a phone a sweep's tools come first, beside its details; others' after them");
             if (wide)
             {
                 At(drawer).Should().BeLessThan(At(side), $"a {kind}'s tools are in the wide column")
-                    .And.BeGreaterThan(At("Layout tools place details"), "under its details")
+                    .And.BeLessThan(At("Layout tools place details"), "above its details, so Copy is on the first screen")
                     .And.BeLessThan(At("id=\"feed-h\""), "above what's happened");
                 html.Should().Contain("data-tool=\"hunt\"", "opened on its hunt queries");
             }

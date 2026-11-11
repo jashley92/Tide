@@ -7,8 +7,9 @@ using Tide.Web.Services;
 namespace Tide.Web.Components.Shared;
 
 /// <summary>A library entry as its list names it (<see cref="LibraryBrowser"/>): its name, what it's for in a line, its kind
-/// (a query's language, a template's TLP ceiling, the kind of action a playbook is for) and how often it was used.</summary>
-public sealed record LibraryEntry(Guid Id, string Name, string? Description, string Kind, string Used, bool Retired);
+/// (a query's language, a template's TLP ceiling, the kind of action a playbook is for), how often it was used, and the
+/// heading it's listed under, when the list is grouped (a query's platform).</summary>
+public sealed record LibraryEntry(Guid Id, string Name, string? Description, string Kind, string Used, bool Retired, string? Group = null);
 
 /// <summary>
 /// What the team's libraries (Saved queries, Outreach templates, Playbooks; each a tab of the Library page) share: the
@@ -40,7 +41,7 @@ public abstract class LibraryPage<TRow> : ComponentBase, IDisposable where TRow 
     private FocusOn? _focus;
     private protected LibraryBrowser? _browser;
     private protected ElementReference _formStart, _empty;
-    private string? _pageAsked, _rowAsked;
+    private string? _pageAsked, _rowAsked, _wordsAsked;
     private protected int _page = 1;
     private protected bool _busy, _showRetired;
     private protected string? _words;
@@ -75,6 +76,9 @@ public abstract class LibraryPage<TRow> : ComponentBase, IDisposable where TRow 
 
     /// <summary>The Library page's: called after a step here changed the rows, so the tab's count is read again.</summary>
     [Parameter] public EventCallback OnChanged { get; set; }
+
+    /// <summary>The Library's search words (its ?q=): the list shows only the entries that match every one.</summary>
+    [Parameter] public string? Words { get; set; }
 
     /// <summary>The change feed topic the rows are published on.</summary>
     protected abstract string Topic { get; }
@@ -115,6 +119,7 @@ public abstract class LibraryPage<TRow> : ComponentBase, IDisposable where TRow 
         _page = TableView.PageFrom(PageParam);
         (_pageAsked, _rowAsked, _selectedId) = (PageParam, RowParam, RowId(RowParam));
         _rowSaid = _selectedId;
+        _words = _wordsAsked = Words;
         // A link to an entry alone (no page): the page of the list it's on.
         if (PageParam is null) _reveal = _selectedId;
         _live = new LiveChanges(Feed, Origin, c => c.Topic == Topic, InvokeAsync, OnChangedElsewhere);
@@ -135,6 +140,12 @@ public abstract class LibraryPage<TRow> : ComponentBase, IDisposable where TRow 
     // mustn't go back to the address's page.
     protected override void OnParametersSet()
     {
+        // New words in the Library's search: the list again from its first page (the address dropped the page with them).
+        if (Words != _wordsAsked)
+        {
+            (_wordsAsked, _words, _page) = (Words, Words, 1);
+            Filter();
+        }
         if (PageParam == _pageAsked && RowParam == _rowAsked) return;
         var sameRow = RowParam == _rowAsked;
         (_pageAsked, _rowAsked, _rowSaid) = (PageParam, RowParam, RowId(RowParam));
@@ -228,10 +239,10 @@ public abstract class LibraryPage<TRow> : ComponentBase, IDisposable where TRow 
     private string Address(int page, Guid? row) =>
         Nav.GetUriWithQueryParameters(new Dictionary<string, object?> { ["page"] = page == 1 ? null : page, ["row"] = row });
 
-    // Clear: the words and the page's own filters; retired ones stay shown or hidden as chosen.
+    // Clear: the page's own filters (the words are the Library's search's, cleared in its box); retired ones stay shown
+    // or hidden as chosen.
     internal void ClearFilters()
     {
-        _words = null;
         ClearOwnFilters();
         Refilter();
     }
@@ -242,13 +253,6 @@ public abstract class LibraryPage<TRow> : ComponentBase, IDisposable where TRow 
         _page = 1;
         Filter();
         SayPage();
-    }
-
-    // The words, as they're typed.
-    protected void SetWords(string? words)
-    {
-        _words = words;
-        Refilter();
     }
 
     // A colleague saved, changed, retired or deleted one: re-read in place. An edit under way keeps what's typed; its save
@@ -307,6 +311,16 @@ public abstract class LibraryPage<TRow> : ComponentBase, IDisposable where TRow 
         Toasts.Show(retired ? $"{name} retired. It's no longer offered on actions." : $"{name} restored.");
         if (retired && !_showRetired) FocusList();   // it left the list, and its buttons with it
     });
+
+    /// <summary>An entry's More menu: Retire (or Restore) for whoever keeps the library, Delete for whoever may delete it.
+    /// Each runs the library's own step, with its checks and its confirmation.</summary>
+    protected IReadOnlyList<MenuButton.Item> MoreMenu(bool retired, bool canRetire, Func<Task> retire, bool canDelete, Func<Task> delete)
+    {
+        var items = new List<MenuButton.Item>();
+        if (canRetire) items.Add(new(retired ? "Restore" : "Retire", retired ? "bi-arrow-counterclockwise" : "bi-archive", EventCallback.Factory.Create(this, retire)));
+        if (canDelete) items.Add(new("Delete", "bi-trash", EventCallback.Factory.Create(this, delete)));
+        return items;
+    }
 
     // "Not used yet", or how often it was ("Used on 3 actions", "Used for 1 email").
     protected static string Used(int count, string how, string noun) => count == 0 ? "Not used yet" : $"Used {how} {Ui.Plural(count, noun)}";

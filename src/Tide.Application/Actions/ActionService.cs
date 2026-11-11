@@ -363,7 +363,20 @@ public sealed record AssigneeLoad(string? AssigneeId, string Assignee, int Open,
 /// action's article's and any added on the action); <paramref name="StoryIndicators"/>, what building from the story hunts
 /// for (every one of its <paramref name="StoryArticles"/> articles', with the action's own).
 /// </summary>
-public sealed record HuntSources(int Indicators, int StoryIndicators, int StoryArticles);
+public sealed record HuntSources(int Indicators, int StoryIndicators, int StoryArticles)
+{
+    /// <summary>The indicators Generate hunts for, as its query lists them.</summary>
+    public IReadOnlyList<ArticleIndicator> Own { get; init; } = [];
+
+    /// <summary>The indicators building from the story hunts for.</summary>
+    public IReadOnlyList<ArticleIndicator> Story { get; init; } = [];
+
+    /// <summary>How far back a query looks unless the analyst says otherwise: from a week before the earliest article.</summary>
+    public int Days { get; init; } = HuntQueryBuilder.DefaultDays;
+
+    /// <summary>The same for the story's articles.</summary>
+    public int StoryDays { get; init; } = HuntQueryBuilder.DefaultDays;
+}
 
 /// <summary>
 /// Follow-up actions: created by analysts (from an article, or in the meeting), owned by a team, worked by its
@@ -1804,19 +1817,26 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var a = await HuntActionAsync(db, actionId, tracked: false, ct);
         var own = await HuntInputsAsync(db, a, fromStory: false, ct);
         var story = await HuntInputsAsync(db, a, fromStory: true, ct);
-        return new HuntSources(own.Indicators.Count, story.Indicators.Count, story.Articles);
+        return new HuntSources(own.Indicators.Count, story.Indicators.Count, story.Articles)
+        {
+            Own = own.Indicators, Story = story.Indicators, Days = own.Days, StoryDays = story.Days,
+        };
     }
+
+    /// <summary>The most days back a hunt's window can reach.</summary>
+    public const int MaxHuntDays = 3650;
 
     /// <summary>
     /// Generates a hunt query in <paramref name="dialect"/> from the source article's indicators, or (<paramref name="fromStory"/>)
-    /// every article's in its story, with any added on the action itself, over the window <see cref="HuntInputsAsync"/> sets.
+    /// every article's in its story, with any added on the action itself, over <paramref name="days"/> when the analyst
+    /// chose a window (1 to <see cref="MaxHuntDays"/>), else the window <see cref="HuntInputsAsync"/> sets.
     /// </summary>
-    public async Task<HuntQuery> GenerateHuntAsync(Guid actionId, string dialect, bool fromStory = false, CancellationToken ct = default)
+    public async Task<HuntQuery> GenerateHuntAsync(Guid actionId, string dialect, bool fromStory = false, int? days = null, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
         var a = await HuntActionAsync(db, actionId, tracked: false, ct);
         await RequireWork(db, user, a, ct);
-        var inputs = await HuntInputsAsync(db, a, fromStory, ct);
+        var inputs = Over(await HuntInputsAsync(db, a, fromStory, ct), days);
         if (inputs.Indicators.Count == 0)
             throw new InvalidOperationException(fromStory ? "No article in the story has indicators to hunt for."
                 : a.Article is null ? "The action has no indicators to hunt for. Add them on this card, or write a query by hand."
@@ -1838,14 +1858,18 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// opens. It writes nothing (no hunt query, no history line), and is for whoever may generate one: anyone else is
     /// refused as Generate refuses them. Null when the action has no indicators to hunt for.
     /// </summary>
-    public async Task<string?> PreviewHuntAsync(Guid actionId, string dialect, CancellationToken ct = default)
+    public async Task<string?> PreviewHuntAsync(Guid actionId, string dialect, bool fromStory = false, int? days = null, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
         var a = await HuntActionAsync(db, actionId, tracked: false, ct);
         await RequireWork(db, user, a, ct);
-        var inputs = await HuntInputsAsync(db, a, fromStory: false, ct);
+        var inputs = Over(await HuntInputsAsync(db, a, fromStory, ct), days);
         return inputs.Indicators.Count == 0 ? null : await GeneratedTextAsync(dialect, inputs, ct);
     }
+
+    // The window the analyst chose, held to 1 to MaxHuntDays, in place of the one worked out from the articles.
+    private static HuntInputs Over(HuntInputs inputs, int? days) =>
+        days is { } d ? inputs with { Days = Math.Clamp(d, 1, MaxHuntDays) } : inputs;
 
     // A generated query's text, the one saved and its preview alike: one builder, the same templates and the same limit.
     private async Task<string> GeneratedTextAsync(string dialect, HuntInputs inputs, CancellationToken ct) =>

@@ -7,9 +7,15 @@
 <div class="tide-library">
     <div class="tide-library-side">
         <ul class="tide-library-list" aria-label="@Label">
-            @foreach (var e in Entries)
+            @for (var i = 0; i < Entries.Count; i++)
             {
+                var e = Entries[i];
                 var on = e.Id == Selected;
+                @* A heading where a group starts (and on each page's first row): its name and how many it holds in all. *@
+                @if (e.Group is { } group && Groups is not null && (i == 0 || Entries[i - 1].Group != group))
+                {
+                    <li class="tide-library-group">@($"{group} · {Groups.GetValueOrDefault(group)}")</li>
+                }
                 <li class="tide-library-row@(on ? " selected" : "")" aria-current="@(on ? "true" : null)" tabindex="@(on ? "0" : "-1")"
                     @ref="_rows[e.Id]" @key="e.Id" @onclick="() => OnPick.InvokeAsync(e.Id)" @onfocus="() => OnPick.InvokeAsync(e.Id)">
                     <span class="tide-library-row-name">@e.Name</span>
@@ -38,6 +44,9 @@
     [Parameter, EditorRequired] public string Label { get; set; } = "";
 
     [Parameter] public EventCallback<Guid> OnPick { get; set; }
+
+    /// <summary>When the list is grouped (each entry's <see cref="LibraryEntry.Group"/>): how many each group holds.</summary>
+    [Parameter] public IReadOnlyDictionary<string, int>? Groups { get; set; }
 
     /// <summary>The selected entry in full: its card, or its edit form.</summary>
     [Parameter, EditorRequired] public RenderFragment ChildContent { get; set; } = default!;

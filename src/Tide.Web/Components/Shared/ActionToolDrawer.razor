@@ -5,8 +5,13 @@
    tab shows and kept (hidden) after, so a half-written query or email survives a look at another tab. The panels' own
    card and heading fold into the drawer by CSS (.tide-drawer), so they're used as they are. *@
 
+@using Microsoft.AspNetCore.Components.Sections
 <section class="tide-card tide-drawer" aria-label="Tools">
-    <TabBar Items="Tabs" Label="Tools" Level="TabLevel.Page" Active="@ActionGuide.Key(Tool)" PanelId="tool-panel" OnSelect="SelectKey" Class="tide-drawer-tabs" />
+    @* The tab row: the tabs, and at its right the open tool's own controls (the hunt's language and window). *@
+    <div class="tide-drawer-head">
+        <TabBar Items="Tabs" Label="Tools" Level="TabLevel.Page" Active="@ActionGuide.Key(Tool)" PanelId="tool-panel" OnSelect="SelectKey" Class="tide-drawer-tabs" />
+        @if (Tool == ActionTool.Hunt) { <SectionOutlet SectionName="@HuntPanel.ToolsSection" /> }
+    </div>
     <div role="tabpanel" id="tool-panel" aria-labelledby="@TabBar.TabId("tool-panel", ActionGuide.Key(Tool))" data-tool="@ActionGuide.Key(Tool)">
         @if (_opened.Contains(ActionTool.Checklist))
         {
