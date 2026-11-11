@@ -1,6 +1,6 @@
-// Actions board: drag a card to another column to move the action there. CSP-safe (an external file, no inline
-// handlers). The drop goes to .NET, which checks and makes the move (ActionService.MoveAsync); only cards the person may
-// move are draggable. Each card also has a Move menu, the way to do this from the keyboard.
+// Actions board: drag a card to another lane, or onto a chip on the closed strip, to move the action there. CSP-safe (an
+// external file, no inline handlers). The drop goes to .NET, which checks and makes the move (ActionService.MoveAsync);
+// only cards the person may move are draggable. Each card also has a Move menu, the way to do this from the keyboard.
 // While a card is held, .NET hears when the drag starts, each time it crosses into another column, and when it ends (a
 // few calls a drag, not the pointer's path), so everyone else's board can show who is moving it and where (BoardDrags).
 // When someone else's move arrives, play() slides the card in from the column it left.
@@ -23,10 +23,11 @@ window.tideBoard = (function () {
         tell('OnDragging', dragging.dataset.id, status);
     }
 
-    function column(e) { return e.target && e.target.closest ? e.target.closest('.tide-kcol') : null; }
+    // Where a card is over: a lane, or a chip on the closed strip (both carry the status a drop moves it to).
+    function column(e) { return e.target && e.target.closest ? e.target.closest('.tide-kcol, .tide-kchip') : null; }
 
     function mark(col) {
-        root.querySelectorAll('.tide-kcol.over').forEach(function (c) { if (c !== col) c.classList.remove('over'); });
+        root.querySelectorAll('.over').forEach(function (c) { if (c !== col) c.classList.remove('over'); });
         if (col) col.classList.add('over');
     }
 

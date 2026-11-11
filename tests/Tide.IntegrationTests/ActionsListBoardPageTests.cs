@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tide.Application.Actions;
 using Tide.Application.Preferences;
@@ -145,29 +146,86 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
         (await viewer.HtmlOnce(token)).Should().NotContain("Take it", "a viewer works no action");
     }
 
+    // An action's history and comments put back some days, and when it was raised: nothing has happened to it since.
+    private async Task Quiet(int number, int days)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<Tide.Infrastructure.Persistence.AppDbContext>();
+        var a = await db.Actions.Include(x => x.Events).SingleAsync(x => x.Number == number);
+        var then = DateTimeOffset.UtcNow.AddDays(-days);
+        a.CreatedAtUtc = then;
+        foreach (var e in a.Events) e.AtUtc = then;
+        await db.SaveChangesAsync();
+    }
+
+    private static string Row(string html, string title)
+    {
+        var row = html[html.LastIndexOf("<tr", html.IndexOf($"{title}</a>", StringComparison.Ordinal), StringComparison.Ordinal)..];
+        return row[..row.IndexOf("</tr>", StringComparison.Ordinal)];
+    }
+
     [Fact]
-    public async Task EachRow_ShowsItsChecklistProgress_UnderItsStatus_WithoutAColumnOfItsOwn()
+    public async Task EachRow_ShowsItsProgress_TheChecklist_ThenHowItsHuntWent_OrHowLongSinceAnUpdate()
     {
         var token = $"alprog{Guid.NewGuid():N}"[..14];
-        var number = await Raise(await Team("AL progress"), $"{token} checklist");
+        var team = await Team("AL progress");
+        var patch = await As(sp => sp.GetRequiredService<ActionService>().CreateAsync(new ActionForm { Title = $"{token} checklist", Kind = ActionKind.PatchRemediate, TeamId = team }));
+        var sweep = await As(sp => sp.GetRequiredService<ActionService>().CreateAsync(new ActionForm { Title = $"{token} sweep", Kind = ActionKind.IocSweep, TeamId = team }));
         await As(async sp =>
         {
             var actions = sp.GetRequiredService<ActionService>();
-            var id = (await actions.GetAsync(number))!.Action.Id;
+            var id = (await actions.GetAsync(patch))!.Action.Id;
             await actions.AddChecklistItemAsync(id, "One");
             await actions.AddChecklistItemAsync(id, "Two");
-            var first = (await actions.GetAsync(number))!.Action.Checklist[0];
+            var first = (await actions.GetAsync(patch))!.Action.Checklist[0];
             await actions.SetChecklistItemAsync(first.Id, true);
             return true;
         });
+        await Quiet(patch, 3);
         await using var r = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=list&q={token}");
         var html = WebUtility.HtmlDecode(await r.HtmlOnce(token));
-        html.Should().NotMatchRegex(@"<th[^>]*>\s*Checklist\s*</th>", "most rows have no checklist, so a column of its own would only narrow the title");
-        var row = html[html.LastIndexOf("<tr", html.IndexOf($"{token} checklist</a>", StringComparison.Ordinal), StringComparison.Ordinal)..];
-        row = row[..row.IndexOf("</tr>", StringComparison.Ordinal)];
-        Regex.Count(row, "<td").Should().Be(5);
-        var status = row[row.LastIndexOf("<td", StringComparison.Ordinal)..];
-        status.Should().Contain("Open").And.Contain("tide-row-progress").And.Contain("aria-label=\"Checklist: 1 of 2 done\"");
+        var head = html[html.IndexOf("<thead", StringComparison.Ordinal)..html.IndexOf("</thead>", StringComparison.Ordinal)];
+        Regex.Matches(head, "<th[^>]*>(?:<[^>]+>)*\\s*([A-Za-z ]+?)\\s*<").Select(m => m.Groups[1].Value).Should().Equal(["Action", "Kind", "Team", "Progress", "Due", "Status"]);
+
+        var checklist = Row(html, $"{token} checklist");
+        var progress = Regex.Matches(checklist, "<td[^>]*>([\\s\\S]*?)</td>")[3].Groups[1].Value;
+        progress.Should().Contain("Checklist 1 of 2").And.Contain("No update for 3 days");
+        var sweeping = Regex.Matches(Row(html, $"{token} sweep"), "<td[^>]*>([\\s\\S]*?)</td>")[3].Groups[1].Value;
+        sweeping.Should().Contain("Hunt not run", "a sweep says how its hunt went, as the board's card does").And.NotContain("Checklist");
+    }
+
+    [Theory]
+    [InlineData("list")]
+    [InlineData("board")]
+    public async Task NoOwner_SaysHowManyItWouldShow(string layout)
+    {
+        await Raise(await Team("AL count"), "AL count nobody's");
+        var counts = await As(sp => sp.GetRequiredService<ActionService>().ViewCountsAsync(new ActionFilter(ActionView.Open)));
+        counts.NoOwner(ActionView.Open).Should().BePositive();
+        await using var r = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout={layout}");
+        FilterBarHtml.PillCount(WebUtility.HtmlDecode(await r.HtmlOnce("No owner")), "No owner").Should().Be(counts.NoOwner(ActionView.Open));
+    }
+
+    [Fact]
+    public async Task TheBoardsTabs_CountOpenActions_AsTheListsDo()
+    {
+        var id = (await Detail(await Raise(await Team("AL closed"), "AL closed one"))).Action.Id;
+        await As(async sp =>
+        {
+            await sp.GetRequiredService<ActionService>().MoveAsync(id, ActionStatus.Open, ActionStatus.Cancelled);
+            return true;
+        });
+        async Task<Dictionary<string, int>> Tabs(string layout)
+        {
+            await using var r = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout={layout}");
+            var html = WebUtility.HtmlDecode(await r.HtmlOnce("tide-tabbar-count"));
+            var views = html[html.IndexOf("aria-label=\"Views\"", StringComparison.Ordinal)..];
+            views = views[..views.IndexOf("</div>", StringComparison.Ordinal)];
+            return TabCount().Matches(views).ToDictionary(m => m.Groups[1].Value, m => int.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture));
+        }
+        var list = await Tabs("list");
+        (await Tabs("board")).Should().Equal(new Dictionary<string, int> { ["Mine"] = list["Mine"], ["My teams"] = list["My teams"], ["All open"] = list["All open"] },
+            "\"All open\" is the same number on the board as in the list: closed actions are counted under the lanes");
     }
 
     [Fact]
