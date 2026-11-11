@@ -2759,9 +2759,9 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
    "Include what it travels with" under it), who is sweeping for it, and the export. */
 .tide-lookup-card > div.tide-lookup-part:first-of-type { margin-top: var(--tide-space-3); padding-top: var(--tide-space-3); border-top: 1px solid var(--tide-border); }
 .tide-lookup-articles td:first-child { overflow-wrap: anywhere; }
-/* On a narrow window the actions' table keeps to the card too: a badge ("Hunt: no hits") wraps in its cell. */
-#lookup-actions td { overflow-wrap: anywhere; }
-#lookup-actions td .tide-badge { white-space: normal; }
+/* On a narrow window the actions' table keeps to the card too: a badge ("Hunt: no hits") wraps in its cell there. */
+#lookup-actions td:first-child { overflow-wrap: anywhere; }
+@media (max-width: 900px) { #lookup-actions td .tide-badge { white-space: normal; } }
 .tide-lookup-rail-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--tide-space-2); margin-bottom: var(--tide-space-2); }
 .tide-lookup-rail-head > h2 { margin: 0; }
 .tide-lookup-rail-head > .tide-tabbar-sub { margin: 0; }

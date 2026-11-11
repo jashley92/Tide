@@ -83,7 +83,7 @@ else if (_results is { Terms.Count: > 0 } r)
         <ContextRail Title="@RailTitle">
             <section class="tide-card" aria-labelledby="lookup-query-h">
                 <div class="tide-lookup-rail-head">
-                    <h2 id="lookup-query-h">Hunt query</h2>
+                    <h2 id="lookup-query-h" class="tide-card-title">Hunt query</h2>
                     <TabBar Items="DialectItems" Active="@_dialect" Label="Query language" Level="TabLevel.Sub" OnSelect="ChooseDialect" />
                 </div>
                 @if (nothingToRun)
