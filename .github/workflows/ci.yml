@@ -162,7 +162,9 @@ jobs:
         # node_modules rather than npx, which could fetch an unpinned package.
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
-          ./node_modules/.bin/playwright install --with-deps --only-shell chromium
+          # If the runner can't reach Ubuntu's package mirrors, fall back to the browser alone: the runner image
+          # already carries the system libraries Chromium needs.
+          ./node_modules/.bin/playwright install --with-deps --only-shell chromium \n            || ./node_modules/.bin/playwright install --only-shell chromium
 
       - name: Layout holds
         run: node tools/screenshots/layout.mjs
