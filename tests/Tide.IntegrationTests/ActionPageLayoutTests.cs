@@ -79,7 +79,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
         return html[at..html.IndexOf(end, at, StringComparison.Ordinal)];
     }
 
-    private static string Header(string html) => Section(html, "<div class=\"tide-page-head tide-action-head\">", "class=\"tide-action-layout\"");
+    private static string Header(string html) => Section(html, "<div class=\"tide-page-head tide-action-head\">", "class=\"tide-action-main\"");
 
     [Fact]
     public async Task TheHeader_HasTheTitle_OneLineOfBadges_WhoHasIt_AndOnePrimaryButton()
@@ -385,7 +385,7 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
         await using (var page = await Open(number))
         {
             var html = WebUtility.HtmlDecode(await page.Html());
-            var feed = Section(html, "<section class=\"tide-card tide-feed tide-ord-5\"", "</section>");
+            var feed = Section(html, "<section class=\"tide-card tide-feed\"", "</section>");
             feed.Should().Contain("What's happened").And.NotContain("Show ", "nothing to fold yet");
             var first = feed.IndexOf("Layout first comment", StringComparison.Ordinal);
             var moved = feed.IndexOf("Status: Open → In progress.", StringComparison.Ordinal);
@@ -475,30 +475,27 @@ public class ActionPageLayoutTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task TheTools_AreInTheWideColumnAboveWhatsHappened_ForASweepOrAHunt_AndBesideTheWork_ForEveryOtherKind()
+    public async Task TheTools_AreInThePageAboveWhatsHappened_FirstForASweepOrAHunt_AndAfterTheDetailsForEveryOtherKind()
     {
         var team = await Team("Layout tools place team");
-        const string drawer = "class=\"tide-card tide-drawer\"", side = "<div class=\"tide-action-side\">", main = "<div class=\"tide-action-main\">";
+        const string drawer = "class=\"tide-card tide-drawer\"", main = "<div class=\"tide-action-main\">", rail = "<aside id=\"tide-rail\"";
         foreach (var kind in Enum.GetValues<ActionKind>())
         {
             var wide = kind is ActionKind.IocSweep or ActionKind.ThreatHunt;
             await using var page = await Open(await Raise(team, $"Layout tools place {kind}", kind, description: "Layout tools place details"));
             var html = await page.Html();
             int At(string text) => html.IndexOf(text, StringComparison.Ordinal);
-            At(drawer).Should().BeGreaterThan(At(main));
-            html.Should().Contain(wide ? "<div class=\"tide-ord-2\">" : "<div class=\"tide-ord-3\">", "on a phone a sweep's tools come first, beside its details; others' after them");
+            At(drawer).Should().BeGreaterThan(At(main)).And.BeLessThan(At(rail), $"a {kind}'s tools are in the page, not the rail")
+                .And.BeLessThan(At("id=\"feed-h\""), "above what's happened");
+            html.Should().NotContain("tide-action-side", "the page has one column; what was beside it is in the rail");
             if (wide)
             {
-                At(drawer).Should().BeLessThan(At(side), $"a {kind}'s tools are in the wide column")
-                    .And.BeLessThan(At("Layout tools place details"), "above its details, so Copy is on the first screen")
-                    .And.BeLessThan(At("id=\"feed-h\""), "above what's happened");
+                At(drawer).Should().BeLessThan(At("Layout tools place details"), "above its details, so Copy is on the first screen");
                 html.Should().Contain("data-tool=\"hunt\"", "opened on its hunt queries");
             }
             else
             {
-                At(drawer).Should().BeGreaterThan(At(side), $"a {kind}'s tools stay beside the work")
-                    .And.BeGreaterThan(At("aria-label=\"Facts\""), "under the facts")
-                    .And.BeGreaterThan(At("id=\"feed-h\""));
+                At(drawer).Should().BeGreaterThan(At("Layout tools place details"), $"a {kind}'s tools follow its details");
             }
         }
     }

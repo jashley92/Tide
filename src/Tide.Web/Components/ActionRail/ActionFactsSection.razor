@@ -1,0 +1,45 @@
+@* An action's facts, first in its context rail: who has it, what kind it is, its ticket and its dates. The edit form
+   changes them. *@
+@inject ActionService ActionSvc
+@inject OrgClock Clock
+
+<section class="tide-card" aria-label="Facts">
+    <dl class="tide-facts tide-facts-side">
+        <div class="tide-fact"><dt>Team</dt><dd>@A.Team?.Name</dd></div>
+        <div class="tide-fact"><dt>Assignee</dt><dd>@(A.AssigneeName ?? "Unassigned")</dd></div>
+        <div class="tide-fact"><dt>Kind</dt><dd>@ActionService.KindName(A.Kind)</dd></div>
+        <div class="tide-fact">
+            <dt>Ticket</dt>
+            <dd>
+                @if (A.TicketUrl is not null) { <a href="@A.TicketUrl" target="_blank" rel="noopener noreferrer">@(A.TicketRef ?? "Open the ticket")</a> }
+                else { @(A.TicketRef ?? "None") }
+            </dd>
+        </div>
+        <div class="tide-fact"><dt>Created</dt><dd>@Ui.When(Clock, A.CreatedAtUtc)</dd></div>
+        <div class="tide-fact"><dt>Due</dt><dd>@(A.DueDate is { } due ? Ui.ShortDay(due) : "No due date") <SlaBadge State="State" Due="A.DueDate" Today="ActionSvc.Today" />
+            @if (MovedNote(A) is { } moved) { <div class="small tide-muted tide-due-moved">@moved</div> }</dd></div>
+        @if (A.RaisedOn is { } raised)
+        {
+            <div class="tide-fact tide-fact-wide"><dt>Raised for</dt><dd>@Ui.Day(raised)'s brief</dd></div>
+        }
+        @if (A.ClosedDate is { } closed) { <div class="tide-fact"><dt>Closed</dt><dd>@Ui.ShortDay(closed)</dd></div> }
+        @if (Parent is { } p)
+        {
+            <div class="tide-fact tide-fact-wide"><dt>Part of</dt><dd><a href="@Ui.ActionUrl(p.Number)">@Ui.ActionLabel(p.Number)</a> @p.Title</dd></div>
+        }
+    </dl>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ActionItem A { get; set; } = default!;
+
+    /// <summary>Its parent, for a part.</summary>
+    [Parameter] public ActionRow? Parent { get; set; }
+
+    /// <summary>How it stands against its due date (ActionSla.StateOf), as the header has it.</summary>
+    [Parameter] public SlaState State { get; set; }
+
+    /// <summary>"Originally due Mon Nov 9 · moved 2 times" once its due date has moved; null while it hasn't.</summary>
+    internal static string? MovedNote(ActionItem a) => a.DueDateMoves == 0 ? null
+        : $"Originally due {(a.OriginalDueDate is { } first ? Ui.ShortDay(first) : "with no date")} · moved {Words.Plural(a.DueDateMoves, "time")}";
+}

@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Tide.Application.Actions;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
-using Tide.Web.Components.Pages;
+using Tide.Web.Components.ActionRail;
 
 namespace Tide.IntegrationTests;
 
@@ -124,9 +124,9 @@ public class OriginalDueDateTests
         a.DueDateMoves.Should().Be(0, "setting the date it has isn't a move");
         a.DueDate = new DateOnly(2026, 11, 3);
         (a.OriginalDueDate, a.DueDateMoves).Should().Be((new DateOnly(2026, 11, 10), 1));
-        ActionPage.MovedNote(a).Should().Be("Originally due Tue Nov 10 · moved 1 time");
+        ActionFactsSection.MovedNote(a).Should().Be("Originally due Tue Nov 10 · moved 1 time");
         a.DueDate = new DateOnly(2026, 11, 24);
-        ActionPage.MovedNote(a).Should().Be("Originally due Tue Nov 10 · moved 2 times");
-        ActionPage.MovedNote(new ActionItem { DueDate = new DateOnly(2026, 11, 10) }).Should().BeNull("a date that never moved says nothing");
+        ActionFactsSection.MovedNote(a).Should().Be("Originally due Tue Nov 10 · moved 2 times");
+        ActionFactsSection.MovedNote(new ActionItem { DueDate = new DateOnly(2026, 11, 10) }).Should().BeNull("a date that never moved says nothing");
     }
 }
