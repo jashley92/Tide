@@ -2752,6 +2752,25 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-rail-list-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); color: var(--tide-text-muted); font-size: var(--tide-text-xs); }
 /* ---- end Action page 3.5 ---- */
 
+/* ---- Search 3.6: an indicator or CVE lookup with the context rail (Search.razor, SearchRail/LookupSweeps.razor) ----
+   The page keeps the answer in one card: the value and its first line, then, under a rule, the articles, the actions
+   raised and "Seen with". Beside a docked rail it has about 873px, which the articles' table fits: a long title wraps
+   in its cell, and the dates keep to theirs. The rail holds the hunt query (its name and language on one row, Copy and
+   "Include what it travels with" under it), who is sweeping for it, and the export. */
+.tide-lookup-card > div.tide-lookup-part:first-of-type { margin-top: var(--tide-space-3); padding-top: var(--tide-space-3); border-top: 1px solid var(--tide-border); }
+.tide-lookup-articles td:first-child { overflow-wrap: anywhere; }
+/* On a narrow window the actions' table keeps to the card too: a badge ("Hunt: no hits") wraps in its cell there. */
+#lookup-actions td:first-child { overflow-wrap: anywhere; }
+@media (max-width: 900px) { #lookup-actions td .tide-badge { white-space: normal; } }
+.tide-lookup-rail-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--tide-space-2); margin-bottom: var(--tide-space-2); }
+.tide-lookup-rail-head > h2 { margin: 0; }
+.tide-lookup-rail-head > .tide-tabbar-sub { margin: 0; }
+.tide-rail .tide-lookup-query { max-height: 22rem; margin-bottom: var(--tide-space-2); }
+.tide-lookup-rail-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); margin-bottom: var(--tide-space-2); }
+.tide-lookup-travels { padding-left: 0; padding-right: 0; text-align: left; }
+.tide-lookup-sweep-do { display: flex; flex-wrap: wrap; gap: var(--tide-space-2); margin-top: var(--tide-space-1); }
+/* ---- end Search 3.6 ---- */
+
 /* ---- Actions 3.4: the list's and board's selected action in the context rail (ActionRowRail), and the board's selected
    card. From 1500px the rail docks beside the board too (it was an overlay there), and the board takes the rest of the
    window; ] closes the rail and the board has the whole window again. ---- */

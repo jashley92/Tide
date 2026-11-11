@@ -481,9 +481,10 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
         Summary(html).Should().Be($"On 1 article · briefed {day:ddd MMM d} · 2 actions open · no hunt result yet");
         Inside(html, "lookup-summary").Should().Contain($"href=\"briefs/{day:yyyy-MM-dd}\"");
         var sweeping = Inside(html, "lookup-sweeping");
-        sweeping.Should().Contain("Lookup sweep for it").And.Contain("already sweeps for this").And.NotContain("Lookup block for it")
-            .And.Contain($"href=\"actions/{sweep}\"");
-        WebUtility.HtmlDecode(Tags().Replace(sweeping, "")).Should().MatchRegex(@"unassigned\)\s+already sweeps for this\.", "the words don't run together");
+        sweeping.Should().Contain("Lookup sweep for it").And.NotContain("Lookup block for it").And.Contain($"href=\"actions/{sweep}\"");
+        // In the context rail: nobody has it and it hasn't run, so nobody has swept for it yet.
+        WebUtility.HtmlDecode(Tags().Replace(Inside(html, "lookup-sweeps-h"), "")).Should().Be("Nobody has swept for it yet");
+        WebUtility.HtmlDecode(Tags().Replace(sweeping, " ")).Should().MatchRegex(@"\bno owner\b", "who has it is said");
     }
 
     [Fact]
@@ -521,7 +522,8 @@ public partial class SearchLookupPageTests(TideApp app) : IClassFixture<TideApp>
         Summary(html).Should().Be("On 1 article · not on a brief yet · 1 action open");
         var swept = Inside(html, "lookup-swept");
         swept.Should().Contain("Lookup CVE article sweep").And.Contain($"href=\"actions/{sweep}\"");
-        WebUtility.HtmlDecode(Tags().Replace(swept, " ")).Should().Contain("indicators on these articles");
+        WebUtility.HtmlDecode(Tags().Replace(swept, " ")).Should().Contain("no hits", "how its hunt went");
+        WebUtility.HtmlDecode(html).Should().Contain("A hunt doesn't search for a CVE. These sweep the indicators on its articles.");
     }
 
     [Fact]

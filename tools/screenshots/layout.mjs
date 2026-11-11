@@ -1737,6 +1737,21 @@ const actionsRailHolds = [visible('#tide-rail [data-rail-next]'), visible('#tide
 /** The action page's own column: its head, the tools and the query fit it, the query wrapping rather than scrolling. */
 const actionPageFits = [noSidewaysScroll, fits('.tide-action-head'), fits('.tide-drawer'), visible('.tide-feed')];
 
+// --- Search's context rail (option E 3.6) ------------------------------------------------------------------------------
+
+/** What a lookup's rail holds, in the rail and not the page: the hunt query (for an indicator), who is sweeping for it,
+ * and the export, each section within the rail's column; the query wrapping rather than scrolling sideways. */
+const searchRailHolds = (query = true) => [
+  ...(query ? [visible('#tide-rail #lookup-query'), fits('#tide-rail #lookup-query'), visible('#tide-rail [role=group][aria-label="Query language"]')] : []),
+  visible('#tide-rail #lookup-sweeps-h'), visible('#tide-rail #lookup-export-h'), hidden('.content #lookup-query'), hidden('.content #lookup-sweeps-h'),
+  hidden('.content #lookup-export-h'), fits('.tide-rail-body'), fits('.tide-rail-body > *')];
+
+/** The lookup's own column: its one card (the answer, the articles, the actions and "Seen with") fits, the articles'
+ * table too, and nothing scrolls sideways. */
+const searchPageFits = [noSidewaysScroll, visible('.content #lookup-summary'), visible('.tide-lookup-articles'), fits('.content .tide-card'),
+  fits('.tide-lookup-articles'), headAtTop('.content .tide-card', 24), sameBox('.tide-card', '#lookup-summary', '.tide-lookup-articles'),
+  sameBox('.tide-card', '.tide-lookup-articles', '#lookup-actions'), sameBox('.tide-card', '#lookup-actions', '#lookup-seen-with'), above('#lookup-actions', '#lookup-seen-with')];
+
 // --- the pages: route, optional setup, widths (each 900px tall, or [width, height]) and rules ([minWidth, rule] from that
 // width up) -------------------------------------------------------------------------------------------------------------
 
@@ -2013,14 +2028,25 @@ const pages = [
   // The entry's More menu opens wholly in view: Retire and Delete aren't cut off by the scrolling detail panel.
   { name: 'library-more', route: '/library/queries', setup: openEntryMore, widths: [1920, 1440], rules: [menuItemsVisible] },
   { name: 'library-search', route: '/library/queries?q=sweep', setup: wideFonts, widths: [1440, 780], rules: [noSidewaysScroll, visible('#library-find'), visible('.tide-library-list')] },
-  // Search for an indicator: the hunt query wraps rather than scrolling sideways, Copy puts exactly its text on the
-  // clipboard, and the cards' headings start at their tops.
-  { name: 'search-lookup', route: '/search?q=update-check.example.net', setup: wideFonts, widths: [1920, 1440, 780], context: clipboard,
-    rules: [noSidewaysScroll, fits('.tide-lookup-query'), headAtTop('.tide-lookup .tide-card', 24), visible('.tide-lookup-articles'),
-      copiesExactly('[data-copy-target="lookup-query"]', '#lookup-query'),
-      // The language as the action page's segmented control; the article, the actions raised and "Seen with" in one card.
-      visible('#lookup-query-tools [role=group][aria-label="Query language"]'), sameBox('.tide-card', '.tide-lookup-articles', '#lookup-actions'),
-      sameBox('.tide-card', '#lookup-actions', '#lookup-seen-with'), above('#lookup-actions', '#lookup-seen-with')] },
+  // Search for an indicator or a CVE: the answer in the page, in one card, and the hunt query, who is sweeping for it and
+  // the export in the context rail. From 1500px the rail is docked open and the page has about 873px, which the articles'
+  // table fits; the query wraps, and Copy puts exactly its text on the clipboard. Below 1500px the rail is closed until
+  // `]` opens it over the page, as a modal dialog. Wider letters throughout.
+  ...[['search-rail-ip', '203.0.113.45'], ['search-rail-domain', 'update-check.example.net']].map(([name, q]) => (
+    { name, route: `/search?q=${q}`, setup: wideFont, widths: [[1920, 1000], [1600, 1000], [1500, 1000]], context: clipboard,
+      rules: [visible('#tide-rail'), ...searchRailHolds(), ...searchPageFits, copiesExactly('#tide-rail [data-copy-target="lookup-query"]', '#lookup-query')] })),
+  { name: 'search-rail-cve', route: '/search?q=CVE-2026-0001', setup: wideFont, widths: [[1920, 1000], [1600, 1000], [1500, 1000]],
+    rules: [visible('#tide-rail'), ...searchRailHolds(false), ...searchPageFits, hidden('#lookup-query')] },
+  { name: 'search-rail-narrow', route: '/search?q=203.0.113.45', setup: wideFont, widths: [[1440, 900], [780, 900]],
+    rules: [hidden('#tide-rail'), visible('#tide-rail-toggle'), ...searchPageFits] },
+  { name: 'search-rail-closed', route: '/search?q=203.0.113.45', setup: toggleRail, widths: [[1600, 1000]],
+    rules: [hidden('#tide-rail'), widerThan('.content', 1100), ...searchPageFits] },
+  { name: 'search-rail-overlay', route: '/search?q=203.0.113.45', setup: toggleRail, widths: [[1440, 900], [780, 900]], context: clipboard,
+    rules: [visible('#tide-rail'), ...searchRailHolds(), noSidewaysScroll, focusIn('#tide-rail'), attr('#tide-rail', 'role', 'dialog'),
+      attr('#tide-rail', 'aria-label', 'Do something with it'), tabStaysIn('#tide-rail', 30),
+      copiesExactly('#tide-rail [data-copy-target="lookup-query"]', '#lookup-query')] },
+  // A search for words has no rail, and its page is as before.
+  { name: 'search-words', route: '/search?q=gateway', widths: [1920, 780], rules: [noSidewaysScroll, hidden('#tide-rail'), hidden('#tide-rail-toggle')] },
   { name: 'trends', route: '/trends', widths: [1920], rules: [noSidewaysScroll, widerThan('.content', 1400)] },
   { name: 'slide-article', route: '/present/{today}', setup: toArticleSlide, widths: [1440, 1100, 900],
     rules: [

@@ -126,8 +126,9 @@ The indicators of an article, a day's brief (in running order) or a story downlo
 (`ExportIndicators.razor` on the article editor, the brief page and a story's page). The user picks the highest TLP to
 include.
 
-`GET /exports/{article|brief|story}/{key}?format=stix|csv&tlp=` (the key is the article's or story's id, or the
-brief's `yyyy-MM-dd`; `tlp` defaults to RED, every level):
+`GET /exports/{article|brief|story|lookup}/{key}?format=stix|csv&tlp=` (the key is the article's or story's id, the
+brief's `yyyy-MM-dd`, or a lookup's search as base64url; `tlp` is required, and the Export panel starts it at CLEAR;
+no `format` is STIX, and another than stix or csv is refused):
 
 1. `ExportService.GatherAsync` loads the articles with their indicators, CVEs and techniques and leaves out every article
    whose TLP is above the ceiling, whole, as the editions do.
