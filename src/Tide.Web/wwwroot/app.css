@@ -2774,5 +2774,10 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
     /* The bar's second row comes out of the text's share of the pane, which scrolls in less room, so the bar stays on
        the first screen. */
     html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-reading > .tide-reading-text { min-height: 3rem; }
+    /* The pane's title takes its whole width, breaking only between words, and Read it here (or again), Open the site
+       and Close go on a row of their own under it, Close at its end. */
+    html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-reading-head { flex-wrap: wrap; }
+    html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-reading-head > .tide-reading-title { flex: 1 0 100%; overflow-wrap: break-word; }
+    html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-reading-head > .btn-close { margin-left: auto; }
 }
 /* ---- end Triage 3.2 ---- */

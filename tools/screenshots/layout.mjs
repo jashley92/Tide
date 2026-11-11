@@ -1390,6 +1390,27 @@ const actionRailHolds = [visible('#tide-rail .tide-facts'), visible('#tide-rail 
 /** The action page's own column: its head, the tools and the query fit it, the query wrapping rather than scrolling. */
 const actionPageFits = [noSidewaysScroll, fits('.tide-action-head'), fits('.tide-drawer'), visible('.tide-feed')];
 
+/** No word in a visible match of `selector` is split across lines: each word's text sits on one line box (a line
+ *  ending at a hyphen doesn't split a word). */
+const wordsWhole = selector => holds(`no word split across lines: ${selector}`, selector => {
+  const found = [];
+  for (const el of document.querySelectorAll(selector)) {
+    if (!el.getClientRects().length) continue;
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let node = walk.nextNode(); node; node = walk.nextNode()) {
+      // A hyphen is a place a line may break ("remote-/access"), as in print: the parts either side are the words here.
+      for (const m of node.data.matchAll(/[^\s-]+-?/g)) {
+        const range = document.createRange();
+        range.setStart(node, m.index);
+        range.setEnd(node, m.index + m[0].length);
+        const lines = new Set([...range.getClientRects()].filter(r => r.width > 0).map(r => Math.round(r.top)));
+        if (lines.size > 1) found.push(`"${m[0]}" in ${selector} is split across ${lines.size} lines`);
+      }
+    }
+  }
+  return found;
+}, selector);
+
 /** Triage's rail: its sections flat under its header (with the ] key), each within the rail's column; the rail's, not the
  *  page's. */
 const triageRailFits = [visible('#tide-rail .tide-rail-head kbd'), flat('#tide-rail .tide-rail-body > section'), fits('.tide-rail-body'),
@@ -1402,6 +1423,8 @@ const triageBesideTheRail = [noSidewaysScroll, visible('#tide-rail'), attr('#tid
   besides('.tide-reading', '#tide-rail'), besides('.tide-triage-layout > .tide-card:first-child', '.tide-reading'), visible('.tide-reading'),
   widerThan('.tide-triage-layout > .tide-card:first-child', 340), widerThan('.tide-reading', 440), onFirstScreen('.tide-reading .tide-triage-decide'),
   fits('.tide-triage-decide'), fits('.tide-triage-acts'), fits('.tide-reading-head'), fits('.tide-triage-row'), windowDoesntScroll,
+  // The pane's title has the pane's width (its tools under it where the pane is narrow): whole words, three lines at most.
+  wordsWhole('.tide-reading-title'), oneLine('.tide-reading-title', 3),
   [1800, oneRow('.tide-triage-decide .tide-triage-acts')], [1800, widthNear('.tide-triage-layout > .tide-card:first-child', 440, 16)]];
 
 // --- the pages: route, optional setup, widths (each 900px tall, or [width, height]) and rules ([minWidth, rule] from that
