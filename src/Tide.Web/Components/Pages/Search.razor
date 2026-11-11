@@ -1,7 +1,9 @@
 @page "/search"
 @using Tide.Application.Preferences
+@using Tide.Web.Components.SearchRail
 @attribute [Authorize(Policy = Policies.ReadTeamEdition)]
 @inject SearchService SearchSvc
+@inject ActionService ActionSvc
 @inject HuntQueryBuilder Hunts
 @inject NavigationManager Nav
 @inject ICurrentUser CurrentUser
@@ -43,7 +45,9 @@ else if (_results is { Terms.Count: > 0 } r)
         var related = ind.Sightings.Items.Count(s => s.Related);
         var byArticle = ind.Sightings.Items.GroupBy(s => s.ArticleId).ToList();
         var nothingToRun = HuntQueryBuilder.SearchesNothing(_query);
-        <div class="tide-card">
+        @* The answer in one card: the value, the first line, the articles, the actions raised from them and what it was
+           seen with. What to do with it (hunt for it, who is sweeping for it, export it) is in the context rail. *@
+        <div class="tide-card tide-lookup-card">
             <h2 class="d-flex gap-2 align-items-center flex-wrap">
                 <span class="tide-chip mb-0">@Ui.IndicatorLabel(ind.Type)</span>
                 <span id="lookup-value" class="tide-ioc">@IocObservable.Defang(ind.Type, ind.Value)</span>
@@ -55,56 +59,33 @@ else if (_results is { Terms.Count: > 0 } r)
             {
                 <p class="small tide-muted mb-2">@Words.Plural(related, "other indicator") on <span class="tide-ioc">@IocObservable.Defang(ind.Host)</span>, listed with the articles.</p>
             }
-            @if (ind.Sweeping.Count > 0)
+            @if (byArticle.Count > 0)
             {
-                <p id="lookup-sweeping" class="tide-lookup-sweeping">
-                    <span class="bi bi-search" aria-hidden="true"></span>
-                    @foreach (var a in ind.Sweeping)
-                    {
-                        <span class="tide-lookup-sweep"><ActionRef Number="a.Number" Title="@a.Title" Link="_canOpenActions" /> <span class="tide-muted">(@a.TeamName, @(a.AssigneeName ?? "unassigned"))</span></span>
-                    }
-                    <span> already @(ind.Sweeping.Count == 1 ? "sweeps" : "sweep") for this.</span>
-                </p>
+                <div class="tide-lookup-part">
+                    <h3 class="tide-card-title">@(byArticle.Count == 1 ? "Article" : "Articles") <span class="tide-count">(@N(byArticle.Count))</span></h3>
+                    @ArticleTable(byArticle.Select(g => (g.First().Article, (RenderFragment)(@<text>
+                        @foreach (var s in g)
+                        {
+                            <div>
+                                @if (s.Related) { <span class="tide-chip mb-0">@Ui.IndicatorLabel(s.Type)</span> <span class="tide-ioc">@IocObservable.Defang(s.Type, s.Value)</span> }
+                                else { <span class="tide-muted">This indicator</span> }
+                                @if (!string.IsNullOrWhiteSpace(s.Note)) { <span class="small tide-muted"> @s.Note</span> }
+                            </div>
+                        }
+                    </text>))), "Indicator")
+                    @if (ind.Sightings.More) { <p class="small tide-muted mt-2 mb-0">Showing the first @ind.Sightings.Items.Count of @N(ind.Sightings.Total) mentions.</p> }
+                </div>
             }
+            <div id="lookup-actions" class="tide-lookup-part"><ActionsDone Actions="ind.Actions" CanOpen="_canOpenActions" /></div>
+            @SeenWithRow(ind.SeenWith)
         </div>
 
-        @* The article, the actions raised from it and what it was seen with, in one card; the hunt query beside it. *@
-        <div class="tide-lookup">
-            <div class="tide-card">
-                @if (byArticle.Count > 0)
-                {
-                    <div class="tide-lookup-part">
-                        <h3 class="tide-card-title">@(byArticle.Count == 1 ? "Article" : "Articles") <span class="tide-count">(@N(byArticle.Count))</span></h3>
-                        @ArticleTable(byArticle.Select(g => (g.First().Article, (RenderFragment)(@<text>
-                            @foreach (var s in g)
-                            {
-                                <div>
-                                    @if (s.Related) { <span class="tide-chip mb-0">@Ui.IndicatorLabel(s.Type)</span> <span class="tide-ioc">@IocObservable.Defang(s.Type, s.Value)</span> }
-                                    else { <span class="tide-muted">This indicator</span> }
-                                    @if (!string.IsNullOrWhiteSpace(s.Note)) { <span class="small tide-muted"> @s.Note</span> }
-                                </div>
-                            }
-                        </text>))), "Indicator")
-                        @if (ind.Sightings.More) { <p class="small tide-muted mt-2 mb-0">Showing the first @ind.Sightings.Items.Count of @N(ind.Sightings.Total) mentions.</p> }
-                    </div>
-                }
-                <div id="lookup-actions" class="tide-lookup-part"><ActionsDone Actions="ind.Actions" CanOpen="_canOpenActions" /></div>
-                @SeenWithRow(ind.SeenWith)
-            </div>
-            <div class="tide-card">
-                <h2>Hunt query</h2>
-                <div id="lookup-query-tools" class="d-flex gap-2 align-items-center flex-wrap mb-2">
+        <ContextRail Title="@RailTitle">
+            <section class="tide-card" aria-labelledby="lookup-query-h">
+                <div class="tide-lookup-rail-head">
+                    <h2 id="lookup-query-h">Hunt query</h2>
                     <TabBar Items="DialectItems" Active="@_dialect" Label="Query language" Level="TabLevel.Sub" OnSelect="ChooseDialect" />
-                    @if (_query is not null)
-                    {
-                        <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="lookup-query" data-copy-status="lookup-query-status" data-copy-done="Query copied." disabled="@nothingToRun"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
-                        <span id="lookup-query-status" class="small tide-muted" role="status"></span>
-                    }
                 </div>
-                @if (related > 0)
-                {
-                    <label class="form-check-label small d-block mb-2"><input type="checkbox" class="form-check-input me-1" @bind:get="_withRelated" @bind:set="IncludeRelated" /> With the @Words.Plural(related, "related indicator")</label>
-                }
                 @if (nothingToRun)
                 {
                     <p id="lookup-query-none" class="small mb-2"><span class="bi bi-exclamation-triangle" aria-hidden="true"></span> @HuntQueryBuilder.DialectName(_dialect) can't search for this kind of value (@Ui.IndicatorLabel(ind.Type)), so there's nothing to copy. Choose another language.</p>
@@ -112,43 +93,53 @@ else if (_results is { Terms.Count: > 0 } r)
                 @if (_query is not null)
                 {
                     <pre id="lookup-query" class="tide-query tide-lookup-query" tabindex="0" aria-label="Hunt query">@_query</pre>
+                    <div id="lookup-query-tools" class="tide-lookup-rail-tools">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="lookup-query" data-copy-status="lookup-query-status" data-copy-done="Query copied." disabled="@nothingToRun"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
+                        <span id="lookup-query-status" class="small tide-muted" role="status"></span>
+                        @if (ind.SeenWith.Indicators.Count > 0)
+                        {
+                            @* One label whatever its state, which aria-pressed and the box say, as "Use the whole story's" on an action. *@
+                            <button type="button" id="lookup-travels" class="btn btn-link btn-sm tide-lookup-travels" aria-pressed="@Ui.Aria(_withTravels)"
+                                    title="@($"Adds the {Words.Plural(ind.SeenWith.Indicators.Count, "indicator")} it was seen with")" @onclick="() => IncludeTravels(!_withTravels)">
+                                <span class="bi @(_withTravels ? "bi-check2-square" : "bi-square")" aria-hidden="true"></span> Include what it travels with
+                            </button>
+                        }
+                    </div>
+                }
+                @if (related > 0)
+                {
+                    <label class="form-check-label small d-block mb-2"><input type="checkbox" class="form-check-input me-1" @bind:get="_withRelated" @bind:set="IncludeRelated" /> With the @Words.Plural(related, "related indicator")</label>
                 }
                 <p class="form-text mb-0">Built for this page: nothing is saved until a query is added to an action.</p>
-            </div>
-        </div>
+            </section>
+            <LookupSweeps @ref="_sweeps" Actions="ind.Sweeping" CanOpen="_canOpenActions" Takeable="_takeable" OnTake="Take" Busy="_taking" />
+            @Export(ind.Summary.Articles > 0)
+        </ContextRail>
     }
 
     @if (r.Cve is { } cve)
     {
-        <div class="tide-card">
+        <div class="tide-card tide-lookup-card">
             <h2 class="d-flex gap-2 align-items-center flex-wrap"><CveChip CveId="@cve.CveId" Record="cve.Record" /></h2>
             @SummaryLine(cve.Summary, cve.Summary.Unseen, cve.Actions.More, cve.CveId)
             @if (cve.Record?.Description is { } desc) { <p>@desc</p> }
             @if (cve.Record is null) { <p class="small tide-muted">Not enriched yet: CVSS, EPSS and KEV are fetched for CVEs that are on an article.</p> }
-            @if (cve.Sweeps.Count > 0)
+            @if (cve.Articles.Items.Count > 0)
             {
-                <p id="lookup-swept" class="tide-lookup-sweeping">
-                    <span class="bi bi-search" aria-hidden="true"></span>
-                    <span>A hunt doesn't search for a CVE. The indicators on these articles: </span>
-                    @foreach (var a in cve.Sweeps)
-                    {
-                        <span class="tide-lookup-sweep"><ActionRef Number="a.Number" Title="@a.Title" Link="_canOpenActions" /> @if (a.Hunted is null) { <span class="tide-muted">(no query yet)</span> } else { <HuntBadge Result="a.Hunted" /> }</span>
-                    }
-                </p>
+                <div class="tide-lookup-part">
+                    <h3 class="tide-card-title">@(cve.Articles.Total == 1 ? "Article" : "Articles") <span class="tide-count">(@N(cve.Articles.Total))</span></h3>
+                    @ArticleTable(cve.Articles.Items.Select(a => (a, (RenderFragment)(@<span class="tide-muted">This CVE</span>))), "CVE")
+                    @if (cve.Articles.More) { <p class="small tide-muted mt-2 mb-0">Showing the newest @cve.Articles.Items.Count of @N(cve.Articles.Total).</p> }
+                </div>
             }
+            <div id="lookup-actions" class="tide-lookup-part"><ActionsDone Actions="cve.Actions" CanOpen="_canOpenActions" /></div>
+            @SeenWithRow(cve.SeenWith)
         </div>
-        <div class="tide-card">
-        @if (cve.Articles.Items.Count > 0)
-        {
-            <div class="tide-lookup-part">
-                <h3 class="tide-card-title">@(cve.Articles.Total == 1 ? "Article" : "Articles") <span class="tide-count">(@N(cve.Articles.Total))</span></h3>
-                @ArticleTable(cve.Articles.Items.Select(a => (a, (RenderFragment)(@<span class="tide-muted">This CVE</span>))), "CVE")
-                @if (cve.Articles.More) { <p class="small tide-muted mt-2 mb-0">Showing the newest @cve.Articles.Items.Count of @N(cve.Articles.Total).</p> }
-            </div>
-        }
-        <div id="lookup-actions" class="tide-lookup-part"><ActionsDone Actions="cve.Actions" CanOpen="_canOpenActions" /></div>
-        @SeenWithRow(cve.SeenWith)
-        </div>
+
+        <ContextRail Title="@RailTitle">
+            <LookupSweeps @ref="_sweeps" Actions="cve.Sweeps" Cve="true" CanOpen="_canOpenActions" Takeable="_takeable" OnTake="Take" Busy="_taking" />
+            @Export(cve.Summary.Articles > 0)
+        </ContextRail>
     }
 
     @if (r.Empty)
@@ -233,12 +224,20 @@ else if (_results is { Terms.Count: > 0 } r)
     private string? _text, _query, _searched;
     private SearchResults? _results;
     private IReadOnlyList<string> _forms = [];
-    private bool _loading, _more, _withRelated, _canOpenActions;
+    private bool _loading, _more, _withRelated, _withTravels, _canOpenActions, _taking;
     // A lookup's articles are listed with the lookup, so the article hits leave them out.
     private static readonly SearchPages FirstPages = SearchPages.First with { LookupOnce = true };
     private SearchPages _pages = FirstPages;
     private string _dialect = QueryDialects.All[0].Key;
     private bool _dialectRead;
+    // The sweeps in the rail the reader may take on, and the rail's list of them (for focus once one is taken).
+    private IReadOnlySet<Guid> _takeable = new HashSet<Guid>();
+    private LookupSweeps? _sweeps;
+
+    private const string RailTitle = "Do something with it";
+
+    /// <summary>The sweeps and hunts the rail lists: for the indicator, or of a CVE's articles.</summary>
+    internal IReadOnlyList<ActionHit> Sweeps => _results?.Indicator?.Sweeping ?? _results?.Cve?.Sweeps ?? [];
 
     protected override async Task OnParametersSetAsync()
     {
@@ -247,7 +246,8 @@ else if (_results is { Terms.Count: > 0 } r)
         _searched = Q;
         _text = Q;
         _query = null;
-        _withRelated = false;
+        (_withRelated, _withTravels) = (false, false);
+        _takeable = new HashSet<Guid>();
         _pages = FirstPages;
         if (string.IsNullOrWhiteSpace(Q))
         {
@@ -267,6 +267,7 @@ else if (_results is { Terms.Count: > 0 } r)
             (_results, _forms) = (results, SearchText.AllForms(results.Terms));
             // The hunt query comes with the results, in the language the person chose last.
             if (results.Indicator is { } ind) await BuildQuery(ind);
+            await ReadTakeable(q);
         }
         catch (Exception ex)
         {
@@ -304,6 +305,8 @@ else if (_results is { Terms.Count: > 0 } r)
     {
         var values = new List<ArticleIndicator> { new() { Type = ind.Type, Value = ind.Value } };
         if (_withRelated) values.AddRange(ind.Sightings.Items.Where(s => s.Related).Select(s => new ArticleIndicator { Type = s.Type, Value = s.Value }));
+        // What it travels with: the indicators "Seen with" names, on the same articles as it.
+        if (_withTravels) values.AddRange(ind.SeenWith.Indicators.Select(i => new ArticleIndicator { Type = i.Type, Value = i.Value }));
         try
         {
             // The language the person chose last, read once for the page's life.
@@ -330,6 +333,60 @@ else if (_results is { Terms.Count: > 0 } r)
         _withRelated = with;
         return _results?.Indicator is { } ind ? BuildQuery(ind) : Task.CompletedTask;
     }
+
+    /// <summary>"Include what it travels with": the query with, or without, the indicators it was seen with.</summary>
+    internal Task IncludeTravels(bool with)
+    {
+        _withTravels = with;
+        return _results?.Indicator is { } ind ? BuildQuery(ind) : Task.CompletedTask;
+    }
+
+    // Which of the rail's sweeps the reader may take on: nobody has it, and the reader may work its team's actions (the
+    // action page's rule, ActionRow.TakeableBy). None for someone who works no actions, so nothing is read for them.
+    private async Task ReadTakeable(string? q)
+    {
+        var open = Sweeps.Where(a => a.IsOpen && a.AssigneeName is null).Select(a => a.Id).ToList();
+        if (open.Count == 0 || !CurrentUser.Has(Permission.WorkActions)) { _takeable = new HashSet<Guid>(); return; }
+        var takeable = new HashSet<Guid>();
+        var teams = new Dictionary<Guid, bool>();
+        foreach (var row in await ActionSvc.ListByIdAsync(open))
+        {
+            if (!teams.TryGetValue(row.TeamId, out var works)) teams[row.TeamId] = works = await ActionSvc.CanWorkAsync(row.TeamId);
+            if (row.TakeableBy(works)) takeable.Add(row.Id);
+        }
+        if (q == Q) _takeable = takeable;
+    }
+
+    /// <summary>
+    /// Take it, on a sweep the rail showed as nobody's: the action service's own Take, which checks the reader may work
+    /// it, that it can still be taken and that nobody took it meanwhile, and records it in the action's history. Then the
+    /// lookup is read again, so the rail says who has it now; focus goes to the section's heading, as the button has gone.
+    /// </summary>
+    internal async Task Take(ActionHit a)
+    {
+        var label = Ui.ActionLabel(a.Number);
+        _taking = true;
+        try
+        {
+            await ActionSvc.TakeAsync(a.Id, onlyIfNobodys: true);
+            Toasts.Show($"You took {label} on.");
+        }
+        catch (StaleEditException ex) { Toasts.Error(ex.Message); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _taking = false; }
+        await More(_pages);
+        await ReadTakeable(Q);
+        StateHasChanged();
+        if (_sweeps is not null) await _sweeps.FocusAsync();
+    }
+
+    // The rail's Export: the articles the lookup lists as its own, with everything they carry, as STIX 2.1 or CSV, up to
+    // the TLP chosen (ExportService, held to the team edition as every export is). Not offered when it's on no article.
+    private RenderFragment? Export(bool any) => !any || _results is null ? null : @<section class="tide-card" aria-labelledby="lookup-export-h">
+        <h2 id="lookup-export-h">Export</h2>
+        <p class="small tide-muted">STIX 2.1 or CSV: the articles it's on, with what it travels with, up to the TLP you choose.</p>
+        <ExportIndicators Scope="ExportScope.Lookup" Key="@ExportService.LookupKey(_results.Query)" Inline="true" />
+    </section>;
 
     // The address that looks a value up: the value encoded, and quoted when it has a space so it stays one term.
     private static string LookupUrl(string value) =>

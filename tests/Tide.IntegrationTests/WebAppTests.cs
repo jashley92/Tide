@@ -285,6 +285,12 @@ public class WebAppTests(TideApp app) : IClassFixture<TideApp>
         (await indicators.Content.ReadAsStringAsync()).Should().Contain("type,value,defanged");
         (await app.CreateClient().GetAsync($"/exports/brief/{day:yyyy-MM-dd}?tlp=purple")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await app.CreateClient().GetAsync($"/exports/nothing/{day:yyyy-MM-dd}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // A lookup's export: the articles the sample's VPN address is on, named for it and the ceiling.
+        var lookup = await app.CreateClient().GetAsync($"/exports/lookup/{Tide.Application.Exports.ExportService.LookupKey("203.0.113.45")}?format=stix&tlp=amber");
+        lookup.StatusCode.Should().Be(HttpStatusCode.OK);
+        lookup.Content.Headers.ContentDisposition!.FileNameStar.Should().Be("tide-lookup-203-0-113-45-amber.stix.json");
+        (await lookup.Content.ReadAsStringAsync()).Should().Contain("[ipv4-addr:value = '203.0.113.45']").And.Contain("update-check.example.net");
+        (await app.CreateClient().GetAsync($"/exports/lookup/{Tide.Application.Exports.ExportService.LookupKey("just words")}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
         var trends = await app.CreateClient().GetAsync("/trends/export.csv?p=2026-Q3");
         trends.Content.Headers.ContentDisposition!.FileNameStar.Should().Be("tide-trends-2026-Q3.csv");
         (await trends.Content.ReadAsStringAsync()).Should().Contain("section,group,line,key,2025-Q3,2025-Q4,2026-Q1,2026-Q2,2026-Q3,change");
@@ -320,6 +326,7 @@ public class ReaderTests(ReaderApp app) : IClassFixture<ReaderApp>
         (await client.GetAsync("/published")).StatusCode.Should().Be(HttpStatusCode.OK);
         (await client.GetAsync("/metrics/export.csv")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await client.GetAsync("/exports/brief/2026-10-26?format=csv")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await client.GetAsync($"/exports/lookup/{Tide.Application.Exports.ExportService.LookupKey("203.0.113.45")}?format=stix")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await client.GetAsync("/trends/export.csv")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         var page = await client.GetAsync("/actions");
         page.StatusCode.Should().Be(HttpStatusCode.Redirect, "a page they can't open goes to the friendly access-denied page");

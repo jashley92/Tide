@@ -149,6 +149,7 @@ public class VisitorAppTests(VisitorApp app) : IClassFixture<VisitorApp>
         (await client.GetAsync(path)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         var day = app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;
         (await client.GetAsync($"/exports/brief/{day:yyyy-MM-dd}?format=csv")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await client.GetAsync($"/exports/lookup/{Tide.Application.Exports.ExportService.LookupKey("203.0.113.45")}?format=csv")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await client.GetAsync($"/briefs/{day:yyyy-MM-dd}/email/team")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
