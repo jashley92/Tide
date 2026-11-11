@@ -1,15 +1,18 @@
-@* The actions board: a column per working status (Open, In progress, Blocked, Tracking), sharing the width, and one narrow
-   Closed column holding Done, Cancelled and Not applicable, each still its own column to drop a card on. A card the
-   person may work can be dragged to another column (board.js, which drops on the nearest .tide-kcol), or moved with its
-   Move menu from the keyboard; either way ActionService.MoveAsync checks and makes the move. A move to a closed column
-   asks for the outcome first, as the action's page does.
-   It's shared live: a card someone else is dragging says who has it and lights the column it's over (BoardDrags), and a
-   card someone else moved slides in from its old column and says who moved it.
+@* The actions board: a lane per working status (Open, In progress, Blocked, Tracking), sharing the width and filling the
+   window's height, each scrolling on its own when long, with a place to drop under its cards. Under the lanes, a strip
+   counts what closed in the last week each way (Done, Cancelled, Not applicable): closed cards aren't drawn, and each
+   way is a chip to drop a card on to close it so. A card the person may work can be dragged to another lane or a chip
+   (board.js, which drops on the nearest .tide-kcol or .tide-kchip), or moved with its Move menu from the keyboard;
+   either way ActionService.MoveAsync checks and makes the move. A move to a closed status asks for the outcome first,
+   as the action's page does.
+   It's shared live: a card someone else is dragging says who has it and lights the lane or chip it's over (BoardDrags),
+   and a card someone else moved slides in from its old lane and says who moved it.
    A card says its article (to whoever may read it: the board leaves it off otherwise), KEV when that article names a
-   CVE on CISA's known exploited list, its checklist's progress and how long it has been in its column.
-   A column shows its first 20 cards, then "Show N more" adds 20 at a time; a card moved here (by this person or someone
-   else) stays shown whatever its place. The closed columns reach back a week; "Show older", under them, takes them to
-   30 days. Both are for this visit only. *@
+   CVE on CISA's known exploited list, its checklist's progress, how its hunt went (a sweep or hunt) and how long it has
+   been in its lane.
+   A lane shows its first 20 cards, then "Show N more" adds 20 at a time; a card moved here (by this person or someone
+   else) stays shown whatever its place. The strip counts a week back; "Show the last 30 days" takes it to 30, and "Show the
+   last 7 days" back again. Both are for this visit only. *@
 @implements IAsyncDisposable
 @inject ActionService ActionSvc
 @inject ToastService Toasts
@@ -21,54 +24,52 @@
 @inject OrgClock Clock
 
 @{ var drags = Drags.Others(CurrentUser.UserId); }
-<div class="tide-kanban" @ref="_root" aria-label="Actions board">
-    @foreach (var status in WorkingStatuses)
-    {
-        @Column(status, drags)
-    }
-    <div class="tide-kclosed" role="group" aria-labelledby="kcol-closed">
-        <div class="tide-kcol-head" id="kcol-closed">Closed <span class="tide-count tide-muted fw-normal">@Board.Cards.Count(c => !c.IsOpen)</span></div>
-        <div class="tide-kcol-sub">Last @Board.ClosedDays days</div>
-        @foreach (var status in ClosedStatuses)
+<div class="tide-board" @ref="_root">
+    <div class="tide-kanban" aria-label="Actions board">
+        @foreach (var status in WorkingStatuses)
         {
             @Column(status, drags)
         }
-        @if (Board.ClosedDays < ActionService.BoardOlderDays)
-        {
-            <button type="button" class="btn btn-link btn-sm tide-kcol-more" @onclick="ShowOlder">Show older: the last @ActionService.BoardOlderDays days</button>
-        }
     </div>
+    <section class="tide-kstrip" aria-labelledby="kstrip-head">
+        <h2 class="tide-kstrip-head" id="kstrip-head">Closed, last @ClosedDays days</h2>
+        @foreach (var status in ClosedStatuses)
+        {
+            var incoming = drags.Where(d => d.Over == status).ToList();
+            var name = ActionService.StatusName(status);
+            var n = Counts.ClosedAs(status);
+            <div class="tide-kchip @(incoming.Count > 0 ? "tide-kcol-incoming" : "")" data-status="@status" role="group"
+                 aria-label="@($"{name}: {n} closed in the last {ClosedDays} days")">
+                <ActionStatusBadge Status="status" /> <span class="tide-count" aria-hidden="true">@n</span>
+                @foreach (var d in incoming)
+                {
+                    <span class="tide-kcol-incoming-by" title="@d.Name is moving a card here"><span class="bi bi-arrow-down-circle" aria-hidden="true"></span> @d.Name</span>
+                }
+            </div>
+        }
+        <span class="tide-kstrip-hint">Drop a card on one to close it that way</span>
+        @* The strip's reach, a week or a month, either way. *@
+        <button type="button" class="btn btn-link btn-sm tide-kstrip-more" @onclick="ShowOlder">Show the last @(ClosedDays < ActionService.BoardOlderDays ? ActionService.BoardOlderDays : ActionService.BoardClosedDays) days</button>
+    </section>
 </div>
 <div class="visually-hidden" role="status">@_said</div>
 
-@* A move to a closed column asks for the outcome (required for Done) and an optional note first. *@
-<ConfirmDialog @ref="_closeDialog" Form="true" Confirming="ConfirmClose"
-               ConfirmDisabled="@(_closing is { } closing && !ActionCloseFields.CanClose(closing.To, _outcome))">
-    @if (_closing is { } pending)
-    {
-        <ActionCloseFields Kind="pending.Card.Kind" Current="pending.Card.Outcome" To="pending.To" Id="kclose" @bind-Outcome="_outcome" @bind-Note="_note" />
-    }
-</ConfirmDialog>
-
-@* A parent closed while parts are open is asked about first; a move over a team's limit, when it warns, asks why. *@
-<ConfirmDialog @ref="_confirm" />
-<OverLimitDialog @ref="_overLimit" />
+@* A move asks what it needs first (the outcome, for a closed status) and is checked and recorded (ActionMover). *@
+<ActionMover @ref="_mover" Id="kclose" OnChanged="OnChanged" />
 
 @code {
-    // The working columns, then the closed ones, which share the Closed column.
+    // The working statuses, a lane each, then the closed ones, a chip each on the strip under them.
     private static readonly ActionStatus[] WorkingStatuses = [.. ActionItem.StatusOrder.Where(s => !ActionItem.IsClosedStatus(s))];
     private static readonly ActionStatus[] ClosedStatuses = [.. ActionItem.StatusOrder.Where(ActionItem.IsClosedStatus)];
 
-    // One status's column: its heading and count, who is carrying a card into it, and its cards. A closed card is the
-    // short one (what it was, when and how it closed), as the Closed column is narrow.
+    // One working status's lane: its heading and count, who is carrying a card into it, its cards and a place to drop.
     private RenderFragment Column(ActionStatus status, IReadOnlyList<BoardDrag> drags) => __builder =>
     {
         var cards = Board.In(status);
         var shown = Shown(status, cards);
         var incoming = drags.Where(d => d.Over == status).ToList();
-        var closed = ActionItem.IsClosedStatus(status);
-        <section class="tide-kcol @(closed ? "tide-kcol-closed" : "") @(incoming.Count > 0 ? "tide-kcol-incoming" : "")" data-status="@status" aria-labelledby="kcol-@status">
-            <h2 class="tide-kcol-head" id="kcol-@status">
+        <section class="@(incoming.Count > 0 ? "tide-kcol tide-kcol-incoming" : "tide-kcol")" data-status="@status" aria-labelledby="kcol-@status">
+            <h2 class="tide-kcol-head" id="kcol-@status" tabindex="-1">
                 <ActionStatusBadge Status="status" /> <span class="tide-count tide-muted fw-normal">@cards.Count</span>
                 @foreach (var d in incoming)
                 {
@@ -92,6 +93,8 @@
                                 <span class="tide-kev" title="Its article names a CVE on CISA's known exploited list">KEV</span>
                             }
                             <span class="tide-muted small ms-auto text-truncate">@ActionService.KindName(r.Kind)</span>
+                            @* The number at the head's end, to quote, as the design has it. *@
+                            <span class="tide-action-num">@Ui.ActionLabel(r.Number)</span>
                         </div>
                         @if (held is not null)
                         {
@@ -101,74 +104,69 @@
                         {
                             <div class="tide-kcard-note"><span class="bi @(ar.Moved ? "bi-arrow-right-circle" : "bi-plus-circle")" aria-hidden="true"></span> @(ar.Moved ? "Moved" : "Added") by @ar.Name</div>
                         }
-                        @if (r.ParentNumber is { } parent && !closed)
+                        @if (r.ParentNumber is { } parent)
                         {
                             <a class="tide-kcard-parent small" href="@Ui.ActionUrl(parent)" draggable="false">
                                 <span class="bi bi-arrow-return-right" aria-hidden="true"></span> Part of @Ui.ActionLabel(parent)
                             </a>
                         }
-                        <div><ActionRef Number="r.Number" Title="@r.Title" TitleClass="tide-kcard-title" Draggable="false" /></div>
-                        @if (r.ArticleTitle is not null && !closed)
+                        <div><ActionRef Number="r.Number" Title="@r.Title" TitleClass="tide-kcard-title" Draggable="false" ShowNumber="false" /></div>
+                        @if (r.ArticleTitle is not null)
                         {
                             <div class="tide-kcard-article" title="@r.ArticleTitle"><span class="bi bi-newspaper" aria-hidden="true"></span> <span class="text-truncate">@r.ArticleTitle</span></div>
                         }
-                        @if (!closed)
+                        @if (matched.Count > 0)
                         {
-                            @if (matched.Count > 0)
-                            {
-                                <div class="tide-kcard-labels">
-                                    @foreach (var rule in matched) { <span class="tide-rule-label @Ui.RuleClass(rule.Colour)">@rule.Name</span> }
-                                </div>
-                            }
-                            @if (r.Children > 0)
-                            {
-                                <div class="small tide-muted tide-rollup"><span class="bi bi-diagram-3" aria-hidden="true"></span> @r.Rollup</div>
-                            }
-                            @if (r.ChecklistTotal > 0)
-                            {
-                                var open = _checklistFor.Contains(r.Id);
-                                <button type="button" class="tide-kcard-progress" aria-expanded="@(open ? "true" : "false")"
-                                        aria-label="Checklist for @Ui.ActionLabel(r.Number): @r.ChecklistDone of @r.ChecklistTotal done" @onclick="() => ToggleChecklist(r.Id)">
-                                    <span class="bi @(r.ChecklistDone == r.ChecklistTotal ? "bi-check2-square" : "bi-list-check")" aria-hidden="true"></span>
-                                    <span>@r.ChecklistDone/@r.ChecklistTotal</span>
-                                    <span class="tide-kcard-bar" aria-hidden="true"><span style="width: @(r.ChecklistDone * 100 / r.ChecklistTotal)%"></span></span>
-                                    <span class="bi @(open ? "bi-chevron-up" : "bi-chevron-down")" aria-hidden="true"></span>
-                                </button>
-                                @if (open)
-                                {
-                                    <ActionChecklist ActionId="r.Id" Kind="r.Kind" CanWork="canMove" Compact="true" OnChanged="OnChanged" />
-                                }
-                            }
-                            <div class="tide-kcard-meta small">
-                                <span class="bi bi-person" aria-hidden="true"></span> @(r.AssigneeName ?? "Unassigned") <span class="tide-muted">&middot; @r.TeamName</span>
-                                <FileCount Count="r.Files" />
+                            <div class="tide-kcard-labels">
+                                @foreach (var rule in matched) { <span class="tide-rule-label @Ui.RuleClass(rule.Colour)">@rule.Name</span> }
                             </div>
                         }
-                        <div class="tide-kcard-foot small">
-                            @if (!r.IsOpen)
+                        @if (r.Children > 0)
+                        {
+                            <div class="small tide-muted tide-rollup"><span class="bi bi-diagram-3" aria-hidden="true"></span> @r.Rollup</div>
+                        }
+                        @if (r.ChecklistTotal > 0)
+                        {
+                            var open = _checklistFor.Contains(r.Id);
+                            <button type="button" class="tide-kcard-progress" aria-expanded="@(open ? "true" : "false")"
+                                    aria-label="Checklist for @Ui.ActionLabel(r.Number): @r.ChecklistDone of @r.ChecklistTotal done" @onclick="() => ToggleChecklist(r.Id)">
+                                <span class="bi @(r.ChecklistDone == r.ChecklistTotal ? "bi-check2-square" : "bi-list-check")" aria-hidden="true"></span>
+                                <span class="text-nowrap">@r.ChecklistDone of @r.ChecklistTotal</span>
+                                <span class="tide-kcard-bar" aria-hidden="true"><span style="width: @(r.ChecklistDone * 100 / r.ChecklistTotal)%"></span></span>
+                                <span class="bi @(open ? "bi-chevron-up" : "bi-chevron-down")" aria-hidden="true"></span>
+                            </button>
+                            @if (open)
                             {
-                                <span class="tide-muted">Closed @(r.ClosedDate is { } c ? Ui.ShortDay(c) : "")@(r.Outcome != ActionOutcome.None ? $" · {ActionService.OutcomeName(r.Outcome)}" : "")</span>
+                                <ActionChecklist ActionId="r.Id" Kind="r.Kind" CanWork="canMove" Compact="true" OnChanged="OnChanged" />
+                            }
+                        }
+                        <div class="tide-kcard-meta small">
+                            <span class="bi bi-person" aria-hidden="true"></span> @(r.AssigneeName ?? "Unassigned") <span class="tide-muted">&middot; @r.TeamName</span>
+                            <FileCount Count="r.Files" />
+                        </div>
+                        <div class="tide-kcard-foot small">
+                            @if (r.DueDate is { } d)
+                            {
+                                <span>Due @Ui.ShortDay(d)</span> <SlaBadge State="r.Sla(Today, ActionSvc.Days)" Due="r.DueDate" Today="Today" />
                             }
                             else
                             {
-                                @if (r.DueDate is { } d)
-                                {
-                                    <span>Due @Ui.ShortDay(d)</span> <SlaBadge State="r.Sla(Today, ActionSvc.Days)" Due="r.DueDate" Today="Today" />
-                                }
-                                else
-                                {
-                                    <span class="tide-muted">@Age(r)</span>
-                                }
-                                @if (InColumn(r) is var (text, since))
-                                {
-                                    <span class="tide-muted tide-kcard-since" title="@($"{ActionService.StatusName(r.Status)} since {Ui.ShortDay(since)}")">@text</span>
-                                }
+                                <span class="tide-muted">@Age(r)</span>
+                            }
+                            @if (InColumn(r) is var (text, since))
+                            {
+                                <span class="tide-muted tide-kcard-since" title="@($"{ActionService.StatusName(r.Status)} since {Ui.ShortDay(since)}")">@text</span>
+                            }
+                            @if (ActionGuide.IsHunt(r.Kind))
+                            {
+                                @* How its hunt went: a sweep with no query yet hasn't been run either. *@
+                                <HuntBadge Result="@(r.Hunted ?? HuntResult.NotRun)" />
                             }
                             @if (canMove)
                             {
                                 <button type="button" class="btn btn-link btn-sm tide-kcard-move ms-auto" aria-haspopup="menu" aria-expanded="@(_menuFor == r.Id ? "true" : "false")"
                                         aria-controls="@(_menuFor == r.Id ? $"move-menu-{r.Id}" : null)"
-                                        aria-label="Move @Ui.ActionLabel(r.Number)" disabled="@_busy" @onclick="() => ToggleMenu(r.Id)">
+                                        aria-label="Move @Ui.ActionLabel(r.Number)" disabled="@_mover?.Busy" @onclick="() => ToggleMenu(r.Id)">
                                     Move <span class="bi bi-chevron-down" aria-hidden="true"></span>
                                 </button>
                             }
@@ -180,15 +178,11 @@
                             <div class="tide-kcard-menu" id="move-menu-@r.Id" role="menu" aria-label="Move @Ui.ActionLabel(r.Number) to" @onkeydown="OnMenuKey">
                                 @foreach (var to in ActionItem.StatusOrder.Where(s => s != r.Status))
                                 {
-                                    <button type="button" role="menuitem" tabindex="-1" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => MoveFromMenu(r, to)">@ActionService.StatusName(to)</button>
+                                    <button type="button" role="menuitem" tabindex="-1" class="btn btn-outline-secondary btn-sm" disabled="@_mover?.Busy" @onclick="() => MoveFromMenu(r, to)">@ActionService.StatusName(to)</button>
                                 }
                             </div>
                         }
                     </article>
-                }
-                @if (cards.Count == 0)
-                {
-                    <div class="tide-kcol-empty">Nothing here.</div>
                 }
                 @if (cards.Count > shown.Count)
                 {
@@ -196,6 +190,8 @@
                     <button type="button" class="btn btn-outline-secondary btn-sm tide-kcol-more" aria-label="@($"Show {more} more in {ActionService.StatusName(status)}")"
                             @onclick="() => ShowMore(status)">Show @more more</button>
                 }
+                @* Room to drop under the cards (the whole lane takes a drop); an empty lane says so to a screen reader. *@
+                <div class="tide-kcol-drop">@if (cards.Count == 0) { <span class="visually-hidden">Nothing here.</span> }</div>
             </div>
         </section>
     };
@@ -214,13 +210,19 @@
     [Parameter, EditorRequired] public ActionBoard Board { get; set; } = default!;
     [Parameter, EditorRequired] public DateOnly Today { get; set; }
 
+    /// <summary>How many of the board's view closed each way (the strip under the lanes), from the tabs' count.</summary>
+    [Parameter] public ActionViewCounts Counts { get; set; } = ActionViewCounts.None;
+
+    /// <summary>How far back the closed strip counts.</summary>
+    [Parameter] public int ClosedDays { get; set; } = ActionService.BoardClosedDays;
+
     /// <summary>The administrators' card rules: a card takes the first matching one's colour, and every match's label.</summary>
     [Parameter] public IReadOnlyList<ActionCardRule> Rules { get; set; } = [];
 
     /// <summary>After a move (or a refused one): the page reloads the board.</summary>
     [Parameter] public EventCallback OnChanged { get; set; }
 
-    /// <summary>"Show older" under Done: the page reads the board again with its closed columns reaching further back.</summary>
+    /// <summary>"Show the last 30 days" (or 7) under the lanes: the page counts the closed strip again, reaching that far.</summary>
     [Parameter] public EventCallback OnShowOlder { get; set; }
 
     /// <summary>Who last changed each card, from the changes a live reload heard: a card that changed column says so.</summary>
@@ -228,8 +230,6 @@
 
     /// <summary>How long a card someone else moved says who moved it.</summary>
     private static readonly TimeSpan ArrivedFor = TimeSpan.FromSeconds(6);
-
-    private sealed record PendingClose(ActionRow Card, ActionStatus To);
 
     /// <summary>The cards a column shows at first, and how many more each "Show more" adds.</summary>
     internal const int FirstCards = 20, MoreCards = 20;
@@ -254,18 +254,13 @@
     private Task ShowOlder() => OnShowOlder.InvokeAsync();
 
     private ElementReference _root;
-    private ConfirmDialog _closeDialog = default!;
-    private ConfirmDialog _confirm = default!;
-    private OverLimitDialog _overLimit = default!;
+    private ActionMover _mover = default!;
     private DotNetObjectReference<ActionKanban>? _self;
     private Guid? _menuFor;
     // The card whose Move menu just opened (focus goes to its first option), or that the menu just moved (focus goes
     // back to its Move button, in its new column).
-    private Guid? _focusMenu, _focusMove;
-    private PendingClose? _closing;
-    private bool _busy;
-    private ActionOutcome _outcome;
-    private string? _note;
+    private Guid? _focusMenu;
+    private bool _focusPlace;
 
     // The columns the cards were in at the last render, to see which moved; the cards this tab moved itself (its own
     // reload isn't news); the ones someone else moved, saying so for a moment; and the slides still to play.
@@ -367,10 +362,19 @@
         if (e.Key is "Escape" or "Tab") _menuFor = null;
     }
 
+    /// <summary>After a move from a card's Move menu: the card, and the cards beside it in its lane then, where focus goes
+    /// if it has left (the next, else the one before, else the lane's heading).</summary>
+    internal (Guid Card, Guid? Next, Guid? Previous, ActionStatus Lane)? Place { get; private set; }
+
+    // From the Move menu: once moved (or not), focus goes back to the card's Move button wherever it is now, or when it
+    // has left the board (closed), to the card that was after it in its lane, else the one before, else the lane's heading.
     private async Task MoveFromMenu(ActionRow card, ActionStatus to)
     {
+        var lane = Shown(card.Status, Board.In(card.Status));
+        var at = lane.FindIndex(c => c.Id == card.Id);
+        Place = (card.Id, at + 1 < lane.Count ? lane[at + 1].Id : null, at > 0 ? lane[at - 1].Id : null, card.Status);
         await Move(card, to);
-        _focusMove = card.Id;
+        _focusPlace = true;
         StateHasChanged();
     }
 
@@ -392,59 +396,13 @@
         StateHasChanged();
     }
 
+    // This tab's own move: its reload isn't news, and the card stays shown wherever it lands.
     private async Task Move(ActionRow card, ActionStatus to)
     {
         _menuFor = null;
-        if (ActionItem.IsClosedStatus(to) && card.ChildrenOpen > 0 && !await ActionPrompts.ConfirmCloseParent(_confirm, card.Number, card.ChildrenOpen)) return;
-        if (ActionItem.IsClosedStatus(to))
-        {
-            _closing = new PendingClose(card, to);
-            _outcome = ActionOutcome.None;   // Done: chosen in the dialog; otherwise optional
-            _note = null;
-            StateHasChanged();   // a drop comes from script, not an event: draw the dialog's fields for this card first
-            var column = ActionService.StatusName(to);
-            await _closeDialog.Ask($"Move {Ui.ActionLabel(card.Number)} to {column}", card.Title, $"Move to {column}", danger: false);
-            _closing = null;
-            return;
-        }
-        await Run(card, to, ActionOutcome.None, null);
-    }
-
-    // The dialog's button: true closes it (moved, or the card changed underneath and the board reloaded).
-    private async Task<bool> ConfirmClose() =>
-        _closing is not { } p || await Run(p.Card, p.To, _outcome, _note) || _closing is null;
-
-    private async Task<bool> Run(ActionRow card, ActionStatus to, ActionOutcome outcome, string? note)
-    {
-        _busy = true;
-        try
-        {
-            _mine.Add(card.Id);
-            _pinned.Add(card.Id);
-            if (!await _overLimit.RunAsync(reason => ActionSvc.MoveAsync(card.Id, card.Status, to, outcome, note, reason)))
-            {
-                _mine.Remove(card.Id);
-                return false;
-            }
-            Toasts.Show($"{Ui.ActionLabel(card.Number)} moved to {ActionService.StatusName(to)}.");
-            await OnChanged.InvokeAsync();
-            return true;
-        }
-        catch (StaleEditException ex)
-        {
-            _mine.Remove(card.Id);
-            Toasts.Error(ex.Message);
-            _closing = null;
-            await OnChanged.InvokeAsync();
-            return false;
-        }
-        catch (Exception ex)
-        {
-            _mine.Remove(card.Id);
-            Toasts.Error(UserFacingError.For(ex));
-            return false;
-        }
-        finally { _busy = false; }
+        _mine.Add(card.Id);
+        _pinned.Add(card.Id);
+        await _mover.MoveAsync(card, to, refused: () => _mine.Remove(card.Id));
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -461,10 +419,10 @@
                 _focusMenu = null;
                 await JS.InvokeVoidAsync("tideBoard.focusMenu", open.ToString());
             }
-            if (_focusMove is { } moved)
+            if (_focusPlace && Place is { } p)
             {
-                _focusMove = null;
-                await JS.InvokeVoidAsync("tideBoard.focusMove", moved.ToString());
+                _focusPlace = false;
+                await JS.InvokeVoidAsync("tideBoard.focusPlace", p.Card.ToString(), p.Next?.ToString(), p.Previous?.ToString(), $"kcol-{p.Lane}");
             }
             if (_toPlay.Count > 0)
             {

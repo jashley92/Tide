@@ -652,6 +652,10 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 .tide-md { overflow-wrap: anywhere; }
 .tide-md pre { max-width: 100%; overflow-x: auto; }
 .tide-md p:last-child { margin-bottom: 0; }
+/* A quote in rendered Markdown (a team's recorded reply, or any "> " line) reads as someone else's words: a rule down
+   its left and muted text, as the email templates draw it. Bootstrap's reboot gives a bare blockquote only a margin. */
+.tide-md blockquote { margin: 0 0 .75rem; padding: .1rem 0 .1rem .75rem; border-left: 3px solid var(--tide-border); color: var(--tide-text-muted); }
+.tide-md blockquote:last-child { margin-bottom: 0; }
 
 /* ---- Toasts, reconnect ---- */
 .tide-toasts { position: fixed; right: 1rem; bottom: 1rem; z-index: 2000; display: grid; gap: .5rem; max-width: 420px; }
@@ -1172,14 +1176,13 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
     .tide-popover.tide-filter-pop { position: fixed; top: auto; left: .75rem; right: .75rem; bottom: .75rem; width: auto; max-height: 70vh; }
 }
 /* Four working columns sharing the width, then the narrow Closed column (ActionKanban); a narrower window scrolls the board. */
-.tide-kanban { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(11rem, 13rem); gap: .75rem; padding-bottom: .5rem; align-items: start; }
-@media (max-width: 1199.98px) { .tide-kanban { grid-template-columns: repeat(4, minmax(14rem, 1fr)) minmax(11rem, 13rem); overflow-x: auto; } }
+.tide-kanban { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; align-items: stretch; }
+/* A narrower window has the lanes two by two, so none is squeezed and nothing scrolls sideways. */
+@media (max-width: 1199.98px) { .tide-kanban { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .tide-kcol { background: var(--tide-surface-2); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl); padding: .6rem; min-height: 12rem; }
 .tide-kcol.over { border-color: var(--tide-accent); background: var(--tide-drop); box-shadow: inset 0 0 0 1px var(--tide-accent); }
 .tide-kcol-head { font-size: .9rem; font-weight: var(--tide-weight-semibold); margin: 0 0 .5rem; display: flex; align-items: center; gap: .4rem; }
-.tide-kcol-sub { font-size: .74rem; color: var(--tide-text-muted); margin: -.3rem 0 .5rem; }
 .tide-kcol-cards { display: flex; flex-direction: column; gap: .5rem; }
-.tide-kcol-empty { font-size: .82rem; color: var(--tide-text-muted); text-align: center; padding: 1.25rem .5rem; border: 1px dashed var(--tide-border-strong); border-radius: var(--tide-radius-lg); }
 /* A column's "Show N more" and Done's "Show older", under its cards. */
 .tide-kcol-more { align-self: center; }
 .tide-kcard { background: var(--tide-surface); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-lg); padding: .55rem .65rem; display: flex; flex-direction: column; gap: .3rem; }
@@ -1194,7 +1197,6 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
 .tide-kcard-arrived { animation: tide-kcard-glow 2.4s ease-out 1; }
 @keyframes tide-kcard-glow { from { box-shadow: 0 0 0 3px var(--tide-info); } to { box-shadow: 0 0 0 3px transparent; } }
 @media (prefers-reduced-motion: reduce) { .tide-kcard-arrived { animation: none; box-shadow: 0 0 0 2px var(--tide-info); } }
-.tide-kcol-closed .tide-kcard { background: var(--tide-bg); }
 .tide-kcard-head { display: flex; align-items: center; gap: .4rem; min-width: 0; }
 .tide-kcard-title { font-weight: var(--tide-weight-semibold); line-height: 1.3; color: var(--tide-text); overflow-wrap: anywhere; text-decoration: none; }
 .tide-kcard-title:hover, .tide-kcard-title:focus-visible { text-decoration: underline; }
@@ -2438,16 +2440,10 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 @media (max-width: 899.98px) { .tide-brief-chip { display: none; } }
 
 /* ---- Actions list and board (ActionsBoard.razor, ActionTable.razor, ActionKanban.razor). The board's four working
-   columns share the width, with the closed statuses folded into one narrow Closed column after them (each still its own
-   .tide-kcol to drop on; the grid itself is .tide-kanban's, above). A card's article on one line and its time in
-   column; a row's Take it and checklist progress; the views' tabs on a narrow window; the line an empty Mine shows
-   when the person's teams have work nobody owns. ---- */
+   lanes share the width (the grid itself is .tide-kanban's, above; the strip under them is at the end of this file). A
+   card's article on one line and its time in column; a row's Take it; the views' tabs on a narrow window; the line an
+   empty Mine shows when the person's teams have work nobody owns. ---- */
 .tide-kanban .tide-kcol, .tide-kcard { min-width: 0; }
-.tide-kclosed { display: flex; flex-direction: column; gap: var(--tide-space-2); min-width: 0; }
-.tide-kclosed > .tide-kcol-head, .tide-kclosed > .tide-kcol-sub { margin: 0; padding: 0 var(--tide-space-1); }
-.tide-kclosed .tide-kcol { min-height: 4.5rem; padding: var(--tide-space-2); }
-.tide-kclosed .tide-kcol .tide-kcol-head { font-size: var(--tide-text-sm); margin-bottom: var(--tide-space-1); }
-.tide-kclosed .tide-kcol-empty { padding: var(--tide-space-2); }
 .tide-kcard-article { display: flex; align-items: center; gap: .3rem; min-width: 0; font-size: var(--tide-text-xs); color: var(--tide-text-muted); }
 .tide-kcard-since { font-size: var(--tide-text-xs); }
 /* The view tabs, each with its count, are one row whatever the window or the fonts: closer together in a narrow window,
@@ -2469,8 +2465,6 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
     .tide-actions-views .tide-tabbar-item { padding-inline: .3rem; gap: .25rem; font-size: .9rem; }
     .tide-actions-views .tide-tabbar-count { padding: .1rem .3rem; font-size: .68rem; }
 }
-.tide-row-progress { margin-top: var(--tide-space-1); max-width: 7rem; display: flex; align-items: center; gap: .4rem; color: var(--tide-text-muted); }
-.tide-row-progress > .tide-kcard-bar { min-width: 2.5rem; }
 .tide-row-take { display: block; margin-top: var(--tide-space-1); padding: .05rem .5rem; font-size: var(--tide-text-xs); }
 .tide-actions-unowned { margin: 0 0 var(--tide-space-3); padding: var(--tide-space-2) var(--tide-space-3); background: var(--tide-info-soft);
     border-radius: var(--tide-radius-lg); font-size: var(--tide-text-sm); }
@@ -2546,3 +2540,75 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
     }
 }
 /* ---- end Today 3.1 ---- */
+/* ---- Actions list and board, as designed (ActionsBoard.razor, ActionKanban.razor, ActionTable.razor). The board's page
+   is a column the window's height under the top bar: the board takes what the head, tabs and filters leave, its lanes
+   share that height, each scrolling on its own with room to drop under its cards, and the closed strip sits at the
+   bottom of the first screen. A short window keeps the lanes usable and scrolls the page instead. The strip's chips
+   are drop targets, lit like a lane as a card is carried over them. On the list, a pill's count and the Progress
+   column. ---- */
+.content:has(.tide-board) { display: flex; flex-direction: column; height: calc(100vh - var(--tide-height-top)); min-height: 36rem; padding-bottom: var(--tide-space-4); }
+.content:has(.tide-board) > * { flex-shrink: 0; }
+.content > .tide-board { flex: 1 1 0; min-height: 20rem; display: flex; flex-direction: column; gap: var(--tide-space-3); }
+.tide-board > .tide-kanban { flex: 1 1 0; min-height: 0; grid-auto-rows: minmax(0, 1fr); }
+.tide-board .tide-kcol { display: flex; flex-direction: column; min-height: 0; }
+.tide-board .tide-kcol-cards { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 2px; margin: -2px; }
+.tide-kcol-drop { flex: 1 0 3.5rem; border: 1px dashed var(--tide-border-strong); border-radius: var(--tide-radius-lg); }
+.tide-kstrip { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2) var(--tide-space-3); padding: var(--tide-space-3) var(--tide-space-4);
+    background: var(--tide-surface); border: 1px solid var(--tide-border); border-radius: var(--tide-radius-xl); }
+.tide-kstrip-head { margin: 0; font-size: var(--tide-text-md); font-weight: var(--tide-weight-semibold); }
+.tide-kchip { display: inline-flex; align-items: center; gap: var(--tide-space-2); min-height: 2.25rem; padding: var(--tide-space-1) var(--tide-space-3);
+    background: var(--tide-surface-2); border: 1px dashed var(--tide-border-strong); border-radius: var(--tide-radius-lg); white-space: nowrap; }
+.tide-kchip.over { border-style: solid; border-color: var(--tide-accent); background: var(--tide-drop); box-shadow: inset 0 0 0 1px var(--tide-accent); }
+.tide-kstrip-hint { font-size: var(--tide-text-sm); color: var(--tide-text-muted); }
+.tide-kstrip-more { margin-left: auto; padding: 0; }
+.tide-chip-count { margin-left: var(--tide-space-1); color: var(--tide-text-muted); font-variant-numeric: tabular-nums; }
+.tide-col-progress { min-width: 7.5rem; }
+/* A card's number at its head's end, small and muted, to quote. */
+.tide-kcard-head .tide-action-num { flex: none; font-size: var(--tide-text-xs); font-weight: var(--tide-weight-regular); color: var(--tide-text-muted); }
+/* KEV on a card and a row: the design's outlined pill. */
+.tide-kcard .tide-kev, .tide-action-row .tide-kev { display: inline-block; padding: 0 var(--tide-space-1); border: 1px solid currentColor;
+    border-radius: var(--tide-radius-pill); line-height: 1.5; }
+.tide-action-row .tide-kev { margin-left: var(--tide-space-1); }
+/* The list's keys beside its heading; its selected row (rows.js moves it), marked as Triage's is; a status that is a
+   menu, tinted as its badge; and a due group's heading saying how many of it nobody holds. */
+.tide-actions-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--tide-space-1) var(--tide-space-3); }
+.tide-actions-keys { font-size: var(--tide-text-sm); color: var(--tide-text-muted); }
+.tide-action-row.selected > td { background: var(--tide-accent-soft); }
+.tide-action-row.selected > td:first-child { box-shadow: inset 3px 0 0 var(--tide-accent); }
+.tide-action-row:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: -2px; }
+.tide-status-menu { border: 0; cursor: pointer; white-space: nowrap; }
+.tide-status-menu:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
+.tide-dt-group-note { margin-left: var(--tide-space-2); padding: 0 var(--tide-space-2); border: 1px dashed var(--tide-border-strong); border-radius: var(--tide-radius-pill);
+    color: var(--tide-text-muted); font-size: var(--tide-text-xs); font-weight: var(--tide-weight-regular); }
+/* The view tabs' row, as the design has it: the tabs, then on their centre line the tab this page opens on and Save view,
+   and List or Board at the end, over one rule across the row. The tabs scroll sideways inside themselves when they
+   don't fit and the rest keeps its place; on a phone the rest takes a line of its own under them. */
+.tide-actions-viewrow { display: flex; align-items: center; gap: var(--tide-space-3); margin-bottom: var(--tide-space-3); box-shadow: inset 0 -1px 0 var(--tide-border); }
+.tide-actions-viewrow > .tide-actions-views { flex: 0 1 auto; align-self: stretch; margin-bottom: 0; }
+.tide-actions-viewtools { flex: none; display: flex; align-items: center; gap: var(--tide-space-3); }
+.tide-actions-viewrow > .tide-actions-layout { flex: none; margin-left: auto; }
+.tide-actions-saved { margin: 0 0 var(--tide-space-3); }
+/* In a narrower window the tools and List or Board keep their icons, and their words go to screen readers and tooltips,
+   so the tabs keep room enough to show a whole tab. */
+@media (max-width: 1099.98px) {
+    .tide-viewtool-text, .tide-actions-layout .tide-tabbar-item > span:not(.bi) {
+        position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+}
+@media (max-width: 640.98px) {
+    .tide-actions-viewrow { flex-wrap: wrap; row-gap: var(--tide-space-2); padding-bottom: var(--tide-space-2); }
+    .tide-actions-viewrow > .tide-actions-views { flex-basis: 100%; }
+}
+/* A narrower window lays each row out in its box rather than scrolling the table sideways: the title on its own line,
+   the rest under it, wrapping as it needs; the headings, still the way to sort, wrap the same way above. */
+@media (max-width: 1199.98px) {
+    .tide-table:has(.tide-action-row), .tide-table:has(.tide-action-row) > thead, .tide-table:has(.tide-action-row) > tbody { display: block; }
+    .tide-table:has(.tide-action-row) > thead > tr, .tide-action-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--tide-space-1) var(--tide-space-4);
+        padding: var(--tide-space-2) var(--tide-space-3); border-bottom: 1px solid var(--tide-border); }
+    .tide-table:has(.tide-action-row) > thead > tr > th, .tide-action-row > td { display: block; padding: 0; border: 0; }
+    .tide-action-row > td:first-child { flex: 1 0 100%; }
+    .tide-table:has(.tide-action-row) .tide-dt-group, .tide-table:has(.tide-action-row) .tide-dt-group > th { display: block; }
+    .tide-action-row.selected > td:first-child { box-shadow: none; }
+    .tide-action-row.selected { background: var(--tide-accent-soft); box-shadow: inset 3px 0 0 var(--tide-accent); }
+    .tide-action-row.selected > td { background: none; }
+}
+/* ---- end Actions list and board, as designed ---- */

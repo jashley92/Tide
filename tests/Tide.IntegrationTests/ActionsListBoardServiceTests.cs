@@ -9,9 +9,10 @@ using Tide.Domain.Enums;
 namespace Tide.IntegrationTests;
 
 /// <summary>
-/// The Actions list and board in the services: each view tab's count from one grouped query that counts what that view
-/// shows and nothing more, Take it offered where taking is allowed (and refused when someone took it meanwhile), and the
-/// board's cards with their article, its KEV flag and how long each has been in its column, in a fixed number of queries.
+/// The Actions list and board in the services: each view tab's count, No owner's and the board's closed strip's from one
+/// grouped query that counts what each shows and nothing more, Take it offered where taking is allowed (and refused when
+/// someone took it meanwhile), and the rows and cards with their article, its KEV flag, how long each has been in its
+/// column, how its hunts went and when something last happened to it, in a fixed number of queries.
 /// </summary>
 public class ActionsListBoardServiceTests : IDisposable
 {
@@ -71,21 +72,67 @@ public class ActionsListBoardServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task OnTheBoard_EachTabCountsTheCardsItShows_ClosedLaneIncluded_InOneQuery()
+    public async Task OnTheBoard_TheTabsCountOpenActions_AsTheListDoes_AndTheClosedStripCountsEachWayOfClosing_InOneQuery()
     {
-        await Seed();
+        var (mine, other) = await Seed();
+        var now = DateTimeOffset.UtcNow;
+        await Add(mine, a => (a.Status, a.ClosedAtUtc) = (ActionStatus.Cancelled, now.AddDays(-3)));
+        await Add(other, a => (a.Status, a.ClosedAtUtc) = (ActionStatus.NotApplicable, now.AddDays(-2)));
+        await Add(mine, a => (a.AssigneeId, a.AssigneeName, a.Status, a.ClosedAtUtc) = (Me, "Test Analyst", ActionStatus.Done, now.AddDays(-1)));
+        await Add(mine, a => (a.Status, a.ClosedAtUtc) = (ActionStatus.Done, now.AddDays(-20)));   // past the week, within the month
         var svc = _db.Actions();
 
         _db.Commands.Reset();
         var counts = await svc.ViewCountsAsync(new ActionFilter(ActionView.Open), closedDays: ActionService.BoardClosedDays);
-        _db.Commands.Count.Should().Be(1);
+        _db.Commands.Count.Should().Be(1, "the tabs and the closed strip are counted together");
+        var list = await svc.ViewCountsAsync(new ActionFilter(ActionView.Open));
+        (counts.Mine, counts.MyTeams, counts.Open).Should().Be((list.Mine, list.MyTeams, list.Open), "\"All open\" means the same on the board as in the list");
         foreach (var view in new[] { ActionView.Mine, ActionView.MyTeams, ActionView.Open })
-            counts.For(view).Should().Be((await svc.BoardAsync(new ActionFilter(view))).Cards.Count, $"the board's {view} tab counts its cards");
-        (counts.Mine, counts.MyTeams, counts.Open).Should().Be((1, 4, 5), "the action closed today is on the board, in its Closed lane");
-        counts.MineOpen.Should().Be(1, "what an empty Mine looks at is still open work");
+            counts.For(view).Should().Be((await svc.BoardAsync(new ActionFilter(view))).Cards.Count, $"the board's {view} tab counts the cards it draws");
+        (counts.ClosedAs(ActionStatus.Done), counts.ClosedAs(ActionStatus.Cancelled), counts.ClosedAs(ActionStatus.NotApplicable))
+            .Should().Be((2, 1, 1), "closed in the last week, each way");
+        counts.ClosedAs(ActionStatus.Open).Should().Be(0, "an open status is no way of closing");
+        list.ClosedAs(ActionStatus.Done).Should().Be(0, "the list has no strip");
 
         var month = await svc.ViewCountsAsync(new ActionFilter(ActionView.Open), closedDays: ActionService.BoardOlderDays);
-        month.Open.Should().Be((await svc.BoardAsync(new ActionFilter(ActionView.Open), ActionService.BoardOlderDays)).Cards.Count, "Show older reaches further back");
+        month.ClosedAs(ActionStatus.Done).Should().Be(3, "the last 30 days reach further back");
+
+        // The strip follows the board's view and filters, as the cards do.
+        var mineOnly = await svc.ViewCountsAsync(new ActionFilter(ActionView.Mine), closedDays: ActionService.BoardClosedDays);
+        (mineOnly.ClosedAs(ActionStatus.Done), mineOnly.ClosedAs(ActionStatus.Cancelled)).Should().Be((1, 0));
+        var teams = await svc.ViewCountsAsync(new ActionFilter(ActionView.MyTeams), closedDays: ActionService.BoardClosedDays);
+        (teams.ClosedAs(ActionStatus.Done), teams.ClosedAs(ActionStatus.Cancelled), teams.ClosedAs(ActionStatus.NotApplicable)).Should().Be((2, 1, 0), "not another team's");
+        var nobodys = await svc.ViewCountsAsync(new ActionFilter(ActionView.Open, AssigneeId: ActionFilter.Unassigned), closedDays: ActionService.BoardClosedDays);
+        nobodys.ClosedAs(ActionStatus.Done).Should().Be(1, "held by nobody: not the one I closed");
+    }
+
+    [Fact]
+    public async Task TheBoard_DrawsOpenActionsOnly()
+    {
+        var (mine, _) = await Seed();
+        await Add(mine, a => (a.Status, a.ClosedAtUtc) = (ActionStatus.Cancelled, DateTimeOffset.UtcNow.AddHours(-1)));
+        var cards = (await _db.Actions().BoardAsync(new ActionFilter(ActionView.Open))).Cards;
+        cards.Should().HaveCount(4).And.OnlyContain(c => c.IsOpen, "closed actions are counted in the strip under the lanes, not drawn");
+    }
+
+    [Fact]
+    public async Task NoOwner_IsCountedForEachView_InTheSameOneQuery()
+    {
+        var (mine, _) = await Seed();
+        await Add(mine, a => a.DueDate = _db.Clock.Today.AddDays(-2));   // my team's, nobody's, overdue
+        var svc = _db.Actions();
+        foreach (var view in Enum.GetValues<ActionView>())
+        {
+            _db.Commands.Reset();
+            var counts = await svc.ViewCountsAsync(new ActionFilter(view));
+            _db.Commands.Count.Should().Be(1, "No owner is counted with the tabs");
+            // No owner chosen on Mine shows the person's teams' work nobody has.
+            var shows = view == ActionView.Mine ? ActionView.MyTeams : view;
+            counts.NoOwner(view).Should().Be((await svc.PageAsync(new ActionFilter(shows, AssigneeId: ActionFilter.Unassigned))).Total, $"No owner on {view}");
+        }
+        (await svc.ViewCountsAsync(new ActionFilter(ActionView.Open))).NoOwner(ActionView.Open).Should().Be(3, "not the deleted one, nor a held or closed one");
+        (await svc.ViewCountsAsync(new ActionFilter(ActionView.Open, Kind: ActionKind.Block))).NoOwner(ActionView.Open).Should().Be(0, "it follows the other filters");
+        (await svc.ViewCountsAsync(new ActionFilter(ActionView.Open, AssigneeId: Colleague))).NoOwner(ActionView.Open).Should().Be(3, "it's what choosing it shows: it takes Held by's place");
     }
 
     [Fact]
@@ -124,6 +171,44 @@ public class ActionsListBoardServiceTests : IDisposable
         var counts = await _db.Actions().ViewCountsAsync(new ActionFilter(ActionView.Open), rule);
         _db.Commands.Count.Should().Be(1);
         (counts.Open, counts.MyTeams).Should().Be((2, 1));
+    }
+
+    [Fact]
+    public async Task EachDueGroup_SaysHowManyNobodyHas_ReadWithTheGroupsTotals()
+    {
+        var (mine, other) = await Seed();
+        var today = _db.Clock.Today;
+        await Add(other, a => a.DueDate = today);
+        await Add(other, a => (a.DueDate, a.AssigneeId, a.AssigneeName) = (today, Colleague, "Colleague"));
+        var svc = _db.Actions();
+
+        _db.Commands.Reset();
+        await svc.PageAsync(new ActionFilter(ActionView.Open), group: ActionGrouping.Kind);
+        var byKind = _db.Commands.Count;
+        _db.Commands.Reset();
+        var page = await svc.PageAsync(new ActionFilter(ActionView.Open), group: ActionGrouping.Urgency);
+        _db.Commands.Count.Should().Be(byKind, "nobody's are counted in the groups' own query");
+
+        var expected = (await svc.ListAsync(new ActionFilter(ActionView.Open)))
+            .GroupBy(r => ActionSla.UrgencyName(r.Urgency(today, svc.Days)))
+            .ToDictionary(g => g.Key, g => g.Count(r => r.AssigneeId is null));
+        page.GroupsUnowned.Should().Equal(expected);
+        page.GroupsUnowned["Due today"].Should().Be(1);
+    }
+
+    [Fact]
+    public async Task TheListsRows_SayKev_AsTheBoardsCardsDo_OnlyToSomeoneWhoReadsArticles()
+    {
+        var team = await _db.Teams().AddAsync("Cyber Defense", null, null);
+        var (kev, plain) = await Articles();
+        var a = await Add(team, x => x.ArticleId = kev);
+        var b = await Add(team, x => x.ArticleId = plain);
+        var rows = (await _db.Actions().PageAsync(new ActionFilter(ActionView.Open))).Rows;
+        (rows.Single(r => r.Id == a.Id).ArticleKev, rows.Single(r => r.Id == b.Id).ArticleKev).Should().Be((true, false));
+
+        var worker = new OnlyUser("S-1-5-21-WORKER", Permission.WorkActions, Permission.ReadActions);
+        var svc = new ActionService(_db, worker, _db.Sla(), _db.Clock, _db.Queries(), _db.Screenshots(), _db.Articles());
+        (await svc.PageAsync(new ActionFilter(ActionView.Open))).Rows.Should().OnlyContain(r => !r.ArticleKev, "someone who can't open the article isn't told what it says");
     }
 
     [Fact]
@@ -307,6 +392,75 @@ public class ActionsListBoardServiceTests : IDisposable
         a.StatusChangedAtUtc.Should().NotBe(old);
     }
 
+    // A hunt query on an action, with its result.
+    private static HuntQuery Hunt(Guid action, HuntResult result) =>
+        new() { ActionId = action, Dialect = "xql", Text = "dataset = x", GeneratedText = "dataset = x", CreatedAtUtc = DateTimeOffset.UtcNow, CreatedByName = "x", Result = result };
+
+    [Fact]
+    public async Task EachRowAndCard_SaysHowItsHuntsWent_AndWhenSomethingLastHappenedToIt()
+    {
+        var team = await _db.Teams().AddAsync("Cyber Defense", null, null);
+        var none = await Add(team, x => x.Kind = ActionKind.IocSweep);
+        var notRun = await Add(team, x => x.Kind = ActionKind.IocSweep);
+        var clean = await Add(team, x => x.Kind = ActionKind.ThreatHunt);
+        var hits = await Add(team, x => x.Kind = ActionKind.IocSweep);
+        var quiet = await Add(team, x => x.Kind = ActionKind.PatchRemediate);
+        var now = DateTimeOffset.UtcNow;
+        await using (var ctx = _db.Context())
+        {
+            ctx.HuntQueries.AddRange(Hunt(notRun.Id, HuntResult.NotRun), Hunt(clean.Id, HuntResult.NoHits), Hunt(clean.Id, HuntResult.NotRun),
+                Hunt(hits.Id, HuntResult.NoHits), Hunt(hits.Id, HuntResult.Hits));
+            foreach (var a in await ctx.Actions.Where(x => x.TeamId == team).ToListAsync()) a.CreatedAtUtc = now.AddDays(-10);
+            ctx.ActionEvents.Add(new ActionEvent { ActionId = quiet.Id, AtUtc = now.AddDays(-4), ByName = "x", Text = "Changed the due date." });
+            ctx.ActionComments.Add(new ActionComment { ActionId = quiet.Id, AtUtc = now.AddDays(-2), AuthorId = Me, AuthorName = "x", Text = "Asked the vendor." });
+            ctx.ActionEvents.Add(new ActionEvent { ActionId = clean.Id, AtUtc = now.AddDays(-3), ByName = "x", Text = "Recorded the hunt's result." });
+            await ctx.SaveChangesAsync();
+        }
+
+        var svc = _db.Actions();
+        var page = (await svc.PageAsync(new ActionFilter(ActionView.Open))).Rows;
+        var board = (await svc.BoardAsync(new ActionFilter(ActionView.Open))).Cards;
+        foreach (var rows in new[] { page, board })
+        {
+            HuntResult? Of(ActionItem a) => rows.Single(r => r.Id == a.Id).Hunted;
+            (Of(none), Of(notRun), Of(clean), Of(hits), Of(quiet)).Should().Be(((HuntResult?)null, HuntResult.NotRun, HuntResult.NoHits, HuntResult.Hits, (HuntResult?)null),
+                "a hit anywhere is hits, else a clean run is no hits");
+            DateTimeOffset? Last(ActionItem a) => rows.Single(r => r.Id == a.Id).LastActivityUtc;
+            Last(quiet)!.Value.Should().BeCloseTo(now.AddDays(-2), TimeSpan.FromSeconds(1), "the latest of its history and its comments");
+            Last(clean)!.Value.Should().BeCloseTo(now.AddDays(-3), TimeSpan.FromSeconds(1));
+            Last(none)!.Value.Should().BeCloseTo(now.AddDays(-10), TimeSpan.FromSeconds(1), "nothing since it was raised");
+        }
+    }
+
+    [Fact]
+    public async Task TheList_ReadsItsRowsInAFixedNumberOfQueries_HoweverManyThereAre()
+    {
+        var team = await _db.Teams().AddAsync("Cyber Defense", null, null);
+        var svc = _db.Actions();
+        var first = await Add(team, x => x.Kind = ActionKind.IocSweep);
+        await using (var ctx = _db.Context())
+        {
+            ctx.HuntQueries.Add(Hunt(first.Id, HuntResult.NoHits));
+            await ctx.SaveChangesAsync();
+        }
+        _db.Commands.Reset();
+        await svc.PageAsync(new ActionFilter(ActionView.Open));
+        var few = _db.Commands.Count;
+
+        var (kev, _) = await Articles();
+        for (var i = 0; i < 15; i++)
+        {
+            var a = await Add(team, x => (x.Kind, x.ArticleId) = (ActionKind.IocSweep, kev));
+            await using var ctx = _db.Context();
+            ctx.HuntQueries.Add(Hunt(a.Id, i % 2 == 0 ? HuntResult.Hits : HuntResult.NotRun));
+            ctx.ActionEvents.Add(new ActionEvent { ActionId = a.Id, AtUtc = DateTimeOffset.UtcNow, ByName = "x", Text = "Changed it." });
+            await ctx.SaveChangesAsync();
+        }
+        _db.Commands.Reset();
+        (await svc.PageAsync(new ActionFilter(ActionView.Open))).Rows.Should().HaveCount(16).And.OnlyContain(r => r.Hunted != null && r.LastActivityUtc != null);
+        _db.Commands.Count.Should().Be(few + 1, "the hunt state and last activity are read with the rows, and the KEV flag for them all at once, not row by row");
+    }
+
     [Fact]
     public async Task TheBoard_ReadsItsCardsInAFixedNumberOfQueries_HoweverManyThereAre()
     {
@@ -318,10 +472,17 @@ public class ActionsListBoardServiceTests : IDisposable
         await svc.BoardAsync(new ActionFilter(ActionView.Open));
         var few = _db.Commands.Count;
 
-        for (var i = 0; i < 15; i++) await Add(team, x => (x.ArticleId, x.Status) = (kev, i % 2 == 0 ? ActionStatus.Blocked : ActionStatus.Open));
+        for (var i = 0; i < 15; i++)
+        {
+            var a = await Add(team, x => (x.ArticleId, x.Status, x.Kind) = (kev, i % 2 == 0 ? ActionStatus.Blocked : ActionStatus.Open, ActionKind.IocSweep));
+            await using var ctx = _db.Context();
+            ctx.HuntQueries.Add(Hunt(a.Id, HuntResult.NoHits));
+            ctx.ActionEvents.Add(new ActionEvent { ActionId = a.Id, AtUtc = DateTimeOffset.UtcNow, ByName = "x", Text = "Changed it." });
+            await ctx.SaveChangesAsync();
+        }
         _db.Commands.Reset();
-        (await svc.BoardAsync(new ActionFilter(ActionView.Open))).Cards.Should().HaveCount(16);
-        _db.Commands.Count.Should().Be(few, "the article, KEV flag and time in column are read for all the cards at once, not card by card");
+        (await svc.BoardAsync(new ActionFilter(ActionView.Open))).Cards.Should().HaveCount(16).And.Contain(c => c.Hunted == HuntResult.NoHits);
+        _db.Commands.Count.Should().Be(few, "the article, KEV flag, time in column, hunt state and last activity are read for all the cards at once, not card by card");
     }
 
     [Fact]

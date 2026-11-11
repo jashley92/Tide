@@ -300,7 +300,10 @@ public class HandoffsAndExternalTeamsTests : IDisposable
         var parts = await _db.Actions().PageAsync(new ActionFilter(ActionView.Open) { ParentNumber = number });
         parts.Rows.Select(r => r.Number).Should().Equal([made[1]], "its open parts, not the parent");
         (await _db.Actions().PageAsync(new ActionFilter(ActionView.Closed) { ParentNumber = number })).Rows.Select(r => r.Number).Should().Equal(made[0]);
-        (await _db.Actions().BoardAsync(new ActionFilter(ActionView.Open) { ParentNumber = number })).Cards.Should().HaveCount(2);
+        (await _db.Actions().BoardAsync(new ActionFilter(ActionView.Open) { ParentNumber = number })).Cards.Select(r => r.Number).Should().Equal([made[1]],
+            "the board draws the open part; the cancelled one is counted under it");
+        (await _db.Actions().ViewCountsAsync(new ActionFilter(ActionView.Open) { ParentNumber = number }, closedDays: ActionService.BoardClosedDays))
+            .ClosedAs(ActionStatus.Cancelled).Should().Be(1);
 
         var again = () => _db.Handoffs().SplitAsync(net.Id, [new SplitPart(owner)]);
         await again.Should().ThrowAsync<ArgumentException>().WithMessage("*one level deep*");

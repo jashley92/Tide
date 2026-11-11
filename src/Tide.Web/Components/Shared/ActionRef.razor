@@ -15,7 +15,10 @@ else
 {
     <span class="@TitleClass">@TitleContent</span>
 }
-@if (AfterNumber is null)
+@if (!ShowNumber)
+{
+}
+else if (AfterNumber is null)
 {
     <span class="tide-action-num tide-action-num-after">@Label</span>
 }
@@ -42,6 +45,9 @@ else
 
     /// <summary>What goes right after the number, on its line whatever the width (the Escalated badge in a list).</summary>
     [Parameter] public RenderFragment? AfterNumber { get; set; }
+
+    /// <summary>False where the number is shown elsewhere (a board card's head).</summary>
+    [Parameter] public bool ShowNumber { get; set; } = true;
 
     /// <summary>False on a board card: dragging the card mustn't drag its link.</summary>
     [Parameter] public bool Draggable { get; set; } = true;
