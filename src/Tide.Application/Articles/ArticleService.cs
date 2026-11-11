@@ -344,11 +344,7 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
         if (a.Status == ArticleStatus.Ready && ArticleChecks.For(a).Any(c => c.Blocking)) a.Status = ArticleStatus.Draft;
 
         a.EditVersion = Guid.NewGuid();
-        try { await db.SaveChangesAsync(ct); }
-        catch (DbUpdateConcurrencyException)
-        {
-            throw new StaleEditException(SavedMeanwhile);
-        }
+        await SaveCheckedAsync(db, ct);
         return a.EditVersion;
     }
 
