@@ -13,6 +13,7 @@
 @inject ScreenshotService Shots
 @inject ActionFileService FileSvc
 @inject OutreachService OutreachSvc
+@inject Tide.Application.Stack.StackService StackSvc
 @inject OrgClock Clock
 @inject IJSRuntime JS
 @inject ChangeFeed Feed
@@ -31,6 +32,7 @@
             <h1>New action</h1>
             @if (_parent is not null) { <div class="tide-sub">A part of <a href="@Ui.ActionUrl(_parent.Number)">@Ui.ActionLabel(_parent.Number) @_parent.Title</a></div> }
             else if (_articleTitle is not null) { <div class="tide-sub">From the article <a href="articles/@_form.ArticleId">@_articleTitle</a></div> }
+            else if (_product is not null) { <div class="tide-sub">An outreach about <a href="@($"stack/{_product.Id}")">@_product.Name</a> on Our stack</div> }
         </div>
     </div>
     @if (!CurrentUser.Has(Permission.WriteArticles))
@@ -421,6 +423,9 @@ else
     [SupplyParameterFromQuery(Name = "article")] public string? ArticleParam { get; set; }
     [SupplyParameterFromQuery(Name = "parent")] public string? ParentParam { get; set; }
 
+    /// <summary>A product on Our stack (<c>?product=</c>, its rail's Start an outreach): the new action is an Outreach about it.</summary>
+    [SupplyParameterFromQuery(Name = "product")] public string? ProductParam { get; set; }
+
     /// <summary>The drawer's tool to open (<c>?tool=hunt</c>), so a link can open it.</summary>
     [SupplyParameterFromQuery(Name = "tool")] public string? ToolParam { get; set; }
 
@@ -435,6 +440,7 @@ else
     private ActionForm? _editing;
     private ActionRow? _parent;
     private string? _articleTitle, _comment;
+    private StackProduct? _product;
     private ActionStatusControl? _statusControl;
     private ActionToolDrawer? _drawer;
     private MenuButton? _more;
@@ -462,7 +468,7 @@ else
         // page; it's read again below, quietly, only if something was saved in between.
         var adopted = false;
         if (Handoff.Take<ActionPage>(RendererInfo, PrerenderedState, out var current) is { } prerendered && prerendered.Number == Number
-            && prerendered.ArticleParam == ArticleParam && prerendered.ParentParam == ParentParam)
+            && prerendered.ArticleParam == ArticleParam && prerendered.ParentParam == ParentParam && prerendered.ProductParam == ProductParam)
         {
             Adopt(prerendered);
             adopted = true;
@@ -506,14 +512,14 @@ else
     {
         (_teams, _people, _detail, _topic, _shownNumber) = (p._teams, p._people, p._detail, p._topic, p._shownNumber);
         Derive();
-        (_form, _parent, _articleTitle) = (p._form, p._parent, p._articleTitle);
+        (_form, _parent, _articleTitle, _product) = (p._form, p._parent, p._articleTitle, p._product);
         _loaded = true;
     }
 
     private async Task PrepareNew()
     {
         _shownNumber = null;
-        (_parent, _articleTitle) = (null, null);   // a new action from elsewhere isn't a part of the last one's parent
+        (_parent, _articleTitle, _product) = (null, null, null);   // a new action from elsewhere isn't a part of the last one's parent
         _created = false;
         _newFiles.Clear();
         // No team to start with: the person chooses one (the first in the list was too easy to keep by mistake).
@@ -531,6 +537,14 @@ else
             _form.Kind = article.Indicators.Count > 0 ? ActionKind.IocSweep : ActionKind.Other;
             _form.Priority = article.Priority ?? Priority.P3;
             _form.Description = article.RecommendedActions;
+        }
+        // An outreach about a product: its title names the product, so the Outreach panel offers the product's contact as
+        // the email's To line. The team is still the person's to choose.
+        else if (_parent is null && FilterValues.Id(ProductParam) is { } productId && await StackSvc.FindAsync(productId) is { } product)
+        {
+            _product = product;
+            _form.Kind = ActionKind.Outreach;
+            _form.Title = $"Ask {product.ContactName ?? "the vendor"} about {product.Name}";
         }
     }
 
