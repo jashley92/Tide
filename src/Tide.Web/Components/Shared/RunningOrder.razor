@@ -154,20 +154,28 @@
             if (_focusAfter is { } f)
             {
                 _focusAfter = null;
-                await JS.InvokeVoidAsync("tideOrder.focus", _root, f.Item.ToString(), f.Dir);
+                await Focus("tideOrder.focus", _root, f.Item.ToString(), f.Dir);
             }
             if (_focusTitle is { } row)
             {
                 _focusTitle = null;
-                await JS.InvokeVoidAsync("tideOrder.focusTitle", _root, row.ToString());
+                await Focus("tideOrder.focusTitle", _root, row.ToString());
             }
             if (_focusUndo)
             {
                 _focusUndo = false;
-                await JS.InvokeVoidAsync("tideOrder.focusUndo");
+                await Focus("tideOrder.focusUndo");
             }
         }
         catch (JSDisconnectedException) { }
+    }
+
+    // Focus moved after a change. A browser holding an older brief-order.js without the call leaves focus where it was,
+    // rather than the page's error boundary replacing the page.
+    private async Task Focus(string call, params object?[] args)
+    {
+        try { await JS.InvokeVoidAsync(call, args); }
+        catch (JSException) { /* an older brief-order.js still cached */ }
     }
 
     public async ValueTask DisposeAsync()
