@@ -123,6 +123,34 @@ const take = (which, expect) => async page => {
   await page.waitForFunction(el => !el.isConnected, button, { timeout: 5000 }).catch(() => { });
 };
 
+/** The first visible child of the row `selector` matching `which` (in the page): whether it's wholly inside the row's
+ * visible box, within a pixel, as a row that scrolls sideways inside itself must bring it there. */
+const inRow = (page, selector, which) => page.$eval(selector, (row, which) => {
+  const el = which === 'focused' ? document.activeElement : row.querySelector('[aria-pressed="true"], [aria-current="page"], [aria-selected="true"]');
+  if (!el || el.parentElement !== row) return [which === 'focused' ? `focus isn't on one of its tabs (it's on ${el?.tagName ?? 'nothing'})` : 'no current tab'];
+  const e = el.getBoundingClientRect(), r = row.getBoundingClientRect();
+  return e.left >= r.left - 1 && e.right <= r.right + 1 ? [] : [`"${el.innerText.replace(/\s+/g, ' ').trim()}" (${which}) is only partly in view`];
+}, which);
+
+/** Tabbing from the first button of the row `selector` to its last, each one is wholly in view as it takes focus. */
+const tabsInView = selector => ({
+  name: `each tab in view as it's focused: ${selector}`,
+  check: async page => {
+    const count = await page.$$eval(`${selector} > *`, ks => ks.length);
+    await page.$eval(`${selector} > *`, b => b.focus());
+    const problems = [];
+    for (let i = 0; i < count; i++) {
+      if (i > 0) await page.keyboard.press('Tab');
+      await page.waitForTimeout(150);
+      problems.push(...await inRow(page, selector, 'focused'));
+    }
+    return problems;
+  },
+});
+
+/** The current item of the row `selector` (aria-pressed, aria-current or aria-selected) is wholly in view inside it. */
+const activeInView = selector => ({ name: `current tab in view: ${selector}`, check: page => inRow(page, selector, 'current') });
+
 // --- the pages: route, optional setup, widths (each 900px tall) and rules ([minWidth, rule] from that width up) ------
 
 const pages = [
@@ -150,6 +178,12 @@ const pages = [
     rules: [focusedOnExpectedRow] },
   { name: 'actions-take-focus', route: '/actions?view=open&layout=list&assignee=none', setup: take('first', 'next'), widths: [1440],
     rules: [focusedOnExpectedRow] },
+  // The view tabs scroll sideways inside their row when they don't fit (a phone, wider fonts): a tab taking focus comes
+  // wholly into view, and the current one is in view when the page opens on it.
+  { name: 'actions-tabs-focus', route: '/actions?view=open&layout=list', widths: [375, 780],
+    rules: [tabsInView('[role=group][aria-label="Views"]')] },
+  { name: 'actions-tabs-current', route: '/actions?view=closed&layout=list', widths: [375, 320],
+    rules: [activeInView('[role=group][aria-label="Views"]')] },
   { name: 'actions-take-focus-last', route: '/actions?view=open&layout=list&assignee=none', setup: take('last', 'previous'), widths: [780],
     rules: [focusedOnExpectedRow] },
   // The four working columns share the width and Closed folds into one narrow column: nothing scrolls sideways, the

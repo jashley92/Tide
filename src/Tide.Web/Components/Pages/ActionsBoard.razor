@@ -14,6 +14,7 @@
 @inject UserPreferenceService Prefs
 @inject SavedViewService SavedViews
 @inject PrerenderHandoff Handoff
+@inject IJSRuntime JS
 
 <PageTitle>Actions · TIDE</PageTitle>
 
@@ -588,8 +589,18 @@ else
         await Load();
     }
 
+    // The view whose tab was last brought into view (the tab row scrolls sideways inside itself when it doesn't fit).
+    private ActionView? _revealed;
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_revealed != _view)
+        {
+            _revealed = _view;
+            try { await JS.InvokeVoidAsync("tideTabs.revealCurrent"); }
+            catch (JSDisconnectedException) { /* the tab has gone */ }
+            catch (JSException) { /* an older tabs.js still cached: the row just doesn't scroll to it */ }
+        }
         if (_refocus && !_loading)
         {
             var row = FocusRow;
