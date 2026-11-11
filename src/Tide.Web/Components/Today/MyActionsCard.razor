@@ -1,10 +1,16 @@
-@* My actions, for an analyst on no team: the first six, each with its due-date badge. *@
+@* My actions, in the page under the running order: the first six, each with its due-date badge. With none, it says
+   how many of the teams' actions have no owner (listed in the rail's queue), so an empty card doesn't hide them. *@
 
 <section class="tide-card" aria-labelledby="my-actions-h">
     <h2 id="my-actions-h">My actions <span class="tide-count">(@Mine.Count)</span> <a class="ms-auto small fw-normal" href="actions?view=mine">All</a></h2>
     @if (Mine.Count == 0)
     {
-        <EmptyState Icon="bi-check2-circle" Title="Nothing assigned to you." Compact="true" />
+        <EmptyState Icon="bi-check2-circle" Title="Nothing assigned to you." Compact="true">
+            @if (Unowned > 0)
+            {
+                <span>@Unowned in your teams' queue @(Unowned == 1 ? "has" : "have") no owner: <a href="actions?view=myteams&assignee=none">see @(Unowned == 1 ? "it" : "them")</a>.</span>
+            }
+        </EmptyState>
     }
     @foreach (var r in Mine.Take(Shown))
     {
@@ -17,6 +23,9 @@
     public const int Shown = 6;
 
     [Parameter, EditorRequired] public IReadOnlyList<ActionRow> Mine { get; set; } = default!;
+
+    /// <summary>How many open actions of my teams nobody has.</summary>
+    [Parameter] public int Unowned { get; set; }
 
     /// <summary>Rows a colleague's change brought or changed, highlighted a moment.</summary>
     [Parameter] public LiveMarks<Guid>? Marks { get; set; }

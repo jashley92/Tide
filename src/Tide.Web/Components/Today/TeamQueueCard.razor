@@ -1,5 +1,6 @@
 @* The open actions of my teams that are mine or nobody's, mine first, each by due date; Take it on an unassigned one.
-   After Take it, focus goes to the next row that offers it (KeepPlace), as the taken row stays listed as yours. *@
+   After Take it, focus goes to the next row that offers it (KeepPlace), as the taken row stays listed as yours; so it
+   does when a colleague takes the row that has focus. *@
 
 <section class="tide-card" aria-labelledby="team-queue-h">
     <h2 id="team-queue-h" tabindex="-1" @ref="_heading">My team's queue <span class="tide-count">(@Queue.Total)</span>
@@ -19,7 +20,7 @@
     @foreach (var r in Queue.Rows)
     {
         <QueueRow @key="r.Id" @ref="_rows[r.Id]" Row="r" Meta="@($"{ActionService.KindName(r.Kind)} · {r.TeamName} · {(r.AssigneeId is null ? "Unassigned" : "Yours")}")"
-                  OfferTake="true" Busy="Busy" Marks="Marks" OnTake="Take" />
+                  OfferTake="true" Busy="Busy" Marks="Marks" OnTake="Take" Focused="_place.Focus" />
     }
     @if (Queue.Total > Queue.Rows.Count)
     {
@@ -44,6 +45,8 @@
 
     // The rows that offer Take it.
     private IEnumerable<Guid> Unassigned => Queue.Rows.Where(r => r.AssigneeId is null).Select(r => r.Id);
+
+    protected override void OnParametersSet() => _place.Listed(Unassigned);
 
     private async Task Take(ActionRow row)
     {

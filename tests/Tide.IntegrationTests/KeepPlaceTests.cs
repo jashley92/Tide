@@ -22,4 +22,35 @@ public class KeepPlaceTests
 
     [Fact]
     public void AnEmptyList_LeavesItToTheHeading() => KeepPlace.After([A], A, []).Should().BeNull();
+
+    // The row FocusAsync would send focus to, read without a browser (null: none).
+    private static async Task<string?> Target(KeepPlace place, IReadOnlyList<Guid> now)
+    {
+        string? to = null;
+        await place.FocusAsync(now, id => { to = id.ToString(); return null; }, default);
+        return to;
+    }
+
+    [Fact]
+    public async Task AColleagueTakingTheFocusedRow_MovesFocusToTheNext()
+    {
+        var place = new KeepPlace();
+        place.Listed([A, B, C]);
+        place.Focus(B, true);
+        place.Listed([A, C]);
+        (await Target(place, [A, C])).Should().Be(C.ToString());
+    }
+
+    [Fact]
+    public async Task AColleaguesChange_LeavesFocusAlone_WhenItWasntInTheList()
+    {
+        var place = new KeepPlace();
+        place.Listed([A, B, C]);
+        place.Focus(B, true);
+        place.Focus(B, false);
+        place.Listed([A, C]);
+        string? to = "nothing";
+        await place.FocusAsync([A, C], id => { to = id.ToString(); return null; }, default);
+        to.Should().Be("nothing", "focus had left the list, so nothing moves it");
+    }
 }

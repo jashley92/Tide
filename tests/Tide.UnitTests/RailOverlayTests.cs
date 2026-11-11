@@ -26,7 +26,7 @@ public class RailOverlayTests
         const vm = require('vm'), fs = require('fs');
         function el(id) {
             const attrs = {};
-            return { id, attrs, isConnected: true,
+            return { id, attrs, isConnected: true, getClientRects: () => [{}],
                 getAttribute: n => (n in attrs ? attrs[n] : null), hasAttribute: n => n in attrs,
                 setAttribute: (n, v) => { attrs[n] = String(v); }, removeAttribute: n => { delete attrs[n]; },
                 toggleAttribute(n, on) { if (on) attrs[n] = ''; else delete attrs[n]; },
@@ -59,6 +59,8 @@ public class RailOverlayTests
             expanded: button.getAttribute('aria-expanded'),
             focus: document.activeElement ? document.activeElement.id : null,
             watching: observers.length,
+            role: rail.getAttribute('role'),
+            modal: rail.getAttribute('aria-modal'),
         });
         function reset(at) {
             Object.assign(where, { docks: false }, at);
@@ -92,10 +94,18 @@ public class RailOverlayTests
         reset({});
         tideRail.toggle(); dialog = rail; changed(); out.dialogInRail = state();
 
+        // A dialog that's in the markup but not showing (the reconnect dialog) is nothing: the rail's markup changing
+        // (its form opening) leaves it open.
+        reset({});
+        tideRail.toggle(); dialog = Object.assign(el('reconnect'), { getClientRects: () => [] }); changed(); out.hiddenDialog = state();
+
         console.log(JSON.stringify(out));
         """;
 
-    private sealed record State(string Inert, bool RailInert, bool Over, string? Expanded, string? Focus, int Watching);
+    // Role and Modal: the rail's role and aria-modal, set only while it's an open overlay (a dialog); a docked or closed
+    // rail is the aside's own complementary landmark.
+    private sealed record State(string Inert, bool RailInert, bool Over, string? Expanded, string? Focus, int Watching,
+        string? Role = null, string? Modal = null);
 
     private static async Task<Dictionary<string, State>> Run()
     {
@@ -129,8 +139,8 @@ public class RailOverlayTests
     {
         var said = await Run();
 
-        said["overOpen"].Should().Be(new State(Everything, RailInert: false, Over: true, "true", "tide-rail", 1),
-            "the overlay is modal: Tab stays in it, and focus moves into it");
+        said["overOpen"].Should().Be(new State(Everything, RailInert: false, Over: true, "true", "tide-rail", 1, "dialog", "true"),
+            "the overlay is modal, and says so: Tab stays in it, and focus moves into it");
         said["overClosed"].Should().Be(new State("", false, false, "false", "tide-rail-toggle", 0), "closed, the page is back and focus is on the button");
         said["overEscape"].Should().Be(new State("", false, false, "false", "tide-rail-toggle", 0), "Escape closes it the same way");
     }
@@ -149,12 +159,13 @@ public class RailOverlayTests
     {
         var said = await Run();
 
-        said["railGone"].Should().Be(new State("", false, false, "false", "tide-rail", 0), "a page with no rail has nothing over it");
+        (said["railGone"] with { Role = null, Modal = null }).Should().Be(new State("", false, false, "false", "tide-rail", 0), "a page with no rail has nothing over it (the rail that went keeps its attributes, gone with it)");
         said["widened"].Inert.Should().BeEmpty("a docked rail leaves the page as it is");
         said["widened"].Over.Should().BeFalse("where it docks, it isn't an overlay");
         said["dialogUnder"].Inert.Should().BeEmpty("a dialog opened in the page must be usable");
         said["dialogUnder"].Over.Should().BeFalse("so the rail closes for it");
         said["dialogUnder"].Focus.Should().Be("tide-rail", "and focus is left for the dialog to take");
-        said["dialogInRail"].Should().Be(new State(Everything, false, true, "true", "tide-rail", 1), "a dialog in the rail is the rail's own");
+        said["dialogInRail"].Should().Be(new State(Everything, false, true, "true", "tide-rail", 1, "dialog", "true"), "a dialog in the rail is the rail's own");
+        said["hiddenDialog"].Over.Should().BeTrue("a hidden dialog in the markup doesn't close the rail");
     }
 }

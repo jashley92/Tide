@@ -197,7 +197,12 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
         var path = $"/briefs/{day:yyyy-MM-dd}";
         await using var page = await RenderAsync<BriefPage>(app, path, new() { ["Day"] = $"{day:yyyy-MM-dd}" });
         var html = await page.Html();
-        html.Should().Contain("id=\"team-note-h\"").And.Contain("id=\"team-note\"").And.Contain("Invoice lures are up").And.Contain("Save note");
+        // Read first, under the running order; Edit opens the editor.
+        html.Should().Contain("id=\"team-note-h\"").And.Contain("Invoice lures are up").And.Contain(">Edit</button>")
+            .And.NotContain("id=\"team-note\"").And.NotContain("Save note");
+        html.IndexOf("id=\"team-note-h\"", StringComparison.Ordinal).Should().BeGreaterThan(html.IndexOf("id=\"running-order-h\"", StringComparison.Ordinal));
+        await page.Click(p => p.EditTeamNote());
+        (await page.Html()).Should().Contain("id=\"team-note\"").And.Contain("Save note");
 
         await using (var owner = await RenderAsync<BriefPage>(app, path, new() { ["Day"] = $"{day:yyyy-MM-dd}" }, Owner))
         {
@@ -222,7 +227,7 @@ public class TeamNotePageTests(TideApp app) : IClassFixture<TideApp>
 
         await using var page = await RenderAsync<BriefPage>(app, $"/briefs/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" });
         var html = System.Net.WebUtility.HtmlDecode(await page.Html());
-        html.Should().Contain("Not updated").And.Contain("This is the last brief's note, not yet updated for").And.Contain("Still current</button>");
+        html.Should().Contain("Not updated").And.Contain("Still current</button>").And.Contain(">Edit</button>");
         await using (var owner = await RenderAsync<BriefPage>(app, $"/briefs/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" }, Owner))
             (await owner.Html()).Should().NotContain("Not updated", "only those who can update it are asked to");
 

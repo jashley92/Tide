@@ -131,7 +131,9 @@ fills it by placing one `ContextRail` anywhere in its markup:
   remembered: `theme.js` (`tideRail`) sets `data-rail-over` on `<html>` while it's open, and a new page starts with it
   closed. Opening it moves focus into the rail; Escape, Close or a click on the backdrop closes it and focus returns
   to the Context button. On a phone it takes the whole window, over the top bar.
-- **Modal while open.** The open overlay, at any width, makes the page under it `inert` until it closes: the skip
+- **Modal while open.** The open overlay is a modal dialog (`role="dialog"`, `aria-modal="true"`, still named by its
+  `aria-label`); docked, it's the aside's own complementary landmark. Opening it focuses the aside itself, so its name
+  and role are announced and the first Tab reaches Close. At any width it makes the page under it `inert` until it closes: the skip
   link, the sidebar, the top bar and the content are out of the tab order and hidden from assistive technology, and
   Tab stays in the rail. A backdrop (`--tide-overlay`, drawn by the rail's `::before`) dims the rest of the window so
   it reads as a layer. Toasts, the error bar and the reconnect dialog stay live. While it holds the page, `tideRail`

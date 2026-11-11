@@ -1,22 +1,44 @@
 @inject OrgClock Clock
 @inject ICurrentUser CurrentUser
 
-@* The brief's meeting: when it meets, who the rotation has, the presenter and the title slide line (editable by
-   whoever writes the brief until it's sent, read by everyone else), then who attended and the notes. The presenter
-   and the line as typed are the page's (bound), so it can say they're unsaved and keep them through a reload. *@
+@* The brief's meeting: when it meets, who presents and the title slide line, who the rotation has, then who attended
+   and the notes. Whoever writes the brief changes the presenter and the line (until it's sent) in a form that opens from
+   its buttons, and stays open while what's typed isn't saved. The presenter and the line as typed are the page's
+   (bound), so it can say they're unsaved and keep them through a reload. *@
 
 <section class="tide-card" aria-labelledby="meeting-h" data-submit-scope>
-    @{ var when = $"{Ui.ShortDay(Day)} · {MeetsAt} {Zone}".TrimEnd(); }
-    @* In the rail's narrow column the day and time may be cut short: the title has them whole. *@
-    <h2 id="meeting-h">Meeting <span class="ms-auto small fw-normal tide-muted" title="@when">@when</span></h2>
+    <h2 id="meeting-h">Meeting</h2>
+    <dl class="tide-dl mb-2">
+        <dt>When</dt><dd>@($"{Ui.ShortDay(Day)} · {MeetsAt} {Zone}".TrimEnd())</dd>
+        <dt>Presenter</dt><dd>@Brief.AnalystName</dd>
+        <dt>Title slide line</dt>
+        <dd>
+            @if (string.IsNullOrWhiteSpace(Brief.Intro))
+            {
+                <span class="tide-muted">None</span>
+            }
+            else
+            {
+                @* The space is written out: Razor drops it between a component and an expression. *@
+                <TlpBadge Level="Brief.IntroTlp" />@(" " + Brief.Intro)
+            }
+        </dd>
+    </dl>
     @if (RotaDay is { AnalystName: { } rota } && !Past)
     {
         <p class="small mb-2">The rotation has <strong>@rota</strong>@(RotaDay.IsChanged ? $", covering {RotaDay.RegularName}" : "") for this day.</p>
     }
-    @if (CanEdit)
+    @if (CanEdit && !FormShown)
+    {
+        <div class="d-flex gap-2 flex-wrap">
+            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => OpenAt(Field.Presenter)">Change presenter</button>
+            <button type="button" class="btn btn-link btn-sm" @onclick="() => OpenAt(Field.Line)">Title slide line</button>
+        </div>
+    }
+    else if (CanEdit)
     {
         <label class="tide-field-label" for="analyst">Presenting analyst</label>
-        <select id="analyst" class="form-select form-select-sm mb-2" @bind:get="AnalystId" @bind:set="v => AnalystIdChanged.InvokeAsync(v)">
+        <select id="analyst" class="form-select form-select-sm mb-2" @ref="_analyst" @bind:get="AnalystId" @bind:set="v => AnalystIdChanged.InvokeAsync(v)">
             @if (!People.Any(p => p.Sid == AnalystId))
             {
                 <option value="@AnalystId">@Brief.AnalystName</option>
@@ -30,28 +52,13 @@
             <label class="tide-field-label" for="intro">Title slide line (optional)</label>
             <TlpSelect Value="IntroTlp" ValueChanged="IntroTlpChanged" Label="The title slide line's TLP" Class="w-auto mb-1" />
         </div>
-        <textarea id="intro" class="form-control form-control-sm tide-autogrow tide-grow-2" rows="2" maxlength="2000" @bind:get="Intro" @bind:set="v => IntroChanged.InvokeAsync(v)"
+        <textarea id="intro" class="form-control form-control-sm tide-autogrow tide-grow-2" rows="2" maxlength="2000" @ref="_intro" @bind:get="Intro" @bind:set="v => IntroChanged.InvokeAsync(v)"
                   placeholder="Shown on the title slide: a quiet day, a theme, a reminder."></textarea>
         <div class="small tide-muted mt-1">An edition whose ceiling is below its TLP leaves it out.</div>
-        <button class="btn btn-outline-secondary btn-sm mt-2" disabled="@Busy" data-submit @onclick="OnSave">Save</button>
-    }
-    else
-    {
-        <dl class="tide-dl mb-0">
-            <dt>Presenter</dt><dd>@Brief.AnalystName</dd>
-            <dt>Title slide line</dt>
-            <dd>
-                @if (string.IsNullOrWhiteSpace(Brief.Intro))
-                {
-                    <span class="tide-muted">None</span>
-                }
-                else
-                {
-                    @* The space is written out: Razor drops it between a component and an expression. *@
-                    <TlpBadge Level="Brief.IntroTlp" />@(" " + Brief.Intro)
-                }
-            </dd>
-        </dl>
+        <div class="d-flex gap-2 mt-2">
+            <button class="btn btn-outline-secondary btn-sm" disabled="@Busy" data-submit @onclick="OnSave">Save</button>
+            <button type="button" class="btn btn-link btn-sm" disabled="@Busy" @onclick="OnCancel">Cancel</button>
+        </div>
     }
     @if (Meeting.Attendees.Count > 0)
     {
@@ -118,6 +125,37 @@
     [Parameter] public bool Busy { get; set; }
 
     [Parameter] public EventCallback OnSave { get; set; }
+
+    /// <summary>Drops what's typed and closes the form.</summary>
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    /// <summary>The form is open (a button opened it); it stays open while what's typed isn't saved, whatever this says.</summary>
+    [Parameter] public bool Open { get; set; }
+
+    [Parameter] public EventCallback<bool> OpenChanged { get; set; }
+
+    private bool Dirty => AnalystId != Brief.AnalystId || (Intro ?? "").Trim() != (Brief.Intro ?? "").Trim() || IntroTlp != Brief.IntroTlp;
+
+    private bool FormShown => Open || Dirty;
+
+    private enum Field { Presenter, Line }
+
+    private ElementReference _analyst, _intro;
+    private Field? _focus;
+
+    // A button opens the form, and focus goes to the field it names once it's drawn.
+    private async Task OpenAt(Field field)
+    {
+        _focus = field;
+        await OpenChanged.InvokeAsync(true);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focus is not { } field || !FormShown) return;
+        _focus = null;
+        await (field == Field.Presenter ? _analyst : _intro).TryFocusAsync(orGone: true);
+    }
 
     // The notes grouped by the article on screen when each was written, in the running order; the meeting's own last.
     private IEnumerable<(string Title, IEnumerable<MeetingNote> Notes)> NoteGroups()

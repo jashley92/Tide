@@ -28,7 +28,12 @@
                         <span class="tide-step-now" aria-hidden="true">Now</span>
                     }
                 </span>
-                <span class="tide-step-detail" title="@s.Detail">@s.Detail</span>
+                @* The detail in full, on up to two lines; Triage's count of new items on the known exploited list is a flag
+                   beside it. *@
+                <span class="tide-step-detail">@s.Detail@if (s.Kev > 0)
+                    {
+                        <Badge Tone="BadgeTone.Danger" Class="tide-step-flag">@s.Kev KEV</Badge>
+                    }</span>
                 <span class="visually-hidden">(@StateText(s.State))</span>
             </span>
         </li>

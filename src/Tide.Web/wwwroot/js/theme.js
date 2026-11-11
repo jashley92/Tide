@@ -129,7 +129,13 @@ window.tideRail = (function () {
     // The markup is watched meanwhile, so nothing is left inert under a rail that has gone (a link in it opened a page
     // with none), and a dialog opened in the page under it (the palette, from Ctrl+K) closes the rail to be usable.
     function hold() {
-        var on = !!rail() && over();
+        var r = rail(), on = !!r && over();
+        // Open over the page, the rail is a modal dialog, named as before; docked or closed it's the aside's own
+        // complementary landmark.
+        if (r) {
+            if (on) { r.setAttribute('role', 'dialog'); r.setAttribute('aria-modal', 'true'); }
+            else { r.removeAttribute('role'); r.removeAttribute('aria-modal'); }
+        }
         if (on === held) return;
         held = on;
         document.querySelectorAll(UNDER).forEach(function (el) { el.toggleAttribute('inert', on); });
@@ -138,8 +144,9 @@ window.tideRail = (function () {
     }
     function changed() {
         var r = rail();
+        // Only a dialog that's showing: the reconnect dialog is always in the markup, hidden until it's needed.
         var dialogUnder = !!r && Array.prototype.some.call(document.querySelectorAll('[role="dialog"], [role="alertdialog"]'),
-            function (d) { return !r.contains(d); });
+            function (d) { return !r.contains(d) && d.getClientRects().length > 0; });
         if (!r || dialogUnder) root.removeAttribute('data-rail-over');
         sync();
     }
@@ -228,7 +235,9 @@ document.addEventListener('keydown', function (e) {
 // that Escape is the rail's alone, so the page under it (a list's Esc, Triage's reading pane) doesn't hear it as well.
 document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape' && e.key !== ']') return;
-    if (e.isComposing || e.defaultPrevented || window.tideShortcuts.inMenu(e.target)) return;
+    // The open overlay is a dialog itself: only a menu or dialog inside it, or elsewhere, keeps the key.
+    var holder = e.target && e.target.closest && e.target.closest('[role="menu"], [role="dialog"], [role="alertdialog"]');
+    if (e.isComposing || e.defaultPrevented || (holder && holder.id !== 'tide-rail')) return;
     if (e.key === 'Escape') {
         if (!window.tideRail.over()) return;
         e.preventDefault();

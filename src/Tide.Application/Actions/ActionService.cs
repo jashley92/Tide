@@ -278,8 +278,15 @@ public sealed record TeamQueue(IReadOnlyList<ActionRow> Rows, int Mine, int Unas
         var open = teamRows.Where(r => r.IsOpen).ToList();
         var mine = Sorted(open.Where(r => r.AssigneeId == userId)).ToList();
         var unassigned = Sorted(open.Where(r => string.IsNullOrEmpty(r.AssigneeId))).ToList();
-        return new(mine.Concat(unassigned).Take(take).ToList(), mine.Count, unassigned.Count, onATeam);
+        return new(mine.Concat(unassigned).Take(take).ToList(), mine.Count, unassigned.Count, onATeam)
+        {
+            UnassignedRows = unassigned.Take(take).ToList(),
+        };
     }
+
+    /// <summary>The unassigned ones alone, at most as many as <see cref="Rows"/> holds, for a list of the work nobody has
+    /// (Today's rail): <see cref="Rows"/> fills with the user's own first, so it can hold fewer of them.</summary>
+    public IReadOnlyList<ActionRow> UnassignedRows { get; init; } = [];
 
     private static IEnumerable<ActionRow> Sorted(IEnumerable<ActionRow> rows) =>
         rows.OrderBy(r => r.DueDate ?? DateOnly.MaxValue).ThenBy(r => r.Priority).ThenBy(r => r.Number);

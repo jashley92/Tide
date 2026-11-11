@@ -4,7 +4,7 @@
 @* One row of a Today action list (the queue, the team's unassigned, the escalated): its number, title and files, a
    line about it with how late it is, then Take it (when it's nobody's and offered) or its due-date badge. *@
 
-<div class="tide-queue-row @Marks?.Css(Row.Id)">
+<div class="tide-queue-row @Marks?.Css(Row.Id)" @onfocusin="() => Focused?.Invoke(Row.Id, true)" @onfocusout="() => Focused?.Invoke(Row.Id, false)">
     <span class="tide-queue-title">
         <ActionRef Number="Row.Number" Title="@Row.Title" /> <FileCount Count="Row.Files" />
         <span class="tide-queue-meta">
@@ -44,6 +44,10 @@
     [Parameter] public LiveMarks<Guid>? Marks { get; set; }
 
     [Parameter] public EventCallback<ActionRow> OnTake { get; set; }
+
+    /// <summary>Focus came into the row (true) or left it (false): the card keeps its place when a colleague's change
+    /// takes the focused row away (KeepPlace). A plain delegate, so moving focus doesn't redraw the card.</summary>
+    [Parameter] public Action<Guid, bool>? Focused { get; set; }
 
     private bool Offers => OfferTake && Row.AssigneeId is null;
 

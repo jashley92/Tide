@@ -23,16 +23,16 @@
 @implements IDisposable
 
 @* A day's brief. Today's is the start page (Home renders this with AsToday): the step strip, the running order, the
-   numbers, the edition check and the meeting, with My actions, the rotation and recent articles beside them; its
-   /briefs/{day} address redirects there. Every day's brief, today's too, has a preview of both editions for
+   opening note, My actions and what's not on a brief yet, and the numbers; its /briefs/{day} address redirects there. Every day's brief, today's too, has a preview of both editions for
    proofreading at /briefs/{day}?tab=preview, a tab beside the running order. The strip's Send step opens the Send
    dialog. Old links keep working: ?tab=team or company opens the preview with that edition picked for a narrow
    screen, and ?tab=distribute opens the Send dialog (the send log, for someone who can't send).
    Whoever works actions gets their teams' queue on Today. Someone who can't write articles (an action owner) can't act on
    the steps, the running order or the edition check, so their Today leads with the queue and keeps only a read-only
    summary of the brief; it's drawn by permission, never by role name.
-   What sits beside the brief (the edition check, the meeting, the history and, on Today, the actions, the rotation and
-   the articles) is in the context rail (Rail), so the running order has the page's width. *@
+   What sits beside the brief (the edition check, the meeting, the history and, on Today, the teams' unowned work, the
+   escalated actions, the reviews asked of you and the rotation) is in the context rail (Rail), so the running order has
+   the page's width. *@
 
 <PageTitle>@(AsToday ? "Today" : "Brief " + Ui.ShortDay(_date)) · TIDE</PageTitle>
 
@@ -218,6 +218,7 @@ else
                 </Actions>
             </EmptyState>
         </div>
+        @if (AsToday) { @PageCards() }
         @if (AsToday && _canWrite) { <MetricEntry Date="_date" Collapsible="true" MissingChanged="n => _missingNumbers = n" /> }
     }
     else
@@ -398,7 +399,7 @@ else
             _recent = await RecentAsync();
             _upcoming = await Rotation.UpcomingAsync();
         }
-        if (!adopted) _brief = null;   // another day: "Loading" until it's read (a reload after an action keeps the page, and focus, in place)
+        if (!adopted) (_brief, _noteOpen, _meetingOpen) = (null, false, false);   // another day: "Loading" until it's read (a reload after an action keeps the page, and focus, in place)
         await Load();
     }
 
@@ -493,7 +494,7 @@ else
                 // One of their own requests is no longer waiting: the changes say whether it was approved or declined.
                 var still = _upcoming.MyRequests.Select(c => c.Id).ToHashSet();
                 var decided = before?.MyRequests.Any(c => !still.Contains(c.Id)) == true ? await Rotation.ChangesAsync() : [];
-                if (RotationPage.Heard(before, _upcoming, decided, LiveChanges.Who(changes)) is { } news) Toasts.Show(news);
+                if (RotationPage.Heard(before, _upcoming, decided, LiveChanges.Who(changes)) is { } news) Toasts.Tell(news);
             }
             if (changes.Any(c => c.Topic == ChangeFeed.Articles))
             {
@@ -585,7 +586,7 @@ else
             _teamNote = myNote;
             if (_brief.TeamNote != noteBefore) _noteChangedBy = who;
         }
-        if (_changedBy is null && _noteChangedBy is null) Toasts.Show($"{who} updated this brief.");
+        if (_changedBy is null && _noteChangedBy is null) Toasts.Tell($"{who} updated this brief.");
         StateHasChanged();
     }
 
@@ -598,12 +599,12 @@ else
         if (numbers.Count > 0 && _tab == 1)
         {
             await LoadNumbers();
-            Toasts.Show($"{LiveChanges.Who(numbers)} updated the numbers.");
+            Toasts.Tell($"{LiveChanges.Who(numbers)} updated the numbers.");
         }
         if (actions.Count > 0 && ShowsActions)
         {
             await LoadActions(live: true);
-            Toasts.Show($"{LiveChanges.Who(actions)} updated an action.");
+            Toasts.Tell($"{LiveChanges.Who(actions)} updated an action.");
         }
         StateHasChanged();
     }
@@ -619,7 +620,9 @@ else
         _queue = await ActionSvc.TeamQueueAsync(ladderOn: ReminderOptions.CurrentValue.Escalation.Enabled);
         if (!live || _actionMarks is null) return;
         if (mine is not null) _actionMarks.Apply(LiveDiff.Of(mine.Take(MyActionsCard.Shown), _mine.Take(MyActionsCard.Shown), r => r.Id, r => r));
-        if (queue is not null) _actionMarks.Apply(LiveDiff.Of(queue.Rows, _queue.Rows, r => r.Id, r => r));
+        // The queue as either list draws it: the owner's (theirs and nobody's) and the rail's (nobody's alone).
+        if (queue is not null) _actionMarks.Apply(LiveDiff.Of(queue.Rows.UnionBy(queue.UnassignedRows, r => r.Id),
+            _queue.Rows.UnionBy(_queue.UnassignedRows, r => r.Id), r => r.Id, r => r));
     }
 
     private async Task ReloadTheirs()
@@ -820,12 +823,45 @@ else
 
     private Guid? _correct;   // the send the Send dialog opens the correction of, if any
 
-    // Take it, on a row this page showed as nobody's: someone who took it meanwhile keeps it, and the page says so and
-    // reads the queue again either way (the card keeps focus in its list: KeepPlace).
+    // Take it, on a row this page showed as nobody's: someone who took it meanwhile keeps it. Refused, the page reads the
+    // queue again and says who has it now, as the queue no longer shows it (the card keeps focus in its list: KeepPlace).
     internal async Task Take(ActionRow r)
     {
-        await Run(() => ActionSvc.TakeAsync(r.Id, onlyIfNobodys: true), $"You took {Ui.ActionLabel(r.Number)} on.");
-        if (_queue?.Rows.Any(x => x.Id == r.Id && x.AssigneeId is null) == true) await LoadActions();
+        var label = Ui.ActionLabel(r.Number);
+        _busy = true;
+        try
+        {
+            await ActionSvc.TakeAsync(r.Id, onlyIfNobodys: true);
+            await Load();
+            Toasts.Show($"You took {label} on.");
+        }
+        catch (StaleEditException ex)
+        {
+            await Load();
+            var now = (await ActionSvc.RowAsync(r.Id))?.AssigneeName;
+            Toasts.Error(now is null ? ex.Message : $"{now} took {label} on a moment ago.");
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+        StateHasChanged();   // drawn now, with the list read again, whoever called (a card's button, or a test)
+    }
+
+    // The opening note's editor and the meeting's form, opened from their buttons. Each also stays open while what's
+    // typed in it isn't saved, and closes once it's saved.
+    private bool _noteOpen, _meetingOpen;
+
+    internal Task EditTeamNote()
+    {
+        _noteOpen = true;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    internal Task OpenMeeting()
+    {
+        _meetingOpen = true;
+        StateHasChanged();
+        return Task.CompletedTask;
     }
 
     private Task RecordCover() => Run(() => Rotation.RecordPastCoverAsync(_date), "Recorded in the brief rotation.");
@@ -833,7 +869,14 @@ else
     private Task SaveDetails()
     {
         var name = _people.FirstOrDefault(p => p.Sid == _analystId)?.DisplayName ?? _brief!.AnalystName;
-        return Run(() => BriefSvc.SetDetailsAsync(_brief!.Id, _analystId, name, _intro, _introTlp), "Saved.");
+        return Run(() => BriefSvc.SetDetailsAsync(_brief!.Id, _analystId, name, _intro, _introTlp), "Saved.", () => _meetingOpen = false);
+    }
+
+    // Cancel in the meeting's form: back to the presenter and line as saved, and the form closes.
+    private void CancelDetails()
+    {
+        if (_brief is null) return;
+        (_analystId, _intro, _introTlp, _meetingOpen, _changedBy) = (_brief.AnalystId, _brief.Intro, _brief.IntroTlp, false, null);
     }
 
     // The line under the title, after the status: who presents, then when it met (and how much was discussed, and when it
@@ -851,7 +894,14 @@ else
     }
 
     private Task SaveTeamNote() => Run(() => BriefSvc.SetTeamNoteAsync(_brief!.Id, _teamNote),
-        string.IsNullOrWhiteSpace(_teamNote) ? "Opening note cleared." : "Opening note saved.");
+        string.IsNullOrWhiteSpace(_teamNote) ? "Opening note cleared." : "Opening note saved.", () => _noteOpen = false);
+
+    // Cancel in the note's editor: back to the note as saved, and the editor closes.
+    private void CancelTeamNote()
+    {
+        if (_brief is null) return;
+        (_teamNote, _noteOpen, _noteChangedBy) = (_brief.TeamNote, false, null);
+    }
 
     /// <summary>Keeps the last brief's opening note as it is for this one: it's reviewed, and no longer flagged.</summary>
     internal Task KeepTeamNote() => Run(() => BriefSvc.SetTeamNoteAsync(_brief!.Id, _brief.TeamNote), "Opening note kept as it is.");
@@ -885,7 +935,6 @@ else
                                CanMarkReady="@(_canWrite && _brief.Status == BriefStatus.Draft && _brief.Items.Count > 0)" OnMarkReady="AskReady" Busy="_busy"
                                OnSend="AskSend" />
                 }
-                @TeamNoteCard()
                 <section class="tide-card" aria-labelledby="running-order-h">
                     <h2 id="running-order-h">Running order
                         <span class="ms-auto small fw-normal tide-muted">@Ordered().Count() article@(_brief.Items.Count == 1 ? "" : "s") &middot; @Count(Classification.Threat) threat@(Count(Classification.Threat) == 1 ? "" : "s") &middot; @Count(Classification.Informational) informational</span></h2>
@@ -904,6 +953,8 @@ else
                         @if (_canWrite) { <span class="small tide-muted ms-auto">@ReadyCount of @Ordered().Count() ready</span> }
                     </div>
                 </section>
+                @TeamNoteCard()
+                @if (AsToday) { @PageCards() }
                 <MetricEntry Date="_date" Collapsible="true" MissingChanged="n => _missingNumbers = n" />
             }
             else
@@ -938,31 +989,49 @@ else
         </section>
     };
 
-    // The team's opening note (team edition only): written by analysts until the brief is sent, read by everyone else.
-    // Markdown, as an article's longer fields are, so bullets and sub-bullets show on the slide and in the email.
+    // The team's opening note (team edition only), under the running order: read first, with Edit, which opens the
+    // editor for analysts until the brief is sent (open, too, while what's typed isn't saved). A note carried over from
+    // the last brief is flagged, with Still current to keep it. Markdown, as an article's longer fields are, so bullets
+    // and sub-bullets show on the slide and in the email.
     private RenderFragment TeamNoteCard() => __builder =>
     {
         var editable = _canWrite && _brief!.Status != BriefStatus.Sent;
         var carried = editable && BriefService.TeamNoteCarriedOver(_brief!);
+        var editing = editable && (_noteOpen || NoteDirty);
         if (!editable && string.IsNullOrWhiteSpace(_brief!.TeamNote)) return;
         <section class="tide-card" aria-labelledby="team-note-h" data-submit-scope>
-            <h2 id="team-note-h">Opening note
-                @if (carried) { <Badge Tone="BadgeTone.Warn" Icon="bi-clock-history" Class="ms-2">Not updated</Badge> }
-                <span class="ms-auto small fw-normal tide-muted">team edition only</span></h2>
-            @if (carried)
-            {
-                <div class="tide-missing small mb-2" role="status"><span class="bi bi-clock-history" aria-hidden="true"></span>
-                    This is the last brief's note, not yet updated for @Ui.ShortDay(_date). Change it, or keep it if it still stands.
-                    <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" disabled="@(_busy || NoteDirty)" @onclick="KeepTeamNote">Still current</button>
-                </div>
-            }
-            @if (editable)
+            <h2 id="team-note-h">Opening note <span class="small fw-normal tide-muted">team edition only</span>
+                @if (carried || (editable && !editing))
+                {
+                    <span class="ms-auto d-flex gap-2 align-items-center fw-normal">
+                        @if (carried)
+                        {
+                            <span title="@($"This is the last brief's note, not yet updated for {Ui.ShortDay(_date)}.")"><Badge Tone="BadgeTone.Warn" Icon="bi-clock-history">Not updated</Badge></span>
+                        }
+                        @if (!editing)
+                        {
+                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="EditTeamNote">Edit</button>
+                        }
+                        @if (carried)
+                        {
+                            <button type="button" class="btn btn-link btn-sm" disabled="@(_busy || NoteDirty)" @onclick="KeepTeamNote">Still current</button>
+                        }
+                    </span>
+                }</h2>
+            @if (editing)
             {
                 <label class="visually-hidden" for="team-note">Opening note</label>
                 <MarkdownToolbar For="team-note" Label="Opening note" />
                 <textarea id="team-note" class="form-control tide-autogrow tide-grow-3" rows="3" maxlength="@BriefService.TeamNoteMax"
                           placeholder="Key items coming up, recent phishing trends: read at the start of the meeting." @bind="_teamNote" @bind:event="oninput"></textarea>
-                <button class="btn btn-outline-secondary btn-sm mt-2" disabled="@(_busy || !NoteDirty)" data-submit @onclick="SaveTeamNote">Save note</button>
+                <div class="d-flex gap-2 mt-2">
+                    <button class="btn btn-outline-secondary btn-sm" disabled="@(_busy || !NoteDirty)" data-submit @onclick="SaveTeamNote">Save note</button>
+                    <button type="button" class="btn btn-link btn-sm" disabled="@_busy" @onclick="CancelTeamNote">Cancel</button>
+                </div>
+            }
+            else if (string.IsNullOrWhiteSpace(_brief!.TeamNote))
+            {
+                <p class="small tide-muted mb-0">No opening note for this brief.</p>
             }
             else
             {
@@ -976,7 +1045,8 @@ else
     {
         <MeetingCard Brief="_brief!" Day="_date" MeetsAt="@MeetsAt" Zone="@ZoneLabel" RotaDay="_rotaDay" Past="_past"
                      CanEdit="@(_canWrite && _brief!.Status != BriefStatus.Sent)" People="_people"
-                     @bind-AnalystId="_analystId" @bind-Intro="_intro" @bind-IntroTlp="_introTlp" Meeting="_meeting" Busy="_busy" OnSave="SaveDetails" />
+                     @bind-AnalystId="_analystId" @bind-Intro="_intro" @bind-IntroTlp="_introTlp" Meeting="_meeting" Busy="_busy" OnSave="SaveDetails"
+                     OnCancel="CancelDetails" @bind-Open="_meetingOpen" />
     };
 
     // Today for someone who works actions but can't write articles: their escalated actions and their teams' queue first,
@@ -1009,24 +1079,32 @@ else
     /// <summary>Whether the page has a context rail: Today, and another day's running order once its brief is read.</summary>
     private bool HasRail => _validDay && (_brief is not null ? AsToday || _tab == 0 : AsToday && !_loading);
 
-    // The context rail: what sits beside the brief, in the order the side column had it. With a brief, the edition check
-    // (for those who make it), the meeting and its history (only the meeting on an action owner's Today); then on Today
-    // the actions, the rotation and the articles.
+    // The context rail: what sits beside the brief, what needs the reader first. For whoever writes the brief: the edition
+    // check, then on Today their teams' work nobody has and their escalated actions, the reviews asked of them; the
+    // meeting; on Today what's coming up for them; last the brief's history. For anyone else: the meeting, then on
+    // Today what's coming up and what was presented lately (their queue leads their page), or another day's history.
     private RenderFragment Rail() => __builder =>
     {
-        @if (_brief is not null)
+        @if (_canWrite && _brief is not null)
         {
-            @if (_canWrite)
-            {
-                <EditionCheck Brief="_brief" Day="_date" TeamMax="_teamMax" PublicMax="_publicMax" HasNumbers="_missingNumbers is not null" MissingNumbers="_missingNumbers ?? 0" />
-            }
-            @Meeting()
-            @if (_canWrite || !AsToday)
-            {
-                <HistoryPanel Id="_brief.Id" Brief="true" Version="_brief.EditVersion" />
-            }
+            <EditionCheck Brief="_brief" Day="_date" TeamMax="_teamMax" PublicMax="_publicMax" HasNumbers="_missingNumbers is not null" MissingNumbers="_missingNumbers ?? 0" />
         }
-        @if (AsToday) { @Side() }
+        @if (AsToday && _canWrite)
+        {
+            @if (_queue is { OnATeam: true } q)
+            {
+                <TeamsQueueSection Queue="q" Busy="_busy" Marks="_actionMarks" OnTake="Take" />
+            }
+            <EscalatedCard Rows="_queue?.Escalated" Marks="_actionMarks" />
+            <ReviewsForYou />
+        }
+        @if (_brief is not null) { @Meeting() }
+        @if (AsToday) { <ComingUpCard Upcoming="_upcoming" /> }
+        @if (AsToday && !_canWrite) { <RecentArticlesCard Articles="_recent" CanWrite="false" /> }
+        @if (_brief is not null && (_canWrite || !AsToday))
+        {
+            <HistoryPanel Id="_brief.Id" Brief="true" Version="_brief.EditVersion" />
+        }
     };
 
     // The open actions of my teams that are mine or nobody's, mine first, each by due date; Take it on an unassigned one.
@@ -1038,35 +1116,29 @@ else
         }
     };
 
-    // The Actions card's open tab, kept here so it survives the card being drawn afresh (the brief started, say).
-    private string _actionsTab = "mine";
-
     // What a reader of the brief who can't write is shown of each article's readiness: nothing.
     private static readonly IReadOnlyDictionary<Guid, IReadOnlyList<ArticleCheck>> NoReadiness = new Dictionary<Guid, IReadOnlyList<ArticleCheck>>();
 
-    // In the rail beside today's brief: an analyst's actions (on a team, with the team's unassigned ones; action owners
-    // have the queue in the page), the rotation and recent articles.
-    private RenderFragment Side() => __builder =>
+    // Today's page, under the running order and the opening note, for whoever writes the brief: My actions (with how many
+    // of their teams' actions have no owner, which the rail lists) beside the articles not on a brief yet, or with no
+    // brief yet, what was written lately.
+    private RenderFragment PageCards() => __builder =>
     {
-        @if (_canWrite)
-        {
-            <ReviewsForYou />
-            <EscalatedCard Rows="_queue?.Escalated" Marks="_actionMarks" />
+        if (!_canWrite) return;
+        <div class="tide-today-pair">
             @if (_mine is { } mine)
             {
-                @if (_queue is { OnATeam: true } q) { <ActionsCard Mine="mine" Queue="q" @bind-Tab="_actionsTab" Busy="_busy" Marks="_actionMarks" OnTake="Take" /> }
-                else { <MyActionsCard Mine="mine" Marks="_actionMarks" /> }
+                <MyActionsCard Mine="mine" Unowned="@(_queue?.Unassigned ?? 0)" Marks="_actionMarks" />
             }
-        }
-        <ComingUpCard Upcoming="_upcoming" />
-        @if (_canWrite && _brief is not null)
-        {
-            <NotYetBriefedCard Articles="NotYetBriefed" CanAdd="@(_brief.Status != BriefStatus.Sent)" Busy="_busy" OnAdd="AddFromCard" OnAddMore="AskAdd" />
-        }
-        else
-        {
-            <RecentArticlesCard Articles="_recent" CanWrite="_canWrite" />
-        }
+            @if (_brief is not null)
+            {
+                <NotYetBriefedCard Articles="NotYetBriefed" CanAdd="@(_brief.Status != BriefStatus.Sent)" Busy="_busy" OnAdd="AddFromCard" OnAddMore="AskAdd" />
+            }
+            else
+            {
+                <RecentArticlesCard Articles="_recent" CanWrite="true" />
+            }
+        </div>
     };
 
     /// <summary>

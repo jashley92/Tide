@@ -304,15 +304,31 @@ const besides = (selector, other) => ({
   }, [selector, other]),
 });
 
-/** Each visible match of `selector` is one line of text tall: it truncates or fits rather than wrapping. */
-const oneLine = selector => ({
-  name: `one line: ${selector}`,
-  check: page => page.$$eval(selector, (els, selector) => els.flatMap((el, i) => {
+/** Each visible match of `selector` is at most `most` lines of text tall (one by default): it wraps no further. */
+const oneLine = (selector, most = 1) => ({
+  name: `${most === 1 ? 'one line' : `at most ${most} lines`}: ${selector}`,
+  check: page => page.$$eval(selector, (els, [selector, most]) => els.flatMap((el, i) => {
     const r = el.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) return [];
     const s = getComputedStyle(el), line = parseFloat(s.lineHeight) || parseFloat(s.fontSize) * 1.5;
-    return r.height < line * 1.5 ? [] : [`${selector} #${i + 1}: "${el.textContent.trim().slice(0, 50)}" is on ${Math.round(r.height / line)} lines`];
+    return r.height < line * (most + .5) ? [] : [`${selector} #${i + 1}: "${el.textContent.trim().slice(0, 50)}" is on ${Math.round(r.height / line)} lines`];
+  }), [selector, most]),
+});
+
+/** No visible match of `selector` draws a box of its own (a border or a background): flat, as a section in the rail. */
+const flat = selector => ({
+  name: `flat: ${selector}`,
+  check: page => page.$$eval(selector, (els, selector) => els.flatMap((el, i) => {
+    const s = getComputedStyle(el);
+    const box = ['Left', 'Right', 'Bottom'].some(side => parseFloat(s[`border${side}Width`]) > 0) || !/rgba\(0, 0, 0, 0\)|transparent/.test(s.backgroundColor);
+    return el.getBoundingClientRect().height > 0 && box ? [`${selector} #${i + 1} is drawn as a card (border or background)`] : [];
   }), selector),
+});
+
+/** The first match of `selector` has `name` set to `value` (or, with null, doesn't have it). */
+const attr = (selector, name, value) => ({
+  name: `${name}=${value}: ${selector}`,
+  check: page => page.$eval(selector, (el, [name, value]) => el.getAttribute(name) === value ? [] : [`its ${name} is ${el.getAttribute(name)}, not ${value}`], [name, value]),
 });
 
 /** The children of each visible match of `selector` are stacked, one under another, not side by side. */
@@ -391,17 +407,72 @@ const toggleRail = async page => {
 /** Setup: the first two articles (both ready) taken off today's brief, so "Not on a brief yet" lists them; then the first one's Add
  *  pressed from the keyboard, and the card read again. */
 async function addFromRail(page) {
-  const card = page.locator('#tide-rail section[aria-labelledby="recent-h"]');
+  const card = page.locator('section[aria-labelledby="recent-h"]');
   for (let i = 0; i < 2; i++) {
     const n = await card.locator('li').count();
     await page.getByRole('button', { name: /off this brief$/ }).first().click();
-    await page.waitForFunction(([n]) => document.querySelectorAll('#tide-rail section[aria-labelledby="recent-h"] li').length > n, [n], { timeout: 10000 });
+    await page.waitForFunction(([n]) => document.querySelectorAll('section[aria-labelledby="recent-h"] li').length > n, [n], { timeout: 10000 });
   }
   const before = await card.locator('li').count();
   await card.getByRole('button', { name: /^Add / }).first().focus();
   await page.keyboard.press('Enter');
-  await page.waitForFunction(([n]) => document.querySelectorAll('#tide-rail section[aria-labelledby="recent-h"] li').length < n, [before], { timeout: 10000 });
+  await page.waitForFunction(([n]) => document.querySelectorAll('section[aria-labelledby="recent-h"] li').length < n, [before], { timeout: 10000 });
   await page.waitForTimeout(300);
+}
+
+/** Setup: wider letters, then the meeting's Change presenter pressed (opening its form, a docked rail or the overlay). */
+async function openMeeting(page) {
+  await wideFont(page);
+  if (!(await page.locator('#tide-rail').isVisible())) {
+    await page.locator('#tide-rail-toggle').click();
+    await page.waitForTimeout(300);
+  }
+  await page.locator('#tide-rail').getByRole('button', { name: 'Change presenter' }).click();
+  await page.locator('#tide-rail #analyst').waitFor({ state: 'attached' });
+  await page.waitForTimeout(500);
+}
+
+/**
+ * Setup: a colleague takes the action whose Take it has focus in the rail's queue. The demo's dev analyst and a second
+ * person (Olive, an action owner) go on the first team, with two actions nobody has; focus goes to the first one's
+ * Take it, and Olive takes that action from her own Today. The row leaves the analyst's queue, live.
+ */
+async function colleagueTakesFocusedRow(page) {
+  const browser = page.context().browser();
+  const olive = await browser.newContext({ viewport: { width: 1920, height: 900 }, reducedMotion: 'reduce' });
+  try {
+    const her = await olive.newPage();
+    await her.goto(`${new URL(page.url()).origin}/?as=Olive&roles=ActionOwner`, { waitUntil: 'networkidle' });
+    await page.goto(new URL('/admin/teams', page.url()).href, { waitUntil: 'networkidle' });
+    await settle(page);
+    const pick = page.locator('select[aria-label^="Person to add to"]').first();
+    const team = (await pick.getAttribute('aria-label')).replace('Person to add to ', '');
+    for (const who of ['Dev Analyst', 'Olive']) {
+      await pick.selectOption({ label: who });
+      await pick.locator('xpath=following::button[normalize-space()="Add"][1]').click();
+      await page.waitForTimeout(600);
+    }
+    for (const title of ['Live check one', 'Live check two']) {
+      await page.goto(new URL('/actions/new', page.url()).href, { waitUntil: 'networkidle' });
+      await settle(page);
+      await page.locator('#a-title').fill(title);
+      await page.locator('#a-team').selectOption({ label: team });
+      await page.waitForTimeout(300);
+      await page.getByRole('button', { name: 'Create action' }).click();
+      await page.waitForURL(/actions\/\d+/);
+    }
+    await page.goto(new URL('/', page.url()).href, { waitUntil: 'networkidle' });
+    await settle(page);
+    const queue = page.locator('#tide-rail section[aria-labelledby="teams-queue-h"]');
+    await queue.getByRole('button', { name: /Live check one/ }).focus();
+    await her.reload({ waitUntil: 'networkidle' });
+    await settle(her);
+    await her.locator('section[aria-labelledby="team-queue-h"]').getByRole('button', { name: /Live check one/ }).click();
+    await queue.getByRole('button', { name: /Live check one/ }).waitFor({ state: 'detached', timeout: 15000 });
+    await page.waitForTimeout(500);
+  } finally {
+    await olive.close();
+  }
 }
 
 /** Setup: V pressed `times`, a moment apart (each read or close reaching the page before the next). */
@@ -529,14 +600,20 @@ const pages = [
     rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), besides('#main-content', '#tide-rail'), oneRow('.tide-steps'), fits('.tide-steps > li'),
       fits('.tide-page-head'), fits('.tide-order-row'), fits('.tide-rail-body'), fits('#tide-rail .tide-card'), hidden('.content .tide-card[aria-labelledby="meeting-h"]'),
       ringOnFocus('#tide-rail #analyst, #tide-rail #intro, #tide-rail [data-submit], #tide-rail a.btn')] },
-  // Beside the docked rail, the page head keeps its buttons beside the title, and each step says where it stands on one
-  // line (cut short, the whole of it in its title). The rail's cards are laid out for a narrow column: the edition
-  // check's two editions one under the other, the meeting's day and time on one line under its heading, and the title
-  // slide line's label on one line.
+  // Beside the docked rail, the page head keeps its buttons beside the title, and each step says where it stands in
+  // full on up to two lines, Triage's KEV count a flag beside it, the strip one row of steps. My actions and what's not
+  // on a brief yet sit in the page. The rail's sections are flat, under a header with the ] key, and laid out for a
+  // narrow column: the edition check's two editions one under the other.
   { name: 'today-rail-fit', route: '/', setup: wideFont, widths: [1920, 1600, 1500],
-    rules: [oneRow('.tide-page-head'), oneRow('.tide-brief-head > :last-child'), oneLine('.tide-step-detail'), stacked('#tide-rail .tide-ed-cols'), fits('#tide-rail .tide-ed-col'),
-      oneLine('#tide-rail section[aria-labelledby="meeting-h"] > h2 > span'), oneLine('#tide-rail label[for="intro"]'),
+    rules: [oneRow('.tide-page-head'), oneRow('.tide-brief-head > :last-child'), oneRow('.tide-steps'), oneLine('.tide-step-detail', 2), visible('.tide-steps .tide-step-flag'),
+      visible('.content section[aria-labelledby="my-actions-h"]'), visible('.content section[aria-labelledby="recent-h"]'),
+      flat('#tide-rail .tide-rail-body > section'), visible('#tide-rail .tide-rail-head kbd'), attr('#tide-rail', 'role', null),
+      stacked('#tide-rail .tide-ed-cols'), fits('#tide-rail .tide-ed-col'),
       fits('#tide-rail section[aria-labelledby="edition-check-h"]'), fits('#tide-rail section[aria-labelledby="meeting-h"]')] },
+  // The meeting's form, opened from Change presenter: the title slide line's label on one line, the form in its column.
+  { name: 'today-rail-meeting', route: '/', setup: openMeeting, widths: [1920, 1500, 1440],
+    rules: [visible('#tide-rail'), visible('#tide-rail #analyst'), oneLine('#tide-rail label[for="intro"]'), fits('#tide-rail section[aria-labelledby="meeting-h"]'), focusIn('#tide-rail #analyst'),
+      ringOnFocus('#tide-rail #analyst, #tide-rail #intro, #tide-rail [data-submit]')] },
   { name: 'today-rail-closed', route: '/', setup: toggleRail, widths: [1920, 1500],
     rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), oneRow('.tide-steps'), fits('.tide-page-head')] },
   { name: 'today-rail-shut', route: '/', setup: wideFont, widths: [1440, 780],
@@ -544,6 +621,7 @@ const pages = [
   // The open overlay holds focus as a dialog does, at every width it's an overlay: Tab never reaches the page under it.
   { name: 'today-rail-over', route: '/', setup: toggleRail, widths: [1440, 780, 400],
     rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), fits('.tide-rail-body'), fits('#tide-rail .tide-card'), focusIn('#tide-rail'),
+      attr('#tide-rail', 'role', 'dialog'), attr('#tide-rail', 'aria-modal', 'true'), attr('#tide-rail', 'aria-label', 'Beside the brief'),
       tabStaysIn('#tide-rail', 40)] },
   // Another day's brief draws the same panel in its rail.
   { name: 'day-rail', route: '/briefs/{sent}', setup: wideFont, widths: [1920, 1500],
@@ -632,8 +710,12 @@ const pages = [
     rules: [noSidewaysScroll, visible('.tide-mc-cell'), visible('.tide-chart-band-warn'), oneRow('.tide-mc-cell-head'), [1800, widerThan('.content', 1400)]] },
   // Add on "Not on a brief yet", from the keyboard: the article leaves the card and focus stays in it, on the next
   // article's Add. Last, as it changes today's brief.
+  // A colleague takes the row that has focus in the rail's queue: focus moves to the next row's Take it. Last too: it
+  // puts people on a team.
+  { name: 'today-queue-live', route: '/', setup: colleagueTakesFocusedRow, widths: [1920],
+    rules: [focusIn('#tide-rail section[aria-labelledby="teams-queue-h"] .tide-queue-row')] },
   { name: 'today-rail-add', route: '/', setup: addFromRail, widths: [1920],
-    rules: [focusIn('#tide-rail section[aria-labelledby="recent-h"] li')] },
+    rules: [focusIn('section[aria-labelledby="recent-h"] li')] },
 ];
 
 // --- the run -----------------------------------------------------------------------------------------------------------
