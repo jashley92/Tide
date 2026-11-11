@@ -1,5 +1,6 @@
 @inject PlaybookService PlaybookSvc
 @inherits LibraryPage<PlaybookRow>
+@using Tide.Web.Components.LibraryRail
 
 @* The team's playbooks, a tab of the Library page (which checks who may open it): a checklist for a kind of action, or
    for any, that an action's checklist starts from when it's raised, or that's applied from the checklist later. Kept as
@@ -67,7 +68,7 @@ else
     var r = Selected!;
     var p = r.Playbook;
     var id = "pb-" + p.Id.ToString("N");
-    <LibraryBrowser Count="@CountText" Entries="Entries" Selected="SelectedId" Label="Playbooks" OnPick="Pick" @ref="_browser">
+    <LibraryBrowser Count="@CountText" Entries="Entries" Selected="SelectedId" Label="Playbooks" OnPick="Pick" Page="_page" Pages="Pages" OnPage="Turn" @ref="_browser">
         <ChildContent>
             <article class="tide-hunt tide-library-entry @(p.IsRetired ? "tide-retired" : "")" aria-labelledby="@(id + "-h")" @key="p.Id">
                 @if (_form?.Id == p.Id)
@@ -79,7 +80,7 @@ else
                 {
                     <div class="tide-library-entry-head">
                         <div class="tide-library-entry-title">
-                            <h3 class="tide-subhead my-0" id="@(id + "-h")">@p.Name</h3>
+                            <h3 class="tide-library-entry-name" id="@(id + "-h")">@p.Name</h3>
                             <div class="small tide-muted"><Badge>@KindName(p)</Badge> @if (p.IsRetired) { <Badge>Retired</Badge> } @Provenance(p) · <span>@Used(r.Actions, "on", "action")</span></div>
                         </div>
                         <div class="tide-library-entry-tools">
@@ -99,14 +100,16 @@ else
                         </div>
                     </div>
                     @if (p.Description is { } about) { <p class="small mb-1">@about</p> }
-                    <ol class="tide-playbook-preview small mb-0">
+                    <ol class="tide-playbook-preview small mb-3">
                         @foreach (var s in p.Steps) { <li>@s.Text</li> }
                     </ol>
+                    <p class="small tide-muted tide-library-entry-foot">Its steps are copied onto an action, so an edit leaves started actions alone.@UnderMore(MoreItems(r))</p>
                 }
             </article>
         </ChildContent>
-        <Below><Pager Page="_page" Pages="TableView.Pages(_shown.Count, PageSize)" Many="playbooks" Href="PageHref" /></Below>
+        <Below><Pager Page="_page" Pages="Pages" Many="playbooks" Href="PageHref" /></Below>
     </LibraryBrowser>
+    <LibraryEntryRail Kind="LibraryKind.Playbook" EntryId="p.Id" Name="@p.Name" Noun="playbook" Retired="p.IsRetired" For="p.Kind" OnAdded="Reread" Facts="Facts(r)" />
 }
 
 @code {
@@ -141,6 +144,11 @@ else
     private static string KindName(Playbook p) => p.Kind is { } k ? ActionService.KindName(k) : "Any kind";
 
     protected override Guid? EditingId => _form?.Id;
+
+    // The rail's facts: the kind of action it's for, its steps, who saved it, and how many actions started from it.
+    private List<LibraryFact> Facts(PlaybookRow r) =>
+        [new("For", r.Playbook.Kind is { } k ? ActionService.KindName(k) + " actions" : "Any action"), new("Steps", r.Playbook.Steps.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            SavedBy(r.Playbook), UsedFact(r.Actions, "On", "action")];
 
     protected override void Filtering()
     {
