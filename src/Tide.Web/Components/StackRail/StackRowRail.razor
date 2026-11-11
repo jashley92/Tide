@@ -1,0 +1,182 @@
+@* The product selected on Our stack, in the context rail: its facts and contact, then Edit (the product's page, where it's
+   edited), Start an outreach (a new Outreach action about it) and Mark checked, for those who keep the list; what's in
+   triage now that names it, for those who triage; its articles, held to the team edition's ceiling as the product's page
+   holds them; its open actions; and its notes.
+   The facts and notes are the list's row. What the rail reads beyond it (StackService.GetAsync, the product page's own
+   read, and InTriageAsync) is read once the selection has rested a moment, so J held down doesn't read every product it
+   passes. Mark checked goes through StackService.MarkCheckedAsync: refused to anyone who doesn't keep the list, refused
+   over a colleague's save since the list was read, and audited. *@
+@using Tide.Application.Stack
+@using Tide.Web.Components.Pages
+@inject StackService Stack
+@inject ICurrentUser CurrentUser
+@inject OrgClock Clock
+@inject ToastService Toasts
+
+@{ var p = Row.Product; }
+<section class="tide-card" aria-label="Facts">
+    <dl class="tide-facts tide-facts-side">
+        <div class="tide-fact"><dt>Versions</dt><dd>@(p.Versions ?? "—")</dd></div>
+        <div class="tide-fact"><dt>Team</dt><dd>@(Row.TeamName ?? "No team")</dd></div>
+        <div class="tide-fact"><dt>Checked</dt><dd>@Checked(p.CheckedOn)
+            @if (Row.CheckOld) { <Badge Tone="BadgeTone.Warn" Icon="bi-clock-history">@(p.CheckedOn is null ? "Never" : "Old")</Badge> }</dd></div>
+        <div class="tide-fact tide-fact-wide"><dt>Contact</dt><dd class="tide-stack-rail-contact">@StackPage.Contact(p)</dd></div>
+    </dl>
+    @if (CanWrite)
+    {
+        <div class="tide-stack-rail-buttons">
+            <a class="btn btn-outline-secondary btn-sm" href="@($"stack/{p.Id}")" aria-label="@($"Edit {p.Name}")">Edit</a>
+            <a class="btn btn-outline-secondary btn-sm" href="@($"actions/new?product={p.Id}")">Start an outreach</a>
+            @if (!p.IsRetired && p.CheckedOn != Clock.Today)
+            {
+                <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_marking" @onclick="MarkChecked">Mark checked</button>
+            }
+        </div>
+    }
+</section>
+
+@if (CanWrite && !p.IsRetired)
+{
+    <section class="tide-card" aria-labelledby="rail-triage-h">
+        <h2 id="rail-triage-h">In triage now @Count(_triage?.Count)</h2>
+        @if (_triage is null) { <p class="small tide-muted mb-0">Loading…</p> }
+        else if (_triage.Count == 0) { <p class="small tide-muted mb-0">Nothing new names it.</p> }
+        else
+        {
+            <ul class="tide-rail-list">
+                @foreach (var i in _triage.Take(Shown))
+                {
+                    <li class="tide-stack-rail-item"><a class="tide-rail-list-title" href="@($"triage?at={i.Id}")">@i.Title</a>
+                        @if (i.Kev) { <span class="tide-kev">KEV</span> }</li>
+                }
+            </ul>
+            @if (_triage.Count > Shown) { <a class="small" href="triage?named=true">and @(_triage.Count - Shown) more in triage</a> }
+        }
+    </section>
+}
+
+<section class="tide-card" aria-labelledby="rail-articles-h">
+    <h2 id="rail-articles-h">Articles @Count(_detail is { } d ? d.Articles.Count + d.ArticlesAbove : null)</h2>
+    @if (_detail is null) { <p class="small tide-muted mb-0">Loading…</p> }
+    else
+    {
+        @if (_detail.Articles.Count == 0 && _detail.ArticlesAbove == 0) { <p class="small tide-muted mb-0">No articles yet.</p> }
+        <ul class="tide-rail-list">
+            @foreach (var a in _detail.Articles.Take(Shown))
+            {
+                <li><a class="tide-rail-list-title" href="@($"articles/{a.Id}")">@a.Title</a>
+                    <span class="tide-rail-list-meta">@Ui.ShortDay(a.On, Clock.Today) · @(a.Tagged ? "tagged" : "names it")</span></li>
+            }
+        </ul>
+        @if (_detail.Articles.Count > Shown) { <a class="small" href="@($"stack/{p.Id}")">and @(_detail.Articles.Count - Shown) more</a> }
+        @if (_detail.ArticlesAbove > 0) { <div class="small tide-muted">@StackPage.AboveLine(_detail.ArticlesAbove, "article", _detail.Ceiling)</div> }
+    }
+</section>
+
+<section class="tide-card" aria-labelledby="rail-open-actions-h">
+    @{ var open = _detail?.Actions.Where(a => !ActionItem.IsClosedStatus(a.Status)).ToList(); }
+    <h2 id="rail-open-actions-h">Open actions @Count(open?.Count)</h2>
+    @if (open is null) { <p class="small tide-muted mb-0">Loading…</p> }
+    else
+    {
+        @if (open.Count == 0) { <p class="small tide-muted mb-0">No open actions.</p> }
+        <ul class="tide-rail-list">
+            @foreach (var a in open.Take(Shown))
+            {
+                <li class="tide-stack-rail-item"><span class="tide-rail-list-title"><ActionRef Number="a.Number" Title="@a.Title" /></span>
+                    <ActionStatusBadge Status="a.Status" /></li>
+            }
+        </ul>
+        @if (open.Count > Shown) { <a class="small" href="@($"stack/{p.Id}")">and @(open.Count - Shown) more</a> }
+        @if (_detail!.ActionsAbove > 0) { <div class="small tide-muted">@StackPage.AboveLine(_detail.ActionsAbove, "action", _detail.Ceiling, "from articles ")</div> }
+    }
+</section>
+
+<section class="tide-card" aria-labelledby="rail-notes-h">
+    <h2 id="rail-notes-h">Notes</h2>
+    @if (p.Notes is { } notes) { <Md Text="@notes" /> } else { <p class="small tide-muted mb-0">No notes yet.</p> }
+</section>
+
+@code {
+    /// <summary>The selected row.</summary>
+    [Parameter, EditorRequired] public StackRow Row { get; set; } = default!;
+
+    /// <summary>After Mark checked (done or refused): the list reads the products again.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    /// <summary>How long the selection rests before the rest of the product is read.</summary>
+    private static readonly TimeSpan Rest = TimeSpan.FromMilliseconds(150);
+
+    /// <summary>How many of each list the rail shows; the rest are on the product's page (or in triage).</summary>
+    internal const int Shown = 5;
+
+    private StackDetail? _detail;
+    private IReadOnlyList<StackTriageItem>? _triage;
+    private StackRow? _for;
+    private int _ticket;
+    private bool _marking;
+
+    // Analysts both keep the list and triage: they change it and see what's in triage (StackService's own rules).
+    private bool CanWrite => CurrentUser.Has(Permission.WriteArticles);
+
+    protected override Task OnParametersSetAsync()
+    {
+        // The same product as it was (the page drawn again, or the list read again with it unchanged): nothing to read
+        // again. The same product changed (checked, edited) is read again at once; another one after the selection rests.
+        var was = _for;
+        _for = Row;
+        if (was?.Product.Id == Row.Product.Id && was.Product.EditVersion == Row.Product.EditVersion) return Task.CompletedTask;
+        var another = was?.Product.Id != Row.Product.Id;
+        if (another) (_detail, _triage) = (null, null);
+        return Load(rest: another && RendererInfo.IsInteractive);
+    }
+
+    // Reads the product's history and, for those who triage, what's in triage naming it. A read overtaken by another
+    // selection is dropped.
+    private async Task Load(bool rest)
+    {
+        var ticket = ++_ticket;
+        var row = Row;
+        try
+        {
+            if (rest) await Task.Delay(Rest);
+            if (ticket != _ticket) return;
+            var detail = await Stack.GetAsync(row.Product.Id);
+            var triage = CanWrite && !row.Product.IsRetired ? await Stack.InTriageAsync(row.Product.Id) : [];
+            if (ticket != _ticket) return;
+            (_detail, _triage) = (detail, triage);
+        }
+        catch (Exception ex)
+        {
+            if (ticket == _ticket) Toasts.Error(UserFacingError.For(ex));
+        }
+    }
+
+    /// <summary>Mark checked: today, over the version the list read; a colleague's save since is refused and said.</summary>
+    internal async Task MarkChecked()
+    {
+        if (_marking) return;
+        _marking = true;
+        try
+        {
+            await Stack.MarkCheckedAsync(Row.Product.Id, Row.Product.EditVersion);
+            Toasts.Show($"{Row.Product.Name}: marked checked today.");
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _marking = false; }
+        await OnChanged.InvokeAsync();
+    }
+
+    // "Nov 9", or "Nov 9 today"; a dash when it's never been checked.
+    private RenderFragment Checked(DateOnly? on) => __builder =>
+    {
+        if (on is not { } day) { <text>—</text> return; }
+        @Ui.ShortDay(day, Clock.Today)
+        if (day == Clock.Today) { <span class="tide-stack-rail-today"> today</span> }
+    };
+
+    private static RenderFragment Count(int? n) => __builder =>
+    {
+        if (n is { } count) { <span class="tide-count">(@count)</span> }
+    };
+}

@@ -2751,3 +2751,30 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-rail-list-title { display: block; overflow-wrap: anywhere; }
 .tide-rail-list-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); color: var(--tide-text-muted); font-size: var(--tide-text-xs); }
 /* ---- end Action page 3.5 ---- */
+
+/* ---- Our stack 3.7: a selected row, and the selected product in the context rail (its flat sections are Today 3.1's) ----
+   The selected row is marked as the Actions list's is (rows.js moves it). Beside the docked rail the page has about
+   873px: the headings wrap onto two lines rather than holding the table wide, and a CVE's chip wraps between its parts
+   (the id, the scores, KEV), never inside a word, so the table fits with no sideways scroll. */
+.tide-stack-item.selected > td { background: var(--tide-accent-soft); }
+.tide-stack-item.selected > td:first-child { box-shadow: inset 3px 0 0 var(--tide-accent); }
+.tide-stack-item:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: -2px; }
+.tide-stack-table th { white-space: normal; }
+@media (min-width: 900.02px) { .tide-stack-table th, .tide-stack-table td { padding-left: .45rem; padding-right: .45rem; } }
+.tide-stack-table td { overflow-wrap: break-word; }
+.tide-stack-table .tide-stack-now { min-width: 0; }
+.tide-stack-now .tide-chip { flex-wrap: wrap; white-space: nowrap; max-width: 100%; }
+@media (max-width: 900px) {
+    .tide-stack-item.selected { background: var(--tide-accent-soft); box-shadow: inset 3px 0 0 var(--tide-accent); }
+    .tide-stack-item.selected > td { background: none; }
+    .tide-stack-item.selected > td:first-child { box-shadow: none; }
+}
+/* The rail: the facts two by two, the contact wrapping whole; Edit, Start an outreach and Mark checked on a row that
+   wraps; "today" after a check made today; a list's title, then its KEV flag or status at the row's end. */
+.tide-stack-rail-contact { overflow-wrap: anywhere; }
+.tide-stack-rail-today { color: var(--tide-accent-text); }
+.tide-stack-rail-buttons { display: flex; flex-wrap: wrap; gap: var(--tide-space-2); margin-top: var(--tide-space-3); }
+.tide-stack-rail-item { display: flex; align-items: baseline; justify-content: space-between; gap: var(--tide-space-2); }
+.tide-stack-rail-item > .tide-rail-list-title { flex: 1 1 0; min-width: 0; }
+.tide-stack-rail-item > :not(.tide-rail-list-title) { flex: none; }
+/* ---- end Our stack 3.7 ---- */

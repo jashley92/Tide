@@ -139,6 +139,9 @@ public sealed record StackNow(IReadOnlyList<StackCve> Cves, int CvesAbove, int? 
     public bool NotWrittenUp { get; init; }
 }
 
+/// <summary>A new triage item marked "We run" for a product: its id, its title, and whether one of its CVEs is on KEV.</summary>
+public sealed record StackTriageItem(Guid Id, string Title, bool Kev);
+
 /// <summary>An article in a product's history: tagged with it, or found because it names it.</summary>
 public sealed record StackArticle(Guid Id, string Title, DateOnly On, ArticleStatus Status, bool Tagged);
 
@@ -348,15 +351,52 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         }).ToList();
     }
 
-    // How many new triage items name each product, as triage says it: each item goes to the first product it names (its
-    // "We run" mark), matched once over the items. Items from a retired source aren't in the inbox, so they aren't here.
-    private static async Task<Dictionary<Guid, int>> NewItemsNamingAsync(IAppDbContext db, IReadOnlyList<StackEntry> inUse, CancellationToken ct)
+    // How many new triage items name each product, as triage says it (NewItemsMarkedAsync).
+    private static async Task<Dictionary<Guid, int>> NewItemsNamingAsync(IAppDbContext db, IReadOnlyList<StackEntry> inUse, CancellationToken ct) =>
+        (await NewItemsMarkedAsync(db, inUse, ct)).GroupBy(m => m.Product).ToDictionary(g => g.Key, g => g.Count());
+
+    // A new triage item as it's matched and listed: the start of its excerpt only, and its CVEs as stored.
+    private sealed record NewItem(Guid Id, string Title, string? Excerpt, string? Cves, DateTimeOffset FetchedAtUtc);
+
+    // The new triage items that name a product in use, each with the product its "We run" mark goes to, as triage says it:
+    // the first product it names, matched once over the items. Items from a retired source aren't in the inbox, so they
+    // aren't here.
+    private static async Task<List<(NewItem Item, Guid Product)>> NewItemsMarkedAsync(IAppDbContext db, IReadOnlyList<StackEntry> inUse, CancellationToken ct)
     {
         if (inUse.Count == 0) return [];
         var items = await db.FeedItems.AsNoTracking().Where(i => i.Status == FeedItemStatus.New && !i.Source!.IsRetired)
-            .Select(i => new { i.Title, Excerpt = i.Excerpt == null ? null : i.Excerpt.Substring(0, SummaryStart) }).ToListAsync(ct);
+            .Select(i => new NewItem(i.Id, i.Title, i.Excerpt == null ? null : i.Excerpt.Substring(0, SummaryStart), i.Cves, i.FetchedAtUtc)).ToListAsync(ct);
         var match = Matcher(inUse);
-        return items.Select(i => match(i.Title, i.Excerpt)).Where(e => e is not null).GroupBy(e => e!.Id).ToDictionary(g => g.Key, g => g.Count());
+        return [.. items.Select(i => (Item: i, Entry: match(i.Title, i.Excerpt))).Where(m => m.Entry is not null).Select(m => (m.Item, m.Entry!.Id))];
+    }
+
+    /// <summary>
+    /// The new triage items marked "We run" for <paramref name="id"/> (the first product each names, as triage marks it),
+    /// newest first, each saying whether one of its CVEs is on KEV: the context rail's "In triage now". Only for those who
+    /// triage, as the list's count is. A retired product has none: triage no longer lifts it. Read in a fixed number of
+    /// queries, however many products and items there are.
+    /// </summary>
+    public async Task<IReadOnlyList<StackTriageItem>> InTriageAsync(Guid id, CancellationToken ct = default)
+    {
+        RequireRead();
+        if (!user.Has(Permission.WriteArticles)) throw new ForbiddenException("Only those who triage see what's in triage.");
+        await using var db = await dbs.CreateAsync(ct);
+        var items = (await NewItemsMarkedAsync(db, await EntriesAsync(db, ct), ct)).Where(m => m.Product == id).Select(m => m.Item).ToList();
+        var cves = items.SelectMany(i => CvesOf(i.Cves)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var kev = cves.Count == 0 ? []
+            : (await db.CveRecords.AsNoTracking().Where(r => cves.Contains(r.CveId) && r.IsKev).Select(r => r.CveId).ToListAsync(ct)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return [.. items.OrderByDescending(i => i.FetchedAtUtc).Select(i => new StackTriageItem(i.Id, i.Title, CvesOf(i.Cves).Any(kev.Contains)))];
+    }
+
+    // An item's CVEs, as FeedItem.CveList reads them.
+    private static string[] CvesOf(string? cves) => (cves ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    /// <summary>A product by itself, or null when it's gone: no history is read (a new Outreach action about it).</summary>
+    public async Task<StackProduct?> FindAsync(Guid id, CancellationToken ct = default)
+    {
+        RequireRead();
+        await using var db = await dbs.CreateAsync(ct);
+        return await db.StackProducts.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
     }
 
     public async Task<StackDetail?> GetAsync(Guid id, CancellationToken ct = default)
@@ -676,6 +716,23 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         try { await db.SaveChangesAsync(ct); }
         // Someone untagged it first.
         catch (DbUpdateConcurrencyException) { }
+    }
+
+    /// <summary>
+    /// Marks a product checked today (the organization's day), from the context rail: only its check date changes, audited
+    /// as any change to it is. <paramref name="editVersion"/> is the version the person was shown: a colleague's save made
+    /// since is refused, as the product page's Save refuses it.
+    /// </summary>
+    public async Task MarkCheckedAsync(Guid id, Guid editVersion, CancellationToken ct = default)
+    {
+        RequireWrite();
+        await using var db = await dbs.CreateAsync(ct);
+        var p = await db.StackProducts.FirstOrDefaultAsync(x => x.Id == id, ct) ?? throw new KeyNotFoundException("That product no longer exists.");
+        if (p.EditVersion != editVersion) throw new StaleEditException(Stale(p));
+        p.CheckedOn = clock.Today;
+        p.EditVersion = Guid.NewGuid();
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException) { throw new StaleEditException(Stale(p)); }
     }
 
     private void RequireRead()
