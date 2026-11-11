@@ -25,7 +25,7 @@
             <MenuButton Label="Move to" Items="Moves" Disabled="Busy" ButtonClass="btn btn-outline-secondary btn-sm"
                         AriaLabel="@($"Move {Ui.ActionLabel(Row.Number)} to")" MenuLabel="@($"Move {Ui.ActionLabel(Row.Number)} to")" />
         }
-        else if (Assign && CanWork && Row.IsOpen)
+        else if (!OnBoard && CanWork && Row.IsOpen)
         {
             @* The action page's edit form, where its assignee is chosen. *@
             <a class="btn btn-outline-secondary btn-sm" href="@Ui.ActionUrl(Row.Number, "do=" + ActionGuide.Key(ActionFlow.Edit))">Assign…</a>
@@ -38,14 +38,28 @@
     <dl class="tide-facts tide-facts-side">
         <div class="tide-fact"><dt>Kind</dt><dd>@ActionService.KindName(Row.Kind)</dd></div>
         <div class="tide-fact"><dt>Team</dt><dd>@Row.TeamName</dd></div>
-        <div class="tide-fact"><dt>In @ActionService.StatusName(Row.Status)</dt><dd>@InColumn</dd></div>
+        <div class="tide-fact"><dt>@InColumnName</dt><dd>@InColumn</dd></div>
         <div class="tide-fact"><dt>Checklist</dt><dd>@(Row.ChecklistTotal > 0 ? $"{Row.ChecklistDone} of {Row.ChecklistTotal}" : "None")</dd></div>
     </dl>
 </section>
 
 @if (_detail is { Action: var a })
 {
-    @* The query on the action, or with none, the preview: one copy button, which keeps the preview on the action. *@
+    @* The board's rail has the article first, then the query, as its design does; the list's the query first. *@
+    @if (OnBoard) { @Article(a) @Hunt(a) } else { @Hunt(a) @Article(a) }
+    @if (LastActivity(a) is { } last)
+    {
+        <section class="tide-card" aria-labelledby="rail-activity-h">
+            <h2 id="rail-activity-h">Last activity</h2>
+            <p class="small mb-0"><span class="tide-muted">@Ui.When(Clock, last.At)</span> · @last.Text</p>
+        </section>
+    }
+}
+
+@code {
+    // The query on the action, or with none, the preview: one copy button, which keeps the preview on the action.
+    private RenderFragment Hunt(ActionItem a) => __builder =>
+    {
     @if (Query(a) is var (text, dialect, previewed))
     {
         <section class="tide-card tide-rail-hunt" aria-labelledby="rail-hunt-h">
@@ -61,20 +75,17 @@
             <span class="small tide-muted" role="status" aria-live="polite">@_said</span>
         </section>
     }
-    @if (a.Article is { } article)
-    {
-        <ActionSourceArticle Source="article" />
-    }
-    @if (LastActivity(a) is { } last)
-    {
-        <section class="tide-card" aria-labelledby="rail-activity-h">
-            <h2 id="rail-activity-h">Last activity</h2>
-            <p class="small mb-0"><span class="tide-muted">@Ui.When(Clock, last.At)</span> · @last.Text</p>
-        </section>
-    }
-}
+    };
 
-@code {
+    // The article it was raised from (for whoever may read it: ActionSourceArticle's rule).
+    private static RenderFragment Article(ActionItem a) => __builder =>
+    {
+        @if (a.Article is { } article)
+        {
+            <ActionSourceArticle Source="article" />
+        }
+    };
+
     /// <summary>The selected row or card.</summary>
     [Parameter, EditorRequired] public ActionRow Row { get; set; } = default!;
 
@@ -92,8 +103,9 @@
     /// <summary>The board's Move to menu: the statuses it can move to. None on the list, or for whoever can't move it.</summary>
     [Parameter] public IReadOnlyList<MenuButton.Item>? Moves { get; set; }
 
-    /// <summary>The list's Assign…, to the action page's edit form, for whoever works it.</summary>
-    [Parameter] public bool Assign { get; set; }
+    /// <summary>The board's rail: Move to (from <see cref="Moves"/>) and the article before the query; the list's has
+    /// Assign…, to the action page's edit form, for whoever works it.</summary>
+    [Parameter] public bool OnBoard { get; set; }
 
     /// <summary>How long the selection rests before the rest of the action is read.</summary>
     private static readonly TimeSpan Rest = TimeSpan.FromMilliseconds(150);
@@ -182,6 +194,10 @@
     // The query shown: the newest on the action, else the preview (whether it's that), else none.
     private (string Text, string Dialect, bool Previewed)? Query(ActionItem a) =>
         a.Hunts.FirstOrDefault() is { } saved ? (saved.Text, saved.Dialect, false) : _preview is { } preview ? (preview, _dialect, true) : null;
+
+    // The column it's in, as the fact names it: "In Open" (the design's words), and the others' own names, which say it
+    // already ("In progress", "Blocked", "Tracking", "Done").
+    private string InColumnName => Row.Status == ActionStatus.Open ? "In Open" : ActionService.StatusName(Row.Status);
 
     // How long it has been in its column (from when it moved there, else from when it was opened), in the organization's days.
     private string InColumn

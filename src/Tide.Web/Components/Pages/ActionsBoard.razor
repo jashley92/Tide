@@ -136,7 +136,7 @@
         @* The board's selected card, as the list's row: J/K and the up and down arrows move it card by card, lane after
            lane; left and right (on a card) to the next lane with cards; T takes it on; Enter opens it. *@
         <RowKeys RowClass="tide-kcard" Count="order.Count" Selected="CardIndex" SelectedChanged="SelectCardAt" OnOpen="OpenCard"
-                 Keys="@(CanHold ? BoardTakeKeys : BoardLaneKeys)" OnKey="BoardKey" Follow="LaneKeys" OnRow="LaneKeys" Address="CardAddress" />
+                 Keys="@(CanHold ? BoardTakeKeys : BoardLaneKeys)" OnKey="BoardKey" Follow="LaneKeys" OnRow="LaneKeys" />
     }
 }
 else
@@ -174,7 +174,7 @@ else
     {
         var canWork = _asBoard ? _board?.CanMove(row) == true : _workers.CanWork(row.TeamId);
         <ActionRowRail @ref="_rail" Row="row" CanWork="canWork" CanTake="row.TakeableBy(canWork)" Busy="@(_taking || _mover?.Busy == true)"
-                       OnTake="() => Take(row)" Moves="@(_asBoard && canWork ? RailMoves(row) : null)" Assign="!_asBoard" />
+                       OnTake="() => Take(row)" Moves="@(_asBoard && canWork ? RailMoves(row) : null)" OnBoard="_asBoard" />
     }
     else
     {
@@ -213,10 +213,10 @@ else
     [SupplyParameterFromQuery(Name = DataTable<ActionRow>.PageParameter)] public string? PageParam { get; set; }
 
     /// <summary>
-    /// The layout this person last chose with the List / Board tab (the board until they choose), kept on the server so
-    /// it follows them. Read once when the page opens (and carried from the prerender to the interactive render, so not
-    /// read twice); it's what an address without <c>layout</c> shows. A link's own <c>layout</c> wins for that visit
-    /// without changing it.
+    /// The layout Actions opens in (the board until they choose): the one last chosen with the List / Board tab on the tab
+    /// Actions opens on, or with "Open here by default". Kept on the server so it follows them; read once when the page
+    /// opens (and carried from the prerender to the interactive render, so not read twice); it's what an address without
+    /// <c>layout</c> shows. A link's own <c>layout</c> wins for that visit without changing it.
     /// </summary>
     [PersistentState]
     public string? SavedLayout { get; set; }
@@ -457,7 +457,8 @@ else
         _parentNumber = query.Parent is > 0 ? query.Parent : null;
         _side = EnumNames.OrNull<ActionTeams>(TeamsParam, ignoreCase: true);
         _raised = string.Equals(RaisedParam, Me, StringComparison.OrdinalIgnoreCase);
-        (_cardId, _cardAt, _cardAsked) = (null, 0, FilterValues.Number(CardParam));
+        (_cardId, _cardAt, _cardAsked) = (null, 0, CardNumber(CardParam));
+        _addressedCard = _cardAsked;
         // The board from a link to a view it hasn't: Overdue shows as All open with the Overdue pill, the same actions.
         if (_asBoard && !OnBoard(_view)) FitBoard(say: false);
         var heldToMine = HoldMine();
@@ -630,7 +631,7 @@ else
     internal async Task Refilter()
     {
         if (_view == ActionView.Mine && _assignee == ActionFilter.Unassigned) (_view, _sort) = (ActionView.MyTeams, DefaultSort(ActionView.MyTeams));
-        (_page, _selected, _cardId, _cardAt) = (1, 0, null, 0);
+        (_page, _selected, _cardId, _cardAt, _addressedCard) = (1, 0, null, 0, null);
         await Load();
         Remember();
     }
@@ -648,7 +649,7 @@ else
     {
         _view = view;
         if (view == ActionView.Mine) _assignee = null;   // Mine is held by you: another holder would show nothing
-        (_page, _selected, _cardId, _cardAt) = (1, 0, null, 0);
+        (_page, _selected, _cardId, _cardAt, _addressedCard) = (1, 0, null, 0, null);
         _sort = DefaultSort(view);
         Remember();
         await Load();
@@ -672,12 +673,7 @@ else
             _refocus = false;
             if (row is null || _table is null || !await _table.FocusRowAsync(row.Id)) await _heading.TryFocusAsync(orGone: true);
         }
-        if (_revealCard && _asBoard && !_loading && RendererInfo.IsInteractive)
-        {
-            _revealCard = false;
-            try { await JS.InvokeVoidAsync("tideBoard.reveal"); }
-            catch (JSDisconnectedException) { }
-        }
+        if (_asBoard && !_loading && RendererInfo.IsInteractive) await SayCard();
         if (!_sayLayout) return;
         _sayLayout = false;
         // Only the layout is added (the team, holder and the rest stay as they were), and recorded first so it isn't re-read.
@@ -686,15 +682,20 @@ else
         Nav.NavigateTo(Nav.GetUriWithQueryParameter("layout", layout), replace: true);
     }
 
-    // The tab is the one place the preference changes; a link's layout only applies to its visit.
+    // The tab is the one place the preference changes, and only on the tab Actions opens on (the person's default): the
+    // layout chosen on another tab is for this visit, so a default set with "Open here by default" keeps its layout. A
+    // link's layout only applies to its visit.
     private async Task SetLayout(string? layout)
     {
         _asBoard = layout == "board";
         if (_asBoard && !OnBoard(_view)) FitBoard(say: true);
-        _page = 1;
-        SavedLayout = _asBoard ? UserPreferences.Board : UserPreferences.List;
-        try { await Prefs.SetAsync(UserPreferences.ActionsLayout, SavedLayout); }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        (_page, _addressedCard) = (1, null);
+        if (_view == OpeningView())
+        {
+            SavedLayout = _asBoard ? UserPreferences.Board : UserPreferences.List;
+            try { await Prefs.SetAsync(UserPreferences.ActionsLayout, SavedLayout); }
+            catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        }
         Remember();
         await Load();
     }
@@ -878,7 +879,7 @@ else
     // view by a colleague) gives its place to the one now there. The number the address asked for, until the board is read.
     private Guid? _cardId;
     private int _cardAt;
-    private int? _cardAsked;
+    private int? _cardAsked, _addressedCard;
     private bool _revealCard;
     private ActionKanban? _kanban;
     private ActionRowRail? _rail;
@@ -944,8 +945,29 @@ else
         if (at < BoardOrder.Count) Nav.NavigateTo(Ui.ActionUrl(BoardOrder[at].Number));
     }
 
-    // This history entry's address with the card selected (rows.js writes it in place, navigating nowhere).
-    private string CardAddress(int at) => Nav.GetUriWithQueryParameter("card", at < BoardOrder.Count ? BoardOrder[at].Number : null);
+    /// <summary>The card an address names: its number, as 63 or A-63; null for anything else.</summary>
+    internal static int? CardNumber(string? text) =>
+        FilterValues.Number(text?.Trim() is { } t && t.StartsWith("A-", StringComparison.OrdinalIgnoreCase) ? t[2..] : text);
+
+    // Once drawn: a card the address named takes focus; and whatever moved the selection (a key, a click, a card that
+    // left the board and gave its place to the next), this history entry's address names the card now selected, in
+    // place (rows.js), navigating nowhere. The first card, selected by default, isn't written until the selection moves.
+    private async Task SayCard()
+    {
+        try
+        {
+            if (_revealCard)
+            {
+                _revealCard = false;
+                await JS.InvokeVoidAsync("tideBoard.reveal");
+            }
+            if (SelectedCard is not { } card || card.Number == _addressedCard) return;
+            var first = _addressedCard is null && _cardId is null;
+            _addressedCard = card.Number;
+            if (!first) await JS.InvokeVoidAsync("tideRows.remember", Nav.GetUriWithQueryParameter("card", card.Number));
+        }
+        catch (JSDisconnectedException) { }
+    }
 
     // The board's own keys: left and right move to the next lane with cards (only with focus on a card, so they keep
     // their meaning elsewhere), and T takes the selected card on, for someone who may take actions on.
@@ -1067,6 +1089,7 @@ else
         try
         {
             await ActionSvc.TakeAsync(row.Id, onlyIfNobodys: true);
+            if (row.Status == ActionStatus.Open) _kanban?.Moving(row.Id);   // taking it starts it: not news on the board
             Toasts.Show($"You took {Ui.ActionLabel(row.Number)} on.");
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }

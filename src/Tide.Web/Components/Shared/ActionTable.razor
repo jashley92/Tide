@@ -25,6 +25,8 @@
                 </AfterNumber>
             </ActionRef>
             <PresenceNote Place="@Tide.Web.Components.Pages.ActionPage.ActionPlace(r.Number)" Join="false" Compact="true" />
+            @* Its kind and priority, shown here in place of the Kind column where that folds away (beside the docked rail). *@
+            <div class="small tide-action-kind">@ActionService.KindName(r.Kind) <PriorityBadge Priority="r.Priority" /></div>
             @if (ActionRules.For(Rules, r, Today, Clock.Days) is { Count: > 0 } matched)
             {
                 <div class="tide-kcard-labels">@foreach (var rule in matched) { <span class="tide-rule-label @Ui.RuleClass(rule.Colour)">@rule.Name</span> }</div>
@@ -43,7 +45,7 @@
                 <div class="small tide-muted tide-rollup"><span class="bi bi-diagram-3" aria-hidden="true"></span> @r.Rollup</div>
             }
         </td>
-        <td class="small text-nowrap">@ActionService.KindName(r.Kind) <PriorityBadge Priority="r.Priority" /></td>
+        <td class="small tide-col-kind">@ActionService.KindName(r.Kind) <PriorityBadge Priority="r.Priority" /></td>
         <td class="small">
             @r.TeamName<div class="tide-muted">@(r.AssigneeName ?? "Unassigned")</div>
             @if (CanTake?.Invoke(r) == true)

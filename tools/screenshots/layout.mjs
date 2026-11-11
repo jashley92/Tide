@@ -1462,9 +1462,188 @@ const boardTakeKey = {
     const number = (await page.locator('.tide-kcard.selected .tide-action-num').innerText()).trim();
     await page.locator('.tide-kcard.selected').focus();
     await page.keyboard.press('t');
-    try { await page.getByText(`You took ${number} on.`).waitFor({ timeout: 5000 }); return []; } catch { return [`T on ${number} didn't take it on`]; }
+    try { await page.getByText(`You took ${number} on.`).waitFor({ timeout: 5000 }); } catch { return [`T on ${number} didn't take it on`]; }
+    await page.waitForTimeout(800);
+    const note = await page.locator('.tide-kcard.selected .tide-kcard-note').allInnerTexts();
+    return note.length ? [`the card ${number} the person took says "${note.join(' ').trim()}"`] : [];
   },
 };
+
+/** Every tab of the row `selector` is wholly in view, the row not scrolling inside itself: all five views fit. */
+const everyTabShown = selector => ({
+  name: `every tab shown whole: ${selector}`,
+  check: page => page.$eval(selector, row => {
+    const r = row.getBoundingClientRect(), problems = [];
+    if (row.scrollWidth > row.clientWidth + 1) problems.push(`the tabs scroll inside their row (${row.scrollWidth - row.clientWidth}px more than it shows)`);
+    for (const t of row.children) {
+      const b = t.getBoundingClientRect();
+      if (b.left < r.left - 1 || b.right > r.right + 1) problems.push(`"${t.innerText.replace(/\s+/g, ' ').trim()}" is cut off`);
+    }
+    return problems;
+  }),
+});
+
+/** A table, not stacked rows: each heading shown sits over its column (its left edge within 2px of the first row's cell
+ *  in the same column), and the header row is shown at all. */
+const headingsOverColumns = {
+  name: 'the list\'s headings sit over their columns',
+  check: page => page.evaluate(() => {
+    const table = document.querySelector('.tide-table:has(.tide-action-row)');
+    const row = table?.querySelector('.tide-action-row');
+    if (!table || !row) return ['no list of actions'];
+    const shown = e => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0 && getComputedStyle(e).display !== 'none'; };
+    const ths = [...table.querySelectorAll(':scope > thead > tr > th')].filter(shown), tds = [...row.children].filter(shown);
+    if (!ths.length) return ['the header row isn\'t shown'];
+    if (getComputedStyle(table).display !== 'table') return ['the list is laid out as stacked rows, not a table'];
+    if (ths.length !== tds.length) return [`${ths.length} headings over ${tds.length} cells`];
+    return ths.flatMap((th, i) => Math.abs(th.getBoundingClientRect().left - tds[i].getBoundingClientRect().left) > 2
+      ? [`"${th.innerText.trim()}" starts at ${Math.round(th.getBoundingClientRect().left)}px, its column at ${Math.round(tds[i].getBoundingClientRect().left)}px`] : []);
+  }),
+};
+
+/** Setup: the demo's analyst put on the first team (on none, My teams opens All open for them), then the list opened. */
+async function analystOnATeam(page) {
+  await page.goto(new URL('/admin/teams', page.url()).href, { waitUntil: 'networkidle' });
+  await settle(page);
+  const pick = page.locator('select[aria-label^="Person to add to"]').first();
+  if (await pick.locator('option', { hasText: 'Dev Analyst' }).count()) {
+    await pick.selectOption({ label: 'Dev Analyst' });
+    await pick.locator('xpath=following::button[normalize-space()="Add"][1]').click();
+    await page.waitForTimeout(800);
+  }
+  await page.goto(new URL('/actions?view=open&layout=list', page.url()).href, { waitUntil: 'networkidle' });
+}
+
+/**
+ * "Open here by default" keeps the layout: the default set to My teams on the board, then All open on the list (the List
+ * tab pressed), then Actions from the sidebar and from a new tab: both open My teams on the board.
+ */
+const defaultKeepsLayout = {
+  name: 'Open here by default opens that tab in that layout, from the sidebar and a new tab',
+  check: async page => {
+    const problems = [];
+    const views = page.locator('[role=group][aria-label="Views"]');
+    const layoutTab = name => page.locator('.tide-actions-layout').getByRole('button', { name });
+    await views.getByRole('button', { name: /^My teams/ }).click();
+    await page.waitForTimeout(800);
+    await layoutTab(/Board/).click();
+    await page.waitForTimeout(800);
+    const star = page.locator('button#view-default');
+    if (await star.count()) { await star.click(); await page.waitForTimeout(800); }
+    await views.getByRole('button', { name: /^All open/ }).click();
+    await page.waitForTimeout(800);
+    await layoutTab(/List/).click();
+    await page.waitForTimeout(1000);
+    const opened = async (p, how) => {
+      const view = (await p.locator('[role=group][aria-label="Views"] [aria-pressed="true"]').innerText()).replace(/\s+/g, ' ').trim();
+      const layout = (await p.locator('.tide-actions-layout [aria-pressed="true"]').textContent()).trim();
+      if (!view.startsWith('My teams') || layout !== 'Board') problems.push(`${how} opened ${view} as the ${layout}, not My teams on the board`);
+    };
+    await page.locator('#tide-nav-links a[href="actions"]').first().click();
+    await page.waitForTimeout(1500);
+    await opened(page, "the sidebar's Actions");
+    const fresh = await page.context().newPage();
+    await fresh.goto(new URL('/actions', page.url()).href, { waitUntil: 'networkidle' });
+    await settle(fresh);
+    await opened(fresh, 'a new tab on /actions');
+    await fresh.close();
+    return problems;
+  },
+};
+
+/** After a card is closed by dragging it, the address names the card now selected (?card=), not the one that left. */
+const addressFollowsAfterClose = {
+  name: 'after a drag-close the address names the selected card',
+  check: async page => {
+    const lane = page.locator('.tide-kcol[data-status="Open"] .tide-kcard[draggable="true"]');
+    if (await lane.count() < 2) return ['the Open lane has fewer than two cards to move'];
+    const card = lane.first();
+    await card.locator('.tide-kcard-head').click({ position: { x: 4, y: 4 } });
+    await page.waitForTimeout(600);
+    await card.dragTo(page.locator('.tide-kchip[data-status="Cancelled"]'));
+    const confirm = page.getByRole('button', { name: 'Move to Cancelled' });
+    await confirm.waitFor({ timeout: 5000 });
+    await confirm.click();
+    await page.waitForTimeout(1500);
+    const now = await selectedCard(page);
+    return now.card === now.number?.replace(/^A-/, '') ? [] : [`the address says card=${now.card}, but ${now.number} is selected`];
+  },
+};
+
+/** The rail's time-in-column fact reads naturally: "In Open", "In progress", "Blocked", never "In In progress". */
+const columnFactWording = {
+  name: 'the rail says how long in its column without doubling "In"',
+  check: page => page.$$eval('#tide-rail .tide-facts dt', dts => {
+    const texts = dts.map(d => d.innerText.trim());
+    return texts.some(t => /^In In\b/i.test(t)) ? [`the fact reads "${texts.find(t => /^In In\b/i.test(t))}"`] : [];
+  }),
+};
+
+/** On the board, the rail puts "From the article" before the hunt query, as the board's design does. */
+const articleBeforeHunt = {
+  name: 'the board\'s rail: the article, then the hunt query',
+  check: page => page.evaluate(() => {
+    const a = document.querySelector('#tide-rail #rail-article-h'), h = document.querySelector('#tide-rail #rail-hunt-h');
+    if (!a || !h) return [`the rail has no ${!a ? 'article' : 'hunt query'}`];
+    return a.compareDocumentPosition(h) & Node.DOCUMENT_POSITION_FOLLOWING ? [] : ['the hunt query comes before the article'];
+  }),
+};
+
+/** The average brightness of `clip` on the page, from a screenshot decoded in a page of its own (as dims does, above). */
+async function luma(page, clip) {
+  const shot = (await page.screenshot({ clip })).toString('base64');
+  const scratch = await page.context().newPage();
+  try {
+    return await scratch.evaluate(async s => {
+      const img = new Image();
+      img.src = `data:image/png;base64,${s}`;
+      await img.decode();
+      const c = Object.assign(document.createElement('canvas'), { width: img.width, height: img.height }), g = c.getContext('2d');
+      g.drawImage(img, 0, 0);
+      const d = g.getImageData(0, 0, c.width, c.height).data;
+      let sum = 0;
+      for (let i = 0; i < d.length; i += 4) sum += .2126 * d[i] + .7152 * d[i + 1] + .0722 * d[i + 2];
+      return sum / (d.length / 4);
+    }, shot);
+  } finally {
+    await scratch.close();
+  }
+}
+
+/**
+ * With `open` (Save view, or a card's close asking how it closed) a modal is up: its backdrop covers the docked rail as it
+ * covers the page, dimming both (each at least 25% darker), and the rail is under it.
+ */
+const scrimCoversRail = open => ({
+  name: `the ${open} dialog's backdrop dims the docked rail`,
+  check: async page => {
+    const box = await page.locator('#tide-rail').boundingBox();
+    const rail = { x: box.x + 20, y: box.y + box.height - 220, width: box.width - 40, height: 180 };
+    const main = await page.locator('#main-content').boundingBox();
+    const content = { x: main.x + 20, y: 780, width: 200, height: 180 };
+    const before = [await luma(page, rail), await luma(page, content)];
+    if (open === 'Save view') await page.locator('#save-view').click();
+    else {
+      await page.locator('.tide-kcard[draggable="true"] .tide-kcard-move').first().click();
+      await page.locator('.tide-kcard-menu').getByRole('menuitem', { name: 'Cancelled' }).click();
+    }
+    await page.locator('.tide-modal-scrim').waitFor({ timeout: 5000 });
+    await page.waitForTimeout(400);
+    const after = [await luma(page, rail), await luma(page, content)];
+    const problems = [];
+    ['the rail', 'the page'].forEach((what, i) => {
+      const drop = (before[i] - after[i]) / Math.max(before[i], 1) * 100;
+      if (drop < 25) problems.push(`${what} is only ${drop.toFixed(0)}% darker under the dialog (${before[i].toFixed(0)} to ${after[i].toFixed(0)})`);
+    });
+    const above = await page.evaluate(() => {
+      const r = document.getElementById('tide-rail').getBoundingClientRect();
+      return !!document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest('#tide-rail');
+    });
+    if (above) problems.push('the rail is above the dialog\'s backdrop');
+    await page.keyboard.press('Escape');
+    return problems;
+  },
+});
 
 /** Enter on the selected card opens it. Run last on its page: it leaves it. */
 const boardEnterOpens = {
@@ -1693,8 +1872,10 @@ const pages = [
   // The selected action is in the context rail, on the list and the board. From 1500px it's docked beside the page, which
   // has about 873px at 1500: the list's table and the board's four lanes and closed strip still fit, nothing scrolls
   // sideways, and the strip is on the first screen. Below 1500px it's closed until ] opens it over the page. Wider letters.
-  { name: 'actions-rail-list', route: '/actions?view=open&layout=list', setup: wideFont, widths: [[1920, 1000], [1600, 1000], [1500, 1000]],
+  { name: 'actions-rail-list', route: '/actions?view=open&layout=list', setup: wideFont, widths: [[1920, 1000], [1680, 1000], [1600, 1000], [1500, 1000]],
     rules: [noSidewaysScroll, visible('#tide-rail'), besides('#main-content', '#tide-rail'), visible('.tide-action-row.selected'), fits('.tide-dt-scroll'),
+      everyTabShown('[role=group][aria-label="Views"]'), headingsOverColumns, columnFactWording,
+      besideTheTabs('[role=group][aria-label="Views"]', '#view-default', '#save-view'),
       visible('#tide-rail #rail-about-h'), ...actionsRailHolds] },
   { name: 'actions-rail-board', route: '/actions?view=open&layout=board', setup: wideFont, widths: [[1920, 1000], [1600, 1000], [1500, 1000]],
     rules: [noSidewaysScroll, visible('#tide-rail'), besides('.tide-board', '#tide-rail'), fits('.tide-kanban'), lanesOnOneRow, onFirstScreen('.tide-kstrip'),
@@ -1714,7 +1895,14 @@ const pages = [
   { name: 'actions-board-keys', route: '/actions?view=open&layout=board', widths: [[1920, 1000], [1440, 900]], rules: [boardKeys, clickSelectsCard, boardEnterOpens] },
   // A link to a card (?card=, the demo's sweep, low in the Open lane) lands on it: selected, in view and focused.
   { name: 'actions-board-card-link', route: '/actions?view=open&layout=board&card={huntAction}', widths: [[1600, 1000], [1440, 900]],
-    rules: [selectedCardInView, railFollowsSelection] },
+    rules: [selectedCardInView, railFollowsSelection, articleBeforeHunt, columnFactWording] },
+  { name: 'actions-board-card-link-a', route: '/actions?view=open&layout=board&card=A-{huntAction}', widths: [[1600, 1000]], rules: [selectedCardInView, railFollowsSelection] },
+  // A modal's backdrop covers the docked rail: Save view on the list, a card's close on the board.
+  ...['light', 'dark'].flatMap(theme => [['save', 'list', 'Save view'], ['close', 'board', 'close']].map(([name, layout, open]) => ({
+    name: `actions-rail-scrim-${name}-${theme}`, route: `/actions?view=open&layout=${layout}`, context: { theme }, widths: [[1920, 1000], [1600, 1000]],
+    rules: [scrimCoversRail(open)],
+  }))),
+
   { name: 'actions-board-take-key', route: '/actions?view=open&layout=board', setup: newUnownedCard, widths: [[1600, 1000]], rules: [boardTakeKey] },
   { name: 'actions-rail-list-keys', route: '/actions?view=open&layout=list', widths: [[1920, 1000]], rules: [actionKeys, railFollowsSelection, statusMenuByKeyboard] },
   // A card dragged with the mouse onto each chip asks how it closed.
@@ -1867,6 +2055,9 @@ const pages = [
   { name: 'actions-board-close-menu', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [closeKeepsPlace('menu')] },
   { name: 'actions-board-close-drag', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [closeKeepsPlace('drag')] },
   { name: 'actions-board-close-click-drag', route: '/actions?view=open&layout=board', widths: [[1600, 1000]], rules: [closeKeepsPlace('click-drag')] },
+  { name: 'actions-board-close-address', route: '/actions?view=open&layout=board', widths: [[1600, 1000]], rules: [addressFollowsAfterClose] },
+  // Last: it changes the demo analyst's default tab and layout.
+  { name: 'actions-default-layout', route: '/actions?view=open&layout=list', setup: analystOnATeam, widths: [[1600, 1000]], rules: [defaultKeepsLayout] },
 ];
 
 // --- the run -----------------------------------------------------------------------------------------------------------

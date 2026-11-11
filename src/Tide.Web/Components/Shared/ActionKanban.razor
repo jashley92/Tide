@@ -426,12 +426,18 @@
         StateHasChanged();
     }
 
-    // This tab's own move: its reload isn't news, and the card stays shown wherever it lands.
+    /// <summary>This tab is moving the card itself (a move, or taking it on, which starts it): the reload that follows
+    /// isn't news, and the card stays shown wherever it lands.</summary>
+    internal void Moving(Guid card)
+    {
+        _mine.Add(card);
+        _pinned.Add(card);
+    }
+
     private async Task Move(ActionRow card, ActionStatus to)
     {
         _menuFor = null;
-        _mine.Add(card.Id);
-        _pinned.Add(card.Id);
+        Moving(card.Id);
         await _mover.MoveAsync(card, to, refused: () => _mine.Remove(card.Id));
     }
 

@@ -2777,19 +2777,27 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 /* A menu in the rail (the board's Move to) opens from its button's left edge, into the rail, never out past its edge. */
 .tide-rail .tide-menubutton-pop { right: auto; left: 0; }
 .tide-rail-links { display: flex; flex-wrap: wrap; gap: var(--tide-space-1) var(--tide-space-3); }
-/* Beside the docked rail, up to about 1760px, the list has too little room for its six columns: each row is laid out in its
-   box, as in a narrower window (the rules for that, above), rather than scrolling the table sideways. */
+/* The list's Kind column keeps to one line; its kind and priority under the title are for where the column folds away. */
+.tide-col-kind { white-space: nowrap; }
+.tide-action-kind { display: none; }
+/* Beside the docked rail, up to 1760px, the page has 820 to 1080px: the list stays a table with every view tab in view,
+   as the design has it. The tabs sit closer, the tools beside them and List or Board keep their icons (their words go to
+   screen readers and tooltips, as in a narrower window), and the table's cells sit closer, Kind and Progress wrapping.
+   Under 1600px the Kind column folds under each title, so the table fits with wider fonts too. */
 @media (min-width: 1500px) and (max-width: 1759.98px) {
     html:not([data-rail="closed"]) main:has(> .tide-rail) {
-        & .tide-table:has(.tide-action-row), & .tide-table:has(.tide-action-row) > thead, & .tide-table:has(.tide-action-row) > tbody { display: block; }
-        & .tide-table:has(.tide-action-row) > thead > tr, & .tide-action-row { display: flex; flex-wrap: wrap; align-items: flex-start;
-            gap: var(--tide-space-1) var(--tide-space-4); padding: var(--tide-space-2) var(--tide-space-3); border-bottom: 1px solid var(--tide-border); }
-        & .tide-table:has(.tide-action-row) > thead > tr > th, & .tide-action-row > td { display: block; padding: 0; border: 0; }
-        & .tide-action-row > td:first-child { flex: 1 0 100%; }
-        & .tide-table:has(.tide-action-row) .tide-dt-group, & .tide-table:has(.tide-action-row) .tide-dt-group > th { display: block; }
-        & .tide-action-row.selected > td:first-child { box-shadow: none; }
-        & .tide-action-row.selected { background: var(--tide-accent-soft); box-shadow: inset 3px 0 0 var(--tide-accent); }
-        & .tide-action-row.selected > td { background: none; }
+        & .tide-viewtool-text, & .tide-actions-layout .tide-tabbar-item > span:not(.bi) {
+            position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+        & .tide-actions-views .tide-tabbar-item { padding-left: .45rem; padding-right: .45rem; }
+        & .tide-table:has(.tide-action-row) > * > tr > :is(th, td) { padding-left: .4rem; padding-right: .4rem; }
+        & .tide-col-kind { white-space: normal; }
+        & .tide-col-progress { min-width: 0; }
+    }
+}
+@media (min-width: 1500px) and (max-width: 1599.98px) {
+    html:not([data-rail="closed"]) main:has(> .tide-rail) {
+        & .tide-table:has(.tide-action-row) > thead > tr > th:nth-child(2), & .tide-col-kind { display: none; }
+        & .tide-action-kind { display: block; }
     }
 }
 /* ---- end Actions 3.4 ---- */

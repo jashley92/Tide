@@ -255,4 +255,55 @@ public class ActionsRailTests(TideApp app) : IClassFixture<TideApp>
         await using var board = await RenderAsync<ActionsBoard>(app, "/actions?view=open&layout=board", @as: who);
         (await board.Html()).Should().Contain("Open here by default", "the board isn't where Actions opens for them");
     }
+
+    [Fact]
+    public async Task TheLayoutChosenOnAnotherTab_LeavesTheDefaultsLayout()
+    {
+        var who = new SignIn($"dev:ar-keep-{Guid.NewGuid():N}", "Keep tester", "Analyst");
+        await using (var scope = SignedIn(app, who))
+        {
+            var prefs = scope.ServiceProvider.GetRequiredService<UserPreferenceService>();
+            await prefs.SetAsync(UserPreferences.ActionsView, UserPreferences.Mine);
+            await prefs.SetAsync(UserPreferences.ActionsLayout, UserPreferences.Board);
+        }
+        await using (var r = await RenderAsync<ActionsBoard>(app, "/actions?view=open&layout=board", @as: who))
+        {
+            try { await r.Click(c => (Task)typeof(ActionsBoard).GetMethod("SetLayout", Private)!.Invoke(c, ["list"])!); }
+            catch (NavigationException) { }
+        }
+        await using (var scope = SignedIn(app, who))
+            (await scope.ServiceProvider.GetRequiredService<UserPreferenceService>().GetAsync(UserPreferences.ActionsLayout))
+                .Should().Be(UserPreferences.Board, "List chosen on All open is for that visit: Actions still opens on Mine, on the board");
+    }
+
+    [Theory]
+    [InlineData("63", 63)]
+    [InlineData("A-63", 63)]
+    [InlineData("a-63", 63)]
+    [InlineData("A-", null)]
+    [InlineData("board", null)]
+    public void ACardInTheAddress_IsItsNumber_WithOrWithoutTheA(string text, int? number) => ActionsBoard.CardNumber(text).Should().Be(number);
+
+    [Fact]
+    public async Task TheColumnFact_ReadsNaturally_AndTheBoardsRail_PutsTheArticleBeforeTheQuery()
+    {
+        var owner = Owner();
+        var token = $"arword{Guid.NewGuid():N}"[..14];
+        var (number, id) = await Raise(await Team("AR words", owner), $"{token} sweep");
+        await As(async sp =>
+        {
+            await sp.GetRequiredService<ActionService>().SetStatusAsync(id, ActionStatus.InProgress, ActionOutcome.None, null);
+            return true;
+        });
+        await using var r = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=board&q={token}&card=A-{number}", @as: owner);
+        var rail = await RailOnce(r, "rail-hunt-query");
+        rail.Should().Contain("<dt>In progress</dt>").And.NotContain("In In progress");
+        rail.IndexOf("id=\"rail-article-h\"", StringComparison.Ordinal).Should().BeLessThan(rail.IndexOf("id=\"rail-hunt-h\"", StringComparison.Ordinal),
+            "the board's rail has the article first, as its design does");
+        r.Component.SelectedCard!.Number.Should().Be(number, "?card=A-12 names the card as ?card=12 does");
+
+        await using var list = await RenderAsync<ActionsBoard>(app, $"/actions?view=open&layout=list&q={token}", @as: owner);
+        var listRail = await RailOnce(list, "rail-hunt-query");
+        listRail.IndexOf("id=\"rail-hunt-h\"", StringComparison.Ordinal).Should().BeLessThan(listRail.IndexOf("id=\"rail-article-h\"", StringComparison.Ordinal));
+    }
 }
