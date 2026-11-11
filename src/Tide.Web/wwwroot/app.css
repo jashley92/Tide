@@ -2864,3 +2864,11 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-lookup-travels { padding-left: 0; padding-right: 0; text-align: left; }
 .tide-lookup-sweep-do { display: flex; flex-wrap: wrap; gap: var(--tide-space-2); margin-top: var(--tide-space-1); }
 /* ---- end Search 3.6 ---- */
+
+/* ---- Option E 3.9, autosave in the article editor's save bar: first in the bar, "All changes saved" or "Saved at 10:12"
+   in the colour of done; while something is unsaved, "Saving…" quietly, or why it held off (a marking, a sent brief, a
+   colleague's save) in the colour of a warning, wrapping within the bar rather than pushing it wider. ---- */
+.tide-sticky-save .tide-saved { color: var(--tide-ok); }
+.tide-autosave-note { font-size: .86rem; color: var(--tide-text-muted); min-width: 0; flex: 0 1 auto; }
+.tide-autosave-note.is-held { color: var(--tide-warn); }
+/* ---- end Option E 3.9 ---- */

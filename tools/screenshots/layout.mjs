@@ -1425,6 +1425,24 @@ const crowdedHead = async page => {
   });
 };
 
+/** Setup: wider letters, then `edit` made in the editor and the pause for autosave waited out (a little over its 2s). */
+const autosaveAfter = edit => async page => {
+  await wideFont(page);
+  await edit(page);
+  await page.waitForTimeout(3500);
+};
+
+/** Setup: wider letters, then a word added to the article's sectors (it autosaves), and the pause waited out. */
+const autosaved = autosaveAfter(async page => {
+  const box = page.locator('#sectors');
+  await box.click();
+  await box.press('End');
+  await box.pressSequentially(', energy');
+});
+
+/** Setup: wider letters, then the article's marking changed (autosave holds it for Save), and the pause waited out. */
+const autosaveHeld = autosaveAfter(page => page.getByRole('combobox', { name: "The article's TLP" }).selectOption('Green'));
+
 /** Setup: wider letters, then the Edit | Preview switch set to Preview. */
 const showPreviewPane = async page => {
   await wideFont(page);
@@ -1706,6 +1724,15 @@ const pages = [
   // Someone who can't edit reads the preview as the page: one column with the Review card above it, not a narrow strip.
   { name: 'editor-viewer', route: '/articles/{vpnArticle}?roles=Viewer', setup: wideFont, widths: [1920, 1440, 780],
     rules: [noSidewaysScroll, visible('.tide-editor-side .tide-reader'), sameColumn('.tide-review-card', '.tide-editor-side'), fits('.tide-editor-side')] },
+  // Autosave in the save bar, first in it: "Saved at" after a pause in typing, or why it held off; the bar one row on a
+  // wide window, and wrapping within the window on a phone, its words whole.
+  { name: 'editor-autosaved', route: '/articles/{vpnArticle}', setup: autosaved, widths: [1920, 390],
+    rules: [noSidewaysScroll, visible('.tide-sticky-save .tide-autosave'), says('.tide-sticky-save .tide-autosave', /^Saved at \d{1,2}:\d\d [AP]M$/),
+      fits('.tide-sticky-save'), [1000, oneRow('.tide-sticky-save')], onTop('.tide-sticky-save .tide-autosave')] },
+  { name: 'editor-autosave-held', route: '/articles/{vpnArticle}', setup: autosaveHeld, widths: [1920, 390],
+    rules: [noSidewaysScroll, visible('.tide-sticky-save .tide-autosave-note'), says('.tide-sticky-save .tide-autosave-note', /Save to keep it\.$/),
+      fits('.tide-sticky-save'), fits('.tide-sticky-save .tide-autosave-note'), wordsWhole('.tide-sticky-save .tide-autosave-note'),
+      [1000, oneLine('.tide-sticky-save .tide-autosave-note')], onTop('.tide-sticky-save .tide-autosave-note')] },
   { name: 'editor-phone-edit', route: '/articles/{vpnArticle}', setup: wideFont, widths: [780, 400],
     rules: [noSidewaysScroll, visible('.tide-ws-switch'), hidden('#tide-rail'), visible('section[aria-labelledby="sec-assessment"]'), fits('.tide-section-pills'),
       stacked('.tide-editor-pair')] },
