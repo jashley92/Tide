@@ -114,6 +114,7 @@ public static class DependencyInjection
         services.AddScoped<HandoffNotices>();
         services.AddScoped<PlaybookService>();
         services.AddScoped<SavedQueryService>();
+        services.AddScoped<LibraryUseService>();
         services.AddScoped<OutreachTemplateService>();
         services.AddScoped<OutreachService>();
         services.AddScoped<CardRuleService>();

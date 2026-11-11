@@ -114,7 +114,7 @@ public class PaletteEntryTests
             group.Title.Should().Be("Library", path);
             var keys = group.Keys;
             keys.Where(k => k.Letter).SelectMany(k => k.Keys).Should().Equal("J", "K");
-            keys.Where(k => !k.Letter).SelectMany(k => k.Keys).Should().Equal("↓", "↑");
+            keys.Where(k => !k.Letter).SelectMany(k => k.Keys).Should().Equal("↓", "↑", "Enter");
         }
         Shortcuts.For("library/board-rules").Should().Equal(Shortcuts.Everywhere, Shortcuts.Palette);
     }

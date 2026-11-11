@@ -1762,7 +1762,9 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// transaction (<see cref="SerializedChanges.SerializedAsync{T}"/>), so two people applying the same playbook at the
     /// same moment don't both find its steps missing and add each one twice: the second waits and finds them there.
     /// </remarks>
-    public async Task<int> ApplyPlaybookAsync(Guid actionId, Guid playbookId, CancellationToken ct = default)
+    /// <remarks>Given the <paramref name="previewed"/> steps the person saw (<see cref="PreviewPlaybookAsync"/>), it's refused
+    /// as stale when the action changed since (its edit version moved) or the steps it would add are no longer those.</remarks>
+    public async Task<int> ApplyPlaybookAsync(Guid actionId, Guid playbookId, PlaybookPreview? previewed = null, CancellationToken ct = default)
     {
         Playbook playbook;
         await using (var check = await dbs.CreateAsync(ct))
@@ -1774,6 +1776,8 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         return await dbs.SerializedAsync(async db =>
         {
             var a = await db.Actions.Include(x => x.Checklist).FirstOrDefaultAsync(x => x.Id == actionId, ct) ?? throw new KeyNotFoundException("That action no longer exists.");
+            if (previewed is not null && (previewed.EditVersion != a.EditVersion || !previewed.Steps.SequenceEqual(StepsToAdd(a, playbook).Select(s => s.Text))))
+                throw StalePreview();
             var added = AddSteps(a, playbook);
             db.ActionChecklistItems.AddRange(added);
             db.ActionEvents.Add(Event(user, a.Id, added.Count == 0
@@ -1781,6 +1785,20 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
                 : $"Applied the {playbook.Name} playbook: {added.Count} step{(added.Count == 1 ? "" : "s")} added to the checklist."));
             return added.Count;
         }, ct);
+    }
+
+    /// <summary>
+    /// The steps <see cref="ApplyPlaybookAsync"/> would add to the action's checklist from <paramref name="playbookId"/>,
+    /// without adding them: the Library shows them when a playbook is tried on an action. It writes nothing, and refuses
+    /// whom and what Apply refuses (someone who doesn't work the action, a retired playbook, one for another kind).
+    /// </summary>
+    public async Task<PlaybookPreview> PreviewPlaybookAsync(Guid actionId, Guid playbookId, CancellationToken ct = default)
+    {
+        await using var db = await dbs.CreateAsync(ct);
+        var a = await db.Actions.AsNoTracking().Include(x => x.Checklist).FirstOrDefaultAsync(x => x.Id == actionId, ct)
+                ?? throw new KeyNotFoundException("That action no longer exists.");
+        await RequireWork(db, user, a, ct);
+        return new PlaybookPreview([.. StepsToAdd(a, await PlaybookFor(db, playbookId, a.Kind, ct)).Select(s => s.Text)], a.EditVersion);
     }
 
     private static async Task<Playbook> PlaybookFor(IAppDbContext db, Guid playbookId, ActionKind kind, CancellationToken ct)
@@ -1797,10 +1815,8 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     // checklist, the history saying they were all there already).
     private static List<ActionChecklistItem> AddSteps(ActionItem a, Playbook playbook)
     {
-        var have = new HashSet<string>(a.Checklist.Select(i => i.Text.Trim()), StringComparer.OrdinalIgnoreCase);
         var order = NextOrder(a);
-        var added = playbook.Steps.OrderBy(s => s.Order).Where(s => have.Add(s.Text.Trim()))
-            .Select(step => new ActionChecklistItem { ActionId = a.Id, Text = step.Text, SortOrder = order++ }).ToList();
+        var added = StepsToAdd(a, playbook).Select(step => new ActionChecklistItem { ActionId = a.Id, Text = step.Text, SortOrder = order++ }).ToList();
         var room = Math.Max(0, ActionChecklistItem.MaxPerAction - a.Checklist.Count);
         if (added.Count > room)
             throw new ArgumentException($"A checklist can have at most {ActionChecklistItem.MaxPerAction} items, and this one has room for "
@@ -1809,6 +1825,13 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         a.PlaybookId ??= playbook.Id;
         a.PlaybookName ??= playbook.Name;
         return added;
+    }
+
+    // The playbook's steps the action's checklist doesn't have yet (by text, ignoring case), in the playbook's order.
+    private static List<PlaybookStep> StepsToAdd(ActionItem a, Playbook playbook)
+    {
+        var have = new HashSet<string>(a.Checklist.Select(i => i.Text.Trim()), StringComparer.OrdinalIgnoreCase);
+        return [.. playbook.Steps.OrderBy(s => s.Order).Where(s => have.Add(s.Text.Trim()))];
     }
 
     private static int NextOrder(ActionItem a) => a.Checklist.Count == 0 ? 0 : a.Checklist.Max(i => i.SortOrder) + 1;
@@ -1923,19 +1946,14 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// <see cref="HuntQueryBuilder.FromSaved"/>). It's recorded like a generated one, and names the saved query it came
     /// from. A retired saved query isn't added.
     /// </summary>
-    public async Task<HuntQuery> AddSavedHuntAsync(Guid actionId, Guid savedQueryId, CancellationToken ct = default)
+    /// <remarks>Given the <paramref name="previewed"/> query the person saw (<see cref="PreviewSavedHuntAsync"/>), it's refused
+    /// as stale when the action changed since (its edit version moved) or the query would now be filled differently (an
+    /// indicator added), so what's added is what they saw.</remarks>
+    public async Task<HuntQuery> AddSavedHuntAsync(Guid actionId, Guid savedQueryId, SavedHuntPreview? previewed = null, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
-        var a = await HuntActionAsync(db, actionId, tracked: false, ct);
-        await RequireWork(db, user, a, ct);
-        var saved = await db.SavedQueries.AsNoTracking().FirstOrDefaultAsync(q => q.Id == savedQueryId, ct)
-                    ?? throw new KeyNotFoundException("That saved query no longer exists.");
-        if (saved.IsRetired) throw new InvalidOperationException($"{saved.Name} is retired. Restore it in the Library, on Saved queries, to use it.");
-        var d = QueryDialects.Find(saved.Dialect) ?? throw new ArgumentException("That saved query's language isn't one TIDE knows.");
-        var inputs = await HuntInputsAsync(db, a, fromStory: false, ct);
-        // TIDE wrote all of it (the saved query is held to its own limit), so however long the indicators make it, it's added.
-        var filled = HuntQueryBuilder.FromSaved(d, saved.Name, saved.Text, inputs.Days, inputs.Indicators);
-        var text = HuntText(Filled(filled), filled.Length);
+        var (a, saved, d, text) = await SavedHuntAsync(db, actionId, savedQueryId, ct);
+        if (previewed is not null && (previewed.EditVersion != a.EditVersion || previewed.Text != text)) throw StalePreview();
         var hunt = new HuntQuery
         {
             ActionId = a.Id, Dialect = d.Key, GeneratedText = text, Text = text, CreatedAtUtc = DateTimeOffset.UtcNow, CreatedByName = user.DisplayName,
@@ -1945,6 +1963,37 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         db.ActionEvents.Add(Event(user, a.Id, $"Added the saved {d.Name} hunt query \"{saved.Name}\"."));
         await db.SaveChangesAsync(ct);
         return hunt;
+    }
+
+    /// <summary>
+    /// The text <see cref="AddSavedHuntAsync"/> would add to the action from <paramref name="savedQueryId"/>, without adding
+    /// it: the Library shows it when a saved query is tried on an action. It writes nothing (no hunt query, no history
+    /// line), and is for whoever may add one: anyone else is refused as Add refuses them, and so is a retired query.
+    /// </summary>
+    public async Task<SavedHuntPreview> PreviewSavedHuntAsync(Guid actionId, Guid savedQueryId, CancellationToken ct = default)
+    {
+        await using var db = await dbs.CreateAsync(ct);
+        var (a, _, _, text) = await SavedHuntAsync(db, actionId, savedQueryId, ct);
+        return new SavedHuntPreview(text, a.EditVersion);
+    }
+
+    // What Add says when the action changed after the person saw what it would add: the edit form's own words.
+    private static StaleEditException StalePreview() => new("Someone else changed this action since you opened it. Reload to see their changes.");
+
+    // The action, for someone who may work it, and the saved query filled in for it: what Add saves and its preview shows.
+    private async Task<(ActionItem Action, SavedQuery Saved, IQueryDialect Dialect, string Text)> SavedHuntAsync(IAppDbContext db, Guid actionId,
+        Guid savedQueryId, CancellationToken ct)
+    {
+        var a = await HuntActionAsync(db, actionId, tracked: false, ct);
+        await RequireWork(db, user, a, ct);
+        var saved = await db.SavedQueries.AsNoTracking().FirstOrDefaultAsync(q => q.Id == savedQueryId, ct)
+                    ?? throw new KeyNotFoundException("That saved query no longer exists.");
+        if (saved.IsRetired) throw new InvalidOperationException($"{saved.Name} is retired. Restore it in the Library, on Saved queries, to use it.");
+        var d = QueryDialects.Find(saved.Dialect) ?? throw new ArgumentException("That saved query's language isn't one TIDE knows.");
+        var inputs = await HuntInputsAsync(db, a, fromStory: false, ct);
+        // TIDE wrote all of it (the saved query is held to its own limit), so however long the indicators make it, it's added.
+        var filled = HuntQueryBuilder.FromSaved(d, saved.Name, saved.Text, inputs.Days, inputs.Indicators);
+        return (a, saved, d, HuntText(Filled(filled), filled.Length));
     }
 
     /// <summary>

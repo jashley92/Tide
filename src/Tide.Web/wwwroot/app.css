@@ -2752,6 +2752,52 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-rail-list-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); color: var(--tide-text-muted); font-size: var(--tide-text-xs); }
 /* ---- end Action page 3.5 ---- */
 
+/* ---- Library 3.8: the selected entry's context in the rail (its facts, what an action fills in, the entry tried on an
+   open action, and where it was used; flat sections as Today 3.1's); the entry's name as its card's heading and the
+   footnote at its foot; a long grouped list folded after the selected entry's group ---- */
+.tide-library-entry-name { margin: 0; font-size: 1.0625rem; font-weight: var(--tide-weight-bold); overflow-wrap: anywhere; }
+@media (min-width: 1000.02px) {
+    .tide-library-detail .tide-library-entry { display: flex; flex-direction: column; }
+}
+/* At the entry's foot, below its text (a query or an email's body keeps its own margin under it). */
+.tide-library-entry-foot { margin: auto 0 0; padding-top: var(--tide-space-2); border-top: 1px solid var(--tide-border); }.tide-library-detail:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; }
+/* A row is two lines, as the design draws it: its name with how often it was used at the right of the same line, then
+   what it's for under both. */
+.tide-library-row { grid-template-columns: minmax(0, 1fr) minmax(0, max-content); column-gap: var(--tide-space-3); align-items: baseline; }
+.tide-library-row > .tide-library-row-name { grid-column: 1; grid-row: 1; }
+.tide-library-row > .tide-library-row-meta { grid-column: 2; grid-row: 1; text-align: right; }
+.tide-library-row > .tide-library-row-about { grid-column: 1 / -1; grid-row: 2; }
+/* The entry header's chip (its TLP or kind) stands clear of the words after it. */
+.tide-library-entry-title > .small > :first-child { margin-right: var(--tide-space-2); }
+.tide-library-fold { border-top: 1px solid var(--tide-border); }
+.tide-library-fold > .btn { width: 100%; padding: .5rem .7rem; text-align: left; font-size: var(--tide-text-sm); color: var(--tide-text-muted); }
+.tide-library-fold > .btn:hover { color: var(--tide-text); }
+/* The Library's header keeps the tab's New button at its right, its line about the tab wrapping first. The entry's
+   tools stay at its top right, its name and line wrapping beside them, so a More menu opening down and to the left from
+   there stays within the entry's column. */
+.tide-page-head:has(+ .tide-library-tabrow) { flex-wrap: nowrap; }
+.tide-page-head:has(+ .tide-library-tabrow) > :first-child { flex: 1 1 0; min-width: 0; }
+.tide-page-head:has(+ .tide-library-tabrow) > :last-child:not(:first-child) { flex: none; }
+.tide-library-entry-head { flex-wrap: nowrap; }
+.tide-library-entry-title { flex: 1 1 0; }
+.tide-library-entry-tools { flex: 0 1 auto; max-width: 65%; }
+/* The search keeps to the tab row while the row has room for its least width, beside the docked rail too. */
+.tide-library-find { flex: 1 1 12rem; max-width: 18rem; }
+/* Beside the docked rail the page has about 870px: the list keeps a little less, and the entry takes the rest. */
+@media (min-width: 1500px) {
+    .tide-library { grid-template-columns: minmax(15rem, 22rem) minmax(0, 1fr); }
+}
+.tide-lib-fills { display: grid; gap: var(--tide-space-2); margin: 0; }
+.tide-lib-fills > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--tide-space-1) var(--tide-space-2); }
+.tide-lib-fills dt { font-weight: inherit; }
+.tide-lib-fills dd { margin: 0; flex: 1 1 8rem; min-width: 0; }
+.tide-lib-fills .tide-chip { margin: 0; }
+.tide-lib-try { display: grid; gap: var(--tide-space-2); }
+.tide-lib-try > h2 { margin-bottom: 0; }
+.tide-lib-try .tide-lib-try-text { min-height: 5.5rem; max-height: 18rem; margin: 0; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tide-lib-try-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); }
+/* ---- end Library 3.8 ---- */
+
 /* ---- Triage 3.2: what TIDE knows about the selected item, in the context rail (its flat sections are Today 3.1's) ----
    Its CVEs' facts three across, the covering article (Action page 3.5's .tide-rail-article) with its open actions, the
    same event's other reports with Attach all and Not the same, the story, and what it names of Our stack. */
