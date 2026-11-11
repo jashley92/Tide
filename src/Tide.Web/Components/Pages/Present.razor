@@ -1,4 +1,5 @@
 @page "/present/{Day}"
+@using Tide.Application.Indicators
 @layout BlankLayout
 @* Anyone who may join meetings can open it to join a live meeting; starting, running and ending one are the analysts'.
    A Visitor (not on the team edition) sees it only from a seat in the day's live meeting: the seat is taken before
@@ -497,18 +498,49 @@ else
                                         }
                                     </section>
                                 }
+                                @* The indicators the edition carries (the team's only, ADR 0005), defanged as the email shows them, in the
+                                   card's order, so the room reads them without a click; the first ten, then how many more. A chip opens
+                                   the larger card over the slide (by type, with the notes), as "+N more" does; where no card opens
+                                   (a held follower, the company-wide edition), they are plain chips. *@
                                 @if (ea.Indicators.Count > 0)
                                 {
-                                    var iocs = Ui.Plural(ea.Indicators.Count, "indicator");
-                                    @if (CanOpenCard)
-                                    {
-                                        <button type="button" class="btn btn-sm btn-outline-secondary mt-2 tide-slide-iocs" aria-expanded="@Ui.Aria(ShownIndicators?.Article.Id == a.Id)"
-                                                title="Show them over the slide" @onclick="() => ShowIndicators(a.Id)"><span class="bi bi-fingerprint" aria-hidden="true"></span> @iocs</button>
-                                    }
-                                    else
-                                    {
-                                        <div class="tide-present-help mt-2">@iocs on the article.</div>
-                                    }
+                                    var openIocs = ShownIndicators?.Article.Id == a.Id;
+                                    var moreIocs = ea.Indicators.Count - SlideIndicators;
+                                    var iocsId = $"slide-iocs-{a.Id:N}";
+                                    <section class="tide-slide-iocsec" aria-labelledby="@iocsId">
+                                        <div class="tide-slide-section" id="@iocsId">Indicators (@ea.Indicators.Count)</div>
+                                        <ul class="tide-slide-iocs">
+                                            @foreach (var ind in ea.Indicators.Take(SlideIndicators))
+                                            {
+                                                var type = IndicatorLabels.For(ind.Type);
+                                                var title = string.IsNullOrWhiteSpace(ind.Note) ? type : $"{type} · {ind.Note}";
+                                                var shown = IndicatorLabels.Shown(ind.Type, ind.Value);
+                                                <li @key="ind.Id">
+                                                    @if (CanOpenCard)
+                                                    {
+                                                        <button type="button" class="tide-slide-ioc" title="@title" aria-expanded="@Ui.Aria(openIocs)" @onclick="() => ShowIndicators(a.Id)"><span class="visually-hidden">@type: </span><span class="tide-data">@shown</span></button>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="tide-slide-ioc" title="@title"><span class="visually-hidden">@type: </span><span class="tide-data">@shown</span></span>
+                                                    }
+                                                </li>
+                                            }
+                                            @if (moreIocs > 0)
+                                            {
+                                                <li>
+                                                    @if (CanOpenCard)
+                                                    {
+                                                        <button type="button" class="btn btn-link btn-sm tide-slide-cve-more tide-slide-ioc-more" aria-expanded="@Ui.Aria(openIocs)" title="Show them all over the slide" @onclick="() => ShowIndicators(a.Id)">+@moreIocs more</button>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="tide-present-help tide-slide-ioc-more">+@moreIocs more on the article</span>
+                                                    }
+                                                </li>
+                                            }
+                                        </ul>
+                                    </section>
                                 }
                                 @if (ea.WithheldParts > 0)
                                 {
@@ -2243,6 +2275,9 @@ else
 
     /// <summary>Whether this page can open a card: on the team edition, and not held by the presenter's lock.</summary>
     private bool CanOpenCard => TeamEdition && !Held && _readsTeam;
+
+    /// <summary>How many of an article's indicators its slide shows; the card has them all.</summary>
+    internal const int SlideIndicators = 10;
 
     // The article whose indicators are open over its slide, as this page's edition carries them (read again with it).
     private EditionArticle? ShownIndicators =>

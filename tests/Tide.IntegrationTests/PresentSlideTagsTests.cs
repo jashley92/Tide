@@ -82,10 +82,10 @@ public class PresentSlideTagsTests(TideApp app) : IClassFixture<TideApp>
         (await r.Html()).Should().Contain($"<h2>{title}</h2>");
     }
 
-    /// <summary>The slide's "Tags and ATT&amp;CK" section, or null when it has none.</summary>
-    internal static string? Section(string html)
+    /// <summary>The slide's "Tags and ATT&amp;CK" section (or the one of class <paramref name="cls"/>), or null when it has none.</summary>
+    internal static string? Section(string html, string cls = "tide-slide-tagsec")
     {
-        var at = html.IndexOf("<section class=\"tide-slide-tagsec\"", StringComparison.Ordinal);
+        var at = html.IndexOf($"<section class=\"{cls}\"", StringComparison.Ordinal);
         return at < 0 ? null : html[at..(html.IndexOf("</section>", at, StringComparison.Ordinal) + 10)];
     }
 
