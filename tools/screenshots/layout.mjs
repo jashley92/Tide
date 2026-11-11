@@ -1147,36 +1147,98 @@ const widthNear = (selector, px, slack) => holds(`about ${px}px wide: ${selector
 }, [selector, px, slack]);
 
 /**
- * Tab from the selected row goes through the row's own controls and then into Triage's decision bar, its main button
- * first and the rest in the order they're shown (not past every other row's links and the reading pane on the way);
- * Shift+Tab from the bar's first button goes back to the row.
+ * Tab from the selected row goes through the row's own controls, then the reading pane's head tools (Read it here or
+ * Read again, Open the site), then Triage's decision bar, its main button first and the rest in the order they're
+ * shown (not past every other row's links on the way). From the bar's last control Tab goes on to the next row, as it
+ * did when the buttons were in the row, and Shift+Tab from there comes back to the bar; Shift+Tab from the bar's
+ * first goes back to the head tools.
  */
 const tabReachesBar = {
-  name: 'Tab from the selected row reaches the decision bar, main button first',
+  name: 'Tab from the selected row: head tools, then the decision bar, then the next row',
   check: async page => {
     const where = () => page.evaluate(() => {
       const a = document.activeElement, r = a.getBoundingClientRect();
-      return { inRow: !!a.closest('.tide-triage-row.selected'), inBar: !!a.closest('.tide-triage-decide'), primary: a.classList.contains('btn-primary'),
+      const row = a.closest('.tide-triage-row');
+      return { inRow: !!a.closest('.tide-triage-row.selected'), inTools: !!a.closest('.tide-reading-tools'), inBar: !!a.closest('.tide-triage-decide'),
+        nextRow: !!row && row.previousElementSibling?.classList.contains('selected'), primary: a.classList.contains('btn-primary'),
         x: Math.round(r.left), y: Math.round(r.top), text: (a.innerText || a.getAttribute('aria-label') || a.tagName).replace(/\s+/g, ' ').trim().slice(0, 40) };
     });
     await page.locator('.tide-triage-row.selected').focus();
     const seen = [];
-    for (let i = 0; i < 30 && seen.length < 4; i++) {
+    for (let i = 0; i < 40; i++) {
       await page.keyboard.press('Tab');
       const at = await where();
       if (!at.inRow) seen.push(at);
+      if (!at.inRow && !at.inTools && !at.inBar) break;
     }
-    if (!seen.length || !seen[0].inBar) return [`Tab from the selected row goes to "${seen[0]?.text}", not the decision bar`];
-    if (!seen[0].primary) return [`the first of the bar Tab reaches is "${seen[0].text}", not its main button`];
-    const bar = seen.filter(s => s.inBar);
+    const tools = seen.filter(s => s.inTools), bar = seen.filter(s => s.inBar), last = seen[seen.length - 1];
+    const order = seen.map(s => s.inTools ? 'tools' : s.inBar ? 'bar' : 'other');
+    if (!tools.length || order.indexOf('bar') < order.lastIndexOf('tools') || order[0] !== 'tools')
+      return [`Tab from the selected row goes: ${seen.map(s => `"${s.text}"`).join(', ')}; not the head tools, then the bar`];
+    if (!bar.length || !bar[0].primary) return [`the first of the bar Tab reaches is "${bar[0]?.text}", not its main button`];
     const backwards = bar.slice(1).filter((s, i) => s.y === bar[i].y && s.x <= bar[i].x);
     if (backwards.length) return [`Tab goes back along the bar's row: "${bar.map(s => s.text).join('", "')}"`];
+    if (!last?.nextRow) return [`after the bar's last control Tab goes to "${last?.text}", not the next row`];
+    await page.keyboard.press('Shift+Tab');
+    const fromNext = await where();
+    if (!fromNext.inBar) return [`Shift+Tab from the next row goes to "${fromNext.text}", not back to the bar`];
     await page.locator('.tide-triage-decide .btn-primary').first().focus();
     await page.keyboard.press('Shift+Tab');
     const back = await where();
-    return back.inRow ? [] : [`Shift+Tab from the bar's main button goes to "${back.text}", not back to the selected row`];
+    return back.inTools ? [] : [`Shift+Tab from the bar's main button goes to "${back.text}", not back to the pane's head tools`];
   },
 };
+
+/** In the full-height page the window doesn't scroll: the document is no taller than the window (give or take 4px). */
+const windowDoesntScroll = holds('the window does not scroll', () => {
+  const over = document.scrollingElement.scrollHeight - window.innerHeight;
+  return over <= 4 ? [] : [`the document is ${document.scrollingElement.scrollHeight}px tall, ${over}px more than the window`];
+});
+
+/**
+ * Setup: a colleague's presence on a row far down the list, as PresenceNote draws it (its words for screen readers in a
+ * visually hidden span, positioned absolutely), then End pressed and the wheel turned over the pane's head and over the
+ * page's header.
+ */
+async function endAndWheel(page) {
+  await page.$eval('.tide-triage-row:last-of-type .tide-triage-head', head => {
+    const note = document.createElement('span');
+    note.className = 'visually-hidden';
+    note.textContent = 'Robin is looking at this item';
+    head.append(note);
+  });
+  await page.keyboard.press('End');
+  await page.waitForTimeout(200);
+  for (const s of ['.tide-reading-head', '.tide-page-head']) {
+    const box = await page.locator(s).first().boundingBox();
+    if (box) { await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.wheel(0, 1500); await page.waitForTimeout(300); }
+  }
+}
+
+/**
+ * A clicked decision behaves as its key: after a click on the bar's `label` button (Shortlist, Dismiss), focus is on the
+ * row selected next, not left on the bar's button (which now belongs to the next item) or dropped on the page.
+ */
+const clickFocusesNextRow = label => ({
+  name: `a click on ${label} puts focus on the next selected row`,
+  check: async page => {
+    const before = await page.locator('.tide-triage-row.selected').getAttribute('aria-label');
+    await page.locator('.tide-reading .tide-triage-acts button', { hasText: new RegExp(`^${label}`) }).first().click();
+    await page.waitForFunction(was => document.querySelector('.tide-triage-row.selected')?.getAttribute('aria-label') !== was, before, { timeout: 10000 });
+    await page.waitForTimeout(800);
+    const focus = await page.evaluate(() => {
+      const a = document.activeElement;
+      return a.classList.contains('selected') && a.classList.contains('tide-triage-row') ? null : `${a.tagName}${a.className ? '.' + a.className.split(' ').join('.') : ''} "${(a.innerText || '').trim().slice(0, 30)}"`;
+    });
+    return focus ? [`after the click on ${label} focus is on ${focus}, not the next selected row`] : [];
+  },
+});
+
+/** Setup: the first single report (not a group) selected, by a click on its line. */
+async function selectReport(page) {
+  await page.locator('.tide-triage-row:not(.tide-triage-group):not(.tide-triage-member) .tide-triage-meta > span').first().click();
+  await page.locator('.tide-reading .tide-triage-acts').waitFor();
+}
 
 /**
  * Setup: a long kept text in the reading pane, as an article read in full leaves (the demo keeps only short ones): the
@@ -1189,6 +1251,10 @@ async function longKeptText(page) {
     const paragraph = 'The vendor has released fixed builds for an authentication bypass in the web interface of its managed file '
       + 'transfer server. An unauthenticated attacker who can reach the interface can create an administrator session. ';
     text.textContent = Array.from({ length: 40 }, () => paragraph).join('\n\n');
+  });
+  // And a long title, which wraps beside the head's tools.
+  await page.$eval('.tide-reading .tide-reading-title', title => {
+    title.textContent = 'Vendor patches an authentication bypass in its managed file transfer server, exploited against manufacturers in three countries';
   });
   await page.waitForTimeout(200);
 }
@@ -1369,7 +1435,12 @@ const pages = [
   { name: 'triage-decision-long', route: '/triage', setup: longKeptText, widths: [[1920, 1080], [1440, 900]],
     rules: [noSidewaysScroll, reachesBottom('.tide-reading', 24), belowTopBar('.tide-reading'), scrollsInside('.tide-reading-text'),
       onFirstScreen('.tide-reading .tide-triage-decide'), oneRow('.tide-triage-decide .tide-triage-acts'), fits('.tide-reading'),
-      sameBox('.tide-reading-head', '.tide-reading-title', '.tide-reading-tools .btn')] },
+      sameBox('.tide-reading-head', '.tide-reading-title', '.tide-reading-tools .btn'), oneRow('.tide-reading-tools'), fits('.tide-reading-head'),
+      windowDoesntScroll] },
+  // The full-height page doesn't scroll the window into blank space: not by End, nor the wheel over the pane or the
+  // header; the bar stays on the first screen. At 1600x1000 too.
+  { name: 'triage-decision-still', route: '/triage', setup: endAndWheel, widths: [[1920, 1080], [1600, 1000], [1440, 900]],
+    rules: [windowDoesntScroll, onFirstScreen('.tide-reading .tide-triage-decide'), belowTopBar('.tide-reading'), onFirstScreen('.top-row')] },
   // A covered row's Attach and Promote, and a covered group's Attach all and Promote as one, share the bar's one row.
   { name: 'triage-covered', route: '/triage', setup: selectCovered(), widths: [1440, 1920],
     rules: [visible('.tide-reading'), sameLine('.tide-triage-decide .tide-triage-attach', '.tide-triage-decide .tide-triage-promote'),
@@ -1453,6 +1524,10 @@ const pages = [
     rules: [focusIn('section[aria-labelledby="recent-h"] li')] },
   // Closing a card from its Move menu, or by dragging it while it had focus, keeps the person's place in the lane.
   // Last, as each closes one of the demo's actions.
+  // A clicked decision in Triage's bar moves focus on to the next selected row, as its key does. Late, as each sets
+  // one of the demo's new items aside.
+  { name: 'triage-click-shortlist', route: '/triage', setup: selectReport, widths: [1440], rules: [clickFocusesNextRow('Shortlist')] },
+  { name: 'triage-click-dismiss', route: '/triage', setup: selectReport, widths: [1440], rules: [clickFocusesNextRow('Dismiss')] },
   { name: 'actions-board-close-menu', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [closeKeepsPlace('menu')] },
   { name: 'actions-board-close-drag', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [closeKeepsPlace('drag')] },
 ];

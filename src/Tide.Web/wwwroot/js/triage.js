@@ -57,13 +57,14 @@ window.tideTriage = (function () {
     }
 
     // While the reading pane is shown, the selected item's buttons are in the decision bar at its foot, after every other
-    // row's links and the pane in the page's order. Tab from the selected row's last control goes straight to the bar's
-    // first (its main button), and Shift+Tab from there comes back: the decision is one Tab from the item, as it was when
-    // the buttons were in the row.
+    // row's links and the pane in the page's order. Tab goes as it did when the buttons were in the row: through the
+    // selected row, then the pane's head tools (Read it here or again, Open the site), then the bar, main button first,
+    // and from the bar's last control on to the next row; Shift+Tab goes back the same way. The pane's close button and
+    // its text stay where the page's order puts them (after the list), and Esc closes the pane.
     const tabbable = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex="0"]';
 
     function stops(root) {
-        return Array.prototype.filter.call(root.querySelectorAll(tabbable), function (el) { return el.getClientRects().length > 0; });
+        return root ? Array.prototype.filter.call(root.querySelectorAll(tabbable), function (el) { return el.getClientRects().length > 0; }) : [];
     }
 
     function hop(e) {
@@ -71,10 +72,15 @@ window.tideTriage = (function () {
         const bar = document.querySelector('.tide-reading .tide-triage-decide');
         const row = document.querySelector('.tide-triage-row.selected');
         if (!bar || !row || !bar.getClientRects().length) return;
-        const inRow = [row].concat(stops(row)), inBar = stops(bar);
-        if (!inBar.length) return;
-        const to = !e.shiftKey && e.target === inRow[inRow.length - 1] ? inBar[0]
-            : e.shiftKey && e.target === inBar[0] ? inRow[inRow.length - 1] : null;
+        const chain = [row].concat(stops(row), stops(document.querySelector('.tide-reading .tide-reading-tools')), stops(bar));
+        // The list's first control past the selected row: the next row's, as the page's order had it.
+        const after = stops(row.closest('.tide-card')).filter(function (el) {
+            return !row.contains(el) && (row.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
+        })[0];
+        const at = chain.indexOf(e.target);
+        let to = null;
+        if (at >= 0) to = e.shiftKey ? (at > 0 ? chain[at - 1] : null) : (at < chain.length - 1 ? chain[at + 1] : after);
+        else if (e.shiftKey && e.target === after) to = chain[chain.length - 1];
         if (!to) return;
         e.preventDefault();
         to.focus();

@@ -2712,17 +2712,20 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
        scrolls inside its card, and the pane fills the height beside it, its text scrolling inside it and the bar at its
        foot on the first screen however long the text. A short window scrolls the page instead. */
     .content:has(> .tide-inbox-view > .tide-triage-layout.reading) { display: flex; flex-direction: column; height: calc(100vh - var(--tide-height-top));
-        min-height: 36rem; padding-bottom: var(--tide-space-4); }
+        min-height: 36rem; padding-bottom: var(--tide-space-4); overflow: clip; }
     .content:has(> .tide-inbox-view > .tide-triage-layout.reading) > *, .tide-inbox-view:has(> .tide-triage-layout.reading) > * { flex-shrink: 0; }
     .tide-inbox-view:has(> .tide-triage-layout.reading) > .tide-triage-layout.reading { flex: 1 1 0; min-height: 20rem; grid-template-rows: minmax(0, 1fr);
         align-items: stretch; }
     .tide-triage-layout.reading > .tide-card { margin-bottom: 0; }
-    .tide-triage-layout.reading > .tide-card:first-child { overflow-y: auto; overscroll-behavior: contain; }
+    /* The list scrolls inside its card, which is also what anything positioned in a row (a presence note's hidden words)
+       is placed against: nothing in the list reaches past it to make the window scroll. */
+    .tide-triage-layout.reading > .tide-card:first-child { position: relative; overflow-y: auto; overscroll-behavior: contain; }
     .tide-triage-layout.reading > .tide-reading { position: static; max-height: none; min-height: 0; }
     .tide-triage-layout.reading > .tide-reading > .tide-reading-text { max-height: none; }
     .tide-triage-layout.reading > .tide-reading > .tide-triage-decide { margin-top: auto; }
 }
-/* Read it here, Read again and Open the site in the pane's head, beside its title. */
-.tide-reading-head > .tide-reading-title { flex: 1 1 auto; min-width: 0; }
-.tide-reading-tools { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: var(--tide-space-2); flex: 0 1 auto; }
+/* Read it here, Read again and Open the site in the pane's head, on one row beside its title, which wraps. */
+.tide-reading-head > .tide-reading-title { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.tide-reading-tools { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: var(--tide-space-2); flex: none; }
+.tide-reading-tools > .btn { white-space: nowrap; }
 /* ---- end Triage's decision bar ---- */

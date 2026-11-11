@@ -946,6 +946,7 @@ else
             Toasts.Show(done == 0 ? "Nothing changed: a colleague got to those reports first."
                 : $"{(dismiss ? "Dismissed" : "Shortlisted")} {done} report{(done == 1 ? "" : "s")}.");
             await Load();
+            _focus = "tideTriage.focusRow";
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _busy = false; }
@@ -1639,6 +1640,9 @@ else
             }
             Announce();
             await Load();
+            // Clicked in the bar or the row, as by its key: focus goes on to the row selected next, not the button (which
+            // now belongs to the next item) or the page.
+            _focus = "tideTriage.focusRow";
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _busy = false; }
