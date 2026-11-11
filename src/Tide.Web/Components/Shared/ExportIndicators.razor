@@ -1,5 +1,9 @@
 @* Export the indicators of an article, a brief, a story or a lookup as STIX 2.1 or CSV, up to a TLP: articles marked
-   above it are left out whole. Behind its button, or (Inline) drawn where it's placed, in a context rail's section. *@
+   above it are left out whole. Behind its button, or (Inline) drawn where it's placed, in a context rail's section.
+   Behind its button, the panel closes when done with (Popout): Esc anywhere on the page, with focus back on the button;
+   a click outside it, or Tab out of it. *@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
 
 @if (Inline)
 {
@@ -7,8 +11,8 @@
 }
 else
 {
-    <div class="tide-export">
-        <button type="button" class="btn btn-outline-secondary" aria-expanded="@Ui.Aria(_open)" @onclick="() => _open = !_open">
+    <div class="tide-export" @ref="_holder">
+        <button type="button" class="btn btn-outline-secondary" aria-expanded="@Ui.Aria(_open)" @ref="_button" @onclick="() => _open = !_open">
             <span class="bi bi-box-arrow-up" aria-hidden="true"></span> Export indicators
         </button>
         @if (_open)
@@ -26,6 +30,9 @@ else
     [Parameter] public bool Inline { get; set; }
 
     private bool _open;
+    private ElementReference _holder, _button;
+    private Popout? _popout;
+
     // The least sensitive ceiling, so a wider one is always chosen, never the one a click gets.
     private TlpLevel _ceiling = TlpLevel.Clear;
 
@@ -41,4 +48,17 @@ else
 
     private string Url(string format) =>
         $"exports/{Scope.ToString().ToLowerInvariant()}/{Uri.EscapeDataString(Key)}?format={format}&tlp={Tlp.Key(_ceiling)}";
+
+    private Task Dismissed()
+    {
+        _open = false;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    // Inline, there's no button and nothing to close: no popout is followed.
+    protected override Task OnAfterRenderAsync(bool firstRender) =>
+        Inline ? Task.CompletedTask : (_popout ??= new Popout(JS, Dismissed)).FollowAsync(_open, _holder, _button);
+
+    public ValueTask DisposeAsync() => _popout?.DisposeAsync() ?? ValueTask.CompletedTask;
 }
