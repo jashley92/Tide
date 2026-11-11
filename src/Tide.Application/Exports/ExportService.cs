@@ -1,3 +1,4 @@
+using System.Buffers.Text;
 using System.Globalization;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
@@ -10,12 +11,14 @@ using Tide.Domain.Observables;
 
 namespace Tide.Application.Exports;
 
-/// <summary>What can be exported: one article, a day's brief, or a story's articles.</summary>
+/// <summary>What can be exported: one article, a day's brief, a story's articles, or the articles an indicator or CVE
+/// lookup lists as its own (keyed by <see cref="ExportService.LookupKey"/>).</summary>
 public enum ExportScope
 {
     Article = 0,
     Brief = 1,
     Story = 2,
+    Lookup = 3,
 }
 
 /// <summary>The articles going into an export, with their indicators, CVEs and techniques, and the briefs each was on.</summary>
@@ -31,8 +34,10 @@ public sealed record ExportSet(string FileStem, IReadOnlyList<Article> Articles,
 }
 
 /// <summary>
-/// Gathers an article, a brief or a story for export as indicators (CSV, STIX 2.1). An export carries the TLP of the
-/// articles in it, so it takes a ceiling: articles marked above it are left out whole, as the editions leave them out.
+/// Gathers an article, a brief, a story or a lookup for export as indicators (CSV, STIX 2.1). An export carries the TLP
+/// of the articles in it, so it takes a ceiling: articles marked above it are left out whole, as the editions leave them
+/// out. It's open to whoever reads the team edition, which shows every article at every TLP: an export holds nothing
+/// its reader couldn't open, and the ceiling only ever narrows it.
 /// </summary>
 public sealed class ExportService(IAppDbContextFactory dbs, ICurrentUser user)
 {
@@ -64,12 +69,31 @@ public sealed class ExportService(IAppDbContextFactory dbs, ICurrentUser user)
                 rows = await articles.Where(a => a.StoryId == id).OrderBy(a => a.CreatedAtUtc).ToListAsync(ct);
                 stem = "story-" + Slug(name);
                 break;
+            case ExportScope.Lookup when Term(key) is { } term && Search.Lookups.ArticlesOf(db, term) is { } on:
+                // The articles Search lists as the lookup's own, every one (not just the page of them it shows), newest
+                // first as it lists them; with each comes everything else on it: what the value travels with.
+                rows = await articles.Where(a => on.Contains(a.Id)).OrderByDescending(a => a.CreatedAtUtc).ThenBy(a => a.Id).ToListAsync(ct);
+                stem = "lookup-" + Slug(term);
+                break;
             default:
                 return null;
         }
 
         var kept = rows.Where(a => a.Tlp <= ceiling).ToList();
         return new ExportSet(stem, kept, await Search.Lookups.BriefDatesAsync(db, kept.Select(a => a.Id).ToList(), ct));
+    }
+
+    /// <summary>
+    /// A search's words as a lookup export's key: base64url of their UTF-8, so a URL, a path or a Windows file name (with
+    /// its slashes, dots and question marks) is one segment of the export's address and comes back as it was typed.
+    /// </summary>
+    public static string LookupKey(string query) => Base64Url.EncodeToString(Encoding.UTF8.GetBytes(query));
+
+    // The words a lookup export's key holds, or null when it's no key LookupKey wrote.
+    private static string? Term(string key)
+    {
+        try { return Encoding.UTF8.GetString(Base64Url.DecodeFromChars(key)); }
+        catch (FormatException) { return null; }
     }
 
     /// <summary>A title as a short file-name part: lower-case letters and digits joined by hyphens, at most 40.</summary>

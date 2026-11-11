@@ -70,4 +70,68 @@ public class ExportServiceTests : IDisposable
         _db.User.Roles = new HashSet<AppRole> { AppRole.Reader };
         await FluentActions.Awaiting(() => Exports().GatherAsync(ExportScope.Brief, "2026-10-26", TlpLevel.Red)).Should().ThrowAsync<ForbiddenException>();
     }
+
+    // An article carrying `ip` and another indicator of its own (what the looked-up one travels with), and a CVE.
+    private async Task<Guid> Carrying(string title, TlpLevel tlp, string ip, string alongside, string? cve = null)
+    {
+        var svc = _db.Articles();
+        var id = await svc.CreateAsync(title, "Vendor", null, tlp);
+        var form = ArticleForm.From((await svc.GetAsync(id))!);
+        form.Bluf = title + ": summary.";
+        form.Indicators = [new() { Type = IndicatorType.IpAddress, Value = ip }, new() { Type = IndicatorType.Domain, Value = alongside }];
+        if (cve is not null) form.Cves = [cve];
+        await svc.SaveAsync(form);
+        return id;
+    }
+
+    [Fact]
+    public async Task ALookup_HoldsTheArticlesItsOn_WithWhatItTravelsWith_AndLeavesOutThoseAboveTheCeiling()
+    {
+        var clear = await Carrying("Lookup clear", TlpLevel.Clear, "198.51.100.7", "clear-only.example.net", "CVE-2031-111111");
+        var amber = await Carrying("Lookup amber", TlpLevel.Amber, "198.51.100.7", "amber-only.example.net", "CVE-2031-111111");
+        var red = await Carrying("Lookup red", TlpLevel.Red, "198.51.100.7", "red-only.example.net", "CVE-2031-111111");
+        await Carrying("Lookup elsewhere", TlpLevel.Clear, "198.51.100.8", "elsewhere.example.net");
+        var key = ExportService.LookupKey("198.51.100.7");
+
+        var all = (await Exports().GatherAsync(ExportScope.Lookup, key, TlpLevel.Red))!;
+        all.Articles.Select(a => a.Id).Should().BeEquivalentTo([clear, amber, red], "every article it's on, and none it isn't");
+        all.FileStem.Should().Be("lookup-198-51-100-7");
+
+        var amberUp = (await Exports().GatherAsync(ExportScope.Lookup, key, TlpLevel.Amber))!;
+        amberUp.Articles.Select(a => a.Id).Should().BeEquivalentTo([clear, amber], "a TLP:RED article is left out whole under an AMBER ceiling");
+        var stix = System.Text.Encoding.UTF8.GetString(Stix.Write(amberUp, "CTI"));
+        stix.Should().Contain("198.51.100.7").And.Contain("amber-only.example.net", "what it travels with goes with it")
+            .And.Contain(Stix.Marking(TlpLevel.Amber)).And.Contain(Stix.Marking(TlpLevel.Clear))
+            .And.NotContain("red-only.example.net").And.NotContain("Lookup red").And.NotContain(Stix.Marking(TlpLevel.Red))
+            .And.NotContain("elsewhere.example.net");
+        IndicatorCsv.Write(amberUp, null).Should().Contain("amber-only.example.net").And.NotContain("red-only.example.net").And.NotContain("TLP:RED");
+
+        var clearOnly = (await Exports().GatherAsync(ExportScope.Lookup, key, TlpLevel.Clear))!;
+        clearOnly.Articles.Select(a => a.Id).Should().Equal(clear);
+
+        // A defanged value looks up the same articles, as Search does; a CVE the articles about it.
+        (await Exports().GatherAsync(ExportScope.Lookup, ExportService.LookupKey("198.51.100[.]7"), TlpLevel.Red))!.Articles.Should().HaveCount(3);
+        var byCve = (await Exports().GatherAsync(ExportScope.Lookup, ExportService.LookupKey("cve-2031-111111"), TlpLevel.Amber))!;
+        byCve.Articles.Select(a => a.Id).Should().BeEquivalentTo([clear, amber]);
+        byCve.FileStem.Should().Be("lookup-cve-2031-111111");
+    }
+
+    [Fact]
+    public async Task ALookupKey_ThatIsNoIndicatorOrCve_FindsNothing()
+    {
+        (await Exports().GatherAsync(ExportScope.Lookup, ExportService.LookupKey("just words"), TlpLevel.Red)).Should().BeNull();
+        (await Exports().GatherAsync(ExportScope.Lookup, "not base64!", TlpLevel.Red)).Should().BeNull();
+        (await Exports().GatherAsync(ExportScope.Lookup, ExportService.LookupKey("unseen.example.org"), TlpLevel.Red))!.Articles.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(AppRole.Reader)]
+    [InlineData(AppRole.Visitor)]
+    public async Task SomeoneWhoCantReadTheTeamEdition_GetsNothingOfALookup(AppRole role)
+    {
+        await Carrying("Lookup restricted", TlpLevel.Clear, "198.51.100.9", "restricted.example.net");
+        _db.User.Roles = new HashSet<AppRole> { role };
+        await FluentActions.Awaiting(() => Exports().GatherAsync(ExportScope.Lookup, ExportService.LookupKey("198.51.100.9"), TlpLevel.Clear))
+            .Should().ThrowAsync<ForbiddenException>();
+    }
 }

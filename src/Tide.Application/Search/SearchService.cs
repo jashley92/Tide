@@ -300,14 +300,10 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
 
     private static async Task<IndicatorLookup?> IndicatorAsync(IAppDbContext db, string term, bool triages, CancellationToken ct)
     {
-        var live = IocObservable.Refang(term);
-        var type = IocObservable.DetectType(live);
-        if (type is IndicatorType.Other or IndicatorType.CommandLine) return null;
-        var value = IocObservable.Normalize(type, live);
-        var family = IocObservable.FamilyTypes(type).ToList();
+        if (Lookups.IndicatorOf(term) is not { } looked) return null;
+        var (type, value, family) = looked;
         var exact = SearchText.Literal(value);
-        var matching = db.ArticleIndicators.AsNoTracking()
-            .Where(i => family.Contains(i.Type) && EF.Functions.Like(i.Value, exact, SearchText.Escape));
+        var matching = Lookups.Carrying(db, looked);
         var rows = await matching.Take(MaxSightings + 1).ToListAsync(ct);
         var exactTotal = rows.Count > MaxSightings ? await matching.CountAsync(ct) : rows.Count;
 
@@ -360,7 +356,7 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
     private static async Task<CveLookup> CveAsync(IAppDbContext db, string cveId, bool triages, CancellationToken ct)
     {
         var record = await db.CveRecords.AsNoTracking().FirstOrDefaultAsync(c => c.CveId == cveId, ct);
-        var articleIds = await db.ArticleCves.AsNoTracking().Where(c => c.CveId == cveId).Select(c => c.ArticleId).Distinct().ToListAsync(ct);
+        var articleIds = await Lookups.About(db, cveId).ToListAsync(ct);
         List<LookupArticle> newest = articleIds.Count == 0 ? [] : await LookupArticlesAsync(db,
             db.Articles.AsNoTracking().Where(a => articleIds.Contains(a.Id)).OrderByDescending(a => a.CreatedAtUtc).ThenBy(a => a.Id).Take(MaxSightings), ct);
         var actions = await Lookups.ActionsOnAsync(db, articleIds, [], MaxHits, ct);
