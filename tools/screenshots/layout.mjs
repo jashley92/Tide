@@ -1390,6 +1390,114 @@ const actionRailHolds = [visible('#tide-rail .tide-facts'), visible('#tide-rail 
 /** The action page's own column: its head, the tools and the query fit it, the query wrapping rather than scrolling. */
 const actionPageFits = [noSidewaysScroll, fits('.tide-action-head'), fits('.tide-drawer'), visible('.tide-feed')];
 
+// --- the Library's context rail (option E 3.8) --------------------------------------------------------------------------
+
+/** What the Library's rail holds for the selected entry, each in the rail and laid out for its column: the facts, what
+ * it fills in, the entry tried on an open action (with its preview) and where it was used. */
+const libraryRailHolds = [visible('#tide-rail .tide-lib-facts'), visible('#tide-rail #lib-fills-h'), visible('#tide-rail #lib-try-h'),
+  visible('#tide-rail #lib-try-text'), visible('#tide-rail #lib-used-h'), hidden('.content #lib-try-h'), fits('.tide-rail-body'),
+  fits('.tide-rail-body > *'), fits('#tide-rail .tide-lib-try-tools'), flat('#tide-rail .tide-rail-body > section'), visible('#tide-rail .tide-rail-head kbd')];
+
+/** The list and the entry beside it fit what the docked rail leaves: neither spills, the entry's head keeps its tools,
+ * and both sit left of the rail. */
+const libraryFitsBesideRail = [noSidewaysScroll, besides('#main-content', '#tide-rail'), allBesides('.tide-library-detail', '#tide-rail'),
+  fits('.tide-library'), fits('.tide-library-list'), fits('.tide-library-detail'), fits('.tide-library-entry-head'), fits('.tide-library-filters'),
+  visible('.tide-library-entry-name'), visible('.tide-library-entry-foot')];
+
+/** The entry header's first chip (its TLP or kind) has room before the words after it ("Saved by…"). */
+const chipHasRoom = holds('the entry header\'s chip stands clear of the words after it', () => {
+  const line = [...document.querySelectorAll('.tide-library-entry-title > .small')].find(e => e.getBoundingClientRect().height > 0);
+  const chip = line?.firstElementChild;
+  if (!chip) return ['no entry header with a chip is shown'];
+  let next = chip.nextSibling;
+  while (next && !(next.textContent ?? '').trim()) next = next.nextSibling;
+  if (!next) return ['nothing follows the chip'];
+  const range = document.createRange();
+  const text = next.nodeType === Node.TEXT_NODE ? next : next.firstChild ?? next;
+  const at = text.nodeType === Node.TEXT_NODE ? (text.textContent.length - text.textContent.trimStart().length) : 0;
+  if (text.nodeType === Node.TEXT_NODE) { range.setStart(text, at); range.setEnd(text, at + 1); } else range.selectNode(text);
+  const r = range.getBoundingClientRect(), c = chip.getBoundingClientRect();
+  if (r.top >= c.bottom - 2) return [];   // the words wrapped to the next line
+  const gap = r.left - c.right;
+  return gap >= 4 ? [] : [`the chip is ${Math.round(gap)}px from "${next.textContent.trim().slice(0, 20)}"`];
+});
+
+/** Each list row is two lines, as the design draws it: its name with how often it was used at the right of the same
+ * line, then what it's for, under both. */
+const rowsTwoLines = [sameLine('.tide-library-row.selected .tide-library-row-name', '.tide-library-row.selected .tide-library-row-meta'),
+  above('.tide-library-row.selected .tide-library-row-meta', '.tide-library-row.selected .tide-library-row-about'),
+  holds('the rows\' use is at their right', () => [...document.querySelectorAll('.tide-library-row')].filter(r => r.getBoundingClientRect().height > 0).flatMap((r, i) => {
+    const m = r.querySelector('.tide-library-row-meta').getBoundingClientRect(), b = r.getBoundingClientRect();
+    return b.right - m.right <= 24 ? [] : [`row ${i + 1}'s use ends ${Math.round(b.right - m.right)}px from its right`];
+  })), fits('.tide-library-row')];
+
+/** The selected row's name, its place, whether it has focus, and the address's row. */
+const libraryRow = page => page.evaluate(() => {
+  const rows = [...document.querySelectorAll('.tide-library-row')];
+  const at = rows.findIndex(r => r.getAttribute('aria-current') === 'true');
+  return {
+    at, name: rows[at]?.querySelector('.tide-library-row-name')?.textContent, current: rows.filter(r => r.getAttribute('aria-current') === 'true').length,
+    focused: document.activeElement === rows[at], tabStops: rows.filter(r => r.tabIndex === 0).length, row: new URL(location.href).searchParams.get('row'),
+  };
+});
+
+/**
+ * The Library's keys are every list's (rows.js): J and K, and the arrows, move the selected row (aria-current, the one
+ * tab stop) and focus with it; the address names the entry in place, so a reload comes back to it; Enter goes into the
+ * entry shown. The rail's keys stay the rail's.
+ */
+const libraryKeys = {
+  name: 'J, K, the arrows and Enter move through the Library as through every list, and ?row= follows',
+  check: async page => {
+    const problems = [];
+    const expect = async (at, what) => {
+      await page.waitForTimeout(300);
+      const s = await libraryRow(page);
+      if (s.at !== at || !s.focused || s.current !== 1 || s.tabStops !== 1) problems.push(`${what}: row ${s.at} selected (focused ${s.focused}, ${s.current} current, ${s.tabStops} tab stops), not row ${at}`);
+      return s;
+    };
+    await page.locator('.tide-library-row.selected').focus();
+    await page.keyboard.press('j');
+    await expect(1, 'J');
+    await page.keyboard.press('j');
+    await expect(2, 'J again');
+    await page.keyboard.press('k');
+    await expect(1, 'K');
+    await page.keyboard.press('ArrowDown');
+    const s = await expect(2, 'the down arrow');
+    await page.keyboard.press('ArrowUp');
+    await expect(1, 'the up arrow');
+    await page.keyboard.press('ArrowDown');
+    await expect(2, 'the down arrow again');
+    if (!s.row) problems.push('the address names no row');
+    await page.reload({ waitUntil: 'networkidle' });
+    await settle(page);
+    const back = await libraryRow(page);
+    if (back.name !== s.name) problems.push(`a reload selects "${back.name}", not "${s.name}"`);
+    await page.locator('.tide-library-row.selected').focus();
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(300);
+    if (!(await page.evaluate(() => document.activeElement?.classList.contains('tide-library-detail')))) problems.push('Enter on a row doesn\'t go into the entry');
+    return problems;
+  },
+};
+
+/** Setup: wider letters, and the demo's "Every indicator sweep (XQL)" chosen from the list (it fills in from any action
+ * with indicators, as the design shows it). */
+const everyIndicatorSweep = async page => {
+  await wideFont(page);
+  await page.locator('.tide-library-row', { hasText: 'Every indicator sweep (XQL)' }).click();
+  await page.locator('#lib-try-text').waitFor({ timeout: 5000 }).catch(() => { });
+};
+
+/** Setup: that entry, then the rail opened where it's an overlay (the Context button). */
+const libraryOverlay = async page => {
+  await everyIndicatorSweep(page);
+  await page.locator('#tide-rail-toggle').click();
+  await page.locator('#tide-rail').waitFor();
+  await page.waitForTimeout(300);
+};
+
 /** No word in a visible match of `selector` is split across lines: each word's text sits on one line box (a line
  *  ending at a hyphen doesn't split a word). */
 const wordsWhole = selector => holds(`no word split across lines: ${selector}`, selector => {
@@ -1708,6 +1816,27 @@ const pages = [
   // The entry's More menu opens wholly in view: Retire and Delete aren't cut off by the scrolling detail panel.
   { name: 'library-more', route: '/library/queries', setup: openEntryMore, widths: [1920, 1440], rules: [menuItemsVisible] },
   { name: 'library-search', route: '/library/queries?q=sweep', setup: wideFonts, widths: [1440, 780], rules: [noSidewaysScroll, visible('#library-find'), visible('.tide-library-list')] },
+  // The selected entry's context in the rail: docked and open from 1500px, with the list and the entry fitting beside
+  // it (about 870px); closed below that until asked for, and never a sideways scroll. Wider letters (LETTER_SPACING).
+  { name: 'library-rail', route: '/library/queries', setup: everyIndicatorSweep, widths: [1920, 1600, 1500],
+    rules: [...libraryRailHolds, ...libraryFitsBesideRail, visible('.tide-library-fold'), chipHasRoom, ...rowsTwoLines] },
+  { name: 'library-rail-closed', route: '/library/queries', setup: wideFont, widths: [1440, 780],
+    rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), visible('.tide-library-entry-name'), fits('.tide-library-detail')] },
+  // Below 1500px the rail opens over the page as a dialog, holds what it holds there too, and Escape closes it.
+  { name: 'library-rail-overlay', route: '/library/queries', setup: libraryOverlay, widths: [1440, 780],
+    rules: [noSidewaysScroll, ...libraryRailHolds, attr('#tide-rail', 'role', 'dialog'), overlayClosesBy('Escape')] },
+  // Each tab's entry has its rail (the demo has no open outreach action, so a template's isn't tried there).
+  { name: 'library-rail-templates', route: '/library/templates', setup: wideFont, widths: [1920, 1500],
+    rules: [visible('#tide-rail .tide-lib-facts'), visible('#tide-rail #lib-fills-h'), visible('#tide-rail #lib-used-h'), ...libraryFitsBesideRail.slice(0, 6), chipHasRoom, ...rowsTwoLines] },
+  { name: 'library-rail-playbooks', route: '/library/playbooks', setup: wideFont, widths: [1920, 1500],
+    rules: [visible('#tide-rail .tide-lib-facts'), visible('#tide-rail #lib-used-h'), ...libraryFitsBesideRail.slice(0, 6), chipHasRoom, ...rowsTwoLines] },
+  // Copy filled in puts exactly the preview on the clipboard.
+  { name: 'library-rail-copy', route: '/library/queries', setup: everyIndicatorSweep, widths: [1920], context: clipboard,
+    rules: [copiesExactly('[data-copy-target="lib-try-text"]', '#lib-try-text')] },
+  // The keys, as on Triage and the Actions list.
+  { name: 'library-keys', route: '/library/queries', widths: [1920, 1440], rules: [libraryKeys] },
+  // The More menu opens wholly in view beside the docked rail, and at the overlay's widths.
+  { name: 'library-more-rail', route: '/library/queries', setup: openEntryMore, widths: [1600, 1500, 1440], rules: [menuItemsVisible] },
   // Search for an indicator or a CVE: the answer in the page, in one card, and the hunt query, who is sweeping for it and
   // the export in the context rail. From 1500px the rail is docked open and the page has about 873px, which the articles'
   // table fits; the query wraps, and Copy puts exactly its text on the clipboard. Below 1500px the rail is closed until
