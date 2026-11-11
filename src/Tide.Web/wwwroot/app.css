@@ -2751,3 +2751,28 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-rail-list-title { display: block; overflow-wrap: anywhere; }
 .tide-rail-list-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); color: var(--tide-text-muted); font-size: var(--tide-text-xs); }
 /* ---- end Action page 3.5 ---- */
+
+/* ---- Triage 3.2: what TIDE knows about the selected item, in the context rail (its flat sections are Today 3.1's) ----
+   Its CVEs' facts three across, the covering article (Action page 3.5's .tide-rail-article) with its open actions, the
+   same event's other reports with Attach all and Not the same, the story, and what it names of Our stack. */
+.tide-triage-rail-cve + .tide-triage-rail-cve { margin-top: var(--tide-space-3); }
+.tide-triage-rail-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); margin: var(--tide-space-2) 0; }
+.tide-triage-rail-critical { color: var(--tide-threat); }
+.tide-triage-rail-desc { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; margin-bottom: var(--tide-space-2); }
+.tide-triage-rail-cves > p:last-child { margin-top: var(--tide-space-2); }
+.tide-rail-list .btn.tide-rail-list-title { font-size: inherit; line-height: inherit; text-align: start; white-space: normal; }
+.tide-triage-rail-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); margin-top: var(--tide-space-2); }
+.tide-triage-rail-acts > input { flex: 1 1 10rem; min-width: 0; width: auto; }
+/* Docked beside the rail under 1800px, the page has about 873 to 1170px: the list takes up to 42% of it (its own rule,
+   Triage's decision bar) and the bar's buttons wrap to a second row, as the design has them, rather than the pane
+   closing. From 1800px the pane has the room for them in one row again. */
+@media (min-width: 1500px) and (max-width: 1799.98px) {
+    html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-reading .tide-triage-acts { flex-wrap: wrap; }
+    /* Dismiss keeps its reason beside it, at its full width, and the two go to the next row together, at its end. */
+    html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-reading .tide-triage-end { display: inline-flex; margin-left: auto; }
+    html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-reading .tide-triage-end > select { flex: none; max-width: none; }
+    /* The bar's second row comes out of the text's share of the pane, which scrolls in less room, so the bar stays on
+       the first screen. */
+    html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-reading > .tide-reading-text { min-height: 3rem; }
+}
+/* ---- end Triage 3.2 ---- */

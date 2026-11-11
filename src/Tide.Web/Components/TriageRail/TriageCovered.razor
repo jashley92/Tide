@@ -1,0 +1,110 @@
+@* Triage's context rail: the article that already covers the selected item (the one its main button would attach it
+   to, or else the first its coverage flags name), how it's classed, when it was first briefed, and the actions raised
+   from it that are still open; then, after whatever the page puts between (Then: the same event's other reports), the
+   story that article is in. Only an article the row's flags already name is shown, so the rail says nothing of an
+   article the list doesn't: the coverage is the inbox's own (IntakeService), and the rest is read through the services'
+   own permission checks. *@
+@inject ArticleService Articles
+@inject ActionService ActionSvc
+@inject StoryService Stories
+@inject ICurrentUser CurrentUser
+
+@if (Coverage.Count > 0)
+{
+    var main = Coverage[0];
+    <section class="tide-card tide-rail-article" aria-labelledby="rail-covered-h">
+        <h2 id="rail-covered-h">Already covered</h2>
+        <a class="tide-rail-article-title" href="articles/@main.ArticleId">@main.ArticleTitle</a>
+        <div class="tide-rail-badges small">
+            @if (_known?.Article is { } a) { <ClassBadge Classification="a.Classification" Priority="a.Priority" /> }
+            <span class="tide-muted">@(main.BriefDate is { } d ? $"briefed {Ui.ShortDay(d)}" : "not briefed yet")</span>
+            @if (!main.Attachable) { <span class="tide-muted">· can't take another report now</span> }
+        </div>
+        @if (_known is { Actions: { } open })
+        {
+            @if (open.Count > 0)
+            {
+                <ul class="tide-rail-list" aria-label="Its open actions">
+                    @foreach (var r in open)
+                    {
+                        <li @key="r.Id">
+                            <span class="tide-rail-list-title"><ActionRef Number="r.Number" Title="@r.Title" /></span>
+                            <span class="tide-rail-list-meta"><span>@r.TeamName</span><ActionStatusBadge Status="r.Status" /></span>
+                        </li>
+                    }
+                </ul>
+            }
+            else { <p class="small tide-muted mb-0">No actions open on it.</p> }
+        }
+        else if (main.OpenActions.Count > 0)
+        {
+            <p class="small mb-0">@string.Join(", ", main.OpenActions.Select(Ui.ActionLabel)) open</p>
+        }
+        @if (Coverage.Count > 1)
+        {
+            <p class="small mb-0">Also covered by
+                @for (var i = 1; i < Coverage.Count; i++)
+                {
+                    var c = Coverage[i];
+                    <a href="articles/@c.ArticleId">@c.ArticleTitle</a>@(i < Coverage.Count - 1 ? ", " : ".")
+                }
+            </p>
+        }
+    </section>
+}
+@Then
+@if (_known?.Story is { } story)
+{
+    <section class="tide-card" aria-labelledby="rail-story-h">
+        <h2 id="rail-story-h">Story</h2>
+        <div class="tide-rail-badges small">
+            <a href="stories/@story.Id">@story.Name</a>
+            <Badge Tone="@(story.Status == StoryStatus.Active ? BadgeTone.Ok : BadgeTone.Neutral)">@story.Status</Badge>
+            <span class="tide-muted">@Ui.Plural(story.Articles, "article")</span>
+        </div>
+    </section>
+}
+
+@code {
+    /// <summary>The articles that cover the item, one each, the one its main button attaches it to first.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<Coverage> Coverage { get; set; } = [];
+
+    /// <summary>Drawn after the coverage and before the story.</summary>
+    [Parameter] public RenderFragment? Then { get; set; }
+
+    // What's read of the first article: the article (its class), its open actions, and its story. Kept by the article and
+    // its open actions as the inbox counted them, so moving through a list of items one article covers reads it once, and
+    // a colleague closing or raising one reads it again.
+    private sealed record Known(Article? Article, IReadOnlyList<ActionRow>? Actions, StoryRow? Story);
+
+    private readonly Dictionary<string, Known> _read = [];
+    private Known? _known;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Coverage.Count == 0) { _known = null; return; }
+        var main = Coverage[0];
+        var key = main.ArticleId + ":" + string.Join(",", main.OpenActions);
+        if (!_read.TryGetValue(key, out var known))
+        {
+            _known = null;   // not the last article's, while this one's read
+            known = await ReadAsync(main);
+            _read[key] = known;
+        }
+        _known = known;
+    }
+
+    private async Task<Known> ReadAsync(Coverage main)
+    {
+        try
+        {
+            // The article and its actions at once (each service reads on a context of its own); the story after the article.
+            var reading = CurrentUser.Has(Permission.ReadTeamEdition) ? Articles.GetAsync(main.ArticleId) : Task.FromResult<Article?>(null);
+            var raised = CurrentUser.Has(Permission.ReadTeamEdition) || CurrentUser.Has(Permission.WorkActions) ? ActionSvc.ForArticleAsync(main.ArticleId) : null;
+            var article = await reading;
+            var story = article?.StoryId is { } sid ? await Stories.RowAsync(sid) : null;
+            return new Known(article, raised is null ? null : [.. (await raised).Where(a => a.IsOpen)], story);
+        }
+        catch (ForbiddenException) { return new Known(null, null, null); }
+    }
+}

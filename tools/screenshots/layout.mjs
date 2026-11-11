@@ -942,27 +942,53 @@ async function holdV(page) {
 }
 
 /**
- * Setup: a context rail on the page, as ContextRail draws one (no page places one yet): its button in the top bar and
- * its region with a link in it, opened (as an overlay below 1500px) the way the button opens it. Focus goes into it.
+ * Setup: the page's context rail opened (as an overlay below 1500px) the way its button opens it, and focus on the first
+ * control in its sections.
  */
 async function openRail(page) {
-  await page.evaluate(() => {
-    const button = document.createElement('button');
-    button.id = 'tide-rail-toggle';
-    button.type = 'button';
-    button.textContent = 'Context';
-    document.querySelector('.tide-top-end')?.prepend(button);
-    const rail = document.createElement('aside');
-    rail.id = 'tide-rail';
-    rail.className = 'tide-rail';
-    rail.tabIndex = -1;
-    rail.innerHTML = '<div class="tide-rail-body"><a href="#" id="rail-link">A link in the rail</a></div>';
-    document.body.append(rail);   // fixed in place as an overlay, wherever it sits
-    window.tideRail.start();
-  });
-  await page.click('#tide-rail-toggle');
+  if (!(await page.locator('#tide-rail').isVisible())) await page.click('#tide-rail-toggle');
   await page.locator('#tide-rail').waitFor();
-  await page.focus('#rail-link');
+  await page.locator(railLink).first().focus();
+}
+
+/** A control in the rail's sections (Triage's: a CVE's link, an article's, Add to what we run…). */
+const railLink = '#tide-rail .tide-rail-body :is(a[href], button)';
+
+// --- Triage's context rail (option E 3.2) ------------------------------------------------------------------------------
+
+/** Lines of Triage's list by what the rail says of them: a report an article covers, a group one covers, one naming a
+ *  CVE TIDE has a record of. */
+const triageLines = {
+  covered: '.tide-triage-row:not(.tide-triage-group):not(.tide-triage-member):has(.tide-triage-flags .tide-badge-info)',
+  group: '.tide-triage-group:has(.tide-triage-flags .tide-badge-info)',
+  cve: '.tide-triage-row:not(.tide-triage-group):has(.tide-cvss)',
+};
+
+/** Setup: wider letters (LETTER_SPACING), then the first line of `kind` (triageLines) selected by a click on its source's
+ *  name; the rail follows it. */
+const railOn = kind => async page => {
+  await wideFont(page);
+  await page.locator(triageLines[kind]).first().locator('.tide-group-label, .tide-triage-meta > span').first().click();
+  await page.waitForFunction(kind => document.querySelector('.tide-triage-row.selected')?.matches(kind), triageLines[kind], { timeout: 10000 });
+  await page.waitForTimeout(600);
+};
+
+/** Setup: wider letters, the rail opened over the page with `]` (below 1500px), then `kind`'s line selected from the list
+ *  first, as railOn. */
+const railOverOn = kind => async page => {
+  await railOn(kind)(page);
+  await page.locator('.tide-triage-row.selected').focus();
+  await page.keyboard.press(']');
+  await page.locator('#tide-rail').waitFor();
+  await page.waitForTimeout(300);
+};
+
+/** Setup: Escape pressed on the selected row, where the rail is docked: Triage's own Escape, which closes the pane. */
+async function escapeOnRow(page) {
+  await wideFont(page);
+  await page.locator('.tide-triage-row.selected').focus();
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(800);
 }
 
 const selectedRow = page => page.evaluate(() => [...document.querySelectorAll('.tide-triage-row')].findIndex(r => r.classList.contains('selected')));
@@ -974,7 +1000,7 @@ const railKeysStayInTheRail = {
     const problems = [], before = await selectedRow(page);
     if (before < 0) return ['no row is selected to begin with'];
     for (const key of ['j', 'ArrowDown']) {
-      await page.focus('#rail-link');
+      await page.locator(railLink).first().focus();
       await page.keyboard.press(key);
       await page.waitForTimeout(600);
       const now = await selectedRow(page);
@@ -989,7 +1015,7 @@ const railKeysStayInTheRail = {
 const escapeClosesTheRailOnly = {
   name: 'Escape closes the rail only',
   check: async page => {
-    await page.focus('#rail-link');
+    await page.locator(railLink).first().focus();
     await page.keyboard.press('Escape');
     await page.waitForTimeout(800);
     const problems = [];
@@ -1364,6 +1390,20 @@ const actionRailHolds = [visible('#tide-rail .tide-facts'), visible('#tide-rail 
 /** The action page's own column: its head, the tools and the query fit it, the query wrapping rather than scrolling. */
 const actionPageFits = [noSidewaysScroll, fits('.tide-action-head'), fits('.tide-drawer'), visible('.tide-feed')];
 
+/** Triage's rail: its sections flat under its header (with the ] key), each within the rail's column; the rail's, not the
+ *  page's. */
+const triageRailFits = [visible('#tide-rail .tide-rail-head kbd'), flat('#tide-rail .tide-rail-body > section'), fits('.tide-rail-body'),
+  fits('#tide-rail .tide-rail-body > section'), visible('#tide-rail #rail-named-h'), hidden('.content #rail-named-h')];
+
+/** Beside Triage's docked rail, the list, the reading pane and the rail sit side by side, and the pane's decision bar is
+ *  on the first screen, its buttons within it. From 1800px the bar is one row and the list 440px; under that the list
+ *  takes up to 42% of the page and the bar's buttons wrap to a second row, as the design has them. */
+const triageBesideTheRail = [noSidewaysScroll, visible('#tide-rail'), attr('#tide-rail', 'role', null), besides('#main-content', '#tide-rail'),
+  besides('.tide-reading', '#tide-rail'), besides('.tide-triage-layout > .tide-card:first-child', '.tide-reading'), visible('.tide-reading'),
+  widerThan('.tide-triage-layout > .tide-card:first-child', 340), widerThan('.tide-reading', 440), onFirstScreen('.tide-reading .tide-triage-decide'),
+  fits('.tide-triage-decide'), fits('.tide-triage-acts'), fits('.tide-reading-head'), fits('.tide-triage-row'), windowDoesntScroll,
+  [1800, oneRow('.tide-triage-decide .tide-triage-acts')], [1800, widthNear('.tide-triage-layout > .tide-card:first-child', 440, 16)]];
+
 // --- the pages: route, optional setup, widths (each 900px tall, or [width, height]) and rules ([minWidth, rule] from that
 // width up) -------------------------------------------------------------------------------------------------------------
 
@@ -1577,6 +1617,36 @@ const pages = [
   // the list, and Escape closes the rail without closing the reading pane (or keeping it closed).
   { name: 'triage-rail-keys', route: `/triage?as=r1${run}`, setup: openRail, widths: [1440],
     rules: [visible('#tide-rail'), visible('.tide-reading'), railKeysStayInTheRail, escapeClosesTheRailOnly] },
+  // Triage's context rail: what TIDE knows about the selected item. From 1500px it's docked open beside the list and the
+  // reading pane (triageBesideTheRail): for a covered report its coverage and story, for a covered group the other
+  // reports with Attach all and Not the same, for a report naming a CVE its facts.
+  { name: 'triage-rail', route: '/triage', setup: railOn('covered'), widths: [[1920, 1080], [1600, 1000], [1500, 1000]],
+    rules: [...triageBesideTheRail, ...triageRailFits, visible('#tide-rail #rail-covered-h'), visible('#tide-rail #rail-story-h'),
+      visible('#tide-rail section[aria-labelledby="rail-covered-h"] .tide-rail-list a')] },
+  { name: 'triage-rail-group', route: '/triage', setup: railOn('group'), widths: [[1920, 1080], [1600, 1000], [1500, 1000]],
+    rules: [...triageBesideTheRail, ...triageRailFits, visible('#tide-rail #rail-same-h'),
+      visible('#tide-rail section[aria-labelledby="rail-same-h"] .tide-triage-rail-acts button'), oneRow('#tide-rail .tide-triage-rail-acts')] },
+  { name: 'triage-rail-cve', route: '/triage', setup: railOn('cve'), widths: [[1920, 1080], [1500, 1000]],
+    rules: [...triageBesideTheRail, ...triageRailFits, visible('#tide-rail #rail-cve-h'), oneRow('#tide-rail .tide-triage-rail-facts')] },
+  { name: 'triage-rail-dark', route: '/triage', setup: railOn('covered'), context: { theme: 'dark' }, widths: [[1600, 1000]],
+    rules: [...triageBesideTheRail, ...triageRailFits] },
+  // `]` closes the docked rail, and the page takes the width back: the list 440px again and the bar one row.
+  { name: 'triage-rail-closed', route: '/triage', setup: toggleRail, widths: [[1600, 1000], [1500, 1000]],
+    rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), visible('.tide-reading'),
+      widthNear('.tide-triage-layout > .tide-card:first-child', 440, 16), oneRow('.tide-triage-decide .tide-triage-acts'), onFirstScreen('.tide-reading .tide-triage-decide')] },
+  // Where it's docked, Escape on the list is still Triage's own: it closes the reading pane, and the rail stays.
+  { name: 'triage-rail-docked-escape', route: `/triage?as=r2${run}`, setup: escapeOnRow, widths: [[1600, 1000]],
+    rules: [hidden('.tide-reading'), visible('#tide-rail'), visible('.tide-triage-row.selected .tide-triage-decide')] },
+  // Below 1500px it's closed until `]` opens it over the page, as Triage was before it.
+  { name: 'triage-rail-shut', route: '/triage', setup: wideFont, widths: [[1440, 900], [780, 900]],
+    rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), [1400, visible('.tide-reading')], [1400, oneRow('.tide-triage-decide .tide-triage-acts')]] },
+  // Open over the page it's a modal dialog, named, holding focus; Escape, Close and a click on the backdrop each close it
+  // and give focus back to the Context button (and Escape leaves the reading pane alone: triage-rail-keys).
+  { name: 'triage-rail-overlay', route: '/triage', setup: railOverOn('covered'), widths: [[1440, 900], [780, 900]],
+    rules: [noSidewaysScroll, visible('#tide-rail'), ...triageRailFits, visible('#tide-rail #rail-covered-h'), focusIn('#tide-rail'),
+      attr('#tide-rail', 'role', 'dialog'), attr('#tide-rail', 'aria-label', 'What TIDE knows'), [780, dims(15)], tabStaysIn('#tide-rail', 30)] },
+  ...['Escape', 'Close', 'backdrop'].map(how => ({ name: `triage-rail-overlay-${how.toLowerCase()}`, route: '/triage', setup: railOverOn('covered'),
+    widths: [[1440, 900], [780, 900]], rules: [overlayClosesBy(how), visible('.tide-triage-row.selected')] })),
   // J and K pressed quickly land on the row they were pressed for: on the page (the selection isn't pulled back by a
   // row's focus), and across a page boundary both ways (the demo has a second page: Demo:TriageFiller below).
   { name: 'triage-keys', route: '/triage', setup: pressQuickly('j', 10), widths: [1440], rules: [selectedAsAimed()] },
