@@ -1189,6 +1189,40 @@ const tabReachesBar = {
   },
 };
 
+/**
+ * The decision bar's main button keeps its words: its visible text starts with its whole verb ("Attach to", "Attach
+ * all 2 to", "Promote"), the button itself isn't cut, the article's title in it ends in an ellipsis when it's cut, and
+ * the button is at least as wide as any other button in the bar: the others give way first.
+ */
+const mainButtonKeepsItsWords = holds('the main button keeps its verb, cuts only the title, and is the widest', () => {
+  const bar = [...document.querySelectorAll('.tide-reading .tide-triage-decide')].find(e => e.getBoundingClientRect().height > 0);
+  const main = bar?.querySelector('.tide-triage-acts .btn-primary');
+  if (!main) return ['no main button in a shown decision bar'];
+  const problems = [];
+  const verb = /^(Attach all \d+ to|Attach to|Promote)/;
+  const range = document.createRange();
+  // What's on screen of the button's own words (outside the title): each text node, wholly inside the button's box.
+  for (const node of [...main.childNodes].filter(n => n.nodeType === 3 && n.textContent.trim())) {
+    range.selectNodeContents(node);
+    const r = range.getBoundingClientRect(), b = main.getBoundingClientRect();
+    if (r.right > b.right - 2) problems.push(`the main button's words "${node.textContent.trim()}" are cut off (they end at ${Math.round(r.right)}px, the button at ${Math.round(b.right)}px)`);
+  }
+  const text = main.innerText.replace(/\s+/g, ' ').trim();
+  if (!verb.test(text)) problems.push(`the main button reads "${text}", not its whole verb`);
+  if (main.scrollWidth > main.clientWidth + 1) problems.push(`the main button's content is ${main.scrollWidth - main.clientWidth}px wider than it`);
+  const title = main.querySelector('.tide-triage-attach-title');
+  if (title && title.scrollWidth > title.clientWidth + 1) {
+    if (getComputedStyle(title).textOverflow !== 'ellipsis') problems.push('the article title is cut without an ellipsis');
+    if (title.clientWidth < 16) problems.push(`the article title has ${title.clientWidth}px, too little to show its ellipsis`);
+  }
+  const width = main.getBoundingClientRect().width;
+  for (const other of bar.querySelectorAll('.btn:not(.btn-primary)')) {
+    const w = other.getBoundingClientRect().width;
+    if (w > width + 1) problems.push(`"${other.innerText.replace(/\s+/g, ' ').trim()}" is ${Math.round(w)}px wide, wider than the main button's ${Math.round(width)}px`);
+  }
+  return problems;
+});
+
 /** In the full-height page the window doesn't scroll: the document is no taller than the window (give or take 4px). */
 const windowDoesntScroll = holds('the window does not scroll', () => {
   const over = document.scrollingElement.scrollHeight - window.innerHeight;
@@ -1444,11 +1478,11 @@ const pages = [
   // A covered row's Attach and Promote, and a covered group's Attach all and Promote as one, share the bar's one row.
   { name: 'triage-covered', route: '/triage', setup: selectCovered(), widths: [1440, 1920],
     rules: [visible('.tide-reading'), sameLine('.tide-triage-decide .tide-triage-attach', '.tide-triage-decide .tide-triage-promote'),
-      oneRow('.tide-triage-decide .tide-triage-acts'), fits('.tide-triage-decide'), fits('.tide-triage-row.selected')] },
+      oneRow('.tide-triage-decide .tide-triage-acts'), fits('.tide-triage-decide'), fits('.tide-triage-row.selected'), mainButtonKeepsItsWords] },
   // A covered group's Attach all and Promote as one share a line too (the demo's covered group: Demo:TriageFiller below).
   { name: 'triage-covered-group', route: '/triage', setup: selectCovered(true), widths: [1440, 1920],
     rules: [visible('.tide-reading'), sameLine('.tide-triage-decide .tide-triage-attach', '.tide-triage-decide .tide-triage-promote'),
-      oneRow('.tide-triage-decide .tide-triage-acts'), fits('.tide-triage-decide'), fits('.tide-triage-group.selected')] },
+      oneRow('.tide-triage-decide .tide-triage-acts'), fits('.tide-triage-decide'), fits('.tide-triage-group.selected'), mainButtonKeepsItsWords] },
   // Below 1400px the pane that opened by itself is hidden and the decision stays in the selected row, reason and all.
   { name: 'triage-decision-narrow', route: '/triage', setup: wider, widths: [1000, 780],
     rules: [noSidewaysScroll, hidden('.tide-reading'), visible('.tide-triage-row.selected .tide-triage-decide'), visible('.tide-triage-row.selected .tide-triage-why'),

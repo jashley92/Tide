@@ -2704,10 +2704,18 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 @media (min-width: 1400px) {
     .tide-reading .tide-triage-acts { flex-wrap: nowrap; }
     .tide-reading .tide-triage-acts .btn:not(.tide-triage-attach) { flex: none; white-space: nowrap; }
-    /* The article's title gives way first, then the dismiss reason. */
-    .tide-reading .tide-triage-acts > .tide-triage-main { flex: 0 1000 auto; }
-    .tide-reading .tide-triage-end { flex: 0 1 auto; margin-left: auto; }
-    .tide-reading .tide-triage-end > select { flex: 0 1 auto; min-width: 5rem; }
+    /* The main button keeps its verb and takes the room the others leave: only the article's title in it gives way,
+       with an ellipsis, and never below a few letters. The other buttons give way first: their words after the first
+       go (each says them in full to a screen reader and on hover), then the dismiss reason narrows. The row's groups
+       (the main pair, Dismiss and its reason) lay their buttons straight into it. */
+    .tide-reading .tide-triage-acts > .tide-triage-main, .tide-reading .tide-triage-end { display: contents; }
+    /* Attach is a grid of its icon, its verb and the title, the title's column at least 3em: the button's least width
+       is its verb and the start of the title. It takes the room the others leave, up to its full width. */
+    .tide-reading .tide-triage-acts .tide-triage-attach { display: inline-grid; grid-auto-flow: column; grid-template-columns: auto auto minmax(3em, 1fr);
+        flex: 4 1 0; min-width: auto; max-width: max-content; }
+    .tide-reading .tide-triage-acts .btn:not(.btn-primary) .tide-triage-long { display: none; }
+    .tide-reading .tide-triage-end > :first-child { margin-left: auto; }
+    .tide-reading .tide-triage-end > select { flex: 1 1 0; min-width: 5rem; max-width: max-content; }
     /* With the pane beside it, the page is a column the window's height under the top bar, as the board's is: the list
        scrolls inside its card, and the pane fills the height beside it, its text scrolling inside it and the bar at its
        foot on the first screen however long the text. A short window scrolls the page instead. */

@@ -524,15 +524,20 @@ else
                             @onclick:stopPropagation="true" @onclick="() => AttachLine(line, attachTo)">
                         <span class="bi bi-link-45deg" aria-hidden="true"></span> Attach all @n to <span class="tide-triage-attach-title text-truncate">“@attachTo.ArticleTitle”</span></button>
                 }
-                <button class="btn @(attachTo is null ? "btn-primary" : "btn-outline-secondary") btn-sm tide-triage-promote" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => OpenGroupPromote(line)">
-                    <span class="bi bi-file-earmark-plus" aria-hidden="true"></span> Promote as one article (@n sources) <span class="tide-kbd">P</span></button>
+                @* The other buttons' words after the first (tide-triage-long) give way in the bar, so the main button keeps
+                   its own; each says them in full to a screen reader and on hover. *@
+                <button class="btn @(attachTo is null ? "btn-primary" : "btn-outline-secondary") btn-sm tide-triage-promote" disabled="@_busy" aria-keyshortcuts="P"
+                        aria-label="@($"Promote as one article ({n} sources)")" title="@($"Promote as one article ({n} sources)")" @onclick:stopPropagation="true" @onclick="() => OpenGroupPromote(line)">
+                    <span class="bi bi-file-earmark-plus" aria-hidden="true"></span> Promote as one<span class="tide-triage-long"> article (@n sources)</span> <span class="tide-kbd">P</span></button>
                 </span>
                 @* Only new reports are shortlisted or dismissed as a group, as the S and X keys are. *@
                 @if (_status == FeedItemStatus.New)
                 {
-                    <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => ActOnGroup(line, TriageStep.Shortlist)">Shortlist the @n <span class="tide-kbd">S</span></button>
+                    <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" aria-keyshortcuts="S" aria-label="@($"Shortlist the {n}")" title="@($"Shortlist the {n}")"
+                            @onclick:stopPropagation="true" @onclick="() => ActOnGroup(line, TriageStep.Shortlist)">Shortlist<span class="tide-triage-long"> the @n</span> <span class="tide-kbd">S</span></button>
                     <span class="tide-triage-end">
-                        <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => ActOnGroup(line, TriageStep.Dismiss)">Dismiss the @n <span class="tide-kbd">X</span></button>
+                        <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" aria-keyshortcuts="X" aria-label="@($"Dismiss the {n}")" title="@($"Dismiss the {n}")"
+                                @onclick:stopPropagation="true" @onclick="() => ActOnGroup(line, TriageStep.Dismiss)">Dismiss<span class="tide-triage-long"> the @n</span> <span class="tide-kbd">X</span></button>
                     </span>
                 }
             </div>

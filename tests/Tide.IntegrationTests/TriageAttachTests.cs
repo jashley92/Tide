@@ -147,7 +147,10 @@ public class TriageAttachTests(TideApp app) : IClassFixture<TideApp>
         Selected(html).Should().Contain("tide-triage-group");
         var line = Bar(html);
         Regex.IsMatch(line, "class=\"btn btn-primary btn-sm tide-triage-attach\"[^>]*>(<span[^>]*></span>)? Attach all 3 to <span class=\"tide-triage-attach-title text-truncate\">“Quorvexz theft, first report”</span>").Should().BeTrue();
-        Regex.IsMatch(line, "class=\"btn btn-outline-secondary btn-sm tide-triage-promote\"[^>]*>(<span[^>]*></span>)? Promote as one article \\(3 sources\\) <span class=\"tide-kbd\">P</span>")
+        // Promote as one keeps its whole name for screen readers and on hover; on a wide window's bar the words after
+        // "Promote as one" give way, so the main button keeps its own.
+        Regex.IsMatch(line, "class=\"btn btn-outline-secondary btn-sm tide-triage-promote\"[^>]*aria-label=\"Promote as one article \\(3 sources\\)\"[^>]*>(<span[^>]*></span>)? "
+                + "Promote as one<span class=\"tide-triage-long\"> article \\(3 sources\\)</span> <span class=\"tide-kbd\">P</span>")
             .Should().BeTrue("promoting the group is still there, and P");
 
         await r.Click(t => t.AttachCovered(0));
