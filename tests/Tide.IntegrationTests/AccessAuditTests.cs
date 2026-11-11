@@ -59,7 +59,8 @@ public class DownloadAuditTests(TideApp app) : IClassFixture<TideApp>
         var amber = await app.CreateClient().GetAsync($"/exports/article/{article}?format=csv&tlp=amber");
         amber.StatusCode.Should().Be(HttpStatusCode.OK);
         var size = (await amber.Content.ReadAsByteArrayAsync()).Length;
-        (await app.CreateClient().GetAsync($"/exports/article/{article}")).StatusCode.Should().Be(HttpStatusCode.OK, "no ceiling is every level");
+        (await app.CreateClient().GetAsync($"/exports/article/{article}")).StatusCode.Should().Be(HttpStatusCode.BadRequest, "no ceiling is refused, not every level");
+        (await app.CreateClient().GetAsync($"/exports/article/{article}?tlp=red")).StatusCode.Should().Be(HttpStatusCode.OK);
 
         var rows = await Downloads(key);
         rows.Should().HaveCount(2);

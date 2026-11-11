@@ -1,35 +1,50 @@
-@* Export the indicators of an article, a brief or a story as STIX 2.1 or CSV, up to a TLP: articles marked above it are
-   left out whole. The panel closes when done with (Popout): Esc anywhere on the page, with focus back on the button; a
-   click outside it, or Tab out of it. *@
+@* Export the indicators of an article, a brief, a story or a lookup as STIX 2.1 or CSV, up to a TLP: articles marked
+   above it are left out whole. Behind its button, or (Inline) drawn where it's placed, in a context rail's section.
+   Behind its button, the panel closes when done with (Popout): Esc anywhere on the page, with focus back on the button;
+   a click outside it, or Tab out of it. *@
 @implements IAsyncDisposable
 @inject IJSRuntime JS
 
-<div class="tide-export" @ref="_holder">
-    <button type="button" class="btn btn-outline-secondary" aria-expanded="@Ui.Aria(_open)" @ref="_button" @onclick="() => _open = !_open">
-        <span class="bi bi-box-arrow-up" aria-hidden="true"></span> Export indicators
-    </button>
-    @if (_open)
-    {
-        <div class="tide-export-panel">
-            <label class="tide-field-label">Include articles marked up to</label>
-            <TlpSelect @bind-Value="_ceiling" Label="Highest TLP to include" />
-            <div class="d-flex gap-2 mt-2">
-                <a class="btn btn-primary btn-sm" href="@Url("stix")" download><span class="bi bi-filetype-json" aria-hidden="true"></span> STIX 2.1</a>
-                <a class="btn btn-outline-secondary btn-sm" href="@Url("csv")" download><span class="bi bi-filetype-csv" aria-hidden="true"></span> CSV</a>
-            </div>
-            <div class="form-text">Each object carries its article's TLP marking. STIX leaves out host names, process names and "other" indicators; the CSV has every one.</div>
-        </div>
-    }
-</div>
+@if (Inline)
+{
+    @Panel
+}
+else
+{
+    <div class="tide-export" @ref="_holder">
+        <button type="button" class="btn btn-outline-secondary" aria-expanded="@Ui.Aria(_open)" @ref="_button" @onclick="() => _open = !_open">
+            <span class="bi bi-box-arrow-up" aria-hidden="true"></span> Export indicators
+        </button>
+        @if (_open)
+        {
+            <div class="tide-export-panel">@Panel</div>
+        }
+    </div>
+}
 
 @code {
     [Parameter, EditorRequired] public ExportScope Scope { get; set; }
     [Parameter, EditorRequired] public string Key { get; set; } = "";
 
+    /// <summary>Drawn in place, with no button to open it.</summary>
+    [Parameter] public bool Inline { get; set; }
+
     private bool _open;
     private ElementReference _holder, _button;
     private Popout? _popout;
-    private TlpLevel _ceiling = TlpLevel.Red;
+
+    // The least sensitive ceiling, so a wider one is always chosen, never the one a click gets.
+    private TlpLevel _ceiling = TlpLevel.Clear;
+
+    private RenderFragment Panel => @<text>
+        <label class="tide-field-label">Include articles marked up to</label>
+        <TlpSelect @bind-Value="_ceiling" Label="Highest TLP to include" />
+        <div class="d-flex gap-2 mt-2">
+            <a class="btn btn-primary btn-sm" href="@Url("stix")" download><span class="bi bi-filetype-json" aria-hidden="true"></span> STIX 2.1</a>
+            <a class="btn btn-outline-secondary btn-sm" href="@Url("csv")" download><span class="bi bi-filetype-csv" aria-hidden="true"></span> CSV</a>
+        </div>
+        <div class="form-text">Each object carries its article's TLP marking. STIX leaves out host names, process names and "other" indicators; the CSV has every one.</div>
+    </text>;
 
     private string Url(string format) =>
         $"exports/{Scope.ToString().ToLowerInvariant()}/{Uri.EscapeDataString(Key)}?format={format}&tlp={Tlp.Key(_ceiling)}";
@@ -41,8 +56,9 @@
         return Task.CompletedTask;
     }
 
+    // Inline, there's no button and nothing to close: no popout is followed.
     protected override Task OnAfterRenderAsync(bool firstRender) =>
-        (_popout ??= new Popout(JS, Dismissed)).FollowAsync(_open, _holder, _button);
+        Inline ? Task.CompletedTask : (_popout ??= new Popout(JS, Dismissed)).FollowAsync(_open, _holder, _button);
 
     public ValueTask DisposeAsync() => _popout?.DisposeAsync() ?? ValueTask.CompletedTask;
 }
