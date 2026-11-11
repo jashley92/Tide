@@ -743,8 +743,8 @@ else
     public void Dispose()
     {
         _live?.Dispose();
-        _autosaveWait?.Cancel();
-        _autosaveWait?.Dispose();
+        _autosavePause.Now();   // a pause still running saves nothing once the editor has gone
+        _disposed = true;
     }
 
     // Loads when the article changes, not whenever the page around it redraws, which would drop what's being typed.
@@ -802,7 +802,7 @@ else
             _whyHint = _form.WhyItMattersAtThreatDefault;
             _dirty = false;
             _changedBy = null;
-            (_autosaveStopped, _autosaveNote, _autosavedAt) = (false, null, null);
+            (_autosaveNote, _autosavedAt) = (null, null);
         }
         _briefDates = (await ArticleSvc.BriefDatesAsync(Id)).ToList();
         _excerpt = await ArticleSvc.SourceExcerptAsync(Id);
@@ -853,28 +853,23 @@ else
     /// <summary>How long typing pauses before the form is autosaved.</summary>
     internal static readonly TimeSpan AutosavePause = TimeSpan.FromSeconds(2);
 
-    // Autosave: the wait for the pause (each edit starts it again), what the bar says about it while something is unsaved
-    // ("Saving…", or why it held off), when it last saved, and whether a colleague's save has stopped it.
-    private CancellationTokenSource? _autosaveWait;
+    // Autosave: the pause (each edit starts it again; Save and leaving supersede it), what the bar says about it while
+    // something is unsaved ("Saving…", or why it held off), and when it last saved. A colleague's save heard, or refused
+    // as stale, stops it (_changedBy) until the article is reloaded.
+    private readonly TypingPause _autosavePause = new((int)AutosavePause.TotalMilliseconds);
     private string? _autosaveNote;
     private DateTimeOffset? _autosavedAt;
-    private bool _autosaveStopped;
+    private bool _disposed;
 
     private void ScheduleAutosave()
     {
-        _autosaveWait?.Cancel();
-        _autosaveWait?.Dispose();
-        _autosaveWait = null;
-        if (!_canWrite || _autosaveStopped) return;
-        var wait = _autosaveWait = new CancellationTokenSource();
-        _ = AutosaveAfterPause(wait.Token);
+        if (!_canWrite || _changedBy is not null) return;
+        _ = AutosaveAfterPause();
     }
 
-    private async Task AutosaveAfterPause(CancellationToken ct)
+    private async Task AutosaveAfterPause()
     {
-        try { await Task.Delay(AutosavePause, ct); }
-        catch (OperationCanceledException) { return; }
-        await InvokeAsync(AutosaveNowAsync);
+        if (await _autosavePause.Settled() && !_disposed) await InvokeAsync(AutosaveNowAsync);
     }
 
     /// <summary>
@@ -886,7 +881,7 @@ else
     /// </summary>
     internal async Task AutosaveNowAsync()
     {
-        if (_form is null || !_canWrite || !_dirty || _busy || _uploading || _autosaveStopped || _changedBy is not null) return;
+        if (_form is null || !_canWrite || !_dirty || _busy || _uploading || _changedBy is not null) return;
         _busy = true;
         var edits = _edits;
         _autosaveNote = "Saving…";
@@ -897,10 +892,8 @@ else
             var result = await ArticleSvc.AutosaveAsync(_form);
             if (result.EditVersion is { } version)
             {
-                (_form.EditVersion, saved, _autosaveNote, _autosavedAt) = (version, true, null, DateTimeOffset.UtcNow);
-                // Typing during the save may not have reached it: those edits stay unsaved, and are saved after the next pause.
-                _dirty = _edits != edits;
-                _article = await ArticleSvc.GetAsync(Id) ?? _article;
+                saved = true;
+                await Saved(version, edits, DateTimeOffset.UtcNow);
             }
             else _autosaveNote = result.Hold == AutosaveHold.SentBrief
                 ? "On a sent brief, so not saved automatically: Save to correct it."
@@ -908,7 +901,7 @@ else
         }
         catch (StaleEditException)
         {
-            (_autosaveStopped, _changedBy) = (true, _changedBy ?? "Someone else");
+            _changedBy ??= "Someone else";
             _autosaveNote = "Not saved automatically: someone else saved this article. What you typed is still here.";
         }
         catch (Exception ex) { _autosaveNote = $"Not saved automatically: {UserFacingError.For(ex)}"; }
@@ -1222,19 +1215,15 @@ else
     {
         if (_busy) return false;
         _busy = true;
-        _autosaveWait?.Cancel();
+        _autosavePause.Now();
         var edits = _edits;
         try
         {
-            _form!.EditVersion = await ArticleSvc.SaveAsync(_form);
+            var version = await ArticleSvc.SaveAsync(_form!);
             // The save went through, so whatever was heard meanwhile didn't make it stale: the banner saying it would
             // be refused goes.
             _changedBy = null;
-            // Typing during the save may not have reached it: those edits stay unsaved, so the bar and the leave
-            // question still say so.
-            _dirty = _edits != edits;
-            (_autosaveNote, _autosavedAt) = (null, null);
-            _article = await ArticleSvc.GetAsync(Id);
+            await Saved(version, edits, null);
             Toasts.Show("Saved.");
             return true;
         }
@@ -1314,15 +1303,26 @@ else
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
     }
 
+    // After a save, by hand or by itself (autosavedAt): the form carries on from the new version. Typing during the save
+    // may not have reached it: those edits stay unsaved, so the bar and the leave question still say so (and autosave
+    // saves them after the next pause).
+    private async Task Saved(Guid version, int edits, DateTimeOffset? autosavedAt)
+    {
+        _form!.EditVersion = version;
+        _dirty = _edits != edits;
+        (_autosaveNote, _autosavedAt) = (null, autosavedAt);
+        _article = await ArticleSvc.GetAsync(Id) ?? _article;
+    }
+
+    /// <summary>Whether the form has changes not yet saved (for the tests; the bar and UnsavedGuard read it).</summary>
+    internal bool Dirty => _dirty;
+
     /// <summary>
     /// Whether to let a navigation go ahead (UnsavedGuard): at once when nothing is unsaved; otherwise as the person
     /// chooses. Save and leave goes only if the save works (a stale copy is refused, and stays here to sort out); Discard
     /// and leave drops the changes (the next article, or the page, loads afresh); Stay keeps everything as it is.
     /// </summary>
     // Reads _dirty as it is now, not as the guard's last render had it.
-    /// <summary>Whether the form has changes not yet saved (for the tests; the bar and UnsavedGuard read it).</summary>
-    internal bool Dirty => _dirty;
-
     internal Task<bool> MayLeave() => _dirty ? _guard.Ask() : Task.FromResult(true);
 
     // Loaded again even when the way out leads back to this article, so what was discarded isn't left showing.

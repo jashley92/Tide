@@ -159,7 +159,7 @@ public static class HistoryFormatter
 
     /// <summary>Whether <paramref name="row"/> was written by an autosave (<see cref="AuditVia"/>).</summary>
     public static bool IsAutosave(AuditLogEntry row) =>
-        row.ChangesJson is { } json && json.Contains($"\"{AuditVia.Field}\"", StringComparison.Ordinal);
+        Changes(row.ChangesJson, Noise, null).Any(c => c.Field == Label(AuditVia.Field));
 
     /// <summary>
     /// One editing session's autosaves of an article (<paramref name="rows"/>, newest first) as one entry: each field from
