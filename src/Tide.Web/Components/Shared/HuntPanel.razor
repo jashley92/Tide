@@ -132,7 +132,7 @@
                 </div>
                 <pre id="hunt-preview" class="tide-query">@preview</pre>
                 <div class="d-flex gap-2 align-items-center flex-wrap">
-                    <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="hunt-preview" data-copy-status="hunt-preview-status" data-copy-done="Copied. The query is now on the action." disabled="@_busy" @onclick="CopyPreview"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="hunt-preview" data-copy-status="hunt-preview-status" disabled="@_busy" @onclick="CopyPreview"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
                     <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="KeepPreview"><span class="bi bi-plus-lg" aria-hidden="true"></span> Keep this query</button>
                     <button type="button" class="btn btn-outline-secondary btn-sm" disabled aria-describedby="hunt-preview-why"><span class="bi bi-check2-circle" aria-hidden="true"></span> No hits, close</button>
                     <button type="button" class="btn btn-outline-secondary btn-sm" disabled aria-describedby="hunt-preview-why"><span class="bi bi-check2-square" aria-hidden="true"></span> Record hits</button>
@@ -140,8 +140,10 @@
                 </div>
             </div>
         }
-        @* Outside the preview, which has gone by the time the browser says the copy worked. *@
+        @* Outside the preview, which has gone by the time the browser says the copy worked. The browser writes the first
+           ("Copied."); the page writes the second, once the copied query is saved on the action or couldn't be. *@
         <span id="hunt-preview-status" class="small tide-muted" role="status" aria-live="polite"></span>
+        <span class="small tide-muted" role="status" aria-live="polite">@_previewSaved</span>
     }
     @foreach (var h in Action.Hunts)
     {
@@ -342,17 +344,21 @@
     }
 
     /// <summary>Copy on the preview: the query goes on the action as a generated one does, and counts as copied here.
-    /// The browser's own click copies the text and says so beside the query (clipboard.js, the button's data-copy-done):
-    /// it knows the copy worked, so that's the one confirmation, with no toast as well.</summary>
+    /// The browser's own click copies the text and says "Copied." beside the query (clipboard.js); the page says the
+    /// query is on the action only once it's saved, or plainly that it isn't. No toast as well.</summary>
     internal Task CopyPreview() => SavePreview(copied: true);
 
     /// <summary>Keep this query: the same, without the copy; a toast confirms it.</summary>
     internal Task KeepPreview() => SavePreview(copied: false);
 
+    // What the page says after Copy on the preview: that the copied query is saved on the action, or that it isn't.
+    private string? _previewSaved;
+
     private async Task SavePreview(bool copied)
     {
         if (_preview is not { } shown) return;   // saved already: a second click finds the preview gone
-        await Run(async () =>
+        _previewSaved = null;
+        var saved = await Run(async () =>
         {
             var hunt = await ActionSvc.GenerateHuntAsync(Action.Id, _dialect);
             _preview = null;
@@ -362,9 +368,18 @@
                 Toasts.Error("The query changed since it was shown. Copy it again before you run it.");
                 return;
             }
-            if (copied) _copied.Add(hunt.Id);
+            if (copied)
+            {
+                _copied.Add(hunt.Id);
+                _previewSaved = "The query is now on the action.";
+            }
             else Toasts.Show("Query kept on the action.");
         });
+        if (copied && !saved)
+        {
+            _previewSaved = "Copied, but the query isn't on the action: it couldn't be saved.";
+            StateHasChanged();
+        }
     }
 
     private async Task RememberDialect()
