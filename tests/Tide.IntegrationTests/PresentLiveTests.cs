@@ -89,7 +89,8 @@ public class PresentLiveTests(TideApp app) : IClassFixture<TideApp>
         await Do(owner, p => p.ToggleHand());
         Meetings.Get(day)!.Hands.Single().Should().Match<RaisedHand>(h => h.Name == "Olive Owner" && h.ArticleId != null);
         await Do(pat, p => p.Follow());
-        (await pat.Html()).Should().Contain("Lower Olive Owner&#x27;s hand");
+        await Do(pat, p => p.ToggleHandsList());
+        (await pat.Html()).Should().Contain("Lower Olive Owner&#x27;s hand", "the presenter lowers it from the list of hands");
 
         await using (var scope = SignedIn(app, SignIn.Analyst))
         {

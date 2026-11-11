@@ -692,13 +692,15 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 /* ---- Present mode: one article per slide, dark, sized for a shared screen ---- */
 .tide-present { position: fixed; inset: 0; background: var(--tide-slide-bg); color: var(--tide-slide-text); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); font-size: clamp(16px, 1.15vw, 22px); }
 .tide-present a { color: var(--tide-slide-accent); }
-.tide-present-top { display: flex; justify-content: space-between; align-items: center; padding: .7em 1.6em; border-bottom: 1px solid var(--tide-slide-line); gap: 1em; }
+/* The top bar: the title, who is here, and the tools, on one row while they fit and on two when they don't (the tools
+   go to the second), never off the window. The title and who is here start from their least width (the mark; the dots,
+   the count and the buttons) and share what's left, up to what they need; the tools keep their size. */
+.tide-present-top { display: flex; flex-wrap: wrap; align-items: center; padding: .7em 1.6em; border-bottom: 1px solid var(--tide-slide-line); gap: .5em 1em; }
 .tide-present-top .tide-brand-mark { flex: none; width: 1.8em; height: 1.8em; font-size: .9em; }
-.tide-present-title { display: flex; align-items: center; gap: .7em; font-weight: var(--tide-weight-semibold); flex: 0 1000 auto; min-width: 1.62em; }
+.tide-present-title { display: flex; align-items: center; gap: .7em; font-weight: var(--tide-weight-semibold); flex: 2 1 0; min-width: 1.62em; max-width: max-content; }
 .tide-present-title small { color: var(--tide-slide-muted); font-weight: var(--tide-weight-regular); }
-.tide-present-tools { display: flex; gap: .5em; align-items: center; flex: 0 1 auto; min-width: 0; }
-/* The tools keep their words on one line: the title gives way first (it ellipsizes, down to its mark), then who is
-   here (.tide-present-people), and only then the follow pill. */
+.tide-present-tools { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5em; align-items: center; flex: 0 1 auto; margin-left: auto; }
+/* The tools keep their words on one line. */
 .tide-present-tools > .btn { white-space: nowrap; flex: none; }
 .tide-present-title > span:not(.tide-brand-mark) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tide-present .btn-primary { --bs-btn-color: var(--tide-slide-on-accent); --bs-btn-bg: var(--tide-slide-accent); --bs-btn-border-color: var(--tide-slide-accent); --bs-btn-hover-color: var(--tide-slide-on-accent); --bs-btn-hover-bg: var(--tide-slide-accent-hover); --bs-btn-hover-border-color: var(--tide-slide-accent-hover); }
@@ -821,8 +823,6 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
 @media (prefers-reduced-motion: reduce) { .tide-follow.is-reconnecting .tide-follow-dot { animation: none; } }
 @media (forced-colors: active) { .tide-follow-dot { background: CanvasText; } }
 @media (max-width: 900px) {
-    .tide-present-top { flex-wrap: wrap; }
-    .tide-present-tools { flex-wrap: wrap; justify-content: flex-end; }
     .tide-follow { max-width: 16em; }
     .tide-follow .tide-follow-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 }
@@ -831,24 +831,28 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
 .tide-progress button.hand { box-shadow: 0 -3px 0 var(--tide-slide-warn); }
 .tide-presence-dot.is-away { opacity: .6; }
 .tide-presence-slide { position: absolute; right: -.4rem; bottom: -.35rem; min-width: .9rem; padding: 0 .15rem; font-size: .5rem; line-height: .9rem; text-align: center; border-radius: var(--tide-radius-pill); background: var(--tide-slide-surface); color: var(--tide-slide-text); border: 1px solid var(--tide-slide-line-strong); }
-/* Who is in the meeting and whose hands are up, in the top bar for everyone, after the title. On one line, by
-   construction: a grid whose least width is the dots, the buttons and each hand's mark and first letter (--hands, the
-   count, sizes that track; how many are here starts at nothing), so it gives way after the title and before the tools.
-   The hands' names have the room they need first, how many are here only what is left; each ends in an ellipsis when
-   short of it. The presenter's dot is ringed in the accent, a raised hand's in the warning. */
-.tide-present-people { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(calc(var(--hands, 0) * 2.9em + .3em), max-content) auto auto; align-items: center; flex: 1 100 auto; }
+/* Who is in the meeting and whose hands are up, in the top bar for everyone, after the title. Its least width is
+   bounded whatever the meeting: five dots and "+N", how many are here (short, never cut), a follower's Raise hand, and
+   the hands' count. The hands' names follow the count in the room that's left, in order, each whole or not shown: one
+   line that wraps, so a name that doesn't fit drops to a hidden second line (the first item, an empty <i> a line
+   tall, lets even the first name go). The count opens the list. The presenter's dot is ringed in the accent, a raised hand's in the warning. */
+.tide-present-people { position: relative; display: flex; align-items: center; gap: .6em; flex: 1 1 0; }
 .tide-present-people:not(:has(*)) { display: none; }
-.tide-present-people > .tide-presence { grid-column: 1; }
-.tide-present-here { grid-column: 2; margin-inline-start: .75em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tide-slide-muted); font-size: .8em; }
-.tide-hands { grid-column: 3; display: flex; gap: .3em; min-width: 0; margin: 0 0 0 .6em; padding: 0; list-style: none; overflow: clip; overflow-clip-margin: .3em; }
-.tide-hands > li { display: flex; min-width: 2.6em; }
-.tide-hand-up { display: inline-flex; align-items: center; gap: .3em; min-width: 0; max-width: 14em; white-space: nowrap; }
-.tide-hand-up > .bi { flex: none; }
-.tide-hand-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-span.tide-hand-up { padding: .2em .65em; border: 1px solid var(--tide-slide-warn); border-radius: var(--tide-radius-pill); color: var(--tide-slide-warn); font-size: .8em; line-height: 1.3; }
-.tide-present .btn.tide-hand-up { --bs-btn-color: var(--tide-slide-warn); --bs-btn-border-color: var(--tide-slide-warn); }
-.tide-present-people > .btn { grid-column: 5; margin-inline-start: .6em; white-space: nowrap; font-size: .8em; }
-.tide-present-people > .btn-link { grid-column: 4; padding-inline: 0; font-size: .8em; color: var(--tide-slide-accent); }
+.tide-present-people > * { flex: none; }
+.tide-present-people > .btn { white-space: nowrap; font-size: .8em; }
+.tide-present-here { white-space: nowrap; color: var(--tide-slide-muted); font-size: .8em; }
+.tide-present-people > .tide-hands-box { display: flex; flex: 1 1 0; }
+.tide-hands-btn { display: flex; align-items: center; gap: .5em; flex: 1 1 auto; min-width: 0; padding: 0; border: 0; background: none; color: var(--tide-slide-warn); text-align: start; }
+.tide-hands-count { flex: none; display: inline-flex; align-items: center; gap: .3em; padding: .15em .6em; border: 1px solid var(--tide-slide-warn); border-radius: var(--tide-radius-pill); font-size: .8em; font-weight: var(--tide-weight-semibold); line-height: 1.3; }
+.tide-hands-btn:hover .tide-hands-count, .tide-hands-btn[aria-expanded="true"] .tide-hands-count { background: var(--tide-slide-line); }
+.tide-hands-names { flex: 1 1 auto; width: 0; display: flex; flex-wrap: wrap; height: 1.3em; line-height: 1.3; overflow: hidden; font-size: .8em; }
+.tide-hands-names > i { width: 0; height: 1.3em; }
+.tide-hands-names > span { white-space: nowrap; }
+.tide-hands-names > span + span::before { content: ", "; white-space: pre; }
+.tide-hands-pop { position: absolute; top: calc(100% + .5em); left: 0; z-index: 20; width: max-content; min-width: 12em; max-width: min(24em, calc(100vw - 3.2em)); padding: .6em .8em; background: var(--tide-slide-surface); border: 1px solid var(--tide-slide-line-strong); border-radius: var(--tide-radius-xl); box-shadow: 0 10px 30px var(--tide-shadow-strong); }
+.tide-hands-pop .tide-hands { list-style: none; margin: 0 0 .5em; padding: 0; }
+.tide-hands-pop .tide-hands > li { display: flex; align-items: center; justify-content: space-between; gap: .8em; padding: .3em 0; border-bottom: 1px solid var(--tide-slide-line); }
+.tide-hands-pop .tide-hand-name { overflow-wrap: anywhere; }
 .tide-present-people .tide-presence-dot.is-presenting { border-color: var(--tide-slide-accent); }
 .tide-present-people .tide-presence-dot.has-hand { border-color: var(--tide-slide-warn); }
 .tide-action-assign { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .3em; margin-left: .4em; }
