@@ -192,7 +192,7 @@ public class ReaderPreviewTests(TideApp app) : IClassFixture<TideApp>
         foreach (var query in new[] { "", "?edition=company" })
         {
             var body = await Preview(await Save(OpenWhy()), query);
-            body.Should().Contain("1 thing missing")
+            body.Should().Contain(" 1 to check</span>", "a marking to look at is a check, not something missing").And.NotContain("thing missing")
                 .And.Contain("<span class=\"visually-hidden\">Warning:</span>")
                 .And.Contain("Why it matters is TLP:CLEAR and will reach the company-wide edition.")
                 .And.Contain("Check it")
