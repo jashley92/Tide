@@ -47,7 +47,9 @@ window.tideDialog = (function () {
     });
     return {
         open: function (focusTarget) {
-            opener = document.activeElement;
+            // Opened from inside a popout (the palette over + Filter), which closes as the dialog takes focus: focus goes
+            // back to the popout's button, as what had focus in it is gone by then.
+            opener = (window.tidePopout && window.tidePopout.opener(document.activeElement)) || document.activeElement;
             if (focusTarget && focusTarget.focus) focusTarget.focus();
         },
         // A dialog with fields to fill (ConfirmDialog's Form): focus goes to its first field, or to the fallback.

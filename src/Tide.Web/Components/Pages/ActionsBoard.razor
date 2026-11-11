@@ -72,16 +72,17 @@
 @if (_saved.Count > 0)
 {
     @* The person's own saved views: a link each to the tab, layout and filters it keeps, the one shown marked, with a
-       menu to rename, move or delete it. *@
+       menu of what can be done to it (its name says which: a view first or last can't move that way). *@
     var current = ActiveSaved;
     <nav class="tide-savedviews-list tide-actions-saved" aria-label="Saved views">
         @foreach (var v in _saved)
         {
             var on = v.Id == current?.Id;
+            var menu = SavedMenu(v);
             <span class="tide-savedview" @key="v.Id">
                 <a class="tide-chip tide-chip-pick @(on ? "selected" : "")" href="@("actions?" + v.Query)" aria-current="@(on ? "page" : null)">@v.Name</a>
-                <MenuButton Label="@($"{v.Name}: rename, move or delete")" IconOnly="true" Icon="bi-three-dots-vertical" ButtonClass="tide-savedview-menu"
-                            Items="@SavedMenu(v)" />
+                <MenuButton Label="@SavedMenuLabel(v, menu)" IconOnly="true" Icon="bi-three-dots-vertical" ButtonClass="tide-savedview-menu"
+                            Items="@menu" />
             </span>
         }
     </nav>
@@ -162,7 +163,7 @@ else
 <ConfirmDialog @ref="_nameDialog" Form="true" Confirming="SaveName" ConfirmDisabled="@string.IsNullOrWhiteSpace(_newName)" ConfirmIcon="bi-bookmark-check">
     <label class="tide-field-label" for="saved-view-name">Name</label>
     <input id="saved-view-name" class="form-control form-control-sm" maxlength="@SavedActionView.MaxName" @bind="_newName" @bind:event="oninput"
-           placeholder="My team's P1s" autocomplete="off" />
+           placeholder="My team's P1s" autocomplete="off" @onkeydown="NameKey" />
     <div class="form-text">@(_renaming is null ? "Keeps this tab, layout and filters under the tabs. Only you see your views." : "Only the name changes: the view still opens the same filters.")</div>
     @if (_nameError is not null) { <div class="text-danger small mt-2" role="alert">@_nameError</div> }
 </ConfirmDialog>
@@ -769,6 +770,19 @@ else
         if (_saved[^1] != v) items.Add(new("Move later", "bi-arrow-right", EventCallback.Factory.Create(this, () => MoveSaved(v, 1))));
         items.Add(new("Delete", "bi-trash", EventCallback.Factory.Create(this, () => DeleteSaved(v))));
         return items;
+    }
+
+    // The menu button's name says what its menu offers: "Weekly: rename, move later or delete".
+    internal static string SavedMenuLabel(ActionsSavedView v, IReadOnlyList<MenuButton.Item> menu)
+    {
+        var what = menu.Select(i => i.Label.ToLowerInvariant()).ToList();
+        return $"{v.Name}: {(what.Count < 2 ? string.Concat(what) : string.Join(", ", what[..^1]) + " or " + what[^1])}";
+    }
+
+    // Enter in the Name box saves, as in a form (the dialog's button is held back while it's empty).
+    private async Task NameKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.Repeat && !string.IsNullOrWhiteSpace(_newName)) await _nameDialog.Confirm();
     }
 
     internal async Task StartSave()

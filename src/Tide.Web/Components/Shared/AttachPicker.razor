@@ -1,14 +1,18 @@
 @* Triage's "Attach to…": the selected item as another report of an article being written, rather than a new one. The
    button opens a combobox in the row: a filter box over the recent drafts, ready articles and those on today's brief,
    newest first (IntakeService.AttachTargetsAsync; never one already presented or sent). The box keeps focus and
-   aria-activedescendant names the highlighted article; the arrows, Home and End move it, Enter picks it, Esc closes and
-   gives focus back to the button. Triage's letter keys leave the box alone (it's a text field). The page does the
-   attaching (OnPick), as its other buttons do. *@
+   aria-activedescendant names the highlighted article; the arrows, Home and End move it, Enter picks it. It closes when
+   done with (Popout): Esc anywhere on the page closes it and gives focus back to the button, without Triage hearing that
+   Esc too (it would close the reading pane); a click outside it, or Tab out of it, closes it with focus left there.
+   Triage's letter keys leave the box alone (it's a text field). The page does the attaching (OnPick), as its other
+   buttons do. *@
+@implements IAsyncDisposable
 @inject IntakeService Intake
 @inject OrgClock Clock
 @inject ToastService Toasts
+@inject IJSRuntime JS
 
-<div class="tide-attach" @onclick:stopPropagation="true">
+<div class="tide-attach" @ref="_holder" @onclick:stopPropagation="true">
     <button type="button" class="btn btn-outline-secondary btn-sm" aria-expanded="@Ui.Aria(_open)" aria-controls="@(_id)-panel"
             disabled="@Disabled" @ref="_button" @onclick="Toggle">
         <span class="bi bi-link-45deg" aria-hidden="true"></span> Attach to&hellip;
@@ -59,9 +63,10 @@
     private readonly string _id = "attach-" + Guid.NewGuid().ToString("N")[..8];
     private IReadOnlyList<AttachTarget>? _targets;
     private string _filter = "";
-    private bool _open, _focusInput, _focusButton;
+    private bool _open, _focusInput;
     private int _active;
-    private ElementReference _button, _input;
+    private ElementReference _holder, _button, _input;
+    private Popout? _popout;
 
     private string OptionId(int i) => $"{_id}-opt-{i}";
 
@@ -96,8 +101,8 @@
 
     private async Task Close()
     {
+        if (!_open) return;
         _open = false;
-        _focusButton = true;
         await OpenChanged.InvokeAsync(false);
         StateHasChanged();
     }
@@ -109,7 +114,6 @@
         var shown = Shown;
         if (ComboKeys.Move(e, _active, shown.Count, typed: _filter.Length > 0) is { } to) _active = to;
         else if (e.Key == "Enter" && _active < shown.Count) await Pick(shown[_active]);
-        else if (e.Key == "Escape") await Close();
         StateHasChanged();
     }
 
@@ -122,15 +126,14 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        _popout ??= new Popout(JS, Close);
+        await _popout.FollowAsync(_open, _holder, _button);
         if (_focusInput && _open)
         {
             _focusInput = false;
-            await _input.TryFocusAsync();
-        }
-        if (_focusButton)
-        {
-            _focusButton = false;
-            await _button.TryFocusAsync();
+            await _input.TryFocusAsync(preventScroll: true);
         }
     }
+
+    public ValueTask DisposeAsync() => _popout?.DisposeAsync() ?? ValueTask.CompletedTask;
 }

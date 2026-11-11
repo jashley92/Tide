@@ -1083,6 +1083,234 @@ const addFormTakesFocus = {
   },
 };
 
+/** Where focus is, said for a failure. */
+const focusedOn = page => page.evaluate(() => {
+  const el = document.activeElement;
+  return !el || el === document.body ? 'the page body' : `<${el.tagName.toLowerCase()} class="${el.className}"> ${(el.innerText ?? '').trim().slice(0, 30)}`;
+});
+
+/**
+ * A popout that closes when it's done with: Escape anywhere on the page (with focus outside it too), a click outside it,
+ * or focus leaving it by Tab. `wrap` holds the popout and the button that opens it (`opener`); `panel` is the popout;
+ * `inside` is where focus is put for an Escape in it, and `bare` a part of it that takes no focus, pressed. Escape is the popout's alone: it leaves the reading pane (where
+ * there is one) as it was, and an Escape in it puts focus back on its button; a click outside leaves focus where it went.
+ */
+const popoutCloses = (label, { wrap, opener, panel, inside, bare }) => {
+  const pane = page => anyShown(page, '.tide-reading');
+  const open = async page => {
+    // One a rule before left open (it failed) goes, with the page as it was.
+    if (await anyShown(page, `${wrap} ${panel}`)) { await page.reload({ waitUntil: 'networkidle' }); await settle(page); }
+    await page.locator(`${wrap} ${opener}`).first().click();
+    await page.locator(`${wrap} ${panel}`).first().waitFor({ timeout: 5000 });
+    await page.waitForTimeout(400);
+  };
+  const stillOpen = async (page, how) => {
+    await page.waitForTimeout(700);
+    return (await anyShown(page, `${wrap} ${panel}`)) ? [`${label} is still open after ${how}`] : [];
+  };
+  const paneKept = async (page, was, how) => (await pane(page)) === was ? [] : [`${how} ${was ? 'closed' : 'opened'} the reading pane too`];
+  const onOpener = page => page.evaluate(sel => document.activeElement === document.querySelector(sel), `${wrap} ${opener}`);
+  return [
+    { name: `${label}: Escape with focus on the page closes it, and only it`, check: async page => {
+      const was = await pane(page);
+      await open(page);
+      // Focus left on the page while it's open: the body, where a removed control or a click on bare page leaves it.
+      await page.evaluate(() => document.activeElement?.blur());
+      await page.keyboard.press('Escape');
+      return [...await stillOpen(page, 'Escape with focus on the page'), ...await paneKept(page, was, 'that Escape')];
+    } },
+    { name: `${label}: Tab out of it closes it`, check: async page => {
+      await open(page);
+      for (let i = 0; i < 20 && await page.evaluate(sel => !!document.activeElement?.closest(sel), wrap); i++) await page.keyboard.press('Tab');
+      return stillOpen(page, 'Tab took focus out of it');
+    } },
+    { name: `${label}: a click outside closes it, focus staying there`, check: async page => {
+      await open(page);
+      // By the mouse at the heading, whatever is over it (a backdrop that hears the click is outside too).
+      const at = await page.locator('.tide-page-head h1').first().boundingBox();
+      await page.mouse.click(at.x + 10, at.y + at.height / 2);
+      const problems = await stillOpen(page, 'a click on the page heading');
+      if (await onOpener(page)) problems.push(`a click outside put focus back on its button`);
+      return problems;
+    } },
+    { name: `${label}: Escape in it closes it, focus back on its button`, check: async page => {
+      const was = await pane(page);
+      await open(page);
+      await page.locator(`${wrap} ${inside}`).first().focus();
+      await page.keyboard.press('Escape');
+      const problems = [...await stillOpen(page, 'Escape in it'), ...await paneKept(page, was, 'that Escape')];
+      if (!await onOpener(page)) problems.push(`Escape in it left focus on ${await focusedOn(page)}, not its button`);
+      return problems;
+    } },
+    // A press on a part of it that takes no focus (its background, a label, a hint): the browser moves focus to the
+    // nearest focusable element holding it, which mustn't count as leaving it. By mouse, and by a tap.
+    ...(bare ? ['mouse', 'touch'].map(by => ({ name: `${label}: a ${by} press inside it (${bare}) leaves it open`, check: async page => {
+      await open(page);
+      const part = page.locator(`${wrap} ${bare}`).first();
+      await part.scrollIntoViewIfNeeded();
+      const box = await part.boundingBox();
+      const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.className, [box.x + 3, box.y + 3]);
+      await pressAt(page, by, box.x + 3, box.y + 3);
+      await page.waitForTimeout(700);
+      return (await anyShown(page, `${wrap} ${panel}`)) ? [] : [`a ${by} press on ${bare} (${hit}) closed ${label}, focus going to ${await focusedOn(page)}`];
+    } })) : []),
+  ];
+};
+
+/** A mouse click, or a tap (touch, by the DevTools protocol, as a phone sends it), at x, y. */
+async function pressAt(page, by, x, y) {
+  if (by === 'mouse') return page.mouse.click(x, y);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, radiusX: 1, radiusY: 1 }] });   // a fine point: no snapping to a nearby control
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await cdp.detach();
+}
+
+/** Setup: a click on the first `opener`, and its `panel` drawn. */
+const openFirst = (opener, panel) => async page => {
+  await page.locator(opener).first().click();
+  await page.locator(panel).first().waitFor({ timeout: 5000 });
+};
+
+/** Every shown match of `selector` lies side to side inside the page: within the window, and clear of the sidebar
+ * beside it (from where <main> starts). */
+const insidePage = selector => ({
+  name: `inside the page: ${selector}`,
+  check: page => page.$$eval(selector, (els, selector) => {
+    const shown = els.map(e => e.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0);
+    if (!shown.length) return [`nothing shown matches ${selector}`];
+    const from = Math.max(0, document.querySelector('main')?.getBoundingClientRect().left ?? 0), to = document.documentElement.clientWidth;
+    return shown.filter(r => r.left < from - 0.5 || r.right > to + 0.5)
+      .map(r => `${selector} runs from x=${Math.round(r.left)} to ${Math.round(r.right)}px, outside the page (${Math.round(from)} to ${to}px)`);
+  }, selector),
+});
+
+/**
+ * Opening a popout (by a click on `opener`, as the mouse, a tap or Enter does) moves nothing and hides nothing:
+ * - the page doesn't scroll sideways, isn't wider than what shows of it (the body's clientWidth, without the scrollbar
+ *   or the gutter kept for it), and a sideways wheel or Shift+wheel over it afterwards still doesn't scroll it sideways;
+ * - the popout lies inside what shows of the window, top to bottom, and never over its button;
+ * - no part of it is cut off by a box it's drawn in: the middle of each edge of it, and each end of each item, is its own
+ *   (a hit test there finds it).
+ */
+const opensInPlace = (label, opener, panel) => ({
+  name: `${label} opens in place`,
+  check: async page => {
+    const button = page.locator(opener).first();
+    await button.scrollIntoViewIfNeeded();
+    const x0 = await page.evaluate(() => scrollX);
+    await button.click();
+    await page.locator(panel).first().waitFor({ timeout: 5000 });
+    await page.waitForTimeout(700);
+    const seen = await page.evaluate(([sel, opener]) => {
+      const el = [...document.querySelectorAll(sel)].find(e => e.getBoundingClientRect().height > 0);
+      const r = el.getBoundingClientRect(), b = document.querySelector(opener).getBoundingClientRect();
+      const de = document.documentElement;
+      const mine = (x, y) => el.contains(document.elementFromPoint(x, y));
+      // Just inside the middle of each edge (its corners are rounded off).
+      const mx = (r.left + r.right) / 2, my = (r.top + r.bottom) / 2;
+      const edges = [[r.left + 3, my], [r.right - 3, my], [mx, r.top + 3], [mx, r.bottom - 3]];
+      const items = [...el.querySelectorAll('[role=menuitem], [role=option], [role=menuitemradio], [role=menuitemcheckbox], .tide-profile-item, .tide-export-panel a')]
+        .map(i => [i, i.getBoundingClientRect()]).filter(([, ir]) => ir.height > 0 && ir.top >= r.top && ir.bottom <= r.bottom);
+      return {
+        x: scrollX, scrollWidth: de.scrollWidth, clientWidth: Math.min(de.clientWidth, document.body.clientWidth), clientHeight: de.clientHeight, top: r.top, bottom: r.bottom,
+        overOpener: r.left < b.right && r.right > b.left && r.top < b.bottom && r.bottom > b.top,
+        cutEdges: edges.filter(([x, y]) => !mine(x, y)).map(([x, y]) => { const e = document.elementFromPoint(x, y); return (e ? `${e.tagName.toLowerCase()}.${e.className}`.trim() : "nothing") + ` at ${Math.round(x)},${Math.round(y)}`; }),
+        cutItems: items.filter(([i, ir]) => ![[ir.left + 2, (ir.top + ir.bottom) / 2], [ir.right - 2, (ir.top + ir.bottom) / 2]]
+          .every(([x, y]) => i.contains(document.elementFromPoint(x, y)))).map(([i]) => i.innerText.trim().slice(0, 24)),
+      };
+    }, [panel, opener]);
+    const problems = [];
+    if (seen.x !== x0) problems.push(`opening it scrolled the page sideways ${Math.round(seen.x - x0)}px`);
+    if (seen.scrollWidth > seen.clientWidth) problems.push(`the page is ${seen.scrollWidth - seen.clientWidth}px wider than what shows of it`);
+    if (seen.top < -0.5 || seen.bottom > seen.clientHeight + 0.5)
+      problems.push(`it runs from y=${Math.round(seen.top)} to ${Math.round(seen.bottom)}px, outside the window (0 to ${seen.clientHeight}px)`);
+    if (seen.overOpener) problems.push('it covers its own button');
+    if (seen.cutEdges.length) problems.push(`${seen.cutEdges.length} of its edges are cut off or covered (by ${seen.cutEdges.join(", ")})`);
+    if (seen.cutItems.length) problems.push(`items cut off or covered: ${seen.cutItems.join(', ')}`);
+    // A sideways wheel, and Shift with the wheel, over the page heading.
+    const h = await page.locator('h1').first().boundingBox();
+    await page.mouse.move(h.x + 5, Math.max(5, h.y + h.height / 2));
+    await page.mouse.wheel(120, 0);
+    await page.keyboard.down('Shift');
+    await page.mouse.wheel(0, 120);
+    await page.keyboard.up('Shift');
+    await page.waitForTimeout(400);
+    const x1 = await page.evaluate(() => scrollX);
+    if (x1 !== x0) problems.push(`a sideways wheel then scrolled the page ${Math.round(x1 - x0)}px`);
+    return problems;
+  },
+});
+
+/** Where focus is: an element's text, or "the page body". */
+const focusName = page => page.evaluate(() => {
+  const el = document.activeElement;
+  return !el || el === document.body ? 'the page body' : (el.innerText || el.getAttribute('aria-label') || el.tagName).trim().slice(0, 40);
+});
+
+/** Delete in the entry's More menu asks first; Escape, or Cancel, leaves the entry with focus back on More. */
+const deleteCancelledFocusesMore = {
+  name: 'Delete cancelled: focus back on More',
+  check: async page => {
+    const problems = [];
+    for (const how of ['Escape', 'Cancel']) {
+      await page.locator('.tide-library-entry .tide-menubutton-btn').first().click();
+      await page.getByRole('menuitem', { name: 'Delete' }).click();
+      await page.locator('.tide-modal').waitFor({ timeout: 5000 });
+      await page.waitForTimeout(400);
+      if (how === 'Escape') await page.keyboard.press('Escape');
+      else await page.locator('.tide-modal').getByRole('button', { name: 'Cancel' }).click();
+      await page.locator('.tide-modal').waitFor({ state: 'detached', timeout: 5000 });
+      await page.waitForTimeout(600);
+      const now = await focusName(page);
+      if (now !== 'More') problems.push(`after ${how} focus is on ${now}, not More`);
+    }
+    return problems;
+  },
+};
+
+/** The palette opened (Ctrl+K) over the open + Filter, then closed: focus is back on + Filter. */
+/** Save view, its name typed and Enter pressed: saved, as a form is; its menu button is named for the items it offers. */
+const saveViewByEnter = {
+  name: 'Save view: Enter saves, and the menu is named for what it offers',
+  check: async page => {
+    await page.locator('#save-view').click();
+    await page.locator('#saved-view-name').waitFor({ timeout: 5000 });
+    await page.locator('#saved-view-name').fill('By Enter');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(1200);
+    const problems = [];
+    if (await anyShown(page, '.tide-modal')) return ['Enter in the Name box left the dialog open'];
+    const menu = page.locator('.tide-savedview', { hasText: 'By Enter' }).locator('.tide-savedview-menu');
+    if (!await menu.count()) return ['no saved view "By Enter" after Enter'];
+    const named = (await menu.innerText()).trim();
+    await menu.click();
+    await page.locator('.tide-savedview [role=menuitem]').first().waitFor({ timeout: 5000 });
+    const items = (await page.locator('.tide-savedview [role=menuitem]').allInnerTexts()).map(t => t.trim().toLowerCase());
+    const said = named.replace(/^By Enter: /, '').split(/, | or /);
+    if (said.join('|') !== items.join('|')) problems.push(`the menu button says "${named}" but the menu offers ${items.join(', ')}`);
+    await page.keyboard.press('Escape');
+    return problems;
+  },
+};
+
+const paletteGivesFocusBack = {
+  name: 'the palette over + Filter gives focus back to it',
+  check: async page => {
+    await page.locator('.tide-filter-menu .tide-filter-add').click();
+    await page.locator('.tide-filter-pop').waitFor({ timeout: 5000 });
+    await page.waitForTimeout(400);
+    await page.keyboard.press('Control+k');
+    await page.locator('[data-palette-input]').waitFor({ timeout: 5000 });
+    await page.waitForTimeout(400);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(800);
+    const now = await focusName(page);
+    return /Filter/.test(now) ? [] : [`focus is on ${now}, not + Filter`];
+  },
+};
+
 /** In each visible match of `row`, every cell's text starts at least `px` right of the row's left edge: clear of an
  * accent drawn inside the row's edge. */
 const clearOfEdge = (row, px) => holds(`text clear of the edge: ${row}`, ([row, px]) => {
@@ -2572,6 +2800,43 @@ const pages = [
   // the list, and Escape closes the rail without closing the reading pane (or keeping it closed).
   { name: 'triage-rail-keys', route: `/triage?as=r1${run}`, setup: openRail, widths: [1440],
     rules: [visible('#tide-rail'), visible('.tide-reading'), railKeysStayInTheRail, escapeClosesTheRailOnly] },
+  // The decision's Attach to… (in the selected row, or under the reading pane where the pane shows) and the account
+  // menu close when done with, and their Escape is theirs alone: Triage's own (the reading pane's) doesn't hear it. A
+  // press on a part of one that takes no focus leaves it open. Signed in as someone of this run's own, as the pane's
+  // state is kept. The Attach panel stays inside the page, however narrow.
+  { name: 'triage-attach-popout', route: `/triage?as=a1${run}`, widths: [1440, 800],
+    rules: popoutCloses('Attach to…', { wrap: '.tide-triage-decide .tide-attach', opener: '> button', panel: '.tide-attach-panel', inside: 'input', bare: '.tide-attach-panel .form-text' }) },
+  { name: 'triage-attach-fits', route: '/triage', setup: openFirst('.tide-triage-decide .tide-attach > button', '.tide-attach-panel'),
+    widths: [1920, 1440, 1000, 800, 400], rules: [insidePage('.tide-attach-panel')] },
+  { name: 'triage-account-popout', route: `/triage?as=a2${run}`, widths: [1440, 800],
+    rules: popoutCloses('the account menu', { wrap: '.tide-profile', opener: '.tide-profile-btn', panel: '.tide-popover', inside: '.tide-popover button' }) },
+  { name: 'brief-export-popout', route: '/briefs/{today}', widths: [1440],
+    rules: popoutCloses('Export indicators', { wrap: '.tide-export', opener: '> button', panel: '.tide-export-panel', inside: '.tide-export-panel a', bare: '.tide-export-panel .tide-field-label' }) },
+  // The menu buttons and + Filter the same way: the Actions list's Status menu, + Filter there, and an action's More.
+  { name: 'actions-status-popout', route: '/actions?view=open&layout=list', widths: [1440],
+    rules: popoutCloses('the Status menu', { wrap: '.tide-table .tide-menubutton', opener: '.tide-menubutton-btn', panel: '.tide-menubutton-pop', inside: '[role=menuitem]' }) },
+  { name: 'actions-filter-popout', route: '/actions?view=open&layout=list', widths: [1440, 800],
+    rules: popoutCloses('+ Filter', { wrap: '.tide-filter-menu', opener: '.tide-filter-add', panel: '.tide-filter-pop', inside: '[role=menuitem]' }) },
+  { name: 'action-more-popout', route: '/actions/{huntAction}', widths: [1440],
+    rules: popoutCloses('the More menu', { wrap: '.tide-menubutton', opener: '.tide-menubutton-btn', panel: '.tide-menubutton-pop', inside: '[role=menuitem]' }) },
+  // Each popout opens in place on a narrow or short window: no sideways scroll, nothing wider than what shows, inside
+  // the window top to bottom (upward where there's more room above), never over its button, and nothing of it cut off.
+  ...[
+    ['triage', '/triage', 'Attach to…', '.tide-triage-decide .tide-attach > button', '.tide-attach-panel'],
+    ['account', '/triage', 'the account menu', '.tide-profile-btn', '.tide-profile .tide-popover'],
+    ['export', '/briefs/{today}', 'Export indicators', '.tide-export > button', '.tide-export-panel'],
+    ['status', '/actions?view=open&layout=list', 'the Status menu', '.tide-table .tide-menubutton-btn', '.tide-menubutton-pop'],
+    ['filter', '/actions?view=open&layout=list', '+ Filter', '.tide-filter-menu .tide-filter-add', '.tide-filter-pop'],
+    ['action-more', '/actions/{huntAction}', 'the More menu', '.tide-menubutton-btn', '.tide-menubutton-pop'],
+    ['library-more', '/library/queries', 'the entry’s More menu', '.tide-library-entry .tide-menubutton-btn', '.tide-menubutton-pop'],
+  ].map(([name, route, label, opener, panel]) => ({ name: `popout-in-place-${name}`, route, widths: [[1024, 900], [780, 900], [780, 380], [400, 800], [400, 330]],
+    rules: [opensInPlace(label, opener, panel)] })),
+  // Focus after a dialog opened from a popout: back on More once Delete is cancelled, and on + Filter after the palette.
+  { name: 'library-delete-focus', route: '/library/queries', widths: [1440], rules: [deleteCancelledFocusesMore] },
+  { name: 'palette-over-filter', route: '/actions?view=open&layout=list', widths: [1440], rules: [paletteGivesFocusBack] },
+  // Save view: Enter in its Name box saves it, and the new view's menu is named for what it offers. Someone of this
+  // run's own, so no one else's Actions shows the view.
+  { name: 'save-view-enter', route: `/actions?view=open&layout=list&as=sv${run}`, widths: [1440], rules: [saveViewByEnter] },
   // Triage's context rail: what TIDE knows about the selected item. From 1500px it's docked open beside the list and the
   // reading pane (triageBesideTheRail): for a covered report its coverage and story, for a covered group the other
   // reports with Attach all and Not the same, for a report naming a CVE its facts.
@@ -2650,7 +2915,10 @@ const pages = [
       [1000, sameLine('.tide-library-entry h3', '.tide-library-entry [data-copy-target]')], [1440, reachesBottom('.tide-library-entry', 24)],
       visible('#sq-retired'), hidden('.form-switch #sq-retired')] },
   // The entry's More menu opens wholly in view: Retire and Delete aren't cut off by the scrolling detail panel.
-  { name: 'library-more', route: '/library/queries', setup: openEntryMore, widths: [1920, 1440], rules: [menuItemsVisible] },
+  { name: 'library-more', route: '/library/queries', setup: openEntryMore, widths: [1920, 1440, 780, 400], rules: [menuItemsVisible, insidePage('.tide-menubutton-pop')] },
+  // The entry's More menu closes when done with, as every popout does.
+  { name: 'library-more-popout', route: '/library/queries', widths: [1920, 1440, 780, 400],
+    rules: popoutCloses('the entry’s More menu', { wrap: '.tide-library-entry .tide-menubutton', opener: '.tide-menubutton-btn', panel: '.tide-menubutton-pop', inside: '[role=menuitem]' }) },
   { name: 'library-search', route: '/library/queries?q=sweep', setup: wideFonts, widths: [1440, 780], rules: [noSidewaysScroll, visible('#library-find'), visible('.tide-library-list')] },
   // The selected entry's context in the rail: docked and open from 1500px, with the list and the entry fitting beside
   // it (about 870px); closed below that until asked for, and never a sideways scroll. Wider letters (LETTER_SPACING).
