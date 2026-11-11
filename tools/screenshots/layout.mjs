@@ -359,6 +359,28 @@ const escapeClosesTheRailOnly = {
   },
 };
 
+/** Our stack's Add a product, from the keyboard: opening the form puts focus in its first box, and Cancel puts it back
+ * on the button that opened it (not on the page's body, where the next Tab starts from the top). */
+const addFormTakesFocus = {
+  name: 'Add a product: focus into the form, and back to its button',
+  check: async page => {
+    const problems = [], focused = () => page.evaluate(() => {
+      const el = document.activeElement;
+      return !el || el === document.body ? 'the page body' : el.id || el.innerText.trim().slice(0, 40) || el.tagName;
+    });
+    const open = page.getByRole('button', { name: 'Add a product' });
+    await open.focus();
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(600);
+    if (await focused() !== 'new-name') problems.push(`opening the form left focus on ${await focused()}, not its Product box`);
+    await page.getByRole('button', { name: 'Cancel' }).focus();
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(600);
+    if (await focused() !== 'Add a product') problems.push(`Cancel left focus on ${await focused()}, not Add a product`);
+    return problems;
+  },
+};
+
 // The reading pane's open or closed is kept for the person, so the pages that press V sign in as someone of their own
 // for this run (the dev sign-in's ?as=), and everyone else's Triage opens as it always does.
 const run = Date.now().toString(36);
@@ -444,6 +466,7 @@ const pages = [
   { name: 'triage-keys', route: '/triage', setup: pressQuickly('j', 10), widths: [1440], rules: [selectedAsAimed()] },
   { name: 'triage-keys-next-page', route: '/triage?row=45', setup: pressQuickly('j', 10), widths: [1440], rules: [selectedAsAimed()] },
   { name: 'triage-keys-previous-page', route: '/triage?page=2&row=4', setup: pressQuickly('k', 10), widths: [1440], rules: [selectedAsAimed()] },
+  { name: 'stack-add-focus', route: '/stack', widths: [1440], rules: [addFormTakesFocus] },
   { name: 'trends', route: '/trends', widths: [1920], rules: [noSidewaysScroll, widerThan('.content', 1400)] },
   { name: 'slide-article', route: '/present/{today}', setup: toArticleSlide, widths: [1440, 1100, 900],
     rules: [
