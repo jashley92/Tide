@@ -28,6 +28,7 @@ public class PopoutScriptTests
         const add = list => (type, f, capture) => list(capture).push({ type, f });
         const remove = list => (type, f, capture) => { const l = list(capture), i = l.findIndex(x => x.type === type && x.f === f); if (i >= 0) l.splice(i, 1); };
         global.window = global;
+        global.getComputedStyle = () => ({});
         global.addEventListener = add(() => on.window);
         global.removeEventListener = remove(() => on.window);
         global.document = { addEventListener: add(c => c ? on.capture : on.bubble), removeEventListener: remove(c => c ? on.capture : on.bubble) };
@@ -38,7 +39,7 @@ public class PopoutScriptTests
         // A popout's holder, its button (which takes focus back after Escape) and its box, and what .NET is told.
         function holder(name) {
             const button = { isConnected: true, focus() { heard.push(name + ':focus'); } };
-            const h = { button, kids: [button, {}], attrs: {} };
+            const h = { button, kids: [button, {}], attrs: {}, children: [] };
             h.contains = x => x === h || h.kids.includes(x);
             h.hasAttribute = n => n in h.attrs;
             h.setAttribute = (n, v) => { h.attrs[n] = v; };

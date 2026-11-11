@@ -9,8 +9,24 @@
 //     A press inside it, on a part that takes no focus, leaves it open.
 // Each closes it once: the watch ends here, then .NET's Dismiss closes it. .NET ends a watch itself (unwatch) when the
 // popout closes another way, or the component goes.
+// As it opens, its panel is kept inside the page: one aligned to its button that would run past the window's edge, or
+// over the sidebar beside the page, is moved along until it doesn't (a button near the left of a narrow window).
 window.tidePopout = (function () {
     let watched = [], last = 0;
+    const margin = 8;
+
+    // The holder's panel: its child placed against it (the backdrop, where there is one, covers the window instead).
+    function fit(el) {
+        const panel = Array.prototype.find.call(el.children, function (c) { return getComputedStyle(c).position === 'absolute'; });
+        if (!panel) return;
+        const r = panel.getBoundingClientRect();
+        const main = document.querySelector('main');
+        const from = Math.max(0, main ? main.getBoundingClientRect().left : 0) + margin;
+        const to = document.documentElement.clientWidth - margin;
+        // Past the right edge it moves left, but never past the left one: a panel wider than the room starts at its left.
+        const by = r.right > to ? Math.max(to - r.right, from - r.left) : Math.max(0, from - r.left);
+        if (by) panel.style.translate = by + 'px 0';
+    }
 
     function listen(on) {
         const method = on ? 'addEventListener' : 'removeEventListener';
@@ -51,6 +67,7 @@ window.tidePopout = (function () {
             // element holding it: the holder itself takes it (out of the Tab order), so that press isn't leaving it.
             const focusable = !el.hasAttribute('tabindex');
             if (focusable) el.setAttribute('tabindex', '-1');
+            fit(el);
             watched.push({ id: ++last, el: el, opener: opener, ref: ref, focusable: focusable });
             return last;
         },

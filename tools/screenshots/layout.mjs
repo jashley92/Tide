@@ -707,15 +707,16 @@ const openFirst = (opener, panel) => async page => {
   await page.locator(panel).first().waitFor({ timeout: 5000 });
 };
 
-/** Every shown match of `selector` lies inside the window, side to side and top to bottom of the page. */
-const insideWindow = selector => ({
-  name: `inside the window: ${selector}`,
+/** Every shown match of `selector` lies side to side inside the page: within the window, and clear of the sidebar
+ * beside it (from where <main> starts). */
+const insidePage = selector => ({
+  name: `inside the page: ${selector}`,
   check: page => page.$$eval(selector, (els, selector) => {
     const shown = els.map(e => e.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0);
     if (!shown.length) return [`nothing shown matches ${selector}`];
-    const w = document.documentElement.clientWidth;
-    return shown.filter(r => r.left < -0.5 || r.right > w + 0.5)
-      .map(r => `${selector} runs from x=${Math.round(r.left)} to ${Math.round(r.right)}px, outside the window (0 to ${w}px)`);
+    const from = Math.max(0, document.querySelector('main')?.getBoundingClientRect().left ?? 0), to = document.documentElement.clientWidth;
+    return shown.filter(r => r.left < from - 0.5 || r.right > to + 0.5)
+      .map(r => `${selector} runs from x=${Math.round(r.left)} to ${Math.round(r.right)}px, outside the page (${Math.round(from)} to ${to}px)`);
   }, selector),
 });
 
@@ -938,11 +939,11 @@ const pages = [
     rules: [visible('#tide-rail'), visible('.tide-reading'), railKeysStayInTheRail, escapeClosesTheRailOnly] },
   // A row's Attach to… and the account menu close when done with, and their Escape is theirs alone: Triage's own (the
   // reading pane's) doesn't hear it. A press on a part of one that takes no focus leaves it open. Signed in as someone
-  // of this run's own, as the pane's state is kept. The Attach panel stays inside the window, however narrow.
+  // of this run's own, as the pane's state is kept. The Attach panel stays inside the page, however narrow.
   { name: 'triage-attach-popout', route: `/triage?as=a1${run}`, widths: [1440, 800],
     rules: popoutCloses('Attach to…', { wrap: '.tide-triage-row.selected .tide-attach', opener: '> button', panel: '.tide-attach-panel', inside: 'input', bare: '.tide-attach-panel .form-text' }) },
   { name: 'triage-attach-fits', route: '/triage', setup: openFirst('.tide-triage-row.selected .tide-attach > button', '.tide-attach-panel'),
-    widths: [1920, 1440, 1000, 800, 400], rules: [insideWindow('.tide-attach-panel')] },
+    widths: [1920, 1440, 1000, 800, 400], rules: [insidePage('.tide-attach-panel')] },
   { name: 'triage-account-popout', route: `/triage?as=a2${run}`, widths: [1440, 800],
     rules: popoutCloses('the account menu', { wrap: '.tide-profile', opener: '.tide-profile-btn', panel: '.tide-popover', inside: '.tide-popover button' }) },
   { name: 'brief-export-popout', route: '/briefs/{today}', widths: [1440],
@@ -976,7 +977,10 @@ const pages = [
       [1000, sameLine('.tide-library-entry h3', '.tide-library-entry [data-copy-target]')], [1440, reachesBottom('.tide-library-entry', 24)],
       visible('#sq-retired'), hidden('.form-switch #sq-retired')] },
   // The entry's More menu opens wholly in view: Retire and Delete aren't cut off by the scrolling detail panel.
-  { name: 'library-more', route: '/library/queries', setup: openEntryMore, widths: [1920, 1440], rules: [menuItemsVisible] },
+  { name: 'library-more', route: '/library/queries', setup: openEntryMore, widths: [1920, 1440, 780, 400], rules: [menuItemsVisible, insidePage('.tide-menubutton-pop')] },
+  // The entry's More menu closes when done with, as every popout does.
+  { name: 'library-more-popout', route: '/library/queries', widths: [1920, 1440, 780, 400],
+    rules: popoutCloses('the entry’s More menu', { wrap: '.tide-library-entry .tide-menubutton', opener: '.tide-menubutton-btn', panel: '.tide-menubutton-pop', inside: '[role=menuitem]' }) },
   { name: 'library-search', route: '/library/queries?q=sweep', setup: wideFonts, widths: [1440, 780], rules: [noSidewaysScroll, visible('#library-find'), visible('.tide-library-list')] },
   // Search for an indicator: the hunt query wraps rather than scrolling sideways, Copy puts exactly its text on the
   // clipboard, and the cards' headings start at their tops.
