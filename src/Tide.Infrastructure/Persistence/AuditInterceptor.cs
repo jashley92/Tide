@@ -74,6 +74,8 @@ public sealed class AuditInterceptor(ICurrentUser user, TimeProvider time) : Sav
             if (NotAudited.Contains(entry.Entity.GetType())) continue;
             var changes = Changes(entry);
             if (entry.State == EntityState.Modified && changes.Count == 0) continue;
+            // A save the article editor made by itself says so (AuditVia), on every row it wrote.
+            if (AuditVia.Autosaving) changes[AuditVia.Field] = [null, AuditVia.Yes];
             entries.Add(new AuditLogEntry
             {
                 AtUtc = now,

@@ -11,7 +11,11 @@
    On today's brief, the Stepper the page gives stands above the title in place of the breadcrumbs. At 900px or
    narrower the fields and the preview are one pane at a time, chosen by an Edit | Preview switch (app.css), and the choice
    is kept while you step through the brief; the sticky bar stays at the foot of either pane, so the save state and Save
-   are there in Preview too. Leaving with unsaved changes asks: Save and leave, Discard and leave, or Stay (UnsavedGuard). *@
+   are there in Preview too. Leaving with unsaved changes asks: Save and leave, Discard and leave, or Stay (UnsavedGuard).
+   Autosave: a pause of AutosavePause in typing saves the form for someone who can edit (ArticleService.AutosaveAsync,
+   the one save path), and the bar says "Saving…", then "Saved at 10:12", or why it didn't: a marking changed or
+   something now reaches everyone, the article is on a sent brief (each waits for Save), or a colleague saved meanwhile
+   (autosave stops; what was typed stays in the form). *@
 @inject ArticleService ArticleSvc
 @inject ScreenshotService Shots
 @inject BriefService Briefs
@@ -433,16 +437,20 @@ else
 
             @if (_canWrite)
             {
-                @* The save state first, where the bar says what's saved (and, later, what saved by itself). *@
+                @* The save state first: what's saved, what saved by itself and when, or why it didn't. *@
                 <div class="tide-sticky-save" role="region" aria-label="Save changes">
                     @if (_dirty)
                     {
                         <span class="tide-dirty"><span class="bi bi-dot" aria-hidden="true"></span>Unsaved changes</span>
+                        @if (AutosaveNote is { } note)
+                        {
+                            <span class="tide-autosave tide-autosave-note @(_busy ? null : "is-held")" role="status">@note</span>
+                        }
                         <button type="button" class="btn btn-outline-secondary" disabled="@_busy" @onclick="Discard">Discard</button>
                     }
                     else
                     {
-                        <span class="tide-saved" tabindex="-1" @ref="_savedNote"><span class="bi bi-check2" aria-hidden="true"></span> All changes saved</span>
+                        <span class="tide-saved @(_autosavedAt is null ? null : "tide-autosave")" role="status" tabindex="-1" @ref="_savedNote"><span class="bi bi-check2" aria-hidden="true"></span> @(_autosavedAt is { } at ? $"Saved at {Ui.Time(Clock, at)}" : "All changes saved")</span>
                     }
                     <button type="button" class="btn btn-primary" disabled="@(_busy || !_dirty)" @onclick="Save"><span class="bi bi-check2" aria-hidden="true"></span> Save</button>
                     @if (_article.Status == ArticleStatus.Draft)
@@ -678,8 +686,9 @@ else
         _form.WhyItMatters = why.Length == 0 ? text : why + "\n" + text;
         _pane = EditPane;
         _jumpTo = (ArticlePart.WhyItMatters, FieldId(ArticlePart.WhyItMatters));
+        var touched = Touch();
         StateHasChanged();
-        return Touch();
+        return touched;
     }
 
     private async Task RemoveLink(ArticleLink l)
@@ -716,6 +725,7 @@ else
         if (_dirty || _busy || _uploading)
         {
             _changedBy = who;
+            _changedByMe = changes.All(c => c.ActorId == CurrentUser.UserId);
         }
         else
         {
@@ -731,7 +741,12 @@ else
         Toasts.Show("Reloaded. Your unsaved changes were dropped.");
     }
 
-    public void Dispose() => _live?.Dispose();
+    public void Dispose()
+    {
+        _live?.Dispose();
+        _autosavePause.Now();   // a pause still running saves nothing once the editor has gone
+        _disposed = true;
+    }
 
     // Loads when the article changes, not whenever the page around it redraws, which would drop what's being typed.
     protected override async Task OnParametersSetAsync()
@@ -788,6 +803,7 @@ else
             _whyHint = _form.WhyItMattersAtThreatDefault;
             _dirty = false;
             _changedBy = null;
+            (_autosaveNote, _autosavedAt) = (null, null);
         }
         _briefDates = (await ArticleSvc.BriefDatesAsync(Id)).ToList();
         _excerpt = await ArticleSvc.SourceExcerptAsync(Id);
@@ -831,7 +847,81 @@ else
     {
         _dirty = true;
         _edits++;
+        ScheduleAutosave();
         return OnFormChanged.InvokeAsync(_form);
+    }
+
+    /// <summary>How long typing pauses before the form is autosaved.</summary>
+    internal static readonly TimeSpan AutosavePause = TimeSpan.FromSeconds(2);
+
+    // Autosave: the pause (each edit starts it again; Save and leaving supersede it), what the bar says about it while
+    // something is unsaved ("Saving…", or why it held off), and when it last saved. A colleague's save heard, or refused
+    // as stale, stops it (_changedBy) until the article is reloaded.
+    private readonly TypingPause _autosavePause = new((int)AutosavePause.TotalMilliseconds);
+    private string? _autosaveNote;
+    private DateTimeOffset? _autosavedAt;
+    private bool _disposed;
+
+    // What the bar says of autosave while something is unsaved: a colleague's save, heard or refused as stale, first,
+    // since it stops autosave; else "Saving…" or why it held off.
+    private string? AutosaveNote => _changedBy is not { } who ? _autosaveNote
+        : _changedByMe ? "Not saved automatically: you saved this article in another tab. What you typed here is still here."
+        : $"Not saved automatically: {who} saved this article. What you typed is still here.";
+
+    // Whether the save that stopped autosave was this person's own, in another tab or window.
+    private bool _changedByMe;
+
+    private void ScheduleAutosave()
+    {
+        if (!_canWrite || _changedBy is not null) return;
+        _ = AutosaveAfterPause();
+    }
+
+    private async Task AutosaveAfterPause()
+    {
+        if (await _autosavePause.Settled() && !_disposed) await InvokeAsync(AutosaveNowAsync);
+    }
+
+    /// <summary>
+    /// Saves the form now, as the pause in typing does: through <see cref="ArticleService.AutosaveAsync"/>, which checks
+    /// who may, the edit version (a colleague's save meanwhile stops autosave for this article until it's reloaded, and
+    /// what was typed stays), and holds off for a changed marking, a part newly reaching everyone or a sent brief, all of
+    /// which wait for Save. Nothing happens for someone who can't edit, with nothing unsaved, while another save runs, or
+    /// once a colleague's save has been heard (the banner offers to reload).
+    /// </summary>
+    internal async Task AutosaveNowAsync()
+    {
+        if (_form is null || !_canWrite || !_dirty || _busy || _uploading || _changedBy is not null) return;
+        _busy = true;
+        var edits = _edits;
+        _autosaveNote = "Saving…";
+        StateHasChanged();
+        var saved = false;
+        try
+        {
+            var result = await ArticleSvc.AutosaveAsync(_form);
+            if (result.EditVersion is { } version)
+            {
+                saved = true;
+                await Saved(version, edits, DateTimeOffset.UtcNow);
+            }
+            else _autosaveNote = result.Hold == AutosaveHold.SentBrief
+                ? "On a sent brief, so not saved automatically: Save to correct it."
+                : "A marking changed, or something now reaches everyone: Save to keep it.";
+        }
+        catch (StaleEditException)
+        {
+            // Refused before any notice arrived: who saved it last says whether it was this person, elsewhere.
+            if (_changedBy is null) _changedByMe = (await ArticleSvc.GetAsync(Id))?.ModifiedBy == CurrentUser.UserId;
+            _changedBy ??= "Someone else";
+        }
+        catch (Exception ex) { _autosaveNote = $"Not saved automatically: {UserFacingError.For(ex)}"; }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+        if (saved && _dirty) ScheduleAutosave();
     }
 
     // Unsaved changes dropped on purpose, after asking: the saved article is read again.
@@ -1136,17 +1226,15 @@ else
     {
         if (_busy) return false;
         _busy = true;
+        _autosavePause.Now();
         var edits = _edits;
         try
         {
-            _form!.EditVersion = await ArticleSvc.SaveAsync(_form);
+            var version = await ArticleSvc.SaveAsync(_form!);
             // The save went through, so whatever was heard meanwhile didn't make it stale: the banner saying it would
             // be refused goes.
             _changedBy = null;
-            // Typing during the save may not have reached it: those edits stay unsaved, so the bar and the leave
-            // question still say so.
-            _dirty = _edits != edits;
-            _article = await ArticleSvc.GetAsync(Id);
+            await Saved(version, edits, null);
             Toasts.Show("Saved.");
             return true;
         }
@@ -1225,6 +1313,20 @@ else
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
     }
+
+    // After a save, by hand or by itself (autosavedAt): the form carries on from the new version. Typing during the save
+    // may not have reached it: those edits stay unsaved, so the bar and the leave question still say so (and autosave
+    // saves them after the next pause).
+    private async Task Saved(Guid version, int edits, DateTimeOffset? autosavedAt)
+    {
+        _form!.EditVersion = version;
+        _dirty = _edits != edits;
+        (_autosaveNote, _autosavedAt) = (null, autosavedAt);
+        _article = await ArticleSvc.GetAsync(Id) ?? _article;
+    }
+
+    /// <summary>Whether the form has changes not yet saved (for the tests; the bar and UnsavedGuard read it).</summary>
+    internal bool Dirty => _dirty;
 
     /// <summary>
     /// Whether to let a navigation go ahead (UnsavedGuard): at once when nothing is unsaved; otherwise as the person
