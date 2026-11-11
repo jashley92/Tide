@@ -107,12 +107,12 @@ window.tidePrefs = (function () {
 // The context rail (ContextRail): the region on the right of a page that has one. Where the stylesheet docks it beside
 // the content (a wide window, a page held to the usual width), open or closed is remembered per browser as tide-rail
 // and applied before paint by theme-init.js as data-rail="closed". Elsewhere it's an overlay, opened with
-// data-rail-over and not remembered, as the phone menu isn't. On a phone the open overlay covers the whole window, and
-// the page under it is inert until it closes.
+// data-rail-over and not remembered, as the phone menu isn't. The open overlay is modal, as a dialog is: the page under
+// it is inert until it closes, behind a backdrop (app.css) that closes it on a click.
 window.tideRail = (function () {
     var root = document.documentElement;
-    // The page under a rail that covers the window: everything in the layout but the rail. Toasts, the error bar and
-    // the reconnect dialog aren't the page's, and stay live.
+    // The page under the open overlay: everything in the layout but the rail. Toasts, the error bar and the reconnect
+    // dialog aren't the page's, and stay live.
     var UNDER = '.tide-skip-link, .sidebar, .top-row, #main-content';
     var held = false, watch = new MutationObserver(changed);
     function rail() { return document.getElementById('tide-rail'); }
@@ -124,17 +124,18 @@ window.tideRail = (function () {
     }
     function over() { return root.hasAttribute('data-rail-over'); }
     function isOpen() { return docks() ? root.getAttribute('data-rail') !== 'closed' : over(); }
-    // app.css also says where the open overlay covers the whole window, with --tide-rail-covers.
-    function covers() {
-        var r = rail();
-        return !!r && over() && getComputedStyle(r).getPropertyValue('--tide-rail-covers').trim() === '1';
-    }
-    // While the rail covers the window, the page under it is inert: out of the tab order and hidden from assistive
-    // technology, so Tab stays in the rail. A side overlay and a docked rail leave the page in view, and as it is.
+    // While the overlay is open, the page under it is inert: out of the tab order and hidden from assistive technology,
+    // so Tab stays in the rail. A docked rail leaves the page beside it as it is.
     // The markup is watched meanwhile, so nothing is left inert under a rail that has gone (a link in it opened a page
     // with none), and a dialog opened in the page under it (the palette, from Ctrl+K) closes the rail to be usable.
     function hold() {
-        var on = covers();
+        var r = rail(), on = !!r && over();
+        // Open over the page, the rail is a modal dialog, named as before; docked or closed it's the aside's own
+        // complementary landmark.
+        if (r) {
+            if (on) { r.setAttribute('role', 'dialog'); r.setAttribute('aria-modal', 'true'); }
+            else { r.removeAttribute('role'); r.removeAttribute('aria-modal'); }
+        }
         if (on === held) return;
         held = on;
         document.querySelectorAll(UNDER).forEach(function (el) { el.toggleAttribute('inert', on); });
@@ -143,12 +144,13 @@ window.tideRail = (function () {
     }
     function changed() {
         var r = rail();
+        // Only a dialog that's showing: the reconnect dialog is always in the markup, hidden until it's needed.
         var dialogUnder = !!r && Array.prototype.some.call(document.querySelectorAll('[role="dialog"], [role="alertdialog"]'),
-            function (d) { return !r.contains(d); });
+            function (d) { return !r.contains(d) && d.getClientRects().length > 0; });
         if (!r || dialogUnder) root.removeAttribute('data-rail-over');
         sync();
     }
-    // Blazor draws the button once, as closed; this keeps what it says right, and the page under a covering rail inert:
+    // Blazor draws the button once, as closed; this keeps what it says right, and the page under the overlay inert:
     // on load, when a page with a rail starts, on each toggle, and when the window's width changes where the rail sits.
     function sync() {
         if (over() && docks()) root.removeAttribute('data-rail-over');
@@ -200,8 +202,10 @@ document.addEventListener('click', function (e) {
     if (!e.target || !e.target.closest) return;
     if (e.target.closest('#nav-collapse-toggle')) { window.tideNav.toggle(); return; }
     if (e.target.closest('#nav-menu-toggle')) { window.tideNav.setOpen(!window.tideNav.isOpen()); return; }
-    // The Context button, and the rail's own Close (shown only while the rail is, so toggling closes it).
+    // The Context button, and the rail's own Close (shown only while the rail is, so toggling closes it). A click on the
+    // overlay's backdrop (drawn by the rail itself, beside it) closes it too.
     if (e.target.closest('#tide-rail-toggle, #tide-rail-close')) { window.tideRail.toggle(); return; }
+    if (e.target.id === 'tide-rail' && window.tideRail.over() && e.clientX < e.target.getBoundingClientRect().left) { window.tideRail.toggle(); return; }
     // Choosing a link closes the phone menu, so the page it opens is what you see.
     if (window.tideNav.isOpen() && e.target.closest('#tide-nav-links a')) window.tideNav.setOpen(false);
     // The circuit-disconnect modal: retry the connection, or reload when the server lost the session.
@@ -231,7 +235,9 @@ document.addEventListener('keydown', function (e) {
 // that Escape is the rail's alone, so the page under it (a list's Esc, Triage's reading pane) doesn't hear it as well.
 document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape' && e.key !== ']') return;
-    if (e.isComposing || e.defaultPrevented || window.tideShortcuts.inMenu(e.target)) return;
+    // The open overlay is a dialog itself: only a menu or dialog inside it, or elsewhere, keeps the key.
+    var holder = e.target && e.target.closest && e.target.closest('[role="menu"], [role="dialog"], [role="alertdialog"]');
+    if (e.isComposing || e.defaultPrevented || (holder && holder.id !== 'tide-rail')) return;
     if (e.key === 'Escape') {
         if (!window.tideRail.over()) return;
         e.preventDefault();

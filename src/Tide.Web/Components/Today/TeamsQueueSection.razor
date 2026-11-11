@@ -1,0 +1,52 @@
+@* In the rail beside the brief, for an analyst on a team: the open work of their teams that nobody has, soonest due
+   first, each with Take it; the first ActionService.TeamQueueSize of them, and a link to the rest. Their own actions
+   are My actions, in the page. After Take it, or a colleague's change that takes away the row with focus, focus goes
+   to the next row's Take it (KeepPlace). *@
+
+<section class="tide-card" aria-labelledby="teams-queue-h">
+    <h2 id="teams-queue-h" tabindex="-1" @ref="_heading">Your teams' queue <span class="tide-count">(@Queue.Unassigned)</span>
+        <a class="ms-auto small fw-normal" href="actions?view=myteams">My teams</a></h2>
+    @if (Queue.UnassignedRows.Count == 0)
+    {
+        <EmptyState Icon="bi-check2-circle" Title="Nothing unassigned on your teams." Compact="true" />
+    }
+    @foreach (var r in Queue.UnassignedRows)
+    {
+        <QueueRow @key="r.Id" @ref="_rows[r.Id]" Row="r" Meta="@($"{r.TeamName} · nobody has it")" OfferTake="true" Busy="Busy"
+                  Marks="Marks" OnTake="Take" Focused="_place.Focus" />
+    }
+    @if (Queue.Unassigned > Queue.UnassignedRows.Count)
+    {
+        <a class="small d-inline-block mt-2" href="actions?view=myteams&assignee=none">@(Queue.Unassigned - Queue.UnassignedRows.Count) more</a>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public TeamQueue Queue { get; set; } = default!;
+
+    /// <summary>The page is saving: Take it waits.</summary>
+    [Parameter] public bool Busy { get; set; }
+
+    /// <summary>Rows a colleague's change brought or changed, highlighted a moment.</summary>
+    [Parameter] public LiveMarks<Guid>? Marks { get; set; }
+
+    [Parameter] public EventCallback<ActionRow> OnTake { get; set; }
+
+    private readonly KeepPlace _place = new();
+    private readonly Dictionary<Guid, QueueRow> _rows = [];
+    private ElementReference _heading;
+
+    private IEnumerable<Guid> Listed => Queue.UnassignedRows.Select(r => r.Id);
+
+    protected override void OnParametersSet() => _place.Listed(Listed);
+
+    private async Task Take(ActionRow row)
+    {
+        var before = Listed.ToList();
+        await OnTake.InvokeAsync(row);
+        _place.Acted(before, row.Id);
+    }
+
+    protected override Task OnAfterRenderAsync(bool firstRender) =>
+        _place.FocusAsync(Listed, id => _rows.GetValueOrDefault(id)?.TakeButton, _heading);
+}

@@ -1,13 +1,13 @@
 @inject OrgClock Clock
 
-@* The latest articles beside Today's brief: what's written, for someone who writes the brief and has none yet; what's
-   been presented, for anyone else (the page reads them, at or below the team edition's ceiling). *@
+@* The latest articles presented, beside Today's brief, for someone who doesn't write it (the page reads them, at or
+   below the team edition's ceiling). *@
 
 <section class="tide-card" aria-labelledby="recent-h">
-    <h2 id="recent-h">@(CanWrite ? "Recently written" : "Recently presented") <span class="tide-count">(@Articles.Count)</span></h2>
+    <h2 id="recent-h">Recently presented <span class="tide-count">(@Articles.Count)</span></h2>
     @if (Articles.Count == 0)
     {
-        <EmptyState Icon="bi-file-earmark-text" Title="@(CanWrite ? "No articles yet." : "Nothing presented yet.")" Compact="true" />
+        <EmptyState Icon="bi-file-earmark-text" Title="Nothing presented yet." Compact="true" />
     }
     <ul class="list-unstyled mb-0">
         @foreach (var r in Articles)
@@ -22,15 +22,8 @@
             </li>
         }
     </ul>
-    @if (CanWrite)
-    {
-        <a class="btn btn-outline-secondary btn-sm mt-2" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article</a>
-    }
 </section>
 
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<ArticleSummary> Articles { get; set; } = default!;
-
-    /// <summary>Whoever's reading writes articles: the card lists what's written and offers New article.</summary>
-    [Parameter] public bool CanWrite { get; set; }
 }
