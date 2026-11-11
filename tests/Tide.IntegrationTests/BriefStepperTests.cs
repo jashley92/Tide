@@ -208,10 +208,12 @@ public class BriefStepperTests(TideApp app) : IClassFixture<TideApp>
         var shown = await r.Html();
         shown.Should().Contain("data-pane=\"preview\"").And.Contain("aria-pressed=\"true\"><span>Preview</span>");
 
+        // Narrow, Edit leaves the rail where it is (closed, or over the page when asked for); Preview puts it in the page,
+        // in place of the fields.
         var css = await app.CreateClient().GetStringAsync("/app.css");
         css.Should().Contain(".tide-tabbar.tide-ws-switch { display: none; }")
-            .And.Contain(".tide-editor[data-pane=\"edit\"] > .tide-editor-side:has(.tide-reader) { display: none; }")
-            .And.Contain(".tide-editor[data-pane=\"preview\"]:has(.tide-reader) > .tide-editor-main > :not(.tide-sticky-save) { display: none; }");
+            .And.Contain("html:not([data-rail-over]) main:has(.tide-editor[data-pane=\"preview\"]) > .tide-rail { display: flex; position: static;")
+            .And.Contain(".tide-editor[data-pane=\"preview\"] > .tide-editor-main > :not(.tide-sticky-save) { display: none; }");
     }
 
     [Fact]
@@ -223,17 +225,17 @@ public class BriefStepperTests(TideApp app) : IClassFixture<TideApp>
         await r.Click(p => { p.ShowPane(ArticleEditorPanel.PreviewPane); return Task.CompletedTask; });
         var html = await r.Html();
 
-        // The bar is still in the edit column (where it sits beside the preview on a wide screen), and saying what's unsaved.
+        // The bar is still in the edit column, saying what's unsaved; the preview is the rail's, after the page.
         var editor = html[html.IndexOf("<div class=\"tide-editor\" data-pane=\"preview\">", StringComparison.Ordinal)..];
         var bar = editor[editor.IndexOf("class=\"tide-sticky-save", StringComparison.Ordinal)..];
         editor.IndexOf("class=\"tide-editor-main\"", StringComparison.Ordinal).Should().BeLessThan(editor.IndexOf("class=\"tide-sticky-save", StringComparison.Ordinal));
         bar[..bar.IndexOf("<aside", StringComparison.Ordinal)].Should().Contain("Unsaved changes").And.Contain("> Save</button>");
+        bar[bar.IndexOf("<aside", StringComparison.Ordinal)..].Should().StartWith("<aside id=\"tide-rail\"").And.Contain("The preview");
 
-        // Narrow, in Preview, the edit column gives up its box to the bar alone, which follows the preview and sticks.
+        // Narrow, in Preview, the fields go and the bar stays at the foot of the window, over the preview.
         var css = await app.CreateClient().GetStringAsync("/app.css");
-        css.Should().Contain(".tide-editor[data-pane=\"preview\"]:has(.tide-reader) { display: flex; flex-direction: column; }")
-            .And.Contain(".tide-editor[data-pane=\"preview\"]:has(.tide-reader) > .tide-editor-main { display: contents; }")
-            .And.Contain(".tide-editor[data-pane=\"preview\"]:has(.tide-reader) .tide-sticky-save { order: 1; }")
+        css.Should().Contain(".tide-editor[data-pane=\"preview\"] > .tide-editor-main > :not(.tide-sticky-save) { display: none; }")
+            .And.Contain(".tide-editor[data-pane=\"preview\"] .tide-sticky-save { position: fixed;")
             .And.Contain("html:has(.tide-sticky-save) { scroll-padding-bottom:")
             .And.NotContain("> .tide-editor-main { display: none; }", "the bar would go with the fields");
     }

@@ -1,12 +1,15 @@
-@* The article editor: an article's fields in their sections, with pills above them that take you to a section (and say
-   "Needed" where the readiness checks find a gap), and the sticky bar that saves, marks ready, discards or adds the
-   article to today's brief (or says it's on it). It loads the article, keeps the edit version a save must match (a stale copy is refused),
+@* The article editor: an article's fields as pairs of cards, side by side where there's room (Assessment beside Tags &
+   ATT&CK, Bottom line beside Why it matters, Bullets across both, Recommended beside Indicators), under a section index
+   (EditorSectionIndex) that says where each stands and takes you to it, and the sticky bar that saves, marks ready,
+   discards or adds the article to today's brief (or says it's on it). It loads the article, keeps the edit version a save must match (a stale copy is refused),
    shows who else has it open, guards leaving with unsaved changes, and takes pasted or dropped screenshots.
-   The page beside it draws the right rail (Aside), from the article, the form as it is on screen, and its checks.
+   The page gives what readers get (Aside), drawn from the article, the form as it is on screen, and its checks: in the
+   context rail ("Context · what readers get") for someone who can edit, and as the page for someone who can't.
+   "Why it matters" carries the running order's warning where the company-wide edition would carry it, with its answers.
    For a pane that follows the form as it's typed (the reader preview): OnFormChanged fires after it loads and on every
    edit, FocusAsync takes you to a part, as the pills do, and FocusFieldAsync to the field a gap is in.
    On today's brief, the Stepper the page gives stands above the title in place of the breadcrumbs. At 900px or
-   narrower the fields and the rail are one pane at a time, chosen by an Edit | Preview switch (app.css), and the choice
+   narrower the fields and the preview are one pane at a time, chosen by an Edit | Preview switch (app.css), and the choice
    is kept while you step through the brief; the sticky bar stays at the foot of either pane, so the save state and Save
    are there in Preview too. Leaving with unsaved changes asks: Save and leave, Discard and leave, or Stay (UnsavedGuard). *@
 @inject ArticleService ArticleSvc
@@ -19,6 +22,7 @@
 @inject OrgClock Clock
 @inject ICurrentUser CurrentUser
 @inject Tide.Application.Detections.DetectionService Detections
+@inject Tide.Application.Settings.DistributionSettings Distribution
 @inject ChangeFeed Feed
 @inject ChangeOrigin Origin
 @inject PrerenderHandoff Handoff
@@ -74,7 +78,7 @@ else
         }
     </div>
 
-    var checks = Checks();
+    var (checks, why) = Checks();
     <ReviewCard Article="_article" CanWrite="_canWrite" />
     @if (Aside is not null && _canWrite)
     {
@@ -85,28 +89,16 @@ else
        than a form of greyed-out fields: the fields are hidden and the preview takes the page (app.css). *@
     <div class="tide-editor" data-pane="@(!_canWrite && Aside is not null ? PreviewPane : _pane)" data-readonly="@(!_canWrite && Aside is not null ? "true" : null)">
         <div class="tide-editor-main">
-            <nav class="tide-section-pills" aria-label="Article sections">
-                <ul>
-                    @foreach (var (part, label) in Pills)
-                    {
-                        var needed = checks.Any(c => c.Part == part);
-                        <li @key="part">
-                            <button type="button" @onclick="() => FocusAsync(part)">
-                                @label
-                                @if (needed)
-                                {
-                                    <span class="visually-hidden">,</span><span class="tide-needed">Needed</span>
-                                }
-                            </button>
-                        </li>
-                    }
-                </ul>
-            </nav>
+            <EditorSectionIndex Items="IndexItems(checks, why)" OnJump="FocusAsync" />
 
+            @* The form as pairs of cards, side by side where there's room for both (app.css), one under the other where
+               there isn't: what it is beside how it's tagged, the bottom line beside why it matters to us, the bullets
+               across both, then what to do beside what to look for. *@
+            <div class="tide-editor-pair">
             <section class="tide-card tide-section" aria-labelledby="sec-assessment">
                 <h2 id="sec-assessment" tabindex="-1" @ref="_heads[ArticlePart.Assessment]">Assessment</h2>
-                <div class="row g-3">
-                    <div class="col-md-5">
+                <div class="tide-assess-row">
+                    <div class="tide-assess-class">
                         <span class="tide-field-label">Classification</span>
                         <div class="btn-group" role="group" aria-label="Classification">
                             <input type="radio" class="btn-check" name="cls" id="cls-threat" checked="@(_form.Classification == Classification.Threat)"
@@ -116,11 +108,10 @@ else
                                    disabled="@(!_canWrite)" @onchange="() => SetClass(Classification.Informational)" />
                             <label class="btn btn-outline-secondary btn-sm" for="cls-info"><span class="bi bi-info-circle" aria-hidden="true"></span> Informational</label>
                         </div>
-                        <div class="form-text">Threat: something should be done. Informational: worth knowing, no action expected.</div>
                     </div>
                     @if (_form.Classification == Classification.Threat)
                     {
-                        <div class="col-md-3">
+                        <div>
                             <label class="tide-field-label" for="prio">Priority</label>
                             <select id="prio" class="form-select form-select-sm" disabled="@(!_canWrite)" value="@(_form.Priority?.ToString() ?? "")" @onchange="SetPriority">
                                 <option value="">Choose&hellip;</option>
@@ -131,16 +122,18 @@ else
                             </select>
                         </div>
                     }
-                    <div class="col-md-4">
+                    <div>
                         <label class="tide-field-label">Article TLP</label>
                         <TlpSelect Value="_form.Tlp" ValueChanged="SetTlp" Label="The article's TLP" Disabled="@(!_canWrite)" />
-                        <div class="form-text">Bullets and screenshots can be marked higher, never lower.</div>
                     </div>
-                    <div class="col-md-5">
+                </div>
+                <div class="form-text mt-0 mb-2">Threat: something should be done. Informational: worth knowing, no action expected. Bullets and screenshots can be marked higher than the article, never lower.</div>
+                <div class="tide-assess-row">
+                    <div>
                         <label class="tide-field-label" for="src">Source</label>
                         <input id="src" class="form-control form-control-sm" maxlength="200" readonly="@(!_canWrite)" @bind="_form.SourceName" @bind:event="oninput" @bind:after="Touch" />
                     </div>
-                    <div class="col-md-7">
+                    <div class="tide-assess-url">
                         <label class="tide-field-label" for="url">Link</label>
                         <div class="input-group input-group-sm">
                             <input id="url" class="form-control" maxlength="2000" readonly="@(!_canWrite)" @bind="_form.SourceUrl" @bind:event="oninput" @bind:after="Touch" placeholder="https://…" />
@@ -150,64 +143,112 @@ else
                             }
                         </div>
                     </div>
-                    @if (_links.Count > 0 || _canWrite)
-                    {
-                        <div class="col-12">
-                            <div class="tide-field-label">Other reports</div>
-                            <ul class="list-unstyled small mb-0">
-                                @foreach (var l in _links)
-                                {
-                                    <li @key="l.Id" class="d-flex gap-2 align-items-baseline">
-                                        <a href="@l.Url" target="_blank" rel="noopener noreferrer">@l.Title</a>
-                                        <span class="tide-muted">@l.SourceName@(l.PublishedAtUtc is { } pub ? " · " + Ui.ShortDay(DateOnly.FromDateTime(Clock.ToLocal(pub).DateTime)) : "")</span>
-                                        @if (_canWrite)
-                                        {
-                                            <button type="button" class="btn btn-link btn-sm p-0 ms-auto" aria-label="Remove the report “@l.Title”" @onclick="() => RemoveLink(l)">Remove</button>
-                                        }
-                                    </li>
-                                }
-                            </ul>
-                            @if (_canWrite)
-                            {
-                                @* Another outlet's report, added by hand (triage's "Attach to…" adds them from the feeds). *@
-                                @if (_addingLink)
-                                {
-                                    <form class="tide-add-link" aria-label="Add a report link" @onsubmit="AddLink">
-                                        <div class="tide-add-link-url">
-                                            <label class="tide-field-label" for="link-url">Report address</label>
-                                            <input id="link-url" type="url" class="form-control form-control-sm" maxlength="2000" placeholder="https://…" required
-                                                   aria-invalid="@(_linkError is null ? null : "true")" aria-describedby="@(_linkError is null ? null : "link-error")"
-                                                   @ref="_linkUrlInput" @bind="_linkUrl" @bind:event="oninput" />
-                                        </div>
-                                        <div class="tide-add-link-source">
-                                            <label class="tide-field-label" for="link-source">Source <span class="tide-muted">(optional)</span></label>
-                                            <input id="link-source" class="form-control form-control-sm" maxlength="200" placeholder="Who published it" @bind="_linkSource" @bind:event="oninput" />
-                                        </div>
-                                        <div class="d-flex gap-2 align-items-end">
-                                            <button type="submit" class="btn btn-outline-secondary btn-sm" disabled="@_busy">Add</button>
-                                            <button type="button" class="btn btn-link btn-sm" @onclick="CancelLink">Cancel</button>
-                                        </div>
-                                        @if (_linkError is not null)
-                                        {
-                                            <div id="link-error" class="tide-field-error" role="alert">@_linkError</div>
-                                        }
-                                    </form>
-                                }
-                                else
-                                {
-                                    <button type="button" class="btn btn-link btn-sm p-0" @ref="_addLinkButton" @onclick="OpenAddLink"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add a report link</button>
-                                }
-                            }
-                        </div>
-                    }
                 </div>
+                @if (_links.Count > 0 || _canWrite)
+                {
+                    <div>
+                        <div class="tide-field-label">Other reports</div>
+                        <ul class="list-unstyled small mb-0">
+                            @foreach (var l in _links)
+                            {
+                                <li @key="l.Id" class="d-flex gap-2 align-items-baseline">
+                                    <a href="@l.Url" target="_blank" rel="noopener noreferrer">@l.Title</a>
+                                    <span class="tide-muted">@l.SourceName@(l.PublishedAtUtc is { } pub ? " · " + Ui.ShortDay(DateOnly.FromDateTime(Clock.ToLocal(pub).DateTime)) : "")</span>
+                                    @if (_canWrite)
+                                    {
+                                        <button type="button" class="btn btn-link btn-sm p-0 ms-auto" aria-label="Remove the report “@l.Title”" @onclick="() => RemoveLink(l)">Remove</button>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                        @if (_canWrite)
+                        {
+                            @* Another outlet's report, added by hand (triage's "Attach to…" adds them from the feeds). *@
+                            @if (_addingLink)
+                            {
+                                <form class="tide-add-link" aria-label="Add a report link" @onsubmit="AddLink">
+                                    <div class="tide-add-link-url">
+                                        <label class="tide-field-label" for="link-url">Report address</label>
+                                        <input id="link-url" type="url" class="form-control form-control-sm" maxlength="2000" placeholder="https://…" required
+                                               aria-invalid="@(_linkError is null ? null : "true")" aria-describedby="@(_linkError is null ? null : "link-error")"
+                                               @ref="_linkUrlInput" @bind="_linkUrl" @bind:event="oninput" />
+                                    </div>
+                                    <div class="tide-add-link-source">
+                                        <label class="tide-field-label" for="link-source">Source <span class="tide-muted">(optional)</span></label>
+                                        <input id="link-source" class="form-control form-control-sm" maxlength="200" placeholder="Who published it" @bind="_linkSource" @bind:event="oninput" />
+                                    </div>
+                                    <div class="d-flex gap-2 align-items-end">
+                                        <button type="submit" class="btn btn-outline-secondary btn-sm" disabled="@_busy">Add</button>
+                                        <button type="button" class="btn btn-link btn-sm" @onclick="CancelLink">Cancel</button>
+                                    </div>
+                                    @if (_linkError is not null)
+                                    {
+                                        <div id="link-error" class="tide-field-error" role="alert">@_linkError</div>
+                                    }
+                                </form>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn-link btn-sm p-0" @ref="_addLinkButton" @onclick="OpenAddLink"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add a report link</button>
+                            }
+                        }
+                    </div>
+                }
             </section>
+
+            @* Scorecard tags, ATT&CK and the context, open beside the assessment. *@
+            <section class="tide-card tide-section" aria-labelledby="sec-tags">
+                <h2 id="sec-tags" tabindex="-1" @ref="_heads[ArticlePart.Tags]">Tags &amp; ATT&amp;CK</h2>
+                <h3 class="tide-subhead">Scorecard tags <span class="tide-tagpick-count">@Tide.Application.Scorecard.ScorecardTagSearch.Summary(_form.TagIds.Count)</span></h3>
+                <ScorecardTagPicker @ref="_tagPicker" Id="tags" Categories="_categories" Chosen="_form.TagIds" ReadOnly="!_canWrite" OnToggle="ToggleTag"
+                                    RetiredName="RetiredTagName" />
+
+                <h3 class="tide-subhead">ATT&amp;CK techniques</h3>
+                @foreach (var id in TechniquesInMatrixOrder())
+                {
+                    var t = AttackCatalog.Find(id);
+                    var gone = t is null ? AttackCatalog.Retired(id) : null;
+                    <span class="tide-chip tide-chip-technique @(t is null ? "tide-chip-retired" : "")"
+                          title="@(t is not null ? string.Join(", ", t.Tactics.Select(AttackMatrix.TacticName)) : gone is not null ? AttackCatalog.RetiredText(gone) : "Not in the ATT&CK catalog")">
+                        @if (t is not null)
+                        {
+                            <a href="@AttackMatrix.TechniqueUrl(t.Id)" target="_blank" rel="noopener noreferrer">@t.Id</a> @t.Name
+                            @if (_rules?.GetValueOrDefault(id) is { } rules) { <RuleCount Rules="rules" /> }
+                        }
+                        else
+                        {
+                            <span class="bi bi-exclamation-triangle" aria-hidden="true"></span>@id<span class="visually-hidden"> (no longer in ATT&amp;CK)</span>
+                        }
+                        @if (_canWrite)
+                        {
+                            <button type="button" aria-label="Remove @id" @onclick="() => RemoveTechnique(id)"><span class="bi bi-x" aria-hidden="true"></span></button>
+                        }
+                    </span>
+                }
+                @if (_form.TechniqueIds.Count == 0) { <p class="tide-muted small mb-2">None tagged.</p> }
+                @if (_canWrite)
+                {
+                    <div>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => _techniquesOpen = true">
+                            <span class="bi bi-diagram-3 me-1" aria-hidden="true"></span>@(_form.TechniqueIds.Count == 0 ? "Choose techniques" : "Edit techniques")
+                        </button>
+                    </div>
+                }
+
+                <h3 class="tide-subhead">Context</h3>
+                @* The adversary picker is the article's one place to tag threat actors; it saves as it tags, apart from the form. *@
+                <ArticleAdversaryCard ArticleId="_article.Id" CanWrite="_canWrite" />
+                <label class="tide-field-label mt-3" for="sectors">Sectors</label>
+                <input id="sectors" class="form-control form-control-sm" maxlength="500" readonly="@(!_canWrite)" placeholder="Financial services, healthcare" @bind="_form.Sectors" @bind:event="oninput" @bind:after="Touch" />
+            </section>
+            </div>
 
             @if (_canWrite)
             {
                 <DraftAssist ArticleId="Id" Form="_form" OnEdited="Touch" />
             }
 
+            <div class="tide-editor-pair">
             <section class="tide-card tide-section" aria-labelledby="sec-bluf">
                 <h2 id="sec-bluf" tabindex="-1" @ref="_heads[ArticlePart.BottomLine]">Bottom line</h2>
                 <textarea id="f-bluf" class="form-control tide-autogrow tide-grow-2" rows="2" maxlength="600" readonly="@(!_canWrite)" aria-label="Bottom line up front"
@@ -225,6 +266,43 @@ else
                 }
             </section>
 
+            @* Why it matters to us, with the running order's warning where the company-wide edition would carry it, and its
+               two answers: Set to AMBER, or Keep it (meant for everyone, as it is). *@
+            <section class="tide-card tide-section @(why is not null ? "tide-section-warn" : null)" aria-labelledby="sec-why">
+                <div class="d-flex gap-2 align-items-center justify-content-between flex-wrap">
+                    <h2 id="sec-why" class="tide-card-title mb-0" tabindex="-1" @ref="_heads[ArticlePart.WhyItMatters]">Why it matters to us</h2>
+                    <TlpSelect Value="_form.WhyItMattersTlp" ValueChanged="SetWhyTlp" Floor="_form.Tlp" Label="The TLP of why it matters" Class="w-auto" Disabled="@(!_canWrite)" />
+                </div>
+                @if (_whyHint && _canWrite)
+                {
+                    <div class="form-text mt-0 mb-1 text-end">Internal context starts at AMBER; lower it if it's safe to share.</div>
+                }
+                <MarkdownToolbar For="f-why" Label="Why it matters to us" Disabled="!_canWrite" />
+                <textarea id="f-why" class="form-control tide-autogrow tide-grow-3" rows="3" maxlength="8000" readonly="@(!_canWrite)" aria-label="Why it matters to us"
+                          placeholder="Do we run it? Are we in the targeted sector? What's our exposure?" @bind="_form.WhyItMatters" @bind:event="oninput" @bind:after="Touch"></textarea>
+                @if (why is not null)
+                {
+                    <div class="tide-why-check">
+                        <span class="tide-why-check-text"><span class="bi bi-exclamation-triangle" aria-hidden="true"></span> Will reach the company-wide edition.</span>
+                        @if (_canWrite)
+                        {
+                            @if (why.Fix == ArticleFix.WhyItMattersAmber)
+                            {
+                                <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="SetWhyAmberAsync">Set to AMBER</button>
+                            }
+                            @if (KeepOffered)
+                            {
+                                <button type="button" class="btn btn-link btn-sm" disabled="@_busy" @onclick="KeepWhyAsync">Keep it</button>
+                            }
+                        }
+                    </div>
+                }
+                @* What we run, always open under the text it informs: tagging saves straight away; Mention adds to the text above. *@
+                <ArticleStackCard ArticleId="_article.Id" CanWrite="_canWrite" OnMention="MentionAsync" />
+            </section>
+            </div>
+
+            @* The bullets across both columns, and the screenshots with them. *@
             <section class="tide-card tide-section" aria-labelledby="sec-bullets">
                 <h2 id="sec-bullets" tabindex="-1" @ref="_heads[ArticlePart.Bullets]">Bullets <span class="tide-count">(@_form.Bullets.Count)</span></h2>
                 @foreach (var (b, i) in _form.Bullets.Select((b, i) => (b, i)).ToList())
@@ -259,10 +337,8 @@ else
                     }
                     <div class="form-text">Markdown works: **bold**, _italic_, `code`, [text](https://link). Bare addresses are never made into links.</div>
                 }
-            </section>
 
-            <section class="tide-card tide-section" aria-labelledby="sec-shots">
-                <h2 id="sec-shots" tabindex="-1" @ref="_heads[ArticlePart.Screenshots]">Screenshots <span class="tide-count">(@_form.Screenshots.Count of @Article.MaxScreenshots)</span></h2>
+                <h3 id="sec-shots" class="tide-subhead" tabindex="-1" @ref="_heads[ArticlePart.Screenshots]">Screenshots <span class="tide-count">(@_form.Screenshots.Count of @Article.MaxScreenshots)</span></h3>
                 @if (_canWrite)
                 {
                     <div id="shot-zone" class="tide-drop-zone">
@@ -298,21 +374,9 @@ else
                 }
             </section>
 
-            <section class="tide-card tide-section" aria-labelledby="sec-why">
-                <div class="d-flex gap-2 align-items-center justify-content-between flex-wrap">
-                    <h2 id="sec-why" class="tide-card-title mb-0" tabindex="-1" @ref="_heads[ArticlePart.WhyItMatters]">Why it matters to us</h2>
-                    <TlpSelect Value="_form.WhyItMattersTlp" ValueChanged="SetWhyTlp" Floor="_form.Tlp" Label="The TLP of why it matters" Class="w-auto" Disabled="@(!_canWrite)" />
-                </div>
-                @if (_whyHint && _canWrite)
-                {
-                    <div class="form-text mt-0 mb-1 text-end">Internal context starts at AMBER; lower it if it's safe to share.</div>
-                }
-                <MarkdownToolbar For="f-why" Label="Why it matters to us" Disabled="!_canWrite" />
-                <textarea id="f-why" class="form-control tide-autogrow tide-grow-3" rows="3" maxlength="8000" readonly="@(!_canWrite)" aria-label="Why it matters to us"
-                          placeholder="Do we run it? Are we in the targeted sector? What's our exposure?" @bind="_form.WhyItMatters" @bind:event="oninput" @bind:after="Touch"></textarea>
-                @* What we run, always open under the text it informs: tagging saves straight away; Mention adds to the text above. *@
-                <ArticleStackCard ArticleId="_article.Id" CanWrite="_canWrite" OnMention="MentionAsync" />
-                <h2 id="sec-rec" class="mt-3" tabindex="-1" @ref="_heads[ArticlePart.Recommended]">Recommended actions</h2>
+            <div class="tide-editor-pair">
+            <section class="tide-card tide-section" aria-labelledby="sec-rec">
+                <h2 id="sec-rec" tabindex="-1" @ref="_heads[ArticlePart.Recommended]">Recommended actions</h2>
                 <MarkdownToolbar For="f-rec" Label="Recommended actions" Disabled="!_canWrite" />
                 <textarea id="f-rec" class="form-control tide-autogrow tide-grow-3" rows="3" maxlength="8000" readonly="@(!_canWrite)" aria-label="Recommended actions"
                           placeholder="e.g. - Hunt for the indicators in the SIEM (last 30 days)  - Patch the affected systems" @bind="_form.RecommendedActions" @bind:event="oninput" @bind:after="Touch"></textarea>
@@ -322,7 +386,7 @@ else
                 <h2 id="sec-ind" tabindex="-1" @ref="_heads[ArticlePart.Indicators]">Indicators <span class="tide-count">(@_form.Indicators.Count)</span> and CVEs <span class="tide-count">(@_form.Cves.Count)</span></h2>
                 @if (_form.Indicators.Count > 0)
                 {
-                    <table class="tide-table mb-2">
+                    <table class="tide-table tide-ind-table mb-2">
                         <thead><tr><th class="tide-col-md">Type</th><th>Value (shown defanged)</th><th class="tide-col-third">Note</th><th></th></tr></thead>
                         <tbody>
                             @foreach (var ind in _form.Indicators.ToList())
@@ -360,69 +424,16 @@ else
                 }
                 @if (_canWrite)
                 {
-                    <IndicatorAdd Have="_form.Indicators" HaveCves="_form.Cves" Adding="AddIndicators" />
+                    <IndicatorAdd @ref="_indicatorBox" Have="_form.Indicators" HaveCves="_form.Cves" Adding="AddIndicators" />
                 }
             </section>
-
-            @* Scorecard tags, ATT&CK and the context, folded away until wanted: a disclosure that says how much is chosen. *@
-            <section class="tide-card tide-section" aria-labelledby="sec-tags">
-                <h2 id="sec-tags" class="mb-0">
-                    <button type="button" class="tide-disclosure" aria-expanded="@(_tagsOpen ? "true" : "false")" aria-controls="sec-tags-body"
-                            @ref="_heads[ArticlePart.Tags]" @onclick="() => _tagsOpen = !_tagsOpen">
-                        <span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span>
-                        Tags &amp; ATT&amp;CK
-                        <span class="tide-disclosure-sum">@SelectedSummary()</span>
-                    </button>
-                </h2>
-                <div id="sec-tags-body" class="tide-disclosure-body" hidden="@(!_tagsOpen)">
-                    <h3 class="tide-subhead">Scorecard tags <span class="tide-tagpick-count">@Tide.Application.Scorecard.ScorecardTagSearch.Summary(_form.TagIds.Count)</span></h3>
-                    <ScorecardTagPicker @ref="_tagPicker" Id="tags" Categories="_categories" Chosen="_form.TagIds" ReadOnly="!_canWrite" OnToggle="ToggleTag"
-                                        RetiredName="RetiredTagName" />
-
-                    <h3 class="tide-subhead">ATT&amp;CK techniques</h3>
-                    @foreach (var id in TechniquesInMatrixOrder())
-                    {
-                        var t = AttackCatalog.Find(id);
-                        var gone = t is null ? AttackCatalog.Retired(id) : null;
-                        <span class="tide-chip tide-chip-technique @(t is null ? "tide-chip-retired" : "")"
-                              title="@(t is not null ? string.Join(", ", t.Tactics.Select(AttackMatrix.TacticName)) : gone is not null ? AttackCatalog.RetiredText(gone) : "Not in the ATT&CK catalog")">
-                            @if (t is not null)
-                            {
-                                <a href="@AttackMatrix.TechniqueUrl(t.Id)" target="_blank" rel="noopener noreferrer">@t.Id</a> @t.Name
-                                @if (_rules?.GetValueOrDefault(id) is { } rules) { <RuleCount Rules="rules" /> }
-                            }
-                            else
-                            {
-                                <span class="bi bi-exclamation-triangle" aria-hidden="true"></span>@id<span class="visually-hidden"> (no longer in ATT&amp;CK)</span>
-                            }
-                            @if (_canWrite)
-                            {
-                                <button type="button" aria-label="Remove @id" @onclick="() => RemoveTechnique(id)"><span class="bi bi-x" aria-hidden="true"></span></button>
-                            }
-                        </span>
-                    }
-                    @if (_form.TechniqueIds.Count == 0) { <p class="tide-muted small mb-2">None tagged.</p> }
-                    @if (_canWrite)
-                    {
-                        <div>
-                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => _techniquesOpen = true">
-                                <span class="bi bi-diagram-3 me-1" aria-hidden="true"></span>@(_form.TechniqueIds.Count == 0 ? "Choose techniques" : "Edit techniques")
-                            </button>
-                        </div>
-                    }
-
-                    <h3 class="tide-subhead">Context</h3>
-                    @* The adversary picker is the article's one place to tag threat actors; it saves as it tags, apart from the form. *@
-                    <ArticleAdversaryCard ArticleId="_article.Id" CanWrite="_canWrite" />
-                    <label class="tide-field-label mt-3" for="sectors">Sectors</label>
-                    <input id="sectors" class="form-control form-control-sm" maxlength="500" readonly="@(!_canWrite)" placeholder="Financial services, healthcare" @bind="_form.Sectors" @bind:event="oninput" @bind:after="Touch" />
-                </div>
-            </section>
+            </div>
 
             <HistoryPanel Id="_article.Id" Version="_article.EditVersion" />
 
             @if (_canWrite)
             {
+                @* The save state first, where the bar says what's saved (and, later, what saved by itself). *@
                 <div class="tide-sticky-save" role="region" aria-label="Save changes">
                     @if (_dirty)
                     {
@@ -458,12 +469,23 @@ else
             }
         </div>
 
-        <aside class="tide-editor-side">
-            @Aside?.Invoke(new State(_article, _form, checks, _briefDates, _dirty, _canWrite))
-        </aside>
+        @* What readers get: in the context rail for someone who can edit, beside the form (docked from 1500px, over the
+           page below that, and in place of the fields in a narrow window's Preview); for someone who can't, it's the page. *@
+        @if (Aside is not null)
+        {
+            var state = new State(_article, _form, checks, _briefDates, _dirty, _canWrite);
+            if (_canWrite)
+            {
+                <ContextRail Title="@RailTitle">@Aside(state)</ContextRail>
+            }
+            else
+            {
+                <aside class="tide-editor-side">@Aside(state)</aside>
+            }
+        }
     </div>
 
-    @* Out here, not in the sticky side column: sticky makes its own stacking context, which would put the top bar over it. *@
+    @* Out here, not inside a card: a sticky or contained box makes its own stacking context, which would put the top bar over it. *@
     @if (_techniquesOpen)
     {
         <AttackMatrixPicker Current="_form.TechniqueIds" OnApply="ApplyTechniques" OnCancel="() => _techniquesOpen = false" />
@@ -499,17 +521,36 @@ else
     public sealed record State(Article Article, ArticleForm Form, IReadOnlyList<ArticleCheck> Checks, IReadOnlyList<DateOnly> BriefDates, bool Dirty,
         bool CanWrite = false);
 
-    /// <summary>The section pills, in the order the sections run. Screenshots has none: it sits between two that do.</summary>
-    private static readonly (ArticlePart Part, string Label)[] Pills =
-    [
-        (ArticlePart.Assessment, "Assessment"), (ArticlePart.BottomLine, "Bottom line"), (ArticlePart.Bullets, "Bullets"),
-        (ArticlePart.WhyItMatters, "Why it matters"), (ArticlePart.Recommended, "Recommended"),
-        (ArticlePart.Indicators, "Indicators & CVEs"), (ArticlePart.Tags, "Tags & ATT&CK"),
-    ];
+    /// <summary>The context rail's name, for its heading and for screen readers.</summary>
+    internal const string RailTitle = "Context · what readers get";
+
+    // The section index: each section in the order the cards run, saying where it stands. Screenshots has none: it's
+    // part of the Bullets card.
+    private List<EditorSectionIndex.Item> IndexItems(IReadOnlyList<ArticleCheck> checks, ArticleCheck? why)
+    {
+        var f = _form!;
+        EditorSectionIndex.Item Item(ArticlePart part, string label, string? state, EditorSectionIndex.Kind kind = EditorSectionIndex.Kind.Count) =>
+            checks.Any(c => c.Part == part) ? new(part, label, "Needed", EditorSectionIndex.Kind.Needed)
+            : new(part, label, state, kind);
+        static string? Count(int n) => n > 0 ? n.ToString() : null;
+        static string? Pair(int a, int b) => a + b > 0 ? $"{a} · {b}" : null;
+        const EditorSectionIndex.Kind Done = EditorSectionIndex.Kind.Done;
+        return
+        [
+            Item(ArticlePart.Assessment, "Assessment", "✓", Done),
+            Item(ArticlePart.BottomLine, "Bottom line", "✓", Done),
+            Item(ArticlePart.Bullets, "Bullets", Count(f.Bullets.Count(b => !string.IsNullOrWhiteSpace(b.Text)))),
+            why is not null ? new(ArticlePart.WhyItMatters, "Why it matters", "check TLP", EditorSectionIndex.Kind.Warn)
+                : Item(ArticlePart.WhyItMatters, "Why it matters", string.IsNullOrWhiteSpace(f.WhyItMatters) ? null : "✓", Done),
+            Item(ArticlePart.Recommended, "Recommended", Count(RecommendedActions.Lines(f.RecommendedActions).Count)),
+            Item(ArticlePart.Indicators, "Indicators & CVEs", Pair(f.Indicators.Count, f.Cves.Count)),
+            Item(ArticlePart.Tags, "Tags & ATT&CK", Pair(f.TagIds.Count, f.TechniqueIds.Count)),
+        ];
+    }
 
     /// <summary>
-    /// Takes you to a part of the article, as its pill does: focus moves to its heading (to the Tags &amp; ATT&amp;CK
-    /// disclosure, opened, for that part), scrolled to the top. For a readiness gap shown elsewhere, by its
+    /// Takes you to a part of the article, as its item in the section index does: focus moves to its heading, scrolled
+    /// to the top. For a readiness gap shown elsewhere, by its
     /// <see cref="ArticleCheck.Part"/>. It happens once the editor has drawn (so an opened section is there to scroll to).
     /// </summary>
     public Task FocusAsync(ArticlePart part) => Jump(part, null);
@@ -518,7 +559,7 @@ else
     /// Takes you to the field a readiness gap in <paramref name="part"/> is fixed in, for a placeholder in the preview:
     /// the bottom line, why it matters or the recommended actions box; the first empty bullet (one added, when there's
     /// none and there's room); the first screenshot without a caption; the priority a threat lacks, or else the source.
-    /// Parts with no one field (the Tags &amp; ATT&amp;CK disclosure) go to their heading, as <see cref="FocusAsync"/> does.
+    /// Parts with no one field (Tags &amp; ATT&amp;CK) go to their heading, as <see cref="FocusAsync"/> does.
     /// On a narrow screen showing the preview, the editor is shown first.
     /// </summary>
     public async Task FocusFieldAsync(ArticlePart part)
@@ -544,7 +585,6 @@ else
 
     private Task Jump(ArticlePart part, string? field)
     {
-        if (part == ArticlePart.Tags) _tagsOpen = true;
         _pane = EditPane;
         _jumpTo = (part, field);
         StateHasChanged();
@@ -562,7 +602,8 @@ else
         catch (JSDisconnectedException) { /* the tab has gone */ }
     }
 
-    // At 900px or narrower, which of the two is shown: the fields or the rail. Wider, both are, and the switch is hidden.
+    // At 900px or narrower, which of the two is shown: the fields or what readers get. Wider, the rail shows it beside
+    // the fields (or over them, when asked for), and the switch is hidden.
     internal const string EditPane = "edit", PreviewPane = "preview";
     private string _pane = EditPane;
 
@@ -587,7 +628,7 @@ else
 
     // In today's running order: the stepper shows, and the bar says so in place of "Add to today's brief".
     private bool OnTodaysBrief => _briefDates.Contains(Briefs.CurrentDate);
-    private bool _notFound, _dirty, _busy, _uploading, _canWrite, _showPasteBullets, _tagsOpen;
+    private bool _notFound, _dirty, _busy, _uploading, _canWrite, _showPasteBullets;
     private string? _pasteBullets;
     // The screenshot open in the dialog; it steps through the article's others, captioned if they have one.
     private ScreenshotDialog.Shot? _shot;
@@ -599,13 +640,6 @@ else
     private bool _registered;
     private string? _excerpt;
     private IReadOnlyList<ArticleLink> _links = [];
-
-    // "2 tags · 1 technique selected", for the folded Tags & ATT&CK section.
-    private string SelectedSummary()
-    {
-        int tags = _form!.TagIds.Count, techniques = _form.TechniqueIds.Count;
-        return $"{tags} tag{(tags == 1 ? "" : "s")} · {techniques} technique{(techniques == 1 ? "" : "s")} selected";
-    }
 
     // "Add a report link": the form's fields, the reason the last address was refused, and where focus goes next.
     private bool _addingLink, _focusLinkUrl, _focusAddLink;
@@ -714,6 +748,7 @@ else
         else
         {
             _categories = await Scorecard.ListAsync();
+            (_publicMax, _) = await Distribution.GetAsync();
             await Reload(keepEdits: adopted);
         }
         if (_article is not null) PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
@@ -728,7 +763,7 @@ else
     private bool Adopt(ArticleEditorPanel p)
     {
         (_article, _form, _categories, _briefDates, _whyHint) = (p._article, p._form, p._categories, p._briefDates, p._whyHint);
-        (_excerpt, _links, _rules, _notFound) = (p._excerpt, p._links, p._rules, p._notFound);
+        (_excerpt, _links, _rules, _notFound, _publicMax) = (p._excerpt, p._links, p._rules, p._notFound, p._publicMax);
         return _form is not null;
     }
 
@@ -841,18 +876,22 @@ else
         return Touch();
     }
 
-    private IReadOnlyList<ArticleCheck> Checks()
+    // The readiness checks, and apart from them the running order's warning on "Why it matters" (a threat's paragraph the
+    // company-wide edition would carry, not yet kept as it is): both on what's on screen, saved or not. The paragraph is
+    // trimmed as a save stores it, so a "Keep it" fingerprint matches the text it was kept for.
+    private (IReadOnlyList<ArticleCheck> Checks, ArticleCheck? Why) Checks()
     {
-        // The checks run on what's on screen, saved or not.
         var a = new Article
         {
             Title = _form!.Title, Bluf = _form.Bluf, Classification = _form.Classification, Priority = _form.Priority,
             RecommendedActions = _form.RecommendedActions, SourceName = _form.SourceName, SourceUrl = _form.SourceUrl,
+            Tlp = _form.Tlp, WhyItMatters = _form.WhyItMatters?.Trim() is { Length: > 0 } why ? why : null, WhyItMattersTlp = _form.WhyItMattersTlp,
+            WhyItMattersKeptHash = _form.WhyItMattersKeptHash,
         };
         a.Bullets.AddRange(_form.Bullets.Select(b => new ArticleBullet { Text = b.Text }));
         a.Tags.AddRange(_form.TagIds.Select(t => new ArticleTag { TagId = t }));
         a.Screenshots.AddRange(_form.Screenshots.Select(s => new ArticleScreenshot { Caption = s.Caption }));
-        return ArticleChecks.For(a);
+        return (ArticleChecks.For(a), ArticleChecks.WhyReachesCompany(a, _publicMax));
     }
 
     private Task SetClass(Classification c)
@@ -888,6 +927,66 @@ else
         await Touch();
         Toasts.Show($"Why it matters is marked {Tlp.Label(_form.WhyItMattersTlp)}. Save to keep it.");
         await Jump(ArticlePart.WhyItMatters, null);
+    }
+
+    // The company-wide edition's ceiling, for the warning on "Why it matters".
+    private TlpLevel _publicMax = TlpLevel.Green;
+
+    // "Keep it" answers for the saved text, from today's brief, as the running order does: offered while nothing is unsaved.
+    private bool KeepOffered => OnTodaysBrief && !_dirty;
+
+    /// <summary>
+    /// "Set to AMBER", beside the warning in "Why it matters". With nothing unsaved and the article on today's open brief,
+    /// it's the running order's own answer (<see cref="ArticleService.MarkWhyItMattersAmberAsync"/>: saved at once,
+    /// permission- and version-checked and audited there), and the form reads the article again. Otherwise it's the
+    /// preview's one-click fix (<see cref="FixAsync"/>): an unsaved edit, kept by Save.
+    /// </summary>
+    internal async Task SetWhyAmberAsync()
+    {
+        if (_form is null || !_canWrite || _busy) return;
+        if (await OpenBriefAsync() is not { } briefId)
+        {
+            await FixAsync(ArticleFix.WhyItMattersAmber);
+            return;
+        }
+        var changed = false;
+        await AnswerOnBrief(async () => changed = await ArticleSvc.MarkWhyItMattersAmberAsync(Id, _form.EditVersion, briefId),
+            () => changed ? $"Why it matters is now {Tlp.Label(TlpLevel.Amber)}. The company-wide edition leaves it out."
+                : $"Why it matters was already {Tlp.Label(TlpLevel.Amber)} or stricter.");
+    }
+
+    /// <summary>
+    /// "Keep it": the running order's other answer (<see cref="ArticleService.KeepWhyItMattersAsync"/>), recording that
+    /// "Why it matters" is meant for the company-wide edition as it is. It changes no marking and no edition. Only for
+    /// the saved text on today's open brief, as there.
+    /// </summary>
+    internal async Task KeepWhyAsync()
+    {
+        if (_form is null || !_canWrite || _busy || await OpenBriefAsync() is not { } briefId) return;
+        TlpLevel? kept = null;
+        await AnswerOnBrief(async () => kept = await ArticleSvc.KeepWhyItMattersAsync(Id, _form.EditVersion, briefId),
+            () => kept is { } tlp ? $"Kept Why it matters at {Tlp.Label(tlp)}. It goes to the company-wide edition as it is." : "There's no Why it matters to keep.");
+    }
+
+    // Today's brief, when the article is on it, it hasn't gone out, and nothing here is unsaved: where the running order's
+    // answers apply.
+    private async Task<Guid?> OpenBriefAsync() =>
+        KeepOffered && await Briefs.GetAsync(Briefs.CurrentDate) is { Status: not BriefStatus.Sent } brief ? brief.Id : null;
+
+    // One of the running order's answers, saved by the service; then the article is read again (the form is clean) and
+    // focus goes to the section, as the buttons went with the warning.
+    private async Task AnswerOnBrief(Func<Task> answer, Func<string> done)
+    {
+        _busy = true;
+        try
+        {
+            await answer();
+            await Reload();
+            Toasts.Show(done());
+            await Jump(ArticlePart.WhyItMatters, null);
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
     }
 
     private Task SetBulletTlp(BulletForm b, TlpLevel t) { b.Tlp = t; return Touch(); }
@@ -977,6 +1076,11 @@ else
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
     }
 
+    private IndicatorAdd? _indicatorBox;
+
+    /// <summary>For tests: the box that adds indicators and CVEs, as drawn.</summary>
+    internal IndicatorAdd? IndicatorBox => _indicatorBox;
+
     private ScorecardTagPicker? _tagPicker;
 
     /// <summary>For tests: the scorecard tag picker, as drawn.</summary>
@@ -1018,6 +1122,8 @@ else
                 _form.Indicators.Add(i);
         if (add.Picked) Toasts.Show($"Added {add.Indicators.Count + add.Cves.Count}. Save to keep them.");
         await Touch();
+        // The box calls this as a plain function, which redraws only the box: the bar's Save and "Unsaved changes" are ours.
+        StateHasChanged();
         return true;
     }
 

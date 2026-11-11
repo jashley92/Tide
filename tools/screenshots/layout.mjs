@@ -1364,6 +1364,29 @@ const actionRailHolds = [visible('#tide-rail .tide-facts'), visible('#tide-rail 
 /** The action page's own column: its head, the tools and the query fit it, the query wrapping rather than scrolling. */
 const actionPageFits = [noSidewaysScroll, fits('.tide-action-head'), fits('.tide-drawer'), visible('.tide-feed')];
 
+/** The middle of the first visible match of `selector` is the match itself (or inside it): nothing is drawn over it. */
+const onTop = selector => holds(`nothing over: ${selector}`, selector => {
+  const el = [...document.querySelectorAll(selector)].find(e => e.getBoundingClientRect().height > 0);
+  if (!el) return [`nothing shown matches ${selector}`];
+  const r = el.getBoundingClientRect(), at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  return el.contains(at) ? [] : [`${selector} is under ${at ? at.tagName.toLowerCase() + '.' + [...at.classList].join('.') : 'nothing'}`];
+}, selector);
+
+/** The editor's paired cards, each pair's two cards. */
+const editorPairs = [['section[aria-labelledby="sec-assessment"]', 'section[aria-labelledby="sec-tags"]'],
+  ['section[aria-labelledby="sec-bluf"]', 'section[aria-labelledby="sec-why"]'], ['section[aria-labelledby="sec-rec"]', 'section[aria-labelledby="sec-ind"]']];
+
+/** The editor's cards and its section index fit their boxes: the index's items each on one line, wrapping as a row. */
+const editorFits = [visible('.tide-section-pills'), fits('.tide-section-pills'), oneLine('.tide-section-pills button'),
+  fits('.tide-editor-pair > .tide-card'), fits('section[aria-labelledby="sec-bullets"]'), fits('.tide-sticky-save'), fits('.tide-page-head')];
+
+/** Setup: wider letters, then the Edit | Preview switch set to Preview. */
+const showPreviewPane = async page => {
+  await wideFont(page);
+  await page.locator('.tide-ws-switch').getByRole('button', { name: 'Preview' }).click();
+  await page.waitForTimeout(300);
+};
+
 // --- the pages: route, optional setup, widths (each 900px tall, or [width, height]) and rules ([minWidth, rule] from that
 // width up) -------------------------------------------------------------------------------------------------------------
 
@@ -1443,10 +1466,36 @@ const pages = [
   { name: 'top-bar', route: '/articles', widths: [1440, 1100, 1000, 900, 780, 375],
     rules: [noSidewaysScroll, [900, visible('.tide-brief-chip')], [780, oneRow('.top-row')], [780, oneRow('.tide-top-end')],
       [780, fits('.top-row')], [780, fits('.tide-top-find')], roomBeside('.tide-top-search', 200, '.tide-brief-chip')] },
-  { name: 'article', route: '/articles/{vpnArticle}', widths: [1440, 1000],
-    rules: [noSidewaysScroll, visible('.tide-reader-sum'), visible('[role=tablist][aria-label="Beside the article"]')] },
-  { name: 'article-actions-tab', route: '/articles/{vpnArticle}?side=actions', widths: [1440, 800],
+  { name: 'article', route: '/articles/{vpnArticle}', widths: [1920, 1500],
+    rules: [noSidewaysScroll, visible('#tide-rail .tide-reader-sum'), visible('#tide-rail [role=tablist][aria-label="Beside the article"]')] },
+  { name: 'article-actions-tab', route: '/articles/{vpnArticle}?side=actions', widths: [1920, 800],
     rules: [noSidewaysScroll, visible('#reader-panel .tide-action-ref')] },
+  // The article editor: a section index across the top, then the form as two columns of paired cards (Assessment beside
+  // Tags & ATT&CK, Bottom line beside Why it matters, Recommended beside Indicators, Bullets across both), and what
+  // readers get in the context rail, docked open from 1500px. Wider letters throughout, so each holds by construction.
+  { name: 'editor-rail', route: '/articles/{vpnArticle}', setup: wideFont, widths: [1920, 1600, 1500],
+    rules: [noSidewaysScroll, visible('#tide-rail .tide-reader'), besides('#main-content', '#tide-rail'), attr('#tide-rail', 'role', null),
+      attr('#tide-rail', 'aria-label', 'Context · what readers get'), ...editorFits,
+      ...editorPairs.map(pair => [1600, sameLine(...pair)]),
+      [1600, besides(...editorPairs[0])], [1600, besides(...editorPairs[2])],
+      fits('.tide-rail-body'), fits('#tide-rail .tide-reader-head'), fits('#tide-rail .tide-tabbar')] },
+  // Below 1500px the rail is closed until asked for, and the form keeps its pairs where there's room for two columns;
+  // at 780 each card takes the width, one under another, and nothing scrolls sideways.
+  { name: 'editor-rail-shut', route: '/articles/{vpnArticle}', setup: wideFont, widths: [1440, 1000, 780],
+    rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), ...editorFits,
+      ...editorPairs.map(pair => [1440, sameLine(...pair)]), [901, hidden('.tide-ws-switch')]] },
+  // `]` opens it over the page there: a modal dialog with the preview in it, named for what it holds.
+  { name: 'editor-rail-over', route: '/articles/{vpnArticle}', setup: toggleRail, widths: [1440, 780],
+    rules: [noSidewaysScroll, visible('#tide-rail .tide-reader'), fits('.tide-rail-body'), focusIn('#tide-rail'), attr('#tide-rail', 'role', 'dialog'),
+      attr('#tide-rail', 'aria-label', 'Context · what readers get')] },
+  // On a narrow screen the Edit | Preview switch stays: Preview shows what readers get in the page, in place of the
+  // fields, with the save bar still on screen.
+  { name: 'editor-phone-preview', route: '/articles/{vpnArticle}', setup: showPreviewPane, widths: [780, 400],
+    rules: [noSidewaysScroll, visible('.tide-ws-switch'), visible('#tide-rail .tide-reader'), hidden('section[aria-labelledby="sec-assessment"]'),
+      hidden('#tide-rail .tide-rail-head'), visible('.tide-sticky-save'), onFirstScreen('.tide-sticky-save'), onTop('.tide-sticky-save'), fits('.tide-rail-body'), fits('#tide-rail .tide-reader-head')] },
+  { name: 'editor-phone-edit', route: '/articles/{vpnArticle}', setup: wideFont, widths: [780, 400],
+    rules: [noSidewaysScroll, visible('.tide-ws-switch'), hidden('#tide-rail'), visible('section[aria-labelledby="sec-assessment"]'), fits('.tide-section-pills'),
+      stacked('.tide-editor-pair')] },
   // The page reads the tab from ?view= (each tab with its count). The tabs are one row at every width: when wider fonts
   // don't leave room, the row scrolls sideways inside itself, so there's no fits() on it; noSidewaysScroll checks that the
   // page never does. The Escalated badge stays on the number's line, the title wrapping before them.

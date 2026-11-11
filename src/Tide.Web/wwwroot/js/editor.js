@@ -47,6 +47,8 @@ window.tideEditor = (function () {
             const field = fieldId ? document.getElementById(fieldId) : null;
             const to = field || el;
             if (!to) return;
+            // From the rail open over the page (a gap's button in the preview): the page under it is inert until it closes.
+            if (window.tideRail && window.tideRail.over() && !to.closest('#tide-rail')) window.tideRail.toggle();
             const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
             to.scrollIntoView({ block: field ? 'center' : 'start', behavior: smooth ? 'smooth' : 'auto' });
             to.focus({ preventScroll: true });
