@@ -237,6 +237,22 @@ public class SearchServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Lookup_Summary_CountsOnlyWhatWasDoneAboutTheIndicatorItself_NotARelatedHost()
+    {
+        await Article("C2 domain", indicators: [(IndicatorType.Domain, "evil.example.net")]);
+        var sub = await Article("Subdomain", indicators: [(IndicatorType.Domain, "cdn.evil.example.net")]);
+        var team = await _db.Teams().AddAsync("Cyber Defense", null, null);
+        var number = await _db.Actions().CreateAsync(new ActionForm { Title = "Sweep the CDN", Kind = ActionKind.IocSweep, TeamId = team, ArticleId = sub });
+        var hunt = await _db.Actions().GenerateHuntAsync((await _db.Actions().GetAsync(number))!.Action.Id, QueryDialects.All[0].Key);
+        await _db.Actions().RecordHuntResultAsync(hunt.Id, HuntResult.Hits, 3, "Two hosts.", null);
+
+        var ind = (await Search().SearchAsync("evil.example.net")).Indicator!;
+
+        ind.Actions.Items.Select(x => x.Number).Should().Equal([number], "the full list still names what was done about the host");
+        ind.Summary.Should().Be(new LookupSummary(1, null, null, 0, 0, null), "a sweep for cdn.evil.example.net didn't hunt for evil.example.net");
+    }
+
+    [Fact]
     public async Task Lookup_AnOpenActionCarryingTheIndicatorItself_IsSweepingForIt_AClosedOneIsNot()
     {
         var team = await _db.Teams().AddAsync("Cyber Defense", null, null);

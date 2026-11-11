@@ -338,10 +338,14 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
         var sweeping = actions.Items
             .Where(a => a.IsOpen && a.Hunts && (carrying.Contains(a.Id) || on.Any(x => x.Id == a.ArticleId)))
             .ToList();
+        // The first line counts what was done about the indicator itself, as Sweeping does: a sweep raised from an article
+        // on a related host searched for that host, not this one. The list below it still names them all.
+        var onIds = on.Select(a => a.Id).ToList();
+        var itself = onIds.Count == articleIds.Count ? actions : await Lookups.ActionsOnAsync(db, onIds, carrying, MaxHits, ct);
         var seenWith = await SeenWithAsync(db, on, i => family.Contains(i.Type) && string.Equals(i.Value, value, StringComparison.OrdinalIgnoreCase), null, ct);
         return new IndicatorLookup(type, value, host,
             new HitList<Sighting>(sightings.Take(MaxSightings).ToList(), sightings.Count + exactTotal - rows.Count),
-            actions, sweeping, seenWith, LookupSummary.Of(on, actions, hunted: true));
+            actions, sweeping, seenWith, LookupSummary.Of(on, itself, hunted: true));
     }
 
     private static async Task<CveLookup> CveAsync(IAppDbContext db, string cveId, CancellationToken ct)
