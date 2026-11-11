@@ -45,6 +45,25 @@ public class DemoSeederTests(DemoTideApp app) : IClassFixture<DemoTideApp>
     private AppDbContext Db() => app.Services.CreateScope().ServiceProvider.GetRequiredService<AppDbContext>();
 
     [Fact]
+    public async Task EverySeededActionsStatusTime_IsWhatItsOwnHistorySays()
+    {
+        Info();
+        await using var db = Db();
+        var actions = await db.Actions.AsNoTracking().Include(a => a.Events).ToListAsync();
+        actions.Should().NotBeEmpty();
+        foreach (var a in actions)
+        {
+            var name = Tide.Application.Actions.ActionService.StatusName(a.Status);
+            var line = a.Events.Where(e => (e.Text.StartsWith("Status: ", StringComparison.Ordinal) && e.Text.Contains("→ " + name, StringComparison.Ordinal))
+                    || e.Text.StartsWith("Raised from", StringComparison.Ordinal))
+                .Select(e => (DateTimeOffset?)e.AtUtc).Max();
+            var expected = !a.IsOpen && a.ClosedAtUtc is { } closed ? closed : line;
+            if (expected is { } at) a.StatusChangedAtUtc.Should().Be(at, $"A-{a.Number} ({a.Status}): its close, or its latest move or raise line");
+            else a.StatusChangedAtUtc!.Value.Should().BeCloseTo(a.CreatedAtUtc, TimeSpan.FromMinutes(1), $"A-{a.Number} has no line saying when: since it was made");
+        }
+    }
+
+    [Fact]
     public async Task Seeds_yesterdays_brief_sent_in_both_editions_and_names_it()
     {
         var info = Info();

@@ -71,6 +71,24 @@ public class ActionsListBoardServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task OnTheBoard_EachTabCountsTheCardsItShows_ClosedLaneIncluded_InOneQuery()
+    {
+        await Seed();
+        var svc = _db.Actions();
+
+        _db.Commands.Reset();
+        var counts = await svc.ViewCountsAsync(new ActionFilter(ActionView.Open), closedDays: ActionService.BoardClosedDays);
+        _db.Commands.Count.Should().Be(1);
+        foreach (var view in new[] { ActionView.Mine, ActionView.MyTeams, ActionView.Open })
+            counts.For(view).Should().Be((await svc.BoardAsync(new ActionFilter(view))).Cards.Count, $"the board's {view} tab counts its cards");
+        (counts.Mine, counts.MyTeams, counts.Open).Should().Be((1, 4, 5), "the action closed today is on the board, in its Closed lane");
+        counts.MineOpen.Should().Be(1, "what an empty Mine looks at is still open work");
+
+        var month = await svc.ViewCountsAsync(new ActionFilter(ActionView.Open), closedDays: ActionService.BoardOlderDays);
+        month.Open.Should().Be((await svc.BoardAsync(new ActionFilter(ActionView.Open), ActionService.BoardOlderDays)).Cards.Count, "Show older reaches further back");
+    }
+
+    [Fact]
     public async Task TheTabCounts_FollowTheFilters_AsEachTabWouldShowThem()
     {
         await Seed();

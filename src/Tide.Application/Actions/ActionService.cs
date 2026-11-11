@@ -232,10 +232,11 @@ public sealed record ActionWorkers(bool All, IReadOnlySet<Guid> Teams)
 }
 
 /// <summary>
-/// How many actions each view tab of the list shows under the same filters (Mine lets go of Held by, as choosing it does),
-/// and how many open actions of the reader's teams nobody has (<see cref="MyTeamsUnowned"/>, for an empty Mine to point at).
+/// How many actions each view tab shows under the same filters (Mine lets go of Held by, as choosing it does): the list's
+/// open actions, or on the board its cards, Closed lane included. And for an empty Mine to point at, how many open actions
+/// are the reader's (<see cref="MineOpen"/>) and how many of the reader's teams' nobody has (<see cref="MyTeamsUnowned"/>).
 /// </summary>
-public sealed record ActionViewCounts(int Mine, int MyTeams, int Open, int Overdue, int Closed, int MyTeamsUnowned)
+public sealed record ActionViewCounts(int Mine, int MyTeams, int Open, int Overdue, int Closed, int MyTeamsUnowned, int MineOpen)
 {
     public int For(ActionView view) => view switch
     {
@@ -418,14 +419,17 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// <summary>
     /// How many actions each view tab shows under <paramref name="filter"/>'s other filters (and the card
     /// <paramref name="rule"/> chosen as one, already read), in one grouped query: each count is the total that tab's
-    /// <see cref="PageAsync"/> would give. Mine lets go of Held by, as choosing the tab does.
+    /// <see cref="PageAsync"/> would give, or with <paramref name="closedDays"/>, the cards its <see cref="BoardAsync"/>
+    /// would draw, those closed in that many days included. Mine lets go of Held by, as choosing the tab does.
     /// </summary>
-    public async Task<ActionViewCounts> ViewCountsAsync(ActionFilter filter, ActionCardRule? rule = null, CancellationToken ct = default)
+    public async Task<ActionViewCounts> ViewCountsAsync(ActionFilter filter, ActionCardRule? rule = null, int? closedDays = null, CancellationToken ct = default)
     {
         RequireRead(user);
         await using var db = await dbs.CreateAsync(ct);
         var (me, held, today) = (user.UserId, filter.AssigneeId, clock.Today);
         var closedSince = DateTimeOffset.UtcNow.AddDays(-ClosedListDays);
+        var board = closedDays is not null;
+        var boardSince = DateTimeOffset.UtcNow.AddDays(-Math.Clamp(closedDays ?? 0, 1, BoardOlderDays));
         var q = Narrow(db, db.Actions.AsNoTracking(), filter with { View = ActionView.Open, AssigneeId = null });
         if (rule is not null) q = WhereRule(q, rule);
         var open = ActionItem.OpenStatuses;
@@ -436,6 +440,8 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
                    select new
                    {
                        Open = open.Contains(a.Status),
+                       // On the board: a card, open or in its Closed lane (BoardAsync's WhereOpenOrClosedSinceUtc).
+                       Shown = open.Contains(a.Status) || (board && a.ClosedAtUtc != null && a.ClosedAtUtc >= boardSince),
                        Closed = a.ClosedAtUtc != null && a.ClosedAtUtc >= closedSince,
                        Mine = a.AssigneeId == me,
                        Nobodys = a.AssigneeId == null,
@@ -445,14 +451,15 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
                    };
         var c = await rows.GroupBy(_ => 1).Select(g => new
         {
-            Mine = g.Count(x => x.Open && x.Mine),
-            MyTeams = g.Count(x => x.Open && x.Team && x.Held),
-            Open = g.Count(x => x.Open && x.Held),
+            Mine = g.Count(x => x.Shown && x.Mine),
+            MyTeams = g.Count(x => x.Shown && x.Team && x.Held),
+            Open = g.Count(x => x.Shown && x.Held),
             Overdue = g.Count(x => x.Open && x.Late && x.Held),
             Closed = g.Count(x => x.Closed && x.Held),
             Unowned = g.Count(x => x.Open && x.Team && x.Nobodys),
+            MineOpen = g.Count(x => x.Open && x.Mine),
         }).FirstOrDefaultAsync(ct);
-        return c is null ? new(0, 0, 0, 0, 0, 0) : new(c.Mine, c.MyTeams, c.Open, c.Overdue, c.Closed, c.Unowned);
+        return c is null ? new(0, 0, 0, 0, 0, 0, 0) : new(c.Mine, c.MyTeams, c.Open, c.Overdue, c.Closed, c.Unowned, c.MineOpen);
     }
 
     /// <summary>How many of the list's actions for <paramref name="filter"/> each rule matches (its own rule left out): the

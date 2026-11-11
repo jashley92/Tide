@@ -161,7 +161,7 @@
                                 }
                                 @if (InColumn(r) is var (text, since))
                                 {
-                                    <span class="tide-muted tide-kcard-since" title="@($"In {ActionService.StatusName(r.Status)} since {Ui.ShortDay(since)}")">@text</span>
+                                    <span class="tide-muted tide-kcard-since" title="@($"{ActionService.StatusName(r.Status)} since {Ui.ShortDay(since)}")">@text</span>
                                 }
                             }
                             @if (canMove)

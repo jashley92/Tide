@@ -177,7 +177,7 @@ public class BoardClosedColumnTests(TideApp app) : IClassFixture<TideApp>
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var card = new ActionRow(Guid.NewGuid(), 9101, "Patch the edge VPN", ActionKind.PatchRemediate, Priority.P1, Guid.NewGuid(), "Network",
-            null, null, null, ActionStatus.Blocked, ActionOutcome.None, null, Guid.NewGuid(), "Edge VPN zero-day exploited in the wild", null, 0,
+            null, null, null, ActionStatus.InProgress, ActionOutcome.None, null, Guid.NewGuid(), "Edge VPN zero-day exploited in the wild", null, 0,
             DateTimeOffset.UtcNow.AddDays(-10), ChecklistDone: 1, ChecklistTotal: 4, ArticleKev: true, InStatusSinceUtc: DateTimeOffset.UtcNow.AddDays(-3));
         await using var r = await RenderAsync<ActionKanban>(app, "/actions?layout=board", new()
         {
@@ -188,5 +188,6 @@ public class BoardClosedColumnTests(TideApp app) : IClassFixture<TideApp>
         html.Should().Contain("class=\"tide-kev\"").And.Contain(">KEV<");
         html.Should().Contain("1/4");
         html.Should().MatchRegex("In column [34]d");
+        html.Should().Contain("title=\"In progress since ").And.NotContain("In In progress", "the status names itself: \"In progress since\", \"Blocked since\"");
     }
 }

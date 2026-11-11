@@ -169,6 +169,7 @@ public static class DemoSeeder
             await TokensAsync(ct);
             await SendAsync(sent, ct);
 
+            await DateStatusChangesAsync(db, ct);
             db.Settings.Add(new AppSetting { Key = MarkerKey, Value = "1", UpdatedAtUtc = DateTimeOffset.UtcNow, UpdatedBy = "system" });
             await db.SaveChangesAsync(ct);
             return new Seeded(_today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), Sent.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), 1, detail, vpn.Id.ToString(), sent[0].Id.ToString(),
@@ -404,6 +405,22 @@ public static class DemoSeeder
             return [rmm, token, rule, helpdesk];
         }
 
+        // Each seeded action's status time is what its own history says, as an upgrade dates an older one: when it was
+        // closed, else its latest move into the status it has or the line saying it was raised; else when it was made.
+        // (Seeded actions are made today with their past written in, so the time the setter gave them isn't theirs.)
+        private static async Task DateStatusChangesAsync(IAppDbContext db, CancellationToken ct)
+        {
+            foreach (var a in await db.Actions.Include(a => a.Events).ToListAsync(ct))
+            {
+                var name = ActionService.StatusName(a.Status);
+                var line = a.Events.Where(e => (e.Text.StartsWith("Status: ", StringComparison.Ordinal) && e.Text.Contains("→ " + name, StringComparison.Ordinal))
+                        || e.Text.StartsWith("Raised from", StringComparison.Ordinal))
+                    .Select(e => (DateTimeOffset?)e.AtUtc).Max();
+                a.StatusChangedAtUtc = (!a.IsOpen ? a.ClosedAtUtc : null) ?? line ?? a.CreatedAtUtc;
+            }
+            await db.SaveChangesAsync(ct);
+        }
+
         // --- current actions -----------------------------------------------------------------------------------------
 
         private int CurrentActions(IAppDbContext db, Dictionary<string, Team> teams, List<Article> sent)
@@ -441,7 +458,6 @@ public static class DemoSeeder
                 new ActionEvent { AtUtc = raised.AddMinutes(5), ByName = robin.Name, Text = "Took the action." },
                 new ActionEvent { AtUtc = raised.AddHours(17), ByName = robin.Name, Text = "Status: Open → In progress." },
             ]);
-            detail.StatusChangedAtUtc = raised.AddHours(17);
             detail.Comments.Add(new ActionComment
             {
                 Text = "Proxy block is in. Working on the detection now; the agent's service name is stable across versions, which helps.",
@@ -452,8 +468,7 @@ public static class DemoSeeder
             Add("Brief the service desk on MFA reset pretexting", ActionKind.Awareness, Priority.P3, "fraud-operations", helpdesk, me, Bd(-1), ActionStatus.Open);
             // Blocked three days ago: the board says how long it has waited there.
             var blocked = Add("Confirm the vendor's patch window for the file transfer server", ActionKind.PatchRemediate, Priority.P2, "vulnerability-management", null, sam, Bd(-2), ActionStatus.Blocked);
-            blocked.StatusChangedAtUtc = DateTimeOffset.UtcNow.AddDays(-3);
-            blocked.Events.Add(new ActionEvent { AtUtc = blocked.StatusChangedAtUtc.Value, ByName = sam.Name, Text = "Status: Open → Blocked: waiting on the vendor's window." });
+            blocked.Events.Add(new ActionEvent { AtUtc = DateTimeOffset.UtcNow.AddDays(-3), ByName = sam.Name, Text = "Status: Open → Blocked: waiting on the vendor's window." });
             Add("Hunt for unapproved remote monitoring agents on servers", ActionKind.ThreatHunt, Priority.P2, "cyber-defense", rmm, me, Bd(2), ActionStatus.Open);
             return detail.Number;
         }
