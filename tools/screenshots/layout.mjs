@@ -9,7 +9,7 @@
 // Each failure names the page, the width and the rule. Add a page or a rule below; README.md says how.
 
 import { chromium } from 'playwright';
-import { openPage, pick, readDemo, startTide, toArticleSlide } from './tide.mjs';
+import { openPage, pick, readDemo, settle, startTide, toArticleSlide } from './tide.mjs';
 
 // --- the rules: each runs in the page and returns what's wrong (nothing, when it holds). A box is shown when it has
 // width and height. --------------------------------------------------------------------------------------------------
@@ -77,9 +77,135 @@ const roomBeside = (selector, px, beside) => ({
 /** At least one match is visible. */
 const visible = selector => ({
   name: `visible: ${selector}`,
-  check: page => page.$$eval(selector, (els, selector) =>
-    els.some(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; }) ? [] : [`${selector} isn't shown`], selector),
+  check: async page => (await anyShown(page, selector)) ? [] : [`${selector} isn't shown`],
 });
+
+/** Whether any match of `selector` is shown (has width and height). */
+const anyShown = (page, selector) => page.$$eval(selector, els =>
+  els.some(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; }));
+
+/** No match is visible (none there, or each hidden). */
+const hidden = selector => ({
+  name: `hidden: ${selector}`,
+  check: async page => (await anyShown(page, selector)) ? [`${selector} is shown`] : [],
+});
+
+/**
+ * Triage's selection, and focus, are where the keys pressed quickly (pressQuickly) were aimed: as many rows on from where
+ * they started as keys were pressed, on to the next page past the last row or back to the previous one before the first
+ * (the address says which page). Counted in lines as shown, whatever the seed's groups make of a page.
+ */
+const selectedAsAimed = () => ({
+  name: 'selected: the row the keys were aimed at',
+  check: page => page.evaluate(() => {
+    const aim = window.__tideAim;
+    const rows = [...document.querySelectorAll('.tide-triage-row')];
+    const at = rows.findIndex(r => r.classList.contains('selected'));
+    const focused = rows.indexOf(document.activeElement);
+    const shown = Number(new URL(location.href).searchParams.get('page') ?? 1);
+    let [listPage, row] = [aim.page, aim.row + aim.step];
+    if (row >= aim.count) [listPage, row] = [listPage + 1, row - aim.count];
+    else if (row < 0) [listPage, row] = [listPage - 1, rows.length + row];
+    return shown === listPage && at === row && focused === row ? []
+      : [`page ${shown}, row ${at + 1} of ${rows.length} is selected and row ${focused + 1} has focus, not page ${listPage}, row ${row + 1}`];
+  }),
+});
+
+/** Each visible match of `selector` starts at or below the top bar's bottom edge: nothing slides under the bar. */
+const belowTopBar = selector => ({
+  name: `below the top bar: ${selector}`,
+  check: page => page.$$eval(selector, (els, selector) => {
+    const bar = document.querySelector('.top-row')?.getBoundingClientRect().bottom ?? 0;
+    return els.map(e => e.getBoundingClientRect()).filter(r => r.height > 0 && r.top < bar - 1)
+      .map(r => `${selector} starts at ${Math.round(r.top)}px, under the top bar (to ${Math.round(bar)}px)`);
+  }, selector),
+});
+
+/** The first visible match of each selector shares one horizontal band: side by side, neither on a line of its own. */
+const sameLine = (...selectors) => ({
+  name: `same line: ${selectors.join(' / ')}`,
+  check: page => page.evaluate(selectors => {
+    const boxes = selectors.map(s => [...document.querySelectorAll(s)].map(e => e.getBoundingClientRect()).find(r => r.width > 0 && r.height > 0));
+    const missing = selectors.filter((_, i) => !boxes[i]);
+    if (missing.length) return [`nothing visible: ${missing.join(', ')}`];
+    return Math.max(...boxes.map(r => r.top)) < Math.min(...boxes.map(r => r.bottom)) ? [] : [`not on one line: ${selectors.join(', ')}`];
+  }, selectors),
+});
+
+/**
+ * Setup: `key` pressed `times` quickly, 25ms apart, over a connection that takes 50ms each way, as a server across a
+ * network does. The keys go faster than the answers come back: none may be lost, applied out of order, or undone by a
+ * row taking focus, even across a page of the list. Waits until the selection has stayed put for a second.
+ */
+const pressQuickly = (key, times) => async page => {
+  await page.routeWebSocket(/_blazor/, ws => {
+    const server = ws.connectToServer();
+    ws.onMessage(m => setTimeout(() => server.send(m), 50));
+    server.onMessage(m => setTimeout(() => ws.send(m), 50));
+  });
+  await page.reload({ waitUntil: 'networkidle' });
+  await settle(page);
+  await page.locator('.tide-triage-row.selected').focus();
+  // Where the keys start, for selectedAsAimed.
+  await page.evaluate(step => {
+    const rows = [...document.querySelectorAll('.tide-triage-row')];
+    window.__tideAim = { page: Number(new URL(location.href).searchParams.get('page') ?? 1), row: rows.findIndex(r => r.classList.contains('selected')), count: rows.length, step };
+  }, key === 'k' ? -times : times);
+  for (let i = 0; i < times; i++) {
+    await page.keyboard.press(key);
+    await page.waitForTimeout(25);
+  }
+  const where = () => page.evaluate(() => location.href + '#' + [...document.querySelectorAll('.tide-triage-row')].findIndex(r => r.classList.contains('selected')));
+  let was = await where();
+  for (let quiet = 0, waited = 0; quiet < 1000 && waited < 15000; waited += 250) {
+    await page.waitForTimeout(250);
+    const now = await where();
+    quiet = now === was ? quiet + 250 : 0;
+    was = now;
+  }
+};
+
+/**
+ * Setup: the first line covered by an article (a coverage flag) is selected, by a click on it: a report's own line, or
+ * with `group` a suggested group's. Every letter is spaced wider, as a font wider than this machine's would set it, so
+ * a rule that holds holds by the page's construction (truncation, widths), not by pixels to spare.
+ */
+const selectCovered = (group = false) => async page => {
+  await page.addStyleTag({ content: '* { letter-spacing: .07em !important; }' });
+  const line = page.locator(group ? '.tide-triage-group' : '.tide-triage-row:not(.tide-triage-group)', { has: page.locator('.tide-triage-flags .tide-badge-info') }).first();
+  await line.locator(group ? '.tide-group-label' : '.tide-triage-meta > span').first().click();
+  await page.locator('.tide-triage-row.selected .tide-triage-attach').waitFor();
+};
+
+/** Setup: V pressed `times`, a moment apart (each read or close reaching the page before the next). */
+const pressV = times => async page => {
+  for (let i = 0; i < times; i++) {
+    await page.keyboard.press('v');
+    await page.waitForTimeout(700);
+  }
+};
+
+/** Setup: V held down for a second and a half, the keyboard repeating it (20 keydowns, all but the first repeats). */
+async function holdV(page) {
+  for (let i = 0; i < 20; i++) {
+    await page.keyboard.down('v');
+    await page.waitForTimeout(75);
+  }
+  await page.keyboard.up('v');
+  // Once the pane has gone, a moment more for a late switch back to show.
+  await page.locator('.tide-reading').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(500);
+}
+
+// The reading pane's open or closed is kept for the person, so the pages that press V sign in as someone of their own
+// for this run (the dev sign-in's ?as=), and everyone else's Triage opens as it always does.
+const run = Date.now().toString(36);
+
+/** Setup: the page scrolled well down, past the top of the list. */
+async function scrollDown(page) {
+  await page.mouse.wheel(0, 1500);
+  await page.waitForTimeout(300);
+}
 
 // --- the pages: route, optional setup, widths (each 900px tall) and rules ([minWidth, rule] from that width up) ------
 
@@ -103,6 +229,30 @@ const pages = [
   // A sweep's query is read whole, in the wide column: its long lines wrap, so nothing scrolls sideways inside its box.
   { name: 'action-hunt', route: '/actions/{huntAction}', widths: [1920, 1440],
     rules: [noSidewaysScroll, visible('.tide-action-main .tide-hunt pre.tide-query'), fits('.tide-hunt pre.tide-query')] },
+  // Triage: the keys on one line, each row's flags fitting its line, and the reading pane open by itself from 1400px.
+  { name: 'triage', route: '/triage', widths: [1920, 1440, 780],
+    rules: [noSidewaysScroll, fits('.tide-page-head'), visible('.tide-triage-keys'), oneRow('.tide-triage-keys'), visible('.tide-triage-row.selected'), fits('.tide-triage-row'),
+      fits('.tide-triage-flags'), [1400, visible('.tide-reading')]] },
+  { name: 'triage-narrow', route: '/triage', widths: [1300, 780], rules: [hidden('.tide-reading')] },
+  // The reading pane open by itself stays below the top bar as the page scrolls; a covered row's Attach and Promote
+  // share a line beside it.
+  { name: 'triage-scrolled', route: '/triage', setup: scrollDown, widths: [1440], rules: [visible('.tide-reading'), belowTopBar('.tide-reading')] },
+  { name: 'triage-covered', route: '/triage', setup: selectCovered(), widths: [1440, 1920],
+    rules: [visible('.tide-reading'), sameLine('.tide-triage-row.selected .tide-triage-attach', '.tide-triage-row.selected .tide-triage-promote'), fits('.tide-triage-row.selected')] },
+  // A covered group's Attach all and Promote as one share a line too (the demo's covered group: Demo:TriageFiller below).
+  { name: 'triage-covered-group', route: '/triage', setup: selectCovered(true), widths: [1440, 1920],
+    rules: [visible('.tide-reading'), sameLine('.tide-triage-group.selected .tide-triage-attach', '.tide-triage-group.selected .tide-triage-promote'), fits('.tide-triage-group.selected')] },
+  // V closes the pane that opened by itself, and opens it again; on a narrow window, where it's hidden, V opens it.
+  // Held down, V is one press: the keyboard's repeats don't open and close the pane over and over.
+  { name: 'triage-v-held', route: `/triage?as=v4${run}`, setup: holdV, widths: [1440], rules: [hidden('.tide-reading')] },
+  { name: 'triage-v-closes', route: `/triage?as=v1${run}`, setup: pressV(1), widths: [1440], rules: [hidden('.tide-reading')] },
+  { name: 'triage-v-reopens', route: `/triage?as=v2${run}`, setup: pressV(2), widths: [1440], rules: [visible('.tide-reading')] },
+  { name: 'triage-v-narrow', route: `/triage?as=v3${run}`, setup: pressV(1), widths: [780], rules: [visible('.tide-reading')] },
+  // J and K pressed quickly land on the row they were pressed for: on the page (the selection isn't pulled back by a
+  // row's focus), and across a page boundary both ways (the demo has a second page: Demo:TriageFiller below).
+  { name: 'triage-keys', route: '/triage', setup: pressQuickly('j', 10), widths: [1440], rules: [selectedAsAimed()] },
+  { name: 'triage-keys-next-page', route: '/triage?row=45', setup: pressQuickly('j', 10), widths: [1440], rules: [selectedAsAimed()] },
+  { name: 'triage-keys-previous-page', route: '/triage?page=2&row=4', setup: pressQuickly('k', 10), widths: [1440], rules: [selectedAsAimed()] },
   { name: 'trends', route: '/trends', widths: [1920], rules: [noSidewaysScroll, widerThan('.content', 1400)] },
   { name: 'slide-article', route: '/present/{today}', setup: toArticleSlide, widths: [1440, 1100, 900],
     rules: [
@@ -123,7 +273,8 @@ const wanted = pick(pages, 'page');
 
 let server;
 try {
-  server = await startTide();
+  // Enough more new items for Triage to have a second page (the paging keys' rules).
+  server = await startTide(['--Demo:TriageFiller=55']);
   const problems = await check(wanted, readDemo());
   if (problems.length) {
     console.error(`\n${problems.length} layout problem${problems.length === 1 ? '' : 's'}:`);

@@ -27,6 +27,12 @@ public static class UserPreferences
     /// there last (a dialect's key; the first dialect until they choose).</summary>
     public const string HuntDialect = "hunt.dialect";
 
+    /// <summary>Triage's reading pane: open by itself on a wide window (the default, until the person chooses), or as
+    /// they last left it, open (V) or closed (Esc or its close button), at every width.</summary>
+    public const string TriageReading = "triage.reading";
+
+    public const string ReadingAuto = "auto", ReadingOpen = "open", ReadingClosed = "closed";
+
     // --- My notifications (NotificationPreferenceService) ----------------------------------------------------------
 
     /// <summary>Due-soon reminders about the person's actions (or their team's, when it has no mailbox): on or off.</summary>
@@ -66,6 +72,7 @@ public static class UserPreferences
             {
                 new(ActionsLayout, [Board, List], Permission.ReadActions), new(ActionsView, [Mine, MyTeams, AllOpen], Permission.ReadActions),
                 new(HuntDialect, QueryDialects.All.Select(d => d.Key).ToList(), Permission.ReadTeamEdition),
+                new(TriageReading, [ReadingAuto, ReadingOpen, ReadingClosed], Permission.WriteArticles),
             }
             .Concat(NotificationKinds.All.Select(k => new Definition(k.Name, k.Values, k.Needs)))
             .ToDictionary(d => d.Name, StringComparer.Ordinal);
