@@ -7,7 +7,8 @@ using Tide.Web.Components.Shared;
 
 namespace Tide.IntegrationTests;
 
-/// <summary>Triage's promote form: P (or the button) opens it in the selected row, prefilled; Esc or Cancel closes it.</summary>
+/// <summary>Triage's promote form: P (or the button) opens it in the selected item's decision, prefilled; Esc or Cancel
+/// closes it.</summary>
 public class TriagePromoteTests(TideApp app) : IClassFixture<TideApp>
 {
     // The newest new item, so it leads the inbox and is selected: from an AMBER source, naming a CVE.

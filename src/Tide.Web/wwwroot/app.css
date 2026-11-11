@@ -2602,3 +2602,33 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
     .tide-action-row.selected > td { background: none; }
 }
 /* ---- end Actions list and board, as designed ---- */
+
+/* ---- Triage's decision bar, as designed: the list a column of about 440px beside the reading pane, and the selected
+   item's decision in a bar at the foot of the pane: first the line that says why its main button is the main one,
+   then the buttons, the main one first. On a wide window the bar's buttons are one row, by construction: the article's
+   title in Attach gives way, the dismiss reason narrows, and the pane's text gives way so the bar stays in the pane.
+   Where the pane isn't shown (closed, or hidden below 1400px) the same decision sits in the selected row and wraps,
+   as the row's buttons always have. ---- */
+.tide-triage-layout.reading { grid-template-columns: minmax(0, min(27.5rem, 42%)) minmax(0, 1fr); }
+.tide-triage-decide { display: grid; gap: var(--tide-space-2); margin-top: var(--tide-space-2); }
+.tide-triage-why { margin: 0; font-size: var(--tide-text-sm); color: var(--tide-text-muted); }
+.tide-triage-acts, .tide-triage-more { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); min-width: 0; }
+.tide-triage-more:empty { display: none; }
+.tide-triage-end { display: inline-flex; align-items: center; gap: var(--tide-space-2); min-width: 0; }
+.tide-reading > .tide-triage-decide { margin-top: var(--tide-space-3); padding-top: var(--tide-space-3); border-top: 1px solid var(--tide-border); }
+/* From the bar, the attach list opens upwards, over the pane's text. */
+.tide-reading .tide-attach-panel { top: auto; bottom: calc(100% + var(--tide-space-1)); }
+@media (min-width: 1000.02px) {
+    .tide-reading { display: flex; flex-direction: column; overflow: visible; }
+    .tide-reading > * { flex: none; }
+    .tide-reading > .tide-reading-text { flex: 0 1 auto; min-height: 6rem; }
+}
+@media (min-width: 1400px) {
+    .tide-reading .tide-triage-acts { flex-wrap: nowrap; }
+    .tide-reading .tide-triage-acts .btn:not(.tide-triage-attach) { flex: none; white-space: nowrap; }
+    /* The article's title gives way first, then the dismiss reason. */
+    .tide-reading .tide-triage-acts > .tide-triage-main { flex: 0 1000 auto; }
+    .tide-reading .tide-triage-end { flex: 0 1 auto; margin-left: auto; }
+    .tide-reading .tide-triage-end > select { flex: 0 1 auto; min-width: 5rem; }
+}
+/* ---- end Triage's decision bar ---- */

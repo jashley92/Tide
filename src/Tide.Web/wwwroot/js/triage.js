@@ -8,7 +8,8 @@
 // A suggested group ("Looks like one event") is a line of its own: Enter on it opens or closes it, the right arrow opens
 // it, and the left arrow (on it or on a report under it) closes it. J/K and the up and down arrows move over it.
 // "v" reads the selected item in the reading pane (EP-76), and pressed again closes it; Esc closes it too. Open or closed
-// is remembered for the person.
+// is remembered for the person. While the pane is shown, the selected item's buttons are in the decision bar at its
+// foot, one Tab from the selected row (hop, below).
 window.tideTriage = (function () {
     const rows = window.tideRows;
     let started = 0, room = null, tellRoom = null;
@@ -55,16 +56,41 @@ window.tideTriage = (function () {
         if (link) window.open(link.href, '_blank', 'noopener,noreferrer');
     }
 
+    // While the reading pane is shown, the selected item's buttons are in the decision bar at its foot, after every other
+    // row's links and the pane in the page's order. Tab from the selected row's last control goes straight to the bar's
+    // first (its main button), and Shift+Tab from there comes back: the decision is one Tab from the item, as it was when
+    // the buttons were in the row.
+    const tabbable = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex="0"]';
+
+    function stops(root) {
+        return Array.prototype.filter.call(root.querySelectorAll(tabbable), function (el) { return el.getClientRects().length > 0; });
+    }
+
+    function hop(e) {
+        if (e.key !== 'Tab' || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+        const bar = document.querySelector('.tide-reading .tide-triage-decide');
+        const row = document.querySelector('.tide-triage-row.selected');
+        if (!bar || !row || !bar.getClientRects().length) return;
+        const inRow = [row].concat(stops(row)), inBar = stops(bar);
+        if (!inBar.length) return;
+        const to = !e.shiftKey && e.target === inRow[inRow.length - 1] ? inBar[0]
+            : e.shiftKey && e.target === inBar[0] ? inRow[inRow.length - 1] : null;
+        if (!to) return;
+        e.preventDefault();
+        to.focus();
+    }
+
     return {
         // The promote form opened: its title takes focus, selected, ready to retype.
         focusPromote: function () {
             const title = document.getElementById('promote-title');
             if (title) { title.focus(); title.select(); }
         },
-        // The promote form closed: the row gets focus back, unless focus already went somewhere else (a tab, a filter).
+        // The promote form closed, or an attach is done: the row gets focus back, unless focus already went somewhere else
+        // (a tab, a filter). The decision bar under the reading pane counts as the list's, as the row's buttons did.
         focusRow: function () {
             const active = document.activeElement;
-            if (!active || active === document.body || (active.closest && active.closest('.tide-triage'))) rows.follow();
+            if (!active || active === document.body || (active.closest && active.closest('.tide-triage, .tide-triage-decide'))) rows.follow();
         },
         // A choice kept in this browser (the inbox order). With no value it reads; null forgets it.
         pref: function (key, value) {
@@ -82,6 +108,7 @@ window.tideTriage = (function () {
             tellRoom = function () { dotnetRef.invokeMethodAsync('OnReadingRoom', room.matches).catch(function () { }); };
             room.addEventListener('change', tellRoom);
             tellRoom();
+            document.addEventListener('keydown', hop);
             started = rows.start(dotnetRef, {
                 row: 'tide-triage-row', method: 'OnTriageKey',
                 keys: { s: 'shortlist', x: 'dismiss', d: 'duplicate', p: 'promote', r: 'restore', o: 'open', v: 'read' },
@@ -92,6 +119,7 @@ window.tideTriage = (function () {
         stop: function () {
             if (room) room.removeEventListener('change', tellRoom);
             room = tellRoom = null;
+            document.removeEventListener('keydown', hop);
             rows.stop(started);
         }
     };

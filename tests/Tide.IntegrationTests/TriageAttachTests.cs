@@ -65,6 +65,14 @@ public class TriageAttachTests(TideApp app) : IClassFixture<TideApp>
         return html[at..html.IndexOf("</li>", at, StringComparison.Ordinal)];
     }
 
+    // The decision bar under the reading pane (open by itself here): the selected line's buttons, its reason first.
+    private static string Bar(string html)
+    {
+        var at = html.IndexOf("<section class=\"tide-triage-decide\"", StringComparison.Ordinal);
+        at.Should().BePositive("the decision bar is drawn");
+        return html[at..html.IndexOf("</section>", at, StringComparison.Ordinal)];
+    }
+
     // Someone of their own, so a preference one test keeps isn't another's.
     private static ComponentHarness.SignIn Someone() => new("attach:" + Guid.NewGuid().ToString("N"), "Attach tester", "Analyst");
 
@@ -75,12 +83,12 @@ public class TriageAttachTests(TideApp app) : IClassFixture<TideApp>
         var (source, ids) = await Items(("Lantern VPN bug now used by two gangs", "CVE-2026-7201"));
         await using var r = await ComponentHarness.RenderAsync<Triage>(app, $"/triage?source={source}", @as: Someone());
 
-        var row = Selected(await r.HtmlOnce("Lantern VPN bug now used by two gangs"));
-        row.Should().Contain("Attach to <span class=\"tide-triage-attach-title text-truncate\">“Lantern VPN flaw exploited in the wild”</span>");
-        Regex.IsMatch(row, "class=\"btn btn-primary btn-sm tide-triage-attach\"[^>]*>(<span[^>]*></span>)? Attach to").Should().BeTrue("Attach is the main (primary) button");
-        Regex.IsMatch(row, "class=\"btn btn-outline-secondary btn-sm tide-triage-promote\"[^>]*>(<span[^>]*></span>)? Promote <span class=\"tide-kbd\">P</span>")
+        var bar = Bar(await r.HtmlOnce("Lantern VPN bug now used by two gangs"));
+        bar.Should().Contain("Attach to <span class=\"tide-triage-attach-title text-truncate\">“Lantern VPN flaw exploited in the wild”</span>");
+        Regex.IsMatch(bar, "class=\"btn btn-primary btn-sm tide-triage-attach\"[^>]*>(<span[^>]*></span>)? Attach to").Should().BeTrue("Attach is the main (primary) button");
+        Regex.IsMatch(bar, "class=\"btn btn-outline-secondary btn-sm tide-triage-promote\"[^>]*>(<span[^>]*></span>)? Promote <span class=\"tide-kbd\">P</span>")
             .Should().BeTrue("Promote is still there, with its key");
-        row.Should().NotContain("Add as a source of “Lantern VPN flaw", "the main button says it once");
+        bar.Should().NotContain("Add as a source of “Lantern VPN flaw", "the main button says it once");
 
         // P still promotes: its form opens, and Esc closes it.
         await r.Click(t => t.OnTriageKey("promote"));
@@ -98,9 +106,11 @@ public class TriageAttachTests(TideApp app) : IClassFixture<TideApp>
         var (source, _) = await Items(("Kestrel routers still unpatched", "CVE-2026-7202"));
         await using var r = await ComponentHarness.RenderAsync<Triage>(app, $"/triage?source={source}", @as: Someone());
 
-        var row = Selected(await r.HtmlOnce("Kestrel routers still unpatched"));
-        row.Should().NotContain("Attach to “").And.Contain("covered");
-        Regex.IsMatch(row, "class=\"btn btn-primary btn-sm tide-triage-promote\"[^>]*>(<span[^>]*></span>)? Promote <span class=\"tide-kbd\">P</span>").Should().BeTrue();
+        var html = await r.HtmlOnce("Kestrel routers still unpatched");
+        Selected(html).Should().Contain("covered", "the row's flag says so");
+        var bar = Bar(html);
+        bar.Should().NotContain("Attach to “");
+        Regex.IsMatch(bar, "class=\"btn btn-primary btn-sm tide-triage-promote\"[^>]*>(<span[^>]*></span>)? Promote <span class=\"tide-kbd\">P</span>").Should().BeTrue();
     }
 
     [Fact]
@@ -133,8 +143,9 @@ public class TriageAttachTests(TideApp app) : IClassFixture<TideApp>
         }
         await using var r = await ComponentHarness.RenderAsync<Triage>(app, "/triage", @as: Someone());
 
-        var line = Selected(await r.HtmlOnce("Looks like one event"));
-        line.Should().Contain("tide-triage-group");
+        var html = await r.HtmlOnce("Looks like one event");
+        Selected(html).Should().Contain("tide-triage-group");
+        var line = Bar(html);
         Regex.IsMatch(line, "class=\"btn btn-primary btn-sm tide-triage-attach\"[^>]*>(<span[^>]*></span>)? Attach all 3 to <span class=\"tide-triage-attach-title text-truncate\">“Quorvexz theft, first report”</span>").Should().BeTrue();
         Regex.IsMatch(line, "class=\"btn btn-outline-secondary btn-sm tide-triage-promote\"[^>]*>(<span[^>]*></span>)? Promote as one article \\(3 sources\\) <span class=\"tide-kbd\">P</span>")
             .Should().BeTrue("promoting the group is still there, and P");
@@ -188,10 +199,10 @@ public class TriageAttachTests(TideApp app) : IClassFixture<TideApp>
         var (source, _) = await Items(("Heron escape used against hosting providers", "CVE-2026-7205"));
         await using var r = await ComponentHarness.RenderAsync<Triage>(app, $"/triage?source={source}", @as: Someone());
 
-        var row = Selected(await r.HtmlOnce("Heron escape used against hosting providers"));
-        var at = row.IndexOf("tide-triage-attach", StringComparison.Ordinal);
+        var bar = Bar(await r.HtmlOnce("Heron escape used against hosting providers"));
+        var at = bar.IndexOf("tide-triage-attach", StringComparison.Ordinal);
         at.Should().BePositive();
-        var button = System.Net.WebUtility.HtmlDecode(row[row.LastIndexOf("<button", at, StringComparison.Ordinal)..row.IndexOf("</button>", at, StringComparison.Ordinal)]);
+        var button = System.Net.WebUtility.HtmlDecode(bar[bar.LastIndexOf("<button", at, StringComparison.Ordinal)..bar.IndexOf("</button>", at, StringComparison.Ordinal)]);
         button.Should().Contain($"title=\"Attach to “{title}”\"", "the whole title on hover")
             .And.Contain($"<span class=\"tide-triage-attach-title text-truncate\">“{title}”</span>", "and in the button's name; the stylesheet cuts it short on screen");
     }

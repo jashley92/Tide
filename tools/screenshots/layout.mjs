@@ -511,7 +511,7 @@ const selectCovered = (group = false) => async page => {
   await wider(page);
   const line = page.locator(group ? '.tide-triage-group' : '.tide-triage-row:not(.tide-triage-group):not(.tide-triage-member)', { has: page.locator('.tide-triage-flags .tide-badge-info') }).first();
   await line.locator(group ? '.tide-group-label' : '.tide-triage-meta > span').first().click();
-  await page.locator('.tide-triage-row.selected .tide-triage-attach').waitFor();
+  await page.locator('.tide-triage-decide .tide-triage-attach').waitFor();
 };
 
 /** Setup: V pressed `times`, a moment apart (each read or close reaching the page before the next). */
@@ -732,6 +732,45 @@ const openEntryMore = async page => {
 // for this run (the dev sign-in's ?as=), and everyone else's Triage opens as it always does.
 const run = Date.now().toString(36);
 
+/** The first visible match of `selector` is `px` wide, give or take `slack`. */
+const widthNear = (selector, px, slack) => holds(`about ${px}px wide: ${selector}`, ([selector, px, slack]) => {
+  const r = [...document.querySelectorAll(selector)].map(e => e.getBoundingClientRect()).find(b => b.height > 0);
+  if (!r) return [`nothing shown matches ${selector}`];
+  return Math.abs(r.width - px) <= slack ? [] : [`${selector} is ${Math.round(r.width)}px wide, not about ${px}px`];
+}, [selector, px, slack]);
+
+/**
+ * Tab from the selected row goes through the row's own controls and then into Triage's decision bar, its main button
+ * first and the rest in the order they're shown (not past every other row's links and the reading pane on the way);
+ * Shift+Tab from the bar's first button goes back to the row.
+ */
+const tabReachesBar = {
+  name: 'Tab from the selected row reaches the decision bar, main button first',
+  check: async page => {
+    const where = () => page.evaluate(() => {
+      const a = document.activeElement, r = a.getBoundingClientRect();
+      return { inRow: !!a.closest('.tide-triage-row.selected'), inBar: !!a.closest('.tide-triage-decide'), primary: a.classList.contains('btn-primary'),
+        x: Math.round(r.left), y: Math.round(r.top), text: (a.innerText || a.getAttribute('aria-label') || a.tagName).replace(/\s+/g, ' ').trim().slice(0, 40) };
+    });
+    await page.locator('.tide-triage-row.selected').focus();
+    const seen = [];
+    for (let i = 0; i < 30 && seen.length < 4; i++) {
+      await page.keyboard.press('Tab');
+      const at = await where();
+      if (!at.inRow) seen.push(at);
+    }
+    if (!seen.length || !seen[0].inBar) return [`Tab from the selected row goes to "${seen[0]?.text}", not the decision bar`];
+    if (!seen[0].primary) return [`the first of the bar Tab reaches is "${seen[0].text}", not its main button`];
+    const bar = seen.filter(s => s.inBar);
+    const backwards = bar.slice(1).filter((s, i) => s.y === bar[i].y && s.x <= bar[i].x);
+    if (backwards.length) return [`Tab goes back along the bar's row: "${bar.map(s => s.text).join('", "')}"`];
+    await page.locator('.tide-triage-decide .btn-primary').first().focus();
+    await page.keyboard.press('Shift+Tab');
+    const back = await where();
+    return back.inRow ? [] : [`Shift+Tab from the bar's main button goes to "${back.text}", not back to the selected row`];
+  },
+};
+
 /** Setup: the page scrolled well down, past the top of the list. */
 async function scrollDown(page) {
   await page.mouse.wheel(0, 1500);
@@ -816,18 +855,34 @@ const pages = [
     rules: [noSidewaysScroll, fits('.tide-page-head'), visible('.tide-triage-keys'), oneRow('.tide-triage-keys'), visible('.tide-triage-row.selected'), fits('.tide-triage-row'),
       fits('.tide-triage-flags'), [1400, visible('.tide-reading')]] },
   { name: 'triage-narrow', route: '/triage', widths: [1300, 780], rules: [hidden('.tide-reading')] },
-  // The reading pane open by itself stays below the top bar as the page scrolls; a covered row's Attach and Promote
-  // share a line beside it.
+  // The reading pane open by itself stays below the top bar as the page scrolls.
   { name: 'triage-scrolled', route: '/triage', setup: scrollDown, widths: [1440], rules: [visible('.tide-reading'), belowTopBar('.tide-reading')] },
+  // The decision bar, as designed: the list a column of about 440px, the selected item's buttons in a bar at the foot of
+  // the reading pane (not in the row), opening with the line that says why its main button is the main one; the bar's
+  // buttons one row, by construction (letters spaced wider); Tab from the row goes to them.
+  { name: 'triage-decision', route: '/triage', setup: wider, widths: [[1920, 1080], [1440, 900]],
+    rules: [noSidewaysScroll, widthNear('.tide-triage-layout > .tide-card:first-child', 440, 16), visible('.tide-reading .tide-triage-decide'),
+      sameBox('.tide-reading', '.tide-triage-decide', '.tide-reading-title'), above('.tide-reading-title', '.tide-triage-decide'),
+      above('.tide-triage-why', '.tide-triage-acts'), oneRow('.tide-triage-decide .tide-triage-acts'), fits('.tide-triage-decide'), fits('.tide-triage-acts'),
+      hidden('.tide-triage-row.selected .tide-triage-decide'), fits('.tide-triage-row'), tabReachesBar] },
+  // A covered row's Attach and Promote, and a covered group's Attach all and Promote as one, share the bar's one row.
   { name: 'triage-covered', route: '/triage', setup: selectCovered(), widths: [1440, 1920],
-    rules: [visible('.tide-reading'), sameLine('.tide-triage-row.selected .tide-triage-attach', '.tide-triage-row.selected .tide-triage-promote'), fits('.tide-triage-row.selected')] },
+    rules: [visible('.tide-reading'), sameLine('.tide-triage-decide .tide-triage-attach', '.tide-triage-decide .tide-triage-promote'),
+      oneRow('.tide-triage-decide .tide-triage-acts'), fits('.tide-triage-decide'), fits('.tide-triage-row.selected')] },
   // A covered group's Attach all and Promote as one share a line too (the demo's covered group: Demo:TriageFiller below).
   { name: 'triage-covered-group', route: '/triage', setup: selectCovered(true), widths: [1440, 1920],
-    rules: [visible('.tide-reading'), sameLine('.tide-triage-group.selected .tide-triage-attach', '.tide-triage-group.selected .tide-triage-promote'), fits('.tide-triage-group.selected')] },
+    rules: [visible('.tide-reading'), sameLine('.tide-triage-decide .tide-triage-attach', '.tide-triage-decide .tide-triage-promote'),
+      oneRow('.tide-triage-decide .tide-triage-acts'), fits('.tide-triage-decide'), fits('.tide-triage-group.selected')] },
+  // Below 1400px the pane that opened by itself is hidden and the decision stays in the selected row, reason and all.
+  { name: 'triage-decision-narrow', route: '/triage', setup: wider, widths: [1000, 780],
+    rules: [noSidewaysScroll, hidden('.tide-reading'), visible('.tide-triage-row.selected .tide-triage-decide'), visible('.tide-triage-row.selected .tide-triage-why'),
+      visible('.tide-triage-row.selected .tide-triage-promote'), fits('.tide-triage-row.selected')] },
   // V closes the pane that opened by itself, and opens it again; on a narrow window, where it's hidden, V opens it.
   // Held down, V is one press: the keyboard's repeats don't open and close the pane over and over.
   { name: 'triage-v-held', route: `/triage?as=v4${run}`, setup: holdV, widths: [1440], rules: [hidden('.tide-reading')] },
-  { name: 'triage-v-closes', route: `/triage?as=v1${run}`, setup: pressV(1), widths: [1440], rules: [hidden('.tide-reading')] },
+  // Closed by the person, the pane takes the decision bar with it: the buttons are in the selected row again.
+  { name: 'triage-v-closes', route: `/triage?as=v1${run}`, setup: pressV(1), widths: [1440],
+    rules: [hidden('.tide-reading'), visible('.tide-triage-row.selected .tide-triage-decide'), visible('.tide-triage-row.selected .tide-triage-promote')] },
   { name: 'triage-v-reopens', route: `/triage?as=v2${run}`, setup: pressV(2), widths: [1440], rules: [visible('.tide-reading')] },
   { name: 'triage-v-narrow', route: `/triage?as=v3${run}`, setup: pressV(1), widths: [780], rules: [visible('.tide-reading')] },
   // The context rail as an overlay over Triage: the keys pressed in it are its own. J and the arrows there don't move
