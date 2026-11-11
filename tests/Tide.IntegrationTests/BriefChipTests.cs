@@ -296,6 +296,23 @@ public class BriefChipCostTests(CountingApp app) : IClassFixture<CountingApp>
     }
 
     [Fact]
+    public async Task AChangeThatLandsWhileTheFirstReadIsUnderWay_IsHeard()
+    {
+        await BriefChipPage.Change(app, b => b.Status = BriefStatus.Draft);
+        await using var circuit = Circuit();
+        var source = circuit.ServiceProvider.GetRequiredService<BriefChipSource>();
+        // A colleague marks the brief ready after the chip read it, but before the chip knew which brief to follow.
+        source.AfterBriefRead = () =>
+        {
+            source.AfterBriefRead = null;
+            return BriefChipPage.Change(app, b => b.Status = BriefStatus.Ready);
+        };
+
+        (await source.GetAsync())!.Full.Should().NotContain("Present", "the first read was of the draft");
+        (await source.GetAsync())!.Full.Should().Contain("step 4 of 5 · Present", "the change it missed is read next time");
+    }
+
+    [Fact]
     public async Task DrawingTheWholeLayoutASecondTime_AddsNoCommandsForTheChip()
     {
         await using var circuit = Circuit();

@@ -2,6 +2,7 @@ using System.Globalization;
 using Tide.Application.Abstractions;
 using Tide.Application.Briefs;
 using Tide.Application.Distribution;
+using Tide.Domain.Entities;
 using Tide.Domain.Enums;
 using Tide.Application.Org;
 using Tide.Application.Security;
@@ -87,11 +88,19 @@ public sealed class BriefChipSource : IDisposable
     public bool Follows(Change change) => _follow.Contains(change.Topic);
 
     // On the publisher's thread, from any circuit (this one too: Today's own save moves the chip): only marks the
-    // reading as out of date. The next GetAsync reads again.
+    // reading as out of date. The next GetAsync reads again. While a read is under way, what isn't followed is noted
+    // for it: the read learns which brief to follow only once it has it, and a change to that brief may land first.
     private void OnChanged(Change change)
     {
-        if (Follows(change)) Interlocked.Increment(ref _version);
+        lock (_gate)
+        {
+            if (Follows(change)) Interlocked.Increment(ref _version);
+            else foreach (var heard in _reading) heard.Add(change.Topic);
+        }
     }
+
+    private readonly Lock _gate = new();
+    private readonly List<List<string>> _reading = [];
 
     /// <summary>The chip for the person signed in, or null when they get none. Reads the database only when nothing is
     /// kept, or what's kept is out of date. The top bar sits outside the page's error boundary, so a failed read gives
@@ -117,10 +126,27 @@ public sealed class BriefChipSource : IDisposable
     private async Task<BriefChipView> ReadAsync(DateOnly day)
     {
         var meets = BriefChipView.MeetsAt(_clock, day);
-        var brief = await _briefs.GetAsync(day);
-        // The topics Today's page re-reads on: the day's brief (or its start), each article on it, and its sends
-        // (which publish as the brief's).
-        _follow = BriefPage.Follow(brief, day);
+        List<string> heard = [];
+        lock (_gate) _reading.Add(heard);
+        Brief? brief;
+        try
+        {
+            brief = await _briefs.GetAsync(day);
+            if (AfterBriefRead is { } hook) await hook();
+        }
+        catch
+        {
+            lock (_gate) _reading.Remove(heard);
+            throw;
+        }
+        // The topics Today's page re-reads on: the day's brief (or its start), each article on it, and its sends (which
+        // publish as the brief's). One of them changed after the read began: what was read is out of date.
+        lock (_gate)
+        {
+            _reading.Remove(heard);
+            var follow = _follow = BriefPage.Follow(brief, day);
+            if (heard.Exists(follow.Contains)) Interlocked.Increment(ref _version);
+        }
         if (brief is null) return new BriefChipView(day, null, meets, 0, 0, null);
         var (publicMax, teamMax) = await _ceilings.GetAsync();
         // Today's strip, without the feed's count and the day's numbers: neither moves the current step (BriefSteps.On).
@@ -130,6 +156,10 @@ public sealed class BriefChipSource : IDisposable
         var met = steps.Any(s => s is { Kind: BriefStepKind.Present, State: StepState.Done });
         return new BriefChipView(day, brief.Id, meets, number, steps.Count, step, met);
     }
+
+    /// <summary>For tests: runs after the brief is read and before what's followed is set, where a colleague's change
+    /// can land.</summary>
+    internal Func<Task>? AfterBriefRead { get; set; }
 
     public void Dispose() => _feed.Changed -= OnChanged;
 }
