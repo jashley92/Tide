@@ -75,13 +75,13 @@
 </section>
 
 <section class="tide-card" aria-labelledby="rail-open-actions-h">
-    @* Counted as the list's row counts them (StackDetail.OpenActionCount): those above the ceiling too, not named. *@
+    @* The same actions the list's row counts, every one named. *@
     @{ var open = _detail?.OpenActions; }
-    <h2 id="rail-open-actions-h">Open actions @Count(_detail?.OpenActionCount)</h2>
+    <h2 id="rail-open-actions-h">Open actions @Count(open?.Count)</h2>
     @if (open is null) { <p class="small tide-muted mb-0">Loading…</p> }
     else
     {
-        @if (_detail!.OpenActionCount == 0) { <p class="small tide-muted mb-0">No open actions.</p> }
+        @if (open.Count == 0) { <p class="small tide-muted mb-0">No open actions.</p> }
         <ul class="tide-rail-list">
             @foreach (var a in open.Take(Shown))
             {
@@ -89,9 +89,7 @@
                     <ActionStatusBadge Status="a.Status" /></li>
             }
         </ul>
-        @if (open.Count > Shown) { <a class="small tide-stack-rail-link" href="@($"stack/{p.Id}")">and @(open.Count - Shown) more</a> }
-        @if (_detail.OpenActionsAbove > 0) { <div class="small tide-muted">@StackPage.AboveLine(_detail.OpenActionsAbove, "open action", _detail.Ceiling, "from articles ")</div> }
-    }
+        @if (open.Count > Shown) { <a class="small tide-stack-rail-link" href="@($"stack/{p.Id}")">and @(open.Count - Shown) more</a> }    }
 </section>
 
 <section class="tide-card" aria-labelledby="rail-notes-h">

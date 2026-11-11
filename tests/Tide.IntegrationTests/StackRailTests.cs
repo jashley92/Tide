@@ -250,11 +250,12 @@ public class StackRailTests(TideApp app) : IClassFixture<TideApp>
 
     /// <summary>
     /// The row's Open actions and the rail's count the same actions, by the product page's rule: those raised from its
-    /// articles and those whose title names it, an action with no article included; those from an article above the
-    /// team edition's ceiling are counted in both, and named in neither.
+    /// articles and those whose title names it, an action with no article included. One raised from an article above the
+    /// team edition's ceiling is named like any other, as the Actions list and the action page name it; that article
+    /// itself stays counted, not named.
     /// </summary>
     [Fact]
-    public async Task TheRowsOpenActions_CountWhatTheRailCounts_AnActionWithNoArticleIncluded()
+    public async Task TheRowsOpenActions_CountWhatTheRailNames_AnActionWithNoArticleAndOneAboveTheCeilingIncluded()
     {
         var name = Name("count");
         var id = await Product(name);
@@ -271,7 +272,15 @@ public class StackRailTests(TideApp app) : IClassFixture<TideApp>
         r.Component.SelectedRow!.OpenActions.Should().Be(3, "the action raised from its article, the one naming it with no article, and the one above the ceiling");
         var rail = await RailOnce(r, "rail-open-actions-h");
         rail.Should().Contain("Open actions <span class=\"tide-count\">(3)</span>").And.Contain($"Block {name} at the proxy").And.Contain($"Sweep for {name} rail-open")
-            .And.Contain("1 open action from articles above TLP:AMBER+STRICT").And.NotContain("Contain the supplier's foothold");
+            .And.Contain("Contain the supplier's foothold", "an action is named wherever actions are shown")
+            .And.NotContain("action from articles above").And.NotContain("actions from articles above");
+        rail.Should().Contain("2 articles above TLP:AMBER+STRICT", "the articles above the ceiling stay counted")
+            .And.NotContain($"{name} hit at a supplier", "and not named");
+
+        await using var page = await RenderAsync<StackPage>(app, $"/stack/{id}", new() { ["Id"] = (Guid?)id });
+        var html = WebUtility.HtmlDecode(await page.Html());
+        html.Should().Contain("Contain the supplier's foothold", "the product's page names it too").And.NotContain("from articles above")
+            .And.Contain("2 articles above TLP:AMBER+STRICT").And.NotContain($"{name} hit at a supplier");
     }
 
     [Fact]

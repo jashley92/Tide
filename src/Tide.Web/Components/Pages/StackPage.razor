@@ -19,8 +19,9 @@
    triage, how many new items name it; an old or missing check is flagged. A filter box, quick filters with counts and
    a team narrow it; Add a product opens the add form. A product's page has its other names, versions and notes, and its history:
    the articles tagged with it or naming it, and their actions. Triage lifts items that name a product, and an article
-   can be tagged with any number of them from the editor. A product's history is held to the team edition's TLP ceiling:
-   articles above it, and actions raised from them, are counted but not named. A colleague's change to a product
+   can be tagged with any number of them from the editor. A product's articles are held to the team edition's TLP
+   ceiling: those above it are counted but not named. Its actions are all named, one raised from an article above the
+   ceiling too, as the Actions list and the action page name them. A colleague's change to a product
    re-reads the page in place; the edit form keeps what's typed in it. *@
 
 <PageTitle>@(_detail?.Product.Name ?? "Our stack") · TIDE</PageTitle>
@@ -228,8 +229,8 @@ else
                 @if (_detail.ArticlesAbove > 0) { <div class="small tide-muted mt-1">@AboveLine(_detail.ArticlesAbove, "article", _detail.Ceiling)</div> }
             </section>
             <section class="tide-card" aria-labelledby="stack-actions-h">
-                <h2 id="stack-actions-h">Actions <span class="tide-count">(@(_detail.Actions.Count + _detail.ActionsAbove))</span></h2>
-                @if (_detail.Actions.Count == 0 && _detail.ActionsAbove == 0) { <div class="small tide-muted">No actions yet.</div> }
+                <h2 id="stack-actions-h">Actions <span class="tide-count">(@_detail.Actions.Count)</span></h2>
+                @if (_detail.Actions.Count == 0) { <div class="small tide-muted">No actions yet.</div> }
                 <ul class="list-unstyled mb-0">
                     @foreach (var a in _detail.Actions)
                     {
@@ -238,7 +239,6 @@ else
                             <ActionStatusBadge Status="a.Status" /></li>
                     }
                 </ul>
-                @if (_detail.ActionsAbove > 0) { <div class="small tide-muted mt-1">@AboveLine(_detail.ActionsAbove, "action", _detail.Ceiling, "from articles ")</div> }
             </section>
         </div>
     </div>
@@ -338,8 +338,8 @@ else
     }
 
     /// <summary>"2 articles above TLP:AMBER": what the page counts but doesn't name.</summary>
-    internal static string AboveLine(int count, string noun, TlpLevel ceiling, string via = "") =>
-        $"{count} {noun}{(count == 1 ? "" : "s")} {via}above {Tlp.Label(ceiling)}";
+    internal static string AboveLine(int count, string noun, TlpLevel ceiling) =>
+        $"{count} {noun}{(count == 1 ? "" : "s")} above {Tlp.Label(ceiling)}";
 
     // After the triage count: whether it's on today's brief, or the news about it isn't written up yet.
     private static string Said(StackNow now)

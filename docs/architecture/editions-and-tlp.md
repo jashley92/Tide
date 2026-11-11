@@ -233,8 +233,10 @@ digests) list action titles with each article's TLP beside it and the highest in
 ### The Our stack exception
 
 Our stack is the exception inside the app. A product's page (`StackService.GetAsync`) and present mode's product card
-(`StackService.CardAsync`) name only the articles at or below the team edition's ceiling, and the actions raised from
-them, and count the rest ("2 articles above TLP:AMBER+STRICT"), even for an analyst. The list's counts name no titles, so they count every article.
+(`StackService.CardAsync`) name only the articles at or below the team edition's ceiling, and count the rest ("2
+articles above TLP:AMBER+STRICT"), even for an analyst. The list's counts name no titles, so they count every article.
+Actions are not held back: an action raised from an article above the ceiling is named on the product's page, the
+list's Open actions and the context rail, as the Actions list and the action page name it (owner decision 2026-11-13).
 The list's "Right now" column (`StackService.OverviewAsync`, `RightNow`) names a CVE only when an article at or below
 the ceiling carries it; one seen only above it is counted ("1 CVE above TLP:AMBER+STRICT") and its id, scores and KEV
 listing are not kept.
@@ -282,7 +284,7 @@ lists only the rows that aren't whole or carry a warning (`EditionChecks.Excepti
 | Webhooks hold to the team ceiling | `ApiTests.Webhooks_LeaveOutActionsAboveTheTeamCeiling_AndMarkEachWithItsArticlesTlp` |
 | Outreach holds to the template's ceiling | `tests/Tide.UnitTests/OutreachFillTests.cs` `AnArticleAboveTheCeiling_IsLeftOutWhole_IndicatorsWithIt_AndSaidSo`, `APartAboveTheCeiling_IsLeftOutAlone_ByItsOwnTlp_AsTheEditionsCutIt` |
 | Exports leave out articles above the ceiling | `tests/Tide.IntegrationTests/ExportTests.cs` `Brief_InRunningOrder_LeavesOutArticlesAboveTheCeiling` |
-| Our stack names only articles within the team ceiling | `CommentsAndStackDecisionTests.AProductsPage_NamesOnlyArticlesAtOrBelowTheTeamCeiling_AndCountsTheRest`; `StackTests.APresentModeCard_LeavesOutArticlesAboveTheTeamEditionsCeiling`; `StackTests.RightNow_NeverNamesACve_ThatComesOnlyFromAnArticleAboveTheTeamEditionsCeiling`; `StackAttentionTests.RightNow_CountsButNeverNamesACve_ThatComesOnlyFromAnArticleAboveTheCeiling` |
+| Our stack names only articles within the team ceiling | `CommentsAndStackDecisionTests.AProductsPage_NamesOnlyArticlesAtOrBelowTheTeamCeiling_AndCountsTheRest_ButNamesEveryAction`; `StackTests.APresentModeCard_LeavesOutArticlesAboveTheTeamEditionsCeiling`; `StackTests.RightNow_NeverNamesACve_ThatComesOnlyFromAnArticleAboveTheTeamEditionsCeiling`; `StackAttentionTests.RightNow_CountsButNeverNamesACve_ThatComesOnlyFromAnArticleAboveTheCeiling` |
 | An undefined TLP is never stored | `ArticleAndBriefTests.Save_AnUndefinedTlp_IsRefused_NotStoredBelowEveryCeiling`; `DistributionTests.Ceilings_AnUndefinedTlp_IsRefused` |
 | The "why it matters" default | `tests/Tide.UnitTests/WhyItMattersDefaultTests.cs`; `IntakeTests.Promote_AsAThreat_StartsWhyItMattersAtAmber_OrTheArticlesTlp_AndInformationalKeepsClear` |
 

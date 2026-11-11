@@ -149,18 +149,15 @@ public sealed record StackArticle(Guid Id, string Title, DateOnly On, ArticleSta
 public sealed record StackAction(int Number, string Title, Priority Priority, ActionStatus Status, string TeamName, string? AssigneeName, DateOnly? DueDate);
 
 /// <summary>
-/// A product with its history, newest first, held to the team edition's <paramref name="Ceiling"/>: articles above it, and
-/// actions raised from them, are counted (<paramref name="ArticlesAbove"/>, <paramref name="ActionsAbove"/>, of those
-/// <paramref name="OpenActionsAbove"/> still open) but not named.
+/// A product with its history, newest first. Its articles are held to the team edition's <paramref name="Ceiling"/>:
+/// those above it are counted (<paramref name="ArticlesAbove"/>) but not named. Its actions are all named, those raised
+/// from an article above the ceiling too, as the Actions list and the action page name them.
 /// </summary>
 public sealed record StackDetail(StackProduct Product, string? TeamName, IReadOnlyList<StackArticle> Articles, IReadOnlyList<StackAction> Actions,
-    TlpLevel Ceiling, int ArticlesAbove = 0, int ActionsAbove = 0, int OpenActionsAbove = 0)
+    TlpLevel Ceiling, int ArticlesAbove = 0)
 {
-    /// <summary>The open actions shown, those not raised from an article above the ceiling.</summary>
+    /// <summary>Its open actions: what Our stack's row counts and its rail lists.</summary>
     public IReadOnlyList<StackAction> OpenActions { get; } = [.. Actions.Where(a => !ActionItem.IsClosedStatus(a.Status))];
-
-    /// <summary>How many actions about it are open, those above the ceiling included: what Our stack's row counts.</summary>
-    public int OpenActionCount => OpenActions.Count + OpenActionsAbove;
 }
 
 /// <summary>
@@ -439,39 +436,36 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         return details;
     }
 
-    // What every product's page reads alike: the team edition's ceiling, the articles, those above it, and every action
-    // (only the columns shown: every action is read, to find those that name the product without an article).
+    // What every product's page reads alike: the team edition's ceiling, the articles, and every action (only the columns
+    // shown: every action is read, to find those that name the product without an article).
     private sealed record ActionFact(Guid? ArticleId, int Number, string Title, Priority Priority, ActionStatus Status, string? Team, string? AssigneeName, DateOnly? DueDate);
 
-    private sealed record DetailFacts(TlpLevel Ceiling, List<ArticleFact> Articles, HashSet<Guid> Above, List<ActionFact> Actions);
+    private sealed record DetailFacts(TlpLevel Ceiling, List<ArticleFact> Articles, List<ActionFact> Actions);
 
     private async Task<DetailFacts> DetailFactsAsync(IAppDbContext db, CancellationToken ct)
     {
         // The page is the team edition's readers': an article above its ceiling isn't named, as the brief leaves it out.
         var ceiling = (await editions.GetAsync(ct)).Team;
         var articles = await ArticlesAsync(db, ct);
-        var aboveIds = (await db.Articles.AsNoTracking().Where(a => a.Tlp > ceiling).Select(a => a.Id).ToListAsync(ct)).ToHashSet();
         var actions = await db.Actions.AsNoTracking()
             .Select(a => new ActionFact(a.ArticleId, a.Number, a.Title, a.Priority, a.Status, a.Team!.Name, a.AssigneeName, a.DueDate))
             .ToListAsync(ct);
-        return new DetailFacts(ceiling, articles, aboveIds, actions);
+        return new DetailFacts(ceiling, articles, actions);
     }
 
+    // Its articles at or below the ceiling named, those above counted; its actions all named, an action raised from an
+    // article above the ceiling too (the Actions list and the action page name it).
     private static async Task<StackDetail> DetailAsync(IAppDbContext db, StackProduct p, DetailFacts facts, CancellationToken ct)
     {
-        var (ceiling, aboveIds) = (facts.Ceiling, facts.Above);
         var e = Entry(p);
         var history = await HistoryAsync(db, p, facts.Articles, ct);
-        var ids = history.Select(h => h.Article.Id).ToList();
+        var ids = history.Select(h => h.Article.Id).ToHashSet();
         var actions = facts.Actions
             .Where(a => (a.ArticleId is { } aid && ids.Contains(aid)) || Names(e, Words(a.Title, null)))
-            .ToList();
-        var shownActions = actions.Where(a => a.ArticleId is not { } aid || !aboveIds.Contains(aid))
             .OrderBy(a => ActionItem.IsClosedStatus(a.Status)).ThenBy(a => a.DueDate ?? DateOnly.MaxValue).ThenBy(a => a.Number)
             .Select(a => new StackAction(a.Number, a.Title, a.Priority, a.Status, a.Team ?? "", a.AssigneeName, a.DueDate)).ToList();
-        var articles = history.Where(h => h.Tlp <= ceiling).Select(h => h.Article).ToList();
-        var openAbove = actions.Count(a => a.ArticleId is { } aid && aboveIds.Contains(aid) && !ActionItem.IsClosedStatus(a.Status));
-        return new StackDetail(p, p.Team?.Name, articles, shownActions, ceiling, history.Count - articles.Count, actions.Count - shownActions.Count, openAbove);
+        var articles = history.Where(h => h.Tlp <= facts.Ceiling).Select(h => h.Article).ToList();
+        return new StackDetail(p, p.Team?.Name, articles, actions, facts.Ceiling, history.Count - articles.Count);
     }
 
     /// <summary>How many other articles a present-mode card lists.</summary>
