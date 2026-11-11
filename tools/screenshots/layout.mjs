@@ -613,10 +613,10 @@ const focusedOn = page => page.evaluate(() => {
 /**
  * A popout that closes when it's done with: Escape anywhere on the page (with focus outside it too), a click outside it,
  * or focus leaving it by Tab. `wrap` holds the popout and the button that opens it (`opener`); `panel` is the popout;
- * `inside` is where focus is put for an Escape in it. Escape is the popout's alone: it leaves the reading pane (where
+ * `inside` is where focus is put for an Escape in it, and `bare` a part of it that takes no focus, pressed. Escape is the popout's alone: it leaves the reading pane (where
  * there is one) as it was, and an Escape in it puts focus back on its button; a click outside leaves focus where it went.
  */
-const popoutCloses = (label, { wrap, opener, panel, inside }) => {
+const popoutCloses = (label, { wrap, opener, panel, inside, bare }) => {
   const pane = page => anyShown(page, '.tide-reading');
   const open = async page => {
     // One a rule before left open (it failed) goes, with the page as it was.
@@ -663,8 +663,48 @@ const popoutCloses = (label, { wrap, opener, panel, inside }) => {
       if (!await onOpener(page)) problems.push(`Escape in it left focus on ${await focusedOn(page)}, not its button`);
       return problems;
     } },
+    // A press on a part of it that takes no focus (its background, a label, a hint): the browser moves focus to the
+    // nearest focusable element holding it, which mustn't count as leaving it. By mouse, and by a tap.
+    ...(bare ? ['mouse', 'touch'].map(by => ({ name: `${label}: a ${by} press inside it (${bare}) leaves it open`, check: async page => {
+      await open(page);
+      const part = page.locator(`${wrap} ${bare}`).first();
+      await part.scrollIntoViewIfNeeded();
+      const box = await part.boundingBox();
+      const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.className, [box.x + 3, box.y + 3]);
+      await pressAt(page, by, box.x + 3, box.y + 3);
+      await page.waitForTimeout(700);
+      return (await anyShown(page, `${wrap} ${panel}`)) ? [] : [`a ${by} press on ${bare} (${hit}) closed ${label}, focus going to ${await focusedOn(page)}`];
+    } })) : []),
   ];
 };
+
+/** A mouse click, or a tap (touch, by the DevTools protocol, as a phone sends it), at x, y. */
+async function pressAt(page, by, x, y) {
+  if (by === 'mouse') return page.mouse.click(x, y);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, radiusX: 1, radiusY: 1 }] });   // a fine point: no snapping to a nearby control
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await cdp.detach();
+}
+
+/** Setup: a click on the first `opener`, and its `panel` drawn. */
+const openFirst = (opener, panel) => async page => {
+  await page.locator(opener).first().click();
+  await page.locator(panel).first().waitFor({ timeout: 5000 });
+};
+
+/** Every shown match of `selector` lies inside the window, side to side and top to bottom of the page. */
+const insideWindow = selector => ({
+  name: `inside the window: ${selector}`,
+  check: page => page.$$eval(selector, (els, selector) => {
+    const shown = els.map(e => e.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0);
+    if (!shown.length) return [`nothing shown matches ${selector}`];
+    const w = document.documentElement.clientWidth;
+    return shown.filter(r => r.left < -0.5 || r.right > w + 0.5)
+      .map(r => `${selector} runs from x=${Math.round(r.left)} to ${Math.round(r.right)}px, outside the window (0 to ${w}px)`);
+  }, selector),
+});
 
 // The reading pane's open or closed is kept for the person, so the pages that press V sign in as someone of their own
 // for this run (the dev sign-in's ?as=), and everyone else's Triage opens as it always does.
@@ -766,16 +806,26 @@ const pages = [
   // the list, and Escape closes the rail without closing the reading pane (or keeping it closed).
   { name: 'triage-rail-keys', route: `/triage?as=r1${run}`, setup: openRail, widths: [1440],
     rules: [visible('#tide-rail'), visible('.tide-reading'), railKeysStayInTheRail, escapeClosesTheRailOnly] },
-  // J and K pressed quickly land on the row they were pressed for: on the page (the selection isn't pulled back by a
-  // row's focus), and across a page boundary both ways (the demo has a second page: Demo:TriageFiller below).
   // A row's Attach to… and the account menu close when done with, and their Escape is theirs alone: Triage's own (the
-  // reading pane's) doesn't hear it. Signed in as someone of this run's own, as the pane's state is kept.
+  // reading pane's) doesn't hear it. A press on a part of one that takes no focus leaves it open. Signed in as someone
+  // of this run's own, as the pane's state is kept. The Attach panel stays inside the window, however narrow.
   { name: 'triage-attach-popout', route: `/triage?as=a1${run}`, widths: [1440, 800],
-    rules: popoutCloses('Attach to…', { wrap: '.tide-triage-row.selected .tide-attach', opener: '> button', panel: '.tide-attach-panel', inside: 'input' }) },
+    rules: popoutCloses('Attach to…', { wrap: '.tide-triage-row.selected .tide-attach', opener: '> button', panel: '.tide-attach-panel', inside: 'input', bare: '.tide-attach-panel .form-text' }) },
+  { name: 'triage-attach-fits', route: '/triage', setup: openFirst('.tide-triage-row.selected .tide-attach > button', '.tide-attach-panel'),
+    widths: [1920, 1440, 1000, 800, 400], rules: [insideWindow('.tide-attach-panel')] },
   { name: 'triage-account-popout', route: `/triage?as=a2${run}`, widths: [1440, 800],
     rules: popoutCloses('the account menu', { wrap: '.tide-profile', opener: '.tide-profile-btn', panel: '.tide-popover', inside: '.tide-popover button' }) },
   { name: 'brief-export-popout', route: '/briefs/{today}', widths: [1440],
-    rules: popoutCloses('Export indicators', { wrap: '.tide-export', opener: '> button', panel: '.tide-export-panel', inside: '.tide-export-panel a' }) },
+    rules: popoutCloses('Export indicators', { wrap: '.tide-export', opener: '> button', panel: '.tide-export-panel', inside: '.tide-export-panel a', bare: '.tide-export-panel .tide-field-label' }) },
+  // The menu buttons and + Filter the same way: the Actions list's Status menu, + Filter there, and an action's More.
+  { name: 'actions-status-popout', route: '/actions?view=open&layout=list', widths: [1440],
+    rules: popoutCloses('the Status menu', { wrap: '.tide-table .tide-menubutton', opener: '.tide-menubutton-btn', panel: '.tide-menubutton-pop', inside: '[role=menuitem]' }) },
+  { name: 'actions-filter-popout', route: '/actions?view=open&layout=list', widths: [1440, 800],
+    rules: popoutCloses('+ Filter', { wrap: '.tide-filter-menu', opener: '.tide-filter-add', panel: '.tide-filter-pop', inside: '[role=menuitem]' }) },
+  { name: 'action-more-popout', route: '/actions/{huntAction}', widths: [1440],
+    rules: popoutCloses('the More menu', { wrap: '.tide-menubutton', opener: '.tide-menubutton-btn', panel: '.tide-menubutton-pop', inside: '[role=menuitem]' }) },
+  // J and K pressed quickly land on the row they were pressed for: on the page (the selection isn't pulled back by a
+  // row's focus), and across a page boundary both ways (the demo has a second page: Demo:TriageFiller below).
   { name: 'triage-keys', route: '/triage', setup: pressQuickly('j', 10), widths: [1440], rules: [selectedAsAimed()] },
   { name: 'triage-keys-next-page', route: '/triage?row=45', setup: pressQuickly('j', 10), widths: [1440], rules: [selectedAsAimed()] },
   { name: 'triage-keys-previous-page', route: '/triage?page=2&row=4', setup: pressQuickly('k', 10), widths: [1440], rules: [selectedAsAimed()] },

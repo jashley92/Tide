@@ -38,8 +38,11 @@ public class PopoutScriptTests
         // A popout's holder, its button (which takes focus back after Escape) and its box, and what .NET is told.
         function holder(name) {
             const button = { isConnected: true, focus() { heard.push(name + ':focus'); } };
-            const h = { button, kids: [button, {}] };
+            const h = { button, kids: [button, {}], attrs: {} };
             h.contains = x => x === h || h.kids.includes(x);
+            h.hasAttribute = n => n in h.attrs;
+            h.setAttribute = (n, v) => { h.attrs[n] = v; };
+            h.removeAttribute = n => { delete h.attrs[n]; };
             return h;
         }
         const a = holder('a'), b = holder('b'), outside = {};
@@ -67,6 +70,11 @@ public class PopoutScriptTests
         step('unwatched', () => { id = watch(a, 'a'); tidePopout.unwatch(id); tidePopout.unwatch(id); fire('keydown', { key: 'Escape', target: outside }); });
         step('twoOpen', () => { watch(a, 'a'); watch(b, 'b'); fire('keydown', { key: 'Escape', target: outside }); });
         step('thenTheFirst', () => fire('keydown', { key: 'Escape', target: outside }));
+        // A press on a part of it that takes no focus: the browser focuses the holder, which takes focus while it's open.
+        let tabindex;
+        step('pressOnBarePart', () => { id = watch(a, 'a'); tabindex = a.attrs.tabindex; fire('pointerdown', { target: a }); fire('focusin', { target: a }); });
+        tidePopout.unwatch(id);
+        out.tabindex = { heard: ['open:' + tabindex, 'closed:' + a.attrs.tabindex], listening: listening() };
         console.log(JSON.stringify(out));
         """;
 
@@ -117,6 +125,17 @@ public class PopoutScriptTests
         said["focusInside"].Should().BeEquivalentTo(new Step([], 3));
         said["pressOutside"].Should().BeEquivalentTo(new Step(["a:Dismiss"], 0), "a click elsewhere closes it, focus staying where it went");
         said["focusOutside"].Should().BeEquivalentTo(new Step(["a:Dismiss"], 0), "so does Tab out of it");
+    }
+
+    // A click on the Attach picker's hint line, or the export panel's label, sent focus to the row or the page around it,
+    // and that focus outside closed it.
+    [Fact]
+    public async Task APressOnAPartThatTakesNoFocus_LeavesItOpen_TheHolderTakingFocus()
+    {
+        var said = await Run();
+
+        said["pressOnBarePart"].Should().BeEquivalentTo(new Step([], 3), "focus goes to the holder, which is part of it");
+        said["tabindex"].Heard.Should().Equal(["open:-1", "closed:undefined"], "it takes focus (out of the Tab order) only while open");
     }
 
     [Fact]
