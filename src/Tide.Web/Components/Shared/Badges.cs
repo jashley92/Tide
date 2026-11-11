@@ -246,6 +246,15 @@ public sealed class ActionStatusBadge : ComponentBase
 /// <see cref="OfOneHunt"/> drops the word "Hunt" (it sits on the hunt itself) and gives the hit count when known.</summary>
 public sealed class HuntBadge : ComponentBase
 {
+    /// <summary>How an action's hunts went, in words ("Hunt not run", "Hunt: no hits", "Hunt: hits"), as the badge says it
+    /// (the actions list says it as text).</summary>
+    public static string Text(HuntResult result) => result switch
+    {
+        HuntResult.Hits => "Hunt: hits",
+        HuntResult.NoHits => "Hunt: no hits",
+        _ => "Hunt not run",
+    };
+
     [Parameter] public HuntResult? Result { get; set; }
     [Parameter] public bool OfOneHunt { get; set; }
     [Parameter] public int? Count { get; set; }
@@ -253,14 +262,12 @@ public sealed class HuntBadge : ComponentBase
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         if (Result is not { } r) return;
-        var text = (r, OfOneHunt) switch
+        var text = OfOneHunt switch
         {
-            (HuntResult.Hits, true) => Count is { } c ? "Hits: " + c.ToString(System.Globalization.CultureInfo.InvariantCulture) : "Hits",
-            (HuntResult.Hits, false) => "Hunt: hits",
-            (HuntResult.NoHits, true) => "No hits",
-            (HuntResult.NoHits, false) => "Hunt: no hits",
-            (_, true) => "Not run yet",
-            _ => "Hunt not run",
+            true when r == HuntResult.Hits => Count is { } c ? "Hits: " + c.ToString(System.Globalization.CultureInfo.InvariantCulture) : "Hits",
+            true when r == HuntResult.NoHits => "No hits",
+            true => "Not run yet",
+            _ => Text(r),
         };
         Badge.Write(b, r switch
         {

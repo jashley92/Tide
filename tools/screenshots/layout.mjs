@@ -422,7 +422,7 @@ const pressQuickly = (key, times) => async page => {
  * a rule that holds holds by the page's construction (truncation, widths), not by pixels to spare.
  */
 const selectCovered = (group = false) => async page => {
-  await page.addStyleTag({ content: '* { letter-spacing: .07em !important; }' });
+  await wider(page);
   const line = page.locator(group ? '.tide-triage-group' : '.tide-triage-row:not(.tide-triage-group)', { has: page.locator('.tide-triage-flags .tide-badge-info') }).first();
   await line.locator(group ? '.tide-group-label' : '.tide-triage-meta > span').first().click();
   await page.locator('.tide-triage-row.selected .tide-triage-attach').waitFor();

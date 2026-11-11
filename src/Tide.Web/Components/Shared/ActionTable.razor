@@ -59,7 +59,8 @@
             }
             @if (ActionGuide.IsHunt(r.Kind))
             {
-                <div class="tide-muted">@HuntText(r.Hunted)</div>
+                @* As the board's card says it: a sweep with no query yet hasn't been run either. *@
+                <div class="tide-muted">@HuntBadge.Text(r.Hunted ?? HuntResult.NotRun)</div>
             }
             else if (r.IsOpen && Quiet(r) is { } quiet)
             {
@@ -192,14 +193,6 @@
     private IReadOnlyList<string> GroupNames => GroupByKind ? KindOrder : UrgencyOrder;
 
     private static string KindOf(ActionRow r) => ActionService.KindName(r.Kind);
-
-    // How a sweep's or hunt's queries went (one with none hasn't been run either), as the board's card says it.
-    private static string HuntText(HuntResult? hunted) => hunted switch
-    {
-        HuntResult.Hits => "Hunt: hits",
-        HuntResult.NoHits => "Hunt: no hits",
-        _ => "Hunt not run",
-    };
 
     // "No update for 3 days": the organization's days since anything last happened to it; nothing within the day.
     private string? Quiet(ActionRow r)

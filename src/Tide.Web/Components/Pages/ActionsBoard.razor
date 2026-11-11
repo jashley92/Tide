@@ -801,8 +801,8 @@ else
 
     private void SelectRow(ActionRow r)
     {
-        var at = _rows.ToList().FindIndex(x => x.Id == r.Id);
-        if (at >= 0) _selected = at;
+        for (var i = 0; i < _rows.Count; i++)
+            if (_rows[i].Id == r.Id) _selected = i;
     }
 
     // This history entry's address with the row selected (rows.js writes it in place, navigating nowhere).
