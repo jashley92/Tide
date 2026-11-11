@@ -184,7 +184,9 @@ window.tideRail = (function () {
     }
     window.addEventListener('resize', function () { if (rail()) sync(); });
     sync();
-    return { toggle: toggle, start: start, over: over };
+    // Whether the page has a rail, so "]" does something (the "?" list names the key only then).
+    function has() { return !!rail(); }
+    return { toggle: toggle, start: start, over: over, has: has };
 })();
 
 // Copies text to the clipboard (the Copy buttons on indicators). Returns whether it worked.

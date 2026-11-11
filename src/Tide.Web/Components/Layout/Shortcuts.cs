@@ -20,7 +20,6 @@ public static class Shortcuts
     [
         new(["Ctrl K", "⌘ K"], "Go to a page, article or action"),
         new(["?"], "This list of shortcuts", Letter: true),
-        new(["]"], "Show or hide the context rail, on a page that has one", Letter: true),
         new(["Ctrl Enter", "⌘ Enter"], "Post or save the text box you're in"),
         new(["Esc"], "Close a dialog or menu"),
         new(["Alt Z", "⌥ Z"], "Undo, while a toast offers it (the newest)"),
@@ -33,8 +32,12 @@ public static class Shortcuts
         new(["Esc"], "Close, back where you were"),
     ]);
 
-    /// <summary>The groups for the page at <paramref name="relativePath"/> (relative to the app's base), then the global ones.</summary>
-    public static IReadOnlyList<ShortcutGroup> For(string relativePath)
+    /// <summary>"]" (theme.js): listed among Everywhere's on a page that has a context rail, where it does something.</summary>
+    public static readonly Shortcut RailKey = new(["]"], "Show or hide the context rail", Letter: true);
+
+    /// <summary>The groups for the page at <paramref name="relativePath"/> (relative to the app's base), then the global ones,
+    /// with "]" among them when the page has a context <paramref name="rail"/>.</summary>
+    public static IReadOnlyList<ShortcutGroup> For(string relativePath, bool rail = false)
     {
         var path = relativePath.Split('?', '#')[0].Trim('/');
         var segments = path.Split('/');
@@ -65,7 +68,8 @@ public static class Shortcuts
                 groups.Add(Charts);
                 break;
         }
-        groups.Add(Everywhere);
+        // After "?", as the two single keys that work on every page that has what they act on.
+        groups.Add(rail ? Everywhere with { Keys = [.. Everywhere.Keys.Take(2), RailKey, .. Everywhere.Keys.Skip(2)] } : Everywhere);
         groups.Add(Palette);
         return groups;
     }

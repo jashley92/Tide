@@ -71,10 +71,16 @@
     public async Task Open()
     {
         if (_open) return;
-        _groups = Shortcuts.For(Nav.ToBaseRelativePath(Nav.Uri));
-        try { _letters = await JS.InvokeAsync<bool>("tideShortcuts.on"); }
-        catch (JSException) { /* the default stands */ }
+        // "]" is listed where it does something: on a page with a context rail, as theme.js decides it.
+        var rail = false;
+        try
+        {
+            _letters = await JS.InvokeAsync<bool>("tideShortcuts.on");
+            rail = await JS.InvokeAsync<bool>("tideRail.has");
+        }
+        catch (JSException) { /* the defaults stand */ }
         catch (JSDisconnectedException) { return; }
+        _groups = Shortcuts.For(Nav.ToBaseRelativePath(Nav.Uri), rail);
         _open = true;
         StateHasChanged();
     }

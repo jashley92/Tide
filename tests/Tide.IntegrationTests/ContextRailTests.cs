@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Tide.Web.Components.Layout;
 
 namespace Tide.IntegrationTests;
@@ -111,10 +112,43 @@ public class ContextRailTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public void TheRailsKey_IsListedEverywhere_AsALetterShortcut()
+    public void TheRailsKey_IsListed_OnlyOnAPageWithARail_AsALetterShortcut()
     {
-        var key = Shortcuts.Everywhere.Keys.Single(k => k.Keys.Contains("]"));
+        static IEnumerable<Shortcut> Keys(bool rail) => Shortcuts.For("articles", rail).SelectMany(g => g.Keys);
+        Keys(rail: false).Should().NotContain(k => k.Keys.Contains("]"), "] does nothing on a page with no rail");
+        var key = Keys(rail: true).Should().ContainSingle(k => k.Keys.Contains("]")).Subject;
         key.Letter.Should().BeTrue("a single character, so the letter switch turns it off");
-        Shortcuts.For("present/2026-10-29").Should().Contain(Shortcuts.Everywhere);
+        Shortcuts.For("articles", rail: true).Select(g => g.Title).Should().Equal(Shortcuts.For("articles").Select(g => g.Title), "the key joins Everywhere");
+    }
+
+    // The "?" overlay opened on a page, in a browser whose page has a rail or hasn't (theme.js's tideRail.has).
+    private sealed class Browser(bool rail) : Microsoft.JSInterop.IJSRuntime
+    {
+        public ValueTask<TValue> InvokeAsync<TValue>(string identifier, object?[]? args) =>
+            ValueTask.FromResult(identifier is "tideRail.has" or "tideShortcuts.on" ? (TValue)(object)(identifier == "tideShortcuts.on" || rail) : default!);
+
+        public ValueTask<TValue> InvokeAsync<TValue>(string identifier, CancellationToken cancellationToken, object?[]? args) =>
+            InvokeAsync<TValue>(identifier, args);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TheShortcutsOverlay_ListsTheRailsKey_OnlyWhenThePageHasARail(bool rail)
+    {
+        await using var sp = new ServiceCollection().AddSingleton<Microsoft.JSInterop.IJSRuntime>(new Browser(rail))
+            .AddSingleton<NavigationManager, AtArticles>().BuildServiceProvider();
+        using var renderer = new RecordingRenderer(sp);
+        var overlay = await renderer.Mount<ShortcutsOverlay>();
+        await renderer.Dispatcher.InvokeAsync(overlay.Open);
+
+        renderer.Shows("Keyboard shortcuts").Should().BeTrue("the overlay opened");
+        renderer.Shows("Go to a page, article or action").Should().BeTrue();
+        renderer.Shows("Show or hide the context rail").Should().Be(rail, rail ? "this page has a rail for ] to show" : "] does nothing here");
+    }
+
+    private sealed class AtArticles : NavigationManager
+    {
+        public AtArticles() => Initialize("http://localhost/", "http://localhost/articles");
     }
 }
