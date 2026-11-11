@@ -2912,6 +2912,14 @@ a.tide-stack-rail-link:hover, a.tide-stack-rail-link:focus-visible { text-decora
 .tide-stack-rail-item > :not(.tide-rail-list-title) { flex: none; }
 /* ---- end Our stack 3.7 ---- */
 
+/* ---- Option E 3.9, autosave in the article editor's save bar: first in the bar, "All changes saved" or "Saved at 10:12"
+   in the colour of done; while something is unsaved, "Saving…" quietly, or why it held off (a marking, a sent brief, a
+   colleague's save) in the colour of a warning, wrapping within the bar rather than pushing it wider. ---- */
+.tide-sticky-save .tide-saved { color: var(--tide-ok); }
+.tide-autosave-note { font-size: .86rem; color: var(--tide-text-muted); min-width: 0; flex: 0 1 auto; }
+.tide-autosave-note.is-held { color: var(--tide-warn); }
+/* ---- end Option E 3.9 ---- */
+
 /* ---- Actions 3.4: the list's and board's selected action in the context rail (ActionRowRail), and the board's selected
    card. From 1500px the rail docks beside the board too (it was an overlay there), and the board takes the rest of the
    window; ] closes the rail and the board has the whole window again. ---- */

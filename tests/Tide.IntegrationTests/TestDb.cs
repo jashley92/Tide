@@ -467,7 +467,7 @@ public sealed class TestDb : IAppDbContextFactory, IDisposable
 
     public ScreenshotService Screenshots() => new(this, User, Store, Options.Create(new FileStoreOptions { MaxImageMB = 1 }), Live);
 
-    public ArticleService Articles() => new(this, User, Screenshots(), Clock);
+    public ArticleService Articles() => new(this, User, Screenshots(), Clock, Settings());
 
     public BriefService Briefs() => new(this, User, Clock, Rotation(), Live);
 
