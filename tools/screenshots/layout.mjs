@@ -396,6 +396,68 @@ const addFormTakesFocus = {
   },
 };
 
+/** Where focus is, said for a failure. */
+const focusedOn = page => page.evaluate(() => {
+  const el = document.activeElement;
+  return !el || el === document.body ? 'the page body' : `<${el.tagName.toLowerCase()} class="${el.className}"> ${(el.innerText ?? '').trim().slice(0, 30)}`;
+});
+
+/**
+ * A popout that closes when it's done with: Escape anywhere on the page (with focus outside it too), a click outside it,
+ * or focus leaving it by Tab. `wrap` holds the popout and the button that opens it (`opener`); `panel` is the popout;
+ * `inside` is where focus is put for an Escape in it. Escape is the popout's alone: it leaves the reading pane (where
+ * there is one) as it was, and an Escape in it puts focus back on its button; a click outside leaves focus where it went.
+ */
+const popoutCloses = (label, { wrap, opener, panel, inside }) => {
+  const pane = page => anyShown(page, '.tide-reading');
+  const open = async page => {
+    // One a rule before left open (it failed) goes, with the page as it was.
+    if (await anyShown(page, `${wrap} ${panel}`)) { await page.reload({ waitUntil: 'networkidle' }); await settle(page); }
+    await page.locator(`${wrap} ${opener}`).first().click();
+    await page.locator(`${wrap} ${panel}`).first().waitFor({ timeout: 5000 });
+    await page.waitForTimeout(400);
+  };
+  const stillOpen = async (page, how) => {
+    await page.waitForTimeout(700);
+    return (await anyShown(page, `${wrap} ${panel}`)) ? [`${label} is still open after ${how}`] : [];
+  };
+  const paneKept = async (page, was, how) => (await pane(page)) === was ? [] : [`${how} ${was ? 'closed' : 'opened'} the reading pane too`];
+  const onOpener = page => page.evaluate(sel => document.activeElement === document.querySelector(sel), `${wrap} ${opener}`);
+  return [
+    { name: `${label}: Escape with focus on the page closes it, and only it`, check: async page => {
+      const was = await pane(page);
+      await open(page);
+      // Focus left on the page while it's open: the body, where a removed control or a click on bare page leaves it.
+      await page.evaluate(() => document.activeElement?.blur());
+      await page.keyboard.press('Escape');
+      return [...await stillOpen(page, 'Escape with focus on the page'), ...await paneKept(page, was, 'that Escape')];
+    } },
+    { name: `${label}: Tab out of it closes it`, check: async page => {
+      await open(page);
+      for (let i = 0; i < 20 && await page.evaluate(sel => !!document.activeElement?.closest(sel), wrap); i++) await page.keyboard.press('Tab');
+      return stillOpen(page, 'Tab took focus out of it');
+    } },
+    { name: `${label}: a click outside closes it, focus staying there`, check: async page => {
+      await open(page);
+      // By the mouse at the heading, whatever is over it (a backdrop that hears the click is outside too).
+      const at = await page.locator('.tide-page-head h1').first().boundingBox();
+      await page.mouse.click(at.x + 10, at.y + at.height / 2);
+      const problems = await stillOpen(page, 'a click on the page heading');
+      if (await onOpener(page)) problems.push(`a click outside put focus back on its button`);
+      return problems;
+    } },
+    { name: `${label}: Escape in it closes it, focus back on its button`, check: async page => {
+      const was = await pane(page);
+      await open(page);
+      await page.locator(`${wrap} ${inside}`).first().focus();
+      await page.keyboard.press('Escape');
+      const problems = [...await stillOpen(page, 'Escape in it'), ...await paneKept(page, was, 'that Escape')];
+      if (!await onOpener(page)) problems.push(`Escape in it left focus on ${await focusedOn(page)}, not its button`);
+      return problems;
+    } },
+  ];
+};
+
 // The reading pane's open or closed is kept for the person, so the pages that press V sign in as someone of their own
 // for this run (the dev sign-in's ?as=), and everyone else's Triage opens as it always does.
 const run = Date.now().toString(36);
@@ -478,6 +540,14 @@ const pages = [
     rules: [visible('#tide-rail'), visible('.tide-reading'), railKeysStayInTheRail, escapeClosesTheRailOnly] },
   // J and K pressed quickly land on the row they were pressed for: on the page (the selection isn't pulled back by a
   // row's focus), and across a page boundary both ways (the demo has a second page: Demo:TriageFiller below).
+  // A row's Attach to… and the account menu close when done with, and their Escape is theirs alone: Triage's own (the
+  // reading pane's) doesn't hear it. Signed in as someone of this run's own, as the pane's state is kept.
+  { name: 'triage-attach-popout', route: `/triage?as=a1${run}`, widths: [1440, 800],
+    rules: popoutCloses('Attach to…', { wrap: '.tide-triage-row.selected .tide-attach', opener: '> button', panel: '.tide-attach-panel', inside: 'input' }) },
+  { name: 'triage-account-popout', route: `/triage?as=a2${run}`, widths: [1440, 800],
+    rules: popoutCloses('the account menu', { wrap: '.tide-profile', opener: '.tide-profile-btn', panel: '.tide-popover', inside: '.tide-popover button' }) },
+  { name: 'brief-export-popout', route: '/briefs/{today}', widths: [1440],
+    rules: popoutCloses('Export indicators', { wrap: '.tide-export', opener: '> button', panel: '.tide-export-panel', inside: '.tide-export-panel a' }) },
   { name: 'triage-keys', route: '/triage', setup: pressQuickly('j', 10), widths: [1440], rules: [selectedAsAimed()] },
   { name: 'triage-keys-next-page', route: '/triage?row=45', setup: pressQuickly('j', 10), widths: [1440], rules: [selectedAsAimed()] },
   { name: 'triage-keys-previous-page', route: '/triage?page=2&row=4', setup: pressQuickly('k', 10), widths: [1440], rules: [selectedAsAimed()] },

@@ -1,12 +1,14 @@
 @* The account menu in the top right: the initials avatar opens a panel with who you are and your role,
    your own settings (theme, letter shortcuts) as segmented toggles, My notifications, your brief days as a calendar
    file, and About.
-   Settings are per browser, applied by theme.js. *@
+   Settings are per browser, applied by theme.js. It closes when done with (Popout): Esc anywhere on the page, with focus
+   back on the avatar, and the page under it not hearing that Esc too; a click outside it, or Tab out of it. *@
+@implements IAsyncDisposable
 @inject ICurrentUser CurrentUser
 @inject IJSRuntime JS
 
-<div class="tide-profile">
-    <button type="button" class="tide-profile-btn" @onclick="Toggle" title="@CurrentUser.DisplayName"
+<div class="tide-profile" @ref="_holder">
+    <button type="button" class="tide-profile-btn" @ref="_button" @onclick="Toggle" title="@CurrentUser.DisplayName"
             aria-haspopup="true" aria-expanded="@(_open ? "true" : "false")" aria-label="Account menu">
         <span class="tide-avatar" aria-hidden="true">@MainLayout.Initials(CurrentUser.DisplayName)</span>
     </button>
@@ -14,7 +16,7 @@
     @if (_open)
     {
         <div class="tide-popover-backdrop" @onclick="Close"></div>
-        <div class="tide-popover tide-popover-end" role="menu" aria-label="Account" @onkeydown="OnKey">
+        <div class="tide-popover tide-popover-end" role="menu" aria-label="Account">
             <div class="tide-profile-id">
                 <span class="tide-avatar tide-avatar-lg" aria-hidden="true">@MainLayout.Initials(CurrentUser.DisplayName)</span>
                 <div class="tide-profile-id-text">
@@ -90,6 +92,8 @@
 
 @code {
     private bool _open, _about, _dark, _shortcuts = true;
+    private ElementReference _holder, _button;
+    private Popout? _popout;
 
     // Most privileged first (as the Capabilities columns run), so the chip reads as access level.
     private IReadOnlyList<AppRole> Roles => CurrentUser.Roles.OrderBy(Rank.IndexOf).ToList();
@@ -130,10 +134,17 @@
         _about = false;
     }
 
-    private void OnKey(KeyboardEventArgs e)
+    private Task Dismissed()
     {
-        if (e.Key == "Escape") Close();
+        Close();
+        StateHasChanged();
+        return Task.CompletedTask;
     }
+
+    protected override Task OnAfterRenderAsync(bool firstRender) =>
+        (_popout ??= new Popout(JS, Dismissed)).FollowAsync(_open, _holder, _button);
+
+    public ValueTask DisposeAsync() => _popout?.DisposeAsync() ?? ValueTask.CompletedTask;
 
     private async Task SetTheme(bool dark)
     {
