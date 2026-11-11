@@ -63,7 +63,11 @@
                 <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Generate(true)"><span class="bi bi-diagram-3" aria-hidden="true"></span> Generate from @Ui.Plural(_sources.StoryIndicators, "indicator"), with the story's @_sources.StoryArticles articles</button>
             }
             <button class="btn btn-link btn-sm" @onclick="() => _writing = !_writing">Write one by hand</button>
-            <button class="btn btn-link btn-sm" aria-expanded="@(_picking ? "true" : "false")" aria-controls="hunt-saved-picker" @onclick="TogglePicker">Add a saved query</button>
+            @* A closed action takes no saved query (ActionService refuses it). *@
+            @if (Action.IsOpen)
+            {
+                <button class="btn btn-link btn-sm" aria-expanded="@(_picking ? "true" : "false")" aria-controls="hunt-saved-picker" @onclick="TogglePicker">Add a saved query</button>
+            }
             <button class="btn btn-link btn-sm" aria-expanded="@(_addingIndicators ? "true" : "false")" aria-controls="hunt-indicators" @onclick="ToggleIndicators">Add indicators</button>
         </div>
         @if (_sources.StoryIndicators == 0)
@@ -109,7 +113,7 @@
                 </div>
             </div>
         }
-        @if (_picking)
+        @if (_picking && Action.IsOpen)
         {
             <div class="tide-hunt-picker mb-3" id="hunt-saved-picker">
                 <div class="d-flex gap-2 align-items-center flex-wrap mb-2">

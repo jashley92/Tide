@@ -11,8 +11,10 @@
    CVE on CISA's known exploited list, its checklist's progress, how its hunt went (a sweep or hunt) and how long it has
    been in its lane.
    A lane shows its first 20 cards, then "Show N more" adds 20 at a time; a card moved here (by this person or someone
-   else) stays shown whatever its place. The strip counts a week back; "Show the last 30 days" takes it to 30, and "Show the
-   last 7 days" back again. Both are for this visit only. *@
+   else) stays shown whatever its place, and so does the selected card.
+   One card is selected (the page keeps which, and its keys move it, as a list's row): it's marked, it's the board's one
+   tab stop, and a card that takes focus (a click on it, or on anything in it) becomes it.
+   The strip counts a week back; "Show the last 30 days" takes it to 30, and "Show the last 7 days" back again. Both are for this visit only. *@
 @implements IAsyncDisposable
 @inject ActionService ActionSvc
 @inject ToastService Toasts
@@ -26,7 +28,7 @@
 @{ var drags = Drags.Others(CurrentUser.UserId); }
 <div class="tide-board" @ref="_root">
     <div class="tide-kanban" aria-label="Actions board">
-        @foreach (var status in WorkingStatuses)
+        @foreach (var status in Lanes)
         {
             @Column(status, drags)
         }
@@ -58,8 +60,9 @@
 <ActionMover @ref="_mover" Id="kclose" OnChanged="OnChanged" />
 
 @code {
-    // The working statuses, a lane each, then the closed ones, a chip each on the strip under them.
-    private static readonly ActionStatus[] WorkingStatuses = [.. ActionItem.StatusOrder.Where(s => !ActionItem.IsClosedStatus(s))];
+    /// <summary>The working statuses, a lane each, left to right (the order the page's keys move through the cards); then
+    /// the closed ones, a chip each on the strip under them.</summary>
+    internal static readonly ActionStatus[] Lanes = [.. ActionItem.StatusOrder.Where(s => !ActionItem.IsClosedStatus(s))];
     private static readonly ActionStatus[] ClosedStatuses = [.. ActionItem.StatusOrder.Where(ActionItem.IsClosedStatus)];
 
     // One working status's lane: its heading and count, who is carrying a card into it, its cards and a place to drop.
@@ -83,8 +86,10 @@
                     var matched = ActionRules.For(Rules, r, Today, ActionSvc.Days);
                     var held = drags.FirstOrDefault(d => d.ActionId == r.Id);
                     var arrived = _arrived.TryGetValue(r.Id, out var a) ? a : ((string Name, int Ticket, bool Moved)?)null;
-                    <article @key="r.Id" class="tide-kcard @(matched.Count > 0 ? "tide-ruled " + Ui.RuleClass(matched[0].Colour) : "") @(held is not null ? "tide-kcard-held" : "") @(arrived is not null ? "tide-kcard-arrived" : "")"
-                             draggable="@(canMove ? "true" : "false")" data-id="@r.Id" data-status="@r.Status">
+                    var selected = r.Id == SelectedId;
+                    <article @key="r.Id" class="tide-kcard @RowSelection.Css(selected) @(matched.Count > 0 ? "tide-ruled " + Ui.RuleClass(matched[0].Colour) : "") @(held is not null ? "tide-kcard-held" : "") @(arrived is not null ? "tide-kcard-arrived" : "")"
+                             draggable="@(canMove ? "true" : "false")" data-id="@r.Id" data-status="@r.Status" aria-label="@($"{Ui.ActionLabel(r.Number)}: {r.Title}")"
+                             aria-current="@RowSelection.Current(selected)" tabindex="@RowSelection.TabIndex(selected)" @onfocusin="() => Select(r)">
                         <div class="tide-kcard-head">
                             <PriorityBadge Priority="r.Priority" />
                             <EscalatedBadge At="r.EscalatedSince" />
@@ -225,6 +230,12 @@
     /// <summary>"Show the last 30 days" (or 7) under the lanes: the page counts the closed strip again, reaching that far.</summary>
     [Parameter] public EventCallback OnShowOlder { get; set; }
 
+    /// <summary>The selected card (the page's), and a card that took focus, which becomes it.</summary>
+    [Parameter] public Guid? SelectedId { get; set; }
+    [Parameter] public EventCallback<ActionRow> OnSelect { get; set; }
+
+    private Task Select(ActionRow card) => card.Id == SelectedId ? Task.CompletedTask : OnSelect.InvokeAsync(card);
+
     /// <summary>Who last changed each card, from the changes a live reload heard: a card that changed column says so.</summary>
     [Parameter] public IReadOnlyDictionary<Guid, string> MovedBy { get; set; } = new Dictionary<Guid, string>();
 
@@ -276,6 +287,7 @@
 
     protected override void OnParametersSet()
     {
+        ShowSelected();
         var was = _was;
         _was = Board.Cards.ToDictionary(c => c.Id, c => c.Status);
         if (was is null) return;
@@ -302,6 +314,16 @@
         }
         _said = string.Join(" ", said);
         _ = Settle(ticket);
+    }
+
+    // The selected card past its lane's cards shown (J went on to it) is shown, with the cards before it.
+    private void ShowSelected()
+    {
+        if (SelectedId is not { } id || Board.Cards.FirstOrDefault(c => c.Id == id) is not { } card) return;
+        var at = Board.In(card.Status).ToList().FindIndex(c => c.Id == id);
+        var cap = _cap.GetValueOrDefault(card.Status, FirstCards);
+        while (cap <= at) cap += MoreCards;
+        _cap[card.Status] = cap;
     }
 
     // After a moment the moved cards stop saying who moved them (unless they've moved again since).
@@ -378,6 +400,14 @@
         StateHasChanged();
     }
 
+    /// <summary>The rail's Move to: the card moves as its Move menu moves it, and stays selected wherever it lands (focus
+    /// stays in the rail).</summary>
+    internal async Task MoveFromRail(ActionRow card, ActionStatus to)
+    {
+        await Move(card, to);
+        StateHasChanged();
+    }
+
     [JSInvokable]
     public async Task OnCardDropped(string id, string from, string to)
     {
@@ -396,12 +426,18 @@
         StateHasChanged();
     }
 
-    // This tab's own move: its reload isn't news, and the card stays shown wherever it lands.
+    /// <summary>This tab is moving the card itself (a move, or taking it on, which starts it): the reload that follows
+    /// isn't news, and the card stays shown wherever it lands.</summary>
+    internal void Moving(Guid card)
+    {
+        _mine.Add(card);
+        _pinned.Add(card);
+    }
+
     private async Task Move(ActionRow card, ActionStatus to)
     {
         _menuFor = null;
-        _mine.Add(card.Id);
-        _pinned.Add(card.Id);
+        Moving(card.Id);
         await _mover.MoveAsync(card, to, refused: () => _mine.Remove(card.Id));
     }
 

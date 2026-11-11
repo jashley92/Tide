@@ -27,6 +27,14 @@
     [Parameter] public IReadOnlyDictionary<string, string>? Keys { get; set; }
     [Parameter] public EventCallback<string> OnKey { get; set; }
 
+    /// <summary>Of the list's own actions, those after which focus goes to the selected row, as after J and K (the
+    /// board's left and right).</summary>
+    [Parameter] public IReadOnlyList<string>? Follow { get; set; }
+
+    /// <summary>Of the list's own actions, those taken only with focus in a row, so the key keeps its meaning elsewhere
+    /// (the board's left and right arrows).</summary>
+    [Parameter] public IReadOnlyList<string>? OnRow { get; set; }
+
     /// <summary>A paged list: the page shown and how many there are. J on the last row then asks <see cref="OnPage"/>
     /// for the next page and K on the first for the previous one; the page reads it and sets the selection to its first
     /// row, or after <see cref="RowMove.PreviousPage"/> its last.</summary>
@@ -49,7 +57,7 @@
             {
                 _ref = DotNetObjectReference.Create(this);
                 _addressed = Selected;   // the address the page opened at says this row already
-                _started = await JS.InvokeAsync<int>("tideRows.start", _ref, new { row = RowClass, keys = Keys });
+                _started = await JS.InvokeAsync<int>("tideRows.start", _ref, new { row = RowClass, keys = Keys, follow = Follow, onRow = OnRow });
             }
             // However the selection moved (a key, a click, the page itself), the address says it.
             else if (Address is not null && Selected != _addressed)
