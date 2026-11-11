@@ -349,6 +349,9 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
         // A Ready article that lost something it needs goes back to Draft.
         if (a.Status == ArticleStatus.Ready && ArticleChecks.For(a).Any(c => c.Blocking)) a.Status = ArticleStatus.Draft;
 
+        // A form that saves as the article already is (an empty bullet added, say) writes nothing, and keeps the edit
+        // version, so no one else's open copy is made stale for nothing.
+        if (!db.ChangeTracker.HasChanges()) return new AutosaveResult(a.EditVersion, AutosaveHold.None);
         a.EditVersion = Guid.NewGuid();
         await SaveCheckedAsync(db, ct);
         return new AutosaveResult(a.EditVersion, AutosaveHold.None);

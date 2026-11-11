@@ -108,6 +108,23 @@ public class ArticleAutosaveTests(TideApp app) : IClassFixture<TideApp>
         (await As(async sp => await sp.GetRequiredService<AppDbContext>().AuditLog.CountAsync(e => e.EntityKey == id.ToString()))).Should().Be(audit);
     }
 
+    // An empty bullet added, and nothing else: the form saves as the article already is. Neither autosave nor Save writes
+    // anything or moves the edit version, so a colleague's open editor isn't refused for nothing.
+    [Fact]
+    public async Task AFormThatSavesAsTheArticleIs_WritesNothing_AndKeepsTheEditVersion()
+    {
+        var id = await NewArticle();
+        var form = await Form(id);
+        form.Bullets.Add(new BulletForm { Tlp = TlpLevel.Clear });
+        var audit = await As(async sp => await sp.GetRequiredService<AppDbContext>().AuditLog.CountAsync(e => e.EntityKey == id.ToString()));
+
+        (await Autosave(form)).Should().Be(new AutosaveResult(form.EditVersion, AutosaveHold.None));
+        (await As(sp => sp.GetRequiredService<ArticleService>().SaveAsync(form))).Should().Be(form.EditVersion, "Save by hand too");
+
+        (await Saved(id)).EditVersion.Should().Be(form.EditVersion);
+        (await As(async sp => await sp.GetRequiredService<AppDbContext>().AuditLog.CountAsync(e => e.EntityKey == id.ToString()))).Should().Be(audit);
+    }
+
     public static TheoryData<string> MarkingChanges => ["article", "bullet", "why"];
 
     [Theory]
@@ -324,6 +341,36 @@ public class ArticleAutosaveTests(TideApp app) : IClassFixture<TideApp>
         var version = (await Saved(id)).EditVersion;
         await r.Click(p => p.AutosaveNowAsync());
         (await Saved(id)).EditVersion.Should().Be(version, "stopped: nothing is saved over theirs");
+    }
+
+    // The same person in another tab: the bar says it was them, there, not their name as if a colleague's.
+    [Fact]
+    public async Task TheEditor_SaysYouSavedItInAnotherTab_WhenTheOtherSaveWasYours()
+    {
+        var id = await NewArticle();
+        await using var r = await Editor(id);
+        await r.Click(p => p.MentionAsync("Typed in this tab."));
+        app.Services.GetRequiredService<ChangeFeed>().Publish(new Change(ChangeFeed.Article(id), SignIn.Analyst.UserId, SignIn.Analyst.Name, Guid.NewGuid()));
+
+        var bar = Bar(await r.HtmlOnce("in another tab"));
+        bar.Should().Contain("Not saved automatically: you saved this article in another tab. What you typed here is still here.")
+            .And.NotContain($"{SignIn.Analyst.Name} saved");
+    }
+
+    // Refused as stale before any notice arrived, it's told the same way, from who saved the article last.
+    [Fact]
+    public async Task TheEditor_SaysYouSavedItInAnotherTab_WhenItsAutosaveIsRefusedByYourOwnSave()
+    {
+        var id = await NewArticle();
+        await using var r = await Editor(id);
+        await r.Click(p => p.MentionAsync("Typed in this tab."));
+        var other = await Form(id);
+        other.Bluf = "Saved in the other tab.";
+        await As(sp => sp.GetRequiredService<ArticleService>().SaveAsync(other));
+
+        await r.Click(p => p.AutosaveNowAsync());
+
+        Bar(await r.Html()).Should().Contain("you saved this article in another tab");
     }
 
     [Fact]

@@ -725,6 +725,7 @@ else
         if (_dirty || _busy || _uploading)
         {
             _changedBy = who;
+            _changedByMe = changes.All(c => c.ActorId == CurrentUser.UserId);
         }
         else
         {
@@ -863,9 +864,12 @@ else
 
     // What the bar says of autosave while something is unsaved: a colleague's save, heard or refused as stale, first,
     // since it stops autosave; else "Saving…" or why it held off.
-    private string? AutosaveNote => _changedBy is { } who
-        ? $"Not saved automatically: {who} saved this article. What you typed is still here."
-        : _autosaveNote;
+    private string? AutosaveNote => _changedBy is not { } who ? _autosaveNote
+        : _changedByMe ? "Not saved automatically: you saved this article in another tab. What you typed here is still here."
+        : $"Not saved automatically: {who} saved this article. What you typed is still here.";
+
+    // Whether the save that stopped autosave was this person's own, in another tab or window.
+    private bool _changedByMe;
 
     private void ScheduleAutosave()
     {
@@ -905,7 +909,12 @@ else
                 ? "On a sent brief, so not saved automatically: Save to correct it."
                 : "A marking changed, or something now reaches everyone: Save to keep it.";
         }
-        catch (StaleEditException) { _changedBy ??= "Someone else"; }
+        catch (StaleEditException)
+        {
+            // Refused before any notice arrived: who saved it last says whether it was this person, elsewhere.
+            if (_changedBy is null) _changedByMe = (await ArticleSvc.GetAsync(Id))?.ModifiedBy == CurrentUser.UserId;
+            _changedBy ??= "Someone else";
+        }
         catch (Exception ex) { _autosaveNote = $"Not saved automatically: {UserFacingError.For(ex)}"; }
         finally
         {
