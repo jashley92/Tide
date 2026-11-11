@@ -348,6 +348,10 @@ public sealed record ActionDetail(ActionItem Action, ActionRow? Parent, IReadOnl
 
     /// <summary>The email waiting longest for a reply, or null (<see cref="OutreachState.Oldest"/>).</summary>
     public OutreachMessage? Waiting => new OutreachState(Action.Outreach, null).Oldest;
+
+    /// <summary>The other actions raised from its article, open first: not itself, and none in its <see cref="Lineage"/>
+    /// (its parent and parts are shown there). Empty for whoever reads only this one action (a seated Visitor).</summary>
+    public IReadOnlyList<ActionRow> RaisedWith { get; init; } = [];
 }
 
 /// <summary>One team's load: open, overdue, due soon, P1, closed in the last week, and open by assignee (none for an external
@@ -961,7 +965,18 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         {
             Files = await ActionFileService.ListAsync(db, user, a.Id, ct, a.Comments), HandedFrom = handedFrom,
             Rollup = lineage?.Parent.Id == a.Id ? lineage.Rollup : "", Lineage = lineage,
+            RaisedWith = await RaisedWithAsync(db, a, lineage, ct),
         };
+    }
+
+    // The other actions raised from its article, open first: for whoever reads actions (a seated Visitor reads only the
+    // one the presenter opened), and leaving out itself and its lineage, which the page shows on its own.
+    private async Task<IReadOnlyList<ActionRow>> RaisedWithAsync(IAppDbContext db, ActionItem a, ActionLineage? lineage, CancellationToken ct)
+    {
+        if (a.ArticleId is not { } articleId || !MayRead(user)) return [];
+        List<Guid> shown = lineage is null ? [a.Id] : [a.Id, lineage.Parent.Id, .. lineage.Parts.Select(p => p.Id)];
+        var rows = await Rows(db, db.Actions.AsNoTracking().Where(x => x.ArticleId == articleId && !shown.Contains(x.Id))).ToListAsync(ct);
+        return [.. rows.OrderBy(r => r.IsOpen ? 0 : 1).ThenBy(r => r.Number)];
     }
 
     // A parent's lineage, from what its page has read already: itself, its article and its parts.

@@ -1,0 +1,46 @@
+@* The article an action was raised from, in its context rail: its title (the link to it), how it's classed and marked,
+   its bottom line, and its CVEs with what's known of them (CVSS, EPSS, KEV). Only for whoever may read the article
+   (ArticleService's rule: the team edition); anyone else sees nothing of it here. *@
+@inject ICurrentUser CurrentUser
+@inject CveService Cves
+
+@if (CanRead)
+{
+    <section class="tide-card tide-rail-article" aria-labelledby="rail-article-h">
+        <h2 id="rail-article-h">From the article</h2>
+        <a class="tide-rail-article-title" href="articles/@Source.Id">@Source.Title</a>
+        <div class="tide-rail-badges">
+            <ClassBadge Classification="Source.Classification" Priority="Source.Priority" />
+            <TlpBadge Level="Source.Tlp" />
+        </div>
+        @if (!string.IsNullOrWhiteSpace(Source.Bluf))
+        {
+            <p class="small mb-0">@Source.Bluf</p>
+        }
+        @if (_cveIds.Count > 0)
+        {
+            <div class="tide-rail-cves">
+                @foreach (var id in _cveIds) { <CveChip @key="id" CveId="@id" Record="@_records.GetValueOrDefault(id)" /> }
+            </div>
+        }
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired] public Article Source { get; set; } = default!;
+
+    private bool CanRead => CurrentUser.Has(Permission.ReadTeamEdition);
+
+    private IReadOnlyList<string> _cveIds = [];
+    private bool _read;
+    private IReadOnlyDictionary<string, CveRecord> _records = new Dictionary<string, CveRecord>();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Read again only when its CVEs change: the page draws again on every save to the action.
+        var ids = Source.Cves.Select(c => c.CveId).Order(StringComparer.OrdinalIgnoreCase).ToList();
+        if (_read && ids.SequenceEqual(_cveIds)) return;
+        (_cveIds, _read) = (ids, true);
+        _records = CanRead && ids.Count > 0 ? await Cves.GetAsync(ids) : new Dictionary<string, CveRecord>();
+    }
+}

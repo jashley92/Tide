@@ -738,6 +738,27 @@ async function scrollDown(page) {
   await page.waitForTimeout(300);
 }
 
+// --- the action page's context rail (option E 3.5) ---------------------------------------------------------------------
+
+/** Setup: every letter spaced wider, as wideFonts; LETTER_SPACING=.12em widens it further by hand, near what a Linux
+ * runner's fonts do. */
+const railLetters = async page => { await page.addStyleTag({ content: `* { letter-spacing: ${process.env.LETTER_SPACING ?? '.07em'} !important; }` }); };
+
+/** Setup: wider letters, then `]` pressed: the rail closes where it docks, and opens over the page where it doesn't. */
+const railToggled = async page => {
+  await railLetters(page);
+  await page.locator('body').press(']');
+  await page.waitForTimeout(300);
+};
+
+/** What the action page's rail holds, each in the rail: the facts, the article it was raised from, what else was
+ * raised from that article, and the Files, with nothing wider than the rail's column. */
+const actionRailHolds = [visible('#tide-rail .tide-facts'), visible('#tide-rail #rail-article-h'), visible('#tide-rail #rail-raised-h'),
+  visible('#tide-rail #files'), hidden('.content .tide-facts'), hidden('.content #files'), fits('.tide-rail-body'), fits('.tide-rail-body > *')];
+
+/** The action page's own column: its head, the tools and the query fit it, the query wrapping rather than scrolling. */
+const actionPageFits = [noSidewaysScroll, fits('.tide-action-head'), fits('.tide-drawer'), visible('.tide-feed')];
+
 // --- the pages: route, optional setup, widths (each 900px tall, or [width, height]) and rules ([minWidth, rule] from that
 // width up) -------------------------------------------------------------------------------------------------------------
 
@@ -811,6 +832,20 @@ const pages = [
       visible('.tide-hunt-story'), startsAbove('.tide-hunt [data-copy-target]', 900),
       // A-1's query is KQL: the control says the language of the query on the action, on the live page too.
       later(says('.tide-drawer-head [aria-label="Query language"] [aria-pressed="true"]', '^KQL$'), 2500)] },
+  // The action page's context rail. From 1500px it's docked open beside the page, which has about 873px for the sweep's
+  // card: the query wraps, nothing scrolls sideways and Copy is on the first screen. Below 1500px it's closed until `]`
+  // opens it over the page. A sweep (its query) and an action of another kind (its checklist).
+  { name: 'action-rail-sweep', route: '/actions/{huntAction}', setup: railLetters, widths: [[1920, 1000], [1600, 1000], [1500, 1000]],
+    rules: [visible('#tide-rail'), ...actionRailHolds, ...actionPageFits, fits('.tide-hunt pre.tide-query'), onFirstScreen('.tide-hunt [data-copy-target]')] },
+  { name: 'action-rail-other', route: '/actions/{detailAction}', setup: railLetters, widths: [[1920, 1000], [1500, 1000]],
+    rules: [visible('#tide-rail'), visible('#tide-rail .tide-facts'), visible('#tide-rail #files'), hidden('.content #files'), fits('.tide-rail-body > *'),
+      ...actionPageFits] },
+  { name: 'action-rail-narrow', route: '/actions/{huntAction}', setup: railLetters, widths: [[1440, 900], [780, 900]],
+    rules: [hidden('#tide-rail'), visible('#tide-rail-toggle'), ...actionPageFits, fits('.tide-hunt pre.tide-query')] },
+  { name: 'action-rail-closed', route: '/actions/{huntAction}', setup: railToggled, widths: [[1600, 1000]],
+    rules: [hidden('#tide-rail'), widerThan('.tide-action-main', 1100), ...actionPageFits] },
+  { name: 'action-rail-overlay', route: '/actions/{huntAction}', setup: railToggled, widths: [[1440, 900], [780, 900]],
+    rules: [visible('#tide-rail'), ...actionRailHolds, noSidewaysScroll] },
   // Triage: the keys on one line, each row's flags fitting its line, and the reading pane open by itself from 1400px.
   { name: 'triage', route: '/triage', widths: [1920, 1440, 780],
     rules: [noSidewaysScroll, fits('.tide-page-head'), visible('.tide-triage-keys'), oneRow('.tide-triage-keys'), visible('.tide-triage-row.selected'), fits('.tide-triage-row'),
