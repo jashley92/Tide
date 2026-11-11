@@ -156,6 +156,17 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('tools/screenshots/package-lock.json') }}
 
+      - name: Fetch apt packages from Ubuntu's own archive first
+        # GitHub's Ubuntu runners list an Azure mirror (azure.archive.ubuntu.com) in /etc/apt/apt-mirrors.txt; when it
+        # can't be resolved, installing the browser's system libraries fails and the layout check never runs. Ubuntu's
+        # archive serves the same signed packages (apt checks each against Ubuntu's keys whatever the mirror), so it goes
+        # first and the Azure mirror stays as the fallback.
+        run: |
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            printf '%s\tpriority:1\n%s\tpriority:2\n' http://archive.ubuntu.com/ubuntu/ http://azure.archive.ubuntu.com/ubuntu/ | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+          fi
+          cat /etc/apt/apt-mirrors.txt 2>/dev/null || true
+
       - name: Install Playwright and its Chromium
         working-directory: tools/screenshots
         # The locked Playwright, without lifecycle scripts (it needs none: its CLI fetches the browser), run from
