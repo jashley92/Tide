@@ -72,7 +72,7 @@ public class ActionPageDesignTests(TideApp app) : IClassFixture<TideApp>
         await using var page = await Open(number);
         var (inPage, _) = Split(await page.Html());
         var head = inPage[At(inPage, "class=\"tide-action-badges\"")..At(inPage, "tide-action-who")];
-        head.Should().Contain($"tide-action-kind\">{ActionService.KindName(ActionKind.IocSweep)}</span>");
+        head.Should().Contain($"tide-action-head-kind\">{ActionService.KindName(ActionKind.IocSweep)}</span>");
         head.Should().Contain($"tide-action-due\" title=\"Due {Ui.Day(today)}\"><span class=\"bi bi-clock-history\" aria-hidden=\"true\"></span>Due {Ui.ShortDay(today)} · due soon</span>");
         head.Should().NotContain(">Due soon<", "the date and how it stands are one badge");
     }

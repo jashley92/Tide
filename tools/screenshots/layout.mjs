@@ -2117,7 +2117,7 @@ const huntFound = [visible('.tide-hunt-found > h3'), above('.tide-hunt [data-cop
 const huntAsDesigned = [huntCopyRow, ...huntFound];
 
 /** The header's badges: its kind, and its due date said with how it stands ("Due Thu Nov 12 · due soon"), one badge. */
-const actionHeadAsDesigned = [visible('.tide-action-badges .tide-action-kind'), says('.tide-action-badges .tide-action-due', '^Due \\w{3} \\w{3} \\d+ · '),
+const actionHeadAsDesigned = [visible('.tide-action-badges .tide-action-head-kind'), says('.tide-action-badges .tide-action-due', '^Due \\w{3} \\w{3} \\d+ · '),
   hidden('.tide-action-badges > .tide-badge-warn:not(.tide-action-due)')];
 
 /** Setup: wider letters, and the demo's "Every indicator sweep (XQL)" chosen from the list (it fills in from any action
