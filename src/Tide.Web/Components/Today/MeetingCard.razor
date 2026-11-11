@@ -41,14 +41,15 @@
     else if (CanEdit)
     {
         @* A colleague saved these meanwhile: said here, by the form, as well as at the top of the page (which announces it). *@
-        @if (ChangedBy is not null)
-        {
-            <div class="tide-changed-elsewhere mb-2">
-                <span class="bi bi-exclamation-triangle" aria-hidden="true"></span>
-                <span><strong>@ChangedBy saved the presenter or title slide line meanwhile.</strong> Saving now replaces theirs.</span>
-                <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" @onclick="OnReload">Reload</button>
-            </div>
-        }
+        <div role="status">
+            @if (ChangedBy is not null)
+            {
+                <div class="tide-changed-elsewhere tide-changed-elsewhere-short mb-2">
+                    <span><span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span><strong>@ChangedBy saved the presenter or title slide line meanwhile.</strong> Saving now replaces theirs.</span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" @onclick="OnReload">Reload</button>
+                </div>
+            }
+        </div>
         <label class="tide-field-label" for="analyst">Presenting analyst</label>
         <select id="analyst" class="form-select form-select-sm mb-2" @ref="_analyst" @bind:get="AnalystId" @bind:set="v => AnalystIdChanged.InvokeAsync(v)">
             @if (!People.Any(p => p.Sid == AnalystId))

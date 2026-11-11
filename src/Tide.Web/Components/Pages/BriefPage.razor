@@ -920,7 +920,8 @@ else
     }
 
     /// <summary>Keeps the last brief's opening note as it is for this one: it's reviewed, and no longer flagged.</summary>
-    internal Task KeepTeamNote() => Run(() => BriefSvc.SetTeamNoteAsync(_brief!.Id, _brief.TeamNote), "Opening note kept as it is.");
+    internal Task KeepTeamNote() => Run(() => BriefSvc.SetTeamNoteAsync(_brief!.Id, _brief.TeamNote), "Opening note kept as it is.",
+        () => _noteFocus = NoteFocus.Edit);   // the button goes with the flag: focus to Edit beside it
 
     private async Task Run(Func<Task> action, string? done, Action? then = null)
     {
@@ -1016,14 +1017,17 @@ else
         var editing = editable && (_noteOpen || NoteDirty);
         if (!editable && string.IsNullOrWhiteSpace(_brief!.TeamNote)) return;
         <section class="tide-card" aria-labelledby="team-note-h" data-submit-scope>
-            <h2 id="team-note-h">Opening note <span class="small fw-normal tide-muted">team edition only</span>
+            @* The heading is "Opening note" alone; what it's for, whether it's been updated and its buttons sit beside it. *@
+            <div class="tide-note-head">
+                <h2 id="team-note-h">Opening note</h2>
+                <span class="small tide-muted">team edition only</span>
+                @if (carried)
+                {
+                    <span title="@($"This is the last brief's note, not yet updated for {Ui.ShortDay(_date)}.")"><Badge Tone="BadgeTone.Warn" Icon="bi-clock-history">Not updated</Badge></span>
+                }
                 @if (carried || (editable && !editing))
                 {
-                    <span class="ms-auto d-flex gap-2 align-items-center fw-normal">
-                        @if (carried)
-                        {
-                            <span title="@($"This is the last brief's note, not yet updated for {Ui.ShortDay(_date)}.")"><Badge Tone="BadgeTone.Warn" Icon="bi-clock-history">Not updated</Badge></span>
-                        }
+                    <span class="ms-auto d-flex gap-2 align-items-center">
                         @if (!editing)
                         {
                             <button type="button" class="btn btn-outline-secondary btn-sm tide-note-edit" @ref="_noteEditBtn" @onclick="EditTeamNote">Edit</button>
@@ -1033,7 +1037,8 @@ else
                             <button type="button" class="btn btn-link btn-sm" disabled="@(_busy || NoteDirty)" @onclick="KeepTeamNote">Still current</button>
                         }
                     </span>
-                }</h2>
+                }
+            </div>
             @if (editing)
             {
                 <label class="visually-hidden" for="team-note">Opening note</label>

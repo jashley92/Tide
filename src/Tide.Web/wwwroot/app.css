@@ -2523,10 +2523,18 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-rail-body > .tide-card:first-child { padding-top: 0; }
 .tide-rail-body > .tide-card + .tide-card { border-top: 1px solid var(--tide-border); }
 .tide-rail .tide-ed-cols { grid-template-columns: minmax(0, 1fr); }
-/* Each edition in one row: its name, its TLP, its count ("edition" and "Up to" kept for screen readers alone). */
+/* Each edition in a row: its name on one line, its TLP chip at full width, then its count, which goes to the next line,
+   under the chip, when the column hasn't room ("edition" and "Up to" kept for screen readers alone). */
 .tide-rail .tide-ed-col > h3 { display: flex; flex-wrap: nowrap; align-items: baseline; gap: var(--tide-space-2); }
-.tide-rail .tide-ed-col > h3 > a { flex: 0 0 6.5rem; }
-.tide-rail .tide-ed-sub { min-width: 0; white-space: nowrap; }
+.tide-rail .tide-ed-col > h3 > a { flex: 0 0 auto; min-width: 6.5rem; white-space: nowrap; }
+.tide-rail .tide-ed-sub { flex: 1 1 0; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--tide-space-1); }
+.tide-rail .tide-ed-sub .tide-tlp { flex: none; }
+.tide-rail .tide-ed-count { white-space: nowrap; }
+/* The opening note's head: its heading as a card's, then what it's for, whether it's been updated, and its buttons. */
+.tide-note-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); margin: 0 0 .75rem; }
+.tide-note-head > h2 { font-size: .95rem; font-weight: var(--tide-weight-semibold); margin: 0; }
+/* The meeting form's own "changed elsewhere": its icon in the line of text. */
+.tide-changed-elsewhere-short > span { flex: 1 1 0; min-width: 0; }
 .tide-rail .tide-ed-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .tide-rail .d-flex:has(> label[for="intro"]) { flex-wrap: wrap; }
 .tide-rail label[for="intro"] { white-space: nowrap; }

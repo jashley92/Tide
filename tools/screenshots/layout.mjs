@@ -709,7 +709,8 @@ const dims = percent => ({
 });
 
 /** Setup: every letter spaced wider, as a font wider than this machine's would set it (see selectCovered). */
-const wideFont = async page => { await page.addStyleTag({ content: '* { letter-spacing: .07em !important; }' }); };
+// LETTER_SPACING=.12em widens it further by hand, near what a Linux runner's fonts do.
+const wideFont = async page => { await page.addStyleTag({ content: `* { letter-spacing: ${process.env.LETTER_SPACING ?? '.07em'} !important; }` }); };
 
 /** Setup: wider letters, and `theme` (dark) set on the page as the app's theme switch would. */
 const darkWide = async page => {
@@ -791,6 +792,13 @@ const keptWhatsTyped = (field, near) => ({
 });
 
 /** Each visible match of `selector` is wholly in view: no ancestor that clips its overflow cuts any of it off. */
+/** No visible match of `selector` is drawn narrower than its content: it hasn't been squeezed. */
+const notSqueezed = selector => ({
+  name: `not squeezed: ${selector}`,
+  check: page => page.$$eval(selector, (els, selector) => els.flatMap((el, i) =>
+    el.getBoundingClientRect().width > 0 && el.scrollWidth > el.clientWidth + 1 ? [`${selector} #${i + 1} is ${el.scrollWidth - el.clientWidth}px narrower than its text`] : []), selector),
+});
+
 const notClipped = selector => ({
   name: `not clipped: ${selector}`,
   check: page => page.$$eval(selector, (els, selector) => els.flatMap((el, i) => {
@@ -1181,9 +1189,11 @@ const pages = [
   { name: 'today-steps', route: '/', setup: wideFont, widths: [1920, 1600, 1500, 1440, 1000, 780, 641, 400],
     rules: [oneRow('.tide-steps'), oneLine('.tide-step-detail', 2), [1001, inlineIn('.tide-step-flag', '.tide-step-detail')],
       visible('.tide-steps .tide-step-flag'), notClipped('.tide-steps .tide-step-flag')] },
-  // In the rail's edition check, each edition's heading is one row: its name, its TLP and its count.
+  // In the rail's edition check, each edition's heading fits the column: its name on one line beside its TLP chip, the
+  // chip at full width, the count after it or under it.
   { name: 'today-editions', route: '/', setup: wideFont, widths: [1920, 1500],
-    rules: [oneRow('#tide-rail .tide-ed-col > h3'), fits('#tide-rail .tide-ed-col > h3')] },
+    rules: [fits('#tide-rail .tide-ed-col > h3'), oneLine('#tide-rail .tide-ed-col > h3 > a'), sameLine('#tide-rail .tide-ed-col > h3 > a', '#tide-rail .tide-ed-sub .tide-tlp'),
+      notSqueezed('#tide-rail .tide-ed-sub .tide-tlp'), oneLine('#tide-rail .tide-ed-count')] },
   // Focus after the meeting's form closes goes back to the button that opened it; the note's Edit puts it in the
   // editor, and its Cancel and Save back on Edit.
   { name: 'today-meeting-saved', route: '/', setup: meetingClosedBy('Save'), widths: [1920],
