@@ -2,6 +2,7 @@
 @page "/stack/{Id:guid}"
 @attribute [Authorize(Policy = Policies.ReadTeamEdition)]
 @using Tide.Application.Stack
+@using Tide.Web.Components.StackRail
 @inject StackService Stack
 @inject TeamService TeamSvc
 @inject ICurrentUser CurrentUser
@@ -18,14 +19,19 @@
    triage, how many new items name it; an old or missing check is flagged. A filter box, quick filters with counts and
    a team narrow it; Add a product opens the add form. A product's page has its other names, versions and notes, and its history:
    the articles tagged with it or naming it, and their actions. Triage lifts items that name a product, and an article
-   can be tagged with any number of them from the editor. A product's history is held to the team edition's TLP ceiling:
-   articles above it, and actions raised from them, are counted but not named. A colleague's change to a product
+   can be tagged with any number of them from the editor. A product's articles are held to the team edition's TLP
+   ceiling: those above it are counted but not named. Its actions are all named, one raised from an article above the
+   ceiling too, as the Actions list and the action page name them. A colleague's change to a product
    re-reads the page in place; the edit form keeps what's typed in it. *@
 
 <PageTitle>@(_detail?.Product.Name ?? "Our stack") · TIDE</PageTitle>
 
 @if (Id is null)
 {
+    @* The rows the filters leave, and the selected one's place, worked out once for the list and the rail. *@
+    var shown = Shown;
+    var selectedAt = RowSelection.Clamp(_selected, shown.Count);
+    var selectedRow = shown.Count > 0 ? shown[selectedAt] : null;
     <div class="tide-page-head">
         <div>
             <h1>Our stack</h1>
@@ -62,7 +68,6 @@
     }
     else
     {
-        var shown = Shown;
         @* The filters above the list: the words, a quick filter per reason to look (in + Filter too), a team, and the
            retired ones; the count says the order. *@
         <FilterBar Pills="Pills" Filters="Filters" Active="Narrowed" OnClear="ClearFilters" OnChanged="Refiltered"
@@ -96,9 +101,13 @@
                         <thead><tr><th scope="col">Product</th><th scope="col">Versions</th><th scope="col">Team</th><th scope="col">Checked</th><th scope="col">Right now</th>
                             <th scope="col" class="tide-table-num">Articles</th><th scope="col" class="tide-table-num">Open actions</th></tr></thead>
                         <tbody>
-                            @foreach (var r in shown)
+                            @for (var at = 0; at < shown.Count; at++)
                             {
-                                <tr class="@(r.Product.IsRetired ? "tide-muted" : "")" @key="r.Product.Id">
+                                var r = shown[at];
+                                var place = at;
+                                var selected = place == selectedAt;
+                                <tr class="@RowClass @RowSelection.Css(selected) @(r.Product.IsRetired ? "tide-muted" : null)" aria-current="@RowSelection.Current(selected)"
+                                    tabindex="@RowSelection.TabIndex(selected)" @key="r.Product.Id" @onfocusin="() => SelectAt(place)">
                                     <td><a href="@($"stack/{r.Product.Id}")">@r.Product.Name</a>
                                         @if (r.Product.OtherNames is { } o) { <div class="small tide-muted">also @o</div> }
                                         @if (r.Product.IsRetired) { <Badge Tone="BadgeTone.Neutral">Retired</Badge> }</td>
@@ -124,9 +133,22 @@
                         </tbody>
                     </table>
                 </div>
+                @* J/K and the arrows move the selected row, Enter opens the product; the address names the row. *@
+                <RowKeys RowClass="@RowClass" Count="shown.Count" Selected="selectedAt" SelectedChanged="SelectAt" OnOpen="OpenRow" Address="RowAddress" />
             }
         </div>
     }
+    @* The selected product, in the context rail. *@
+    <ContextRail Title="@(selectedRow is { } chosen ? $"About {chosen.Product.Name}" : "About the selected product")">
+        @if (selectedRow is { } row)
+        {
+            <StackRowRail @ref="_rail" Row="row" OnChanged="ReadAgain" />
+        }
+        else
+        {
+            <section class="tide-card"><p class="small tide-muted mb-0">@(_list is null ? "Loading…" : "Nothing is selected: no product is shown.")</p></section>
+        }
+    </ContextRail>
 }
 else if (_detail is null)
 {
@@ -207,8 +229,8 @@ else
                 @if (_detail.ArticlesAbove > 0) { <div class="small tide-muted mt-1">@AboveLine(_detail.ArticlesAbove, "article", _detail.Ceiling)</div> }
             </section>
             <section class="tide-card" aria-labelledby="stack-actions-h">
-                <h2 id="stack-actions-h">Actions <span class="tide-count">(@(_detail.Actions.Count + _detail.ActionsAbove))</span></h2>
-                @if (_detail.Actions.Count == 0 && _detail.ActionsAbove == 0) { <div class="small tide-muted">No actions yet.</div> }
+                <h2 id="stack-actions-h">Actions <span class="tide-count">(@_detail.Actions.Count)</span></h2>
+                @if (_detail.Actions.Count == 0) { <div class="small tide-muted">No actions yet.</div> }
                 <ul class="list-unstyled mb-0">
                     @foreach (var a in _detail.Actions)
                     {
@@ -217,7 +239,6 @@ else
                             <ActionStatusBadge Status="a.Status" /></li>
                     }
                 </ul>
-                @if (_detail.ActionsAbove > 0) { <div class="small tide-muted mt-1">@AboveLine(_detail.ActionsAbove, "action", _detail.Ceiling, "from articles ")</div> }
             </section>
         </div>
     </div>
@@ -296,10 +317,11 @@ else
         catch (JSDisconnectedException) { /* the tab has gone */ }
         catch (JSException) { /* the element went before focus reached it */ }
     }
-    internal void SetWords(string? words) => _words = words ?? "";
-    internal void SetTeam(string? team) => _team = string.IsNullOrEmpty(team) ? null : team;
-    internal void SetQuick(string key, bool on) { if (on) _quick.Add(key); else _quick.Remove(key); }
-    private void ClearFilters() { (_words, _team) = ("", null); _quick.Clear(); }
+    // Each filter narrows the list anew: the first row left is selected.
+    internal void SetWords(string? words) => (_words, _selected) = (words ?? "", 0);
+    internal void SetTeam(string? team) => (_team, _selected) = (string.IsNullOrEmpty(team) ? null : team, 0);
+    internal void SetQuick(string key, bool on) { if (on) _quick.Add(key); else _quick.Remove(key); _selected = 0; }
+    private void ClearFilters() { (_words, _team, _selected) = ("", null, 0); _quick.Clear(); }
     private static void Refiltered() { }   // nothing to read again: the bar's call draws the page with the filter it set
 
     private string TeamValue
@@ -311,12 +333,13 @@ else
     protected override async Task OnParametersSetAsync()
     {
         _canWrite = CurrentUser.Has(Permission.WriteArticles);
+        if (Id is null) _selected = RowSelection.From(RowParam);
         await Load();
     }
 
     /// <summary>"2 articles above TLP:AMBER": what the page counts but doesn't name.</summary>
-    internal static string AboveLine(int count, string noun, TlpLevel ceiling, string via = "") =>
-        $"{count} {noun}{(count == 1 ? "" : "s")} {via}above {Tlp.Label(ceiling)}";
+    internal static string AboveLine(int count, string noun, TlpLevel ceiling) =>
+        $"{count} {noun}{(count == 1 ? "" : "s")} above {Tlp.Label(ceiling)}";
 
     // After the triage count: whether it's on today's brief, or the news about it isn't written up yet.
     private static string Said(StackNow now)
@@ -375,14 +398,56 @@ else
 
     private static bool Same(string? a, string? b) => string.Equals(a ?? "", b ?? "", StringComparison.Ordinal);
 
+    // --- the selected row (RowSelection, RowKeys) and the rail ----------------------------------------------------------
+
+    /// <summary>The selected row's place on the list, from 0 (?row=; RowSelection).</summary>
+    [SupplyParameterFromQuery(Name = RowSelection.Param)] public string? RowParam { get; set; }
+
+    /// <summary>The class every row of the list carries (RowKeys's RowClass).</summary>
+    private const string RowClass = "tide-stack-item";
+
+    private int _selected;
+    private StackRowRail? _rail;
+
+    internal StackRowRail? Rail => _rail;
+
+    /// <summary>The selected row's place among the rows shown.</summary>
+    internal int Selected => RowSelection.Clamp(_selected, Shown.Count);
+
+    /// <summary>The selected product's row, or none when no product is shown.</summary>
+    internal StackRow? SelectedRow => Shown is { Count: > 0 } shown ? shown[RowSelection.Clamp(_selected, shown.Count)] : null;
+
+    internal void SelectAt(int at) => _selected = at;
+
+    // Enter on the selected row: the product's page.
+    internal void OpenRow(int at)
+    {
+        var shown = Shown;
+        if (at < shown.Count) Nav.NavigateTo($"stack/{shown[at].Product.Id}");
+    }
+
+    // This history entry's address with the row selected (rows.js writes it in place, navigating nowhere).
+    private string RowAddress(int selected) => Nav.GetUriWithQueryParameter(RowSelection.Param, selected > 0 ? selected : null);
+
+    // After Mark checked in the rail: the list read again, the same product still selected.
+    private async Task ReadAgain()
+    {
+        try { await ReadList(); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
     internal StackForm? Form => _form;
     internal StackDetail? Detail => _detail;
     internal IReadOnlyList<StackRow>? List => _list;
 
+    // The list read again keeps the selected product selected wherever it now sits (checked, it may move down the list);
+    // one that has gone gives its place to the row now there.
     private async Task ReadList()
     {
+        var was = _list is null ? null : SelectedRow?.Product.Id;
         var list = await Stack.OverviewAsync(_showRetired);
         (_list, _ceiling) = (list.Rows, list.Ceiling);
+        if (was is { } id && Shown.ToList().FindIndex(r => r.Product.Id == id) is >= 0 and var at) _selected = at;
     }
 
     private async Task Load()

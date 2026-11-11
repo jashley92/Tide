@@ -49,7 +49,7 @@ public class CommentsAndStackDecisionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task AProductsPage_NamesOnlyArticlesAtOrBelowTheTeamCeiling_AndCountsTheRest()
+    public async Task AProductsPage_NamesOnlyArticlesAtOrBelowTheTeamCeiling_AndCountsTheRest_ButNamesEveryAction()
     {
         var stack = _db.Stack();
         var vpn = await stack.SaveAsync(new StackForm { Name = "Contoso VPN Gateway" });
@@ -65,8 +65,8 @@ public class CommentsAndStackDecisionServiceTests : IDisposable
         d.Ceiling.Should().Be(TlpLevel.AmberStrict, "the team edition's default ceiling");
         d.Articles.Select(a => a.Id).Should().Equal(open);
         d.ArticlesAbove.Should().Be(1);
-        d.Actions.Select(a => a.Title).Should().BeEquivalentTo("Patch the gateways", "Check Contoso VPN Gateway logs");
-        d.ActionsAbove.Should().Be(1, "an action raised from the RED article isn't named either");
+        d.Actions.Select(a => a.Title).Should().BeEquivalentTo(["Patch the gateways", "Call the partner", "Check Contoso VPN Gateway logs"],
+            "an action is named wherever actions are shown, the one raised from the RED article too, as the Actions list names it");
         (await stack.ListAsync()).Single().Articles.Should().Be(2, "the list counts every article; it names none");
 
         await _db.Settings().SaveAsync(TlpLevel.Green, TlpLevel.Amber);
@@ -74,14 +74,14 @@ public class CommentsAndStackDecisionServiceTests : IDisposable
         await _db.Settings().SaveAsync(TlpLevel.Green, TlpLevel.Red);
         var all = (await stack.GetAsync(vpn))!;
         all.Articles.Select(a => a.Id).Should().BeEquivalentTo([open, red]);
-        (all.ArticlesAbove, all.ActionsAbove, all.Actions.Count).Should().Be((0, 0, 3));
+        (all.ArticlesAbove, all.Actions.Count).Should().Be((0, 3));
     }
 
     [Fact]
     public void TheAboveLine_CountsAndNamesTheCeiling()
     {
         StackPage.AboveLine(2, "article", TlpLevel.Amber).Should().Be("2 articles above TLP:AMBER");
-        StackPage.AboveLine(1, "action", TlpLevel.AmberStrict, "from articles ").Should().Be("1 action from articles above TLP:AMBER+STRICT");
+        StackPage.AboveLine(1, "CVE", TlpLevel.AmberStrict).Should().Be("1 CVE above TLP:AMBER+STRICT");
     }
 
     [Fact]
