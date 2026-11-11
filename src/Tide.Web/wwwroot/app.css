@@ -2455,7 +2455,6 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 }
 .tide-row-progress { margin-top: var(--tide-space-1); max-width: 7rem; display: flex; align-items: center; gap: .4rem; color: var(--tide-text-muted); }
 .tide-row-progress > .tide-kcard-bar { min-width: 2.5rem; }
-.tide-action-num-tail { white-space: nowrap; }
 .tide-row-take { display: block; margin-top: var(--tide-space-1); padding: .05rem .5rem; font-size: var(--tide-text-xs); }
 .tide-actions-unowned { margin: 0 0 var(--tide-space-3); padding: var(--tide-space-2) var(--tide-space-3); background: var(--tide-info-soft);
     border-radius: var(--tide-radius-lg); font-size: var(--tide-text-sm); }

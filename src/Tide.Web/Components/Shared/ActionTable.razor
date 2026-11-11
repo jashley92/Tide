@@ -14,8 +14,13 @@
             {
                 <a class="tide-kcard-parent small d-block" href="@Ui.ActionUrl(parent)"><span class="bi bi-arrow-return-right" aria-hidden="true"></span> Part of @Ui.ActionLabel(parent)</a>
             }
-            <ActionRef @ref="_refs[r.Id]" Number="r.Number" Title="@r.Title" AfterNumber="@(r.EscalatedSince is { } at ? Escalated(at) : null)" />
-            <FileCount Count="r.Files" />
+            <ActionRef @ref="_refs[r.Id]" Number="r.Number" Title="@r.Title">
+                @* The Escalated badge and the paperclip stay on the number's line; the title wraps before them. *@
+                <AfterNumber>
+                    <EscalatedBadge At="r.EscalatedSince" />
+                    <FileCount Count="r.Files" />
+                </AfterNumber>
+            </ActionRef>
             <PresenceNote Place="@Tide.Web.Components.Pages.ActionPage.ActionPlace(r.Number)" Join="false" Compact="true" />
             @if (ActionRules.For(Rules, r, Today, Clock.Days) is { Count: > 0 } matched)
             {
@@ -112,8 +117,6 @@
         _refsFor = Rows;
         foreach (var gone in _refs.Keys.Except(Rows?.Select(r => r.Id) ?? []).ToList()) _refs.Remove(gone);
     }
-
-    private static RenderFragment Escalated(DateTimeOffset at) => @<EscalatedBadge At="at" />;
 
     /// <summary>Puts focus on this row's title; false when the row isn't drawn.</summary>
     public async Task<bool> FocusRowAsync(Guid id)
