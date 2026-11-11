@@ -218,30 +218,31 @@ public class ActionsListBoardServiceTests : IDisposable
         var team = await _db.Teams().AddAsync("Cyber Defense", null, null);
         var other = await _db.Teams().AddAsync("Network Engineering", null, null);
         var svc = _db.Actions();
-        bool Now(DateTimeOffset? at) => at is { } t && (DateTimeOffset.UtcNow - t).Duration() < TimeSpan.FromMinutes(1);
+        static void Now(DateTimeOffset? at, string because) => at!.Value.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(1), because);
 
         var n = await svc.CreateAsync(new ActionForm { Title = "Sweep", Kind = ActionKind.Block, TeamId = team });
         var id = (await svc.GetAsync(n))!.Action.Id;
-        Now(await Stamp(id)).Should().BeTrue("raised: in Open from now");
+        Now(await Stamp(id), "raised: in Open from now");
 
         var old = await Age(id);
-        await svc.GetAsync(n);
-        await svc.SaveAsync(Edited((await svc.GetAsync(n))!.Action));
+        var form = ActionForm.From((await svc.GetAsync(n))!.Action);
+        form.Priority = Priority.P1;
+        await svc.SaveAsync(form);
         (await Stamp(id)).Should().Be(old, "reading it, or editing what isn't its status, isn't a move");
 
         await svc.MoveAsync(id, ActionStatus.Open, ActionStatus.Blocked);
-        Now(await Stamp(id)).Should().BeTrue("a move on the board");
+        Now(await Stamp(id), "a move on the board");
 
         await Age(id);
         await svc.SetStatusAsync(id, ActionStatus.InProgress, ActionOutcome.None, null);
-        Now(await Stamp(id)).Should().BeTrue("a status set on its page");
+        Now(await Stamp(id), "a status set on its page");
 
         old = await Age(id);
         await svc.TakeAsync(id);
         (await Stamp(id)).Should().Be(old, "taking one already in progress doesn't move it");
 
         await svc.RecordUpdateAsync(new TeamUpdate { ActionId = id, From = ActionStatus.InProgress, Status = ActionStatus.Done, Outcome = ActionOutcome.Blocked, Note = "Blocked at the edge." });
-        Now(await Stamp(id)).Should().BeTrue("an update from the team that closes it");
+        Now(await Stamp(id), "an update from the team that closes it");
 
         old = await Age(id);
         await svc.ChangeOutcomeAsync(id, ActionStatus.Done, ActionOutcome.NotAffected, "Not affected after all.");
@@ -250,19 +251,12 @@ public class ActionsListBoardServiceTests : IDisposable
         var fresh = (await svc.GetAsync(await svc.CreateAsync(new ActionForm { Title = "Second", Kind = ActionKind.Block, TeamId = team })))!.Action.Id;
         await Age(fresh);
         await svc.TakeAsync(fresh);
-        Now(await Stamp(fresh)).Should().BeTrue("taking an open one starts it");
+        Now(await Stamp(fresh), "taking an open one starts it");
 
         await _db.Handoffs().SplitAsync(fresh, [new SplitPart(other)]);
         await using var ctx = _db.Context();
         var child = await ctx.Actions.AsNoTracking().SingleAsync(x => x.ParentId == fresh);
-        Now(child.StatusChangedAtUtc).Should().BeTrue("a part split off is raised now");
-    }
-
-    private static ActionForm Edited(ActionItem a)
-    {
-        var form = ActionForm.From(a);
-        form.Priority = Priority.P1;
-        return form;
+        Now(child.StatusChangedAtUtc, "a part split off is raised now");
     }
 
     [Fact]
