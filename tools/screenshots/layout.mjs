@@ -1147,15 +1147,52 @@ async function scrollDown(page) {
 
 // --- the action page's context rail (option E 3.5) ---------------------------------------------------------------------
 
-/** Setup: every letter spaced wider, as wideFonts; LETTER_SPACING=.12em widens it further by hand, near what a Linux
- * runner's fonts do. */
-const railLetters = async page => { await page.addStyleTag({ content: `* { letter-spacing: ${process.env.LETTER_SPACING ?? '.07em'} !important; }` }); };
+/** The open overlay closes by `how` ('Escape', 'Close' or 'backdrop'), and focus goes back to the Context button. Run
+ *  last on its page: it closes the rail. */
+const overlayClosesBy = how => ({
+  name: `${how} closes the overlay, focus back on Context`,
+  check: async page => {
+    if (how === 'Escape') await page.keyboard.press('Escape');
+    else if (how === 'Close') await page.locator('#tide-rail-close').click();
+    else {
+      const rail = await page.locator('#tide-rail').boundingBox();
+      await page.mouse.click(Math.max(2, rail.x / 2), rail.y + rail.height / 2);
+    }
+    await page.waitForTimeout(300);
+    const problems = [];
+    if (await anyShown(page, '#tide-rail')) problems.push(`the rail is still open after ${how}`);
+    const at = await page.evaluate(() => document.activeElement?.id || document.activeElement?.tagName);
+    if (at !== 'tide-rail-toggle') problems.push(`focus is on ${at}, not the Context button`);
+    return problems;
+  },
+});
 
-/** Setup: wider letters, then `]` pressed: the rail closes where it docks, and opens over the page where it doesn't. */
-const railToggled = async page => {
-  await railLetters(page);
-  await page.locator('body').press(']');
-  await page.waitForTimeout(300);
+/** A file dropped on the rail's Files box, and an image pasted while it has focus, wait there to be added. */
+const railFilesTakeDropAndPaste = {
+  name: 'the rail\'s Files box takes a drop and a paste',
+  check: async page => {
+    const zone = page.locator('#tide-rail .tide-file-pick').first();
+    const id = await zone.getAttribute('id');
+    await page.evaluate(id => {
+      const dt = new DataTransfer();
+      dt.items.add(new File(['proxy log line'], 'rail-drop.log', { type: 'text/plain' }));
+      const el = document.getElementById(id);
+      el.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+      el.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    }, id);
+    await page.waitForTimeout(1000);
+    await zone.focus();
+    await page.evaluate(id => {
+      const dt = new DataTransfer();
+      const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='), c => c.charCodeAt(0));
+      dt.items.add(new File([png], 'image.png', { type: 'image/png' }));
+      document.getElementById(id).dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
+    }, id);
+    await page.waitForTimeout(1000);
+    const pending = await page.locator('#tide-rail .tide-file-pending').innerText().catch(() => '');
+    return [!pending.includes('rail-drop.log') && 'a dropped file isn\'t waiting in the rail', !pending.includes('pasted-screenshot') && 'a pasted image isn\'t waiting in the rail']
+      .filter(Boolean);
+  },
 };
 
 /** What the action page's rail holds, each in the rail: the facts, the article it was raised from, what else was
@@ -1309,17 +1346,23 @@ const pages = [
   // The action page's context rail. From 1500px it's docked open beside the page, which has about 873px for the sweep's
   // card: the query wraps, nothing scrolls sideways and Copy is on the first screen. Below 1500px it's closed until `]`
   // opens it over the page. A sweep (its query) and an action of another kind (its checklist).
-  { name: 'action-rail-sweep', route: '/actions/{huntAction}', setup: railLetters, widths: [[1920, 1000], [1600, 1000], [1500, 1000]],
+  { name: 'action-rail-sweep', route: '/actions/{huntAction}', setup: wideFont, widths: [[1920, 1000], [1600, 1000], [1500, 1000]],
     rules: [visible('#tide-rail'), ...actionRailHolds, ...actionPageFits, fits('.tide-hunt pre.tide-query'), onFirstScreen('.tide-hunt [data-copy-target]')] },
-  { name: 'action-rail-other', route: '/actions/{detailAction}', setup: railLetters, widths: [[1920, 1000], [1500, 1000]],
+  { name: 'action-rail-other', route: '/actions/{detailAction}', setup: wideFont, widths: [[1920, 1000], [1500, 1000]],
     rules: [visible('#tide-rail'), visible('#tide-rail .tide-facts'), visible('#tide-rail #files'), hidden('.content #files'), fits('.tide-rail-body > *'),
       ...actionPageFits] },
-  { name: 'action-rail-narrow', route: '/actions/{huntAction}', setup: railLetters, widths: [[1440, 900], [780, 900]],
+  { name: 'action-rail-narrow', route: '/actions/{huntAction}', setup: wideFont, widths: [[1440, 900], [780, 900]],
     rules: [hidden('#tide-rail'), visible('#tide-rail-toggle'), ...actionPageFits, fits('.tide-hunt pre.tide-query')] },
-  { name: 'action-rail-closed', route: '/actions/{huntAction}', setup: railToggled, widths: [[1600, 1000]],
+  { name: 'action-rail-closed', route: '/actions/{huntAction}', setup: toggleRail, widths: [[1600, 1000]],
     rules: [hidden('#tide-rail'), widerThan('.tide-action-main', 1100), ...actionPageFits] },
-  { name: 'action-rail-overlay', route: '/actions/{huntAction}', setup: railToggled, widths: [[1440, 900], [780, 900]],
-    rules: [visible('#tide-rail'), ...actionRailHolds, noSidewaysScroll] },
+  // Open over the page it's a modal dialog: named, the page dimmed behind it, Tab held in it; Escape, Close and a click
+  // on the backdrop each close it and give focus back to the Context button; its Files box still takes a drop and a paste.
+  { name: 'action-rail-overlay', route: '/actions/{huntAction}', setup: toggleRail, widths: [[1440, 900], [780, 900], [400, 800]],
+    rules: [visible('#tide-rail'), ...actionRailHolds, noSidewaysScroll, focusIn('#tide-rail'), attr('#tide-rail', 'role', 'dialog'),
+      attr('#tide-rail', 'aria-modal', 'true'), attr('#tide-rail', 'aria-label', 'About this action'), [780, dims(15)], tabStaysIn('#tide-rail', 40)] },
+  ...['Escape', 'Close', 'backdrop'].map(how => ({ name: `action-rail-overlay-${how.toLowerCase()}`, route: '/actions/{huntAction}', setup: toggleRail,
+    widths: how === 'backdrop' ? [[1440, 900], [780, 900]] : [[1440, 900], [780, 900], [400, 800]], rules: [overlayClosesBy(how)] })),
+  { name: 'action-rail-overlay-files', route: '/actions/{detailAction}', setup: toggleRail, widths: [[1440, 900]], rules: [railFilesTakeDropAndPaste] },
   // Triage: the keys on one line, each row's flags fitting its line, and the reading pane open by itself from 1400px.
   { name: 'triage', route: '/triage', widths: [1920, 1440, 780],
     rules: [noSidewaysScroll, fits('.tide-page-head'), visible('.tide-triage-keys'), oneRow('.tide-triage-keys'), visible('.tide-triage-row.selected'), fits('.tide-triage-row'),
