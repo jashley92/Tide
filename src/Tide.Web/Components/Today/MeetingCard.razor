@@ -6,7 +6,9 @@
    and the line as typed are the page's (bound), so it can say they're unsaved and keep them through a reload. *@
 
 <section class="tide-card" aria-labelledby="meeting-h" data-submit-scope>
-    <h2 id="meeting-h">Meeting <span class="ms-auto small fw-normal tide-muted">@Ui.ShortDay(Day) &middot; @MeetsAt @Zone</span></h2>
+    @{ var when = $"{Ui.ShortDay(Day)} · {MeetsAt} {Zone}".TrimEnd(); }
+    @* In the rail's narrow column the day and time may be cut short: the title has them whole. *@
+    <h2 id="meeting-h">Meeting <span class="ms-auto small fw-normal tide-muted" title="@when">@when</span></h2>
     @if (RotaDay is { AnalystName: { } rota } && !Past)
     {
         <p class="small mb-2">The rotation has <strong>@rota</strong>@(RotaDay.IsChanged ? $", covering {RotaDay.RegularName}" : "") for this day.</p>

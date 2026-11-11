@@ -304,6 +304,26 @@ const besides = (selector, other) => ({
   }, [selector, other]),
 });
 
+/** Each visible match of `selector` is one line of text tall: it truncates or fits rather than wrapping. */
+const oneLine = selector => ({
+  name: `one line: ${selector}`,
+  check: page => page.$$eval(selector, (els, selector) => els.flatMap((el, i) => {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return [];
+    const s = getComputedStyle(el), line = parseFloat(s.lineHeight) || parseFloat(s.fontSize) * 1.5;
+    return r.height < line * 1.5 ? [] : [`${selector} #${i + 1}: "${el.textContent.trim().slice(0, 50)}" is on ${Math.round(r.height / line)} lines`];
+  }), selector),
+});
+
+/** The children of each visible match of `selector` are stacked, one under another, not side by side. */
+const stacked = selector => ({
+  name: `stacked: ${selector}`,
+  check: page => page.$$eval(selector, (els, selector) => els.flatMap((el, i) => {
+    const kids = [...el.children].map(c => c.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0);
+    return kids.every((r, k) => k === 0 || r.top >= kids[k - 1].bottom - 1) ? [] : [`${selector} #${i + 1}: its parts sit side by side`];
+  }), selector),
+});
+
 /** Each visible match of `selector`, given focus from the keyboard, draws a focus ring (an outline or a box shadow). */
 const ringOnFocus = selector => ({
   name: `focus ring: ${selector}`,
@@ -489,6 +509,14 @@ const pages = [
     rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), besides('#main-content', '#tide-rail'), oneRow('.tide-steps'), fits('.tide-steps > li'),
       fits('.tide-page-head'), fits('.tide-order-row'), fits('.tide-rail-body'), fits('#tide-rail .tide-card'), hidden('.content .tide-card[aria-labelledby="meeting-h"]'),
       ringOnFocus('#tide-rail #analyst, #tide-rail #intro, #tide-rail [data-submit], #tide-rail a.btn')] },
+  // Beside the docked rail, the page head keeps its buttons beside the title, and each step says where it stands on one
+  // line (cut short, the whole of it in its title). The rail's cards are laid out for a narrow column: the edition
+  // check's two editions one under the other, the meeting's day and time on one line under its heading, and the title
+  // slide line's label on one line.
+  { name: 'today-rail-fit', route: '/', setup: wideFont, widths: [1920, 1600, 1500],
+    rules: [oneRow('.tide-page-head'), oneRow('.tide-brief-head > :last-child'), oneLine('.tide-step-detail'), stacked('#tide-rail .tide-ed-cols'), fits('#tide-rail .tide-ed-col'),
+      oneLine('#tide-rail section[aria-labelledby="meeting-h"] > h2 > span'), oneLine('#tide-rail label[for="intro"]'),
+      fits('#tide-rail section[aria-labelledby="edition-check-h"]'), fits('#tide-rail section[aria-labelledby="meeting-h"]')] },
   { name: 'today-rail-closed', route: '/', setup: toggleRail, widths: [1920, 1500],
     rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), oneRow('.tide-steps'), fits('.tide-page-head')] },
   { name: 'today-rail-shut', route: '/', setup: wideFont, widths: [1440, 780],

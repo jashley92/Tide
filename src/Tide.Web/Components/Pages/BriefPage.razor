@@ -42,7 +42,7 @@
 }
 else
 {
-    <div class="tide-page-head">
+    <div class="tide-page-head tide-brief-head">
         <div>
             <div class="d-flex gap-2 align-items-center mb-1">
                 <a class="small" href="@Ui.BriefUrl(Clock.Days.Previous(_date))">&larr; @Ui.ShortDay(Clock.Days.Previous(_date))</a>
@@ -820,7 +820,13 @@ else
 
     private Guid? _correct;   // the send the Send dialog opens the correction of, if any
 
-    private Task Take(ActionRow r) => Run(() => ActionSvc.TakeAsync(r.Id), $"You took {Ui.ActionLabel(r.Number)} on.");
+    // Take it, on a row this page showed as nobody's: someone who took it meanwhile keeps it, and the page says so and
+    // reads the queue again either way (the card keeps focus in its list: KeepPlace).
+    internal async Task Take(ActionRow r)
+    {
+        await Run(() => ActionSvc.TakeAsync(r.Id, onlyIfNobodys: true), $"You took {Ui.ActionLabel(r.Number)} on.");
+        if (_queue?.Rows.Any(x => x.Id == r.Id && x.AssigneeId is null) == true) await LoadActions();
+    }
 
     private Task RecordCover() => Run(() => Rotation.RecordPastCoverAsync(_date), "Recorded in the brief rotation.");
 

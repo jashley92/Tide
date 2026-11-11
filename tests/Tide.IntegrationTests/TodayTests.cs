@@ -280,6 +280,30 @@ public class TeamQueueTodayTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task TakeIt_OnAnActionAColleagueTookMeanwhile_IsRefused_AndTheQueueIsReadAgain()
+    {
+        var team = await TeamWithActions("Queue Team C");
+        var today = app.Services.GetRequiredService<OrgClock>().CurrentBriefDate;
+        await using var r = await ComponentHarness.RenderAsync<BriefPage>(app, "/", new() { ["Day"] = $"{today:yyyy-MM-dd}", ["AsToday"] = true }, Robin);
+        Tide.Application.Actions.ActionRow shown;
+        await using (var asRobin = ComponentHarness.SignedIn(app, Robin))
+            shown = (await asRobin.ServiceProvider.GetRequiredService<Tide.Application.Actions.ActionService>().TeamQueueAsync()).Rows
+                .Single(x => x.Title == $"{team}: nobody's, overdue");
+        await using (var asColleague = ComponentHarness.SignedIn(app, Colleague))
+            await asColleague.ServiceProvider.GetRequiredService<Tide.Application.Actions.ActionService>().TakeAsync(shown.Id);
+
+        // Robin's Today still shows it as nobody's: Take it there.
+        await r.Click(p => p.Take(shown));
+
+        await using (var check = ComponentHarness.SignedIn(app, Robin))
+            (await check.ServiceProvider.GetRequiredService<Tide.Application.Actions.ActionService>().GetAsync(shown.Number))!.Action.AssigneeName
+                .Should().Be(Colleague.Name, "the colleague who took it first keeps it");
+        r.Scope.ServiceProvider.GetRequiredService<Tide.Web.Services.ToastService>().Toasts
+            .Should().Contain(t => t.IsError && t.Message.Contains("in the meantime"));
+        (await r.Html()).Should().NotContain($"Take {Tide.Web.Components.Shared.Ui.ActionLabel(shown.Number)} on", "the queue was read again, without it");
+    }
+
+    [Fact]
     public async Task AnAnalystOnATeam_KeepsTheWholeBrief_WithOneActionsCardBesideIt()
     {
         var team = await TeamWithActions("Queue Team B");

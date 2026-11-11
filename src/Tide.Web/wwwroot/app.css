@@ -2493,4 +2493,26 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
    offers the button (KeepPlace): the app's ring from the keyboard, none from a click. */
 .tide-card > h2[tabindex="-1"]:focus { outline: none; }
 .tide-card > h2[tabindex="-1"]:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; border-radius: var(--tide-radius-sm); }
+/* Beside a docked rail the page has about 870px. The brief's buttons stay beside its title, which wraps first; each
+   step says where it stands on one line, cut short (StepStrip puts the whole of it in the title). The compact strip,
+   centred under each icon, still wraps. */
+@media (min-width: 1500px) {
+    .tide-brief-head { flex-wrap: nowrap; }
+    .tide-brief-head > :first-child { flex: 1 1 0; min-width: 0; }
+    /* The buttons keep their own width, up to most of the row; past that (a live meeting's note beside them) they wrap. */
+    .tide-brief-head > :last-child:not(:first-child) { flex: 0 0 auto; max-width: 70%; justify-content: flex-end; }
+}
+@container steps (min-width: 46.01rem) {
+    .tide-step-txt { grid-template-columns: minmax(0, 1fr); }
+    .tide-step-detail { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}
+/* The rail's cards in its narrow column: the edition check's two editions one under the other, the meeting's day and
+   time on a line of their own under its heading (cut short, the whole of it in the title), and the title slide line's
+   label on one line, its TLP picker under it when they don't fit side by side. */
+.tide-rail .tide-ed-cols { grid-template-columns: minmax(0, 1fr); }
+.tide-rail [aria-labelledby="meeting-h"] > h2 { flex-wrap: wrap; row-gap: 0; }
+.tide-rail [aria-labelledby="meeting-h"] > h2 > span { flex: 1 0 100%; margin-left: 0 !important; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tide-rail .d-flex:has(> label[for="intro"]) { flex-wrap: wrap; }
+.tide-rail label[for="intro"] { white-space: nowrap; }
 /* ---- end Today 3.1 ---- */
