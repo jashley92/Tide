@@ -15,17 +15,26 @@ public sealed class Popout(IJSRuntime js, Func<Task> dismissed) : IAsyncDisposab
     private int _watch;
 
     /// <summary>Watches <paramref name="holder"/> (the popout and its <paramref name="opener"/>) while
-    /// <paramref name="open"/>, and stops when it closes.</summary>
+    /// <paramref name="open"/>, placing it inside the page as it's drawn, and stops when it closes. Called before the
+    /// popout's first control takes focus, so it's in place by then.</summary>
     public async Task FollowAsync(bool open, ElementReference holder, ElementReference opener)
     {
-        if (open && _watch == 0)
+        if (!open)
         {
-            _self ??= DotNetObjectReference.Create(this);
-            try { _watch = await js.InvokeAsync<int>("tidePopout.watch", holder, opener, _self); }
-            catch (JSDisconnectedException) { /* the tab has gone */ }
-            catch (InvalidOperationException) { /* not rendered interactively */ }
+            if (_watch != 0) await StopAsync();
+            return;
         }
-        else if (!open && _watch != 0) await StopAsync();
+        try
+        {
+            if (_watch != 0) await js.InvokeVoidAsync("tidePopout.fit", _watch);
+            else
+            {
+                _self ??= DotNetObjectReference.Create(this);
+                _watch = await js.InvokeAsync<int>("tidePopout.watch", holder, opener, _self);
+            }
+        }
+        catch (JSDisconnectedException) { /* the tab has gone */ }
+        catch (InvalidOperationException) { /* not rendered interactively */ }
     }
 
     /// <summary>Escape, or a press or focus outside: the script has stopped watching.</summary>

@@ -126,13 +126,13 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        _popout ??= new Popout(JS, Close);
+        await _popout.FollowAsync(_open, _holder, _button);
         if (_focusInput && _open)
         {
             _focusInput = false;
-            await _input.TryFocusAsync();
+            await _input.TryFocusAsync(preventScroll: true);
         }
-        _popout ??= new Popout(JS, Close);
-        await _popout.FollowAsync(_open, _holder, _button);
     }
 
     public ValueTask DisposeAsync() => _popout?.DisposeAsync() ?? ValueTask.CompletedTask;

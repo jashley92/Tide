@@ -288,6 +288,9 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // Placed before its first choice takes focus.
+        _popout ??= new Popout(JS, Dismissed);
+        await _popout.FollowAsync(_open, _holder, _trigger);
         if (_focusPop && _open)
         {
             _focusPop = false;
@@ -300,8 +303,6 @@
             _focusTrigger = false;
             await _trigger.TryFocusAsync(orGone: true);
         }
-        _popout ??= new Popout(JS, Dismissed);
-        await _popout.FollowAsync(_open, _holder, _trigger);
     }
 
     public ValueTask DisposeAsync() => _popout?.DisposeAsync() ?? ValueTask.CompletedTask;

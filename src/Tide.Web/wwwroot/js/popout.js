@@ -9,23 +9,40 @@
 //     A press inside it, on a part that takes no focus, leaves it open.
 // Each closes it once: the watch ends here, then .NET's Dismiss closes it. .NET ends a watch itself (unwatch) when the
 // popout closes another way, or the component goes.
-// As it opens, its panel is kept inside the page: one aligned to its button that would run past the window's edge, or
-// over the sidebar beside the page, is moved along until it doesn't (a button near the left of a narrow window).
+// Its panel is kept inside the page as it opens, and as it's drawn again (fit), before its first control takes focus
+// (which .NET gives without scrolling, so the page never moves):
+//   side to side, one aligned to its button that would run past the window's edge, or over the sidebar beside the
+//     page, is moved along until it doesn't (a button near the left of a narrow window);
+//   top to bottom, one with no room below its button opens above it, where there's room; with room for neither it's
+//     kept inside the window and scrolls.
 window.tidePopout = (function () {
     let watched = [], last = 0;
     const margin = 8;
 
     // The holder's panel: its child placed against it (the backdrop, where there is one, covers the window instead).
-    function fit(el) {
-        const panel = Array.prototype.find.call(el.children, function (c) { return getComputedStyle(c).position === 'absolute'; });
+    function fit(w) {
+        const panel = Array.prototype.find.call(w.el.children, function (c) { return getComputedStyle(c).position === 'absolute'; });
         if (!panel) return;
-        const r = panel.getBoundingClientRect();
+        // Measured where the stylesheet puts it.
+        panel.style.translate = panel.style.maxHeight = panel.style.overflowY = '';
+        let r = panel.getBoundingClientRect();
         const main = document.querySelector('main');
-        const from = Math.max(0, main ? main.getBoundingClientRect().left : 0) + margin;
-        const to = document.documentElement.clientWidth - margin;
+        const left = Math.max(0, main ? main.getBoundingClientRect().left : 0) + margin;
+        const right = document.documentElement.clientWidth - margin, bottom = document.documentElement.clientHeight - margin;
         // Past the right edge it moves left, but never past the left one: a panel wider than the room starts at its left.
-        const by = r.right > to ? Math.max(to - r.right, from - r.left) : Math.max(0, from - r.left);
-        if (by) panel.style.translate = by + 'px 0';
+        const x = r.right > right ? Math.max(right - r.right, left - r.left) : Math.max(0, left - r.left);
+        let y = 0;
+        if (r.bottom > bottom) {
+            const button = w.opener.getBoundingClientRect(), gap = Math.max(0, r.top - button.bottom);
+            if (button.top - gap - r.height >= margin) y = button.top - gap - r.bottom;
+            else {
+                panel.style.maxHeight = (bottom - margin) + 'px';
+                panel.style.overflowY = 'auto';
+                r = panel.getBoundingClientRect();
+                y = Math.max(bottom - r.bottom, margin - r.top);
+            }
+        }
+        if (x || y) panel.style.translate = x + 'px ' + y + 'px';
     }
 
     function listen(on) {
@@ -56,6 +73,10 @@ window.tidePopout = (function () {
         if (w.opener.isConnected) w.opener.focus();
     }
 
+    function find(id) {
+        return watched.find(function (x) { return x.id === id; });
+    }
+
     function onOutside(e) {
         watched.filter(function (w) { return !w.el.contains(e.target); }).forEach(dismiss);
     }
@@ -67,13 +88,25 @@ window.tidePopout = (function () {
             // element holding it: the holder itself takes it (out of the Tab order), so that press isn't leaving it.
             const focusable = !el.hasAttribute('tabindex');
             if (focusable) el.setAttribute('tabindex', '-1');
-            fit(el);
-            watched.push({ id: ++last, el: el, opener: opener, ref: ref, focusable: focusable });
+            const w = { id: ++last, el: el, opener: opener, ref: ref, focusable: focusable };
+            watched.push(w);
+            fit(w);
             return last;
         },
+        // Drawn again while open (a filter's options, fewer matches): placed again.
+        fit: function (id) {
+            const w = find(id);
+            if (w) fit(w);
+        },
         unwatch: function (id) {
-            const w = watched.find(function (x) { return x.id === id; });
+            const w = find(id);
             if (w) end(w);
+        },
+        // The button of the open popout `el` is in, if it's in one: a dialog opened from a popout (which closes as the
+        // dialog takes focus) gives focus back to that button.
+        opener: function (el) {
+            const w = watched.find(function (x) { return x.el.contains(el); });
+            return w ? w.opener : null;
         }
     };
 })();

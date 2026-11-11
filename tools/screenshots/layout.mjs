@@ -1127,6 +1127,77 @@ const insidePage = selector => ({
   }, selector),
 });
 
+/**
+ * Opening a popout (by a click on `opener`, as the mouse, a tap or Enter does) moves nothing: the page doesn't scroll
+ * sideways or grow wider than the window, and the popout lies inside the window top to bottom, opening upward where
+ * there's no room below its button.
+ */
+const opensInPlace = (label, opener, panel) => ({
+  name: `${label} opens in place`,
+  check: async page => {
+    const button = page.locator(opener).first();
+    await button.scrollIntoViewIfNeeded();
+    const before = await page.evaluate(() => ({ x: scrollX, width: Math.max(document.documentElement.scrollWidth, document.documentElement.clientWidth) }));
+    await button.click();
+    await page.locator(panel).first().waitFor({ timeout: 5000 });
+    await page.waitForTimeout(700);
+    const after = await page.evaluate(sel => {
+      const r = [...document.querySelectorAll(sel)].map(e => e.getBoundingClientRect()).find(b => b.height > 0);
+      return { x: scrollX, width: document.documentElement.scrollWidth, top: r.top, bottom: r.bottom, height: innerHeight };
+    }, panel);
+    const problems = [];
+    if (after.x !== before.x) problems.push(`opening it scrolled the page sideways ${Math.round(after.x - before.x)}px`);
+    if (after.width > before.width) problems.push(`opening it made the page ${after.width - before.width}px wider than the window`);
+    if (after.top < -0.5 || after.bottom > after.height + 0.5)
+      problems.push(`it runs from y=${Math.round(after.top)} to ${Math.round(after.bottom)}px, outside the window (0 to ${after.height}px)`);
+    return problems;
+  },
+});
+
+/** Where focus is: an element's text, or "the page body". */
+const focusName = page => page.evaluate(() => {
+  const el = document.activeElement;
+  return !el || el === document.body ? 'the page body' : (el.innerText || el.getAttribute('aria-label') || el.tagName).trim().slice(0, 40);
+});
+
+/** Delete in the entry's More menu asks first; Escape, or Cancel, leaves the entry with focus back on More. */
+const deleteCancelledFocusesMore = {
+  name: 'Delete cancelled: focus back on More',
+  check: async page => {
+    const problems = [];
+    for (const how of ['Escape', 'Cancel']) {
+      await page.locator('.tide-library-entry .tide-menubutton-btn').first().click();
+      await page.getByRole('menuitem', { name: 'Delete' }).click();
+      await page.locator('.tide-modal').waitFor({ timeout: 5000 });
+      await page.waitForTimeout(400);
+      if (how === 'Escape') await page.keyboard.press('Escape');
+      else await page.locator('.tide-modal').getByRole('button', { name: 'Cancel' }).click();
+      await page.locator('.tide-modal').waitFor({ state: 'detached', timeout: 5000 });
+      await page.waitForTimeout(600);
+      const now = await focusName(page);
+      if (now !== 'More') problems.push(`after ${how} focus is on ${now}, not More`);
+    }
+    return problems;
+  },
+};
+
+/** The palette opened (Ctrl+K) over the open + Filter, then closed: focus is back on + Filter. */
+const paletteGivesFocusBack = {
+  name: 'the palette over + Filter gives focus back to it',
+  check: async page => {
+    await page.locator('.tide-filter-menu .tide-filter-add').click();
+    await page.locator('.tide-filter-pop').waitFor({ timeout: 5000 });
+    await page.waitForTimeout(400);
+    await page.keyboard.press('Control+k');
+    await page.locator('[data-palette-input]').waitFor({ timeout: 5000 });
+    await page.waitForTimeout(400);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(800);
+    const now = await focusName(page);
+    return /Filter/.test(now) ? [] : [`focus is on ${now}, not + Filter`];
+  },
+};
+
 /** The first visible match of `selector` starts no lower than `px` from the top of the page: what a page is for isn't
  * pushed down by headings above it. */
 const startsAbove = (selector, px) => ({
@@ -1429,6 +1500,21 @@ const pages = [
     rules: popoutCloses('+ Filter', { wrap: '.tide-filter-menu', opener: '.tide-filter-add', panel: '.tide-filter-pop', inside: '[role=menuitem]' }) },
   { name: 'action-more-popout', route: '/actions/{huntAction}', widths: [1440],
     rules: popoutCloses('the More menu', { wrap: '.tide-menubutton', opener: '.tide-menubutton-btn', panel: '.tide-menubutton-pop', inside: '[role=menuitem]' }) },
+  // Each popout opens in place on a narrow window: no sideways scroll, nothing wider, and inside the window top to
+  // bottom (upward where there's no room below).
+  ...[
+    ['triage', '/triage', 'Attach to…', '.tide-triage-row.selected .tide-attach > button', '.tide-attach-panel'],
+    ['account', '/triage', 'the account menu', '.tide-profile-btn', '.tide-profile .tide-popover'],
+    ['export', '/briefs/{today}', 'Export indicators', '.tide-export > button', '.tide-export-panel'],
+    ['status', '/actions?view=open&layout=list', 'the Status menu', '.tide-table .tide-menubutton-btn', '.tide-menubutton-pop'],
+    ['filter', '/actions?view=open&layout=list', '+ Filter', '.tide-filter-menu .tide-filter-add', '.tide-filter-pop'],
+    ['action-more', '/actions/{huntAction}', 'the More menu', '.tide-menubutton-btn', '.tide-menubutton-pop'],
+    ['library-more', '/library/queries', 'the entry’s More menu', '.tide-library-entry .tide-menubutton-btn', '.tide-menubutton-pop'],
+  ].map(([name, route, label, opener, panel]) => ({ name: `popout-in-place-${name}`, route, widths: [[1024, 900], [780, 900], [400, 800]],
+    rules: [opensInPlace(label, opener, panel)] })),
+  // Focus after a dialog opened from a popout: back on More once Delete is cancelled, and on + Filter after the palette.
+  { name: 'library-delete-focus', route: '/library/queries', widths: [1440], rules: [deleteCancelledFocusesMore] },
+  { name: 'palette-over-filter', route: '/actions?view=open&layout=list', widths: [1440], rules: [paletteGivesFocusBack] },
   // J and K pressed quickly land on the row they were pressed for: on the page (the selection isn't pulled back by a
   // row's focus), and across a page boundary both ways (the demo has a second page: Demo:TriageFiller below).
   { name: 'triage-keys', route: '/triage', setup: pressQuickly('j', 10), widths: [1440], rules: [selectedAsAimed()] },

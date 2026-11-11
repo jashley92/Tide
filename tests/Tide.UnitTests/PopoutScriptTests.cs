@@ -76,6 +76,12 @@ public class PopoutScriptTests
         step('pressOnBarePart', () => { id = watch(a, 'a'); tabindex = a.attrs.tabindex; fire('pointerdown', { target: a }); fire('focusin', { target: a }); });
         tidePopout.unwatch(id);
         out.tabindex = { heard: ['open:' + tabindex, 'closed:' + a.attrs.tabindex], listening: listening() };
+        // A dialog opened from inside a popout gives focus back to the popout's button (the palette over + Filter).
+        id = watch(a, 'a');
+        const named = x => x === a.button ? 'a-button' : x === null ? 'none' : 'other';
+        out.opener = { heard: [named(tidePopout.opener(a.kids[1])), named(tidePopout.opener(outside))], listening: 0 };
+        tidePopout.unwatch(id);
+        out.opener.heard.push(named(tidePopout.opener(a.kids[1])));
         console.log(JSON.stringify(out));
         """;
 
@@ -137,6 +143,14 @@ public class PopoutScriptTests
 
         said["pressOnBarePart"].Should().BeEquivalentTo(new Step([], 3), "focus goes to the holder, which is part of it");
         said["tabindex"].Heard.Should().Equal(["open:-1", "closed:undefined"], "it takes focus (out of the Tab order) only while open");
+    }
+
+    [Fact]
+    public async Task AnElementInAnOpenPopout_IsOwnedByItsButton_ForADialogToGiveFocusBackTo()
+    {
+        var said = await Run();
+
+        said["opener"].Heard.Should().Equal(["a-button", "none", "none"], "only while it's open, and only for what's in it");
     }
 
     [Fact]

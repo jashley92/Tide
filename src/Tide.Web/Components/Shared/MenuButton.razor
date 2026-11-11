@@ -88,11 +88,13 @@
         StateHasChanged();
     }
 
-    /// <summary>Runs an item, as a click on it does: the menu closes first.</summary>
+    /// <summary>Runs an item, as a click on it does: the menu closes first, with focus on its button, so a dialog the
+    /// item opens gives focus back there (not to the page body, where the item it was chosen from went).</summary>
     internal async Task Choose(Item i)
     {
         Close(false);
         StateHasChanged();
+        await _trigger.TryFocusAsync(orGone: true);
         await i.Run.InvokeAsync();
     }
 
@@ -116,6 +118,9 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // Placed before its first choice takes focus.
+        _popout ??= new Popout(JS, Dismissed);
+        await _popout.FollowAsync(_open, _holder, _trigger);
         if (_focusPop && _open)
         {
             _focusPop = false;
@@ -128,8 +133,6 @@
             _focusTrigger = false;
             await _trigger.TryFocusAsync(orGone: true);
         }
-        _popout ??= new Popout(JS, Dismissed);
-        await _popout.FollowAsync(_open, _holder, _trigger);
     }
 
     public ValueTask DisposeAsync() => _popout?.DisposeAsync() ?? ValueTask.CompletedTask;
