@@ -147,8 +147,13 @@ window.tideRail = (function () {
         // Only a dialog that's showing: the reconnect dialog is always in the markup, hidden until it's needed.
         var dialogUnder = !!r && Array.prototype.some.call(document.querySelectorAll('[role="dialog"], [role="alertdialog"]'),
             function (d) { return !r.contains(d) && d.getClientRects().length > 0; });
+        // A dialog opening over the page closes the overlay. Focus that was in it (or dropped to the body as it went) moves
+        // to the Context button first, so the dialog, when it closes, gives focus back there and not to the body.
+        var lost = dialogUnder && over() && (r.contains(document.activeElement) || document.activeElement === document.body);
         if (!r || dialogUnder) root.removeAttribute('data-rail-over');
         sync();
+        var btn = lost && toggleBtn();
+        if (btn) btn.focus();
     }
     // Blazor draws the button once, as closed; this keeps what it says right, and the page under the overlay inert:
     // on load, when a page with a rail starts, on each toggle, and when the window's width changes where the rail sits.

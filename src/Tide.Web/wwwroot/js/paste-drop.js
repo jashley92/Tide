@@ -149,9 +149,19 @@ window.tidePasteDrop = (function () {
         return !!types && Array.prototype.indexOf.call(types, 'Files') >= 0;
     }
 
+    // A file input takes a dropped file itself; anywhere else that no zone takes it, a dropped file would open in the
+    // browser in place of TIDE, so the drop is refused instead.
+    function fileInput(target) {
+        return !!(target && target.closest && target.closest('input[type="file"]'));
+    }
+
     function onDragOver(e) {
+        if (!carriesFiles(e)) return;
         const v = zoneForTarget(e.target);
-        if (!v || !carriesFiles(e)) return;
+        if (!v) {
+            if (!fileInput(e.target)) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'none'; }
+            return;
+        }
         e.preventDefault();
         if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
         if (v.page) dragging(true);
@@ -166,14 +176,19 @@ window.tidePasteDrop = (function () {
     }
 
     function onDrop(e) {
+        if (!carriesFiles(e)) return;
         const v = zoneForTarget(e.target);
-        if (!v || !carriesFiles(e)) return;
+        if (!v) { if (!fileInput(e.target)) e.preventDefault(); return; }
         e.preventDefault();
         if (v.page) dragging(false);
         else v.el.classList.remove('tide-dropping');
         const files = e.dataTransfer && e.dataTransfer.files;
         if (files && files.length) push(v.z.dropInputId, files);
     }
+
+    // From the start, on every page: a file dropped where nothing takes it mustn't open in the browser.
+    document.addEventListener('dragover', onDragOver, true);
+    document.addEventListener('drop', onDrop, true);
 
     return {
         // pasteInputId: hidden InputFile that receives a pasted image. dropInputId: hidden InputFile that
@@ -193,9 +208,7 @@ window.tidePasteDrop = (function () {
                 document.addEventListener('change', onChange, true);
                 document.addEventListener('click', onClick);
                 document.addEventListener('paste', onPaste, true);
-                document.addEventListener('dragover', onDragOver, true);
                 document.addEventListener('dragleave', onDragLeave, true);
-                document.addEventListener('drop', onDrop, true);
                 attached = true;
             }
         }

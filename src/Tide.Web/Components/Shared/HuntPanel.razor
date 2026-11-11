@@ -276,15 +276,16 @@
     private bool AddersOnTop => CanWork && _preview is null && AddersOnHunt is null;
 
     private RenderFragment Adders => @<text>
-        <button id="hunt-write" type="button" class="btn btn-link btn-sm" @onclick="() => _writing = !_writing">Write one by hand</button>
-        <button id="hunt-pick" type="button" class="btn btn-link btn-sm" aria-expanded="@(_picking ? "true" : "false")" aria-controls="hunt-saved-picker" @onclick="TogglePicker">Add a saved query</button>
-        <button id="hunt-add-iocs" type="button" class="btn btn-link btn-sm" aria-expanded="@(_addingIndicators ? "true" : "false")" aria-controls="hunt-indicators" @onclick="ToggleIndicators">Add indicators</button>
+        <button id="hunt-write" type="button" class="btn btn-link btn-sm" aria-expanded="@Ui.Aria(_writing)" @ref="_writeBtn" @onclick="ToggleWriting">Write one by hand</button>
+        <button id="hunt-pick" type="button" class="btn btn-link btn-sm" aria-expanded="@Ui.Aria(_picking)" aria-controls="hunt-saved-picker" @ref="_pickBtn" @onclick="TogglePicker">Add a saved query</button>
+        <button id="hunt-add-iocs" type="button" class="btn btn-link btn-sm" aria-expanded="@Ui.Aria(_addingIndicators)" aria-controls="hunt-indicators" @ref="_iocsBtn" @onclick="ToggleIndicators">Add indicators</button>
     </text>;
 
     // A screenshot of what the query found goes to the action's Files, through its picker (ActionFilesPanel).
     private RenderFragment AttachShot => @<button type="button" class="btn btn-link btn-sm" data-pick="@ActionFilesPanel.PickInput"><span class="bi bi-image" aria-hidden="true"></span> Attach a screenshot</button>;
 
-    private RenderFragment AdderPanels => @<text>
+    // Escape in the one open closes it, and focus goes back to the button that opened it.
+    private RenderFragment AdderPanels => @<div class="tide-hunt-adding" @onkeydown="AdderKey">
         @if (_addingIndicators)
         {
             <div class="tide-hunt-picker mb-3" id="hunt-indicators">
@@ -317,10 +318,10 @@
         @if (_writing)
         {
             <div class="mb-3" data-submit-scope>
-                <textarea class="tide-query tide-autogrow" spellcheck="false" aria-label="Your query" placeholder="A behavioural hunt, for example: php-fpm spawning a shell" @bind="_ownText"></textarea>
+                <textarea class="tide-query tide-autogrow" spellcheck="false" aria-label="Your query" placeholder="A behavioural hunt, for example: php-fpm spawning a shell" @bind="_ownText" @bind:event="oninput"></textarea>
                 <div class="d-flex gap-2 mt-2">
                     <button class="btn btn-primary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_ownText))" data-submit @onclick="AddOwn">Add the query</button>
-                    <button class="btn btn-outline-secondary btn-sm" @onclick="() => _writing = false">Cancel</button>
+                    <button class="btn btn-outline-secondary btn-sm" @onclick="() => _adding = Adder.None">Cancel</button>
                 </div>
             </div>
         }
@@ -362,7 +363,7 @@
                 }
             </div>
         }
-    </text>;
+    </div>;
 
     /// <summary>The outlet on the drawer's tab row the language and window are drawn in.</summary>
     public const string ToolsSection = "hunt-tools";
@@ -552,7 +553,26 @@
     });
 
     private string _dialect = QueryDialects.All[0].Key;
-    private bool _busy, _writing;
+    private bool _busy;
+
+    // The way to add a query that's open: one at a time.
+    internal enum Adder { None, Write, Saved, Indicators }
+
+    private Adder _adding;
+    private bool _writing => _adding == Adder.Write;
+    private bool _picking => _adding == Adder.Saved;
+    private bool _addingIndicators => _adding == Adder.Indicators;
+    private ElementReference _writeBtn, _pickBtn, _iocsBtn;
+
+    internal void ToggleWriting() => _adding = _writing ? Adder.None : Adder.Write;
+
+    internal async Task AdderKey(KeyboardEventArgs e)
+    {
+        if (e.Key != "Escape" || _adding == Adder.None) return;
+        var button = _adding switch { Adder.Write => _writeBtn, Adder.Saved => _pickBtn, _ => _iocsBtn };
+        _adding = Adder.None;
+        await button.TryFocusAsync(orGone: true);
+    }
     private ScreenshotDialog.Shot? _shot;   // the evidence screenshot open in the dialog
     private IReadOnlyList<ScreenshotDialog.Shot> EvidenceSet => _shot is null ? [] : [_shot];
 
@@ -645,7 +665,7 @@
         await RememberDialect();
         await ActionSvc.AddHandWrittenHuntAsync(Action.Id, _dialect, _ownText ?? "");
         _ownText = null;
-        _writing = false;
+        _adding = Adder.None;
         Toasts.Show("Query added.");
     });
 
@@ -675,11 +695,9 @@
 
     // --- indicators added here ------------------------------------------------------------------------------------
 
-    private bool _addingIndicators;
-
     internal void ToggleIndicators()
     {
-        _addingIndicators = !_addingIndicators;
+        _adding = _addingIndicators ? Adder.None : Adder.Indicators;
         StateHasChanged();
     }
 
@@ -704,7 +722,7 @@
 
     // --- the team's saved queries ----------------------------------------------------------------------------------
 
-    private bool _picking, _pickAll;
+    private bool _pickAll;
     private string? _pickWords;
     private IReadOnlyList<SavedQuery>? _saved;
     private IReadOnlyList<SavedQuery> _offered = [];
@@ -727,14 +745,14 @@
     // Read each time the picker opens, so one a colleague saved since the page loaded is there.
     internal async Task TogglePicker()
     {
-        _picking = !_picking;
+        _adding = _picking ? Adder.None : Adder.Saved;
         if (!_picking) return;
         _saved = null;
         try { _saved = await SavedSvc.OfferedAsync(); }
         catch (Exception ex)
         {
             Toasts.Error(UserFacingError.For(ex));
-            _picking = false;
+            _adding = Adder.None;
         }
         Offer();
         StateHasChanged();
@@ -743,7 +761,7 @@
     internal Task AddSaved(SavedQuery q) => Run(async () =>
     {
         await ActionSvc.AddSavedHuntAsync(Action.Id, q.Id);
-        _picking = false;
+        _adding = Adder.None;
         Toasts.Show($"{q.Name} added.");
     });
 

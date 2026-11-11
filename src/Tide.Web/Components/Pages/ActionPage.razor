@@ -355,7 +355,7 @@ else
             </section>
         }
         @* Files are the action's working material, last. *@
-        <ActionFilesPanel @key="@($"files-{a.Id}")" Files="_detail.Files" ActionId="a.Id" Number="a.Number" CanWork="_detail.CanWork" Changed="Reload" OnComment="ShowComment" />
+        <ActionFilesPanel @key="@($"files-{a.Id}")" @ref="_filesPanel" StagedChanged="n => _staged = n" Files="_detail.Files" ActionId="a.Id" Number="a.Number" CanWork="_detail.CanWork" Changed="Reload" OnComment="ShowComment" />
     </ContextRail>
 
     @if (_detail.CanWork)
@@ -374,6 +374,9 @@ else
 @* A comment typed (or files attached) and not posted, or a comment's edit not saved: leaving asks first. Record an
    update and the outreach email guard their own. *@
 <UnsavedGuard Dirty="CommentUnsaved" Message="@CommentUnsavedMessage" Discard="DiscardComments" />
+@* Files dropped or picked and not yet added to the action. *@
+<UnsavedGuard Dirty="_staged > 0" Message="@($"{Ui.Plural(_staged, "file")} waiting in Files {(_staged == 1 ? "isn't" : "aren't")} added to the action yet.")"
+              Discard="DiscardStaged" />
 <ScreenshotDialog Set="_shotSet" @bind-Open="_shot" />
 <OverLimitDialog @ref="_overLimit" />
 
@@ -423,6 +426,12 @@ else
 
 @code {
     private ConfirmDialog _confirm = default!;
+
+    // The Files panel, and how many files wait there to be added.
+    private ActionFilesPanel? _filesPanel;
+    private int _staged;
+
+    private Task DiscardStaged() => _filesPanel?.DiscardPending() ?? Task.CompletedTask;
     [Parameter] public int? Number { get; set; }
     // Text, parsed (FilterValues), so an id cut short ("?article=12ab") is ignored rather than failing the page.
     [SupplyParameterFromQuery(Name = "article")] public string? ArticleParam { get; set; }
@@ -495,6 +504,7 @@ else
                 (_editing, _editingComment, _commentEdit, _comment, _prompting, _shot) = (null, null, null, null, false, null);
                 (_commentTheirs, _commentTheirsBy, _focusEditOf) = (null, null, null);
                 _attachments.Clear();
+                _staged = 0;   // the Files panel is keyed by the action, so it starts with none waiting
             }
             _shownNumber = Number;
             await Reload();

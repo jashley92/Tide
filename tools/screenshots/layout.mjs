@@ -1670,7 +1670,9 @@ const writtenQueryAddsOnFirstClick = {
     await page.locator('#hunt-write').click();
     await page.locator('textarea[aria-label="Your query"]').click();
     await page.keyboard.type('DeviceProcessEvents | where FileName == "php-fpm"');
-    const add = await page.getByRole('button', { name: 'Add the query', exact: true }).boundingBox();
+    const button = page.getByRole('button', { name: 'Add the query', exact: true });
+    await button.evaluate(b => b.scrollIntoView({ block: 'center' }));
+    const add = await button.boundingBox();
     await page.mouse.click(add.x + add.width / 2, add.y + add.height / 2);
     await page.waitForTimeout(1500);
     const after = await page.locator('.tide-hunt pre.tide-query').count();
