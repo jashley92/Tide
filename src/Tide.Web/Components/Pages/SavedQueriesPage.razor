@@ -12,18 +12,10 @@
 
 <ConfirmDialog @ref="_confirm" />
 
-<div class="tide-page-head tide-library-head">
-    <div>
-        <h2>Saved queries</h2>
-        <div class="tide-sub">Hunt queries kept for the team. Add one to an action from its Hunt queries card:
-            <span class="tide-data">@QueryDialects.DaysPlaceholder</span> is filled in with the action's window, and <span class="tide-data">@QueryDialects.Placeholder</span>
-            with its indicators (the article's, and any added on the action). TIDE never runs a query itself. Changes are audited.</div>
-    </div>
-    @if (_canWrite && _form is null)
-    {
-        <button class="btn btn-primary" @onclick="New"><span class="bi bi-plus-lg" aria-hidden="true"></span> New saved query</button>
-    }
-</div>
+@if (_canWrite && _form is null)
+{
+    <LibraryHead><button class="btn btn-primary" @onclick="New"><span class="bi bi-plus-lg" aria-hidden="true"></span> New saved query</button></LibraryHead>
+}
 
 @if (_form is { Id: null })
 {
@@ -42,20 +34,16 @@ else if (EditingAway)
     </section>
 }
 
-@* The filter bar: the words, a pill per language (one at a time), and Show retired as the switch it was: it widens the
-   list rather than narrowing it, so it isn't a filter to clear. *@
-<FilterBar Pills="Pills" Filters="Defs" Active="@(_language.Length > 0 || !string.IsNullOrWhiteSpace(_words))" OnChanged="Refilter" OnClear="ClearFilters">
-    <Search>
-        <input id="sq-find" type="search" class="tide-maxw-md form-control form-control-sm" placeholder="Name, description or query text" aria-label="Find saved queries"
-               @bind="_words" @bind:event="oninput" @bind:after="Refilter" />
-    </Search>
-    <ChildContent>
-        <div class="form-check form-switch mb-0">
-            <input class="form-check-input" type="checkbox" id="sq-retired" checked="@_showRetired" @onchange="ToggleRetired" />
-            <label class="form-check-label small" for="sq-retired">Show retired</label>
-        </div>
-    </ChildContent>
-</FilterBar>
+@* The platform (all, or one language), each with how many it holds; the order, by platform or the most used first; and
+   Show retired, a checkbox: it widens the list rather than narrowing it. The words are the Library's search's. *@
+<div class="tide-library-filters">
+    <TabBar Items="PlatformItems" Active="@(_language.Length > 0 ? _language : All)" Label="Platform" Level="TabLevel.Sub" OnSelect="ChoosePlatform" />
+    <TabBar Items="SortItems" Active="@_sort" Label="Sort" Level="TabLevel.Sub" OnSelect="SortBy" />
+    <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="sq-retired" checked="@_showRetired" @onchange="ToggleRetired" />
+        <label class="form-check-label small" for="sq-retired">Show retired</label>
+    </div>
+</div>
 
 @if (_rows is null)
 {
@@ -79,7 +67,7 @@ else
     var r = Selected!;
     var q = r.Query;
     var id = "sq-" + q.Id.ToString("N");
-    <LibraryBrowser Count="@CountText" Entries="Entries" Selected="SelectedId" Label="Saved queries" OnPick="Pick" @ref="_browser">
+    <LibraryBrowser Count="@CountText" Entries="Entries" Selected="SelectedId" Label="Saved queries" OnPick="Pick" Groups="_groups" @ref="_browser">
         <ChildContent>
             <article class="tide-hunt tide-library-entry @(q.IsRetired ? "tide-retired" : "")" aria-labelledby="@(id + "-h")" @key="q.Id">
                 @if (_form?.Id == q.Id)
@@ -89,28 +77,27 @@ else
                 }
                 else
                 {
-                    <div class="d-flex gap-2 align-items-center flex-wrap">
-                        <h3 class="tide-subhead my-0" id="@(id + "-h")">@q.Name</h3>
-                        <Badge>@HuntQueryBuilder.DialectName(q.Dialect)</Badge>
-                        @if (q.IsRetired) { <Badge>Retired</Badge> }
-                        <span class="ms-auto small tide-muted">@Used(r.Actions, "on", "action")</span>
+                    @* The entry's name and what it is on the left, its Copy, Edit and More at the top right; its query under. *@
+                    <div class="tide-library-entry-head">
+                        <div class="tide-library-entry-title">
+                            <h3 class="tide-subhead my-0" id="@(id + "-h")">@q.Name</h3>
+                            <div class="small tide-muted"><Badge>@HuntQueryBuilder.DialectName(q.Dialect)</Badge> @if (q.IsRetired) { <Badge>Retired</Badge> } @Provenance(q) · <span>@Used(r.Actions, "on", "action")</span></div>
+                        </div>
+                        <div class="tide-library-entry-tools">
+                            <span id="@(id + "-status")" class="small tide-muted" role="status" aria-live="polite"></span>
+                            <button type="button" class="btn btn-primary btn-sm" data-copy-target="@(id + "-text")" data-copy-status="@(id + "-status")"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
+                            @if (_canWrite)
+                            {
+                                <button class="btn btn-outline-secondary btn-sm" disabled="@(_form is not null)" aria-label="Edit @q.Name" @onclick="() => Edit(q)"><span class="bi bi-pencil" aria-hidden="true"></span> Edit</button>
+                            }
+                            @if (MoreItems(q) is { Count: > 0 } more)
+                            {
+                                <MenuButton Label="More" MenuLabel="@($"More for {q.Name}")" Items="more" ButtonClass="btn btn-outline-secondary btn-sm" Disabled="_busy" />
+                            }
+                        </div>
                     </div>
-                    @if (q.Description is { } about) { <p class="small mb-1">@about</p> }
-                    <div class="small tide-muted mb-2">@Provenance(q)</div>
+                    @if (q.Description is { } about) { <p class="small mb-2">@about</p> }
                     <pre id="@(id + "-text")" class="tide-query">@q.Text</pre>
-                    <div class="d-flex gap-2 align-items-center flex-wrap">
-                        <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="@(id + "-text")" data-copy-status="@(id + "-status")"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
-                        @if (_canWrite)
-                        {
-                            <button class="btn btn-outline-secondary btn-sm" disabled="@(_form is not null)" aria-label="Edit @q.Name" @onclick="() => Edit(q)"><span class="bi bi-pencil" aria-hidden="true"></span> Edit</button>
-                            <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" aria-label="@((q.IsRetired ? "Restore " : "Retire ") + q.Name)" @onclick="() => Retire(q, !q.IsRetired)">@(q.IsRetired ? "Restore" : "Retire")</button>
-                        }
-                        @if (SavedSvc.CanDelete(q))
-                        {
-                            <button class="btn btn-link btn-sm text-danger" disabled="@_busy" aria-label="Delete @q.Name" @onclick="() => Delete(q)">Delete</button>
-                        }
-                        <span id="@(id + "-status")" class="small tide-muted" role="status" aria-live="polite"></span>
-                    </div>
                 }
             </article>
         </ChildContent>
@@ -135,25 +122,66 @@ else
     protected override Guid IdOf(SavedQueryRow row) => row.Query.Id;
 
     protected override LibraryEntry Entry(SavedQueryRow row) =>
-        new(row.Query.Id, row.Query.Name, row.Query.Description, PillName(row.Query.Dialect), Used(row.Actions, "on", "action"), row.Query.IsRetired);
+        new(row.Query.Id, row.Query.Name, row.Query.Description, QueryDialects.ShortName(row.Query.Dialect), Used(row.Actions, "on", "action"), row.Query.IsRetired,
+            _groups is null ? null : HuntQueryBuilder.DialectName(row.Query.Dialect));
 
     protected override Guid? EditingId => _form?.Id;
 
-    // The language chosen (or all) and every word typed. Each language's queries together (the languages in the order they
-    // first come), so the pages run through the languages in order.
-    protected override IEnumerable<SavedQueryRow> Filtered(IReadOnlyList<SavedQueryRow> rows, IReadOnlyList<string> words) =>
-        rows.Where(r => _language.Length == 0 || r.Query.Dialect == _language).Where(r => SavedQueryService.Matches(r.Query, words))
-            .GroupBy(r => r.Query.Dialect).SelectMany(g => g);
+    private const string All = "all", ByPlatform = "platform", MostUsed = "used";
+
+    private string _sort = ByPlatform;
+
+    // How many each platform holds of those the words leave (and All), and, sorted by platform, each platform's count
+    // for the list's headings: worked out when the rows or the filters change.
+    private Dictionary<string, int> _platforms = [];
+    private Dictionary<string, int>? _groups;
+
+    // The language chosen (or all) and every word typed: each language's queries together (the languages in the order
+    // they first come, so the pages run through them in order), or the most used first.
+    protected override IEnumerable<SavedQueryRow> Filtered(IReadOnlyList<SavedQueryRow> rows, IReadOnlyList<string> words)
+    {
+        var chosen = rows.Where(r => _language.Length == 0 || r.Query.Dialect == _language).Where(r => SavedQueryService.Matches(r.Query, words));
+        return _sort == MostUsed
+            ? chosen.OrderByDescending(r => r.Actions).ThenBy(r => r.Query.Name, StringComparer.OrdinalIgnoreCase)
+            : chosen.GroupBy(r => r.Query.Dialect).SelectMany(g => g);
+    }
+
+    protected override void Filtering()
+    {
+        var words = TableView.Words(_words);
+        var matching = (_rows ?? []).Where(r => SavedQueryService.Matches(r.Query, words)).ToList();
+        _platforms = matching.GroupBy(r => r.Query.Dialect).ToDictionary(g => g.Key, g => g.Count());
+        _platforms[All] = matching.Count;
+        _groups = _sort == ByPlatform ? Shown.GroupBy(r => HuntQueryBuilder.DialectName(r.Query.Dialect)).ToDictionary(g => g.Key, g => g.Count()) : null;
+    }
 
     protected override void ClearOwnFilters() => _language = "";
 
-    // A pill per language, by its short name: presets of the language filter, so one at a time.
-    internal static readonly IReadOnlyList<FilterPill> Pills = [.. QueryDialects.All.Select(d => new FilterPill(d.Key, PillName(d.Key), "language", [d.Key]))];
 
-    internal static string PillName(string key) => key == "fql" ? "Falcon" : key.ToUpperInvariant();
+    private IReadOnlyList<TabBarItem> PlatformItems =>
+        [new("All", "", null, All, _platforms.GetValueOrDefault(All)), .. QueryDialects.All.Select(d => new TabBarItem(QueryDialects.ShortName(d.Key), "", null, d.Key, _platforms.GetValueOrDefault(d.Key)))];
 
-    internal IReadOnlyList<FilterDef> Defs =>
-        [new("language", "Language", FilterKind.Single, v => _language = FilterValues.First(v) ?? "") { InMenu = false, Values = FilterValues.Of(_language) }];
+    private static readonly IReadOnlyList<TabBarItem> SortItems = [new("By platform", "", null, ByPlatform), new("Most used", "", null, MostUsed)];
+
+    /// <summary>A platform chosen (All for every one): the list from its first page.</summary>
+    internal void ChoosePlatform(string? key)
+    {
+        _language = key is null or All ? "" : key;
+        Refilter();
+        StateHasChanged();
+    }
+
+    /// <summary>The order chosen: by platform, under each one's heading, or the most used first.</summary>
+    internal void SortBy(string? key)
+    {
+        _sort = key == MostUsed ? MostUsed : ByPlatform;
+        Refilter();
+        StateHasChanged();
+    }
+
+    /// <summary>The query's More menu: Retire or Restore, and Delete, for whoever may.</summary>
+    internal IReadOnlyList<MenuButton.Item> MoreItems(SavedQuery q) =>
+        MoreMenu(q.IsRetired, _canWrite, () => Retire(q, !q.IsRetired), SavedSvc.CanDelete(q), () => Delete(q));
 
     private RenderFragment EditForm => __builder =>
     {

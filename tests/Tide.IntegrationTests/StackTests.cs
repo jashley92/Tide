@@ -291,6 +291,30 @@ public class StackServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task RightNow_SaysBriefedToday_OrNotWrittenUp_WithinTheTeamEditionsCeiling()
+    {
+        _db.User.Roles = new HashSet<AppRole> { AppRole.Analyst, AppRole.Admin };
+        var stack = _db.Stack();
+        await stack.SaveAsync(new StackForm { Name = "Halo Router" });
+        await stack.SaveAsync(new StackForm { Name = "Halo Keep" });
+        await stack.SaveAsync(new StackForm { Name = "Halo Quiet" });
+        await stack.SaveAsync(new StackForm { Name = "Halo Idle" });
+        var articles = _db.Articles();
+        await BriefAsync(await articles.CreateAsync("Halo Router flaw exploited", "Vendor", null, TlpLevel.Clear), 0);
+        await BriefAsync(await articles.CreateAsync("Halo Keep breach at a partner", "Vendor", null, TlpLevel.Red), 0);
+        await NewItemsAsync("Halo Router advisory", "Halo Quiet patch out");
+
+        var rows = (await stack.OverviewAsync()).Rows.ToDictionary(r => r.Product.Name, r => r.Now);
+        (rows["Halo Router"].BriefedToday, rows["Halo Router"].NotWrittenUp).Should().Be((true, false), "an article on today's brief names it");
+        rows["Halo Keep"].BriefedToday.Should().BeFalse("its only article on today's brief is above the team edition's ceiling");
+        (rows["Halo Quiet"].BriefedToday, rows["Halo Quiet"].NotWrittenUp).Should().Be((false, true), "triage names it and no article does");
+        (rows["Halo Idle"].BriefedToday, rows["Halo Idle"].NotWrittenUp).Should().Be((false, false), "nothing is happening to it");
+
+        _db.User.Roles = new HashSet<AppRole> { AppRole.ActionOwner };
+        (await stack.OverviewAsync()).Rows.Should().OnlyContain(r => !r.Now.NotWrittenUp, "the triage count, and what it says, is only for those who triage");
+    }
+
+    [Fact]
     public async Task RightNow_NeverNamesACve_ThatComesOnlyFromAnArticleAboveTheTeamEditionsCeiling()
     {
         _db.User.Roles = new HashSet<AppRole> { AppRole.Analyst, AppRole.Admin };   // an administrator moves the ceiling
@@ -465,6 +489,36 @@ public class StackPageTests(TideApp app) : IClassFixture<TideApp>
         var theirs = await After(owner, p => p.SetWords("nowcast"));
         theirs.Should().Contain("CVE-2026-4141").And.Contain("1 CVE above TLP:AMBER&#x2B;STRICT").And.NotContain("CVE-2026-4666");
         theirs.Should().NotContain("in triage", "triage is the analysts': its count isn't shown to anyone else").And.NotContain("href=\"triage");
+    }
+
+    [Fact]
+    public async Task AProductWithNoTeam_ShowsANoTeamFlag_AndRightNowSaysBriefedToday()
+    {
+        await using (var scope = ComponentHarness.SignedIn(app, ComponentHarness.SignIn.Analyst))
+        {
+            var sp = scope.ServiceProvider;
+            var today = sp.GetRequiredService<Tide.Application.Org.OrgClock>().Today;
+            var team = await sp.GetRequiredService<TeamService>().AddAsync("Flagged Owners", null, null);
+            var stack = sp.GetRequiredService<StackService>();
+            await stack.SaveAsync(new StackForm { Name = "Flagpole Orphan", CheckedOn = today });
+            await stack.SaveAsync(new StackForm { Name = "Flagpole Owned", TeamId = team, CheckedOn = today });
+            var article = await sp.GetRequiredService<ArticleService>().CreateAsync("Flagpole Owned flaw exploited", "Vendor", null, TlpLevel.Clear);
+            await using var db = await sp.GetRequiredService<Tide.Application.Abstractions.IAppDbContextFactory>().CreateAsync();
+            var brief = await db.Briefs.FirstOrDefaultAsync(b => b.BriefDate == today);
+            if (brief is null) db.Briefs.Add(brief = new Brief { BriefDate = today, AnalystId = "a", AnalystName = "A" });
+            db.BriefItems.Add(new BriefItem { BriefId = brief.Id, ArticleId = article, SortOrder = 95 });
+            await db.SaveChangesAsync();
+        }
+
+        await using var page = await ComponentHarness.RenderAsync<StackPage>(app, "/stack");
+        var html = await After(page, p => p.SetWords("flagpole"));
+        var orphan = html[html.IndexOf(">Flagpole Orphan</a>", StringComparison.Ordinal)..];
+        orphan = orphan[..orphan.IndexOf("</tr>", StringComparison.Ordinal)];
+        orphan.Should().Contain("<span class=\"tide-badge tide-badge-neutral tide-badge-off\">No team</span>", "a product no team owns says so as a flag, as the No owning team filter does")
+            .And.NotContain("<td>—</td>");
+        var owned = html[html.IndexOf(">Flagpole Owned</a>", StringComparison.Ordinal)..];
+        owned = owned[..owned.IndexOf("</tr>", StringComparison.Ordinal)];
+        owned.Should().Contain("<td data-label=\"Team\">Flagged Owners</td>").And.Contain("briefed today").And.NotContain("No team");
     }
 
     // An article's open "we run" card shows a colleague's tag and untag: they're heard on the article's tags topic.

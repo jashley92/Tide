@@ -2,11 +2,14 @@
 @page "/library/{Tab}"
 @attribute [Authorize(Policy = Policies.ReadActions)]
 @implements IDisposable
+@using Microsoft.AspNetCore.Components.Sections
 @inject ICurrentUser CurrentUser
 @inject SavedQueryService SavedSvc
 @inject OutreachTemplateService TemplateSvc
 @inject PlaybookService PlaybookSvc
 @inject CardRuleService RuleSvc
+@inject LibrarySearch Search
+@inject NavigationManager Nav
 @inject ChangeFeed Feed
 @inject ChangeOrigin Origin
 @inject ToastService Toasts
@@ -15,15 +18,19 @@
    tab each (LibraryTabs), each tab counting its entries (those in use: not retired, not turned off). A tab is an
    address of its own (library/queries), so its page and selected entry (?page=, ?row=) are its alone and a link to
    another tab carries neither. Each tab asks for the permission its page asked when it was a page of its own: someone
-   without it gets neither the tab nor what's in it. The pages' old addresses lead here (LibraryMoved). *@
+   without it gets neither the tab nor what's in it. The pages' old addresses lead here (LibraryMoved).
+   One header: the Library's name, a line about the open tab, and the tab's own New button (LibraryPage.HeadSection).
+   One search, on the tab row, through every tab the person may open (LibrarySearch): its words are in the address
+   (?q=), each tab's link keeps them, each tab counts what matches, and the open tab lists only that. *@
 
 <PageTitle>Library · TIDE</PageTitle>
 
 <div class="tide-page-head">
     <div>
         <h1>Library</h1>
-        <div class="tide-sub">What the team keeps to use again on actions: hunt queries, outreach emails, playbooks, and the rules that mark the board.</div>
+        <div class="tide-sub">@(_tab?.About ?? "What the team keeps to reuse on actions.")</div>
     </div>
+    <SectionOutlet SectionName="@LibraryHead.Section" />
 </div>
 
 @if (_tab is null)
@@ -34,13 +41,20 @@
 }
 else
 {
-    <TabBar Items="Items" Active="@_tab.Key" Label="Library" />
+    <div class="tide-library-tabrow">
+        <TabBar Items="Items" Active="@_tab.Key" Label="Library" />
+        <form class="tide-library-find" role="search" @onsubmit:preventDefault="true">
+            <input id="library-find" type="search" class="form-control form-control-sm" maxlength="100" autocomplete="off"
+                   placeholder="Search the whole library" aria-label="Search the whole library"
+                   value="@_text" @oninput="e => Find(e.Value as string)" />
+        </form>
+    </div>
     @switch (_tab.Key)
     {
-        case LibraryTabs.Queries: <SavedQueriesPage OnChanged="() => Count(LibraryTabs.Queries)" /> break;
-        case LibraryTabs.Templates: <OutreachTemplatesPage OnChanged="() => Count(LibraryTabs.Templates)" /> break;
-        case LibraryTabs.Playbooks: <PlaybooksPage OnChanged="() => Count(LibraryTabs.Playbooks)" /> break;
-        default: <BoardRulesPage /> break;
+        case LibraryTabs.Queries: <SavedQueriesPage Words="@Q" OnChanged="() => Changed(LibraryTabs.Queries)" /> break;
+        case LibraryTabs.Templates: <OutreachTemplatesPage Words="@Q" OnChanged="() => Changed(LibraryTabs.Templates)" /> break;
+        case LibraryTabs.Playbooks: <PlaybooksPage Words="@Q" OnChanged="() => Changed(LibraryTabs.Playbooks)" /> break;
+        default: <BoardRulesPage Words="@Q" /> break;
     }
 }
 
@@ -48,13 +62,21 @@ else
     /// <summary>The tab's key (library/playbooks). None, or one that isn't a tab this person has, shows their first.</summary>
     [Parameter] public string? Tab { get; set; }
 
+    /// <summary>The search's words: every tab is searched for them, and the open one lists what matches.</summary>
+    [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
+
     private IReadOnlyList<LibraryTab> _tabs = [];
     private LibraryTab? _tab;
     private readonly Dictionary<string, int> _counts = [];
+    private Dictionary<string, int>? _found;
+    private string? _text, _searched, _said;
     private LiveChanges? _live;
 
+    // Each tab with its count: what it holds, or, while there are words, what of it matches. Its link keeps the words.
     private IReadOnlyList<TabBarItem> Items =>
-        [.. _tabs.Select(t => new TabBarItem(t.Label, t.Href, t.Icon, t.Key, _counts.TryGetValue(t.Key, out var n) ? n : null))];
+        [.. _tabs.Select(t => new TabBarItem(t.Label, Href(t), t.Icon, t.Key, (_found ?? _counts).TryGetValue(t.Key, out var n) ? n : null))];
+
+    private string Href(LibraryTab t) => string.IsNullOrWhiteSpace(Q) ? t.Href : t.Href + "?q=" + Uri.EscapeDataString(Q.Trim());
 
     protected override async Task OnInitializedAsync()
     {
@@ -63,16 +85,46 @@ else
         _live = new LiveChanges(Feed, Origin, c => LibraryTabs.All.Any(t => t.Topic == c.Topic), InvokeAsync, async heard =>
         {
             foreach (var t in _tabs.Where(t => heard.Any(c => c.Topic == t.Topic))) await Count(t.Key);
+            await Searched();
             StateHasChanged();
         });
         // Each count is its own read (a service opens its own database context), so they run together.
         await Task.WhenAll(_tabs.Select(t => Count(t.Key)));
     }
 
-    protected override void OnParametersSet() =>
+    protected override async Task OnParametersSetAsync()
+    {
         _tab = _tabs.FirstOrDefault(t => string.Equals(t.Key, Tab, StringComparison.OrdinalIgnoreCase)) ?? _tabs.FirstOrDefault();
+        // Words from the address (a link, Back, a reload) show in the box; the address said as they're typed leaves the
+        // box alone, so a keystroke isn't undone by the address catching up with an earlier one.
+        if (Q != _said) (_text, _said) = (Q, Q);
+        if (Q != _searched) await Searched();
+    }
 
     public void Dispose() => _live?.Dispose();
+
+    // Typed in the box: the words go in the address in place (the tab's page starts again), and the tabs follow it.
+    private void Find(string? text)
+    {
+        _text = text;
+        _said = string.IsNullOrWhiteSpace(text) ? null : text;
+        Nav.NavigateTo(Nav.GetUriWithQueryParameters(new Dictionary<string, object?> { ["q"] = _said, ["page"] = null, ["row"] = null }), replace: true);
+    }
+
+    // What matches the words in each tab, for its count; none without words.
+    private async Task Searched()
+    {
+        _searched = Q;
+        try { _found = string.IsNullOrWhiteSpace(Q) ? null : (await Search.FindAsync(Q)).ToDictionary(h => h.Tab.Key, h => h.Ids.Count); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
+    // A step on the open tab changed its entries: its count, and what matches the words.
+    private async Task Changed(string key)
+    {
+        await Count(key);
+        if (_found is not null) await Searched();
+    }
 
     // How many entries a tab holds, of those in use: what an action is offered, and the rules that mark the board.
     private async Task Count(string key)
@@ -89,5 +141,6 @@ else
             };
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+
     }
 }

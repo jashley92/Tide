@@ -546,10 +546,10 @@ public class OutreachPageTests(TideApp app) : IClassFixture<TideApp>
         await using (var r = await RenderAsync<OutreachTemplatesPage>(app, "/library/templates?row=" + asked))
         {
             var html = await r.Html();
-            html.Should().Contain("<h2>Outreach templates</h2>").And.Contain("Ask the PSIRT " + tag).And.Contain("For the vendor")
+            html.Should().NotContain("<h2>Outreach templates</h2>").And.Contain("Ask the PSIRT " + tag).And.Contain("For the vendor")
                 .And.Contain("Filled up to TLP:GREEN, always to psirt@vendor.example.").And.Contain("Not used yet").And.Contain("Saved by Tester, ")
-                .And.Contain("New template</button>").And.Contain($"aria-label=\"Edit Ask the PSIRT {tag}\"").And.Contain($"aria-label=\"Retire Ask the PSIRT {tag}\"")
-                .And.Contain($"aria-label=\"Delete Ask the PSIRT {tag}\"").And.Contain("data-copy-done=\"Copied.\"").And.NotContain("style=");
+                .And.Contain($"aria-label=\"Edit Ask the PSIRT {tag}\"").And.Contain("aria-haspopup=\"menu\"")
+                .And.Contain("data-copy-done=\"Copied.\"").And.NotContain("style=");
             html.Should().NotContain("<h1", "the Library page has the title");
 
             await r.Click(p => { p.New(); return Task.CompletedTask; });

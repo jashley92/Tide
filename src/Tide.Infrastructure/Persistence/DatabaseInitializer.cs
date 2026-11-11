@@ -236,21 +236,24 @@ public sealed class DatabaseInitializer(
                 TeamId = vulnerability.Id, ArticleId = vpn.Id, DueDate = clock.Days.Next(clock.Today), Status = ActionStatus.InProgress,
             });
 
-        // Intake: a paused sample source with a few items (one repeating another under a new headline, one about a CVE
+        // Intake: two paused sample sources with a few items (one repeating another under a new headline, one about a CVE
         // already briefed), a story, and made-up CVE context, so triage and enrichment have something to show offline.
+        // The repeat comes from a second outlet's feed, as it would: two feeds telling one event is what triage offers as
+        // one group, so the pair can be attached to the article that covers it in one step.
         var feed = new Source { Name = "Sample security news", Url = "https://example.com/feed.xml", Enabled = false, Reliability = SourceReliability.B };
-        db.Sources.Add(feed);
+        var wire = new Source { Name = "Sample news wire", Url = "https://example.org/feed.xml", Enabled = false, Reliability = SourceReliability.B };
+        db.Sources.AddRange(feed, wire);
         var now = DateTimeOffset.UtcNow;
-        FeedItem Item(string title, string url, string excerpt, int hoursAgo, string? cves = null) => new()
+        FeedItem Item(string title, string url, string excerpt, int hoursAgo, string? cves = null, Source? from = null) => new()
         {
-            SourceId = feed.Id, Title = title, Url = url, UrlHash = Application.Intake.UrlCanonicalizer.Hash(url),
+            SourceId = (from ?? feed).Id, Title = title, Url = url, UrlHash = Application.Intake.UrlCanonicalizer.Hash(url),
             TitleKey = Application.Intake.TitleMatch.Key(title), Excerpt = excerpt, Cves = cves,
             PublishedAtUtc = now.AddHours(-hoursAgo), FetchedAtUtc = now.AddHours(-hoursAgo + 1),
         };
         var first = Item("Ransomware gang exploits edge VPN zero-day against manufacturers", "https://example.com/news/vpn-ransomware",
             "Researchers tie a ransomware affiliate to exploitation of CVE-2026-0001 in remote-access gateways.", 3, "CVE-2026-0001");
         var again = Item("Manufacturers hit as ransomware gang exploits edge VPN zero-day", "https://example.org/story/edge-vpn-ransomware",
-            "The same campaign, reported by a second outlet.", 2);
+            "The same campaign, reported by a second outlet.", 2, from: wire);
         again.SimilarToId = first.Id;
         db.FeedItems.AddRange(first, again,
             Item("Browser vendor ships fix for actively exploited type confusion bug", "https://example.com/news/browser-fix",

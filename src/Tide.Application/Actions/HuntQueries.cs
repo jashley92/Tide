@@ -93,6 +93,9 @@ public static class QueryDialects
 
     public static readonly IReadOnlyList<IQueryDialect> All = [new Xql(), new Kql(), new Fql()];
 
+    /// <summary>A language's short name, as a control or a list's row says it ("XQL", "KQL", "Falcon").</summary>
+    public static string ShortName(string key) => key == "fql" ? "Falcon" : key.ToUpperInvariant();
+
     public static IQueryDialect? Find(string? key) => All.FirstOrDefault(d => string.Equals(d.Key, key, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>A value as a double-quoted string literal: backslashes and quotes escaped, line breaks removed.</summary>
@@ -108,15 +111,15 @@ public static class QueryDialects
 
         public IReadOnlyDictionary<HuntValueKind, string> Defaults { get; } = new Dictionary<HuntValueKind, string>
         {
-            [HuntValueKind.Ipv4] = "dataset = xdr_data\n| filter action_remote_ip in ({{values}}) or action_local_ip in ({{values}})\n| fields _time, agent_hostname, actor_process_image_name, action_local_ip, action_remote_ip, action_remote_port",
-            [HuntValueKind.Ipv6] = "dataset = xdr_data\n| filter action_remote_ipv6 in ({{values}}) or action_local_ipv6 in ({{values}})\n| fields _time, agent_hostname, actor_process_image_name, action_local_ipv6, action_remote_ipv6, action_remote_port",
-            [HuntValueKind.Domain] = "dataset = xdr_data\n| filter dns_query_name in ({{values}}) or action_external_hostname in ({{values}})\n| fields _time, agent_hostname, actor_process_image_name, dns_query_name, action_external_hostname",
-            [HuntValueKind.Url] = "dataset = xdr_data\n| filter action_url in ({{values}})\n| fields _time, agent_hostname, actor_process_image_name, action_url",
-            [HuntValueKind.Md5] = "dataset = xdr_data\n| filter action_file_md5 in ({{values}}) or actor_process_image_md5 in ({{values}})\n| fields _time, agent_hostname, action_file_name, action_file_path, action_file_md5",
-            [HuntValueKind.Sha256] = "dataset = xdr_data\n| filter action_file_sha256 in ({{values}}) or actor_process_image_sha256 in ({{values}})\n| fields _time, agent_hostname, action_file_name, action_file_path, action_file_sha256",
-            [HuntValueKind.FileName] = "dataset = xdr_data\n| filter action_file_name in ({{values}}) or actor_process_image_name in ({{values}})\n| fields _time, agent_hostname, action_file_name, action_file_path",
-            [HuntValueKind.EmailAddress] = "dataset = xdr_data\n| filter action_email_sender in ({{values}}) or action_email_recipient in ({{values}})\n| fields _time, action_email_sender, action_email_recipient, action_email_subject",
-            [HuntValueKind.Host] = "dataset = xdr_data\n| filter agent_hostname in ({{values}})\n| fields _time, agent_hostname, event_type, actor_process_image_name",
+            [HuntValueKind.Ipv4] = "config timeframe = {{days}}d\n| dataset = xdr_data\n| filter action_remote_ip in ({{values}}) or action_local_ip in ({{values}})\n| fields _time, agent_hostname, actor_process_image_name, action_local_ip, action_remote_ip, action_remote_port",
+            [HuntValueKind.Ipv6] = "config timeframe = {{days}}d\n| dataset = xdr_data\n| filter action_remote_ipv6 in ({{values}}) or action_local_ipv6 in ({{values}})\n| fields _time, agent_hostname, actor_process_image_name, action_local_ipv6, action_remote_ipv6, action_remote_port",
+            [HuntValueKind.Domain] = "config timeframe = {{days}}d\n| dataset = xdr_data\n| filter dns_query_name in ({{values}}) or action_external_hostname in ({{values}})\n| fields _time, agent_hostname, actor_process_image_name, dns_query_name, action_external_hostname",
+            [HuntValueKind.Url] = "config timeframe = {{days}}d\n| dataset = xdr_data\n| filter action_url in ({{values}})\n| fields _time, agent_hostname, actor_process_image_name, action_url",
+            [HuntValueKind.Md5] = "config timeframe = {{days}}d\n| dataset = xdr_data\n| filter action_file_md5 in ({{values}}) or actor_process_image_md5 in ({{values}})\n| fields _time, agent_hostname, action_file_name, action_file_path, action_file_md5",
+            [HuntValueKind.Sha256] = "config timeframe = {{days}}d\n| dataset = xdr_data\n| filter action_file_sha256 in ({{values}}) or actor_process_image_sha256 in ({{values}})\n| fields _time, agent_hostname, action_file_name, action_file_path, action_file_sha256",
+            [HuntValueKind.FileName] = "config timeframe = {{days}}d\n| dataset = xdr_data\n| filter action_file_name in ({{values}}) or actor_process_image_name in ({{values}})\n| fields _time, agent_hostname, action_file_name, action_file_path",
+            [HuntValueKind.EmailAddress] = "config timeframe = {{days}}d\n| dataset = xdr_data\n| filter action_email_sender in ({{values}}) or action_email_recipient in ({{values}})\n| fields _time, action_email_sender, action_email_recipient, action_email_subject",
+            [HuntValueKind.Host] = "config timeframe = {{days}}d\n| dataset = xdr_data\n| filter agent_hostname in ({{values}})\n| fields _time, agent_hostname, event_type, actor_process_image_name",
         };
     }
 
@@ -155,18 +158,18 @@ public static class QueryDialects
         public string List(IEnumerable<string> values) => string.Join(", ", values.Select(Quote));
 
         private static string Hash(string field) =>
-            $"#event_simpleName=ProcessRollup2\n| in(field={field}, values=[{{{{values}}}}], ignoreCase=true)\n| table([@timestamp, ComputerName, FileName, {field}])";
+            $"setTimeInterval(start={{{{days}}}}d)\n| #event_simpleName=ProcessRollup2\n| in(field={field}, values=[{{{{values}}}}], ignoreCase=true)\n| table([@timestamp, ComputerName, FileName, {field}])";
 
         public IReadOnlyDictionary<HuntValueKind, string> Defaults { get; } = new Dictionary<HuntValueKind, string>
         {
-            [HuntValueKind.Ipv4] = "#event_simpleName=NetworkConnectIP4\n| in(field=RemoteAddressIP4, values=[{{values}}])\n| table([@timestamp, ComputerName, RemoteAddressIP4, RemotePort, ContextBaseFileName])",
-            [HuntValueKind.Ipv6] = "#event_simpleName=NetworkConnectIP6\n| in(field=RemoteAddressIP6, values=[{{values}}], ignoreCase=true)\n| table([@timestamp, ComputerName, RemoteAddressIP6, RemotePort, ContextBaseFileName])",
-            [HuntValueKind.Domain] = "#event_simpleName=DnsRequest\n| in(field=DomainName, values=[{{values}}], ignoreCase=true)\n| table([@timestamp, ComputerName, DomainName, ContextBaseFileName])",
+            [HuntValueKind.Ipv4] = "setTimeInterval(start={{days}}d)\n| #event_simpleName=NetworkConnectIP4\n| in(field=RemoteAddressIP4, values=[{{values}}])\n| table([@timestamp, ComputerName, RemoteAddressIP4, RemotePort, ContextBaseFileName])",
+            [HuntValueKind.Ipv6] = "setTimeInterval(start={{days}}d)\n| #event_simpleName=NetworkConnectIP6\n| in(field=RemoteAddressIP6, values=[{{values}}], ignoreCase=true)\n| table([@timestamp, ComputerName, RemoteAddressIP6, RemotePort, ContextBaseFileName])",
+            [HuntValueKind.Domain] = "setTimeInterval(start={{days}}d)\n| #event_simpleName=DnsRequest\n| in(field=DomainName, values=[{{values}}], ignoreCase=true)\n| table([@timestamp, ComputerName, DomainName, ContextBaseFileName])",
             [HuntValueKind.Md5] = Hash("MD5HashData"),
             [HuntValueKind.Sha1] = Hash("SHA1HashData"),
             [HuntValueKind.Sha256] = Hash("SHA256HashData"),
-            [HuntValueKind.FileName] = "#event_simpleName=ProcessRollup2\n| in(field=FileName, values=[{{values}}], ignoreCase=true)\n| table([@timestamp, ComputerName, FileName, CommandLine])",
-            [HuntValueKind.Host] = "in(field=ComputerName, values=[{{values}}], ignoreCase=true)\n| groupBy([ComputerName, #event_simpleName])",
+            [HuntValueKind.FileName] = "setTimeInterval(start={{days}}d)\n| #event_simpleName=ProcessRollup2\n| in(field=FileName, values=[{{values}}], ignoreCase=true)\n| table([@timestamp, ComputerName, FileName, CommandLine])",
+            [HuntValueKind.Host] = "setTimeInterval(start={{days}}d)\n| in(field=ComputerName, values=[{{values}}], ignoreCase=true)\n| groupBy([ComputerName, #event_simpleName])",
         };
     }
 }
@@ -219,9 +222,9 @@ public sealed partial class HuntQueryBuilder(IAppDbContextFactory dbs, ICurrentU
     {
         var byKind = ByKind(indicators);
         var sb = new StringBuilder();
-        // The window is claimed only when every block sets it ({{days}} in its template): a dialect whose queries can't
-        // (Falcon's runs over the range picked in the console) says to pick it, so a clean result isn't recorded as having
-        // searched days it didn't (WindowOf reads the claim back).
+        // The window is claimed only when every block sets it ({{days}} in its template, as every built-in one does, each
+        // in its own language's syntax): a template saved without it says to pick the range in the console, so a clean
+        // result isn't recorded as having searched days it didn't (WindowOf reads the claim back).
         var windowed = true;
         var blocks = 0;
         foreach (var (kind, values) in byKind)

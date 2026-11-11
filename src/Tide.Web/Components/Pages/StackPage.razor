@@ -50,35 +50,50 @@
             </div>
         </div>
     }
-    <div class="tide-card">
-        @if (_list is null)
-        {
-            <LoadingBlock />
-        }
-        else if (_list.Count == 0)
-        {
+    @if (_list is null)
+    {
+        <LoadingBlock />
+    }
+    else if (_list.Count == 0)
+    {
+        <div class="tide-card">
             <EmptyState Icon="bi-hdd-stack" Title="Nothing on Our stack yet.">Add the products you run, or add one from a triage item ("Add to what we run…").</EmptyState>
-        }
-        else
-        {
-            var shown = Shown;
-            <FilterBar Pills="Pills" Filters="Filters" Active="Narrowed" OnClear="ClearFilters" OnChanged="Refiltered"
-                       Count="@TableView.Count(1, shown.Count, shown.Count, _list.Count, Narrowed, "product", "products")">
-                <Search>
-                    <input id="stack-q" type="search" class="tide-maxw-md form-control form-control-sm" placeholder="Product, other name or version" aria-label="Filter products"
-                           @bind:get="_words" @bind:set="SetWords" @bind:event="oninput" />
-                </Search>
-            </FilterBar>
+        </div>
+    }
+    else
+    {
+        var shown = Shown;
+        @* The filters above the list: the words, a quick filter per reason to look (in + Filter too), a team, and the
+           retired ones; the count says the order. *@
+        <FilterBar Pills="Pills" Filters="Filters" Active="Narrowed" OnClear="ClearFilters" OnChanged="Refiltered"
+                   Count="@($"{TableView.Count(1, shown.Count, shown.Count, _list.Count, Narrowed, "product", "products")} · most pressing first")">
+            <Search>
+                <input id="stack-q" type="search" class="tide-maxw-md form-control form-control-sm" placeholder="Product, other name or version" aria-label="Filter products"
+                       @bind:get="_words" @bind:set="SetWords" @bind:event="oninput" />
+            </Search>
+            <ChildContent>
+                <select id="stack-team" class="form-select form-select-sm tide-stack-team" aria-label="Owning team" @bind:get="_team ?? string.Empty" @bind:set="SetTeam">
+                    <option value="">Any team</option>
+                    @foreach (var t in TeamOptions) { <option value="@t.Value">@t.Label</option> }
+                </select>
+                <div class="form-check mb-0">
+                    <input class="form-check-input" type="checkbox" id="show-retired" checked="@_showRetired" @onchange="ToggleRetired" />
+                    <label class="form-check-label small" for="show-retired">Show retired products</label>
+                </div>
+            </ChildContent>
+        </FilterBar>
+        <div class="tide-card">
             @if (shown.Count == 0)
             {
                 <EmptyState Icon="bi-funnel" Title="No product matches these filters." Compact="true" />
             }
             else
             {
-                <div class="table-responsive">
-                    <table class="tide-table">
+                @* Each row's cells stack on a narrow window (data-label names each), so the list never scrolls sideways. *@
+                <div class="table-responsive tide-stack-list">
+                    <table class="tide-table tide-stack-table">
                         <caption class="visually-hidden">Our stack: products that need a look first</caption>
-                        <thead><tr><th scope="col">Product</th><th scope="col">Right now</th><th scope="col">Versions</th><th scope="col">Team</th><th scope="col">Checked</th>
+                        <thead><tr><th scope="col">Product</th><th scope="col">Versions</th><th scope="col">Team</th><th scope="col">Checked</th><th scope="col">Right now</th>
                             <th scope="col" class="tide-table-num">Articles</th><th scope="col" class="tide-table-num">Open actions</th></tr></thead>
                         <tbody>
                             @foreach (var r in shown)
@@ -87,32 +102,31 @@
                                     <td><a href="@($"stack/{r.Product.Id}")">@r.Product.Name</a>
                                         @if (r.Product.OtherNames is { } o) { <div class="small tide-muted">also @o</div> }
                                         @if (r.Product.IsRetired) { <Badge Tone="BadgeTone.Neutral">Retired</Badge> }</td>
-                                    <td class="tide-stack-now">
+                                    <td data-label="Versions">@(r.Product.Versions ?? "—")</td>
+                                    <td data-label="Team">@if (r.TeamName is { } owner) { @owner } else if (r.NoTeam) { <Badge Tone="BadgeTone.Neutral" Class="tide-badge-off">No team</Badge> } else { <text>—</text> }</td>
+                                    <td data-label="Checked">@if (r.Product.CheckedOn is { } on) { @Ui.ShortDay(on, Clock.Today) }
+                                        @if (r.CheckOld) { <Badge Tone="BadgeTone.Warn" Icon="bi-clock-history">@(r.Product.CheckedOn is null ? "Never checked" : $"Over {StackService.CheckOldAfterDays} days ago")</Badge> }
+                                        else if (r.Product.CheckedOn is null) { <text>—</text> }</td>
+                                    <td class="tide-stack-now" data-label="Right now">
                                         @foreach (var c in r.Now.Cves.Take(CvesShown)) { <CveChip CveId="@c.Id" Record="c.Record" /> }
                                         @if (r.Now.Cves.Count > CvesShown) { <a class="small" href="@($"stack/{r.Product.Id}")">+@(r.Now.Cves.Count - CvesShown) more</a> }
                                         @if (r.Now.CvesAbove > 0) { <div class="small tide-muted">@AboveLine(r.Now.CvesAbove, "CVE", _ceiling)</div> }
-                                        @if (r.Now.TriageItems is > 0 and var n) { <div class="small"><a href="triage?named=true">@n new in triage</a></div> }
-                                        @if (!r.Now.Any) { <span class="small tide-muted">Nothing new</span> }
+                                        @if (r.Now.TriageItems is > 0 || r.Now.BriefedToday)
+                                        {
+                                            <div class="small">@if (r.Now.TriageItems is > 0 and var n) { <a href="triage?named=true">@n new in triage</a> }@Said(r.Now)</div>
+                                        }
+                                        @if (!r.Now.Any && !r.Now.BriefedToday) { <span class="small tide-muted">Nothing new</span> }
                                     </td>
-                                    <td>@(r.Product.Versions ?? "—")</td>
-                                    <td>@(r.TeamName ?? "—")</td>
-                                    <td>@if (r.Product.CheckedOn is { } on) { @Ui.ShortDay(on, Clock.Today) }
-                                        @if (r.CheckOld) { <Badge Tone="BadgeTone.Warn" Icon="bi-clock-history">@(r.Product.CheckedOn is null ? "Never checked" : $"Over {StackService.CheckOldAfterDays} days ago")</Badge> }
-                                        else if (r.Product.CheckedOn is null) { <text>—</text> }</td>
-                                    <td class="tide-table-num">@r.Articles</td>
-                                    <td class="tide-table-num">@r.OpenActions</td>
+                                    <td class="tide-table-num" data-label="Articles">@r.Articles</td>
+                                    <td class="tide-table-num" data-label="Open actions">@r.OpenActions</td>
                                 </tr>
                             }
                         </tbody>
                     </table>
                 </div>
             }
-            <div class="form-check mt-2">
-                <input class="form-check-input" type="checkbox" id="show-retired" checked="@_showRetired" @onchange="ToggleRetired" />
-                <label class="form-check-label small" for="show-retired">Show retired products</label>
-            </div>
-        }
-    </div>
+        </div>
+    }
 }
 else if (_detail is null)
 {
@@ -241,19 +255,20 @@ else
 
     private bool Narrowed => _words.Trim().Length > 0 || _team is not null || _quick.Count > 0;
 
-    // The bar's pills, each with how many products it would keep, and its filters: a switch behind each pill, and the team.
+    // The bar's pills, each with how many products it would keep, and its filters: a switch behind each pill (offered in
+    // + Filter too), and the team, chosen from its own list beside them.
     private IReadOnlyList<FilterPill> Pills =>
         [.. Quick.Select(q => new FilterPill(q.Key, $"{q.Label} ({_list!.Count(q.Matches)})", q.Key, FilterValues.Of(true)) { Title = q.Title })];
 
     private IReadOnlyList<FilterDef> Filters =>
     [
-        .. Quick.Select(q => new FilterDef(q.Key, q.Label, FilterKind.Single, v => SetQuick(q.Key, v.Count > 0)) { InMenu = false, Values = FilterValues.Of(_quick.Contains(q.Key)) }),
-        new("team", "Owning team", FilterKind.Single, v => SetTeam(FilterValues.First(v)))
-        {
-            Values = FilterValues.Of(_team),
-            Options = [.. _list!.Where(r => r.Product.TeamId is not null).Select(r => new FilterOption(r.Product.TeamId!.Value.ToString(), r.TeamName ?? "")).Distinct().OrderBy(o => o.Label, StringComparer.OrdinalIgnoreCase)],
-        },
+        .. Quick.Select(q => new FilterDef(q.Key, q.Label, FilterKind.Single, v => SetQuick(q.Key, v.Count > 0)) { Values = FilterValues.Of(_quick.Contains(q.Key)) }),
+        new("team", "Owning team", FilterKind.Single, v => SetTeam(FilterValues.First(v))) { InMenu = false, Values = FilterValues.Of(_team), Options = TeamOptions },
     ];
+
+    // The teams that own a product on the list, by name.
+    private IReadOnlyList<FilterOption> TeamOptions =>
+        [.. (_list ?? []).Where(r => r.Product.TeamId is not null).Select(r => new FilterOption(r.Product.TeamId!.Value.ToString(), r.TeamName ?? "")).Distinct().OrderBy(o => o.Label, StringComparer.OrdinalIgnoreCase)];
 
     /// <summary>The rows the filters leave, in the list's order.</summary>
     internal IReadOnlyList<StackRow> Shown
@@ -302,6 +317,13 @@ else
     /// <summary>"2 articles above TLP:AMBER": what the page counts but doesn't name.</summary>
     internal static string AboveLine(int count, string noun, TlpLevel ceiling, string via = "") =>
         $"{count} {noun}{(count == 1 ? "" : "s")} {via}above {Tlp.Label(ceiling)}";
+
+    // After the triage count: whether it's on today's brief, or the news about it isn't written up yet.
+    private static string Said(StackNow now)
+    {
+        var said = now.BriefedToday ? "briefed today" : now.NotWrittenUp ? "not written up" : "";
+        return said.Length == 0 ? "" : now.TriageItems > 0 ? " · " + said : said;
+    }
 
     // A colleague added, edited or retired a product: re-read in place. The edit form keeps what's typed in it, and says
     // who saved it meanwhile (saving it then is refused by the product's edit version); one not touched takes their change.

@@ -121,7 +121,7 @@ public class TriageGroupTests(TideApp app) : IClassFixture<TideApp>
                     await t.OnTriageKey("prev");
                 });
                 var html = await r.Html();
-                html.Should().NotContain("tide-triage-group").And.NotContain("tide-triage-member");
+                html.Should().NotContain("Looks like one event: 3 reports", "the split group is gone (the samples' own pair of reports still groups)");
                 Line(html, "tide-triage-row selected").Should().Contain("Quorvexb links $6.3 billion theft", "the newest report is selected");
                 html.Should().Contain("Quorvexb hit by $6.3 billion hack").And.Contain("Quorvexb probes $5.8 billion theft");
             }

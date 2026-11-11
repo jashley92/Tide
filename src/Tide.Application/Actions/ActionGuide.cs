@@ -265,9 +265,11 @@ public static class ActionGuide
     /// </summary>
     public static IReadOnlyList<ActionTool> Tools(ActionKind kind, bool timeline, int hunts, int emails)
     {
+        // A sweep's or hunt's query is its work, so its tab comes first.
         var tools = new List<ActionTool> { ActionTool.Checklist };
         if (timeline) tools.Add(ActionTool.Timeline);
-        if (hunts > 0 || IsHunt(kind)) tools.Add(ActionTool.Hunt);
+        if (IsHunt(kind)) tools.Insert(0, ActionTool.Hunt);
+        else if (hunts > 0) tools.Add(ActionTool.Hunt);
         if (emails > 0 || kind == ActionKind.Outreach) tools.Add(ActionTool.Outreach);
         return tools;
     }

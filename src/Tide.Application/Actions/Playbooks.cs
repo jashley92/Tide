@@ -206,6 +206,10 @@ public sealed class CardRuleService(IAppDbContextFactory dbs, ICurrentUser user)
             .OrderBy(r => r.SortOrder).ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase).ThenBy(r => r.Id).ToList();
     }
 
+    /// <summary>Whether <paramref name="rule"/> matches every word typed, in its label or its colour, ignoring case.</summary>
+    public static bool Matches(ActionCardRule rule, IReadOnlyList<string> words) => words.All(w =>
+        rule.Name.Contains(w, StringComparison.OrdinalIgnoreCase) || rule.Colour.ToString().Contains(w, StringComparison.OrdinalIgnoreCase));
+
     /// <summary>Adds (a new id) or changes a rule from <paramref name="form"/>, a detached copy. Returns its id.</summary>
     public async Task<Guid> SaveAsync(ActionCardRule form, CancellationToken ct = default)
     {

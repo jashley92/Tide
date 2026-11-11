@@ -13,18 +13,10 @@
 
 <ConfirmDialog @ref="_confirm" />
 
-<div class="tide-page-head tide-library-head">
-    <div>
-        <h2>Playbooks</h2>
-        <div class="tide-sub">Checklists kept for the team, for each kind of action or for any. Choose one when you raise an
-            action, or apply one from its checklist: the steps are copied, so editing a playbook doesn't change actions
-            already started from it. Changes are audited.</div>
-    </div>
-    @if (_canWrite && _form is null)
-    {
-        <button class="btn btn-primary" @onclick="New"><span class="bi bi-plus-lg" aria-hidden="true"></span> New playbook</button>
-    }
-</div>
+@if (_canWrite && _form is null)
+{
+    <LibraryHead><button class="btn btn-primary" @onclick="New"><span class="bi bi-plus-lg" aria-hidden="true"></span> New playbook</button></LibraryHead>
+}
 
 @if (_form is { Id: null })
 {
@@ -43,16 +35,11 @@ else if (EditingAway)
     </section>
 }
 
-@* The filter bar: the words, a pill per kind of action (one at a time: those offered on that kind, its own and those for
-   any), and Show retired as the switch it is on the other libraries. *@
-<FilterBar Pills="Pills" Filters="Defs" Active="@(_kind is not null || !string.IsNullOrWhiteSpace(_words))" OnChanged="Refilter" OnClear="ClearFilters"
-           PillsLabel="Kinds of action">
-    <Search>
-        <input id="pb-find" type="search" class="tide-maxw-md form-control form-control-sm" placeholder="Name, description or step" aria-label="Find playbooks"
-               @bind:get="_words" @bind:set="SetWords" @bind:event="oninput" />
-    </Search>
+@* The filter bar: a pill per kind of action (one at a time: those offered on that kind, its own and those for any), and
+   Show retired as the checkbox it is on the other libraries. The words are the Library's search's. *@
+<FilterBar Pills="Pills" Filters="Defs" Active="@(_kind is not null)" OnChanged="Refilter" OnClear="ClearFilters" PillsLabel="Kinds of action">
     <ChildContent>
-        <div class="form-check form-switch mb-0">
+        <div class="form-check mb-0">
             <input class="form-check-input" type="checkbox" id="pb-retired" checked="@_showRetired" @onchange="ToggleRetired" />
             <label class="form-check-label small" for="pb-retired">Show retired</label>
         </div>
@@ -90,34 +77,31 @@ else
                 }
                 else
                 {
-                    <div class="d-flex gap-2 align-items-center flex-wrap">
-                        <h3 class="tide-subhead my-0" id="@(id + "-h")">@p.Name</h3>
-                        <Badge>@KindName(p)</Badge>
-                        @if (p.IsRetired) { <Badge>Retired</Badge> }
-                        <span class="ms-auto small tide-muted">@Used(r.Actions, "on", "action")</span>
+                    <div class="tide-library-entry-head">
+                        <div class="tide-library-entry-title">
+                            <h3 class="tide-subhead my-0" id="@(id + "-h")">@p.Name</h3>
+                            <div class="small tide-muted"><Badge>@KindName(p)</Badge> @if (p.IsRetired) { <Badge>Retired</Badge> } @Provenance(p) · <span>@Used(r.Actions, "on", "action")</span></div>
+                        </div>
+                        <div class="tide-library-entry-tools">
+                            @if (_canWrite)
+                            {
+                                @if (CanMove(p))
+                                {
+                                    <button class="btn btn-outline-secondary btn-sm" aria-label="Move @p.Name up" disabled="@(_busy || _form is not null || p.Id == _firstOffered)" @onclick="() => Move(p, -1)"><span class="bi bi-arrow-up" aria-hidden="true"></span></button>
+                                    <button class="btn btn-outline-secondary btn-sm" aria-label="Move @p.Name down" disabled="@(_busy || _form is not null || p.Id == _lastOffered)" @onclick="() => Move(p, 1)"><span class="bi bi-arrow-down" aria-hidden="true"></span></button>
+                                }
+                                <button class="btn btn-outline-secondary btn-sm" disabled="@(_form is not null)" aria-label="Edit @p.Name" @onclick="() => Edit(p)"><span class="bi bi-pencil" aria-hidden="true"></span> Edit</button>
+                            }
+                            @if (MoreItems(r) is { Count: > 0 } more)
+                            {
+                                <MenuButton Label="More" MenuLabel="@($"More for {p.Name}")" Items="more" ButtonClass="btn btn-outline-secondary btn-sm" Disabled="_busy" />
+                            }
+                        </div>
                     </div>
                     @if (p.Description is { } about) { <p class="small mb-1">@about</p> }
-                    <div class="small tide-muted mb-1">@Provenance(p)</div>
-                    <ol class="tide-playbook-preview small mb-2">
+                    <ol class="tide-playbook-preview small mb-0">
                         @foreach (var s in p.Steps) { <li>@s.Text</li> }
                     </ol>
-                    <div class="d-flex gap-2 align-items-center flex-wrap">
-                        @if (_canWrite)
-                        {
-                            @if (CanMove(p))
-                            {
-                                <button class="btn btn-outline-secondary btn-sm" aria-label="Move @p.Name up" disabled="@(_busy || _form is not null || p.Id == _firstOffered)" @onclick="() => Move(p, -1)"><span class="bi bi-arrow-up" aria-hidden="true"></span></button>
-                                <button class="btn btn-outline-secondary btn-sm" aria-label="Move @p.Name down" disabled="@(_busy || _form is not null || p.Id == _lastOffered)" @onclick="() => Move(p, 1)"><span class="bi bi-arrow-down" aria-hidden="true"></span></button>
-                            }
-                            <button class="btn btn-outline-secondary btn-sm" disabled="@(_form is not null)" aria-label="Edit @p.Name" @onclick="() => Edit(p)"><span class="bi bi-pencil" aria-hidden="true"></span> Edit</button>
-                            <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" aria-label="@((p.IsRetired ? "Restore " : "Retire ") + p.Name)" @onclick="() => Retire(p, !p.IsRetired)">@(p.IsRetired ? "Restore" : "Retire")</button>
-                        }
-                        @* One an action was started from is kept for that action's history: Retire is the way out. *@
-                        @if (r.Actions == 0 && PlaybookSvc.CanDelete(p))
-                        {
-                            <button class="btn btn-link btn-sm text-danger" disabled="@_busy" aria-label="Delete @p.Name" @onclick="() => Delete(p)">Delete</button>
-                        }
-                    </div>
                 }
             </article>
         </ChildContent>
@@ -250,6 +234,11 @@ else
 
     // Not while a form is open: a move changes the two it swaps, so an edit open on either would be refused as stale.
     internal Task Move(Playbook p, int by) => _form is not null ? Task.CompletedTask : Run(() => PlaybookSvc.MoveAsync(p.Id, by));
+
+    /// <summary>The playbook's More menu: Retire or Restore, and Delete for one no action was started from (that one is
+    /// kept for the action's history: Retire is the way out).</summary>
+    internal IReadOnlyList<MenuButton.Item> MoreItems(PlaybookRow r) =>
+        MoreMenu(r.Playbook.IsRetired, _canWrite, () => Retire(r.Playbook, !r.Playbook.IsRetired), r.Actions == 0 && PlaybookSvc.CanDelete(r.Playbook), () => Delete(r.Playbook));
 
     internal Task Retire(Playbook p, bool retired) => Retiring(p.Name, retired, () => PlaybookSvc.SetRetiredAsync(p.Id, retired));
 
