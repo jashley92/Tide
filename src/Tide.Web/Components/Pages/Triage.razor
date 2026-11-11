@@ -432,10 +432,11 @@ else
         if (i != was) await Follow();
     }
 
-    // The pane shows the newly selected item's kept text, or offers to read it.
+    // The pane shows the newly selected item's kept text, or offers to read it. Hidden (opened by itself on a window too
+    // narrow for it), it reads nothing until it's shown (OnReadingRoom).
     private async Task Follow()
     {
-        if (!_reading) return;
+        if (!PaneShown) return;
         var row = ReadableRow;
         if (row?.Item.Id == _readRow?.Item.Id) return;
         _readRow = row;
@@ -444,6 +445,23 @@ else
         try { await Show(await Reading.KeptAsync(row.Item.Id)); }
         catch (Exception ex) when (ex is ArgumentException or ForbiddenException) { Toasts.Error(UserFacingError.For(ex)); }
     }
+
+    // Whether the window is wide enough for the pane that opened by itself (app.css shows it from 1400px), as triage.js
+    // reports it: null until it has.
+    private bool? _roomForPane;
+
+    /// <summary>triage.js: the window became wide enough for the pane that opened by itself, or too narrow for it.</summary>
+    [JSInvokable]
+    public async Task OnReadingRoom(bool room)
+    {
+        if (_roomForPane == room) return;
+        _roomForPane = room;
+        await Follow();   // shown now: it catches up with the selection
+        StateHasChanged();
+    }
+
+    // The pane is on screen: open, and either chosen (it shows at every width) or with the room to show by itself.
+    private bool PaneShown => _reading && (_readingPref != UserPreferences.ReadingAuto || _roomForPane != false);
 
     /// <summary>V or "Read it here": opens the pane on the selected item and fetches its text when it isn't kept.</summary>
     internal async Task Read(bool again = false)

@@ -60,4 +60,37 @@ public class TriageReadingFetchTests(PullApp app) : IClassFixture<PullApp>
         Fetches().Should().Be(1, "pressing V again and again never fetches the item more than once");
         (await r.Html()).Should().Contain("<aside class=\"tide-card tide-reading\"");
     }
+
+    [Fact]
+    public async Task ThePaneThatOpenedByItself_ReadsNothing_WhileTheWindowIsTooNarrowToShowIt_AndCatchesUpWhenItIs()
+    {
+        var key = Guid.NewGuid().ToString("N");
+        Guid source;
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var feed = new Source { Name = "Narrow feed " + key[..6], Url = $"https://narrow.example/{key}/feed" };
+            var now = DateTimeOffset.UtcNow;
+            db.Add(feed);
+            db.AddRange(Enumerable.Range(0, 3).Select(n => new FeedItem
+            {
+                Source = feed, Title = $"Narrow item {n} {key[..6]}", Url = $"https://narrow.example/{key}/{n}", UrlHash = $"narrow-{key}-{n}",
+                PublishedAtUtc = now.AddMinutes(-n), FetchedAtUtc = now.AddMinutes(-n),
+            }));
+            await db.SaveChangesAsync();
+            source = feed.Id;
+        }
+        var who = new ComponentHarness.SignIn("narrow:" + key, "Narrow tester", "Analyst");
+        await using var r = await ComponentHarness.RenderAsync<Triage>(app, $"/triage?source={source}", @as: who);
+        (await r.HtmlOnce("Narrow item 0")).Should().Contain("reading reading-auto").And.Contain($"<h2 class=\"tide-reading-title\">Narrow item 0 {key[..6]}");
+
+        // Below 1400px the pane is hidden: moving the selection reads nothing for it, so it still names the first item.
+        await r.Click(t => t.OnReadingRoom(false));
+        await r.Click(t => t.OnTriageKey("next"));
+        (await r.Html()).Should().Contain($"<h2 class=\"tide-reading-title\">Narrow item 0 {key[..6]}", "a hidden pane doesn't follow");
+
+        // The window widens: the pane shows, with the selected item's kept text.
+        await r.Click(t => t.OnReadingRoom(true));
+        (await r.Html()).Should().Contain($"<h2 class=\"tide-reading-title\">Narrow item 1 {key[..6]}");
+    }
 }

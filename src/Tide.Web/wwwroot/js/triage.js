@@ -11,7 +11,7 @@
 // is remembered for the person.
 window.tideTriage = (function () {
     const rows = window.tideRows;
-    let started = 0;
+    let started = 0, room = null, tellRoom = null;
 
     // While the promote form is open, only Esc is the page's.
     function held(e) {
@@ -76,6 +76,12 @@ window.tideTriage = (function () {
             return null;
         },
         start: function (dotnetRef) {
+            // Whether the window has room for the pane that opens by itself (app.css shows it from 1400px): .NET reads
+            // nothing for a hidden pane, and catches up when it shows.
+            room = window.matchMedia('(min-width: 1400px)');
+            tellRoom = function () { dotnetRef.invokeMethodAsync('OnReadingRoom', room.matches).catch(function () { }); };
+            room.addEventListener('change', tellRoom);
+            tellRoom();
             started = rows.start(dotnetRef, {
                 row: 'tide-triage-row', method: 'OnTriageKey',
                 keys: { s: 'shortlist', x: 'dismiss', d: 'duplicate', p: 'promote', r: 'restore', o: 'open', v: 'read' },
@@ -84,6 +90,8 @@ window.tideTriage = (function () {
             });
         },
         stop: function () {
+            if (room) room.removeEventListener('change', tellRoom);
+            room = tellRoom = null;
             rows.stop(started);
         }
     };
