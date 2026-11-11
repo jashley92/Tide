@@ -218,7 +218,6 @@ else
                 </Actions>
             </EmptyState>
         </div>
-        @if (AsToday) { @PageCards() }
         @if (AsToday && _canWrite) { <MetricEntry Date="_date" Collapsible="true" MissingChanged="n => _missingNumbers = n" /> }
     }
     else
@@ -240,6 +239,9 @@ else
             </div>
         }
     }
+    @* Today's My actions and Not on a brief yet: drawn here, after either branch, so they're the same cards whether or not
+       the brief is started (Add can start it, and the card keeps focus in its list). *@
+    @if (AsToday && !(_loading && _brief is null)) { @PageCards() }
 }
 
 @if (HasRail)
@@ -964,7 +966,6 @@ else
                     </div>
                 </section>
                 @TeamNoteCard()
-                @if (AsToday) { @PageCards() }
                 <MetricEntry Date="_date" Collapsible="true" MissingChanged="n => _missingNumbers = n" />
             }
             else
@@ -1056,7 +1057,7 @@ else
         <MeetingCard Brief="_brief!" Day="_date" MeetsAt="@MeetsAt" Zone="@ZoneLabel" RotaDay="_rotaDay" Past="_past"
                      CanEdit="@(_canWrite && _brief!.Status != BriefStatus.Sent)" People="_people"
                      @bind-AnalystId="_analystId" @bind-Intro="_intro" @bind-IntroTlp="_introTlp" Meeting="_meeting" Busy="_busy" OnSave="SaveDetails"
-                     OnCancel="CancelDetails" @bind-Open="_meetingOpen" />
+                     OnCancel="CancelDetails" @bind-Open="_meetingOpen" ChangedBy="@_changedBy" OnReload="ReloadTheirs" />
     };
 
     // Today for someone who works actions but can't write articles: their escalated actions and their teams' queue first,

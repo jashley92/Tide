@@ -120,7 +120,12 @@ public class TodayTests(TideApp app) : IClassFixture<TideApp>
         var html = await app.CreateClient().GetStringAsync("/");
 
         var strip = html[At(html, "aria-label=\"Brief progress\"")..At(html, "id=\"running-order-h\"")];
-        strip.Should().MatchRegex(@"\d+ new in the <span class=""text-nowrap"">feed<span class=""tide-badge tide-badge-danger tide-step-flag"">" + expected + " KEV</span>", "the flag held to the last word");
+        strip.Should().MatchRegex(@"\d+ new in the <span class=""text-nowrap"">feed<span class=""tide-step-flag-wide"" aria-hidden=""true""><span class=""tide-badge tide-badge-danger tide-step-flag"">"
+            + expected + " KEV</span>", "the flag held to the last word");
+        // The whole of it, KEV included, in the title and in what the step's link is described by.
+        strip.Should().MatchRegex($@"<a href=""triage"" aria-describedby=""step-triage-detail"">Triage</a>")
+            .And.MatchRegex($@"id=""step-triage-detail"" title=""\d+ new in the feed &#xB7; {expected} on KEV""")
+            .And.Contain($"<span class=\"visually-hidden\"> &#xB7; {expected} on KEV</span>");
 
         // Another day's brief keeps the feed's count, as it always had, without the KEV count: that is today's work.
         var past = WorkingDays.Weekdays.Previous(WorkingDays.Weekdays.Previous(WorkingDays.Weekdays.Previous(WorkingDays.Weekdays.Previous(Today))));
@@ -315,6 +320,10 @@ public class TeamQueueTodayTests(TideApp app) : IClassFixture<TideApp>
             .And.Contain("<div class=\"tide-queue-meta\">Queue Team A · nobody has it</div>");
         queue.Should().Contain(">Take it</button>").And.MatchRegex(@"\d+ yours and \d+ unassigned\.","the other test in this class adds a team the owner is on too")
             .And.Contain("href=\"actions?view=myteams\">My teams</a>").And.Contain("Queue Team A · yours");
+        // A row not yet late says when it's due, by its date.
+        var theirs = queue[At(queue, $"{team}: the owner's")..];
+        theirs[..At(theirs, "tide-queue-meta")].Should().MatchRegex(@">Due (Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z]{2} \d{1,2}</span>")
+            .And.NotContain("On track").And.NotContain("Due soon");
         html.Should().NotContain("aria-label=\"Brief progress\"").And.NotContain("id=\"edition-check-h\"");
     }
 

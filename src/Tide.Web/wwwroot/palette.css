@@ -4,7 +4,10 @@
 
 /* The top bar: the search box with the Go to button beside it, and the shortcuts button by the account menu. */
 .tide-top-find { flex: 1; display: flex; align-items: center; gap: var(--tide-space-2); min-width: 0; max-width: 34rem; }
-.tide-top-end { display: flex; align-items: center; gap: var(--tide-space-2); }
+.tide-top-end { display: flex; flex: none; align-items: center; gap: var(--tide-space-2); }
+/* The team's name, first in the bar: one line, giving way (cut short) before anything else does, so the bar is never
+   wider than the window. */
+.top-row > span:first-child { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .tide-palette-btn { display: inline-flex; align-items: center; gap: var(--tide-space-2); height: 2rem; padding: 0 var(--tide-space-2) 0 var(--tide-space-3);
     border: 1px solid var(--tide-border-strong); border-radius: var(--tide-radius-md); background: var(--tide-surface-2);
@@ -24,7 +27,7 @@
 /* Below 900px the search box is gone and Go to and the Context button are icons, so nothing in the top bar crowds the
    next control. */
 @media (max-width: 899.98px) {
-    .tide-top-find { flex: 0 0 auto; }
+    .tide-top-find { flex: 0 1 auto; }
     .tide-palette-btn { width: 2rem; padding: 0; justify-content: center; }
     .tide-palette-btn-label, .tide-palette-btn .tide-palette-kbd { display: none; }
 }

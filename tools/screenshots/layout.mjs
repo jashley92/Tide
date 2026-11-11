@@ -765,15 +765,42 @@ const colleagueSavesWhileTyping = field => async page => {
 };
 
 /** What's typed in `field` is still there, and the page says a colleague changed it meanwhile. */
-const keptWhatsTyped = field => ({
-  name: `kept what's typed: #${field}`,
-  check: page => page.evaluate(field => {
-    const box = document.getElementById(field), notice = document.querySelector('.tide-changed-elsewhere');
+/** What's typed in `field` is still there, and a "changed elsewhere" notice shows inside `near` (where it's typed). */
+const keptWhatsTyped = (field, near) => ({
+  name: `kept what's typed: #${field}, notice in ${near}`,
+  check: page => page.evaluate(([field, near]) => {
+    const box = document.getElementById(field), notice = document.querySelector(`${near} .tide-changed-elsewhere`);
     return [
       ...(box && box.value.includes('Mine, typed and not saved') ? [] : [`#${field} holds "${box?.value}", not what was typed`]),
-      ...(notice ? [] : ['no "changed elsewhere" notice']),
+      ...(notice && notice.getClientRects().length ? [] : [`no "changed elsewhere" notice in ${near}`]),
     ];
-  }, field),
+  }, [field, near]),
+});
+
+/** Each visible match of `selector` is wholly in view: no ancestor that clips its overflow cuts any of it off. */
+const notClipped = selector => ({
+  name: `not clipped: ${selector}`,
+  check: page => page.$$eval(selector, (els, selector) => els.flatMap((el, i) => {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0 || getComputedStyle(el).display === 'none') return [];
+    for (let a = el.parentElement; a; a = a.parentElement) {
+      if (getComputedStyle(a).overflow === 'visible') continue;
+      const b = a.getBoundingClientRect();
+      if (r.left < b.left - 1 || r.right > b.right + 1 || r.top < b.top - 1 || r.bottom > b.bottom + 1)
+        return [`${selector} #${i + 1} is cut off by ${a.tagName.toLowerCase()}.${a.className}`];
+    }
+    return [];
+  }), selector),
+});
+
+/** Each visible match of `selector` lies within the first match of `box`, top to bottom. */
+const insideOf = (selector, box) => ({
+  name: `inside ${box}: ${selector}`,
+  check: page => page.evaluate(([selector, box]) => {
+    const b = document.querySelector(box)?.getBoundingClientRect();
+    return [...document.querySelectorAll(selector)].map(e => e.getBoundingClientRect()).filter(r => r.height > 0 && b && (r.top < b.top - 1 || r.bottom > b.bottom + 1))
+      .map(r => `${selector} (${Math.round(r.top)}–${Math.round(r.bottom)}px) spills out of ${box} (${Math.round(b.top)}–${Math.round(b.bottom)}px)`);
+  }, [selector, box]),
 });
 
 /** Setup: a toast shown while the rail is docked (the opening note saved; whatever the toast says, it's placed alike). */
@@ -1004,11 +1031,18 @@ const pages = [
       ringOnFocus('#tide-rail #analyst, #tide-rail #intro, #tide-rail [data-submit]')] },
   // The top bar keeps each control in its own room, whatever the width and the fonts.
   { name: 'top-bar-today', route: '/', setup: wideFont, widths: [1920, 1100, 900, 780, 726, 700, 660, 641, 400],
-    rules: [noOverlap('.top-row a, .top-row button, .top-row input')] },
+    rules: [noSidewaysScroll, noOverlap('.top-row a, .top-row button, .top-row input'), fits('.top-row'),
+      oneLine('.top-row > span:first-child'), insideOf('.top-row > span:first-child', '.top-row')] },
+  // No page scrolls sideways where the top bar is at its tightest. Coverage (its matrix table) and an article's page (a
+  // table in the reader preview) are left out: their own content is wider than 700px with wider letters, not the bar.
+  ...['/triage', '/articles', '/actions', '/library', '/stack', '/briefs', '/search', '/rotation', '/workload', '/trends', '/published',
+    '/reports', '/stories', '/adversaries', '/notifications', '/briefs/{sent}', '/actions/{huntAction}']
+    .map(route => ({ name: `narrow ${route}`, route, setup: wideFont, widths: [700, 641], rules: [noSidewaysScroll] })),
   // Each step's detail stays within two lines at every width (the strip compact where it's narrow), and Triage's KEV
   // flag sits on the line of its words where there's room.
-  { name: 'today-steps', route: '/', setup: wideFont, widths: [1920, 1600, 1500, 1440, 1000, 780, 400],
-    rules: [oneRow('.tide-steps'), oneLine('.tide-step-detail', 2), inlineIn('.tide-step-flag', '.tide-step-detail')] },
+  { name: 'today-steps', route: '/', setup: wideFont, widths: [1920, 1600, 1500, 1440, 1000, 780, 641, 400],
+    rules: [oneRow('.tide-steps'), oneLine('.tide-step-detail', 2), [1001, inlineIn('.tide-step-flag', '.tide-step-detail')],
+      visible('.tide-steps .tide-step-flag'), notClipped('.tide-steps .tide-step-flag')] },
   // In the rail's edition check, each edition's heading is one row: its name, its TLP and its count.
   { name: 'today-editions', route: '/', setup: wideFont, widths: [1920, 1500],
     rules: [oneRow('#tide-rail .tide-ed-col > h3'), fits('#tide-rail .tide-ed-col > h3')] },
@@ -1145,8 +1179,8 @@ const pages = [
     rules: [focusIn('#tide-rail section[aria-labelledby="teams-queue-h"] .tide-queue-row')] },
   // A colleague saves what the analyst is typing (not yet left the field): the analyst's text stays, and the page says
   // so. Then a toast while the rail is docked sits beside it, not over its buttons. Late: these save the brief.
-  { name: 'today-typing-intro', route: '/', setup: colleagueSavesWhileTyping('intro'), widths: [1920], rules: [keptWhatsTyped('intro')] },
-  { name: 'today-typing-note', route: '/', setup: colleagueSavesWhileTyping('team-note'), widths: [1920], rules: [keptWhatsTyped('team-note')] },
+  { name: 'today-typing-intro', route: '/', setup: colleagueSavesWhileTyping('intro'), widths: [1920], rules: [keptWhatsTyped('intro', '#tide-rail section[aria-labelledby="meeting-h"]')] },
+  { name: 'today-typing-note', route: '/', setup: colleagueSavesWhileTyping('team-note'), widths: [1920], rules: [keptWhatsTyped('team-note', '#main-content .tide-page-head')] },
   { name: 'today-toast', route: '/', setup: toastBesideRail, widths: [1920, 1600], rules: [allBesides('.tide-toast', '#tide-rail')] },
   { name: 'today-rail-add', route: '/', setup: addFromRail, widths: [1920],
     rules: [focusIn('section[aria-labelledby="recent-h"] li')] },

@@ -2505,6 +2505,14 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-step-txt { grid-template-columns: minmax(0, 1fr); }
 .tide-step-detail { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .tide-step-flag { margin-left: var(--tide-space-1); padding: 0 var(--tide-space-1); font-size: .68rem; vertical-align: baseline; }
+/* The KEV flag follows the detail's words where the strip is wide; where it's compact, and the detail may be cut short,
+   it sits by the step's name instead, always in view. */
+.tide-step-flag-compact { display: none; }
+@container steps (max-width: 46rem) {
+    .tide-step-flag-compact { display: inline; }
+    .tide-step-flag-compact .tide-step-flag { margin-left: 0; }
+    .tide-step-flag-wide { display: none; }
+}
 /* Under the running order and the opening note: My actions beside what's not on a brief yet, one under the other where
    there isn't room for both. */
 .tide-today-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 0 var(--tide-space-4); align-items: start; }

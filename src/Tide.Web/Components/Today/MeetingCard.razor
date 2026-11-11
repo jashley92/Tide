@@ -40,6 +40,15 @@
     }
     else if (CanEdit)
     {
+        @* A colleague saved these meanwhile: said here, by the form, as well as at the top of the page (which announces it). *@
+        @if (ChangedBy is not null)
+        {
+            <div class="tide-changed-elsewhere mb-2">
+                <span class="bi bi-exclamation-triangle" aria-hidden="true"></span>
+                <span><strong>@ChangedBy saved the presenter or title slide line meanwhile.</strong> Saving now replaces theirs.</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" @onclick="OnReload">Reload</button>
+            </div>
+        }
         <label class="tide-field-label" for="analyst">Presenting analyst</label>
         <select id="analyst" class="form-select form-select-sm mb-2" @ref="_analyst" @bind:get="AnalystId" @bind:set="v => AnalystIdChanged.InvokeAsync(v)">
             @if (!People.Any(p => p.Sid == AnalystId))
@@ -128,6 +137,12 @@
     [Parameter] public bool Busy { get; set; }
 
     [Parameter] public EventCallback OnSave { get; set; }
+
+    /// <summary>A colleague who saved the presenter or line while this form held unsaved changes; null otherwise.</summary>
+    [Parameter] public string? ChangedBy { get; set; }
+
+    /// <summary>Drops what's typed and reads the colleague's version.</summary>
+    [Parameter] public EventCallback OnReload { get; set; }
 
     /// <summary>Drops what's typed and closes the form.</summary>
     [Parameter] public EventCallback OnCancel { get; set; }
