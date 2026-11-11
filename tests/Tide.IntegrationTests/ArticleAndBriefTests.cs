@@ -245,6 +245,48 @@ public class ArticleServiceTests : IDisposable
         _db.Store.Files.Should().HaveCount(1, "a refused batch stores nothing");
     }
 
+    // A new screenshot is marked AMBER, or the article's TLP when that's higher: adding one never puts it in the
+    // company-wide edition without a deliberate choice (owner decision 2026-11-11).
+    [Theory]
+    [InlineData(TlpLevel.Clear, TlpLevel.Amber)]
+    [InlineData(TlpLevel.Green, TlpLevel.Amber)]
+    [InlineData(TlpLevel.Amber, TlpLevel.Amber)]
+    [InlineData(TlpLevel.AmberStrict, TlpLevel.AmberStrict)]
+    [InlineData(TlpLevel.Red, TlpLevel.Red)]
+    public async Task NewScreenshot_IsAmber_OrTheArticlesTlpWhenHigher(TlpLevel article, TlpLevel expected)
+    {
+        var form = await NewForm(article);
+
+        var added = (await _db.Screenshots().AddAsync(form.Id, [new ScreenshotUpload("a.png", TestDb.Png)])).Single();
+
+        added.Tlp.Should().Be(expected);
+        (await _db.Articles().GetAsync(form.Id))!.Screenshots.Single().Tlp.Should().Be(expected, "that's the marking stored");
+    }
+
+    [Fact]
+    public async Task NewScreenshot_OnAClearArticle_IsLeftOutOfAGreenCompanyWideEdition_UntilItsMarkingIsSaved()
+    {
+        var form = await NewForm(TlpLevel.Clear);
+        var shot = (await _db.Screenshots().AddAsync(form.Id, [new ScreenshotUpload("a.png", TestDb.Png)])).Single();
+
+        var saved = (await _db.Articles().GetAsync(form.Id))!;
+        var company = BriefEditions.BuildArticle(saved, Edition.Public, TlpLevel.Green)!;
+        company.Screenshots.Should().BeEmpty("a new screenshot is AMBER, above the GREEN ceiling");
+        company.WithheldParts.Should().Be(1);
+        BriefEditions.BuildArticle(ArticleForm.From(saved).ToPreview(), Edition.Public, TlpLevel.Green)!.Screenshots
+            .Should().BeEmpty("the editor's preview cuts it the same way");
+        BriefEditions.BuildArticle(saved, Edition.Team, TlpLevel.AmberStrict)!.Screenshots.Should().ContainSingle();
+
+        // The analyst lowers it deliberately: the change saves through the usual save, and then it's in.
+        form = ArticleForm.From(saved);
+        form.Screenshots.Single(s => s.Id == shot.Id).Tlp = TlpLevel.Green;
+        await _db.Articles().SaveAsync(form);
+
+        saved = (await _db.Articles().GetAsync(form.Id))!;
+        saved.Screenshots.Single().Tlp.Should().Be(TlpLevel.Green);
+        BriefEditions.BuildArticle(saved, Edition.Public, TlpLevel.Green)!.Screenshots.Should().ContainSingle();
+    }
+
     [Fact]
     public async Task Screenshot_OpenAsync_ServesTheTeam_NeverAReaderALiveScreenshot()
     {

@@ -32,7 +32,9 @@ public class DistributionTests : IDisposable
         await articles.SaveAsync(form);
         var shots = await _db.Screenshots().AddAsync(open, [new ScreenshotUpload("a.png", TestDb.Png), new ScreenshotUpload("b.png", TestDb.Png)]);
         form = ArticleForm.From((await articles.GetAsync(open))!);
-        form.Screenshots.Single(s => s.Id == shots[0].Id).Caption = "open caption";
+        var openShot = form.Screenshots.Single(s => s.Id == shots[0].Id);
+        openShot.Caption = "open caption";
+        openShot.Tlp = TlpLevel.Clear;   // a new screenshot starts at AMBER: lowered on purpose
         var secret = form.Screenshots.Single(s => s.Id == shots[1].Id);
         secret.Caption = "secret caption";
         secret.Tlp = TlpLevel.Red;

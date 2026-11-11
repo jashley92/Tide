@@ -44,7 +44,7 @@ Decisions: ADR [0005](../decisions/0005-editions-from-one-model.md) (editions fr
 |---|---|---|
 | An article | `Article.Tlp` | The source's `DefaultTlp` when promoted from triage; CLEAR otherwise |
 | A bullet (key point) | `ArticleBullet.Tlp` | The article's |
-| A screenshot (and its caption) | `ArticleScreenshot.Tlp` | The article's, when added |
+| A screenshot (and its caption) | `ArticleScreenshot.Tlp` | AMBER, or the article's when higher, when added (see below) |
 | "Why it matters to us" | `Article.WhyItMattersTlp` | See below |
 | The brief's title slide line | `Brief.IntroTlp` | CLEAR for briefs written before it existed |
 | A feed source | `Source.DefaultTlp` | Set by an administrator; what promoted items start at |
@@ -79,6 +79,20 @@ when that's higher (`Article.DefaultWhyItMattersTlp`, floor `Article.ThreatWhyIt
 It only ever raises, never touches one already written, and isn't a column default, so saved articles keep what they
 have. An informational article's starts at CLEAR. The editor shows a "starts at AMBER" hint while the value sits at the
 default untouched (`ArticleForm.WhyItMattersAtThreatDefault`).
+
+### The screenshot default
+
+A screenshot is often a capture of our own console, mail or logs, so a new one is marked AMBER, or the article's TLP
+when that's higher (`ArticleScreenshot.NewFloor`, applied in `ScreenshotService.AddAsync`, the one path every paste,
+drop and upload in the editor takes). Owner decision 2026-11-11: until then it took the article's TLP, which put a
+screenshot on a CLEAR or GREEN article straight into the company-wide edition with no deliberate choice.
+
+- AMBER+STRICT and RED articles keep their own marking on a new screenshot; a part is never below its article.
+- The editor shows the marking on the new screenshot at once, and its preview and the company-wide view leave it out of
+  an edition whose ceiling is below AMBER (counted as a withheld part).
+- The analyst can lower it to the article's TLP in the editor. That's a marking change, so autosave holds it for an
+  explicit Save, which is permission-checked, concurrency-checked and audited like any other.
+- It isn't a column default and nothing was migrated: screenshots added before keep their marking.
 
 ## The cut: `BriefEditions.Build`
 

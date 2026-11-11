@@ -203,7 +203,8 @@ dates counted from and to. Each filter in force is a chip that links to the list
 sent. Trends opens this list
 pre-filtered when you click a count; opened from a tactic or technique, each row shows the techniques it was counted
 for. An analyst starts an article here with **New article**: a title, a source, a link and a TLP, which is set first
-because screenshots take the article's marking.
+because the parts start from it. A new screenshot starts at TLP:AMBER, or the article's marking when that's higher, so
+it reaches the company-wide edition only once someone lowers it (owner decision 2026-11-11).
 
 ## The article editor
 
