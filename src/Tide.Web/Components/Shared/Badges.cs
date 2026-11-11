@@ -157,10 +157,15 @@ public sealed class SlaBadge : ComponentBase
     /// <summary>Today, for how late an overdue action is ("Overdue · 3 days"); without it, just "Overdue".</summary>
     [Parameter] public DateOnly? Today { get; set; }
 
+    /// <summary>Says when an action not yet late is due ("Due Tue Nov 10"), in place of "Due soon" or "On track"; the
+    /// tone still says which.</summary>
+    [Parameter] public bool ShowDate { get; set; }
+
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         var text = State switch
         {
+            Application.Actions.SlaState.DueSoon or Application.Actions.SlaState.OnTrack when ShowDate && Due is { } due => "Due " + Ui.ShortDay(due),
             Application.Actions.SlaState.Overdue => "Overdue" + Application.Actions.ActionSla.Late(Due, Today) switch
             {
                 > 0 and var days => $" · {days} day{(days == 1 ? "" : "s")}",

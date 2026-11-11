@@ -129,15 +129,16 @@ fills it by placing one `ContextRail` anywhere in its markup:
 - **An overlay.** Below 1500px, and at any width on the pages that take the whole window (the board, metric history,
   trends), the rail starts closed and opens over the content from the right, which keeps its width. It isn't
   remembered: `theme.js` (`tideRail`) sets `data-rail-over` on `<html>` while it's open, and a new page starts with it
-  closed. Opening it moves focus into the rail; Escape or Close closes it and focus returns to the Context button.
-  Beside the page it isn't modal, so Tab can leave it.
-- **Over the whole window.** On a phone the open rail covers the window (and never widens the page), so the page
-  under it is made `inert` until it closes: the skip link, the sidebar, the top bar and the content are out of the tab
-  order and hidden from assistive technology, and Tab stays in the rail. `app.css` says where that is
-  (`--tide-rail-covers` on the rail), and `tideRail` sets and clears the attribute. Toasts, the error bar and the
-  reconnect dialog stay live. While it holds the page, `tideRail` watches the markup: if the rail goes (a link in it
-  opened a page with none) nothing stays inert, and a dialog opened in the page under it (the palette, from Ctrl+K)
-  closes the rail so the dialog can be used. There is no backdrop to click, as the phone menu has none.
+  closed. Opening it moves focus into the rail; Escape, Close or a click on the backdrop closes it and focus returns
+  to the Context button. On a phone it takes the whole window, over the top bar.
+- **Modal while open.** The open overlay is a modal dialog (`role="dialog"`, `aria-modal="true"`, still named by its
+  `aria-label`); docked, it's the aside's own complementary landmark. Opening it focuses the aside itself, so its name
+  and role are announced and the first Tab reaches Close. At any width it makes the page under it `inert` until it closes: the skip
+  link, the sidebar, the top bar and the content are out of the tab order and hidden from assistive technology, and
+  Tab stays in the rail. A backdrop (`--tide-overlay`, drawn by the rail's `::before`) dims the rest of the window so
+  it reads as a layer. Toasts, the error bar and the reconnect dialog stay live. While it holds the page, `tideRail`
+  watches the markup: if the rail goes (a link in it opened a page with none) nothing stays inert, and a dialog opened
+  in the page under it (the palette, from Ctrl+K) closes the rail so the dialog can be used.
 - **Which of the two** is decided in `app.css` alone (the "Context rail" section), which sets `--tide-rail-docks` on the
   rail where it docks; `tideRail` reads that, so the breakpoint and the list of whole-window pages aren't repeated in
   script. Blazor draws the Context button as closed (`aria-expanded="false"`), and `tideRail` keeps it right, as
