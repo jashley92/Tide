@@ -236,7 +236,7 @@ Our stack is the exception inside the app. A product's page (`StackService.GetAs
 (`StackService.CardAsync`) name only the articles at or below the team edition's ceiling, and count the rest ("2
 articles above TLP:AMBER+STRICT"), even for an analyst. The list's counts name no titles, so they count every article.
 Actions are not held back: an action raised from an article above the ceiling is named on the product's page, the
-list's Open actions and the context rail, as the Actions list and the action page name it (owner decision 2026-11-13).
+list's Open actions and the context rail, as the Actions list and the action page name it (owner decision 2026-11-11).
 The list's "Right now" column (`StackService.OverviewAsync`, `RightNow`) names a CVE only when an article at or below
 the ceiling carries it; one seen only above it is counted ("1 CVE above TLP:AMBER+STRICT") and its id, scores and KEV
 listing are not kept.
