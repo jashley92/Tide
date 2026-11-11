@@ -19,7 +19,7 @@
     }
     @foreach (var r in Queue.Rows)
     {
-        <QueueRow @key="r.Id" @ref="_rows[r.Id]" Row="r" Meta="@($"{ActionService.KindName(r.Kind)} · {r.TeamName} · {(r.AssigneeId is null ? "Unassigned" : "Yours")}")"
+        <QueueRow @key="r.Id" @ref="_rows[r.Id]" Row="r" Meta="@($"{r.TeamName} · {(r.AssigneeId is null ? "nobody has it" : "yours")}")"
                   OfferTake="true" Busy="Busy" Marks="Marks" OnTake="Take" Focused="_place.Focus" />
     }
     @if (Queue.Total > Queue.Rows.Count)

@@ -1,37 +1,32 @@
 @inject ActionService ActionSvc
 @inject OrgClock Clock
 
-@* One row of a Today action list (the queue, the team's unassigned, the escalated): its number, title and files, a
-   line about it with how late it is, then Take it (when it's nobody's and offered) or its due-date badge. *@
+@* One row of a Today action list (the teams' queue, an action owner's queue, the escalated): its title and files, a row
+   of badges (its number, status, priority and when it's due, or how late), then a line saying whose it is, and Take it
+   when it's nobody's and offered. *@
 
 <div class="tide-queue-row @Marks?.Css(Row.Id)" @onfocusin="() => Focused?.Invoke(Row.Id, true)" @onfocusout="() => Focused?.Invoke(Row.Id, false)">
-    <span class="tide-queue-title">
+    <div class="tide-queue-title">
         <ActionRef Number="Row.Number" Title="@Row.Title" /> <FileCount Count="Row.Files" />
-        <span class="tide-queue-meta">
-            @Meta
-            @if (ActionSla.LateText(Row.DueDate, ActionSvc.Today) is { } late)
-            {
-                @* The space before the dot is written out: Razor drops the white space around a code block. It doesn't
-                   break, so a "·" never starts a line. *@
-                <span>@("\u00a0\u00b7 ")<span class="tide-queue-late">@late</span></span>
-            }
-        </span>
-    </span>
+        <div class="tide-queue-badges">
+            <span class="tide-action-num">@Ui.ActionLabel(Row.Number)</span>
+            <ActionStatusBadge Status="Row.Status" />
+            <PriorityBadge Priority="Row.Priority" />
+            <SlaBadge State="Row.Sla(ActionSvc.Today, Clock.Days)" Due="Row.DueDate" Today="ActionSvc.Today" />
+        </div>
+        <div class="tide-queue-meta">@Meta</div>
+    </div>
     @if (Offers)
     {
         <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@Busy" @onclick="() => OnTake.InvokeAsync(Row)" @ref="_take"
                 aria-label="@($"Take {Ui.ActionLabel(Row.Number)} on: {Row.Title}")">Take it</button>
-    }
-    else
-    {
-        <SlaBadge State="Row.Sla(ActionSvc.Today, Clock.Days)" Due="Row.DueDate" />
     }
 </div>
 
 @code {
     [Parameter, EditorRequired] public ActionRow Row { get; set; } = default!;
 
-    /// <summary>The line under the title: its kind or priority, its team, whose it is.</summary>
+    /// <summary>The line under the badges: its team, and whose it is ("nobody has it").</summary>
     [Parameter, EditorRequired] public string Meta { get; set; } = "";
 
     /// <summary>Offer Take it when the action is nobody's.</summary>

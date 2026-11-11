@@ -75,8 +75,8 @@ public class TodayTests(TideApp app) : IClassFixture<TideApp>
         var html = await app.CreateClient().GetStringAsync("/");
 
         var check = html[At(html, "id=\"edition-check-h\"")..At(html, "id=\"meeting-h\"")];
-        var team = check[At(check, "Team edition")..At(check, "Company-wide edition")];
-        var company = check[At(check, "Company-wide edition")..];
+        var team = check[At(check, "?tab=team\">Team")..At(check, "?tab=company\">Company-wide")];
+        var company = check[At(check, "?tab=company\">Company-wide")..];
         team.Should().Contain("3 of 3 articles").And.NotContain("The article is TLP:AMBER");
         company.Should().Contain("2 of 3 articles").And.Contain(">Left out<").And.Contain("The article is TLP:AMBER");
     }
@@ -87,8 +87,8 @@ public class TodayTests(TideApp app) : IClassFixture<TideApp>
         var html = await app.CreateClient().GetStringAsync("/");
 
         var check = html[At(html, "id=\"edition-check-h\"")..At(html, "id=\"meeting-h\"")];
-        var team = check[At(check, "Team edition")..At(check, "Company-wide edition")];
-        var company = check[At(check, "Company-wide edition")..];
+        var team = check[At(check, "?tab=team\">Team")..At(check, "?tab=company\">Company-wide")];
+        var company = check[At(check, "?tab=company\">Company-wide")..];
         team.Should().Contain("3 of 3 articles").And.Contain("All 3 articles go out whole.")
             .And.NotContain("href=\"articles/", "an article that goes out whole is named by the running order, not again here");
         company.Should().Contain("2 of 3 articles").And.NotContain("go out whole")
@@ -120,7 +120,7 @@ public class TodayTests(TideApp app) : IClassFixture<TideApp>
         var html = await app.CreateClient().GetStringAsync("/");
 
         var strip = html[At(html, "aria-label=\"Brief progress\"")..At(html, "id=\"running-order-h\"")];
-        strip.Should().MatchRegex(@"\d+ new in the feed<").And.Contain($"tide-badge-danger").And.Contain($">{expected} KEV</span>");
+        strip.Should().MatchRegex(@"\d+ new in the <span class=""text-nowrap"">feed<span class=""tide-badge tide-badge-danger tide-step-flag"">" + expected + " KEV</span>", "the flag held to the last word");
 
         // Another day's brief keeps the feed's count, as it always had, without the KEV count: that is today's work.
         var past = WorkingDays.Weekdays.Previous(WorkingDays.Weekdays.Previous(WorkingDays.Weekdays.Previous(WorkingDays.Weekdays.Previous(Today))));
@@ -141,6 +141,21 @@ public class TodayTests(TideApp app) : IClassFixture<TideApp>
 
         await r.Click(p => p.OpenMeeting());
         Section(await r.Html(), "meeting-h").Should().Contain("id=\"analyst\"").And.Contain("id=\"intro\"").And.Contain(">Save</button>");
+    }
+
+    [Fact]
+    public async Task ReviewsMyActionsAndTheMeeting_AreLaidOutAsDesigned()
+    {
+        await using var r = await ComponentHarness.RenderAsync<BriefPage>(app, "/", new() { ["Day"] = $"{Today:yyyy-MM-dd}", ["AsToday"] = true },
+            new ComponentHarness.SignIn("dev:layout-analyst", "Layout Analyst", "Analyst"));
+        var html = await r.Html();
+        Section(html, "reviews-h").Should().Contain("Reviews asked of you").And.Contain("<p class=\"small tide-muted mb-0\">None waiting.</p>",
+            "the section is there when none are waiting");
+        Section(html, "my-actions-h").Should().Contain("<p class=\"small tide-muted mb-0\">Nothing assigned to you.").And.NotContain("tide-empty-state",
+            "an empty card says so in a line");
+        Section(html, "recent-h").Should().MatchRegex(@"(?s)<h2 id=""recent-h""[^>]*>Not on a brief yet.*href=""articles\?new=1"".*</h2>", "New article is in the heading");
+        Section(html, "meeting-h").Should().Contain("<dl class=\"tide-facts tide-facts-side tide-meeting-facts\"><div class=\"tide-fact\"><dt>When</dt>")
+            .And.Contain("<div class=\"tide-fact\"><dt>Presenter</dt>").And.Contain("<div class=\"tide-fact tide-fact-wide\">");
     }
 
     // The section headed by the heading with this id, whole.
@@ -292,11 +307,15 @@ public class TeamQueueTodayTests(TideApp app) : IClassFixture<TideApp>
         var queue = html[At(html, "id=\"team-queue-h\"")..At(html, "id=\"todays-brief-h\"")];
         At(queue, $"{team}: the owner's").Should().BeLessThan(At(queue, $"{team}: nobody's, overdue"), "theirs come first");
         queue.Should().NotContain($"{team}: the colleague's", "a colleague's is in hand").And.NotContain($"{team}: Robin's");
-        queue.Should().Contain("IOC sweep · Queue Team A · Unassigned").And.Contain("<span class=\"tide-queue-late\">3 days late</span>")
-            .And.Contain(">Take it</button>").And.MatchRegex(@"\d+ yours and \d+ unassigned\.","the other test in this class adds a team the owner is on too")
-            .And.Contain("href=\"actions?view=myteams\">My teams</a>");
+        // Each row: its title, a row of badges (number, status, priority, how late), then whose it is.
+        var row = queue[At(queue, $"{team}: nobody's, overdue")..];
+        row = row[..At(row, ">Take it</button>")];
+        row.Should().MatchRegex(@"<div class=""tide-queue-badges""><span class=""tide-action-num"">A-\d+</span>")
+            .And.Contain(">Open</span>").And.Contain("Overdue").And.Contain("3 days")
+            .And.Contain("<div class=\"tide-queue-meta\">Queue Team A · nobody has it</div>");
+        queue.Should().Contain(">Take it</button>").And.MatchRegex(@"\d+ yours and \d+ unassigned\.","the other test in this class adds a team the owner is on too")
+            .And.Contain("href=\"actions?view=myteams\">My teams</a>").And.Contain("Queue Team A · yours");
         html.Should().NotContain("aria-label=\"Brief progress\"").And.NotContain("id=\"edition-check-h\"");
-        System.Text.RegularExpressions.Regex.Replace(queue, "<[^>]+>", "").Should().Contain("Unassigned · 3 days late", "a space before the dot, which never starts a line");
     }
 
     [Fact]

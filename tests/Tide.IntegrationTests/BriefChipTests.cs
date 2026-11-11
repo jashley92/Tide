@@ -147,7 +147,7 @@ public class BriefChipTests(TideApp app) : IClassFixture<TideApp>
         sent.Should().NotContain(Meets).And.NotContain("step");
         // Today's strip, for the same brief: its last step, done, says the same word.
         var today = await app.CreateClient().GetStringAsync("/");
-        today.Should().Contain("<span class=\"tide-step-detail\">Sent</span>");
+        today.Should().Contain("<span class=\"tide-step-detail\" title=\"Sent\">Sent</span>");
     }
 
     [Fact]

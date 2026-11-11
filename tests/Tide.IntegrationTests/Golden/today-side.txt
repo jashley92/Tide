@@ -1,20 +1,22 @@
-=== draft / Analyst Side Analyst / today (47 commands)
+=== draft / Analyst Side Analyst / today (45 commands)
 
 <section class="tide-card" aria-labelledby="my-actions-h">
-<h2 id="my-actions-h">My actions <span class="tide-count">(0)</span> <a class="ms-auto small fw-normal" href="actions?view=mine">All</a></h2><div class="tide-empty-state tide-empty-state-compact "><span class="bi bi-check2-circle tide-empty-state-icon" aria-hidden="true"></span> <div class="tide-empty-state-title">Nothing assigned to you.</div><div class="tide-empty-state-msg"></div></div></section> --- 
+<h2 id="my-actions-h">My actions <span class="tide-count">(0)</span> <a class="ms-auto small fw-normal" href="actions?view=mine">All</a></h2><p class="small tide-muted mb-0">Nothing assigned to you.</p></section> --- 
 <section class="tide-card" aria-labelledby="recent-h">
-<h2 id="recent-h" tabindex="-1">Not on a brief yet <span class="tide-count">(0)</span></h2> <p class="small tide-muted mb-2">Ready articles first, then your own drafts. None has been on a brief.</p><div class="tide-empty-state tide-empty-state-compact "><span class="bi bi-check2-circle tide-empty-state-icon" aria-hidden="true"></span> <div class="tide-empty-state-title">Everything ready is on a brief.</div></div><ul class="list-unstyled mb-0"></ul> <div class="d-flex gap-2 mt-2"><a class="btn btn-outline-secondary btn-sm ms-auto" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article</a></div></section> --- 
+<h2 id="recent-h" tabindex="-1">Not on a brief yet <span class="tide-count">(0)</span> <a class="ms-auto small fw-normal" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article</a></h2><p class="small tide-muted mb-0">Everything ready is on a brief.</p><ul class="list-unstyled mb-0"></ul></section> --- 
 <section class="tide-card" aria-labelledby="edition-check-h">
 <h2 id="edition-check-h">Edition check <span class="ms-auto small fw-normal tide-muted">From the running order</span></h2> <div class="tide-ed-cols"><div class="tide-ed-col">
-<h3><a href="briefs/{iso}?tab=team">Team edition</a> <span class="tide-ed-sub">Up to <span class="tide-tlp tide-tlp-amberstrict" title="Limited disclosure: recipients may share only within their own organization, on a need-to-know basis.">TLP:AMBER&#x2B;STRICT</span> &#xB7; 3 of 3 articles</span></h3><p class="tide-ed-whole is-all"><span class="bi bi-check2" aria-hidden="true"></span>All 3 articles go out whole.</p></div> <div class="tide-ed-col">
-<h3><a href="briefs/{iso}?tab=company">Company-wide edition</a> <span class="tide-ed-sub">Up to <span class="tide-tlp tide-tlp-green" title="Limited disclosure: may be shared within the community, not publicly.">TLP:GREEN</span> &#xB7; 2 of 3 articles</span></h3><ul class="tide-ed-list">
+<h3><a href="briefs/{iso}?tab=team">Team<span class="tide-ed-word"> edition</span></a> <span class="tide-ed-sub"><span class="tide-ed-word">Up to </span><span class="tide-tlp tide-tlp-amberstrict" title="Limited disclosure: recipients may share only within their own organization, on a need-to-know basis.">TLP:AMBER&#x2B;STRICT</span> &#xB7; 3 of 3 articles</span></h3><p class="tide-ed-whole is-all"><span class="bi bi-check2" aria-hidden="true"></span>All 3 articles go out whole.</p></div> <div class="tide-ed-col">
+<h3><a href="briefs/{iso}?tab=company">Company-wide<span class="tide-ed-word"> edition</span></a> <span class="tide-ed-sub"><span class="tide-ed-word">Up to </span><span class="tide-tlp tide-tlp-green" title="Limited disclosure: may be shared within the community, not publicly.">TLP:GREEN</span> &#xB7; 2 of 3 articles</span></h3><ul class="tide-ed-list">
 <li class=""><span class="tide-ed-mark is-part">Partly included<span class="visually-hidden">:</span></span> <span><a class="tide-ed-title" href="articles/{id}">Edge VPN appliance zero-day exploited for initial access</a><span class="tide-ed-why">1 part above TLP:GREEN left out</span><span class="tide-ed-warn"><span class="bi bi-exclamation-circle" aria-hidden="true"></span><span class="visually-hidden">Warning:</span> Why it matters is TLP:CLEAR and will reach the company-wide edition.</span></span></li>
 <li class="is-out"><span class="tide-ed-mark is-leftout">Left out<span class="visually-hidden">:</span></span> <span><a class="tide-ed-title" href="articles/{id}">Partner reports targeting of shared payment processor</a><span class="tide-ed-why">The article is TLP:AMBER</span></span></li></ul></div></div> <p class="tide-ed-note">The company-wide edition never carries the numbers, indicators or actions. <a href="briefs/{iso}?tab=preview">Preview both editions</a></p></section> --- 
+<section class="tide-card" aria-labelledby="reviews-h">
+<h2 id="reviews-h"><span class="bi bi-person-check" aria-hidden="true"></span> Reviews asked of you</h2><p class="small tide-muted mb-0">None waiting.</p></section> --- 
 <section class="tide-card" aria-labelledby="meeting-h" data-submit-scope>
-<h2 id="meeting-h">Meeting</h2> <dl class="tide-dl mb-2">
-<dt>When</dt><dd>{shortday} &#xB7; {time} {zone}</dd> 
-<dt>Presenter</dt><dd>Sample data</dd> 
-<dt>Title slide line</dt> <dd><span class="tide-muted">None</span></dd></dl><p class="small mb-2">The rotation has <strong>Dev Analyst</strong> for this day.</p><div class="d-flex gap-2 flex-wrap"><button type="button" class="btn btn-outline-secondary btn-sm">Change presenter</button> <button type="button" class="btn btn-link btn-sm">Title slide line</button></div>
+<h2 id="meeting-h">Meeting</h2> <dl class="tide-facts tide-facts-side tide-meeting-facts"><div class="tide-fact">
+<dt>When</dt><dd>{shortday} &#xB7; {time} {zone}</dd></div> <div class="tide-fact">
+<dt>Presenter</dt><dd>Sample data</dd></div> <div class="tide-fact tide-fact-wide">
+<dt>Title slide line</dt> <dd><span class="tide-muted">None</span></dd></div></dl><p class="small mb-2">The rotation has <strong>Dev Analyst</strong> for this day.</p><div class="d-flex gap-2 flex-wrap"><button type="button" class="btn btn-outline-secondary btn-sm tide-meeting-presenter">Change presenter</button> <button type="button" class="btn btn-link btn-sm">Title slide line</button></div>
 <h3 class="tide-subhead">Attended</h3> <div class="small">In the room</div>
 <h3 class="tide-subhead">Meeting notes</h3><div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
 <li><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
@@ -27,43 +29,45 @@
 
 <section class="tide-card" aria-labelledby="edition-check-h">
 <h2 id="edition-check-h">Edition check <span class="ms-auto small fw-normal tide-muted">From the running order</span></h2> <div class="tide-ed-cols"><div class="tide-ed-col">
-<h3><a href="briefs/{iso}?tab=team">Team edition</a> <span class="tide-ed-sub">Up to <span class="tide-tlp tide-tlp-amberstrict" title="Limited disclosure: recipients may share only within their own organization, on a need-to-know basis.">TLP:AMBER&#x2B;STRICT</span> &#xB7; 1 of 1 article</span></h3><p class="tide-ed-whole is-all"><span class="bi bi-check2" aria-hidden="true"></span>The article goes out whole.</p></div> <div class="tide-ed-col">
-<h3><a href="briefs/{iso}?tab=company">Company-wide edition</a> <span class="tide-ed-sub">Up to <span class="tide-tlp tide-tlp-green" title="Limited disclosure: may be shared within the community, not publicly.">TLP:GREEN</span> &#xB7; 1 of 1 article</span></h3><ul class="tide-ed-list">
+<h3><a href="briefs/{iso}?tab=team">Team<span class="tide-ed-word"> edition</span></a> <span class="tide-ed-sub"><span class="tide-ed-word">Up to </span><span class="tide-tlp tide-tlp-amberstrict" title="Limited disclosure: recipients may share only within their own organization, on a need-to-know basis.">TLP:AMBER&#x2B;STRICT</span> &#xB7; 1 of 1 article</span></h3><p class="tide-ed-whole is-all"><span class="bi bi-check2" aria-hidden="true"></span>The article goes out whole.</p></div> <div class="tide-ed-col">
+<h3><a href="briefs/{iso}?tab=company">Company-wide<span class="tide-ed-word"> edition</span></a> <span class="tide-ed-sub"><span class="tide-ed-word">Up to </span><span class="tide-tlp tide-tlp-green" title="Limited disclosure: may be shared within the community, not publicly.">TLP:GREEN</span> &#xB7; 1 of 1 article</span></h3><ul class="tide-ed-list">
 <li class=""><span class="tide-ed-mark is-part">Partly included<span class="visually-hidden">:</span></span> <span><a class="tide-ed-title" href="articles/{id}">Edge VPN appliance zero-day exploited for initial access</a><span class="tide-ed-why">1 part above TLP:GREEN left out</span><span class="tide-ed-warn"><span class="bi bi-exclamation-circle" aria-hidden="true"></span><span class="visually-hidden">Warning:</span> Why it matters is TLP:CLEAR and will reach the company-wide edition.</span></span></li></ul></div></div> <p class="tide-ed-note">The company-wide edition never carries the numbers, indicators or actions. <a href="briefs/{iso}?tab=preview">Preview both editions</a></p></section> --- 
 <section class="tide-card" aria-labelledby="meeting-h" data-submit-scope>
-<h2 id="meeting-h">Meeting</h2> <dl class="tide-dl mb-2">
-<dt>When</dt><dd>{shortday} &#xB7; {time} {zone}</dd> 
-<dt>Presenter</dt><dd>Tester</dd> 
-<dt>Title slide line</dt> <dd><span class="tide-tlp tide-tlp-clear" title="Disclosure is not limited.">TLP:CLEAR</span> A quiet week.</dd></dl><div class="d-flex gap-2 flex-wrap"><button type="button" class="btn btn-outline-secondary btn-sm">Change presenter</button> <button type="button" class="btn btn-link btn-sm">Title slide line</button></div>
+<h2 id="meeting-h">Meeting</h2> <dl class="tide-facts tide-facts-side tide-meeting-facts"><div class="tide-fact">
+<dt>When</dt><dd>{shortday} &#xB7; {time} {zone}</dd></div> <div class="tide-fact">
+<dt>Presenter</dt><dd>Tester</dd></div> <div class="tide-fact tide-fact-wide">
+<dt>Title slide line</dt> <dd><span class="tide-tlp tide-tlp-clear" title="Disclosure is not limited.">TLP:CLEAR</span> A quiet week.</dd></div></dl><div class="d-flex gap-2 flex-wrap"><button type="button" class="btn btn-outline-secondary btn-sm tide-meeting-presenter">Change presenter</button> <button type="button" class="btn btn-link btn-sm">Title slide line</button></div>
 <h3 class="tide-subhead">Attended</h3> <div class="small">In the room</div>
 <h3 class="tide-subhead">Meeting notes</h3><div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
 <li><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
 <li><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</li></ul></div></section> --- 
 <section class="tide-card tide-section" aria-labelledby="hist-{id}-head">
 <h2 id="hist-{id}-head" class="mb-0"><button type="button" class="tide-disclosure" aria-expanded="false" aria-controls="hist-{id}-body"><span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span> History <span class="tide-disclosure-sum">who changed what, and when</span></button></h2> <div id="hist-{id}-body" class="tide-disclosure-body" hidden><p class="small tide-muted mb-0">Loading&#x2026;</p></div></section>
-=== draft / Analyst Robin / today (48 commands)
+=== draft / Analyst Robin / today (46 commands)
 
 <section class="tide-card" aria-labelledby="my-actions-h">
 <h2 id="my-actions-h">My actions <span class="tide-count">(1)</span> <a class="ms-auto small fw-normal" href="actions?view=mine">All</a></h2><div class="d-flex gap-2 align-items-start py-1 border-bottom small "><span class="flex-grow-1"><a class="tide-action-ref " href="{action}">Side: Robin&#x27;s</a><span class="tide-action-num tide-action-num-after">{action}</span> </span> <span class="tide-badge tide-badge-ok" title="Due {day}">On track</span></div></section> --- 
 <section class="tide-card" aria-labelledby="recent-h">
-<h2 id="recent-h" tabindex="-1">Not on a brief yet <span class="tide-count">(0)</span></h2> <p class="small tide-muted mb-2">Ready articles first, then your own drafts. None has been on a brief.</p><div class="tide-empty-state tide-empty-state-compact "><span class="bi bi-check2-circle tide-empty-state-icon" aria-hidden="true"></span> <div class="tide-empty-state-title">Everything ready is on a brief.</div></div><ul class="list-unstyled mb-0"></ul> <div class="d-flex gap-2 mt-2"><a class="btn btn-outline-secondary btn-sm ms-auto" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article</a></div></section> --- 
+<h2 id="recent-h" tabindex="-1">Not on a brief yet <span class="tide-count">(0)</span> <a class="ms-auto small fw-normal" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article</a></h2><p class="small tide-muted mb-0">Everything ready is on a brief.</p><ul class="list-unstyled mb-0"></ul></section> --- 
 <section class="tide-card" aria-labelledby="edition-check-h">
 <h2 id="edition-check-h">Edition check <span class="ms-auto small fw-normal tide-muted">From the running order</span></h2> <div class="tide-ed-cols"><div class="tide-ed-col">
-<h3><a href="briefs/{iso}?tab=team">Team edition</a> <span class="tide-ed-sub">Up to <span class="tide-tlp tide-tlp-amberstrict" title="Limited disclosure: recipients may share only within their own organization, on a need-to-know basis.">TLP:AMBER&#x2B;STRICT</span> &#xB7; 3 of 3 articles</span></h3><p class="tide-ed-whole is-all"><span class="bi bi-check2" aria-hidden="true"></span>All 3 articles go out whole.</p></div> <div class="tide-ed-col">
-<h3><a href="briefs/{iso}?tab=company">Company-wide edition</a> <span class="tide-ed-sub">Up to <span class="tide-tlp tide-tlp-green" title="Limited disclosure: may be shared within the community, not publicly.">TLP:GREEN</span> &#xB7; 2 of 3 articles</span></h3><ul class="tide-ed-list">
+<h3><a href="briefs/{iso}?tab=team">Team<span class="tide-ed-word"> edition</span></a> <span class="tide-ed-sub"><span class="tide-ed-word">Up to </span><span class="tide-tlp tide-tlp-amberstrict" title="Limited disclosure: recipients may share only within their own organization, on a need-to-know basis.">TLP:AMBER&#x2B;STRICT</span> &#xB7; 3 of 3 articles</span></h3><p class="tide-ed-whole is-all"><span class="bi bi-check2" aria-hidden="true"></span>All 3 articles go out whole.</p></div> <div class="tide-ed-col">
+<h3><a href="briefs/{iso}?tab=company">Company-wide<span class="tide-ed-word"> edition</span></a> <span class="tide-ed-sub"><span class="tide-ed-word">Up to </span><span class="tide-tlp tide-tlp-green" title="Limited disclosure: may be shared within the community, not publicly.">TLP:GREEN</span> &#xB7; 2 of 3 articles</span></h3><ul class="tide-ed-list">
 <li class=""><span class="tide-ed-mark is-part">Partly included<span class="visually-hidden">:</span></span> <span><a class="tide-ed-title" href="articles/{id}">Edge VPN appliance zero-day exploited for initial access</a><span class="tide-ed-why">1 part above TLP:GREEN left out</span><span class="tide-ed-warn"><span class="bi bi-exclamation-circle" aria-hidden="true"></span><span class="visually-hidden">Warning:</span> Why it matters is TLP:CLEAR and will reach the company-wide edition.</span></span></li>
 <li class="is-out"><span class="tide-ed-mark is-leftout">Left out<span class="visually-hidden">:</span></span> <span><a class="tide-ed-title" href="articles/{id}">Partner reports targeting of shared payment processor</a><span class="tide-ed-why">The article is TLP:AMBER</span></span></li></ul></div></div> <p class="tide-ed-note">The company-wide edition never carries the numbers, indicators or actions. <a href="briefs/{iso}?tab=preview">Preview both editions</a></p></section> --- 
 <section class="tide-card" aria-labelledby="teams-queue-h">
 <h2 id="teams-queue-h" tabindex="-1">Your teams&#x27; queue <span class="tide-count">(1)</span> <a class="ms-auto small fw-normal" href="actions?view=myteams">My teams</a></h2>
-<div class="tide-queue-row "><span class="tide-queue-title"><a class="tide-action-ref " href="{action}">Side: nobody&#x27;s, overdue</a><span class="tide-action-num tide-action-num-after">{action}</span> <span class="tide-queue-meta">IOC sweep &#xB7; Side Team<span>&#xA0;&#xB7; <span class="tide-queue-late">3 days late</span></span></span></span><button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" aria-label="Take {action} on: Side: nobody&#x27;s, overdue">Take it</button></div></section> --- 
+<div class="tide-queue-row "><div class="tide-queue-title"><a class="tide-action-ref " href="{action}">Side: nobody&#x27;s, overdue</a><span class="tide-action-num tide-action-num-after">{action}</span> <div class="tide-queue-badges"><span class="tide-action-num">{action}</span> <span class="tide-badge tide-badge-neutral">Open</span> <span class="tide-badge tide-badge-warn" title="Priority P3">P3</span> <span class="tide-badge tide-badge-danger tide-badge-solid" title="Due {day}"><span class="bi bi-exclamation-triangle-fill" aria-hidden="true"></span>Overdue &#xB7; 3 days</span></div> <div class="tide-queue-meta">Side Team &#xB7; nobody has it</div></div><button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" aria-label="Take {action} on: Side: nobody&#x27;s, overdue">Take it</button></div></section> --- 
 <section class="tide-card tide-escalated" aria-labelledby="escalated-h">
 <h2 id="escalated-h"><span class="bi bi-arrow-up-circle-fill text-danger" aria-hidden="true"></span> Escalated <span class="tide-count">(1)</span> <a class="ms-auto small fw-normal" href="actions?view=overdue">Overdue</a></h2> <p class="small tide-muted mb-1">Slipping long enough that the escalation ladder flagged them. Each stays until it closes or its due date moves.</p>
-<div class="tide-queue-row "><span class="tide-queue-title"><a class="tide-action-ref " href="{action}">Side: nobody&#x27;s, overdue</a><span class="tide-action-num tide-action-num-after">{action}</span> <span class="tide-queue-meta">P3 &#xB7; Side Team &#xB7; Unassigned<span>&#xA0;&#xB7; <span class="tide-queue-late">3 days late</span></span></span></span><span class="tide-badge tide-badge-danger tide-badge-solid" title="Due {day}"><span class="bi bi-exclamation-triangle-fill" aria-hidden="true"></span>Overdue</span></div></section> --- 
+<div class="tide-queue-row "><div class="tide-queue-title"><a class="tide-action-ref " href="{action}">Side: nobody&#x27;s, overdue</a><span class="tide-action-num tide-action-num-after">{action}</span> <div class="tide-queue-badges"><span class="tide-action-num">{action}</span> <span class="tide-badge tide-badge-neutral">Open</span> <span class="tide-badge tide-badge-warn" title="Priority P3">P3</span> <span class="tide-badge tide-badge-danger tide-badge-solid" title="Due {day}"><span class="bi bi-exclamation-triangle-fill" aria-hidden="true"></span>Overdue &#xB7; 3 days</span></div> <div class="tide-queue-meta">Side Team &#xB7; nobody has it</div></div></div></section> --- 
+<section class="tide-card" aria-labelledby="reviews-h">
+<h2 id="reviews-h"><span class="bi bi-person-check" aria-hidden="true"></span> Reviews asked of you</h2><p class="small tide-muted mb-0">None waiting.</p></section> --- 
 <section class="tide-card" aria-labelledby="meeting-h" data-submit-scope>
-<h2 id="meeting-h">Meeting</h2> <dl class="tide-dl mb-2">
-<dt>When</dt><dd>{shortday} &#xB7; {time} {zone}</dd> 
-<dt>Presenter</dt><dd>Sample data</dd> 
-<dt>Title slide line</dt> <dd><span class="tide-muted">None</span></dd></dl><p class="small mb-2">The rotation has <strong>Dev Analyst</strong> for this day.</p><div class="d-flex gap-2 flex-wrap"><button type="button" class="btn btn-outline-secondary btn-sm">Change presenter</button> <button type="button" class="btn btn-link btn-sm">Title slide line</button></div>
+<h2 id="meeting-h">Meeting</h2> <dl class="tide-facts tide-facts-side tide-meeting-facts"><div class="tide-fact">
+<dt>When</dt><dd>{shortday} &#xB7; {time} {zone}</dd></div> <div class="tide-fact">
+<dt>Presenter</dt><dd>Sample data</dd></div> <div class="tide-fact tide-fact-wide">
+<dt>Title slide line</dt> <dd><span class="tide-muted">None</span></dd></div></dl><p class="small mb-2">The rotation has <strong>Dev Analyst</strong> for this day.</p><div class="d-flex gap-2 flex-wrap"><button type="button" class="btn btn-outline-secondary btn-sm tide-meeting-presenter">Change presenter</button> <button type="button" class="btn btn-link btn-sm">Title slide line</button></div>
 <h3 class="tide-subhead">Attended</h3> <div class="small">In the room</div>
 <h3 class="tide-subhead">Meeting notes</h3><div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
 <li><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
@@ -81,16 +85,16 @@ same as draft / Analyst Side Analyst / day
 
 <section class="tide-card tide-escalated" aria-labelledby="escalated-h">
 <h2 id="escalated-h"><span class="bi bi-arrow-up-circle-fill text-danger" aria-hidden="true"></span> Escalated <span class="tide-count">(1)</span> <a class="ms-auto small fw-normal" href="actions?view=overdue">Overdue</a></h2> <p class="small tide-muted mb-1">Slipping long enough that the escalation ladder flagged them. Each stays until it closes or its due date moves.</p>
-<div class="tide-queue-row "><span class="tide-queue-title"><a class="tide-action-ref " href="{action}">Side: nobody&#x27;s, overdue</a><span class="tide-action-num tide-action-num-after">{action}</span> <span class="tide-queue-meta">P3 &#xB7; Side Team &#xB7; Unassigned<span>&#xA0;&#xB7; <span class="tide-queue-late">3 days late</span></span></span></span><span class="tide-badge tide-badge-danger tide-badge-solid" title="Due {day}"><span class="bi bi-exclamation-triangle-fill" aria-hidden="true"></span>Overdue</span></div></section> --- 
+<div class="tide-queue-row "><div class="tide-queue-title"><a class="tide-action-ref " href="{action}">Side: nobody&#x27;s, overdue</a><span class="tide-action-num tide-action-num-after">{action}</span> <div class="tide-queue-badges"><span class="tide-action-num">{action}</span> <span class="tide-badge tide-badge-neutral">Open</span> <span class="tide-badge tide-badge-warn" title="Priority P3">P3</span> <span class="tide-badge tide-badge-danger tide-badge-solid" title="Due {day}"><span class="bi bi-exclamation-triangle-fill" aria-hidden="true"></span>Overdue &#xB7; 3 days</span></div> <div class="tide-queue-meta">Side Team &#xB7; nobody has it</div></div></div></section> --- 
 <section class="tide-card" aria-labelledby="team-queue-h">
 <h2 id="team-queue-h" tabindex="-1">My team&#x27;s queue <span class="tide-count">(2)</span> <a class="ms-auto small fw-normal" href="actions?view=myteams">My teams</a></h2><p class="small tide-muted mb-1">1 yours and 1 unassigned.</p>
-<div class="tide-queue-row "><span class="tide-queue-title"><a class="tide-action-ref " href="{action}">Side: the owner&#x27;s</a><span class="tide-action-num tide-action-num-after">{action}</span> <span class="tide-queue-meta">Block &#xB7; Side Team &#xB7; Yours</span></span><span class="tide-badge tide-badge-ok" title="Due {day}">On track</span></div>
-<div class="tide-queue-row "><span class="tide-queue-title"><a class="tide-action-ref " href="{action}">Side: nobody&#x27;s, overdue</a><span class="tide-action-num tide-action-num-after">{action}</span> <span class="tide-queue-meta">IOC sweep &#xB7; Side Team &#xB7; Unassigned<span>&#xA0;&#xB7; <span class="tide-queue-late">3 days late</span></span></span></span><button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" aria-label="Take {action} on: Side: nobody&#x27;s, overdue">Take it</button></div></section> --- 
+<div class="tide-queue-row "><div class="tide-queue-title"><a class="tide-action-ref " href="{action}">Side: the owner&#x27;s</a><span class="tide-action-num tide-action-num-after">{action}</span> <div class="tide-queue-badges"><span class="tide-action-num">{action}</span> <span class="tide-badge tide-badge-neutral">Open</span> <span class="tide-badge tide-badge-warn" title="Priority P3">P3</span> <span class="tide-badge tide-badge-ok" title="Due {day}">On track</span></div> <div class="tide-queue-meta">Side Team &#xB7; yours</div></div></div>
+<div class="tide-queue-row "><div class="tide-queue-title"><a class="tide-action-ref " href="{action}">Side: nobody&#x27;s, overdue</a><span class="tide-action-num tide-action-num-after">{action}</span> <div class="tide-queue-badges"><span class="tide-action-num">{action}</span> <span class="tide-badge tide-badge-neutral">Open</span> <span class="tide-badge tide-badge-warn" title="Priority P3">P3</span> <span class="tide-badge tide-badge-danger tide-badge-solid" title="Due {day}"><span class="bi bi-exclamation-triangle-fill" aria-hidden="true"></span>Overdue &#xB7; 3 days</span></div> <div class="tide-queue-meta">Side Team &#xB7; nobody has it</div></div><button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" aria-label="Take {action} on: Side: nobody&#x27;s, overdue">Take it</button></div></section> --- 
 <section class="tide-card" aria-labelledby="meeting-h" data-submit-scope>
-<h2 id="meeting-h">Meeting</h2> <dl class="tide-dl mb-2">
-<dt>When</dt><dd>{shortday} &#xB7; {time} {zone}</dd> 
-<dt>Presenter</dt><dd>Sample data</dd> 
-<dt>Title slide line</dt> <dd><span class="tide-muted">None</span></dd></dl><p class="small mb-2">The rotation has <strong>Dev Analyst</strong> for this day.</p>
+<h2 id="meeting-h">Meeting</h2> <dl class="tide-facts tide-facts-side tide-meeting-facts"><div class="tide-fact">
+<dt>When</dt><dd>{shortday} &#xB7; {time} {zone}</dd></div> <div class="tide-fact">
+<dt>Presenter</dt><dd>Sample data</dd></div> <div class="tide-fact tide-fact-wide">
+<dt>Title slide line</dt> <dd><span class="tide-muted">None</span></dd></div></dl><p class="small mb-2">The rotation has <strong>Dev Analyst</strong> for this day.</p>
 <h3 class="tide-subhead">Attended</h3> <div class="small">In the room</div>
 <h3 class="tide-subhead">Meeting notes</h3><div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
 <li><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
@@ -102,10 +106,10 @@ same as draft / Analyst Side Analyst / day
 === draft / ActionOwner Side Owner / day (17 commands)
 
 <section class="tide-card" aria-labelledby="meeting-h" data-submit-scope>
-<h2 id="meeting-h">Meeting</h2> <dl class="tide-dl mb-2">
-<dt>When</dt><dd>{shortday} &#xB7; {time} {zone}</dd> 
-<dt>Presenter</dt><dd>Tester</dd> 
-<dt>Title slide line</dt> <dd><span class="tide-tlp tide-tlp-clear" title="Disclosure is not limited.">TLP:CLEAR</span> A quiet week.</dd></dl>
+<h2 id="meeting-h">Meeting</h2> <dl class="tide-facts tide-facts-side tide-meeting-facts"><div class="tide-fact">
+<dt>When</dt><dd>{shortday} &#xB7; {time} {zone}</dd></div> <div class="tide-fact">
+<dt>Presenter</dt><dd>Tester</dd></div> <div class="tide-fact tide-fact-wide">
+<dt>Title slide line</dt> <dd><span class="tide-tlp tide-tlp-clear" title="Disclosure is not limited.">TLP:CLEAR</span> A quiet week.</dd></div></dl>
 <h3 class="tide-subhead">Attended</h3> <div class="small">In the room</div>
 <h3 class="tide-subhead">Meeting notes</h3><div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
 <li><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
@@ -113,10 +117,10 @@ same as draft / Analyst Side Analyst / day
 === draft / Viewer Side Viewer / today (20 commands)
 
 <section class="tide-card" aria-labelledby="meeting-h" data-submit-scope>
-<h2 id="meeting-h">Meeting</h2> <dl class="tide-dl mb-2">
-<dt>When</dt><dd>{shortday} &#xB7; {time} {zone}</dd> 
-<dt>Presenter</dt><dd>Sample data</dd> 
-<dt>Title slide line</dt> <dd><span class="tide-muted">None</span></dd></dl><p class="small mb-2">The rotation has <strong>Dev Analyst</strong> for this day.</p>
+<h2 id="meeting-h">Meeting</h2> <dl class="tide-facts tide-facts-side tide-meeting-facts"><div class="tide-fact">
+<dt>When</dt><dd>{shortday} &#xB7; {time} {zone}</dd></div> <div class="tide-fact">
+<dt>Presenter</dt><dd>Sample data</dd></div> <div class="tide-fact tide-fact-wide">
+<dt>Title slide line</dt> <dd><span class="tide-muted">None</span></dd></div></dl><p class="small mb-2">The rotation has <strong>Dev Analyst</strong> for this day.</p>
 <h3 class="tide-subhead">Attended</h3> <div class="small">In the room</div>
 <h3 class="tide-subhead">Meeting notes</h3><div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
 <li><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
@@ -127,11 +131,11 @@ same as draft / Analyst Side Analyst / day
 <h2 id="recent-h">Recently presented <span class="tide-count">(0)</span></h2><div class="tide-empty-state tide-empty-state-compact "><span class="bi bi-file-earmark-text tide-empty-state-icon" aria-hidden="true"></span> <div class="tide-empty-state-title">Nothing presented yet.</div></div><ul class="list-unstyled mb-0"></ul></section>
 === draft / Viewer Side Viewer / day (17 commands)
 same as draft / ActionOwner Side Owner / day
-=== ready / Analyst Side Analyst / today (47 commands)
+=== ready / Analyst Side Analyst / today (45 commands)
 same as draft / Analyst Side Analyst / today
 === ready / Analyst Side Analyst / day (35 commands)
 same as draft / Analyst Side Analyst / day
-=== ready / Analyst Robin / today (48 commands)
+=== ready / Analyst Robin / today (46 commands)
 same as draft / Analyst Robin / today
 === ready / Analyst Robin / day (35 commands)
 same as draft / Analyst Side Analyst / day
@@ -143,11 +147,11 @@ same as draft / ActionOwner Side Owner / day
 same as draft / Viewer Side Viewer / today
 === ready / Viewer Side Viewer / day (17 commands)
 same as draft / ActionOwner Side Owner / day
-=== live meeting / Analyst Side Analyst / today (47 commands)
+=== live meeting / Analyst Side Analyst / today (45 commands)
 same as draft / Analyst Side Analyst / today
 === live meeting / Analyst Side Analyst / day (35 commands)
 same as draft / Analyst Side Analyst / day
-=== live meeting / Analyst Robin / today (48 commands)
+=== live meeting / Analyst Robin / today (46 commands)
 same as draft / Analyst Robin / today
 === live meeting / Analyst Robin / day (35 commands)
 same as draft / Analyst Side Analyst / day
@@ -159,11 +163,11 @@ same as draft / ActionOwner Side Owner / day
 same as draft / Viewer Side Viewer / today
 === live meeting / Viewer Side Viewer / day (17 commands)
 same as draft / ActionOwner Side Owner / day
-=== presented / Analyst Side Analyst / today (47 commands)
+=== presented / Analyst Side Analyst / today (45 commands)
 same as draft / Analyst Side Analyst / today
 === presented / Analyst Side Analyst / day (35 commands)
 same as draft / Analyst Side Analyst / day
-=== presented / Analyst Robin / today (48 commands)
+=== presented / Analyst Robin / today (46 commands)
 same as draft / Analyst Robin / today
 === presented / Analyst Robin / day (35 commands)
 same as draft / Analyst Side Analyst / day
@@ -175,23 +179,25 @@ same as draft / ActionOwner Side Owner / day
 same as draft / Viewer Side Viewer / today
 === presented / Viewer Side Viewer / day (17 commands)
 same as draft / ActionOwner Side Owner / day
-=== sent / Analyst Side Analyst / today (48 commands)
+=== sent / Analyst Side Analyst / today (46 commands)
 
 <section class="tide-card" aria-labelledby="my-actions-h">
-<h2 id="my-actions-h">My actions <span class="tide-count">(0)</span> <a class="ms-auto small fw-normal" href="actions?view=mine">All</a></h2><div class="tide-empty-state tide-empty-state-compact "><span class="bi bi-check2-circle tide-empty-state-icon" aria-hidden="true"></span> <div class="tide-empty-state-title">Nothing assigned to you.</div><div class="tide-empty-state-msg"></div></div></section> --- 
+<h2 id="my-actions-h">My actions <span class="tide-count">(0)</span> <a class="ms-auto small fw-normal" href="actions?view=mine">All</a></h2><p class="small tide-muted mb-0">Nothing assigned to you.</p></section> --- 
 <section class="tide-card" aria-labelledby="recent-h">
-<h2 id="recent-h" tabindex="-1">Not on a brief yet <span class="tide-count">(0)</span></h2> <p class="small tide-muted mb-2">Ready articles first, then your own drafts. None has been on a brief.</p><div class="tide-empty-state tide-empty-state-compact "><span class="bi bi-check2-circle tide-empty-state-icon" aria-hidden="true"></span> <div class="tide-empty-state-title">Everything ready is on a brief.</div></div><ul class="list-unstyled mb-0"></ul> <div class="d-flex gap-2 mt-2"><a class="btn btn-outline-secondary btn-sm ms-auto" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article</a></div></section> --- 
+<h2 id="recent-h" tabindex="-1">Not on a brief yet <span class="tide-count">(0)</span> <a class="ms-auto small fw-normal" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article</a></h2><p class="small tide-muted mb-0">Everything ready is on a brief.</p><ul class="list-unstyled mb-0"></ul></section> --- 
 <section class="tide-card" aria-labelledby="edition-check-h">
 <h2 id="edition-check-h">Edition check <span class="ms-auto small fw-normal tide-muted">From the running order</span></h2> <div class="tide-ed-cols"><div class="tide-ed-col">
-<h3><a href="briefs/{iso}?tab=team">Team edition</a> <span class="tide-ed-sub">Up to <span class="tide-tlp tide-tlp-amberstrict" title="Limited disclosure: recipients may share only within their own organization, on a need-to-know basis.">TLP:AMBER&#x2B;STRICT</span> &#xB7; 3 of 3 articles</span></h3><p class="tide-ed-whole is-all"><span class="bi bi-check2" aria-hidden="true"></span>All 3 articles go out whole.</p></div> <div class="tide-ed-col">
-<h3><a href="briefs/{iso}?tab=company">Company-wide edition</a> <span class="tide-ed-sub">Up to <span class="tide-tlp tide-tlp-green" title="Limited disclosure: may be shared within the community, not publicly.">TLP:GREEN</span> &#xB7; 2 of 3 articles</span></h3><ul class="tide-ed-list">
+<h3><a href="briefs/{iso}?tab=team">Team<span class="tide-ed-word"> edition</span></a> <span class="tide-ed-sub"><span class="tide-ed-word">Up to </span><span class="tide-tlp tide-tlp-amberstrict" title="Limited disclosure: recipients may share only within their own organization, on a need-to-know basis.">TLP:AMBER&#x2B;STRICT</span> &#xB7; 3 of 3 articles</span></h3><p class="tide-ed-whole is-all"><span class="bi bi-check2" aria-hidden="true"></span>All 3 articles go out whole.</p></div> <div class="tide-ed-col">
+<h3><a href="briefs/{iso}?tab=company">Company-wide<span class="tide-ed-word"> edition</span></a> <span class="tide-ed-sub"><span class="tide-ed-word">Up to </span><span class="tide-tlp tide-tlp-green" title="Limited disclosure: may be shared within the community, not publicly.">TLP:GREEN</span> &#xB7; 2 of 3 articles</span></h3><ul class="tide-ed-list">
 <li class=""><span class="tide-ed-mark is-part">Partly included<span class="visually-hidden">:</span></span> <span><a class="tide-ed-title" href="articles/{id}">Edge VPN appliance zero-day exploited for initial access</a><span class="tide-ed-why">1 part above TLP:GREEN left out</span><span class="tide-ed-warn"><span class="bi bi-exclamation-circle" aria-hidden="true"></span><span class="visually-hidden">Warning:</span> Why it matters is TLP:CLEAR and will reach the company-wide edition.</span></span></li>
 <li class="is-out"><span class="tide-ed-mark is-leftout">Left out<span class="visually-hidden">:</span></span> <span><a class="tide-ed-title" href="articles/{id}">Partner reports targeting of shared payment processor</a><span class="tide-ed-why">The article is TLP:AMBER</span></span></li></ul></div></div> <p class="tide-ed-note">The company-wide edition never carries the numbers, indicators or actions. <a href="briefs/{iso}?tab=preview">Preview both editions</a></p></section> --- 
+<section class="tide-card" aria-labelledby="reviews-h">
+<h2 id="reviews-h"><span class="bi bi-person-check" aria-hidden="true"></span> Reviews asked of you</h2><p class="small tide-muted mb-0">None waiting.</p></section> --- 
 <section class="tide-card" aria-labelledby="meeting-h" data-submit-scope>
-<h2 id="meeting-h">Meeting</h2> <dl class="tide-dl mb-2">
-<dt>When</dt><dd>{shortday} &#xB7; {time} {zone}</dd> 
-<dt>Presenter</dt><dd>Sample data</dd> 
-<dt>Title slide line</dt> <dd><span class="tide-muted">None</span></dd></dl><p class="small mb-2">The rotation has <strong>Dev Analyst</strong> for this day.</p>
+<h2 id="meeting-h">Meeting</h2> <dl class="tide-facts tide-facts-side tide-meeting-facts"><div class="tide-fact">
+<dt>When</dt><dd>{shortday} &#xB7; {time} {zone}</dd></div> <div class="tide-fact">
+<dt>Presenter</dt><dd>Sample data</dd></div> <div class="tide-fact tide-fact-wide">
+<dt>Title slide line</dt> <dd><span class="tide-muted">None</span></dd></div></dl><p class="small mb-2">The rotation has <strong>Dev Analyst</strong> for this day.</p>
 <h3 class="tide-subhead">Attended</h3> <div class="small">In the room</div>
 <h3 class="tide-subhead">Meeting notes</h3><div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
 <li><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
@@ -204,43 +210,45 @@ same as draft / ActionOwner Side Owner / day
 
 <section class="tide-card" aria-labelledby="edition-check-h">
 <h2 id="edition-check-h">Edition check <span class="ms-auto small fw-normal tide-muted">From the running order</span></h2> <div class="tide-ed-cols"><div class="tide-ed-col">
-<h3><a href="briefs/{iso}?tab=team">Team edition</a> <span class="tide-ed-sub">Up to <span class="tide-tlp tide-tlp-amberstrict" title="Limited disclosure: recipients may share only within their own organization, on a need-to-know basis.">TLP:AMBER&#x2B;STRICT</span> &#xB7; 1 of 1 article</span></h3><p class="tide-ed-whole is-all"><span class="bi bi-check2" aria-hidden="true"></span>The article goes out whole.</p></div> <div class="tide-ed-col">
-<h3><a href="briefs/{iso}?tab=company">Company-wide edition</a> <span class="tide-ed-sub">Up to <span class="tide-tlp tide-tlp-green" title="Limited disclosure: may be shared within the community, not publicly.">TLP:GREEN</span> &#xB7; 1 of 1 article</span></h3><ul class="tide-ed-list">
+<h3><a href="briefs/{iso}?tab=team">Team<span class="tide-ed-word"> edition</span></a> <span class="tide-ed-sub"><span class="tide-ed-word">Up to </span><span class="tide-tlp tide-tlp-amberstrict" title="Limited disclosure: recipients may share only within their own organization, on a need-to-know basis.">TLP:AMBER&#x2B;STRICT</span> &#xB7; 1 of 1 article</span></h3><p class="tide-ed-whole is-all"><span class="bi bi-check2" aria-hidden="true"></span>The article goes out whole.</p></div> <div class="tide-ed-col">
+<h3><a href="briefs/{iso}?tab=company">Company-wide<span class="tide-ed-word"> edition</span></a> <span class="tide-ed-sub"><span class="tide-ed-word">Up to </span><span class="tide-tlp tide-tlp-green" title="Limited disclosure: may be shared within the community, not publicly.">TLP:GREEN</span> &#xB7; 1 of 1 article</span></h3><ul class="tide-ed-list">
 <li class=""><span class="tide-ed-mark is-part">Partly included<span class="visually-hidden">:</span></span> <span><a class="tide-ed-title" href="articles/{id}">Edge VPN appliance zero-day exploited for initial access</a><span class="tide-ed-why">1 part above TLP:GREEN left out</span><span class="tide-ed-warn"><span class="bi bi-exclamation-circle" aria-hidden="true"></span><span class="visually-hidden">Warning:</span> Why it matters is TLP:CLEAR and will reach the company-wide edition.</span></span></li></ul></div></div> <p class="tide-ed-note">The company-wide edition never carries the numbers, indicators or actions. <a href="briefs/{iso}?tab=preview">Preview both editions</a></p></section> --- 
 <section class="tide-card" aria-labelledby="meeting-h" data-submit-scope>
-<h2 id="meeting-h">Meeting</h2> <dl class="tide-dl mb-2">
-<dt>When</dt><dd>{shortday} &#xB7; {time} {zone}</dd> 
-<dt>Presenter</dt><dd>Tester</dd> 
-<dt>Title slide line</dt> <dd><span class="tide-tlp tide-tlp-clear" title="Disclosure is not limited.">TLP:CLEAR</span> A quiet week.</dd></dl>
+<h2 id="meeting-h">Meeting</h2> <dl class="tide-facts tide-facts-side tide-meeting-facts"><div class="tide-fact">
+<dt>When</dt><dd>{shortday} &#xB7; {time} {zone}</dd></div> <div class="tide-fact">
+<dt>Presenter</dt><dd>Tester</dd></div> <div class="tide-fact tide-fact-wide">
+<dt>Title slide line</dt> <dd><span class="tide-tlp tide-tlp-clear" title="Disclosure is not limited.">TLP:CLEAR</span> A quiet week.</dd></div></dl>
 <h3 class="tide-subhead">Attended</h3> <div class="small">In the room</div>
 <h3 class="tide-subhead">Meeting notes</h3><div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
 <li><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
 <li><strong>Sam</strong> <span class="tide-muted">{time}</span> Thanks all.</li></ul></div></section> --- 
 <section class="tide-card tide-section" aria-labelledby="hist-{id}-head">
 <h2 id="hist-{id}-head" class="mb-0"><button type="button" class="tide-disclosure" aria-expanded="false" aria-controls="hist-{id}-body"><span class="bi bi-chevron-right tide-disclosure-chev" aria-hidden="true"></span> History <span class="tide-disclosure-sum">who changed what, and when</span></button></h2> <div id="hist-{id}-body" class="tide-disclosure-body" hidden><p class="small tide-muted mb-0">Loading&#x2026;</p></div></section>
-=== sent / Analyst Robin / today (49 commands)
+=== sent / Analyst Robin / today (47 commands)
 
 <section class="tide-card" aria-labelledby="my-actions-h">
 <h2 id="my-actions-h">My actions <span class="tide-count">(1)</span> <a class="ms-auto small fw-normal" href="actions?view=mine">All</a></h2><div class="d-flex gap-2 align-items-start py-1 border-bottom small "><span class="flex-grow-1"><a class="tide-action-ref " href="{action}">Side: Robin&#x27;s</a><span class="tide-action-num tide-action-num-after">{action}</span> </span> <span class="tide-badge tide-badge-ok" title="Due {day}">On track</span></div></section> --- 
 <section class="tide-card" aria-labelledby="recent-h">
-<h2 id="recent-h" tabindex="-1">Not on a brief yet <span class="tide-count">(0)</span></h2> <p class="small tide-muted mb-2">Ready articles first, then your own drafts. None has been on a brief.</p><div class="tide-empty-state tide-empty-state-compact "><span class="bi bi-check2-circle tide-empty-state-icon" aria-hidden="true"></span> <div class="tide-empty-state-title">Everything ready is on a brief.</div></div><ul class="list-unstyled mb-0"></ul> <div class="d-flex gap-2 mt-2"><a class="btn btn-outline-secondary btn-sm ms-auto" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article</a></div></section> --- 
+<h2 id="recent-h" tabindex="-1">Not on a brief yet <span class="tide-count">(0)</span> <a class="ms-auto small fw-normal" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article</a></h2><p class="small tide-muted mb-0">Everything ready is on a brief.</p><ul class="list-unstyled mb-0"></ul></section> --- 
 <section class="tide-card" aria-labelledby="edition-check-h">
 <h2 id="edition-check-h">Edition check <span class="ms-auto small fw-normal tide-muted">From the running order</span></h2> <div class="tide-ed-cols"><div class="tide-ed-col">
-<h3><a href="briefs/{iso}?tab=team">Team edition</a> <span class="tide-ed-sub">Up to <span class="tide-tlp tide-tlp-amberstrict" title="Limited disclosure: recipients may share only within their own organization, on a need-to-know basis.">TLP:AMBER&#x2B;STRICT</span> &#xB7; 3 of 3 articles</span></h3><p class="tide-ed-whole is-all"><span class="bi bi-check2" aria-hidden="true"></span>All 3 articles go out whole.</p></div> <div class="tide-ed-col">
-<h3><a href="briefs/{iso}?tab=company">Company-wide edition</a> <span class="tide-ed-sub">Up to <span class="tide-tlp tide-tlp-green" title="Limited disclosure: may be shared within the community, not publicly.">TLP:GREEN</span> &#xB7; 2 of 3 articles</span></h3><ul class="tide-ed-list">
+<h3><a href="briefs/{iso}?tab=team">Team<span class="tide-ed-word"> edition</span></a> <span class="tide-ed-sub"><span class="tide-ed-word">Up to </span><span class="tide-tlp tide-tlp-amberstrict" title="Limited disclosure: recipients may share only within their own organization, on a need-to-know basis.">TLP:AMBER&#x2B;STRICT</span> &#xB7; 3 of 3 articles</span></h3><p class="tide-ed-whole is-all"><span class="bi bi-check2" aria-hidden="true"></span>All 3 articles go out whole.</p></div> <div class="tide-ed-col">
+<h3><a href="briefs/{iso}?tab=company">Company-wide<span class="tide-ed-word"> edition</span></a> <span class="tide-ed-sub"><span class="tide-ed-word">Up to </span><span class="tide-tlp tide-tlp-green" title="Limited disclosure: may be shared within the community, not publicly.">TLP:GREEN</span> &#xB7; 2 of 3 articles</span></h3><ul class="tide-ed-list">
 <li class=""><span class="tide-ed-mark is-part">Partly included<span class="visually-hidden">:</span></span> <span><a class="tide-ed-title" href="articles/{id}">Edge VPN appliance zero-day exploited for initial access</a><span class="tide-ed-why">1 part above TLP:GREEN left out</span><span class="tide-ed-warn"><span class="bi bi-exclamation-circle" aria-hidden="true"></span><span class="visually-hidden">Warning:</span> Why it matters is TLP:CLEAR and will reach the company-wide edition.</span></span></li>
 <li class="is-out"><span class="tide-ed-mark is-leftout">Left out<span class="visually-hidden">:</span></span> <span><a class="tide-ed-title" href="articles/{id}">Partner reports targeting of shared payment processor</a><span class="tide-ed-why">The article is TLP:AMBER</span></span></li></ul></div></div> <p class="tide-ed-note">The company-wide edition never carries the numbers, indicators or actions. <a href="briefs/{iso}?tab=preview">Preview both editions</a></p></section> --- 
 <section class="tide-card" aria-labelledby="teams-queue-h">
 <h2 id="teams-queue-h" tabindex="-1">Your teams&#x27; queue <span class="tide-count">(1)</span> <a class="ms-auto small fw-normal" href="actions?view=myteams">My teams</a></h2>
-<div class="tide-queue-row "><span class="tide-queue-title"><a class="tide-action-ref " href="{action}">Side: nobody&#x27;s, overdue</a><span class="tide-action-num tide-action-num-after">{action}</span> <span class="tide-queue-meta">IOC sweep &#xB7; Side Team<span>&#xA0;&#xB7; <span class="tide-queue-late">3 days late</span></span></span></span><button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" aria-label="Take {action} on: Side: nobody&#x27;s, overdue">Take it</button></div></section> --- 
+<div class="tide-queue-row "><div class="tide-queue-title"><a class="tide-action-ref " href="{action}">Side: nobody&#x27;s, overdue</a><span class="tide-action-num tide-action-num-after">{action}</span> <div class="tide-queue-badges"><span class="tide-action-num">{action}</span> <span class="tide-badge tide-badge-neutral">Open</span> <span class="tide-badge tide-badge-warn" title="Priority P3">P3</span> <span class="tide-badge tide-badge-danger tide-badge-solid" title="Due {day}"><span class="bi bi-exclamation-triangle-fill" aria-hidden="true"></span>Overdue &#xB7; 3 days</span></div> <div class="tide-queue-meta">Side Team &#xB7; nobody has it</div></div><button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" aria-label="Take {action} on: Side: nobody&#x27;s, overdue">Take it</button></div></section> --- 
 <section class="tide-card tide-escalated" aria-labelledby="escalated-h">
 <h2 id="escalated-h"><span class="bi bi-arrow-up-circle-fill text-danger" aria-hidden="true"></span> Escalated <span class="tide-count">(1)</span> <a class="ms-auto small fw-normal" href="actions?view=overdue">Overdue</a></h2> <p class="small tide-muted mb-1">Slipping long enough that the escalation ladder flagged them. Each stays until it closes or its due date moves.</p>
-<div class="tide-queue-row "><span class="tide-queue-title"><a class="tide-action-ref " href="{action}">Side: nobody&#x27;s, overdue</a><span class="tide-action-num tide-action-num-after">{action}</span> <span class="tide-queue-meta">P3 &#xB7; Side Team &#xB7; Unassigned<span>&#xA0;&#xB7; <span class="tide-queue-late">3 days late</span></span></span></span><span class="tide-badge tide-badge-danger tide-badge-solid" title="Due {day}"><span class="bi bi-exclamation-triangle-fill" aria-hidden="true"></span>Overdue</span></div></section> --- 
+<div class="tide-queue-row "><div class="tide-queue-title"><a class="tide-action-ref " href="{action}">Side: nobody&#x27;s, overdue</a><span class="tide-action-num tide-action-num-after">{action}</span> <div class="tide-queue-badges"><span class="tide-action-num">{action}</span> <span class="tide-badge tide-badge-neutral">Open</span> <span class="tide-badge tide-badge-warn" title="Priority P3">P3</span> <span class="tide-badge tide-badge-danger tide-badge-solid" title="Due {day}"><span class="bi bi-exclamation-triangle-fill" aria-hidden="true"></span>Overdue &#xB7; 3 days</span></div> <div class="tide-queue-meta">Side Team &#xB7; nobody has it</div></div></div></section> --- 
+<section class="tide-card" aria-labelledby="reviews-h">
+<h2 id="reviews-h"><span class="bi bi-person-check" aria-hidden="true"></span> Reviews asked of you</h2><p class="small tide-muted mb-0">None waiting.</p></section> --- 
 <section class="tide-card" aria-labelledby="meeting-h" data-submit-scope>
-<h2 id="meeting-h">Meeting</h2> <dl class="tide-dl mb-2">
-<dt>When</dt><dd>{shortday} &#xB7; {time} {zone}</dd> 
-<dt>Presenter</dt><dd>Sample data</dd> 
-<dt>Title slide line</dt> <dd><span class="tide-muted">None</span></dd></dl><p class="small mb-2">The rotation has <strong>Dev Analyst</strong> for this day.</p>
+<h2 id="meeting-h">Meeting</h2> <dl class="tide-facts tide-facts-side tide-meeting-facts"><div class="tide-fact">
+<dt>When</dt><dd>{shortday} &#xB7; {time} {zone}</dd></div> <div class="tide-fact">
+<dt>Presenter</dt><dd>Sample data</dd></div> <div class="tide-fact tide-fact-wide">
+<dt>Title slide line</dt> <dd><span class="tide-muted">None</span></dd></div></dl><p class="small mb-2">The rotation has <strong>Dev Analyst</strong> for this day.</p>
 <h3 class="tide-subhead">Attended</h3> <div class="small">In the room</div>
 <h3 class="tide-subhead">Meeting notes</h3><div class="tide-meeting-notes-group"><div class="tide-muted small">Edge VPN appliance zero-day exploited for initial access</div> <ul class="tide-meeting-notes small">
 <li><strong>Sam</strong> <span class="tide-muted">{time}</span> Patch Friday.</li></ul></div><div class="tide-meeting-notes-group"><div class="tide-muted small">The meeting</div> <ul class="tide-meeting-notes small">
@@ -265,12 +273,11 @@ same as draft / ActionOwner Side Owner / day
 === no brief yet / Analyst Side Analyst / today (17 commands)
 
 <section class="tide-card" aria-labelledby="my-actions-h">
-<h2 id="my-actions-h">My actions <span class="tide-count">(0)</span> <a class="ms-auto small fw-normal" href="actions?view=mine">All</a></h2><div class="tide-empty-state tide-empty-state-compact "><span class="bi bi-check2-circle tide-empty-state-icon" aria-hidden="true"></span> <div class="tide-empty-state-title">Nothing assigned to you.</div><div class="tide-empty-state-msg"></div></div></section> --- 
+<h2 id="my-actions-h">My actions <span class="tide-count">(0)</span> <a class="ms-auto small fw-normal" href="actions?view=mine">All</a></h2><p class="small tide-muted mb-0">Nothing assigned to you.</p></section> --- 
 <section class="tide-card" aria-labelledby="recent-h">
-<h2 id="recent-h">Recently written <span class="tide-count">(3)</span></h2><ul class="list-unstyled mb-0">
-<li class="mb-2"><a href="articles/{id}" class="fw-semibold text-decoration-none">Edge VPN appliance zero-day exploited for initial access</a> <div class="tide-run-meta"><span class="tide-badge tide-badge-danger"><span class="bi bi-exclamation-triangle-fill" aria-hidden="true"></span>Threat</span> <span class="tide-badge tide-badge-danger tide-badge-solid" title="Priority P1">P1</span> <span class="tide-badge tide-badge-ok">Ready</span> <span>Sample data &#xB7; {when}</span></div></li>
-<li class="mb-2"><a href="articles/{id}" class="fw-semibold text-decoration-none">Invoice-themed phishing wave targets accounts payable teams</a> <div class="tide-run-meta"><span class="tide-badge tide-badge-info"><span class="bi bi-info-circle" aria-hidden="true"></span>Informational</span> <span class="tide-badge tide-badge-ok">Ready</span> <span>Sample data &#xB7; {when}</span></div></li>
-<li class="mb-2"><a href="articles/{id}" class="fw-semibold text-decoration-none">Partner reports targeting of shared payment processor</a> <div class="tide-run-meta"><span class="tide-badge tide-badge-danger"><span class="bi bi-exclamation-triangle-fill" aria-hidden="true"></span>Threat</span> <span class="tide-badge tide-badge-danger" title="Priority P2">P2</span> <span class="tide-badge tide-badge-neutral">Draft</span> <span>Sample data &#xB7; {when}</span></div></li></ul><a class="btn btn-outline-secondary btn-sm mt-2" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article</a></section> --- 
+<h2 id="recent-h" tabindex="-1">Not on a brief yet <span class="tide-count">(0)</span> <a class="ms-auto small fw-normal" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article</a></h2><p class="small tide-muted mb-0">Everything ready is on a brief.</p><ul class="list-unstyled mb-0"></ul></section> --- 
+<section class="tide-card" aria-labelledby="reviews-h">
+<h2 id="reviews-h"><span class="bi bi-person-check" aria-hidden="true"></span> Reviews asked of you</h2><p class="small tide-muted mb-0">None waiting.</p></section> --- 
 <section class="tide-card" aria-labelledby="coming-up-h">
 <h2 id="coming-up-h">Coming up for you <a class="ms-auto small fw-normal" href="rotation">Rotation</a></h2><div class="small tide-muted">You're not on the rotation in the coming weeks.</div><ul class="list-unstyled small mb-0"></ul></section>
 === no brief yet / Analyst Side Analyst / day (5 commands)
@@ -280,16 +287,15 @@ same as draft / ActionOwner Side Owner / day
 <section class="tide-card" aria-labelledby="my-actions-h">
 <h2 id="my-actions-h">My actions <span class="tide-count">(1)</span> <a class="ms-auto small fw-normal" href="actions?view=mine">All</a></h2><div class="d-flex gap-2 align-items-start py-1 border-bottom small "><span class="flex-grow-1"><a class="tide-action-ref " href="{action}">Side: Robin&#x27;s</a><span class="tide-action-num tide-action-num-after">{action}</span> </span> <span class="tide-badge tide-badge-ok" title="Due {day}">On track</span></div></section> --- 
 <section class="tide-card" aria-labelledby="recent-h">
-<h2 id="recent-h">Recently written <span class="tide-count">(3)</span></h2><ul class="list-unstyled mb-0">
-<li class="mb-2"><a href="articles/{id}" class="fw-semibold text-decoration-none">Edge VPN appliance zero-day exploited for initial access</a> <div class="tide-run-meta"><span class="tide-badge tide-badge-danger"><span class="bi bi-exclamation-triangle-fill" aria-hidden="true"></span>Threat</span> <span class="tide-badge tide-badge-danger tide-badge-solid" title="Priority P1">P1</span> <span class="tide-badge tide-badge-ok">Ready</span> <span>Sample data &#xB7; {when}</span></div></li>
-<li class="mb-2"><a href="articles/{id}" class="fw-semibold text-decoration-none">Invoice-themed phishing wave targets accounts payable teams</a> <div class="tide-run-meta"><span class="tide-badge tide-badge-info"><span class="bi bi-info-circle" aria-hidden="true"></span>Informational</span> <span class="tide-badge tide-badge-ok">Ready</span> <span>Sample data &#xB7; {when}</span></div></li>
-<li class="mb-2"><a href="articles/{id}" class="fw-semibold text-decoration-none">Partner reports targeting of shared payment processor</a> <div class="tide-run-meta"><span class="tide-badge tide-badge-danger"><span class="bi bi-exclamation-triangle-fill" aria-hidden="true"></span>Threat</span> <span class="tide-badge tide-badge-danger" title="Priority P2">P2</span> <span class="tide-badge tide-badge-neutral">Draft</span> <span>Sample data &#xB7; {when}</span></div></li></ul><a class="btn btn-outline-secondary btn-sm mt-2" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article</a></section> --- 
+<h2 id="recent-h" tabindex="-1">Not on a brief yet <span class="tide-count">(0)</span> <a class="ms-auto small fw-normal" href="articles?new=1"><span class="bi bi-plus-lg" aria-hidden="true"></span> New article</a></h2><p class="small tide-muted mb-0">Everything ready is on a brief.</p><ul class="list-unstyled mb-0"></ul></section> --- 
 <section class="tide-card" aria-labelledby="teams-queue-h">
 <h2 id="teams-queue-h" tabindex="-1">Your teams&#x27; queue <span class="tide-count">(1)</span> <a class="ms-auto small fw-normal" href="actions?view=myteams">My teams</a></h2>
-<div class="tide-queue-row "><span class="tide-queue-title"><a class="tide-action-ref " href="{action}">Side: nobody&#x27;s, overdue</a><span class="tide-action-num tide-action-num-after">{action}</span> <span class="tide-queue-meta">IOC sweep &#xB7; Side Team<span>&#xA0;&#xB7; <span class="tide-queue-late">3 days late</span></span></span></span><button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" aria-label="Take {action} on: Side: nobody&#x27;s, overdue">Take it</button></div></section> --- 
+<div class="tide-queue-row "><div class="tide-queue-title"><a class="tide-action-ref " href="{action}">Side: nobody&#x27;s, overdue</a><span class="tide-action-num tide-action-num-after">{action}</span> <div class="tide-queue-badges"><span class="tide-action-num">{action}</span> <span class="tide-badge tide-badge-neutral">Open</span> <span class="tide-badge tide-badge-warn" title="Priority P3">P3</span> <span class="tide-badge tide-badge-danger tide-badge-solid" title="Due {day}"><span class="bi bi-exclamation-triangle-fill" aria-hidden="true"></span>Overdue &#xB7; 3 days</span></div> <div class="tide-queue-meta">Side Team &#xB7; nobody has it</div></div><button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" aria-label="Take {action} on: Side: nobody&#x27;s, overdue">Take it</button></div></section> --- 
 <section class="tide-card tide-escalated" aria-labelledby="escalated-h">
 <h2 id="escalated-h"><span class="bi bi-arrow-up-circle-fill text-danger" aria-hidden="true"></span> Escalated <span class="tide-count">(1)</span> <a class="ms-auto small fw-normal" href="actions?view=overdue">Overdue</a></h2> <p class="small tide-muted mb-1">Slipping long enough that the escalation ladder flagged them. Each stays until it closes or its due date moves.</p>
-<div class="tide-queue-row "><span class="tide-queue-title"><a class="tide-action-ref " href="{action}">Side: nobody&#x27;s, overdue</a><span class="tide-action-num tide-action-num-after">{action}</span> <span class="tide-queue-meta">P3 &#xB7; Side Team &#xB7; Unassigned<span>&#xA0;&#xB7; <span class="tide-queue-late">3 days late</span></span></span></span><span class="tide-badge tide-badge-danger tide-badge-solid" title="Due {day}"><span class="bi bi-exclamation-triangle-fill" aria-hidden="true"></span>Overdue</span></div></section> --- 
+<div class="tide-queue-row "><div class="tide-queue-title"><a class="tide-action-ref " href="{action}">Side: nobody&#x27;s, overdue</a><span class="tide-action-num tide-action-num-after">{action}</span> <div class="tide-queue-badges"><span class="tide-action-num">{action}</span> <span class="tide-badge tide-badge-neutral">Open</span> <span class="tide-badge tide-badge-warn" title="Priority P3">P3</span> <span class="tide-badge tide-badge-danger tide-badge-solid" title="Due {day}"><span class="bi bi-exclamation-triangle-fill" aria-hidden="true"></span>Overdue &#xB7; 3 days</span></div> <div class="tide-queue-meta">Side Team &#xB7; nobody has it</div></div></div></section> --- 
+<section class="tide-card" aria-labelledby="reviews-h">
+<h2 id="reviews-h"><span class="bi bi-person-check" aria-hidden="true"></span> Reviews asked of you</h2><p class="small tide-muted mb-0">None waiting.</p></section> --- 
 <section class="tide-card" aria-labelledby="coming-up-h">
 <h2 id="coming-up-h">Coming up for you <a class="ms-auto small fw-normal" href="rotation">Rotation</a></h2><ul class="list-unstyled small mb-0">
 <li>You present {shortday} to {shortday}</li>
@@ -301,8 +307,8 @@ same as no brief yet / Analyst Side Analyst / day
 
 <section class="tide-card" aria-labelledby="team-queue-h">
 <h2 id="team-queue-h" tabindex="-1">My team&#x27;s queue <span class="tide-count">(2)</span> <a class="ms-auto small fw-normal" href="actions?view=myteams">My teams</a></h2><p class="small tide-muted mb-1">1 yours and 1 unassigned.</p>
-<div class="tide-queue-row "><span class="tide-queue-title"><a class="tide-action-ref " href="{action}">Side: the owner&#x27;s</a><span class="tide-action-num tide-action-num-after">{action}</span> <span class="tide-queue-meta">Block &#xB7; Side Team &#xB7; Yours</span></span><span class="tide-badge tide-badge-ok" title="Due {day}">On track</span></div>
-<div class="tide-queue-row "><span class="tide-queue-title"><a class="tide-action-ref " href="{action}">Side: nobody&#x27;s, overdue</a><span class="tide-action-num tide-action-num-after">{action}</span> <span class="tide-queue-meta">IOC sweep &#xB7; Side Team &#xB7; Unassigned<span>&#xA0;&#xB7; <span class="tide-queue-late">3 days late</span></span></span></span><button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" aria-label="Take {action} on: Side: nobody&#x27;s, overdue">Take it</button></div></section> --- 
+<div class="tide-queue-row "><div class="tide-queue-title"><a class="tide-action-ref " href="{action}">Side: the owner&#x27;s</a><span class="tide-action-num tide-action-num-after">{action}</span> <div class="tide-queue-badges"><span class="tide-action-num">{action}</span> <span class="tide-badge tide-badge-neutral">Open</span> <span class="tide-badge tide-badge-warn" title="Priority P3">P3</span> <span class="tide-badge tide-badge-ok" title="Due {day}">On track</span></div> <div class="tide-queue-meta">Side Team &#xB7; yours</div></div></div>
+<div class="tide-queue-row "><div class="tide-queue-title"><a class="tide-action-ref " href="{action}">Side: nobody&#x27;s, overdue</a><span class="tide-action-num tide-action-num-after">{action}</span> <div class="tide-queue-badges"><span class="tide-action-num">{action}</span> <span class="tide-badge tide-badge-neutral">Open</span> <span class="tide-badge tide-badge-warn" title="Priority P3">P3</span> <span class="tide-badge tide-badge-danger tide-badge-solid" title="Due {day}"><span class="bi bi-exclamation-triangle-fill" aria-hidden="true"></span>Overdue &#xB7; 3 days</span></div> <div class="tide-queue-meta">Side Team &#xB7; nobody has it</div></div><button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" aria-label="Take {action} on: Side: nobody&#x27;s, overdue">Take it</button></div></section> --- 
 <section class="tide-card" aria-labelledby="coming-up-h">
 <h2 id="coming-up-h">Coming up for you <a class="ms-auto small fw-normal" href="rotation">Rotation</a></h2><div class="small tide-muted">You're not on the rotation in the coming weeks.</div><ul class="list-unstyled small mb-0"></ul></section> --- 
 <section class="tide-card" aria-labelledby="recent-h">

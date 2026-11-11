@@ -2355,7 +2355,7 @@ html[data-rail-over] .tide-rail { display: flex; z-index: 1025; }
 /* The overlay's backdrop: the rest of the window, top bar included, dimmed a little. Part of the rail, so a click on it
    reaches the rail (theme.js closes it). */
 html[data-rail-over] .tide-rail::before { content: ""; position: fixed; inset: 0 min(var(--tide-width-rail), 100%) 0 0;
-    background: var(--tide-overlay); opacity: .5; }
+    background: var(--tide-scrim); }
 .tide-rail:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: -2px; }
 .tide-rail-head { display: flex; align-items: center; justify-content: space-between; gap: var(--tide-space-2);
     padding: var(--tide-space-3) var(--tide-space-4); border-bottom: 1px solid var(--tide-border); }
@@ -2508,11 +2508,9 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
     /* The buttons keep their own width, up to most of the row; past that (a live meeting's note beside them) they wrap. */
     .tide-brief-head > :last-child:not(:first-child) { flex: 0 0 auto; max-width: 70%; justify-content: flex-end; }
 }
-@container steps (min-width: 46.01rem) {
-    .tide-step-txt { grid-template-columns: minmax(0, 1fr); }
-    .tide-step-detail { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
-}
-.tide-step-flag { margin-left: var(--tide-space-1); vertical-align: baseline; }
+.tide-step-txt { grid-template-columns: minmax(0, 1fr); }
+.tide-step-detail { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.tide-step-flag { margin-left: var(--tide-space-1); padding: 0 var(--tide-space-1); font-size: .68rem; vertical-align: baseline; }
 /* Under the running order and the opening note: My actions beside what's not on a brief yet, one under the other where
    there isn't room for both. */
 .tide-today-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 0 var(--tide-space-4); align-items: start; }
@@ -2523,6 +2521,28 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-rail-body > .tide-card:first-child { padding-top: 0; }
 .tide-rail-body > .tide-card + .tide-card { border-top: 1px solid var(--tide-border); }
 .tide-rail .tide-ed-cols { grid-template-columns: minmax(0, 1fr); }
+/* Each edition in one row: its name, its TLP, its count ("edition" and "Up to" kept for screen readers alone). */
+.tide-rail .tide-ed-col > h3 { display: flex; flex-wrap: nowrap; align-items: baseline; gap: var(--tide-space-2); }
+.tide-rail .tide-ed-col > h3 > a { flex: 0 0 6.5rem; }
+.tide-rail .tide-ed-sub { min-width: 0; white-space: nowrap; }
+.tide-rail .tide-ed-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .tide-rail .d-flex:has(> label[for="intro"]) { flex-wrap: wrap; }
 .tide-rail label[for="intro"] { white-space: nowrap; }
+/* A queue row (QueueRow): its title, then a row of badges (number, status, priority, due), then whose it is. The
+   number after the title is left to the badges. */
+.tide-queue-badges { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1); margin-top: 2px; }
+.tide-queue-row .tide-action-num-after { display: none; }
+/* The meeting's facts, as the action page's side column has its own (.tide-facts-side): when and who side by side. */
+.tide-meeting-facts { margin-bottom: var(--tide-space-3); }
+.tide-meeting-facts .tide-fact dd { font-size: var(--tide-text-sm); }
+/* The backdrop behind the open rail overlay: plainly a layer over the page, light or dark. */
+:root { --tide-scrim: rgba(15, 23, 42, .38); }
+[data-bs-theme="dark"] { --tide-scrim: rgba(0, 0, 0, .6); }
+/* Toasts sit left of a docked rail, never over its buttons. */
+@media (min-width: 1500px) {
+    /* Where the rail docks (its own rule above): a page with a rail, other than one that takes the whole window. */
+    html:not([data-rail="closed"]):has(main > .tide-rail):not(:has(.tide-kanban, .tide-mh-scroll, .tide-trend-table)) .tide-toasts {
+        right: calc(var(--tide-width-rail) + var(--tide-space-4));
+    }
+}
 /* ---- end Today 3.1 ---- */

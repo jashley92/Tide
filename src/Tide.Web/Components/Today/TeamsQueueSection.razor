@@ -12,7 +12,7 @@
     }
     @foreach (var r in Queue.UnassignedRows)
     {
-        <QueueRow @key="r.Id" @ref="_rows[r.Id]" Row="r" Meta="@($"{ActionService.KindName(r.Kind)} · {r.TeamName}")" OfferTake="true" Busy="Busy"
+        <QueueRow @key="r.Id" @ref="_rows[r.Id]" Row="r" Meta="@($"{r.TeamName} · nobody has it")" OfferTake="true" Busy="Busy"
                   Marks="Marks" OnTake="Take" Focused="_place.Focus" />
     }
     @if (Queue.Unassigned > Queue.UnassignedRows.Count)

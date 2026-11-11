@@ -281,12 +281,11 @@ else
     private IReadOnlyList<InboxRow> _shortlist = [];   // shortlisted triage items, at the top of the Add article picker
     private IReadOnlyList<ArticleSummary> _recent = [];
 
-    // The latest articles beside Today's brief. Someone who writes the brief sees what's written (when there's no brief
-    // for Not on a brief yet). Anyone else sees only what's been presented, at or below the team edition's TLP ceiling:
-    // not a draft's title, nor one marked above what the team edition carries.
-    private async Task<IReadOnlyList<ArticleSummary>> RecentAsync() => _canWrite
-        ? await ArticleSvc.ListAsync(take: 8)
-        : [.. (await ArticleSvc.ListAsync(status: ArticleStatus.Presented, take: 40)).Where(a => a.Tlp <= _teamMax).Take(8)];
+    // The latest articles presented, beside Today's brief, for someone who doesn't write it (whoever does has Not on a
+    // brief yet): at or below the team edition's TLP ceiling, so not a draft's title, nor one marked above what the team
+    // edition carries.
+    private async Task<IReadOnlyList<ArticleSummary>> RecentAsync() =>
+        [.. (await ArticleSvc.ListAsync(status: ArticleStatus.Presented, take: 40)).Where(a => a.Tlp <= _teamMax).Take(8)];
     private IReadOnlyList<ActionRow>? _mine;
     private TeamQueue? _queue;
     private int? _newInFeed;
@@ -396,7 +395,7 @@ else
         if (_canWrite) _people = await Users.ListAsync();
         if (AsToday)
         {
-            _recent = await RecentAsync();
+            if (!_canWrite) _recent = await RecentAsync();
             _upcoming = await Rotation.UpcomingAsync();
         }
         if (!adopted) (_brief, _noteOpen, _meetingOpen) = (null, false, false);   // another day: "Loading" until it's read (a reload after an action keeps the page, and focus, in place)
@@ -444,7 +443,6 @@ else
 
     protected override void OnInitialized()
     {
-        _me = CurrentUser.UserId;
         _live = new LiveChanges(Feed, Origin, c => _follow.Contains(c.Topic), InvokeAsync, OnChangedElsewhere);
         _actionMarks = new LiveMarks<Guid>(InvokeAsync, StateHasChanged);
         _around = new LiveChanges(Feed, Origin, c => (c.Topic == ChangeFeed.Rotation && AsToday) || c.Topic == ChangeFeed.Articles,
@@ -498,8 +496,8 @@ else
             }
             if (changes.Any(c => c.Topic == ChangeFeed.Articles))
             {
-                if (AsToday) _recent = await RecentAsync();
-                if (_canWrite && _brief is not null) _candidates = await BriefSvc.CandidatesAsync(_brief.Id);
+                if (AsToday && !_canWrite) _recent = await RecentAsync();
+                if (_canWrite && (_brief is not null || AsToday)) _candidates = await BriefSvc.CandidatesAsync(_brief?.Id ?? Guid.Empty);
             }
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
@@ -570,22 +568,14 @@ else
             return;
         }
         var who = LiveChanges.Who(changes);
-        var mine = DetailsDirty ? (_analystId, _intro, _introTlp) : ((string, string?, TlpLevel)?)null;
+        // What's typed and not saved stays as it is, typing that goes on while the brief is read again included: the
+        // fields aren't read back over it. If the colleague changed them too, ChangedElsewhere says so.
+        var (keepDetails, keepNote) = (DetailsDirty, NoteDirty);
         var theirsBefore = (_brief?.AnalystId, _brief?.Intro, _brief?.IntroTlp);
-        // The team note as typed stays too, and if the colleague changed it as well, ChangedElsewhere says so.
-        var myNote = NoteDirty ? _teamNote : null;
         var noteBefore = _brief?.TeamNote;
-        await Load();
-        if (mine is { } m && _brief is not null)
-        {
-            (_analystId, _intro, _introTlp) = m;
-            if ((_brief.AnalystId, _brief.Intro, _brief.IntroTlp) != theirsBefore) _changedBy = who;
-        }
-        if (myNote is not null && _brief is not null)
-        {
-            _teamNote = myNote;
-            if (_brief.TeamNote != noteBefore) _noteChangedBy = who;
-        }
+        await Load(keepDetails, keepNote);
+        if (keepDetails && _brief is not null && (_brief.AnalystId, _brief.Intro, _brief.IntroTlp) != theirsBefore) _changedBy = who;
+        if (keepNote && _brief is not null && _brief.TeamNote != noteBefore) _noteChangedBy = who;
         if (_changedBy is null && _noteChangedBy is null) Toasts.Tell($"{who} updated this brief.");
         StateHasChanged();
     }
@@ -656,7 +646,11 @@ else
         _loading = false;
     }
 
-    private async Task Load()
+    private Task Load() => Load(keepDetails: false, keepNote: false);
+
+    // Reads the brief and what's around it. keepDetails and keepNote leave the presenter and title slide line, and the
+    // opening note, as typed (a colleague's save heard while they're unsaved).
+    private async Task Load(bool keepDetails, bool keepNote)
     {
         _loading = true;
         (_changedBy, _noteChangedBy) = (null, null);
@@ -667,10 +661,8 @@ else
         if (_brief is not null)
         {
             _readiness = BriefService.Readiness(_brief, _publicMax);
-            _analystId = _brief.AnalystId;
-            _intro = _brief.Intro;
-            _introTlp = _brief.IntroTlp;
-            _teamNote = _brief.TeamNote;
+            if (!keepDetails) (_analystId, _intro, _introTlp) = (_brief.AnalystId, _brief.Intro, _brief.IntroTlp);
+            if (!keepNote) _teamNote = _brief.TeamNote;
             if (_canWrite)
             {
                 _candidates = await BriefSvc.CandidatesAsync(_brief.Id);
@@ -690,6 +682,8 @@ else
                     .GroupBy(x => x.Edition).Select(g => g.First()).OrderBy(x => x.Edition).ToList()
                 : [];
         }
+        // No brief yet on Today: Not on a brief yet lists what's ready all the same, and Add starts the brief.
+        else if (AsToday && _canWrite) _candidates = await BriefSvc.CandidatesAsync(Guid.Empty);
         _loading = false;
     }
 
@@ -701,7 +695,9 @@ else
         if (picked.Count == 0) return;
         await Run(async () =>
         {
-            foreach (var id in picked) await BriefSvc.AddArticleAsync(_brief!.Id, id);
+            // From Not on a brief yet before today's brief is started: Add starts it.
+            var briefId = await BriefIdOrStartAsync();
+            foreach (var id in picked) await BriefSvc.AddArticleAsync(briefId, id);
         }, picked.Count == 1 ? "Added to the end of the running order." : $"Added {picked.Count} articles to the end of the running order.");
     }
 
@@ -852,7 +848,7 @@ else
 
     internal Task EditTeamNote()
     {
-        _noteOpen = true;
+        (_noteOpen, _noteFocus) = (true, NoteFocus.Box);
         StateHasChanged();
         return Task.CompletedTask;
     }
@@ -894,13 +890,27 @@ else
     }
 
     private Task SaveTeamNote() => Run(() => BriefSvc.SetTeamNoteAsync(_brief!.Id, _teamNote),
-        string.IsNullOrWhiteSpace(_teamNote) ? "Opening note cleared." : "Opening note saved.", () => _noteOpen = false);
+        string.IsNullOrWhiteSpace(_teamNote) ? "Opening note cleared." : "Opening note saved.", () => (_noteOpen, _noteFocus) = (false, NoteFocus.Edit));
 
     // Cancel in the note's editor: back to the note as saved, and the editor closes.
     private void CancelTeamNote()
     {
         if (_brief is null) return;
-        (_teamNote, _noteOpen, _noteChangedBy) = (_brief.TeamNote, false, null);
+        (_teamNote, _noteOpen, _noteChangedBy, _noteFocus) = (_brief.TeamNote, false, null, NoteFocus.Edit);
+    }
+
+    // Where focus goes once the note's card is drawn again: into the editor Edit opened, or back to Edit once it closes.
+    private enum NoteFocus { None, Box, Edit }
+
+    private NoteFocus _noteFocus;
+    private ElementReference _noteBox, _noteEditBtn;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_noteFocus == NoteFocus.None || _busy) return;
+        var to = _noteFocus == NoteFocus.Box ? _noteBox : _noteEditBtn;
+        _noteFocus = NoteFocus.None;
+        await to.TryFocusAsync(orGone: true);
     }
 
     /// <summary>Keeps the last brief's opening note as it is for this one: it's reviewed, and no longer flagged.</summary>
@@ -1010,7 +1020,7 @@ else
                         }
                         @if (!editing)
                         {
-                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="EditTeamNote">Edit</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm tide-note-edit" @ref="_noteEditBtn" @onclick="EditTeamNote">Edit</button>
                         }
                         @if (carried)
                         {
@@ -1022,7 +1032,7 @@ else
             {
                 <label class="visually-hidden" for="team-note">Opening note</label>
                 <MarkdownToolbar For="team-note" Label="Opening note" />
-                <textarea id="team-note" class="form-control tide-autogrow tide-grow-3" rows="3" maxlength="@BriefService.TeamNoteMax"
+                <textarea id="team-note" class="form-control tide-autogrow tide-grow-3" rows="3" maxlength="@BriefService.TeamNoteMax" @ref="_noteBox"
                           placeholder="Key items coming up, recent phishing trends: read at the start of the meeting." @bind="_teamNote" @bind:event="oninput"></textarea>
                 <div class="d-flex gap-2 mt-2">
                     <button class="btn btn-outline-secondary btn-sm" disabled="@(_busy || !NoteDirty)" data-submit @onclick="SaveTeamNote">Save note</button>
@@ -1100,7 +1110,7 @@ else
         }
         @if (_brief is not null) { @Meeting() }
         @if (AsToday) { <ComingUpCard Upcoming="_upcoming" /> }
-        @if (AsToday && !_canWrite) { <RecentArticlesCard Articles="_recent" CanWrite="false" /> }
+        @if (AsToday && !_canWrite) { <RecentArticlesCard Articles="_recent" /> }
         @if (_brief is not null && (_canWrite || !AsToday))
         {
             <HistoryPanel Id="_brief.Id" Brief="true" Version="_brief.EditVersion" />
@@ -1120,8 +1130,8 @@ else
     private static readonly IReadOnlyDictionary<Guid, IReadOnlyList<ArticleCheck>> NoReadiness = new Dictionary<Guid, IReadOnlyList<ArticleCheck>>();
 
     // Today's page, under the running order and the opening note, for whoever writes the brief: My actions (with how many
-    // of their teams' actions have no owner, which the rail lists) beside the articles not on a brief yet, or with no
-    // brief yet, what was written lately.
+    // of their teams' actions have no owner, which the rail lists) beside the ready articles not on a brief yet, brief or
+    // no brief.
     private RenderFragment PageCards() => __builder =>
     {
         if (!_canWrite) return;
@@ -1130,30 +1140,27 @@ else
             {
                 <MyActionsCard Mine="mine" Unowned="@(_queue?.Unassigned ?? 0)" Marks="_actionMarks" />
             }
-            @if (_brief is not null)
-            {
-                <NotYetBriefedCard Articles="NotYetBriefed" CanAdd="@(_brief.Status != BriefStatus.Sent)" Busy="_busy" OnAdd="AddFromCard" OnAddMore="AskAdd" />
-            }
-            else
-            {
-                <RecentArticlesCard Articles="_recent" CanWrite="true" />
-            }
+            <NotYetBriefedCard Articles="NotYetBriefed" CanAdd="CanAddFromCard" Busy="_busy" OnAdd="AddFromCard" OnAddMore="AskAdd" />
         </div>
     };
 
     /// <summary>
-    /// For whoever writes the brief: what hasn't been on any brief yet. Ready articles (anyone's) first, then the person's
-    /// own drafts, newest first: the brief's to-do, each with Add while today's brief can still change. Read from the
-    /// same candidates as Add article, so the two agree.
+    /// For whoever writes the brief: the ready articles that haven't been on any brief yet, newest first (no drafts, and
+    /// nothing presented): the brief's to-do, each with Add while today's brief can still change, or before it's started.
+    /// Read from the same candidates as Add article, so the two agree.
     /// </summary>
     internal IReadOnlyList<BriefCandidate> NotYetBriefed =>
-        [.. _candidates.Where(c => c.Available && c.LastBriefed is null && (c.Status == ArticleStatus.Ready || c.AuthorId == _me))
-            .OrderBy(c => c.Status == ArticleStatus.Ready ? 0 : 1).ThenByDescending(c => c.CreatedAtUtc)];
+        [.. _candidates.Where(c => c.Available && c.LastBriefed is null && c.Status == ArticleStatus.Ready).OrderByDescending(c => c.CreatedAtUtc)];
 
-    // Who's reading, as the page opened: their drafts are the ones listed.
-    private string _me = "";
+    // Whether an article can be added from the card: to today's brief until it's sent, or, with none yet, to the one Add
+    // starts on a working day.
+    private bool CanAddFromCard => _brief is { } b ? b.Status != BriefStatus.Sent : Clock.Days.IsWorkingDay(_date);
 
-    // One article onto the end of today's running order, from the card.
-    internal Task AddFromCard(BriefCandidate c) =>
-        Run(() => BriefSvc.AddArticleAsync(_brief!.Id, c.Id), $"Added “{c.Title}” to the end of the running order.");
+    // One article onto the end of today's running order, from the card: with no brief yet, Add starts it, as Start the
+    // brief does.
+    internal Task AddFromCard(BriefCandidate c) => Run(async () => await BriefSvc.AddArticleAsync(await BriefIdOrStartAsync(), c.Id),
+        _brief is null ? $"Brief started, with “{c.Title}”." : $"Added “{c.Title}” to the end of the running order.");
+
+    // Today's brief to add to, started if there's none yet (Not on a brief yet's Add), as Start the brief starts it.
+    private async Task<Guid> BriefIdOrStartAsync() => _brief?.Id ?? (await BriefSvc.GetOrStartAsync(_date)).Id;
 }

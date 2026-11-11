@@ -28,11 +28,16 @@
                         <span class="tide-step-now" aria-hidden="true">Now</span>
                     }
                 </span>
-                @* The detail in full, on up to two lines; Triage's count of new items on the known exploited list is a flag
-                   beside it. *@
-                <span class="tide-step-detail">@s.Detail@if (s.Kev > 0)
+                @* The detail, on up to two lines (cut short beyond that, where the strip is narrow: the title has it whole);
+                   Triage's count of new items on the known exploited list is a flag held to the detail's last word, so
+                   it's never on a line of its own. *@
+                <span class="tide-step-detail" title="@s.Detail">@if (s.Kev > 0 && s.Detail.LastIndexOf(' ') is var cut and > 0)
                     {
-                        <Badge Tone="BadgeTone.Danger" Class="tide-step-flag">@s.Kev KEV</Badge>
+                        @s.Detail[..(cut + 1)]<span class="text-nowrap">@s.Detail[(cut + 1)..]<Badge Tone="BadgeTone.Danger" Class="tide-step-flag">@s.Kev KEV</Badge></span>
+                    }
+                    else
+                    {
+                        @s.Detail
                     }</span>
                 <span class="visually-hidden">(@StateText(s.State))</span>
             </span>

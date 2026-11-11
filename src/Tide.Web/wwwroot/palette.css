@@ -21,8 +21,9 @@
     font-weight: var(--tide-weight-medium); line-height: 1.3; padding: 0 var(--tide-space-1); border: 1px solid var(--tide-border-strong);
     border-bottom-width: 2px; border-radius: var(--tide-radius-sm); background: var(--tide-surface); color: var(--tide-text-muted); box-shadow: none; }
 
-/* On a phone the search box is gone and the Go to button is an icon in its place. */
-@media (max-width: 640.98px) {
+/* Below 900px the search box is gone and Go to and the Context button are icons, so nothing in the top bar crowds the
+   next control. */
+@media (max-width: 899.98px) {
     .tide-top-find { flex: 0 0 auto; }
     .tide-palette-btn { width: 2rem; padding: 0; justify-content: center; }
     .tide-palette-btn-label, .tide-palette-btn .tide-palette-kbd { display: none; }

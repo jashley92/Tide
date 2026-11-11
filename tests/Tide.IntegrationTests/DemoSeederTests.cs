@@ -80,6 +80,18 @@ public class DemoSeederTests(DemoTideApp app) : IClassFixture<DemoTideApp>
     }
 
     [Fact]
+    public async Task The_latest_briefs_dont_repeat_a_story()
+    {
+        Info();
+        await using var db = Db();
+        // The past briefs draw their stories from a pool; the latest few, as Recently presented lists them, are each a
+        // story of its own.
+        var latest = await db.BriefItems.Join(db.Briefs.Where(b => b.Status == BriefStatus.Sent), i => i.BriefId, b => b.Id, (i, b) => new { i, b })
+            .OrderByDescending(x => x.b.BriefDate).ThenBy(x => x.i.SortOrder).Take(10).Select(x => x.i.Article!.Title).ToListAsync();
+        latest.Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
     public async Task Seeds_history_metrics_actions_and_the_rest_the_pages_show()
     {
         var info = Info();

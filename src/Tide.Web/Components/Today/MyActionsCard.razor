@@ -5,12 +5,10 @@
     <h2 id="my-actions-h">My actions <span class="tide-count">(@Mine.Count)</span> <a class="ms-auto small fw-normal" href="actions?view=mine">All</a></h2>
     @if (Mine.Count == 0)
     {
-        <EmptyState Icon="bi-check2-circle" Title="Nothing assigned to you." Compact="true">
-            @if (Unowned > 0)
+        <p class="small tide-muted mb-0">Nothing assigned to you.@if (Unowned > 0)
             {
-                <span>@Unowned in your teams' queue @(Unowned == 1 ? "has" : "have") no owner: <a href="actions?view=myteams&assignee=none">see @(Unowned == 1 ? "it" : "them")</a>.</span>
-            }
-        </EmptyState>
+                @(" ")<span>@Unowned in your teams' queue @(Unowned == 1 ? "has" : "have") no owner: <a href="actions?view=myteams&assignee=none">see @(Unowned == 1 ? "it" : "them")</a>.</span>
+            }</p>
     }
     @foreach (var r in Mine.Take(Shown))
     {
