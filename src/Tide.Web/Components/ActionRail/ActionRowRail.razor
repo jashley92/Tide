@@ -1,0 +1,240 @@
+@* The action selected on the Actions list or board, in the context rail: what to do next, Take it where the person may
+   take it, Assign (the list) or Move to (the board), and Open; its facts (kind, team, how long in its column, its
+   checklist); for a sweep or hunt, its query; the article it was raised from; and its last activity.
+   What it reads beyond the row (ActionService.GetAsync) is read once the selection has rested a moment, so J held down
+   doesn't read every action it passes. A sweep's query is shown as the action page shows it: a saved one to whoever reads
+   the action, and with none saved, a preview (PreviewHuntAsync, which writes nothing) to whoever may work it. Copy on the
+   preview keeps it on the action through GenerateHuntAsync, as the action page's Copy does. *@
+@inject ActionService ActionSvc
+@inject ICurrentUser CurrentUser
+@inject OrgClock Clock
+@inject IJSRuntime JS
+@inject ToastService Toasts
+
+@{ var next = NextLine(); }
+<section class="tide-card tide-rail-do" aria-label="What to do">
+    <div class="tide-rail-next" role="note" data-rail-next="@next.Kind"><strong>Next</strong> <span>@next.Text</span></div>
+    <div class="tide-rail-buttons">
+        @if (CanTake)
+        {
+            <button type="button" class="btn btn-primary btn-sm tide-rail-take" disabled="@Busy" aria-keyshortcuts="T" aria-label="@($"Take {Ui.ActionLabel(Row.Number)} on")"
+                    @onclick="() => OnTake.InvokeAsync()">Take it <kbd class="tide-kbd" aria-hidden="true">T</kbd></button>
+        }
+        @if (Moves is { Count: > 0 })
+        {
+            <MenuButton Label="Move to" Items="Moves" Disabled="Busy" ButtonClass="btn btn-outline-secondary btn-sm"
+                        AriaLabel="@($"Move {Ui.ActionLabel(Row.Number)} to")" MenuLabel="@($"Move {Ui.ActionLabel(Row.Number)} to")" />
+        }
+        else if (Assign && CanWork && Row.IsOpen)
+        {
+            @* The action page's edit form, where its assignee is chosen. *@
+            <a class="btn btn-outline-secondary btn-sm" href="@Ui.ActionUrl(Row.Number, "do=" + ActionGuide.Key(ActionFlow.Edit))">Assign…</a>
+        }
+        <a class="tide-rail-open" href="@Ui.ActionUrl(Row.Number)">Open</a>
+    </div>
+</section>
+
+<section class="tide-card" aria-label="Facts">
+    <dl class="tide-facts tide-facts-side">
+        <div class="tide-fact"><dt>Kind</dt><dd>@ActionService.KindName(Row.Kind)</dd></div>
+        <div class="tide-fact"><dt>Team</dt><dd>@Row.TeamName</dd></div>
+        <div class="tide-fact"><dt>In @ActionService.StatusName(Row.Status)</dt><dd>@InColumn</dd></div>
+        <div class="tide-fact"><dt>Checklist</dt><dd>@(Row.ChecklistTotal > 0 ? $"{Row.ChecklistDone} of {Row.ChecklistTotal}" : "None")</dd></div>
+    </dl>
+</section>
+
+@if (_detail is { Action: var a })
+{
+    @* The query on the action, or with none, the preview: one copy button, which keeps the preview on the action. *@
+    @if (Query(a) is var (text, dialect, previewed))
+    {
+        <section class="tide-card tide-rail-hunt" aria-labelledby="rail-hunt-h">
+            <h2 id="rail-hunt-h">Hunt query</h2>
+            <div class="small tide-muted">@HuntQueryBuilder.DialectName(dialect) · @(previewed ? "a preview: copying it puts it on the action" : "on the action")</div>
+            <pre id="rail-hunt-query" class="tide-query">@text</pre>
+            <div class="tide-rail-buttons">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-copy-target="rail-hunt-query" data-copy-status="rail-hunt-status"
+                        disabled="@(previewed && _copying)" @onclick="CopyPreview"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy query</button>
+                @Chips(_sweeping)
+            </div>
+            <span id="rail-hunt-status" class="small tide-muted" role="status" aria-live="polite"></span>
+            <span class="small tide-muted" role="status" aria-live="polite">@_said</span>
+        </section>
+    }
+    @if (a.Article is { } article)
+    {
+        <ActionSourceArticle Source="article" />
+    }
+    @if (LastActivity(a) is { } last)
+    {
+        <section class="tide-card" aria-labelledby="rail-activity-h">
+            <h2 id="rail-activity-h">Last activity</h2>
+            <p class="small mb-0"><span class="tide-muted">@Ui.When(Clock, last.At)</span> · @last.Text</p>
+        </section>
+    }
+}
+
+@code {
+    /// <summary>The selected row or card.</summary>
+    [Parameter, EditorRequired] public ActionRow Row { get; set; } = default!;
+
+    /// <summary>Whether the person works this action's team (the list's and board's own rule, read once for them all).</summary>
+    [Parameter] public bool CanWork { get; set; }
+
+    /// <summary>Whether the person may take it on (ActionRow.TakeableBy).</summary>
+    [Parameter] public bool CanTake { get; set; }
+
+    [Parameter] public EventCallback OnTake { get; set; }
+
+    /// <summary>While a take or a move is being made, the buttons wait.</summary>
+    [Parameter] public bool Busy { get; set; }
+
+    /// <summary>The board's Move to menu: the statuses it can move to. None on the list, or for whoever can't move it.</summary>
+    [Parameter] public IReadOnlyList<MenuButton.Item>? Moves { get; set; }
+
+    /// <summary>The list's Assign…, to the action page's edit form, for whoever works it.</summary>
+    [Parameter] public bool Assign { get; set; }
+
+    /// <summary>How long the selection rests before the rest of the action is read.</summary>
+    private static readonly TimeSpan Rest = TimeSpan.FromMilliseconds(150);
+
+    // The hunt panel's choice of language, remembered by the browser.
+    private const string DialectPref = "hunt-dialect";
+
+    private ActionDetail? _detail;
+    private ActionRow? _for;
+    private int _ticket;
+    private string? _preview, _said;
+    private string _dialect = QueryDialects.All[0].Key;
+    private IReadOnlyList<ArticleIndicator> _sweeping = [];
+    private bool _copying;
+
+    protected override Task OnParametersSetAsync()
+    {
+        // A list read again draws equal rows: nothing to read again. A changed row (taken, moved) is read again at once.
+        if (Row == _for) return Task.CompletedTask;
+        var another = _for?.Id != Row.Id;
+        _for = Row;
+        if (another) (_detail, _preview, _said, _sweeping) = (null, null, null, []);
+        return Load(rest: another && RendererInfo.IsInteractive);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            if (QueryDialects.Find(await JS.InvokeAsync<string?>("tidePrefs.get", DialectPref)) is not { } d || d.Key == _dialect) return;
+            _dialect = d.Key;
+            await Load(rest: false);
+            StateHasChanged();
+        }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { }
+    }
+
+    // Reads the action, and for a sweep or hunt whoever may work, what it sweeps for and its preview. A read overtaken by
+    // another selection is dropped.
+    private async Task Load(bool rest)
+    {
+        var ticket = ++_ticket;
+        var row = Row;
+        try
+        {
+            if (rest) await Task.Delay(Rest);
+            if (ticket != _ticket) return;
+            var detail = await ActionSvc.GetAsync(row.Number);
+            IReadOnlyList<ArticleIndicator> sweeping = [];
+            string? preview = null;
+            if (detail is { CanWork: true, Action: { IsOpen: true } a } && ActionGuide.IsHunt(a.Kind))
+            {
+                sweeping = (await ActionSvc.HuntSourcesAsync(a.Id)).Own;
+                if (a.Hunts.Count == 0 && sweeping.Count > 0) preview = await ActionSvc.PreviewHuntAsync(a.Id, _dialect);
+            }
+            if (ticket != _ticket) return;
+            (_detail, _sweeping, _preview) = (detail, sweeping, preview);
+        }
+        catch (Exception ex)
+        {
+            if (ticket == _ticket) Toasts.Error(UserFacingError.For(ex));
+        }
+    }
+
+    /// <summary>Copy on the preview: the browser copies the text (clipboard.js), and the query goes on the action as a
+    /// generated one does, in its history too. Said when what's saved isn't what was copied, or couldn't be saved.</summary>
+    internal async Task CopyPreview()
+    {
+        if (_preview is not { } shown || _detail is null || _copying) return;
+        _copying = true;
+        try
+        {
+            var hunt = await ActionSvc.GenerateHuntAsync(_detail.Action.Id, _dialect);
+            _said = hunt.Text == shown ? "The query is now on the action." : null;
+            if (hunt.Text != shown) Toasts.Error("The query changed since it was shown. Copy it again before you run it.");
+        }
+        catch (Exception ex) { Toasts.Error("Copied, but the query isn't on the action: " + UserFacingError.For(ex)); }
+        finally { _copying = false; }
+        var said = _said;
+        await Load(rest: false);
+        _said = said;
+    }
+
+    // The query shown: the newest on the action, else the preview (whether it's that), else none.
+    private (string Text, string Dialect, bool Previewed)? Query(ActionItem a) =>
+        a.Hunts.FirstOrDefault() is { } saved ? (saved.Text, saved.Dialect, false) : _preview is { } preview ? (preview, _dialect, true) : null;
+
+    // How long it has been in its column (from when it moved there, else from when it was opened), in the organization's days.
+    private string InColumn
+    {
+        get
+        {
+            var days = ActionSvc.Today.DayNumber - Clock.DayOf(Row.InStatusSinceUtc ?? Row.CreatedAtUtc).DayNumber;
+            return days <= 0 ? "Today" : Words.Plural(days, "day");
+        }
+    }
+
+    // The Next line: the action page's (ActionGuide.Next) where it has one, in the rail's words for a sweep nobody has;
+    // otherwise who has it, and whether the person may take it.
+    private (string Kind, string Text) NextLine()
+    {
+        var mine = Row.AssigneeId == CurrentUser.UserId;
+        var a = _detail?.Action;
+        var onAction = a?.Hunts.Any(h => h.Result == HuntResult.NotRun) ?? Row.Hunted == HuntResult.NotRun;
+        var hunt = ActionGuide.IsHunt(Row.Kind)
+            ? new HuntFacts(CanTake && Row.AssigneeId is null, mine, onAction, _sweeping.Count > 0, Row.Hunted is { } h && h != HuntResult.NotRun)
+            : null;
+        var next = ActionGuide.Next(new NextFacts(Row.Status, Row.Sla(ActionSvc.Today, Clock.Days), Row.DueDate, ActionSvc.Today, CanWork,
+            EscalatedOn: Row.EscalatedSince is { } at ? Clock.DayOf(at) : null, Hunt: hunt));
+        if (next is { Kind: NextKind.Unowned } && !onAction)
+            return ("unowned", _preview is not null ? "Nobody has it. Take it, then copy the query." : "Nobody has it. Take it.");
+        if (next is not null) return (next.Kind.ToString().ToLowerInvariant(), next.Text);
+        if (!Row.IsOpen) return ("closed", $"{ActionService.StatusName(Row.Status)}{(Row.ClosedDate is { } c ? " on " + Ui.ShortDay(c) : "")}.");
+        if (Row.AssigneeId is null) return ("unowned", CanTake ? "Nobody has it. Take it." : "Nobody has it yet.");
+        if (mine) return ("mine", Row.Status == ActionStatus.Open ? "It's yours. Start work when you begin." : "It's yours.");
+        return ("held", $"{Row.AssigneeName} has it.");
+    }
+
+    // The newest thing that happened to it: a history line or a comment.
+    private static (DateTimeOffset At, string Text)? LastActivity(ActionItem a)
+    {
+        var e = a.Events.MaxBy(x => x.AtUtc);
+        var c = a.Comments.MaxBy(x => x.AtUtc);
+        if (c is not null && (e is null || c.AtUtc > e.AtUtc)) return (c.AtUtc, $"{c.AuthorName} commented.");
+        return e is null ? null : (e.AtUtc, $"{e.Text.TrimEnd('.')}, by {e.ByName}.");
+    }
+
+    // What the query sweeps for, as chips: the first few, then how many more.
+    private static RenderFragment Chips(IReadOnlyList<ArticleIndicator> values) => __builder =>
+    {
+        foreach (var i in values.Take(ChipsShown))
+        {
+            <span class="tide-chip tide-ioc mb-0" title="@Ui.IndicatorLabel(i.Type)">@IocObservable.Defang(i.Type, i.Value)</span>
+        }
+        if (values.Count > ChipsShown)
+        {
+            <span class="small tide-muted">and @(values.Count - ChipsShown) more</span>
+        }
+    };
+
+    private const int ChipsShown = 3;
+}

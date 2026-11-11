@@ -57,8 +57,8 @@ public static class Shortcuts
                 break;
             // The list or the board, as the address says (it always names its layout once the page has drawn).
             case "actions" when segments.Length == 1:
-                groups.Add(!relativePath.Contains("layout=list", StringComparison.OrdinalIgnoreCase) ? Board
-                    : canTake ? ActionsList : ActionsList with { Keys = [.. ActionsList.Keys.Where(k => k != TakeKey)] });
+                var group = !relativePath.Contains("layout=list", StringComparison.OrdinalIgnoreCase) ? Board : ActionsList;
+                groups.Add(canTake ? group : group with { Keys = [.. group.Keys.Where(k => k != TakeKey)] });
                 break;
             case "actions" when int.TryParse(segments[1], out _):
                 groups.Add(Screenshots);
@@ -127,6 +127,12 @@ public static class Shortcuts
 
     private static readonly ShortcutGroup Board = new("Actions board",
     [
+        new(["↓", "↑"], "Next and previous card, lane after lane"),
+        new(["J"], "Next card, on to the next lane at the end of one", Letter: true),
+        new(["K"], "Previous card", Letter: true),
+        new(["←", "→"], "On a card: the card beside it, in the next lane with cards"),
+        TakeKey,
+        new(["Enter"], "Open the selected card"),
         new(["Tab", "Enter"], "A card's Move button opens the columns it can go to; Enter on one moves it"),
         new(["Esc"], "Close the Move menu"),
     ]);

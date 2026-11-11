@@ -2694,3 +2694,45 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-rail-list-title { display: block; overflow-wrap: anywhere; }
 .tide-rail-list-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); color: var(--tide-text-muted); font-size: var(--tide-text-xs); }
 /* ---- end Action page 3.5 ---- */
+
+/* ---- Actions 3.4: the list's and board's selected action in the context rail (ActionRowRail), and the board's selected
+   card. From 1500px the rail docks beside the board too (it was an overlay there), and the board takes the rest of the
+   window; ] closes the rail and the board has the whole window again. ---- */
+@media (min-width: 1500px) {
+    main:has(.tide-board) > .tide-rail { --tide-rail-docks: 1; box-shadow: none; }
+    html:not([data-rail="closed"]) main:has(.tide-board) > .tide-rail { display: flex; }
+    html:not([data-rail="closed"]) main:has(.tide-board) > .content:has(+ .tide-rail) { max-width: calc(100% - var(--tide-width-rail)); }
+    html:not([data-rail="closed"]):has(main > .tide-rail):has(.tide-board) .tide-toasts { right: calc(var(--tide-width-rail) + var(--tide-space-4)); }
+}
+/* The selected card, as the design marks it: an accent ring (a card rule's colour stays on its left edge), inside the lane's
+   padding, so the lane never clips it. */
+.tide-kcard.selected { box-shadow: 0 0 0 2px var(--tide-accent); }
+.tide-kcard:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 0; }
+/* The rail's Next note, its buttons on one line under it (wrapping when they must), and the hunt query read whole. */
+.tide-rail-next { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--tide-space-1) var(--tide-space-2); margin-bottom: var(--tide-space-3);
+    padding: var(--tide-space-2) var(--tide-space-3); border-radius: var(--tide-radius-lg); background: var(--tide-accent-soft); font-size: var(--tide-text-sm); }
+.tide-rail-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); }
+.tide-rail-buttons .tide-kbd { margin-left: var(--tide-space-1); }
+.tide-rail-buttons .tide-chip { margin: 0; max-width: 100%; overflow-wrap: anywhere; }
+.tide-rail-hunt { display: flex; flex-direction: column; gap: var(--tide-space-2); }
+.tide-rail-hunt > h2 { margin-bottom: 0; }
+.tide-rail-hunt pre.tide-query { margin: 0; min-height: 5rem; max-height: 14rem; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* A menu in the rail (the board's Move to) opens from its button's left edge, into the rail, never out past its edge. */
+.tide-rail .tide-menubutton-pop { right: auto; left: 0; }
+.tide-rail-links { display: flex; flex-wrap: wrap; gap: var(--tide-space-1) var(--tide-space-3); }
+/* Beside the docked rail, up to about 1760px, the list has too little room for its six columns: each row is laid out in its
+   box, as in a narrower window (the rules for that, above), rather than scrolling the table sideways. */
+@media (min-width: 1500px) and (max-width: 1759.98px) {
+    html:not([data-rail="closed"]) main:has(> .tide-rail) {
+        & .tide-table:has(.tide-action-row), & .tide-table:has(.tide-action-row) > thead, & .tide-table:has(.tide-action-row) > tbody { display: block; }
+        & .tide-table:has(.tide-action-row) > thead > tr, & .tide-action-row { display: flex; flex-wrap: wrap; align-items: flex-start;
+            gap: var(--tide-space-1) var(--tide-space-4); padding: var(--tide-space-2) var(--tide-space-3); border-bottom: 1px solid var(--tide-border); }
+        & .tide-table:has(.tide-action-row) > thead > tr > th, & .tide-action-row > td { display: block; padding: 0; border: 0; }
+        & .tide-action-row > td:first-child { flex: 1 0 100%; }
+        & .tide-table:has(.tide-action-row) .tide-dt-group, & .tide-table:has(.tide-action-row) .tide-dt-group > th { display: block; }
+        & .tide-action-row.selected > td:first-child { box-shadow: none; }
+        & .tide-action-row.selected { background: var(--tide-accent-soft); box-shadow: inset 3px 0 0 var(--tide-accent); }
+        & .tide-action-row.selected > td { background: none; }
+    }
+}
+/* ---- end Actions 3.4 ---- */

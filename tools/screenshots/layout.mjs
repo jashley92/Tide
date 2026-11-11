@@ -294,7 +294,7 @@ const kevPill = selector => ({
 
 /**
  * Closing a card keeps the person's place: from its Move menu by keyboard (`how` 'menu'), or dragged onto a chip while
- * focus was on it ('drag'), then the outcome dialog's button: focus lands in the card that was next in its lane.
+ * focus was on it ('drag') or after a click on it ('click-drag'), then the outcome dialog's button: focus lands in the card that was next in its lane.
  */
 const closeKeepsPlace = how => ({
   name: `after closing a card (${how}), focus is on the next card in its lane`,
@@ -307,6 +307,10 @@ const closeKeepsPlace = how => ({
       await page.keyboard.press('Enter');
       await card.getByRole('menuitem', { name: 'Cancelled' }).focus();
       await page.keyboard.press('Enter');
+    } else if (how === 'click-drag') {
+      // A click on the card itself (not a link or button in it) first, as the mouse selects one.
+      await card.locator('.tide-kcard-head').click({ position: { x: 4, y: 4 } });
+      await card.dragTo(page.locator('.tide-kchip[data-status="Cancelled"]'));
     } else {
       await card.locator('.tide-action-ref').focus();
       await card.dragTo(page.locator('.tide-kchip[data-status="Cancelled"]'));
@@ -1200,6 +1204,196 @@ const railFilesTakeDropAndPaste = {
 const actionRailHolds = [visible('#tide-rail .tide-facts'), visible('#tide-rail #rail-article-h'), visible('#tide-rail #rail-raised-h'),
   visible('#tide-rail #files'), hidden('.content .tide-facts'), hidden('.content #files'), fits('.tide-rail-body'), fits('.tide-rail-body > *')];
 
+// --- the Actions list and board's context rail (option E 3.4) ----------------------------------------------------------
+
+/** The board's selected card: its place among the cards, the one with focus, its lane, and what the address names. */
+const selectedCard = page => page.evaluate(() => {
+  const cards = [...document.querySelectorAll('.tide-kcard')];
+  const on = cards.find(c => c.classList.contains('selected'));
+  return {
+    at: cards.indexOf(on), focused: cards.indexOf(document.activeElement), lane: on?.closest('.tide-kcol')?.dataset.status ?? null,
+    number: on?.querySelector('.tide-action-num')?.innerText.trim() ?? null, card: new URL(location.href).searchParams.get('card'),
+    many: on ? on.getAttribute('aria-current') === 'true' && on.tabIndex === 0 && cards.filter(c => c.tabIndex === 0).length === 1 : false,
+  };
+});
+
+/** The rail is named for the selected row or card ("About A-12"), so it follows the selection. */
+const railFollowsSelection = {
+  name: 'the rail is about the selected action',
+  check: page => page.evaluate(() => {
+    const on = document.querySelector('.tide-action-row.selected, .tide-kcard.selected');
+    const number = on?.querySelector('.tide-action-num')?.innerText.trim().replace(/\s+/g, '');
+    const label = document.getElementById('tide-rail')?.getAttribute('aria-label');
+    if (!on || !number) return ['nothing is selected'];
+    return label === `About ${number}` ? [] : [`the rail is "${label}", not about ${number}`];
+  }),
+};
+
+/**
+ * The board's keys: the selected card is the one tab stop, and J, K and the arrows move it within and across lanes, focus
+ * following and the address naming it (?card=); the rail follows.
+ */
+const boardKeys = {
+  name: 'J, K and the arrows move the selected card, within and across lanes',
+  check: async page => {
+    const problems = [];
+    const start = await selectedCard(page);
+    if (start.at < 0) return ['no card is selected'];
+    if (!start.many) problems.push('the selected card isn\'t the one tab stop (aria-current, tabindex 0)');
+    await page.locator('.tide-kcard.selected').focus();
+    const lanes = await page.$$eval('.tide-kcol', ls => ls.map(l => [l.dataset.status, l.querySelectorAll('.tide-kcard').length]));
+    for (const key of ['j', 'ArrowDown', 'k', 'ArrowUp', 'ArrowRight', 'ArrowLeft']) {
+      const before = await selectedCard(page);
+      await page.keyboard.press(key);
+      await page.waitForTimeout(500);
+      const now = await selectedCard(page);
+      const moved = now.at !== before.at;
+      const canMove = key === 'ArrowRight' ? lanes.some(([s, n], i) => n > 0 && i > lanes.findIndex(([l]) => l === before.lane))
+        : key === 'ArrowLeft' ? lanes.some(([s, n], i) => n > 0 && i < lanes.findIndex(([l]) => l === before.lane))
+          : ['j', 'ArrowDown'].includes(key) ? before.at < (await page.locator('.tide-kcard').count()) - 1 : before.at > 0;
+      if (canMove && !moved) problems.push(`${key} left card ${before.number} selected`);
+      if (['ArrowRight', 'ArrowLeft'].includes(key) && moved && now.lane === before.lane) problems.push(`${key} stayed in the ${now.lane} lane`);
+      if (now.focused !== now.at) problems.push(`after ${key} card ${now.number} is selected but focus is elsewhere`);
+      if (now.card !== now.number?.replace(/^A-/, '')) problems.push(`after ${key} the address says card=${now.card}, not ${now.number}`);
+      problems.push(...await railFollowsSelection.check(page));
+    }
+    return problems;
+  },
+};
+
+/** A click on a card (not on its links or buttons) selects it and gives it focus; the rail follows. */
+const clickSelectsCard = {
+  name: 'a click on a card selects it and focuses it',
+  check: async page => {
+    const cards = page.locator('.tide-kcard');
+    if (await cards.count() < 2) return ['fewer than two cards'];
+    const target = cards.nth(1);
+    const number = (await target.locator('.tide-action-num').innerText()).trim();
+    await target.locator('.tide-kcard-head').click({ position: { x: 4, y: 4 } });
+    await page.waitForTimeout(600);
+    const now = await selectedCard(page);
+    const problems = [];
+    if (now.number !== number) problems.push(`clicking ${number} left ${now.number} selected`);
+    if (now.focused !== now.at) problems.push(`clicking ${number} didn't give it focus`);
+    problems.push(...await railFollowsSelection.check(page));
+    return problems;
+  },
+};
+
+/** Setup: a new action nobody has, raised from the form, and the board opened on it (the demo's own unowned actions are
+ *  taken by the list's rules before this one runs). */
+async function newUnownedCard(page) {
+  const title = `Board take check ${Date.now().toString(36)}`;
+  await page.goto(new URL('/actions/new', page.url()).href, { waitUntil: 'networkidle' });
+  await settle(page);
+  await page.locator('#a-title').fill(title);
+  await page.locator('#a-team').selectOption({ index: 1 });
+  await page.waitForTimeout(300);
+  await page.getByRole('button', { name: 'Create action' }).click();
+  await page.waitForURL(/actions\/\d+/);
+  await page.goto(new URL(`/actions?view=open&layout=board&q=${encodeURIComponent(title)}`, page.url()).href, { waitUntil: 'networkidle' });
+}
+
+/** T on the selected card takes it on: the toast says so. */
+const boardTakeKey = {
+  name: 'T takes the selected card on',
+  check: async page => {
+    const number = (await page.locator('.tide-kcard.selected .tide-action-num').innerText()).trim();
+    await page.locator('.tide-kcard.selected').focus();
+    await page.keyboard.press('t');
+    try { await page.getByText(`You took ${number} on.`).waitFor({ timeout: 5000 }); return []; } catch { return [`T on ${number} didn't take it on`]; }
+  },
+};
+
+/** Enter on the selected card opens it. Run last on its page: it leaves it. */
+const boardEnterOpens = {
+  name: 'Enter opens the selected card',
+  check: async page => {
+    const number = (await page.locator('.tide-kcard.selected .tide-action-num').innerText()).trim().replace(/^A-/, '');
+    await page.locator('.tide-kcard.selected').focus();
+    await page.keyboard.press('Enter');
+    try { await page.waitForURL(new RegExp(`/actions/${number}$`), { timeout: 5000 }); return []; } catch { return [`Enter on A-${number} left the page at ${page.url()}`]; }
+  },
+};
+
+/**
+ * Escape with the rail's Move to menu open closes the menu and leaves the rail open; the next Escape closes the overlay.
+ * Run on a page whose setup opened the overlay.
+ */
+const escapeClosesTheMenuFirst = {
+  name: 'Escape closes the rail\'s Move menu before the rail',
+  check: async page => {
+    const button = page.locator('#tide-rail').getByRole('button', { name: /^Move A-\d+ to$/ });
+    if (!await button.count()) return ['the rail has no Move to'];
+    await button.focus();
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(400);
+    const problems = [];
+    if (!await page.evaluate(() => !!document.activeElement?.closest('#tide-rail [role="menu"]'))) problems.push('Move to didn\'t open its menu with focus in it');
+    const out = await page.evaluate(() => {
+      const m = document.querySelector('#tide-rail [role="menu"]')?.getBoundingClientRect(), r = document.querySelector('#tide-rail .tide-rail-body').getBoundingClientRect();
+      return m && (m.left < r.left - 1 || m.right > r.right + 1) ? `the menu (${Math.round(m.left)}–${Math.round(m.right)}px) runs out of the rail (${Math.round(r.left)}–${Math.round(r.right)}px)` : null;
+    });
+    if (out) problems.push(out);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(400);
+    if (await page.locator('#tide-rail [role="menu"]').count()) problems.push('Escape left the menu open');
+    if (!await anyShown(page, '#tide-rail')) problems.push('Escape in the menu closed the rail too');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(400);
+    if (await anyShown(page, '#tide-rail')) problems.push('a second Escape didn\'t close the rail');
+    return problems;
+  },
+};
+
+/** The selected card is wholly in view in its lane (which scrolls on its own), and has focus: a link to it lands on it. */
+const selectedCardInView = {
+  name: 'the selected card is in view in its lane, with focus',
+  check: page => page.evaluate(() => {
+    const card = document.querySelector('.tide-kcard.selected'), lane = card?.closest('.tide-kcol-cards');
+    if (!card || !lane) return ['no card is selected'];
+    const c = card.getBoundingClientRect(), l = lane.getBoundingClientRect(), problems = [];
+    if (c.top < l.top - 1 || c.bottom > l.bottom + 1) problems.push(`the selected card (${Math.round(c.top)}–${Math.round(c.bottom)}px) is out of its lane's view (${Math.round(l.top)}–${Math.round(l.bottom)}px)`);
+    if (document.activeElement !== card) problems.push('the selected card has no focus');
+    return problems;
+  }),
+};
+
+/**
+ * The rail's Move to → Cancelled, from the open overlay, asks how it closed: the dialog is usable (the overlay gives way to
+ * it), and Escape closes the dialog alone, the card staying where it was. Run on a page whose setup opened the overlay.
+ */
+const railMoveAsksFirst = {
+  name: "the rail's Move to a closed status asks first, and Escape closes only the dialog",
+  check: async page => {
+    const number = (await page.locator('.tide-kcard.selected .tide-action-num').innerText()).trim();
+    try { await page.locator('#tide-rail').getByRole('button', { name: /^Move A-\d+ to$/ }).click({ timeout: 5000 }); } catch { return [`the rail has no Move to for ${number}`]; }
+    try { await page.locator('#tide-rail').getByRole('menuitem', { name: 'Cancelled' }).click({ timeout: 5000 }); } catch { return ['Move to offers no Cancelled to choose']; }
+    const dialog = page.getByRole('dialog', { name: `Move ${number} to Cancelled` });
+    try { await dialog.waitFor({ timeout: 5000 }); } catch { return [`Move to Cancelled didn't ask how ${number} closed`]; }
+    const problems = [];
+    if (!await page.evaluate(() => !!document.activeElement?.closest('.tide-modal'))) problems.push('focus is outside the dialog');
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => problems.push('Escape left the dialog open'));
+    await page.waitForTimeout(500);
+    if (!await page.locator(`.tide-kcol[data-status="Open"] .tide-kcard:has(.tide-action-num:text-is("${number}"))`).count()) problems.push(`${number} left its lane`);
+    return problems;
+  },
+};
+
+/** The four lanes sit side by side on one row (their tops line up). */
+const lanesOnOneRow = {
+  name: 'the four lanes on one row',
+  check: page => page.evaluate(() => {
+    const tops = [...document.querySelectorAll('.tide-kcol')].map(l => Math.round(l.getBoundingClientRect().top));
+    return tops.length === 4 && Math.max(...tops) - Math.min(...tops) <= 1 ? [] : [`the lanes start at ${tops.join(', ')}px`];
+  }),
+};
+
+/** What the rail holds for the selected action on the list or the board. */
+const actionsRailHolds = [visible('#tide-rail [data-rail-next]'), visible('#tide-rail .tide-facts'), visible('#tide-rail #rail-activity-h'),
+  flat('#tide-rail .tide-rail-body > section'), fits('.tide-rail-body'), fits('.tide-rail-body > *'), railFollowsSelection];
+
 /** The action page's own column: its head, the tools and the query fit it, the query wrapping rather than scrolling. */
 const actionPageFits = [noSidewaysScroll, fits('.tide-action-head'), fits('.tide-drawer'), visible('.tide-feed')];
 
@@ -1330,8 +1524,38 @@ const pages = [
   ...['actions-board', 'actions-board-wide-letters'].map(name => ({
     name, route: '/actions?view=open&layout=board', setup: name.endsWith('letters') ? wider : undefined, widths: [[1920, 1080], [1440, 900], [780, 900]],
     rules: [noSidewaysScroll, fits('.tide-kanban'), visible('.tide-kcard'), oneRow('.tide-kcard-head'), fits('.tide-kcard-article'), kevPill('.tide-kcard .tide-kev'),
-      onFirstScreen('.tide-kstrip'), lanesFillTheHeight, chipsAreDropTargets, [1440, oneRow('.tide-kstrip')], [1800, widerThan('.content', 1400)]],
+      onFirstScreen('.tide-kstrip'), lanesFillTheHeight, chipsAreDropTargets, [1440, oneRow('.tide-kstrip')]],
   })),
+  // With the rail closed (]), the board takes the whole window again.
+  { name: 'actions-board-rail-closed', route: '/actions?view=open&layout=board', setup: toggleRail, widths: [[1920, 1080]],
+    rules: [noSidewaysScroll, hidden('#tide-rail'), widerThan('.content', 1400), lanesFillTheHeight] },
+  // The selected action is in the context rail, on the list and the board. From 1500px it's docked beside the page, which
+  // has about 873px at 1500: the list's table and the board's four lanes and closed strip still fit, nothing scrolls
+  // sideways, and the strip is on the first screen. Below 1500px it's closed until ] opens it over the page. Wider letters.
+  { name: 'actions-rail-list', route: '/actions?view=open&layout=list', setup: wideFont, widths: [[1920, 1000], [1600, 1000], [1500, 1000]],
+    rules: [noSidewaysScroll, visible('#tide-rail'), besides('#main-content', '#tide-rail'), visible('.tide-action-row.selected'), fits('.tide-dt-scroll'),
+      visible('#tide-rail #rail-about-h'), ...actionsRailHolds] },
+  { name: 'actions-rail-board', route: '/actions?view=open&layout=board', setup: wideFont, widths: [[1920, 1000], [1600, 1000], [1500, 1000]],
+    rules: [noSidewaysScroll, visible('#tide-rail'), besides('.tide-board', '#tide-rail'), fits('.tide-kanban'), lanesOnOneRow, onFirstScreen('.tide-kstrip'),
+      lanesFillTheHeight, oneRow('.tide-kcard-head'), visible('.tide-kcard.selected'), hidden('#tide-rail #rail-about-h'), ...actionsRailHolds] },
+  ...['list', 'board'].map(layout => ({
+    name: `actions-rail-${layout}-narrow`, route: `/actions?view=open&layout=${layout}`, setup: wideFont, widths: [[1440, 900], [780, 900]],
+    rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), visible(layout === 'list' ? '.tide-action-row.selected' : '.tide-kcard.selected')],
+  })),
+  // Open over the page: what it holds, Tab held in it, and on the board Escape closing its Move menu before the rail.
+  ...['list', 'board'].map(layout => ({
+    name: `actions-rail-${layout}-overlay`, route: `/actions?view=open&layout=${layout}`, setup: toggleRail, widths: [[1440, 900], [780, 900]],
+    rules: [visible('#tide-rail'), ...actionsRailHolds, noSidewaysScroll, focusIn('#tide-rail'), attr('#tide-rail', 'role', 'dialog'),
+      ...(layout === 'board' ? [escapeClosesTheMenuFirst] : [tabStaysIn('#tide-rail', 30)])],
+  })),
+  { name: 'actions-rail-board-overlay-move', route: '/actions?view=open&layout=board', setup: toggleRail, widths: [[1440, 900]], rules: [railMoveAsksFirst] },
+  // The board's selection: the keys, a click, T and Enter. The list's keys and Status menu beside the docked rail.
+  { name: 'actions-board-keys', route: '/actions?view=open&layout=board', widths: [[1920, 1000], [1440, 900]], rules: [boardKeys, clickSelectsCard, boardEnterOpens] },
+  // A link to a card (?card=, the demo's sweep, low in the Open lane) lands on it: selected, in view and focused.
+  { name: 'actions-board-card-link', route: '/actions?view=open&layout=board&card={huntAction}', widths: [[1600, 1000], [1440, 900]],
+    rules: [selectedCardInView, railFollowsSelection] },
+  { name: 'actions-board-take-key', route: '/actions?view=open&layout=board', setup: newUnownedCard, widths: [[1600, 1000]], rules: [boardTakeKey] },
+  { name: 'actions-rail-list-keys', route: '/actions?view=open&layout=list', widths: [[1920, 1000]], rules: [actionKeys, railFollowsSelection, statusMenuByKeyboard] },
   // A card dragged with the mouse onto each chip asks how it closed.
   { name: 'actions-board-drop', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [dropOnEachChip] },
   // A sweep's query is read whole, in the wide column: its long lines wrap, so nothing scrolls sideways inside its box.
@@ -1447,6 +1671,7 @@ const pages = [
   // Last, as each closes one of the demo's actions.
   { name: 'actions-board-close-menu', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [closeKeepsPlace('menu')] },
   { name: 'actions-board-close-drag', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [closeKeepsPlace('drag')] },
+  { name: 'actions-board-close-click-drag', route: '/actions?view=open&layout=board', widths: [[1600, 1000]], rules: [closeKeepsPlace('click-drag')] },
 ];
 
 // --- the run -----------------------------------------------------------------------------------------------------------
