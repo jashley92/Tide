@@ -133,7 +133,7 @@ else
 <div class="tide-card">
     @* The server filters, sorts, groups and pages the list, 50 rows a page; the page is ?page=, its pager links. *@
     <ActionTable @ref="_table" PageInAddress="true" ServerSide="true" Total="_total" GroupTotals="_groups" PageSize="ActionService.ListPageSize" OnQuery="Query" Filtered="AnyFilter"
-                 Rows="@(_loading ? null : _rows)" Today="ActionSvc.Today" Live="_marks" Rules="_rules" Filter="@_search" GroupByKind="_groupByKind" GroupByUrgency="ByUrgency"
+                 Rows="@(_loading ? null : _rows)" Today="ActionSvc.Today" Live="_marks" Rules="_rules" Filter="@Words" GroupByKind="_groupByKind" GroupByUrgency="ByUrgency"
                  CanTake="_workers.CanTake" OnTake="Take" Busy="_taking"
                  DefaultSort="@DefaultSort(_view)" Caption="@(ViewName + (_view == ActionView.Closed ? ", most recently closed first" : ByUrgency ? ", grouped by when they're due" : ""))">
         <Empty><EmptyState Icon="@(_view == ActionView.Overdue ? "bi-check2-circle" : "bi-list-check")" Title="@Empty" /></Empty>
@@ -284,6 +284,10 @@ else
     private bool _raised;   // only the ones this person raised
     private IReadOnlyList<ActionHolder> _holders = [];
     private string? _search;
+
+    // The words searched for: none for an empty box or spaces (_search is the box as typed, so it isn't trimmed under the
+    // cursor). What filters, what the address says and what counts as a filter all read this.
+    private string? Words => string.IsNullOrWhiteSpace(_search) ? null : _search.Trim();
     private IReadOnlyList<Priority> _priorities = [];
     private ActionDue? _due;
     private ActionStatus? _status;
@@ -304,7 +308,7 @@ else
     private readonly TypingPause _typing = new(300);
 
     // The filters besides the card rule and the bar's Team, Kind and Held by.
-    private bool Narrowed => _search is not null || _priorities.Count > 0 || _due is not null || _status is not null || _parentNumber is not null
+    private bool Narrowed => Words is not null || _priorities.Count > 0 || _due is not null || _status is not null || _parentNumber is not null
         || _side is not null || _raised;
 
     // Every filter but the card rule, which the empty message counts only off the board. AnyFilter is these or the rule.
@@ -413,7 +417,7 @@ else
         var quiet = _adopted;
         _adopted = false;
         if (await Read(quiet)) PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
-        if (_focusOnArrival) (_focusOnArrival, _refocus, _focusId) = (false, true, null);
+        FocusIfArrived();
     }
 
     private static ActionDue? DueFrom(string? text) => text?.Trim().ToLowerInvariant() switch
@@ -568,12 +572,10 @@ else
     // Grouping by kind is the list's own order: from its first page too.
     private Task Regroup() => Refilter();
 
-    // Search as you type, once typing pauses. A box emptied (or only spaces) is no search: no filter, nothing in the address.
+    // Search as you type, once typing pauses.
     private async Task SearchChanged()
     {
-        if (!await _typing.Settled()) return;
-        if (string.IsNullOrWhiteSpace(_search)) _search = null;
-        await Refilter();
+        if (await _typing.Settled()) await Refilter();
     }
 
     private async Task SetView(ActionView view)
@@ -620,7 +622,7 @@ else
     private void Remember()
     {
         var shown = ShownParameters();
-        _applied = new Address(Text("view"), _teamId, _assignee, Text("layout"), _ruleId, Text("group"), _search, Text("kind"), Text("priority"), Text("due"),
+        _applied = new Address(Text("view"), _teamId, _assignee, Text("layout"), _ruleId, Text("group"), Words, Text("kind"), Text("priority"), Text("due"),
             Text("status"), Text("page"), _parentNumber, Text("teams"), Text("raised"));
         Nav.NavigateTo(Nav.GetUriWithQueryParameters("actions", shown), replace: true);
 
@@ -640,7 +642,7 @@ else
         return new()
         {
             ["view"] = view, ["layout"] = layout, ["group"] = group, ["rule"] = _ruleId, ["team"] = _teamId, ["assignee"] = _assignee,
-            ["q"] = _search, ["kind"] = kind, ["priority"] = priority, ["due"] = DueKey(_due), ["status"] = status, ["page"] = page, ["parent"] = _parentNumber,
+            ["q"] = Words, ["kind"] = kind, ["priority"] = priority, ["due"] = DueKey(_due), ["status"] = status, ["page"] = page, ["parent"] = _parentNumber,
             ["teams"] = teams, ["raised"] = raised,
         };
     }
@@ -768,8 +770,14 @@ else
     internal void ShowThemClicked(MouseEventArgs e)
     {
         if (e.Button != 0 || e.CtrlKey || e.MetaKey || e.ShiftKey || e.AltKey) return;
-        if (_view == ActionView.MyTeams && _assignee == ActionFilter.Unassigned) (_refocus, _focusId) = (true, null);
-        else _focusOnArrival = true;
+        _focusOnArrival = true;
+        FocusIfArrived();
+    }
+
+    // Once My teams with No owner is shown after a plain click on Show them, focus goes to its first row.
+    private void FocusIfArrived()
+    {
+        if (_focusOnArrival && _view == ActionView.MyTeams && _assignee == ActionFilter.Unassigned) (_focusOnArrival, _refocus, _focusId) = (false, true, null);
     }
 
     // On an empty Mine: how many open actions of the person's teams have nobody, when there are any.
@@ -830,7 +838,7 @@ else
 
     private ActionFilter Filter() => new ActionFilter(_view, _teamId, _kind, AssigneeId: _assignee)
     {
-        Search = _search, Priorities = _priorities, Due = _due, Status = _status, ParentNumber = _parentNumber, Teams = _side, RaisedByMe = _raised,
+        Search = Words, Priorities = _priorities, Due = _due, Status = _status, ParentNumber = _parentNumber, Teams = _side, RaisedByMe = _raised,
     };
 
     private ActionSort SortOf(TableSort? sort) => sort?.Key switch

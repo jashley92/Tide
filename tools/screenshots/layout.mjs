@@ -99,9 +99,9 @@ const focusedOnExpectedRow = {
   name: 'focused: the expected row\'s title',
   check: page => page.evaluate(() => {
     const want = document.body.dataset.expectFocus, el = document.activeElement;
-    const got = el && el !== document.body ? `<${el.tagName.toLowerCase()} class="${el.className}">${el.closest('tr')?.querySelector('.tide-action-num')?.innerText ?? ''}` : 'the page body';
-    return el?.matches('.tide-table .tide-action-ref') && el.closest('tr').querySelector('.tide-action-num').innerText === want
-      ? [] : [`focus is on ${got}, not ${want}'s title`];
+    const num = el?.closest('tr')?.querySelector('.tide-action-num')?.innerText;
+    if (el?.matches('.tide-table .tide-action-ref') && num === want) return [];
+    return [`focus is on ${el && el !== document.body ? `<${el.tagName.toLowerCase()} class="${el.className}">${num ?? ''}` : 'the page body'}, not ${want}'s title`];
   }),
 };
 

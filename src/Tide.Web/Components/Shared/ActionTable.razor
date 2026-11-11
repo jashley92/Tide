@@ -102,8 +102,8 @@
     /// <summary>While a take is under way, the buttons wait.</summary>
     [Parameter] public bool Busy { get; set; }
 
-    // Each drawn row's title, to put focus on (the page keeps the person's place when a row changes or leaves): only the
-    // rows given now, so a page, filter or view left behind keeps none.
+    // Each row's title, to put focus on (the page keeps the person's place when a row changes or leaves). Blazor hands a
+    // title over once, when it's first drawn, so a new list of rows drops only the ones that went.
     private readonly Dictionary<Guid, ActionRef> _refs = [];
     private IReadOnlyList<ActionRow>? _refsFor;
 
@@ -111,9 +111,7 @@
     {
         if (ReferenceEquals(Rows, _refsFor)) return;
         _refsFor = Rows;
-        // Only the rows that went: a row still drawn keeps its title's component, which isn't captured again.
-        var drawn = Rows?.Select(r => r.Id).ToHashSet() ?? [];
-        foreach (var gone in _refs.Keys.Where(id => !drawn.Contains(id)).ToList()) _refs.Remove(gone);
+        foreach (var gone in _refs.Keys.Except(Rows?.Select(r => r.Id) ?? []).ToList()) _refs.Remove(gone);
     }
 
     /// <summary>Puts focus on this row's title; false when the row isn't drawn.</summary>

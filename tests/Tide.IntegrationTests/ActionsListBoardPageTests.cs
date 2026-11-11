@@ -213,8 +213,7 @@ public partial class ActionsListBoardPageTests(TideApp app) : IClassFixture<Tide
     // The link's address arriving, as the router hands the page the new query when the browser follows it.
     private static Task Arrive(Rendered<ActionsBoard> r, string view, string? assignee) => r.Click(async p =>
     {
-        typeof(ActionsBoard).GetProperty(nameof(ActionsBoard.ViewParam))!.SetValue(p, view);
-        typeof(ActionsBoard).GetProperty(nameof(ActionsBoard.AssigneeParam))!.SetValue(p, assignee);
+        (p.ViewParam, p.AssigneeParam) = (view, assignee);
         await (Task)typeof(ComponentBase).GetMethod("OnParametersSetAsync", Private)!.Invoke(p, null)!;
     });
 
