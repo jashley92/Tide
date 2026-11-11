@@ -427,6 +427,24 @@ else
         <aside class="tide-card tide-reading" aria-label="The article" aria-busy="@Ui.Aria(ReadingBusy)">
             <div class="tide-reading-head">
                 <h2 class="tide-reading-title">@(row?.Item.Title ?? "Choose an item to read")</h2>
+                @* Reading it here, again, or on its site, beside its title; the bar at the foot is for deciding. *@
+                @if (row is not null)
+                {
+                    <span class="tide-reading-tools">
+                        @if (_read is { HasText: true })
+                        {
+                            <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@ReadingBusy" @onclick="() => Read(again: true)"><span class="bi bi-arrow-clockwise" aria-hidden="true"></span> Read again</button>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_fetching is not null)" @onclick="() => Read(again: _read is not null)"><span class="bi bi-book" aria-hidden="true"></span> Read it here <span class="tide-kbd">V</span></button>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(row.Item.Url))
+                        {
+                            <a class="btn btn-outline-secondary btn-sm" href="@row.Item.Url" target="_blank" rel="noopener noreferrer"><span class="bi bi-box-arrow-up-right" aria-hidden="true"></span> Open the site <span class="tide-kbd">O</span></a>
+                        }
+                    </span>
+                }
                 <button type="button" class="btn-close" aria-label="Close the article" title="Close (Esc)" @onclick="CloseReading"></button>
             </div>
             @if (row is not null)
@@ -468,20 +486,6 @@ else
                     @if (!string.IsNullOrWhiteSpace(row.Item.Excerpt)) { <div class="tide-triage-excerpt">@row.Item.Excerpt</div> }
                     <p class="small tide-muted">Not read yet.</p>
                 }
-                <div class="d-flex gap-2 flex-wrap mt-2">
-                    @if (_read is { HasText: true })
-                    {
-                        <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@ReadingBusy" @onclick="() => Read(again: true)"><span class="bi bi-arrow-clockwise" aria-hidden="true"></span> Read again</button>
-                    }
-                    else
-                    {
-                        <button type="button" class="btn btn-primary btn-sm" disabled="@(_fetching is not null)" @onclick="() => Read(again: _read is not null)"><span class="bi bi-book" aria-hidden="true"></span> Read it here <span class="tide-kbd">V</span></button>
-                    }
-                    @if (!string.IsNullOrWhiteSpace(row.Item.Url))
-                    {
-                        <a class="btn btn-outline-secondary btn-sm" href="@row.Item.Url" target="_blank" rel="noopener noreferrer"><span class="bi bi-box-arrow-up-right" aria-hidden="true"></span> Open the site <span class="tide-kbd">O</span></a>
-                    }
-                </div>
                 <p class="form-text mb-0 mt-2">For reading here only: the text isn't sent or exported, and it's deleted after @ReadingDaysText.</p>
             }
             @if (DecisionInBar && Current is { } line) { @Decision(line, _selected) }

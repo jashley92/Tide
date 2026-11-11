@@ -2708,5 +2708,21 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
     .tide-reading .tide-triage-acts > .tide-triage-main { flex: 0 1000 auto; }
     .tide-reading .tide-triage-end { flex: 0 1 auto; margin-left: auto; }
     .tide-reading .tide-triage-end > select { flex: 0 1 auto; min-width: 5rem; }
+    /* With the pane beside it, the page is a column the window's height under the top bar, as the board's is: the list
+       scrolls inside its card, and the pane fills the height beside it, its text scrolling inside it and the bar at its
+       foot on the first screen however long the text. A short window scrolls the page instead. */
+    .content:has(> .tide-inbox-view > .tide-triage-layout.reading) { display: flex; flex-direction: column; height: calc(100vh - var(--tide-height-top));
+        min-height: 36rem; padding-bottom: var(--tide-space-4); }
+    .content:has(> .tide-inbox-view > .tide-triage-layout.reading) > *, .tide-inbox-view:has(> .tide-triage-layout.reading) > * { flex-shrink: 0; }
+    .tide-inbox-view:has(> .tide-triage-layout.reading) > .tide-triage-layout.reading { flex: 1 1 0; min-height: 20rem; grid-template-rows: minmax(0, 1fr);
+        align-items: stretch; }
+    .tide-triage-layout.reading > .tide-card { margin-bottom: 0; }
+    .tide-triage-layout.reading > .tide-card:first-child { overflow-y: auto; overscroll-behavior: contain; }
+    .tide-triage-layout.reading > .tide-reading { position: static; max-height: none; min-height: 0; }
+    .tide-triage-layout.reading > .tide-reading > .tide-reading-text { max-height: none; }
+    .tide-triage-layout.reading > .tide-reading > .tide-triage-decide { margin-top: auto; }
 }
+/* Read it here, Read again and Open the site in the pane's head, beside its title. */
+.tide-reading-head > .tide-reading-title { flex: 1 1 auto; min-width: 0; }
+.tide-reading-tools { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: var(--tide-space-2); flex: 0 1 auto; }
 /* ---- end Triage's decision bar ---- */

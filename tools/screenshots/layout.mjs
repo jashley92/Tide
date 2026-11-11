@@ -1178,6 +1178,28 @@ const tabReachesBar = {
   },
 };
 
+/**
+ * Setup: a long kept text in the reading pane, as an article read in full leaves (the demo keeps only short ones): the
+ * selected item's text is filled out to a few thousand words in the page. Letters spaced wider too.
+ */
+async function longKeptText(page) {
+  await wider(page);
+  await page.locator('.tide-reading .tide-reading-text').waitFor();
+  await page.$eval('.tide-reading .tide-reading-text', text => {
+    const paragraph = 'The vendor has released fixed builds for an authentication bypass in the web interface of its managed file '
+      + 'transfer server. An unauthenticated attacker who can reach the interface can create an administrator session. ';
+    text.textContent = Array.from({ length: 40 }, () => paragraph).join('\n\n');
+  });
+  await page.waitForTimeout(200);
+}
+
+/** The first visible match of `selector` scrolls inside itself (its content is taller than its box). */
+const scrollsInside = selector => holds(`scrolls inside itself: ${selector}`, selector => {
+  const el = [...document.querySelectorAll(selector)].find(e => e.getBoundingClientRect().height > 0);
+  if (!el) return [`nothing shown matches ${selector}`];
+  return el.scrollHeight > el.clientHeight + 1 ? [] : [`${selector} is as tall as its content (${el.clientHeight}px): it doesn't scroll inside itself`];
+}, selector);
+
 /** Setup: the page scrolled well down, past the top of the list. */
 async function scrollDown(page) {
   await page.mouse.wheel(0, 1500);
@@ -1338,7 +1360,16 @@ const pages = [
     rules: [noSidewaysScroll, widthNear('.tide-triage-layout > .tide-card:first-child', 440, 16), visible('.tide-reading .tide-triage-decide'),
       sameBox('.tide-reading', '.tide-triage-decide', '.tide-reading-title'), above('.tide-reading-title', '.tide-triage-decide'),
       above('.tide-triage-why', '.tide-triage-acts'), oneRow('.tide-triage-decide .tide-triage-acts'), fits('.tide-triage-decide'), fits('.tide-triage-acts'),
-      hidden('.tide-triage-row.selected .tide-triage-decide'), fits('.tide-triage-row'), tabReachesBar] },
+      hidden('.tide-triage-row.selected .tide-triage-decide'), fits('.tide-triage-row'), tabReachesBar,
+      // The pane the window's height under the top bar, the bar at its foot on the first screen; Read it here or Read
+      // again and Open the site in its head, beside the title.
+      reachesBottom('.tide-reading', 24), belowTopBar('.tide-reading'), onFirstScreen('.tide-reading .tide-triage-decide'),
+      sameBox('.tide-reading-head', '.tide-reading-title', '.tide-reading-tools .btn'), above('.tide-reading-tools', '.tide-triage-decide')] },
+  // With a long text read, the text scrolls inside the pane and the bar stays at its foot on the first screen.
+  { name: 'triage-decision-long', route: '/triage', setup: longKeptText, widths: [[1920, 1080], [1440, 900]],
+    rules: [noSidewaysScroll, reachesBottom('.tide-reading', 24), belowTopBar('.tide-reading'), scrollsInside('.tide-reading-text'),
+      onFirstScreen('.tide-reading .tide-triage-decide'), oneRow('.tide-triage-decide .tide-triage-acts'), fits('.tide-reading'),
+      sameBox('.tide-reading-head', '.tide-reading-title', '.tide-reading-tools .btn')] },
   // A covered row's Attach and Promote, and a covered group's Attach all and Promote as one, share the bar's one row.
   { name: 'triage-covered', route: '/triage', setup: selectCovered(), widths: [1440, 1920],
     rules: [visible('.tide-reading'), sameLine('.tide-triage-decide .tide-triage-attach', '.tide-triage-decide .tide-triage-promote'),
