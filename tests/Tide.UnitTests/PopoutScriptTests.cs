@@ -128,8 +128,8 @@ public class PopoutScriptTests
     {
         var said = await Run();
 
-        said["pressInside"].Should().BeEquivalentTo(new Step([], 3), "its button and its box are part of it");
-        said["focusInside"].Should().BeEquivalentTo(new Step([], 3));
+        said["pressInside"].Should().BeEquivalentTo(new Step([], 5), "its button and its box are part of it");
+        said["focusInside"].Should().BeEquivalentTo(new Step([], 5));
         said["pressOutside"].Should().BeEquivalentTo(new Step(["a:Dismiss"], 0), "a click elsewhere closes it, focus staying where it went");
         said["focusOutside"].Should().BeEquivalentTo(new Step(["a:Dismiss"], 0), "so does Tab out of it");
     }
@@ -141,7 +141,7 @@ public class PopoutScriptTests
     {
         var said = await Run();
 
-        said["pressOnBarePart"].Should().BeEquivalentTo(new Step([], 3), "focus goes to the holder, which is part of it");
+        said["pressOnBarePart"].Should().BeEquivalentTo(new Step([], 5), "focus goes to the holder, which is part of it");
         said["tabindex"].Heard.Should().Equal(["open:-1", "closed:undefined"], "it takes focus (out of the Tab order) only while open");
     }
 
@@ -159,7 +159,7 @@ public class PopoutScriptTests
         var said = await Run();
 
         said["unwatched"].Should().BeEquivalentTo(new Step(["page:Escape"], 0), "closed another way, it leaves nothing listening (twice is harmless)");
-        said["twoOpen"].Should().BeEquivalentTo(new Step(["b:Dismiss", "b:focus"], 3), "one Escape closes one popout, the last opened");
+        said["twoOpen"].Should().BeEquivalentTo(new Step(["b:Dismiss", "b:focus"], 5), "one Escape closes one popout, the last opened");
         said["thenTheFirst"].Should().BeEquivalentTo(new Step(["a:Dismiss", "a:focus"], 0));
     }
 }

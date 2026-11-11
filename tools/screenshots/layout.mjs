@@ -1128,28 +1128,58 @@ const insidePage = selector => ({
 });
 
 /**
- * Opening a popout (by a click on `opener`, as the mouse, a tap or Enter does) moves nothing: the page doesn't scroll
- * sideways or grow wider than the window, and the popout lies inside the window top to bottom, opening upward where
- * there's no room below its button.
+ * Opening a popout (by a click on `opener`, as the mouse, a tap or Enter does) moves nothing and hides nothing:
+ * - the page doesn't scroll sideways, isn't wider than what shows of it (the body's clientWidth, without the scrollbar
+ *   or the gutter kept for it), and a sideways wheel or Shift+wheel over it afterwards still doesn't scroll it sideways;
+ * - the popout lies inside what shows of the window, top to bottom, and never over its button;
+ * - no part of it is cut off by a box it's drawn in: the middle of each edge of it, and each end of each item, is its own
+ *   (a hit test there finds it).
  */
 const opensInPlace = (label, opener, panel) => ({
   name: `${label} opens in place`,
   check: async page => {
     const button = page.locator(opener).first();
     await button.scrollIntoViewIfNeeded();
-    const before = await page.evaluate(() => ({ x: scrollX, width: Math.max(document.documentElement.scrollWidth, document.documentElement.clientWidth) }));
+    const x0 = await page.evaluate(() => scrollX);
     await button.click();
     await page.locator(panel).first().waitFor({ timeout: 5000 });
     await page.waitForTimeout(700);
-    const after = await page.evaluate(sel => {
-      const r = [...document.querySelectorAll(sel)].map(e => e.getBoundingClientRect()).find(b => b.height > 0);
-      return { x: scrollX, width: document.documentElement.scrollWidth, top: r.top, bottom: r.bottom, height: innerHeight };
-    }, panel);
+    const seen = await page.evaluate(([sel, opener]) => {
+      const el = [...document.querySelectorAll(sel)].find(e => e.getBoundingClientRect().height > 0);
+      const r = el.getBoundingClientRect(), b = document.querySelector(opener).getBoundingClientRect();
+      const de = document.documentElement;
+      const mine = (x, y) => el.contains(document.elementFromPoint(x, y));
+      // Just inside the middle of each edge (its corners are rounded off).
+      const mx = (r.left + r.right) / 2, my = (r.top + r.bottom) / 2;
+      const edges = [[r.left + 3, my], [r.right - 3, my], [mx, r.top + 3], [mx, r.bottom - 3]];
+      const items = [...el.querySelectorAll('[role=menuitem], [role=option], [role=menuitemradio], [role=menuitemcheckbox], .tide-profile-item, .tide-export-panel a')]
+        .map(i => [i, i.getBoundingClientRect()]).filter(([, ir]) => ir.height > 0 && ir.top >= r.top && ir.bottom <= r.bottom);
+      return {
+        x: scrollX, scrollWidth: de.scrollWidth, clientWidth: Math.min(de.clientWidth, document.body.clientWidth), clientHeight: de.clientHeight, top: r.top, bottom: r.bottom,
+        overOpener: r.left < b.right && r.right > b.left && r.top < b.bottom && r.bottom > b.top,
+        cutEdges: edges.filter(([x, y]) => !mine(x, y)).map(([x, y]) => { const e = document.elementFromPoint(x, y); return (e ? `${e.tagName.toLowerCase()}.${e.className}`.trim() : "nothing") + ` at ${Math.round(x)},${Math.round(y)}`; }),
+        cutItems: items.filter(([i, ir]) => ![[ir.left + 2, (ir.top + ir.bottom) / 2], [ir.right - 2, (ir.top + ir.bottom) / 2]]
+          .every(([x, y]) => i.contains(document.elementFromPoint(x, y)))).map(([i]) => i.innerText.trim().slice(0, 24)),
+      };
+    }, [panel, opener]);
     const problems = [];
-    if (after.x !== before.x) problems.push(`opening it scrolled the page sideways ${Math.round(after.x - before.x)}px`);
-    if (after.width > before.width) problems.push(`opening it made the page ${after.width - before.width}px wider than the window`);
-    if (after.top < -0.5 || after.bottom > after.height + 0.5)
-      problems.push(`it runs from y=${Math.round(after.top)} to ${Math.round(after.bottom)}px, outside the window (0 to ${after.height}px)`);
+    if (seen.x !== x0) problems.push(`opening it scrolled the page sideways ${Math.round(seen.x - x0)}px`);
+    if (seen.scrollWidth > seen.clientWidth) problems.push(`the page is ${seen.scrollWidth - seen.clientWidth}px wider than what shows of it`);
+    if (seen.top < -0.5 || seen.bottom > seen.clientHeight + 0.5)
+      problems.push(`it runs from y=${Math.round(seen.top)} to ${Math.round(seen.bottom)}px, outside the window (0 to ${seen.clientHeight}px)`);
+    if (seen.overOpener) problems.push('it covers its own button');
+    if (seen.cutEdges.length) problems.push(`${seen.cutEdges.length} of its edges are cut off or covered (by ${seen.cutEdges.join(", ")})`);
+    if (seen.cutItems.length) problems.push(`items cut off or covered: ${seen.cutItems.join(', ')}`);
+    // A sideways wheel, and Shift with the wheel, over the page heading.
+    const h = await page.locator('h1').first().boundingBox();
+    await page.mouse.move(h.x + 5, Math.max(5, h.y + h.height / 2));
+    await page.mouse.wheel(120, 0);
+    await page.keyboard.down('Shift');
+    await page.mouse.wheel(0, 120);
+    await page.keyboard.up('Shift');
+    await page.waitForTimeout(400);
+    const x1 = await page.evaluate(() => scrollX);
+    if (x1 !== x0) problems.push(`a sideways wheel then scrolled the page ${Math.round(x1 - x0)}px`);
     return problems;
   },
 });
@@ -1182,6 +1212,30 @@ const deleteCancelledFocusesMore = {
 };
 
 /** The palette opened (Ctrl+K) over the open + Filter, then closed: focus is back on + Filter. */
+/** Save view, its name typed and Enter pressed: saved, as a form is; its menu button is named for the items it offers. */
+const saveViewByEnter = {
+  name: 'Save view: Enter saves, and the menu is named for what it offers',
+  check: async page => {
+    await page.locator('#save-view').click();
+    await page.locator('#saved-view-name').waitFor({ timeout: 5000 });
+    await page.locator('#saved-view-name').fill('By Enter');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(1200);
+    const problems = [];
+    if (await anyShown(page, '.tide-modal')) return ['Enter in the Name box left the dialog open'];
+    const menu = page.locator('.tide-savedview', { hasText: 'By Enter' }).locator('.tide-savedview-menu');
+    if (!await menu.count()) return ['no saved view "By Enter" after Enter'];
+    const named = (await menu.innerText()).trim();
+    await menu.click();
+    await page.locator('.tide-savedview [role=menuitem]').first().waitFor({ timeout: 5000 });
+    const items = (await page.locator('.tide-savedview [role=menuitem]').allInnerTexts()).map(t => t.trim().toLowerCase());
+    const said = named.replace(/^By Enter: /, '').split(/, | or /);
+    if (said.join('|') !== items.join('|')) problems.push(`the menu button says "${named}" but the menu offers ${items.join(', ')}`);
+    await page.keyboard.press('Escape');
+    return problems;
+  },
+};
+
 const paletteGivesFocusBack = {
   name: 'the palette over + Filter gives focus back to it',
   check: async page => {
@@ -1578,8 +1632,8 @@ const pages = [
     rules: popoutCloses('+ Filter', { wrap: '.tide-filter-menu', opener: '.tide-filter-add', panel: '.tide-filter-pop', inside: '[role=menuitem]' }) },
   { name: 'action-more-popout', route: '/actions/{huntAction}', widths: [1440],
     rules: popoutCloses('the More menu', { wrap: '.tide-menubutton', opener: '.tide-menubutton-btn', panel: '.tide-menubutton-pop', inside: '[role=menuitem]' }) },
-  // Each popout opens in place on a narrow window: no sideways scroll, nothing wider, and inside the window top to
-  // bottom (upward where there's no room below).
+  // Each popout opens in place on a narrow or short window: no sideways scroll, nothing wider than what shows, inside
+  // the window top to bottom (upward where there's more room above), never over its button, and nothing of it cut off.
   ...[
     ['triage', '/triage', 'Attach to…', '.tide-triage-row.selected .tide-attach > button', '.tide-attach-panel'],
     ['account', '/triage', 'the account menu', '.tide-profile-btn', '.tide-profile .tide-popover'],
@@ -1588,11 +1642,14 @@ const pages = [
     ['filter', '/actions?view=open&layout=list', '+ Filter', '.tide-filter-menu .tide-filter-add', '.tide-filter-pop'],
     ['action-more', '/actions/{huntAction}', 'the More menu', '.tide-menubutton-btn', '.tide-menubutton-pop'],
     ['library-more', '/library/queries', 'the entry’s More menu', '.tide-library-entry .tide-menubutton-btn', '.tide-menubutton-pop'],
-  ].map(([name, route, label, opener, panel]) => ({ name: `popout-in-place-${name}`, route, widths: [[1024, 900], [780, 900], [400, 800]],
+  ].map(([name, route, label, opener, panel]) => ({ name: `popout-in-place-${name}`, route, widths: [[1024, 900], [780, 900], [780, 380], [400, 800], [400, 330]],
     rules: [opensInPlace(label, opener, panel)] })),
   // Focus after a dialog opened from a popout: back on More once Delete is cancelled, and on + Filter after the palette.
   { name: 'library-delete-focus', route: '/library/queries', widths: [1440], rules: [deleteCancelledFocusesMore] },
   { name: 'palette-over-filter', route: '/actions?view=open&layout=list', widths: [1440], rules: [paletteGivesFocusBack] },
+  // Save view: Enter in its Name box saves it, and the new view's menu is named for what it offers. Someone of this
+  // run's own, so no one else's Actions shows the view.
+  { name: 'save-view-enter', route: `/actions?view=open&layout=list&as=sv${run}`, widths: [1440], rules: [saveViewByEnter] },
   // J and K pressed quickly land on the row they were pressed for: on the page (the selection isn't pulled back by a
   // row's focus), and across a page boundary both ways (the demo has a second page: Demo:TriageFiller below).
   { name: 'triage-keys', route: '/triage', setup: pressQuickly('j', 10), widths: [1440], rules: [selectedAsAimed()] },
