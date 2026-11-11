@@ -53,7 +53,7 @@ else
             {
                 <Breadcrumbs Items="@([new("Articles", "articles"), new(Ui.Clip(_article.Title))])" />
             }
-            <div class="d-flex gap-2 align-items-center mb-1">
+            <div class="d-flex flex-wrap gap-2 align-items-center mb-1">
                 <PresenceNote Place="@($"article:{Id}")" Editing="_dirty" />
                 <StatusBadge Status="@_article.Status.ToString()" />
                 <ClassBadge Classification="_form.Classification" Priority="_form.Priority" />

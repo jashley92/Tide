@@ -639,7 +639,7 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 .tide-edition h3 { font-size: 1.08rem; font-weight: var(--tide-weight-semibold); margin: .3rem 0; }
 .tide-edition .tide-bluf { font-weight: var(--tide-weight-medium); }
 .tide-edition ul { margin: .4rem 0; }
-.tide-edition img { max-width: 100%; max-height: 300px; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-md); margin: .3rem .4rem .3rem 0; }
+.tide-edition img { max-width: calc(100% - .4rem); max-height: 300px; border: 1px solid var(--tide-border); border-radius: var(--tide-radius-md); margin: .3rem .4rem .3rem 0; }
 .tide-withheld { font-size: .86rem; color: var(--tide-text-muted); font-style: italic; }
 /* Written text can hold a word longer than its card is wide (a pasted URL, a hash): it breaks rather than run out of the
    card and make the page scroll sideways. A code block keeps its lines and scrolls in itself. */
@@ -1951,10 +1951,10 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 /* Triage: a heading inside the list ("Matches what we run", "Everything else", the Older fold's note). */
 .tide-triage-section { list-style: none; padding: .45rem .6rem .25rem; font-size: var(--tide-text-xs); text-transform: uppercase; letter-spacing: .06em; color: var(--tide-text-muted); background: var(--tide-surface-2); border-bottom: 1px solid var(--tide-border); }
 
-/* The article page for someone who can't write: the reader preview, with the article's actions, is the page. */
-.tide-editor[data-readonly] { display: block; max-width: 48rem; }
+/* The article page for someone who can't write: the reader preview, with the article's actions, is the page, in the
+   page's column as the Review card above it is. */
 .tide-editor[data-readonly] .tide-editor-main { display: none; }
-.tide-editor[data-readonly] > .tide-editor-side { position: static; max-height: none; overflow: visible; display: block; }
+.tide-editor[data-readonly] > .tide-editor-side { display: block; }
 
 /* Trends' tiles open what they count; the outcomes row has a small heading of its own. */
 .tide-trend-tiles > a { color: inherit; text-decoration: none; display: block; background: var(--tide-surface-2); border-radius: var(--tide-radius-lg); padding: .4rem; }

@@ -259,6 +259,69 @@ public partial class EditorRailLayoutTests(TideApp app) : IClassFixture<TideApp>
         (await Saved(id)).WhyItMattersTlp.Should().Be(TlpLevel.Amber);
     }
 
+    // A threat that's ready but for its "Why it matters" marking: one thing to check, nothing missing.
+    private Task<Guid> ReadyButForWhy(string title) => NewArticle(title, fill: a =>
+    {
+        a.Classification = Classification.Threat;
+        a.Priority = Priority.P2;
+        a.Bluf = "Exploited in the wild.";
+        a.Bullets.Add(new Domain.Entities.ArticleBullet { Text = "One" });
+        a.RecommendedActions = "- Patch";
+        a.SourceUrl = "https://example.com/a";
+        a.WhyItMatters = "Our gateways run it.";
+        a.WhyItMattersTlp = TlpLevel.Clear;
+    });
+
+    private static string Summary(string html)
+    {
+        var sum = html[At(html, "class=\"tide-reader-sum\"")..];
+        return sum[..sum.IndexOf("</p>", StringComparison.Ordinal)];
+    }
+
+    [Fact]
+    public async Task TheReadinessLine_NamesTheEditionShown_AndCallsATlpCheckACheck()
+    {
+        var id = await ReadyButForWhy("layout-sum article");
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var tag = await db.ScorecardTags.FirstAsync();
+            db.ArticleTags.Add(new Domain.Entities.ArticleTag { ArticleId = id, TagId = tag.Id });
+            await db.SaveChangesAsync();
+        }
+        var article = await Saved(id);
+        async Task<string> Shown(string? edition)
+        {
+            await using var r = await ComponentHarness.RenderAsync<ReaderPreview>(app, $"/articles/{id}", new()
+            {
+                ["State"] = new ArticleEditorPanel.State(article, ArticleForm.From(article), [], [], false, CanWrite: true), ["EditionKey"] = edition,
+            });
+            return Summary(await r.Html());
+        }
+
+        var team = await Shown(null);
+        team.Should().Contain("Security team edition").And.Contain("1 to check").And.NotContain("missing")
+            .And.NotContain("company-wide edition", "the other edition has the same one thing, so it isn't repeated");
+
+        var company = await Shown("company");
+        company.Should().Contain("Company-wide edition").And.Contain("1 to check").And.NotContain("missing").And.NotContain("team edition");
+    }
+
+    [Fact]
+    public async Task SomeoneWhoCantEdit_GetsNoAuthorPrompts_InThePreview()
+    {
+        var id = await ReadyButForWhy("layout-prompts article");
+        var article = await Saved(id);
+        await using var r = await ComponentHarness.RenderAsync<ReaderPreview>(app, $"/articles/{id}", new()
+        {
+            ["State"] = new ArticleEditorPanel.State(article, ArticleForm.From(article), ArticleChecks.For(article), [], false),
+        }, new ComponentHarness.SignIn("dev:viewer", "Viewer", "Viewer"));
+
+        var html = await r.HtmlOnce("What readers get");
+        html.Should().NotContain("class=\"tide-reader-sum\"", "whether it's ready to brief is the author's question")
+            .And.NotContain("tide-placeholder", "nor are the gaps' buttons theirs to press").And.NotContain("Check it");
+    }
+
     private async Task<int> HistoryRows(Guid id)
     {
         using var scope = app.Services.CreateScope();

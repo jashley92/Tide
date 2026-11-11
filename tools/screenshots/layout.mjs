@@ -1406,6 +1406,25 @@ const editorPairs = [['section[aria-labelledby="sec-assessment"]', 'section[aria
 const editorFits = [visible('.tide-section-pills'), fits('.tide-section-pills'), oneLine('.tide-section-pills button'),
   fits('.tide-editor-pair > .tide-card'), fits('section[aria-labelledby="sec-bullets"]'), fits('.tide-sticky-save'), fits('.tide-page-head')];
 
+/** The first visible matches of `a` and `b` are the same width (within 2px) and start at the same x: one column. */
+const sameColumn = (a, b) => holds(`one column: ${a} / ${b}`, ([a, b]) => {
+  const box = s => [...document.querySelectorAll(s)].map(e => e.getBoundingClientRect()).find(r => r.width > 0 && r.height > 0);
+  const ra = box(a), rb = box(b);
+  if (!ra || !rb) return [`nothing visible: ${!ra ? a : b}`];
+  return Math.abs(ra.left - rb.left) <= 2 && Math.abs(ra.width - rb.width) <= 2 ? []
+    : [`${a} (${Math.round(ra.left)}px, ${Math.round(ra.width)}px wide) and ${b} (${Math.round(rb.left)}px, ${Math.round(rb.width)}px wide) aren't one column`];
+}, [a, b]);
+
+/** Setup: wider letters, and five more people on the article than the seed has: the head's row of chips at its fullest. */
+const crowdedHead = async page => {
+  await wideFont(page);
+  await page.evaluate(() => {
+    const row = document.querySelector('.tide-page-head .tide-presence');
+    for (const who of ['AB', 'CD', 'EF', 'GH']) row.insertAdjacentHTML('beforeend', `<span class="tide-presence-dot">${who}</span>`);
+    row.insertAdjacentHTML('beforeend', '<span class="tide-presence-dot tide-presence-more">+3</span>');
+  });
+};
+
 /** Setup: wider letters, then the Edit | Preview switch set to Preview. */
 const showPreviewPane = async page => {
   await wideFont(page);
@@ -1555,7 +1574,7 @@ const pages = [
       attr('#tide-rail', 'aria-label', 'Context · what readers get'), ...editorFits,
       ...editorPairs.map(pair => [1600, sameLine(...pair)]),
       [1600, besides(...editorPairs[0])], [1600, besides(...editorPairs[2])],
-      fits('.tide-rail-body'), fits('#tide-rail .tide-reader-head'), fits('#tide-rail .tide-tabbar')] },
+      fits('.tide-rail-body'), fits('#tide-rail .tide-reader'), fits('#tide-rail .tide-reader-head'), fits('#tide-rail .tide-tabbar')] },
   // Below 1500px the rail is closed until asked for, and the form keeps its pairs where there's room for two columns;
   // at 780 each card takes the width, one under another, and nothing scrolls sideways.
   { name: 'editor-rail-shut', route: '/articles/{vpnArticle}', setup: wideFont, widths: [1440, 1000, 780],
@@ -1570,6 +1589,15 @@ const pages = [
   { name: 'editor-phone-preview', route: '/articles/{vpnArticle}', setup: showPreviewPane, widths: [780, 400],
     rules: [noSidewaysScroll, visible('.tide-ws-switch'), visible('#tide-rail .tide-reader'), hidden('section[aria-labelledby="sec-assessment"]'),
       hidden('#tide-rail .tide-rail-head'), visible('.tide-sticky-save'), onFirstScreen('.tide-sticky-save'), onTop('.tide-sticky-save'), fits('.tide-rail-body'), fits('#tide-rail .tide-reader-head')] },
+  // There, `]` leaves the preview in the page: no dialog over the switch.
+  { name: 'editor-phone-preview-key', route: '/articles/{vpnArticle}', setup: async page => { await showPreviewPane(page); await page.locator('body').press(']'); await page.waitForTimeout(300); },
+    widths: [780, 400], rules: [attr('#tide-rail', 'role', null), onTop('.tide-ws-switch'), hidden('#tide-rail .tide-rail-head'), visible('#tide-rail .tide-reader')] },
+  // The head's badges wrap under the people here rather than run off a phone's edge, for an analyst and a reviewer.
+  ...['', '?roles=Viewer'].map(roles => ({ name: `editor-head-crowded${roles ? '-viewer' : ''}`, route: `/articles/{vpnArticle}${roles}`, setup: crowdedHead,
+    widths: [390, 780], rules: [noSidewaysScroll, fits('.tide-page-head-main'), fits('.tide-page-head-main > .d-flex')] })),
+  // Someone who can't edit reads the preview as the page: one column with the Review card above it, not a narrow strip.
+  { name: 'editor-viewer', route: '/articles/{vpnArticle}?roles=Viewer', setup: wideFont, widths: [1920, 1440, 780],
+    rules: [noSidewaysScroll, visible('.tide-editor-side .tide-reader'), sameColumn('.tide-review-card', '.tide-editor-side'), fits('.tide-editor-side')] },
   { name: 'editor-phone-edit', route: '/articles/{vpnArticle}', setup: wideFont, widths: [780, 400],
     rules: [noSidewaysScroll, visible('.tide-ws-switch'), hidden('#tide-rail'), visible('section[aria-labelledby="sec-assessment"]'), fits('.tide-section-pills'),
       stacked('.tide-editor-pair')] },

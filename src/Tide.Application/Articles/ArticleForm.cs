@@ -221,9 +221,11 @@ public enum ArticleFix
 /// <summary>
 /// A gap in an article that a brief shouldn't go out with. <see cref="Blocking"/> ones stop it being Ready; <see cref="Part"/>
 /// is where it's fixed, and <see cref="Need"/> names what's missing in a word or two, for a row's "Needs: Bottom line".
-/// <see cref="Fix"/>, when set, is a one-click change the editor offers for it.
+/// <see cref="Fix"/>, when set, is a one-click change the editor offers for it. <see cref="ToCheck"/> marks one that asks
+/// for a second look at something written (a TLP marking) rather than something missing.
 /// </summary>
-public sealed record ArticleCheck(string Message, bool Blocking, ArticlePart Part, string? Need = null, ArticleFix? Fix = null)
+public sealed record ArticleCheck(string Message, bool Blocking, ArticlePart Part, string? Need = null, ArticleFix? Fix = null,
+    bool ToCheck = false)
 {
     /// <summary>What's missing in a word or two, or the whole message when there's no short name.</summary>
     public string Short => Need ?? Message;
@@ -267,6 +269,6 @@ public static class ArticleChecks
         var why = a.Effective(a.WhyItMattersTlp);
         return why > companyCeiling ? null
             : new($"Why it matters is {Tlp.Label(why)} and will reach the company-wide edition.", false, ArticlePart.WhyItMatters,
-                "Why it matters TLP", TlpLevel.Amber > companyCeiling ? ArticleFix.WhyItMattersAmber : null);
+                "Why it matters TLP", TlpLevel.Amber > companyCeiling ? ArticleFix.WhyItMattersAmber : null, ToCheck: true);
     }
 }
