@@ -15,18 +15,16 @@
 @inject SavedViewService SavedViews
 @inject PrerenderHandoff Handoff
 @inject IJSRuntime JS
+@using Tide.Web.Components.ActionRail
 
 <PageTitle>Actions · TIDE</PageTitle>
 
 <div class="tide-page-head">
     <div class="tide-actions-title">
         <h1 @ref="_heading" tabindex="-1">Actions</h1>
-        @if (!_asBoard)
-        {
-            @* The list's keys (RowKeys, rows.js), as the ? overlay lists them. *@
-            @* T only for someone who may take actions on. *@
-            <span class="tide-actions-keys"><kbd class="tide-kbd">J</kbd> <kbd class="tide-kbd">K</kbd> move · @if (CanHold) { <kbd class="tide-kbd">T</kbd> <span>take it ·</span> }<kbd class="tide-kbd">Enter</kbd> open</span>
-        }
+        @* The list's and the board's keys (RowKeys, rows.js), as the ? overlay lists them: on the board the arrows also
+           move across its lanes. T only for someone who may take actions on. *@
+        <span class="tide-actions-keys"><kbd class="tide-kbd">J</kbd> <kbd class="tide-kbd">K</kbd>@if (_asBoard) { @(" ")<kbd class="tide-kbd">←</kbd> <kbd class="tide-kbd">→</kbd> } move · @if (CanHold) { <kbd class="tide-kbd">T</kbd> <span>take it ·</span> }<kbd class="tide-kbd">Enter</kbd> open</span>
     </div>
     <div class="d-flex gap-2">
         <a class="btn btn-outline-secondary" href="workload"><span class="bi bi-people" aria-hidden="true"></span> Workload</a>
@@ -53,7 +51,7 @@
         @if (DefaultFor(_view) is { } shown)
         {
             @* The tab this page opens on when a link doesn't say: the person's own, set here. *@
-            @if (shown == SavedView)
+            @if (shown == SavedView && _asBoard == SavedBoard)
             {
                 <span class="tide-muted" id="view-default" title="Actions opens on this tab when a link doesn't say which"><span class="bi bi-star-fill" aria-hidden="true"></span> <span class="tide-viewtool-text">Opens here</span></span>
             }
@@ -133,8 +131,13 @@
     }
     else
     {
-        <ActionKanban Board="@(_board with { Cards = Matching(_board.Cards) })" Today="ActionSvc.Today" Rules="_rules" MovedBy="_movedBy" OnChanged="Load" OnShowOlder="ShowOlder"
-                      Counts="@(_counts ?? ActionViewCounts.None)" ClosedDays="_closedDays" />
+        var order = BoardOrder;
+        <ActionKanban @ref="_kanban" Board="@ShownBoard" Today="ActionSvc.Today" Rules="_rules" MovedBy="_movedBy" OnChanged="Load" OnShowOlder="ShowOlder"
+                      Counts="@(_counts ?? ActionViewCounts.None)" ClosedDays="_closedDays" SelectedId="@SelectedCard?.Id" OnSelect="SelectCard" />
+        @* The board's selected card, as the list's row: J/K and the up and down arrows move it card by card, lane after
+           lane; left and right (on a card) to the next lane with cards; T takes it on; Enter opens it. *@
+        <RowKeys RowClass="tide-kcard" Count="order.Count" Selected="CardIndex" SelectedChanged="SelectCardAt" OnOpen="OpenCard"
+                 Keys="@(CanHold ? BoardTakeKeys : BoardLaneKeys)" OnKey="BoardKey" Follow="LaneKeys" OnRow="LaneKeys" />
     }
 }
 else
@@ -166,6 +169,31 @@ else
 </ConfirmDialog>
 <ConfirmDialog @ref="_confirm" />
 
+@* The selected row or card, in the context rail; on the list, the pages beside this one. *@
+<ContextRail Title="@(RailRow is { } shownRow ? $"About {Ui.ActionLabel(shownRow.Number)}" : "About the selected action")">
+    @if (RailRow is { } row)
+    {
+        var canWork = _asBoard ? _board?.CanMove(row) == true : _workers.CanWork(row.TeamId);
+        <ActionRowRail @ref="_rail" Row="row" CanWork="canWork" CanTake="row.TakeableBy(canWork)" Busy="@(_taking || _mover?.Busy == true)"
+                       OnTake="() => Take(row)" Moves="@(_asBoard && canWork ? RailMoves(row) : null)" OnBoard="_asBoard" />
+    }
+    else
+    {
+        <section class="tide-card"><p class="small tide-muted mb-0">@(_loading ? "Loading…" : "Nothing is selected: the list is empty.")</p></section>
+    }
+    @if (!_asBoard)
+    {
+        <section class="tide-card" aria-labelledby="rail-about-h">
+            <h2 id="rail-about-h">About this page</h2>
+            <p class="tide-rail-links small mb-0">
+                <a href="workload">Workload</a>
+                <a href="library/board-rules">Board rules</a>
+                @if (Teams.CanManageExternal) { <a href="teams/external">External teams</a> }
+            </p>
+        </section>
+    }
+</ContextRail>
+
 @code {
     [SupplyParameterFromQuery(Name = "view")] public string? ViewParam { get; set; }
     [SupplyParameterFromQuery(Name = "team")] public string? TeamParam { get; set; }
@@ -186,10 +214,10 @@ else
     [SupplyParameterFromQuery(Name = DataTable<ActionRow>.PageParameter)] public string? PageParam { get; set; }
 
     /// <summary>
-    /// The layout this person last chose with the List / Board tab (the board until they choose), kept on the server so
-    /// it follows them. Read once when the page opens (and carried from the prerender to the interactive render, so not
-    /// read twice); it's what an address without <c>layout</c> shows. A link's own <c>layout</c> wins for that visit
-    /// without changing it.
+    /// The layout Actions opens in (the board until they choose): the one last chosen with the List / Board tab on the tab
+    /// Actions opens on, or with "Open here by default". Kept on the server so it follows them; read once when the page
+    /// opens (and carried from the prerender to the interactive render, so not read twice); it's what an address without
+    /// <c>layout</c> shows. A link's own <c>layout</c> wins for that visit without changing it.
     /// </summary>
     [PersistentState]
     public string? SavedLayout { get; set; }
@@ -238,15 +266,18 @@ else
     private string? _me;
     private string Me_ => _me ??= CurrentUser.UserId;
 
-    // "Open here by default": this tab, from now on, wherever they sign in.
+    // "Open here by default": this tab, in this layout, from now on, wherever they sign in.
     internal async Task SetDefaultView(string value)
     {
         if (_busyDefault) return;
         _busyDefault = true;
         try
         {
+            // The layout shown with it, so Actions opens as it's seen now.
+            var layout = _asBoard ? UserPreferences.Board : UserPreferences.List;
             await Prefs.SetAsync(UserPreferences.ActionsView, value);
-            SavedView = value;
+            await Prefs.SetAsync(UserPreferences.ActionsLayout, layout);
+            (SavedView, SavedLayout) = (value, layout);
             Toasts.Show($"Actions opens on {ViewLabel(_view)} from now on.");
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
@@ -414,7 +445,6 @@ else
         _asBoard = LayoutParam is not null ? string.Equals(LayoutParam, "board", StringComparison.OrdinalIgnoreCase)
             : SavedBoard && OnBoard(_view) && !_groupByKind;
         _sayLayout = LayoutParam is null;
-        if (_asBoard && !OnBoard(_view)) _view = ActionView.Open;
         _ruleId = _rules.Any(r => r.Id == query.Rule && r.ShowAsFilter) ? query.Rule : null;
         _teamId = query.Team;
         _assignee = string.IsNullOrWhiteSpace(AssigneeParam) ? null : AssigneeParam;
@@ -428,6 +458,10 @@ else
         _parentNumber = query.Parent is > 0 ? query.Parent : null;
         _side = EnumNames.OrNull<ActionTeams>(TeamsParam, ignoreCase: true);
         _raised = string.Equals(RaisedParam, Me, StringComparison.OrdinalIgnoreCase);
+        (_cardId, _cardAt, _cardAsked) = (null, 0, CardNumber(CardParam));
+        _addressedCard = _cardAsked;
+        // The board from a link to a view it hasn't: Overdue shows as All open with the Overdue pill, the same actions.
+        if (_asBoard && !OnBoard(_view)) FitBoard(say: false);
         var heldToMine = HoldMine();
         // Only another view resets the sort: another page (or filter) keeps the one chosen.
         if (was is null || heldToMine || !string.Equals(was.View, query.View, StringComparison.OrdinalIgnoreCase)) _sort = DefaultSort(_view);
@@ -598,7 +632,7 @@ else
     internal async Task Refilter()
     {
         if (_view == ActionView.Mine && _assignee == ActionFilter.Unassigned) (_view, _sort) = (ActionView.MyTeams, DefaultSort(ActionView.MyTeams));
-        (_page, _selected) = (1, 0);
+        (_page, _selected, _cardId, _cardAt, _addressedCard) = (1, 0, null, 0, null);
         await Load();
         Remember();
     }
@@ -616,7 +650,7 @@ else
     {
         _view = view;
         if (view == ActionView.Mine) _assignee = null;   // Mine is held by you: another holder would show nothing
-        (_page, _selected) = (1, 0);
+        (_page, _selected, _cardId, _cardAt, _addressedCard) = (1, 0, null, 0, null);
         _sort = DefaultSort(view);
         Remember();
         await Load();
@@ -640,6 +674,7 @@ else
             _refocus = false;
             if (row is null || _table is null || !await _table.FocusRowAsync(row.Id)) await _heading.TryFocusAsync(orGone: true);
         }
+        if (_asBoard && !_loading && RendererInfo.IsInteractive) await SayCard();
         if (!_sayLayout) return;
         _sayLayout = false;
         // Only the layout is added (the team, holder and the rest stay as they were), and recorded first so it isn't re-read.
@@ -648,17 +683,32 @@ else
         Nav.NavigateTo(Nav.GetUriWithQueryParameter("layout", layout), replace: true);
     }
 
-    // The tab is the one place the preference changes; a link's layout only applies to its visit.
+    // The tab is the one place the preference changes, and only on the tab Actions opens on (the person's default): the
+    // layout chosen on another tab is for this visit, so a default set with "Open here by default" keeps its layout. A
+    // link's layout only applies to its visit.
     private async Task SetLayout(string? layout)
     {
         _asBoard = layout == "board";
-        if (_asBoard && !OnBoard(_view)) _view = ActionView.Open;
-        _page = 1;
-        SavedLayout = _asBoard ? UserPreferences.Board : UserPreferences.List;
-        try { await Prefs.SetAsync(UserPreferences.ActionsLayout, SavedLayout); }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        if (_asBoard && !OnBoard(_view)) FitBoard(say: true);
+        (_page, _addressedCard) = (1, null);
+        if (_view == OpeningView())
+        {
+            SavedLayout = _asBoard ? UserPreferences.Board : UserPreferences.List;
+            try { await Prefs.SetAsync(UserPreferences.ActionsLayout, SavedLayout); }
+            catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        }
         Remember();
         await Load();
+    }
+
+    // The board has no Overdue or Recently closed tab. Overdue becomes All open with the Overdue pill, which shows the same
+    // actions; Recently closed becomes All open, and the person is told why (the board shows open actions).
+    private void FitBoard(bool say)
+    {
+        if (_view == ActionView.Overdue) _due = ActionDue.Overdue;
+        else if (say) Toasts.Show("The board shows open actions: Recently closed is on the list.");
+        _view = ActionView.Open;
+        _sort = DefaultSort(_view);
     }
 
     // The address of what's shown: every filter, and the page when it isn't the first. Recorded first, so writing it
@@ -814,7 +864,7 @@ else
 
     private bool CanWorkRow(ActionRow r) => _workers.CanWork(r.TeamId);
 
-    private void SelectRow(ActionRow r)
+    internal void SelectRow(ActionRow r)
     {
         for (var i = 0; i < _rows.Count; i++)
             if (_rows[i].Id == r.Id) _selected = i;
@@ -833,6 +883,139 @@ else
     {
         if (action == "take" && SelectedRow is { } row && _workers.CanTake(row)) await Take(row);
     }
+
+    // --- The board's selected card, its keys, and the rail ----------------------------------------------------------------
+
+    /// <summary>The selected card's number in the address (?card=12): a card, unlike a row, keeps its number as it moves.</summary>
+    [SupplyParameterFromQuery(Name = "card")] public string? CardParam { get; set; }
+
+    // The selected card, and its place among the cards when it was chosen: a card that has left (closed, or moved off the
+    // view by a colleague) gives its place to the one now there. The number the address asked for, until the board is read.
+    private Guid? _cardId;
+    private int _cardAt;
+    private int? _cardAsked, _addressedCard;
+    private bool _revealCard;
+    private ActionKanban? _kanban;
+    private ActionRowRail? _rail;
+
+    internal ActionRowRail? Rail => _rail;
+
+    // The board as drawn (the card rule chosen applies), and its cards lane by lane, top to bottom: the order J and K
+    // move through. Worked out again only when the board is read again or the rule changes.
+    private (ActionBoard? Read, Guid? Rule, ActionBoard? Shown, IReadOnlyList<ActionRow> Order) _arranged;
+
+    private (ActionBoard? Shown, IReadOnlyList<ActionRow> Order) Arranged
+    {
+        get
+        {
+            if (_board is null) return (null, []);
+            if (!ReferenceEquals(_arranged.Read, _board) || _arranged.Rule != _ruleId)
+            {
+                var shown = _board with { Cards = Matching(_board.Cards) };
+                _arranged = (_board, _ruleId, shown, [.. ActionKanban.Lanes.SelectMany(shown.In)]);
+            }
+            return (_arranged.Shown, _arranged.Order);
+        }
+    }
+
+    private ActionBoard ShownBoard => Arranged.Shown!;
+    private IReadOnlyList<ActionRow> BoardOrder => Arranged.Order;
+
+    /// <summary>The board's selected card: the one chosen, else the one now in its place (the first, to begin with).</summary>
+    internal ActionRow? SelectedCard
+    {
+        get
+        {
+            var order = BoardOrder;
+            if (order.Count == 0) return null;
+            return order.FirstOrDefault(c => c.Id == _cardId) ?? order[RowSelection.Clamp(_cardAt, order.Count)];
+        }
+    }
+
+    private int CardIndex => SelectedCard is { } card ? IndexOf(card) : 0;
+
+    private int IndexOf(ActionRow card)
+    {
+        var order = BoardOrder;
+        for (var i = 0; i < order.Count; i++)
+            if (order[i].Id == card.Id) return i;
+        return -1;
+    }
+
+    // What the rail shows: the list's selected row, or the board's selected card.
+    private ActionRow? RailRow => _asBoard ? SelectedCard : SelectedRow;
+
+    private void SelectCard(ActionRow card) => SelectCardAt(IndexOf(card));
+
+    private void SelectCardAt(int at)
+    {
+        var order = BoardOrder;
+        if (at < 0 || at >= order.Count) return;
+        (_cardId, _cardAt) = (order[at].Id, at);
+    }
+
+    private void OpenCard(int at)
+    {
+        if (at < BoardOrder.Count) Nav.NavigateTo(Ui.ActionUrl(BoardOrder[at].Number));
+    }
+
+    /// <summary>The card an address names: its number, as 63 or A-63; null for anything else.</summary>
+    internal static int? CardNumber(string? text) =>
+        FilterValues.Number(text?.Trim() is { } t && t.StartsWith("A-", StringComparison.OrdinalIgnoreCase) ? t[2..] : text);
+
+    // Once drawn: a card the address named takes focus; and whatever moved the selection (a key, a click, a card that
+    // left the board and gave its place to the next), this history entry's address names the card now selected, in
+    // place (rows.js), navigating nowhere. The first card, selected by default, isn't written until the selection moves.
+    private async Task SayCard()
+    {
+        try
+        {
+            if (_revealCard)
+            {
+                _revealCard = false;
+                await JS.InvokeVoidAsync("tideBoard.reveal");
+            }
+            if (SelectedCard is not { } card || card.Number == _addressedCard) return;
+            var first = _addressedCard is null && _cardId is null;
+            _addressedCard = card.Number;
+            if (!first) await JS.InvokeVoidAsync("tideRows.remember", Nav.GetUriWithQueryParameter("card", card.Number));
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    // The board's own keys: left and right move to the next lane with cards (only with focus on a card, so they keep
+    // their meaning elsewhere), and T takes the selected card on, for someone who may take actions on.
+    private static readonly IReadOnlyList<string> LaneKeys = ["left", "right"];
+    private static readonly IReadOnlyDictionary<string, string> BoardLaneKeys = new Dictionary<string, string> { ["ArrowLeft"] = "left", ["ArrowRight"] = "right" };
+    private static readonly IReadOnlyDictionary<string, string> BoardTakeKeys = new Dictionary<string, string>(BoardLaneKeys) { ["t"] = "take" };
+
+    /// <summary>A key of the board's own on the selected card: T takes it on, where taking is allowed; left and right move
+    /// to the card at the same place (or the last) in the next lane that has cards that way.</summary>
+    internal async Task BoardKey(string action)
+    {
+        if (SelectedCard is not { } card || _board is null) return;
+        if (action == "take")
+        {
+            if (card.TakeableBy(_board.CanMove(card))) await Take(card);
+            return;
+        }
+        var step = action switch { "left" => -1, "right" => 1, _ => 0 };
+        if (step == 0) return;
+        var lanes = ActionKanban.Lanes.Select(s => BoardOrder.Where(c => c.Status == s).ToList()).ToList();
+        var lane = lanes.FindIndex(l => l.Contains(card));
+        var place = lanes[lane].IndexOf(card);
+        for (var i = lane + step; i >= 0 && i < lanes.Count; i += step)
+        {
+            if (lanes[i].Count == 0) continue;
+            SelectCard(lanes[i][Math.Min(place, lanes[i].Count - 1)]);
+            return;
+        }
+    }
+
+    // The rail's Move to on the board: the statuses the card can go to, each moved as its Move menu moves it.
+    private IReadOnlyList<MenuButton.Item> RailMoves(ActionRow card) =>
+        [.. ActionItem.StatusOrder.Where(s => s != card.Status)
+            .Select(s => new MenuButton.Item(ActionService.StatusName(s), null, EventCallback.Factory.Create(this, () => _kanban?.MoveFromRail(card, s) ?? Task.CompletedTask)))];
 
     // J past the page's last row, or K before its first: the next or previous page, its first or last row selected.
     private async Task TurnPage(RowMove move)
@@ -920,13 +1103,15 @@ else
         try
         {
             await ActionSvc.TakeAsync(row.Id, onlyIfNobodys: true);
+            if (row.Status == ActionStatus.Open) _kanban?.Moving(row.Id);   // taking it starts it: not news on the board
             Toasts.Show($"You took {Ui.ActionLabel(row.Number)} on.");
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _taking = false; }
         var was = _rows;
         await Read(quiet: true);
-        KeepPlace(was, row);
+        // On the board the card stays selected wherever it went (it's still there: taking it starts it).
+        if (!_asBoard) KeepPlace(was, row);
     }
 
     // After a row's action was taken or moved and the list read again: focus stays on the row, or when it has left the
@@ -987,6 +1172,9 @@ else
             var board = ActionSvc.BoardAsync(filter);
             await Task.WhenAll(active, board, counts);
             (_board, _active, _counts) = (board.Result, active.Result, counts.Result);
+            // A card the address named (?card=12), once.
+            if (_cardAsked is { } number && _board.Cards.FirstOrDefault(c => c.Number == number) is { } named) (_cardId, _revealCard) = (named.Id, true);
+            _cardAsked = null;
             _ruleCounts = _rules.Where(r => r.ShowAsFilter).ToDictionary(r => r.Id, r => _board.Cards.Count(c => ActionRules.Matches(r, c, ActionSvc.Today, ActionSvc.Days)));
             return;
         }
