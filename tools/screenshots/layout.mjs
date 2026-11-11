@@ -91,19 +91,24 @@ const hidden = selector => ({
 });
 
 /**
- * Triage's selection is on `page` of the list (the address says which), at row `row` (from 0), and that row has focus:
- * where the keys pressed quickly (pressQuickly) were meant to take it.
+ * Triage's selection, and focus, are where the keys pressed quickly (pressQuickly) were aimed: as many rows on from where
+ * they started as keys were pressed, on to the next page past the last row or back to the previous one before the first
+ * (the address says which page). Counted in lines as shown, whatever the seed's groups make of a page.
  */
-const selectedAt = (listPage, row) => ({
-  name: `selected: page ${listPage}, row ${row + 1}`,
-  check: page => page.evaluate(([listPage, row]) => {
+const selectedAsAimed = () => ({
+  name: 'selected: the row the keys were aimed at',
+  check: page => page.evaluate(() => {
+    const aim = window.__tideAim;
     const rows = [...document.querySelectorAll('.tide-triage-row')];
     const at = rows.findIndex(r => r.classList.contains('selected'));
     const focused = rows.indexOf(document.activeElement);
     const shown = Number(new URL(location.href).searchParams.get('page') ?? 1);
+    let [listPage, row] = [aim.page, aim.row + aim.step];
+    if (row >= aim.count) [listPage, row] = [listPage + 1, row - aim.count];
+    else if (row < 0) [listPage, row] = [listPage - 1, rows.length + row];
     return shown === listPage && at === row && focused === row ? []
       : [`page ${shown}, row ${at + 1} of ${rows.length} is selected and row ${focused + 1} has focus, not page ${listPage}, row ${row + 1}`];
-  }, [listPage, row]),
+  }),
 });
 
 /** Each visible match of `selector` starts at or below the top bar's bottom edge: nothing slides under the bar. */
@@ -141,6 +146,11 @@ const pressQuickly = (key, times) => async page => {
   await page.reload({ waitUntil: 'networkidle' });
   await settle(page);
   await page.locator('.tide-triage-row.selected').focus();
+  // Where the keys start, for selectedAsAimed.
+  await page.evaluate(step => {
+    const rows = [...document.querySelectorAll('.tide-triage-row')];
+    window.__tideAim = { page: Number(new URL(location.href).searchParams.get('page') ?? 1), row: rows.findIndex(r => r.classList.contains('selected')), count: rows.length, step };
+  }, key === 'k' ? -times : times);
   for (let i = 0; i < times; i++) {
     await page.keyboard.press(key);
     await page.waitForTimeout(25);
@@ -164,7 +174,7 @@ const selectCovered = (group = false) => async page => {
   await page.addStyleTag({ content: '* { letter-spacing: .07em !important; }' });
   const line = page.locator(group ? '.tide-triage-group' : '.tide-triage-row:not(.tide-triage-group)', { has: page.locator('.tide-triage-flags .tide-badge-info') }).first();
   await line.locator(group ? '.tide-group-label' : '.tide-triage-meta > span').first().click();
-  await page.waitForTimeout(500);
+  await page.locator('.tide-triage-row.selected .tide-triage-attach').waitFor();
 };
 
 /** Setup: V pressed `times`, a moment apart (each read or close reaching the page before the next). */
@@ -182,7 +192,9 @@ async function holdV(page) {
     await page.waitForTimeout(75);
   }
   await page.keyboard.up('v');
-  await page.waitForTimeout(2500);
+  // Once the pane has gone, a moment more for a late switch back to show.
+  await page.locator('.tide-reading').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(500);
 }
 
 // The reading pane's open or closed is kept for the person, so the pages that press V sign in as someone of their own
@@ -238,9 +250,9 @@ const pages = [
   { name: 'triage-v-narrow', route: `/triage?as=v3${run}`, setup: pressV(1), widths: [780], rules: [visible('.tide-reading')] },
   // J and K pressed quickly land on the row they were pressed for: on the page (the selection isn't pulled back by a
   // row's focus), and across a page boundary both ways (the demo has a second page: Demo:TriageFiller below).
-  { name: 'triage-keys', route: '/triage', setup: pressQuickly('j', 10), widths: [1440], rules: [selectedAt(1, 10)] },
-  { name: 'triage-keys-next-page', route: '/triage?row=45', setup: pressQuickly('j', 10), widths: [1440], rules: [selectedAt(2, 5)] },
-  { name: 'triage-keys-previous-page', route: '/triage?page=2&row=4', setup: pressQuickly('k', 10), widths: [1440], rules: [selectedAt(1, 44)] },
+  { name: 'triage-keys', route: '/triage', setup: pressQuickly('j', 10), widths: [1440], rules: [selectedAsAimed()] },
+  { name: 'triage-keys-next-page', route: '/triage?row=45', setup: pressQuickly('j', 10), widths: [1440], rules: [selectedAsAimed()] },
+  { name: 'triage-keys-previous-page', route: '/triage?page=2&row=4', setup: pressQuickly('k', 10), widths: [1440], rules: [selectedAsAimed()] },
   { name: 'trends', route: '/trends', widths: [1920], rules: [noSidewaysScroll, widerThan('.content', 1400)] },
   { name: 'slide-article', route: '/present/{today}', setup: toArticleSlide, widths: [1440, 1100, 900],
     rules: [
