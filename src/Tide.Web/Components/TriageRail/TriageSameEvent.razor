@@ -1,0 +1,45 @@
+@* Triage's context rail: the reports the inbox suggests are one event with the selected line ("Looks like one event"):
+   on the group's own line all of them, on a report under it the others, each a button that selects it in the list.
+   Attach both (or all N) when an article that can still take a report covers them, and Not the same: the page's own
+   paths, the group's all-or-none attach and its split for everyone. *@
+@inject OrgClock Clock
+
+<section class="tide-card" aria-labelledby="rail-same-h">
+    <h2 id="rail-same-h">Same event</h2>
+    @{ var others = Members.Where(m => m.Item.Id != Selected).ToList(); }
+    <p class="small mb-2">@(Selected is null ? $"Looks like one event: {Ui.Plural(Members.Count, "report")}." : $"{Ui.Plural(others.Count, "other report")} of it:")</p>
+    <ul class="tide-rail-list">
+        @foreach (var m in others)
+        {
+            <li @key="m.Item.Id">
+                <button type="button" class="btn btn-link p-0 text-start tide-rail-list-title" title="Select it in the list" @onclick="() => OnPick.InvokeAsync(m.Item.Id)">@m.Item.Title</button>
+                <span class="tide-rail-list-meta"><span>@m.Source.Name</span><span>@Ui.When(Clock, m.Item.PublishedAtUtc ?? m.Item.FetchedAtUtc)</span></span>
+            </li>
+        }
+    </ul>
+    <div class="tide-triage-rail-acts">
+        @if (AttachTo is { } to)
+        {
+            <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@Busy" title="@($"Attach all {Members.Count} to “{to.ArticleTitle}”, in one step")"
+                    @onclick="OnAttach">@(Members.Count == 2 ? "Attach both" : $"Attach all {Members.Count}")</button>
+        }
+        <button type="button" class="btn btn-link btn-sm" disabled="@Busy" title="For everyone: these reports won't be grouped together again"
+                @onclick="OnSplit">Not the same</button>
+    </div>
+</section>
+
+@code {
+    /// <summary>The group's reports, newest first.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<InboxRow> Members { get; set; } = [];
+
+    /// <summary>The report selected under the open group; null when it's the group's own line.</summary>
+    [Parameter] public Guid? Selected { get; set; }
+
+    /// <summary>The article the group's main button attaches them all to, or null when none can take them.</summary>
+    [Parameter] public Coverage? AttachTo { get; set; }
+
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback OnAttach { get; set; }
+    [Parameter] public EventCallback OnSplit { get; set; }
+    [Parameter] public EventCallback<Guid> OnPick { get; set; }
+}

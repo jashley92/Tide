@@ -11,7 +11,7 @@ public sealed record ShortcutGroup(string Title, IReadOnlyList<Shortcut> Keys);
 
 /// <summary>
 /// The keyboard shortcuts the "?" overlay lists (ShortcutsOverlay): those of the page you're on, then those that work
-/// everywhere. They describe the handlers in wwwroot/js (palette.js, theme.js, rows.js (the actions list's too), triage.js, library.js, present.js, chart.js, editor.js, submitkeys.js) and the dialogs'
+/// everywhere. They describe the handlers in wwwroot/js (palette.js, theme.js, rows.js (the actions list's and the Library's too), triage.js, present.js, chart.js, editor.js, submitkeys.js) and the dialogs'
 /// own keys, so a change to one of those changes this too.
 /// </summary>
 public static class Shortcuts
@@ -96,9 +96,10 @@ public static class Shortcuts
 
     private static readonly ShortcutGroup Library = new("Library",
     [
-        new(["J"], "Next entry in the list", Letter: true),
-        new(["K"], "Previous entry", Letter: true),
-        new(["↓", "↑"], "With the list focused: next and previous entry"),
+        new(["↓", "↑"], "Next and previous entry"),
+        new(["J"], "Next entry, on to the next page at the end", Letter: true),
+        new(["K"], "Previous entry, back a page at the start", Letter: true),
+        new(["Enter"], "Go into the selected entry"),
     ]);
 
     private static readonly ShortcutGroup Present = new("Present mode",
