@@ -202,12 +202,10 @@ public class ArticleScreenshot : Entity
     public string? Caption { get; set; }
     public TlpLevel Tlp { get; set; } = TlpLevel.Clear;
 
-    /// <summary>
-    /// The marking a newly added screenshot takes on an article marked <paramref name="articleTlp"/>: AMBER, or the
-    /// article's TLP when that's higher (a part is never below its article). An image goes to the company-wide edition
-    /// only once someone lowers its marking on purpose.
-    /// </summary>
-    public static TlpLevel NewMarking(TlpLevel articleTlp) => articleTlp > TlpLevel.Amber ? articleTlp : TlpLevel.Amber;
+    /// <summary>The lowest TLP a newly added screenshot starts at; the article's, through <see cref="Article.Effective"/>,
+    /// when that's higher. A screenshot is often a capture of our own systems, so it goes to the company-wide edition
+    /// only once someone lowers its marking on purpose.</summary>
+    public const TlpLevel NewFloor = TlpLevel.Amber;
 }
 
 /// <summary>A scorecard tag on an article.</summary>

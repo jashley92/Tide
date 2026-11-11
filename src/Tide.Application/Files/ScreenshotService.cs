@@ -48,7 +48,7 @@ public sealed class ScreenshotService(IAppDbContextFactory dbs, ICurrentUser use
 
     /// <summary>
     /// Adds screenshots to the end of an article, all or none: every file is checked before the first is stored.
-    /// They're marked AMBER, or the article's TLP when that's higher (<see cref="ArticleScreenshot.NewMarking"/>). Returns the new screenshots. The article's edit version is left alone: an editor open
+    /// They're marked AMBER, or the article's TLP when that's higher (<see cref="ArticleScreenshot.NewFloor"/>). Returns the new screenshots. The article's edit version is left alone: an editor open
     /// on it saves captions only for the screenshots it shows, so adding one doesn't make its form stale.
     /// </summary>
     public async Task<IReadOnlyList<ArticleScreenshot>> AddAsync(Guid articleId, IReadOnlyList<ScreenshotUpload> uploads,
@@ -78,7 +78,7 @@ public sealed class ScreenshotService(IAppDbContextFactory dbs, ICurrentUser use
                 var file = await WriteAsync(store, SafeName(u.FileName, type), type, u.Bytes, ct);
                 written.Add(file.Id);
                 db.Files.Add(file);
-                var shot = new ArticleScreenshot { ArticleId = article.Id, FileId = file.Id, SortOrder = order++, Tlp = ArticleScreenshot.NewMarking(article.Tlp) };
+                var shot = new ArticleScreenshot { ArticleId = article.Id, FileId = file.Id, SortOrder = order++, Tlp = article.Effective(ArticleScreenshot.NewFloor) };
                 db.ArticleScreenshots.Add(shot);
                 added.Add(shot);
             }

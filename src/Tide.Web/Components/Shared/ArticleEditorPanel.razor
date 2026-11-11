@@ -1146,11 +1146,8 @@ else
             foreach (var s in added) _form.Screenshots.Add(new ScreenshotForm { Id = s.Id, FileId = s.FileId, Tlp = s.Tlp });
             // The saved article has the new screenshots: the review card reads from it (a new image needs review too).
             _article = await ArticleSvc.GetAsync(Id) ?? _article;
-            if (added.Count > 0)
-            {
-                var marking = Tlp.Label(added[0].Tlp);
-                Toasts.Show(added.Count == 1 ? $"Screenshot added at {marking}. Give it a caption." : $"{added.Count} screenshots added at {marking}.");
-            }
+            var marking = Tlp.Label(added[0].Tlp);
+            Toasts.Show(added.Count == 1 ? $"Screenshot added at {marking}. Give it a caption." : $"{added.Count} screenshots added at {marking}.");
             await OnFormChanged.InvokeAsync(_form);
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }

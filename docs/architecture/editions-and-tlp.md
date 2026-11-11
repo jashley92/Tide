@@ -83,7 +83,7 @@ default untouched (`ArticleForm.WhyItMattersAtThreatDefault`).
 ### The screenshot default
 
 A screenshot is often a capture of our own console, mail or logs, so a new one is marked AMBER, or the article's TLP
-when that's higher (`ArticleScreenshot.NewMarking`, applied in `ScreenshotService.AddAsync`, the one path every paste,
+when that's higher (`ArticleScreenshot.NewFloor`, applied in `ScreenshotService.AddAsync`, the one path every paste,
 drop and upload in the editor takes). Owner decision 2026-11-11: until then it took the article's TLP, which put a
 screenshot on a CLEAR or GREEN article straight into the company-wide edition with no deliberate choice.
 
