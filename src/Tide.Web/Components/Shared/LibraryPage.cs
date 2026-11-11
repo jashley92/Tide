@@ -355,6 +355,10 @@ public abstract class LibraryPage<TRow> : ComponentBase, IDisposable where TRow 
     protected LibraryRail.LibraryFact SavedBy<T>(T entry) where T : Domain.Common.AuditableEntity, Domain.Common.ITeamLibraryEntry =>
         new("Saved by", $"{(entry.CreatedByName.Length > 0 ? entry.CreatedByName : "someone")}, {Clock.ToLocal(entry.CreatedAtUtc).ToString("MMM d", System.Globalization.CultureInfo.InvariantCulture)}");
 
+    /// <summary>The rail's "Used" fact: "Not yet", or how often ("On 3 actions", "For 1 email").</summary>
+    protected static LibraryRail.LibraryFact UsedFact(int count, string how, string noun) =>
+        new("Used", count == 0 ? "Not yet" : $"{how} {Ui.Plural(count, noun)}");
+
     // "Saved by …, changed by …". One saved before the library kept names has none for who saved it.
     protected string Provenance<T>(T entry) where T : Domain.Common.AuditableEntity, Domain.Common.ITeamLibraryEntry =>
         Ui.Provenance(Clock, entry, entry.CreatedByName.Length > 0 ? entry.CreatedByName : "someone", entry.ModifiedByName);

@@ -20,7 +20,7 @@
                 {
                     <li class="tide-library-group">@($"{group} · {Groups.GetValueOrDefault(group)}")</li>
                 }
-                <li class="tide-library-row@(on ? " " + RowSelection.Css(on) : "")" aria-current="@RowSelection.Current(on)" tabindex="@RowSelection.TabIndex(on)"
+                <li class="tide-library-row@(on ? " selected" : "")" aria-current="@RowSelection.Current(on)" tabindex="@RowSelection.TabIndex(on)"
                     @ref="_rows[e.Id]" @key="e.Id" @onclick="() => OnPick.InvokeAsync(e.Id)" @onfocus="() => OnPick.InvokeAsync(e.Id)">
                     <span class="tide-library-row-name">@e.Name</span>
                     @if (e.Description is { } about) { <span class="tide-library-row-about">@about</span> }
@@ -81,7 +81,14 @@
     private ElementReference _detail;
     private bool _unfolded;
 
-    private int SelectedPlace => Math.Max(0, Entries.Select(e => e.Id).ToList().IndexOf(Selected ?? Guid.Empty));
+    private int SelectedPlace
+    {
+        get
+        {
+            for (var i = 0; i < Entries.Count; i++) if (Entries[i].Id == Selected) return i;
+            return 0;
+        }
+    }
 
     // How many of the page's rows are drawn: all, unless a long grouped page folds after the selected entry's group and
     // two rows of the next (at least FoldShows), when that leaves two or more folded.

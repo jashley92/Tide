@@ -133,7 +133,7 @@ else
 
     // The rail's facts: its platform, who saved it, and how many actions it was added to.
     private List<LibraryFact> Facts(SavedQueryRow r) =>
-        [new("Platform", HuntQueryBuilder.DialectName(r.Query.Dialect)), SavedBy(r.Query), new("Used", r.Actions == 0 ? "Not yet" : "On " + Ui.Plural(r.Actions, "action"))];
+        [new("Platform", HuntQueryBuilder.DialectName(r.Query.Dialect)), SavedBy(r.Query), UsedFact(r.Actions, "On", "action")];
 
     private const string All = "all", ByPlatform = "platform", MostUsed = "used";
 

@@ -18,7 +18,7 @@ public sealed record LibraryUses(IReadOnlyList<LibraryUse> Rows, int Total);
 
 /// <summary>An open action the reader works, as an entry can be tried on it, and whether it has indicators to fill one with
 /// (its article's or its own).</summary>
-public sealed record WorkableAction(Guid Id, int Number, string Title, ActionKind Kind, bool HasIndicators = false);
+public sealed record WorkableAction(Guid Id, int Number, string Title, ActionKind Kind, bool HasIndicators);
 
 /// <summary>
 /// What the Library's context rail shows of an entry beyond the entry itself: the actions it was used on (for whoever

@@ -148,7 +148,7 @@ else
     // The rail's facts: the kind of action it's for, its steps, who saved it, and how many actions started from it.
     private List<LibraryFact> Facts(PlaybookRow r) =>
         [new("For", r.Playbook.Kind is { } k ? ActionService.KindName(k) + " actions" : "Any action"), new("Steps", r.Playbook.Steps.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)),
-            SavedBy(r.Playbook), new("Used", r.Actions == 0 ? "Not yet" : "On " + Ui.Plural(r.Actions, "action"))];
+            SavedBy(r.Playbook), UsedFact(r.Actions, "On", "action")];
 
     protected override void Filtering()
     {

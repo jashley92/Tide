@@ -132,7 +132,7 @@ else
     // The rail's facts: how far it's filled, where it always goes, who saved it, and how many emails were written from it.
     private List<LibraryFact> Facts(OutreachTemplateRow r) =>
         [new("Filled up to", Tlp.Label(r.Template.Ceiling)), .. r.Template.To is { } to ? [new LibraryFact("Always to", to)] : Array.Empty<LibraryFact>(),
-            SavedBy(r.Template), new("Used", r.Emails == 0 ? "Not yet" : "For " + Ui.Plural(r.Emails, "email"))];
+            SavedBy(r.Template), UsedFact(r.Emails, "For", "email")];
 
     // Every word typed.
     protected override IEnumerable<OutreachTemplateRow> Filtered(IReadOnlyList<OutreachTemplateRow> rows, IReadOnlyList<string> words) =>
