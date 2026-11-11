@@ -24,9 +24,15 @@ window.tideTabs = (function () {
         mark(bar);
     }
 
+    // Only a tab reached from the keyboard is scrolled to: one pressed with a mouse or a finger takes focus as the press
+    // starts, and scrolling then would move another tab under the pointer before the click lands (the page reveals the
+    // new current tab once the click has chosen it).
+    let pointing = false;
+    document.addEventListener('pointerdown', function () { pointing = true; }, { capture: true, passive: true });
+    document.addEventListener('keydown', function () { pointing = false; }, true);
     document.addEventListener('focusin', function (e) {
         const bar = e.target && e.target.parentElement;
-        if (bar && bar.classList.contains('tide-tabbar')) reveal(bar, e.target);
+        if (bar && bar.classList.contains('tide-tabbar')) pointing ? mark(bar) : reveal(bar, e.target);
     });
     document.addEventListener('scroll', function (e) {
         if (e.target && e.target.classList && e.target.classList.contains('tide-tabbar')) mark(e.target);

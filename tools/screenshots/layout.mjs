@@ -150,6 +150,37 @@ const tabsInView = selector => ({
 /** The current item of the row `selector` (aria-pressed, aria-current or aria-selected) is wholly in view inside it. */
 const activeInView = selector => ({ name: `current tab in view: ${selector}`, check: page => inRow(page, selector, 'current') });
 
+/** A mouse click on the visible edge of the row `selector`'s tab that its right edge cuts (or covers with its fade)
+ * chooses that tab: the address then says its `?view=` (a row that scrolls to show the tab mustn't swallow the click). */
+const clickAtEdgeChooses = selector => ({
+  name: `a click at the edge chooses that tab: ${selector}`,
+  check: async page => {
+    const hit = await page.$eval(selector, row => {
+      const r = row.getBoundingClientRect(), x = r.right - 6, y = r.top + r.height / 2;
+      const tab = [...row.children].find(t => { const b = t.getBoundingClientRect(); return b.left <= x && b.right >= x; });
+      return tab ? { x, y, name: tab.innerText.replace(/\s+/g, ' ').trim() } : null;
+    });
+    if (!hit) return ['no tab at the row\'s right edge'];
+    await page.mouse.click(hit.x, hit.y);
+    await page.waitForTimeout(1500);
+    const pressed = await page.$eval(`${selector} [aria-pressed="true"]`, t => t.innerText.replace(/\s+/g, ' ').trim());
+    return pressed === hit.name ? [] : [`clicked "${hit.name}" at its visible edge, but "${pressed}" is still the view`];
+  },
+});
+
+/** Nothing of the row `selector`'s children (their borders, the current tab's underline, a focus ring drawn inside them)
+ * is cut off at the bottom of the row: a row that scrolls sideways clips whatever hangs below its box. */
+const notClippedBelow = selector => ({
+  name: `nothing clipped below: ${selector}`,
+  check: page => page.$eval(selector, row => {
+    const bottom = row.getBoundingClientRect().top + row.clientTop + row.clientHeight;
+    return [...row.children].flatMap(t => {
+      const over = t.getBoundingClientRect().bottom - bottom;
+      return over > 0.5 ? [`"${t.innerText.replace(/\s+/g, ' ').trim()}" hangs ${over.toFixed(1)}px below the row's box, where it's cut off`] : [];
+    });
+  }),
+});
+
 /** Whether any match of `selector` is shown (has width and height). */
 const anyShown = (page, selector) => page.$$eval(selector, els =>
   els.some(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; }));
@@ -297,7 +328,8 @@ const pages = [
   // page never does. The Escalated badge stays on the number's line, the title wrapping before them.
   { name: 'actions-list', route: '/actions?view=open&layout=list', widths: [1920, 1440, 1000, 780],
     rules: [noSidewaysScroll, visible('.tide-action-ref'), visible('.tide-tabbar-count'), oneRow('[role=group][aria-label="Views"]'),
-      visible('.tide-row-progress'), onTitleLine('.tide-table td:first-child', '.tide-action-num', '[title^="Escalated"]')] },
+      visible('.tide-row-progress'), onTitleLine('.tide-table td:first-child', '.tide-action-num', '[title^="Escalated"]'),
+      notClippedBelow('[role=group][aria-label="Views"]')] },
   // Take it from the keyboard keeps the person's place: on a row that stays listed (All open), focus stays on its title;
   // in No owner the row leaves, and focus goes to the next row's title, or for the last row, the one before.
   { name: 'actions-take-focus-stays', route: '/actions?view=open&layout=list', setup: take('first', 'same'), widths: [1920],
@@ -310,6 +342,9 @@ const pages = [
     rules: [tabsInView('[role=group][aria-label="Views"]')] },
   { name: 'actions-tabs-current', route: '/actions?view=closed&layout=list', widths: [375, 320],
     rules: [activeInView('[role=group][aria-label="Views"]')] },
+  // A mouse click on a tab the row's edge cuts or fades still chooses it (the row doesn't scroll away under the pointer).
+  { name: 'actions-tabs-click', route: '/actions?view=open&layout=list', widths: [375, 320],
+    rules: [clickAtEdgeChooses('[role=group][aria-label="Views"]')] },
   { name: 'actions-take-focus-last', route: '/actions?view=open&layout=list&assignee=none', setup: take('last', 'previous'), widths: [780],
     rules: [focusedOnExpectedRow] },
   // The four working columns share the width and Closed folds into one narrow column: nothing scrolls sideways, the

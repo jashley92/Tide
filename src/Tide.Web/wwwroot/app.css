@@ -2448,6 +2448,10 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
    and when they still don't fit, the row scrolls sideways inside itself (never the page). Focus rings sit inside it. */
 .tide-actions-views { flex-wrap: nowrap; max-width: 100%; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
 .tide-actions-views .tide-tabbar-item:focus-visible { outline-offset: -2px; }
+/* A scroller cuts off what hangs below its box, so the bar's line is drawn inside it and the tabs sit on it, not 1px
+   over it: the current tab's underline and a focus ring keep their full width, as on every other tab bar. */
+.tide-actions-views { border-bottom: 0; box-shadow: inset 0 -1px 0 var(--tide-border); }
+.tide-actions-views .tide-tabbar-item { margin-bottom: 0; }
 /* When it does scroll, the edge with more beyond it fades out (tabs.js sets data-more; a mask uses only the alpha). */
 .tide-tabbar[data-more~="start"], .tide-tabbar[data-more~="end"] { --tide-more-start: var(--tide-text); --tide-more-end: var(--tide-text);
     mask-image: linear-gradient(to right, var(--tide-more-start), var(--tide-text) 1.5rem, var(--tide-text) calc(100% - 1.5rem), var(--tide-more-end)); }
