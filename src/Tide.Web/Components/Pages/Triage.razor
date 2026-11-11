@@ -173,39 +173,7 @@ else
                             @if (attachAll is not null) { <Badge Tone="BadgeTone.Info" Class="tide-badge-wrap">@attachAll.Why covered: <a href="articles/@attachAll.ArticleId" @onclick:stopPropagation="true">@Short(attachAll.ArticleTitle)</a></Badge> }
                         </span>
                     </div>
-                    @if (selected)
-                    {
-                        @if (_promoting == group.Newest && _promotingGroup is not null)
-                        {
-                            @PromoteFields(GroupTlp(line), $"From the sources: {Tlp.Label(GroupTlp(line))}, the most restrictive", $"Promote {line.Members.Count} as one and write")
-                        }
-                        else
-                        {
-                            <div class="d-flex gap-2 flex-wrap mt-2">
-                                @* Covered by an article that can still take reports: attaching them all is the main button, one step.
-                                   It and Promote stay on one line: the article's title gives way (app.css, Triage 2.4). *@
-                                <span class="tide-triage-main">
-                                @if (attachAll is not null)
-                                {
-                                    <button class="btn btn-primary btn-sm tide-triage-attach" disabled="@_busy" title="@($"Attach all {line.Members.Count} to “{attachAll.ArticleTitle}”")"
-                                            @onclick:stopPropagation="true" @onclick="() => AttachLine(line, attachAll)">
-                                        <span class="bi bi-link-45deg" aria-hidden="true"></span> Attach all @line.Members.Count to <span class="tide-triage-attach-title text-truncate">“@attachAll.ArticleTitle”</span></button>
-                                }
-                                <button class="btn @(attachAll is null ? "btn-primary" : "btn-outline-secondary") btn-sm tide-triage-promote" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => OpenGroupPromote(line)">
-                                    <span class="bi bi-file-earmark-plus" aria-hidden="true"></span> Promote as one article (@line.Members.Count sources) <span class="tide-kbd">P</span></button>
-                                </span>
-                                @* Only new reports are shortlisted or dismissed as a group, as the S and X keys are. *@
-                                @if (_status == FeedItemStatus.New)
-                                {
-                                    <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => ActOnGroup(line, TriageStep.Shortlist)">Shortlist the @line.Members.Count <span class="tide-kbd">S</span></button>
-                                    <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => ActOnGroup(line, TriageStep.Dismiss)">Dismiss the @line.Members.Count <span class="tide-kbd">X</span></button>
-                                }
-                                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" title="For everyone: these reports won't be grouped together again"
-                                        @onclick:stopPropagation="true" @onclick="() => Split(i)">Not the same: split</button>
-                                <button class="btn btn-outline-secondary btn-sm" @onclick:stopPropagation="true" @onclick="() => Toggle(i)">@(open ? "Hide" : "Show") the @line.Members.Count reports</button>
-                            </div>
-                        }
-                    }
+                    @if (selected && !DecisionInBar) { @Decision(line, i) }
                 </li>
                 continue;
             }
@@ -296,78 +264,10 @@ else
                 @if (!selected && line.Group is not null && !string.IsNullOrWhiteSpace(item.Excerpt)) { <div class="tide-triage-excerpt">@item.Excerpt</div> }
                 @if (selected)
                 {
-                    @if (!string.IsNullOrWhiteSpace(item.Excerpt)) { <div class="tide-triage-excerpt">@item.Excerpt</div> }
+                    @* With the reading pane shown the item's text is there, and its buttons are in the bar under it. *@
+                    @if (!DecisionInBar && !string.IsNullOrWhiteSpace(item.Excerpt)) { <div class="tide-triage-excerpt">@item.Excerpt</div> }
                     @if (!string.IsNullOrWhiteSpace(row.Source.LicenseNote)) { <div class="small text-danger mb-2"><span class="bi bi-shield-exclamation" aria-hidden="true"></span> @row.Source.LicenseNote</div> }
-                    var attachTo = AttachTo(line);
-                    var otherArticles = attachTo is null ? new List<Coverage>() : row.Coverage.Where(c => c.Attachable && c.ArticleId != attachTo.ArticleId).DistinctBy(c => c.ArticleId).Take(2).ToList();
-                    @if (item.Status != FeedItemStatus.Promoted && (otherArticles.Count > 0 || (item.Status == FeedItemStatus.New && row.SameCve.Count > 0)))
-                    {
-                        @* One story, many reports: keep a follow-up's link on the article that covers it (the first is the
-                           main button), and set the rest aside. *@
-                        <div class="d-flex gap-2 flex-wrap mb-2">
-                            @foreach (var c in otherArticles)
-                            {
-                                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Attach([row.Item.Id], c.ArticleId, c.ArticleTitle)">
-                                    <span class="bi bi-link-45deg" aria-hidden="true"></span> Add as a source of “@Short(c.ArticleTitle)”</button>
-                            }
-                            @if (item.Status == FeedItemStatus.New && row.SameCve.Count > 0)
-                            {
-                                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => DismissSameCve(row)">
-                                    Dismiss the @row.SameCve.Count other@(row.SameCve.Count == 1 ? "" : "s") with its CVE as covered</button>
-                            }
-                        </div>
-                    }
-                    @if (_promoting == item.Id && _promotingGroup is null && item.Status != FeedItemStatus.Promoted)
-                    {
-                        @PromoteFields(row.Source.DefaultTlp, $"From the source: {Tlp.Label(row.Source.DefaultTlp)}", "Promote and write")
-                    }
-                    else
-                    {
-                        <div class="d-flex gap-2 flex-wrap">
-                            @if (item.Status != FeedItemStatus.Promoted)
-                            {
-                                @* Covered by an article that can still take it: attaching it there is the main button; P still promotes.
-                                   The two stay on one line, as a group's do. *@
-                                <span class="tide-triage-main">
-                                @if (attachTo is not null)
-                                {
-                                    <button class="btn btn-primary btn-sm tide-triage-attach" disabled="@_busy" title="@($"Attach to “{attachTo.ArticleTitle}”")"
-                                            @onclick:stopPropagation="true" @onclick="() => AttachLine(line, attachTo)">
-                                        <span class="bi bi-link-45deg" aria-hidden="true"></span> Attach to <span class="tide-triage-attach-title text-truncate">“@attachTo.ArticleTitle”</span></button>
-                                }
-                                <button class="btn @(attachTo is null ? "btn-primary" : "btn-outline-secondary") btn-sm tide-triage-promote" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Promote)"><span class="bi bi-file-earmark-plus" aria-hidden="true"></span> Promote <span class="tide-kbd">P</span></button>
-                                </span>
-                                @if (item.Status != FeedItemStatus.Shortlisted) { <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Shortlist)">Shortlist <span class="tide-kbd">S</span></button> }
-                                @if (item.Status != FeedItemStatus.Dismissed)
-                                {
-                                    <select class="form-select form-select-sm w-auto" aria-label="Reason for dismissing it" @bind="_itemReason" @onclick:stopPropagation="true">
-                                        @foreach (var r in IntakeService.DismissReasons) { <option value="@r">@r</option> }
-                                    </select>
-                                }
-                                @if (item.Status != FeedItemStatus.Dismissed) { <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Dismiss)">Dismiss <span class="tide-kbd">X</span></button> }
-                                @if (row.Similar is not null && item.Status != FeedItemStatus.Duplicate) { <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Duplicate)">Duplicate <span class="tide-kbd">D</span></button> }
-                                @if (item.Status != FeedItemStatus.New) { <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Restore)">Put back <span class="tide-kbd">R</span></button> }
-                                @if (Promotable(item.Status)) { <AttachPicker Disabled="_busy" OnPick="t => Attach([row.Item.Id], t.Id, t.Title)" OpenChanged="open => _attaching = open" /> }
-                                @if (row.WeRun is null)
-                                {
-                                    @if (_addingStack == item.Id)
-                                    {
-                                        <span class="d-inline-flex gap-1 align-items-center" @onclick:stopPropagation="true">
-                                            <label class="visually-hidden" for="stack-add-@item.Id">Product we run</label>
-                                            <input id="stack-add-@item.Id" class="form-control form-control-sm w-auto" maxlength="100" placeholder="Product, e.g. GitLab"
-                                                   @bind="_stackName" @bind:event="oninput" @onkeydown="StackKey" />
-                                            <button type="button" class="btn btn-primary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_stackName))" @onclick="AddToStack">Add</button>
-                                            <button type="button" class="btn btn-link btn-sm" @onclick="() => _addingStack = null">Cancel</button>
-                                        </span>
-                                    }
-                                    else
-                                    {
-                                        <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => { _addingStack = item.Id; _stackName = null; }">Add to what we run…</button>
-                                    }
-                                }
-                            }
-                        </div>
-                    }
+                    @if (!DecisionInBar) { @Decision(line, i) }
                 }
             </li>
         }
@@ -527,6 +427,24 @@ else
         <aside class="tide-card tide-reading" aria-label="The article" aria-busy="@Ui.Aria(ReadingBusy)">
             <div class="tide-reading-head">
                 <h2 class="tide-reading-title">@(row?.Item.Title ?? "Choose an item to read")</h2>
+                @* Reading it here, again, or on its site, beside its title; the bar at the foot is for deciding. *@
+                @if (row is not null)
+                {
+                    <span class="tide-reading-tools">
+                        @if (_read is { HasText: true })
+                        {
+                            <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@ReadingBusy" @onclick="() => Read(again: true)"><span class="bi bi-arrow-clockwise" aria-hidden="true"></span> Read again</button>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_fetching is not null)" @onclick="() => Read(again: _read is not null)"><span class="bi bi-book" aria-hidden="true"></span> Read it here <span class="tide-kbd">V</span></button>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(row.Item.Url))
+                        {
+                            <a class="btn btn-outline-secondary btn-sm" href="@row.Item.Url" target="_blank" rel="noopener noreferrer"><span class="bi bi-box-arrow-up-right" aria-hidden="true"></span> Open the site <span class="tide-kbd">O</span></a>
+                        }
+                    </span>
+                }
                 <button type="button" class="btn-close" aria-label="Close the article" title="Close (Esc)" @onclick="CloseReading"></button>
             </div>
             @if (row is not null)
@@ -568,24 +486,156 @@ else
                     @if (!string.IsNullOrWhiteSpace(row.Item.Excerpt)) { <div class="tide-triage-excerpt">@row.Item.Excerpt</div> }
                     <p class="small tide-muted">Not read yet.</p>
                 }
-                <div class="d-flex gap-2 flex-wrap mt-2">
-                    @if (_read is { HasText: true })
-                    {
-                        <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@ReadingBusy" @onclick="() => Read(again: true)"><span class="bi bi-arrow-clockwise" aria-hidden="true"></span> Read again</button>
-                    }
-                    else
-                    {
-                        <button type="button" class="btn btn-primary btn-sm" disabled="@(_fetching is not null)" @onclick="() => Read(again: _read is not null)"><span class="bi bi-book" aria-hidden="true"></span> Read it here <span class="tide-kbd">V</span></button>
-                    }
-                    @if (!string.IsNullOrWhiteSpace(row.Item.Url))
-                    {
-                        <a class="btn btn-outline-secondary btn-sm" href="@row.Item.Url" target="_blank" rel="noopener noreferrer"><span class="bi bi-box-arrow-up-right" aria-hidden="true"></span> Open the site <span class="tide-kbd">O</span></a>
-                    }
-                </div>
                 <p class="form-text mb-0 mt-2">For reading here only: the text isn't sent or exported, and it's deleted after @ReadingDaysText.</p>
             }
+            @if (DecisionInBar && Current is { } line) { @Decision(line, _selected) }
         </aside>
     };
+
+    // The selected line's buttons are in the bar at the foot of the reading pane while it's on screen; with the pane
+    // closed, or hidden on a window too narrow for it, they stay in the selected row.
+    private bool DecisionInBar => PaneShown;
+
+    // The selected line's decision: why its main button is the main one, then the buttons, the main one first (or its
+    // promote form). In the bar, the buttons are one row and the article's title in Attach gives way; in a row they
+    // wrap, as they always have.
+    private RenderFragment Decision(Line line, int i) =>
+        @<section class="tide-triage-decide" aria-label="Decide on this item">@DecisionBody(line, i)</section>;
+
+    private RenderFragment DecisionBody(Line line, int i) => __builder =>
+    {
+        var attachTo = AttachTo(line);
+        if (line.Row is not { } row)
+        {
+            var group = line.Group!;
+            var n = line.Members.Count;
+            <p class="tide-triage-why">@Suggestion(attachTo, line.Members.SelectMany(m => m.Coverage).FirstOrDefault(), n)</p>
+            if (_promoting == group.Newest && _promotingGroup is not null)
+            {
+                @PromoteFields(GroupTlp(line), $"From the sources: {Tlp.Label(GroupTlp(line))}, the most restrictive", $"Promote {n} as one and write")
+                return;
+            }
+            <div class="tide-triage-acts">
+                @* Covered by an article that can still take reports: attaching them all is the main button, one step. *@
+                <span class="tide-triage-main">
+                @if (attachTo is not null)
+                {
+                    <button class="btn btn-primary btn-sm tide-triage-attach" disabled="@_busy" title="@($"Attach all {n} to “{attachTo.ArticleTitle}”")"
+                            @onclick:stopPropagation="true" @onclick="() => AttachLine(line, attachTo)">
+                        <span class="bi bi-link-45deg" aria-hidden="true"></span> Attach all @n to <span class="tide-triage-attach-title text-truncate">“@attachTo.ArticleTitle”</span></button>
+                }
+                @* The other buttons' words after the first (tide-triage-long) give way in the bar, so the main button keeps
+                   its own; each says them in full to a screen reader and on hover. *@
+                <button class="btn @(attachTo is null ? "btn-primary" : "btn-outline-secondary") btn-sm tide-triage-promote" disabled="@_busy" aria-keyshortcuts="P"
+                        aria-label="@($"Promote as one article ({n} sources)")" title="@($"Promote as one article ({n} sources)")" @onclick:stopPropagation="true" @onclick="() => OpenGroupPromote(line)">
+                    <span class="bi bi-file-earmark-plus" aria-hidden="true"></span> Promote as one<span class="tide-triage-long"> article (@n sources)</span> <span class="tide-kbd">P</span></button>
+                </span>
+                @* Only new reports are shortlisted or dismissed as a group, as the S and X keys are. *@
+                @if (_status == FeedItemStatus.New)
+                {
+                    <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" aria-keyshortcuts="S" aria-label="@($"Shortlist the {n}")" title="@($"Shortlist the {n}")"
+                            @onclick:stopPropagation="true" @onclick="() => ActOnGroup(line, TriageStep.Shortlist)">Shortlist<span class="tide-triage-long"> the @n</span> <span class="tide-kbd">S</span></button>
+                    <span class="tide-triage-end">
+                        <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" aria-keyshortcuts="X" aria-label="@($"Dismiss the {n}")" title="@($"Dismiss the {n}")"
+                                @onclick:stopPropagation="true" @onclick="() => ActOnGroup(line, TriageStep.Dismiss)">Dismiss<span class="tide-triage-long"> the @n</span> <span class="tide-kbd">X</span></button>
+                    </span>
+                }
+            </div>
+            <div class="tide-triage-more">
+                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" title="For everyone: these reports won't be grouped together again"
+                        @onclick:stopPropagation="true" @onclick="() => Split(i)">Not the same: split</button>
+                <button class="btn btn-outline-secondary btn-sm" @onclick:stopPropagation="true" @onclick="() => Toggle(i)">@(IsOpen(group) ? "Hide" : "Show") the @n reports</button>
+            </div>
+            return;
+        }
+        var item = row.Item;
+        if (item.Status == FeedItemStatus.Promoted)
+        {
+            <p class="tide-triage-why">Promoted already: its article opens from the row.</p>
+            return;
+        }
+        <p class="tide-triage-why">@Suggestion(attachTo, row.Coverage.FirstOrDefault(), 1)</p>
+        if (_promoting == item.Id && _promotingGroup is null)
+        {
+            @PromoteFields(row.Source.DefaultTlp, $"From the source: {Tlp.Label(row.Source.DefaultTlp)}", "Promote and write")
+            return;
+        }
+        <div class="tide-triage-acts">
+            @* Covered by an article that can still take it: attaching it there is the main button; P still promotes. *@
+            <span class="tide-triage-main">
+            @if (attachTo is not null)
+            {
+                <button class="btn btn-primary btn-sm tide-triage-attach" disabled="@_busy" title="@($"Attach to “{attachTo.ArticleTitle}”")"
+                        @onclick:stopPropagation="true" @onclick="() => AttachLine(line, attachTo)">
+                    <span class="bi bi-link-45deg" aria-hidden="true"></span> Attach to <span class="tide-triage-attach-title text-truncate">“@attachTo.ArticleTitle”</span></button>
+            }
+            <button class="btn @(attachTo is null ? "btn-primary" : "btn-outline-secondary") btn-sm tide-triage-promote" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Promote)"><span class="bi bi-file-earmark-plus" aria-hidden="true"></span> Promote <span class="tide-kbd">P</span></button>
+            </span>
+            @if (item.Status != FeedItemStatus.Shortlisted) { <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Shortlist)">Shortlist <span class="tide-kbd">S</span></button> }
+            @if (row.Similar is not null && item.Status != FeedItemStatus.Duplicate) { <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Duplicate)">Duplicate <span class="tide-kbd">D</span></button> }
+            @if (item.Status != FeedItemStatus.New) { <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Restore)">Put back <span class="tide-kbd">R</span></button> }
+            @if (item.Status != FeedItemStatus.Dismissed)
+            {
+                <span class="tide-triage-end">
+                    <select class="form-select form-select-sm w-auto" aria-label="Reason for dismissing it" @bind="_itemReason" @onclick:stopPropagation="true">
+                        @foreach (var r in IntakeService.DismissReasons) { <option value="@r">@r</option> }
+                    </select>
+                    <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Dismiss)">Dismiss <span class="tide-kbd">X</span></button>
+                </span>
+            }
+        </div>
+        @* One story, many reports: keep a follow-up's link on another article that covers it, set the rest aside, attach it
+           to an article being written, or name what we run. *@
+        List<Coverage> otherArticles = attachTo is null ? [] : row.Coverage.Where(c => c.Attachable && c.ArticleId != attachTo.ArticleId).DistinctBy(c => c.ArticleId).Take(2).ToList();
+        <div class="tide-triage-more">
+            @foreach (var c in otherArticles)
+            {
+                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Attach([row.Item.Id], c.ArticleId, c.ArticleTitle)">
+                    <span class="bi bi-link-45deg" aria-hidden="true"></span> Add as a source of “@Short(c.ArticleTitle)”</button>
+            }
+            @if (item.Status == FeedItemStatus.New && row.SameCve.Count > 0)
+            {
+                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => DismissSameCve(row)">
+                    Dismiss the @row.SameCve.Count other@(row.SameCve.Count == 1 ? "" : "s") with its CVE as covered</button>
+            }
+            @if (Promotable(item.Status)) { <AttachPicker Disabled="_busy" OnPick="t => Attach([row.Item.Id], t.Id, t.Title)" OpenChanged="open => _attaching = open" /> }
+            @if (row.WeRun is null)
+            {
+                @if (_addingStack == item.Id)
+                {
+                    <span class="d-inline-flex gap-1 align-items-center" @onclick:stopPropagation="true">
+                        <label class="visually-hidden" for="stack-add-@item.Id">Product we run</label>
+                        <input id="stack-add-@item.Id" class="form-control form-control-sm w-auto" maxlength="100" placeholder="Product, e.g. GitLab"
+                               @bind="_stackName" @bind:event="oninput" @onkeydown="StackKey" />
+                        <button type="button" class="btn btn-primary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_stackName))" @onclick="AddToStack">Add</button>
+                        <button type="button" class="btn btn-link btn-sm" @onclick="() => _addingStack = null">Cancel</button>
+                    </span>
+                }
+                else
+                {
+                    <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => { _addingStack = item.Id; _stackName = null; }">Add to what we run…</button>
+                }
+            }
+        </div>
+    };
+
+    /// <summary>
+    /// The decision's first line: why its main button is the main one, from what the line's coverage says. Attach when an
+    /// article that can still take a report covers it (<paramref name="attachTo"/>); otherwise promote, saying whether
+    /// something covers it (<paramref name="covered"/>) that can't take it. Only what the row's flags already show is named.
+    /// </summary>
+    internal static string Suggestion(Coverage? attachTo, Coverage? covered, int reports)
+    {
+        var one = reports == 1;
+        if (attachTo is { } to)
+            return $"Already covered by “{Short(to.ArticleTitle)}”{(to.BriefDate is { } d ? $" (briefed {Ui.ShortDay(d)})" : "")}, so the suggested step is to "
+                + (one ? "attach it as another report." : $"attach all {reports} as more reports of it.");
+        if (covered is { } c)
+            return $"Covered by “{Short(c.ArticleTitle)}”, which cannot take another report now, so the suggested step is to "
+                + (one ? "promote it as a new article." : $"promote the {reports} as one new article.");
+        return one ? "Nothing TIDE has covers it yet, so the suggested step is to promote it."
+            : $"Nothing TIDE has covers them yet, so the suggested step is to promote the {reports} as one article.";
+    }
 
     private string ReadingDaysText => Math.Clamp(IntakeOpts.CurrentValue.ReadingDays, 1, 30) is var d && d == 7 ? "a week" : $"{d} day{(d == 1 ? "" : "s")}";
 
@@ -901,6 +951,7 @@ else
             Toasts.Show(done == 0 ? "Nothing changed: a colleague got to those reports first."
                 : $"{(dismiss ? "Dismissed" : "Shortlisted")} {done} report{(done == 1 ? "" : "s")}.");
             await Load();
+            _focus = "tideTriage.focusRow";
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _busy = false; }
@@ -910,8 +961,8 @@ else
     private bool _loaded, _busy, _failed;   // _failed: the last read threw, so there's no list for a prerender to keep
     private DotNetObjectReference<Triage>? _ref;
 
-    // The item whose promote form is open in its row (or the newest report of the group whose form is open in the
-    // group's line), and what the form holds.
+    // The item whose promote form is open in its decision (or the newest report of the group whose form is open in the
+    // group's), and what the form holds.
     private Guid? _promoting;
     private TriageGroup? _promotingGroup;
     private PromoteForm _pf = new();
@@ -925,8 +976,8 @@ else
         _ => "Nothing here.",
     };
 
-    // Promote asks four things in the row itself (an item's, or a group's), then opens the draft. Enter (in the title)
-    // promotes; Esc or Cancel closes it and gives focus back to the row. The letter keys are off while it's open.
+    // Promote asks four things in the decision itself (an item's, or a group's; in the bar or the row), then opens the
+    // draft. Enter (in the title) promotes; Esc or Cancel closes it and gives focus back to the row. The letter keys are off while it's open.
     private RenderFragment PromoteFields(TlpLevel fromSources, string fromText, string submit) =>
         @<form class="tide-promote-form tide-card mb-0 mt-1" aria-label="Promote to an article" @onsubmit="SubmitPromote" @onclick:stopPropagation="true">
             <div class="mb-2">
@@ -1594,6 +1645,9 @@ else
             }
             Announce();
             await Load();
+            // Clicked in the bar or the row, as by its key: focus goes on to the row selected next, not the button (which
+            // now belongs to the next item) or the page.
+            _focus = "tideTriage.focusRow";
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
         finally { _busy = false; }

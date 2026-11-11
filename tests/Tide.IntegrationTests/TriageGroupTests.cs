@@ -49,6 +49,14 @@ public class TriageGroupTests(TideApp app) : IClassFixture<TideApp>
             .ExecuteUpdateAsync(u => u.SetProperty(i => i.Status, FeedItemStatus.Duplicate));
     }
 
+    // The decision bar under the reading pane (open by itself here): the selected line's buttons.
+    private static string Bar(string html)
+    {
+        var at = html.IndexOf("<section class=\"tide-triage-decide\"", StringComparison.Ordinal);
+        at.Should().BeGreaterThanOrEqualTo(0, "the decision bar is drawn");
+        return html[at..html.IndexOf("</section>", at, StringComparison.Ordinal)];
+    }
+
     private static string Line(string html, string cls)
     {
         var at = html.IndexOf("<li class=\"" + cls, StringComparison.Ordinal);
@@ -73,8 +81,9 @@ public class TriageGroupTests(TideApp app) : IClassFixture<TideApp>
                 .And.Contain("Clear feed a")
                 .And.Contain("In common: Quorvexa, $6.3 billion")
                 .And.Contain("CVE-2026-6001", "every CVE any report names is on the group's line")
-                .And.Contain("aria-expanded=\"false\"").And.Contain("aria-label=\"Show the 3 reports\"")
-                .And.Contain("Promote as one article (3 sources)").And.Contain("Not the same: split")
+                .And.Contain("aria-expanded=\"false\"").And.Contain("aria-label=\"Show the 3 reports\"");
+            // The group's buttons are in the decision bar under the reading pane, not on its line.
+            Bar(html).Should().Contain("Promote as one article (3 sources)").And.Contain("Not the same: split")
                 .And.Contain("Dismiss the 3").And.Contain("Shortlist the 3", "X and S act on the whole group, once confirmed");
             html.Should().NotContain("tide-triage-member", "the reports wait until it's opened")
                 .And.NotContain("Quorvexa hit by $6.3 billion hack");
@@ -91,8 +100,8 @@ public class TriageGroupTests(TideApp app) : IClassFixture<TideApp>
             // J moves onto the first report, which keeps all its own actions; ← goes back to the group and closes it.
             await r.Click(t => t.OnTriageKey("next"));
             html = await r.Html();
-            var first = Line(html, "tide-triage-row tide-triage-member selected");
-            first.Should().Contain("Promote <span class=\"tide-kbd\">P</span>").And.Contain("Dismiss <span class=\"tide-kbd\">X</span>")
+            Line(html, "tide-triage-row tide-triage-member selected").Should().Contain("Clear feed a");
+            Bar(html).Should().Contain("Promote <span class=\"tide-kbd\">P</span>").And.Contain("Dismiss <span class=\"tide-kbd\">X</span>")
                 .And.Contain("Shortlist <span class=\"tide-kbd\">S</span>").And.Contain("Attach to");
             await r.Click(t => t.OnTriageKey("collapse"));
             html = await r.Html();
