@@ -15,6 +15,8 @@
 //   keys    more keys, as { key: action }, a letter in lower case
 //   follow  the page's own actions after which focus goes to the selected row, as it does after "next" and "prev";
 //           after any other action focus moves there only if it was lost (the row it was in has gone)
+//   onRow   the page's own actions taken only with focus in a row of the list (the board's left and right arrows),
+//           so the key keeps its meaning anywhere else
 //   held    function (e): true while something of the page's has the keys (a form open in a row); the page deals with
 //           the key itself, send() for what it wants done
 //   key     function (e, action, onRow): the action for this key, given the one found (or none); for keys that depend
@@ -95,6 +97,7 @@ window.tideRows = (function () {
         if (e.key === 'Enter' && onRow) action = 'open';
         if (opt.key) action = opt.key(e, action, onRow);
         if (!action) return;
+        if (opt.onRow.indexOf(action) >= 0 && !(e.target.closest && e.target.closest('.' + opt.row))) return;
         e.preventDefault();
         if (action === 'open' && opt.open) opt.open(selected());
         else send(action);
@@ -105,7 +108,7 @@ window.tideRows = (function () {
             options = options || {};
             opt = {
                 row: options.row, method: options.method || 'OnRowKey',
-                keys: Object.assign({}, moves, options.keys), follow: ['next', 'prev'].concat(options.follow || []),
+                keys: Object.assign({}, moves, options.keys), follow: ['next', 'prev'].concat(options.follow || []), onRow: options.onRow || [],
                 held: options.held, key: options.key, open: options.open
             };
             ref = dotnetRef;
