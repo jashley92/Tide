@@ -50,7 +50,7 @@
                 {
                     <p class="small tide-muted mb-0" role="status">@error</p>
                 }
-                else if (_text is null && _steps is null)
+                else if (_text is null && _playbook is null)
                 {
                     <p class="small tide-muted mb-0" role="status">Filling it in…</p>
                 }
@@ -58,22 +58,18 @@
                 {
                     @if (Kind == LibraryKind.Playbook)
                     {
-                        @if (_steps!.Count == 0)
+                        @if (Steps!.Count == 0)
                         {
                             <p class="small mb-0">Its steps are all on @Ui.ActionLabel(chosen.Number)'s checklist already.</p>
                         }
                         else
                         {
-                            <p class="small mb-1">Adds @Words.Plural(_steps.Count, "step") to @Ui.ActionLabel(chosen.Number)'s checklist:</p>
-                            <ol class="tide-playbook-preview small mb-0">@foreach (var s in _steps) { <li>@s</li> }</ol>
+                            <p class="small mb-1">Adds @Words.Plural(Steps.Count, "step") to @Ui.ActionLabel(chosen.Number)'s checklist:</p>
+                            <ol class="tide-playbook-preview small mb-0">@foreach (var s in Steps) { <li>@s</li> }</ol>
                         }
                     }
                     else
                     {
-                        @if (_subject is { } subject)
-                        {
-                            <div class="small"><span class="tide-field-label">Subject</span> <span class="tide-data">@subject</span></div>
-                        }
                         <pre id="lib-try-text" class="@(Kind == LibraryKind.SavedQuery ? "tide-query" : "tide-email-text") tide-lib-try-text">@_text</pre>
                     }
                     <div class="tide-lib-try-tools">
@@ -85,7 +81,7 @@
                         {
                             <a class="btn btn-outline-secondary btn-sm" href="@Ui.ActionUrl(chosen.Number)">Write it on @Ui.ActionLabel(chosen.Number)</a>
                         }
-                        else if (Kind == LibraryKind.SavedQuery || _steps!.Count > 0)
+                        else if (Kind == LibraryKind.SavedQuery || Steps!.Count > 0)
                         {
                             <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="Add">Add to @Ui.ActionLabel(chosen.Number)</button>
                         }
@@ -158,8 +154,10 @@
     private Guid? _actionId;
     private (Guid Entry, bool Retired)? _shown;
     private LibraryUses? _uses;
-    private string? _text, _subject, _error;
-    private IReadOnlyList<string>? _steps;
+    private string? _text, _error;
+    // What Add is checked against: the query or the steps as shown, and the action's edit version they were read from.
+    private SavedHuntPreview? _query;
+    private PlaybookPreview? _playbook;
     private bool _busy;
     // Each read is for the entry and action chosen when it started: one that comes back after another was chosen is
     // dropped (J held down runs through entries faster than the previews come back).
@@ -202,7 +200,7 @@
 
     /// <summary>The preview: the query or email filled in, or the steps a playbook would add.</summary>
     internal string? Text => _text;
-    internal IReadOnlyList<string>? Steps => _steps;
+    internal IReadOnlyList<string>? Steps => _playbook?.Steps;
 
     /// <summary>An action chosen to try it on: the preview is read again for it. Nothing is written.</summary>
     internal async Task Choose(Guid? id)
@@ -215,7 +213,7 @@
     private async Task Preview()
     {
         var asked = ++_asked;
-        (_text, _subject, _steps, _error) = (null, null, null, null);
+        (_text, _query, _playbook, _error) = (null, null, null, null);
         if (Retired || Chosen is not { } a) return;
         try
         {
@@ -223,15 +221,16 @@
             {
                 case LibraryKind.SavedQuery:
                     var text = await ActionSvc.PreviewSavedHuntAsync(a.Id, EntryId);
-                    if (asked == _asked) _text = text;
+                    if (asked == _asked) (_query, _text) = (text, text.Text);
                     break;
                 case LibraryKind.OutreachTemplate:
                     var written = await OutreachSvc.WriteAsync(a.Id, EntryId);
-                    if (asked == _asked) (_subject, _text) = (written.Draft.Subject, written.Draft.Body);
+                    // What Copy takes is what's shown: the subject line, a blank line, the body.
+                    if (asked == _asked) _text = $"Subject: {written.Draft.Subject}\n\n{written.Draft.Body}";
                     break;
                 default:
                     var steps = await ActionSvc.PreviewPlaybookAsync(a.Id, EntryId);
-                    if (asked == _asked) _steps = steps;
+                    if (asked == _asked) _playbook = steps;
                     break;
             }
         }
@@ -250,18 +249,23 @@
         {
             if (Kind == LibraryKind.SavedQuery)
             {
-                await ActionSvc.AddSavedHuntAsync(a.Id, EntryId);
+                await ActionSvc.AddSavedHuntAsync(a.Id, EntryId, _query);
                 Toasts.Show($"{Name} added to {Ui.ActionLabel(a.Number)}.");
             }
             else
             {
-                var added = await ActionSvc.ApplyPlaybookAsync(a.Id, EntryId);
+                var added = await ActionSvc.ApplyPlaybookAsync(a.Id, EntryId, _playbook);
                 Toasts.Show($"{Name} applied to {Ui.ActionLabel(a.Number)}: {Words.Plural(added, "step")} added.");
             }
             await Task.WhenAll(Preview(), Uses());
             await OnAdded.InvokeAsync();
         }
-        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.For(ex));
+            // The action changed since the preview: what Add would do now is shown, to be tried again.
+            if (ex is StaleEditException) await Preview();
+        }
         finally
         {
             _busy = false;

@@ -244,6 +244,107 @@ public class LibraryRailTests(TideApp app) : IClassFixture<TideApp>
         rail.Scope.ServiceProvider.GetRequiredService<ToastService>().Toasts.Should().Contain(t => t.IsError && t.Message.Contains("retired"));
     }
 
+    /// <summary>A colleague, in another tab, edits the action's title (its edit version moves).</summary>
+    private Task Retitle(int number) => As(async sp =>
+    {
+        var actions = sp.GetRequiredService<ActionService>();
+        var form = ActionForm.From((await actions.GetAsync(number))!.Action);
+        form.Title += " (edited)";
+        await actions.SaveAsync(form);
+    });
+
+    /// <summary>A colleague, in another tab, adds an indicator to the action's article.</summary>
+    private Task AddIndicator(int number, string ip) => As(async sp =>
+    {
+        var articles = sp.GetRequiredService<ArticleService>();
+        var article = (await sp.GetRequiredService<ActionService>().GetAsync(number))!.Action.ArticleId!.Value;
+        var form = ArticleForm.From((await articles.GetAsync(article))!);
+        form.Indicators.Add(new() { Type = IndicatorType.IpAddress, Value = ip });
+        await articles.SaveAsync(form);
+    });
+
+    [Theory]
+    [InlineData("indicator")]
+    [InlineData("title")]
+    public async Task AddToTheAction_IsRefusedAsStale_WhenTheActionChangedSinceThePreview_AndWritesNothing(string change)
+    {
+        var team = await Team("Rail stale preview team " + change);
+        var query = await Query("Rail stale preview query " + change);
+        var (number, id) = await Raise(team, "Rail stale preview sweep " + change);
+
+        await using var rail = await RailFor(LibraryKind.SavedQuery, query, "Rail stale preview query");
+        rail.Component.Text.Should().NotContain("198.51.100.200");
+        if (change == "indicator") await AddIndicator(number, "198.51.100.200");
+        else await Retitle(number);
+        var before = await Trace(id);
+        await rail.Click(c => c.Add());
+
+        (await Trace(id)).Should().Be(before, "what would be added isn't what the person saw");
+        rail.Scope.ServiceProvider.GetRequiredService<ToastService>().Toasts.Should().Contain(t => t.IsError && t.Message.Contains("Someone else changed this action"));
+        if (change == "indicator") rail.Component.Text.Should().Contain("198.51.100.200", "the preview is read again");
+        // Tried again on what's shown now, it's added.
+        await rail.Click(c => c.Add());
+        (await Trace(id)).Hunts.Should().Be(before.Hunts + 1);
+    }
+
+    [Theory]
+    [InlineData("step")]
+    [InlineData("title")]
+    public async Task ApplyingAPlaybook_IsRefusedAsStale_WhenTheActionChangedSinceThePreview(string change)
+    {
+        var team = await Team("Rail stale playbook team " + change);
+        var playbook = await As(sp => sp.GetRequiredService<PlaybookService>().SaveAsync(new PlaybookForm
+        {
+            Name = "Rail stale playbook " + change, Kind = ActionKind.Block, Steps = ["Block it at the proxy", "Block it at the firewall"],
+        }));
+        var (number, id) = await Raise(team, "Rail stale playbook block " + change, ActionKind.Block);
+
+        await using var rail = await RailFor(LibraryKind.Playbook, playbook, "Rail stale playbook", playbookFor: ActionKind.Block);
+        rail.Component.Steps.Should().HaveCount(2);
+        if (change == "step") await As(sp => sp.GetRequiredService<ActionService>().AddChecklistItemAsync(id, "Block it at the proxy"));
+        else await Retitle(number);
+        var before = await Trace(id);
+        await rail.Click(c => c.Add());
+
+        (await Trace(id)).Should().Be(before);
+        rail.Scope.ServiceProvider.GetRequiredService<ToastService>().Toasts.Should().Contain(t => t.IsError && t.Message.Contains("Someone else changed this action"));
+    }
+
+    [Fact]
+    public async Task UsedOn_ListsTheNewestUseFirst_NotTheNewestAction()
+    {
+        var team = await Team("Rail order team");
+        var query = await Query("Rail order query");
+        var (older, olderId) = await Raise(team, "Rail order older action");
+        var (newer, newerId) = await Raise(team, "Rail order newer action");
+        await As(async sp =>
+        {
+            await sp.GetRequiredService<ActionService>().AddSavedHuntAsync(newerId, query);
+            await Task.Delay(20);
+            await sp.GetRequiredService<ActionService>().AddSavedHuntAsync(olderId, query);
+        });
+
+        var uses = await As(sp => sp.GetRequiredService<LibraryUseService>().UsedOnAsync(LibraryKind.SavedQuery, query));
+        uses.Rows.Select(u => u.Number).Should().Equal(older, newer);
+    }
+
+    [Fact]
+    public async Task CopyFilledIn_ForATemplate_CopiesTheSubjectLine_ABlankLine_AndTheBody()
+    {
+        var team = await Team("Rail copy team");
+        var template = await As(sp => sp.GetRequiredService<OutreachTemplateService>().SaveAsync(new OutreachTemplateForm
+        {
+            Name = "Rail copy ask", Subject = "Asking about {{action.number}}", Body = "Hello,\nAre you affected?", Ceiling = TlpLevel.Clear,
+        }));
+        var (number, _) = await Raise(team, "Rail copy outreach", ActionKind.Outreach);
+
+        await using var rail = await RailFor(LibraryKind.OutreachTemplate, template, "Rail copy ask");
+        var html = WebUtility.HtmlDecode(await rail.Html());
+        var copied = System.Text.RegularExpressions.Regex.Match(html, "<pre id=\"lib-try-text\"[^>]*>(.*?)</pre>", System.Text.RegularExpressions.RegexOptions.Singleline).Groups[1].Value;
+        copied.Should().StartWith($"Subject: Asking about A-{number}\n\n").And.Contain("Are you affected?");
+        html.Should().Contain("data-copy-target=\"lib-try-text\"");
+    }
+
     [Fact]
     public async Task APlaybook_IsTriedOnActionsOfItsKind_PreviewingTheStepsItWouldAdd_ThenApplied()
     {

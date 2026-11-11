@@ -1378,6 +1378,33 @@ const libraryFitsBesideRail = [noSidewaysScroll, besides('#main-content', '#tide
   fits('.tide-library'), fits('.tide-library-list'), fits('.tide-library-detail'), fits('.tide-library-entry-head'), fits('.tide-library-filters'),
   visible('.tide-library-entry-name'), visible('.tide-library-entry-foot')];
 
+/** The entry header's first chip (its TLP or kind) has room before the words after it ("Saved by…"). */
+const chipHasRoom = holds('the entry header\'s chip stands clear of the words after it', () => {
+  const line = [...document.querySelectorAll('.tide-library-entry-title > .small')].find(e => e.getBoundingClientRect().height > 0);
+  const chip = line?.firstElementChild;
+  if (!chip) return ['no entry header with a chip is shown'];
+  let next = chip.nextSibling;
+  while (next && !(next.textContent ?? '').trim()) next = next.nextSibling;
+  if (!next) return ['nothing follows the chip'];
+  const range = document.createRange();
+  const text = next.nodeType === Node.TEXT_NODE ? next : next.firstChild ?? next;
+  const at = text.nodeType === Node.TEXT_NODE ? (text.textContent.length - text.textContent.trimStart().length) : 0;
+  if (text.nodeType === Node.TEXT_NODE) { range.setStart(text, at); range.setEnd(text, at + 1); } else range.selectNode(text);
+  const r = range.getBoundingClientRect(), c = chip.getBoundingClientRect();
+  if (r.top >= c.bottom - 2) return [];   // the words wrapped to the next line
+  const gap = r.left - c.right;
+  return gap >= 4 ? [] : [`the chip is ${Math.round(gap)}px from "${next.textContent.trim().slice(0, 20)}"`];
+});
+
+/** Each list row is two lines, as the design draws it: its name with how often it was used at the right of the same
+ * line, then what it's for, under both. */
+const rowsTwoLines = [sameLine('.tide-library-row.selected .tide-library-row-name', '.tide-library-row.selected .tide-library-row-meta'),
+  above('.tide-library-row.selected .tide-library-row-meta', '.tide-library-row.selected .tide-library-row-about'),
+  holds('the rows\' use is at their right', () => [...document.querySelectorAll('.tide-library-row')].filter(r => r.getBoundingClientRect().height > 0).flatMap((r, i) => {
+    const m = r.querySelector('.tide-library-row-meta').getBoundingClientRect(), b = r.getBoundingClientRect();
+    return b.right - m.right <= 24 ? [] : [`row ${i + 1}'s use ends ${Math.round(b.right - m.right)}px from its right`];
+  })), fits('.tide-library-row')];
+
 /** The selected row's name, its place, whether it has focus, and the address's row. */
 const libraryRow = page => page.evaluate(() => {
   const rows = [...document.querySelectorAll('.tide-library-row')];
@@ -1685,7 +1712,7 @@ const pages = [
   // The selected entry's context in the rail: docked and open from 1500px, with the list and the entry fitting beside
   // it (about 870px); closed below that until asked for, and never a sideways scroll. Wider letters (LETTER_SPACING).
   { name: 'library-rail', route: '/library/queries', setup: everyIndicatorSweep, widths: [1920, 1600, 1500],
-    rules: [...libraryRailHolds, ...libraryFitsBesideRail, visible('.tide-library-fold')] },
+    rules: [...libraryRailHolds, ...libraryFitsBesideRail, visible('.tide-library-fold'), chipHasRoom, ...rowsTwoLines] },
   { name: 'library-rail-closed', route: '/library/queries', setup: wideFont, widths: [1440, 780],
     rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), visible('.tide-library-entry-name'), fits('.tide-library-detail')] },
   // Below 1500px the rail opens over the page as a dialog, holds what it holds there too, and Escape closes it.
@@ -1693,9 +1720,9 @@ const pages = [
     rules: [noSidewaysScroll, ...libraryRailHolds, attr('#tide-rail', 'role', 'dialog'), overlayClosesBy('Escape')] },
   // Each tab's entry has its rail (the demo has no open outreach action, so a template's isn't tried there).
   { name: 'library-rail-templates', route: '/library/templates', setup: wideFont, widths: [1920, 1500],
-    rules: [visible('#tide-rail .tide-lib-facts'), visible('#tide-rail #lib-fills-h'), visible('#tide-rail #lib-used-h'), ...libraryFitsBesideRail.slice(0, 6)] },
+    rules: [visible('#tide-rail .tide-lib-facts'), visible('#tide-rail #lib-fills-h'), visible('#tide-rail #lib-used-h'), ...libraryFitsBesideRail.slice(0, 6), chipHasRoom, ...rowsTwoLines] },
   { name: 'library-rail-playbooks', route: '/library/playbooks', setup: wideFont, widths: [1920, 1500],
-    rules: [visible('#tide-rail .tide-lib-facts'), visible('#tide-rail #lib-used-h'), ...libraryFitsBesideRail.slice(0, 6)] },
+    rules: [visible('#tide-rail .tide-lib-facts'), visible('#tide-rail #lib-used-h'), ...libraryFitsBesideRail.slice(0, 6), chipHasRoom, ...rowsTwoLines] },
   // Copy filled in puts exactly the preview on the clipboard.
   { name: 'library-rail-copy', route: '/library/queries', setup: everyIndicatorSweep, widths: [1920], context: clipboard,
     rules: [copiesExactly('[data-copy-target="lib-try-text"]', '#lib-try-text')] },

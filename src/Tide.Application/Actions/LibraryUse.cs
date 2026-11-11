@@ -20,6 +20,14 @@ public sealed record LibraryUses(IReadOnlyList<LibraryUse> Rows, int Total);
 /// (its article's or its own).</summary>
 public sealed record WorkableAction(Guid Id, int Number, string Title, ActionKind Kind, bool HasIndicators);
 
+/// <summary>A saved query filled in for an action, as the person is shown it, and the action's edit version it was filled
+/// from: <see cref="ActionService.AddSavedHuntAsync"/> refuses it as stale when either has moved.</summary>
+public sealed record SavedHuntPreview(string Text, Guid EditVersion);
+
+/// <summary>The steps a playbook would add to an action's checklist, as the person is shown them, and the action's edit
+/// version they were read from: <see cref="ActionService.ApplyPlaybookAsync"/> refuses them as stale when either has moved.</summary>
+public sealed record PlaybookPreview(IReadOnlyList<string> Steps, Guid EditVersion);
+
 /// <summary>
 /// What the Library's context rail shows of an entry beyond the entry itself: the actions it was used on (for whoever
 /// reads actions; a deleted one isn't listed), and the open actions the reader may try it on (those they work, by the
@@ -42,22 +50,25 @@ public sealed class LibraryUseService(IAppDbContextFactory dbs, ICurrentUser use
         await using var db = await dbs.CreateAsync(ct);
         // The actions' query filter leaves deleted ones out of each join.
         var actions = db.Actions.AsNoTracking();
+        // Each with when it was used there (its latest use there), the newest use first.
         var used = kind switch
         {
             LibraryKind.SavedQuery => (await db.HuntQueries.AsNoTracking().Where(h => h.SavedQueryId == id)
                     .Join(actions, h => h.ActionId, a => a.Id, (h, a) => new { a.Number, a.Title, a.Status, h.Result, h.ResultCount, h.CreatedAtUtc })
                     .ToListAsync(ct))
                 .GroupBy(u => u.Number).Select(g => g.MaxBy(u => u.CreatedAtUtc)!)
-                .Select(u => new LibraryUse(u.Number, u.Title, u.Status, Found(u.Result, u.ResultCount))),
+                .Select(u => (Use: new LibraryUse(u.Number, u.Title, u.Status, Found(u.Result, u.ResultCount)), At: u.CreatedAtUtc)),
             LibraryKind.OutreachTemplate => (await db.OutreachMessages.AsNoTracking().Where(m => m.TemplateId == id)
                     .Join(actions, m => m.ActionId, a => a.Id, (m, a) => new { a.Number, a.Title, a.Status, m.RepliedAtUtc, m.SentAtUtc })
                     .ToListAsync(ct))
                 .GroupBy(u => u.Number).Select(g => g.MaxBy(u => u.SentAtUtc)!)
-                .Select(u => new LibraryUse(u.Number, u.Title, u.Status, u.RepliedAtUtc is null ? "waiting for a reply" : "replied")),
-            _ => (await actions.Where(a => a.PlaybookId == id).Select(a => new { a.Number, a.Title, a.Status }).ToListAsync(ct))
-                .Select(a => new LibraryUse(a.Number, a.Title, a.Status, null)),
+                .Select(u => (Use: new LibraryUse(u.Number, u.Title, u.Status, u.RepliedAtUtc is null ? "waiting for a reply" : "replied"), At: u.SentAtUtc)),
+            // A playbook was used when its steps went on the checklist (the first of them), else when the action was raised.
+            _ => (await actions.Where(a => a.PlaybookId == id)
+                    .Select(a => new { a.Number, a.Title, a.Status, a.CreatedAtUtc, Steps = a.Checklist.Select(i => i.AddedAtUtc).ToList() }).ToListAsync(ct))
+                .Select(a => (Use: new LibraryUse(a.Number, a.Title, a.Status, null), At: a.Steps.Count > 0 ? a.Steps.Min() : a.CreatedAtUtc)),
         };
-        var all = used.OrderByDescending(u => u.Number).ToList();
+        var all = used.OrderByDescending(u => u.At).ThenByDescending(u => u.Use.Number).Select(u => u.Use).ToList();
         return new LibraryUses([.. all.Take(MaxUsedOn)], all.Count);
     }
 
