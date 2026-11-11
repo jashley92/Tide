@@ -200,12 +200,13 @@
         </section>
     };
 
-    // How long an open card has been in its column, from its last move there (the organization's day), and that day;
-    // nothing when it never moved (it has been in Open since it was raised, which "Opened" says).
+    // How long an open card has been in its column, from when it moved there (the organization's day), and that day;
+    // nothing for an Open card with no due date that never moved, whose "Opened" already says it.
     private (string Text, DateOnly Since)? InColumn(ActionRow r)
     {
         if (r.InStatusSinceUtc is not { } at) return null;
         var since = Clock.DayOf(at);
+        if (r.Status == ActionStatus.Open && r.DueDate is null && since == Clock.DayOf(r.CreatedAtUtc)) return null;
         var days = Today.DayNumber - since.DayNumber;
         return (days <= 0 ? "In column today" : $"In column {days}d", since);
     }

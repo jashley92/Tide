@@ -66,8 +66,8 @@ public sealed record ActionRow(Guid Id, int Number, string Title, ActionKind Kin
     DateOnly? ChildrenNextDue = null, DateOnly? EscalatedForDue = null, DateTimeOffset? EscalatedAtUtc = null,
     bool ArticleKev = false, DateTimeOffset? InStatusSinceUtc = null)
 {
-    // The board fills ArticleKev (its article names a CVE on CISA's KEV list) and InStatusSinceUtc (when it last moved to
-    // the status it's in; null when it never has, so it has been there since it was raised).
+    // The board fills ArticleKev (its article names a CVE on CISA's KEV list). InStatusSinceUtc is when it moved to the
+    // status it's in (ActionItem.StatusChangedAtUtc).
     public SlaState Sla(DateOnly today, WorkingDays? workingDays = null) => ActionSla.StateOf(Status, DueDate, ClosedDate, today, workingDays);
     public ActionUrgency Urgency(DateOnly today, WorkingDays? workingDays = null) => ActionSla.UrgencyOf(Status, DueDate, today, workingDays);
     public bool IsOpen => !ActionItem.IsClosedStatus(Status);
@@ -578,8 +578,8 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         return new ActionBoard(cards, workers.All, workers.Teams) { ClosedDays = closedDays };
     }
 
-    // The board's cards: the rows, with whether each one's article names a CVE on CISA's KEV list and when each last moved
-    // to the status it's in. One read each for all the cards, on the cards' own query (so no list of ids is sent).
+    // The board's cards: the rows, with whether each one's article names a CVE on CISA's KEV list, in one read for all the
+    // cards, on the cards' own query (so no list of ids is sent).
     private async Task<List<ActionRow>> CardsAsync(IAppDbContext db, IQueryable<ActionItem> q, CancellationToken ct)
     {
         var rows = Readable(await RowsAsync(db, q, ct));
@@ -591,23 +591,8 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             kev = (await db.ArticleCves.AsNoTracking().Where(c => articles.Contains(c.ArticleId))
                 .Where(c => db.CveRecords.Any(r => r.CveId == c.CveId && r.IsKev)).Select(c => c.ArticleId).Distinct().ToListAsync(ct)).ToHashSet();
         }
-        // A move is the history's "Status: A → B" line (from the board, the page, an update or the API), or taking an open
-        // action on, which starts it.
-        var ids = q.Select(a => a.Id);
-        var moved = (await db.ActionEvents.AsNoTracking()
-                .Where(e => ids.Contains(e.ActionId) && (e.Text.Contains(StatusLine) || e.Text.StartsWith(TookAndStarted)))
-                .GroupBy(e => e.ActionId).Select(g => new { g.Key, At = g.Max(e => e.AtUtc) }).ToListAsync(ct))
-            .ToDictionary(g => g.Key, g => g.At);
-        return [.. rows.Select(r => r with
-        {
-            ArticleKev = r.ArticleId is { } article && kev.Contains(article),
-            InStatusSinceUtc = moved.TryGetValue(r.Id, out var at) ? at : null,
-        })];
+        return kev.Count == 0 ? rows : [.. rows.Select(r => r.ArticleId is { } article && kev.Contains(article) ? r with { ArticleKev = true } : r)];
     }
-
-    // The history's words for a move between statuses (ApplyStatus), and for taking an open action on (TakeAsync).
-    private const string StatusLine = "Status: ";
-    private const string TookAndStarted = "Took it on and started it";
 
     // The holder, team, kind, article, assignee, words, priority, due date and status parts of a filter; the caller says
     // which statuses (open, or recently closed) and applies the rule.
@@ -850,7 +835,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         db.Actions.Where(p => p.Id == a.ParentId).Select(p => (int?)p.Number).FirstOrDefault(), a.PlaybookName,
         a.Checklist.Count(i => i.IsDone), a.Checklist.Count, a.RaisedOn,
         a.Files.Count(f => f.RemovedAtUtc == null) + a.Comments.SelectMany(c => c.Files).Count(f => f.RemovedAtUtc == null),
-        a.Team!.IsExternal, a.HandedFromTeamId, 0, 0, null, a.EscalatedForDue, a.EscalatedAtUtc));
+        a.Team!.IsExternal, a.HandedFromTeamId, 0, 0, null, a.EscalatedForDue, a.EscalatedAtUtc, false, a.StatusChangedAtUtc));
 
     // The rows, and each parent's rollup ("3 of 5 done · 1 overdue · next due Nov 20") from one grouped read of their parts.
     private async Task<List<ActionRow>> RowsAsync(IAppDbContext db, IQueryable<ActionItem> q, CancellationToken ct)
@@ -1300,7 +1285,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var over = await ActiveLimits.CheckChangeAsync(db, (a.TeamId, a.Status), (a.TeamId, to), a.Id, null, null, ct);
         a.Status = to;
         a.EditVersion = Guid.NewGuid();
-        db.ActionEvents.Add(Event(user, a.Id, (started ? TookAndStarted + "." : "Took it on.") + over));
+        db.ActionEvents.Add(Event(user, a.Id, (started ? "Took it on and started it." : "Took it on.") + over));
         await SaveEditAsync(db, ct);
     }
 
@@ -1504,7 +1489,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             a.ClosedDate = null;
         }
         a.EditVersion = Guid.NewGuid();
-        var text = (lead is null ? "" : lead + " ") + $"{StatusLine}{StatusName(was)} → {StatusName(status)}";
+        var text = (lead is null ? "" : lead + " ") + $"Status: {StatusName(was)} → {StatusName(status)}";
         if (a.Outcome != ActionOutcome.None) text += $" ({OutcomeName(a.Outcome)})";
         text += a.OutcomeNote is null ? "." : $": {a.OutcomeNote}";
         var line = Event(user, a.Id, text);

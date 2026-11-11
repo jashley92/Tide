@@ -17,7 +17,7 @@ namespace Tide.Migrations.SqlServer.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.14")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -505,6 +505,9 @@ namespace Tide.Migrations.SqlServer.Migrations
 
                     b.Property<int>("Status")
                         .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("StatusChangedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<Guid>("TeamId")
                         .HasColumnType("uniqueidentifier");

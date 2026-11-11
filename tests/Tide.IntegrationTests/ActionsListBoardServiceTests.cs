@@ -177,23 +177,105 @@ public class ActionsListBoardServiceTests : IDisposable
         var team = await _db.Teams().AddAsync("Cyber Defense", null, null);
         var (kev, plain) = await Articles();
         var moved = DateTimeOffset.UtcNow.AddDays(-3);
-        var a = await Add(team, x => (x.ArticleId, x.Status) = (kev, ActionStatus.InProgress));
+        var a = await Add(team, x => (x.ArticleId, x.Status, x.StatusChangedAtUtc) = (kev, ActionStatus.InProgress, moved));
         var b = await Add(team, x => x.ArticleId = plain);
         await using (var ctx = _db.Context())
         {
-            ctx.ActionEvents.Add(new ActionEvent { ActionId = a.Id, AtUtc = moved.AddDays(-1), ByName = "x", Text = "Raised from the brief." });
-            ctx.ActionEvents.Add(new ActionEvent { ActionId = a.Id, AtUtc = moved, ByName = "x", Text = "Status: Open → In progress." });
-            ctx.ActionEvents.Add(new ActionEvent { ActionId = a.Id, AtUtc = moved.AddHours(2), ByName = "x", Text = "Changed priority: P3 → P2." });
+            // History lines don't decide it, a person's words that look like a move least of all.
+            ctx.ActionEvents.Add(new ActionEvent { ActionId = a.Id, AtUtc = moved.AddHours(2), ByName = "x", Text = "Deleted the checklist item \"Status: Open → In progress\"." });
+            ctx.ActionEvents.Add(new ActionEvent { ActionId = b.Id, AtUtc = moved.AddHours(3), ByName = "x", Text = "Status: Open → Blocked: pasted from a ticket." });
             await ctx.SaveChangesAsync();
         }
 
         var board = await _db.Actions().BoardAsync(new ActionFilter(ActionView.Open));
         var cardA = board.Cards.Single(c => c.Id == a.Id);
         (cardA.ArticleTitle, cardA.ArticleKev).Should().Be(("Edge VPN zero-day exploited", true));
-        cardA.InStatusSinceUtc!.Value.Should().BeCloseTo(moved, TimeSpan.FromSeconds(1), "the last move into its column, not a later edit");
+        cardA.InStatusSinceUtc!.Value.Should().BeCloseTo(moved, TimeSpan.FromSeconds(1), "the time its status last changed, as stored");
         var cardB = board.Cards.Single(c => c.Id == b.Id);
-        (cardB.ArticleTitle, cardB.ArticleKev, cardB.InStatusSinceUtc).Should().Be(("Phishing kit update", false, (DateTimeOffset?)null),
-            "never moved: it has been in Open since it was raised");
+        (cardB.ArticleTitle, cardB.ArticleKev).Should().Be(("Phishing kit update", false));
+        cardB.InStatusSinceUtc!.Value.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(1), "never moved: in Open since it was raised, whatever its history says");
+    }
+
+    // An action's stored status time, put back ten days, so a test can see whether the next step moves it.
+    private async Task<DateTimeOffset> Age(Guid id)
+    {
+        var old = DateTimeOffset.UtcNow.AddDays(-10);
+        await using var ctx = _db.Context();
+        (await ctx.Actions.SingleAsync(x => x.Id == id)).StatusChangedAtUtc = old;
+        await ctx.SaveChangesAsync();
+        return old;
+    }
+
+    private async Task<DateTimeOffset?> Stamp(Guid id)
+    {
+        await using var ctx = _db.Context();
+        return (await ctx.Actions.AsNoTracking().SingleAsync(x => x.Id == id)).StatusChangedAtUtc;
+    }
+
+    [Fact]
+    public async Task EveryWayAnActionsStatusChanges_RecordsWhen_AndNothingElseDoes()
+    {
+        var team = await _db.Teams().AddAsync("Cyber Defense", null, null);
+        var other = await _db.Teams().AddAsync("Network Engineering", null, null);
+        var svc = _db.Actions();
+        bool Now(DateTimeOffset? at) => at is { } t && (DateTimeOffset.UtcNow - t).Duration() < TimeSpan.FromMinutes(1);
+
+        var n = await svc.CreateAsync(new ActionForm { Title = "Sweep", Kind = ActionKind.Block, TeamId = team });
+        var id = (await svc.GetAsync(n))!.Action.Id;
+        Now(await Stamp(id)).Should().BeTrue("raised: in Open from now");
+
+        var old = await Age(id);
+        await svc.GetAsync(n);
+        await svc.SaveAsync(Edited((await svc.GetAsync(n))!.Action));
+        (await Stamp(id)).Should().Be(old, "reading it, or editing what isn't its status, isn't a move");
+
+        await svc.MoveAsync(id, ActionStatus.Open, ActionStatus.Blocked);
+        Now(await Stamp(id)).Should().BeTrue("a move on the board");
+
+        await Age(id);
+        await svc.SetStatusAsync(id, ActionStatus.InProgress, ActionOutcome.None, null);
+        Now(await Stamp(id)).Should().BeTrue("a status set on its page");
+
+        old = await Age(id);
+        await svc.TakeAsync(id);
+        (await Stamp(id)).Should().Be(old, "taking one already in progress doesn't move it");
+
+        await svc.RecordUpdateAsync(new TeamUpdate { ActionId = id, From = ActionStatus.InProgress, Status = ActionStatus.Done, Outcome = ActionOutcome.Blocked, Note = "Blocked at the edge." });
+        Now(await Stamp(id)).Should().BeTrue("an update from the team that closes it");
+
+        old = await Age(id);
+        await svc.ChangeOutcomeAsync(id, ActionStatus.Done, ActionOutcome.NotAffected, "Not affected after all.");
+        (await Stamp(id)).Should().Be(old, "a closed action's outcome changed where it is");
+
+        var fresh = (await svc.GetAsync(await svc.CreateAsync(new ActionForm { Title = "Second", Kind = ActionKind.Block, TeamId = team })))!.Action.Id;
+        await Age(fresh);
+        await svc.TakeAsync(fresh);
+        Now(await Stamp(fresh)).Should().BeTrue("taking an open one starts it");
+
+        await _db.Handoffs().SplitAsync(fresh, [new SplitPart(other)]);
+        await using var ctx = _db.Context();
+        var child = await ctx.Actions.AsNoTracking().SingleAsync(x => x.ParentId == fresh);
+        Now(child.StatusChangedAtUtc).Should().BeTrue("a part split off is raised now");
+    }
+
+    private static ActionForm Edited(ActionItem a)
+    {
+        var form = ActionForm.From(a);
+        form.Priority = Priority.P1;
+        return form;
+    }
+
+    [Fact]
+    public void SettingTheStatus_RecordsWhen_OnlyWhenItChanges()
+    {
+        var a = new ActionItem();
+        a.StatusChangedAtUtc.Should().NotBeNull("a new action is in its first status from now");
+        var old = DateTimeOffset.UtcNow.AddDays(-5);
+        a.StatusChangedAtUtc = old;
+        a.Status = ActionStatus.Open;
+        a.StatusChangedAtUtc.Should().Be(old, "the status it already has");
+        a.Status = ActionStatus.Blocked;
+        a.StatusChangedAtUtc.Should().NotBe(old);
     }
 
     [Fact]

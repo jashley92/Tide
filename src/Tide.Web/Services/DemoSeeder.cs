@@ -441,6 +441,7 @@ public static class DemoSeeder
                 new ActionEvent { AtUtc = raised.AddMinutes(5), ByName = robin.Name, Text = "Took the action." },
                 new ActionEvent { AtUtc = raised.AddHours(17), ByName = robin.Name, Text = "Status: Open → In progress." },
             ]);
+            detail.StatusChangedAtUtc = raised.AddHours(17);
             detail.Comments.Add(new ActionComment
             {
                 Text = "Proxy block is in. Working on the detection now; the agent's service name is stable across versions, which helps.",
@@ -449,7 +450,10 @@ public static class DemoSeeder
             Add("Rotate integration tokens for the cloud storage tenants", ActionKind.ConfigChange, Priority.P3, "identity-access", token, sam, Bd(3), ActionStatus.Open);
             Add("Require call-back verification before MFA resets", ActionKind.ConfigChange, Priority.P2, "identity-access", helpdesk, null, Bd(2), ActionStatus.Open);
             Add("Brief the service desk on MFA reset pretexting", ActionKind.Awareness, Priority.P3, "fraud-operations", helpdesk, me, Bd(-1), ActionStatus.Open);
-            Add("Confirm the vendor's patch window for the file transfer server", ActionKind.PatchRemediate, Priority.P2, "vulnerability-management", null, sam, Bd(-2), ActionStatus.Blocked);
+            // Blocked three days ago: the board says how long it has waited there.
+            var blocked = Add("Confirm the vendor's patch window for the file transfer server", ActionKind.PatchRemediate, Priority.P2, "vulnerability-management", null, sam, Bd(-2), ActionStatus.Blocked);
+            blocked.StatusChangedAtUtc = DateTimeOffset.UtcNow.AddDays(-3);
+            blocked.Events.Add(new ActionEvent { AtUtc = blocked.StatusChangedAtUtc.Value, ByName = sam.Name, Text = "Status: Open → Blocked: waiting on the vendor's window." });
             Add("Hunt for unapproved remote monitoring agents on servers", ActionKind.ThreatHunt, Priority.P2, "cyber-defense", rmm, me, Bd(2), ActionStatus.Open);
             return detail.Number;
         }

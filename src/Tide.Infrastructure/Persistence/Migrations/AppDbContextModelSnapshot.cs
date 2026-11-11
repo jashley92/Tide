@@ -15,7 +15,7 @@ namespace Tide.Infrastructure.Persistence.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.14");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.15");
 
             modelBuilder.Entity("Tide.Domain.Entities.ActionCardRule", b =>
                 {
@@ -499,6 +499,9 @@ namespace Tide.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("StatusChangedAtUtc")
                         .HasColumnType("INTEGER");
 
                     b.Property<Guid>("TeamId")

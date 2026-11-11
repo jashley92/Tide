@@ -137,7 +137,29 @@ public class ActionItem : AuditableEntity
     /// </summary>
     public DateOnly? RaisedOn { get; set; }
 
-    public ActionStatus Status { get; set; } = ActionStatus.Open;
+    // EF reads and writes the column through this field, as DueDate's, so loading an action isn't a change of status.
+    private ActionStatus _status = ActionStatus.Open;
+
+    /// <summary>Where it stands. Setting another status records when (<see cref="StatusChangedAtUtc"/>), whichever path
+    /// moves it; setting the one it has changes nothing.</summary>
+    public ActionStatus Status
+    {
+        get => _status;
+        set
+        {
+            if (value == _status) return;
+            _status = value;
+            StatusChangedAtUtc = DateTimeOffset.UtcNow;
+        }
+    }
+
+    /// <summary>
+    /// When it moved to the status it has (the board's "In column 3d"): when it was raised, until it moves. Derived, like
+    /// <see cref="OriginalDueDate"/>, so it adds no history line. Null only for a row from before it was kept that the
+    /// upgrade couldn't date.
+    /// </summary>
+    public DateTimeOffset? StatusChangedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+
     public ActionOutcome Outcome { get; set; } = ActionOutcome.None;
     public string? OutcomeNote { get; set; }
 
