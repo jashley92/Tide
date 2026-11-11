@@ -177,7 +177,7 @@ public class ScorecardTagPickerTests(TideApp app) : IClassFixture<TideApp>
             return p.Add(p._found.Single());
         });
         html = await r.Html();
-        html.Should().Contain("Unsaved changes").And.Contain("1 chosen").And.Contain("aria-label=\"Remove Pickeditor cloud token\"").And.Contain("1 tag &#xB7;");
+        html.Should().Contain("Unsaved changes").And.Contain("1 chosen").And.Contain("aria-label=\"Remove Pickeditor cloud token\"").And.Contain(">1 &#xB7; 0</span>", "the section index counts it");
         var ok = false;
         await r.Click(async c => ok = await c.Save());
         ok.Should().BeTrue();

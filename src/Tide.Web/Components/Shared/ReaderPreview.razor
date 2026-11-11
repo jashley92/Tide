@@ -25,22 +25,24 @@
 @implements IAsyncDisposable
 
 <section class="tide-card tide-reader" aria-label="Beside the article">
-    @* Whether it's ready: above the tabs, so it's seen from any. *@
-    @if (Current is { } now)
+    @* Whether it's ready, for the edition shown: above the tabs, so it's seen from any. The other edition is named only
+       where it differs. It's the author's question, so only someone who can edit is asked it. *@
+    @if (Current is { } now && _canWrite)
     {
         <p class="tide-reader-sum">
+            <span class="tide-reader-edition">@Tide.Application.Distribution.BriefRenderer.EditionName(now.Edition):</span>
             @if (now.Checks.Count == 0)
             {
                 <span class="tide-reader-ready"><span class="bi bi-check-circle-fill" aria-hidden="true"></span> Ready to brief</span>
             }
             else
             {
-                <span class="tide-reader-need"><span class="bi bi-exclamation-circle" aria-hidden="true"></span> @Ui.Plural(now.Checks.Count, "thing") missing</span>
+                <span class="tide-reader-need"><span class="bi bi-exclamation-circle" aria-hidden="true"></span> @Gaps(now)</span>
                 <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="ShowGaps">Show</button>
             }
-            @if (_both.FirstOrDefault(x => x.Edition != now.Edition) is { Checks.Count: > 0 } other)
+            @if (_both.FirstOrDefault(x => x.Edition != now.Edition) is { Checks.Count: > 0 } other && Gaps(other) != Gaps(now))
             {
-                <span class="tide-muted">&middot; @Tide.Application.Distribution.BriefRenderer.EditionName(other.Edition).ToLowerInvariant(): @Ui.Plural(other.Checks.Count, "thing") missing</span>
+                <span class="tide-muted">&middot; @Tide.Application.Distribution.BriefRenderer.EditionName(other.Edition).ToLowerInvariant(): @Gaps(other)</span>
             }
             @if (State.Dirty)
             {
@@ -96,7 +98,7 @@
         <div class="tide-reader-doc tide-edition">
             @if (p.Cut is { } cut)
             {
-                <EditionArticleView Article="cut" LeftOut="LeftOutLine" Missing="Placeholder">
+                <EditionArticleView Article="cut" LeftOut="LeftOutLine" Missing="@(_canWrite ? Placeholder : null)">
                     @if (p.DropsTeamOnlyParts(_actions.Count))
                     {
                         <p class="tide-left-out">Indicators and follow-up actions aren't part of the company-wide edition.</p>
@@ -110,7 +112,7 @@
                     <p class="tide-left-out">@LeftOutMarker &middot; the whole article is <TlpBadge Level="p.Article.Tlp" />, above this edition's <TlpBadge Level="p.Ceiling" /> &mdash; @OnlyYou</p>
                 </article>
             }
-            @{ var others = p.Checks.Where(c => p.Cut is null || !InPlace.Contains(c.Part)).ToList(); }
+            @{ var others = _canWrite ? p.Checks.Where(c => p.Cut is null || !InPlace.Contains(c.Part)).ToList() : []; }
             @if (others.Count > 0)
             {
                 <div class="tide-reader-gaps">
@@ -453,8 +455,15 @@
         _ => "Included in full",
     };
 
+    // What an edition still needs, by kind: "2 things missing, 1 to check" (a TLP marking to look at isn't missing).
+    private static string Gaps(ArticlePreview p)
+    {
+        int check = p.Checks.Count(c => c.ToCheck), missing = p.Checks.Count - check;
+        return string.Join(", ", new[] { missing > 0 ? $"{Ui.Plural(missing, "thing")} missing" : null, check > 0 ? $"{check} to check" : null }.OfType<string>());
+    }
+
     // A warning about a part that's written (its TLP) is checked, not written.
-    private static string GoText(ArticleCheck c) => c.Fix is not null ? "Check it" : c.Part switch
+    private static string GoText(ArticleCheck c) => c.ToCheck || c.Fix is not null ? "Check it" : c.Part switch
     {
         ArticlePart.BottomLine or ArticlePart.WhyItMatters or ArticlePart.Recommended => "Write it",
         ArticlePart.Bullets => "Add one",
