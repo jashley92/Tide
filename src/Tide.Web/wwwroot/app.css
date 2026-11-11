@@ -2513,4 +2513,22 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-status-menu:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; }
 .tide-dt-group-note { margin-left: var(--tide-space-2); padding: 0 var(--tide-space-2); border: 1px dashed var(--tide-border-strong); border-radius: var(--tide-radius-pill);
     color: var(--tide-text-muted); font-size: var(--tide-text-xs); font-weight: var(--tide-weight-regular); }
+/* The view tabs' row, as the design has it: the tabs, then on their centre line the tab this page opens on and Save view,
+   and List or Board at the end, over one rule across the row. The tabs scroll sideways inside themselves when they
+   don't fit and the rest keeps its place; on a phone the rest takes a line of its own under them. */
+.tide-actions-viewrow { display: flex; align-items: center; gap: var(--tide-space-3); margin-bottom: var(--tide-space-3); box-shadow: inset 0 -1px 0 var(--tide-border); }
+.tide-actions-viewrow > .tide-actions-views { flex: 0 1 auto; align-self: stretch; margin-bottom: 0; }
+.tide-actions-viewtools { flex: none; display: flex; align-items: center; gap: var(--tide-space-3); }
+.tide-actions-viewrow > .tide-actions-layout { flex: none; margin-left: auto; }
+.tide-actions-saved { margin: 0 0 var(--tide-space-3); }
+/* In a narrower window the tools and List or Board keep their icons, and their words go to screen readers and tooltips,
+   so the tabs keep room enough to show a whole tab. */
+@media (max-width: 1099.98px) {
+    .tide-viewtool-text, .tide-actions-layout .tide-tabbar-item > span:not(.bi) {
+        position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+}
+@media (max-width: 640.98px) {
+    .tide-actions-viewrow { flex-wrap: wrap; row-gap: var(--tide-space-2); padding-bottom: var(--tide-space-2); }
+    .tide-actions-viewrow > .tide-actions-views { flex-basis: 100%; }
+}
 /* ---- end Actions list and board, as designed ---- */

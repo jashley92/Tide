@@ -41,52 +41,52 @@
     </div>
 </div>
 
-<div class="d-flex flex-wrap align-items-end gap-2">
+@* The view tabs, then on their line (as the design has them): the tab this page opens on, Save view, and at the end List
+   or Board. The tabs scroll sideways inside themselves when they don't fit; the rest stays where it is. *@
+<div class="tide-actions-viewrow">
     @* Each tab says how many open actions it shows under the filters set (one grouped count, ActionService.ViewCountsAsync),
        the same on the list and the board. *@
     <TabBar Label="Views" Items="@(Views.Where(v => !_asBoard || OnBoard(v.Item1)).Select(v => new TabBarItem(v.Item2, "", Key: v.Item1.ToString(), Count: _counts?.For(v.Item1))).ToList())"
             Active="@_view.ToString()" OnSelect="k => SetView(Enum.Parse<ActionView>(k!))" Class="tide-actions-views" />
-    @if (DefaultFor(_view) is { } shown)
-    {
-        @* The tab this page opens on when a link doesn't say: the person's own, set here. *@
-        <div class="mb-2 small">
+    <div class="tide-actions-viewtools small">
+        @if (DefaultFor(_view) is { } shown)
+        {
+            @* The tab this page opens on when a link doesn't say: the person's own, set here. *@
             @if (shown == SavedView)
             {
-                <span class="tide-muted" id="view-default"><span class="bi bi-star-fill" aria-hidden="true"></span> Opens here</span>
+                <span class="tide-muted" id="view-default" title="Actions opens on this tab when a link doesn't say which"><span class="bi bi-star-fill" aria-hidden="true"></span> <span class="tide-viewtool-text">Opens here</span></span>
             }
             else
             {
                 <button type="button" class="btn btn-link btn-sm p-0" id="view-default" disabled="@_busyDefault" @onclick="() => SetDefaultView(shown)"
-                        title="Open Actions on @ViewLabel(_view) when a link doesn't say which tab"><span class="bi bi-star" aria-hidden="true"></span> Open here by default</button>
+                        title="Open Actions on @ViewLabel(_view) when a link doesn't say which tab"><span class="bi bi-star" aria-hidden="true"></span> <span class="tide-viewtool-text">Open here by default</span></button>
             }
-        </div>
-    }
-    @* The person's own saved views: a link each to the tab, layout and filters it keeps, the one shown marked, with a
-       menu to rename, move or delete it; Save view keeps what's shown now. *@
-    <div class="tide-savedviews flex-grow-1 mb-2">
-        @if (_saved.Count > 0)
-        {
-            var current = ActiveSaved;
-            <nav class="tide-savedviews-list" aria-label="Saved views">
-                @foreach (var v in _saved)
-                {
-                    var on = v.Id == current?.Id;
-                    <span class="tide-savedview" @key="v.Id">
-                        <a class="tide-chip tide-chip-pick @(on ? "selected" : "")" href="@("actions?" + v.Query)" aria-current="@(on ? "page" : null)">@v.Name</a>
-                        <MenuButton Label="@($"{v.Name}: rename, move or delete")" IconOnly="true" Icon="bi-three-dots-vertical" ButtonClass="tide-savedview-menu"
-                                    Items="@SavedMenu(v)" />
-                    </span>
-                }
-            </nav>
         }
         <button type="button" class="tide-filter-add" id="save-view" disabled="@(_saved.Count >= SavedViewService.MaxViews)" @onclick="StartSave"
-                title="@(_saved.Count >= SavedViewService.MaxViews ? $"You can keep up to {SavedViewService.MaxViews} views: delete one to save another" : "Keep this tab, layout and filters as a view of your own, beside the tabs")">
-            <span class="bi bi-bookmark-plus" aria-hidden="true"></span> Save view
+                title="@(_saved.Count >= SavedViewService.MaxViews ? $"You can keep up to {SavedViewService.MaxViews} views: delete one to save another" : "Keep this tab, layout and filters as a view of your own, under the tabs")">
+            <span class="bi bi-bookmark-plus" aria-hidden="true"></span> <span class="tide-viewtool-text">Save view</span>
         </button>
     </div>
-    <TabBar Label="Layout" Level="TabLevel.Sub" Class="mb-2" Active="@(_asBoard ? "board" : "list")" OnSelect="SetLayout"
+    <TabBar Label="Layout" Level="TabLevel.Sub" Class="tide-actions-layout" Active="@(_asBoard ? "board" : "list")" OnSelect="SetLayout"
             Items="@([new TabBarItem("List", "", "bi-list-ul", "list"), new TabBarItem("Board", "", "bi-kanban", "board")])" />
 </div>
+@if (_saved.Count > 0)
+{
+    @* The person's own saved views: a link each to the tab, layout and filters it keeps, the one shown marked, with a
+       menu to rename, move or delete it. *@
+    var current = ActiveSaved;
+    <nav class="tide-savedviews-list tide-actions-saved" aria-label="Saved views">
+        @foreach (var v in _saved)
+        {
+            var on = v.Id == current?.Id;
+            <span class="tide-savedview" @key="v.Id">
+                <a class="tide-chip tide-chip-pick @(on ? "selected" : "")" href="@("actions?" + v.Query)" aria-current="@(on ? "page" : null)">@v.Name</a>
+                <MenuButton Label="@($"{v.Name}: rename, move or delete")" IconOnly="true" Icon="bi-three-dots-vertical" ButtonClass="tide-savedview-menu"
+                            Items="@SavedMenu(v)" />
+            </span>
+        }
+    </nav>
+}
 
 @* One bar for the list and the board (FilterBar): the words, the pills used most, a chip for each other filter and
    + Filter for the rest. They combine, go in the address as before, and a change starts the list again from its first
@@ -159,7 +159,7 @@ else
     <label class="tide-field-label" for="saved-view-name">Name</label>
     <input id="saved-view-name" class="form-control form-control-sm" maxlength="@SavedActionView.MaxName" @bind="_newName" @bind:event="oninput"
            placeholder="My team's P1s" autocomplete="off" />
-    <div class="form-text">@(_renaming is null ? "Keeps this tab, layout and filters beside the tabs. Only you see your views." : "Only the name changes: the view still opens the same filters.")</div>
+    <div class="form-text">@(_renaming is null ? "Keeps this tab, layout and filters under the tabs. Only you see your views." : "Only the name changes: the view still opens the same filters.")</div>
     @if (_nameError is not null) { <div class="text-danger small mt-2" role="alert">@_nameError</div> }
 </ConfirmDialog>
 <ConfirmDialog @ref="_confirm" />
@@ -689,7 +689,7 @@ else
         };
     }
 
-    // --- Saved views (SavedViewService): the person's own, beside the tabs --------------------------------------------
+    // --- Saved views (SavedViewService): the person's own, under the tabs ---------------------------------------------
 
     private IReadOnlyList<ActionsSavedView> _saved = [];
     private ConfirmDialog _nameDialog = default!;
@@ -746,7 +746,7 @@ else
             else
             {
                 var saved = await SavedViews.SaveAsync(_newName ?? "", ShownQuery() ?? throw new ArgumentException("These filters are too long to keep as a view."));
-                Toasts.Show($"Saved \"{saved.Name}\" beside the tabs.");
+                Toasts.Show($"Saved \"{saved.Name}\" under the tabs.");
             }
             _saved = await SavedViews.ListAsync();
             return true;

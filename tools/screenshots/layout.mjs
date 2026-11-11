@@ -238,6 +238,31 @@ const statusMenuByKeyboard = {
   },
 };
 
+/**
+ * Beside the tabs of the row `tabs`, each of `selectors` sits on the tabs' centre line (its centre within 2px of the
+ * first tab label's) and inside the tab row: not hanging below the row's bottom rule (the tabs' own bottom edge, where
+ * their underline is drawn), nor scrolled or cut out of the window sideways.
+ */
+const besideTheTabs = (tabs, ...selectors) => ({
+  name: `on the tabs' line: ${selectors.join(', ')}`,
+  check: page => page.evaluate(([tabs, selectors]) => {
+    const bar = document.querySelector(tabs), label = bar?.querySelector('.tide-tabbar-item');
+    if (!bar || !label) return [`no tabs at ${tabs}`];
+    const t = label.getBoundingClientRect(), row = bar.getBoundingClientRect(), mid = t.top + t.height / 2;
+    return selectors.flatMap(s => {
+      const r = document.querySelector(s)?.getBoundingClientRect();
+      if (!r || !r.width) return [`${s} isn't shown`];
+      const problems = [];
+      const off = r.top + r.height / 2 - mid;
+      if (Math.abs(off) > 2) problems.push(`${s}'s centre is ${off.toFixed(1)}px ${off > 0 ? 'below' : 'above'} the tab labels'`);
+      if (r.bottom > row.bottom + 0.5) problems.push(`${s} hangs ${(r.bottom - row.bottom).toFixed(1)}px below the tab row's rule`);
+      if (r.top < row.top - 0.5) problems.push(`${s} sticks ${(row.top - r.top).toFixed(1)}px above the tab row`);
+      if (r.left < 0 || r.right > innerWidth) problems.push(`${s} is out of the window sideways`);
+      return problems;
+    });
+  }, [tabs, selectors]),
+});
+
 /** Setup: every letter spaced wider, as a font wider than this machine's would set it (CI's): a rule that holds then
  * holds by the page's construction, not by pixels to spare. */
 const wider = async page => { await page.addStyleTag({ content: '* { letter-spacing: .07em !important; }' }); };
@@ -564,6 +589,13 @@ const pages = [
     rules: [noSidewaysScroll, visible('.tide-action-ref'), visible('.tide-tabbar-count'), oneRow('[role=group][aria-label="Views"]'),
       visible('.tide-col-progress'), onTitleLine('.tide-table td:first-child', '.tide-action-num', '[title^="Escalated"]'),
       notClippedBelow('[role=group][aria-label="Views"]'), visible('.tide-chip-count')] },
+  // "Open here by default" (or "Opens here") and Save view sit on the view tabs' line, inside their row, as the design
+  // has them: on the list and the board, at each width, and with wider letters.
+  ...['list', 'board'].flatMap(layout => [false, true].map(wide => ({
+    name: `actions-${layout}-view-tools${wide ? '-wide-letters' : ''}`, route: `/actions?view=open&layout=${layout}`, setup: wide ? wider : undefined,
+    widths: [[1920, 1080], [1440, 900], [780, 900]],
+    rules: [noSidewaysScroll, besideTheTabs('[role=group][aria-label="Views"]', '#view-default', '#save-view')],
+  }))),
   // With wider letters (CI's fonts), the Progress column still leaves the title its line: the Escalated badge stays on it.
   { name: 'actions-list-wide-letters', route: '/actions?view=open&layout=list', setup: wider, widths: [[1920, 1080], [1440, 900]],
     rules: [noSidewaysScroll, visible('.tide-col-progress'), onTitleLine('.tide-table td:first-child', '.tide-action-num', '[title^="Escalated"]')] },
