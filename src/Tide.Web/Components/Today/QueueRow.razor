@@ -12,7 +12,7 @@
             <span class="tide-action-num">@Ui.ActionLabel(Row.Number)</span>
             <ActionStatusBadge Status="Row.Status" />
             <PriorityBadge Priority="Row.Priority" />
-            <SlaBadge State="Row.Sla(ActionSvc.Today, Clock.Days)" Due="Row.DueDate" Today="ActionSvc.Today" ShowDate="true" />
+            <SlaBadge State="Row.Sla(ActionSvc.Today, Clock.Days)" Due="Row.DueDate" Today="ActionSvc.Today" Date="SlaDate.Instead" />
         </div>
         <div class="tide-queue-meta">@Meta</div>
     </div>

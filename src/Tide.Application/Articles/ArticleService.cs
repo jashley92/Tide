@@ -31,7 +31,8 @@ public enum ArticleSort { Written, Title, Status, Tlp }
 public sealed class StaleEditException(string message) : Exception(message);
 
 /// <summary>Writing and reading articles: the analyst's write-ups that briefs are built from.</summary>
-public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, ScreenshotService screenshots, OrgClock clock)
+public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, ScreenshotService screenshots, OrgClock clock,
+    Settings.DistributionSettings distribution)
 {
     public const int MaxTitle = 300;
     public const int MaxBluf = 600;
@@ -303,7 +304,11 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
     /// Saves the editor's whole form. Refused (<see cref="StaleEditException"/>) when the article changed since the form
     /// was loaded. Returns the new edit version.
     /// </summary>
-    public async Task<Guid> SaveAsync(ArticleForm form, CancellationToken ct = default)
+    public async Task<Guid> SaveAsync(ArticleForm form, CancellationToken ct = default) => (await SaveAsync(form, null, ct)).EditVersion!.Value;
+
+    // The one save: who may, the edit version, then, for an autosave, whatever it holds off for (hold, read against the
+    // article as saved, before anything changes), and the form copied on.
+    private async Task<AutosaveResult> SaveAsync(ArticleForm form, Func<IAppDbContext, Article, Task<AutosaveHold>>? hold, CancellationToken ct)
     {
         RequireWrite();
         await using var db = await dbs.CreateAsync(ct);
@@ -311,6 +316,7 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
                 ?? throw new KeyNotFoundException("That article no longer exists.");
         if (a.EditVersion != form.EditVersion)
             throw new StaleEditException(SavedMeanwhile);
+        if (hold is not null && await hold(db, a) is var held and not AutosaveHold.None) return new AutosaveResult(null, held);
 
         a.Title = Clean(form.Title, MaxTitle);
         if (a.Title.Length == 0) throw new ArgumentException("An article needs a title.");
@@ -343,9 +349,12 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
         // A Ready article that lost something it needs goes back to Draft.
         if (a.Status == ArticleStatus.Ready && ArticleChecks.For(a).Any(c => c.Blocking)) a.Status = ArticleStatus.Draft;
 
+        // A form that saves as the article already is (an empty bullet added, say) writes nothing, and keeps the edit
+        // version, so no one else's open copy is made stale for nothing.
+        if (!db.ChangeTracker.HasChanges()) return new AutosaveResult(a.EditVersion, AutosaveHold.None);
         a.EditVersion = Guid.NewGuid();
         await SaveCheckedAsync(db, ct);
-        return a.EditVersion;
+        return new AutosaveResult(a.EditVersion, AutosaveHold.None);
     }
 
     /// <summary>
@@ -365,6 +374,49 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
         form.TagIds = tagIds.ToHashSet();
         form.TechniqueIds = techniqueIds.ToList();
         return await SaveAsync(form, ct);
+    }
+
+    /// <summary>
+    /// The article editor's save after a pause in typing: <see cref="SaveAsync"/> itself, so the same permission check,
+    /// edit-version check (a colleague's save meanwhile is refused as stale, never overwritten) and audit apply, with its
+    /// audit rows marked as automatic (<see cref="AuditVia"/>). It saves nothing, and says why, when the form changes a
+    /// marking or puts a part into the company-wide edition (<see cref="NeedsExplicitSave"/>): that waits for Save, all of
+    /// the form with it. Nor does it save an article on a sent brief, whose corrections stay deliberate.
+    /// </summary>
+    public async Task<AutosaveResult> AutosaveAsync(ArticleForm form, CancellationToken ct = default)
+    {
+        using (AuditVia.Autosave())
+            return await SaveAsync(form, async (db, saved) =>
+            {
+                if (await db.Briefs.AnyAsync(b => b.Status == BriefStatus.Sent && b.Items.Any(i => i.ArticleId == form.Id), ct)) return AutosaveHold.SentBrief;
+                var (companyCeiling, _) = await distribution.ReadAsync(ct);
+                return NeedsExplicitSave(ArticleForm.From(saved).ToPreview(), form.ToPreview(), companyCeiling) ? AutosaveHold.Markings : AutosaveHold.None;
+            }, ct);
+    }
+
+    /// <summary>
+    /// Whether going from <paramref name="before"/> to <paramref name="after"/> (each as the form saves it) must wait for
+    /// an explicit Save: a marking changed (the article's, "Why it matters"'s, a bullet's, a screenshot's), or a part
+    /// would reach the company-wide edition (under <paramref name="companyCeiling"/>) that didn't before. With the markings
+    /// unchanged, the article, its bullets and its screenshots reach it as before (a new bullet or screenshot is a new
+    /// marking), so what's left is text written for the first time where it goes to everyone: a bottom line, recommended
+    /// actions, or "Why it matters" at or under the ceiling. Narrowing (a part taken out) and editing what already goes
+    /// out don't wait. Indicators carry no marking of their own and never go to the company-wide edition.
+    /// </summary>
+    internal static bool NeedsExplicitSave(Article before, Article after, TlpLevel companyCeiling)
+    {
+        if (before.Tlp != after.Tlp || before.WhyItMattersTlp != after.WhyItMattersTlp) return true;
+        // Bullets have no identity across a save: their markings may only lose members (a bullet taken out), never change.
+        var left = before.Bullets.GroupBy(b => b.Tlp).ToDictionary(g => g.Key, g => g.Count());
+        foreach (var b in after.Bullets)
+            if (left.TryGetValue(b.Tlp, out var n) && n > 0) left[b.Tlp] = n - 1;
+            else return true;
+        if (after.Screenshots.Any(s => before.Screenshots.FirstOrDefault(x => x.Id == s.Id) is not { } was || was.Tlp != s.Tlp)) return true;
+
+        if (after.Tlp > companyCeiling) return false;
+        static bool New(string? now, string? was) => !string.IsNullOrWhiteSpace(now) && string.IsNullOrWhiteSpace(was);
+        return New(after.Bluf, before.Bluf) || New(after.RecommendedActions, before.RecommendedActions)
+               || (New(after.WhyItMatters, before.WhyItMatters) && after.Effective(after.WhyItMattersTlp) <= companyCeiling);
     }
 
     /// <summary>
@@ -761,3 +813,10 @@ public sealed class ArticleService(IAppDbContextFactory dbs, ICurrentUser user, 
         if (!user.Has(Permission.WriteArticles)) throw new ForbiddenException(WriteRefusal);
     }
 }
+
+/// <summary>Why an autosave saved nothing: none (it saved), a marking or the company-wide edition changed, or the
+/// article is on a sent brief. Each waits for an explicit Save.</summary>
+public enum AutosaveHold { None, Markings, SentBrief }
+
+/// <summary>What an autosave did: the new edit version when it saved, or why it held off.</summary>
+public sealed record AutosaveResult(Guid? EditVersion, AutosaveHold Hold);

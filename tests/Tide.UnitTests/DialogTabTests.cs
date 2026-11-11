@@ -28,6 +28,7 @@ public class DialogTabTests
             e.getAttribute = n => (n in e.attrs ? e.attrs[n] : null);
             e.hasAttribute = n => n in e.attrs;
             e.focus = () => { document.activeElement = e; };
+            e.getClientRects = () => [{}];
             e.matches = sel => sel.split(',').some(one => compound(e, one.trim()));
             e.closest = sel => { for (let x = e; x; x = x.parentElement) if (x.matches(sel)) return x; return null; };
             e.querySelectorAll = sel => { const out = []; (function walk(x) { x.children.forEach(k => { if (k.matches(sel)) out.push(k); walk(k); }); })(e); return out; };

@@ -15,7 +15,10 @@ window.tideFilters = (function () {
         const all = Array.prototype.slice.call(pop.querySelectorAll(choices));
         const first = all.find(function (c) { return !c.classList.contains('tide-filter-back'); }) || all[0];
         const target = pop.querySelector('input') || pop.querySelector('[aria-checked="true"]') || first;
-        if (target) target.focus();
+        if (!target) return;
+        // The popout is placed in view already (tidePopout): only a long list inside it scrolls to the choice.
+        target.focus({ preventScroll: true });
+        target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
 
     function onKey(e) {

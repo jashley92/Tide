@@ -42,6 +42,7 @@ else
                    @ref="_newInput" @bind="_newItem" @bind:event="oninput" @onkeydown="OnNewKey" />
             <button class="btn btn-outline-secondary btn-sm text-nowrap" disabled="@(_busy || string.IsNullOrWhiteSpace(_newItem))" @onclick="Add">Add</button>
         </div>
+        @* A closed action takes no playbook (ActionService refuses it): it's offered only while the action is open. *@
         @if (_playbooks.Count > 0)
         {
             <div class="d-flex gap-2 mt-2 align-items-center">
@@ -61,6 +62,9 @@ else
     [Parameter, EditorRequired] public ActionKind Kind { get; set; }
     [Parameter] public bool CanWork { get; set; }
     [Parameter] public bool Compact { get; set; }
+
+    /// <summary>Whether the action is open: a closed one isn't offered a playbook.</summary>
+    [Parameter] public bool Open { get; set; } = true;
 
     /// <summary>Focus the new item's box once it's drawn: the page's empty checklist was just opened to add one.</summary>
     [Parameter] public bool Autofocus { get; set; }
@@ -85,13 +89,13 @@ else
         // The action page's first interactive draw has the prerendered items, not "Loading" over them; they're read again
         // if something was saved since.
         if (Handoff.Take<ActionChecklist>(RendererInfo, PrerenderedState, out var current) is { } prerendered && prerendered.ActionId == ActionId
-            && prerendered.CanWork == CanWork && !Compact)
+            && prerendered.CanWork == CanWork && prerendered.Open == Open && !Compact)
         {
             (_items, _playbooks) = (prerendered._items, prerendered._playbooks);
             if (current) return;
         }
         await Load();
-        if (!Compact && CanWork) _playbooks = await PlaybookSvc.ForKindAsync(Kind);
+        _playbooks = !Compact && CanWork && Open ? await PlaybookSvc.ForKindAsync(Kind) : [];
         if (!Compact) PrerenderedState = Handoff.Keep(RendererInfo, this, PrerenderedState);
     }
 

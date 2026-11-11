@@ -7,7 +7,7 @@
 // The Move menu, from the keyboard: opening it focuses its first option (focusMenu), the arrows and Home/End move
 // between its options, and Esc gives focus back to the Move button (.NET closes the menu). After a move from it, focus
 // goes to the card's Move button in its new lane, or when it has left the board (closed), to the card that was after it
-// in its lane, else the one before, else the lane's heading (focusPlace). A card dragged while focus was in it does the
+// in its lane, else the one before, else the lane's heading (focusPlace). A card dragged (pressing it gives it focus) does the
 // same once its drop is done.
 window.tideBoard = (function () {
     let ref = null, root = null, dragging = null, over = null, focusedAtPress = null;
@@ -43,10 +43,10 @@ window.tideBoard = (function () {
         if (root) mark(null);
     }
 
-    // The card that had focus in it as the pointer pressed on it (pressing moves focus off it before the drag starts).
+    // The card pressed on: pressing a card gives it focus (each card is focusable, the selected one the tab stop), so a
+    // card dragged off the board after a click, or with focus already in it, leaves focus beside where it was.
     function onPress(e) {
-        const c = e.target && e.target.closest ? e.target.closest('.tide-kcard') : null;
-        focusedAtPress = c && c.contains(document.activeElement) ? c : null;
+        focusedAtPress = e.target && e.target.closest ? e.target.closest('.tide-kcard') : null;
     }
 
     function onDragStart(e) {
@@ -149,8 +149,17 @@ window.tideBoard = (function () {
         to.focus();
     }
 
+    // Arriving at a card the address names (?card=): it takes focus, scrolled to the middle of its lane.
+    function reveal() {
+        const c = document.querySelector('.tide-kcard.selected');
+        if (!c) return;
+        c.focus({ preventScroll: true });
+        c.scrollIntoView({ block: 'center' });
+    }
+
     return {
         play: play,
+        reveal: reveal,
         focusMenu: focusMenu,
         focusPlace: focusPlace,
         start: function (dotnetRef, el) {
