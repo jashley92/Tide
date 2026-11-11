@@ -37,7 +37,15 @@ internal static partial class FilterBarHtml
     /// <summary>Sets the filter <paramref name="key"/>, as choosing in the menu or removing its chip does.</summary>
     public static void Set(IReadOnlyList<FilterDef> filters, string key, params string[] values) => filters.Single(f => f.Key == key).Apply(values);
 
-    [GeneratedRegex("<button type=\"button\" class=\"tide-chip tide-chip-pick[^\"]*\" aria-pressed=\"(true|false)\"[^>]*>(?:<span class=\"bi bi-check2\" aria-hidden=\"true\"></span>)?([^<]*)</button>")]
+    /// <summary>The count the pill named <paramref name="label"/> says it would show; null when it says none.</summary>
+    public static int? PillCount(string html, string label)
+    {
+        var pill = Pill().Matches(html).FirstOrDefault(m => m.Groups[2].Value == label);
+        pill.Should().NotBeNull($"a pill named {label} is in the bar");
+        return pill!.Groups[3].Success ? int.Parse(pill.Groups[3].Value, System.Globalization.CultureInfo.InvariantCulture) : null;
+    }
+
+    [GeneratedRegex("<button type=\"button\" class=\"tide-chip tide-chip-pick[^\"]*\" aria-pressed=\"(true|false)\"[^>]*>(?:<span class=\"bi bi-check2\" aria-hidden=\"true\"></span>)?([^<]*?)\\s*(?:<span class=\"tide-chip-count\"[^>]*>(\\d+)</span>)?</button>")]
     private static partial Regex Pill();
 }
 
