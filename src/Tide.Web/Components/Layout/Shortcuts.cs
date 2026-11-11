@@ -11,7 +11,7 @@ public sealed record ShortcutGroup(string Title, IReadOnlyList<Shortcut> Keys);
 
 /// <summary>
 /// The keyboard shortcuts the "?" overlay lists (ShortcutsOverlay): those of the page you're on, then those that work
-/// everywhere. They describe the handlers in wwwroot/js (palette.js, theme.js, rows.js, triage.js, library.js, present.js, chart.js, editor.js, submitkeys.js) and the dialogs'
+/// everywhere. They describe the handlers in wwwroot/js (palette.js, theme.js, rows.js (the actions list's too), triage.js, library.js, present.js, chart.js, editor.js, submitkeys.js) and the dialogs'
 /// own keys, so a change to one of those changes this too.
 /// </summary>
 public static class Shortcuts
@@ -36,8 +36,9 @@ public static class Shortcuts
     public static readonly Shortcut RailKey = new(["]"], "Show or hide the context rail", Letter: true);
 
     /// <summary>The groups for the page at <paramref name="relativePath"/> (relative to the app's base), then the global ones,
-    /// with "]" among them when the page has a context <paramref name="rail"/>.</summary>
-    public static IReadOnlyList<ShortcutGroup> For(string relativePath, bool rail = false)
+    /// with "]" among them when the page has a context <paramref name="rail"/>. The Actions list's T is listed only for
+    /// someone who <paramref name="canTake"/> actions on.</summary>
+    public static IReadOnlyList<ShortcutGroup> For(string relativePath, bool rail = false, bool canTake = true)
     {
         var path = relativePath.Split('?', '#')[0].Trim('/');
         var segments = path.Split('/');
@@ -54,8 +55,10 @@ public static class Shortcuts
             case LibraryTabs.Root when LibraryTabs.All.FirstOrDefault(t => segments.Length == 1 || t.Key.Equals(segments[1], StringComparison.OrdinalIgnoreCase)) is { Topic: not null }:
                 groups.Add(Library);
                 break;
+            // The list or the board, as the address says (it always names its layout once the page has drawn).
             case "actions" when segments.Length == 1:
-                groups.Add(Board);
+                groups.Add(!relativePath.Contains("layout=list", StringComparison.OrdinalIgnoreCase) ? Board
+                    : canTake ? ActionsList : ActionsList with { Keys = [.. ActionsList.Keys.Where(k => k != TakeKey)] });
                 break;
             case "actions" when int.TryParse(segments[1], out _):
                 groups.Add(Screenshots);
@@ -108,6 +111,18 @@ public static class Shortcuts
         new(["D"], "Mark the article discussed, or not", Letter: true),
         new(["F"], "Full screen, or leave it", Letter: true),
         new(["Esc"], "Leave full screen, then close a zoomed screenshot"),
+    ]);
+
+    private static readonly Shortcut TakeKey = new(["T"], "Take the selected action on, when it's yours to take", Letter: true);
+
+    private static readonly ShortcutGroup ActionsList = new("Actions list",
+    [
+        new(["↓", "↑"], "Next and previous action"),
+        new(["J"], "Next action, on to the next page at the end", Letter: true),
+        new(["K"], "Previous action, back a page at the start", Letter: true),
+        TakeKey,
+        new(["Enter"], "Open the selected action"),
+        new(["Tab", "Enter"], "A row's status opens the statuses it can move to"),
     ]);
 
     private static readonly ShortcutGroup Board = new("Actions board",

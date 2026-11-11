@@ -107,6 +107,214 @@ const onTitleLine = (cell, a, b) => ({
   }, [cell, a, b]),
 });
 
+/** The first visible match is wholly on the first screen, the page not scrolled: seen without looking for it. */
+const onFirstScreen = selector => ({
+  name: `on the first screen: ${selector}`,
+  check: page => page.$$eval(selector, (els, selector) => {
+    const r = els.map(e => e.getBoundingClientRect()).find(b => b.width > 0 && b.height > 0);
+    if (!r) return [`nothing shown matches ${selector}`];
+    return r.top >= 0 && r.bottom <= innerHeight + 1 ? [] : [`${selector} runs from ${Math.round(r.top)}px to ${Math.round(r.bottom)}px, past the window's ${innerHeight}px`];
+  }, selector),
+});
+
+/**
+ * The board's lanes fill the window's height: the closed strip sits at the bottom of the first screen (within 48px of
+ * the window's edge), the lowest lanes reach down to it, and every lane has room to drop under its cards or scrolls on
+ * its own (its cards are taller than it).
+ */
+const lanesFillTheHeight = {
+  name: 'the lanes fill the height, a drop area in each',
+  check: page => page.evaluate(() => {
+    const strip = document.querySelector('.tide-kstrip')?.getBoundingClientRect();
+    const lanes = [...document.querySelectorAll('.tide-kcol')].filter(l => l.getBoundingClientRect().height > 0);
+    if (!strip || !lanes.length) return ['no lanes and strip shown'];
+    const problems = [];
+    if (strip.bottom < innerHeight - 48) problems.push(`the strip ends at ${Math.round(strip.bottom)}px, well above the window's bottom (${innerHeight}px): the lanes don't fill the height`);
+    const lowest = Math.max(...lanes.map(l => l.getBoundingClientRect().bottom));
+    if (strip.top - lowest > 24) problems.push(`the lanes stop ${Math.round(strip.top - lowest)}px above the strip`);
+    lanes.forEach(l => {
+      const cards = l.querySelector('.tide-kcol-cards'), drop = l.querySelector('.tide-kcol-drop')?.getBoundingClientRect();
+      const scrolls = cards && cards.scrollHeight > cards.clientHeight + 1;
+      if (!scrolls && !(drop && drop.height >= 40)) problems.push(`the ${l.dataset.status} lane has no room to drop under its cards`);
+    });
+    return problems;
+  }),
+};
+
+/** The closed strip has a chip for each way of closing, each a drop target (a .tide-kchip with its status) and shown. */
+const chipsAreDropTargets = {
+  name: 'a drop target for each way of closing',
+  check: page => page.evaluate(() => {
+    const want = ['Done', 'Cancelled', 'NotApplicable'];
+    const chips = [...document.querySelectorAll('.tide-kstrip .tide-kchip')].filter(c => c.getBoundingClientRect().height > 0);
+    const have = chips.map(c => c.dataset.status);
+    return want.every(w => have.includes(w)) ? [] : [`the strip's drop targets are ${have.join(', ') || 'none'}, not ${want.join(', ')}`];
+  }),
+};
+
+/**
+ * A card dragged onto each chip of the closed strip (as a mouse does it) asks how it closed, as a drop on that status
+ * always has, naming the card and the status; Cancel leaves it where it was.
+ */
+const dropOnEachChip = {
+  name: 'a card dropped on each chip asks how it closed',
+  check: async page => {
+    const problems = [];
+    for (const [status, name] of [['Done', 'Done'], ['Cancelled', 'Cancelled'], ['NotApplicable', 'Not applicable']]) {
+      const card = page.locator('.tide-kcard[draggable="true"]').first();
+      if (!await card.count()) return ['no card the demo\'s analyst may move'];
+      const number = (await card.locator('.tide-action-num').innerText()).trim();
+      await card.dragTo(page.locator(`.tide-kchip[data-status="${status}"]`));
+      const dialog = page.getByRole('dialog', { name: `Move ${number} to ${name}` });
+      try { await dialog.waitFor({ timeout: 5000 }); } catch { problems.push(`dropping ${number} on ${name} didn't ask how it closed`); continue; }
+      const dims = await page.evaluate(() => {
+        const s = document.querySelector('.tide-modal-scrim'), r = s?.getBoundingClientRect();
+        return !!s && r.width >= innerWidth - 20 && r.height >= innerHeight - 1 && getComputedStyle(s).backgroundColor !== 'rgba(0, 0, 0, 0)';
+      });
+      if (!dims) problems.push(`the ${name} dialog has no backdrop over the page`);
+      await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+      await dialog.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => problems.push(`the ${name} dialog didn't close on Cancel`));
+    }
+    return problems;
+  },
+};
+
+const selectedAction = page => page.evaluate(() => {
+  const rows = [...document.querySelectorAll('.tide-action-row')];
+  return { at: rows.findIndex(r => r.classList.contains('selected')), focused: rows.indexOf(document.activeElement), row: new URL(location.href).searchParams.get('row') };
+});
+
+/**
+ * The Actions list's keys: J and the down arrow move the selected row (it takes focus, and the address names it), K and
+ * the up arrow move it back, and T typed in the search box is only typed: it takes nothing on.
+ */
+const actionKeys = {
+  name: 'J and K move the selected action; T in a field is typing',
+  check: async page => {
+    const problems = [];
+    await page.locator('.tide-action-row.selected').focus();
+    for (const [key, at] of [['j', 1], ['ArrowDown', 2], ['k', 1], ['ArrowUp', 0]]) {
+      await page.keyboard.press(key);
+      await page.waitForTimeout(500);
+      const now = await selectedAction(page);
+      if (now.at !== at || now.focused !== at) problems.push(`after ${key} row ${now.at + 1} is selected and row ${now.focused + 1} has focus, not row ${at + 1}`);
+      if ((now.row ?? '0') !== String(at)) problems.push(`after ${key} the address says row=${now.row}, not ${at}`);
+    }
+    const takes = await page.locator('.tide-row-take').count();
+    const box = page.getByRole('searchbox', { name: 'Search actions' });
+    await box.focus();
+    await page.keyboard.press('t');
+    await page.waitForTimeout(800);
+    if (await page.locator('.tide-row-take').count() !== takes || await page.locator('.tide-toast').count()) problems.push('T typed in the search box took an action on');
+    return problems;
+  },
+};
+
+/** T on the selected row takes it on: the toast says so. */
+const takeKey = {
+  name: 'T takes the selected action on',
+  check: async page => {
+    const number = (await page.locator('.tide-action-row.selected .tide-action-num').innerText()).trim();
+    await page.locator('.tide-action-row.selected').focus();
+    await page.keyboard.press('t');
+    const toast = page.getByText(`You took ${number} on.`);
+    try { await toast.waitFor({ timeout: 5000 }); return []; } catch { return [`T on ${number} didn't take it on`]; }
+  },
+};
+
+/** A row's Status menu from the keyboard: Enter on it opens its menu with focus on the first status, and Esc closes it
+ * with focus back on the status. */
+const statusMenuByKeyboard = {
+  name: 'the Status menu opens and closes from the keyboard',
+  check: async page => {
+    const button = page.locator('.tide-status-menu').first();
+    if (!await button.count()) return ['no row has a Status menu'];
+    await button.focus();
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(500);
+    const problems = [];
+    const inMenu = await page.evaluate(() => !!document.activeElement?.closest('[role="menu"]'));
+    if (!inMenu) problems.push('Enter on the status left focus outside its menu');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(500);
+    if (await page.locator('.tide-menubutton-pop[role="menu"]').count()) problems.push('Esc left the menu open');
+    if (!await page.evaluate(() => document.activeElement?.classList.contains('tide-status-menu'))) problems.push('Esc didn\'t put focus back on the status');
+    return problems;
+  },
+};
+
+/**
+ * Beside the tabs of the row `tabs`, each of `selectors` sits on the tabs' centre line (its centre within 2px of the
+ * first tab label's) and inside the tab row: not hanging below the row's bottom rule (the tabs' own bottom edge, where
+ * their underline is drawn), nor scrolled or cut out of the window sideways.
+ */
+const besideTheTabs = (tabs, ...selectors) => ({
+  name: `on the tabs' line: ${selectors.join(', ')}`,
+  check: page => page.evaluate(([tabs, selectors]) => {
+    const bar = document.querySelector(tabs), label = bar?.querySelector('.tide-tabbar-item');
+    if (!bar || !label) return [`no tabs at ${tabs}`];
+    const t = label.getBoundingClientRect(), row = bar.getBoundingClientRect(), mid = t.top + t.height / 2;
+    return selectors.flatMap(s => {
+      const r = document.querySelector(s)?.getBoundingClientRect();
+      if (!r || !r.width) return [`${s} isn't shown`];
+      const problems = [];
+      const off = r.top + r.height / 2 - mid;
+      if (Math.abs(off) > 2) problems.push(`${s}'s centre is ${off.toFixed(1)}px ${off > 0 ? 'below' : 'above'} the tab labels'`);
+      if (r.bottom > row.bottom + 0.5) problems.push(`${s} hangs ${(r.bottom - row.bottom).toFixed(1)}px below the tab row's rule`);
+      if (r.top < row.top - 0.5) problems.push(`${s} sticks ${(row.top - r.top).toFixed(1)}px above the tab row`);
+      if (r.left < 0 || r.right > innerWidth) problems.push(`${s} is out of the window sideways`);
+      return problems;
+    });
+  }, [tabs, selectors]),
+});
+
+/** The KEV flag is an outlined pill (a border, rounded): the same on the board's cards and the list's rows. */
+const kevPill = selector => ({
+  name: `KEV is a pill: ${selector}`,
+  check: page => page.$$eval(selector, (els, selector) => {
+    const shown = els.filter(e => e.getBoundingClientRect().height > 0);
+    if (!shown.length) return [`nothing shown matches ${selector}`];
+    const cs = getComputedStyle(shown[0]);
+    return parseFloat(cs.borderTopWidth) > 0 && parseFloat(cs.borderTopLeftRadius) >= 6 ? [] : [`${selector} has no outlined pill (border ${cs.borderTopWidth}, radius ${cs.borderTopLeftRadius})`];
+  }, selector),
+});
+
+/**
+ * Closing a card keeps the person's place: from its Move menu by keyboard (`how` 'menu'), or dragged onto a chip while
+ * focus was on it ('drag'), then the outcome dialog's button: focus lands in the card that was next in its lane.
+ */
+const closeKeepsPlace = how => ({
+  name: `after closing a card (${how}), focus is on the next card in its lane`,
+  check: async page => {
+    const lane = page.locator('.tide-kcol[data-status="Open"] .tide-kcard[draggable="true"]');
+    if (await lane.count() < 2) return ['the Open lane has fewer than two cards to move'];
+    const card = lane.first(), next = await lane.nth(1).getAttribute('data-id');
+    if (how === 'menu') {
+      await card.locator('.tide-kcard-move').focus();
+      await page.keyboard.press('Enter');
+      await card.getByRole('menuitem', { name: 'Cancelled' }).focus();
+      await page.keyboard.press('Enter');
+    } else {
+      await card.locator('.tide-action-ref').focus();
+      await card.dragTo(page.locator('.tide-kchip[data-status="Cancelled"]'));
+    }
+    const confirm = page.getByRole('button', { name: 'Move to Cancelled' });
+    await confirm.waitFor({ timeout: 5000 });
+    await confirm.focus();
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(1500);
+    const at = await page.evaluate(() => {
+      const el = document.activeElement;
+      return el === document.body || !el ? 'the page body' : el.closest('.tide-kcard')?.dataset.id ?? `<${el.tagName.toLowerCase()} id="${el.id}">`;
+    });
+    return at === next ? [] : [`focus is on ${at}, not the next card ${next}`];
+  },
+});
+
+/** Setup: every letter spaced wider, as a font wider than this machine's would set it (CI's): a rule that holds then
+ * holds by the page's construction, not by pixels to spare. */
+const wider = async page => { await page.addStyleTag({ content: '* { letter-spacing: .07em !important; }' }); };
+
 /** Focus is on the title of the row `take` named (its `data-expect-focus`): the person's place in the list is kept. */
 const focusedOnExpectedRow = {
   name: 'focused: the expected row\'s title',
@@ -287,7 +495,7 @@ const pressQuickly = (key, times) => async page => {
  * a rule that holds holds by the page's construction (truncation, widths), not by pixels to spare.
  */
 const selectCovered = (group = false) => async page => {
-  await page.addStyleTag({ content: '* { letter-spacing: .07em !important; }' });
+  await wider(page);
   const line = page.locator(group ? '.tide-triage-group' : '.tide-triage-row:not(.tide-triage-group)', { has: page.locator('.tide-triage-flags .tide-badge-info') }).first();
   await line.locator(group ? '.tide-group-label' : '.tide-triage-meta > span').first().click();
   await page.locator('.tide-triage-row.selected .tide-triage-attach').waitFor();
@@ -406,7 +614,8 @@ async function scrollDown(page) {
   await page.waitForTimeout(300);
 }
 
-// --- the pages: route, optional setup, widths (each 900px tall) and rules ([minWidth, rule] from that width up) ------
+// --- the pages: route, optional setup, widths (each 900px tall, or [width, height]) and rules ([minWidth, rule] from that
+// width up) -------------------------------------------------------------------------------------------------------------
 
 const pages = [
   { name: 'today', route: '/', widths: [1440, 1000, 780],
@@ -426,8 +635,18 @@ const pages = [
   // page never does. The Escalated badge stays on the number's line, the title wrapping before them.
   { name: 'actions-list', route: '/actions?view=open&layout=list', widths: [1920, 1440, 1000, 780],
     rules: [noSidewaysScroll, visible('.tide-action-ref'), visible('.tide-tabbar-count'), oneRow('[role=group][aria-label="Views"]'),
-      visible('.tide-row-progress'), onTitleLine('.tide-table td:first-child', '.tide-action-num', '[title^="Escalated"]'),
-      notClippedBelow('[role=group][aria-label="Views"]')] },
+      visible('.tide-col-progress'), onTitleLine('.tide-table td:first-child', '.tide-action-num', '[title^="Escalated"]'),
+      notClippedBelow('[role=group][aria-label="Views"]'), visible('.tide-chip-count'), fits('.tide-dt-scroll'), kevPill('.tide-action-row .tide-kev')] },
+  // "Open here by default" (or "Opens here") and Save view sit on the view tabs' line, inside their row, as the design
+  // has them: on the list and the board, at each width, and with wider letters.
+  ...['list', 'board'].flatMap(layout => [false, true].map(wide => ({
+    name: `actions-${layout}-view-tools${wide ? '-wide-letters' : ''}`, route: `/actions?view=open&layout=${layout}`, setup: wide ? wider : undefined,
+    widths: [[1920, 1080], [1440, 900], [780, 900]],
+    rules: [noSidewaysScroll, besideTheTabs('[role=group][aria-label="Views"]', '#view-default', '#save-view')],
+  }))),
+  // With wider letters (CI's fonts), the Progress column still leaves the title its line: the Escalated badge stays on it.
+  { name: 'actions-list-wide-letters', route: '/actions?view=open&layout=list', setup: wider, widths: [[1920, 1080], [1440, 900]],
+    rules: [noSidewaysScroll, visible('.tide-col-progress'), onTitleLine('.tide-table td:first-child', '.tide-action-num', '[title^="Escalated"]'), fits('.tide-dt-scroll')] },
   // Take it from the keyboard keeps the person's place: on a row that stays listed (All open), focus stays on its title;
   // in No owner the row leaves, and focus goes to the next row's title, or for the last row, the one before.
   { name: 'actions-take-focus-stays', route: '/actions?view=open&layout=list', setup: take('first', 'same'), widths: [1920],
@@ -445,11 +664,20 @@ const pages = [
     rules: [clickAtEdgeChooses('[role=group][aria-label="Views"]')] },
   { name: 'actions-take-focus-last', route: '/actions?view=open&layout=list&assignee=none', setup: take('last', 'previous'), widths: [780],
     rules: [focusedOnExpectedRow] },
-  // The four working columns share the width and Closed folds into one narrow column: nothing scrolls sideways, the
-  // board included, on a laptop's window.
-  { name: 'actions-board', route: '/actions?view=open&layout=board', widths: [1920, 1440],
-    rules: [noSidewaysScroll, fits('.tide-kanban'), visible('.tide-kcard'), visible('.tide-kclosed .tide-kcol[data-status="Done"]'),
-      oneRow('.tide-kcard-head'), fits('.tide-kcard-article'), [1800, widerThan('.content', 1400)]] },
+  // The list's selected row and its keys, the Status menu from the keyboard, and T taking the selected row on.
+  { name: 'actions-list-keys', route: '/actions?view=open&layout=list', widths: [[1440, 900]],
+    rules: [visible('.tide-action-row.selected'), visible('.tide-actions-keys'), oneRow('.tide-actions-keys'), actionKeys, statusMenuByKeyboard] },
+  { name: 'actions-list-take-key', route: '/actions?view=open&layout=list&assignee=none', widths: [[1440, 900]], rules: [takeKey] },
+  // The four lanes share the width and fill the window's height, each with room to drop under its cards, and the closed
+  // strip (a drop target for each way of closing) sits at the bottom of the first screen: on a laptop's window, a
+  // smaller one and a narrow one (the lanes two by two), and with wider letters. Nothing scrolls sideways.
+  ...['actions-board', 'actions-board-wide-letters'].map(name => ({
+    name, route: '/actions?view=open&layout=board', setup: name.endsWith('letters') ? wider : undefined, widths: [[1920, 1080], [1440, 900], [780, 900]],
+    rules: [noSidewaysScroll, fits('.tide-kanban'), visible('.tide-kcard'), oneRow('.tide-kcard-head'), fits('.tide-kcard-article'), kevPill('.tide-kcard .tide-kev'),
+      onFirstScreen('.tide-kstrip'), lanesFillTheHeight, chipsAreDropTargets, [1440, oneRow('.tide-kstrip')], [1800, widerThan('.content', 1400)]],
+  })),
+  // A card dragged with the mouse onto each chip asks how it closed.
+  { name: 'actions-board-drop', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [dropOnEachChip] },
   // A sweep's query is read whole, in the wide column: its long lines wrap, so nothing scrolls sideways inside its box.
   { name: 'action-hunt', route: '/actions/{huntAction}', widths: [1920, 1440],
     rules: [noSidewaysScroll, visible('.tide-action-main .tide-hunt pre.tide-query'), fits('.tide-hunt pre.tide-query')] },
@@ -493,6 +721,10 @@ const pages = [
     ] },
   { name: 'metrics-grid', route: '/metrics?chart=group:alert-queue,group:vulnerability-sla&view=grid', widths: [1920, 1000, 700],
     rules: [noSidewaysScroll, visible('.tide-mc-cell'), visible('.tide-chart-band-warn'), oneRow('.tide-mc-cell-head'), [1800, widerThan('.content', 1400)]] },
+  // Closing a card from its Move menu, or by dragging it while it had focus, keeps the person's place in the lane.
+  // Last, as each closes one of the demo's actions.
+  { name: 'actions-board-close-menu', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [closeKeepsPlace('menu')] },
+  { name: 'actions-board-close-drag', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [closeKeepsPlace('drag')] },
 ];
 
 // --- the run -----------------------------------------------------------------------------------------------------------
@@ -521,15 +753,16 @@ async function check(list, demo) {
   const problems = [];
   try {
     for (const p of list) {
-      for (const width of p.widths) {
+      for (const size of p.widths) {
+        const [width, height] = Array.isArray(size) ? size : [size, 900];
         const rules = p.rules.map(r => Array.isArray(r) ? r : [0, r]).filter(([minWidth]) => width >= minWidth).map(([, r]) => r);
         let context;
         try {
           let page;
-          ({ context, page } = await openPage(browser, { ...p, viewport: { width, height: 900 } }, demo));
+          ({ context, page } = await openPage(browser, { ...p, viewport: { width, height } }, demo));
           const before = problems.length;
           for (const rule of rules) problems.push(...(await rule.check(page)).map(f => `${p.name} at ${width}px: ${f}`));
-          console.log(`  ${p.name} at ${width}px: ${rules.length - (problems.length - before)}/${rules.length} rules hold`);
+          console.log(`  ${p.name} at ${width}x${height}: ${rules.length - (problems.length - before)}/${rules.length} rules hold`);
         } catch (e) {
           problems.push(`${p.name} at ${width}px: ${e.message.split('\n')[0]}`);
         } finally {

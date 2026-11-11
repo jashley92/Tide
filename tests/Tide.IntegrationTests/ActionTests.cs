@@ -230,8 +230,12 @@ public class ActionServiceTests : IDisposable
         done.Outcome.Should().Be(ActionOutcome.NoHits);
         done.ClosedDate.Should().Be(_db.Clock.Today);
 
+        var counts = await svc.ViewCountsAsync(new ActionFilter(ActionView.Overdue), closedDays: ActionService.BoardClosedDays);
+        counts.ClosedAs(ActionStatus.Done).Should().Be(1, "a recently closed action is counted under the board, and Overdue shows all there");
+        (await svc.BoardAsync(new ActionFilter(ActionView.Overdue))).Cards.Should().BeEmpty("it isn't drawn");
+        var open = (await svc.GetAsync(await svc.CreateAsync(new ActionForm { Title = "Another", Kind = ActionKind.Block, TeamId = team })))!.Action.Number;
         var board = await svc.BoardAsync(new ActionFilter(ActionView.Overdue));
-        board.In(ActionStatus.Done).Select(c => c.Number).Should().Equal([n], "recently closed actions stay on the board, and Overdue shows all there");
+        board.Cards.Single().Number.Should().Be(open);
         board.CanMove(board.Cards[0]).Should().BeTrue("an analyst works every action");
 
         await svc.MoveAsync(id, ActionStatus.Done, ActionStatus.Cancelled);

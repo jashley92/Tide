@@ -144,7 +144,9 @@ public class PagingAndFiltersServiceTests : IDisposable
         (await List(open with { Priorities = [Priority.P2], Due = ActionDue.ThisWeek })).Should().Equal("today P2");
         (await List(open with { Priorities = [Priority.P2], Status = ActionStatus.Blocked })).Should().BeEmpty();
 
-        (await Board(open with { Priorities = [Priority.P1] })).Should().BeEquivalentTo(["late P1", "closed late"], "the board's Done column is filtered too");
+        (await Board(open with { Priorities = [Priority.P1] })).Should().Equal(["late P1"], "the board draws open actions");
+        (await svc.ViewCountsAsync(open with { Priorities = [Priority.P1] }, closedDays: ActionService.BoardClosedDays)).ClosedAs(ActionStatus.Done)
+            .Should().Be(1, "and its closed strip is filtered too");
         (await Board(open with { Due = ActionDue.Overdue })).Should().Equal(["late P1"], "a closed action is never overdue");
         (await Board(open with { Search = "week end" })).Should().Equal("week end P3");
     }
@@ -185,7 +187,7 @@ public class PagingAndFiltersServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task TheBoardsClosedColumns_ReachAWeek_OrAMonthWhenAsked()
+    public async Task TheBoardsClosedStrip_CountsAWeek_OrAMonthWhenAsked_AndTheBoardDrawsOpenOnes()
     {
         var team = await Team();
         var now = DateTimeOffset.UtcNow;
@@ -194,13 +196,13 @@ public class PagingAndFiltersServiceTests : IDisposable
         await Actions(team, [Closed("3 days", 3), Closed("cancelled 5 days", 5, ActionStatus.Cancelled), Closed("10 days", 10), Closed("20 days", 20), Closed("40 days", 40), a => a.Title = "open"]);
         var svc = _db.Actions();
 
-        var week = await svc.BoardAsync(new ActionFilter());
-        week.ClosedDays.Should().Be(7);
-        week.Cards.Select(c => c.Title).Should().BeEquivalentTo("open", "3 days", "cancelled 5 days");
+        (await svc.BoardAsync(new ActionFilter())).Cards.Select(c => c.Title).Should().Equal(["open"], "closed actions are counted, not drawn");
 
-        var month = await svc.BoardAsync(new ActionFilter(), ActionService.BoardOlderDays);
-        month.ClosedDays.Should().Be(30);
-        month.Cards.Select(c => c.Title).Should().BeEquivalentTo("open", "3 days", "cancelled 5 days", "10 days", "20 days");
+        var week = await svc.ViewCountsAsync(new ActionFilter(), closedDays: ActionService.BoardClosedDays);
+        (week.ClosedAs(ActionStatus.Done), week.ClosedAs(ActionStatus.Cancelled)).Should().Be((1, 1));
+
+        var month = await svc.ViewCountsAsync(new ActionFilter(), closedDays: ActionService.BoardOlderDays);
+        (month.ClosedAs(ActionStatus.Done), month.ClosedAs(ActionStatus.Cancelled)).Should().Be((3, 1), "not the one closed 40 days ago");
     }
 
     // --- Triage ----------------------------------------------------------------------------------------------------------
@@ -484,16 +486,15 @@ public partial class PagingAndFiltersPageTests(TideApp app) : IClassFixture<Tide
             .Should().Be("triage?tab=new&cve=kev&named=true&older=true&page=3");
     }
 
-    // A board of 45 open cards, 25 in progress and 3 done, none of them this person's to move.
-    private static ActionBoard Board(int closedDays = ActionService.BoardClosedDays)
+    // A board of 45 open cards and 25 in progress, none of them this person's to move.
+    private static ActionBoard Board()
     {
         var n = 0;
         ActionRow Card(ActionStatus status) => new(Guid.NewGuid(), ++n, $"Card {n}", ActionKind.Other, Priority.P3, Guid.Empty, "SOC", null, null,
             null, status, ActionOutcome.None, status == ActionStatus.Done ? DateOnly.FromDateTime(DateTime.UtcNow) : null, null, null, null, 0, DateTimeOffset.UtcNow);
         var cards = Enumerable.Range(0, 45).Select(_ => Card(ActionStatus.Open))
-            .Concat(Enumerable.Range(0, 25).Select(_ => Card(ActionStatus.InProgress)))
-            .Concat(Enumerable.Range(0, 3).Select(_ => Card(ActionStatus.Done))).ToList();
-        return new ActionBoard(cards, false, new HashSet<Guid>()) { ClosedDays = closedDays };
+            .Concat(Enumerable.Range(0, 25).Select(_ => Card(ActionStatus.InProgress))).ToList();
+        return new ActionBoard(cards, false, new HashSet<Guid>());
     }
 
     private static string Column(string html, ActionStatus status)
@@ -505,14 +506,6 @@ public partial class PagingAndFiltersPageTests(TideApp app) : IClassFixture<Tide
     }
 
     private static int Cards(string column) => Regex.Count(column, "<article ");
-
-    // The board's one Closed column, which holds Done, Cancelled and Not applicable.
-    private static string Closed(string html)
-    {
-        var at = html.IndexOf("class=\"tide-kclosed\"", StringComparison.Ordinal);
-        at.Should().BePositive();
-        return html[at..];
-    }
 
     [Fact]
     public async Task TheBoard_ShowsEachColumnsFirst20_ThenTwentyMoreAtATime()
@@ -527,7 +520,6 @@ public partial class PagingAndFiltersPageTests(TideApp app) : IClassFixture<Tide
         open.Should().Contain("<span class=\"tide-count tide-muted fw-normal\">45</span>", "the heading counts the whole column");
         open.Should().Contain("aria-label=\"Show 20 more in Open\">Show 20 more</button>");
         Column(html, ActionStatus.InProgress).Should().Contain("Show 5 more");
-        Cards(Column(html, ActionStatus.Done)).Should().Be(3);
 
         await r.Click(k => { k.ShowMore(ActionStatus.Open); return Task.CompletedTask; });
         html = await r.Html();
@@ -538,28 +530,6 @@ public partial class PagingAndFiltersPageTests(TideApp app) : IClassFixture<Tide
         await r.Click(k => { k.ShowMore(ActionStatus.Open); return Task.CompletedTask; });
         Column(await r.Html(), ActionStatus.Open).Should().NotContain("more</button>");
         Cards(Column(await r.Html(), ActionStatus.Open)).Should().Be(45);
-    }
-
-    [Fact]
-    public async Task TheBoardsDone_ReachesAWeek_AndShowOlderTakesItToAMonth()
-    {
-        var older = 0;
-        await using var r = await ComponentHarness.RenderAsync<ActionKanban>(app, "/actions?layout=board", new()
-        {
-            ["Board"] = Board(), ["Today"] = DateOnly.FromDateTime(DateTime.UtcNow),
-            ["OnShowOlder"] = EventCallback.Factory.Create(new object(), () => older++),
-        });
-        var closed = Closed(WebUtility.HtmlDecode(await r.Html()));
-        closed.Should().Contain("Last 7 days").And.Contain("Show older: the last 30 days");
-        Column(await r.Html(), ActionStatus.Open).Should().NotContain("Show older", "only under the closed column");
-        await r.Click(k => (Task)typeof(ActionKanban).GetMethod("ShowOlder", Private)!.Invoke(k, null)!);
-        older.Should().Be(1, "the page reads the board again, further back");
-
-        await using var month = await ComponentHarness.RenderAsync<ActionKanban>(app, "/actions?layout=board", new()
-        {
-            ["Board"] = Board(ActionService.BoardOlderDays), ["Today"] = DateOnly.FromDateTime(DateTime.UtcNow),
-        });
-        Closed(WebUtility.HtmlDecode(await month.Html())).Should().Contain("Last 30 days").And.NotContain("Show older");
     }
 
     // 60 open actions of the test's own, P1 every third, blocked every fifth, undated every fourth; found by their words.

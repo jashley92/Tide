@@ -187,6 +187,7 @@ public class PaletteEntryTests
     [InlineData("present/2026-10-29", "Present mode")]
     [InlineData("actions", "Actions board")]
     [InlineData("actions?view=open&layout=board", "Actions board")]
+    [InlineData("actions?view=open&layout=list", "Actions list")]
     [InlineData("actions/12", "A screenshot shown full size")]
     [InlineData("articles/5b0f6c1e-0000-0000-0000-000000000001", "Article")]
     [InlineData("trends", "Charts")]

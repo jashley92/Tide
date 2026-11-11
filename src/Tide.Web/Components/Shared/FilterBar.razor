@@ -16,7 +16,7 @@
             {
                 var on = p.OnFor(Filter(p.FilterKey));
                 <button type="button" class="tide-chip tide-chip-pick @(on ? "selected" : "")" aria-pressed="@Ui.Aria(on)" title="@p.Title" disabled="@p.Disabled"
-                        @onclick="() => Press(p)">@if (on) { <span class="bi bi-check2" aria-hidden="true"></span> }@p.Label</button>
+                        @onclick="() => Press(p)">@if (on) { <span class="bi bi-check2" aria-hidden="true"></span> }@p.Label@if (p.Count is { } n) { <span class="tide-chip-count">@n</span> }</button>
             }
         </div>
     }
