@@ -161,6 +161,13 @@ public sealed class SlaBadge : ComponentBase
     /// tone still says which.</summary>
     [Parameter] public bool ShowDate { get; set; }
 
+    /// <summary>Says the due date and how it stands together ("Due Thu Nov 12 · due soon", "Due Mon Nov 9 · overdue · 3
+    /// days"), as an action's header has it.</summary>
+    [Parameter] public bool WithDate { get; set; }
+
+    /// <summary>Classes for where it sits (<c>tide-action-due</c>).</summary>
+    [Parameter] public string? Class { get; set; }
+
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         var text = State switch
@@ -192,8 +199,10 @@ public sealed class SlaBadge : ComponentBase
             Application.Actions.SlaState.OnTrack or Application.Actions.SlaState.Met => BadgeTone.Ok,
             _ => BadgeTone.Neutral,
         };
+        if (WithDate && Due is { } on && State != Application.Actions.SlaState.NoDue)
+            text = $"Due {Ui.ShortDay(on)} · {char.ToLowerInvariant(text[0])}{text[1..]}";
         Badge.Write(b, tone, State == Application.Actions.SlaState.Overdue, text, icon,
-            Due is { } d ? "Due " + Ui.Day(d) : null);
+            Due is { } d ? "Due " + Ui.Day(d) : null, Class);
     }
 }
 

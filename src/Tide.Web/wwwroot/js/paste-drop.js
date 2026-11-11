@@ -2,10 +2,14 @@
 // listeners attached from this external file (no inline handlers, no eval). It moves no bytes itself: it hands the
 // clipboard image or dropped files to a hidden Blazor <InputFile> by setting its FileList and firing a native
 // 'change', so the files stream to .NET over the normal InputFile path (type check and size cap unchanged).
-// Registration is idempotent and supports several zones (paste goes to the one that's visible).
+// Registration is idempotent and supports several zones (paste goes to the one that's visible). A zone can take the
+// whole page (an action's Files): a drop anywhere outside another zone, and a paste with nothing focused, go to it, even
+// while it's hidden in a closed context rail, which then opens to show what came.
 window.tidePasteDrop = (function () {
     let attached = false;
-    const zones = []; // { zoneId, pasteInputId, dropInputId|null, anyFile, focusOnly }
+    const zones = []; // { zoneId, pasteInputId, dropInputId|null, anyFile, focusOnly, page }
+    const root = document.documentElement;
+    let dragEnds = 0;
 
     // A zone takes part only while its wrapper element is in the DOM and visible, so paste goes to the editor on
     // screen and the listeners stay registered harmlessly across pages. Visible is "has a box". A paste goes first to
@@ -20,19 +24,56 @@ window.tidePasteDrop = (function () {
         for (const z of zones) {
             if (z.focusOnly) continue;
             const el = document.getElementById(z.zoneId);
-            if (el && el.getClientRects().length > 0) return { z, el };
+            if (el && (z.page || el.getClientRects().length > 0)) return { z, el };
         }
         return null;
     }
 
+    // The zone a drop on `target` goes to: the one it's in, else a zone that takes the whole page (not from inside a
+    // dialog, whose own controls are what's being used).
     function zoneForTarget(target) {
+        if (!target || !target.closest) return null;
         for (const z of zones) {
-            if (z.dropInputId && target.closest && target.closest('#' + z.zoneId)) {
+            if (z.dropInputId && target.closest('#' + z.zoneId)) {
                 const el = document.getElementById(z.zoneId);
                 if (el) return { z, el };
             }
         }
+        if (target.closest('[role="dialog"]:not(#tide-rail), [role="alertdialog"]')) return null;
+        for (const z of zones) {
+            const el = z.page && z.dropInputId && document.getElementById(z.zoneId);
+            if (el) return { z, el, page: true };
+        }
         return null;
+    }
+
+    // While files are dragged over a page that takes them, html[data-file-drag] shows its drop hint (app.css). A drag
+    // fires dragover every few milliseconds, so the hint goes once they stop: dropped, or carried off the window.
+    function dragging(on) {
+        clearTimeout(dragEnds);
+        if (!on) { root.removeAttribute('data-file-drag'); return; }
+        root.setAttribute('data-file-drag', '');
+        dragEnds = setTimeout(function () { root.removeAttribute('data-file-drag'); }, 300);
+    }
+
+    // Files that reached a page zone hidden in the closed context rail: the rail opens to show them waiting.
+    function onChange(e) {
+        const t = e.target;
+        if (!t || t.type !== 'file') return;
+        for (const z of zones) {
+            const el = z.page && (z.pasteInputId === t.id || z.dropInputId === t.id) && document.getElementById(z.zoneId);
+            if (el && el.getClientRects().length === 0 && window.tideRail && el.closest('#tide-rail')) {
+                window.tideRail.show();
+                el.scrollIntoView({ block: 'nearest' });
+            }
+        }
+    }
+
+    // A button that picks files for a zone (data-pick names its hidden InputFile): a label can't take the keyboard's focus.
+    function onClick(e) {
+        const btn = e.target && e.target.closest && e.target.closest('[data-pick]');
+        const inp = btn && document.getElementById(btn.getAttribute('data-pick'));
+        if (inp) inp.click();
     }
 
     function push(inputId, files) {
@@ -114,7 +155,8 @@ window.tidePasteDrop = (function () {
         if (!v || !carriesFiles(e)) return;
         e.preventDefault();
         if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
-        v.el.classList.add('tide-dropping');
+        if (v.page) dragging(true);
+        else v.el.classList.add('tide-dropping');
     }
 
     function onDragLeave(e) {
@@ -129,6 +171,7 @@ window.tidePasteDrop = (function () {
         if (!v || !carriesFiles(e)) return;
         e.preventDefault();
         v.el.classList.remove('tide-dropping');
+        dragging(false);
         const files = e.dataTransfer && e.dataTransfer.files;
         if (files && files.length) push(v.z.dropInputId, files);
     }
@@ -137,15 +180,19 @@ window.tidePasteDrop = (function () {
         // pasteInputId: hidden InputFile that receives a pasted image. dropInputId: hidden InputFile that
         // receives dropped files (pass null to disable drop for this zone). anyFile: a pasted file that
         // isn't an image is taken too. focusOnly: the zone takes a paste only while it, or something in it, has the focus.
-        register: function (zoneId, pasteInputId, dropInputId, anyFile, focusOnly) {
+        // page: the zone takes a drop anywhere on the page and, unless focusOnly, a paste with nothing focused.
+        register: function (zoneId, pasteInputId, dropInputId, anyFile, focusOnly, page) {
             const existing = zones.find(z => z.zoneId === zoneId);
             if (existing) {
                 // The same zone drawn again (another action's page): its inputs are the same, and so is how it takes a paste.
                 existing.focusOnly = !!focusOnly;
+                existing.page = !!page;
             } else {
-                zones.push({ zoneId, pasteInputId, dropInputId: dropInputId || null, anyFile: !!anyFile, focusOnly: !!focusOnly });
+                zones.push({ zoneId, pasteInputId, dropInputId: dropInputId || null, anyFile: !!anyFile, focusOnly: !!focusOnly, page: !!page });
             }
             if (!attached) {
+                document.addEventListener('change', onChange, true);
+                document.addEventListener('click', onClick);
                 document.addEventListener('paste', onPaste, true);
                 document.addEventListener('dragover', onDragOver, true);
                 document.addEventListener('dragleave', onDragLeave, true);

@@ -1,5 +1,7 @@
 @* Files waiting to be added to an action: picked, dropped on the zone, or pasted while the zone has focus (paste-drop.js
-   hands them to the hidden InputFile). Each can have a description before it's added. The page adds them. *@
+   hands them to the hidden InputFile). Each can have a description before it's added. The page adds them. With
+   TakesThePage, a drop anywhere on the page and a paste with nothing focused come here too, and the button that picks
+   them is the page's own (a data-pick button naming InputId). *@
 @inject ActionFileService FileSvc
 @inject ToastService Toasts
 @inject IJSRuntime JS
@@ -28,8 +30,15 @@
         </ul>
     }
     <div class="d-flex gap-2 align-items-center flex-wrap">
-        <label for="@InputId" class="btn btn-outline-secondary btn-sm"><span class="bi bi-paperclip" aria-hidden="true"></span> @PickLabel</label>
-        <span class="small tide-muted">or drop them here, or paste while this box has focus. @FileSvc.LimitsText@(_reading ? " Reading…" : "")</span>
+        @if (TakesThePage)
+        {
+            <span class="small tide-muted">Drop them anywhere on the page, or paste. @FileSvc.LimitsText@(_reading ? " Reading…" : "")</span>
+        }
+        else
+        {
+            <label for="@InputId" class="btn btn-outline-secondary btn-sm"><span class="bi bi-paperclip" aria-hidden="true"></span> @PickLabel</label>
+            <span class="small tide-muted">or drop them here, or paste while this box has focus. @FileSvc.LimitsText@(_reading ? " Reading…" : "")</span>
+        }
         <InputFile id="@InputId" class="d-none" multiple OnChange="OnPick" />
     </div>
     @ChildContent
@@ -66,6 +75,9 @@
     [Parameter] public EventCallback Changed { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
+    /// <summary>The zone takes files dropped anywhere on the page, and pasted with nothing focused (an action's Files).</summary>
+    [Parameter] public bool TakesThePage { get; set; }
+
     private bool _reading, _registered;
 
     internal async Task OnPick(InputFileChangeEventArgs e)
@@ -94,12 +106,12 @@
         await Changed.InvokeAsync();
     }
 
-    // Drop files on the zone, or paste one while it (or something in it) has focus.
+    // Drop files on the zone, or paste one while it (or something in it) has focus; or anywhere, with TakesThePage.
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (_registered) return;
         _registered = true;
-        try { await JS.InvokeVoidAsync("tidePasteDrop.register", ZoneId, InputId, InputId, true, true); }
+        try { await JS.InvokeVoidAsync("tidePasteDrop.register", ZoneId, InputId, InputId, true, !TakesThePage, TakesThePage); }
         catch (JSDisconnectedException) { }
     }
 }

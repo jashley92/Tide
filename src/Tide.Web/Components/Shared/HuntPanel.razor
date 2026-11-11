@@ -8,7 +8,7 @@
    can be added here too: to the article the action was raised from (for an analyst), or, with no article, to the action.
    An open sweep or hunt with indicators and no query yet shows the generated one straight away, as a preview, to whoever
    may work it (ActionService.PreviewHuntAsync, which writes nothing). Copy or "Keep this query" saves it, through
-   GenerateHuntAsync like the Generate button; until then the result buttons beside Copy are disabled and say why, so a
+   GenerateHuntAsync like the Generate button; until then the result buttons, under "What did it find?", are disabled and say why, so a
    result is only ever recorded against a query the action's history shows. The card says what the query sweeps for (the
    indicators, as chips, the whole story's when chosen) and over how many days: every built-in template enforces that
    window in its own language, so the days a clean result searched start from it. *@
@@ -51,25 +51,241 @@
                 }
             </div>
         }
-        <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
-            @* The preview is this button's query already; Keep this query is the button then. *@
-            @if (_sources.Indicators > 0 && _preview is null)
-            {
-                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Generate(false)"><span class="bi bi-terminal" aria-hidden="true"></span> Generate from @Ui.Plural(_sources.Indicators, "indicator")</button>
-            }
-            @* Its count is every indicator it hunts for (the action's own among them), so it's said as a total, not as the articles'. *@
-            @if (StoryOffersMore && _preview is null)
-            {
-                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Generate(true)"><span class="bi bi-diagram-3" aria-hidden="true"></span> Generate from @Ui.Plural(_sources.StoryIndicators, "indicator"), with the story's @_sources.StoryArticles articles</button>
-            }
-            <button class="btn btn-link btn-sm" @onclick="() => _writing = !_writing">Write one by hand</button>
-            <button class="btn btn-link btn-sm" aria-expanded="@(_picking ? "true" : "false")" aria-controls="hunt-saved-picker" @onclick="TogglePicker">Add a saved query</button>
-            <button class="btn btn-link btn-sm" aria-expanded="@(_addingIndicators ? "true" : "false")" aria-controls="hunt-indicators" @onclick="ToggleIndicators">Add indicators</button>
-        </div>
+        @if (((_sources.Indicators > 0 || StoryOffersMore) && _preview is null) || AddersAt == TopHost)
+        {
+            <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
+                @* The preview is this button's query already; Keep this query is the button then. *@
+                @if (_sources.Indicators > 0 && _preview is null)
+                {
+                    <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Generate(false)"><span class="bi bi-terminal" aria-hidden="true"></span> Generate from @Ui.Plural(_sources.Indicators, "indicator")</button>
+                }
+                @* Its count is every indicator it hunts for (the action's own among them), so it's said as a total, not as the articles'. *@
+                @if (StoryOffersMore && _preview is null)
+                {
+                    <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Generate(true)"><span class="bi bi-diagram-3" aria-hidden="true"></span> Generate from @Ui.Plural(_sources.StoryIndicators, "indicator"), with the story's @_sources.StoryArticles articles</button>
+                }
+                @if (AddersAt == TopHost) { @Adders }
+            </div>
+        }
         @if (_sources.StoryIndicators == 0)
         {
             <p class="small tide-muted">@(Action.Article is null ? "Not from an article, so there are no indicators yet. Add some, or write a query by hand." : "No indicators on the article. Add some, or write a query by hand.")</p>
         }
+        @if (AddersAt == TopHost) { @AdderPanels }
+        @if (_preview is { } preview)
+        {
+            <div class="tide-hunt tide-hunt-preview">
+                <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
+                    <strong>@HuntQueryBuilder.DialectName(_dialect)</strong>
+                    <Badge>Preview</Badge>
+                    <span class="small tide-muted">Not on the action yet. Copying or keeping it puts it there.</span>
+                </div>
+                <pre id="hunt-preview" class="tide-query">@preview</pre>
+                <div class="d-flex gap-2 align-items-center flex-wrap">
+                    <button type="button" class="btn btn-primary btn-sm" data-copy-target="hunt-preview" data-copy-status="hunt-preview-status" disabled="@_busy" @onclick="CopyPreview"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="KeepPreview"><span class="bi bi-plus-lg" aria-hidden="true"></span> Keep this query</button>
+                    @Adders
+                </div>
+                @AdderPanels
+                <div class="tide-hunt-found">
+                    <h3 class="tide-hunt-found-h">What did it find?</h3>
+                    <div class="d-flex gap-2 align-items-center flex-wrap">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" disabled aria-describedby="hunt-preview-why"><span class="bi bi-check2-circle" aria-hidden="true"></span> No hits, close</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" disabled aria-describedby="hunt-preview-why"><span class="bi bi-check2-square" aria-hidden="true"></span> Record hits</button>
+                        @AttachShot
+                        <span id="hunt-preview-why" class="small tide-muted">Copy or keep the query first.</span>
+                    </div>
+                </div>
+            </div>
+        }
+        @* Outside the preview, which has gone by the time the browser says the copy worked. The browser writes the first
+           ("Copied."); the page writes the second, once the copied query is saved on the action or couldn't be. *@
+        <span id="hunt-preview-status" class="small tide-muted" role="status" aria-live="polite"></span>
+        <span class="small tide-muted" role="status" aria-live="polite">@_previewSaved</span>
+    }
+    @foreach (var h in Action.Hunts)
+    {
+        var id = "hunt-" + h.Id.ToString("N");
+        <div class="tide-hunt" @key="h.Id">
+            <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
+                <strong>@HuntQueryBuilder.DialectName(h.Dialect)</strong>
+                @if (h.SavedQueryName is { } savedName) { <Badge Icon="bi-bookmark">saved query: @savedName</Badge> }
+                else if (h.GeneratedText.Length == 0) { <Badge>hand-written</Badge> }
+                <span class="small tide-muted">@h.CreatedByName &middot; @Ui.When(Clock, h.CreatedAtUtc)</span>
+                <span class="ms-auto small">
+                    <HuntBadge Result="h.Result" OfOneHunt="true" Count="h.ResultCount" />
+                </span>
+            </div>
+            @if (_editingHunt == h.Id)
+            {
+                <div data-submit-scope>
+                    <textarea class="tide-query tide-autogrow" spellcheck="false" aria-label="Query" @bind="_huntText"></textarea>
+                    <div class="d-flex gap-2 mt-2">
+                        <button class="btn btn-primary btn-sm" disabled="@_busy" data-submit @onclick="() => SaveText(h)">Save query</button>
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editingHunt = null">Cancel</button>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <pre id="@id" class="tide-query">@h.Text</pre>
+                <div class="d-flex gap-2 align-items-center flex-wrap">
+                    <button type="button" class="btn @(h.Result == HuntResult.NotRun ? "btn-primary" : "btn-outline-secondary") btn-sm" data-copy-target="@id" data-copy-status="@(id + "-status")" @onclick="() => _copied.Add(h.Id)"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
+                    @if (AddersAt == h.Id.ToString()) { @Adders }
+                    @if (CanWork)
+                    {
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => EditText(h)"><span class="bi bi-pencil" aria-hidden="true"></span> Edit</button>
+                        @if (h.Result == HuntResult.NotRun)
+                        {
+                            <button class="btn btn-link btn-sm" disabled="@_busy" @onclick="() => Remove(h)">Remove</button>
+                        }
+                    }
+                    @if (SavedSvc.CanWrite)
+                    {
+                        <button class="btn btn-link btn-sm ms-auto" @onclick="() => StartSave(h)"><span class="bi bi-bookmark-plus" aria-hidden="true"></span> Save for the team</button>
+                    }
+                    <span id="@(id + "-status")" class="small tide-muted" role="status" aria-live="polite"></span>
+                </div>
+                @if (AddersAt == h.Id.ToString()) { @AdderPanels }
+            }
+            @* What it found: closing clean (its days box first, so a query that sets no range of its own gets its days
+               said before anything else) or recording hits, and a screenshot for the action's Files; or what was recorded. *@
+            @if ((CanWork && _editingHunt != h.Id) || h.Result != HuntResult.NotRun)
+            {
+                <div class="tide-hunt-found">
+                    <h3 class="tide-hunt-found-h">What did it find?</h3>
+                    @if (CanWork && _editingHunt != h.Id)
+                    {
+                        <div class="d-flex gap-2 align-items-center flex-wrap">
+                            @if (CanClose(h))
+                            {
+                                var draft = Draft(h);
+                                var leftOut = HuntQueryBuilder.LeftOut(h.GeneratedText);
+                                var ready = Ready(h, draft, leftOut);
+                                <div class="tide-hunt-close">
+                                    <label class="tide-field-label mb-0" for="@(id + "-days")">Searched</label>
+                                    <input id="@(id + "-days")" type="number" min="1" max="3650" class="form-control form-control-sm tide-w-count" @bind="draft.Window" />
+                                    <span class="small">days</span>
+                                    @if (leftOut > 0)
+                                    {
+                                        <div class="form-check mb-0">
+                                            <input class="form-check-input" type="checkbox" id="@(id + "-checked")" @bind="draft.Checked" />
+                                            <label class="form-check-label small" for="@(id + "-checked")">I've checked the @(leftOut == 1 ? "value" : $"{leftOut} values") the query left out</label>
+                                        </div>
+                                    }
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_busy || !ready)" aria-describedby="@(ready ? null : id + "-why")" @onclick="() => CloseClean(h)">
+                                        <span class="bi bi-check2-circle" aria-hidden="true"></span> No hits, close
+                                    </button>
+                                    @if (!ready)
+                                    {
+                                        <span id="@(id + "-why")" class="small tide-muted">@Why(h, draft, leftOut)</span>
+                                    }
+                                </div>
+                            }
+                            @if (h.Result == HuntResult.NotRun)
+                            {
+                                <button class="btn btn-outline-secondary btn-sm" @onclick="() => StartRecord(h)"><span class="bi bi-check2-square" aria-hidden="true"></span> Record the result</button>
+                            }
+                            @AttachShot
+                        </div>
+                    }
+                    @if (h.Result != HuntResult.NotRun)
+                    {
+                        <div class="small mt-2">
+                            Run by @h.RunByName@(h.RunAtUtc is { } at ? $" on {Ui.When(Clock, at)}" : "")@(h.Notes is not null ? ": " + h.Notes : ".")
+                        </div>
+                        @if (h.EditedAfterResultAtUtc is { } edited)
+                        {
+                            <div class="small tide-muted">Edited after its result was recorded (@Ui.When(Clock, edited)).</div>
+                        }
+                        @if (h.EvidenceFileId is { } ev)
+                        {
+                            <button type="button" class="tide-zoom tide-zoom-inline mt-2" aria-label="Open the evidence for this hunt" @onclick="() => OpenEvidence(h, ev)"><img src="@Ui.ImageUrl(ev)" alt="Evidence for this hunt" class="tide-evidence-thumb border rounded" /></button>
+                        }
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<ScreenshotDialog Set="EvidenceSet" @bind-Open="_shot" />
+
+@* Recording what a query found: the result, how many hits, notes and an optional screenshot, in one step. *@
+<ConfirmDialog @ref="_record" Form="true" ConfirmDisabled="@(_result == HuntResult.NotRun)" Confirming="Record">
+    <div class="d-flex gap-3 flex-wrap align-items-end">
+        <div>
+            <div class="tide-field-label" id="hunt-r-label">Result</div>
+            <div class="btn-group btn-group-sm" role="group" aria-labelledby="hunt-r-label">
+                <input type="radio" class="btn-check" name="hunt-r" id="hunt-r-no" checked="@(_result == HuntResult.NoHits)" @onchange="() => _result = HuntResult.NoHits" />
+                <label class="btn btn-outline-secondary" for="hunt-r-no">No hits</label>
+                <input type="radio" class="btn-check" name="hunt-r" id="hunt-r-hits" checked="@(_result == HuntResult.Hits)" @onchange="() => _result = HuntResult.Hits" />
+                <label class="btn btn-outline-secondary" for="hunt-r-hits">Hits</label>
+            </div>
+        </div>
+        @if (_result == HuntResult.Hits)
+        {
+            <div>
+                <label class="tide-field-label" for="hunt-r-count">How many</label>
+                <input id="hunt-r-count" type="number" min="0" class="form-control form-control-sm tide-w-count" @bind="_count" />
+            </div>
+        }
+    </div>
+    <div class="mt-2">
+        <label class="tide-field-label" for="hunt-r-notes">Notes</label>
+        <input id="hunt-r-notes" class="form-control form-control-sm" maxlength="2000" @bind="_notes" placeholder="Time range searched, what the hits were" />
+    </div>
+    <div class="mt-2">
+        <label class="tide-field-label" for="hunt-r-ev">Evidence screenshot (optional)</label>
+        <InputFile id="hunt-r-ev" class="form-control form-control-sm" accept="image/png,image/jpeg,image/gif,image/webp" OnChange="PickEvidence" />
+    </div>
+</ConfirmDialog>
+
+@* Saving a query for the team: a name and what it's for, prefilled, and the query as it stands, which can be tidied
+   first (a fixed number of days made {{days}}, or the indicators {{values}}, say). *@
+<ConfirmDialog @ref="_saveDialog" Form="true" Wide="true" ConfirmDisabled="@(string.IsNullOrWhiteSpace(_saveName) || string.IsNullOrWhiteSpace(_saveText))" Confirming="SaveForTeam">
+    <div>
+        <label class="tide-field-label" for="hunt-s-name">Name</label>
+        <input id="hunt-s-name" class="form-control form-control-sm" maxlength="@SavedQuery.MaxName" @bind="_saveName" @bind:event="oninput" />
+    </div>
+    <div class="mt-2">
+        <label class="tide-field-label" for="hunt-s-about">What it's for (optional)</label>
+        <input id="hunt-s-about" class="form-control form-control-sm" maxlength="@SavedQuery.MaxDescription" @bind="_saveDescription" />
+    </div>
+    <div class="mt-2">
+        <label class="tide-field-label" for="hunt-s-text">Query</label>
+        <textarea id="hunt-s-text" class="tide-query tide-autogrow" spellcheck="false" aria-describedby="hunt-s-text-help" @bind="_saveText" @bind:event="oninput"></textarea>
+        <SavedQueryHelp Id="hunt-s-text-help" />
+    </div>
+</ConfirmDialog>
+
+@code {
+    [Parameter, EditorRequired] public ActionItem Action { get; set; } = default!;
+    [Parameter] public bool CanWork { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private const string DialectPref = "hunt-dialect";
+
+    // Where the ways to add a query (Write one by hand, Add a saved query, Add indicators) sit: beside the first Copy, the
+    // preview's or the first query's, with their panels under that row; above, by the Generate buttons, while there's
+    // nothing to copy (or the first query is being edited).
+    private const string TopHost = "top", PreviewHost = "preview";
+
+    private string? AddersAt => !CanWork ? null
+        : _preview is not null ? PreviewHost
+        : Action.Hunts.FirstOrDefault() is { } first && _editingHunt != first.Id ? first.Id.ToString()
+        : TopHost;
+
+    private RenderFragment Adders => @<text>
+        <button id="hunt-write" type="button" class="btn btn-link btn-sm" @onclick="() => _writing = !_writing">Write one by hand</button>
+        <button id="hunt-pick" type="button" class="btn btn-link btn-sm" aria-expanded="@(_picking ? "true" : "false")" aria-controls="hunt-saved-picker" @onclick="TogglePicker">Add a saved query</button>
+        <button id="hunt-add-iocs" type="button" class="btn btn-link btn-sm" aria-expanded="@(_addingIndicators ? "true" : "false")" aria-controls="hunt-indicators" @onclick="ToggleIndicators">Add indicators</button>
+    </text>;
+
+    // A screenshot of what the query found goes to the action's Files, through its picker (ActionFilesPanel).
+    private RenderFragment AttachShot => @<button type="button" class="btn btn-link btn-sm" data-pick="@ActionFilesPanel.PickInput"><span class="bi bi-image" aria-hidden="true"></span> Attach a screenshot</button>;
+
+    private RenderFragment AdderPanels => @<text>
         @if (_addingIndicators)
         {
             <div class="tide-hunt-picker mb-3" id="hunt-indicators">
@@ -147,174 +363,7 @@
                 }
             </div>
         }
-        @if (_preview is { } preview)
-        {
-            <div class="tide-hunt tide-hunt-preview">
-                <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
-                    <strong>@HuntQueryBuilder.DialectName(_dialect)</strong>
-                    <Badge>Preview</Badge>
-                    <span class="small tide-muted">Not on the action yet. Copying or keeping it puts it there.</span>
-                </div>
-                <pre id="hunt-preview" class="tide-query">@preview</pre>
-                <div class="d-flex gap-2 align-items-center flex-wrap">
-                    <button type="button" class="btn btn-primary btn-sm" data-copy-target="hunt-preview" data-copy-status="hunt-preview-status" disabled="@_busy" @onclick="CopyPreview"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
-                    <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="KeepPreview"><span class="bi bi-plus-lg" aria-hidden="true"></span> Keep this query</button>
-                    <button type="button" class="btn btn-outline-secondary btn-sm" disabled aria-describedby="hunt-preview-why"><span class="bi bi-check2-circle" aria-hidden="true"></span> No hits, close</button>
-                    <button type="button" class="btn btn-outline-secondary btn-sm" disabled aria-describedby="hunt-preview-why"><span class="bi bi-check2-square" aria-hidden="true"></span> Record hits</button>
-                    <span id="hunt-preview-why" class="small tide-muted">Copy or keep the query first.</span>
-                </div>
-            </div>
-        }
-        @* Outside the preview, which has gone by the time the browser says the copy worked. The browser writes the first
-           ("Copied."); the page writes the second, once the copied query is saved on the action or couldn't be. *@
-        <span id="hunt-preview-status" class="small tide-muted" role="status" aria-live="polite"></span>
-        <span class="small tide-muted" role="status" aria-live="polite">@_previewSaved</span>
-    }
-    @foreach (var h in Action.Hunts)
-    {
-        var id = "hunt-" + h.Id.ToString("N");
-        <div class="tide-hunt" @key="h.Id">
-            <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
-                <strong>@HuntQueryBuilder.DialectName(h.Dialect)</strong>
-                @if (h.SavedQueryName is { } savedName) { <Badge Icon="bi-bookmark">saved query: @savedName</Badge> }
-                else if (h.GeneratedText.Length == 0) { <Badge>hand-written</Badge> }
-                <span class="small tide-muted">@h.CreatedByName &middot; @Ui.When(Clock, h.CreatedAtUtc)</span>
-                <span class="ms-auto small">
-                    <HuntBadge Result="h.Result" OfOneHunt="true" Count="h.ResultCount" />
-                </span>
-            </div>
-            @if (_editingHunt == h.Id)
-            {
-                <div data-submit-scope>
-                    <textarea class="tide-query tide-autogrow" spellcheck="false" aria-label="Query" @bind="_huntText"></textarea>
-                    <div class="d-flex gap-2 mt-2">
-                        <button class="btn btn-primary btn-sm" disabled="@_busy" data-submit @onclick="() => SaveText(h)">Save query</button>
-                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editingHunt = null">Cancel</button>
-                    </div>
-                </div>
-            }
-            else
-            {
-                <pre id="@id" class="tide-query">@h.Text</pre>
-                <div class="d-flex gap-2 align-items-center flex-wrap">
-                    <button type="button" class="btn @(h.Result == HuntResult.NotRun ? "btn-primary" : "btn-outline-secondary") btn-sm" data-copy-target="@id" data-copy-status="@(id + "-status")" @onclick="() => _copied.Add(h.Id)"><span class="bi bi-clipboard" aria-hidden="true"></span> Copy</button>
-                    @* Closing clean comes straight after Copy, on the page and in the tab order: the days box is the next
-                       stop, so a query that sets no range of its own gets its days said before anything else. *@
-                    @if (CanClose(h))
-                    {
-                        var draft = Draft(h);
-                        var leftOut = HuntQueryBuilder.LeftOut(h.GeneratedText);
-                        var ready = Ready(h, draft, leftOut);
-                        <div class="tide-hunt-close">
-                            <label class="tide-field-label mb-0" for="@(id + "-days")">Searched</label>
-                            <input id="@(id + "-days")" type="number" min="1" max="3650" class="form-control form-control-sm tide-w-count" @bind="draft.Window" />
-                            <span class="small">days</span>
-                            @if (leftOut > 0)
-                            {
-                                <div class="form-check mb-0">
-                                    <input class="form-check-input" type="checkbox" id="@(id + "-checked")" @bind="draft.Checked" />
-                                    <label class="form-check-label small" for="@(id + "-checked")">I've checked the @(leftOut == 1 ? "value" : $"{leftOut} values") the query left out</label>
-                                </div>
-                            }
-                            <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_busy || !ready)" aria-describedby="@(ready ? null : id + "-why")" @onclick="() => CloseClean(h)">
-                                <span class="bi bi-check2-circle" aria-hidden="true"></span> No hits, close
-                            </button>
-                            @if (!ready)
-                            {
-                                <span id="@(id + "-why")" class="small tide-muted">@Why(h, draft, leftOut)</span>
-                            }
-                        </div>
-                    }
-                    @if (CanWork)
-                    {
-                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => EditText(h)"><span class="bi bi-pencil" aria-hidden="true"></span> Edit</button>
-                        @if (h.Result == HuntResult.NotRun)
-                        {
-                            <button class="btn btn-outline-secondary btn-sm" @onclick="() => StartRecord(h)"><span class="bi bi-check2-square" aria-hidden="true"></span> Record the result</button>
-                            <button class="btn btn-link btn-sm" disabled="@_busy" @onclick="() => Remove(h)">Remove</button>
-                        }
-                    }
-                    @if (SavedSvc.CanWrite)
-                    {
-                        <button class="btn btn-link btn-sm" @onclick="() => StartSave(h)"><span class="bi bi-bookmark-plus" aria-hidden="true"></span> Save for the team</button>
-                    }
-                    <span id="@(id + "-status")" class="small tide-muted" role="status" aria-live="polite"></span>
-                </div>
-            }
-            @if (h.Result != HuntResult.NotRun)
-            {
-                <div class="small mt-2">
-                    Run by @h.RunByName@(h.RunAtUtc is { } at ? $" on {Ui.When(Clock, at)}" : "")@(h.Notes is not null ? ": " + h.Notes : ".")
-                </div>
-                @if (h.EditedAfterResultAtUtc is { } edited)
-                {
-                    <div class="small tide-muted">Edited after its result was recorded (@Ui.When(Clock, edited)).</div>
-                }
-                @if (h.EvidenceFileId is { } ev)
-                {
-                    <button type="button" class="tide-zoom tide-zoom-inline mt-2" aria-label="Open the evidence for this hunt" @onclick="() => OpenEvidence(h, ev)"><img src="@Ui.ImageUrl(ev)" alt="Evidence for this hunt" class="tide-evidence-thumb border rounded" /></button>
-                }
-            }
-        </div>
-    }
-</div>
-
-<ScreenshotDialog Set="EvidenceSet" @bind-Open="_shot" />
-
-@* Recording what a query found: the result, how many hits, notes and an optional screenshot, in one step. *@
-<ConfirmDialog @ref="_record" Form="true" ConfirmDisabled="@(_result == HuntResult.NotRun)" Confirming="Record">
-    <div class="d-flex gap-3 flex-wrap align-items-end">
-        <div>
-            <div class="tide-field-label" id="hunt-r-label">Result</div>
-            <div class="btn-group btn-group-sm" role="group" aria-labelledby="hunt-r-label">
-                <input type="radio" class="btn-check" name="hunt-r" id="hunt-r-no" checked="@(_result == HuntResult.NoHits)" @onchange="() => _result = HuntResult.NoHits" />
-                <label class="btn btn-outline-secondary" for="hunt-r-no">No hits</label>
-                <input type="radio" class="btn-check" name="hunt-r" id="hunt-r-hits" checked="@(_result == HuntResult.Hits)" @onchange="() => _result = HuntResult.Hits" />
-                <label class="btn btn-outline-secondary" for="hunt-r-hits">Hits</label>
-            </div>
-        </div>
-        @if (_result == HuntResult.Hits)
-        {
-            <div>
-                <label class="tide-field-label" for="hunt-r-count">How many</label>
-                <input id="hunt-r-count" type="number" min="0" class="form-control form-control-sm tide-w-count" @bind="_count" />
-            </div>
-        }
-    </div>
-    <div class="mt-2">
-        <label class="tide-field-label" for="hunt-r-notes">Notes</label>
-        <input id="hunt-r-notes" class="form-control form-control-sm" maxlength="2000" @bind="_notes" placeholder="Time range searched, what the hits were" />
-    </div>
-    <div class="mt-2">
-        <label class="tide-field-label" for="hunt-r-ev">Evidence screenshot (optional)</label>
-        <InputFile id="hunt-r-ev" class="form-control form-control-sm" accept="image/png,image/jpeg,image/gif,image/webp" OnChange="PickEvidence" />
-    </div>
-</ConfirmDialog>
-
-@* Saving a query for the team: a name and what it's for, prefilled, and the query as it stands, which can be tidied
-   first (a fixed number of days made {{days}}, or the indicators {{values}}, say). *@
-<ConfirmDialog @ref="_saveDialog" Form="true" Wide="true" ConfirmDisabled="@(string.IsNullOrWhiteSpace(_saveName) || string.IsNullOrWhiteSpace(_saveText))" Confirming="SaveForTeam">
-    <div>
-        <label class="tide-field-label" for="hunt-s-name">Name</label>
-        <input id="hunt-s-name" class="form-control form-control-sm" maxlength="@SavedQuery.MaxName" @bind="_saveName" @bind:event="oninput" />
-    </div>
-    <div class="mt-2">
-        <label class="tide-field-label" for="hunt-s-about">What it's for (optional)</label>
-        <input id="hunt-s-about" class="form-control form-control-sm" maxlength="@SavedQuery.MaxDescription" @bind="_saveDescription" />
-    </div>
-    <div class="mt-2">
-        <label class="tide-field-label" for="hunt-s-text">Query</label>
-        <textarea id="hunt-s-text" class="tide-query tide-autogrow" spellcheck="false" aria-describedby="hunt-s-text-help" @bind="_saveText" @bind:event="oninput"></textarea>
-        <SavedQueryHelp Id="hunt-s-text-help" />
-    </div>
-</ConfirmDialog>
-
-@code {
-    [Parameter, EditorRequired] public ActionItem Action { get; set; } = default!;
-    [Parameter] public bool CanWork { get; set; }
-    [Parameter] public EventCallback Changed { get; set; }
-
-    private const string DialectPref = "hunt-dialect";
+    </text>;
 
     /// <summary>The outlet on the drawer's tab row the language and window are drawn in.</summary>
     public const string ToolsSection = "hunt-tools";

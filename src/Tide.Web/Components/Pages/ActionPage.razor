@@ -89,8 +89,9 @@ else
                     <ActionStatusBadge Status="a.Status" />
                 }
                 <PriorityBadge Priority="a.Priority" />
-                @if (a.DueDate is { } dueOn) { <span class="tide-action-due">Due @Ui.ShortDay(dueOn)</span> }
-                <SlaBadge State="state" Due="a.DueDate" Today="ActionSvc.Today" />
+                @* Its due date and how it stands, said together ("Due Thu Nov 12 · due soon"); then what kind of work it is. *@
+                <SlaBadge State="state" Due="a.DueDate" Today="ActionSvc.Today" WithDate="true" Class="tide-action-due" />
+                <Badge Class="tide-action-kind">@ActionService.KindName(a.Kind)</Badge>
                 <EscalatedBadge At="a.EscalatedSince" />
                 @if (a.Outcome != ActionOutcome.None) { <span>@ActionService.OutcomeName(a.Outcome)</span> }
                 @if (_detail.Parent is { } parentRow)
@@ -356,6 +357,12 @@ else
         @* Files are the action's working material, last. *@
         <ActionFilesPanel @key="@($"files-{a.Id}")" Files="_detail.Files" ActionId="a.Id" Number="a.Number" CanWork="_detail.CanWork" Changed="Reload" OnComment="ShowComment" />
     </ContextRail>
+
+    @if (_detail.CanWork)
+    {
+        @* Shown while files are dragged over the page (paste-drop.js): dropped anywhere, they wait in Files. *@
+        <div class="tide-page-drop" aria-hidden="true"><span class="bi bi-paperclip" aria-hidden="true"></span> Drop to add them to this action's files</div>
+    }
 
     @if (a.ParentId is null && a.IsOpen && _detail.CanEditAll)
     {
@@ -1062,7 +1069,8 @@ else
         finally { _reading = false; }
     }
 
-    // Paste a screenshot (or a copied file) anywhere on the page, or drop files on the comment box.
+    // Drop files on the comment box, or paste a screenshot (or a copied file) while it has focus. Elsewhere on the page
+    // they go to Files (ActionFilesPanel).
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         // ?do=: its flow runs once, and the address forgets it, so a reload doesn't run it again.
@@ -1088,7 +1096,7 @@ else
         }
         if (_pasteRegistered || _detail is not { CanWork: true }) return;
         _pasteRegistered = true;
-        try { await JS.InvokeVoidAsync("tidePasteDrop.register", "comment-zone", "comment-files", "comment-files", true); }
+        try { await JS.InvokeVoidAsync("tidePasteDrop.register", "comment-zone", "comment-files", "comment-files", true, true); }
         catch (JSDisconnectedException) { }
     }
 

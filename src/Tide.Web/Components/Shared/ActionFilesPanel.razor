@@ -10,10 +10,18 @@
 @inject ToastService Toasts
 
 <section class="tide-card tide-files-side" id="files" aria-labelledby="files-h">
-    <h2 id="files-h">Files <span class="tide-count tide-muted fw-normal">(@Files.Live.Count)</span></h2>
+    @* Add files in the heading's row; for whoever works the action, files dropped anywhere on its page, or pasted with
+       nothing focused, wait here too. *@
+    <div class="tide-files-head">
+        <h2 id="files-h">Files <span class="tide-count tide-muted fw-normal">(@Files.Live.Count)</span></h2>
+        @if (CanWork)
+        {
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-pick="@PickInput"><span class="bi bi-paperclip" aria-hidden="true"></span> Add files</button>
+        }
+    </div>
     @if (CanWork)
     {
-        <FilePicker Files="_pending" Changed="StateHasChanged" Label="Add files to this action">
+        <FilePicker Files="_pending" Changed="StateHasChanged" Label="Add files to this action" InputId="@PickInput" TakesThePage="true">
             @if (_pending.Count > 0)
             {
                 <div class="d-flex gap-2 mt-2">
@@ -192,6 +200,9 @@
     private ElementReference _box;
     private bool _focusBox;
     private Guid? _focusToggle;
+
+    /// <summary>The Files box's hidden InputFile: Add files, and the hunt's Attach a screenshot, pick through it.</summary>
+    public const string PickInput = "files-input";
 
     internal const string ZipTitle = "In a zip, so it can't run by accident. It opens with the password \"infected\".";
 

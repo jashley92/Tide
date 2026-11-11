@@ -1311,7 +1311,8 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
 .tide-action-head { align-items: flex-start; }
 .tide-action-title { flex: 1 1 32rem; min-width: 0; }
 .tide-action-badges { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); margin-top: var(--tide-space-2); }
-.tide-action-due { font-size: var(--tide-text-sm); color: var(--tide-text-muted); }
+/* The due date and how it stands, one badge (SlaBadge WithDate): kept on one line. */
+.tide-action-due { white-space: nowrap; }
 .tide-action-who { display: flex; flex-wrap: wrap; gap: 0 var(--tide-space-2); }
 .tide-action-who .tide-handoff { overflow-wrap: anywhere; }
 .tide-action-do { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); }
@@ -2358,10 +2359,12 @@ button.tide-chip-chosen:focus-visible { outline: 2px solid var(--tide-focus-ring
 .tide-rail { display: none; position: fixed; top: var(--tide-height-top); right: 0; bottom: 0; z-index: 1010; width: min(var(--tide-width-rail), 100%);
     flex-direction: column; background: var(--tide-surface); border-left: 1px solid var(--tide-border); box-shadow: -8px 0 24px var(--tide-shadow); }
 html[data-rail-over] .tide-rail { display: flex; z-index: 1025; }
-/* The overlay's backdrop: the rest of the window, top bar included, dimmed a little. Part of the rail, so a click on it
-   reaches the rail (theme.js closes it). */
-html[data-rail-over] .tide-rail::before { content: ""; position: fixed; inset: 0 min(var(--tide-width-rail), 100%) 0 0;
-    background: var(--tide-scrim); }
+/* The overlay's backdrop: everything in the window but the rail dimmed, the navigation and the top bar included. Two
+   parts of the rail, so a click on either reaches it (theme.js closes it): the window left of the rail, and the strip of
+   top bar above it (none on a phone, where the rail takes the whole height). */
+html[data-rail-over] .tide-rail::before, html[data-rail-over] .tide-rail::after { content: ""; position: fixed; background: var(--tide-scrim); }
+html[data-rail-over] .tide-rail::before { inset: 0 min(var(--tide-width-rail), 100%) 0 0; }
+html[data-rail-over] .tide-rail::after { top: 0; right: 0; width: min(var(--tide-width-rail), 100%); height: var(--tide-height-top); }
 .tide-rail:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: -2px; }
 .tide-rail-head { display: flex; align-items: center; justify-content: space-between; gap: var(--tide-space-2);
     padding: var(--tide-space-3) var(--tide-space-4); border-bottom: 1px solid var(--tide-border); }
@@ -2380,7 +2383,10 @@ html[data-rail-over] .tide-rail::before { content: ""; position: fixed; inset: 0
     }
 }
 /* On a phone the top bar scrolls with the page, so the overlay takes the whole window, over the top bar. */
-@media (max-width: 640.98px) { .tide-rail { top: 0; z-index: 1030; } }
+@media (max-width: 640.98px) {
+    .tide-rail { top: 0; z-index: 1030; }
+    html[data-rail-over] .tide-rail::after { content: none; }
+}
 @media print { .tide-rail, .tide-rail-toggle { display: none !important; } }
 
 /* ---- Search: an indicator or CVE lookup (Search.razor). The first line that answers it, "Seen with", the one list of
@@ -2549,8 +2555,9 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 /* The meeting's facts, as the action page's side column has its own (.tide-facts-side): when and who side by side. */
 .tide-meeting-facts { margin-bottom: var(--tide-space-3); }
 .tide-meeting-facts .tide-fact dd { font-size: var(--tide-text-sm); }
-/* The backdrop behind the open rail overlay: plainly a layer over the page, light or dark. */
-:root { --tide-scrim: rgba(15, 23, 42, .38); }
+/* The backdrop behind the open rail overlay: plainly a layer over the page, light or dark. Neutral, so it dims the dark
+   navigation as much as the light page. */
+:root { --tide-scrim: rgba(0, 0, 0, .38); }
 [data-bs-theme="dark"] { --tide-scrim: rgba(0, 0, 0, .6); }
 /* Toasts sit left of a docked rail, never over its buttons. */
 @media (min-width: 1500px) {
@@ -2751,6 +2758,24 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-rail-list-title { display: block; overflow-wrap: anywhere; }
 .tide-rail-list-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); color: var(--tide-text-muted); font-size: var(--tide-text-xs); }
 /* ---- end Action page 3.5 ---- */
+
+/* ---- Action page 3.5b: the rest of the design ----
+   Also raised from it: the number first, the title over its team and due date, the status at the right. */
+.tide-rail-list > .tide-rail-raised { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: var(--tide-space-2); align-items: start; }
+.tide-rail-raised-status { justify-self: end; }
+/* Files: Add files in the heading's row. */
+.tide-files-head { display: flex; align-items: center; justify-content: space-between; gap: var(--tide-space-2); margin-bottom: var(--tide-space-2); }
+.tide-files-head > h2 { margin: 0; min-width: 0; }
+.tide-files-head > .btn { flex: none; white-space: nowrap; }
+/* While files are dragged over the page (paste-drop.js sets html[data-file-drag]): where they go, over the whole window. */
+.tide-page-drop { display: none; position: fixed; inset: var(--tide-space-3); z-index: 1040; pointer-events: none; align-items: center; justify-content: center;
+    gap: var(--tide-space-2); border: 2px dashed var(--tide-accent); border-radius: var(--tide-radius-xl); background: color-mix(in srgb, var(--tide-accent-soft) 85%, transparent);
+    color: var(--tide-text); font-weight: var(--tide-weight-semibold); }
+html[data-file-drag] .tide-page-drop { display: flex; }
+/* The hunt drawer: "What did it find?" under the query's buttons, with what closes it, records it or adds a screenshot. */
+.tide-hunt-found { margin-top: var(--tide-space-3); padding-top: var(--tide-space-3); border-top: 1px solid var(--tide-border); }
+.tide-hunt-found-h { font-size: var(--tide-text-sm); font-weight: var(--tide-weight-semibold); margin-bottom: var(--tide-space-2); }
+/* ---- end Action page 3.5b ---- */
 
 /* ---- Triage 3.2: what TIDE knows about the selected item, in the context rail (its flat sections are Today 3.1's) ----
    Its CVEs' facts three across, the covering article (Action page 3.5's .tide-rail-article) with its open actions, the
