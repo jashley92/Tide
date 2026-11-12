@@ -1120,6 +1120,12 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-slide-open { width: 100%; border-collapse: collapse; font-size: .9em; }
 .tide-slide-open th { text-align: left; color: var(--tide-slide-muted); text-transform: uppercase; letter-spacing: .08em; font-size: .72em; font-weight: var(--tide-weight-semibold); padding: .3em .5em; }
 .tide-slide-open td { padding: .45em .5em; border-top: 1px solid var(--tide-border); vertical-align: top; }
+/* The action's cell opens it: its badge, title and number flow and wrap as text (as a Visitor's do), and a button over
+   the whole cell opens it (a button can't wrap inline). Its title underlines as a link's does on hover and focus. */
+.tide-slide-open td:has(> .tide-slide-row-open) { position: relative; }
+.tide-slide-row-open { position: absolute; inset: 0; background: none; border: 0; padding: 0; cursor: pointer; border-radius: var(--tide-radius-md); }
+.tide-slide-row-open:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: -2px; }
+.tide-slide-open td:has(> .tide-slide-row-open:is(:hover, :focus-visible)) .tide-slide-row-title { text-decoration: underline; text-underline-offset: .2em; }
 .tide-slide-open .tide-slide-late { color: var(--tide-threat); font-weight: var(--tide-weight-semibold); white-space: nowrap; }
 /* How long an open action has waited since its last update, under how late it is; and the one thing to do about it. */
 .tide-slide-open .tide-slide-waited { display: block; color: var(--tide-slide-muted); font-size: .85em; }

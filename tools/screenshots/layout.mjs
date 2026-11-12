@@ -1894,6 +1894,40 @@ const slideFits = holds('the slide fits, or scrolls only at 80%', () => {
   return over > 1 && fit > 0.801 ? [`the slide's body is ${over}px too tall at ${fit}, and could shrink further`] : [];
 });
 
+// --- actions that need review ------------------------------------------------------------------------------------------
+
+/** A row of Actions that need review says it has gone too long without an update, and what its last update was. */
+const quietRow = holds('a row is quiet too long, with its last update', () => {
+  const rows = [...document.querySelectorAll('.tide-slide-open tbody tr')];
+  return rows.some(r => /quiet \d+ business days?/.test(r.querySelector('.tide-slide-why')?.textContent ?? '')
+    && /^last: /.test(r.querySelector('.tide-slide-waited')?.textContent.trim() ?? ''))
+    ? [] : ['no row says it is quiet too long, with its last update'];
+});
+
+/** Each row's title starts on its priority badge's line and wraps on from there, as plain text does: it doesn't drop
+ *  below the badge as a block of its own (the presenter's and a Visitor's alike). */
+const badgeWithTitle = holds('each title starts on its priority badge\'s line', () => {
+  const cells = [...document.querySelectorAll('.tide-slide-open tbody td:first-child')];
+  if (!cells.length) return ['nothing shown matches .tide-slide-open tbody td:first-child'];
+  return cells.flatMap((td, i) => {
+    const badge = td.querySelector('.tide-badge')?.getBoundingClientRect();
+    const first = td.querySelector('.tide-slide-row-title')?.getClientRects()[0];
+    if (!badge || !first) return [`row ${i + 1} has no badge or title`];
+    return first.top < badge.bottom && badge.top < first.bottom ? [] : [`row ${i + 1}: its title starts ${Math.round(first.top - badge.top)}px below its badge`];
+  });
+});
+
+/** Setup: on Actions that need review, the first row's action opened over the slide and closed with Escape. */
+const reviewActionClosed = async page => {
+  await slideWith('.tide-slide-open')(page);
+  await page.locator('.tide-slide-open tbody tr:first-child .tide-slide-row-open').click();
+  await page.locator('#present-action-title').waitFor();
+  await page.waitForTimeout(300);
+  await page.keyboard.press('Escape');
+  await page.locator('#present-action-title').waitFor({ state: 'detached' });
+  await page.waitForTimeout(400);
+};
+
 // --- the wrap-up -------------------------------------------------------------------------------------------------------
 
 /** The slide's More pill, where it shows, covers none of `selector` that shows in the slide's body: it sits in the room
@@ -1979,8 +2013,9 @@ const actionBeside = as => async (page, demo) => {
     await toArticleSlide(p);
     // Unless the page before left one open for the room (over the slide, in a narrow window, it covers the slide's
     // links): the first slide with an action on it, from this article's on and then from the title. The pages before
-    // may have changed today's running order; the open actions from earlier briefs have some, whatever the articles have.
-    const opener = p.locator('.tide-slide :is(.tide-action-ref-btn, .tide-action-open)');
+    // may have changed today's running order; the actions that need review have some, whatever the articles have (each
+    // row opens its action from a button over its cell).
+    const opener = p.locator('.tide-slide :is(.tide-action-ref-btn, .tide-action-open, .tide-slide-row-open)');
     for (let i = 0; i < 16 && !(await p.locator(BESIDE).count()) && !(await opener.count()); i++) {
       await p.keyboard.press(i === 4 ? 'Home' : 'ArrowRight');
       await p.waitForTimeout(300);
@@ -3975,6 +4010,20 @@ const pages = [
   // Keyboard and focus in the presenter's strips: Edit puts focus in the note's box; Escape there cancels, back on Edit,
   // still on the slide; Still current leaves focus on the slide's heading as the strip goes. A number that isn't one is
   // marked on its box with why; Enter saves one, and focus goes to the slide's heading. Late: these change the demo's day.
+  // Actions that need review: each action with why it's there (late, escalated, quiet too long: the demo's earlier
+  // brief's are quiet two business days), its last update, and the one thing to do, in its columns; a title that wraps
+  // flows on from its priority badge. Read only: no meeting, nothing saved.
+  { name: 'slide-open-actions', route: '/present/{today}', setup: slideWith('.tide-slide-open'), widths: [1920, 1440, 1100, 780],
+    rules: [noSidewaysScroll, slideFits, fits('.tide-slide-body'), visible('.tide-slide-open .tide-slide-next'), notSqueezed('.tide-slide-open .tide-slide-late'),
+      [1100, oneLine('.tide-slide-open .tide-slide-next')], visible('.tide-slide-open .tide-slide-why'), visible('.tide-slide-open .tide-slide-waited'),
+      notSqueezed('.tide-slide-open .tide-slide-waited'), quietRow, badgeWithTitle] },
+  // An action opened from its row and closed with Escape: focus is back on that row's title.
+  { name: 'slide-open-actions-closed', route: '/present/{today}', setup: reviewActionClosed, widths: [1920],
+    rules: [hidden('#present-action-title'), focusOn('.tide-slide-open tbody tr:first-child .tide-slide-row-open')] },
+  // The organization's settings: the two business-day limits for Actions that need review, each box with its unit.
+  { name: 'admin-organization', route: '/admin/organization', widths: [1920, 1440, 1100, 780],
+    rules: [noSidewaysScroll, fits('.tide-card'), visible('#org-stale-open'), visible('#org-stale-blocked'),
+      oneRow('.input-group:has(#org-stale-open)'), oneRow('.input-group:has(#org-stale-blocked)')] },
   // From here on, pages change the demo for those after them: a sharded run keeps them all in its last shard, in order.
   CHANGES_THE_DEMO,
   { name: 'slide-note-edit-focus', route: '/present/{today}', setup: noteStrip('edit'), widths: [1440], rules: [focusOn('#slide-note-text')] },
@@ -3994,10 +4043,6 @@ const pages = [
   // the note or the numbers themselves.
   { name: 'slide-note-kept-focus', route: '/present/{today}', setup: noteStrip('keep'), widths: [1440], rules: [hidden('.tide-slide-presenter-flag'), focusOn('#present-rail .tide-slide-presenter button')] },
   { name: 'slide-number-saved', route: '/present/{today}', setup: numberEntered('7'), widths: [1440], rules: [hidden('.tide-slide-presenter'), focusOn('#present-rail')] },
-  // The open actions slide: each action with how long it has waited and the one thing to do, in its columns.
-  { name: 'slide-open-actions', route: '/present/{today}', setup: slideWith('.tide-slide-open'), widths: [1920, 1440, 1100, 780],
-    rules: [noSidewaysScroll, slideFits, fits('.tide-slide-body'), visible('.tide-slide-open .tide-slide-next'), notSqueezed('.tide-slide-open .tide-slide-late'),
-      [1100, oneLine('.tide-slide-open .tide-slide-next')]] },
   // The wrap-up, the presenter's (no meeting): three lists, with the rail beside them where it's docked.
   { name: 'slide-wrap-presenter', route: '/present/{today}', setup: wrapUp('presenter'), widths: [1920, [1920, 480], 1440, [1440, 420], 1100, 780],
     rules: [...wrapUpRules, visible('.tide-wrap-list[data-wrap="owners"] .tide-wrap-item li')] },

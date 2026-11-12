@@ -53,7 +53,8 @@ public sealed record BriefEdition(
     int WithheldArticles,
     bool ShowIntro = false)
 {
-    /// <summary>The overdue actions the team edition lists ("Still open from earlier briefs"), when the cut carries them:
+    /// <summary>The open actions the team edition lists (the email's "Still open from earlier briefs", the meeting's
+    /// "Actions that need review"), when the cut carries them:
     /// each at its article's TLP, so they count in <see cref="Marking"/>.</summary>
     public Actions.OpenActionsReview? Open { get; init; }
 
