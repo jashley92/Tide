@@ -254,7 +254,21 @@ window.tidePresent = (function () {
         el.scrollBy({ top: (forward ? 1 : -1) * el.clientHeight * PAGE, behavior: behavior(false) });
     }
 
+    // The button that last opened a card over the slide (data-card-opener: the indicators' chips and "+N more", the CVEs'
+    // "+N more"), so focus goes back to it when this page closes the card, rather than to the page. Found again by its
+    // value if it was drawn afresh meanwhile.
+    let opener = null, openerKey = null;
+
+    function backToOpener() {
+        const el = opener && opener.isConnected ? opener
+            : openerKey ? document.querySelector('[data-card-opener="' + CSS.escape(openerKey) + '"]') : null;
+        opener = openerKey = null;
+        if (el) el.focus({ preventScroll: true });
+    }
+
     function onClick(e) {
+        const from = e.target.closest && e.target.closest('[data-card-opener]');
+        if (from) { opener = from; openerKey = from.getAttribute('data-card-opener'); }
         const pill = e.target.closest && e.target.closest('[data-slide-more]');
         if (!pill) return;
         e.preventDefault();
@@ -356,12 +370,15 @@ window.tidePresent = (function () {
             shownContent = null;
             watched = [];
             cards = [];
+            opener = openerKey = null;
             frame = 0;
             sendTimer = 0;
             if (document.fullscreenElement) document.exitFullscreen().catch(function () { });
         },
         toggleFullscreen: toggleFullscreen,
         follow: follow,
+        // .NET: this page closed the card over the slide: focus back on the button that opened it.
+        backToOpener: backToOpener,
         // .NET: this page has just become the presenter: where it is on the slide is now the room's.
         share: function () { if (ref) send(); }
     };
