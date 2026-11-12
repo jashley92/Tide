@@ -1742,6 +1742,9 @@ else
     private ConfirmDialog _confirm = default!;
     private ElementReference _endHeading;
     private bool _focusEnd, _focusQuickAdd;
+
+    /// <summary>For tests: focus goes back to the rail's Add once the page is drawn (the over-limit question cancelled).</summary>
+    internal bool FocusingQuickAdd => _focusQuickAdd;
     private ElementReference _quickAddButton;
 
     private RaiseDraft LineDraft(Guid articleId, string line)
