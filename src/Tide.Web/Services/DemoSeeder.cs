@@ -92,7 +92,7 @@ public static class DemoSeeder
             $"This demo database was seeded for {seededFor}, and today's brief is {Iso(today)}: its pages would show a day that's gone. Start on a fresh one (without REUSE).");
     }
 
-    private static string Iso(DateOnly day) => Tide.Web.Components.Shared.Badges.IsoDay(day);
+    private static string Iso(DateOnly day) => Tide.Web.Components.Shared.Ui.IsoDay(day);
 
     /// <summary>
     /// <c>Demo:TriageFiller</c> (none unless set): that many more new items, "Filler k001" onwards, older than the demo's
