@@ -76,12 +76,15 @@ public class PresentTopBarPresenceTests(TideApp app) : IClassFixture<TideApp>
         people.Should().NotContain("Raise hand", "the presenter has no hand of their own");
         await Do(pat, p => p.ToggleHandsList());
         people = People(await pat.Html());
-        people.Should().Contain("id=\"present-hands\"").And.Contain("Lower Olive Owner&#x27;s hand").And.Contain("Lower Robin Analyst&#x27;s hand").And.Contain("Clear all");
-        people.IndexOf("Lower Olive Owner", StringComparison.Ordinal).Should().BeLessThan(people.IndexOf("Lower Robin Analyst", StringComparison.Ordinal), "first up, first shown");
+        people.Should().Contain("id=\"present-hands\"").And.NotContain("Lower", "the presenter lowers hands from the rail");
+        people.IndexOf(">Olive Owner</span>", StringComparison.Ordinal).Should().BeLessThan(people.IndexOf(">Robin Analyst</span>", StringComparison.Ordinal), "first up, first shown");
+        html = await pat.Html();
+        html.Should().Contain("Lower Olive Owner&#x27;s hand").And.Contain("Lower Robin Analyst&#x27;s hand").And.Contain("Clear all");
+        html.IndexOf("Lower Olive Owner", StringComparison.Ordinal).Should().BeLessThan(html.IndexOf("Lower Robin Analyst", StringComparison.Ordinal), "first up, first shown");
         await Do(pat, p => p.OnPresentKey("close"));
         People(await pat.Html()).Should().NotContain("id=\"present-hands\"", "Esc shuts it");
         FooterHasNoneOfIt(html);
-        Footer(html).Should().Contain("Lock to me", "the presenter's other controls stay in the footer");
+        Footer(html).Should().NotContain("Lock to me", "the presenter's other controls are in the rail");
 
         // A follower: whose hands are up, in order, and their own as Lower hand.
         await Do(owner, p => p.Follow());

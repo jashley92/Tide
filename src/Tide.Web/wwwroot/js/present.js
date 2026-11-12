@@ -21,8 +21,13 @@ window.tidePresent = (function () {
         Home: 'first', End: 'last',
         f: 'fullscreen', F: 'fullscreen',
         d: 'discussed', D: 'discussed',
+        ']': 'rail',
         Escape: 'close'
     };
+
+    // Whether the window has room to dock the presenter's rail beside the slide (.NET draws it there, or over the slide).
+    const railRoom = window.matchMedia('(min-width: 1500px)');
+    function onRailRoom() { if (ref) ref.invokeMethodAsync('OnRailRoom', railRoom.matches).catch(function () { }); }
 
     const FLOOR = 0.8;          // the smallest a slide is shrunk to fit, of its size
     const NEAR = 0.01;          // how far from its first guess the fit looks first
@@ -297,6 +302,15 @@ window.tidePresent = (function () {
     }
 
     function onKey(e) {
+        // The presenter's rail open over the slide is a modal dialog: wherever focus is (in it, or dropped to the page), ]
+        // and Escape close it (not while typing), and the slide's other keys aren't heard; Tab is dialog.js's.
+        if (ref && document.querySelector('#present-rail[aria-modal="true"]')) {
+            if (!e.defaultPrevented && (e.key === ']' || e.key === 'Escape') && !e.ctrlKey && !e.metaKey && !e.altKey && !typing(e.target)) {
+                e.preventDefault();
+                ref.invokeMethodAsync('OnPresentKey', 'rail').catch(function () { });
+            }
+            return;
+        }
         if (!ref || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || typing(e.target) || inMenu(e.target)) return;
         // A screenshot shown full size has the keys; the slide behind it doesn't move.
         if (document.querySelector('.tide-lightbox')) return;
@@ -340,6 +354,8 @@ window.tidePresent = (function () {
     return {
         start: function (dotnetRef) {
             ref = dotnetRef;
+            railRoom.addEventListener('change', onRailRoom);
+            onRailRoom();
             document.addEventListener('keydown', onKey);
             document.addEventListener('fullscreenchange', onFullscreenChange);
             document.addEventListener('scroll', onScroll, true);
@@ -355,6 +371,7 @@ window.tidePresent = (function () {
         },
         stop: function () {
             ref = null;
+            railRoom.removeEventListener('change', onRailRoom);
             document.removeEventListener('keydown', onKey);
             document.removeEventListener('fullscreenchange', onFullscreenChange);
             document.removeEventListener('scroll', onScroll, true);

@@ -13,9 +13,9 @@ window.tideDialog = (function () {
             function (el) { return !el.closest('[inert], [hidden]') && el.getClientRects().length > 0; });
     }
 
-    // A modal dialog: a confirmation (ConfirmDialog) or the palette, the ATT&CK matrix picker, or the context rail while
-    // it's open over the page (theme.js marks it aria-modal then). The lightbox handles its own keys, below.
-    var MODAL = '.tide-modal, .tide-atkm-panel, .tide-rail[aria-modal="true"]';
+    // A modal dialog: a confirmation (ConfirmDialog) or the palette, the ATT&CK matrix picker, or the context rail or
+    // present mode's presenter's rail while it's open over the page (each is marked aria-modal then). The lightbox handles its own keys, below.
+    var MODAL = '.tide-modal, .tide-atkm-panel, .tide-rail[aria-modal="true"], #present-rail[aria-modal="true"]';
 
     // Inside the lightbox, only the keys it handles lose their default (Tab stays on its one button; Enter, Space and
     // Escape close it), so the browser's own shortcuts (zoom, find, copy) still work over a screenshot.

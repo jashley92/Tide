@@ -69,18 +69,6 @@ const closeBelow = (selector, above, px) => ({
   }, [selector, above, px]),
 });
 
-/** The first visible match of each selector starts at the same x (within 2px): a column that lines up. */
-const lineUp = (...selectors) => ({
-  name: `line up: ${selectors.join(' / ')}`,
-  check: page => page.evaluate(selectors => {
-    const lefts = selectors.map(s => [...document.querySelectorAll(s)].map(e => e.getBoundingClientRect()).find(r => r.width > 0 && r.height > 0));
-    const missing = selectors.filter((_, i) => !lefts[i]);
-    if (missing.length) return [`nothing visible to line up: ${missing.join(', ')}`];
-    const xs = lefts.map(r => Math.round(r.left));
-    return Math.max(...xs) - Math.min(...xs) > 2 ? [`not lined up: ${selectors.map((s, i) => `${s} at ${xs[i]}px`).join(', ')}`] : [];
-  }, selectors),
-});
-
 /** The first match is wider than `px`: a page that takes the whole window isn't held to the usual width. */
 const widerThan = (selector, px) => ({
   name: `wider than ${px}px: ${selector}`,
@@ -985,7 +973,18 @@ const articleSlide = n => async page => {
 /** Setup: wider letters, then the slides stepped through (from the title) to the first that shows `selector`. */
 const slideWith = selector => async page => {
   await wideFont(page);
-  for (let i = 0; i < 12 && !(await page.locator(selector).count()); i++) {
+  // The presenter's rail holds their strips: opened by its key where it isn't docked, then shut again while the slides
+  // move (open over the slide, it's a dialog, and the slide's keys aren't its), and opened on each slide to look.
+  const over = async open => {
+    if (await page.locator(`#present-rail-toggle[aria-expanded="${open ? 'false' : 'true'}"]`).count() && !(await page.locator('#present-rail.is-docked').count())) {
+      await page.keyboard.press(']');
+      await page.waitForTimeout(250);
+    }
+  };
+  for (let i = 0; i < 12; i++) {
+    await over(true);
+    if (await page.locator(selector).count()) break;
+    await over(false);
     await page.keyboard.press('ArrowRight');
     await page.waitForTimeout(300);
   }
@@ -1025,6 +1024,35 @@ const numberEntered = text => async (page, demo) => {
   await page.locator('.tide-slide-presenter input').first().fill(text);
   await page.keyboard.press('Enter');
   await page.waitForTimeout(900);
+};
+
+/** Setup: the presenter's rail opened over the article's slide, then a click on the scrim beside it. */
+const railScrimClicked = async (page, demo) => {
+  await presenterRail(true)(page, demo);
+  await page.mouse.click(20, Math.round(page.viewportSize().height / 2));
+  await page.waitForTimeout(600);
+};
+
+/** Setup: wider letters, on the title slide with the presenter's rail open, then its Enter beside the numbers missing. */
+const missingNumberEntered = async page => {
+  await wideFont(page);
+  if (!(await page.locator('#present-rail').count())) {
+    await page.keyboard.press(']');
+    await page.locator('#present-rail').waitFor();
+  }
+  await page.locator('#present-rail').getByRole('button', { name: 'Enter', exact: true }).click();
+  await page.waitForTimeout(900);
+};
+
+/** Setup: wider letters, on the first article's slide; with `open`, the presenter's rail opened by its key (`]`). */
+const presenterRail = (open = false) => async page => {
+  await wideFont(page);
+  await toArticleSlide(page);
+  if (open) {
+    await page.keyboard.press(']');
+    await page.locator('#present-rail').waitFor();
+  }
+  await page.waitForTimeout(400);
 };
 
 /** The meeting the present-people pages share: which one it is ("presenter/5"), and the browsers of its other people,
@@ -1086,11 +1114,9 @@ const handsListOpen = async (page, demo) => {
   await page.locator('#present-hands').waitFor();
 };
 
-/** Setup: the list of hands opened, then Tab to its first Lower and Escape. */
+/** Setup: the list of hands opened (the room's view of them: the presenter lowers a hand from the rail), then Escape. */
 const handsListEscaped = async (page, demo) => {
   await handsListOpen(page, demo);
-  await page.keyboard.press('Tab');
-  await page.waitForTimeout(200);
   await page.keyboard.press('Escape');
   await page.waitForTimeout(500);
 };
@@ -1746,8 +1772,31 @@ const contrastAtLeast = (selector, ratio, pseudo = null) => holds(`contrast at l
   });
 }, [selector, ratio, pseudo]);
 
-/** A box's hint on the dark slide (its placeholder) reads: AA, in either theme. */
-const slidePlaceholdersReadable = contrastAtLeast('.tide-slide :is(input, textarea)[placeholder]', 4.5, '::placeholder');
+/** The presenter's rail's hints (its placeholders) read: AA, in either theme. */
+const railPlaceholdersReadable = contrastAtLeast('#present-rail :is(input, textarea)[placeholder]', 4.5, '::placeholder');
+
+/** Each visible list (select) in the presenter's rail is wide enough for its longest choice: none is cut off. */
+const railSelectsWhole = holds('the rail\'s lists show their longest choice whole', () =>
+  [...document.querySelectorAll('#present-rail select')].filter(el => el.getBoundingClientRect().width > 0).flatMap(el => {
+    const has = el.getBoundingClientRect().width;
+    el.style.width = 'max-content';
+    const needs = el.getBoundingClientRect().width;
+    el.style.width = '';
+    return needs > has + 1 ? [`${el.getAttribute('aria-label')}: ${Math.round(has)}px wide, its longest choice needs ${Math.round(needs)}px`] : [];
+  }));
+
+/** While the rail is open over the slide, the slide's keys aren't heard: an arrow doesn't move the slide. */
+const slideKeysHeld = {
+  name: 'the slide stays put while the rail is open over it',
+  check: async page => {
+    const before = await page.locator('[data-slide-key]').first().getAttribute('data-slide-key');
+    await page.evaluate(() => document.activeElement?.blur());
+    await page.keyboard.press('ArrowRight');
+    await page.waitForTimeout(500);
+    const after = await page.locator('[data-slide-key]').first().getAttribute('data-slide-key');
+    return before === after ? [] : [`the slide moved from ${before} to ${after}`];
+  },
+};
 
 /** The first shown match of `a` and of `b` look alike in each of `props` (computed): controls side by side that match. */
 const sameLook = (a, b, props) => holds(`same ${props.join(', ')}: ${a} / ${b}`, ([a, b, props]) => {
@@ -3616,24 +3665,17 @@ const pages = [
   // A search for words has no rail, and its page is as before.
   { name: 'search-words', route: '/search?q=gateway', widths: [1920, 780], rules: [noSidewaysScroll, hidden('#tide-rail'), hidden('#tide-rail-toggle')] },
   { name: 'trends', route: '/trends', widths: [1920], rules: [noSidewaysScroll, widerThan('.content', 1400)] },
+  // The article slide is the room's: each recommended line (one row, the action it became beside a raised one: the
+  // sample's hotfix line is A-2) and the article's other actions, with none of the presenter's controls (the rail has
+  // them, shut at these widths).
   { name: 'slide-article', route: '/present/{today}', setup: toArticleSlide, widths: [1440, 1100, 900],
     rules: [
-      slidePlaceholdersReadable,
-      visible('.tide-quick-add'),
-      [1001, oneRow('.tide-quick-add')],
-      [1001, oneRow('.tide-reco li:not(.is-raised)')],
-      // A line raised already shows the action it became (the sample's hotfix line is A-2), its controls in the Raise rows' columns.
+      [1001, oneRow('.tide-reco li')],
       visible('.tide-reco li.is-raised .tide-reco-done'), fits('.tide-reco'),
-      [1001, lineUp('.tide-reco li.is-raised .tide-action-assign > input', '.tide-slide-actlist .tide-action-assign > input')],
       [1001, oneRow('.tide-slide-actlist > li')],
-      // An other action's team and due stay readable beside its title (the title gives way); its controls look like the
-      // lines' (the date as dark as the selects; the same size of type); each Take it says which action.
+      hidden('.tide-slide :is(select, input, .tide-quick-add)'),
+      // An other action's team and due stay readable beside its title.
       notSqueezed('.tide-slide-actlist .tide-present-help'),
-      sameLook('.tide-slide .tide-action-assign > input', '.tide-slide .tide-action-assign > select', ['backgroundColor', 'color', 'fontSize']),
-      sameLook('.tide-reco .tide-action-assign > select', '.tide-slide-actlist .tide-action-assign > select', ['fontSize']),
-      buttonsNamed('Take it', 'Take A-'),
-      [1001, lineUp('.tide-reco li > select:nth-of-type(1)', '.tide-slide-actlist .tide-action-assign > input')],
-      [1001, lineUp('.tide-reco li > select:nth-of-type(2)', '.tide-slide-actlist .tide-action-assign > select')],
     ] },
   // The article slide shows its indicators, defanged chips the room reads without a click (a chip opens the larger card),
   // beside its tags and CVEs: none, two, or a dozen (ten shown, then "+2 more") with a dozen CVEs and a long hash and
@@ -3672,11 +3714,33 @@ const pages = [
     rules: [attr('.tide-slide-presenter input', 'aria-invalid', 'true'), visible('.tide-slide-presenter-error'), focusOn('.tide-slide-presenter input')] },
   { name: 'slide-numbers-presenter', route: '/present/{today}', setup: slideWith('.tide-slide-presenter input'), widths: [1920, 1440, 1100, 900, 780],
     rules: [noSidewaysScroll, visible('.tide-slide-presenter input'), fits('.tide-slide-presenter'), inWindow('.tide-slide-presenter :is(button, input)'), slideFits] },
-  // Still current, and a number entered with Enter: focus on the slide's heading as the strip goes. After the strips'
+  // The title's Enter beside the numbers missing: the numbers slide, focus in the first missing number's box. Before the
+  // pages that enter it.
+  { name: 'present-rail-number-enter', route: '/present/{today}', setup: missingNumberEntered, widths: [1920, 1440],
+    rules: [focusOn('#present-rail input[inputmode="decimal"]')] },
+  // Still current, and a number entered with Enter, in the rail open over the slide (modal, the slide inert): the flag
+  // goes and focus stays in the rail, on the note's Edit, or on the rail once no number is left. After the strips'
   // other pages, as they change the demo's day (the note is kept, the number entered), and before the pages that change
   // the note or the numbers themselves.
-  { name: 'slide-note-kept-focus', route: '/present/{today}', setup: noteStrip('keep'), widths: [1440], rules: [hidden('.tide-slide-presenter'), focusOn('.tide-slide-note h2')] },
-  { name: 'slide-number-saved', route: '/present/{today}', setup: numberEntered('7'), widths: [1440], rules: [hidden('.tide-slide-presenter'), focusOn('.tide-slide-mgroup h2')] },
+  { name: 'slide-note-kept-focus', route: '/present/{today}', setup: noteStrip('keep'), widths: [1440], rules: [hidden('.tide-slide-presenter-flag'), focusOn('#present-rail .tide-slide-presenter button')] },
+  { name: 'slide-number-saved', route: '/present/{today}', setup: numberEntered('7'), widths: [1440], rules: [hidden('.tide-slide-presenter'), focusOn('#present-rail')] },
+  // The presenter's rail: docked beside the slide from 1500px (the slide's column narrows, and the slide still fits in
+  // it), over the slide below that, as a dialog, once `]` opens it; shut there by default. It holds the presenter's
+  // controls (the quick add among them), and the slide none of them. Wider letters.
+  { name: 'present-rail-docked', route: '/present/{today}', setup: presenterRail(), widths: [[1920, 1000], [1600, 900], [1500, 900]],
+    rules: [noSidewaysScroll, visible('#present-rail'), besides('#present-rail', '.tide-slide'), fits('#present-rail'), slideFits,
+      visible('#present-rail .tide-quick-add'), hidden('.tide-slide .tide-quick-add'), attr('#present-rail-toggle', 'aria-expanded', 'true'),
+      railPlaceholdersReadable, railSelectsWhole, fits('#present-rail .tide-present-rail-raise'), fits('#present-rail .tide-action-assign'),
+      sameLook('#present-rail .tide-action-assign > input', '#present-rail .tide-action-assign > select', ['backgroundColor', 'color', 'fontSize']),
+      buttonsNamed('Take it', 'Take A-')] },
+  { name: 'present-rail-overlay', route: '/present/{today}', setup: presenterRail(true), widths: [1440, 1100, 780],
+    rules: [noSidewaysScroll, visible('#present-rail'), attr('#present-rail', 'role', 'dialog'), attr('#present-rail', 'aria-modal', 'true'), fits('#present-rail'), slideFits,
+      visible('#present-rail .tide-quick-add'), visible('.tide-present-scrim'), railSelectsWhole, tabStaysIn('#present-rail', 25), tabStaysIn('#present-rail', 6, 'Shift+Tab'), slideKeysHeld] },
+  // A click on the scrim beside the rail open over the slide closes it, and focus goes back to Rail.
+  { name: 'present-rail-scrim', route: '/present/{today}', setup: railScrimClicked, widths: [1440],
+    rules: [hidden('#present-rail'), hidden('.tide-present-scrim'), focusOn('#present-rail-toggle')] },
+  { name: 'present-rail-shut', route: '/present/{today}', setup: presenterRail(), widths: [1440, 780],
+    rules: [hidden('#present-rail'), visible('#present-rail-toggle'), attr('#present-rail-toggle', 'aria-expanded', 'false'), hidden('.tide-slide .tide-quick-add'), slideFits] },
   { name: 'metrics-grid', route: '/metrics?chart=group:alert-queue,group:vulnerability-sla&view=grid', widths: [1920, 1000, 700],
     rules: [noSidewaysScroll, visible('.tide-mc-cell'), visible('.tide-chart-band-warn'), oneRow('.tide-mc-cell-head'), [1800, widerThan('.content', 1400)]] },
   // Add on "Not on a brief yet", from the keyboard: the article leaves the card and focus stays in it, on the next
@@ -3721,6 +3785,7 @@ const pages = [
         visible('.tide-present-top .tide-present-people .tide-presence-dot'), shownCount('.tide-present-people .tide-presence-dot', 6), countWhole,
         ...(hands ? [visible('.tide-hands-n'), namesWhole] : [hidden('.tide-hands-btn')]),
         hidden('.tide-present-bottom .tide-presence'), hidden('.tide-present-bottom .tide-hands-btn'),
+        ...(as === 'follower' ? [hidden('#present-rail'), hidden('#present-rail-toggle')] : []),
         inOrder('.tide-present-top', '.tide-slide', '.tide-present-bottom'), slideFits] }))),
   // The title takes the room there is before it's cut: a
   // meeting of three, no hands, as presenter and follower.
@@ -3734,7 +3799,7 @@ const pages = [
   { name: 'present-hands-emptied', route: '/present/{today}', setup: handsListAfterEmpty, widths: [1440], rules: [hidden('#present-hands'), attr('.tide-hands-btn', 'aria-expanded', 'false')] },
   // The presenter's list of hands, opened from the top bar: each hand in order with its Lower, and Clear all, in the window.
   { name: 'present-hands-list', route: '/present/{today}', setup: handsListOpen, widths: [1920, 1100, 901, 780],
-    rules: [inWindow('#present-hands :is(button, li)'), shownCount('#present-hands li', 5), fits('#present-hands'), visible('#present-hands .tide-hands-clear')] },
+    rules: [inWindow('#present-hands :is(button, li)'), shownCount('#present-hands li', 5), fits('#present-hands'), hidden('#present-hands button')] },
 ];
 
 // --- the run -----------------------------------------------------------------------------------------------------------
