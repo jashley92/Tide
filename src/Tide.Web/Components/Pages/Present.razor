@@ -80,7 +80,7 @@ else
     var slideMatch = slideArticle is null ? default : RecommendedActions.Match(slideArticle.Article.RecommendedActions, slideArticle.Actions, r => r.Recommendation);
     var notRaised = _slide == last && TeamEdition ? edition.Articles.Select(x => (x.Article, Lines: Unraised(x))).Where(x => x.Lines.Count > 0).ToList() : null;
     List<BriefItem> undiscussed = _slide == last && !Presented ? Undiscussed(edition) : [];
-    <div id="present-root" class="tide-present @(RailDocked ? "has-rail" : "")">
+    <div id="present-root" class="tide-present @(RailDocked ? "has-rail" : "") @(ActionBeside ? "has-beside" : "")">
         <header class="tide-present-top" inert="@RailOver">
             <div class="tide-present-title">
                 <span class="tide-brand-mark" aria-hidden="true">T</span>
@@ -1041,7 +1041,7 @@ else
         @if (TeamEdition && _actionDetail is { } shownAction)
         {
             <PresentAction Detail="shownAction" Version="_actionVersion" Kicker="@Kicker(_ownAction)" CanClose="!Held" Autofocus="_focusAction"
-                           OnClose="CloseAction" Changed="OnActionChanged" Links="_readsTeam" />
+                           OnClose="CloseAction" Changed="OnActionChanged" Links="_readsTeam" Beside="ActionBeside" Inert="RailOver" />
         }
 
         @if (CanEditTags && _tagEdit is { } editing)
@@ -2600,6 +2600,10 @@ else
     /// <summary>Whether this page can open an action: on the team edition, and not held by the presenter's lock.</summary>
     private bool CanOpenAction => TeamEdition && !Held && _readsTeam;
 
+    /// <summary>Whether the action open shows beside the slide, which narrows for it (an administrator's choice, off until
+    /// rehearsed): the same for the presenter and everyone following, so the room sees what they see.</summary>
+    private bool ActionBeside => Clock.ActionBesideSlide && TeamEdition && _actionDetail is not null;
+
     // An action's title in a slide's list: it opens the action over the slide where this page can (its number after it).
     private RenderFragment ActionTitle(int number, string title) =>
         @<ActionRef Number="number" Title="@title" Link="false" OnOpen="@(CanOpenAction ? EventCallback.Factory.Create(this, () => ShowAction(number)) : default)" />;
@@ -2695,7 +2699,7 @@ else
     private async Task LoadAction(int number, bool focus = false)
     {
         ActionDetail? detail;
-        try { detail = await ActionSvc.GetAsync(number); }
+        try { detail = await ActionSvc.MeetingViewAsync(number, _teamMax); }
         catch (ForbiddenException) when (_visitor)
         {
             DropAction();   // the presenter closed it a moment ago: a Visitor sees only the one open for the room

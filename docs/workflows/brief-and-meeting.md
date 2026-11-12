@@ -207,6 +207,24 @@ Each of the presenter's steps checks it where it's handled, not only by what's d
 meeting (or, with no meeting, be someone who could present). A follower's `D`, or any of the rail's steps sent by hand,
 changes nothing.
 
+**An action beside the slide.** An action opened in the meeting (its title or number on a slide) opens over the slide.
+With **In a meeting, an action opens beside the slide** ticked in Organization settings (`Org:ActionBesideSlide`, off
+by default, to be turned on after a rehearsal in the meeting room), it opens beside the slide instead, and the slide
+narrows for it, so the room reads the two together:
+
+- From 1200px wide the action is a column of the page between the slide and the presenter's rail,
+  `clamp(22em, 30vw, 30em)` wide. That's the same width for the presenter and everyone following at the same window
+  width, so their slides narrow alike, fit alike (present.js's fit) and the shared scroll lands in the same place.
+- With the presenter's rail docked (1500px and wider) the three share the width: the rail keeps its own, the action
+  takes its column, and the slide fits in what's left (at least 560px at 1600px wide). The presenter's own slide is
+  narrower than the room's by the rail, as it is without an action open. The rail open over the slide covers the action
+  too, as a modal.
+- Narrower than 1200px it opens over the slide, as without the setting.
+- Only the action does: a product's card, the indicators, the CVEs and the tag panel open over the slide as ever.
+- Whoever follows sees it where the presenter has it, as they see the card over the slide. It shows no more than that
+  card: their own read of the action (a Visitor's only the one open for the room, without its page link or files), and,
+  for an action raised from an article above the meeting's ceiling, only its number and title.
+
 ## The live meeting
 
 **Start the meeting** makes it live for the team: a banner on every page and a Join button on the brief invite anyone

@@ -820,7 +820,10 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
 .tide-present-action-body { overflow-y: auto; overscroll-behavior: contain; padding: 1em 1.2em 1.4em; }
 .tide-present-action-cols { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 2em; margin-top: .6em; }
 @media (max-width: 1000px) { .tide-present-action-cols { grid-template-columns: 1fr; } .tide-present-action { left: .6em; right: .6em; } }
-.tide-present-action .tide-facts { margin: .8em 0 0; }
+.tide-present-action .tide-facts { margin: .8em 0 0; background: var(--tide-slide-line); border-color: var(--tide-slide-line-strong); }
+/* On the slide's dark surface in either theme, as the card is: not the page's light one under the slide's light text. */
+.tide-present-action .tide-fact { background: var(--tide-slide-surface); }
+.tide-present-action .tide-fact dt { color: var(--tide-slide-muted); }
 .tide-present-action .tide-comment { padding: .5em 0; border-bottom: 1px solid var(--tide-slide-line); }
 
 /* A live meeting (LiveMeetings): who's following, raised hands, the note list, who attended. */
@@ -1489,8 +1492,8 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-present > .tide-present-bottom { grid-row: 3; grid-column: 1 / -1; }
 .tide-present-rail { grid-row: 2; display: flex; flex-direction: column; gap: .9em; min-width: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
     padding: 1em 1.1em; background: var(--tide-slide-surface); color: var(--tide-slide-text); font-size: .82em; }
-.tide-present-rail.is-docked { grid-column: 2; border-left: 1px solid var(--tide-slide-line); }
-.tide-present-rail.is-over { grid-column: 1; justify-self: end; width: min(26em, 100%); z-index: 15; border-left: 1px solid var(--tide-slide-line-strong); box-shadow: -10px 0 30px var(--tide-shadow-strong); }
+.tide-present-rail.is-docked { grid-column: -2; border-left: 1px solid var(--tide-slide-line); }
+.tide-present-rail.is-over { grid-column: 1 / -1; justify-self: end; width: min(26em, 100%); z-index: 15; border-left: 1px solid var(--tide-slide-line-strong); box-shadow: -10px 0 30px var(--tide-shadow-strong); }
 .tide-present-rail:focus { outline: none; }
 .tide-present-rail-head { display: flex; align-items: center; justify-content: space-between; gap: .6em; color: var(--tide-slide-muted); text-transform: uppercase; letter-spacing: .08em; font-size: .85em; }
 .tide-present-rail section { display: grid; gap: .45em; padding-top: .8em; border-top: 1px solid var(--tide-slide-line); }
@@ -1518,6 +1521,29 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
    whole; the box and the button beside them keep a row. */
 .tide-present-rail :is(.tide-present-rail-raise, .tide-quick-add, .tide-action-assign) > select { grid-column: 1 / -1; }
 .tide-present-rail .tide-action-assign > .tide-assign-none { grid-column: 1 / -1; }
+
+/* An action opened in a meeting, beside the slide where the organization has chosen that (Org:ActionBesideSlide): from
+   1200px wide, a column of the page between the slide and the presenter's rail. It's as wide for the presenter as for
+   everyone following, so their slides narrow alike (the presenter's further, by their rail, while it's docked); the rail
+   keeps its width, and the slide's column takes what's left and fits in it. Narrower than 1200px it opens over the slide,
+   as without the setting. The other cards (a product's, the indicators, the CVEs, the tags) open over the slide. */
+.tide-present { --tide-present-beside-w: clamp(22em, 30vw, 30em); }
+@media (min-width: 1200px) {
+    .tide-present.has-beside { grid-template-columns: minmax(0, 1fr) var(--tide-present-beside-w); }
+    .tide-present.has-beside.has-rail { grid-template-columns: minmax(0, 1fr) var(--tide-present-beside-w) var(--tide-present-rail-w); }
+    .tide-present-action.is-beside { position: static; grid-row: 2; grid-column: 2; min-width: 0; min-height: 0; z-index: auto;
+        border-width: 0 0 0 1px; border-radius: 0; box-shadow: none; }
+    .tide-present-action.is-beside .tide-present-action-cols { grid-template-columns: minmax(0, 1fr); }
+    /* A column, not the width of the window: the title on a line of its own, whose it is and its buttons below; the
+       facts two to a row. */
+    .tide-present-action.is-beside .tide-present-action-head { flex-wrap: wrap; }
+    .tide-present-action.is-beside .tide-present-action-head :is(h2, .tide-present-help) { flex: 1 1 100%; }
+    .tide-present-action.is-beside .tide-present-action-head h2 { font-size: 1.25em; }
+    .tide-present-action.is-beside .tide-present-action-head .btn { white-space: nowrap; }
+    .tide-present-action.is-beside .tide-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    /* Its status choices three to a row, as on a narrow screen, rather than one row wider than the column. */
+    .tide-present-action.is-beside .tide-status-seg { display: grid; grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
+}
 
 /* ---- Intake: CVE chips, triage inbox, sources, stories ---- */
 .tide-cve a { color: inherit; text-decoration: none; }

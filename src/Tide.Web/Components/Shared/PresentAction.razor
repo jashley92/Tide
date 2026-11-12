@@ -5,8 +5,9 @@
 @inject OrgClock Clock
 
 @{ var a = Detail.Action; }
-@* A region, not a dialog: present.js still has the keys, so Esc closes it and the arrows move on (which closes it too). *@
-<section class="tide-present-action" aria-labelledby="present-action-title">
+@* A region, not a dialog: present.js still has the keys, so Esc closes it and the arrows move on (which closes it too).
+   Over the slide, or beside it (a column of the page, the slide narrowed for it) where the organization has chosen that. *@
+<section class="tide-present-action@(Beside ? " is-beside" : "")" aria-labelledby="present-action-title" inert="@Inert">
     <div class="tide-present-action-head">
         <h2 id="present-action-title"><span class="tide-action-num">@Ui.ActionLabel(a.Number)</span> @a.Title</h2>
         @if (Kicker is not null) { <span class="tide-present-help">@Kicker</span> }
@@ -20,87 +21,95 @@
         }
     </div>
     <div class="tide-present-action-body tide-scrollfade">
-        @if (Detail.CanWork)
+        @if (Detail.Withheld)
         {
-            <ActionStatusControl @key="(a.Id, Version)" Action="a" Changed="OnChanged" Stale="OnChanged" />
+            @* Raised from an article above the meeting's ceiling: named, as the Actions list names it, and no more. *@
+            <p class="tide-present-help">From an article above the meeting's TLP ceiling: only its name shows here.</p>
         }
         else
         {
-            <div><ActionStatusBadge Status="a.Status" /> @if (a.Outcome != ActionOutcome.None) { <span>@ActionService.OutcomeName(a.Outcome)</span> }</div>
-        }
-        <dl class="tide-facts">
-            <div class="tide-fact"><dt>Due</dt><dd>@(a.DueDate is { } due ? Ui.Day(due) : "No due date") <SlaBadge State="ActionSla.StateOf(a, ActionSvc.Today, Clock.Days)" Due="a.DueDate" Today="ActionSvc.Today" /></dd></div>
-            <div class="tide-fact"><dt>Assignee</dt><dd>@(a.AssigneeName ?? "Unassigned")</dd></div>
-            <div class="tide-fact"><dt>Team</dt><dd>@a.Team?.Name</dd></div>
-            <div class="tide-fact"><dt>Priority</dt><dd><PriorityBadge Priority="a.Priority" /></dd></div>
-            <div class="tide-fact"><dt>Kind</dt><dd>@ActionService.KindName(a.Kind)</dd></div>
-        </dl>
-        <div class="tide-present-action-cols">
-            <div>
-                @if (!string.IsNullOrWhiteSpace(a.Description))
-                {
-                    <div class="tide-slide-section">Details</div>
-                    <Md Text="@a.Description" />
-                }
-                @if (!a.IsOpen && a.OutcomeNote is not null)
-                {
-                    <div class="tide-slide-section">Outcome</div>
-                    <p>@ActionService.OutcomeName(a.Outcome): @a.OutcomeNote</p>
-                }
-                @if (a.Checklist.Count > 0)
-                {
-                    <div class="tide-slide-section">Checklist <span class="tide-present-help">@a.Checklist.Count(i => i.IsDone) of @a.Checklist.Count done</span></div>
-                    @if (Links)
+            @if (Detail.CanWork)
+            {
+                <ActionStatusControl @key="(a.Id, Version)" Action="a" Changed="OnChanged" Stale="OnChanged" />
+            }
+            else
+            {
+                <div><ActionStatusBadge Status="a.Status" /> @if (a.Outcome != ActionOutcome.None) { <span>@ActionService.OutcomeName(a.Outcome)</span> }</div>
+            }
+            <dl class="tide-facts">
+                <div class="tide-fact"><dt>Due</dt><dd>@(a.DueDate is { } due ? Ui.Day(due) : "No due date") <SlaBadge State="ActionSla.StateOf(a, ActionSvc.Today, Clock.Days)" Due="a.DueDate" Today="ActionSvc.Today" /></dd></div>
+                <div class="tide-fact"><dt>Assignee</dt><dd>@(a.AssigneeName ?? "Unassigned")</dd></div>
+                <div class="tide-fact"><dt>Team</dt><dd>@a.Team?.Name</dd></div>
+                <div class="tide-fact"><dt>Priority</dt><dd><PriorityBadge Priority="a.Priority" /></dd></div>
+                <div class="tide-fact"><dt>Kind</dt><dd>@ActionService.KindName(a.Kind)</dd></div>
+            </dl>
+            <div class="tide-present-action-cols">
+                <div>
+                    @if (!string.IsNullOrWhiteSpace(a.Description))
                     {
-                        <ActionChecklist @key="(a.Id, Version)" ActionId="a.Id" Kind="a.Kind" CanWork="Detail.CanWork" Compact="true" OnChanged="OnChanged" />
+                        <div class="tide-slide-section">Details</div>
+                        <Md Text="@a.Description" />
                     }
-                    else
+                    @if (!a.IsOpen && a.OutcomeNote is not null)
                     {
-                        @* As the room sees it, from the action as read: nothing more is asked of the server. *@
-                        <ul class="list-unstyled mb-0">
-                            @foreach (var i in a.Checklist)
-                            {
-                                <li @key="i.Id"><span class="bi @(i.IsDone ? "bi-check2-square" : "bi-square")" aria-hidden="true"></span> @i.Text<span class="visually-hidden">@(i.IsDone ? " (done)" : " (not done)")</span></li>
-                            }
-                        </ul>
+                        <div class="tide-slide-section">Outcome</div>
+                        <p>@ActionService.OutcomeName(a.Outcome): @a.OutcomeNote</p>
                     }
-                }
-                <div class="tide-slide-section">Comments (@a.Comments.Count)</div>
-                @if (a.Comments.Count == 0) { <div class="tide-present-help">None yet.</div> }
-                @foreach (var c in a.Comments)
-                {
-                    <div class="tide-comment" @key="c.Id">
-                        <div class="tide-present-help"><strong>@c.AuthorName</strong> &middot; @Ui.When(Clock, c.AtUtc)@(c.EditedAtUtc is not null ? " (edited)" : "")</div>
-                        @if (c.Text.Length > 0) { <Md Text="@c.Text" /> }
-                        @{ var shots = Links ? c.Files.Where(f => !f.IsRemoved && f.IsImage).OrderBy(f => f.SortOrder).ToList() : []; }
-                        @if (shots.Count > 0)
+                    @if (a.Checklist.Count > 0)
+                    {
+                        <div class="tide-slide-section">Checklist <span class="tide-present-help">@a.Checklist.Count(i => i.IsDone) of @a.Checklist.Count done</span></div>
+                        @if (Links)
                         {
-                            <div class="tide-comment-shots">
-                                @foreach (var f in shots)
+                            <ActionChecklist @key="(a.Id, Version)" ActionId="a.Id" Kind="a.Kind" CanWork="Detail.CanWork" Compact="true" OnChanged="OnChanged" />
+                        }
+                        else
+                        {
+                            @* As the room sees it, from the action as read: nothing more is asked of the server. *@
+                            <ul class="list-unstyled mb-0">
+                                @foreach (var i in a.Checklist)
                                 {
-                                    <button type="button" class="tide-zoom" aria-label="Open @f.FileName" @onclick="() => OpenShot(shots, f)">
-                                        <img src="@Ui.ImageUrl(f.FileId)" alt="Screenshot: @f.FileName" loading="lazy" />
-                                    </button>
+                                    <li @key="i.Id"><span class="bi @(i.IsDone ? "bi-check2-square" : "bi-square")" aria-hidden="true"></span> @i.Text<span class="visually-hidden">@(i.IsDone ? " (done)" : " (not done)")</span></li>
                                 }
-                            </div>
+                            </ul>
                         }
-                        @foreach (var f in c.Files.Where(f => Links && !f.IsRemoved && !f.IsImage).OrderBy(f => f.SortOrder))
-                        {
-                            <div class="tide-present-help"><span class="bi bi-paperclip" aria-hidden="true"></span> @f.FileName</div>
-                        }
-                    </div>
-                }
-            </div>
-            <div>
-                <div class="tide-slide-section">History</div>
-                <ul class="tide-timeline">
-                    @foreach (var e in a.Events)
-                    {
-                        <li><span class="tide-present-help">@Ui.When(Clock, e.AtUtc) &middot; @e.ByName</span><div>@e.Text</div></li>
                     }
-                </ul>
+                    <div class="tide-slide-section">Comments (@a.Comments.Count)</div>
+                    @if (a.Comments.Count == 0) { <div class="tide-present-help">None yet.</div> }
+                    @foreach (var c in a.Comments)
+                    {
+                        <div class="tide-comment" @key="c.Id">
+                            <div class="tide-present-help"><strong>@c.AuthorName</strong> &middot; @Ui.When(Clock, c.AtUtc)@(c.EditedAtUtc is not null ? " (edited)" : "")</div>
+                            @if (c.Text.Length > 0) { <Md Text="@c.Text" /> }
+                            @{ var shots = Links ? c.Files.Where(f => !f.IsRemoved && f.IsImage).OrderBy(f => f.SortOrder).ToList() : []; }
+                            @if (shots.Count > 0)
+                            {
+                                <div class="tide-comment-shots">
+                                    @foreach (var f in shots)
+                                    {
+                                        <button type="button" class="tide-zoom" aria-label="Open @f.FileName" @onclick="() => OpenShot(shots, f)">
+                                            <img src="@Ui.ImageUrl(f.FileId)" alt="Screenshot: @f.FileName" loading="lazy" />
+                                        </button>
+                                    }
+                                </div>
+                            }
+                            @foreach (var f in c.Files.Where(f => Links && !f.IsRemoved && !f.IsImage).OrderBy(f => f.SortOrder))
+                            {
+                                <div class="tide-present-help"><span class="bi bi-paperclip" aria-hidden="true"></span> @f.FileName</div>
+                            }
+                        </div>
+                    }
+                </div>
+                <div>
+                    <div class="tide-slide-section">History</div>
+                    <ul class="tide-timeline">
+                        @foreach (var e in a.Events)
+                        {
+                            <li><span class="tide-present-help">@Ui.When(Clock, e.AtUtc) &middot; @e.ByName</span><div>@e.Text</div></li>
+                        }
+                    </ul>
+                </div>
             </div>
-        </div>
+        }
     </div>
 </section>
 <ScreenshotDialog Set="_shotSet" @bind-Open="_shot" />
@@ -125,6 +134,12 @@
     /// <summary>Whether it links out (the action's page) and shows its files: not for a Visitor, who sees the card only in
     /// the meeting and has neither the page nor the files.</summary>
     [Parameter] public bool Links { get; set; } = true;
+
+    /// <summary>Beside the slide, in a column of the page, rather than over the slide.</summary>
+    [Parameter] public bool Beside { get; set; }
+
+    /// <summary>Under something modal (the presenter's rail open over the slide): out of reach until that closes.</summary>
+    [Parameter] public bool Inert { get; set; }
 
     /// <summary>After a status move or a tick here: the page re-reads the action.</summary>
     [Parameter] public EventCallback Changed { get; set; }

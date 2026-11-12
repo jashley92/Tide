@@ -46,8 +46,10 @@ window.tidePresent = (function () {
 
     // What Space and Page Down page: the body of a panel open over the slide (an action, a product's card, the tag
     // panel), which is what's in view, rather than the slide hidden behind it; else the slide's body.
+    // An action beside the slide (a column of the page, not over it) leaves them to the slide, whose scroll the room shares.
     function pagedBody() {
-        const open = document.querySelectorAll('#present-root .tide-present-action > .tide-present-action-body');
+        const open = Array.from(document.querySelectorAll('#present-root .tide-present-action > .tide-present-action-body'))
+            .filter(function (body) { return getComputedStyle(body.parentElement).position === 'fixed'; });
         return open.length ? open[open.length - 1] : slideBody();
     }
 

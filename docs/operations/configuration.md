@@ -187,6 +187,7 @@ seed accepts them.
 | `Org:TimeZone` | `America/New_York` | An IANA id this server knows. The page offers the server's zones. | In app: **Organization settings** | At once |
 | `Org:MeetingTime` | `10:30` | 24-hour `HH:mm`. | In app: **Organization settings** | At once |
 | `Org:TeamName` | `Cyber Threat Intelligence` | 1 to 80 characters. Shown in the header, on slides and in emails. | In app: **Organization settings** | At once |
+| `Org:ActionBesideSlide` | `false` | `true`: an action opened in a meeting shows beside the slide, which narrows for it, rather than over it. Turn it on after a rehearsal in the meeting room. | In app: **Organization settings** | At once |
 
 A server `Org:TimeZone` that isn't a known zone stops start-up (HTTP 500.30). A saved one can't be invalid: the page
 checks it.
