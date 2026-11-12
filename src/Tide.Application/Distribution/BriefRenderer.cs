@@ -232,7 +232,8 @@ public sealed class BriefRenderer(IMarkdownService markdown)
             var a = o.Row;
             var label = $"A-{a.Number}";
             var number = baseUrl is null ? Esc(label) : $"<a style=\"color:{Palette.Link};\" href=\"{Esc($"{baseUrl}/actions/{a.Number}")}\">{Esc(label)}</a>";
-            var holder = o.NoOneToOwn ? "no one: the team has no members" : a.AssigneeName ?? "unassigned";
+            // Words only: an email links nowhere but TIDE (an external team's ticket is named, not linked).
+            var holder = o.HolderAs("unassigned").Short;
             var escalated = a.Escalated ? $" <strong style=\"color:{Palette.Threat};\">Escalated</strong>" : "";
             sb.Append(Invariant, $"""
                 <tr>

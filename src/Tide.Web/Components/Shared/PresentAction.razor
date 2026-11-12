@@ -38,7 +38,7 @@
             }
             <dl class="tide-facts">
                 <div class="tide-fact"><dt>Due</dt><dd>@(a.DueDate is { } due ? Ui.Day(due) : "No due date") <SlaBadge State="ActionSla.StateOf(a, ActionSvc.Today, Clock.Days)" Due="a.DueDate" Today="ActionSvc.Today" /></dd></div>
-                <div class="tide-fact"><dt>Assignee</dt><dd>@(a.AssigneeName ?? "Unassigned")</dd></div>
+                <div class="tide-fact"><dt>Assignee</dt><dd><HolderText Label="@HolderLabel.Of(a, "Unassigned")" Short="true" Links="Links" /></dd></div>
                 <div class="tide-fact"><dt>Team</dt><dd>@a.Team?.Name</dd></div>
                 <div class="tide-fact"><dt>Priority</dt><dd><PriorityBadge Priority="a.Priority" /></dd></div>
                 <div class="tide-fact"><dt>Kind</dt><dd>@ActionService.KindName(a.Kind)</dd></div>

@@ -189,7 +189,7 @@ else if (_results is { Terms.Count: > 0 } r)
                         <HuntBadge Result="a.Hunted" />
                     </div>
                     @if (a.Snippet is not null) { <div class="tide-hit-snippet"><Highlight Text="@a.Snippet" Forms="_forms" /></div> }
-                    <div class="small tide-muted">@a.TeamName &middot; @(a.AssigneeName ?? "Unassigned")@(a.DueDate is { } due ? $" · due {Ui.ShortDay(due)}" : "")</div>
+                    <div class="small tide-muted">@a.TeamName &middot; <HolderText Label="@a.Holder("Unassigned")" Short="true" />@(a.DueDate is { } due ? $" · due {Ui.ShortDay(due)}" : "")</div>
                 </div>
             }
             <Pager Page="_pages.Actions" Pages="Pages(r.Actions)" Many="actions" Busy="_more" OnPage="p => More(_pages with { Actions = p })" />

@@ -18,8 +18,12 @@ public sealed record ArticleHit(
 /// <summary>An action that matched, with how its hunts went (null when it has none), its kind and the article it's from.</summary>
 public sealed record ActionHit(
     Guid Id, int Number, string Title, ActionStatus Status, Priority Priority, string TeamName, string? AssigneeName,
-    DateOnly? DueDate, HuntResult? Hunted, string? Snippet, ActionKind Kind = ActionKind.Other, Guid? ArticleId = null)
+    DateOnly? DueDate, HuntResult? Hunted, string? Snippet, ActionKind Kind = ActionKind.Other, Guid? ArticleId = null,
+    bool TeamExternal = false, string? TicketRef = null, string? TicketUrl = null)
 {
+    /// <summary>Who has it, in words (<see cref="Actions.HolderLabel"/>); <paramref name="nobody"/> on an internal team's nobody holds.</summary>
+    public Actions.HolderLabel Holder(string nobody) => Actions.HolderLabel.Of(AssigneeName, AssigneeName, TeamExternal, TeamName, TicketRef, TicketUrl, nobody);
+
     public bool IsOpen => !ActionItem.IsClosedStatus(Status);
 
     /// <summary>A sweep or a hunt: an action that searches logs for indicators.</summary>

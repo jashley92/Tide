@@ -194,14 +194,15 @@ public class PresentWrapUpTests(TideApp app) : IClassFixture<TideApp>
         table.Should().Contain("<th scope=\"col\">Waited</th>").And.Contain("<th scope=\"col\">Next</th>");
         var row = table[table.IndexOf(title, StringComparison.Ordinal)..];
         row = row[..row.IndexOf("</tr>", StringComparison.Ordinal)];
-        row.Should().Contain("3 days late").And.Contain("no update for 6 days").And.Contain(mine.NextInTheRoom(6))
+        var quiet = NeedsUpdate.QuietDays(day.AddDays(-6), day, clock.Days);
+        row.Should().Contain("3 days late").And.Contain($"quiet {quiet} business days").And.Contain("last: raised by Tester").And.Contain(mine.NextInTheRoom(6))
             .And.Contain("no one: the team has no members").And.Contain("Reassign to a team with members");
 
         var held = table[table.IndexOf("Wrap held sweep", StringComparison.Ordinal)..];
         held = held[..held.IndexOf("</tr>", StringComparison.Ordinal)];
         held.Should().Contain("· Tester").And.Contain("Ask what it's waiting on").And.NotContain("no members").And.NotContain("Reassign");
 
-        html.Should().NotContain("Wrap red rotation").And.Contain("2 of 2 overdue shown. <a", "the RED one isn't counted, and the sentences are apart");
+        html.Should().NotContain("Wrap red rotation").And.Contain("2 of 2 shown: overdue, escalated", "the RED one isn't counted");
     }
 
     [Fact]

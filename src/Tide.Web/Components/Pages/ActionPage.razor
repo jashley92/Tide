@@ -103,7 +103,7 @@ else
                 <PresenceNote Place="@ActionPlace(a.Number)" Editing="Editing" />
             </div>
             <div class="tide-sub tide-action-who">
-                <span>@a.Team?.Name</span> &middot; <span>@(a.AssigneeName ?? "Unassigned")</span>
+                <span>@a.Team?.Name</span> &middot; <span><HolderText Label="@HolderLabel.Of(a, "Unassigned")" Short="true" /></span>
                 @if (_detail.HandedFrom is { } handedFrom)
                 {
                     <span class="tide-handoff">&middot; <span class="bi bi-box-arrow-in-right" aria-hidden="true"></span>

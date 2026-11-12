@@ -257,27 +257,40 @@ else
                 }
                 else if (OpenSlides == 1 && _slide == NoteSlides + MetricsSlides + 1)
                 {
-                    @* The overdue actions, looked at again in the room: team edition only (ADR 0005), at most 8, worst first. *@
+                    @* The open actions the room should look at, from any brief: overdue, escalated, or gone too long without an
+                       update (ActionService.MeetingActionsAsync). Team edition only (ADR 0005), at most 8, most pressing first. *@
+                    var limits = Clock.StaleLimits;
+                    var more = _open.Overdue - _open.Rows.Count;
                     <div>
                         <div class="tide-slide-kicker"><span>Open actions</span><span>&middot; team edition only</span></div>
-                        <h2>Still open from earlier briefs</h2>
-                        @* Each with how long it has waited (late, and since its last update) and the one thing to do about it. *@
+                        <h2>@ReviewTitle</h2>
+                        @* Each with why it's here (late, escalated, quiet too long), its last update, and the one thing to do about it. *@
                         <table class="tide-slide-open">
                             <thead><tr><th scope="col">Action</th><th scope="col">Who</th><th scope="col">Waited</th><th scope="col">Next</th></tr></thead>
                             <tbody>
                                 @foreach (var o in _open.Rows)
                                 {
-                                    var quiet = o.Row.QuietDays(_date, Clock.DayOf);
                                     <tr>
-                                        <td><PriorityBadge Priority="o.Row.Priority" /> @ActionTitle(o.Row.Number, o.Row.Title) <EscalatedBadge At="o.Row.EscalatedSince" /></td>
-                                        <td>@o.Row.TeamName <span class="tide-present-help">&middot; @o.Holder</span></td>
-                                        <td><span class="tide-slide-late">@o.Late</span>@if (ActionRow.QuietText(quiet) is { } waited) { <span class="tide-slide-waited">@waited</span> }</td>
-                                        <td><span class="tide-slide-next">@o.NextInTheRoom(quiet)</span></td>
+                                        @* The badge, title and number flow as text; where this page can open the action, a button over the cell does. *@
+                                        <td><PriorityBadge Priority="o.Row.Priority" /> <ActionRef Number="o.Row.Number" Title="@o.Row.Title" Link="false" TitleClass="tide-slide-row-title" /> <EscalatedBadge At="o.Row.EscalatedSince" />@if (CanOpenAction)
+                                            {
+                                                var n = o.Row.Number;
+                                                <button type="button" class="tide-slide-row-open" aria-label="Open @Ui.ActionLabel(n), @o.Row.Title" data-card-opener="action:@n" @onclick="() => ShowAction(n)"></button>
+                                            }</td>
+                                        <td>@o.Row.TeamName <span class="tide-present-help">&middot; <HolderText Label="o.Holder" Short="true" Links="!_visitor" /> &middot; <span class="text-nowrap">@ActionService.StatusName(o.Row.Status)</span></span></td>
+                                        <td><span class="tide-slide-why">@foreach (var (why, i) in o.Reasons.Select((w, i) => (w, i))) { @(i > 0 ? " · " : "")<span class="tide-slide-late">@why</span> }</span>@if (o.LastUpdate is { } lastUpdate)
+                                            {
+                                                <span class="tide-slide-waited">last: @lastUpdate</span>
+                                            }</td>
+                                        <td><span class="tide-slide-next">@o.NextInTheRoom(o.QuietDays)</span></td>
                                     </tr>
                                 }
                             </tbody>
                         </table>
-                        <div class="tide-present-help mt-2">@_open.Rows.Count of @_open.Overdue overdue shown.@if (_readsTeam) { @(" ")<a href="actions?view=overdue">The rest are under Actions &gt; Overdue.</a> }</div>
+                        <div class="tide-present-help mt-2">@_open.Rows.Count of @_open.Overdue shown: overdue, escalated, or with no update for @Ui.Plural(limits.OpenDays, "business day") (@limits.BlockedDays when blocked).@if (more > 0)
+                            {
+                                @(" ")@if (_readsTeam) { <a href="actions">@more more under Actions</a> } else { @($"{more} more under Actions") }@(".")
+                            }</div>
                     </div>
                 }
                 else if (_slide > NoteSlides && _slide <= NoteSlides + MetricsSlides)
@@ -407,7 +420,7 @@ else
                                                     @if (done is not null)
                                                     {
                                                         <span class="tide-reco-done">
-                                                            <span class="bi bi-check2" aria-hidden="true"></span> @ActionNum(done.Number) &middot; @ActionService.StatusName(done.Status) &middot; @(done.AssigneeName ?? "nobody")
+                                                            <span class="bi bi-check2" aria-hidden="true"></span> @ActionNum(done.Number) &middot; @ActionService.StatusName(done.Status) &middot; <HolderText Label="@done.Holder("nobody")" Links="!_visitor" />
                                                         </span>
                                                     }
                                                 </li>
@@ -559,7 +572,7 @@ else
                                             {
                                                 <li>
                                                     @ActionTitle(r.Number, r.Title)
-                                                    <span class="tide-present-help">@r.TeamName@(r.AssigneeName is { } who ? " · " + who : "")@(r.DueDate is { } due ? " · due " + Ui.ShortDay(due) : "")</span>
+                                                    <span class="tide-present-help">@r.TeamName@if (r.Holder("") is { Kind: not HolderKind.Nobody } who) { @(" · ")<HolderText Label="who" Short="true" Links="!_visitor" /> }@(r.DueDate is { } due ? " · due " + Ui.ShortDay(due) : "")</span>
                                                 </li>
                                             }
                                         </ul>
@@ -617,7 +630,8 @@ else
                                     @foreach (var g in holders)
                                     {
                                         <div class="tide-wrap-item">
-                                            <strong>@g.Who</strong>
+                                            @* An external team's ticket links out, as on the open actions slide (words only for a Visitor). *@
+                                            <strong>@if (g.Outside is { Kind: HolderKind.Ticket } ticket) { <HolderText Label="ticket" Links="!_visitor" />@($" · {g.TeamName}") } else { @g.Who }</strong>
                                             <ul>
                                                 @foreach (var r in g.Actions)
                                                 {
@@ -1182,7 +1196,7 @@ else
         var (publicMax, teamMax) = await Distribution.GetAsync();
         var brief = await BriefSvc.GetAsync(date);
         var metrics = brief is null ? null : await MetricsSvc.GetDayAsync(date);
-        var open = brief is null ? OpenActionsReview.None : await ActionSvc.OutstandingAsync(date, teamMax);
+        var open = brief is null ? OpenActionsReview.None : await ActionSvc.MeetingActionsAsync(date, teamMax);
         var canCreate = CurrentUser.Has(Permission.WriteArticles);
         var canPresent = CurrentUser.Has(Permission.PresentBriefs);
         var (canWork, canNote) = (CurrentUser.Has(Permission.WorkActions), MeetingSvc.CanNote);
@@ -1253,6 +1267,11 @@ else
             await _endButton.TryFocusAsync(orGone: true);
         }
         await CatchUpScrollAsync();
+        // Back on the actions that need review (however this page came to it: a key, following, a reload): its rows are
+        // read again, so what changed while it was off screen shows.
+        var key = _brief is null ? null : SlideKey(_slide);
+        if (key == "open" && _drawnKey is not null && _drawnKey != "open") _ = InvokeAsync(RereadReview);
+        _drawnKey = key;
         if (!firstRender) return;
         // The elapsed time in the footer ticks once a minute. Started before the await below, so a page closed during it
         // still stops the clock when it's disposed.
@@ -1303,7 +1322,7 @@ else
             var group = MetricPlan[n - 1 - NoteSlides].Group?.Group.Name;
             return shortName ? group ?? "Numbers" : "Numbers: " + (group ?? "all 0");
         }
-        if (n <= LeadSlides) return shortName ? "Open actions" : "Still open from earlier briefs";
+        if (n <= LeadSlides) return ReviewTitle;
         return ArticleAt(e, n) is not { } x ? "Wrap-up"
             : shortName ? $"{n - LeadSlides} · {FirstWords(x.Article.Title, 2)}" : $"{n - LeadSlides}. {x.Article.Title}";
     }
@@ -1360,9 +1379,13 @@ else
     private IReadOnlyList<Tide.Application.Metrics.MetricSlide> _plan = [];
     private Tide.Application.Metrics.MetricDay? _planOf;
 
-    // The overdue actions follow the numbers on the team edition when any are overdue; never on the public one.
+    // The actions that need review (overdue, escalated, or gone too long without an update: ActionService.MeetingActionsAsync)
+    // follow the numbers on the team edition when there are any; never on the public one.
     private OpenActionsReview _open = OpenActionsReview.None;
     private int OpenSlides => TeamEdition && _open.Any ? 1 : 0;
+
+    /// <summary>The open actions slide's title, wherever it's named.</summary>
+    internal const string ReviewTitle = "Actions that need review";
 
     // The team's opening note has a slide of its own straight after the title, before the numbers: on the team edition,
     // when the note isn't blank (the edition carries it only then). Switching editions, or a colleague clearing the note,
@@ -1372,7 +1395,7 @@ else
     /// <summary>The opening note's slide key.</summary>
     internal const string NoteKey = "note";
 
-    /// <summary>The slides before the first article: the opening note, the numbers, then the open actions.</summary>
+    /// <summary>The slides before the first article: the opening note, the numbers, then the actions that need review.</summary>
     private int LeadSlides => NoteSlides + MetricsSlides + OpenSlides;
 
     private int LastSlide => _brief is null ? 0 : Cut(_brief).Articles.Count + LeadSlides + 1;
@@ -1551,7 +1574,7 @@ else
         if (!tagsOnly)
         {
             _metrics = await MetricsSvc.GetDayAsync(_date);
-            _open = await ActionSvc.OutstandingAsync(_date, _teamMax);
+            _open = await ActionSvc.MeetingActionsAsync(_date, _teamMax);
             await LoadActions();
             _cves = await CvesOf(_brief);
             _stackOf = await StackOf(_brief);
@@ -1574,7 +1597,7 @@ else
     private async Task ReloadActionLists()
     {
         var shown = SlideKey(_slide);
-        _open = await ActionSvc.OutstandingAsync(_date, _teamMax);
+        _open = await ActionSvc.MeetingActionsAsync(_date, _teamMax);
         await LoadActions();
         var at = SlideNamed(shown) ?? Math.Min(_slide, LastSlide);
         if (at == _slide && SlideKey(at) == shown && !Behind) return;
@@ -2517,8 +2540,8 @@ else
         Reslide(SlideNamed(shown) ?? Math.Min(_slide, LastSlide), shown);
     }
 
-    /// <summary>The slides before the articles, in a line for the title slide: "the opening note, the numbers and 2 open
-    /// actions from earlier briefs"; null when the articles come first.</summary>
+    /// <summary>The slides before the articles, in a line for the title slide: "the opening note, the numbers and 2 actions
+    /// that need review"; null when the articles come first.</summary>
     private string? FirstUp
     {
         get
@@ -2526,7 +2549,7 @@ else
             List<string> parts = [];
             if (NoteSlides > 0) parts.Add("the opening note");
             if (MetricsSlides > 0) parts.Add("the numbers");
-            if (OpenSlides > 0) parts.Add(Ui.Plural(_open.Rows.Count, "open action") + " from earlier briefs");
+            if (OpenSlides > 0) parts.Add(Ui.Plural(_open.Overdue, "action") + (_open.Overdue == 1 ? " that needs review" : " that need review"));
             return parts.Count switch
             {
                 0 => null,
@@ -2617,16 +2640,33 @@ else
     private bool ActionBeside => Clock.ActionBesideSlide && TeamEdition && _actionDetail is not null;
 
     // The organization's settings changed: an action open now moves beside the slide, or back over it, on every page in
-    // the meeting at once (each draws it from the setting), rather than when it's next opened.
+    // the meeting at once (each draws it from the setting), rather than when it's next opened; and the actions that need
+    // review are read again by the new limits, so the rows and the count agree with the line under them.
     private void OnOrgChanged()
     {
-        if (_disposed || _actionDetail is null) return;
-        _ = InvokeAsync(StateHasChanged);
+        if (_disposed) return;
+        _ = InvokeAsync(RereadReview);
     }
+
+    // The actions that need review, read again (a limit changed, or their slide is shown again), and drawn.
+    private async Task RereadReview()
+    {
+        if (_disposed || _brief is null) return;
+        try
+        {
+            await ReloadActionLists();
+            StateHasChanged();
+        }
+        catch (ObjectDisposedException) { /* the page closed meanwhile */ }
+    }
+
+    // The slide key last drawn: coming to the actions that need review from another slide reads them again.
+    private string? _drawnKey;
 
     // An action's title in a slide's list: it opens the action over the slide where this page can (its number after it).
     private RenderFragment ActionTitle(int number, string title) =>
-        @<ActionRef Number="number" Title="@title" Link="false" OnOpen="@(CanOpenAction ? EventCallback.Factory.Create(this, () => ShowAction(number)) : default)" />;
+        @<ActionRef Number="number" Title="@title" Link="false" Opener="@($"action:{number}")"
+                    OnOpen="@(CanOpenAction ? EventCallback.Factory.Create(this, () => ShowAction(number)) : default)" />;
 
     // An action's due date, holder and Take it, for someone who can work it: on its recommended line, or in the list of
     // the article's other actions.
@@ -2636,6 +2676,13 @@ else
             <span class="tide-action-assign">
                 <input type="date" class="form-control form-control-sm" aria-label="Due date for @Ui.ActionLabel(r.Number)" value="@DueShown(r)" disabled="@_busy"
                        @key="(r.Id, DueResets(r.Id))" @onchange="e => _dueTyped[r.Id] = e.Value as string" @onfocusout="() => SetDue(r)" />
+                @* An external team has no members, as expected: nobody here is given it, and its ticket names who has it. *@
+                @if (r.TeamExternal)
+                {
+                    <span class="tide-present-help"><HolderText Label="@r.Holder("nobody")" Links="!_visitor" /></span>
+                }
+                else
+                {
                 <select class="form-select form-select-sm" aria-label="Assign @Ui.ActionLabel(r.Number)" value="@(r.AssigneeId ?? "")" disabled="@_busy"
                         @key="AssignKey(r.Id)" @onchange="e => Assign(r, e.Value as string)">
                     <option value="">Nobody</option>
@@ -2648,7 +2695,8 @@ else
                     <span class="tide-present-help tide-assign-none">No one is on @r.TeamName yet.
                         @if (CurrentUser.Has(Permission.Administer)) { <a href="admin/teams">Add them</a> }</span>
                 }
-                @if (r.AssigneeId != _me)
+                }
+                @if (r.AssigneeId != _me && !r.TeamExternal)
                 {
                     <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" aria-label="Take @Ui.ActionLabel(r.Number)" @onclick="() => Take(r)">Take it</button>
                 }
@@ -2659,7 +2707,7 @@ else
     private RenderFragment ActionNum(int number) =>
         @<text>@if (CanOpenAction)
         {
-            <button type="button" class="tide-action-num tide-action-open" title="Open @Ui.ActionLabel(number) here" @onclick="() => ShowAction(number)">@Ui.ActionLabel(number)</button>
+            <button type="button" class="tide-action-num tide-action-open" title="Open @Ui.ActionLabel(number) here" data-card-opener="action:@number" @onclick="() => ShowAction(number)">@Ui.ActionLabel(number)</button>
         }
         else
         {
@@ -2706,6 +2754,7 @@ else
             Refresh();
         }
         DropAction();
+        _focusOpener = true;   // closed here (Escape, Close): focus back on the title that opened it, once it's drawn
         return Task.CompletedTask;
     }
 
@@ -2738,11 +2787,12 @@ else
 
     private Task ReloadAction() => _actionDetail is { } open ? LoadAction(open.Action.Number, _focusAction) : Task.CompletedTask;
 
-    // A status move or a tick in the panel: re-read it, and the slides' lists that show its status.
-    private async Task OnActionChanged()
+    // A status move or a tick in the panel: re-read it, and the slides' lists that show its status, the actions that need
+    // review among them (this page doesn't hear its own change, as the others following do).
+    internal async Task OnActionChanged()
     {
         await ReloadAction();
-        await LoadActions();
+        await ReloadActionLists();
     }
 
     // Goes along with the action the presenter has open: always while locked; otherwise when following, unless this page

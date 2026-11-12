@@ -7,9 +7,16 @@ namespace Tide.Application.Briefs;
 
 /// <summary>An action raised on an article, as an edition lists it. <see cref="Id"/>, <see cref="TeamId"/> and the
 /// assignee are for the meeting, which can hand it to someone; a preview leaves them out. <see cref="Recommendation"/> is
-/// the recommended line it was raised from, if any (<see cref="ActionItem.RecommendationLine"/>): the slide shows it there.</summary>
+/// the recommended line it was raised from, if any (<see cref="ActionItem.RecommendationLine"/>): the slide shows it there.
+/// An external team's carries its ticket, which names it where nobody in TIDE holds it (<see cref="Actions.HolderLabel"/>).</summary>
 public sealed record EditionAction(int Number, string Title, string TeamName, DateOnly? DueDate, ActionStatus Status,
-    Guid Id = default, Guid TeamId = default, string? AssigneeId = null, string? AssigneeName = null, string? Recommendation = null);
+    Guid Id = default, Guid TeamId = default, string? AssigneeId = null, string? AssigneeName = null, string? Recommendation = null,
+    bool TeamExternal = false, string? TicketRef = null, string? TicketUrl = null)
+{
+    /// <summary>Who has it, in words; <paramref name="nobody"/> on an internal team's nobody holds.</summary>
+    public Actions.HolderLabel Holder(string nobody) =>
+        Actions.HolderLabel.Of(AssigneeId, AssigneeName, TeamExternal, TeamName, TicketRef, TicketUrl, nobody);
+}
 
 /// <summary>
 /// An article as an edition shows it: the parts the edition's ceiling lets through. <see cref="ShowWhy"/> is false when
@@ -46,7 +53,8 @@ public sealed record BriefEdition(
     int WithheldArticles,
     bool ShowIntro = false)
 {
-    /// <summary>The overdue actions the team edition lists ("Still open from earlier briefs"), when the cut carries them:
+    /// <summary>The open actions the team edition lists (the email's "Still open from earlier briefs", the meeting's
+    /// "Actions that need review"), when the cut carries them:
     /// each at its article's TLP, so they count in <see cref="Marking"/>.</summary>
     public Actions.OpenActionsReview? Open { get; init; }
 
@@ -79,7 +87,8 @@ public static class BriefEditions
         var rows = await db.Actions.AsNoTracking()
             .Where(a => a.ArticleId != null && ids.Contains(a.ArticleId.Value) && a.Status != ActionStatus.Cancelled)
             .OrderBy(a => a.Number)
-            .Select(a => new { ArticleId = a.ArticleId!.Value, Row = new EditionAction(a.Number, a.Title, a.Team!.Name, a.DueDate, a.Status, a.Id, a.TeamId, a.AssigneeId, a.AssigneeName, a.RecommendationLine) })
+            .Select(a => new { ArticleId = a.ArticleId!.Value, Row = new EditionAction(a.Number, a.Title, a.Team!.Name, a.DueDate, a.Status, a.Id, a.TeamId, a.AssigneeId, a.AssigneeName, a.RecommendationLine,
+                a.Team!.IsExternal, a.TicketRef, a.TicketUrl) })
             .ToListAsync(ct);
         return rows.ToLookup(r => r.ArticleId, r => r.Row);
     }
