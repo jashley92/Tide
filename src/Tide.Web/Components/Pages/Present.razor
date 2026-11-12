@@ -2637,6 +2637,13 @@ else
             <span class="tide-action-assign">
                 <input type="date" class="form-control form-control-sm" aria-label="Due date for @Ui.ActionLabel(r.Number)" value="@DueShown(r)" disabled="@_busy"
                        @key="(r.Id, DueResets(r.Id))" @onchange="e => _dueTyped[r.Id] = e.Value as string" @onfocusout="() => SetDue(r)" />
+                @* An external team has no members, as expected: nobody here is given it, and its ticket names who has it. *@
+                @if (r.TeamExternal)
+                {
+                    <span class="tide-present-help"><HolderText Label="@r.Holder("nobody")" Links="!_visitor" /></span>
+                }
+                else
+                {
                 <select class="form-select form-select-sm" aria-label="Assign @Ui.ActionLabel(r.Number)" value="@(r.AssigneeId ?? "")" disabled="@_busy"
                         @key="AssignKey(r.Id)" @onchange="e => Assign(r, e.Value as string)">
                     <option value="">Nobody</option>
@@ -2649,7 +2656,8 @@ else
                     <span class="tide-present-help tide-assign-none">No one is on @r.TeamName yet.
                         @if (CurrentUser.Has(Permission.Administer)) { <a href="admin/teams">Add them</a> }</span>
                 }
-                @if (r.AssigneeId != _me)
+                }
+                @if (r.AssigneeId != _me && !r.TeamExternal)
                 {
                     <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" aria-label="Take @Ui.ActionLabel(r.Number)" @onclick="() => Take(r)">Take it</button>
                 }

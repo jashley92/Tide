@@ -11,8 +11,9 @@
         <div class="tide-fact">
             <dt>Ticket</dt>
             <dd>
-                @if (A.TicketUrl is not null) { <a href="@A.TicketUrl" target="_blank" rel="noopener noreferrer">@(A.TicketRef ?? "Open the ticket")</a> }
-                else { @(A.TicketRef ?? "None") }
+                @* Linked only to an http or https address; any other link shows as words. *@
+                @if (HolderLabel.TicketLink(A.TicketUrl) is { } url) { <a href="@url" target="_blank" rel="noopener noreferrer">@(A.TicketRef ?? "Open the ticket")</a> }
+                else { @(A.TicketRef ?? A.TicketUrl ?? "None") }
             </dd>
         </div>
         <div class="tide-fact"><dt>Created</dt><dd>@Ui.When(Clock, A.CreatedAtUtc)</dd></div>

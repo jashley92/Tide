@@ -167,6 +167,74 @@ public class ExternalTicketHolderTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task TheActionOverASlide_NamesTheHolderBesideItsTeam_AndLinksOnlyWhereItMay()
+    {
+        var s = await Seed("card");
+        ActionDetail ticketed, bare;
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+        {
+            var actions = scope.ServiceProvider.GetRequiredService<ActionService>();
+            (ticketed, bare) = ((await actions.GetAsync(s.Ticketed.Number))!, (await actions.GetAsync(s.Bare.Number))!);
+        }
+        await using (var r = await RenderAsync<PresentAction>(app, "/present", new() { ["Detail"] = bare, ["Links"] = true }))
+            (await r.Html()).Should().Contain("<dt>Assignee</dt><dd><span class=\"tide-holder\">no ticket yet</span></dd>", "the Team fact beside it names the team");
+        await using (var r = await RenderAsync<PresentAction>(app, "/present", new() { ["Detail"] = ticketed, ["Links"] = true }))
+            (await r.Html()).Should().Contain(Link);
+        await using (var r = await RenderAsync<PresentAction>(app, "/present", new() { ["Detail"] = ticketed, ["Links"] = false }))
+            (await r.Html()).Should().Contain("<span class=\"tide-holder\">INC-4411</span>").And.NotContain(Url, "a Visitor gets no links");
+    }
+
+    [Fact]
+    public async Task TheTicketFact_LinksOnlyAnHttpOrHttpsAddress()
+    {
+        var a = new ActionItem { Number = 9101, Title = "Rotate", TicketRef = "INC-9", TicketUrl = "javascript:alert(1)", Team = new Team { Name = "Hosting" } };
+        await using (var r = await RenderAsync<Tide.Web.Components.ActionRail.ActionFactsSection>(app, "/actions/9101", new() { ["A"] = a }))
+            (await r.Html()).Should().Contain("<dt>Ticket</dt>").And.Contain("INC-9").And.NotContain("javascript:");
+        a.TicketUrl = Url;
+        await using (var r = await RenderAsync<Tide.Web.Components.ActionRail.ActionFactsSection>(app, "/actions/9101", new() { ["A"] = a }))
+            (await r.Html()).Should().Contain($"href=\"{Url}\"");
+    }
+
+    [Fact]
+    public async Task ThePresentersRail_NamesAnExternalTeamsAction_ByItsTicket_AndOffersNoOneToAssign()
+    {
+        var day = DaysBack(35);
+        Guid article;
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+        {
+            var briefs = scope.ServiceProvider.GetRequiredService<BriefService>();
+            var brief = await briefs.GetOrStartAsync(day);
+            article = await scope.ServiceProvider.GetRequiredService<ArticleService>().CreateAsync("Hosted DNS hijack", "Vendor", null, TlpLevel.Clear);
+            await briefs.AddArticleAsync(brief.Id, article);
+        }
+        var s = await Seed("rail", day.AddDays(5), article);
+
+        await using var pat = await Open(app, day);
+        var html = "";
+        for (var i = 0; i < 8 && !html.Contains("id=\"rail-actions-h\"", StringComparison.Ordinal); i++)
+        {
+            if (i > 0) await pat.Click(p => p.OnPresentKey("next"));
+            html = await pat.Html();
+        }
+        var at = html.IndexOf("id=\"rail-actions-h\"", StringComparison.Ordinal);
+        at.Should().BeGreaterThan(0, "the presenter's rail lists the article's actions");
+        var rail = html[at..html.IndexOf("</section>", at, StringComparison.Ordinal)];
+        string Item(int number)
+        {
+            var from = rail.IndexOf($">A-{number}<", StringComparison.Ordinal);
+            from.Should().BeGreaterThan(0, $"A-{number} is listed");
+            var next = rail.IndexOf("class=\"tide-present-rail-action\"", from, StringComparison.Ordinal);
+            return rail[from..(next < 0 ? rail.Length : next)];
+        }
+
+        Item(s.Ticketed.Number).Should().Contain(Link).And.NotContain($"Assign A-{s.Ticketed.Number}").And.NotContain("No one is on")
+            .And.NotContain("Take it");
+        Item(s.Bare.Number).Should().Contain("With " + s.External + " &#xB7; no ticket yet").And.NotContain($"Assign A-{s.Bare.Number}")
+            .And.NotContain("No one is on");
+        Item(s.Inside.Number).Should().Contain($"Assign A-{s.Inside.Number}").And.Contain("No one is on Network rail yet", "an internal team's is unchanged");
+    }
+
+    [Fact]
     public async Task TheTeamEmail_NamesTheTicket_InWordsOnly()
     {
         var day = DaysBack(33);

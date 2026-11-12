@@ -42,12 +42,14 @@ public sealed record HolderLabel(string Text, HolderKind Kind, string? Url = nul
     {
         if (assigneeId is not null) return new(assigneeName ?? assigneeId, HolderKind.Person);
         if (!external) return new(nobody, HolderKind.Nobody);
-        // The link as the ticket field keeps it (http or https only); anything else isn't linked.
-        var url = Articles.ArticleService.SafeUrl(ticketUrl);
+        var url = TicketLink(ticketUrl);
         return string.IsNullOrWhiteSpace(ticketRef)
             ? url is null ? new($"With {teamName} · no ticket yet", HolderKind.NoTicket) : new(UnnamedTicket, HolderKind.Ticket, url)
             : new(ticketRef.Trim(), HolderKind.Ticket, url);
     }
+
+    /// <summary>A ticket's link as the ticket field keeps it (http or https only), or null for anything else: not linked.</summary>
+    public static string? TicketLink(string? url) => Articles.ArticleService.SafeUrl(url);
 
     /// <summary>An action as its page has it, its team loaded (without it, it's taken as internal). Held when it has an
     /// assignee's id, or only a name (an email template's sample actions).</summary>
