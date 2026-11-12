@@ -647,6 +647,25 @@ A **watched** profile marks triage items that name it ("Watching: Scattered Spid
 one group can be merged. MITRE ATT&CK's groups and campaigns can be imported for their ids and aliases: fetched from
 MITRE's TAXII server, or uploaded from a saved copy where the server has no internet.
 
+**The context rail.** On the list a row is selected, as on Our stack (a click, `J` and `K`, the row named in the
+address; `Enter` opens the profile), and the rail is **About** that profile: its badges (Watched, Retired or Merged,
+its MITRE id); **Open profile** and, for analysts on a profile not retired, **Watch** or **Stop watching**; its kind,
+motivation and sectors; **Lately**, its three newest articles with their dates, then how many more and how many name
+it but aren't tagged; its **open actions** (up to three, then how many more); its **top techniques** with how many
+articles show each ("T1190 ×3"); and **We run**. On a profile's page the rail has its **facts** (kind, MITRE id,
+motivation, sectors, briefs this quarter and when it was last reported, what it was merged into), **Do** (Watch or Stop
+watching, the Navigator layer, Retire or Bring back, for analysts as before), **To link** for analysts (the articles
+that name it but aren't tagged, a few named, and a link to the timeline where they're tagged), **We run** and, for
+analysts once detection rules are imported, **Hunting**: how many of its techniques have an enabled rule tagged,
+linked to Coverage. The page keeps the story: the timeline, the actions, the techniques and About it. Docked from
+1500px, beside the page; below that `]` opens it over the page.
+
+Both rails read what the profile's page reads, so they list the same articles and actions to the same people, and
+they never show the notes (AMBER), which stay in About it. **We run** is the products on Our stack that the profile's
+articles are about, tagged with them or naming them, as a product's page finds its own articles: profiles aren't
+linked to products, so it says only what the articles say. Retired products aren't listed. Saved hunt queries aren't
+tied to techniques, so Hunting is the detection rules alone.
+
 ## Detection coverage
 
 **Route:** `/coverage` · **Workflow:** [search, exports and adversaries](../workflows/search-exports-and-adversaries.md)

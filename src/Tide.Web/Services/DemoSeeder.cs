@@ -137,7 +137,7 @@ public static class DemoSeeder
     /// <summary>What the screenshot tool needs to find its pages, and <paramref name="Follower"/>: who to sign a second
     /// browser in as (<c>?as=</c>) to follow a live meeting.</summary>
     public sealed record Seeded(string Today, string Sent, int HuntAction, int DetailAction, string VpnArticle, string SentArticle,
-        string StackProduct, string Follower);
+        string StackProduct, string Follower, string Adversary);
 
     // One seeding pass. Everything random comes from one fixed seed.
     private sealed class Run(IServiceProvider sp, IAppDbContextFactory dbs, OrgClock clock, DevAuthOptions dev)
@@ -193,7 +193,7 @@ public static class DemoSeeder
             db.Settings.Add(new AppSetting { Key = MarkerKey, Value = "1", UpdatedAtUtc = DateTimeOffset.UtcNow, UpdatedBy = "system" });
             await db.SaveChangesAsync(ct);
             return new Seeded(_today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), Sent.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), 1, detail, vpn.Id.ToString(), sent[0].Id.ToString(),
-                edgeVpn.Id.ToString(), Follower);
+                edgeVpn.Id.ToString(), Follower, adversaries[0].Id.ToString());
         }
 
         // --- reference data ----------------------------------------------------------------------------------------
