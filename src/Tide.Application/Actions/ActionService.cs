@@ -1595,7 +1595,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         // Open to In progress stays active, so it never adds to the team's count; held to the rule all the same, so a
         // change to what Take does can't slip past the limit.
         var over = await ActiveLimits.CheckChangeAsync(db, (a.TeamId, a.Status), (a.TeamId, to), a.Id, null, null, ct);
-        a.Status = to;
+        MoveTo(a, to);
         a.EditVersion = Guid.NewGuid();
         db.ActionEvents.Add(Event(user, a.Id, (started ? "Took it on and started it." : "Took it on.") + over));
         await SaveEditAsync(db, ct);
@@ -1792,6 +1792,15 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
 
     // A note on the history line (a hunt's result, closing it in the same step) goes before the status change. Returns the
     // line, for a caller with more to say after it (that it went over its team's limit, and why).
+    // Moves it to another status, dated by the app's clock (the entity's own stamp is the wall clock's); the one it has
+    // changes nothing.
+    private void MoveTo(ActionItem a, ActionStatus to)
+    {
+        if (a.Status == to) return;
+        a.Status = to;
+        a.StatusChangedAtUtc = clock.Now.ToUniversalTime();
+    }
+
     internal ActionEvent ApplyStatus(IAppDbContext db, ActionItem a, ActionStatus status, ActionOutcome outcome, string? note, string? lead = null)
     {
         if (status == ActionStatus.Done && outcome == ActionOutcome.None) throw new ArgumentException("Say what came of it: choose an outcome.");
@@ -1801,14 +1810,14 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
                 : $"{Words.AOrAn(KindName(a.Kind))} {KindName(a.Kind)} action closes with one of: {string.Join(", ", KindOutcomes(a.Kind).Select(OutcomeName))}.");
         var cleanNote = ArticleService.CleanOrNull(note, 2000, multiline: true);
         var was = a.Status;
-        a.Status = status;
+        MoveTo(a, status);
         if (ActionItem.IsClosedStatus(status))
         {
             a.Outcome = outcome;
             a.OutcomeNote = cleanNote;
             if (!ActionItem.IsClosedStatus(was))
             {
-                // The same moment the status setter just recorded: closed, and in its Closed lane, at one time.
+                // The same moment MoveTo just recorded: closed, and in its Closed lane, at one time.
                 a.ClosedAtUtc = a.StatusChangedAtUtc;
                 a.ClosedDate = clock.Today;
             }

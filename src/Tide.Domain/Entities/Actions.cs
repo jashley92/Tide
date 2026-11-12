@@ -148,7 +148,8 @@ public class ActionItem : AuditableEntity
     private ActionStatus _status = ActionStatus.Open;
 
     /// <summary>Where it stands. Setting another status records when (<see cref="StatusChangedAtUtc"/>), whichever path
-    /// moves it; setting the one it has changes nothing.</summary>
+    /// moves it, by the wall clock: the service that moves it then dates it by the app's clock, and seeding sets it after.
+    /// Setting the one it has changes nothing.</summary>
     public ActionStatus Status
     {
         get => _status;
