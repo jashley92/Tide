@@ -171,8 +171,8 @@ else
                         @* The group's flags, in the rows' order (see a row's flags). *@
                         <span class="tide-triage-flags">
                             @if (WeRunOf(line) is { } groupRuns) { @TriageNamed.WeRunChip(groupRuns) }
-                            @if (attachAll is not null) { <Badge Tone="BadgeTone.Info" Class="tide-badge-wrap">@attachAll.Why covered: <a href="articles/@attachAll.ArticleId" @onclick:stopPropagation="true">@Short(attachAll.ArticleTitle)</a></Badge> }
                         </span>
+                        @if (attachAll is not null) { <div class="tide-triage-covers">@CoveredFlag(attachAll, group.Cves.Count)</div> }
                     </div>
                     @if (selected && !DecisionInBar) { @Decision(line, i) }
                 </li>
@@ -186,7 +186,7 @@ else
             <li class="tide-triage-row@(line.Group is not null ? " tide-triage-member" : "") @RowSelection.Css(selected) @_marks.Css(item.Id)" aria-current="@RowSelection.Current(selected)" aria-label="@(item.Title + (unseen ? NewNote : ""))"
                 tabindex="@RowSelection.TabIndex(selected)" @key="item.Id" @onclick="() => Pick(i)" @onfocus="() => Pick(i)">
                 <div class="d-flex gap-2 align-items-start">
-                    <div class="flex-grow-1">
+                    <div class="flex-grow-1 tide-triage-body">
                         @* The title does what the tab is for: in New and Shortlisted it opens the row's promote form (as P
                            does); a promoted item's goes to its article; a dismissed or duplicate one's just selects the row.
                            The source opens from its own icon (or O), in a new tab. *@
@@ -239,14 +239,20 @@ else
                             @* The flags: after what the item is (source, TLP, date, CVEs), at the end of the line, always in this
                                order, from what most changes the decision to what least: we run it (we're exposed), a watched
                                adversary, already covered (attach rather than promote), the same CVE as other new items (decide
-                               them together), and looks like an earlier item (maybe a duplicate). *@
+                               them together), and looks like an earlier item (maybe a duplicate). The short chips we run and
+                               watching stay on the CVEs' line; each coverage is a line of its own, then the rest. *@
                             <span class="tide-triage-flags">
                                 @if (row.WeRun is { } runs) { @TriageNamed.WeRunChip(runs) }
                                 @if (row.Watching is { } watching) { @TriageNamed.WatchingChip(watching) }
-                                @foreach (var c in row.Coverage)
-                                {
-                                    <Badge Tone="BadgeTone.Info" Class="tide-badge-wrap">@c.Why covered@(c.BriefDate is { } d ? $" {Ui.ShortDay(d)}" : ""): <a href="articles/@c.ArticleId" @onclick:stopPropagation="true">@Short(c.ArticleTitle)</a></Badge>
-                                }
+                            </span>
+                            @if (row.Coverage.Count > 0)
+                            {
+                                var cves = item.CveList.Count();
+                                <div class="tide-triage-covers">
+                                    @foreach (var c in row.Coverage) { @CoveredFlag(c, cves) }
+                                </div>
+                            }
+                            <span class="tide-triage-flags">
                                 @if (row.SameCve.Count > 0)
                                 {
                                     <button type="button" class="tide-badge tide-badge-warn tide-badge-wrap tide-chip-button" title="@($"Show the items with {row.SharedCve}")"
@@ -1061,6 +1067,21 @@ else
         </form>;
 
     private static string Short(string s) => s.Length > 60 ? s[..60] + "…" : s;
+
+    /// <summary>
+    /// A coverage flag on a line of the list, one line however narrow: "Covered Nov 11 · " and the article's title (its
+    /// link), cut with an ellipsis on screen. It names the CVE only where the line names several ("CVE-2026-0001 covered
+    /// Nov 11"), and says "Same link covered" for the same link. Its whole text, "CVE-2026-0001 covered Wed Nov 11: the
+    /// title", is its tooltip and the link's name.
+    /// </summary>
+    private static RenderFragment CoveredFlag(Coverage c, int cves) => __builder =>
+    {
+        var d = c.BriefDate;
+        var full = $"{c.Why} covered{(d is { } day ? " " + Ui.ShortDay(day) : "")}: {c.ArticleTitle}";
+        var lead = (c.Why != Tide.Application.Search.RelatedService.SameLink && cves < 2 ? "Covered" : $"{c.Why} covered")
+            + (d is { } on ? " " + Words.MonthDay(on) : "") + " ·";
+        <Badge Tone="BadgeTone.Info" Class="tide-triage-cov" Title="@full"><span aria-hidden="true">@lead</span> <a class="text-truncate" href="articles/@c.ArticleId" aria-label="@full" @onclick:stopPropagation="true">@c.ArticleTitle</a></Badge>
+    };
 
     /// <summary>
     /// A line of the list: an item's row (<see cref="Row"/>); a suggested group's own line (no row; its reports, newest

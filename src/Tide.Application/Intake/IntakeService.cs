@@ -943,7 +943,7 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
         {
             var list = new List<Coverage>();
             foreach (var a in recentLinks.Where(a => a.Url == item.Url))
-                list.Add(Of("Same link", a.Id, a.Title));
+                list.Add(Of(Search.RelatedService.SameLink, a.Id, a.Title));
             foreach (var cve in item.CveList)
                 foreach (var a in byCve.Where(x => x.CveId == cve).DistinctBy(x => x.Id))
                     list.Add(Of(cve, a.Id, a.Title));
