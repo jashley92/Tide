@@ -1273,6 +1273,9 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
 .tide-kcard-title { font-weight: var(--tide-weight-semibold); line-height: 1.3; color: var(--tide-text); overflow-wrap: anywhere; text-decoration: none; }
 .tide-kcard-title:hover, .tide-kcard-title:focus-visible { text-decoration: underline; }
 .tide-kcard-meta { color: var(--tide-text); }
+/* Who has an action: an external team's ticket reference (up to 100 characters, often one word) wraps rather than
+   widening its card, row or slide; on the slide's one-line columns too. */
+.tide-holder { overflow-wrap: anywhere; white-space: normal; }
 .tide-kcard-foot { display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; }
 .tide-kcard-move { padding: 0 .2rem; font-size: .8rem; }
 .tide-kcard-menu { display: flex; flex-wrap: wrap; gap: .3rem; padding-top: .35rem; border-top: 1px solid var(--tide-border); }

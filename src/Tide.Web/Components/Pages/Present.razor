@@ -270,7 +270,7 @@ else
                                     var quiet = o.Row.QuietDays(_date, Clock.DayOf);
                                     <tr>
                                         <td><PriorityBadge Priority="o.Row.Priority" /> @ActionTitle(o.Row.Number, o.Row.Title) <EscalatedBadge At="o.Row.EscalatedSince" /></td>
-                                        <td>@o.Row.TeamName <span class="tide-present-help">&middot; @o.Holder</span></td>
+                                        <td>@o.Row.TeamName <span class="tide-present-help">&middot; <HolderText Label="o.Holder" Short="true" Links="!_visitor" /></span></td>
                                         <td><span class="tide-slide-late">@o.Late</span>@if (ActionRow.QuietText(quiet) is { } waited) { <span class="tide-slide-waited">@waited</span> }</td>
                                         <td><span class="tide-slide-next">@o.NextInTheRoom(quiet)</span></td>
                                     </tr>
@@ -407,7 +407,7 @@ else
                                                     @if (done is not null)
                                                     {
                                                         <span class="tide-reco-done">
-                                                            <span class="bi bi-check2" aria-hidden="true"></span> @ActionNum(done.Number) &middot; @ActionService.StatusName(done.Status) &middot; @(done.AssigneeName ?? "nobody")
+                                                            <span class="bi bi-check2" aria-hidden="true"></span> @ActionNum(done.Number) &middot; @ActionService.StatusName(done.Status) &middot; <HolderText Label="@done.Holder("nobody")" Links="!_visitor" />
                                                         </span>
                                                     }
                                                 </li>
@@ -559,7 +559,7 @@ else
                                             {
                                                 <li>
                                                     @ActionTitle(r.Number, r.Title)
-                                                    <span class="tide-present-help">@r.TeamName@(r.AssigneeName is { } who ? " · " + who : "")@(r.DueDate is { } due ? " · due " + Ui.ShortDay(due) : "")</span>
+                                                    <span class="tide-present-help">@r.TeamName@if (r.Holder("") is { Text.Length: > 0 } who) { @(" · ")<HolderText Label="who" Short="true" Links="!_visitor" /> }@(r.DueDate is { } due ? " · due " + Ui.ShortDay(due) : "")</span>
                                                 </li>
                                             }
                                         </ul>
@@ -617,7 +617,8 @@ else
                                     @foreach (var g in holders)
                                     {
                                         <div class="tide-wrap-item">
-                                            <strong>@g.Who</strong>
+                                            @* An external team's ticket links out, as on the open actions slide (words only for a Visitor). *@
+                                            <strong>@if (g.Outside is { Kind: HolderKind.Ticket } ticket) { <HolderText Label="ticket" Links="!_visitor" />@($" · {g.TeamName}") } else { @g.Who }</strong>
                                             <ul>
                                                 @foreach (var r in g.Actions)
                                                 {

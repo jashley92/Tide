@@ -235,7 +235,7 @@ else
                     @foreach (var a in _detail.Actions)
                     {
                         <li class="tide-stack-row"><PriorityBadge Priority="a.Priority" /> <ActionRef Number="a.Number" Title="@a.Title" />
-                            <span class="small tide-muted">&middot; @a.TeamName &middot; @(a.AssigneeName ?? "unassigned")</span>
+                            <span class="small tide-muted">&middot; @a.TeamName &middot; <HolderText Label="@a.Holder("unassigned")" Short="true" /></span>
                             <ActionStatusBadge Status="a.Status" /></li>
                     }
                 </ul>

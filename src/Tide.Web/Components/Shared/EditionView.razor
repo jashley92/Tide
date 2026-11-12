@@ -37,7 +37,7 @@
                 @foreach (var o in open.Rows)
                 {
                     <li><PriorityBadge Priority="o.Row.Priority" /> <a href="@Ui.ActionUrl(o.Row.Number)">@Ui.ActionLabel(o.Row.Number)</a> @o.Row.Title <EscalatedBadge At="o.Row.EscalatedSince" />
-                        <span class="tide-muted">&middot; @o.Row.TeamName &middot; @(o.NoOneToOwn ? "no one: the team has no members" : o.Row.AssigneeName ?? "unassigned")</span>
+                        <span class="tide-muted">&middot; @o.Row.TeamName &middot; <HolderText Label="@o.HolderAs("unassigned")" Short="true" /></span>
                         <span class="tide-slide-late">@o.Late</span></li>
                 }
             </ul>

@@ -6,7 +6,7 @@
 <section class="tide-card" aria-label="Facts">
     <dl class="tide-facts tide-facts-side">
         <div class="tide-fact"><dt>Team</dt><dd>@A.Team?.Name</dd></div>
-        <div class="tide-fact"><dt>Assignee</dt><dd>@(A.AssigneeName ?? "Unassigned")</dd></div>
+        <div class="tide-fact"><dt>Assignee</dt><dd><HolderText Label="@HolderLabel.Of(A, "Unassigned")" Short="true" /></dd></div>
         <div class="tide-fact"><dt>Kind</dt><dd>@ActionService.KindName(A.Kind)</dd></div>
         <div class="tide-fact">
             <dt>Ticket</dt>

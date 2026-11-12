@@ -66,7 +66,7 @@ public class MeetingWrapUpTests
         Open(noOneToOwn: true, holder: null).NextInTheRoom(9).Should().Be("Reassign to a team with members");
         Open(status: ActionStatus.Blocked).NextInTheRoom(9).Should().Be("Ask what it's waiting on");
         Open(holder: null).NextInTheRoom(9).Should().Be("Find someone to take it");
-        Open(holder: null, external: true).NextInTheRoom(9).Should().Be("Ask for an update", "an external team has nobody in TIDE to take it");
+        Open(holder: null, external: true).NextInTheRoom(9).Should().Be("Ask the team for an update", "an external team has nobody in TIDE to take it");
         Open().NextInTheRoom(2).Should().Be("Ask for an update");
         Open(daysLate: 0).NextInTheRoom(0).Should().Be("Ask for an update", "escalated, not yet due");
         Open().NextInTheRoom(1).Should().Be("Agree a new due date", "late, but someone updated it lately");
@@ -77,9 +77,50 @@ public class MeetingWrapUpTests
     [Fact]
     public void Holder_IsWhoeverHoldsIt_AsTheActionPageSays()
     {
-        Open().Holder.Should().Be("Robin");
-        Open(noOneToOwn: true).Holder.Should().Be("Robin", "a holder is the holder, even on a team with no members");
-        Open(holder: null, noOneToOwn: true).Holder.Should().Be("no one: the team has no members");
-        Open(holder: null).Holder.Should().Be("nobody yet");
+        Open().Holder.Text.Should().Be("Robin");
+        Open(noOneToOwn: true).Holder.Text.Should().Be("Robin", "a holder is the holder, even on a team with no members");
+        Open(holder: null, noOneToOwn: true).Holder.Text.Should().Be("no one: the team has no members");
+        Open(holder: null).Holder.Text.Should().Be("nobody yet");
+        Open(holder: null).HolderAs("unassigned").Text.Should().Be("unassigned");
+    }
+
+    private static OutstandingAction External(string? ticket, string? holder = null, ActionStatus status = ActionStatus.Open, int daysLate = 3)
+    {
+        var o = Open(holder: holder, external: true, status: status, daysLate: daysLate);
+        return o with { Row = o.Row with { TeamName = "Hosting Provider", TicketRef = ticket, TicketUrl = ticket is null ? null : "https://itsm.example.org/" + ticket } };
+    }
+
+    [Fact]
+    public void AnExternalTeamsOverdueAction_IsNamedByItsTicket_AndTheRoomAsksForAnUpdateThere_NeverToReassign()
+    {
+        External("INC-4411").Holder.Should().Be(new HolderLabel("INC-4411", HolderKind.Ticket, "https://itsm.example.org/INC-4411"));
+        External(null).Holder.Text.Should().Be("With Hosting Provider · no ticket yet");
+        External("INC-4411", holder: "dev:robin").Holder.Text.Should().Be("Robin", "a holder in TIDE still wins");
+
+        External("INC-4411").NextInTheRoom(9).Should().Be("Ask for an update on its ticket", "the Who column names it");
+        External(null).NextInTheRoom(9).Should().Be("Ask the team for an update");
+        External("INC-4411", daysLate: 0).NextInTheRoom(0).Should().Be("Ask for an update on its ticket", "escalated, not yet due");
+        External("INC-4411").NextInTheRoom(1).Should().Be("Agree a new due date", "late, but updated lately");
+        External("INC-4411", status: ActionStatus.Blocked).NextInTheRoom(9).Should().Be("Ask what it's waiting on");
+        External("INC-4411", holder: "dev:robin").NextInTheRoom(9).Should().Be("Ask for an update", "Robin has it");
+        foreach (var o in new[] { External("INC-4411"), External(null) })
+            o.NextInTheRoom(9).Should().NotContain("Reassign").And.NotContain("Find someone");
+    }
+
+    private static EditionAction Ext(int number, string? ticket, string? holder = null) =>
+        Act(number, "Hosting Provider", holder) with { TeamExternal = true, TicketRef = ticket, TicketUrl = ticket is null ? null : "https://itsm.example.org/" + ticket };
+
+    [Fact]
+    public void WhoHasWhat_GroupsAnExternalTeamsActions_ByTicket_ThoseWithNoTicketLast()
+    {
+        var groups = WrapUp.WhoHasWhat([Ext(4, null), Ext(3, "INC-9"), Ext(1, "INC-4411"), Ext(2, "INC-4411"), Ext(5, "INC-9", holder: "Robin"),
+            Act(6, "Network", null)]);
+
+        groups.Select(g => g.Who).Should().Equal("Robin · Hosting Provider", "INC-4411 · Hosting Provider", "INC-9 · Hosting Provider",
+            "With Hosting Provider · no ticket yet", "Network · nobody yet");
+        groups[1].Actions.Select(a => a.Number).Should().Equal(1, 2);
+        groups[1].Outside!.Url.Should().Be("https://itsm.example.org/INC-4411");
+        groups[0].Outside.Should().BeNull("Robin holds it");
+        groups[4].Outside.Should().BeNull("an internal team's is unchanged");
     }
 }

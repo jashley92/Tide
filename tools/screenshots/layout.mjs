@@ -835,6 +835,21 @@ const navigateToAdmin = async page => {
 // LETTER_SPACING=.12em widens it further by hand, near what a Linux runner's fonts do.
 const wideFont = async page => { await page.addStyleTag({ content: `* { letter-spacing: ${process.env.LETTER_SPACING ?? '.07em'} !important; }` }); };
 
+/** Setup: every holder named by the longest ticket reference the field takes (100 characters, one word), as an external
+ *  team's action is named by its ticket, with wider letters. */
+const longTicket = async page => {
+  await wideFont(page);
+  await page.evaluate(() => {
+    const ticket = () => Object.assign(document.createElement('span'), { className: 'tide-holder', textContent: 'INC-' + '0123456789ABCDEF'.repeat(6) });
+    // A card's holder follows its person icon; a row's is under its team's name.
+    document.querySelectorAll('.tide-kcard-meta > .bi-person').forEach(icon => {
+      if (icon.nextSibling?.nodeType === Node.TEXT_NODE) icon.nextSibling.remove();
+      icon.after(' ', ticket());
+    });
+    document.querySelectorAll('.tide-action-row td[class="small"] > div.tide-muted').forEach(cell => cell.replaceChildren(ticket()));
+  });
+};
+
 /** Setup: wider letters, and `theme` (dark) set on the page as the app's theme switch would. */
 const darkWide = async page => {
   await page.evaluate(() => document.documentElement.setAttribute('data-bs-theme', 'dark'));
@@ -3529,6 +3544,12 @@ const pages = [
     rules: [noSidewaysScroll, fits('.tide-kanban'), visible('.tide-kcard'), oneRow('.tide-kcard-head'), fits('.tide-kcard-article'), kevPill('.tide-kcard .tide-kev'),
       onFirstScreen('.tide-kstrip'), lanesFillTheHeight, chipsAreDropTargets, [1440, oneRow('.tide-kstrip')]],
   })),
+  // Who has an action can be an external team's ticket reference: the longest wraps within its card and its row rather
+  // than widening them, on the board and the list.
+  { name: 'actions-board-long-ticket', route: '/actions?view=open&layout=board', setup: longTicket, widths: [[1440, 900], [780, 900]],
+    rules: [noSidewaysScroll, visible('.tide-kcard .tide-holder'), fits('.tide-kcard'), fits('.tide-kanban')] },
+  { name: 'actions-list-long-ticket', route: '/actions?view=open&layout=list', setup: longTicket, widths: [1440, 780],
+    rules: [noSidewaysScroll, visible('.tide-action-row .tide-holder'), fits('.tide-dt-scroll')] },
   // With the rail closed (]), the board takes the whole window again.
   { name: 'actions-board-rail-closed', route: '/actions?view=open&layout=board', setup: toggleRail, widths: [[1920, 1080]],
     rules: [noSidewaysScroll, hidden('#tide-rail'), widerThan('.content', 1400), lanesFillTheHeight] },

@@ -41,7 +41,7 @@ internal static class ActionEmails
             sb.Append(CultureInfo.InvariantCulture, $"""
                 <tr>
                   <td style="padding:6px 8px 6px 0;border-bottom:1px solid {Palette.Border};white-space:nowrap;vertical-align:top;">{number}</td>
-                  <td style="padding:6px 8px;border-bottom:1px solid {Palette.Border};vertical-align:top;">{(a.Article is { } from ? TlpLabel(from.Tlp, 10) + " " : "")}{Esc(a.Title)}<div style="font-size:12px;color:{Palette.Muted};">{Esc(ActionService.KindName(a.Kind))} &middot; {a.Priority}{(a.AssigneeName is { } who ? " &middot; " + Esc(who) : "")}</div></td>
+                  <td style="padding:6px 8px;border-bottom:1px solid {Palette.Border};vertical-align:top;">{(a.Article is { } from ? TlpLabel(from.Tlp, 10) + " " : "")}{Esc(a.Title)}<div style="font-size:12px;color:{Palette.Muted};">{Esc(ActionService.KindName(a.Kind))} &middot; {a.Priority}{(HolderLabel.Of(a, "").Text is { Length: > 0 } who ? " &middot; " + Esc(who) : "")}</div></td>
                   <td style="padding:6px 0 6px 8px;border-bottom:1px solid {Palette.Border};white-space:nowrap;vertical-align:top;color:{color};font-size:13px;">{Esc(due)}</td>
                 </tr>
                 """);

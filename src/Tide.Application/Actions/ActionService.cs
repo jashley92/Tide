@@ -73,6 +73,13 @@ public sealed record ActionRow(Guid Id, int Number, string Title, ActionKind Kin
     /// <summary>The recommended line it was raised from (<see cref="ActionItem.RecommendationLine"/>), if any.</summary>
     public string? RecommendationLine { get; init; }
 
+    /// <summary>Its ticket elsewhere, and the ticket's link (<see cref="ActionItem.TicketRef"/>, <see cref="ActionItem.TicketUrl"/>).</summary>
+    public string? TicketRef { get; init; }
+    public string? TicketUrl { get; init; }
+
+    /// <summary>Who has it, in words (<see cref="HolderLabel"/>); <paramref name="nobody"/> on an internal team's nobody holds.</summary>
+    public HolderLabel Holder(string nobody) => HolderLabel.Of(AssigneeId, AssigneeName, TeamExternal, TeamName, TicketRef, TicketUrl, nobody);
+
     // The board fills ArticleKev (its article names a CVE on CISA's KEV list). InStatusSinceUtc is when it moved to the
     // status it's in (ActionItem.StatusChangedAtUtc).
     public SlaState Sla(DateOnly today, WorkingDays? workingDays = null) => ActionSla.StateOf(Status, DueDate, ClosedDate, today, workingDays);
@@ -117,21 +124,31 @@ public sealed record OutstandingAction(ActionRow Row, int DaysLate, bool NoOneTo
     /// <summary>"3 days late", or "not yet due" for an escalated one that isn't (the meeting's and the email's words).</summary>
     public string Late => ActionSla.LateText(DaysLate) ?? "not yet due";
 
-    /// <summary>Who has it, as the action page says: whoever holds it; with nobody, why nobody sees it as theirs when its
-    /// team has no members, else "nobody yet".</summary>
-    public string Holder => Row.AssigneeId is not null ? Row.AssigneeName ?? Row.AssigneeId
-        : NoOneToOwn ? "no one: the team has no members" : "nobody yet";
+    /// <summary>Who has it, as the action page says: whoever holds it; an external team's by its ticket
+    /// (<see cref="HolderLabel"/>); with nobody, why nobody sees it as theirs when its team has no members, else
+    /// <paramref name="nobody"/>.</summary>
+    public HolderLabel HolderAs(string nobody) => Row.AssigneeId is null && NoOneToOwn
+        ? new("no one: the team has no members", HolderKind.Nobody) : Row.Holder(nobody);
+
+    /// <summary><see cref="HolderAs"/> in the meeting's words: "nobody yet".</summary>
+    public HolderLabel Holder => HolderAs("nobody yet");
 
     /// <summary>The one thing the meeting can do about it, the most pressing first: give a team with nobody in it someone,
-    /// unblock it, find it a holder, or ask for an update; one updated since yesterday and still late gets a new due date.
-    /// Said to the room, so it doesn't follow the action page's Next line (<see cref="ActionGuide.Next"/>), which depends on
-    /// who is looking and offers that page's flows.</summary>
+    /// unblock it, find it a holder, or ask for an update (an external team's on its ticket, which the Who column names, or
+    /// of the team without one: having nobody in TIDE is expected of it); one updated since yesterday and still late gets a new due date. Said to
+    /// the room, so it doesn't follow the action page's Next line (<see cref="ActionGuide.Next"/>), which depends on who is
+    /// looking and offers that page's flows.</summary>
     public string NextInTheRoom(int quietDays) =>
         Row.AssigneeId is null && NoOneToOwn ? "Reassign to a team with members"
         : Row.Status == ActionStatus.Blocked ? "Ask what it's waiting on"
         : Row.AssigneeId is null && !Row.TeamExternal ? "Find someone to take it"
-        : quietDays >= 2 || DaysLate == 0 ? "Ask for an update"
-        : "Agree a new due date";
+        : quietDays < 2 && DaysLate > 0 ? "Agree a new due date"
+        : Holder.Kind switch
+        {
+            HolderKind.Ticket => "Ask for an update on its ticket",
+            HolderKind.NoTicket => "Ask the team for an update",
+            _ => "Ask for an update",
+        };
 }
 
 /// <summary>The overdue actions the meeting and the team email show (at most <see cref="ActionService.OutstandingSize"/>),
@@ -973,7 +990,8 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         // When something last happened to it: the latest of its history and its comments, or when it was raised.
         (a.Comments.Max(c => (DateTimeOffset?)c.AtUtc) ?? a.CreatedAtUtc) > (a.Events.Max(e => (DateTimeOffset?)e.AtUtc) ?? a.CreatedAtUtc)
             ? a.Comments.Max(c => (DateTimeOffset?)c.AtUtc)
-            : a.Events.Max(e => (DateTimeOffset?)e.AtUtc) ?? a.CreatedAtUtc) { RecommendationLine = a.RecommendationLine });
+            : a.Events.Max(e => (DateTimeOffset?)e.AtUtc) ?? a.CreatedAtUtc)
+        { RecommendationLine = a.RecommendationLine, TicketRef = a.TicketRef, TicketUrl = a.TicketUrl });
 
     // The rows, and each parent's rollup ("3 of 5 done · 1 overdue · next due Nov 20") from one grouped read of their parts.
     private async Task<List<ActionRow>> RowsAsync(IAppDbContext db, IQueryable<ActionItem> q, CancellationToken ct)

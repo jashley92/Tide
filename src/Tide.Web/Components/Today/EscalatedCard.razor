@@ -9,7 +9,7 @@
         <p class="small tide-muted mb-1">Slipping long enough that the escalation ladder flagged them. Each stays until it closes or its due date moves.</p>
         @foreach (var r in rows)
         {
-            <QueueRow @key="r.Id" Row="r" Meta="@($"{r.TeamName} · {r.AssigneeName ?? "nobody has it"}"
+            <QueueRow @key="r.Id" Row="r" Meta="@($"{r.TeamName} · {r.Holder("nobody has it").Short}"
                                                   + (r.ParentNumber is { } parent ? $" · part of {Ui.ActionLabel(parent)}" : ""))" Marks="Marks" />
         }
     </section>

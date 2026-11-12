@@ -23,7 +23,7 @@
                     <span class="tide-rail-list-title"><ActionRef Number="a.Number" Title="@a.Title" Link="false" /></span>
                     <span class="tide-rail-list-meta">
                         <span>@a.TeamName</span>
-                        <span>@(a.AssigneeName ?? "no owner")</span>
+                        <span><HolderText Label="@a.Holder("no owner")" Short="true" /></span>
                         <ActionStatusBadge Status="a.Status" />
                         @if (a.Hunted is null) { <span>no hunt yet</span> } else { <HuntBadge Result="a.Hunted" /> }
                     </span>
