@@ -2188,11 +2188,12 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// </summary>
     /// <remarks>Given the <paramref name="previewed"/> query the person saw (<see cref="PreviewSavedHuntAsync"/>), it's refused
     /// as stale when the action changed since (its edit version moved) or the query would now be filled differently (an
-    /// indicator added), so what's added is what they saw.</remarks>
+    /// indicator added), so what's added is what they saw. It's filled over the window the preview was, so a day count that
+    /// rolled over since doesn't make it differ.</remarks>
     public async Task<HuntQuery> AddSavedHuntAsync(Guid actionId, Guid savedQueryId, SavedHuntPreview? previewed = null, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
-        var (a, saved, d, text) = await SavedHuntAsync(db, actionId, savedQueryId, ct);
+        var (a, saved, d, text, _) = await SavedHuntAsync(db, actionId, savedQueryId, previewed?.Days, ct);
         if (previewed is not null && (previewed.EditVersion != a.EditVersion || previewed.Text != text)) throw StalePreview();
         var hunt = new HuntQuery
         {
@@ -2213,16 +2214,17 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     public async Task<SavedHuntPreview> PreviewSavedHuntAsync(Guid actionId, Guid savedQueryId, CancellationToken ct = default)
     {
         await using var db = await dbs.CreateAsync(ct);
-        var (a, _, _, text) = await SavedHuntAsync(db, actionId, savedQueryId, ct);
-        return new SavedHuntPreview(text, a.EditVersion);
+        var (a, _, _, text, days) = await SavedHuntAsync(db, actionId, savedQueryId, null, ct);
+        return new SavedHuntPreview(text, a.EditVersion, days);
     }
 
     // What Add says when the action changed after the person saw what it would add: the edit form's own words.
     private static StaleEditException StalePreview() => new("Someone else changed this action since you opened it. Reload to see their changes.");
 
-    // The action, for someone who may work it, and the saved query filled in for it: what Add saves and its preview shows.
-    private async Task<(ActionItem Action, SavedQuery Saved, IQueryDialect Dialect, string Text)> SavedHuntAsync(IAppDbContext db, Guid actionId,
-        Guid savedQueryId, CancellationToken ct)
+    // The action, for someone who may work it, and the saved query filled in for it (over days, else the worked-out
+    // window): what Add saves and its preview shows, and the window it was filled over.
+    private async Task<(ActionItem Action, SavedQuery Saved, IQueryDialect Dialect, string Text, int Days)> SavedHuntAsync(IAppDbContext db, Guid actionId,
+        Guid savedQueryId, int? days, CancellationToken ct)
     {
         var a = await HuntActionAsync(db, actionId, tracked: false, ct);
         await RequireWork(db, user, a, ct);
@@ -2231,10 +2233,10 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
                     ?? throw new KeyNotFoundException("That saved query no longer exists.");
         if (saved.IsRetired) throw new InvalidOperationException($"{saved.Name} is retired. Restore it in the Library, on Saved queries, to use it.");
         var d = QueryDialects.Find(saved.Dialect) ?? throw new ArgumentException("That saved query's language isn't one TIDE knows.");
-        var inputs = await HuntInputsAsync(db, a, fromStory: false, ct);
+        var inputs = Over(await HuntInputsAsync(db, a, fromStory: false, ct), days);
         // TIDE wrote all of it (the saved query is held to its own limit), so however long the indicators make it, it's added.
         var filled = HuntQueryBuilder.FromSaved(d, saved.Name, saved.Text, inputs.Days, inputs.Indicators);
-        return (a, saved, d, HuntText(Filled(filled), filled.Length));
+        return (a, saved, d, HuntText(Filled(filled), filled.Length), inputs.Days);
     }
 
     /// <summary>

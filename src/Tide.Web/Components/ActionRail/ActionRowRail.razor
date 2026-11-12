@@ -128,6 +128,9 @@
     private string? _preview, _said;
     private string _dialect = QueryDialects.All[0].Key;
     private IReadOnlyList<ArticleIndicator> _sweeping = [];
+    // The window the preview was written over: Copy saves it over the same, so a day count rolling over in between
+    // doesn't make the saved query differ from the one shown.
+    private int _previewDays = HuntQueryBuilder.DefaultDays;
     private bool _copying;
 
     protected override Task OnParametersSetAsync()
@@ -167,13 +170,15 @@
             var detail = await ActionSvc.GetAsync(row.Number);
             IReadOnlyList<ArticleIndicator> sweeping = [];
             string? preview = null;
+            var days = HuntQueryBuilder.DefaultDays;
             if (detail is { CanWork: true, Action: { IsOpen: true } a } && ActionGuide.IsHunt(a.Kind))
             {
-                sweeping = (await ActionSvc.HuntSourcesAsync(a.Id)).Own;
-                if (a.Hunts.Count == 0 && sweeping.Count > 0) preview = await ActionSvc.PreviewHuntAsync(a.Id, _dialect);
+                var sources = await ActionSvc.HuntSourcesAsync(a.Id);
+                (sweeping, days) = (sources.Own, sources.Days);
+                if (a.Hunts.Count == 0 && sweeping.Count > 0) preview = await ActionSvc.PreviewHuntAsync(a.Id, _dialect, days: days);
             }
             if (ticket != _ticket) return;
-            (_detail, _sweeping, _preview) = (detail, sweeping, preview);
+            (_detail, _sweeping, _preview, _previewDays) = (detail, sweeping, preview, days);
         }
         catch (Exception ex)
         {
@@ -189,7 +194,7 @@
         _copying = true;
         try
         {
-            var hunt = await ActionSvc.GenerateHuntAsync(_detail.Action.Id, _dialect);
+            var hunt = await ActionSvc.GenerateHuntAsync(_detail.Action.Id, _dialect, days: _previewDays);
             _said = hunt.Text == shown ? "The query is now on the action." : null;
             if (hunt.Text != shown) Toasts.Error("The query changed since it was shown. Copy it again before you run it.");
         }

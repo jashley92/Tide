@@ -461,7 +461,9 @@
         var (dialect, story, days) = (_dialect, _fromStory, _days);
         try
         {
-            var text = await ActionSvc.PreviewHuntAsync(Action.Id, dialect, story, days);
+            // Over the window shown (Days, the worked-out one when none was chosen), as Copy and Keep save it, so a day count
+            // rolling over in between doesn't make the saved query differ from the preview.
+            var text = await ActionSvc.PreviewHuntAsync(Action.Id, dialect, story, Days);
             if ((dialect, story, days) == (_dialect, _fromStory, _days)) _preview = text;
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
@@ -484,7 +486,7 @@
         _previewSaved = null;
         var saved = await Run(async () =>
         {
-            var hunt = await ActionSvc.GenerateHuntAsync(Action.Id, _dialect, _fromStory, _days);
+            var hunt = await ActionSvc.GenerateHuntAsync(Action.Id, _dialect, _fromStory, Days);
             (_preview, _asked) = (null, false);
             // The indicators or the templates changed since it was shown: what was copied isn't what was saved.
             if (hunt.Text != shown)
