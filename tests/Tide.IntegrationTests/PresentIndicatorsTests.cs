@@ -112,6 +112,17 @@ public class PresentIndicatorsTests(TideApp app) : IClassFixture<TideApp>
         Regex.Count(iocs, "class=\"tide-slide-ioc\"").Should().Be(10);
         await Do(pat, p => p.ShowIndicators(s.WithIocs));
         (await pat.Html()).Should().Contain("present-iocs-title").And.Contain("more10-73[.]example[.]org", "the card has them all");
+        await Do(pat, p => p.OnPresentKey("close"));
+
+        // Someone who can't open the card (held to the presenter's slide) sees how many more, and nothing to click.
+        await Do(pat, p => p.StartMeeting());
+        await Do(pat, p => p.ToggleLock());
+        await using var owner = await Open(app, s.Day, Owner);
+        await Do(owner, p => p.JoinIfLive());
+        await Do(owner, p => p.Follow());
+        var theirs = Iocs(await owner.Html());
+        theirs.Should().Contain("2 more</span>").And.NotContain("on the article", "they may not be able to open it").And.NotContain("<button");
+        EndMeeting(app, s.Day);
     }
 
     [Fact]

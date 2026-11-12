@@ -2242,7 +2242,9 @@ button.tide-slide-werun-chip:focus-visible { outline: 3px solid var(--tide-slide
 .tide-slide-cves { margin-top: .2em; display: flex; flex-wrap: wrap; align-items: center; gap: .3em .5em; }
 .tide-slide-cve-sum { font-weight: var(--tide-weight-semibold); color: var(--tide-slide-text); }
 .tide-slide-cve-sum-kev { color: var(--tide-threat); }
-.tide-slide .tide-slide-cve-more { padding: 0; font-size: .9em; }
+/* The slide is dark in both themes: its "+N more" links take the slide's accent, not the page's link colour. */
+.tide-slide .tide-slide-cve-more { padding: 0; font-size: .9em; color: var(--tide-slide-accent); }
+.tide-slide .tide-slide-cve-more:hover { color: var(--tide-slide-accent-hover); }
 /* An article's indicators on its slide: defanged chips that wrap (a long hash or address breaks anywhere rather than
    widen the slide), each opening the larger card. */
 .tide-slide-iocs { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .3em .4em; }
