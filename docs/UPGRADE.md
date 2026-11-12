@@ -176,6 +176,89 @@ anonymous request with 404, and the page says so.
 Each release's notes, newest first, under a `### vX.Y.Z` heading (a pre-release's under its own tag, when it has
 any). What changed for administrators: new settings, steps the upgrade needs, anything that behaves differently.
 
+### v1.13.0
+
+Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds three migrations: `ActionStatusChangedAt` (which fills
+when each action entered its status, from its close time, its latest status line or when it was raised),
+`WhyItMattersKept` (five nullable columns on `Articles`, filled with nothing) and `ActionRecommendationLine` (which
+links each existing action to the recommended line its title matches on its article, once). None of the earlier ones
+change. On a DbaApplies install, the DBA applies them first, as for any release that carries one.
+
+Most pages are laid out afresh around one idea: what you select shows what TIDE already knows about it, in a column on
+the right, so you leave the page less. Every route, key and name that worked before still works.
+
+**Changes to check before upgrading**
+- **A new screenshot starts at TLP:AMBER**, or the article's marking when that's higher, so pasting one never puts it
+  into the company-wide edition. Lowering it is a marking change, saved with Save. Screenshots already added keep
+  their markings.
+- **The article editor saves itself** after a two-second pause in typing. It never saves a change to a TLP marking, or
+  anything that would put a part into the company-wide edition (those wait for Save), never saves over a colleague's
+  newer version, and never touches an article on a sent brief. The audit log keeps every save, each autosave marked
+  *Autosaved*; the article's history shows one editing session as one entry.
+- **The meeting's open-actions slide is now *Actions that need review*.** As well as overdue and escalated actions,
+  it lists open actions nobody has updated for 2 business days (5 when Blocked). Updates by TIDE itself (the
+  escalation ladder's, a skipped reminder's) don't count. The team email's "Still open from earlier briefs" is
+  unchanged.
+- **Raising and working actions in the meeting is the presenter's, from the presenter's rail.** Someone following,
+  an analyst included, raises or works an action on the action pages.
+
+**New settings** (all unchanged until set)
+- `Org:ActionBesideSlide`: `false`. *In a meeting, an action opens beside the slide* (Organization settings). Turn it
+  on after a rehearsal in the meeting room.
+- `Org:StaleOpenDays` (`2`) and `Org:StaleBlockedDays` (`5`): business days, 1 to 30, an open or a blocked action may
+  go without an update before *Actions that need review* lists it (Organization settings).
+- `Intake:PulledBy`: `08:00`. From then on each working day, while polling is on, Today tells analysts how many feeds
+  haven't been pulled since (Sources).
+
+**For everyone**
+- **Every page.** A **context rail** on the right of Today, Triage, the article editor, Actions, an action, Search,
+  Our stack, the Library and Adversaries shows what TIDE knows about what's selected. It's open beside the page on a
+  window 1500px or wider; below that, **Context** in the top bar opens it over the page. `]` shows or hides it. A
+  **brief chip** in the top bar ("Brief 10:30 AM · step 3 of 5 · Order") goes back to Today from anywhere. The
+  sidebar fits a short laptop screen. Popouts (Triage's Attach to…, the account menu, Export indicators) close on
+  Escape, a click outside, or Tab.
+- **Today.** The brief takes the page: the step strip, the running order, the opening note (read-only until Edit),
+  My actions, Not on a brief yet and today's numbers. The edition check, your teams' queue, Escalated, reviews, the
+  meeting and coming up are in the rail. A *Why it matters* warning has **Set to AMBER** and **Keep it** beside it: Keep
+  it records that the paragraph is meant to go to everyone as it is, and the warning comes back if the text or marking
+  changes. The edition check lists only the exceptions, and the Triage step says how many new items are on KEV and
+  how many feeds weren't pulled since the morning, with **Pull all**.
+- **Triage.** The decisions sit under the reading pane, with a line saying why the suggested step is suggested. A
+  report an article already covers is attached in one click (**Attach to “…”**), and a covered group with **Attach
+  all**, every report or none. The rail shows the item's CVE, what already covers it and its open actions, the other
+  reports of the same event, the story, and what it names. The reading pane opens by itself on a wide window but
+  never fetches an article until you press V or *Read it here*. **Pull all** on the Sources tab pulls every source,
+  one at a time.
+- **The article editor.** One column, in the order the brief reads, with the reader preview in the rail. *Why it
+  matters* has the same Set to AMBER and Keep it as Today. Adding an indicator enables Save again, and bullets grow with
+  their text again.
+- **Actions.** Each tab shows its count, and **No owner** finds work nobody has. List rows offer **Take it**, a status
+  menu and a Progress column; All open and My teams are grouped by due date. The board's four lanes fit the window,
+  with Done, Cancelled and Not applicable as chips under them that still take a dropped card and open those actions.
+  Select a row or card with a click or `J`/`K`; `T` takes it, `Enter` opens it, and the rail shows its next step,
+  hunt query, article and last activity. A closed action's rail on Recently closed has **Reopen**. An external team's
+  action that nobody here holds is named by its ticket ("INC-4411"), or "no ticket yet".
+- **An action's page.** One column of work; the facts, the source article, the other actions raised from it, an
+  external team's contact and Files are in the rail. Drop a file anywhere on the page. On a sweep or hunt the query is
+  shown when the page opens and nothing is saved until you Copy or keep it; every built-in template now limits it to
+  the last N days. Saved queries and playbooks can't be added to a closed action. A team's recorded reply reads as a
+  quote.
+- **Search.** A lookup answers in its first line ("On 1 article · briefed Mon Nov 9 · 2 actions open · no hunt result
+  yet"), lists each article once, and shows what's *Seen with* it. The hunt query, who is sweeping for it and an
+  export of its articles are in the rail.
+- **Our stack.** Products that need a look come first, with a *Right now* column (CVEs, KEV, new triage items),
+  filters, and old checks flagged. The selected product shows in the rail, with Edit, Start an outreach and Mark
+  checked.
+- **Library.** Saved queries, Outreach templates, Playbooks and Board rules are one page with four tabs and one search;
+  the old addresses still work. The rail tries an entry on one of your open actions before you add it, and lists
+  where it's been used.
+- **Adversaries.** The list's selected profile, and a profile's facts and buttons, are in the rail.
+- **Present mode.** Who is here and whose hand is up are in the top bar, for everyone. The article slide shows its
+  indicators, and each recommended line the action it became. The footer names the slides, and the title slide says
+  what comes first. The presenter's controls (take, raise, notes, Mark discussed, the opening note, missing numbers,
+  hands, ending) are in the presenter's rail, never on a follower's screen. The wrap-up is three lists: not raised,
+  who has what, and not discussed.
+
 ### v1.12.0
 
 Upgrade as usual (`Upgrade-Tide.ps1 -Version latest`). It adds one migration, `MissedDismissKept`: two nullable columns

@@ -248,8 +248,9 @@ Pages only read `CveRecord`; nothing else writes it.
 
 What triage does with it:
 
-- **CVE chips** show CVSS, EPSS and KEV.
-- **Suggested priority** (`CveService.SuggestedPriority`), preselected in the promote form with its reason:
+- **CVE chips** show CVSS, EPSS and KEV, on the row and in the context rail's CVE section.
+- **Suggested priority** (`CveService.SuggestedPriority`), preselected in the promote form with its reason, and shown
+  in the context rail before any promote ("Promote would suggest P1"):
 
   | Suggestion | When |
   |---|---|
@@ -274,7 +275,8 @@ What triage does with it:
    take turns.
 3. The selected item: its source with its Admiralty grade, its TLP and its excerpt.
 4. CVE chips: the CVSS score, the EPSS percentage and, where it applies, KEV.
-5. The row's decisions: *Promote* (P), *Shortlist* (S), *Dismiss* (X) with a reason, *Attach to…* and *Add to what we run…*.
+5. The item's decisions: *Promote* (P) or, on a covered report, *Attach to “…”*, *Shortlist* (S), *Dismiss* (X) with a
+   reason, and *Attach to…*. With the reading pane open they sit in a bar under it; otherwise in the selected row.
 6. The reading pane (V): the article's text, read once and kept for a week, with its CVEs and indicators marked.
 
 Triage (`/triage`, `Components/Pages/Triage.razor`) is a keyboard-driven inbox. Its tabs are the item states (New,
@@ -312,6 +314,33 @@ KEV-listed), and *Names what we run* (`Named`: items naming a product on Our sta
 naming a KEV-listed CVE, a CVE with EPSS ≥ 10%, or a product on Our stack never age. Older is a button under New, not a
 state: the items are still `New`.
 
+### The reading pane, the decision bar and the context rail
+
+- **The reading pane** (V) sits beside a list about 440px wide. From 1400px wide it opens by itself until the person
+  closes it; that choice is a per-person preference kept on the server, so the first paint is right. Opening by itself
+  shows only text already kept: an article is fetched from its site only on V or *Read it here* (see
+  [reading the article in triage](#reading-the-article-in-triage)). *Read it here*, *Read again* and *Open the site* sit
+  in the pane's head. The pane is as tall as its text, never shorter than about 26rem so the buttons under it stay put
+  while J and K move through unread items, and a longer text scrolls inside it. It stays below the top bar when the
+  page scrolls.
+- **The decision bar** sits under the pane while it's shown. It opens with a line saying why the suggested step is
+  suggested ("Already covered by “X” (briefed Mon Nov 9), so the suggested step is to attach it as another report."),
+  naming only articles the row's flags already show. Then one row of buttons, the suggested step as the primary one:
+  Promote, or on a report an article already covers and can still take, *Attach to “<title>”* (on a covered group,
+  *Attach all N to “<title>”*), then Promote, Shortlist, Duplicate or Put back, Attach to…, and the dismiss reason with
+  Dismiss. The extras (*Add as a source of…*, *Dismiss the N others with its CVE*, a group's Split and Show) take a
+  second row. With the pane closed, or too narrow to show, the same decision is drawn in the selected row. Tab runs
+  from the selected row's controls, to the pane's head, to the bar, to the next row.
+- **The context rail** ("What TIDE knows", on the inbox tabs) shows what's stored about the selected item: its CVE's
+  CVSS, EPSS, KEV and the priority a promote would suggest; *Already covered*, the covering article and its open
+  actions (only when the row's flags already show that coverage); *Same event*, the other reports with *Attach both* or
+  *Attach all* and *Not the same* (the group paths the page uses); the story; and what it names (*We run it*, a
+  watched adversary), with *Add to what we run…* (`StackService.AddByNameAsync`). It reads nothing from a source site.
+  Docked from 1500px; below that `]` or Context opens it over the page, and Escape then closes only the rail.
+- **A row's coverage** is one line: "Covered Nov 11 · <article title>", the title a link cut with an ellipsis, naming
+  the CVE only when the row names several. The whole text is the flag's tooltip and the link's name. *We run* and
+  *Watching* stay at the end of the CVEs' line.
+
 ### Keyboard
 
 Keys are handled by `wwwroot/js/triage.js` (on the shared `rows.js`), which calls `Triage.OnTriageKey`. Letters work in either case and pause
@@ -326,7 +355,7 @@ while a confirmation is open or letter shortcuts are turned off (WCAG 2.1.4).
 | P | Promote (opens the promote form) |
 | R | Restore to New |
 | O | Open the item's link in a new tab |
-| V | Read it in the side pane |
+| V | Read it in the reading pane, or close the pane (a held key doesn't repeat it) |
 | Enter, → , ← | Open or expand a group, collapse it |
 | Esc | Cancel the promote form, or close the reading pane |
 
@@ -471,6 +500,14 @@ Attaching:
 
 An article already presented, or on a brief that was presented or sent, is refused ("Promote this item as a follow-up
 instead") unless the caller passes `evenIfPresented`. Coverage on the row says which it is (`Coverage.Attachable`).
+
+**Attach in one step.** When an article already covers a report and can still take it, the decision's main button is
+*Attach to “<title>”* (the title cut short on screen, whole in the button's name), and P still promotes. A covered
+same-event group gets *Attach all N to “<title>”*, and the context rail's *Same event* has *Attach both* or *Attach
+all*. These go through `IntakeService.AttachAllAsync`, which shares `AttachAsync`'s permission check, link and CVE
+writes and audited save: every report attaches, or none does. Its claim takes only reports nobody has claimed and must
+take all N; otherwise it rolls back and names the report and who took it. A promote that loses the same race says so
+("Not promoted: … already put it in this article."), and two attaches at once never link a report twice.
 
 ### Looks like one event
 
