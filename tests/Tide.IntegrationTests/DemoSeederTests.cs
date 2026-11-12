@@ -205,4 +205,25 @@ public class DemoSeederTests(DemoTideApp app) : IClassFixture<DemoTideApp>
             .Replace("{product}", info.StackProduct));
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
+
+    [Fact]
+    public async Task TheCircuitWorkInHand_IsAnsweredForTheScreenshotTool()
+    {
+        using var response = await app.CreateClient().GetAsync("/demo/activity");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("started").GetInt64().Should().BeGreaterThanOrEqualTo(0);
+        json.RootElement.GetProperty("inHand").GetInt32().Should().Be(0, "no circuit is open");
+    }
+}
+
+/// <summary>Without Demo:Seed, the screenshot tool's /demo/activity isn't there, Development or not.</summary>
+public class DemoActivityAbsentTests(TideApp app) : IClassFixture<TideApp>
+{
+    [Fact]
+    public async Task TheCircuitWorkInHand_IsntAnsweredWithoutTheDemo()
+    {
+        using var response = await app.CreateClient().GetAsync("/demo/activity");
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
 }

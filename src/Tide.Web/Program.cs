@@ -144,6 +144,12 @@ builder.Services.AddScoped<PresenceCircuit>();
 builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler>(sp => sp.GetRequiredService<PresenceCircuit>());
 // The circuit's user is ambient during each of its activities, so a refusal can be logged with who asked.
 builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler, AmbientUserCircuitHandler>();
+// Development only, for the screenshot tool (tools/screenshots), when Demo:Seed is set: its fuller demo data (below), and
+// the circuit work in hand for it to wait on (/demo/activity, below).
+var demoMode = builder.Environment.IsDevelopment() && builder.Configuration.GetValue<bool>("Demo:Seed");
+var demoActivity = demoMode ? new DemoActivity() : null;
+if (demoActivity is not null)
+    builder.Services.AddSingleton<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler>(demoActivity);
 // First, so it stops last: it writes the jobs' last runs and lets the job lease go once they've stopped.
 builder.Services.AddHostedService<JobUpkeepHostedService>();
 builder.Services.AddHostedService<ReminderHostedService>();
@@ -206,7 +212,7 @@ using (var scope = app.Services.CreateScope())
 }
 
 // Development only: the screenshot tool's fuller demo data (tools/screenshots), when Demo:Seed is set.
-if (app.Environment.IsDevelopment() && app.Configuration.GetValue<bool>("Demo:Seed"))
+if (demoMode)
     await DemoSeeder.SeedAsync(app.Services, app.Configuration, app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Tide.Demo"));
 
 if (!app.Environment.IsDevelopment())
@@ -487,6 +493,8 @@ app.MapHealthChecks("/health", new HealthCheckOptions { Predicate = c => c.Tags.
 // Diagnostics.
 app.MapHealthChecks("/health/jobs", new HealthCheckOptions { Predicate = c => c.Tags.Contains("jobs"), ResponseWriter = StatusWord("Background jobs") })
     .AllowAnonymous().RequireRateLimiting("health");
+if (demoActivity is not null)
+    app.MapGet("/demo/activity", () => demoActivity.Now()).AllowAnonymous();
 
 await app.RunAsync();
 
