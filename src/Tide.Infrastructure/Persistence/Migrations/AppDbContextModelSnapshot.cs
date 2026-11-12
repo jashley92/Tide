@@ -498,6 +498,10 @@ namespace Tide.Infrastructure.Persistence.Migrations
                     b.Property<DateOnly?>("RaisedOn")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("RecommendationLine")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("Status")
                         .HasColumnType("INTEGER");
 

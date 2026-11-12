@@ -22,15 +22,31 @@ public static class RecommendedActions
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .ToList();
 
-    /// <summary>Whether an action titled <paramref name="title"/> is the one raised for <paramref name="line"/>.</summary>
-    /// <summary>The lines of <paramref name="markdown"/> that none of <paramref name="titles"/> raised (<see cref="Raised"/>):
-    /// the meeting slide's Raise rows and the article page's "not raised yet" count, alike.</summary>
-    public static IReadOnlyList<string> Unraised(string? markdown, IEnumerable<string> titles)
+    /// <summary>
+    /// Each line of <paramref name="markdown"/> with the action raised from it, by the line each action stored when it was
+    /// raised (<paramref name="lineOf"/>, <see cref="ActionItem.RecommendationLine"/>), never by its title; and the rest of
+    /// the actions: raised by hand, from a line since edited or removed, or a line's second. In the order given.
+    /// </summary>
+    public static (IReadOnlyList<(string Line, T? Action)> Lines, IReadOnlyList<T> Others) Match<T>(string? markdown, IEnumerable<T> actions,
+        Func<T, string?> lineOf) where T : class
     {
-        var raised = titles.ToList();
-        return Lines(markdown).Where(l => !raised.Any(t => Raised(l, t))).ToList();
+        var left = actions.ToList();
+        var lines = new List<(string, T?)>();
+        foreach (var line in Lines(markdown))
+        {
+            var action = left.FirstOrDefault(a => lineOf(a) is { } stored && Raised(line, stored));
+            if (action is not null) left.Remove(action);
+            lines.Add((line, action));
+        }
+        return (lines, left);
     }
 
+    /// <summary>The lines of <paramref name="markdown"/> no action was raised from (<see cref="Match"/>): the meeting's
+    /// wrap-up and the article editor's "not raised yet" count, alike.</summary>
+    public static IReadOnlyList<string> Unraised<T>(string? markdown, IEnumerable<T> actions, Func<T, string?> lineOf) where T : class =>
+        Match(markdown, actions, lineOf).Lines.Where(l => l.Action is null).Select(l => l.Line).ToList();
+
+    /// <summary>Whether two lines are the same recommendation: their words alike, spacing and case aside.</summary>
     public static bool Raised(string line, string title) =>
         string.Equals(MarkdownService.OneLine(line), MarkdownService.OneLine(title), StringComparison.OrdinalIgnoreCase);
 

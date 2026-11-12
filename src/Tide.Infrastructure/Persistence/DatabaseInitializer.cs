@@ -50,7 +50,46 @@ public sealed class DatabaseInitializer(
         await scorecard.SeedStarterSetAsync(ct);
         await SeedStarterLibrariesAsync(db, ct);
         await CanonicalizeIndicatorsAsync(db, log, ct);
+        await LinkRecommendationsAsync(db, log, ct);
         if (env.IsDevelopment()) await SeedSamplesAsync(ct);
+    }
+
+    /// <summary>The setting that says the one-time pass linking actions to their recommended lines has run.</summary>
+    public const string RecommendationLinksKey = "Data:RecommendationLinks";
+
+    /// <summary>
+    /// Links the actions raised before the link was stored to the recommended line each was raised from, once: the slide
+    /// used to put an action under a line when its title was the line's words (RecommendedActions.Raised), so an action
+    /// whose title is one of its article's lines (as the slide reads them: Markdown emphasis aside) gets that line, as
+    /// the article writes it. One action per line: the oldest open one, else the oldest closed; cancelled ones none.
+    /// Logged, and skipped after the marker is written. Returns the actions linked.
+    /// </summary>
+    public static async Task<int> LinkRecommendationsAsync(AppDbContext db, ILogger log, CancellationToken ct = default)
+    {
+        if (await db.Settings.AnyAsync(s => s.Key == RecommendationLinksKey, ct)) return 0;
+        var articles = await db.Articles.Where(a => a.RecommendedActions != null)
+            .Select(a => new { a.Id, a.RecommendedActions }).ToListAsync(ct);
+        var ids = articles.Select(a => a.Id).ToList();
+        var actions = await db.Actions.Where(a => a.ArticleId != null && ids.Contains(a.ArticleId.Value) && a.Status != ActionStatus.Cancelled)
+            .ToListAsync(ct);
+        var linked = 0;
+        foreach (var article in articles)
+        {
+            var theirs = actions.Where(a => a.ArticleId == article.Id).OrderBy(a => a.IsOpen ? 0 : 1).ThenBy(a => a.Number).ToList();
+            var held = theirs.Where(a => a.RecommendationLine != null).Select(a => a.RecommendationLine!).ToList();
+            foreach (var line in RecommendedActions.Lines(article.RecommendedActions))
+            {
+                if (held.Any(h => RecommendedActions.Raised(line, h))) continue;
+                if (theirs.FirstOrDefault(a => a.RecommendationLine == null && RecommendedActions.Raised(line, a.Title)) is not { } first) continue;
+                first.RecommendationLine = line;
+                held.Add(line);
+                linked++;
+            }
+        }
+        db.Settings.Add(new AppSetting { Key = RecommendationLinksKey, Value = "1", UpdatedAtUtc = DateTimeOffset.UtcNow, UpdatedBy = "system" });
+        await db.SaveChangesAsync(ct);
+        if (linked > 0) log.LogInformation("Linked {Linked} action(s) to the recommended line each was raised from.", linked);
+        return linked;
     }
 
     /// <summary>The setting that says the one-time pass over stored indicators has run.</summary>
@@ -234,6 +273,7 @@ public sealed class DatabaseInitializer(
             {
                 Number = 2, Title = "Apply the vendor hotfix to both remote-access gateways", Kind = ActionKind.PatchRemediate, Priority = Priority.P1,
                 TeamId = vulnerability.Id, ArticleId = vpn.Id, DueDate = clock.Days.Next(clock.Today), Status = ActionStatus.InProgress,
+                RecommendationLine = "Apply the vendor hotfix to both gateways today.",
             });
 
         // Intake: two paused sample sources with a few items (one repeating another under a new headline, one about a CVE

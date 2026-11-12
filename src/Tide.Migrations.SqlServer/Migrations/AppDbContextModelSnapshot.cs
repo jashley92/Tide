@@ -503,6 +503,10 @@ namespace Tide.Migrations.SqlServer.Migrations
                     b.Property<DateOnly?>("RaisedOn")
                         .HasColumnType("date");
 
+                    b.Property<string>("RecommendationLine")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
                     b.Property<int>("Status")
                         .HasColumnType("int");
 

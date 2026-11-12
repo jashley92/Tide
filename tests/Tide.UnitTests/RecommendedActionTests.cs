@@ -80,6 +80,34 @@ public class RecommendedActionTests
     [InlineData(ActionKind.Awareness, Priority.P3)]
     public void QuickPriority_WithoutAnArticlePriority_FallsBackToTheKind(ActionKind kind, Priority expected) =>
         ActionService.QuickPriority(null, kind).Should().Be(expected);
+
+    private sealed record Act(string Title, string? Line);
+
+    [Fact]
+    public void EachLine_HasTheActionRaisedFromIt_ByItsStoredLine_NotItsTitle()
+    {
+        const string md = "- Patch GitLab on both instances\n- Hunt for php-fpm spawning a shell\n- Tell the service desk";
+        var patch = new Act("Patch the two GitLab hosts", "patch gitlab on  both instances");   // its title edited since
+        var byHand = new Act("Tell the service desk", null);                                   // same words, raised by hand
+        var gone = new Act("Block the old C2", "Block the C2 at the proxy");                    // its line removed since
+        var again = new Act("Patch GitLab again", "Patch GitLab on both instances");            // the line's second action
+
+        var (lines, others) = RecommendedActions.Match(md, [patch, byHand, gone, again], r => r.Line);
+
+        lines.Select(l => l.Line).Should().Equal("Patch GitLab on both instances", "Hunt for php-fpm spawning a shell", "Tell the service desk");
+        lines.Select(l => l.Action).Should().Equal(patch, null, null);
+        others.Should().Equal(byHand, gone, again);
+        RecommendedActions.Unraised(md, [patch, byHand, gone, again], r => r.Line)
+            .Should().Equal("Hunt for php-fpm spawning a shell", "Tell the service desk");
+    }
+
+    [Fact]
+    public void NoRecommendations_LeaveEveryActionAmongTheOthers()
+    {
+        var (lines, others) = RecommendedActions.Match(null, [new Act("Sweep", "Sweep the logs")], r => r.Line);
+        lines.Should().BeEmpty();
+        others.Should().ContainSingle();
+    }
 }
 
 /// <summary>What an action can close with, by kind, and how late an overdue one is.</summary>
@@ -167,4 +195,5 @@ public class BriefNextTests
     [InlineData(BriefStatus.Sent, 3, BriefNext.ViewAsSent)]
     public void TheHeadersPrimaryButton_FollowsTheBrief(BriefStatus status, int articles, BriefNext next) =>
         BriefSteps.Next(status, articles).Should().Be(next);
+
 }

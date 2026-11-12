@@ -218,7 +218,7 @@
     }
 
     // The recommended lines (as typed) that no action on the article raised, as the meeting slide finds them.
-    private int UnraisedLines => RecommendedActions.Unraised(State.Form.RecommendedActions, _actionRows.Select(r => r.Title)).Count;
+    private int UnraisedLines => RecommendedActions.Unraised(State.Form.RecommendedActions, _actionRows.Where(r => r.Status != ActionStatus.Cancelled), r => r.RecommendationLine).Count;
     private Guid? _actionsFor;
     private ArticleForm? _builtFrom;
     private ArticlePreview[] _both = [];

@@ -509,6 +509,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         {
             e.HasIndex(x => x.Number).IsUnique();
             e.Property(x => x.Title).HasMaxLength(ActionItem.MaxTitle);
+            e.Property(x => x.RecommendationLine).HasMaxLength(ActionItem.MaxTitle);
             e.Property(x => x.Description).HasMaxLength(8000);
             Person(e, x => x.AssigneeId, x => x.AssigneeName);
             e.Property(x => x.OutcomeNote).HasMaxLength(2000);
