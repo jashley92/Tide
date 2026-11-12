@@ -75,7 +75,7 @@
     // What's read of the first article: the article (its class), its open actions, and its story. Kept by the article and
     // its open actions as the inbox counted them, so moving through a list of items one article covers reads it once, and
     // a colleague closing or raising one reads it again.
-    private sealed record Known(Article? Article, IReadOnlyList<ActionRow>? Actions, StoryRow? Story);
+    protected sealed record Known(Article? Article, IReadOnlyList<ActionRow>? Actions, StoryRow? Story);
 
     private readonly Dictionary<string, Known> _read = [];
     private Known? _known;
@@ -84,17 +84,23 @@
     {
         if (Coverage.Count == 0) { _known = null; return; }
         var main = Coverage[0];
-        var key = main.ArticleId + ":" + string.Join(",", main.OpenActions);
+        var key = Key(main);
         if (!_read.TryGetValue(key, out var known))
         {
             _known = null;   // not the last article's, while this one's read
             known = await ReadAsync(main);
             _read[key] = known;
+            // Moved on meanwhile (j or k past an article still being read): what's shown is the item now selected's, read
+            // or being read on its own; this one is only kept for coming back.
+            if (Coverage.Count == 0 || Key(Coverage[0]) != key) return;
         }
         _known = known;
     }
 
-    private async Task<Known> ReadAsync(Coverage main)
+    private static string Key(Coverage main) => main.ArticleId + ":" + string.Join(",", main.OpenActions);
+
+    /// <summary>Reads the first article, its open actions and its story, through the services' own permission checks.</summary>
+    protected virtual async Task<Known> ReadAsync(Coverage main)
     {
         try
         {

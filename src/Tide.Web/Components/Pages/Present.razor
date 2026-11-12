@@ -874,7 +874,7 @@ else
                 else if (_slide == last)
                 {
                     <section aria-labelledby="rail-end-h">
-                        <h3 id="rail-end-h">Before you end</h3>
+                        <h3 id="rail-end-h" tabindex="-1" @ref="_endHeading">Before you end</h3>
                         @if (TeamEdition && CanRaise)
                         {
                             <div class="tide-present-rail-sub">Not raised yet (@notRaised!.Sum(x => x.Lines.Count))</div>
@@ -932,7 +932,7 @@ else
                             }
                             @if (CanEnd)
                             {
-                                <div><button class="btn btn-primary mt-2" disabled="@_busy" @ref="_endButton" @onclick="EndMeeting"><span class="bi bi-flag" aria-hidden="true"></span> End the meeting</button></div>
+                                <div><button class="btn btn-primary mt-2" disabled="@_busy" @onclick="EndMeeting"><span class="bi bi-flag" aria-hidden="true"></span> End the meeting</button></div>
                                 <div class="tide-present-help">Marks the brief and its articles presented and records the meeting time.</div>
                             }
                         }
@@ -1262,9 +1262,9 @@ else
         }
         if (_focusEnd)
         {
-            // The top bar's End brought the wrap-up slide forward: its End the meeting button is the next step.
+            // The top bar's End brought the wrap-up forward: focus goes to its choices in the rail, read from their heading.
             _focusEnd = false;
-            await _endButton.TryFocusAsync(orGone: true);
+            await _endHeading.TryFocusAsync(orGone: true);
         }
         await CatchUpScrollAsync();
         // Back on the actions that need review (however this page came to it: a key, following, a reload): its rows are
@@ -1720,7 +1720,7 @@ else
     private IReadOnlyDictionary<ActionKind, Guid> _teamsByKind = new Dictionary<ActionKind, Guid>();
     private bool _raising;
     private ConfirmDialog _confirm = default!;
-    private ElementReference _endButton;
+    private ElementReference _endHeading;
     private bool _focusEnd;
 
     private RaiseDraft LineDraft(Guid articleId, string line)
@@ -1778,12 +1778,14 @@ else
     }
 
     // The top bar's End: a past day's meeting needs its time chosen, and articles not ticked off need a decision, which
-    // the wrap-up slide asks for; otherwise it asks first.
-    // On the wrap-up slide itself its choices are on screen, so the top bar's End ends the meeting as the slide's does.
-    private async Task EndFromTop()
+    // the wrap-up's rail asks for; otherwise it asks first.
+    // On the wrap-up slide with the rail open its choices are on screen, so the top bar's End ends the meeting as the
+    // rail's does. With the rail shut (a window too narrow to dock it), End opens it on those choices first: a meeting is
+    // never ended past choices no one could see.
+    internal async Task EndFromTop()
     {
         var needsWrapUp = _past || Undiscussed(Cut(_brief!)).Count > 0;
-        if (needsWrapUp && _slide == LastSlide)
+        if (needsWrapUp && _slide == LastSlide && RailOpen)
         {
             await EndMeeting();
             return;
@@ -1791,7 +1793,9 @@ else
         if (needsWrapUp)
         {
             Go(LastSlide);
-            _focusEnd = _slide == LastSlide;
+            if (_slide != LastSlide) return;
+            if (!RailOpen && Rail) _railToggled = !_railToggled;
+            _focusEnd = true;
             return;
         }
         if (await _confirm.Ask("End the meeting now?", "The brief and its articles are marked presented.", "End the meeting", danger: false)) await EndMeeting();

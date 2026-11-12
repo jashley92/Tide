@@ -242,6 +242,32 @@ public class PresentRailTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task TopBarEnd_WithTheRailShut_OpensItOnTheWrapUp_AndNeverEndsUnseen()
+    {
+        var day = await Day(219);
+        await using var pat = await Open(app, day);
+        await Do(pat, p => p.StartMeeting());
+        await pat.Click(p => p.OnRailRoom(false));   // a laptop below the docking width: the rail is shut
+
+        // Articles not discussed yet: End brings the wrap-up's choices forward, in the rail, and ends nothing.
+        await Do(pat, p => p.EndFromTop());
+        var rail = RailOf(await pat.Html());
+        rail.Should().Contain("Not discussed (2)").And.Contain("End the meeting</button>");
+        app.Services.GetRequiredService<Tide.Web.Services.LiveMeetings>().Get(day).Should().NotBeNull("nothing was ended");
+
+        // Shut again on the wrap-up: End opens it again rather than ending past choices no one can see.
+        await Do(pat, p => p.ToggleRail());
+        (await pat.Html()).Should().NotContain("<aside id=\"present-rail\"");
+        await Do(pat, p => p.EndFromTop());
+        RailOf(await pat.Html()).Should().Contain("End the meeting</button>");
+        app.Services.GetRequiredService<Tide.Web.Services.LiveMeetings>().Get(day).Should().NotBeNull("the choices weren't on screen");
+
+        // With them on screen, End ends the meeting as the rail's own End does.
+        await Do(pat, p => p.EndFromTop());
+        app.Services.GetRequiredService<Tide.Web.Services.LiveMeetings>().Get(day).Should().BeNull();
+    }
+
+    [Fact]
     public async Task TheNote_KeepsAnEdit_OnceCurrent_AndTheNumbers_SayNothing_OnceNoneIsMissing()
     {
         var day = await Day(217);
