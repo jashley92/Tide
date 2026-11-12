@@ -1925,10 +1925,10 @@ const reviewActionClosed = async page => {
   await slideWith('.tide-slide-open')(page);
   await page.locator('.tide-slide-open tbody tr:first-child .tide-slide-row-open').click();
   await page.locator('#present-action-title').waitFor();
-  await page.waitForTimeout(300);
+  await idle(page);
   await page.keyboard.press('Escape');
   await page.locator('#present-action-title').waitFor({ state: 'detached' });
-  await page.waitForTimeout(400);
+  await idle(page);
 };
 
 // --- the wrap-up -------------------------------------------------------------------------------------------------------
