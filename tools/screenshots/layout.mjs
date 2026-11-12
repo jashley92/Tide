@@ -1618,23 +1618,24 @@ async function markCheckedFromRail(page) {
   await page.waitForTimeout(500);
 }
 
-/** Our stack's selected row, as the keys move it: J selects the next product (the row marked, focused and named in the
- * address, the rail named for it and its sections read once it rests), K the one before, a click selects the row
- * clicked, and Enter on the selected row opens the product's page. */
-const stackKeys = {
-  name: 'Our stack: J, K, a click and Enter',
+/** A list's selected row, as the keys move it: J selects the next row (the row marked, focused and named in the
+ * address, the rail named for it and its sections, `loaded` among them, read once it rests), K the one before, a click
+ * selects the row clicked (`clickAt`), and Enter on the selected row opens its page (`path`). On a list of three rows or
+ * more (`min`), J is pressed twice. */
+const listKeys = ({ name, row, loaded, path, min, clickAt }) => ({
+  name,
   check: async page => {
     const problems = [];
-    const state = () => page.evaluate(() => {
-      const rows = [...document.querySelectorAll('.tide-stack-item')];
+    const state = () => page.evaluate(([row, loaded]) => {
+      const rows = [...document.querySelectorAll(row)];
       const at = rows.findIndex(r => r.classList.contains('selected'));
       return {
         at, count: rows.length, current: rows[at]?.getAttribute('aria-current'), focused: document.activeElement === rows[at],
         name: rows[at]?.querySelector('td a')?.textContent.trim(), rail: document.querySelector('#tide-rail')?.getAttribute('aria-label'),
-        loaded: !!document.querySelector('#tide-rail #rail-articles-h') && !document.querySelector('#tide-rail').textContent.includes('Loading…'),
+        loaded: !!document.querySelector(`#tide-rail ${loaded}`) && !document.querySelector('#tide-rail').textContent.includes('Loading…'),
         row: new URL(location.href).searchParams.get('row'),
       };
-    });
+    }, [row, loaded]);
     const expect = async (at, why) => {
       await page.waitForTimeout(600);
       const s = await state();
@@ -1645,23 +1646,29 @@ const stackKeys = {
       if ((s.row ?? '0') !== String(at)) problems.push(`${why}: the address says row=${s.row}, not ${at}`);
       return s;
     };
-    if ((await state()).count < 3) return ['fewer than 3 products on the list'];
+    if ((await state()).count < min) return [`fewer than ${min} rows on the list`];
     await page.keyboard.press('j');
     if (!(await expect(1, 'J')).focused) problems.push('J: focus didn\'t follow the selected row');
-    await page.keyboard.press('j');
-    await expect(2, 'J again');
+    if (min > 2) {
+      await page.keyboard.press('j');
+      await expect(2, 'J again');
+    }
     await page.keyboard.press('k');
-    await expect(1, 'K');
-    await page.locator('.tide-stack-item').nth(0).locator('td').nth(3).click();
-    const clicked = await expect(0, 'a click');
+    await expect(min > 2 ? 1 : 0, 'K');
+    await page.locator(row).nth(clickAt).locator('td').nth(3).click();
+    const clicked = await expect(clickAt, 'a click');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(800);
     const heading = await page.locator('h1').first().textContent();
-    if (!new URL(page.url()).pathname.match(/\/stack\/[0-9a-f-]{36}$/) || !heading?.includes(clicked.name))
+    if (!path.test(new URL(page.url()).pathname) || !heading?.includes(clicked.name))
       problems.push(`Enter on the selected row went to ${page.url()} ("${heading?.trim()}"), not ${clicked.name}'s page`);
     return problems;
   },
-};
+});
+
+/** Our stack's selected row, as the keys move it. */
+const stackKeys = listKeys({ name: 'Our stack: J, K, a click and Enter', row: '.tide-stack-item', loaded: '#rail-articles-h', path: /\/stack\/[0-9a-f-]{36}$/,
+  min: 3, clickAt: 0 });
 
 /** The first visible match of `selector` starts no lower than `px` from the top of the page: what a page is for isn't
  * pushed down by headings above it. */
@@ -2232,6 +2239,30 @@ async function scrollDown(page) {
   await page.mouse.wheel(0, 1500);
   await page.waitForTimeout(300);
 }
+
+// --- Adversaries' context rail -----------------------------------------------------------------------------------------
+
+/** Adversaries' selected row, as the keys move it (as Our stack's). */
+const adversaryKeys = listKeys({ name: 'Adversaries: J, K, a click and Enter', row: '.tide-adv-item', loaded: '#rail-lately-h',
+  path: /\/adversaries\/[0-9a-f-]{36}$/, min: 2, clickAt: 1 });
+
+/** The rail shows no marked text: a profile's notes (TLP:AMBER, the demo's all say "for the demo") stay on its page. */
+const railHasNoNotes = holds('the rail has no AMBER notes', () => {
+  const rail = document.querySelector('#tide-rail');
+  if (!rail) return ['there is no rail'];
+  return /for the demo|TLP:AMBER/i.test(rail.textContent) ? ['the rail shows the profile\'s notes or a marking'] : [];
+});
+
+/** What either Adversaries rail holds, docked: flat sections that each fit the column, buttons as Our stack's. */
+const adversaryRailHolds = [noSidewaysScroll, visible('#tide-rail .tide-card'), besides('#main-content', '#tide-rail'), attr('#tide-rail', 'role', null),
+  visible('#tide-rail .tide-rail-head kbd'), visible('#tide-rail-close'), flat('#tide-rail .tide-rail-body > section'), fits('.tide-rail-body'),
+  fits('#tide-rail .tide-rail-body > section'), fits('#tide-rail .tide-stack-rail-buttons'), fits('#tide-rail .tide-facts'),
+  visible('#tide-rail .tide-facts'), visible('#tide-rail section[aria-labelledby="rail-werun-h"]'),
+  ringOnFocus('#tide-rail .tide-stack-rail-buttons a, #tide-rail .tide-stack-rail-buttons button'), railHasNoNotes];
+
+/** What either Adversaries rail holds as an overlay (below 1500px): a modal dialog that keeps Tab, its sections fitting. */
+const adversaryRailOverHolds = [noSidewaysScroll, visible('#tide-rail .tide-card'), fits('.tide-rail-body'), fits('#tide-rail .tide-rail-body > section'),
+  focusIn('#tide-rail'), attr('#tide-rail', 'role', 'dialog'), attr('#tide-rail', 'aria-modal', 'true'), tabStaysIn('#tide-rail', 30), railHasNoNotes];
 
 // --- the action page's context rail (option E 3.5) ---------------------------------------------------------------------
 
@@ -3555,6 +3586,22 @@ const pages = [
       attr('#tide-rail', 'role', 'dialog'), attr('#tide-rail', 'aria-modal', 'true'), tabStaysIn('#tide-rail', 40)] },
   // J and K move the selected row and the rail follows; a click selects; Enter opens the product.
   { name: 'stack-keys', route: '/stack', widths: [1920, 1440], rules: [stackKeys] },
+  // Adversaries' context rail: on the list, the selected profile (its facts, Open profile and Watch, Lately, open
+  // actions, top techniques, We run); on a profile, its facts and what can be done to it (Watch, the Navigator layer,
+  // Retire), the articles to link, We run and Hunting, the page keeping the story. Docked from 1500px, beside the page
+  // with no sideways scroll; below, closed until `]` opens it over the page as a modal dialog. Never the notes.
+  { name: 'adversaries-rail', route: '/adversaries', setup: wideFont, widths: [1920, 1600, 1500],
+    rules: [...adversaryRailHolds, fits('.tide-dt-scroll'), visible('.tide-adv-item.selected'), attr('.tide-adv-item.selected', 'aria-current', 'true'),
+      visible('#tide-rail section[aria-labelledby="rail-lately-h"]'), visible('#tide-rail section[aria-labelledby="rail-open-actions-h"]'),
+      visible('#tide-rail section[aria-labelledby="rail-techniques-h"]'), fits('#tide-rail .tide-adv-rail-techniques'), linksAlike('#tide-rail .tide-rail-list a')] },
+  { name: 'adversaries-rail-over', route: '/adversaries', setup: toggleRail, widths: [1440],
+    rules: [...adversaryRailOverHolds, fits('.tide-dt-scroll')] },
+  { name: 'adversaries-keys', route: '/adversaries', widths: [1920, 1440], rules: [adversaryKeys] },
+  { name: 'adversary-rail', route: '/adversaries/{adversary}', setup: wideFont, widths: [1920, 1600, 1500],
+    rules: [...adversaryRailHolds, hidden('.content .tide-facts'), visible('#tide-rail section[aria-labelledby="rail-do-h"]'),
+      visible('#tide-rail a[href$="/navigator.json"]'), visible('.content #adv-timeline-h'), visible('.content #adv-about-h'), fits('.content .tide-adv-heat')] },
+  { name: 'adversary-rail-over', route: '/adversaries/{adversary}', setup: toggleRail, widths: [1440],
+    rules: adversaryRailOverHolds },
   // The Library: one header, the one search on the tab row beside the tabs, and the list high on the page; its findings,
   // tab by tab, for a search's words.
   { name: 'library', route: '/library/queries', setup: wideFonts, widths: [1920, 1440, 780],

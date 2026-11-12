@@ -1,0 +1,173 @@
+@* The profile selected on Adversaries, in the context rail: its badges, Open profile and (for those who keep the
+   profiles, on one not retired) Watch or Stop watching; its kind, motivation and sectors; Lately, its newest articles;
+   the open actions raised from them; its top techniques; and what we run that its articles are about.
+   What the rail reads beyond the list's row is the profile page's own read (AdversaryService.GetAsync), so it lists
+   the articles and actions the page lists, to the same people, and StackService.RunByArticlesAsync over those
+   articles. It's read once the selection has rested a moment, so J held down doesn't read every profile it passes.
+   Watch goes through AdversaryService.SetWatchedAsync, as the profile page's does: analysts only, and audited. The
+   profile's notes are internal (AMBER) and stay on its page: the rail shows no marked text. *@
+@using Tide.Application.Adversaries
+@using Tide.Application.Stack
+@inject AdversaryService Adversaries
+@inject StackService Stack
+@inject ICurrentUser CurrentUser
+@inject OrgClock Clock
+@inject ToastService Toasts
+
+@{ var p = Row.Adversary; }
+<section class="tide-card" aria-label="Facts">
+    @if (p.Watched || p.IsRetired || p.MitreId is not null)
+    {
+        <div class="tide-rail-badges mb-3">
+            @if (p.Watched) { <Badge Tone="BadgeTone.Warn">Watched</Badge> }
+            @if (p.IsRetired) { <Badge Tone="BadgeTone.Neutral">@(p.MergedIntoId is null ? "Retired" : "Merged")</Badge> }
+            @if (p.MitreId is { } mitre) { <Badge Tone="BadgeTone.Neutral" Class="tide-data">MITRE @mitre</Badge> }
+        </div>
+    }
+    <dl class="tide-facts tide-facts-side">
+        <div class="tide-fact"><dt>Kind</dt><dd>@p.Kind</dd></div>
+        <div class="tide-fact"><dt>Motivation</dt><dd>@(p.Motivation ?? "—")</dd></div>
+        <div class="tide-fact tide-fact-wide"><dt>Sectors</dt><dd>@(p.Sectors ?? "—")</dd></div>
+    </dl>
+    <div class="tide-stack-rail-buttons">
+        <a class="btn btn-outline-secondary btn-sm" href="@($"adversaries/{p.Id}")" aria-label="@($"Open {p.Name}'s profile")">Open profile</a>
+        @if (CanWrite && !p.IsRetired)
+        {
+            <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Watch(!p.Watched)">@(p.Watched ? "Stop watching" : "Watch in triage")</button>
+        }
+    </div>
+</section>
+
+<section class="tide-card" aria-labelledby="rail-lately-h">
+    <h2 id="rail-lately-h">Lately @Count(_detail?.Articles.Count)</h2>
+    @if (_detail is null) { <p class="small tide-muted mb-0">Loading…</p> }
+    else
+    {
+        var articles = _detail.Articles;
+        @if (articles.Count == 0) { <p class="small tide-muted mb-0">No articles yet.</p> }
+        <ul class="tide-rail-list">
+            @foreach (var a in articles.Take(Shown))
+            {
+                <li><a class="tide-rail-list-title tide-stack-rail-link" href="@($"articles/{a.Id}")">@a.Title</a>
+                    <span class="tide-rail-list-meta">@Ui.ShortDay(a.On, Clock.Today) · @(a.Tagged ? "tagged" : "names it")</span></li>
+            }
+        </ul>
+        @if (articles.Count > Shown) { <a class="small tide-stack-rail-link" href="@($"adversaries/{p.Id}")">+@(articles.Count - Shown) more</a> }
+        @if (_detail.Untagged.Count is > 0 and var untagged) { <div class="small tide-muted">@untagged named but not tagged</div> }
+    }
+</section>
+
+<section class="tide-card" aria-labelledby="rail-open-actions-h">
+    @{ var open = _detail?.Actions.Where(a => !ActionItem.IsClosedStatus(a.Status)).ToList(); }
+    <h2 id="rail-open-actions-h">Open actions @Count(open?.Count)</h2>
+    @if (open is null) { <p class="small tide-muted mb-0">Loading…</p> }
+    else
+    {
+        @if (open.Count == 0) { <p class="small tide-muted mb-0">No open actions.</p> }
+        <ul class="tide-rail-list">
+            @foreach (var a in open.Take(Shown))
+            {
+                <li class="tide-stack-rail-item"><span class="tide-rail-list-title"><ActionRef Number="a.Number" Title="@a.Title" /></span>
+                    <ActionStatusBadge Status="a.Status" /></li>
+            }
+        </ul>
+        @if (open.Count > Shown) { <a class="small tide-stack-rail-link" href="@($"adversaries/{p.Id}")">+@(open.Count - Shown) more</a> }
+    }
+</section>
+
+<section class="tide-card" aria-labelledby="rail-techniques-h">
+    <h2 id="rail-techniques-h">Top techniques</h2>
+    @if (_detail is null) { <p class="small tide-muted mb-0">Loading…</p> }
+    else if (_detail.Techniques.Count == 0) { <p class="small tide-muted mb-0">None yet.</p> }
+    else
+    {
+        <ul class="tide-rail-list tide-adv-rail-techniques">
+            @foreach (var t in _detail.Techniques.Take(Techniques))
+            {
+                <li title="@t.Name"><span class="tide-data">@t.Id</span> <span class="tide-muted">×@t.Articles</span> <span class="visually-hidden">@t.Name</span></li>
+            }
+        </ul>
+    }
+</section>
+
+<AdversaryWeRun Runs="_runs" />
+
+@code {
+    /// <summary>The selected row.</summary>
+    [Parameter, EditorRequired] public AdversaryRow Row { get; set; } = default!;
+
+    /// <summary>After Watch or Stop watching (done or refused): the list reads the profiles again.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    /// <summary>How long the selection rests before the rest of the profile is read.</summary>
+    private static readonly TimeSpan Rest = TimeSpan.FromMilliseconds(150);
+
+    /// <summary>How many articles and actions the rail lists; the rest are on the profile's page.</summary>
+    internal const int Shown = 3;
+
+    /// <summary>How many of its techniques, most seen first.</summary>
+    internal const int Techniques = 5;
+
+    private AdversaryDetail? _detail;
+    private IReadOnlyList<StackRun>? _runs;
+    private AdversaryRow? _for;
+    private int _ticket;
+    private bool _busy;
+
+    // Analysts keep the profiles (AdversaryService's own rule, and the profile page's).
+    private bool CanWrite => CurrentUser.Has(Permission.WriteArticles);
+
+    protected override Task OnParametersSetAsync()
+    {
+        // The same profile with the same articles (the page drawn again, or the list read again after Watch): nothing
+        // to read again, as its facts and badges are the row's. Its articles changed are read again at once; another
+        // profile after the selection rests.
+        var was = _for;
+        _for = Row;
+        if (was?.Adversary.Id == Row.Adversary.Id && was.Articles == Row.Articles) return Task.CompletedTask;
+        var another = was?.Adversary.Id != Row.Adversary.Id;
+        if (another) (_detail, _runs) = (null, null);
+        return Load(rest: another && RendererInfo.IsInteractive);
+    }
+
+    // Reads the profile as its page does, then what we run that its articles are about. A read overtaken by another
+    // selection is dropped.
+    private async Task Load(bool rest)
+    {
+        var ticket = ++_ticket;
+        var id = Row.Adversary.Id;
+        try
+        {
+            if (rest) await Task.Delay(Rest);
+            if (ticket != _ticket) return;
+            var detail = await Adversaries.GetAsync(id);
+            var runs = detail is null ? [] : await Stack.RunByArticlesAsync(detail.Articles.Select(a => a.Id).ToList());
+            if (ticket != _ticket) return;
+            (_detail, _runs) = (detail, runs);
+        }
+        catch (Exception ex)
+        {
+            if (ticket == _ticket) Toasts.Error(UserFacingError.For(ex));
+        }
+    }
+
+    /// <summary>Watch or Stop watching, through the profile page's own call.</summary>
+    internal async Task Watch(bool on)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await Adversaries.SetWatchedAsync(Row.Adversary.Id, on);
+            Toasts.Show(on ? $"{Row.Adversary.Name}: watched. Triage marks new items that name it." : $"{Row.Adversary.Name}: no longer watched.");
+        }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+        finally { _busy = false; }
+        await OnChanged.InvokeAsync();
+    }
+
+    private static RenderFragment Count(int? n) => __builder =>
+    {
+        if (n is { } count) { <span class="tide-count">(@count)</span> }
+    };
+}

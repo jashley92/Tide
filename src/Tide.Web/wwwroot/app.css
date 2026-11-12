@@ -3004,9 +3004,9 @@ html[data-file-drag] .tide-page-drop { display: flex; }
    873px. The table is laid out by its columns' shares of its width, not by its words, so it is the card's width
    whatever the fonts: the headings and cells wrap, a word longer than its column breaks, and a CVE's chip wraps
    between its parts (the id, the scores, KEV). So it never scrolls sideways. */
-.tide-stack-item.selected > td { background: var(--tide-accent-soft); }
-.tide-stack-item.selected > td:first-child { box-shadow: inset 3px 0 0 var(--tide-accent); }
-.tide-stack-item:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: -2px; }
+.tide-stack-item.selected > td, .tide-adv-item.selected > td { background: var(--tide-accent-soft); }
+.tide-stack-item.selected > td:first-child, .tide-adv-item.selected > td:first-child { box-shadow: inset 3px 0 0 var(--tide-accent); }
+.tide-stack-item:focus-visible, .tide-adv-item:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: -2px; }
 .tide-stack-table th { white-space: normal; }
 .tide-stack-table th, .tide-stack-table td { overflow-wrap: anywhere; }
 @media (min-width: 900.02px) {
@@ -3045,6 +3045,17 @@ a.tide-stack-rail-link:hover, a.tide-stack-rail-link:focus-visible { text-decora
 .tide-stack-rail-item > .tide-rail-list-title { flex: 1 1 0; min-width: 0; }
 .tide-stack-rail-item > :not(.tide-rail-list-title) { flex: none; }
 /* ---- end Our stack 3.7 ---- */
+
+/* ---- Adversaries: a selected row on the list, and the profile's context in the rail (its flat sections are Today
+   3.1's, its lists and buttons Our stack's) ----
+   The selected row is marked as Our stack's is (its rule, above). The rail's top techniques wrap as chips, each whole.
+   Beside the docked rail, up to 1760px, a profile's page is one column, so the timeline keeps its room. */
+.tide-rail-list.tide-adv-rail-techniques { display: flex; flex-wrap: wrap; gap: var(--tide-space-1) var(--tide-space-2); }
+.tide-adv-rail-techniques > li { padding: 0 var(--tide-space-2); border-radius: var(--tide-radius-sm); background: var(--tide-chip-bg); white-space: nowrap; }
+@media (min-width: 1500px) and (max-width: 1759.98px) {
+    html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-adv-grid { grid-template-columns: minmax(0, 1fr); }
+}
+/* ---- end Adversaries ---- */
 
 /* ---- Option E 3.9, autosave in the article editor's save bar: first in the bar, "All changes saved" or "Saved at 10:12"
    in the colour of done; while something is unsaved, "Saving…" quietly, or why it held off (a marking, a sent brief, a
