@@ -1981,8 +1981,9 @@ const actionBeside = as => async (page, demo) => {
     await toArticleSlide(p);
     // Unless the page before left one open for the room (over the slide, in a narrow window, it covers the slide's
     // links): the first slide with an action on it, from this article's on and then from the title. The pages before
-    // may have changed today's running order; the open actions from earlier briefs have some, whatever the articles have.
-    const opener = p.locator('.tide-slide :is(.tide-action-ref-btn, .tide-action-open)');
+    // may have changed today's running order; the actions that need review have some, whatever the articles have (each
+    // row opens its action from a button over its cell).
+    const opener = p.locator('.tide-slide :is(.tide-action-ref-btn, .tide-action-open, .tide-slide-row-open)');
     for (let i = 0; i < 16 && !(await p.locator(BESIDE).count()) && !(await opener.count()); i++) {
       await p.keyboard.press(i === 4 ? 'Home' : 'ArrowRight');
       await p.waitForTimeout(300);
