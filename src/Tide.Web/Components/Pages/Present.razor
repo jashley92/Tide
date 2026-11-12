@@ -2095,17 +2095,19 @@ else
     /// hand."), leaving out this page's own; null when nothing of that changed (a follower moving slides, say).</summary>
     internal static string? PresenceNews(LiveMeetingView was, LiveMeetingView now, string me)
     {
-        List<string> parts = [];
-        void Say<T>(IEnumerable<T> from, IEnumerable<T> notIn, Func<T, string> id, Func<T, string> name, string what)
+        string? Said<T>(IEnumerable<T> from, IEnumerable<T> notIn, Func<T, string> id, Func<T, string> name, string what)
         {
             var other = notIn.Select(id).ToHashSet();
             var names = from.Where(x => id(x) != me && !other.Contains(id(x))).Select(name).ToList();
-            if (names.Count > 0) parts.Add($"{string.Join(", ", names)} {what}.");
+            return names.Count > 0 ? $"{string.Join(", ", names)} {what}." : null;
         }
-        Say(now.People, was.People, p => p.UserId, p => p.Name, "joined");
-        Say(was.People, now.People, p => p.UserId, p => p.Name, "left");
-        Say(now.Hands, was.Hands, h => h.UserId, h => h.Name, "raised a hand");
-        Say(was.Hands, now.Hands, h => h.UserId, h => h.Name, "lowered a hand");
+        var parts = new[]
+        {
+            Said(now.People, was.People, p => p.UserId, p => p.Name, "joined"),
+            Said(was.People, now.People, p => p.UserId, p => p.Name, "left"),
+            Said(now.Hands, was.Hands, h => h.UserId, h => h.Name, "raised a hand"),
+            Said(was.Hands, now.Hands, h => h.UserId, h => h.Name, "lowered a hand"),
+        }.OfType<string>().ToList();
         return parts.Count == 0 ? null : string.Join(" ", parts);
     }
 
