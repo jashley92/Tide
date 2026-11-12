@@ -271,15 +271,16 @@ else
                                 @foreach (var o in _open.Rows)
                                 {
                                     <tr>
-                                        <td><PriorityBadge Priority="o.Row.Priority" /> @ActionTitle(o.Row.Number, o.Row.Title) <EscalatedBadge At="o.Row.EscalatedSince" /></td>
+                                        @* The badge, title and number flow as text; where this page can open the action, a button over the cell does. *@
+                                        <td><PriorityBadge Priority="o.Row.Priority" /> <ActionRef Number="o.Row.Number" Title="@o.Row.Title" Link="false" TitleClass="tide-slide-row-title" /> <EscalatedBadge At="o.Row.EscalatedSince" />@if (CanOpenAction)
+                                            {
+                                                var n = o.Row.Number;
+                                                <button type="button" class="tide-slide-row-open" aria-label="Open @Ui.ActionLabel(n), @o.Row.Title" data-card-opener="action:@n" @onclick="() => ShowAction(n)"></button>
+                                            }</td>
                                         <td>@o.Row.TeamName <span class="tide-present-help">&middot; @o.Holder &middot; <span class="text-nowrap">@ActionService.StatusName(o.Row.Status)</span></span></td>
                                         <td><span class="tide-slide-why">@foreach (var (why, i) in o.Reasons.Select((w, i) => (w, i))) { @(i > 0 ? " · " : "")<span class="tide-slide-late">@why</span> }</span>@if (o.LastUpdate is { } lastUpdate)
                                             {
                                                 <span class="tide-slide-waited">last: @lastUpdate</span>
-                                            }
-                                            else if (o.QuietDays > 0)
-                                            {
-                                                <span class="tide-slide-waited">no update for @Ui.Plural(o.QuietDays, "business day")</span>
                                             }</td>
                                         <td><span class="tide-slide-next">@o.NextInTheRoom(o.QuietDays)</span></td>
                                     </tr>
@@ -1265,6 +1266,11 @@ else
             await _endButton.TryFocusAsync(orGone: true);
         }
         await CatchUpScrollAsync();
+        // Back on the actions that need review (however this page came to it: a key, following, a reload): its rows are
+        // read again, so what changed while it was off screen shows.
+        var key = _brief is null ? null : SlideKey(_slide);
+        if (key == "open" && _drawnKey is not null && _drawnKey != "open") _ = InvokeAsync(RereadReview);
+        _drawnKey = key;
         if (!firstRender) return;
         // The elapsed time in the footer ticks once a minute. Started before the await below, so a page closed during it
         // still stops the clock when it's disposed.
@@ -2542,7 +2548,7 @@ else
             List<string> parts = [];
             if (NoteSlides > 0) parts.Add("the opening note");
             if (MetricsSlides > 0) parts.Add("the numbers");
-            if (OpenSlides > 0) parts.Add(Ui.Plural(_open.Rows.Count, "action") + (_open.Rows.Count == 1 ? " that needs review" : " that need review"));
+            if (OpenSlides > 0) parts.Add(Ui.Plural(_open.Overdue, "action") + (_open.Overdue == 1 ? " that needs review" : " that need review"));
             return parts.Count switch
             {
                 0 => null,
@@ -2633,16 +2639,33 @@ else
     private bool ActionBeside => Clock.ActionBesideSlide && TeamEdition && _actionDetail is not null;
 
     // The organization's settings changed: an action open now moves beside the slide, or back over it, on every page in
-    // the meeting at once (each draws it from the setting), rather than when it's next opened.
+    // the meeting at once (each draws it from the setting), rather than when it's next opened; and the actions that need
+    // review are read again by the new limits, so the rows and the count agree with the line under them.
     private void OnOrgChanged()
     {
-        if (_disposed || _actionDetail is null) return;
-        _ = InvokeAsync(StateHasChanged);
+        if (_disposed) return;
+        _ = InvokeAsync(RereadReview);
     }
+
+    // The actions that need review, read again (a limit changed, or their slide is shown again), and drawn.
+    private async Task RereadReview()
+    {
+        if (_disposed || _brief is null) return;
+        try
+        {
+            await ReloadActionLists();
+            StateHasChanged();
+        }
+        catch (ObjectDisposedException) { /* the page closed meanwhile */ }
+    }
+
+    // The slide key last drawn: coming to the actions that need review from another slide reads them again.
+    private string? _drawnKey;
 
     // An action's title in a slide's list: it opens the action over the slide where this page can (its number after it).
     private RenderFragment ActionTitle(int number, string title) =>
-        @<ActionRef Number="number" Title="@title" Link="false" OnOpen="@(CanOpenAction ? EventCallback.Factory.Create(this, () => ShowAction(number)) : default)" />;
+        @<ActionRef Number="number" Title="@title" Link="false" Opener="@($"action:{number}")"
+                    OnOpen="@(CanOpenAction ? EventCallback.Factory.Create(this, () => ShowAction(number)) : default)" />;
 
     // An action's due date, holder and Take it, for someone who can work it: on its recommended line, or in the list of
     // the article's other actions.
@@ -2675,7 +2698,7 @@ else
     private RenderFragment ActionNum(int number) =>
         @<text>@if (CanOpenAction)
         {
-            <button type="button" class="tide-action-num tide-action-open" title="Open @Ui.ActionLabel(number) here" @onclick="() => ShowAction(number)">@Ui.ActionLabel(number)</button>
+            <button type="button" class="tide-action-num tide-action-open" title="Open @Ui.ActionLabel(number) here" data-card-opener="action:@number" @onclick="() => ShowAction(number)">@Ui.ActionLabel(number)</button>
         }
         else
         {
@@ -2722,6 +2745,7 @@ else
             Refresh();
         }
         DropAction();
+        _focusOpener = true;   // closed here (Escape, Close): focus back on the title that opened it, once it's drawn
         return Task.CompletedTask;
     }
 
@@ -2754,11 +2778,12 @@ else
 
     private Task ReloadAction() => _actionDetail is { } open ? LoadAction(open.Action.Number, _focusAction) : Task.CompletedTask;
 
-    // A status move or a tick in the panel: re-read it, and the slides' lists that show its status.
-    private async Task OnActionChanged()
+    // A status move or a tick in the panel: re-read it, and the slides' lists that show its status, the actions that need
+    // review among them (this page doesn't hear its own change, as the others following do).
+    internal async Task OnActionChanged()
     {
         await ReloadAction();
-        await LoadActions();
+        await ReloadActionLists();
     }
 
     // Goes along with the action the presenter has open: always while locked; otherwise when following, unless this page

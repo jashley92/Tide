@@ -307,6 +307,98 @@ public class PresentActionsReviewTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task TheLimitsChanging_WhileTheSlideIsOpen_ReadsItsRowsAgain_ForThePresenterAndEveryoneFollowing()
+    {
+        var (day, _, team) = await Brief(77, "Review change");
+        try
+        {
+            await Action(team, "Review change quiet", ActionStatus.Open, Back(day, 2));
+            await Action(team, "Review change overdue", ActionStatus.Open, day, due: Back(day, 2));
+            await using var pat = await Open(app, day);
+            await Do(pat, p => p.StartMeeting());
+            await using var owner = await Open(app, day, Owner);
+            await Do(owner, p => p.JoinIfLive());
+            Slide(await ToSlide(pat)).Should().Contain("Review change quiet").And.Contain("2 of 2 shown");
+            await Do(owner, p => p.Follow());
+            Slide(await owner.Html()).Should().Contain("Review change quiet");
+
+            await SetLimits(3, 6);
+            foreach (var r in new[] { pat, owner })
+            {
+                var slide = Slide(await r.HtmlOnce("1 of 1 shown"));
+                slide.Should().NotContain("Review change quiet", "2 business days is no longer too long").And.Contain("Review change overdue")
+                    .And.Contain("1 of 1 shown: overdue, escalated, or with no update for 3 business days (6 when blocked).");
+            }
+            EndMeeting(app, day);
+        }
+        finally
+        {
+            await SetLimits(StaleLimits.DefaultOpenDays, StaleLimits.DefaultBlockedDays);
+            await Retire();
+        }
+    }
+
+    [Fact]
+    public async Task ThePresentersOwnChange_FromTheSlide_ReadsItsRowsAgain()
+    {
+        var (day, _, team) = await Brief(78, "Review own");
+        try
+        {
+            var blocked = await Action(team, "Review own blocked", ActionStatus.Blocked, Back(day, 6));
+            await Action(team, "Review own overdue", ActionStatus.Open, day, due: Back(day, 2));
+            await using var pat = await Open(app, day);
+            await Do(pat, p => p.StartMeeting());
+            Slide(await ToSlide(pat)).Should().Contain("Review own blocked").And.Contain("2 of 2 shown");
+            await Do(pat, p => p.ShowAction(blocked));
+
+            // The action card's status move (PresentAction saves it, then tells the page): it was updated just now.
+            await using (var scope = SignedIn(app, SignIn.Analyst))
+            {
+                var actions = scope.ServiceProvider.GetRequiredService<ActionService>();
+                await actions.SetStatusAsync((await actions.GetAsync(blocked))!.Action.Id, ActionStatus.InProgress, ActionOutcome.None, null);
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var id = await db.Actions.Where(a => a.Number == blocked).Select(a => a.Id).SingleAsync();
+                await db.ActionEvents.Where(e => e.ActionId == id && e.Text.StartsWith("Status:")).ExecuteUpdateAsync(u => u.SetProperty(e => e.AtUtc, Noon(day)));
+            }
+            await Do(pat, p => p.OnActionChanged());
+            var slide = Slide(await pat.Html());
+            slide.Should().NotContain(">Review own blocked<", "moved on the brief's day, it no longer needs review").And.Contain("1 of 1 shown");
+            EndMeeting(app, day);
+        }
+        finally { await Retire(); }
+    }
+
+    [Fact]
+    public async Task EveryRow_SaysItsLastUpdate_AndTheTitleSlide_CountsEveryActionThatNeedsReview()
+    {
+        var (day, _, team) = await Brief(79, "Review last");
+        try
+        {
+            for (var i = 1; i <= 9; i++) await Action(team, $"Review last {i:00}", ActionStatus.Open, day, due: Back(day, i), comment: i == 1);
+            await Action(team, "Review last escalated", ActionStatus.Open, day, due: day.AddDays(3), escalated: true);
+            await using var pat = await Open(app, day);
+            (await pat.Html()).Should().Contain("10 actions that need review", "all that qualify, not the 8 shown");
+            var html = await ToSlide(pat);
+            var slide = Slide(html);
+            var rows = slide.Split("<tr").Skip(2).Select(r => r[..r.IndexOf("</tr>", StringComparison.Ordinal)]).ToList();
+            rows.Should().HaveCount(ActionService.OutstandingSize);
+            rows.Should().OnlyContain(r => r.Contains("last: ") && r.Contains(" by "), "each row says what its last update was, and who");
+            Row(slide, "Review last escalated").Should().Contain("last: raised by Tester");
+            rows.Should().NotContain(r => r.Contains("no update for"), "one form for every row");
+        }
+        finally { await Retire(); }
+    }
+
+    [Fact]
+    public async Task ALimitThatIsntAWholeNumber_IsRefused_NotRoundedDown()
+    {
+        await using var page = await RenderAsync<OrganizationAdmin>(app, "/admin/organization", @as: SignIn.Analyst);
+        await page.Click(p => { p.StaleOpen = "2.5"; p.StaleBlocked = "6"; return p.Save(); });
+        Clock.StaleLimits.Should().Be(StaleLimits.Default, "2.5 isn't saved as 2, and nothing else in the save is either");
+        OperationalSettings.Problem(OperationalSettings.StaleOpenDays, "2.5").Should().Contain("whole number from 1 to 30");
+    }
+
+    [Fact]
     public async Task AnAdministrator_SetsTheLimits_InOrganizationSettings_AndTheyCountAtOnce_Audited()
     {
         var (day, _, team) = await Brief(76, "Review limits");
@@ -321,7 +413,7 @@ public class PresentActionsReviewTests(TideApp app) : IClassFixture<TideApp>
             var html = await page.Html();
             html.Should().Contain("id=\"org-stale-open\"").And.Contain("id=\"org-stale-blocked\"").And.Contain("min=\"1\"").And.Contain("max=\"30\"")
                 .And.Contain("Actions that need review");
-            await page.Click(p => { p.StaleOpen = 3; p.StaleBlocked = 3; return p.Save(); });
+            await page.Click(p => { p.StaleOpen = "3"; p.StaleBlocked = "3"; return p.Save(); });
             Clock.StaleLimits.Should().Be(new StaleLimits(3, 3), "at once, as the organization's other settings");
             (await Listed()).Should().Equal("Review limits blocked");
 
@@ -331,7 +423,7 @@ public class PresentActionsReviewTests(TideApp app) : IClassFixture<TideApp>
                 (await db.AuditLog.AnyAsync(a => a.EntityType == nameof(AppSetting) && a.EntityKey == OperationalSettings.StaleBlockedDays)).Should().BeTrue();
             }
 
-            await page.Click(p => { p.StaleOpen = 0; return p.Save(); });
+            await page.Click(p => { p.StaleOpen = "0"; return p.Save(); });
             Clock.StaleLimits.Should().Be(new StaleLimits(3, 3), "0 isn't saved");
         }
         finally

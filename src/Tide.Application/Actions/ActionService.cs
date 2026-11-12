@@ -124,7 +124,7 @@ public sealed record OutstandingAction(ActionRow Row, int DaysLate, bool NoOneTo
     /// <summary>Quiet past its status's limit: it needs an update (<see cref="NeedsUpdate.IsStale"/>).</summary>
     public bool Stale { get; init; }
 
-    /// <summary>What its last update was, in short ("comment by Sam"), when it needs an update.</summary>
+    /// <summary>What its last update was, in short ("comment by Sam"), on the meeting's slide.</summary>
     public string? LastUpdate { get; init; }
 
     /// <summary>Why the meeting looks at it, each reason it has: "escalated", "3 days late", "quiet 6 business days (Blocked)".</summary>
@@ -865,7 +865,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// The actions the meeting's "Actions that need review" slide lists, as of <paramref name="asOf"/> (the brief's day):
     /// every open action that is overdue, escalated, or has gone too long without an update (<see cref="NeedsUpdate"/>,
     /// by the organization's limits and working days), each once. Most pressing first (<see cref="OutstandingAction.Pressing"/>),
-    /// at most <see cref="OutstandingSize"/>, with the full count; those that need an update say what their last update was.
+    /// at most <see cref="OutstandingSize"/>, with the full count; each says what its last update was.
     /// One raised from an article above <paramref name="ceiling"/> is neither listed nor counted, as for
     /// <see cref="OutstandingAsync"/>.
     /// </summary>
@@ -901,7 +901,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         var ranked = shown.OrderBy(o => o.Pressing).ThenByDescending(o => o.Within).ThenBy(o => o.Row.Number).Take(OutstandingSize).ToList();
         var ids = ranked.Select(o => o.Row.Id).ToList();
         var full = await Rows(db, db.Actions.AsNoTracking().Where(a => ids.Contains(a.Id))).ToDictionaryAsync(r => r.Id, ct);
-        var said = await LastUpdatesAsync(db, [.. ranked.Where(o => o.Stale).Select(o => o.Row)], ct);
+        var said = await LastUpdatesAsync(db, [.. ranked.Select(o => o.Row)], ct);
         return new OpenActionsReview([.. ranked.Where(o => full.ContainsKey(o.Row.Id))
             .Select(o => o with { Row = full[o.Row.Id], LastUpdate = said.GetValueOrDefault(o.Row.Id) })], shown.Count);
     }
