@@ -248,7 +248,7 @@ else
                     @* The team's opening note, read before the numbers: team edition only, and only when it isn't blank. *@
                     <div class="tide-slide-note">
                         <div class="tide-slide-kicker"><span>Opening note</span><span>&middot; team edition only</span></div>
-                        <h2>Before we start</h2>
+                        <h2 tabindex="-1" @ref="_noteHeading">Before we start</h2>
                         <Md Text="@note" />
                         @if (PresenterTools && (_noteEditing || BriefService.TeamNoteCarriedOver(_brief)))
                         {
@@ -258,10 +258,12 @@ else
                                 @if (_noteEditing)
                                 {
                                     <label class="visually-hidden" for="slide-note-text">Opening note</label>
-                                    <textarea id="slide-note-text" class="form-control" rows="3" maxlength="@BriefService.TeamNoteMax" @bind="_noteDraft" @bind:event="oninput"></textarea>
+                                    <textarea id="slide-note-text" class="form-control" rows="3" maxlength="@BriefService.TeamNoteMax" @ref="_noteBox"
+                                              aria-describedby="slide-note-hint" @bind="_noteDraft" @bind:event="oninput" @onkeydown="NoteBoxKey"></textarea>
                                     <div class="tide-slide-presenter-row">
-                                        <button type="button" class="btn btn-sm btn-primary" disabled="@_busy" @onclick="() => SaveOpeningNote(_noteDraft)">Save note</button>
-                                        <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="() => _noteEditing = false">Cancel</button>
+                                        <button type="button" class="btn btn-sm btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(_noteDraft))" @onclick="() => SaveOpeningNote(_noteDraft)">Save note</button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="CancelOpeningNote">Cancel</button>
+                                        <span class="tide-slide-presenter-say" id="slide-note-hint">Esc cancels. An empty note isn't saved here: it would take the slide away.</span>
                                     </div>
                                 }
                                 else
@@ -269,7 +271,7 @@ else
                                     <div class="tide-slide-presenter-row">
                                         <span class="tide-slide-presenter-flag"><span class="bi bi-clock-history" aria-hidden="true"></span> Not updated</span>
                                         <span class="tide-slide-presenter-say">Carried from the last brief.</span>
-                                        <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="EditOpeningNote">Edit</button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@_busy" @ref="_noteEditButton" @onclick="EditOpeningNote">Edit</button>
                                         <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="KeepOpeningNote">Still current</button>
                                     </div>
                                 }
@@ -312,7 +314,7 @@ else
                             @if (compared) { <span>&middot; each compared with its last earlier value</span> }
                             else if (tiles.Any(t => t.Value is not null)) { <span>&middot; no earlier values to compare with</span> }
                         </div>
-                        <h2>@(ms.Group?.Group.Name ?? "Opening metrics")</h2>
+                        <h2 tabindex="-1" @ref="_numbersHeading">@(ms.Group?.Group.Name ?? "Opening metrics")</h2>
                         @if (ms.AllZero.Count > 0)
                         {
                             <ul class="tide-mzero" aria-label="Groups with every number at 0">
@@ -328,6 +330,7 @@ else
                                     <div class="tide-mtile">
                                         <div class="tide-tile-name">@if (swatches) { <i class="tide-mchart-swatch @LineChart.Series(ti)" aria-hidden="true"></i> }@t.Metric.Name</div>
                                         <div class="tide-mtile-value @(t.Level == Tide.Application.Metrics.MetricLevel.Normal ? "" : "tide-level-" + t.Level.ToString().ToLowerInvariant())">@t.Display<LevelMark Level="t.Level" /></div>
+                                        @if (t.Value is null) { <div class="tide-mtile-missing">not entered</div> }
                                         @if (compared)
                                         {
                                             <div class="tide-tile-change"><MetricChange Tile="t" ShowDate="false" />@if (t.Previous is { } p && p.Date != Clock.Days.Previous(_date)) { <span class="tide-muted"> vs @Tide.Application.Metrics.MetricMath.ReferenceLabel(p.Date, _date, Clock.Days)</span> }</div>
@@ -352,11 +355,16 @@ else
                                     <div class="tide-slide-presenter-say">@Ui.Plural(missing.Count, "number") missing. The room sees a dash until it's saved.</div>
                                     @foreach (var t in missing)
                                     {
+                                        var refused = _numberErrors.GetValueOrDefault(t.Metric.Id);
+                                        var errorId = $"slide-number-error-{t.Metric.Id:N}";
                                         <div class="tide-slide-presenter-row" @key="t.Metric.Id">
                                             <span class="tide-slide-presenter-name">@t.Metric.Name</span>
                                             <input type="text" inputmode="decimal" class="form-control form-control-sm tide-slide-presenter-number" aria-label="@($"{t.Metric.Name} for {Ui.ShortDay(_date)}")"
-                                                   value="@_numberDrafts.GetValueOrDefault(t.Metric.Id)" @onchange="e => _numberDrafts[t.Metric.Id] = e.Value?.ToString() ?? string.Empty" />
+                                                   aria-invalid="@(refused is null ? null : "true")" aria-describedby="@(refused is null ? null : errorId)"
+                                                   value="@_numberDrafts.GetValueOrDefault(t.Metric.Id)" @oninput="e => _numberDrafts[t.Metric.Id] = e.Value?.ToString() ?? string.Empty"
+                                                   @onkeydown="e => NumberKey(e, t.Metric.Id)" />
                                             <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="() => EnterMissingNumber(t.Metric.Id, _numberDrafts.GetValueOrDefault(t.Metric.Id) ?? string.Empty)">Save</button>
+                                            @if (refused is not null) { <span class="tide-slide-presenter-error" id="@errorId">@refused</span> }
                                         </div>
                                     }
                                 </div>
@@ -1082,6 +1090,7 @@ else
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         await (_handsPopout ??= new Popout(JS, HandsListDismissed)).FollowAsync(HandsListOpen, _handsHolder, _handsButton);
+        await FocusOnSlideAsync();
         if (_focusOpener)
         {
             _focusOpener = false;
@@ -1151,8 +1160,12 @@ else
             return shortName ? group ?? "Numbers" : "Numbers: " + (group ?? "all 0");
         }
         if (n <= LeadSlides) return shortName ? "Open actions" : "Still open from earlier briefs";
-        return ArticleAt(e, n) is { } x ? $"{n - LeadSlides}{(shortName ? " ·" : ".")} {x.Article.Title}" : "Wrap-up";
+        return ArticleAt(e, n) is not { } x ? "Wrap-up"
+            : shortName ? $"{n - LeadSlides} · {FirstWords(x.Article.Title, 2)}" : $"{n - LeadSlides}. {x.Article.Title}";
     }
+
+    // A title's first words ("Edge VPN" of "Edge VPN appliance zero-day…"), for a name the footer has room for.
+    private static string FirstWords(string title, int n) => string.Join(' ', title.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(n));
 
     // The article on slide n of the edition, if slide n is an article's.
     private EditionArticle? ArticleAt(BriefEdition e, int n)
@@ -2179,18 +2192,61 @@ else
     private string? _noteDraft;
     private readonly Dictionary<Guid, string> _numberDrafts = [];
 
-    internal void EditOpeningNote() => (_noteEditing, _noteDraft) = (true, _brief?.TeamNote);
+    internal void EditOpeningNote() => (_noteEditing, _noteDraft, _slideFocus) = (true, _brief?.TeamNote, SlideFocus.NoteBox);
+
+    /// <summary>Cancel (or Escape in the box): the note as saved, and focus back on Edit.</summary>
+    internal void CancelOpeningNote() => (_noteEditing, _slideFocus) = (false, SlideFocus.NoteEdit);
+
+    // Escape in the note's box cancels; the slide's own keys never hear the box's (present.js leaves typing alone).
+    private void NoteBoxKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CancelOpeningNote();
+    }
+
+    // Enter in a number's box saves it.
+    private Task NumberKey(KeyboardEventArgs e, Guid metricId) =>
+        e.Key == "Enter" ? EnterMissingNumber(metricId, _numberDrafts.GetValueOrDefault(metricId) ?? string.Empty) : Task.CompletedTask;
+
+    // Where focus goes once a slide's strip is drawn again: into the note's box, back to Edit, or to the slide's heading
+    // as a strip goes (the note kept or saved, the last number entered); a number refused keeps its box.
+    private enum SlideFocus { None, NoteBox, NoteEdit, NoteHeading, NumbersHeading }
+
+    private SlideFocus _slideFocus;
+    private ElementReference _noteBox, _noteEditButton, _noteHeading, _numbersHeading;
+    private readonly Dictionary<Guid, string> _numberErrors = [];
+
+    private async Task FocusOnSlideAsync()
+    {
+        var to = _slideFocus switch
+        {
+            SlideFocus.NoteBox => _noteBox, SlideFocus.NoteEdit => _noteEditButton,
+            SlideFocus.NoteHeading => _noteHeading, SlideFocus.NumbersHeading => _numbersHeading, _ => default,
+        };
+        if (_slideFocus == SlideFocus.None || _busy) return;
+        _slideFocus = SlideFocus.None;
+        await to.TryFocusAsync(orGone: true);
+    }
 
     /// <summary>Still current: the carried note kept as it is for this brief (BriefService marks it reviewed).</summary>
     internal Task KeepOpeningNote() => SaveOpeningNote(_brief?.TeamNote, "Opening note kept as it is.");
 
-    internal Task SaveOpeningNote(string? text) => SaveOpeningNote(text, string.IsNullOrWhiteSpace(text) ? "Opening note cleared." : "Opening note saved.");
+    /// <summary>Save note. An empty note isn't saved from the slide: clearing it would take the slide away from under the room
+    /// mid-meeting (it's cleared from Today); Still current or Cancel are the ways out.</summary>
+    internal Task SaveOpeningNote(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            Toasts.Error("An empty note isn't saved here: it would take the slide away. Use Cancel, or Still current.");
+            return Task.CompletedTask;
+        }
+        return SaveOpeningNote(text, "Opening note saved.");
+    }
 
     private Task SaveOpeningNote(string? text, string done) => Run(async () =>
     {
         if (_brief is null) return;
         await BriefSvc.SetTeamNoteAsync(_brief.Id, text);
-        _noteEditing = false;
+        (_noteEditing, _slideFocus) = (false, SlideFocus.NoteHeading);
         await ReadBriefAgain();
         Toasts.Show(done);
     });
@@ -2200,12 +2256,14 @@ else
     {
         if (!Tide.Application.Metrics.MetricMath.TryParseValue(text, out var value))
         {
-            Toasts.Error(string.IsNullOrWhiteSpace(text) ? "Type the number first." : $"'{text}' isn't a number TIDE can keep.");
+            _numberErrors[metricId] = string.IsNullOrWhiteSpace(text) ? "Type the number first." : "That isn't a number TIDE can keep.";
             return;
         }
         await MetricsSvc.SaveValueAsync(metricId, _date, value, null);
         _numberDrafts.Remove(metricId);
+        _numberErrors.Remove(metricId);
         _metrics = await MetricsSvc.GetDayAsync(_date);
+        _slideFocus = SlideFocus.NumbersHeading;
         Toasts.Show("Saved. The room sees it now.");
     });
 

@@ -1094,6 +1094,9 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-slide-presenter-name { min-width: 0; overflow-wrap: anywhere; }
 .tide-slide-presenter .form-control { background-color: var(--tide-slide-bg); color: var(--tide-slide-text); border-color: var(--tide-slide-line-strong); }
 .tide-slide-presenter-number { width: 8em; }
+.tide-slide-presenter-error { color: var(--tide-slide-warn); }
+/* A number not entered yet: the room sees its dash, and says so under it (the presenter enters it from the strip). */
+.tide-mtile-missing { color: var(--tide-slide-muted); font-size: .85em; }
 /* A box's hint on the slide, dark in either theme: the slide's muted text, not the page's (AA on the slide). */
 .tide-slide :is(input, textarea)::placeholder { color: var(--tide-slide-muted); opacity: 1; }
 .tide-slide-open { width: 100%; border-collapse: collapse; font-size: .9em; }

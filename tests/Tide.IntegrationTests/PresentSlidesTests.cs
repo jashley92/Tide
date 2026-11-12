@@ -85,9 +85,10 @@ public class PresentSlidesTests(TideApp app) : IClassFixture<TideApp>
         await using var pat = await Open(app, day);
         var html = await pat.Html();
         var footer = Footer(html);
-        foreach (var name in new[] { "Title", "Opening note", "Slide numbers", "1 · Slides first 191", "2 · Slides second 191", "Wrap-up" })
+        foreach (var name in new[] { "Title", "Opening note", "Slide numbers", "1 · Slides first", "2 · Slides second", "Wrap-up" })
             footer.Should().Contain($"<span class=\"tide-progress-name\">{name.Replace("·", "&#xB7;")}</span>");
         footer.IndexOf(">Title<", StringComparison.Ordinal).Should().BeLessThan(footer.IndexOf(">Opening note<", StringComparison.Ordinal));
+        footer.Should().Contain("aria-label=\"1. Slides first 191\"", "the short name's whole title is read out");
         html.Should().Contain("class=\"tide-agenda-first\"").And.Contain("First: the opening note and the numbers.");
     }
 
@@ -139,6 +140,15 @@ public class PresentSlidesTests(TideApp app) : IClassFixture<TideApp>
             BriefService.TeamNoteCarriedOver(saved).Should().BeFalse();
         }
         (await pat.Html()).Should().Contain("Payroll lures are down this week.").And.NotContain("id=\"slide-note-text\"");
+
+        // An empty note isn't saved from the slide: it would take the slide away mid-meeting (Still current or Cancel).
+        await Do(pat, p => p.EditOpeningNote());
+        (await pat.Html()).Should().Contain("id=\"slide-note-text\"");
+        await Do(pat, p => p.SaveOpeningNote("  "));
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            (await scope.ServiceProvider.GetRequiredService<AppDbContext>().Briefs.AsNoTracking().SingleAsync(b => b.Id == brief)).TeamNote.Should().Be("Payroll lures are down this week.");
+        var html = await pat.Html();
+        html.Should().Contain("id=\"slide-note-text\"", "still editing").And.Contain("aria-label=\"Slide 2 of", "on the note's slide still");
     }
 
     [Fact]
@@ -157,8 +167,12 @@ public class PresentSlidesTests(TideApp app) : IClassFixture<TideApp>
         await Do(owner, p => p.Follow());
         (await owner.Html()).Should().Contain("Slide numbers").And.NotContain(PresenterTools).And.NotContain("number missing");
 
+        html = await pat.Html();
+        html.Should().Contain("not entered", "the room's tile says so under its dash");
         await Do(pat, p => p.EnterMissingNumber(missing, "not a number"));
-        (await pat.Html()).Should().Contain("1 number missing", "nothing was saved");
+        html = await pat.Html();
+        html.Should().Contain("1 number missing", "nothing was saved").And.Contain("aria-invalid=\"true\"")
+            .And.Contain($"aria-describedby=\"slide-number-error-{missing:N}\"").And.Contain($"id=\"slide-number-error-{missing:N}\"");
         await Do(pat, p => p.EnterMissingNumber(missing, "12"));
         await using (var scope = SignedIn(app, SignIn.Analyst))
             (await scope.ServiceProvider.GetRequiredService<MetricsService>().GetDayAsync(day)).Missing.Should().NotContain(m => m.Id == missing);

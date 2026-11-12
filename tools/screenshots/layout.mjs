@@ -903,6 +903,28 @@ const cardClosed = (opener, title, how) => async (page, demo) => {
   await page.waitForTimeout(500);
 };
 
+/** Setup: on the opening note's slide, the presenter's `then` done in its strip: 'edit' (Edit pressed), 'escape' (Edit,
+ *  then Escape in the box) or 'keep' (Still current). */
+const noteStrip = then => async (page, demo) => {
+  await slideWith('.tide-slide-note')(page, demo);
+  const strip = page.locator('.tide-slide-presenter');
+  await strip.getByRole('button', { name: then === 'keep' ? 'Still current' : 'Edit', exact: true }).click();
+  if (then === 'escape') {
+    await page.locator('#slide-note-text').waitFor();
+    await page.locator('#slide-note-text').focus();
+    await page.keyboard.press('Escape');
+  }
+  await page.waitForTimeout(800);
+};
+
+/** Setup: on the numbers slide with one missing, `text` typed in its box and Enter pressed. */
+const numberEntered = text => async (page, demo) => {
+  await slideWith('.tide-slide-presenter input')(page, demo);
+  await page.locator('.tide-slide-presenter input').first().fill(text);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(900);
+};
+
 /** The meeting the present-people pages share: which one it is ("presenter/5"), and the browsers of its other people,
  *  kept open across a page's widths (each width opens only its own page) and closed when the next one is set up. */
 let meetingGuests = { key: '', contexts: [] };
@@ -3232,8 +3254,21 @@ const pages = [
   // note's Still current and Edit, and a missing number's box and Save, in the window, and the slide still fits.
   { name: 'slide-note-presenter', route: '/present/{today}', setup: slideWith('.tide-slide-note'), widths: [1920, 1440, 1100, 900, 780],
     rules: [noSidewaysScroll, visible('.tide-slide-presenter'), fits('.tide-slide-presenter'), inWindow('.tide-slide-presenter :is(button, input)'), slideFits] },
+  // Keyboard and focus in the presenter's strips: Edit puts focus in the note's box; Escape there cancels, back on Edit,
+  // still on the slide; Still current leaves focus on the slide's heading as the strip goes. A number that isn't one is
+  // marked on its box with why; Enter saves one, and focus goes to the slide's heading. Late: these change the demo's day.
+  { name: 'slide-note-edit-focus', route: '/present/{today}', setup: noteStrip('edit'), widths: [1440], rules: [focusOn('#slide-note-text')] },
+  { name: 'slide-note-escape', route: '/present/{today}', setup: noteStrip('escape'), widths: [1440],
+    rules: [hidden('#slide-note-text'), visible('.tide-slide-note'), focusIn('.tide-slide-presenter')] },
+  { name: 'slide-number-refused', route: '/present/{today}', setup: numberEntered('lots'), widths: [1440],
+    rules: [attr('.tide-slide-presenter input', 'aria-invalid', 'true'), visible('.tide-slide-presenter-error'), focusOn('.tide-slide-presenter input')] },
   { name: 'slide-numbers-presenter', route: '/present/{today}', setup: slideWith('.tide-slide-presenter input'), widths: [1920, 1440, 1100, 900, 780],
     rules: [noSidewaysScroll, visible('.tide-slide-presenter input'), fits('.tide-slide-presenter'), inWindow('.tide-slide-presenter :is(button, input)'), slideFits] },
+  // Still current, and a number entered with Enter: focus on the slide's heading as the strip goes. After the strips'
+  // other pages, as they change the demo's day (the note is kept, the number entered), and before the pages that change
+  // the note or the numbers themselves.
+  { name: 'slide-note-kept-focus', route: '/present/{today}', setup: noteStrip('keep'), widths: [1440], rules: [hidden('.tide-slide-presenter'), focusOn('.tide-slide-note h2')] },
+  { name: 'slide-number-saved', route: '/present/{today}', setup: numberEntered('7'), widths: [1440], rules: [hidden('.tide-slide-presenter'), focusOn('.tide-slide-mgroup h2')] },
   { name: 'metrics-grid', route: '/metrics?chart=group:alert-queue,group:vulnerability-sla&view=grid', widths: [1920, 1000, 700],
     rules: [noSidewaysScroll, visible('.tide-mc-cell'), visible('.tide-chart-band-warn'), oneRow('.tide-mc-cell-head'), [1800, widerThan('.content', 1400)]] },
   // Add on "Not on a brief yet", from the keyboard: the article leaves the card and focus stays in it, on the next
