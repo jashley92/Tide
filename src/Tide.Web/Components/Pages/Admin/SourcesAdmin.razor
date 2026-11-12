@@ -256,9 +256,14 @@
             <label class="tide-field-label" for="intake-pull">Analyst pull-now window (minutes)</label>
             <input id="intake-pull" type="number" min="1" max="1440" class="form-control form-control-sm" @bind="_intake.PullNowMinutes" aria-describedby="intake-pull-help" />
         </div>
+        <div class="col-sm-6 col-md-4">
+            <label class="tide-field-label" for="intake-pulled-by">Feeds pulled by (each working day)</label>
+            <TimeBox Id="intake-pulled-by" @bind-Value="PulledBy" DescribedBy="intake-pulled-by-help" />
+        </div>
     </div>
     <div class="form-text" id="intake-read-help">Reading an article's page, in triage or for the editor, stops after this long and says so. 6 suits most servers; give a slow one longer.</div>
     <div class="form-text" id="intake-pull-help">Analysts can pull a source now from Triage's Sources tab, once in this window: a source pulled within it, on schedule or by hand, waits until it's passed. Poll now here isn't held to it.</div>
+    <div class="form-text" id="intake-pulled-by-help">From this time on each working day (in the organization's time zone; not on weekends or holidays), while polling is on, Today's Triage step tells analysts how many feeds haven't been pulled since, with Pull all.</div>
     <button class="btn btn-primary btn-sm mt-2" disabled="@_busy" @onclick="SaveIntake">Save polling</button>
 </section>
 
@@ -423,6 +428,8 @@
     private ConfirmDialog _confirm = default!;
     private IReadOnlyList<Source> _sources = [];
     private (bool Enabled, int MinPollMinutes, int RetentionDays, int ReadSeconds, int PullNowMinutes) _intake;
+    // When the feeds should have been pulled by each working day; internal for the render tests.
+    internal TimeOnly PulledBy { get; set; }
     private (bool Enabled, int RefreshHours) _cve;
     private bool _skipSponsored;
     // The sponsored lists as typed (one phrase per line), and the Test box's text; internal for the render tests.
@@ -451,6 +458,7 @@
     {
         var i = IntakeOptionsMonitor.CurrentValue;
         _intake = (i.Enabled, i.MinPollMinutes, i.RetentionDays, (int)i.ReadBudget.TotalSeconds, i.PullNowMinutes);   // as the reader takes it
+        PulledBy = i.PulledByTime;
         _skipSponsored = i.SkipSponsored;
         Markers = Lines(i.SponsoredMarkers ?? SponsoredFilter.DefaultMarkers);
         Exceptions = Lines(i.SponsoredExceptions ?? SponsoredFilter.DefaultExceptions);
@@ -474,6 +482,7 @@
             [OperationalSettings.RetentionDays] = _intake.RetentionDays.ToString(System.Globalization.CultureInfo.InvariantCulture),
             [OperationalSettings.ReadSeconds] = _intake.ReadSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
             [OperationalSettings.PullNowMinutes] = _intake.PullNowMinutes.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            [OperationalSettings.PulledBy] = PulledBy.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture),
         });
         ReadSettings();
         Toasts.Show(_intake.Enabled ? "Polling is on. Due sources are polled within a minute." : "Polling settings saved; polling is off.");

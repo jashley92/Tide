@@ -18,6 +18,16 @@ public sealed class SourcePollGuard
     public void Finished(Guid sourceId) => _running.TryRemove(sourceId, out _);
 
     public bool IsRunning(Guid sourceId) => _running.ContainsKey(sourceId);
+
+    private int _all;
+
+    /// <summary>Starts a Pull all unless one is running, whoever started it; true when this caller may go ahead.</summary>
+    public bool TryStartAll() => Interlocked.CompareExchange(ref _all, 1, 0) == 0;
+
+    public void AllFinished() => Interlocked.Exchange(ref _all, 0);
+
+    /// <summary>Whether a Pull all is running.</summary>
+    public bool AllRunning => Volatile.Read(ref _all) == 1;
 }
 
 /// <summary>

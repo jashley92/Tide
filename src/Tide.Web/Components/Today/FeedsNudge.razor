@@ -1,0 +1,46 @@
+@* Under Today's step strip, Triage's word on the feeds: "4 of 9 feeds not pulled since 8:00 am · 1 failing · last pull
+   6:40 pm yesterday", with Pull all (IntakeService.FreshnessAsync). Only for those who may pull sources, and only when
+   there's something to say: polling on, a working day past the cutoff (Intake:PulledBy), a feed not pulled since it or
+   failing. It's read again when a poll or a pull anywhere is heard of, and after this page's own Pull all. *@
+@implements IDisposable
+@inject IntakeService Intake
+@inject OrgClock Clock
+@inject ICurrentUser CurrentUser
+@inject TimeProvider Time
+@inject ChangeFeed Feed
+@inject ChangeOrigin Origin
+
+@if (_freshness is { } f)
+{
+    <div class="tide-feeds-nudge">
+        <span class="tide-feeds-nudge-text">
+            <span class="bi @(f.Failing > 0 ? "bi-exclamation-triangle-fill tide-feeds-failing" : "bi-rss")" aria-hidden="true"></span>
+            <a href="triage?tab=sources">Triage</a>: @f.Text(Clock.Zone, Time.GetUtcNow())
+        </span>
+        <PullAllButton @ref="PullAll" OnDone="Load" />
+    </div>
+}
+
+@code {
+    private FeedFreshness? _freshness;
+    private LiveChanges? _live;
+
+    /// <summary>The Pull all button, while the word is shown.</summary>
+    internal PullAllButton? PullAll { get; private set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!CurrentUser.Has(Permission.WriteArticles)) return;
+        // Not while this page's own Pull all runs: the word going would take its button, and the run, with it.
+        _live = new LiveChanges(Feed, Origin, c => c.Topic == ChangeFeed.Triage, InvokeAsync, _ => PullAll is { IsRunning: true } ? Task.CompletedTask : Load());
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        _freshness = await Intake.FreshnessAsync(Clock);
+        StateHasChanged();
+    }
+
+    public void Dispose() => _live?.Dispose();
+}

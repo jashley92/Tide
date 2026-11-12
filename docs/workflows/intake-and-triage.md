@@ -135,10 +135,28 @@ and `AddressPolicy`, which refuses loopback and link-local addresses, and privat
 | | Who | Window | Where |
 |---|---|---|---|
 | **Pull now** (`IntakeService.PullNowAsync`) | Analysts (`WriteArticles`) | Refused within `Intake:PullNowMinutes` (15) of the source's last poll, scheduled or forced, for everyone, administrators too. The refusal (`PullTooSoonException`) says when it can be pulled again. | Triage › Sources tab |
+| **Pull all** (`IntakeService.PullAllAsync`) | Analysts (`WriteArticles`) | Every polled source outside the pull-now window, by name, **one at a time** (never side by side), each through Pull now's own checks and guard. Sources inside the window, and those being pulled, are skipped. One run at a time, whoever starts it: a second is refused (`SourcePollGuard.TryStartAll`). | Triage › Sources tab, and Today's Triage step |
 | **Poll now** (`IntakeService.PollNowAsync`) | Administrators | No window. Works on a paused source and with intake off. | Administration › Sources |
 
 Both are refused for an `Api` source ("there's no feed to poll") and while the same source is being polled. Pull now
 is also refused for a paused or retired source. A pull is bookkeeping, like a poll, and leaves no audit row.
+
+Pull all says which source it's on ("Pulling 3 of 9: Sample news…"), then what it did ("Pulled 7 · 12 new items · 2
+skipped (pulled in the last 15 min) · 1 failed: Sample news"). Its run belongs to the page that started it: **leaving
+the page stops it cleanly**. The source being pulled is finished (a poll is never cut short, so nothing is left
+half-pulled), no other is started, and the run's guard is let go. The sources it didn't reach stay as they were, and a
+second Pull all takes them, the ones already pulled now being inside the window. A run that outlived its page would
+keep asking publishers for feeds nobody is waiting for.
+
+### Feeds not pulled since the morning
+
+From `Intake:PulledBy` (08:00, in the organization's time zone) on each working day, Today's Triage step says, under
+the step strip, how many polled feeds haven't been pulled since (on schedule or by hand), how many are failing (counted
+apart, never hidden), and when the last pull was: "4 of 9 feeds not pulled since 8:00 am · 1 failing · last pull 6:40 pm
+yesterday", with **Pull all** (`IntakeService.FreshnessAsync`, `FeedFreshness`). It's shown only to those who may pull
+sources (`WriteArticles`), and only while polling is on and some source is polled. On a weekend or holiday nothing is
+said, and **before the cutoff nothing is said either**: the morning's scheduled polls haven't had their chance yet, and
+measuring against the previous working day's cutoff would only nag about feeds the next poll takes anyway.
 
 The Sources tab (`IntakeService.PolledSourcesAsync`) lists the polled sources: last pull ("12 min ago"), when the next is
 due, how the last went (items added, or the error), and when Pull now opens again. Its tab count is the number of

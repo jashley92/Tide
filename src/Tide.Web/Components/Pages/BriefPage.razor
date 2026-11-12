@@ -295,6 +295,9 @@ else
     private IReadOnlyList<ActionRow>? _mine;
     private TeamQueue? _queue;
     private int? _newInFeed;
+
+    /// <summary>Today's word on the feeds not pulled since the morning, under the steps.</summary>
+    internal FeedsNudge? Freshness { get; private set; }
     private int _newOnKev;   // of the feed's new items, those naming a CVE on the known exploited list (Today only)
 
     // Null until the numbers have been read (and when no metrics are defined), so the edition check leaves them out.
@@ -963,6 +966,7 @@ else
                     <StepStrip Steps="Steps" Day="_date" FirstNeedingWork="FirstNeedingWork" CanTriage="_canWrite" CanPresent="CurrentUser.Has(Permission.PresentBriefs)"
                                CanMarkReady="@(_canWrite && _brief.Status == BriefStatus.Draft && _brief.Items.Count > 0)" OnMarkReady="AskReady" Busy="_busy"
                                OnSend="AskSend" />
+                    @if (AsToday) { <FeedsNudge @ref="Freshness" /> }
                 }
                 <section class="tide-card" aria-labelledby="running-order-h">
                     <h2 id="running-order-h">Running order

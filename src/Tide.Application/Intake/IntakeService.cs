@@ -6,6 +6,7 @@ using Tide.Application.Abstractions;
 using Tide.Application.Actions;
 using Tide.Application.Articles;
 using Tide.Application.Operations;
+using Tide.Application.Org;
 using Tide.Application.Security;
 using Tide.Domain.Entities;
 using Tide.Domain.Enums;
@@ -339,19 +340,84 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     {
         RequireTriage();
         await lease.RequireHeldAsync(ct);
-        return await ExclusiveAsync(id, async () =>
+        return await ExclusiveAsync(id, () => PullHeldAsync(id, ct)) ?? throw new InvalidOperationException(Busy);
+    }
+
+    // Pull now's checks and poll, once the source is held. Read once it's ours: a pull that finished a moment ago has
+    // moved its last pull.
+    private async Task<PollResult> PullHeldAsync(Guid id, CancellationToken ct)
+    {
+        Source source;
+        await using (var db = await dbs.CreateAsync(ct))
+            source = await db.Sources.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct) ?? throw new KeyNotFoundException("That source no longer exists.");
+        if (source.Kind == SourceKind.Api) throw new InvalidOperationException(NoFeed);
+        if (!source.Enabled || source.IsRetired) throw new InvalidOperationException("That source is paused, so it isn't pulled. An administrator turns it on under Administration › Sources.");
+        var now = time.GetUtcNow();
+        if (source.LastPolledAtUtc + PullWindow is { } pullable && now < pullable)
+            throw new PullTooSoonException(PullTimes.TooSoon(source.LastPolledAtUtc!.Value, pullable, now), pullable);
+        return await PollAsync(id, ct);
+    }
+
+    /// <summary>Whether someone's Pull all is running now.</summary>
+    public bool PullAllRunning => _polls.AllRunning;
+
+    private const string AllBusy = "Someone is already pulling every source. Their new items arrive as each source is pulled.";
+
+    /// <summary>
+    /// An analyst pulls every polled source outside the pull-now window, by name, one at a time (never side by side, so
+    /// no publisher is asked twice at once), each as Pull now would (<see cref="PullNowAsync"/>'s checks, its guard, its
+    /// poll). Those pulled within the window are skipped, as are those someone else is pulling; one pulled by hand while
+    /// the run was on its way is skipped when reached. One run at a time, whoever starts it: a second is refused. Whether
+    /// or not intake is switched on, as Pull now. <paramref name="progress"/> hears of each source as it's reached.
+    /// <paramref name="stop"/> (the page that started it was left) ends the run cleanly between sources: the one being
+    /// pulled is finished, no other is started, and the result says how many weren't reached.
+    /// </summary>
+    public async Task<PullAllResult> PullAllAsync(Action<PullAllStep>? progress = null, CancellationToken stop = default)
+    {
+        RequireTriage();
+        await lease.RequireHeldAsync(stop);
+        if (!_polls.TryStartAll()) throw new InvalidOperationException(AllBusy);
+        try
         {
-            // Read once the source is ours: a pull that finished a moment ago has moved its last pull.
-            Source source;
-            await using (var db = await dbs.CreateAsync(ct))
-                source = await db.Sources.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct) ?? throw new KeyNotFoundException("That source no longer exists.");
-            if (source.Kind == SourceKind.Api) throw new InvalidOperationException(NoFeed);
-            if (!source.Enabled || source.IsRetired) throw new InvalidOperationException("That source is paused, so it isn't pulled. An administrator turns it on under Administration › Sources.");
             var now = time.GetUtcNow();
-            if (source.LastPolledAtUtc + PullWindow is { } pullable && now < pullable)
-                throw new PullTooSoonException(PullTimes.TooSoon(source.LastPolledAtUtc!.Value, pullable, now), pullable);
-            return await PollAsync(id, ct);
-        }) ?? throw new InvalidOperationException(Busy);
+            var sources = await PolledSourcesAsync(stop);
+            List<string> recent = [.. sources.Where(s => !s.Pulling && !s.Pullable(now)).Select(s => s.Name)];
+            List<string> busy = [.. sources.Where(s => s.Pulling).Select(s => s.Name)];
+            List<string> failed = [];
+            var due = sources.Where(s => s.Pullable(now)).ToList();
+            int pulled = 0, added = 0, reached = 0;
+            foreach (var s in due)
+            {
+                if (stop.IsCancellationRequested) break;
+                reached++;
+                progress?.Invoke(new PullAllStep(reached, due.Count, s.Id, s.Name));
+                try
+                {
+                    // Not cut short by stop: a source is pulled whole or not at all.
+                    var result = await ExclusiveAsync(s.Id, () => PullHeldAsync(s.Id, CancellationToken.None));
+                    if (result is null) busy.Add(s.Name);
+                    else if (result.Error is not null) failed.Add(s.Name);
+                    else (pulled, added) = (pulled + 1, added + result.New);
+                }
+                catch (PullTooSoonException) { recent.Add(s.Name); }
+                catch (Exception ex) when (ex is InvalidOperationException or KeyNotFoundException) { /* paused or removed since the list was read */ }
+            }
+            return new PullAllResult(pulled, added, recent, busy, failed, due.Count - reached);
+        }
+        finally { _polls.AllFinished(); }
+    }
+
+    /// <summary>
+    /// Whether the polled feeds have been pulled since this working day's cutoff (<see cref="IntakeOptions.PulledBy"/> in
+    /// the organization's zone), for Today's Triage step: null when there's nothing to say (intake is switched off, it's
+    /// a day off or before the cutoff, no source is polled, or every one has been pulled since and none is failing).
+    /// </summary>
+    public async Task<FeedFreshness?> FreshnessAsync(OrgClock clock, CancellationToken ct = default)
+    {
+        RequireTriage();
+        var o = options.CurrentValue;
+        if (!o.Enabled || FeedFreshness.Cutoff(time.GetUtcNow(), clock.Zone, clock.Days, o.PulledByTime) is not { } cutoff) return null;
+        return FeedFreshness.Of(await PolledSourcesAsync(ct), cutoff);
     }
 
     // Runs a poll of the source unless it's being polled already; null when it was.
