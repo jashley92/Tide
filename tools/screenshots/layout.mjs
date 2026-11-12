@@ -1892,6 +1892,153 @@ const windowDoesntScroll = holds('the window does not scroll', () => {
 });
 
 /**
+ * The reading pane is as tall as what it holds: its decision bar starts within `px` of the end of what's above it (the
+ * text, or what was found in it), with no blank space between them; or, for a short item, the pane is at its least
+ * height (app.css: what an item not read yet takes), which keeps the bar where it was from item to item.
+ */
+const barFollowsText = px => holds(`the decision bar follows the pane's text within ${px}px`, px => {
+  const bar = [...document.querySelectorAll('.tide-reading > .tide-triage-decide')].find(e => e.getBoundingClientRect().height > 0);
+  if (!bar) return ['no decision bar shown in the reading pane'];
+  // At its least height: without that least, the pane would be shorter.
+  const pane = bar.parentElement, height = pane.getBoundingClientRect().height;
+  pane.style.minHeight = '0';
+  const natural = pane.getBoundingClientRect().height;
+  pane.style.minHeight = '';
+  if (natural < height - 1) return [];
+  let before = bar.previousElementSibling;
+  while (before && before.getBoundingClientRect().height === 0) before = before.previousElementSibling;
+  if (!before) return ['nothing above the decision bar'];
+  const gap = Math.round(bar.getBoundingClientRect().top - before.getBoundingClientRect().bottom);
+  return gap <= px ? [] : [`the decision bar starts ${gap}px below ${before.className || before.tagName}, more than ${px}px`];
+}, px);
+
+/**
+ * Every button and select of the first shown match of `selector` (a decision: its main buttons, Attach to…, the dismiss
+ * reason and Dismiss; not the extras that may go on a second row) shares one horizontal band: one row.
+ */
+const controlsOneRow = selector => holds(`controls on one row: ${selector}`, selector => {
+  const box = [...document.querySelectorAll(selector)].find(e => e.getBoundingClientRect().height > 0);
+  if (!box) return [`nothing shown matches ${selector}`];
+  const controls = [...box.querySelectorAll('.btn, select')].filter(e => e.matches('.tide-attach > .btn') || !e.closest('.tide-triage-more, .tide-attach-panel'))
+    .map(e => [e, e.getBoundingClientRect()]).filter(([, r]) => r.height > 0);
+  if (controls.length < 2) return [`fewer than two controls shown in ${selector}`];
+  const top = Math.max(...controls.map(([, r]) => r.top)), bottom = Math.min(...controls.map(([, r]) => r.bottom));
+  if (top < bottom - 2) return [];
+  return [`${selector}: its ${controls.length} controls aren't on one row (${controls.map(([e]) => `"${e.innerText.replace(/\s+/g, ' ').trim().slice(0, 16)}"`).join(', ')})`];
+}, selector);
+
+/** The selected row's excerpt keeps to a readable measure: at most about 80ch wide and `lines` lines tall. */
+const excerptMeasure = lines => holds(`the selected row's excerpt is at most 80ch and ${lines} lines`, lines => {
+  const ex = [...document.querySelectorAll('.tide-triage-row.selected .tide-triage-excerpt')].find(e => e.getBoundingClientRect().height > 0);
+  if (!ex) return ['no excerpt shown in the selected row'];
+  const probe = document.createElement('span');
+  probe.style.cssText = 'position: absolute; visibility: hidden; display: block; width: 80ch';
+  ex.append(probe);
+  const measure = probe.getBoundingClientRect().width;
+  probe.remove();
+  const style = getComputedStyle(ex), r = ex.getBoundingClientRect();
+  const line = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.5;
+  const problems = [];
+  if (r.width > measure + 2) problems.push(`the excerpt is ${Math.round(r.width)}px wide, more than 80ch (${Math.round(measure)}px)`);
+  if (r.height > lines * line + 2) problems.push(`the excerpt is ${Math.round(r.height)}px tall, more than ${lines} lines of ${Math.round(line)}px`);
+  return problems;
+}, lines);
+
+/**
+ * In the selected row, the decision is compact: its why line and one row of buttons, no taller than `px` (a line of
+ * small text, a row of small buttons and the gaps between).
+ */
+const rowDecisionCompact = px => holds(`the selected row's decision is at most ${px}px tall`, px => {
+  const d = [...document.querySelectorAll('.tide-triage-row.selected .tide-triage-decide')].find(e => e.getBoundingClientRect().height > 0);
+  if (!d) return ['no decision shown in the selected row'];
+  const h = Math.round(d.getBoundingClientRect().height);
+  return h <= px ? [] : [`the selected row's decision is ${h}px tall, more than ${px}px`];
+}, px);
+
+/**
+ * Moving down the list with J, from item to item that hasn't been read here, the decision bar's buttons stay where they
+ * were (within `px`): what's under the mouse doesn't jump. Each item's own buttons differ; their row doesn't move. (An
+ * item with extra buttons, on a row of their own under the bar's, has its bar that row higher, and isn't compared.)
+ */
+const barStaysPut = (steps, px) => ({
+  name: `the decision bar stays put over ${steps} presses of J (within ${px}px)`,
+  check: async page => {
+    const tops = [];
+    await page.locator('.tide-triage-row.selected').focus();
+    for (let i = 0; i <= steps; i++) {
+      if (i) await pressJ(page);
+      tops.push(await page.evaluate(() => {
+        const read = document.querySelector('.tide-reading .tide-reading-text');
+        const acts = document.querySelector('.tide-reading .tide-triage-acts');
+        const extras = document.querySelector('.tide-reading .tide-triage-more')?.getBoundingClientRect().height > 0;
+        return read || extras || !acts ? null : Math.round(acts.getBoundingClientRect().top);
+      }));
+    }
+    const shown = tops.filter(t => t !== null);
+    if (shown.length < 2) return [`fewer than two unread items with a bar over ${steps} presses of J`];
+    return Math.max(...shown) - Math.min(...shown) <= px ? [] : [`the bar's buttons moved between ${Math.min(...shown)}px and ${Math.max(...shown)}px down the window (${tops.join(', ')})`];
+  },
+});
+
+/** J pressed on the selected row, then a wait until the next row is selected and the reading pane has caught up. */
+async function pressJ(page) {
+  const was = await page.locator('.tide-triage-row.selected').getAttribute('aria-label');
+  await page.keyboard.press('j');
+  await page.waitForFunction(was => document.querySelector('.tide-triage-row.selected')?.getAttribute('aria-label') !== was
+    && document.querySelector('.tide-reading')?.getAttribute('aria-busy') !== 'true', was, { timeout: 10000 });
+  await page.waitForTimeout(150);
+}
+
+/** Setup: J pressed down to the first single report (not a group) that hasn't been read here, the pane beside it. */
+async function selectUnread(page) {
+  const unread = () => page.evaluate(() => !document.querySelector('.tide-reading .tide-reading-text') && !document.querySelector('.tide-triage-group.selected'));
+  await page.locator('.tide-triage-row.selected').focus();
+  for (let i = 0; i < 12 && !(await unread()); i++) await pressJ(page);
+}
+
+/** Setup: the first "Looks like one event" group opened, its reports listed under it. */
+async function openGroup(page) {
+  await page.locator('.tide-triage-group .tide-group-toggle').first().click();
+  await page.locator('.tide-triage-member').first().waitFor();
+}
+
+/**
+ * In an open group, no report's "Looks like" flag names another report of the same group: the group already says they
+ * look alike. Its Duplicate button stays, in the decision, once the report is selected.
+ */
+const noLooksLikeInItsGroup = {
+  name: "an open group's reports don't flag each other as \"Looks like\"",
+  check: async page => {
+    const problems = await page.evaluate(() => {
+      const out = [];
+      for (const group of document.querySelectorAll('.tide-triage-group')) {
+        const members = [];
+        for (let li = group.nextElementSibling; li?.classList.contains('tide-triage-member'); li = li.nextElementSibling) members.push(li);
+        const title = m => m.querySelector('.tide-triage-title')?.innerText.trim();
+        const titles = new Set(members.map(title));
+        for (const m of members)
+          for (const flag of m.querySelectorAll('.tide-triage-flags .tide-badge-warn[title]'))
+            if (/^Looks like/.test(flag.innerText.trim()) && titles.has(flag.getAttribute('title').trim()))
+              out.push(`"${title(m)}" is flagged as looking like "${flag.getAttribute('title')}", a report of its own group`);
+      }
+      return out;
+    });
+    // The report that looks like another still offers Duplicate (D) once selected.
+    const members = page.locator('.tide-triage-member');
+    if (!(await members.count())) return ['no open group to look in'];
+    let duplicate = false;
+    for (let i = 0, n = await members.count(); i < n && !duplicate; i++) {
+      await members.nth(i).locator('.tide-triage-meta > span').first().click();
+      await page.locator('.tide-triage-member.selected .tide-triage-decide, .tide-reading .tide-triage-decide').first().waitFor();
+      await page.waitForTimeout(150);
+      duplicate = await page.locator('.tide-triage-decide button', { hasText: /^Duplicate/ }).first().isVisible().catch(() => false);
+    }
+    if (!duplicate) problems.push("no report of the open group offers Duplicate once selected");
+    return problems;
+  },
+};
+
+/**
  * Setup: a colleague's presence on a row far down the list, as PresenceNote draws it (its words for screen readers in a
  * visually hidden span, positioned absolutely), then End pressed and the wheel turned over the pane's head and over the
  * page's header.
@@ -3127,10 +3274,17 @@ const pages = [
       sameBox('.tide-reading', '.tide-triage-decide', '.tide-reading-title'), above('.tide-reading-title', '.tide-triage-decide'),
       above('.tide-triage-why', '.tide-triage-acts'), oneRow('.tide-triage-decide .tide-triage-acts'), fits('.tide-triage-decide'), fits('.tide-triage-acts'),
       hidden('.tide-triage-row.selected .tide-triage-decide'), fits('.tide-triage-row'), tabReachesBar,
-      // The pane the window's height under the top bar, the bar at its foot on the first screen; Read it here or Read
-      // again and Open the site in its head, beside the title.
-      reachesBottom('.tide-reading', 24), belowTopBar('.tide-reading'), onFirstScreen('.tide-reading .tide-triage-decide'),
+      // The pane as tall as what it holds, the bar straight under a short text, on the first screen; Attach to… on the
+      // bar's one row with the rest; Read it here or Read again and Open the site in its head, beside the title.
+      barFollowsText(32), controlsOneRow('.tide-reading .tide-triage-decide'),
+      sameLine('.tide-reading .tide-triage-decide .tide-attach > button', '.tide-reading .tide-triage-decide .tide-triage-promote'),
+      belowTopBar('.tide-reading'), onFirstScreen('.tide-reading .tide-triage-decide'),
       sameBox('.tide-reading-head', '.tide-reading-title', '.tide-reading-tools .btn'), above('.tide-reading-tools', '.tide-triage-decide')] },
+  // An item not read here: its excerpt, then the bar straight under it, its buttons one row. Moving on with J from one
+  // such item to the next, the bar's buttons stay where they were, so nothing jumps under the mouse.
+  { name: 'triage-decision-unread', route: '/triage', setup: async page => { await wideFont(page); await selectUnread(page); }, widths: [[1920, 1080], [1440, 900]],
+    rules: [barFollowsText(32), controlsOneRow('.tide-reading .tide-triage-decide'), fits('.tide-triage-decide'), onFirstScreen('.tide-reading .tide-triage-decide')] },
+  { name: 'triage-decision-steady', route: '/triage', setup: selectUnread, widths: [[1920, 1080], [1440, 900]], rules: [barStaysPut(6, 4)] },
   // With a long text read, the text scrolls inside the pane and the bar stays at its foot on the first screen.
   { name: 'triage-decision-long', route: '/triage', setup: longKeptText, widths: [[1920, 1080], [1440, 900]],
     rules: [noSidewaysScroll, reachesBottom('.tide-reading', 24), belowTopBar('.tide-reading'), scrollsInside('.tide-reading-text'),
@@ -3141,10 +3295,13 @@ const pages = [
   // header; the bar stays on the first screen. At 1600x1000 too.
   { name: 'triage-decision-still', route: '/triage', setup: endAndWheel, widths: [[1920, 1080], [1600, 1000], [1440, 900]],
     rules: [windowDoesntScroll, onFirstScreen('.tide-reading .tide-triage-decide'), belowTopBar('.tide-reading'), onFirstScreen('.top-row')] },
-  // A covered row's Attach and Promote, and a covered group's Attach all and Promote as one, share the bar's one row.
+  // A covered row's Attach and Promote, and a covered group's Attach all and Promote as one, share the bar's row. A
+  // covered report has seven controls; where even their least widths don't fit (1440, letters spaced wider) Dismiss
+  // and its reason go to a second row together, rather than spill out of the pane.
   { name: 'triage-covered', route: '/triage', setup: selectCovered(), widths: [1440, 1920],
-    rules: [visible('.tide-reading'), sameLine('.tide-triage-decide .tide-triage-attach', '.tide-triage-decide .tide-triage-promote'),
-      oneRow('.tide-triage-decide .tide-triage-acts'), fits('.tide-triage-decide'), fits('.tide-triage-row.selected'), mainButtonKeepsItsWords] },
+    rules: [visible('.tide-reading'), sameLine('.tide-triage-decide .tide-triage-attach', '.tide-triage-decide .tide-triage-promote', '.tide-triage-decide .tide-attach > .btn'),
+      [1800, oneRow('.tide-triage-decide .tide-triage-acts')], sameLine('.tide-triage-decide .tide-triage-end > select', '.tide-triage-decide .tide-triage-end > .btn'),
+      fits('.tide-triage-decide'), fits('.tide-triage-row.selected'), mainButtonKeepsItsWords] },
   // A covered group's Attach all and Promote as one share a line too (the demo's covered group: Demo:TriageFiller below).
   { name: 'triage-covered-group', route: '/triage', setup: selectCovered(true), widths: [1440, 1920],
     rules: [visible('.tide-reading'), sameLine('.tide-triage-decide .tide-triage-attach', '.tide-triage-decide .tide-triage-promote'),
@@ -3153,6 +3310,15 @@ const pages = [
   { name: 'triage-decision-narrow', route: '/triage', setup: wider, widths: [1000, 780],
     rules: [noSidewaysScroll, hidden('.tide-reading'), visible('.tide-triage-row.selected .tide-triage-decide'), visible('.tide-triage-row.selected .tide-triage-why'),
       visible('.tide-triage-row.selected .tide-triage-promote'), fits('.tide-triage-row.selected')] },
+  // With the pane closed (by V, or below 1400px where it's hidden), the selected row stays a row: its excerpt a readable
+  // measure of at most three lines, its why line and its buttons, Attach to… with them, one compact row, and its flags
+  // on its meta line. Letters spaced wider. Each width signs in as its own person, as the pane's state is kept.
+  ...[1920, 1440, 1280].map(w => ({ name: `triage-closed-${w}`, route: `/triage?as=c${w}${run}`, widths: [w],
+    setup: async page => { await wideFont(page); if (w >= 1400) await pressV(1)(page); },
+    rules: [hidden('.tide-reading'), controlsOneRow('.tide-triage-row.selected .tide-triage-decide'), excerptMeasure(3), rowDecisionCompact(76),
+      fits('.tide-triage-row.selected'), fits('.tide-triage-flags'), sameLine('.tide-triage-row.selected .tide-triage-meta > span', '.tide-triage-row.selected .tide-triage-flags')] })),
+  // An open group's reports don't flag each other "Looks like": the group says so already. Duplicate (D) stays.
+  { name: 'triage-group-open', route: '/triage', setup: openGroup, widths: [1440], rules: [noLooksLikeInItsGroup] },
   // V closes the pane that opened by itself, and opens it again; on a narrow window, where it's hidden, V opens it.
   // Held down, V is one press: the keyboard's repeats don't open and close the pane over and over.
   { name: 'triage-v-held', route: `/triage?as=v4${run}`, setup: holdV, widths: [1440], rules: [hidden('.tide-reading')] },
