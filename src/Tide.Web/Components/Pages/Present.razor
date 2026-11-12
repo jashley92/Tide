@@ -1262,8 +1262,9 @@ else
     private List<BriefItem> Undiscussed(BriefEdition edition) =>
         edition.Articles.Select(x => ItemFor(x.Article.Id)).OfType<BriefItem>().Where(i => !i.Discussed).ToList();
 
-    private void Carry(Guid articleId, bool on)
+    internal void Carry(Guid articleId, bool on)
     {
+        if (!InCharge) return;
         if (on) _carry.Add(articleId);
         else _carry.Remove(articleId);
     }
@@ -1431,7 +1432,7 @@ else
                 else await CloseAction();
                 break;
             case "discussed":
-                if (_brief is null || !_canPresent) break;   // no brief for the day, or not theirs to tick
+                if (_brief is null || !InCharge) break;   // no brief for the day, or not theirs to tick
                 if (ShownArticle() is { } shown && ItemFor(shown) is { } item) await ToggleDiscussed(item);
                 break;
         }
@@ -1446,8 +1447,9 @@ else
         StateHasChanged();
     }
 
-    private async Task ToggleDiscussed(BriefItem item)
+    internal async Task ToggleDiscussed(BriefItem item)
     {
+        if (!InCharge) return;
         try
         {
             await BriefSvc.SetDiscussedAsync(item.Id, !item.Discussed);
@@ -1651,6 +1653,7 @@ else
 
     internal Task QuickAdd(Guid articleId) => Run(async () =>
     {
+        if (!InCharge) return;
         var number = 0;
         if (!await _overLimit.RunAsync(async reason =>
                 number = await ActionSvc.QuickAddAsync(articleId, QuickAddTitle(articleId) ?? "", _qaKind, _qaTeam, _qaDue, RaisedFor, reason))) return;
@@ -1700,9 +1703,12 @@ else
     // The edition article's recommended lines no action was raised from.
     private static IReadOnlyList<string> Unraised(EditionArticle x) => RecommendedActions.Unraised(x.Article.RecommendedActions, x.Actions, r => r.Recommendation);
 
+    /// <summary>Raises a recommended line as its draft (kind, team) has it.</summary>
+    internal Task Raise(Guid articleId, string line) => Raise(articleId, line, LineDraft(articleId, line));
+
     private async Task Raise(Guid articleId, string line, RaiseDraft draft)
     {
-        if (_raising) return;   // a second click while the first is saving would raise it twice
+        if (_raising || !InCharge) return;   // a second click while the first is saving would raise it twice
         _raising = true;
         try
         {
@@ -2315,7 +2321,15 @@ else
 
     /// <summary>Whether this page has the presenter's rail: the page presenting, or with no meeting someone who could
     /// present. Never a follower's.</summary>
-    private bool Rail => _canPresent && (_view is null || Presenting);
+    private bool Rail => InCharge;
+
+    /// <summary>
+    /// Whether this page runs the meeting: it's presenting it, or there's no meeting and it could present (alone, getting
+    /// ready). Read from the live meeting, not this page's copy, so it holds the moment the meeting starts or changes
+    /// hands. Every one of the presenter's steps checks it where it's handled, not only by what the page draws: someone
+    /// following, an analyst who could present included, changes nothing with a key or a forged event.
+    /// </summary>
+    private bool InCharge => _canPresent && (Meetings.Get(_date) is not { } live || _seat is not null && live.IsPresenter(_me));
 
     // Whether the window has room to dock it (1500px and wider, as present.js reports), and whether ] or Rail has turned it
     // from what that room gives (open when docked, shut over the slide).
@@ -2362,8 +2376,8 @@ else
 
     /// <summary>Whether this page has the presenter's tools on the slides: it's presenting (or there's no meeting and it
     /// could), on the team edition, as someone who may change the brief, before it's sent. Never a follower's.</summary>
-    private bool PresenterTools => TeamEdition && _canPresent && _writesBriefs
-        && (Presenting || _view is null) && _brief is { Status: not BriefStatus.Sent };
+    private bool PresenterTools => TeamEdition && InCharge && _writesBriefs
+        && _brief is { Status: not BriefStatus.Sent };
 
     private bool _writesBriefs, _noteEditing;
     private string? _noteDraft;
@@ -2421,7 +2435,7 @@ else
 
     private Task SaveOpeningNote(string? text, string done) => Run(async () =>
     {
-        if (_brief is null) return;
+        if (_brief is null || !InCharge) return;
         await BriefSvc.SetTeamNoteAsync(_brief.Id, text);
         (_noteEditing, _slideFocus) = (false, SlideFocus.NoteHeading);
         await ReadBriefAgain();
@@ -2431,6 +2445,7 @@ else
     /// <summary>A number missing from the day's, entered on its slide: blank or not a number is refused, as the form does.</summary>
     internal Task EnterMissingNumber(Guid metricId, string text) => Run(async () =>
     {
+        if (!InCharge) return;
         if (!Tide.Application.Metrics.MetricMath.TryParseValue(text, out var value))
         {
             _numberErrors[metricId] = string.IsNullOrWhiteSpace(text) ? "Type the number first." : "That isn't a number TIDE can keep.";
@@ -2482,22 +2497,22 @@ else
 
     internal void ClearHand(string? userId)
     {
-        if (_seat is not null && Meetings.ClearHands(_seat, userId)) Refresh();
+        if (InCharge && _seat is not null && Meetings.ClearHands(_seat, userId)) Refresh();
     }
 
-    private void Summon()
+    internal void Summon()
     {
-        if (_seat is not null && Meetings.Summon(_seat)) Refresh();
+        if (InCharge && _seat is not null && Meetings.Summon(_seat)) Refresh();
     }
 
     internal void ToggleLock()
     {
-        if (_seat is not null && Meetings.Lock(_seat, _view?.Locked != true)) Refresh();
+        if (InCharge && _seat is not null && Meetings.Lock(_seat, _view?.Locked != true)) Refresh();
     }
 
     internal void HandOff(ChangeEventArgs e)
     {
-        if (_seat is null || e.Value is not string to || to.Length == 0) return;
+        if (!InCharge || _seat is null || e.Value is not string to || to.Length == 0) return;
         var name = _view?.People.FirstOrDefault(p => p.UserId == to)?.Name;
         if (!Meetings.HandTo(_seat, to))
         {
@@ -2876,8 +2891,9 @@ else
     private bool CanWork(EditionAction r) => r.Id != Guid.Empty &&
         (_canCreate || _canWork && MembersOf(r.TeamId).Any(m => m.UserId == _me));
 
-    private Task Take(EditionAction r) => Run(async () =>
+    internal Task Take(EditionAction r) => Run(async () =>
     {
+        if (!InCharge) return;
         await ActionSvc.TakeAsync(r.Id);
         await LoadActions();
         Toasts.Show($"{Ui.ActionLabel(r.Number)} is yours.");
@@ -2889,6 +2905,7 @@ else
     // does: the value drawn hasn't changed, so the browser's wouldn't be put back.
     internal async Task Assign(EditionAction r, string? assigneeId)
     {
+        if (!InCharge) return;
         var kept = false;
         await Run(async () =>
         {
@@ -2928,7 +2945,7 @@ else
     // Only the date changes: whoever holds it now keeps it (not this page's copy's holder, who may have been replaced).
     internal async Task SetDue(EditionAction r)
     {
-        if (!_dueTyped.Remove(r.Id, out var typed)) return;   // left without a change
+        if (!_dueTyped.Remove(r.Id, out var typed) || !InCharge) return;   // left without a change
         if (DateInput(typed) is { } due && due != r.DueDate)
         {
             try
@@ -2963,8 +2980,15 @@ else
         }
     }
 
-    private Task AddAttendee() => Run(async () =>
+    /// <summary>The name typed to add to who attended.</summary>
+    internal string? AddAttendeeName { get => _addName; set => _addName = value; }
+
+    /// <summary>The undiscussed articles ticked to carry to the next brief.</summary>
+    internal IReadOnlyCollection<Guid> Carried => _carry;
+
+    internal Task AddAttendee() => Run(async () =>
     {
+        if (!InCharge) return;
         if (string.IsNullOrWhiteSpace(_addName)) return;
         await MeetingSvc.AddAttendeeAsync(_brief!.Id, _addName);
         _addName = null;
@@ -2975,6 +2999,7 @@ else
 
     private Task RemoveAttendee(MeetingAttendee row) => Run(async () =>
     {
+        if (!InCharge) return;
         await MeetingSvc.RemoveAttendeeAsync(row.Id);
         await ReloadRecord();
     });
