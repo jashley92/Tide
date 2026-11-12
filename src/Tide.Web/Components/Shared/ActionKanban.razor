@@ -4,7 +4,8 @@
    way is a chip to drop a card on to close it so. A card the person may work can be dragged to another lane or a chip
    (board.js, which drops on the nearest .tide-kcol or .tide-kchip), or moved with its Move menu from the keyboard;
    either way ActionService.MoveAsync checks and makes the move. A move to a closed status asks for the outcome first,
-   as the action's page does.
+   as the action's page does. Each chip is also a link to the actions it counts: Recently closed on the list, at that
+   status and the strip's reach, with the board's filters (the page's ClosedLink).
    It's shared live: a card someone else is dragging says who has it and lights the lane or chip it's over (BoardDrags),
    and a card someone else moved slides in from its old lane and says who moved it.
    A card says its article (to whoever may read it: the board leaves it off otherwise), KEV when that article names a
@@ -40,16 +41,26 @@
             var incoming = drags.Where(d => d.Over == status).ToList();
             var name = ActionService.StatusName(status);
             var n = Counts.ClosedAs(status);
-            <div class="tide-kchip @(incoming.Count > 0 ? "tide-kcol-incoming" : "")" data-status="@status" role="group"
-                 aria-label="@($"{name}: {n} closed in the last {ClosedDays} days")">
-                <ActionStatusBadge Status="status" /> <span class="tide-count" aria-hidden="true">@n</span>
+            var said = $"{name}: {n} closed in the last {ClosedDays} days";
+            var href = ClosedLink?.Invoke(status);
+            @* A drop target, and a link to the actions it counts: the link names the chip, and isn't itself dragged. *@
+            <div class="tide-kchip @(incoming.Count > 0 ? "tide-kcol-incoming" : "")" data-status="@status" role="@(href is null ? "group" : null)"
+                 aria-label="@(href is null ? said : null)">
+                @if (href is null)
+                {
+                    @ChipBody(status, n)
+                }
+                else
+                {
+                    <a class="tide-kchip-link" href="@href" draggable="false" aria-label="@($"{said}, show them")">@ChipBody(status, n)</a>
+                }
                 @foreach (var d in incoming)
                 {
                     <span class="tide-kcol-incoming-by" title="@d.Name is moving a card here"><span class="bi bi-arrow-down-circle" aria-hidden="true"></span> @d.Name</span>
                 }
             </div>
         }
-        <span class="tide-kstrip-hint">Drop a card on one to close it that way</span>
+        <span class="tide-kstrip-hint" title="Drop a card on one to close it that way">Drop a card on one to close it that way</span>
         @* The strip's reach, a week or a month, either way. *@
         <button type="button" class="btn btn-link btn-sm tide-kstrip-more" @onclick="ShowOlder">Show the last @(ClosedDays < ActionService.BoardOlderDays ? ActionService.BoardOlderDays : ActionService.BoardClosedDays) days</button>
     </section>
@@ -201,6 +212,12 @@
         </section>
     };
 
+    // A closed chip's badge and count.
+    private static RenderFragment ChipBody(ActionStatus status, int n) => __builder =>
+    {
+        <ActionStatusBadge Status="status" /> <span class="tide-count" aria-hidden="true">@n</span>
+    };
+
     // How long an open card has been in its column, from when it moved there (the organization's day), and that day;
     // nothing for an Open card with no due date that never moved, whose "Opened" already says it.
     private (string Text, DateOnly Since)? InColumn(ActionRow r)
@@ -220,6 +237,10 @@
 
     /// <summary>How far back the closed strip counts.</summary>
     [Parameter] public int ClosedDays { get; set; } = ActionService.BoardClosedDays;
+
+    /// <summary>Where a closed chip links: the list of the actions it counts (Recently closed at that status and reach).
+    /// None: the chips are drop targets only.</summary>
+    [Parameter] public Func<ActionStatus, string>? ClosedLink { get; set; }
 
     /// <summary>The administrators' card rules: a card takes the first matching one's colour, and every match's label.</summary>
     [Parameter] public IReadOnlyList<ActionCardRule> Rules { get; set; } = [];
