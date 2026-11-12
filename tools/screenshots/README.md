@@ -119,6 +119,16 @@ per line. CI runs it on every pull request (the `layout` job).
 node tools/screenshots/layout.mjs
 ```
 
+It starts TIDE with a few more Development-only demo switches than `capture.mjs` does, so each rule has a case to
+check:
+
+| Setting | What it adds |
+| --- | --- |
+| `Demo:TriageFiller=55` | Enough more new triage items for a second page, for the paging keys. |
+| `Demo:SlideFiller=true` | A slide with a dozen indicators and CVEs, a long hash and a long URL, and an opening note carried over. |
+| `Demo:StaleFeeds=true` | Three enabled feeds on loopback addresses that are never fetched, last pulled the day before, so Today says the feeds aren't pulled (with `Intake:Enabled=true` and `Intake:PulledBy=00:00`). |
+| `Org:ActionBesideSlide=true` | A meeting's action beside the slide; only the `present-beside` pages open one. |
+
 `ONLY`, `REUSE`, `PORT` and `BASE_URL` work as above. `SHARD=2/4` checks one of four slices of the pages, in order, on
 its own fresh demo; CI runs the four side by side. The pages from `CHANGES_THE_DEMO` on change the demo for those after
 them, so they stay together at the end of the last slice: put a new page that changes the demo there, and any other
@@ -168,8 +178,9 @@ that already exists replaces that folder's images.
 
 Each screen in its `screens` list is captured at 1920×1080, 1440×900 and 780×900, in the light and the dark theme, as
 `<screen>-<width>x<height>-<theme>.png`. That is 96 images for the 16 screens: Today, Triage, an article in the editor,
-Search with an indicator looked up, the Actions list and board, an action, Our stack and one product, Saved queries,
-Outreach templates, Playbooks, Board rules, and present mode's title slide, an article slide and the wrap-up.
+Search with an indicator looked up, the Actions list and board, an action, Our stack and one product, the Library's
+four tabs (opened by their old addresses, which lead to the tabs), and present mode's title slide, an article slide
+and the wrap-up.
 
 `ONLY`, `REUSE`, `PORT` and `BASE_URL` work as above (`ONLY` names screens). `FULL=1` captures the whole page instead of
 what the window shows. The run exits non-zero if any screen fails, and names it.

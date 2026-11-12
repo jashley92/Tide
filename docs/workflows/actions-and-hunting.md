@@ -291,47 +291,56 @@ before this was kept start from the date they had at the upgrade (the migration 
 
 ![An action's page](../screenshots/doc-action-detail.png)
 
-1. The header: its badges (status, priority, due date and SLA, Escalated), who has it, the one primary button and
-   *More*. The status badge opens the status row (outcomes are asked for when it's closed).
-2. The facts: team, assignee, kind, external ticket, when it was created, and its due date with how close it is (and,
-   once the date has moved, "Originally due … · moved N times" under it).
-3. The tool drawer: the checklist, each item ticked by name, and beside it the parts' timeline, hunt queries or
-   outreach, where the action has them. On an IOC sweep or Threat hunt (`ActionGuide.IsHunt`) the drawer is in the
-   wide column, under the details and above *What's happened*, open on its hunt queries.
+1. The header: its badges (status, priority, kind, the due date and its state, Escalated), who has it, the one
+   primary button and *More*. The status badge opens the status row (outcomes are asked for when it's closed).
+2. The facts, first in the context rail: team, assignee, kind, external ticket, when it was created, and its due date
+   with how close it is (and, once the date has moved, "Originally due … · moved N times" under it).
+3. The tool drawer, in the page's one column under the details: the checklist, each item ticked by name, and in tabs
+   beside it the parts' timeline, hunt queries or outreach, where the action has them. On an IOC sweep or Threat hunt
+   (`ActionGuide.IsHunt`) it opens on its hunt queries, and the Hunt tab comes first.
 4. *What's happened*: its comments, in Markdown with screenshots or evidence, and its history, in one feed.
-5. *From the article*: the article it came from, with its CVEs.
-6. Files on the action: picked, dropped or pasted, each with its SHA-256.
+5. *From the article*, in the rail: the article it came from, with its CVEs.
+6. Files, last in the rail: picked, dropped or pasted, each with its SHA-256.
 
-**The page.** One column of work and one of reference (`ActionPage`):
+**The page.** One column of work, with what you'd look up about the action in the context rail beside it
+(`ActionPage`; the rail is "About this action"):
 
 - **Header.** The title and number; one line of badges: the status (for whoever may work it, a button that opens the
-  status row and its prompt under the line, `ActionStatusControl` with `AsBadge`), the priority, the due date with its
-  SLA badge, and *Escalated* while it is; then a muted line: team · assignee · "handed from {team} by {name}: {reason}"
-  after a hand-off. On the right, **one primary button** chosen by the action's state and kind
-  (`ActionGuide.Primary`, [business rule A27](../reference/business-rules.md#actions-and-sla)), and **More**
-  (`MenuButton`, a menu with the arrow keys) for everything else whoever is looking may do: *Take it*, *Record an
-  update* (when neither is the primary), *Hand off…*, *Split to teams…* and *Split off a part* (an analyst, on a
-  top-level action), *Edit* and *Change status…*. A read-only viewer sees neither.
+  status row and its prompt under the line, `ActionStatusControl` with `AsBadge`), the priority, the kind, one badge for
+  the due date and its SLA state, and *Escalated* while it is; then a muted line: team · assignee · "handed from {team}
+  by {name}: {reason}" after a hand-off. An external team's action that nobody in TIDE holds names its ticket there
+  ("INC-4411", a link when the ticket link is a web address), or "no ticket yet". On the right, **one primary button**
+  chosen by the action's state and kind (`ActionGuide.Primary`, [business rule A27](../reference/business-rules.md#actions-and-sla)),
+  and **More** (`MenuButton`, a menu with the arrow keys) for everything else whoever is looking may do: *Take it*,
+  *Record an update* (when neither is the primary), *Hand off…*, *Split to teams…* and *Split off a part* (an analyst,
+  on a top-level action), *Edit* and *Change status…*. A read-only viewer sees neither.
 - **Next.** A line under the header when something needs doing, with links that do it (`ActionGuide.Next`,
   [business rule A28](../reference/business-rules.md#actions-and-sla)): a part overdue ("Branch IT is 3 days late on
   A-15", with *Chase them*, the part's page, and *Record their reply*, the part's page with Record an update open:
   `actions/15?do=recordupdate`), an email past its follow-up day with no reply, escalated, blocked, or past its own due
   date. Only the most important shows, and only to whoever may work it.
-- **Main column.** *Details*, with *Outcome* under it once it's closed; the *Lineage* when it has parts or is one; and
-  *What's happened*, one feed of its comments and history lines (a recorded reply is a comment, and hand-offs,
-  splits and escalations are history lines), oldest first, so the newest sits by the comment box at its foot
-  (`ActionFeed`). The latest 10 show, with *Show N earlier* for the rest; a comment being edited is never folded away,
-  and a file's *On a comment* link unfolds the feed. A comment carries its author's initials, a history line TIDE's
-  mark. The comment box keeps its Markdown toolbar, its attachments and *Record a team's update*; Ctrl+Enter posts.
-- **Side column.** The facts card; the **tool drawer** (`ActionToolDrawer`), a card of tabs over the existing panels:
-  *Checklist* always, *Timeline* on a parent whose parts have a due date, *Hunt queries* for an IOC sweep or threat
-  hunt (or one with hunts) and *Outreach* for an Outreach action (or one with emails). It opens on the kind's own tool
-  (Outreach, else Hunt queries for a sweep or hunt, else Checklist), or the one the address asks for:
-  `actions/12?tool=hunt`; choosing a tab puts it in the address, which shows it. A tool's panel is drawn the first
-  time its tab shows and kept after, so a half-written query or email survives a look at another tab. Then *From the
-  article*, the external team's contact card when its team is external, and *Files*.
-- **On a phone** the two columns become one, in this order: header, Next, details, the tool drawer, lineage, what's
-  happened, facts, the article, files.
+- **The column.** *Details*, with *Outcome* under it once it's closed; the **tool drawer** (`ActionToolDrawer`), a card
+  of tabs over the existing panels: *Checklist* always, *Timeline* on a parent whose parts have a due date, *Hunt
+  queries* for an IOC sweep or threat hunt (or one with hunts) and *Outreach* for an Outreach action (or one with
+  emails). It opens on the kind's own tool (Outreach, else Hunt queries for a sweep or hunt, else Checklist), or the one
+  the address asks for: `actions/12?tool=hunt`; choosing a tab puts it in the address, which shows it. A tool's panel is
+  drawn the first time its tab shows and kept after, so a half-written query or email survives a look at another tab.
+  Then the *Lineage* when it has parts or is one; and *What's happened*, one feed of its comments and history lines (a
+  recorded reply is a comment, shown as a quote, and hand-offs, splits and escalations are history lines), oldest
+  first, so the newest sits by the comment box at its foot (`ActionFeed`). The latest 10 show, with *Show N earlier*
+  for the rest; a comment being edited is never folded away, and a file's *On a comment* link unfolds the feed. A
+  comment carries its author's initials, a history line TIDE's mark. The comment box keeps its Markdown toolbar, its
+  attachments and *Record a team's update*; Ctrl+Enter posts.
+- **The context rail.** The facts; *From the article* (the source article's title, badges and summary, and its CVEs
+  with KEV, CVSS and EPSS), for those who read the team edition; *Also raised from it*, the other actions raised from
+  the same article, open ones first, each with its number, title and status (`ActionService.RaisedWithAsync`, which
+  leaves out the action itself, its lineage and deleted actions, and lists nothing for someone who can't read actions
+  in general, such as a Visitor seated in a meeting); the external team's contact card when its team is external; and
+  *Files*, with *Add files* in its heading. From 1500px wide the rail is docked beside the page; below that **Context**
+  in the top bar, or `]`, opens it over the page.
+- **Files anywhere.** For someone who may add files, a file dropped anywhere on the page, or pasted with nothing
+  focused, goes to the rail's Files box (opening the rail if it's shut), to be added with *Add*, as if picked there.
+- **On a phone** the page is the same one column, and the rail opens over the whole window.
 
 - **Assignee.** A new assignee must be a member of the action's team; one it already has keeps it (an analyst who took
   it). The meeting's assignee and due boxes change only what they say (`AssignAsync`, `SetDueAsync`), so a due date set
@@ -497,8 +506,9 @@ page is headed there too, its heading counting every match; a page that a delete
   `HuntValueKind` by name) take that kind only; the action's other kinds are then named in a "not included" comment,
   which `LeftOut` counts, so *No hits, close* asks about them. A kind TIDE doesn't know is refused when the query is
   saved.
-- **Adding to an action** (`AddSavedHuntAsync`, `HuntQueryBuilder.FromSaved`). Refused for a retired query, and when a
-  placeholder would get no values (an empty list is a syntax error in every dialect). Past 500 values for a
+- **Adding to an action** (`AddSavedHuntAsync`, `HuntQueryBuilder.FromSaved`). Refused for a retired query, for a
+  closed action (Done, Cancelled or Not applicable: "A-12 is closed. Reopen it to add to it."; the action page doesn't
+  offer it there), and when a placeholder would get no values (an empty list is a syntax error in every dialect). Past 500 values for a
   placeholder, the query is repeated a block each ("Part 2 of 3"). The first line names the query and, with `{{days}}`,
   the window, so `WindowOf` reads it back. The hunt keeps the saved query's name (`HuntQuery.SavedQueryName`) even after
   it's deleted.
@@ -514,6 +524,7 @@ action it's for (or any kind), up to 40 steps, who made it and last changed it, 
 can start its checklist from one for its kind or for any kind; an action already open applies one from its checklist.
 The steps are copied, so a later edit doesn't change actions already started.
 
+- **Applying one** (`ApplyPlaybookAsync`) is refused on a closed action, checked again inside its serialized save.
 - **Who keeps them.** `WorkActions` adds, edits, reorders (the pickers' order) and retires or restores; whoever made
   one, or an administrator, deletes it. The 7 starters (`StarterPlaybooks`), one for each kind of action but Other,
   are made by "TIDE", so only an administrator deletes them; anyone who works actions can retire them. They're added
@@ -539,6 +550,24 @@ The administrators' card rules, read-only, for everyone with `ReadActions` (`Boa
 `/library/board-rules`, linked from the Actions page): each rule turned on, in order, with its label in its colour,
 what it matches (`ActionRules.Describe`), the colour's name and whether it's offered as a filter. Administrators keep
 them on Administration › Card rules.
+
+## Trying a library entry on an action
+
+The Library (`/library`) shows the selected saved query, outreach template or playbook in full in the page and, in the
+context rail ("About this query", "About this template", "About this playbook"), its facts, the placeholders it
+fills, *Try it on an open action* and *Used on*. A search box on the tab row searches the whole library (`?q=`,
+`LibrarySearch`), only over the tabs the person may open, and each tab shows its matches.
+
+- **Try it** lists the open actions the person works, of the kind the entry suits, and previews the entry filled in
+  for the one chosen. The preview only reads (`PreviewSavedHuntAsync`, `PreviewPlaybookAsync`), sharing its fill code
+  with the real add, and refuses whoever the real step would. *Add to A-n* goes through `AddSavedHuntAsync` or
+  `ApplyPlaybookAsync`, with their permission check, history and audit. A template offers *Copy filled in* and a link
+  to write it on the action. With no suitable open action, Try it says so. If the action closes after the preview,
+  *Add* writes nothing, says why and offers the next open action. Viewers and retired entries get no Try it.
+- **Used on** lists the actions the entry was used on, with what each found, for those who may read actions
+  (`ActionService.RequireRead`); deleted actions are left out.
+- **Keys.** The list uses the shared row selection: `J`, `K` and the arrows (turning the page at the ends), `Enter`, and
+  `?row=`, the entry's id, so old links keep working. A long grouped list folds after the selected entry's group.
 
 ## Outreach
 
@@ -904,9 +933,13 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
 
 ## Lists, board, Today's queue and Workload
 
-- **Actions page** (`/actions`, `ActionsBoard.razor`). A board (a column per status in `ActionItem.StatusOrder`:
-  Open, In progress, Blocked, Tracking, Done, Cancelled, Not applicable; `BoardAsync`) or a list (`PageAsync`). Views:
-  Mine, My teams, Open, Overdue, Closed (last 90 days). Overdue and Closed are list-only. The layout is the
+- **Actions page** (`/actions`, `ActionsBoard.razor`). A board (`BoardAsync`: four lanes, Open, In progress, Blocked
+  and Tracking, with the closed statuses in a strip under them) or a list (`PageAsync`). Views: Mine, My teams, All
+  open, Overdue, Recently closed (last 90 days). Overdue and Recently closed are list-only. Each tab shows its count
+  of open actions (Recently closed its closed ones), from one grouped query that applies the page's other filters and
+  each view's own rule of who sees what (`ViewCountsAsync`); on the board a tab's count includes the actions behind
+  the closed strip's chips, so it matches what the tab shows. The tabs stay on one row: when they don't fit, the row
+  scrolls in itself, with a fade on the edge that has more. The layout is the
   `actions.layout` preference; a link's own `layout` wins for that visit. The tab an address without `view` opens
   is the `actions.view` preference (`mine`, the default, `myteams` or `open`), set with *Open here by default* by the
   tabs (*Opens here* on the tab that's theirs). A default that would always be empty opens All open instead
@@ -925,7 +958,7 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
   anything else is refused and `page` is dropped. A view is a shortcut, not a filter of its own: one that names a team
   or rule since retired opens the page as any such link does.
 - **Filters.** One bar for the list and the board (`FilterBar`; the filter is `ActionFilter`): the search box (title,
-  A-number or the article's title), then five pills:
+  A-number or the article's title), then these pills:
 
   | Pill | Address | Notes |
   |---|---|---|
@@ -935,6 +968,7 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
   | Blocked | `status=blocked` | Takes turns with Tracking: `status` holds one value. |
   | Tracking | `status=tracking` | |
   | Raised by me | `raised=me` | The actions you created, wherever they are now: what you asked others for (`ActionFilter.RaisedByMe`). |
+  | No owner | `assignee=none` | The same value as *Held by: nobody*, so saved views and old links keep their meaning. Carries its count. `/actions?view=mine&assignee=none` opens My teams with it. |
 
   **+ Filter** lists them under Who (held by, raised by), Where (team, internal or external), What (kind, priority,
   status, rule) and When (due), and gives a long list (held by, in a big team) a find box. It holds team (`team`); held by (`assignee`: you, nobody, or anyone holding an open action, with how many,
@@ -950,8 +984,33 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
   layout. Filtered to a team with an active limit, the bar shows "4 of 5 active" (`TeamActiveAsync`).
 - **The list** is sorted, grouped and paged in the database, 50 a page (`ActionService.ListPageSize`). Group headings
   count every matching action in the group, and each rule offered as a filter is counted there too (`RuleCountsAsync`); the board counts them from its cards, once each time it's read.
+  All open and My teams are grouped by when actions are due (Overdue, Due today, This week, Later), each group saying
+  how many have no owner. Each row has the title first, then the article's short title (with a KEV flag, for those who
+  read the team edition); the kind; the team and who holds it; a **Progress** column (the checklist, then the hunt
+  state, or "No update for N days" since a person last touched it); the due date; and the status. Where
+  `ActionGuide.CanTake` allows, a row offers **Take it** (`TakeAsync`, refused if someone took the action, or it was
+  closed or handed to an external team, since the list was read). For whoever may work the action, the status is a
+  menu that moves it through `ActionMover` and `MoveAsync`, as the board does: checked, refused if stale, and in the
+  history and audit log. When Mine is empty and the person's teams have actions nobody holds, one line says so, and
+  *Show them* applies No owner.
+- **Who holds it.** Wherever an action's holder is named (the list, the board, Today's Escalated card, the slides, the
+  team email and reminders, search, Our stack), an external team's action that nobody in TIDE holds is named by its
+  ticket (`ActionItem.TicketRef`, linked to `TicketUrl` when that's a web address; plain words in emails and for a
+  Visitor), or "With {team} · no ticket yet" (`HolderLabel`). Someone in TIDE holding it is named instead. Counting and
+  filtering by "no assignee" (No owner, reminders, the meeting's "find someone to take it") still go by the assignee.
+- **The selected action and the context rail.** On the list a row is selected (a click, `J` and `K` or the arrows,
+  `?row=`), and on the board a card (`?card=<number>`; `←` and `→` move between lanes). `T` takes it and `Enter` opens
+  it. The context rail (`ActionRowRail`) shows the selected action: its Next line; Take it, Assign… (list) or Move to
+  (board), and Open; its kind, team, time in its status and checklist; its hunt query with Copy and its indicators;
+  the source article with its CVE, KEV, CVSS and EPSS; and its last activity. A saved hunt query shows to anyone who
+  reads the action; with none saved, a read-only preview (`PreviewHuntAsync`, which writes nothing) shows only to those
+  who work it, and Copy saves it through `GenerateHuntAsync`. A closed action's rail on Recently closed has **Reopen**.
+  The rail reads beyond the row only once the selection has rested for 150ms.
 - **The board** loads every open card and caps each column on screen: its first 20 cards, then *Show N more*, 20 at a
-  time. A card moved into a column (by you or a colleague) stays in view. Closed actions aren't drawn: a strip under the
+  time. A card moved into a column (by you or a colleague) stays in view. The four lanes fill the window's height and
+  each scrolls on its own, with a drop area under its cards. A card shows its title, the article's short title (left
+  off for anyone who can't read the team edition), a KEV flag, its checklist progress, a sweep's or hunt's hunt state,
+  and how long it has been in its column (`ActionItem.StatusChangedAtUtc`, set whenever the status changes). Closed actions aren't drawn: a strip under the
   lanes counts what closed each way (Done, Cancelled, Not applicable) in the last 7 days (`BoardClosedDays`); *Show the
   last 30 days* takes it to 30 (`BoardOlderDays`) for that visit. Each chip is a drop target that closes a card that
   way, and a link to the actions it counts: Recently closed on the list at that status and reach, with the board's

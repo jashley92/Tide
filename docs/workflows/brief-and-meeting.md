@@ -60,10 +60,21 @@ zone). Someone without the team edition (a Reader, a Visitor) is sent to `/publi
 - the step strip, with one main button for whichever step is next (`BriefSteps.Next`: Mark ready, Present, Send, Post
   to SharePoint, or read it as sent). The step it's on also shows in the top bar of every page, as a link back to
   Today ("Brief 10:30 AM · step 3 of 5 · Order"; see [the brief chip](../architecture/frontend.md#layout-and-navigation));
-- the running order, today's numbers, what each edition will carry, and the meeting (its time and who the rotation
-  names to present);
-- reviews asked of you, and, for anyone who works actions, the team's queue (see
-  [actions-and-hunting.md](actions-and-hunting.md)).
+- under the strip, from `Intake:PulledBy` on a working day, how many polled feeds haven't been pulled since, with
+  **Pull all** (see [intake-and-triage.md](intake-and-triage.md#feeds-not-pulled-since-the-morning));
+- the running order, then the team's opening note (read-only until **Edit**), then **My actions**, **Not on a brief
+  yet** (for whoever writes the brief: Ready articles never on a brief, then their own drafts, each with *Add*; on a
+  day with no brief, *Add* starts it) or **Recently presented** for everyone else, and today's numbers.
+
+The cards that sit beside the brief are in the context rail, "Beside the brief" (`Components/Today/`): the **edition
+check**, **your teams' queue** (their teams' open actions that are theirs or nobody's, up to 8, with *Take it* on those
+nobody holds; a colleague's take in the
+meantime is refused and names who took it), **Escalated**, **reviews asked of you**, the **meeting** (when, the
+presenter, and the title slide line, changed in place with *Change presenter* and *Title slide line*), **coming up**
+and the brief's **history**. From 1500px wide the rail is docked beside the brief and `]` hides it; below that it's
+shut, and **Context** in the top bar, or `]`, opens it over the page. A past day's brief (`/briefs/{day}`) has the same
+rail. A colleague's save never replaces what you're typing in the meeting form or the opening note: a "changed
+elsewhere" notice shows beside the form instead.
 
 ## Starting a brief
 
@@ -100,10 +111,15 @@ before the change is refused. Once the brief is Sent, its running order, present
 The running order shows each article's readiness gaps (`BriefService.Readiness`, which runs `ArticleChecks.For` with
 the company-wide ceiling). A gap with a one-click fix has its button beside it: **Set to AMBER**, for a threat whose
 "why it matters" would reach the company-wide edition, calls `ArticleService.MarkWhyItMattersAmberAsync` with the
-article's edit version as the page showed it. It is for people with `WriteArticles`, on a brief that isn't Sent, and
-is audited and heard like any save of the article.
+article's edit version as the page showed it. Beside it, **Keep it** records that the paragraph is meant to reach the
+company-wide edition at the marking it has (`ArticleService.KeepWhyItMattersAsync`): it changes no marking and no
+edition, and stores the marking kept, a hash of that marking and the text, who and when (migration
+`WhyItMattersKept`). The warning then stops showing, and returns by itself when the text or the marking changes. The
+history reads "Kept “Why it matters” at TLP:CLEAR". Both are for people with `WriteArticles`, on a brief that isn't
+Sent, refuse a stale edit version or an article not on that brief, and are audited and heard like any save of the
+article.
 
-The **edition check** beside the running order counts the articles each edition will carry and lists only the
+The **edition check**, in the context rail, counts the articles each edition will carry and lists only the
 exceptions (`EditionChecks.Exceptions`): what is partly included, left out, or goes out with a warning. How the
 editions are cut is on [architecture/editions-and-tlp.md](../architecture/editions-and-tlp.md).
 
@@ -169,12 +185,12 @@ lands on the same one however many slides their page has loaded:
 
 | Slide | Key | Shows |
 |---|---|---|
-| Title | `title` | The date, the presenter, the agenda, the title slide line if the edition carries it |
+| Title | `title` | The date, the presenter, the title slide line if the edition carries it, the articles in order (number, kind, priority, KEV where an article names a KEV-listed CVE), and what comes first ("First: the opening note, the numbers and 4 actions that need review.") |
 | Opening note | `note` | The team's opening note. Team edition only, and only when it isn't blank. |
 | Metrics | `metrics:{group key}` | One slide per metric group: tiles and the group's chart. Team edition only. |
 | Actions that need review | `open` | The open actions the room should look at, from any brief (below). Team edition only, and only when there are any. |
-| One per article | `article:{id}` | The article as the edition carries it. Screenshots zoom. Each recommended line shows the action it became; the article's other actions are listed below. |
-| Wrap-up | `wrap` | Every recommended action not yet raised, the actions raised, who attended, and the articles not marked discussed. |
+| One per article | `article:{id}` | The article as the edition carries it. Screenshots zoom. Its indicators as defanged chips (the first 10, then "+N more"; a chip opens the larger card), on the team edition only, and its CVEs. Each recommended line shows the action it became ("✓ A-2 · In progress · holder"); the article's other actions are listed below. |
+| Wrap-up | `wrap` | Three lists, side by side from 1400px: the recommended lines no action has been raised from yet; who has what, the brief's actions by team and holder, with each team's unheld ones ("nobody yet") last; and the articles not marked discussed. Built from the edition, so nothing above its ceiling is named. |
 
 **Actions that need review** (`ActionService.MeetingActionsAsync`) lists every open action the edition may show that is
 overdue, escalated, or has gone too long without an update, each once, at most 8:
@@ -202,6 +218,11 @@ overdue, escalated, or has gone too long without an update, each once, at most 8
   the same slide; the company-wide edition has none.
 
 The team email's "Still open from earlier briefs" keeps to the overdue and escalated actions.
+
+The footer names each slide under its bar (Title, Opening note, each group of numbers, Actions that need review,
+"1 · Edge VPN", Wrap-up), shortened to fit; the whole title is in its tooltip and what a screen reader hears. Who is
+here and whose hands are up are in the top bar, for everyone: the presence dots, a count ("3 here · all on the same
+slide") and the raised hands in the order they went up. A follower raises and lowers their own hand there.
 
 A page without a slide another has (the company-wide edition has no note) shows the title instead. The edition can be
 switched on screen; joining a live meeting switches to the team edition. Articles are ticked off as discussed
@@ -304,7 +325,7 @@ What people in the meeting can do:
 
 | Who | Can |
 |---|---|
-| Everyone in it | Follow the presenter's slide, browse off and come back (unless locked), show in the strip with the slide they're on, raise a hand on an article or the meeting (`Hand`). |
+| Everyone in it | Follow the presenter's slide, browse off and come back (unless locked), show in the top bar with the slide they're on, raise a hand on an article or the meeting (`Hand`). |
 | With `MeetingNotes` and the team edition (Analyst, Action owner, Viewer, Admin) | Take notes, each their own, against the article on screen as they began writing or the meeting as a whole (`MeetingService.AddNoteAsync`, at most 2,000 characters). A note begun on one article stays on it if the slide moves on before it's added, and the box says which article it's on. Edit or delete only their own. |
 | The presenter, with `WorkActions` | Raise actions from the rail, from the quick add or a recommended line, each assigned to whoever raises it (they can hand it on) and for one of the security team's own teams: an external team's work is split off an action afterwards, so it has a parent to follow it up. Take or assign them (a team that warns at its limit asks why first, `OverLimitDialog`). The quick add's title is kept per article as it's typed, so a slide moved by the presenter doesn't lose it. An assignee the service turns away (they left the team a moment ago) is said in a toast and that row's list is drawn afresh (`Present.AssignResets`), as the due box is. |
 | The presenter | Bring everyone here (`Summon`), lock everyone to their slide (`Lock`), clear hands, open an action or card for the room, hand presenting to another analyst who's there (`HandTo`; one who left a moment ago is refused in a toast and the list goes back to "Hand off to…"), add someone who was in the room by name (`MeetingService.AddAttendeeAsync`), mark articles discussed, end the meeting. |
