@@ -401,7 +401,7 @@ else
                                             @foreach (var ((line, done), n) in recoLines.Select((l, n) => (l, n)))
                                             {
                                                 <li @key="n" class="@(done is null ? "" : "is-raised")">
-                                                    <span class="tide-reco-text">@line</span>
+                                                    <span>@line</span>
                                                     @if (done is not null)
                                                     {
                                                         <span class="tide-reco-done">
