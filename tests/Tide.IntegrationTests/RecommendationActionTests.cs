@@ -192,9 +192,11 @@ public class RecommendationSlideTests(TideApp app) : IClassFixture<TideApp>
         return (day, id, team);
     }
 
-    private async Task<int> Raise(Guid article, Guid team, string title, string? line)
+    private static readonly SignIn Robin = new("dev:reco-robin", "Robin Analyst", "Analyst");
+
+    private async Task<int> Raise(Guid article, Guid team, string title, string? line, SignIn? who = null)
     {
-        await using var scope = SignedIn(app, SignIn.Analyst);
+        await using var scope = SignedIn(app, who ?? SignIn.Analyst);
         return await scope.ServiceProvider.GetRequiredService<ActionService>().QuickAddAsync(article, title, ActionKind.Other, team, null, recommendation: line);
     }
 
@@ -220,13 +222,14 @@ public class RecommendationSlideTests(TideApp app) : IClassFixture<TideApp>
     {
         var (day, article, team) = await Brief(201);
         var linked = await Raise(article, team, "Patch both gateways tonight", "Apply the vendor hotfix to both gateways");
-        var byHand = await Raise(article, team, "Brief the service desk", null);
+        var byHand = await Raise(article, team, "Brief the service desk", null, Robin);   // Robin's: Tester can take it
         await using var pat = await Open(app, day);
         await FirstArticle(pat);
         var (reco, others) = Slide(await pat.Html());
         reco.Should().Contain("Apply the vendor hotfix to both gateways").And.Contain($"A-{linked}").And.Contain("Hunt for the indicators in VPN logs")
             .And.Contain(" Raise</button>", "the line not raised yet");
-        others.Should().Contain($"A-{byHand}").And.NotContain($"A-{linked}", "listed once, against its line").And.Contain("Other actions");
+        others.Should().Contain($"A-{byHand}").And.NotContain($"A-{linked}", "listed once, against its line").And.Contain("Other actions")
+            .And.Contain($"aria-label=\"Take A-{byHand}\"", "Take it says which action");
     }
 
     [Fact]
