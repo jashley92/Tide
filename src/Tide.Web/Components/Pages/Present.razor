@@ -758,6 +758,7 @@ else
                             <div class="tide-slide-presenter">
                                 @if (_noteEditing)
                                 {
+                                    <ChangedElsewhere By="@_noteChangedBy" What="team's opening note" Consequence="Saving now would be refused." OnReload="ReloadOpeningNote" />
                                     <label class="visually-hidden" for="slide-note-text">Opening note</label>
                                     <textarea id="slide-note-text" class="form-control" rows="3" maxlength="@BriefService.TeamNoteMax" @ref="_noteBox"
                                               aria-describedby="slide-note-hint" @bind="_noteDraft" @bind:event="oninput" @onkeydown="NoteBoxKey"></textarea>
@@ -1090,7 +1091,7 @@ else
         <ConfirmDialog @ref="_confirm" />
         <OverLimitDialog @ref="_overLimit" />
         @* A meeting note typed and not added: leaving present mode asks first. *@
-        <UnsavedGuard Dirty="NoteDirty" Message="Your meeting note isn't added." Discard="DiscardNote" />
+        <UnsavedGuard Dirty="Unsaved" Message="@UnsavedMessage" Discard="DiscardUnsaved" />
     </div>
 
     <Lightbox FileId="_zoom?.FileId" Caption="@_zoom?.Caption" OnClose="() => _zoom = null" />
@@ -1248,6 +1249,13 @@ else
             _moveRailFocus = false;
             await to.TryFocusAsync(orGone: true);
         }
+        else if (_railDrawn && !RailOpen)
+        {
+            // The rail went with focus in it (closed docked, handed off, taken over): focus doesn't drop to the body.
+            try { await JS.InvokeVoidAsync("tidePresent.refocus"); }
+            catch (Exception ex) when (ex is JSDisconnectedException or InvalidOperationException) { /* the tab has gone, or not interactive */ }
+        }
+        _railDrawn = RailOpen;
         if (_focusOpener)
         {
             _focusOpener = false;
@@ -1569,6 +1577,7 @@ else
         // Only an article's ATT&CK techniques or scorecard tags changed (present mode's tag panel, or the editor): the
         // chips update quietly, as a product tag's do, and nothing else the slides show is read again.
         var tagsOnly = SlideTags.OnlyTagsChanged(_brief, brief, changes);
+        NoteHeard(brief, changes);
         _brief = brief;
         _follow = Followed();
         if (!tagsOnly)
@@ -2385,6 +2394,9 @@ else
     private ElementReference _railBox, _railToggle;
     private bool _moveRailFocus;
 
+    // Whether the rail was drawn at the last render, to see it go.
+    private bool _railDrawn;
+
     private bool RailOpen => Rail && _railRoom != _railToggled;
 
     /// <summary>Docked beside the slide (the slide's column narrows), rather than over it.</summary>
@@ -2440,10 +2452,42 @@ else
     private string? _noteDraft;
     private readonly Dictionary<Guid, string> _numberDrafts = [];
 
-    internal void EditOpeningNote() => (_noteEditing, _noteDraft, _slideFocus) = (true, _brief?.TeamNote, SlideFocus.NoteBox);
+    // The note as it was opened to edit, and the brief's version then: saving is refused if a colleague saved the brief
+    // meanwhile (BriefService.SetTeamNoteAsync). A change heard to anything but the note moves the version on; one to the
+    // note says who saved it (_noteChangedBy), as the brief page does, and the draft stays to copy from.
+    private string? _noteBase, _noteChangedBy;
+    private Guid? _noteVersion;
+
+    internal void EditOpeningNote() =>
+        (_noteEditing, _noteDraft, _noteBase, _noteVersion, _noteChangedBy, _slideFocus) = (true, _brief?.TeamNote, _brief?.TeamNote, _brief?.EditVersion, null, SlideFocus.NoteBox);
 
     /// <summary>Cancel (or Escape in the box): the note as saved, and focus back on Edit.</summary>
-    internal void CancelOpeningNote() => (_noteEditing, _slideFocus) = (false, SlideFocus.NoteEdit);
+    internal void CancelOpeningNote() => (_noteEditing, _noteChangedBy, _slideFocus) = (false, null, SlideFocus.NoteEdit);
+
+    /// <summary>Reload, after a colleague saved the note: theirs in the box, to edit from.</summary>
+    internal void ReloadOpeningNote() => EditOpeningNote();
+
+    // A brief heard to have changed while the note is open: who saved it, if it was the note; else the edit carries on.
+    private void NoteHeard(Brief brief, IReadOnlyList<Change> changes)
+    {
+        if (!_noteEditing) return;
+        if (brief.TeamNote == _noteBase) _noteVersion = brief.EditVersion;
+        else _noteChangedBy ??= LiveChanges.Who(changes);
+    }
+
+    // Typed and not saved: the meeting note (not yet added), the opening note's edit, or a number.
+    private bool OpeningNoteDirty => _noteEditing && (_noteDraft ?? "") != (_noteBase ?? "");
+    private bool NumbersDirty => _numberDrafts.Values.Any(v => !string.IsNullOrWhiteSpace(v));
+    private bool Unsaved => NoteDirty || OpeningNoteDirty || NumbersDirty;
+    private string UnsavedMessage => NoteDirty ? "Your meeting note isn't added."
+        : OpeningNoteDirty ? "Your edit to the opening note isn't saved." : "A number you typed isn't saved.";
+
+    private void DiscardUnsaved()
+    {
+        DiscardNote();
+        (_noteEditing, _noteChangedBy) = (false, null);
+        _numberDrafts.Clear();
+    }
 
     // Escape in the note's box cancels; the slide's own keys never hear the box's (present.js leaves typing alone).
     private void NoteBoxKey(KeyboardEventArgs e)
@@ -2511,8 +2555,13 @@ else
     private Task SaveOpeningNote(string? text, string done) => Run(async () =>
     {
         if (_brief is null || !InCharge) return;
-        await BriefSvc.SetTeamNoteAsync(_brief.Id, text);
-        (_noteEditing, _slideFocus) = (false, SlideFocus.NoteHeading);
+        try { await BriefSvc.SetTeamNoteAsync(_brief.Id, text, _noteEditing ? _noteVersion : _brief.EditVersion); }
+        catch (StaleEditException)
+        {
+            _noteChangedBy ??= "Someone else";
+            throw;
+        }
+        (_noteEditing, _noteChangedBy, _slideFocus) = (false, null, SlideFocus.NoteHeading);
         await ReadBriefAgain();
         Toasts.Show(done);
     });
@@ -2526,10 +2575,15 @@ else
             _numberErrors[metricId] = string.IsNullOrWhiteSpace(text) ? "Type the number first." : "That isn't a number TIDE can keep.";
             return;
         }
-        await MetricsSvc.SaveValueAsync(metricId, _date, value, null);
+        // The tile's note as saved now, so a colleague's note added a moment ago isn't wiped by the number.
+        var note = (await MetricsSvc.GetDayAsync(_date)).Groups.SelectMany(g => g.Tiles).FirstOrDefault(t => t.Metric.Id == metricId)?.Note;
+        await MetricsSvc.SaveValueAsync(metricId, _date, value, note);
         _numberDrafts.Remove(metricId);
         _numberErrors.Remove(metricId);
+        // The group may fold away (its last number entered as 0): this page stays where its slide's line now is, with the room.
+        var shown = SlideKey(_slide);
         _metrics = await MetricsSvc.GetDayAsync(_date);
+        Reslide(SlideNamed(shown) ?? Math.Min(_slide, LastSlide), shown);
         _slideFocus = SlideFocus.NumbersHeading;
         Toasts.Show("Saved. The room sees it now.");
     });

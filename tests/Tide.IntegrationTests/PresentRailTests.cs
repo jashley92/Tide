@@ -268,6 +268,35 @@ public class PresentRailTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task TheNote_EditedFromTheRail_NeverOverwritesAColleaguesNewerOne()
+    {
+        var day = await Day(220);
+        await using var pat = await Open(app, day);
+        await pat.Click(p => p.OnPresentKey("next"));
+        await Do(pat, p => p.EditOpeningNote());
+        Guid briefId;
+        await using (var scope = SignedIn(app, Robin))
+        {
+            var briefs = scope.ServiceProvider.GetRequiredService<BriefService>();
+            briefId = (await briefs.GetAsync(day))!.Id;
+            await briefs.SetTeamNoteAsync(briefId, "Robin's newer note.");
+        }
+        await Do(pat, p => p.OnChangedElsewhere([new Change(ChangeFeed.Brief(briefId), Robin.UserId, Robin.Name, Guid.NewGuid())]));
+        RailOf(await pat.Html()).Should().Contain("Robin Analyst saved this team&#x27;s opening note while you were editing.");
+
+        await Do(pat, p => p.SaveOpeningNote("The presenter's older edit."));
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            (await scope.ServiceProvider.GetRequiredService<BriefService>().GetAsync(day))!.TeamNote.Should().Be("Robin's newer note.", "the save is refused");
+
+        // Reload: theirs in the box, and saving from it goes through.
+        await Do(pat, p => p.ReloadOpeningNote());
+        RailOf(await pat.Html()).Should().Contain("Robin&#x27;s newer note.</textarea>").And.NotContain("while you were editing");
+        await Do(pat, p => p.SaveOpeningNote("Robin's newer note, and one more line."));
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            (await scope.ServiceProvider.GetRequiredService<BriefService>().GetAsync(day))!.TeamNote.Should().Be("Robin's newer note, and one more line.");
+    }
+
+    [Fact]
     public async Task TheNote_KeepsAnEdit_OnceCurrent_AndTheNumbers_SayNothing_OnceNoneIsMissing()
     {
         var day = await Day(217);

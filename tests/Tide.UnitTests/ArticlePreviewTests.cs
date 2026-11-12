@@ -97,4 +97,17 @@ public class ArticlePreviewTests
         ArticlePreview.ParseEdition(key).Should().Be(expected);
         ArticlePreview.ParseEdition(ArticlePreview.EditionKey(expected)).Should().Be(expected);
     }
+
+    [Fact]
+    public void AnAnswerSavedWhileTyping_IsTakenOn_AndTheTypingKept()
+    {
+        var form = Form();
+        form.WhyItMatters = "Typed meanwhile.";
+        var saved = new Domain.Entities.Article { EditVersion = Guid.NewGuid(), WhyItMattersTlp = TlpLevel.Amber, WhyItMattersKeptHash = "kept", WhyItMatters = "Saved." };
+
+        form.TakeAnswer(saved);
+
+        (form.EditVersion, form.WhyItMattersTlp, form.WhyItMattersKeptHash, form.WhyItMatters)
+            .Should().Be((saved.EditVersion, TlpLevel.Amber, "kept", "Typed meanwhile."));
+    }
 }

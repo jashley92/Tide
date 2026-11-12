@@ -15,7 +15,14 @@ window.tideDialog = (function () {
 
     // A modal dialog: a confirmation (ConfirmDialog) or the palette, the ATT&CK matrix picker, or the context rail or
     // present mode's presenter's rail while it's open over the page (each is marked aria-modal then). The lightbox handles its own keys, below.
-    var MODAL = '.tide-modal, .tide-atkm-panel, .tide-rail[aria-modal="true"], #present-rail[aria-modal="true"]';
+    var DIALOGS = '.tide-modal, .tide-atkm-panel', RAILS = '.tide-rail[aria-modal="true"], #present-rail[aria-modal="true"]';
+    var MODAL = DIALOGS + ', ' + RAILS;
+
+    // The last one drawn that matches: of several open, the one on top.
+    function lastOf(sel) {
+        var all = document.querySelectorAll(sel);
+        return all.length ? all[all.length - 1] : null;
+    }
 
     // Inside the lightbox, only the keys it handles lose their default (Tab stays on its one button; Enter, Space and
     // Escape close it), so the browser's own shortcuts (zoom, find, copy) still work over a screenshot.
@@ -25,7 +32,8 @@ window.tideDialog = (function () {
         // leave it.
         var modal = e.target.closest(MODAL);
         // Focus outside an open dialog (it was on the page, or dropped to the body): Tab goes into the dialog, not behind it.
-        var open = !modal && e.key === 'Tab' ? document.querySelector(MODAL) : null;
+        // With several open, the one on top: a dialog over a rail open over the page, else the last drawn.
+        var open = !modal && e.key === 'Tab' ? lastOf(DIALOGS) || lastOf(RAILS) : null;
         if (open) {
             var into = focusables(open)[0];
             if (into) { e.preventDefault(); into.focus(); }

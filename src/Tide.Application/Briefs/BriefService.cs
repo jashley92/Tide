@@ -232,21 +232,27 @@ public sealed class BriefService(IAppDbContextFactory dbs, ICurrentUser user, Or
     /// <summary>
     /// Saves the team's opening note (Markdown; blank clears it), and marks it reviewed for this brief: saved unchanged,
     /// it's kept as still current. Refused once the brief is sent, as its other content is: the note went out in the team
-    /// email as it was then.
+    /// email as it was then. With <paramref name="editVersion"/> (the brief's <see cref="Brief.EditVersion"/> when the note
+    /// was opened to edit), it's refused (<see cref="StaleEditException"/>) if the brief has been saved since, so a
+    /// colleague's note isn't overwritten unseen; null skips the check.
     /// </summary>
-    public async Task SetTeamNoteAsync(Guid briefId, string? note, CancellationToken ct = default)
+    public async Task SetTeamNoteAsync(Guid briefId, string? note, Guid? editVersion = null, CancellationToken ct = default)
     {
         RequireWrite();
         await using var db = await dbs.CreateAsync(ct);
         var brief = await db.Briefs.FirstOrDefaultAsync(b => b.Id == briefId, ct) ?? throw new KeyNotFoundException("That brief no longer exists.");
         if (brief.Status == BriefStatus.Sent) throw new InvalidOperationException("This brief has been sent; its title slide line is fixed.");
+        if (editVersion is { } v && v != brief.EditVersion) throw new StaleEditException(NoteSavedMeanwhile);
         var text = ArticleService.CleanOrNull(note, TeamNoteMax, multiline: true);
         if (text == brief.TeamNote && brief.TeamNoteReviewedAtUtc is not null) return;
         brief.TeamNote = text;
         brief.TeamNoteReviewedAtUtc = clock.Now.ToUniversalTime();   // who saved it is in the brief's audit trail
         Touch(brief);
-        await db.SaveChangesAsync(ct);
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException) when (editVersion is not null) { throw new StaleEditException(NoteSavedMeanwhile); }
     }
+
+    private const string NoteSavedMeanwhile = "Someone else saved this brief since you opened the note. Reload to see theirs, then save yours again.";
 
     /// <summary>
     /// Whether <paramref name="brief"/>'s opening note is the previous brief's, carried forward and not yet looked at for
