@@ -119,7 +119,7 @@ public class PresentSlidesTests(TideApp app) : IClassFixture<TideApp>
         await Do(pat, p => p.KeepOpeningNote());
         await using (var scope = SignedIn(app, SignIn.Analyst))
             BriefService.TeamNoteCarriedOver((await scope.ServiceProvider.GetRequiredService<AppDbContext>().Briefs.AsNoTracking().SingleAsync(b => b.Id == brief))).Should().BeFalse();
-        (await pat.Html()).Should().NotContain("Not updated").And.NotContain(PresenterTools, "nothing left to deal with");
+        (await pat.Html()).Should().NotContain("Not updated").And.NotContain("Still current").And.Contain(">Edit</button>", "no longer flagged, and still editable");
 
         EndMeeting(app, day);
     }

@@ -107,7 +107,7 @@ public class PresentMidMeetingTests(MeetingClockApp app) : IClassFixture<Meeting
         await Do(robin, p => p.Follow());
         (await robin.Html()).Should().Contain("present-product-title");
 
-        await Do(pat, p => p.HandOff(new ChangeEventArgs { Value = Robin.UserId }));
+        await Do(pat, p => p.HandOff(Robin.UserId));
         Meetings.Get(s.Day)!.Should().Match<LiveMeetingView>(v => v.PresenterId == Robin.UserId && v.Card == null && v.Locked);
         (await pat.Html()).Should().NotContain("present-product-title", "the room's card closed with the hand-off, and a lock wouldn't let them close it")
             .And.Contain("is-held");

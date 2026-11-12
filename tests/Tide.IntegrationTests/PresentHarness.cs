@@ -12,9 +12,15 @@ namespace Tide.IntegrationTests;
 /// <summary>The present page's tests' shared steps: open it, do what a button would, and end the meeting after.</summary>
 public static class PresentHarness
 {
-    /// <summary>Opens present mode for <paramref name="day"/>, signed in as <paramref name="who"/> (the tester if none).</summary>
-    public static Task<Rendered<Present>> Open(TideApp app, DateOnly day, SignIn? who = null) =>
-        RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" }, who);
+    /// <summary>Opens present mode for <paramref name="day"/>, signed in as <paramref name="who"/> (the tester if none), in a
+    /// window wide enough to dock the presenter's rail (present.js says so in a browser): a presenter's page has its rail
+    /// open beside the slide, as it would be on a meeting-room screen.</summary>
+    public static async Task<Rendered<Present>> Open(TideApp app, DateOnly day, SignIn? who = null)
+    {
+        var r = await RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" }, who);
+        await r.Click(p => p.OnRailRoom(true));
+        return r;
+    }
 
     /// <summary>Does what a button would and then renders, as a click does (the page doesn't hear its own meeting
     /// changes, which is what used to render it after them).</summary>

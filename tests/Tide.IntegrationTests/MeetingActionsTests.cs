@@ -59,7 +59,7 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
     public async Task TheArticleSlide_ListsEachRecommendedLine_WithAGuessedKind_AndARaisedOneShowsItsAction()
     {
         var (day, article) = await BriefWithRecommendations(12);
-        await using var r = await RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" });
+        await using var r = await PresentHarness.Open(app, day);
         await r.Click(p => p.OnPresentKey("last"));
         var wrap = await r.Html();
         wrap.Should().Contain("Recommended, with no action raised yet").And.Contain("<li>Patch GitLab to 17.3.2</li>").And.Contain("<li>Notify the service desk</li>");
@@ -80,7 +80,7 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
             made.Priority.Should().Be(Priority.P1, "the article's priority");
             (made.AssigneeId, made.AssigneeName).Should().Be(("dev:tester", "Tester"), "whoever raises it in the meeting holds it");
         }
-        await using var again = await RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" });
+        await using var again = await PresentHarness.Open(app, day);
         await again.Click(p => p.OnPresentKey("last"));
         await again.Click(p => p.OnPresentKey("prev"));
         var raised = await again.Html();
@@ -97,7 +97,7 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
         // A stylesheet edit once dropped the quick add's grid, and its five controls stacked one per line: each row of
         // controls on an article slide keeps its own layout rule.
         var css = await app.CreateClient().GetStringAsync("/app.css");
-        css.Should().Contain(".tide-quick-add { display: grid;", "the quick add: what needs doing, kind, team, due date, Add, in a row")
+        css.Should().Contain(".tide-quick-add { display: grid;", "the quick add: what needs doing, then kind, team, due date and Add")
             .And.Contain(".tide-reco li { display: grid;", "a recommended line with what to raise it as")
             .And.Contain(".tide-slide-actlist { display: grid;", "the article's actions, one line each");
     }
@@ -111,7 +111,7 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
         await using (var scope = SignedIn(app, SignIn.Analyst))
             external = await scope.ServiceProvider.GetRequiredService<TeamService>().AddExternalAsync(new ExternalTeamForm { Name = name });
 
-        await using var r = await RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" });
+        await using var r = await PresentHarness.Open(app, day);
         await r.Click(p => p.OnPresentKey("last"));
         await r.Click(p => p.OnPresentKey("prev"));
         var slide = await r.Html();
@@ -136,7 +136,7 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
             await teams.SetLimitAsync(team, 1, ActiveLimitMode.Warn);
             await scope.ServiceProvider.GetRequiredService<ActionService>().CreateAsync(new ActionForm { Title = "At the limit", TeamId = team });
         }
-        await using var r = await RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" });
+        await using var r = await PresentHarness.Open(app, day);
         var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
         r.Component.TypeQuickAddTitle(article, "Sweep the proxy logs");
         typeof(Present).GetField("_qaTeam", flags)!.SetValue(r.Component, team);
@@ -166,7 +166,7 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
     {
         var (first, _) = await BriefWithRecommendations(21);
         var (second, _) = await BriefWithRecommendations(22);
-        await using var r = await RenderAsync<Present>(app, $"/present/{first:yyyy-MM-dd}", new() { ["Day"] = $"{first:yyyy-MM-dd}" });
+        await using var r = await PresentHarness.Open(app, first);
         await r.Click(p => p.OnPresentKey("last"));
         (await r.Html()).Should().Contain("Recommended, with no action raised yet");
 
@@ -185,7 +185,7 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
     {
         // A past day's brief with an article nobody ticked off: the wrap-up has to be seen before the meeting ends.
         var (day, _) = await BriefWithRecommendations(24);
-        await using var r = await RenderAsync<Present>(app, $"/present/{day:yyyy-MM-dd}", new() { ["Day"] = $"{day:yyyy-MM-dd}" });
+        await using var r = await PresentHarness.Open(app, day);
         var endFromTop = typeof(Present).GetMethod("EndFromTop", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
         var redraw = typeof(ComponentBase).GetMethod("StateHasChanged", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
         // As the button's click would: run it, then draw the page again.

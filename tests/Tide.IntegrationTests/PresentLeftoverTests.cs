@@ -65,10 +65,10 @@ public class PresentLeftoverTests(MeetingClockApp app) : IClassFixture<MeetingCl
         await Do(robin, p => p.JoinIfLive());
 
         // Robin left a moment ago (no seat now), still in the presenter's list.
-        await Do(pat, p => p.HandOff(new ChangeEventArgs { Value = "dev:leftover-not-here" }));
+        await Do(pat, p => p.HandOff("dev:leftover-not-here"));
         pat.Component.HandOffResets.Should().Be(1, "the select is drawn afresh, back on Hand off to…");
 
-        await Do(pat, p => p.HandOff(new ChangeEventArgs { Value = Robin.UserId }));
+        await Do(pat, p => p.HandOff(Robin.UserId));
         pat.Component.HandOffResets.Should().Be(1);
         EndMeeting(app, day);
     }

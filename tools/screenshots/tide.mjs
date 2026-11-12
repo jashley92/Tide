@@ -71,7 +71,7 @@ export async function openPage(browser, { route, viewport, setup }, demo, { fixe
 
 /** In present mode: steps through the slides to the first article's (the one with its recommended lines and actions). */
 export async function toArticleSlide(page) {
-  for (let i = 0; i < 15 && !(await page.locator('.tide-quick-add').count()); i++) {
+  for (let i = 0; i < 15 && !(await page.locator('[data-slide-key^="article:"]').count()); i++) {
     await page.keyboard.press('ArrowRight');
     await page.waitForTimeout(250);
   }
