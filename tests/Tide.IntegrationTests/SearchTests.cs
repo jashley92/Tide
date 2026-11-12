@@ -317,6 +317,41 @@ public class SearchServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Lookup_Cve_OnMoreArticlesThanItLists_CountsThemAll_AndTheTriageInboxByTheExactId()
+    {
+        const string cve = "CVE-2026-1234";
+        var many = SearchService.MaxSightings + 2;
+        var start = DateTimeOffset.UtcNow.AddDays(-400);
+        await using (var db = _db.Context())
+        {
+            var articles = Enumerable.Range(0, many).Select(i => new Article
+            {
+                Title = $"Advisory {i}", AuthorId = "x", AuthorName = "X", CreatedAtUtc = start.AddHours(i),
+            }).ToList();
+            db.Articles.AddRange(articles);
+            db.ArticleCves.AddRange(articles.Select(a => new ArticleCve { ArticleId = a.Id, CveId = cve }));
+            // The oldest, beyond the newest the list shows, is the one that was briefed.
+            db.Briefs.Add(new Brief { BriefDate = new DateOnly(2025, 3, 3), Status = BriefStatus.Presented, Items = { new BriefItem { ArticleId = articles[0].Id } } });
+            var feed = new Source { Name = "Lookup feed", Url = "https://feed.example.net/rss" };
+            FeedItem Item(int i, string cves) => new()
+            {
+                Source = feed, Title = $"Item {i}", Url = $"https://item{i}.example.net/", UrlHash = $"hash-{cves}-{i}", Cves = cves,
+                Status = FeedItemStatus.New, PublishedAtUtc = start, FetchedAtUtc = start,
+            };
+            // A longer id that starts with this one, newer than the item that names it.
+            db.FeedItems.AddRange(Enumerable.Range(0, SearchService.MaxSightings).Select(i => Item(i, cve + "5")));
+            db.FeedItems.Add(Item(-1, "CVE-2020-0001," + cve));
+            await db.SaveChangesAsync();
+        }
+
+        var summary = (await Search().SearchAsync(cve, Once)).Cve!.Summary;
+
+        summary.Articles.Should().Be(many, "every article about it, not only the newest listed");
+        summary.LastBriefed.Should().Be(new DateOnly(2025, 3, 3));
+        summary.NewInTriage.Should().Be(1, "items naming a longer id don't use up the count");
+    }
+
+    [Fact]
     public async Task Lookup_Cve_ListsItsArticles_AndSaysWhoIsOnIt()
     {
         var a = await Article("Firewall bug", cves: ["CVE-2026-12345"]);

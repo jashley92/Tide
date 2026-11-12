@@ -106,10 +106,14 @@ public sealed record LookupSummary(int Articles, DateOnly? LastBriefed, DateOnly
     /// Triage, which may have it.</summary>
     public bool Unseen => Articles == 0 && Actions == 0 && NewInTriage == 0;
 
-    public static LookupSummary Of(IReadOnlyCollection<LookupArticle> articles, HitList<ActionHit> actions, bool hunted, int? newInTriage) => new(
-        articles.Count,
-        Latest(articles, presented: true),
-        Latest(articles, presented: false),
+    public static LookupSummary Of(IReadOnlyCollection<LookupArticle> articles, HitList<ActionHit> actions, bool hunted, int? newInTriage) =>
+        Of(articles.Count, [.. articles.SelectMany(a => a.Briefs)], actions, hunted, newInTriage);
+
+    /// <summary>The same, from how many articles there are and every brief they were on (more than are listed).</summary>
+    public static LookupSummary Of(int articles, IReadOnlyCollection<LookupBrief> briefs, HitList<ActionHit> actions, bool hunted, int? newInTriage) => new(
+        articles,
+        Latest(briefs, presented: true),
+        Latest(briefs, presented: false),
         actions.Total,
         actions.Items.Count(a => a.IsOpen),
         !hunted ? null
@@ -118,8 +122,8 @@ public sealed record LookupSummary(int Articles, DateOnly? LastBriefed, DateOnly
             : actions.Items.Any(a => a.Hunted is not null || (a.IsOpen && a.Hunts)) ? HuntResult.NotRun : null,
         newInTriage);
 
-    private static DateOnly? Latest(IEnumerable<LookupArticle> articles, bool presented) =>
-        articles.SelectMany(a => a.Briefs).Where(b => b.Presented == presented).Select(b => (DateOnly?)b.Day).Max();
+    private static DateOnly? Latest(IEnumerable<LookupBrief> briefs, bool presented) =>
+        briefs.Where(b => b.Presented == presented).Select(b => (DateOnly?)b.Day).Max();
 }
 
 /// <summary>
@@ -364,17 +368,23 @@ public sealed class SearchService(IAppDbContextFactory dbs, ICurrentUser user)
         List<LookupArticle> newest = articleIds.Count == 0 ? [] : await LookupArticlesAsync(db,
             db.Articles.AsNoTracking().Where(a => articleIds.Contains(a.Id)).OrderByDescending(a => a.CreatedAtUtc).ThenBy(a => a.Id).Take(MaxSightings), ct);
         var actions = await Lookups.ActionsOnAsync(db, articleIds, [], MaxHits, ct);
+        // The first line counts every article about it, and when any was briefed, though the list shows the newest only.
+        IReadOnlyCollection<LookupBrief> briefs = articleIds.Count > newest.Count
+            ? [.. (await Lookups.BriefsAsync(db, articleIds, ct)).Values.SelectMany(b => b)]
+            : [.. newest.SelectMany(a => a.Briefs)];
         return new CveLookup(cveId, record, new HitList<LookupArticle>(newest, articleIds.Count), actions,
-            await SeenWithAsync(db, newest, null, cveId, ct), LookupSummary.Of(newest, actions, hunted: false, triages ? await NewInTriageAsync(db, cveId, ct) : null));
+            await SeenWithAsync(db, newest, null, cveId, ct),
+            LookupSummary.Of(articleIds.Count, briefs, actions, hunted: false, triages ? await NewInTriageAsync(db, cveId, ct) : null));
     }
 
     // The new items in Triage's inbox (of a source still read) whose title or summary names the CVE, up to MaxSightings.
-    // Their CVEs are a comma-separated list, so a longer id that starts with this one is told apart here.
-    private static async Task<int> NewInTriageAsync(IAppDbContext db, string cveId, CancellationToken ct) =>
-        (await db.FeedItems.AsNoTracking()
-            .Where(i => i.Status == FeedItemStatus.New && !i.Source!.IsRetired && EF.Functions.Like(i.Cves!, SearchText.Contains(cveId), SearchText.Escape))
-            .Select(i => i.Cves!).Take(MaxSightings).ToListAsync(ct))
-        .Count(cves => cves.Split(',').Contains(cveId, StringComparer.OrdinalIgnoreCase));
+    // Their CVEs are a comma-separated list: the id is matched whole, between commas, so a longer id that starts with this
+    // one isn't counted (nor uses up the count).
+    private static Task<int> NewInTriageAsync(IAppDbContext db, string cveId, CancellationToken ct) =>
+        db.FeedItems.AsNoTracking()
+            .Where(i => i.Status == FeedItemStatus.New && !i.Source!.IsRetired
+                        && EF.Functions.Like("," + i.Cves + ",", SearchText.Contains("," + cveId + ","), SearchText.Escape))
+            .Take(MaxSightings).CountAsync(ct);
 
     // The articles of <paramref name="q"/> as a lookup lists them, in its order.
     private static async Task<List<LookupArticle>> LookupArticlesAsync(IAppDbContext db, IQueryable<Article> q, CancellationToken ct)
