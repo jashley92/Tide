@@ -33,6 +33,9 @@ public sealed record HolderLabel(string Text, HolderKind Kind, string? Url = nul
     /// <summary>The words where the team is named beside them: "no ticket yet" rather than repeating the team.</summary>
     public string Short => Kind == HolderKind.NoTicket ? "no ticket yet" : Text;
 
+    /// <summary>An external team's that nobody in TIDE holds: named by its ticket, or by having none yet.</summary>
+    public bool Outside => Kind is HolderKind.Ticket or HolderKind.NoTicket;
+
     /// <param name="nobody">The words for an internal team's action nobody holds.</param>
     public static HolderLabel Of(string? assigneeId, string? assigneeName, bool external, string teamName, string? ticketRef,
         string? ticketUrl, string nobody)

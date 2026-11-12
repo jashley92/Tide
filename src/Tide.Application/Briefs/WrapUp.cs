@@ -28,9 +28,9 @@ public static class WrapUp
     /// sees no more of them than their names elsewhere).</summary>
     public static IReadOnlyList<HolderGroup> WhoHasWhat(IEnumerable<EditionAction> actions)
     {
-        var groups = actions.GroupBy(a => (a.TeamName, a.AssigneeId, Ticket: Outside(a)?.Text))
+        var groups = actions.GroupBy(a => (a.TeamName, a.AssigneeId, Outside: a.Holder("") is { Outside: true } outside ? outside : null))
             .Select(g => new HolderGroup(g.Key.TeamName, g.Key.AssigneeId is null ? null : g.First().AssigneeName ?? g.Key.AssigneeId,
-                g.OrderBy(a => a.Number).ToList()) { Outside = Outside(g.First()) })
+                g.OrderBy(a => a.Number).ToList()) { Outside = g.Key.Outside })
             .OrderBy(g => g.TeamName, StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(g => g.HolderName is null)
             .ThenBy(g => g.Outside is null or { Kind: HolderKind.NoTicket })
@@ -42,8 +42,4 @@ public static class WrapUp
             .SelectMany(same => same.Key.HolderName is null || same.Count() == 1 ? same : same.Select((g, i) => g with { Twin = i + 1 }))
             .ToList();
     }
-
-    // An external team's action nobody in TIDE holds, by its ticket; null for anything else.
-    private static HolderLabel? Outside(EditionAction a) =>
-        a.Holder("") is { Kind: HolderKind.Ticket or HolderKind.NoTicket } outside ? outside : null;
 }

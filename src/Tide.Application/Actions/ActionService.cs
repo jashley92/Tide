@@ -141,12 +141,12 @@ public sealed record OutstandingAction(ActionRow Row, int DaysLate, bool NoOneTo
     public string NextInTheRoom(int quietDays) =>
         Row.AssigneeId is null && NoOneToOwn ? "Reassign to a team with members"
         : Row.Status == ActionStatus.Blocked ? "Ask what it's waiting on"
-        : Row.AssigneeId is null && !Row.TeamExternal ? "Find someone to take it"
-        : quietDays < 2 && DaysLate > 0 ? "Agree a new due date"
-        : Holder.Kind switch
+        : (Row.Holder("").Kind, quietDays < 2 && DaysLate > 0) switch
         {
-            HolderKind.Ticket => "Ask for an update on its ticket",
-            HolderKind.NoTicket => "Ask the team for an update",
+            (HolderKind.Nobody, _) => "Find someone to take it",
+            (_, true) => "Agree a new due date",
+            (HolderKind.Ticket, _) => "Ask for an update on its ticket",
+            (HolderKind.NoTicket, _) => "Ask the team for an update",
             _ => "Ask for an update",
         };
 }

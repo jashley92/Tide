@@ -559,7 +559,7 @@ else
                                             {
                                                 <li>
                                                     @ActionTitle(r.Number, r.Title)
-                                                    <span class="tide-present-help">@r.TeamName@if (r.Holder("") is { Text.Length: > 0 } who) { @(" · ")<HolderText Label="who" Short="true" Links="!_visitor" /> }@(r.DueDate is { } due ? " · due " + Ui.ShortDay(due) : "")</span>
+                                                    <span class="tide-present-help">@r.TeamName@if (r.Holder("") is { Kind: not HolderKind.Nobody } who) { @(" · ")<HolderText Label="who" Short="true" Links="!_visitor" /> }@(r.DueDate is { } due ? " · due " + Ui.ShortDay(due) : "")</span>
                                                 </li>
                                             }
                                         </ul>
