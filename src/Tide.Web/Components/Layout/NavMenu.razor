@@ -4,6 +4,8 @@
 @inject IntakeService Intake
 @inject ActionService Actions
 @inject IJSRuntime JS
+@inject ChangeFeed Feed
+@inject ChangeOrigin Origin
 @using Microsoft.Extensions.Logging
 @inject ILogger<NavMenu> Log
 
@@ -51,9 +53,19 @@
     private int _newItems;
     private int _myOverdue;
 
+    private LiveChanges? _polled;
+
     protected override async Task OnInitializedAsync()
     {
         Nav.LocationChanged += OnLocationChanged;
+        // A poll or a pull (the system's changes to triage, this page's own Pull all among them) brings new items: the
+        // Triage count is read again, as Triage's New tab is.
+        if (CurrentUser.Has(Permission.WriteArticles))
+            _polled = new LiveChanges(Feed, Origin, c => c.Topic == ChangeFeed.Triage && c.ActorId == "system", InvokeAsync, async _ =>
+            {
+                await LoadCountsAsync();
+                StateHasChanged();
+            });
         await LoadCountsAsync();
     }
 
@@ -119,5 +131,9 @@
         ? @<span class="@(alert ? "tide-nav-count is-alert" : "tide-nav-count")" aria-hidden="true">@(count > 99 ? "99+" : count)</span>
         : null;
 
-    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+        _polled?.Dispose();
+    }
 }

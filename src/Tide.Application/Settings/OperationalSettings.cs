@@ -67,6 +67,11 @@ public static class OperationalSettings
     public const string RetentionDays = "Intake:RetentionDays";
     public const string MinPollMinutes = "Intake:MinPollMinutes";
     public const string PullNowMinutes = "Intake:PullNowMinutes";
+
+    /// <summary>The time each working day the feeds should have been pulled by (Today's Triage step says when they
+    /// haven't): 24-hour, in the organization's zone, 08:00 by default.</summary>
+    public const string PulledBy = "Intake:PulledBy";
+
     public const string SkipSponsored = "Intake:SkipSponsored";
     public const string SponsoredMarkers = "Intake:SponsoredMarkers";
     public const string SponsoredExceptions = "Intake:SponsoredExceptions";
@@ -142,6 +147,7 @@ public static class OperationalSettings
         [RetentionDays] = Number("Days feed items are kept", 7, 3650),
         [MinPollMinutes] = Number("The shortest poll", 5, 24 * 60),
         [PullNowMinutes] = Number("The analyst pull-now window", 1, 24 * 60),
+        [PulledBy] = Time("The time feeds are pulled by"),
         [SkipSponsored] = Switch,
         [SponsoredMarkers] = v => SponsoredFilter.Normalize("The marker list", v, required: true),
         [SponsoredExceptions] = v => SponsoredFilter.Normalize("The exception list", v, required: false),
@@ -246,6 +252,7 @@ public static class OperationalSettings
         s.Use(RetentionDays, v => o.RetentionDays = int.Parse(v, Invariant));
         s.Use(MinPollMinutes, v => o.MinPollMinutes = int.Parse(v, Invariant));
         s.Use(PullNowMinutes, v => o.PullNowMinutes = int.Parse(v, Invariant));
+        s.Use(PulledBy, v => o.PulledBy = v);
         s.Use(SkipSponsored, v => o.SkipSponsored = bool.Parse(v));
         s.Use(SponsoredMarkers, v => o.SponsoredMarkers = v);
         s.Use(SponsoredExceptions, v => o.SponsoredExceptions = v);

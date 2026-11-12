@@ -29,6 +29,15 @@ public sealed class IntakeOptions
     /// can't be pulled again from Triage's Sources tab until it's passed. Administrators' Poll now on Sources isn't held to it.</summary>
     public int PullNowMinutes { get; set; } = 15;
 
+    /// <summary>The time of day ("08:00", 24-hour, in the organization's zone) the feeds should have been pulled by, each
+    /// working day: from then on, Today's Triage step says so to analysts when one hasn't been (<see cref="FeedFreshness"/>).</summary>
+    public string PulledBy { get; set; } = "08:00";
+
+    /// <summary><see cref="PulledBy"/> as a time; 08:00 when it can't be read.</summary>
+    public TimeOnly PulledByTime =>
+        TimeOnly.TryParseExact(PulledBy?.Trim(), ["HH:mm", "H:mm"], System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out var t) ? t : new TimeOnly(8, 0);
+
     /// <summary>Days a feed item that wasn't shortlisted or promoted is kept.</summary>
     public int RetentionDays { get; set; } = 90;
 

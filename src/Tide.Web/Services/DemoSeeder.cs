@@ -62,9 +62,12 @@ public static class DemoSeeder
             var seeded = await new Run(sp, dbs, clock, dev).AllAsync(ct);
             await TriageFillerAsync(dbs, config.GetValue<int>("Demo:TriageFiller"), ct);
             if (config.GetValue<bool>("Demo:SlideFiller")) await SlideFillerAsync(dbs, clock.CurrentBriefDate, ct);
+            var staleFeeds = config.GetValue<bool>("Demo:StaleFeeds");
+            if (staleFeeds) await StaleFeedsAsync(dbs, ct);
             if (!string.IsNullOrWhiteSpace(info))
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(info))!);
+                seeded = seeded with { FeedsDue = staleFeeds && clock.Days.IsWorkingDay(clock.Today) };
                 await File.WriteAllTextAsync(info, JsonSerializer.Serialize(seeded, Indented), ct);
             }
             log.LogInformation("Seeded the demo data: today {Today}, sent {Sent}.", seeded.Today, seeded.Sent);
@@ -99,6 +102,27 @@ public static class DemoSeeder
         db.ArticleCves.Add(new ArticleCve { ArticleId = vpn.Id, CveId = cve });
         Add(source, $"Quillon Bank confirms $3.7 million theft ({cve})", "https://example.com/filler/quillon-theft", now.AddHours(-7), cve);
         Add(wire, "Quillon Bank $3.7 million heist traced to stolen gateway keys", "https://example.net/filler/quillon-heist", now.AddHours(-7).AddMinutes(-20));
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// <c>Demo:StaleFeeds=true</c>: three polled feeds last pulled the day before, one of them failing, for the layout
+    /// checks on Today's word about feeds not pulled since the morning and on the Sources tab's Pull all. Their interval is
+    /// a week, so the scheduled pass leaves them alone, and their addresses are on this machine, which is never fetched
+    /// from: pressing Pull all reaches nothing outside.
+    /// </summary>
+    private static async Task StaleFeedsAsync(IAppDbContextFactory dbs, CancellationToken ct)
+    {
+        await using var db = await dbs.CreateAsync(ct);
+        var yesterday = DateTimeOffset.UtcNow.AddHours(-26);
+        Source Feed(string name, string? error = null) => new()
+        {
+            Name = name, Url = $"http://127.0.0.1/demo/{name.Replace(' ', '-').ToLowerInvariant()}.xml", PollMinutes = 7 * 24 * 60, Enabled = true,
+            LastPolledAtUtc = yesterday, LastSuccessAtUtc = error is null ? yesterday : null, LastNewItems = error is null ? 4 : 0, LastError = error,
+            ConsecutiveFailures = error is null ? 0 : 1,
+        };
+        db.Sources.AddRange(Feed("Morning wire (demo)"), Feed("Vendor advisories (demo)"),
+            Feed("Research blog (demo)", "The server answered 503 Service Unavailable."));
         await db.SaveChangesAsync(ct);
     }
 
@@ -138,9 +162,10 @@ public static class DemoSeeder
     }
 
     /// <summary>What the screenshot tool needs to find its pages, and <paramref name="Follower"/>: who to sign a second
-    /// browser in as (<c>?as=</c>) to follow a live meeting.</summary>
+    /// browser in as (<c>?as=</c>) to follow a live meeting.
+    /// <para><paramref name="FeedsDue"/>: Today says the feeds aren't pulled (<c>Demo:StaleFeeds</c>, on a working day).</para></summary>
     public sealed record Seeded(string Today, string Sent, int HuntAction, int DetailAction, string VpnArticle, string SentArticle,
-        string StackProduct, string Follower, string Adversary);
+        string StackProduct, string Follower, string Adversary, bool FeedsDue = false);
 
     // One seeding pass. Everything random comes from one fixed seed.
     private sealed class Run(IServiceProvider sp, IAppDbContextFactory dbs, OrgClock clock, DevAuthOptions dev)

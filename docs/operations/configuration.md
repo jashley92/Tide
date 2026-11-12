@@ -278,6 +278,7 @@ except the personal digest's offer. What each sends is in [INSTALL.md](../INSTAL
 | `Intake:MaxResponseKB` | `8192` | At least 64. A larger response is refused. | Server | Next request |
 | `Intake:MinPollMinutes` | `15` | 5 to 1440. The shortest interval any source may have. | In app: **Sources** | At once |
 | `Intake:PullNowMinutes` | `15` | 1 to 1440. The analyst pull-now window on Triage's Sources tab. | In app: **Sources** | At once |
+| `Intake:PulledBy` | `08:00` | A 24-hour time (`HH:mm`), in `Org:TimeZone`. From then on each working day (not weekends or holidays), while `Intake:Enabled` is on, Today's Triage step tells analysts how many polled feeds haven't been pulled since, and how many of them are failing, with **Pull all**. Before it, nothing is said. An empty or impossible time is refused on the field, and nothing is saved. | In app: **Sources** | At once |
 | `Intake:RetentionDays` | `90` | 7 to 3650. Feed items nobody kept are pruned after this; an item published longer ago isn't taken in. | In app: **Sources** | At once |
 | `Intake:SkipSponsored` | `true` | `true`/`false` | In app: **Sources** | At once |
 | `Intake:SponsoredMarkers` | `Sponsored; Sponsored by; …; Advertorial` | Phrases separated by `;`, matched as whole words ignoring case. Required when set. | In app: **Sources** | At once |
