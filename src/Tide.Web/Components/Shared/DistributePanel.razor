@@ -154,7 +154,7 @@ else if (_canSend)
     {
         @* Email on, but the brief won't go today: finished as a send would finish it, with the reason kept. It can still be
            sent after. A brief finished another way (distributed while email was off) has nothing to finish here. *@
-        <section class="tide-card tide-send-edition tide-not-sent" aria-labelledby="send-not-sent-h" data-submit-scope>
+        <section class="tide-card tide-send-edition" aria-labelledby="send-not-sent-h" data-submit-scope>
             <h3 class="tide-card-title" id="send-not-sent-h">Finish without sending</h3>
             @if (Brief.NotSentAtUtc is { } at)
             {
