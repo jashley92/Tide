@@ -14,7 +14,7 @@ else
             {
                 <tr @key="a.Id">
                     <td><ActionRef Number="a.Number" Title="@a.Title" Link="CanOpen" /></td>
-                    <td class="small">@a.TeamName<div class="tide-muted">@(a.AssigneeName ?? "Unassigned")</div></td>
+                    <td class="small">@a.TeamName<div class="tide-muted"><HolderText Label="@a.Holder("Unassigned")" Short="true" /></div></td>
                     <td class="small"><ActionStatusBadge Status="a.Status" /></td>
                     <td class="small">@if (a.Hunted is null) { <span class="tide-muted">None</span> } else { <HuntBadge Result="a.Hunted" /> }</td>
                 </tr>

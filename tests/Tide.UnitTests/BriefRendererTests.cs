@@ -249,6 +249,23 @@ public class BriefRendererTests
     }
 
     [Fact]
+    public void TheTeamEmail_NamesAnExternalTeamsAction_ByItsTicket_InWordsOnly()
+    {
+        var row = new Tide.Application.Actions.ActionRow(Guid.NewGuid(), 31, "Patch the hosted edge", ActionKind.PatchRemediate, Priority.P2,
+            Guid.NewGuid(), "Hosting Provider", null, null, new DateOnly(2026, 10, 30), ActionStatus.Tracking, ActionOutcome.None,
+            null, null, null, null, 0, DateTimeOffset.UtcNow, TeamExternal: true)
+        { TicketRef = "INC-4411", TicketUrl = "https://itsm.example.org/INC-4411" };
+        var none = row with { Number = 32, Title = "Rotate the hosted keys", TicketRef = null, TicketUrl = null };
+        var inside = row with { Number = 33, Title = "Sweep the logs", TeamName = "Network", TeamExternal = false };
+        var open = new Tide.Application.Actions.OpenActionsReview([new(row, 3, false), new(none, 3, false), new(inside, 3, false)], 3);
+        var context = new BriefRenderContext("CTI", Metrics(), "https://tide.example.org", img => "cid:" + img.ContentId, null, open);
+
+        var html = _renderer.Render(BriefEditions.Build(Brief(), Edition.Team, TlpLevel.AmberStrict), context).EmailHtml;
+        html.Should().Contain("Hosting Provider &middot; INC-4411</span>").And.NotContain("itsm.example.org", "an email names the ticket, it doesn't link it")
+            .And.Contain("Hosting Provider &middot; no ticket yet</span>").And.Contain("Network &middot; unassigned</span>");
+    }
+
+    [Fact]
     public void TheTeamEmail_MarksAnEscalatedAction_EvenOneNotYetDue()
     {
         var row = new Tide.Application.Actions.ActionRow(Guid.NewGuid(), 21, "Patch the VPN appliances", ActionKind.PatchRemediate, Priority.P2,

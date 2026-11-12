@@ -42,7 +42,7 @@
                                     <div>
                                         <ActionRef Number="x.Number" Title="@x.Title" />
                                         <div class="tide-related-meta">
-                                            @ActionService.StatusName(x.Status) &middot; @x.TeamName &middot; @(x.AssigneeName ?? "Unassigned")
+                                            @ActionService.StatusName(x.Status) &middot; @x.TeamName &middot; <HolderText Label="@x.Holder("Unassigned")" Short="true" />
                                             @if (x.DueDate is { } due) { <text> &middot; due @Ui.ShortDay(due)</text> }
                                             @if (ActionSla.LateText(x.DueDate, Clock.Today) is { } late) { <text> &middot; </text><span class="tide-related-late">@late</span> }
                                         </div>

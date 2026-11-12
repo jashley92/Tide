@@ -157,7 +157,7 @@
                             }
                         }
                         <div class="tide-kcard-meta small">
-                            <span class="bi bi-person" aria-hidden="true"></span> @(r.AssigneeName ?? "Unassigned") <span class="tide-muted">&middot; @r.TeamName</span>
+                            <span class="bi bi-person" aria-hidden="true"></span> <HolderText Label="@r.Holder("Unassigned")" Short="true" /> <span class="tide-muted">&middot; @r.TeamName</span>
                             <FileCount Count="r.Files" />
                         </div>
                         <div class="tide-kcard-foot small">
