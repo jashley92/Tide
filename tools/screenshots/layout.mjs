@@ -3200,7 +3200,10 @@ const pages = [
       slidePlaceholdersReadable,
       visible('.tide-quick-add'),
       [1001, oneRow('.tide-quick-add')],
-      [1001, oneRow('.tide-reco li')],
+      [1001, oneRow('.tide-reco li:not(.is-raised)')],
+      // A line raised already shows the action it became (the sample's hotfix line is A-2), its controls in the Raise rows' columns.
+      visible('.tide-reco li.is-raised .tide-reco-done'), fits('.tide-reco'),
+      [1001, lineUp('.tide-reco li.is-raised .tide-action-assign > input', '.tide-slide-actlist .tide-action-assign > input')],
       [1001, oneRow('.tide-slide-actlist > li')],
       [1001, lineUp('.tide-reco li > select:nth-of-type(1)', '.tide-slide-actlist .tide-action-assign > input')],
       [1001, lineUp('.tide-reco li > select:nth-of-type(2)', '.tide-slide-actlist .tide-action-assign > select')],

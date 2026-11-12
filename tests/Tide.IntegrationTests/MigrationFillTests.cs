@@ -302,6 +302,33 @@ public class MigrationFillTests
         }
     }
 
+    [Theory]
+    [MemberData(nameof(TestDb.Providers), MemberType = typeof(TestDb))]
+    public async Task ActionRecommendationLine_LinksAnOldActionToTheLineItsTitleWas(string provider)
+    {
+        using var database = new MigratedDatabase(provider);
+        var team = new Team { Key = "vuln", Name = "Vulnerability Management" };
+        var article = new Article { Title = "Edge VPN", AuthorId = "x", AuthorName = "X", RecommendedActions = "- Patch the gateways\n- Hunt for php-fpm shells" };
+        var other = new Article { Title = "No recommendations", AuthorId = "x", AuthorName = "X" };
+        ActionItem Made(int n, string title, Article on) => new() { Number = n, Title = title, Team = team, ArticleId = on.Id };
+        var (patch, byHand, other1) = (Made(1, "patch the gateways", article), Made(2, "Brief the service desk", article), Made(3, "Patch the gateways", other));
+        await using (var ctx = database.Context())
+        {
+            ctx.AddRange(team, article, other, patch, byHand, other1);
+            await ctx.SaveChangesAsync();
+        }
+
+        database.UpgradeAgainFrom("ActionRecommendationLine");
+
+        await using (var ctx = database.Context())
+        {
+            var lines = await ctx.Actions.ToDictionaryAsync(a => a.Number, a => a.RecommendationLine);
+            lines[1].Should().Be("patch the gateways", "its title is one of its article's lines");
+            lines[2].Should().BeNull("raised by hand");
+            lines[3].Should().BeNull("its article recommends nothing");
+        }
+    }
+
     // A database on one provider, migrated as the app migrates its own, and dropped afterwards.
     private sealed class MigratedDatabase : IDisposable
     {

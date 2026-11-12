@@ -35,6 +35,10 @@ public sealed class ActionForm
     /// <summary>On a new action raised for a past day's brief: that day (see <see cref="ActionItem.RaisedOn"/>).</summary>
     public DateOnly? RaisedOn { get; set; }
 
+    /// <summary>On a new action raised from one of its article's recommended lines: that line. Checked against the article as
+    /// it's created (and set only then).</summary>
+    public string? RecommendationLine { get; set; }
+
     /// <summary>On a new action: the playbook its checklist starts from (one for its kind, or for any kind).</summary>
     public Guid? PlaybookId { get; set; }
 
@@ -66,6 +70,9 @@ public sealed record ActionRow(Guid Id, int Number, string Title, ActionKind Kin
     DateOnly? ChildrenNextDue = null, DateOnly? EscalatedForDue = null, DateTimeOffset? EscalatedAtUtc = null,
     bool ArticleKev = false, DateTimeOffset? InStatusSinceUtc = null, HuntResult? Hunted = null, DateTimeOffset? LastActivityUtc = null)
 {
+    /// <summary>The recommended line it was raised from (<see cref="ActionItem.RecommendationLine"/>), if any.</summary>
+    public string? RecommendationLine { get; init; }
+
     // The board fills ArticleKev (its article names a CVE on CISA's KEV list). InStatusSinceUtc is when it moved to the
     // status it's in (ActionItem.StatusChangedAtUtc).
     public SlaState Sla(DateOnly today, WorkingDays? workingDays = null) => ActionSla.StateOf(Status, DueDate, ClosedDate, today, workingDays);
@@ -918,7 +925,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         // When something last happened to it: the latest of its history and its comments, or when it was raised.
         (a.Comments.Max(c => (DateTimeOffset?)c.AtUtc) ?? a.CreatedAtUtc) > (a.Events.Max(e => (DateTimeOffset?)e.AtUtc) ?? a.CreatedAtUtc)
             ? a.Comments.Max(c => (DateTimeOffset?)c.AtUtc)
-            : a.Events.Max(e => (DateTimeOffset?)e.AtUtc) ?? a.CreatedAtUtc));
+            : a.Events.Max(e => (DateTimeOffset?)e.AtUtc) ?? a.CreatedAtUtc) { RecommendationLine = a.RecommendationLine });
 
     // The rows, and each parent's rollup ("3 of 5 done · 1 overdue · next due Nov 20") from one grouped read of their parts.
     private async Task<List<ActionRow>> RowsAsync(IAppDbContext db, IQueryable<ActionItem> q, CancellationToken ct)
@@ -1188,6 +1195,8 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         {
             var a = new ActionItem();
             await Apply(db, a, form, ct);
+            if (form.RecommendationLine is { } recommended)
+                a.RecommendationLine = await RecommendationLineAsync(db, a.ArticleId ?? throw new ArgumentException("A recommendation is an article's: raise it from the article."), recommended, ct);
             a.DueDate ??= ActionSla.DueDate(clock.Today, (await sla.GetAsync(ct)).DaysFor(a.Priority, a.Kind), clock.Days);
             if (form.RaisedOn is { } raised && raised != clock.Today)
             {
@@ -1252,7 +1261,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// <paramref name="overLimitReason"/> is why it goes ahead over a team's limit that warns (<see cref="ActiveLimits"/>).
     /// </summary>
     public async Task<int> QuickAddAsync(Guid articleId, string title, ActionKind kind, Guid teamId, DateOnly? due, DateOnly? raisedOn = null,
-        string? overLimitReason = null, CancellationToken ct = default)
+        string? overLimitReason = null, string? recommendation = null, CancellationToken ct = default)
     {
         Priority? articlePriority;
         await using (var db = await dbs.CreateAsync(ct))
@@ -1264,10 +1273,29 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         return await CreateAsync(new ActionForm
         {
             Title = title, Kind = kind, TeamId = teamId, DueDate = due, ArticleId = articleId, Priority = QuickPriority(articlePriority, kind),
-            RaisedOn = raisedOn, OverLimitReason = overLimitReason,
+            RaisedOn = raisedOn, OverLimitReason = overLimitReason, RecommendationLine = recommendation,
             // Whoever raises it in the meeting holds it, so it's on someone's list from the start; they can hand it on.
             AssigneeId = user.UserId, AssigneeName = user.DisplayName,
         }, ct);
+    }
+
+    /// <summary>
+    /// The article's line that <paramref name="recommendation"/> names, as the article has it now: refused when the article
+    /// no longer has it (edited or removed meanwhile), or when another action raised from it stands (not deleted or
+    /// cancelled). That second check guards a second click; two raises in the same instant could both pass it, and the
+    /// slide then shows the first against the line and the other among the article's other actions.
+    /// </summary>
+    private static async Task<string> RecommendationLineAsync(IAppDbContext db, Guid articleId, string recommendation, CancellationToken ct)
+    {
+        var markdown = await db.Articles.AsNoTracking().Where(a => a.Id == articleId).Select(a => a.RecommendedActions).FirstOrDefaultAsync(ct);
+        var line = RecommendedActions.Lines(markdown).FirstOrDefault(l => RecommendedActions.Raised(l, recommendation))
+                   ?? throw new ArgumentException("That recommendation is no longer on the article: it was edited or removed. Raise it as the article reads now.");
+        var raised = await db.Actions.AsNoTracking()
+            .Where(a => a.ArticleId == articleId && a.RecommendationLine != null && a.Status != ActionStatus.Cancelled)
+            .Select(a => new { a.Number, Line = a.RecommendationLine! }).ToListAsync(ct);
+        if (raised.FirstOrDefault(r => RecommendedActions.Raised(line, r.Line)) is { } already)
+            throw new InvalidOperationException($"That recommendation was raised already, as A-{already.Number}.");
+        return line;
     }
 
     /// <summary>

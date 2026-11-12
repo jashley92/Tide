@@ -75,7 +75,7 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
         {
             var actions = scope.ServiceProvider.GetRequiredService<ActionService>();
             var team = (await scope.ServiceProvider.GetRequiredService<TeamService>().ListAsync())[0].Id;
-            number = await actions.QuickAddAsync(article, "Patch GitLab to 17.3.2", ActionKind.PatchRemediate, team, null, day);
+            number = await actions.QuickAddAsync(article, "Patch GitLab to 17.3.2", ActionKind.PatchRemediate, team, null, day, recommendation: "Patch GitLab to 17.3.2");
             var made = (await actions.GetAsync(number))!.Action;
             made.Priority.Should().Be(Priority.P1, "the article's priority");
             (made.AssigneeId, made.AssigneeName).Should().Be(("dev:tester", "Tester"), "whoever raises it in the meeting holds it");
@@ -84,7 +84,7 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
         await again.Click(p => p.OnPresentKey("last"));
         await again.Click(p => p.OnPresentKey("prev"));
         var raised = await again.Html();
-        raised.Should().Contain($"Raised as <button type=\"button\" class=\"tide-action-num tide-action-open\" title=\"Open A-{number} here\">A-{number}</button>").And.Contain("disabled aria-describedby")
+        raised.Should().Contain($"<button type=\"button\" class=\"tide-action-num tide-action-open\" title=\"Open A-{number} here\">A-{number}</button> &#xB7; Open &#xB7; Tester")
             .And.NotContain("aria-label=\"Kind for: Patch GitLab to 17.3.2\"");
         await again.Click(p => p.OnPresentKey("last"));
         (await again.Html()).Should().NotContain("<li>Patch GitLab to 17.3.2</li>", "a raised line isn't a gap any more")

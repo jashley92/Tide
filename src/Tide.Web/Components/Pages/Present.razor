@@ -431,26 +431,33 @@ else
                                     <div class="tide-slide-section">Why it matters to us @if (a.Effective(a.WhyItMattersTlp) > a.Tlp) { <TlpBadge Level="a.Effective(a.WhyItMattersTlp)" /> }</div>
                                     <Md Text="@a.WhyItMatters" />
                                 }
+                                @* The recommended lines, each with the action it became (by the line the action stored as it was raised,
+                                   never its title), and the article's other actions in a list of their own below: raised by hand, or
+                                   from a line since edited or removed. Actions are the team edition's alone (ADR 0005). *@
+                                @{ var (recoLines, otherActions) = RecommendedActions.Match(a.RecommendedActions, ea.Actions, r => r.Recommendation); }
                                 @if (!string.IsNullOrWhiteSpace(a.RecommendedActions))
                                 {
                                     <div class="tide-slide-section">Recommended actions</div>
-                                    @if (TeamEdition && _canCreate && _teams.Count > 0)
+                                    @if (TeamEdition && (CanRaise && recoLines.Count > 0 || recoLines.Any(l => l.Action is not null)))
                                     {
-                                        @* Each line raised in one click, as the kind its wording suggests and that kind's usual team (both
-                                           can be changed first); a line raised already shows its action instead. *@
+                                        @* A line not raised yet is raised in one click, as the kind its wording suggests and that kind's
+                                           usual team (both can be changed first); a raised one shows its action: number, status, holder. *@
                                         <ul class="tide-reco">
-                                            @foreach (var (line, n) in RecommendedActions.Lines(a.RecommendedActions).Select((l, n) => (l, n)))
+                                            @foreach (var ((line, done), n) in recoLines.Select((l, n) => (l, n)))
                                             {
                                                 var lineId = $"reco-{a.Id:N}-{n}";
-                                                var done = ea.Actions.FirstOrDefault(r => RecommendedActions.Raised(line, r.Title));
-                                                <li @key="lineId">
+                                                <li @key="lineId" class="@(done is null ? "" : "is-raised")">
                                                     <span class="tide-reco-text" id="@lineId">@line</span>
                                                     @if (done is not null)
                                                     {
                                                         <span class="tide-reco-done">
-                                                            <span class="bi bi-check2" aria-hidden="true"></span> Raised as @ActionNum(done.Number) &middot; @done.TeamName
-                                                            <button type="button" class="btn btn-sm btn-outline-secondary ms-1" disabled aria-describedby="@lineId">Raised</button>
+                                                            <span class="bi bi-check2" aria-hidden="true"></span> @ActionNum(done.Number) &middot; @ActionService.StatusName(done.Status) &middot; @(done.AssigneeName ?? "nobody")
                                                         </span>
+                                                        @ActionControls(done)
+                                                    }
+                                                    else if (!CanRaise)
+                                                    {
+                                                        <span class="tide-reco-done">Not raised yet</span>
                                                     }
                                                     else
                                                     {
@@ -604,38 +611,21 @@ else
                                 @if (TeamEdition)
                                 {
                                 <div class="tide-slide-actions">
-                                    <div class="tide-slide-section">Actions</div>
-                                    @{ var raised = ea.Actions; }
-                                    @if (raised.Count > 0)
+                                    <div class="tide-slide-section">@(recoLines.Count > 0 ? "Other actions" : "Actions")</div>
+                                    @if (otherActions.Count > 0)
                                     {
                                         <ul class="tide-slide-actlist">
-                                            @foreach (var r in raised)
+                                            @foreach (var r in otherActions)
                                             {
                                                 <li>
                                                     @ActionTitle(r.Number, r.Title)
                                                     <span class="tide-present-help">@r.TeamName@(r.AssigneeName is { } who ? " · " + who : "")@(r.DueDate is { } due ? " · due " + Ui.ShortDay(due) : "")</span>
-                                                    @if (CanWork(r))
-                                                    {
-                                                        <span class="tide-action-assign">
-                                                            <input type="date" class="form-control form-control-sm" aria-label="Due date for @Ui.ActionLabel(r.Number)" value="@DueShown(r)" disabled="@_busy"
-                                                                   @key="(r.Id, DueResets(r.Id))" @onchange="e => _dueTyped[r.Id] = e.Value as string" @onfocusout="() => SetDue(r)" />
-                                                            <select class="form-select form-select-sm" aria-label="Assign @Ui.ActionLabel(r.Number)" value="@(r.AssigneeId ?? "")" disabled="@_busy"
-                                                                    @key="AssignKey(r.Id)" @onchange="e => Assign(r, e.Value as string)">
-                                                                <option value="">Nobody</option>
-                                                                @foreach (var member in MembersOf(r.TeamId)) { <option value="@member.UserId">@member.DisplayName</option> }
-                                                                @if (r.AssigneeId is { } held && MembersOf(r.TeamId).All(member => member.UserId != held)) { <option value="@held">@r.AssigneeName</option> }
-                                                            </select>
-                                                            @if (r.AssigneeId != _me)
-                                                            {
-                                                                <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="() => Take(r)">Take it</button>
-                                                            }
-                                                        </span>
-                                                    }
+                                                    @ActionControls(r)
                                                 </li>
                                             }
                                         </ul>
                                     }
-                                    @if (_canCreate && _teams.Count > 0)
+                                    @if (CanRaise)
                                     {
                                         <div class="tide-quick-add">
                                             <input class="form-control form-control-sm" placeholder="Another action: what needs doing" aria-label="New action title" maxlength="300"
@@ -654,7 +644,7 @@ else
                                             <button class="btn btn-sm btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(QuickAddTitle(a.Id)))" @onclick="() => QuickAdd(a.Id)"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add</button>
                                         </div>
                                     }
-                                    else if (raised.Count == 0)
+                                    else if (otherActions.Count == 0)
                                     {
                                         <div class="tide-present-help">None yet.</div>
                                     }
@@ -685,7 +675,7 @@ else
                             @threats threat@(threats == 1 ? "" : "s"),
                             @edition.Articles.Count(a => a.Article.Classification == Classification.Informational) informational
                         </div>
-                        @* On the team edition, only the recommended lines no action has been raised for yet (matched by title):
+                        @* On the team edition, only the recommended lines no action has been raised from yet (by the stored link):
                            the gap the meeting still has to fill (the raised actions are listed below). The company-wide edition
                            shows them all, as written. *@
                         @if (TeamEdition)
@@ -1554,8 +1544,11 @@ else
         draft.Team = TeamFor(kind);
     }
 
-    // The edition article's recommended lines that no action on it has the title of.
-    private static IReadOnlyList<string> Unraised(EditionArticle x) => RecommendedActions.Unraised(x.Article.RecommendedActions, x.Actions.Select(r => r.Title));
+    /// <summary>Whether this page can raise actions in the meeting: someone who may create them, with a team to give them.</summary>
+    private bool CanRaise => _canCreate && _teams.Count > 0;
+
+    // The edition article's recommended lines no action was raised from.
+    private static IReadOnlyList<string> Unraised(EditionArticle x) => RecommendedActions.Unraised(x.Article.RecommendedActions, x.Actions, r => r.Recommendation);
 
     private async Task Raise(Guid articleId, string line, RaiseDraft draft)
     {
@@ -1565,7 +1558,7 @@ else
         {
             var number = 0;
             if (!await _overLimit.RunAsync(async reason =>
-                    number = await ActionSvc.QuickAddAsync(articleId, line, draft.Kind, draft.Team, null, RaisedFor, reason))) return;
+                    number = await ActionSvc.QuickAddAsync(articleId, line, draft.Kind, draft.Team, null, RaisedFor, reason, recommendation: line))) return;
             await LoadActions();
             Toasts.Show($"{Ui.ActionLabel(number)} raised and assigned to you.");
         }
@@ -2306,6 +2299,27 @@ else
     // An action's title in a slide's list: it opens the action over the slide where this page can (its number after it).
     private RenderFragment ActionTitle(int number, string title) =>
         @<ActionRef Number="number" Title="@title" Link="false" OnOpen="@(CanOpenAction ? EventCallback.Factory.Create(this, () => ShowAction(number)) : default)" />;
+
+    // An action's due date, holder and Take it, for someone who can work it: on its recommended line, or in the list of
+    // the article's other actions.
+    private RenderFragment ActionControls(EditionAction r) =>
+        @<text>@if (CanWork(r))
+        {
+            <span class="tide-action-assign">
+                <input type="date" class="form-control form-control-sm" aria-label="Due date for @Ui.ActionLabel(r.Number)" value="@DueShown(r)" disabled="@_busy"
+                       @key="(r.Id, DueResets(r.Id))" @onchange="e => _dueTyped[r.Id] = e.Value as string" @onfocusout="() => SetDue(r)" />
+                <select class="form-select form-select-sm" aria-label="Assign @Ui.ActionLabel(r.Number)" value="@(r.AssigneeId ?? "")" disabled="@_busy"
+                        @key="AssignKey(r.Id)" @onchange="e => Assign(r, e.Value as string)">
+                    <option value="">Nobody</option>
+                    @foreach (var member in MembersOf(r.TeamId)) { <option value="@member.UserId">@member.DisplayName</option> }
+                    @if (r.AssigneeId is { } held && MembersOf(r.TeamId).All(member => member.UserId != held)) { <option value="@held">@r.AssigneeName</option> }
+                </select>
+                @if (r.AssigneeId != _me)
+                {
+                    <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="() => Take(r)">Take it</button>
+                }
+            </span>
+        }</text>;
 
     // An action's number alone, where it's what's quoted ("Raised as A-6"): it opens the action too.
     private RenderFragment ActionNum(int number) =>

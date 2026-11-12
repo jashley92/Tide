@@ -62,11 +62,12 @@ public class ActionRefTests(TideApp app) : IClassFixture<TideApp>
         }
         int number;
         await using (var scope = SignedIn(app, SignIn.Analyst))
-            number = await scope.ServiceProvider.GetRequiredService<ActionService>().CreateAsync(new ActionForm { Title = "Patch the gateways", TeamId = team, ArticleId = article });
+            number = await scope.ServiceProvider.GetRequiredService<ActionService>().QuickAddAsync(article, "Patch the gateways", ActionKind.PatchRemediate, team, null,
+                recommendation: "Patch the gateways");
 
         var html = System.Net.WebUtility.HtmlDecode(await app.CreateClient().GetStringAsync($"/articles/{article}?side=actions"));
         html.Should().Contain($"href=\"actions/{number}\">Patch the gateways</a>").And.Contain($"A-{number}</span>")
-            .And.Contain("2 recommended lines not raised yet.", "one of the three became an action");
+            .And.Contain("2 recommended lines not raised yet.", "one of the three became an action (its stored line, not its title)");
         html.Should().Contain("<span>Actions</span>").And.Contain("tide-tabbar-count\">1</span>", "the tab carries the count");
         BriefStepper.Href(article, "company", "actions").Should().Be($"articles/{article}?edition=company&side=actions", "a step keeps the edition and the tab");
         BriefStepper.Href(article, null, null).Should().Be($"articles/{article}");

@@ -137,6 +137,13 @@ public class ActionItem : AuditableEntity
     /// </summary>
     public DateOnly? RaisedOn { get; set; }
 
+    /// <summary>
+    /// The line of its article's "Recommended actions" it was raised from (as the line read then, one line of plain
+    /// text), or null for one raised by hand. The slide shows it against that line rather than among the article's other
+    /// actions; a line edited or removed since leaves it among them. Set once, when it's raised.
+    /// </summary>
+    public string? RecommendationLine { get; set; }
+
     // EF reads and writes the column through this field, as DueDate's, so loading an action isn't a change of status.
     private ActionStatus _status = ActionStatus.Open;
 

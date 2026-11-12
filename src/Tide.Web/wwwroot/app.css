@@ -1469,7 +1469,17 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-reco li > .btn { justify-self: stretch; }
 .tide-reco .form-select { background-color: var(--tide-slide-surface); color: var(--tide-slide-text); border-color: var(--tide-slide-line-strong); font-size: .8em; }
 .tide-reco .tide-reco-done { grid-column: 2 / -1; color: var(--tide-slide-muted); }
-@media (max-width: 1000px) { .tide-reco li { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .tide-reco .tide-reco-text { grid-column: 1 / -1; } .tide-reco .tide-reco-done { grid-column: 1 / -1; } }
+/* A line raised already: its words, and under them the action it became (number, status, holder); its date, holder and
+   Take it in the columns the Raise rows' kind, team and Raise take, so they line up with the other actions' below. */
+.tide-reco li.is-raised .tide-reco-done { grid-column: 1; grid-row: 2; }
+.tide-reco li.is-raised .tide-action-assign { grid-column: 2 / -1; grid-row: 1 / span 2; margin: 0; display: grid; grid-template-columns: var(--tide-ctl-1) var(--tide-ctl-2) var(--tide-ctl-3); column-gap: var(--tide-ctl-gap); }
+.tide-reco li.is-raised .tide-action-assign > * { width: 100%; }
+@media (max-width: 1000px) {
+    .tide-reco li { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .tide-reco .tide-reco-text { grid-column: 1 / -1; } .tide-reco .tide-reco-done { grid-column: 1 / -1; }
+    .tide-reco li.is-raised .tide-reco-done { grid-row: auto; }
+    .tide-reco li.is-raised .tide-action-assign { grid-column: 1 / -1; grid-row: auto; display: flex; flex-wrap: wrap; gap: .3em; }
+    .tide-reco li.is-raised .tide-action-assign > * { width: auto; }
+}
 
 /* ---- Intake: CVE chips, triage inbox, sources, stories ---- */
 .tide-cve a { color: inherit; text-decoration: none; }

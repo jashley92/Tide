@@ -234,6 +234,7 @@ public sealed class DatabaseInitializer(
             {
                 Number = 2, Title = "Apply the vendor hotfix to both remote-access gateways", Kind = ActionKind.PatchRemediate, Priority = Priority.P1,
                 TeamId = vulnerability.Id, ArticleId = vpn.Id, DueDate = clock.Days.Next(clock.Today), Status = ActionStatus.InProgress,
+                RecommendationLine = "Apply the vendor hotfix to both gateways today.",
             });
 
         // Intake: two paused sample sources with a few items (one repeating another under a new headline, one about a CVE
