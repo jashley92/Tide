@@ -252,7 +252,8 @@ else
                                     <button type="button" class="tide-badge tide-badge-warn tide-badge-wrap tide-chip-button" title="@($"Show the items with {row.SharedCve}")"
                                             @onclick:stopPropagation="true" @onclick="() => ShowSameCve(row)">Same CVE as @row.SameCve.Count other new item@(row.SameCve.Count == 1 ? "" : "s")</button>
                                 }
-                                @if (row.Similar is { } sim) { <Badge Tone="BadgeTone.Warn" Title="@sim.Title" Class="tide-badge-wrap">Looks like: @Short(sim.Title)</Badge> }
+                                @* Not inside an open group when it names a report of the same group: the group says so already. *@
+                                @if (row.Similar is { } sim && row.Group?.Ids.Contains(sim.Id) != true) { <Badge Tone="BadgeTone.Warn" Title="@sim.Title" Class="tide-badge-wrap">Looks like: @Short(sim.Title)</Badge> }
                             </span>
                         </div>
                         @if (item.Status != FeedItemStatus.Promoted && FollowUp(row) is { } followUp) { <div class="tide-triage-follow">@followUp</div> }
@@ -486,7 +487,6 @@ else
                     @if (!string.IsNullOrWhiteSpace(row.Item.Excerpt)) { <div class="tide-triage-excerpt">@row.Item.Excerpt</div> }
                     <p class="small tide-muted">Not read yet.</p>
                 }
-                <p class="form-text mb-0 mt-2">For reading here only: the text isn't sent or exported, and it's deleted after @ReadingDaysText.</p>
             }
             @if (DecisionInBar && Current is { } line) { @Decision(line, _selected) }
         </aside>
@@ -498,7 +498,7 @@ else
 
     // The selected line's decision: why its main button is the main one, then the buttons, the main one first (or its
     // promote form). In the bar, the buttons are one row and the article's title in Attach gives way; in a row they
-    // wrap, as they always have.
+    // are one row while there's room, and wrap where there isn't.
     private RenderFragment Decision(Line line, int i) =>
         @<section class="tide-triage-decide" aria-label="Decide on this item">@DecisionBody(line, i)</section>;
 
@@ -574,18 +574,20 @@ else
             @if (item.Status != FeedItemStatus.Shortlisted) { <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Shortlist)">Shortlist <span class="tide-kbd">S</span></button> }
             @if (row.Similar is not null && item.Status != FeedItemStatus.Duplicate) { <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Duplicate)">Duplicate <span class="tide-kbd">D</span></button> }
             @if (item.Status != FeedItemStatus.New) { <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Restore)">Put back <span class="tide-kbd">R</span></button> }
+            @* Attach to… with the other ways to take it on: an article being written, rather than a new one. *@
+            @if (Promotable(item.Status)) { <AttachPicker Disabled="_busy" OnPick="t => Attach([row.Item.Id], t.Id, t.Title)" OpenChanged="open => _attaching = open" /> }
             @if (item.Status != FeedItemStatus.Dismissed)
             {
                 <span class="tide-triage-end">
-                    <select class="form-select form-select-sm w-auto" aria-label="Reason for dismissing it" @bind="_itemReason" @onclick:stopPropagation="true">
+                    <select class="form-select form-select-sm tide-triage-reason" aria-label="Reason for dismissing it" @bind="_itemReason" @onclick:stopPropagation="true">
                         @foreach (var r in IntakeService.DismissReasons) { <option value="@r">@r</option> }
                     </select>
                     <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => Act(TriageStep.Dismiss)">Dismiss <span class="tide-kbd">X</span></button>
                 </span>
             }
         </div>
-        @* One story, many reports: keep a follow-up's link on another article that covers it, set the rest aside, or attach
-           it to an article being written. (What we run is named from the context rail.) *@
+        @* One story, many reports: keep a follow-up's link on another article that covers it, or set the rest aside. (What
+           we run is named from the context rail.) *@
         List<Coverage> otherArticles = attachTo is null ? [] : row.Coverage.Where(c => c.Attachable && c.ArticleId != attachTo.ArticleId).DistinctBy(c => c.ArticleId).Take(2).ToList();
         <div class="tide-triage-more">
             @foreach (var c in otherArticles)
@@ -598,7 +600,6 @@ else
                 <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick:stopPropagation="true" @onclick="() => DismissSameCve(row)">
                     Dismiss the @row.SameCve.Count other@(row.SameCve.Count == 1 ? "" : "s") with its CVE as covered</button>
             }
-            @if (Promotable(item.Status)) { <AttachPicker Disabled="_busy" OnPick="t => Attach([row.Item.Id], t.Id, t.Title)" OpenChanged="open => _attaching = open" /> }
         </div>
     };
 
@@ -675,8 +676,6 @@ else
         }
         if (_lines.FindIndex(l => l.Row?.Item.Id == id) is >= 0 and var at) await Pick(at);
     }
-
-    private string ReadingDaysText => Math.Clamp(IntakeOpts.CurrentValue.ReadingDays, 1, 30) is var d && d == 7 ? "a week" : $"{d} day{(d == 1 ? "" : "s")}";
 
     /// <summary>"Found here: 2 CVEs · 3 indicators · Our stack: GitLab".</summary>
     internal static string Found(ReadingText text)
