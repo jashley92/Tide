@@ -17,8 +17,9 @@ else
         </p>
         @Actions
     </div>
-    @* Scrolls within the card, not the page, where the window is too narrow for its columns. *@
-    <div class="tide-card-scroll">
+    @* Where the card is too narrow for the columns, each source is a block of its own (app.css); at worst it scrolls within
+       the card, never the page. *@
+    <div class="tide-card-scroll tide-pull-fit">
     <table class="tide-table tide-pull-table">
         <thead><tr><th scope="col">Source</th><th scope="col">Last pulled</th><th scope="col">Next due</th><th scope="col">Last result</th><th scope="col"><span class="visually-hidden">Pull now</span></th></tr></thead>
         <tbody>

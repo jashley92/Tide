@@ -12,6 +12,7 @@ using Tide.TestSupport;
 using Tide.Web.Components.Pages;
 using Tide.Web.Components.Pages.Admin;
 using Tide.Web.Services;
+using Microsoft.EntityFrameworkCore;
 using static Tide.IntegrationTests.ComponentHarness;
 
 namespace Tide.IntegrationTests;
@@ -169,6 +170,88 @@ public class FeedsPullAllPageTests(FeedsApp app) : IClassFixture<FeedsApp>
         }
         finally { await Save(OperationalSettings.PulledBy, "08:00"); }
     }
+
+    // The page's markup, decoded, once it holds what's asked (up to 15 seconds), else as it is.
+    private static async Task<string> HtmlWhen<T>(Rendered<T> r, Func<string, bool> holds)
+    {
+        var html = "";
+        for (var i = 0; i < 150; i++)
+        {
+            html = System.Net.WebUtility.HtmlDecode(await r.Html());
+            if (holds(html)) return html;
+            await Task.Delay(100);
+        }
+        return html;
+    }
+
+    private static string RowOf(string html, string name)
+    {
+        var at = html.IndexOf($"<td class=\"fw-semibold\">{name}", StringComparison.Ordinal);
+        at.Should().BeGreaterThan(0, name + " is listed");
+        return html[at..html.IndexOf("</tr>", at, StringComparison.Ordinal)];
+    }
+
+    [Fact]
+    public async Task APageWatchingSomeoneElsesRun_LearnsWhenItEnds_OnTheSourcesTabAndOnToday()
+    {
+        var id = await Source("Watched feed", TimeSpan.FromHours(15));
+        var guard = app.Services.GetRequiredService<SourcePollGuard>();
+        // A colleague's Pull all is under way, pulling this source, as these pages open (or are reloaded).
+        guard.TryStartAll().Should().BeTrue();
+        guard.TryStart(id).Should().BeTrue();
+        await using var tab = await RenderAsync<Triage>(app, "/triage?tab=sources", @as: Analyst);
+        await using var today = await RenderToday(Analyst);
+        try
+        {
+            var html = await HtmlWhen(tab, h => h.Contains("Watched feed", StringComparison.Ordinal));
+            html.Should().Contain("Pulling every source…");
+            RowOf(html, "Watched feed").Should().Contain("Pulling…");
+            System.Net.WebUtility.HtmlDecode(await today.Html()).Should().Contain("Pulling every source…");
+        }
+        finally
+        {
+            // Ended from the tab's own thread, signed in, as a circuit's reads are (the harness has no circuit to carry the
+            // user to a read the end starts).
+            await tab.Click(_ =>
+            {
+                guard.Finished(id);
+                guard.AllFinished();
+                return Task.CompletedTask;
+            });
+        }
+
+        var after = await HtmlWhen(tab, h => !h.Contains("Pulling", StringComparison.Ordinal));
+        after.Should().NotContain("Pulling every source…", "the run's end is heard").And.NotContain("Pulling…");
+        RowOf(after, "Watched feed").Should().Contain(" Pull now</button>");
+        (await HtmlWhen(today, h => !h.Contains("Pulling every source", StringComparison.Ordinal))).Should().NotContain("Pulling every source…")
+            .And.MatchRegex("<button type=\"button\" class=\"btn btn-outline-primary btn-sm\" title=\"[^\"]*\">\\s*<span class=\"bi bi-arrow-repeat\"", "Pull all is pressable again");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("25:00")]
+    [InlineData("abc")]
+    [InlineData("8:00 am")]
+    public async Task Sources_AFeedsPulledByThatIsntATime_IsRefusedOnTheField_AndNothingIsSaid(string typed)
+    {
+        await using var r = await RenderAsync<SourcesAdmin>(app, "/admin/sources", @as: Admin);
+        var toasts = r.Scope.ServiceProvider.GetRequiredService<ToastService>();
+
+        await r.Click(c => c.PulledByBox!.OnChange(new Microsoft.AspNetCore.Components.ChangeEventArgs { Value = typed }));
+        await r.Click(c => c.SaveIntake());
+
+        var html = System.Net.WebUtility.HtmlDecode(await r.Html());
+        html.Should().Contain("id=\"intake-pulled-by-error\"").And.Contain("Feeds pulled by is a 24-hour time such as 08:00.")
+            .And.MatchRegex("id=\"intake-pulled-by\"[^>]*aria-invalid=\"true\"|aria-invalid=\"true\"[^>]*id=\"intake-pulled-by\"");
+        toasts.Toasts.Should().NotContain(t => !t.IsError, "nothing was saved, so nothing says it was");
+        app.Services.GetRequiredService<IOptionsMonitor<IntakeOptions>>().CurrentValue.PulledByTime.Should().Be(new TimeOnly(8, 0));
+
+        // Put right, it saves, and the message goes.
+        await r.Click(c => c.PulledByBox!.OnChange(new Microsoft.AspNetCore.Components.ChangeEventArgs { Value = "08:00" }));
+        await r.Click(c => c.SaveIntake());
+        (await r.Html()).Should().NotContain("intake-pulled-by-error");
+        toasts.Toasts.Should().Contain(t => !t.IsError);
+    }
 }
 
 /// <summary>Pull all on the Sources tab with polling off: offered, and the tab says sources are only pulled by hand.</summary>
@@ -228,6 +311,9 @@ public class FeedsTodayCountTests(FeedsApp app) : IClassFixture<FeedsApp>
         await scope.ServiceProvider.GetRequiredService<OperationalSettingsService>().SaveAsync(new Dictionary<string, string?> { [key] = value });
     }
 
+    private static int NewInFeed(string html) =>
+        int.Parse(System.Text.RegularExpressions.Regex.Match(html, @"(\d+) new in the feed").Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+
     [Fact]
     public async Task Today_SaysWhichFeedsArentPulledSinceTheCutoff_ToAnAnalyst_AndPullAllPullsThem()
     {
@@ -237,26 +323,99 @@ public class FeedsTodayCountTests(FeedsApp app) : IClassFixture<FeedsApp>
 
         await Source("Stale feed", TimeSpan.FromHours(15));
         await Source("Fresh feed", TimeSpan.FromMinutes(10));
-        await Source("Broken feed", TimeSpan.FromMinutes(40), "Timed out.");
+        var broken = await Source("Broken feed", TimeSpan.FromMinutes(40), "Timed out.");
         app.Http.Set(Feed("Stale feed"), Rss("stale"));
         app.Http.Set(Feed("Broken feed"), Rss("broken"));
 
+        await using var menu = await RenderAsync<Tide.Web.Components.Layout.NavMenu>(app, "/", @as: Analyst);
         await using (var r = await RenderToday(Analyst))
         {
             var html = System.Net.WebUtility.HtmlDecode(await r.Html());
             html.Should().Contain("class=\"tide-feeds-nudge\"")
-                .And.Contain("1 of 3 feeds not pulled since 8:00 am · 1 failing · last pull 8:50 am")
+                .And.Contain("2 of 3 feeds not pulled since 8:00 AM (1 failing) · last pull 8:50 AM")
                 .And.Contain(">Triage<", "it's Triage's word, beside its step")
                 .And.Contain(" Pull all</button>");
             html.IndexOf("tide-feeds-nudge", StringComparison.Ordinal).Should().BeGreaterThan(html.IndexOf("tide-steps", StringComparison.Ordinal))
                 .And.BeLessThan(html.IndexOf("running-order-h", StringComparison.Ordinal), "under the steps, above the running order");
+            var before = NewInFeed(html);
+            (await menu.Html()).Should().Contain($"Triage, {before} new");
 
             await r.Click(t => t.Freshness!.PullAll!.RunAsync());
 
             r.Scope.ServiceProvider.GetRequiredService<ToastService>().Toasts.Should()
-                .Contain(t => t.Message == "Pulled 2 · 2 new items · 1 skipped (pulled in the last 15 min)");
+                .Contain(t => t.Message == "Pulled 2 · 2 new items · 1 skipped (pulled in the last 15 min)" && !t.IsError && !t.IsWarning);
             (await r.HtmlOnce("tide-steps")).Should().NotContain("tide-feeds-nudge", "every feed has been pulled since 8:00 now");
+            (await r.HtmlOnce($"{before + 2} new in the feed")).Should().Contain($"{before + 2} new in the feed", "Triage's step counts the new items at once");
+            (await menu.HtmlOnce($"Triage, {before + 2} new")).Should().Contain($"Triage, {before + 2} new", "and so does the sidebar");
         }
         app.Http.Requests.Select(q => q.Url).Should().Contain([Feed("Stale feed"), Feed("Broken feed")]).And.NotContain(Feed("Fresh feed"));
+
+        // A feed that failed after the cutoff, everything else pulled: named, with the Sources tab, and nothing to pull.
+        await using (var scope = app.Services.CreateAsyncScope())
+        await using (var db = await scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>().CreateAsync())
+            await db.Sources.Where(x => x.Id == broken).ExecuteUpdateAsync(u => u.SetProperty(x => x.LastError, "The server answered 503."));
+        await using (var r = await RenderToday(Analyst))
+        {
+            var html = System.Net.WebUtility.HtmlDecode(await r.Html());
+            html.Should().Contain("1 feed failing: Broken feed").And.Contain("href=\"triage?tab=sources\">see Sources</a>")
+                .And.NotContain("Pull all</button>", "pulling again now would only be refused");
+        }
+    }
+}
+
+/// <summary>Pull all when the browser's connection drops, and its toast when some sources fail: an app of their own.</summary>
+public class PullAllRunTests(FeedsApp app) : IClassFixture<FeedsApp>
+{
+    private static readonly SignIn Analyst = new("dev:run-analyst", "Run Analyst", "Analyst");
+
+    private async Task Source(string name, bool canned = true)
+    {
+        await using (var scope = app.Services.CreateAsyncScope())
+        await using (var db = await scope.ServiceProvider.GetRequiredService<IAppDbContextFactory>().CreateAsync())
+        {
+            var at = app.Clock.Now.AddHours(-15);
+            db.Sources.Add(new Source { Name = name, Url = Feed(name), PollMinutes = 7 * 24 * 60, LastPolledAtUtc = at, LastSuccessAtUtc = at });
+            await db.SaveChangesAsync();
+        }
+        if (canned)
+            app.Http.Set(Feed(name), $"<rss version=\"2.0\"><channel><title>N</title><item><title>{name} story</title><link>{Feed(name)}/1</link></item></channel></rss>");
+    }
+
+    private static string Feed(string name) => $"https://{name.Replace(' ', '-').ToLowerInvariant()}.example.com/feed";
+
+    [Fact]
+    public async Task PullAll_StopsWhenTheBrowsersConnectionDrops_AfterTheSourceUnderWay()
+    {
+        await Source("Dropped alpha");
+        await Source("Dropped beta");
+        await using var r = await RenderAsync<Triage>(app, "/triage?tab=sources", @as: Analyst);
+        await r.HtmlOnce("Dropped beta");
+        var connection = r.Scope.ServiceProvider.GetRequiredService<CircuitConnection>();
+        var before = app.Http.Requests.Count;
+        // The browser vanishes while the first source is being fetched.
+        app.Http.During = () => connection.OnConnectionDownAsync(null!, CancellationToken.None);
+
+        await r.Click(t => t.PullAll());
+
+        app.Http.Requests.Count.Should().Be(before + 1, "the source under way is finished, and no other is started");
+        app.Services.GetRequiredService<SourcePollGuard>().AllRunning.Should().BeFalse();
+
+        await connection.OnConnectionUpAsync(null!, CancellationToken.None);
+        await r.Click(t => t.PullAll());
+        app.Http.Requests.Count.Should().Be(before + 2, "back again, a new run takes the one left");
+    }
+
+    [Fact]
+    public async Task PullAll_SomeFailing_WarnsRatherThanErrs()
+    {
+        await Source("Tone fine");
+        await Source("Tone broken", canned: false);
+        await using var r = await RenderAsync<Triage>(app, "/triage?tab=sources", @as: Analyst);
+        await r.HtmlOnce("Tone broken");
+
+        await r.Click(t => t.PullAll());
+
+        r.Scope.ServiceProvider.GetRequiredService<ToastService>().Toasts.Should()
+            .Contain(t => t.Message.Contains("1 failed: Tone broken", StringComparison.Ordinal) && t.IsWarning && !t.IsError);
     }
 }

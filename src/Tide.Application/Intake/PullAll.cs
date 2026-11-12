@@ -19,6 +19,12 @@ public sealed record PullAllStep(int Number, int Of, Guid Id, string Name)
 public sealed record PullAllResult(int Pulled, int New, IReadOnlyList<string> Recent, IReadOnlyList<string> Busy, IReadOnlyList<string> Failed,
     int NotReached)
 {
+    /// <summary>Whether any source's pull failed (the toast warns).</summary>
+    public bool SomeFailed => Failed.Count > 0;
+
+    /// <summary>Whether every source tried failed (the toast is an error).</summary>
+    public bool AllFailed => SomeFailed && Pulled == 0;
+
     /// <summary>"Pulled 7 · 12 new items · 2 skipped (pulled in the last 15 min) · 1 failed: Sample news".</summary>
     public string Summary(TimeSpan window)
     {
@@ -36,10 +42,12 @@ public sealed record PullAllResult(int Pulled, int New, IReadOnlyList<string> Re
 
 /// <summary>
 /// Whether the polled feeds have been pulled since this working day's cutoff (<see cref="IntakeOptions.PulledBy"/>), for
-/// Today's Triage step: how many there are, how many weren't pulled since it, how many are failing (counted apart: a
-/// failing feed was tried, but brought nothing), and the latest pull of any.
+/// Today's Triage step: how many there are, how many weren't pulled since it (a failing feed among them: it was tried,
+/// but brought nothing), the failing ones by name, and the latest pull of any. <paramref name="OnlyFailing"/>: every other
+/// feed was pulled since, and the failing ones were tried since too, so pulling again now is no help.
 /// </summary>
-public sealed record FeedFreshness(int Sources, int NotPulled, int Failing, DateTimeOffset CutoffUtc, DateTimeOffset? LastPullUtc)
+public sealed record FeedFreshness(int Sources, int NotPulled, IReadOnlyList<string> Failing, DateTimeOffset CutoffUtc,
+    DateTimeOffset? LastPullUtc, bool OnlyFailing = false)
 {
     private static readonly CultureInfo Invariant = CultureInfo.InvariantCulture;
 
@@ -61,30 +69,27 @@ public sealed record FeedFreshness(int Sources, int NotPulled, int Failing, Date
     /// every one has been pulled since it and none is failing).</summary>
     public static FeedFreshness? Of(IReadOnlyCollection<PolledSource> sources, DateTimeOffset cutoffUtc)
     {
-        var failing = sources.Count(s => s.Failing);
-        var notPulled = sources.Count(s => !s.Failing && (s.LastPolledAtUtc is not { } at || at < cutoffUtc));
-        return notPulled + failing == 0 ? null
-            : new FeedFreshness(sources.Count, notPulled, failing, cutoffUtc, sources.Max(s => s.LastPolledAtUtc));
+        bool Untried(PolledSource s) => s.LastPolledAtUtc is not { } at || at < cutoffUtc;
+        var notPulled = sources.Count(s => s.Failing || Untried(s));
+        return notPulled == 0 ? null
+            : new FeedFreshness(sources.Count, notPulled, [.. sources.Where(s => s.Failing).Select(s => s.Name)], cutoffUtc,
+                sources.Max(s => s.LastPolledAtUtc), OnlyFailing: !sources.Any(Untried));
     }
 
-    /// <summary>"4 of 9 feeds not pulled since 8:00 am · 1 failing · last pull 6:40 pm yesterday".</summary>
+    /// <summary>"8 of 9 feeds not pulled since 8:00 AM (1 failing) · last pull 6:40 PM yesterday"; with only failing feeds
+    /// left, "1 feed failing: Sample news".</summary>
     public string Text(TimeZoneInfo zone, DateTimeOffset nowUtc)
     {
-        List<string> parts = [];
-        var feeds = Words.Plural(Sources, "feed");
-        if (NotPulled > 0)
-        {
-            parts.Add($"{NotPulled} of {feeds} not pulled since {Clock(TimeZoneInfo.ConvertTime(CutoffUtc, zone))}");
-            if (Failing > 0) parts.Add($"{Failing} failing");
-        }
-        else parts.Add($"{Failing} of {feeds} failing");
-        parts.Add(LastPullUtc is { } last ? "last pull " + When(TimeZoneInfo.ConvertTime(last, zone), TimeZoneInfo.ConvertTime(nowUtc, zone)) : "never pulled");
-        return string.Join(" · ", parts);
+        if (OnlyFailing) return $"{Words.Plural(Failing.Count, "feed")} failing: {string.Join(", ", Failing)}";
+        var since = $"{NotPulled} of {Words.Plural(Sources, "feed")} not pulled since {Clock(TimeZoneInfo.ConvertTime(CutoffUtc, zone))}"
+            + (Failing.Count > 0 ? $" ({Failing.Count} failing)" : "");
+        var last = LastPullUtc is { } at ? "last pull " + When(TimeZoneInfo.ConvertTime(at, zone), TimeZoneInfo.ConvertTime(nowUtc, zone)) : "never pulled";
+        return $"{since} · {last}";
     }
 
-    private static string Clock(DateTimeOffset local) => local.ToString("h:mm tt", Invariant).ToLowerInvariant();
+    private static string Clock(DateTimeOffset local) => local.ToString("h:mm tt", Invariant);
 
-    // "7:55 am" today, "6:40 pm yesterday", "Fri 6:40 pm" within the week, "Oct 20, 9:05 am" before that.
+    // "7:55 AM" today, "6:40 PM yesterday", "Fri 6:40 PM" within the week, "Oct 20, 9:05 AM" before that.
     private static string When(DateTimeOffset local, DateTimeOffset now)
     {
         var days = DateOnly.FromDateTime(now.DateTime).DayNumber - DateOnly.FromDateTime(local.DateTime).DayNumber;

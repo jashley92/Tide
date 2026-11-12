@@ -3714,7 +3714,7 @@ const pages = [
   // The Sources tab's head: what the tab is, and Pull all beside it where there's room (under it where there isn't),
   // the button whole on one line, nothing past the card.
   { name: 'triage-pull-all', route: '/triage?tab=sources', setup: wideFont, widths: [1920, 1440, 780],
-    rules: [noSidewaysScroll, visible('.tide-pull-head .tide-pull-all > button'), fits('.tide-pull-head'), [1440, oneRow('.tide-pull-head')],
+    rules: [noSidewaysScroll, visible('.tide-pull-head .tide-pull-all > button'), fits('.tide-pull-head'), fits('.content .tide-card-scroll'), [1440, oneRow('.tide-pull-head')],
       oneLine('.tide-pull-head .tide-pull-all > button'), notSqueezed('.tide-pull-head .tide-pull-all > button')] },
   { name: 'triage-narrow', route: '/triage', widths: [1300, 780], rules: [hidden('.tide-reading')] },
   // The reading pane open by itself stays below the top bar as the page scrolls.

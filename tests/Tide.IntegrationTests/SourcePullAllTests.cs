@@ -201,6 +201,26 @@ public class SourcePullAllTests : IDisposable
         _db.Polls.AllRunning.Should().BeFalse();
     }
 
+    private sealed class StandingByLease : IJobLease
+    {
+        public Task<bool> HoldAsync(CancellationToken ct = default) => Task.FromResult(false);
+        public LeaseStatus Status { get; } = new(LeaseState.StandingBy, "WEB02/4312/abc", null, null, null, null);
+    }
+
+    [Fact]
+    public async Task PullAll_OnAServerStandingBy_IsRefused_AndSaysSoBeforehand()
+    {
+        await Source("Alpha news", _clock.Now.AddHours(-2));
+        var intake = new IntakeService(_db, _db.User, _db.Http, _db.Articles(),
+            new StaticOptionsMonitor<IntakeOptions>(new IntakeOptions { Enabled = true }), _clock, polls: _db.Polls, lease: new StandingByLease());
+
+        intake.StandingBy.Should().StartWith("This server is standing by");
+        Intake().StandingBy.Should().BeNull("a service with no lease runs as the holder");
+        await FluentActions.Invoking(() => intake.PullAllAsync()).Should().ThrowAsync<StandingByException>();
+        _db.Http.Requests.Should().BeEmpty();
+        _db.Polls.AllRunning.Should().BeFalse();
+    }
+
     // --- what Today says -------------------------------------------------------------------------------------------
 
     [Fact]
@@ -215,9 +235,10 @@ public class SourcePullAllTests : IDisposable
         var f = await Intake().FreshnessAsync(Org());
 
         f.Should().NotBeNull();
-        f!.Should().Match<FeedFreshness>(x => x.Sources == 4 && x.NotPulled == 2 && x.Failing == 1);
+        f!.Should().Match<FeedFreshness>(x => x.Sources == 4 && x.NotPulled == 3 && !x.OnlyFailing);
+        f.Failing.Should().Equal("Broken news");
         f.CutoffUtc.Should().Be(new DateTimeOffset(2026, 11, 4, 13, 0, 0, TimeSpan.Zero), "8:00 in New York");
-        f.Text(Org().Zone, _clock.Now).Should().Be("2 of 4 feeds not pulled since 8:00 am · 1 failing · last pull 8:40 am", "the failing feed's pull, at 8:40, is the latest");
+        f.Text(Org().Zone, _clock.Now).Should().Be("3 of 4 feeds not pulled since 8:00 AM (1 failing) · last pull 8:40 AM", "the failing feed's pull, at 8:40, is the latest");
     }
 
     [Fact]

@@ -361,6 +361,10 @@ public sealed class IntakeService(IAppDbContextFactory dbs, ICurrentUser user, I
     /// <summary>Whether someone's Pull all is running now.</summary>
     public bool PullAllRunning => _polls.AllRunning;
 
+    /// <summary>Why pulls are refused here, as last seen: this process is standing by under the job lease (another runs the
+    /// background jobs); null when it may pull.</summary>
+    public string? StandingBy => lease?.Status is { State: LeaseState.StandingBy } s ? new StandingByException(s.HolderName).Message : null;
+
     private const string AllBusy = "Someone is already pulling every source. Their new items arrive as each source is pulled.";
 
     /// <summary>

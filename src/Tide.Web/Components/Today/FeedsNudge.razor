@@ -1,7 +1,8 @@
-@* Under Today's step strip, Triage's word on the feeds: "4 of 9 feeds not pulled since 8:00 am · 1 failing · last pull
-   6:40 pm yesterday", with Pull all (IntakeService.FreshnessAsync). Only for those who may pull sources, and only when
-   there's something to say: polling on, a working day past the cutoff (Intake:PulledBy), a feed not pulled since it or
-   failing. It's read again when a poll or a pull anywhere is heard of, and after this page's own Pull all. *@
+@* Under Today's step strip, Triage's word on the feeds: "8 of 9 feeds not pulled since 8:00 AM (1 failing) · last pull
+   6:40 PM yesterday", with Pull all (IntakeService.FreshnessAsync). With only feeds that failed since the cutoff left,
+   it names them and points to the Sources tab, with nothing to pull. Only for those who may pull sources, and only when
+   there's something to say: polling on, a working day past the cutoff (Intake:PulledBy), a feed not pulled since it.
+   It's read again when a poll or a pull anywhere is heard of, and after this page's own Pull all. *@
 @implements IDisposable
 @inject IntakeService Intake
 @inject OrgClock Clock
@@ -14,10 +15,13 @@
 {
     <div class="tide-feeds-nudge">
         <span class="tide-feeds-nudge-text">
-            <span class="bi @(f.Failing > 0 ? "bi-exclamation-triangle-fill tide-feeds-failing" : "bi-rss")" aria-hidden="true"></span>
-            <a href="triage?tab=sources">Triage</a>: @f.Text(Clock.Zone, Time.GetUtcNow())
+            <span class="bi @(f.Failing.Count > 0 ? "bi-exclamation-triangle-fill tide-feeds-failing" : "bi-rss")" aria-hidden="true"></span>
+            <a href="triage?tab=sources">Triage</a>: @f.Text(Clock.Zone, Time.GetUtcNow())@if (f.OnlyFailing)
+            {
+                @(" · ")<a href="triage?tab=sources">see Sources</a>
+            }
         </span>
-        <PullAllButton @ref="PullAll" OnDone="Load" />
+        @if (!f.OnlyFailing) { <PullAllButton @ref="PullAll" OnDone="Load" /> }
     </div>
 }
 
@@ -25,7 +29,7 @@
     private FeedFreshness? _freshness;
     private LiveChanges? _live;
 
-    /// <summary>The Pull all button, while the word is shown.</summary>
+    /// <summary>The Pull all button, while the word offers it.</summary>
     internal PullAllButton? PullAll { get; private set; }
 
     protected override async Task OnInitializedAsync()
@@ -38,9 +42,10 @@
 
     private async Task Load()
     {
-        // While this page's own Pull all runs, the word stays: its going would take the button, and the run, with it.
-        var now = await Intake.FreshnessAsync(Clock);
-        if (now is not null || PullAll is not { IsRunning: true }) _freshness = now;
+        // While this page's own Pull all runs, the word stays as it is: a new one could take the button, and the run with
+        // it. The run's end reads it again.
+        if (PullAll is { IsRunning: true }) return;
+        _freshness = await Intake.FreshnessAsync(Clock);
         StateHasChanged();
     }
 

@@ -114,7 +114,7 @@ public class FeedFreshnessTests
     }
 
     [Fact]
-    public void Of_CountsThoseNotPulledSinceTheCutoff_AndTheFailingApart()
+    public void Of_CountsTheFailingAmongThoseNotPulled_AndNamesThem()
     {
         var f = FeedFreshness.Of([
             Src("Fresh", Cut.AddMinutes(30)),
@@ -126,53 +126,70 @@ public class FeedFreshnessTests
 
         f.Should().NotBeNull();
         f!.Sources.Should().Be(5);
-        f.NotPulled.Should().Be(2, "the failing are counted apart, not as not pulled");
-        f.Failing.Should().Be(2);
+        f.NotPulled.Should().Be(4, "a failing feed hasn't been pulled, whenever it was tried");
+        f.Failing.Should().Equal("Failing", "Failing yesterday");
+        f.OnlyFailing.Should().BeFalse();
         f.LastPullUtc.Should().Be(Cut.AddMinutes(30));
     }
 
     [Fact]
-    public void Of_OnlyAFailingFeed_StillSaysSo()
+    public void Of_OnlyFeedsThatFailedSinceTheCutoff_IsTheirOwnWord()
     {
-        var f = FeedFreshness.Of([Src("Fresh", Cut.AddMinutes(30)), Src("Failing", Cut.AddMinutes(10), "Not found.")], Cut);
-        f.Should().Match<FeedFreshness>(x => x.NotPulled == 0 && x.Failing == 1);
+        var f = FeedFreshness.Of([Src("Fresh", Cut.AddMinutes(30)), Src("Broken", Cut.AddMinutes(10), "Not found.")], Cut);
+        f.Should().Match<FeedFreshness>(x => x.NotPulled == 1 && x.OnlyFailing);
+        f!.Failing.Should().Equal("Broken");
+    }
+
+    [Fact]
+    public void Of_AFeedThatFailedBeforeTheCutoff_IsStillOneToPull()
+    {
+        var f = FeedFreshness.Of([Src("Fresh", Cut.AddMinutes(30)), Src("Broken", Cut.AddHours(-2), "Not found.")], Cut);
+        f!.OnlyFailing.Should().BeFalse("it hasn't been tried since 8:00, so Pull all may bring it");
     }
 
     // --- how it's said ---------------------------------------------------------------------------------------------
 
+    private static FeedFreshness Word(int sources, int notPulled, string[] failing, DateTimeOffset? last, bool onlyFailing = false) =>
+        new(sources, notPulled, failing, Cut, last, onlyFailing);
+
     [Fact]
     public void Text_SaysHowManyOfHowMany_SinceWhen_AndTheLastPull()
     {
-        var f = new FeedFreshness(9, 4, 0, Cut, NewYorkAt(3, 18, 40));
-        f.Text(NewYork, NewYorkAt(4, 9, 0)).Should().Be("4 of 9 feeds not pulled since 8:00 am · last pull 6:40 pm yesterday");
+        Word(9, 4, [], NewYorkAt(3, 18, 40)).Text(NewYork, NewYorkAt(4, 9, 0))
+            .Should().Be("4 of 9 feeds not pulled since 8:00 AM · last pull 6:40 PM yesterday");
     }
 
     [Fact]
-    public void Text_WithFailing_CountsThemApart()
+    public void Text_SaysHowManyOfThemAreFailing()
     {
-        new FeedFreshness(9, 3, 1, Cut, NewYorkAt(3, 18, 40)).Text(NewYork, NewYorkAt(4, 9, 0))
-            .Should().Be("3 of 9 feeds not pulled since 8:00 am · 1 failing · last pull 6:40 pm yesterday");
-        new FeedFreshness(9, 0, 2, Cut, NewYorkAt(4, 8, 5)).Text(NewYork, NewYorkAt(4, 9, 0))
-            .Should().Be("2 of 9 feeds failing · last pull 8:05 am");
+        Word(8, 8, ["Wire"], NewYorkAt(3, 18, 40)).Text(NewYork, NewYorkAt(4, 9, 0))
+            .Should().Be("8 of 8 feeds not pulled since 8:00 AM (1 failing) · last pull 6:40 PM yesterday");
+    }
+
+    [Fact]
+    public void Text_OnlyFailingSinceTheCutoff_NamesThem()
+    {
+        Word(9, 1, ["Wire"], NewYorkAt(4, 8, 5), onlyFailing: true).Text(NewYork, NewYorkAt(4, 9, 0)).Should().Be("1 feed failing: Wire");
+        Word(9, 2, ["Wire", "Blog"], NewYorkAt(4, 8, 5), onlyFailing: true).Text(NewYork, NewYorkAt(4, 9, 0)).Should().Be("2 feeds failing: Wire, Blog");
     }
 
     [Fact]
     public void Text_OneFeed_AndNeverPulled()
     {
-        new FeedFreshness(1, 1, 0, Cut, null).Text(NewYork, NewYorkAt(4, 9, 0)).Should().Be("1 of 1 feed not pulled since 8:00 am · never pulled");
+        Word(1, 1, [], null).Text(NewYork, NewYorkAt(4, 9, 0)).Should().Be("1 of 1 feed not pulled since 8:00 AM · never pulled");
     }
 
     [Theory]
-    [InlineData(4, 7, 55, "7:55 am")]
-    [InlineData(3, 18, 40, "6:40 pm yesterday")]
-    [InlineData(30, 18, 40, "Fri 6:40 pm")]
-    [InlineData(20, 9, 5, "Oct 20, 9:05 am")]
+    [InlineData(4, 7, 55, "7:55 AM")]
+    [InlineData(3, 18, 40, "6:40 PM yesterday")]
+    [InlineData(30, 18, 40, "Fri 6:40 PM")]
+    [InlineData(20, 9, 5, "Oct 20, 9:05 AM")]
     public void Text_SaysTheLastPullAsAPersonWould(int day, int hour, int minute, string expected)
     {
         var month = day > 4 ? 10 : 11;
         var offset = month == 10 ? TimeSpan.FromHours(-4) : TimeSpan.FromHours(-5);
         var last = new DateTimeOffset(2026, month, day, hour, minute, 0, offset);
-        new FeedFreshness(2, 1, 0, Cut, last).Text(NewYork, NewYorkAt(4, 9, 0)).Should().EndWith("last pull " + expected);
+        Word(2, 1, [], last).Text(NewYork, NewYorkAt(4, 9, 0)).Should().EndWith("last pull " + expected);
     }
 }
 
@@ -211,6 +228,30 @@ public class PullAllTextTests
     public void Summary_Stopped_SaysHowManyWerentReached()
     {
         new PullAllResult(2, 4, [], [], [], 3).Summary(Window).Should().Be("Pulled 2 · 4 new items · stopped: 3 not pulled");
+    }
+
+    [Fact]
+    public void Result_SaysWhetherSomeOrAllFailed_ForTheToastsTone()
+    {
+        new PullAllResult(7, 3, [], [], [], 0).Should().Match<PullAllResult>(r => !r.SomeFailed && !r.AllFailed);
+        new PullAllResult(7, 3, [], [], ["Wire"], 0).Should().Match<PullAllResult>(r => r.SomeFailed && !r.AllFailed);
+        new PullAllResult(0, 0, ["A"], [], ["Wire", "Blog"], 0).Should().Match<PullAllResult>(r => r.SomeFailed && r.AllFailed);
+    }
+
+    [Fact]
+    public void Guard_SaysWhenAPullOrARunStartsOrEnds()
+    {
+        var guard = new SourcePollGuard();
+        var heard = 0;
+        guard.Changed += () => heard++;
+        var id = Guid.NewGuid();
+        guard.TryStart(id);
+        guard.TryStart(id).Should().BeFalse();
+        guard.Finished(id);
+        guard.TryStartAll();
+        guard.TryStartAll().Should().BeFalse();
+        guard.AllFinished();
+        heard.Should().Be(4, "a start, an end, a run's start and its end; a refused start changes nothing");
     }
 
     [Fact]

@@ -258,7 +258,9 @@
         </div>
         <div class="col-sm-6 col-md-4">
             <label class="tide-field-label" for="intake-pulled-by">Feeds pulled by (each working day)</label>
-            <TimeBox Id="intake-pulled-by" @bind-Value="PulledBy" DescribedBy="intake-pulled-by-help" />
+            <TimeBox @ref="PulledByBox" Id="intake-pulled-by" @bind-Value="PulledBy" Invalid="@(_pulledByProblem is not null)"
+                     DescribedBy="@(_pulledByProblem is null ? "intake-pulled-by-help" : "intake-pulled-by-error intake-pulled-by-help")" />
+            @if (_pulledByProblem is { } problem) { <div class="invalid-feedback d-block" id="intake-pulled-by-error">@problem</div> }
         </div>
     </div>
     <div class="form-text" id="intake-read-help">Reading an article's page, in triage or for the editor, stops after this long and says so. 6 suits most servers; give a slow one longer.</div>
@@ -473,7 +475,21 @@
 
     private static string Switch(bool on) => on ? "true" : "false";
 
-    internal Task SaveIntake() => Run(async () =>
+    // The box, to know it holds a whole time (a cleared or impossible one leaves the last whole time bound), and why
+    // what's in it was refused; internal for the render tests.
+    internal TimeBox? PulledByBox { get; private set; }
+    private string? _pulledByProblem;
+
+    internal Task SaveIntake()
+    {
+        _pulledByProblem = PulledByBox is { Whole: false } ? "Feeds pulled by is a 24-hour time such as 08:00." : null;
+        StateHasChanged();
+        if (_pulledByProblem is null) return SaveIntakeSettings();
+        Toasts.Error("Polling wasn't saved: " + _pulledByProblem);
+        return Task.CompletedTask;
+    }
+
+    private Task SaveIntakeSettings() => Run(async () =>
     {
         await Settings.SaveAsync(new Dictionary<string, string?>
         {

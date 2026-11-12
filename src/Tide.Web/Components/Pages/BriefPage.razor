@@ -454,7 +454,7 @@ else
     {
         _live = new LiveChanges(Feed, Origin, c => _follow.Contains(c.Topic), InvokeAsync, OnChangedElsewhere);
         _actionMarks = new LiveMarks<Guid>(InvokeAsync, StateHasChanged);
-        _around = new LiveChanges(Feed, Origin, c => (c.Topic == ChangeFeed.Rotation && AsToday) || c.Topic == ChangeFeed.Articles,
+        _around = new LiveChanges(Feed, Origin, c => (c.Topic == ChangeFeed.Rotation && AsToday) || c.Topic == ChangeFeed.Articles || FeedPolled(c),
             InvokeAsync, OnAroundChanged);
         _meetingLive = new LiveChanges(Feed, Origin, c => _brief is { } b && c.Topic == ChangeFeed.Meeting(b.Id), InvokeAsync, OnMeetingChanged);
         Meetings.Changed += MeetingStartedOrEnded;
@@ -488,6 +488,10 @@ else
         StateHasChanged();
     }
 
+    // A poll or a pull brought new items (the system's change to triage; this page's own Pull all among them): Today's
+    // Triage step counts them again, for those it counts them for.
+    private bool FeedPolled(Change c) => AsToday && _canWrite && c.Topic == ChangeFeed.Triage && c.ActorId == "system";
+
     private async Task OnAroundChanged(IReadOnlyList<Change> changes)
     {
         if (_busy) return;   // this page's own action reloads when it's done, and reads theirs with it
@@ -502,6 +506,11 @@ else
                 var still = _upcoming.MyRequests.Select(c => c.Id).ToHashSet();
                 var decided = before?.MyRequests.Any(c => !still.Contains(c.Id)) == true ? await Rotation.ChangesAsync() : [];
                 if (RotationPage.Heard(before, _upcoming, decided, LiveChanges.Who(changes)) is { } news) Toasts.Tell(news);
+            }
+            if (changes.Any(FeedPolled))
+            {
+                _newInFeed = await Intake.NewCountAsync();
+                _newOnKev = _newInFeed > 0 ? await Intake.NewKevCountAsync() : 0;
             }
             if (changes.Any(c => c.Topic == ChangeFeed.Articles))
             {

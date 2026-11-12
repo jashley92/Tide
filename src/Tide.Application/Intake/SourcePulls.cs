@@ -12,22 +12,33 @@ public sealed class SourcePollGuard
 {
     private readonly ConcurrentDictionary<Guid, byte> _running = new();
 
-    /// <summary>Starts polling the source unless it's being polled; true when this caller may go ahead.</summary>
-    public bool TryStart(Guid sourceId) => _running.TryAdd(sourceId, 0);
+    /// <summary>A source's poll or a Pull all started or ended, here or on another page: a page showing them draws them
+    /// again (a colleague's run ending re-enables Pull all). Raised on the thread that started or ended it.</summary>
+    public event Action? Changed;
 
-    public void Finished(Guid sourceId) => _running.TryRemove(sourceId, out _);
+    /// <summary>Starts polling the source unless it's being polled; true when this caller may go ahead.</summary>
+    public bool TryStart(Guid sourceId) => Said(_running.TryAdd(sourceId, 0));
+
+    public void Finished(Guid sourceId) => Said(_running.TryRemove(sourceId, out _));
 
     public bool IsRunning(Guid sourceId) => _running.ContainsKey(sourceId);
 
     private int _all;
 
     /// <summary>Starts a Pull all unless one is running, whoever started it; true when this caller may go ahead.</summary>
-    public bool TryStartAll() => Interlocked.CompareExchange(ref _all, 1, 0) == 0;
+    public bool TryStartAll() => Said(Interlocked.CompareExchange(ref _all, 1, 0) == 0);
 
-    public void AllFinished() => Interlocked.Exchange(ref _all, 0);
+    public void AllFinished() => Said(Interlocked.Exchange(ref _all, 0) == 1);
 
     /// <summary>Whether a Pull all is running.</summary>
     public bool AllRunning => Volatile.Read(ref _all) == 1;
+
+    // A change is told; a refused start, or an end of what wasn't running, isn't one.
+    private bool Said(bool changed)
+    {
+        if (changed) Changed?.Invoke();
+        return changed;
+    }
 }
 
 /// <summary>
