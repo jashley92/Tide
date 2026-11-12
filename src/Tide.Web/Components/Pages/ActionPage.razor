@@ -561,7 +561,8 @@ else
         {
             _product = product;
             _form.Kind = ActionKind.Outreach;
-            _form.Title = $"Ask {product.ContactName ?? "the vendor"} about {product.Name}";
+            // Whoever looks after it may be a vendor or one of our own teams: a named contact is asked by name, else no one is guessed.
+            _form.Title = product.ContactName is { Length: > 0 } contact ? $"Ask {contact} about {product.Name}" : $"Reach out about {product.Name}";
         }
     }
 

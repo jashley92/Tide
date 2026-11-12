@@ -133,7 +133,7 @@
     {
         var order = BoardOrder;
         <ActionKanban @ref="_kanban" Board="@ShownBoard" Today="ActionSvc.Today" Rules="_rules" MovedBy="_movedBy" OnChanged="Load" OnShowOlder="ShowOlder"
-                      Counts="@(_counts ?? ActionViewCounts.None)" ClosedDays="_closedDays" SelectedId="@SelectedCard?.Id" OnSelect="SelectCard" />
+                      Counts="@(_counts ?? ActionViewCounts.None)" ClosedDays="_closedDays" ClosedLink="ClosedLink" SelectedId="@SelectedCard?.Id" OnSelect="SelectCard" />
         @* The board's selected card, as the list's row: J/K and the up and down arrows move it card by card, lane after
            lane; left and right (on a card) to the next lane with cards; T takes it on; Enter opens it. *@
         <RowKeys RowClass="tide-kcard" Count="order.Count" Selected="CardIndex" SelectedChanged="SelectCardAt" OnOpen="OpenCard"
@@ -175,7 +175,7 @@ else
     {
         var canWork = _asBoard ? _board?.CanMove(row) == true : _workers.CanWork(row.TeamId);
         <ActionRowRail @ref="_rail" Row="row" CanWork="canWork" CanTake="row.TakeableBy(canWork)" Busy="@(_taking || _mover?.Busy == true)"
-                       OnTake="() => Take(row)" Moves="@(_asBoard && canWork ? RailMoves(row) : null)" OnBoard="_asBoard" />
+                       OnTake="() => Take(row)" Moves="@(_asBoard && canWork ? RailMoves(row) : null)" OnBoard="_asBoard" OnReopen="() => Reopen(row)" />
     }
     else
     {
@@ -209,6 +209,8 @@ else
     [SupplyParameterFromQuery(Name = "parent")] public string? ParentParam { get; set; }
     [SupplyParameterFromQuery(Name = "teams")] public string? TeamsParam { get; set; }
     [SupplyParameterFromQuery(Name = "raised")] public string? RaisedParam { get; set; }
+    [SupplyParameterFromQuery(Name = "closed")] public string? ClosedParam { get; set; }
+    [SupplyParameterFromQuery(Name = "on")] public string? OnParam { get; set; }
 
     /// <summary>The list's page, from 1 (text, so "?page=abc" is the first page, not a broken one).</summary>
     [SupplyParameterFromQuery(Name = DataTable<ActionRow>.PageParameter)] public string? PageParam { get; set; }
@@ -299,8 +301,13 @@ else
         (ActionView.Mine, "Mine"), (ActionView.MyTeams, "My teams"), (ActionView.Open, "All open"), (ActionView.Overdue, "Overdue"), (ActionView.Closed, "Recently closed"),
     ];
 
-    // The status filter's choices: the open columns (closed actions are the Recently closed view's).
+    // The status filter's choices: the open columns, and on Recently closed the ways of closing.
     private static readonly ActionStatus[] OpenStatuses = [.. ActionItem.StatusOrder.Where(s => !ActionItem.IsClosedStatus(s))];
+    private static readonly ActionStatus[] ClosedStatuses = [.. ActionItem.StatusOrder.Where(ActionItem.IsClosedStatus)];
+
+    // A status the shown view has, or none.
+    private ActionStatus? StatusIn(ActionStatus? status) =>
+        status is { } s && (_view == ActionView.Closed ? ClosedStatuses : OpenStatuses).Contains(s) ? s : null;
 
     private bool _loading = true, _groupByKind, _asBoard;
     private ActionBoard? _board;
@@ -338,6 +345,11 @@ else
     private ActionDue? _due;
     private ActionStatus? _status;
 
+    // Recently closed's reach in days (?closed=7, from the board's closed strip; none: its 90 days), and only the actions
+    // of the person's teams (?on=myteams, from My teams' strip).
+    private int? _closedWithin;
+    private bool _onMyTeams;
+
     // The parts of one action (?parent=12), and the team filtered to's active count against its limit, if it has one.
     private int? _parentNumber;
     private TeamActive? _active;
@@ -355,7 +367,7 @@ else
 
     // The filters besides the card rule and the bar's Team, Kind and Held by.
     private bool Narrowed => Words is not null || _priorities.Count > 0 || _due is not null || _status is not null || _parentNumber is not null
-        || _side is not null || _raised;
+        || _side is not null || _raised || _closedWithin is not null || _onMyTeams;
 
     // Every filter but the card rule, which the empty message counts only off the board. AnyFilter is these or the rule.
     private bool FilteredBesidesRule => Narrowed || _teamId is not null || _kind is not null || _assignee is not null;
@@ -421,11 +433,12 @@ else
     // What the address says: compared, so the page knows when a link has changed it. The team, rule and parent are read as
     // text and parsed here (FilterValues), so a value that isn't one ("?team=network") is ignored rather than failing the page.
     private sealed record Address(string? View, Guid? Team, string? Assignee, string? Layout, Guid? Rule, string? Group,
-        string? Q, string? Kind, string? Priority, string? Due, string? Status, string? Page, int? Parent = null, string? Teams = null, string? Raised = null);
+        string? Q, string? Kind, string? Priority, string? Due, string? Status, string? Page, int? Parent = null, string? Teams = null, string? Raised = null,
+        string? Closed = null, string? On = null);
 
     private Address FromAddress() =>
         new(ViewParam, FilterValues.Id(TeamParam), AssigneeParam, LayoutParam, FilterValues.Id(RuleParam), GroupParam, Q, KindParam, PriorityParam, DueParam, StatusParam, PageParam,
-            FilterValues.Number(ParentParam), TeamsParam, RaisedParam);
+            FilterValues.Number(ParentParam), TeamsParam, RaisedParam, ClosedParam, OnParam);
 
     // The address as last applied. The page stays open when a link changes only the query (the sidebar's Actions from
     // ?view=closed, a link to ?view=overdue, a pager link), so the address is read whenever it changes, not only when the
@@ -452,7 +465,10 @@ else
         _kind = EnumNames.OrNull<ActionKind>(KindParam, ignoreCase: true);
         _priorities = PrioritiesOf(FilterValues.Split(PriorityParam));
         _due = DueFrom(DueParam);
-        _status = EnumNames.OrNull<ActionStatus>(StatusParam, ignoreCase: true) is { } st && OpenStatuses.Contains(st) ? st : null;
+        _status = EnumNames.OrNull<ActionStatus>(StatusParam, ignoreCase: true);
+        _closedWithin = ReachFrom(ClosedParam);
+        _onMyTeams = string.Equals(OnParam, OnMine, StringComparison.OrdinalIgnoreCase);
+        FitFilters();
         _page = TableView.PageFrom(PageParam);
         _selected = RowSelection.From(RowParam);
         _parentNumber = query.Parent is > 0 ? query.Parent : null;
@@ -496,6 +512,7 @@ else
         (_view, _asBoard, _groupByKind, _ruleId, _teamId, _assignee) = (p._view, p._asBoard, p._groupByKind, p._ruleId, p._teamId, p._assignee);
         (_search, _kind, _priorities, _due, _status) = (p._search, p._kind, p._priorities, p._due, p._status);
         (_parentNumber, _active, _side, _raised, _holders) = (p._parentNumber, p._active, p._side, p._raised, p._holders);
+        (_closedWithin, _onMyTeams) = (p._closedWithin, p._onMyTeams);
         (_total, _page, _groups, _sort, _ruleCounts) = (p._total, p._page, p._groups, p._sort, p._ruleCounts);
         (_saved, _loading, _adopted, _counts, _workers) = (p._saved, false, true, p._counts, p._workers);
         (_selected, _groupsUnowned) = (p._selected, p._groupsUnowned);
@@ -510,7 +527,22 @@ else
     private static readonly IReadOnlyList<FilterOption> PriorityOptions = FilterOption.ForEnum<Priority>();
     private static readonly IReadOnlyList<FilterOption> DueOptions =
         [new(nameof(ActionDue.Overdue), "Overdue"), new(nameof(ActionDue.ThisWeek), "This week"), new(nameof(ActionDue.None), "No due date")];
-    private static readonly IReadOnlyList<FilterOption> StatusOptions = [.. OpenStatuses.Select(s => new FilterOption(s.ToString(), ActionService.StatusName(s)))];
+    private static readonly IReadOnlyList<FilterOption> OpenStatusOptions = StatusOptionsOf(OpenStatuses), ClosedStatusOptions = StatusOptionsOf(ClosedStatuses);
+
+    private static IReadOnlyList<FilterOption> StatusOptionsOf(IEnumerable<ActionStatus> statuses) =>
+        [.. statuses.Select(s => new FilterOption(s.ToString(), ActionService.StatusName(s)))];
+
+    // Recently closed's reach: the board strip's week and month (the list's own 90 days is no filter at all).
+    private static readonly IReadOnlyList<FilterOption> ReachOptions =
+        [.. new[] { ActionService.BoardClosedDays, ActionService.BoardOlderDays }.Select(d => new FilterOption(Invariant(d), $"Last {d} days"))];
+
+    // A reach from the address: a whole number of days within the list's 90, or none.
+    private static int? ReachFrom(string? text) => FilterValues.Number(text) is >= 1 and <= ActionService.ClosedListDays and var days ? days : null;
+
+    private static string Invariant(int n) => n.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    // on=myteams: the only value the Your teams filter takes.
+    private const string OnMine = "myteams";
     private IReadOnlyList<FilterOption> _teamOptions = [];
 
     private static IReadOnlyList<FilterOption> TeamOptions(IEnumerable<Team> teams) => [.. teams.Select(t => new FilterOption(t.Id.ToString(), t.Name))];
@@ -586,11 +618,23 @@ else
                 new("kind", "Kind", FilterKind.Single, v => _kind = FilterValues.Enum<ActionKind>(v)) { Options = KindOptions, Values = FilterValues.Of(_kind?.ToString()), Section = "What" },
                 new("priority", "Priority", FilterKind.Multi, v => _priorities = PrioritiesOf(v)) { Options = PriorityOptions, Values = [.. _priorities.Select(p => p.ToString())], Section = "What" },
                 new("due", "Due", FilterKind.Single, v => _due = FilterValues.Enum<ActionDue>(v)) { Options = DueOptions, Values = FilterValues.Of(_due?.ToString()), Section = "When" },
-                new("status", "Status", FilterKind.Single, v => _status = FilterValues.Enum<ActionStatus>(v) is { } st && OpenStatuses.Contains(st) ? st : null)
+                new("status", "Status", FilterKind.Single, v => _status = StatusIn(FilterValues.Enum<ActionStatus>(v)))
                 {
-                    Options = StatusOptions, Values = FilterValues.Of(_status?.ToString()), Section = "What",
+                    Options = _view == ActionView.Closed ? ClosedStatusOptions : OpenStatusOptions, Values = FilterValues.Of(_status?.ToString()), Section = "What",
                 },
             };
+            // Recently closed's own: how far back, and only the person's teams' (the board's closed chips link to both).
+            if (_view == ActionView.Closed)
+                defs.Add(new("closed", "Closed in", FilterKind.Single, v => _closedWithin = ReachFrom(FilterValues.First(v)))
+                {
+                    Options = ReachOptions, Values = _closedWithin is { } within ? [Invariant(within)] : [], Section = "When",
+                    ChipText = _closedWithin is { } days ? $"Closed in the last {days} days" : null,
+                });
+            if (_view == ActionView.Closed || _onMyTeams)
+                defs.Add(new("on", "Your teams", FilterKind.Single, v => _onMyTeams = FilterValues.First(v) == OnMine)
+                {
+                    Options = [new(OnMine, "Only your teams'")], Values = _onMyTeams ? [OnMine] : [], ChipText = _onMyTeams ? "On your teams" : null, Section = "Where",
+                });
             // An administrator's card rules shown as filters, each with how many it matches (counted as the list or board is read).
             var rules = _rules.Where(r => r.ShowAsFilter).ToList();
             if (rules.Count > 0)
@@ -613,6 +657,7 @@ else
     internal Task ClearFilters()
     {
         (_search, _teamId, _kind, _assignee, _due, _status, _ruleId, _parentNumber, _side, _raised) = (null, null, null, null, null, null, null, null, null, false);
+        (_closedWithin, _onMyTeams) = (null, false);
         _priorities = [];
         return Refilter();
     }
@@ -650,6 +695,7 @@ else
     {
         _view = view;
         if (view == ActionView.Mine) _assignee = null;   // Mine is held by you: another holder would show nothing
+        FitFilters();
         (_page, _selected, _cardId, _cardAt, _addressedCard) = (1, 0, null, 0, null);
         _sort = DefaultSort(view);
         Remember();
@@ -709,6 +755,14 @@ else
         else if (say) Toasts.Show("The board shows open actions: Recently closed is on the list.");
         _view = ActionView.Open;
         _sort = DefaultSort(_view);
+        FitFilters();
+    }
+
+    // Another view keeps the filters it has: a status only if it's one of its own, and the reach only on Recently closed.
+    private void FitFilters()
+    {
+        _status = StatusIn(_status);
+        if (_view != ActionView.Closed) _closedWithin = null;
     }
 
     // The address of what's shown: every filter, and the page when it isn't the first. Recorded first, so writing it
@@ -717,7 +771,7 @@ else
     {
         var shown = ShownParameters();
         _applied = new Address(Text("view"), _teamId, _assignee, Text("layout"), _ruleId, Text("group"), Words, Text("kind"), Text("priority"), Text("due"),
-            Text("status"), Text("page"), _parentNumber, Text("teams"), Text("raised"));
+            Text("status"), Text("page"), _parentNumber, Text("teams"), Text("raised"), Text("closed"), Text("on"));
         Nav.NavigateTo(Nav.GetUriWithQueryParameters("actions", shown), replace: true);
 
         string? Text(string name) => (string?)shown[name];
@@ -731,13 +785,14 @@ else
         var view = _view.ToString().ToLowerInvariant();
         var group = !_asBoard && _groupByKind ? "kind" : null;
         var (kind, priority, status) = (_kind?.ToString().ToLowerInvariant(), FilterValues.Join(_priorities.Select(p => p.ToString().ToLowerInvariant())), _status?.ToString().ToLowerInvariant());
-        var page = !_asBoard && _page > 1 ? _page.ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
+        var page = !_asBoard && _page > 1 ? Invariant(_page) : null;
         var (teams, raised) = (_side?.ToString().ToLowerInvariant(), _raised ? Me : null);
+        var (closed, on) = (_closedWithin is { } within ? Invariant(within) : null, _onMyTeams ? OnMine : null);
         return new()
         {
             ["view"] = view, ["layout"] = layout, ["group"] = group, ["rule"] = _ruleId, ["team"] = _teamId, ["assignee"] = _assignee,
             ["q"] = Words, ["kind"] = kind, ["priority"] = priority, ["due"] = DueKey(_due), ["status"] = status, ["page"] = page, ["parent"] = _parentNumber,
-            ["teams"] = teams, ["raised"] = raised,
+            ["teams"] = teams, ["raised"] = raised, ["closed"] = closed, ["on"] = on,
         };
     }
 
@@ -1040,6 +1095,24 @@ else
     // After a move from the list, or one refused as stale: the list is read again in place.
     private Task ReadAgain() => Read(quiet: true);
 
+    /// <summary>The rail's Reopen on a closed row: back to Open, moved as the Status menu moves it (ActionMover).</summary>
+    internal Task Reopen(ActionRow row) => MoveRow(row, ActionStatus.Open);
+
+    /// <summary>
+    /// A closed chip's link under the board: Recently closed on the list, at that status and the strip's reach, with the
+    /// board's filters. The strip counts Mine's closed actions as the person's and My teams' as their teams', so the list
+    /// is held by them, or on their teams.
+    /// </summary>
+    internal string ClosedLink(ActionStatus status)
+    {
+        var shown = ShownParameters();
+        (shown["view"], shown["layout"], shown["group"], shown["page"]) = (ActionView.Closed.ToString().ToLowerInvariant(), UserPreferences.List, null, null);
+        (shown["status"], shown["closed"]) = (status.ToString().ToLowerInvariant(), Invariant(_closedDays));
+        if (_view == ActionView.Mine) shown["assignee"] = Me_;
+        if (_view == ActionView.MyTeams) shown["on"] = OnMine;
+        return "actions?" + (QueryOf(shown) ?? $"view=closed&layout=list&status={shown["status"]}&closed={shown["closed"]}");
+    }
+
     // --- Counts, No owner and Take it ---------------------------------------------------------------------------------
 
     // How many each tab shows (read with the list or board), and which teams' actions this person works (the list's Take it).
@@ -1147,6 +1220,7 @@ else
     private ActionFilter Filter() => new ActionFilter(_view, _teamId, _kind, AssigneeId: _assignee)
     {
         Search = Words, Priorities = _priorities, Due = _due, Status = _status, ParentNumber = _parentNumber, Teams = _side, RaisedByMe = _raised,
+        ClosedDays = _closedWithin, OnMyTeams = _onMyTeams,
     };
 
     private ActionSort SortOf(TableSort? sort) => sort?.Key switch

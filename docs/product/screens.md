@@ -326,8 +326,9 @@ that fits its kind.
   choice on any computer. A link that names a layout opens that one. It opens on Mine until someone picks *Open here
   by default* on My teams or All open; a default that would always be empty for them (My teams for someone on no
   team) opens All open instead. On the board, a card is dragged to another
-  column, or moved from its Move menu by keyboard. Its columns are Open, In progress, Blocked, Tracking, Done, Cancelled
-  and Not applicable.
+  column, or moved from its Move menu by keyboard. Its columns are Open, In progress, Blocked and Tracking; under them a
+  strip counts what closed as Done, Cancelled and Not applicable. A card dropped on one of those closes that way, and a
+  click on one opens those actions on the list's Recently closed tab, with the board's filters.
 - **Filters.** One bar serves the list and the board: the search box (title, A-number or the article's title), then
   the pills **Overdue**, **Due this week**, **P1–P2**, **Blocked**, **Tracking** and **Raised by me**. Overdue and Due this
   week take turns, as do Blocked and Tracking (each pair is one filter). **+ Filter** holds team, held by (you, nobody,
@@ -341,7 +342,7 @@ that fits its kind.
   renames, moves or deletes it. They're each person's own, up to 12, on any computer.
 - **Long lists.** The list shows 50 actions a page, with numbered pages and the page in the address; group headings
   count every action in the group, not only this page's. Each board column shows its first 20 cards, then *Show N
-  more*. The closed columns show the last 7 days; *Show older*, under Done, takes them back 30 days.
+  more*. The closed strip counts the last 7 days; *Show the last 30 days* takes it back 30.
 - **Raising.** Raise one from an article, from the board, or in the meeting without leaving the slide.
 - **An action's page.** Its title and one line of badges (status, priority, due date, Escalated), then its team, who
   has it and who handed it over. One button does the thing that comes next, chosen by where the action stands: *Write
@@ -434,7 +435,9 @@ that fits its kind.
 
 ### Keeping track
 
-- **Lists.** Views by me, my teams, all open, overdue and recently closed.
+- **Lists.** Views by me, my teams, all open, overdue and recently closed. On the board, each chip under the lanes
+  (Done, Cancelled, Not applicable, closed in the last 7 or 30 days) opens those actions on Recently closed, and a
+  closed action's side panel there has **Reopen**, for whoever may move it.
 - **Reminders.** Reminder emails for due soon and overdue, a weekly team digest, and an outreach follow-up. Each is
   off until enabled.
 - **Personal choices.** Each person turns off the emails they don't want on [My notifications](#my-notifications).

@@ -296,6 +296,15 @@ public class StackRailTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task StartAnOutreach_WithNoContact_NamesNoVendor_ForTheOwnerMayBeOneOfOurOwnTeams()
+    {
+        var name = Name("no-contact");
+        var id = await As(sp => sp.GetRequiredService<StackService>().SaveAsync(new StackForm { Name = name, Versions = "1.0" }));
+        await using var r = await RenderAsync<ActionPage>(app, $"/actions/new?product={id}");
+        r.Component.NewForm.Title.Should().Be($"Reach out about {name}", "who to ask may be a vendor or a team of our own");
+    }
+
+    [Fact]
     public async Task InTriageNow_IsOnlyForThoseWhoTriage()
     {
         var name = Name("triage");

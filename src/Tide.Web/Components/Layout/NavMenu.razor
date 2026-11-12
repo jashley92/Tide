@@ -57,7 +57,8 @@
         await LoadCountsAsync();
     }
 
-    // Brings the collapse button's aria-expanded in step: this render replaced the prerendered one theme.js had set.
+    // Brings the collapse button's aria-expanded in step and the current page's link into the menu's view: this render
+    // replaced the prerendered one theme.js had set.
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
@@ -93,6 +94,9 @@
     {
         await LoadCountsAsync();
         StateHasChanged();
+        // The new page's link, scrolled into the menu's view where the menu scrolls (the render goes first, in order).
+        try { await JS.InvokeVoidAsync("tideNav.reveal"); }
+        catch (JSDisconnectedException) { /* the circuit has gone */ }
     });
 
     /// <summary>A link's name with its count, as a screen reader hears it ("Triage, 4 new"); the plain name at zero.</summary>
