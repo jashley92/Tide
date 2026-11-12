@@ -130,11 +130,17 @@ jobs:
         if: always()
         run: dotnet list package --deprecated 2>&1 | tee deprecated.log || true
 
-  # Layout rules in Chromium on the seeded demo (tools/screenshots/layout.mjs, README.md there).
-  layout:
+  # Layout rules in Chromium on the seeded demo (tools/screenshots/layout.mjs, README.md there), in four slices side by
+  # side, each on its own fresh demo; the layout job below passes when all four do.
+  layout-shard:
+    name: layout (${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -168,10 +174,22 @@ jobs:
 
       - name: Layout holds
         run: node tools/screenshots/layout.mjs
+        env:
+          SHARD: ${{ matrix.shard }}/4
 
       - name: TIDE's log (on failure)
         if: failure()
         run: tail -n 200 tools/screenshots/.demo/tide.log || true
+
+  # The one check the branch rules name: every slice above held.
+  layout:
+    needs: layout-shard
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Every slice held
+        run: test "${{ needs.layout-shard.result }}" = success
 
   # The production migrations, applied to a real SQL Server 2022 and applied again (a no-op), and the tests marked to run
   # on SQL Server: the SQLite run above can't catch SQL Server-only failures (index sizes, cascade paths, type mappings,
