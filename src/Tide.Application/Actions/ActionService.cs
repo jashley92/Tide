@@ -809,10 +809,9 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             var words = filter.Search.Trim();
             var like = Search.SearchText.Contains(words);
             var number = Search.SearchText.ActionNumber(words) ?? -1;
-            q = user.Has(Permission.ReadTeamEdition)
-                ? q.Where(a => a.Number == number || EF.Functions.Like(a.Title, like, Search.SearchText.Escape)
-                               || (a.Article != null && EF.Functions.Like(a.Article.Title, like, Search.SearchText.Escape)))
-                : q.Where(a => a.Number == number || EF.Functions.Like(a.Title, like, Search.SearchText.Escape));
+            var titles = user.Has(Permission.ReadTeamEdition);
+            q = q.Where(a => a.Number == number || EF.Functions.Like(a.Title, like, Search.SearchText.Escape)
+                             || (titles && a.Article != null && EF.Functions.Like(a.Article.Title, like, Search.SearchText.Escape)));
         }
         if (filter.Priorities is { Count: > 0 } priorities)
         {
@@ -1792,8 +1791,6 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         _ => Enum.GetValues<ActionOutcome>().Where(o => o != ActionOutcome.None).ToList(),
     };
 
-    // A note on the history line (a hunt's result, closing it in the same step) goes before the status change. Returns the
-    // line, for a caller with more to say after it (that it went over its team's limit, and why).
     // Moves it to another status, dated by the app's clock (the entity's own stamp is the wall clock's); the one it has
     // changes nothing.
     private void MoveTo(ActionItem a, ActionStatus to)
@@ -1803,6 +1800,8 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         a.StatusChangedAtUtc = clock.Now.ToUniversalTime();
     }
 
+    // A note on the history line (a hunt's result, closing it in the same step) goes before the status change. Returns the
+    // line, for a caller with more to say after it (that it went over its team's limit, and why).
     internal ActionEvent ApplyStatus(IAppDbContext db, ActionItem a, ActionStatus status, ActionOutcome outcome, string? note, string? lead = null)
     {
         if (status == ActionStatus.Done && outcome == ActionOutcome.None) throw new ArgumentException("Say what came of it: choose an outcome.");

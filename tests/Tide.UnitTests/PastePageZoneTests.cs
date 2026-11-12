@@ -11,13 +11,6 @@ namespace Tide.UnitTests;
 /// </summary>
 public class PastePageZoneTests
 {
-    private static string Root()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Tide.sln"))) return dir.FullName;
-        throw new InvalidOperationException("Couldn't find the repo root (Tide.sln).");
-    }
-
     private const string Page = """
         const vm = require('vm'), fs = require('fs');
         function el(id, tag, parent, attrs) {
@@ -67,7 +60,7 @@ public class PastePageZoneTests
         await File.WriteAllTextAsync(script, Page);
         try
         {
-            var psi = new ProcessStartInfo("node", [script, Path.Combine(Root(), "src", "Tide.Web", "wwwroot", "js", "paste-drop.js")])
+            var psi = new ProcessStartInfo("node", [script, Path.Combine(DeployScriptTests.RepoRoot(), "src", "Tide.Web", "wwwroot", "js", "paste-drop.js")])
             {
                 RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
             };

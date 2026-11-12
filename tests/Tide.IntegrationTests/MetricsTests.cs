@@ -46,6 +46,22 @@ public class MetricsServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveNumber_SetsTheValue_AndLeavesTheNoteAsItIs()
+    {
+        var id = await Metric();
+        var svc = _db.Metrics();
+        await svc.SaveValueAsync(id, Mon, 7, "relay outage, partial count");
+
+        await svc.SaveNumberAsync(id, Mon, 9);
+        await svc.SaveNumberAsync(id, Fri, 4);
+
+        var monday = (await svc.GetDayAsync(Mon)).Groups.Single().Tiles.Single();
+        monday.Value.Should().Be(9);
+        monday.Note.Should().Be("relay outage, partial count");
+        (await svc.GetDayAsync(Fri)).Groups.Single().Tiles.Single().Note.Should().BeNull("a first number has no note");
+    }
+
+    [Fact]
     public async Task GetDay_ComparesMondayWithFriday_ColoursByDirection_AndAppliesThresholds()
     {
         var id = await Metric();

@@ -12,13 +12,6 @@ namespace Tide.UnitTests;
 /// </summary>
 public class PresentRailKeysTests
 {
-    private static string Root()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Tide.sln"))) return dir.FullName;
-        throw new InvalidOperationException("Couldn't find the repo root (Tide.sln).");
-    }
-
     private const string Page = """
         const vm = require('vm'), fs = require('fs');
         const open = new Set(['#present-rail[aria-modal="true"]']);
@@ -63,7 +56,7 @@ public class PresentRailKeysTests
         await File.WriteAllTextAsync(script, Page);
         try
         {
-            var psi = new ProcessStartInfo("node", [script, Path.Combine(Root(), "src", "Tide.Web", "wwwroot", "js", "present.js")])
+            var psi = new ProcessStartInfo("node", [script, Path.Combine(DeployScriptTests.RepoRoot(), "src", "Tide.Web", "wwwroot", "js", "present.js")])
             {
                 RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
             };

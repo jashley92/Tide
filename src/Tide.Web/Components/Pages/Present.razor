@@ -760,7 +760,7 @@ else
                             <div class="tide-slide-presenter">
                                 @if (_noteEditing)
                                 {
-                                    <ChangedElsewhere By="@_noteChangedBy" What="team's opening note" Consequence="Saving now would be refused." OnReload="ReloadOpeningNote" />
+                                    <ChangedElsewhere By="@_noteChangedBy" What="team's opening note" Consequence="Saving now would be refused." OnReload="EditOpeningNote" />
                                     <label class="visually-hidden" for="slide-note-text">Opening note</label>
                                     <textarea id="slide-note-text" class="form-control" rows="3" maxlength="@BriefService.TeamNoteMax" @ref="_noteBox"
                                               aria-describedby="slide-note-hint" @bind="_noteDraft" @bind:event="oninput" @onkeydown="NoteBoxKey"></textarea>
@@ -2492,9 +2492,6 @@ else
     /// <summary>Cancel (or Escape in the box): the note as saved, and focus back on Edit.</summary>
     internal void CancelOpeningNote() => (_noteEditing, _noteChangedBy, _slideFocus) = (false, null, SlideFocus.NoteEdit);
 
-    /// <summary>Reload, after a colleague saved the note: theirs in the box, to edit from.</summary>
-    internal void ReloadOpeningNote() => EditOpeningNote();
-
     // A brief heard to have changed while the note is open: who saved it, if it was the note; else the edit carries on.
     private void NoteHeard(Brief brief, IReadOnlyList<Change> changes)
     {
@@ -2603,9 +2600,8 @@ else
             _numberErrors[metricId] = string.IsNullOrWhiteSpace(text) ? "Type the number first." : "That isn't a number TIDE can keep.";
             return;
         }
-        // The tile's note as saved now, so a colleague's note added a moment ago isn't wiped by the number.
-        var note = (await MetricsSvc.GetDayAsync(_date)).Groups.SelectMany(g => g.Tiles).FirstOrDefault(t => t.Metric.Id == metricId)?.Note;
-        await MetricsSvc.SaveValueAsync(metricId, _date, value, note);
+        // The number only: a colleague's note added a moment ago isn't wiped by it.
+        await MetricsSvc.SaveNumberAsync(metricId, _date, value);
         _numberDrafts.Remove(metricId);
         _numberErrors.Remove(metricId);
         // The group may fold away (its last number entered as 0): this page stays where its slide's line now is, with the room.

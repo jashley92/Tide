@@ -289,7 +289,7 @@ public class PresentRailTests(TideApp app) : IClassFixture<TideApp>
             (await scope.ServiceProvider.GetRequiredService<BriefService>().GetAsync(day))!.TeamNote.Should().Be("Robin's newer note.", "the save is refused");
 
         // Reload: theirs in the box, and saving from it goes through.
-        await Do(pat, p => p.ReloadOpeningNote());
+        await Do(pat, p => p.EditOpeningNote());
         RailOf(await pat.Html()).Should().Contain("Robin&#x27;s newer note.</textarea>").And.NotContain("while you were editing");
         await Do(pat, p => p.SaveOpeningNote("Robin's newer note, and one more line."));
         await using (var scope = SignedIn(app, SignIn.Analyst))
