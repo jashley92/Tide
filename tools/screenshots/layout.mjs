@@ -1267,6 +1267,45 @@ async function colleagueTakesFocusedRow(page) {
   }
 }
 
+/**
+ * Setup: the first team's active limit set to 1, warning and asking why (Teams & SLA); then on the first article's slide
+ * of today's meeting, the presenter's rail opened over it by its key, a title typed in its quick add for that team, Add
+ * pressed, and the question that asks why cancelled with Escape. The limit is left in place: last of the pages.
+ */
+async function overLimitCancelled(page, demo) {
+  const to = route => new URL(route, page.url()).href;
+  await page.goto(to('/admin/teams'), { waitUntil: 'load' });
+  await settle(page);
+  const card = page.locator('.tide-card').filter({ has: page.getByRole('button', { name: 'Edit', exact: true }) }).first();
+  const team = (await card.locator('.tide-card-title').innerText()).trim();
+  await card.getByRole('button', { name: 'Edit', exact: true }).click();
+  await idle(page);
+  const form = page.locator('.tide-card').filter({ has: page.getByLabel('Active limit') });   // one team's at a time
+  await form.getByLabel('Active limit').fill('1');
+  await form.getByLabel('Active limit').press('Tab');
+  await form.getByLabel('At the limit').selectOption({ label: 'Warn, and ask why' });
+  await idle(page);
+  await form.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByText('Limit: 1 active, warn, and ask why').waitFor();
+  await page.goto(to(`/present/${demo.Today}`), { waitUntil: 'load' });
+  await settle(page);
+  await page.keyboard.press('Escape');   // an action the last page left open for the room
+  await idle(page);
+  await toArticleSlide(page);
+  await page.keyboard.press(']');
+  const rail = page.locator('#present-rail');
+  await rail.waitFor();
+  await rail.locator('.tide-quick-add select[aria-label="Team"]').selectOption({ label: team });
+  await rail.getByRole('textbox', { name: 'New action title' }).fill('Over the limit, then cancelled');
+  await idle(page);
+  await rail.locator('.tide-quick-add').getByRole('button', { name: 'Add', exact: true }).click();
+  await page.locator('.tide-modal').waitFor();
+  await idle(page);
+  await page.keyboard.press('Escape');
+  await page.locator('.tide-modal').waitFor({ state: 'detached' });
+  await idle(page);
+}
+
 /** Setup: V pressed `times`, a moment apart (each read or close reaching the page before the next). */
 const pressV = times => async page => {
   for (let i = 0; i < times; i++) {
@@ -4058,11 +4097,11 @@ const pages = [
   { name: 'present-rail-number-enter', route: '/present/{today}', setup: missingNumberEntered, widths: [1920, 1440],
     rules: [focusOn('#present-rail input[inputmode="decimal"]')] },
   // Still current, and a number entered with Enter, in the rail open over the slide (modal, the slide inert): the flag
-  // goes and focus stays in the rail, on the note's Edit, or on the rail once no number is left. After the strips'
+  // goes and focus stays in the rail, on the note's Edit, or on the rail's close button once no number is left. After the strips'
   // other pages, as they change the demo's day (the note is kept, the number entered), and before the pages that change
   // the note or the numbers themselves.
   { name: 'slide-note-kept-focus', route: '/present/{today}', setup: noteStrip('keep'), widths: [1440], rules: [hidden('.tide-slide-presenter-flag'), focusOn('#present-rail .tide-slide-presenter button')] },
-  { name: 'slide-number-saved', route: '/present/{today}', setup: numberEntered('7'), widths: [1440], rules: [hidden('.tide-slide-presenter'), focusOn('#present-rail')] },
+  { name: 'slide-number-saved', route: '/present/{today}', setup: numberEntered('7'), widths: [1440], rules: [hidden('.tide-slide-presenter'), focusOn('#present-rail .tide-present-rail-head button')] },
   // The wrap-up, the presenter's (no meeting): three lists, with the rail beside them where it's docked.
   { name: 'slide-wrap-presenter', route: '/present/{today}', setup: wrapUp('presenter'), widths: [1920, [1920, 480], 1440, [1440, 420], 1100, 780],
     rules: [...wrapUpRules, visible('.tide-wrap-list[data-wrap="owners"] .tide-wrap-item li')] },
@@ -4159,6 +4198,10 @@ const pages = [
       oneLine(`${BESIDE} .tide-present-action-head .tide-present-help`), notSqueezed(`${BESIDE} .tide-present-action-head .btn`), slideFits, widerThan('#present-root > .tide-slide', 559)] },
   { name: 'present-beside-narrow', route: '/present/{today}', setup: actionBeside('presenter'), widths: [1100, 780],
     rules: [noSidewaysScroll, actionOver, slideFits] },
+  // The rail's Add over a team's limit, the question that asks why cancelled: focus is back on Add, not on the page.
+  // Last of all: it leaves the first team at its limit, which would ask on every later page that adds to it.
+  { name: 'present-rail-over-limit-cancel', route: '/present/{today}', setup: overLimitCancelled, widths: [1440],
+    rules: [hidden('.tide-modal'), focusOn('#present-rail .tide-quick-add .btn-primary')] },
 ];
 
 // --- the run -----------------------------------------------------------------------------------------------------------

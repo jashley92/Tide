@@ -192,11 +192,39 @@ public class PaletteEntryTests
     [InlineData("articles/5b0f6c1e-0000-0000-0000-000000000001", "Article")]
     [InlineData("trends", "Charts")]
     [InlineData("metrics", "Charts")]
+    [InlineData("adversaries", "Adversaries")]
+    [InlineData("adversaries/5b0f6c1e-0000-0000-0000-000000000001?q=lynx", "Adversaries")]
     public void Shortcuts_StartWithThePagesOwn(string path, string first)
     {
         var groups = Shortcuts.For(path);
         groups[0].Title.Should().Be(first);
         groups.Should().EndWith([Shortcuts.Everywhere, Shortcuts.Palette]);
+    }
+
+    [Fact]
+    public void TheAdversariesShortcuts_AreTheSharedRowKeys()
+    {
+        var keys = Shortcuts.For("adversaries")[0].Keys;
+        keys.Where(k => k.Letter).SelectMany(k => k.Keys).Should().Equal("J", "K");
+        keys.Where(k => !k.Letter).SelectMany(k => k.Keys).Should().Equal("↓", "↑", "Enter");
+    }
+
+    [Fact]
+    public void ThePresentShortcuts_ListEveryKeyPresentJsHandles()
+    {
+        var dir = AppContext.BaseDirectory;
+        while (!File.Exists(Path.Combine(dir, "Tide.sln"))) dir = Path.GetDirectoryName(dir)!;
+        var js = File.ReadAllText(Path.Combine(dir, "src", "Tide.Web", "wwwroot", "js", "present.js"));
+        var map = js[(js.IndexOf("const keys = {", StringComparison.Ordinal) + 14)..];
+        map = map[..map.IndexOf('}', StringComparison.Ordinal)];
+        var named = new Dictionary<string, string> { ["ArrowRight"] = "→", ["ArrowLeft"] = "←", ["Escape"] = "Esc" };
+        var handled = System.Text.RegularExpressions.Regex.Matches(map, @"'?([^\s,:']+)'?\s*:").Select(m => m.Groups[1].Value)
+            .Select(k => named.GetValueOrDefault(k, k.Length == 1 ? k.ToUpperInvariant() : k)).Distinct().ToList();
+        handled.Should().Contain(["→", "Enter", "←", "Backspace", "Home", "End", "F", "D", "]", "Esc"]);
+
+        var present = Shortcuts.For("present/2026-10-29")[0].Keys;
+        present.SelectMany(k => k.Keys).Should().Contain(handled);
+        present.Single(k => k.Keys.Contains("]")).Letter.Should().BeTrue("the single-key switch turns it off");
     }
 
     [Theory]

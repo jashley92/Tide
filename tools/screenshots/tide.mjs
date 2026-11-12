@@ -186,6 +186,10 @@ async function serverActivity(origin) {
 export async function startTide(settings = []) {
   if (process.env.BASE_URL) return null;
   const base = baseUrl();
+  // A TIDE left running on the port from an earlier run would answer in place of this one, with its own day's demo.
+  if (await fetch(`${base}/health/live`).then(r => r.ok, () => false)) {
+    throw new Error(`Something already answers on ${base}. Stop it (a TIDE left from an earlier run?), or name it with BASE_URL.`);
+  }
   if (!process.env.REUSE) rmSync(demoDir, { recursive: true, force: true });
   mkdirSync(demoDir, { recursive: true });
   // NO_BUILD=1 starts the last build, for runs side by side that one build served.

@@ -45,8 +45,9 @@ public static class DemoSeeder
 
         await using (var db = await dbs.CreateAsync(ct))
         {
-            if (await db.Settings.AnyAsync(s => s.Key == MarkerKey, ct))
+            if (await db.Settings.FirstOrDefaultAsync(s => s.Key == MarkerKey, ct) is { } marker)
             {
+                NotStale(marker.Value, clock.CurrentBriefDate);
                 log.LogInformation("Demo data is already in this database; not seeded again.");
                 return;
             }
@@ -77,6 +78,23 @@ public static class DemoSeeder
             accessor.HttpContext = null;
         }
     }
+
+    /// <summary>
+    /// A demo database is seeded for a day (the marker's value; "1" from before it said): its today's brief, the numbers
+    /// left to enter and the day before's sent brief are that day's. Started on a later day (a reused database), today's
+    /// brief isn't there, and the one it calls today may have been presented or sent since, so the tools would check a day
+    /// that's gone. It's refused, saying so.
+    /// </summary>
+    internal static void NotStale(string seededFor, DateOnly today)
+    {
+        if (!DateOnly.TryParseExact(seededFor, IsoDay, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var day) || day == today) return;
+        throw new InvalidOperationException(
+            $"This demo database was seeded for {seededFor}, and today's brief is {Iso(today)}: its pages would show a day that's gone. Start on a fresh one (without REUSE).");
+    }
+
+    private const string IsoDay = "yyyy-MM-dd";
+
+    private static string Iso(DateOnly day) => day.ToString(IsoDay, System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>
     /// <c>Demo:TriageFiller</c> (none unless set): that many more new items, "Filler k001" onwards, older than the demo's
@@ -218,10 +236,24 @@ public static class DemoSeeder
             await TokensAsync(ct);
             await SendAsync(sent, ct);
 
-            db.Settings.Add(new AppSetting { Key = MarkerKey, Value = "1", UpdatedAtUtc = DateTimeOffset.UtcNow, UpdatedBy = "system" });
+            db.Settings.Add(new AppSetting { Key = MarkerKey, Value = Iso(_today), UpdatedAtUtc = DateTimeOffset.UtcNow, UpdatedBy = "system" });
             await db.SaveChangesAsync(ct);
-            return new Seeded(_today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), Sent.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), 1, detail, vpn.Id.ToString(), sent[0].Id.ToString(),
+            await CreatedWhenRaisedAsync(db, ct);
+            return new Seeded(Iso(_today), Iso(Sent), 1, detail, vpn.Id.ToString(), sent[0].Id.ToString(),
                 edgeVpn.Id.ToString(), Follower, adversaries[0].Id.ToString());
+        }
+
+        // A seeded action is made now with its past written in (saving it dates it now): it was created when that past
+        // starts, at the meeting of the day it was raised on or its first line of history, whichever is earlier. Written
+        // straight to the row: the save would date it now again.
+        private async Task CreatedWhenRaisedAsync(IAppDbContext db, CancellationToken ct)
+        {
+            foreach (var a in db.Actions.Local.ToList())
+            {
+                var at = new[] { a.StatusChangedAtUtc, a.RaisedOn is { } day ? clock.MeetingStart(day).ToUniversalTime() : null }
+                    .Concat(a.Events.Select(e => (DateTimeOffset?)e.AtUtc)).OfType<DateTimeOffset>().DefaultIfEmpty(a.CreatedAtUtc).Min();
+                if (at < a.CreatedAtUtc) await db.Actions.Where(x => x.Id == a.Id).ExecuteUpdateAsync(u => u.SetProperty(x => x.CreatedAtUtc, at), ct);
+            }
         }
 
         // --- reference data ----------------------------------------------------------------------------------------
@@ -515,20 +547,22 @@ public static class DemoSeeder
             var robin = Analysts[0];
             var sam = Analysts[1];
             var me = (dev.UserId, dev.DisplayName);
-            var raised = DateTimeOffset.UtcNow.AddHours(-20);
+            // Raised at the sent brief's meeting, as the day it was raised on says; started on this morning, before its
+            // checklist's first box was ticked.
+            var started = DateTimeOffset.UtcNow.AddHours(-4);
             var detail = Add("Block the remote monitoring relay and alert on unapproved agents", ActionKind.Block, Priority.P2, "cyber-defense", rmm, robin,
                 Bd(1), ActionStatus.InProgress,
                 "Block **rmm-relay.example.org** at the proxy and add a detection for remote monitoring agents other than the two we approve.",
-                movedAt: raised.AddHours(17));
+                movedAt: started);
             detail.Checklist.AddRange([
                 new ActionChecklistItem { SortOrder = 0, Text = "Block the relay domain at the proxy", IsDone = true, DoneByName = robin.Name, DoneAtUtc = DateTimeOffset.UtcNow.AddHours(-3) },
                 new ActionChecklistItem { SortOrder = 1, Text = "Add the detection rule for unapproved agents" },
                 new ActionChecklistItem { SortOrder = 2, Text = "Confirm no hits in the last 30 days of proxy logs" },
             ]);
             detail.Events.AddRange([
-                new ActionEvent { AtUtc = raised, ByName = robin.Name, Text = "Raised from the brief." },
-                new ActionEvent { AtUtc = raised.AddMinutes(5), ByName = robin.Name, Text = "Took the action." },
-                new ActionEvent { AtUtc = raised.AddHours(17), ByName = robin.Name, Text = "Status: Open → In progress." },
+                new ActionEvent { AtUtc = meeting, ByName = robin.Name, Text = "Raised from the brief." },
+                new ActionEvent { AtUtc = meeting.AddMinutes(5), ByName = robin.Name, Text = "Took the action." },
+                new ActionEvent { AtUtc = started, ByName = robin.Name, Text = "Status: Open → In progress." },
             ]);
             detail.Comments.Add(new ActionComment
             {

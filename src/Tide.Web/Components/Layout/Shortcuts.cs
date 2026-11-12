@@ -54,6 +54,9 @@ public static class Shortcuts
             case "stack" when segments.Length == 1:
                 groups.Add(Stack);
                 break;
+            case "adversaries":
+                groups.Add(Adversaries);
+                break;
             // A tab that lists entries (the first, when the address names none).
             case LibraryTabs.Root when LibraryTabs.All.FirstOrDefault(t => segments.Length == 1 || t.Key.Equals(segments[1], StringComparison.OrdinalIgnoreCase)) is { Topic: not null }:
                 groups.Add(Library);
@@ -114,6 +117,7 @@ public static class Shortcuts
         new(["Home", "End"], "First and last slide"),
         new(["D"], "Mark the article discussed, or not", Letter: true),
         new(["F"], "Full screen, or leave it", Letter: true),
+        new(["]"], "Presenting: show or hide the presenter's controls", Letter: true),
         new(["Esc"], "Leave full screen, then close a zoomed screenshot"),
     ]);
 
@@ -123,6 +127,14 @@ public static class Shortcuts
         new(["J"], "Next product", Letter: true),
         new(["K"], "Previous product", Letter: true),
         new(["Enter"], "Open the selected product"),
+    ]);
+
+    private static readonly ShortcutGroup Adversaries = new("Adversaries",
+    [
+        new(["↓", "↑"], "Next and previous profile"),
+        new(["J"], "Next profile", Letter: true),
+        new(["K"], "Previous profile", Letter: true),
+        new(["Enter"], "Open the selected profile"),
     ]);
 
     private static readonly Shortcut TakeKey = new(["T"], "Take the selected action on, when it's yours to take", Letter: true);
