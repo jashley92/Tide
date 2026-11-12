@@ -247,8 +247,9 @@ else
                             </span>
                             @if (row.Coverage.Count > 0)
                             {
+                                var cves = item.CveList.Count();
                                 <div class="tide-triage-covers">
-                                    @foreach (var c in row.Coverage) { @CoveredFlag(c, item.CveList.Count()) }
+                                    @foreach (var c in row.Coverage) { @CoveredFlag(c, cves) }
                                 </div>
                             }
                             <span class="tide-triage-flags">
@@ -1075,10 +1076,11 @@ else
     /// </summary>
     private static RenderFragment CoveredFlag(Coverage c, int cves) => __builder =>
     {
-        var full = $"{c.Why} covered{(c.BriefDate is { } fd ? " " + Ui.ShortDay(fd) : "")}: {c.ArticleTitle}";
-        var lead = (cves < 2 && c.Why.StartsWith("CVE-", StringComparison.OrdinalIgnoreCase) ? "Covered" : $"{c.Why} covered")
-            + (c.BriefDate is { } ld ? " " + ld.ToString("MMM d", System.Globalization.CultureInfo.InvariantCulture) : "") + " ·";
-        <Badge Tone="BadgeTone.Info" Class="tide-triage-cov" Title="@full"><span aria-hidden="true">@lead</span> <a href="articles/@c.ArticleId" aria-label="@full" @onclick:stopPropagation="true">@c.ArticleTitle</a></Badge>
+        var d = c.BriefDate;
+        var full = $"{c.Why} covered{(d is { } day ? " " + Ui.ShortDay(day) : "")}: {c.ArticleTitle}";
+        var lead = (c.Why != Tide.Application.Search.RelatedService.SameLink && cves < 2 ? "Covered" : $"{c.Why} covered")
+            + (d is { } on ? " " + Words.MonthDay(on) : "") + " ·";
+        <Badge Tone="BadgeTone.Info" Class="tide-triage-cov" Title="@full"><span aria-hidden="true">@lead</span> <a class="text-truncate" href="articles/@c.ArticleId" aria-label="@full" @onclick:stopPropagation="true">@c.ArticleTitle</a></Badge>
     };
 
     /// <summary>

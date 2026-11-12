@@ -2547,9 +2547,8 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
    ring shows. A row's body gives way to the row's width rather than growing to a flag's whole title. */
 .tide-triage-body { min-width: 0; }
 .tide-triage-covers { flex: 1 0 100%; display: flex; flex-direction: column; align-items: flex-start; gap: var(--tide-space-1); min-width: 0; }
-.tide-triage-cov { max-width: 100%; min-width: 0; }
-.tide-triage-cov > span { flex: none; }
-.tide-triage-cov > a { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tide-triage-cov { max-width: 100%; }
+.tide-triage-cov > a { min-width: 0; }
 .tide-triage-cov > a:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 1px; border-radius: var(--tide-radius-xs); }
 @media (max-width: 1399.98px) {
     .tide-triage-layout.reading-auto { display: block; }

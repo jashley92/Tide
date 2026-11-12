@@ -1903,19 +1903,15 @@ const tabReachesBar = {
 };
 
 /**
- * Each coverage flag on a line of Triage's list (a report's or a group's) is one line, whatever the width: no taller
- * than one line of its text and its padding, its article's title clipped with an ellipsis rather than wrapped, and the
- * whole text ("CVE-… covered Wed Nov 11: the whole title") its tooltip and its link's name.
+ * Each coverage flag on a line of Triage's list (a report's or a group's), one line with oneLine: its article's title
+ * clipped with an ellipsis rather than wrapped, and the whole text ("CVE-… covered Wed Nov 11: the whole title") its
+ * tooltip and its link's name.
  */
-const coverageOneLine = holds('each coverage flag is one line, its title cut with an ellipsis and whole in its tooltip', () => {
+const coverageCutWhole = holds("each coverage flag's title is cut with an ellipsis and whole in its tooltip", () => {
   const flags = [...document.querySelectorAll('.tide-triage-cov')].filter(e => e.getBoundingClientRect().height > 0);
   if (!flags.length) return ['nothing shown matches .tide-triage-cov'];
   return flags.flatMap((flag, i) => {
-    const cs = getComputedStyle(flag), a = flag.querySelector('a'), problems = [];
-    const px = p => parseFloat(cs[p]) || 0;
-    const most = parseFloat(cs.lineHeight) + px('paddingTop') + px('paddingBottom') + px('borderTopWidth') + px('borderBottomWidth') + 3;
-    const h = flag.getBoundingClientRect().height;
-    if (h > most) problems.push(`is ${Math.round(h)}px tall, more than one line (${Math.round(most)}px)`);
+    const a = flag.querySelector('a'), problems = [];
     if (!a) return [`.tide-triage-cov #${i + 1} has no link to its article`];
     const ls = getComputedStyle(a);
     if (ls.whiteSpace !== 'nowrap' || ls.textOverflow !== 'ellipsis' || ls.overflow !== 'hidden') problems.push(`its title wraps or is cut without an ellipsis (${ls.whiteSpace}, ${ls.textOverflow}, ${ls.overflow})`);
@@ -1932,11 +1928,11 @@ const weRunBesideTheCves = holds('the We run chip is on the CVEs\' line where th
   const lines = [...document.querySelectorAll('.tide-triage-meta')].filter(m => m.getBoundingClientRect().height > 0 && m.querySelector('.tide-werun-chip') && m.querySelector('.tide-cve'));
   if (!lines.length) return ['no line shown names a CVE and something we run'];
   return lines.flatMap((meta, i) => {
-    const box = meta.querySelector('.tide-werun-chip').closest('.tide-triage-flags');
+    const box = meta.querySelector('.tide-werun-chip').closest('.tide-triage-flags'), kids = [...meta.children];
     const flags = box.querySelector('.tide-werun-chip').getBoundingClientRect(), cve = [...meta.querySelectorAll('.tide-cve')].at(-1).getBoundingClientRect();
     if (flags.top < cve.bottom && flags.bottom > cve.top) return [];
     // What ends the CVEs' line: the rightmost of what comes before the flags on it.
-    const before = [...meta.children].slice(0, [...meta.children].indexOf(box)).map(e => e.getBoundingClientRect())
+    const before = kids.slice(0, kids.indexOf(box)).map(e => e.getBoundingClientRect())
       .filter(r => r.height > 0 && r.top < cve.bottom && r.bottom > cve.top);
     const room = meta.getBoundingClientRect().right - Math.max(...before.map(r => r.right)) - (parseFloat(getComputedStyle(meta).columnGap) || 0);
     // The chips' own width (with the gaps between them), not their box's, which may hold more.
@@ -3415,10 +3411,13 @@ const pages = [
   // A line's coverage is one compact line: "Covered Nov 11 · " and the article's title, cut with an ellipsis, whole in
   // its tooltip; We run stays on the CVEs' line. On every list: the pane open and closed (V), at each width, for a
   // report's line and a group's. Letters spaced wider. Each signs in as its own person, as the pane's state is kept.
-  ...[1920, 1440, 1280].flatMap(w => [0, 1].map(v => ({ name: `triage-coverage-${w}-${(w >= 1400) === !v ? 'open' : 'closed'}`,
-    route: `/triage?as=cv${w}${v}${run}`, widths: [w], setup: async page => { await wideFont(page); await pressV(v)(page); },
-    rules: [(w >= 1400) === !v ? visible('.tide-reading') : hidden('.tide-reading'), visible('.tide-triage-group .tide-triage-cov'),
-      coverageOneLine, weRunBesideTheCves, fits('.tide-triage-covers'), fits('.tide-triage-row'), noSidewaysScroll] }))),
+  ...[1920, 1440, 1280].flatMap(w => [0, 1].map(v => {
+    const open = (w >= 1400) === !v;
+    return { name: `triage-coverage-${w}-${open ? 'open' : 'closed'}`,
+      route: `/triage?as=cv${w}${v}${run}`, widths: [w], setup: async page => { await wideFont(page); await pressV(v)(page); },
+      rules: [open ? visible('.tide-reading') : hidden('.tide-reading'), visible('.tide-triage-group .tide-triage-cov'),
+        oneLine('.tide-triage-cov'), coverageCutWhole, weRunBesideTheCves, fits('.tide-triage-covers'), fits('.tide-triage-row'), noSidewaysScroll] };
+  })),
   // An open group's reports don't flag each other "Looks like": the group says so already. Duplicate (D) stays.
   { name: 'triage-group-open', route: '/triage', setup: openGroup, widths: [1440], rules: [noLooksLikeInItsGroup] },
   // V closes the pane that opened by itself, and opens it again; on a narrow window, where it's hidden, V opens it.
