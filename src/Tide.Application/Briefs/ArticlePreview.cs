@@ -45,7 +45,7 @@ public sealed record ArticlePreview(Article Article, Edition Edition, TlpLevel C
     public static IReadOnlyList<EditionAction> TeamActions(IEnumerable<ActionRow> rows) => rows
         .Where(r => r.Status != ActionStatus.Cancelled)
         .OrderBy(r => r.Number)
-        .Select(r => new EditionAction(r.Number, r.Title, r.TeamName, r.DueDate, r.Status))
+        .Select(r => new EditionAction(r.Number, r.Title, r.TeamName, r.DueDate, r.Status, Recommendation: r.RecommendationLine))
         .ToList();
 
     /// <summary>The edition named in a link (<c>?edition=company</c>); anything else is the team edition.</summary>
