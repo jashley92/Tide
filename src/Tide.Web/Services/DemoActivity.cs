@@ -24,37 +24,49 @@ public sealed class DemoActivity : CircuitHandler
     /// <summary>How many inbound activities have started, and how many of the connected circuits' are in hand.</summary>
     public object Now()
     {
+        var (started, inHand) = Counts();
+        return new { started, inHand };
+    }
+
+    internal (long Started, int InHand) Counts()
+    {
         var inHand = 0;
         foreach (var (_, hand) in _hands)
             if (hand.Connected) inHand += Volatile.Read(ref hand.Count);
-        return new { started = Interlocked.Read(ref _started), inHand };
+        return (Interlocked.Read(ref _started), inHand);
     }
+
+    /// <summary>Counts <paramref name="work"/>, for circuit <paramref name="circuitId"/>, as in hand until it's done.</summary>
+    internal async Task Track(string circuitId, Func<Task> work)
+    {
+        var hand = _hands.GetOrAdd(circuitId, _ => new Hand());
+        Interlocked.Increment(ref hand.Count);
+        Interlocked.Increment(ref _started);
+        try { await work(); }
+        finally { Interlocked.Decrement(ref hand.Count); }
+    }
+
+    internal void Connection(string circuitId, bool up)
+    {
+        if (up) _hands.GetOrAdd(circuitId, _ => new Hand()).Connected = true;
+        else if (_hands.TryGetValue(circuitId, out var hand)) hand.Connected = false;
+    }
+
+    internal void Closed(string circuitId) => _hands.TryRemove(circuitId, out _);
 
     public override Func<CircuitInboundActivityContext, Task> CreateInboundActivityHandler(Func<CircuitInboundActivityContext, Task> next) =>
-        async context =>
-        {
-            var hand = _hands.GetOrAdd(context.Circuit.Id, _ => new Hand());
-            Interlocked.Increment(ref hand.Count);
-            Interlocked.Increment(ref _started);
-            try { await next(context); }
-            finally { Interlocked.Decrement(ref hand.Count); }
-        };
+        context => Track(context.Circuit.Id, () => next(context));
 
-    public override Task OnConnectionUpAsync(Circuit circuit, CancellationToken cancellationToken)
-    {
-        _hands.GetOrAdd(circuit.Id, _ => new Hand()).Connected = true;
-        return Task.CompletedTask;
-    }
+    // A Circuit can't be made outside a live one, so these only hand its id to the methods above, which the tests call.
+    public override Task OnConnectionUpAsync(Circuit circuit, CancellationToken cancellationToken) => Done(() => Connection(circuit.Id, up: true));
 
-    public override Task OnConnectionDownAsync(Circuit circuit, CancellationToken cancellationToken)
-    {
-        if (_hands.TryGetValue(circuit.Id, out var hand)) hand.Connected = false;
-        return Task.CompletedTask;
-    }
+    public override Task OnConnectionDownAsync(Circuit circuit, CancellationToken cancellationToken) => Done(() => Connection(circuit.Id, up: false));
 
-    public override Task OnCircuitClosedAsync(Circuit circuit, CancellationToken cancellationToken)
+    public override Task OnCircuitClosedAsync(Circuit circuit, CancellationToken cancellationToken) => Done(() => Closed(circuit.Id));
+
+    internal static Task Done(Action act)
     {
-        _hands.TryRemove(circuit.Id, out _);
+        act();
         return Task.CompletedTask;
     }
 }
