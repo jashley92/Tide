@@ -1830,7 +1830,7 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-maxw-2xl { max-width: var(--tide-width-2xl); }
 .tide-card-narrow { max-width: var(--tide-width-narrow); }
 .tide-card-form { max-width: var(--tide-width-form); }
-.tide-card-scroll { overflow-x: auto; }
+.tide-card-scroll { overflow-x: auto; position: relative; }   /* relative: keeps visually-hidden text inside the scroll box */
 .tide-col-sm { width: 8rem; }
 .tide-col-md { width: 9.5rem; }
 .tide-col-lg { width: 12rem; }
@@ -2271,7 +2271,6 @@ button.tide-mentry-chip:focus-visible { outline: 2px solid var(--tide-focus-ring
 .tide-pull-all > .btn { white-space: nowrap; }
 .tide-pull-all-status { font-size: var(--tide-text-xs); color: var(--tide-text-muted); overflow-wrap: break-word; min-width: 0; }
 .tide-pull-all-status:empty { display: none; }
-.tide-pull-scroll { position: relative; }   /* keeps the visually-hidden column name inside the scroll box */
 .tide-pull-table td { vertical-align: middle; }
 .tide-pull-table .tide-pull-error { color: var(--tide-warn); max-width: min(26rem, 30vw); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tide-pull-table .tide-pull-wait { font-size: var(--tide-text-xs); color: var(--tide-text-muted); }

@@ -1,4 +1,5 @@
 using System.Globalization;
+using Tide.Application.Content;
 using Tide.Application.Org;
 
 namespace Tide.Application.Intake;
@@ -24,7 +25,7 @@ public sealed record PullAllResult(int Pulled, int New, IReadOnlyList<string> Re
         var tried = Pulled + Failed.Count;
         List<string> parts = tried == 0 && NotReached == 0
             ? ["Nothing to pull"]
-            : [$"Pulled {Pulled}", New == 0 ? "no new items" : New == 1 ? "1 new item" : $"{New} new items"];
+            : [$"Pulled {Pulled}", PullTimes.NewItems(New)];
         if (Recent.Count > 0) parts.Add($"{Recent.Count} skipped (pulled in the last {PullTimes.Wait(window)})");
         if (Busy.Count > 0) parts.Add($"{Busy.Count} skipped (being pulled)");
         if (Failed.Count > 0) parts.Add($"{Failed.Count} failed: {string.Join(", ", Failed)}");
@@ -52,10 +53,7 @@ public sealed record FeedFreshness(int Sources, int NotPulled, int Failing, Date
     {
         var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(nowUtc, zone).DateTime);
         if (!days.IsWorkingDay(today)) return null;
-        var local = today.ToDateTime(pulledBy, DateTimeKind.Unspecified);
-        while (zone.IsInvalidTime(local)) local = local.AddMinutes(1);
-        var offsets = zone.IsAmbiguousTime(local) ? zone.GetAmbiguousTimeOffsets(local) : [zone.GetUtcOffset(local)];
-        var cutoff = offsets.Select(o => new DateTimeOffset(local, o)).Min();
+        var cutoff = OrgClock.At(zone, today, pulledBy);
         return nowUtc < cutoff ? null : cutoff;
     }
 
@@ -73,13 +71,13 @@ public sealed record FeedFreshness(int Sources, int NotPulled, int Failing, Date
     public string Text(TimeZoneInfo zone, DateTimeOffset nowUtc)
     {
         List<string> parts = [];
-        var feeds = Sources == 1 ? "feed" : "feeds";
+        var feeds = Words.Plural(Sources, "feed");
         if (NotPulled > 0)
         {
-            parts.Add($"{NotPulled} of {Sources} {feeds} not pulled since {Clock(TimeZoneInfo.ConvertTime(CutoffUtc, zone))}");
+            parts.Add($"{NotPulled} of {feeds} not pulled since {Clock(TimeZoneInfo.ConvertTime(CutoffUtc, zone))}");
             if (Failing > 0) parts.Add($"{Failing} failing");
         }
-        else parts.Add($"{Failing} of {Sources} {feeds} failing");
+        else parts.Add($"{Failing} of {feeds} failing");
         parts.Add(LastPullUtc is { } last ? "last pull " + When(TimeZoneInfo.ConvertTime(last, zone), TimeZoneInfo.ConvertTime(nowUtc, zone)) : "never pulled");
         return string.Join(" · ", parts);
     }

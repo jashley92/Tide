@@ -45,7 +45,7 @@
         {
             <PolledSourcesTable Sources="_polled" Now="Time.GetUtcNow()" PollingOn="IntakeOpts.CurrentValue.Enabled" Window="Intake.PullWindow"
                                 Pulling="_pulling" OnPull="Pull">
-                <Actions><PullAllButton @ref="_pullAll" Disabled="@(_pulling is not null && _pullAll?.IsRunning != true)" OnStep="s => _pulling = s.Id" OnDone="PulledAll" /></Actions>
+                <Actions><PullAllButton @ref="_pullAll" Disabled="@(_pulling is not null)" OnStep="s => _pulling = s.Id" OnDone="AfterPull" /></Actions>
             </PolledSourcesTable>
         }
     </div>
@@ -827,27 +827,26 @@ else
         try
         {
             var result = await Intake.PullNowAsync(id);
-            if (result.Error is null) Toasts.Show($"Pulled {name}: {(result.New == 0 ? "no new items" : result.New == 1 ? "1 new item" : $"{result.New} new items")}.");
+            if (result.Error is null) Toasts.Show($"Pulled {name}: {PullTimes.NewItems(result.New)}.");
             else Toasts.Error($"Pulled {name}, but it failed: {result.Error}");
             Changes.Publish(new Change(ChangeFeed.Triage, "system", "", Origin.Id));
         }
         catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
-        finally { _pulling = null; }
-        await Load();
-        StateHasChanged();
+        await AfterPull();
     }
-    private PullAllButton? _pullAll;
 
-    /// <summary>Pull all on the Sources tab: each source due a pull, one at a time, its row showing it as it's pulled.</summary>
-    internal Task PullAll() => _pullAll?.RunAsync() ?? Task.CompletedTask;
-
-    // The run ended: the rows and the tab counts are read again.
-    private async Task PulledAll()
+    // A pull, or Pull all, ended: the rows and the tab counts are read again.
+    private async Task AfterPull()
     {
         _pulling = null;
         await Load();
         StateHasChanged();
     }
+
+    private PullAllButton? _pullAll;
+
+    /// <summary>Pull all on the Sources tab: each source due a pull, one at a time, its row showing it as it's pulled.</summary>
+    internal Task PullAll() => _pullAll?.RunAsync() ?? Task.CompletedTask;
 
     private Guid? _sourceId;
     private string? _search;

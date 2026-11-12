@@ -79,6 +79,9 @@ public static class PullTimes
         return $"{minutes / (24 * 60)} days";
     }
 
+    /// <summary>What a pull brought: "no new items", "1 new item", "12 new items".</summary>
+    public static string NewItems(int n) => n == 0 ? "no new items" : Content.Words.Plural(n, "new item");
+
     /// <summary>Why Pull now is refused at <paramref name="now"/>: "Pulled 4 min ago. You can pull it again in 11 min."</summary>
     public static string TooSoon(DateTimeOffset lastPolledAtUtc, DateTimeOffset pullableAtUtc, DateTimeOffset now) =>
         $"Pulled {Ago(now - lastPolledAtUtc)}. You can pull it again in {Wait(pullableAtUtc - now)}.";

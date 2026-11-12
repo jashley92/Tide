@@ -18,7 +18,7 @@ else
         @Actions
     </div>
     @* Scrolls within the card, not the page, where the window is too narrow for its columns. *@
-    <div class="tide-card-scroll tide-pull-scroll">
+    <div class="tide-card-scroll">
     <table class="tide-table tide-pull-table">
         <thead><tr><th scope="col">Source</th><th scope="col">Last pulled</th><th scope="col">Next due</th><th scope="col">Last result</th><th scope="col"><span class="visually-hidden">Pull now</span></th></tr></thead>
         <tbody>
@@ -40,7 +40,7 @@ else
                         {
                             <div class="tide-pull-error" title="@error"><span class="bi bi-exclamation-triangle-fill" aria-hidden="true"></span> @Ui.Clip(error, 90)</div>
                         }
-                        else if (s.LastNewItems is { } n) { <span>@(n == 0 ? "OK, no new items" : n == 1 ? "1 new item" : $"{n} new items")</span> }
+                        else if (s.LastNewItems is { } n) { <span>@(n == 0 ? "OK, no new items" : PullTimes.NewItems(n))</span> }
                         else if (s.LastPolledAtUtc is null) { <span class="tide-muted">Not pulled yet</span> }
                         else { <span>OK</span> }
                     </td>
