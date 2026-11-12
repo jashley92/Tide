@@ -2735,14 +2735,15 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
    item's decision in a bar at the foot of the pane: first the line that says why its main button is the main one,
    then the buttons, the main one first. On a wide window the bar's buttons are one row, by construction: the article's
    title in Attach gives way, the dismiss reason narrows, and the pane's text gives way so the bar stays in the pane.
-   Where the pane isn't shown (closed, or hidden below 1400px) the same decision sits in the selected row and wraps,
-   as the row's buttons always have. ---- */
+   Where the pane isn't shown (closed, or hidden below 1400px) the same decision sits in the selected row, one row
+   while there's room (below). ---- */
 .tide-triage-layout.reading { grid-template-columns: minmax(0, min(27.5rem, 42%)) minmax(0, 1fr); }
 .tide-triage-decide { display: grid; gap: var(--tide-space-2); margin-top: var(--tide-space-2); }
 .tide-triage-why { margin: 0; font-size: var(--tide-text-sm); color: var(--tide-text-muted); }
 .tide-triage-acts, .tide-triage-more { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); min-width: 0; }
 .tide-triage-more:empty { display: none; }
 .tide-triage-end { display: inline-flex; align-items: center; gap: var(--tide-space-2); min-width: 0; }
+.tide-triage-reason { width: auto; }
 .tide-reading > .tide-triage-decide { margin-top: var(--tide-space-3); padding-top: var(--tide-space-3); border-top: 1px solid var(--tide-border); }
 /* From the bar, the attach list opens upwards, over the pane's text. */
 .tide-reading .tide-attach-panel { top: auto; bottom: calc(100% + var(--tide-space-1)); }
@@ -2752,23 +2753,25 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
     .tide-reading > .tide-reading-text { flex: 0 1 auto; min-height: 6rem; }
 }
 @media (min-width: 1400px) {
-    .tide-reading .tide-triage-acts { flex-wrap: nowrap; }
     .tide-reading .tide-triage-acts .btn:not(.tide-triage-attach) { flex: none; white-space: nowrap; }
     /* The main button keeps its verb and takes the room the others leave: only the article's title in it gives way,
        with an ellipsis, and never below a few letters. The other buttons give way first: their words after the first
-       go (each says them in full to a screen reader and on hover), then the dismiss reason narrows. The row's groups
-       (the main pair, Dismiss and its reason) lay their buttons straight into it. */
-    .tide-reading .tide-triage-acts > .tide-triage-main, .tide-reading .tide-triage-end { display: contents; }
+       go (each says them in full to a screen reader and on hover), then the dismiss reason narrows. The main pair lay
+       their buttons straight into the row; Dismiss and its reason are its end, taking what room is left. Only when all
+       that has given way and still doesn't fit (a covered report's seven controls on a narrow pane) does the end go to
+       a second row, together. */
+    .tide-reading .tide-triage-acts > .tide-triage-main { display: contents; }
+    .tide-reading .tide-triage-end { flex: 1 1 0; min-width: min-content; justify-content: flex-end; }
     /* Attach is a grid of its icon, its verb and the title, the title's column at least 3em: the button's least width
        is its verb and the start of the title. It takes the room the others leave, up to its full width. */
     .tide-reading .tide-triage-acts .tide-triage-attach { display: inline-grid; grid-auto-flow: column; grid-template-columns: auto auto minmax(3em, 1fr);
         flex: 4 1 0; min-width: auto; max-width: max-content; }
     .tide-reading .tide-triage-acts .btn:not(.btn-primary) .tide-triage-long { display: none; }
-    .tide-reading .tide-triage-end > :first-child { margin-left: auto; }
-    .tide-reading .tide-triage-end > select { flex: 1 1 0; min-width: 5rem; max-width: max-content; }
+    /* The reason's least width 5rem, so the end goes to a second row only when even that won't fit. */
+    .tide-reading .tide-triage-end > select { flex: 1 1 0; width: 5rem; min-width: 5rem; max-width: max-content; }
     /* With the pane beside it, the page is a column the window's height under the top bar, as the board's is: the list
-       scrolls inside its card, and the pane fills the height beside it, its text scrolling inside it and the bar at its
-       foot on the first screen however long the text. A short window scrolls the page instead. */
+       scrolls inside its card, and the pane beside it takes as much of the height as it needs, a long text scrolling
+       inside it and the bar at its foot on the first screen. A short window scrolls the page instead. */
     .content:has(> .tide-inbox-view > .tide-triage-layout.reading) { display: flex; flex-direction: column; height: calc(100vh - var(--tide-height-top));
         min-height: 36rem; padding-bottom: var(--tide-space-4); overflow: clip; }
     .content:has(> .tide-inbox-view > .tide-triage-layout.reading) > *, .tide-inbox-view:has(> .tide-triage-layout.reading) > * { flex-shrink: 0; }
@@ -2778,7 +2781,10 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
     /* The list scrolls inside its card, which is also what anything positioned in a row (a presence note's hidden words)
        is placed against: nothing in the list reaches past it to make the window scroll. */
     .tide-triage-layout.reading > .tide-card:first-child { position: relative; overflow-y: auto; overscroll-behavior: contain; }
-    .tide-triage-layout.reading > .tide-reading { position: static; max-height: none; min-height: 0; }
+    /* The pane is as tall as what it holds, so the bar follows a short text straight on; a text longer than the room
+       scrolls inside the pane, the bar at its foot. It's never shorter than an item not read here yet takes (its
+       title, excerpt and "Not read yet"), so moving on with J the bar's buttons stay put under the mouse. */
+    .tide-triage-layout.reading > .tide-reading { position: static; align-self: start; max-height: 100%; min-height: min(100%, 26rem); }
     .tide-triage-layout.reading > .tide-reading > .tide-reading-text { max-height: none; }
     .tide-triage-layout.reading > .tide-reading > .tide-triage-decide { margin-top: auto; }
 }
@@ -2786,6 +2792,13 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-reading-head > .tide-reading-title { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .tide-reading-tools { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: var(--tide-space-2); flex: none; }
 .tide-reading-tools > .btn { white-space: nowrap; }
+.tide-triage-acts > .tide-attach { flex: none; }
+/* With the pane closed (or hidden on a narrower window) the selected row stays a row: its excerpt a readable measure of
+   at most three lines (V reads the rest), then the why line and the buttons, the extras beside them while there's room. */
+.tide-triage-row > .tide-triage-excerpt { max-width: 80ch; margin: var(--tide-space-1) 0 0; display: -webkit-box; -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
+.tide-triage-row .tide-triage-decide { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--tide-space-3); row-gap: var(--tide-space-2); }
+.tide-triage-row .tide-triage-decide > :not(.tide-triage-acts, .tide-triage-more) { flex: 1 0 100%; }
 /* ---- end Triage's decision bar ---- */
 
 /* ---- Action page 3.5: the facts, the article it was raised from, what else was raised from that, and the Files in the
@@ -2905,10 +2918,8 @@ html[data-file-drag] .tide-page-drop { display: flex; }
    Triage's decision bar) and the bar's buttons wrap to a second row, as the design has them, rather than the pane
    closing. From 1800px the pane has the room for them in one row again. */
 @media (min-width: 1500px) and (max-width: 1799.98px) {
-    html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-reading .tide-triage-acts { flex-wrap: wrap; }
     /* Dismiss keeps its reason beside it, at its full width, and the two go to the next row together, at its end. */
-    html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-reading .tide-triage-end { display: inline-flex; margin-left: auto; }
-    html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-reading .tide-triage-end > select { flex: none; max-width: none; }
+    html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-reading .tide-triage-end > select { flex: none; width: auto; max-width: none; }
     /* The bar's second row comes out of the text's share of the pane, which scrolls in less room, so the bar stays on
        the first screen. */
     html:not([data-rail="closed"]) main:has(> .tide-rail) .tide-reading > .tide-reading-text { min-height: 3rem; }
