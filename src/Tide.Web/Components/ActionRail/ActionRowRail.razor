@@ -1,5 +1,5 @@
 @* The action selected on the Actions list or board, in the context rail: what to do next, Take it where the person may
-   take it, Assign (the list) or Move to (the board), and Open; its facts (kind, team, how long in its column, its
+   take it, Assign (the list) or Move to (the board), Reopen on a closed one (Recently closed), and Open; its facts (kind, team, how long in its column, its
    checklist); for a sweep or hunt, its query; the article it was raised from; and its last activity.
    What it reads beyond the row (ActionService.GetAsync) is read once the selection has rested a moment, so J held down
    doesn't read every action it passes. A sweep's query is shown as the action page shows it: a saved one to whoever reads
@@ -29,6 +29,12 @@
         {
             @* The action page's edit form, where its assignee is chosen. *@
             <a class="btn btn-outline-secondary btn-sm" href="@Ui.ActionUrl(Row.Number, "do=" + ActionGuide.Key(ActionFlow.Edit))">Assign…</a>
+        }
+        @if (CanWork && !Row.IsOpen && OnReopen.HasDelegate)
+        {
+            @* Back to Open, as a move on the board: its closing stays in its history. *@
+            <button type="button" class="btn btn-outline-secondary btn-sm tide-rail-reopen" disabled="@Busy" aria-label="@($"Reopen {Ui.ActionLabel(Row.Number)}")"
+                    @onclick="() => OnReopen.InvokeAsync()"><span class="bi bi-arrow-counterclockwise" aria-hidden="true"></span> Reopen</button>
         }
         <a class="tide-rail-open" href="@Ui.ActionUrl(Row.Number)">Open</a>
     </div>
@@ -96,6 +102,9 @@
     [Parameter] public bool CanTake { get; set; }
 
     [Parameter] public EventCallback OnTake { get; set; }
+
+    /// <summary>Reopen, on a closed action, for whoever works it: the page moves it back to Open (ActionMover).</summary>
+    [Parameter] public EventCallback OnReopen { get; set; }
 
     /// <summary>While a take or a move is being made, the buttons wait.</summary>
     [Parameter] public bool Busy { get; set; }

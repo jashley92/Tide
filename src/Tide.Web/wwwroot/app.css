@@ -2670,7 +2670,14 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-kchip { display: inline-flex; align-items: center; gap: var(--tide-space-2); min-height: 2.25rem; padding: var(--tide-space-1) var(--tide-space-3);
     background: var(--tide-surface-2); border: 1px dashed var(--tide-border-strong); border-radius: var(--tide-radius-lg); white-space: nowrap; }
 .tide-kchip.over { border-style: solid; border-color: var(--tide-accent); background: var(--tide-drop); box-shadow: inset 0 0 0 1px var(--tide-accent); }
-.tide-kstrip-hint { font-size: var(--tide-text-sm); color: var(--tide-text-muted); }
+/* A chip is a link to the actions it counts as well as a drop target: the badge and count stay as they were. */
+.tide-kchip-link { display: inline-flex; align-items: center; gap: var(--tide-space-2); color: inherit; text-decoration: none; border-radius: var(--tide-radius-sm); }
+.tide-kchip-link:hover .tide-count { color: var(--tide-accent-text); text-decoration: underline; }
+.tide-kchip:has(.tide-kchip-link:hover) { border-color: var(--tide-accent); }
+.tide-kchip-link:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 3px; }
+/* The hint takes what room is left on the strip's row, cut short with an ellipsis rather than wrapping the row (its
+   title holds it whole); it goes to the next line only below 8rem. */
+.tide-kstrip-hint { flex: 1 1 0; min-width: 8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--tide-text-sm); color: var(--tide-text-muted); }
 .tide-kstrip-more { margin-left: auto; padding: 0; }
 .tide-chip-count { margin-left: var(--tide-space-1); color: var(--tide-text-muted); font-variant-numeric: tabular-nums; }
 .tide-col-progress { min-width: 7.5rem; }
