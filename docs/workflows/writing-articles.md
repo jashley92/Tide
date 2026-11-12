@@ -91,8 +91,10 @@ raises, never touches one already written, and isn't a column default, so saved 
 
 The article page (`/articles/{id}`, `Components/Pages/ArticleEdit.razor`) has two halves:
 
-- **`ArticleEditorPanel`**: the form. Section pills jump to Assessment, Bottom line, Bullets, Why it matters,
-  Recommended, Indicators & CVEs, and Tags & ATT&CK. A sticky save bar along the bottom holds Save, Discard, Save and mark
+- **`ArticleEditorPanel`**: the form, one column in the order the sent brief reads: Assessment, Bottom line (with
+  *Draft from the sources* above it), Bullets, Why it matters, Recommended actions, Screenshots, Indicators & CVEs, and
+  last Tags & ATT&CK. Its text boxes keep a readable width on a wide screen. Section pills jump to each of these but
+  Screenshots. A sticky save bar along the bottom holds Save, Discard, Save and mark
   ready (on a draft) or Back to draft (on a ready article), and Add to today's brief.
 - **`ReaderPreview`**: beside the editor, whether it's ready ("Ready to brief", or how many things are missing in the
   edition previewed and in the other, with Show, which goes to the first gap in the preview, focused), then three tabs (`?side=actions` or `?side=details`

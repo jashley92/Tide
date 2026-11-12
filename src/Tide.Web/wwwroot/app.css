@@ -520,14 +520,18 @@ li > .tide-tlp, .tide-md + .tide-tlp { margin-left: .4rem; }
 .tide-reader-details .tide-card { border: 0; border-top: 1px solid var(--tide-border); border-radius: 0; padding: var(--tide-space-3) 0 0; margin: var(--tide-space-3) 0 0; background: transparent; }
 .tide-reader-details .tide-card h2 { font-size: var(--tide-text-sm); }
 .tide-field-label { font-size: .8rem; font-weight: var(--tide-weight-semibold); color: var(--tide-text-muted); margin-bottom: .3rem; display: block; }
-.tide-bullet-row { display: grid; grid-template-columns: 1.4rem minmax(0, 1fr) 7.5rem auto; gap: .4rem; align-items: start; margin-bottom: .4rem; }
+/* The bullet's box keeps the editor's readable measure (--tide-measure), its TLP and buttons right after it. */
+.tide-bullet-row { display: grid; grid-template-columns: 1.4rem minmax(0, var(--tide-measure, 1fr)) 7.5rem auto; gap: .4rem; align-items: start; margin-bottom: .4rem; }
 /* A text box that grows with its text (an article's bullets, BLUF, why it matters and recommended actions): the browser sizes it where it can; autogrow.js elsewhere. */
 /* Grows with its text, to a cap; past it, it scrolls, so a long paste doesn't push the page's buttons out of sight. */
 .tide-autogrow { field-sizing: content; min-height: calc(1.5em + .5rem + 2px); max-height: min(60vh, 32rem); resize: none; overflow-y: auto; }
 .tide-autogrow.tide-grow-2 { min-height: calc(3em + .75rem + 2px); }   /* never shorter than its two or three starting rows */
 .tide-autogrow.tide-grow-3 { min-height: calc(4.5em + .75rem + 2px); }
+/* No resize grip on these (no rule may bring one back): a drag writes an inline height, which outranks field-sizing, and
+   the box stops growing. Where the browser sizes the box, any height left on it (an extension, a script) is set aside. */
+@supports (field-sizing: content) { .tide-autogrow { height: auto !important; } }
 .tide-bullet-row .tide-dot { padding-top: .45rem; color: var(--tide-text-muted); text-align: center; }
-.tide-bullet-row textarea { min-height: 2.4rem; resize: vertical; }
+.tide-bullet-row textarea { min-height: 2.4rem; }
 .tide-drop-zone { border: 2px dashed var(--tide-border-strong); border-radius: var(--tide-radius-xl); padding: 1rem; text-align: center; color: var(--tide-text-muted); background: var(--tide-surface); transition: background .1s, border-color .1s; }
 .tide-drop-zone.tide-dropping { background: var(--tide-drop); border-color: var(--tide-accent); }
 .tide-shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: .75rem; margin-top: .75rem; }
@@ -2221,7 +2225,6 @@ button.tide-mentry-chip:focus-visible { outline: 2px solid var(--tide-focus-ring
 .tide-not-sent-why { white-space: pre-line; overflow-wrap: anywhere; }
 .tide-not-sent-note { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-clamp: 2; overflow: hidden;
     max-width: 22rem; margin-top: var(--tide-space-1); font-size: var(--tide-text-xs); color: var(--tide-text-muted); overflow-wrap: anywhere; }
-.tide-send-edition.tide-not-sent textarea { resize: vertical; }
 
 /* Present mode's "We run" chips on an article's slide (team edition only), and the product's card they open over the
    slide: large type for a shared screen. A retired product is muted, as the editor's card shows it. */
@@ -2875,13 +2878,12 @@ html[data-file-drag] .tide-page-drop { display: flex; }
 .tide-hunt-found-h { font-size: var(--tide-text-sm); font-weight: var(--tide-weight-semibold); margin-bottom: var(--tide-space-2); }
 /* ---- end Action page 3.5b ---- */
 
-/* ---- Option E 3.3, the article editor: the form as pairs of cards, two columns where there's room for both and one
-   under the other where there isn't (so it holds whatever the fonts make of each card), under a section index that
-   says where each stands. "Why it matters" is marked while the company-wide edition would carry it, with its answers
-   in the card. The save bar wraps rather than run past the page. ---- */
-.tide-editor-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr)); gap: var(--tide-space-3);
-    align-items: stretch; margin-bottom: var(--tide-space-3); }
-.tide-editor-pair > .tide-card { margin-bottom: 0; min-width: 0; }
+/* ---- Option E 3.3, the article editor: the form as one column of cards, in the order the sent brief reads, under a
+   section index that says where each stands. Its prose boxes keep a readable measure however wide the window; the
+   indicators' table takes the card's width. "Why it matters" is marked while the company-wide edition would carry it,
+   with its answers in the card. The save bar wraps rather than run past the page. ---- */
+.tide-editor-main { --tide-measure: 85ch; }
+.tide-editor-main .tide-section > :is(textarea.tide-autogrow, .tide-md-toolbar) { max-width: var(--tide-measure); }
 .tide-assess-row { display: flex; flex-wrap: wrap; gap: var(--tide-space-2) var(--tide-space-3); margin-bottom: var(--tide-space-2); }
 .tide-assess-row > * { flex: 1 1 8rem; min-width: 0; }
 .tide-assess-row > .tide-assess-class { flex: 0 1 auto; }

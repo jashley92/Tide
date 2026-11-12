@@ -2671,13 +2671,61 @@ const onTop = selector => holds(`nothing over: ${selector}`, selector => {
   return el.contains(at) ? [] : [`${selector} is under ${at ? at.tagName.toLowerCase() + '.' + [...at.classList].join('.') : 'nothing'}`];
 }, selector);
 
-/** The editor's paired cards, each pair's two cards. */
-const editorPairs = [['section[aria-labelledby="sec-assessment"]', 'section[aria-labelledby="sec-tags"]'],
-  ['section[aria-labelledby="sec-bluf"]', 'section[aria-labelledby="sec-why"]'], ['section[aria-labelledby="sec-rec"]', 'section[aria-labelledby="sec-ind"]']];
+/** The editor's sections, in the order the sent brief reads them (BriefRenderer): the draft from the sources with the
+ *  bottom line it writes, the tags last. */
+const editorSections = ['sec-assessment', 'sec-draft', 'sec-bluf', 'sec-bullets', 'sec-why', 'sec-rec', 'sec-shots', 'sec-ind', 'sec-tags'];
+
+/** The editor is one column in the brief's reading order: its section headings are in the page (so Tab and a screen
+ *  reader meet them) in exactly that order, each card wholly below the one before, and the headings share a left edge. */
+const editorReadingOrder = holds('one column, in reading order: the editor\'s sections', ids => {
+  const heads = [...document.querySelectorAll('.tide-editor-main :is(h2, h3)[id^="sec-"]')].filter(e => e.getBoundingClientRect().height > 0);
+  if (heads.map(h => h.id).join() !== ids.join()) return [`its sections are ${heads.map(h => h.id).join(', ')}, not ${ids.join(', ')}`];
+  const cards = heads.map(h => h.closest('section').getBoundingClientRect()), lefts = heads.map(h => Math.round(h.getBoundingClientRect().left));
+  const problems = cards.flatMap((r, i) => i && r.top < cards[i - 1].bottom - 1 ? [`${ids[i]}'s card isn't below ${ids[i - 1]}'s`] : []);
+  if (Math.max(...lefts) - Math.min(...lefts) > 1) problems.push(`its headings start at different x: ${ids.map((id, i) => `${id} ${lefts[i]}px`).join(', ')}`);
+  return problems;
+}, editorSections);
+
+/** The editor's prose boxes keep a readable measure however wide the window: app.css caps them at 85 characters, so
+ *  none is wider than 90 (in the type around it). */
+const editorMeasure = holds("readable measure: the editor's text boxes", () => {
+  const boxes = [...document.querySelectorAll('#f-bluf, #f-why, #f-rec, [id^="f-bullet-"]')].map(e => [e, e.getBoundingClientRect().width]).filter(([, w]) => w > 0);
+  if (!boxes.length) return ["nothing shown matches the editor's text boxes"];
+  const probes = boxes.map(([e]) => e.parentElement.appendChild(Object.assign(document.createElement('span'), { style: 'position:absolute;visibility:hidden;width:90ch' })));
+  const most = probes.map(p => p.getBoundingClientRect().width);
+  probes.forEach(p => p.remove());
+  return boxes.flatMap(([e, w], i) => w > most[i] + 1 ? [`#${e.id} is ${Math.round(w)}px wide, more than 90 characters (${Math.round(most[i])}px)`] : []);
+});
+
+/** A bullet starts a line high and grows with its text, to the box's cap: no inline height outranks field-sizing, even
+ *  after its bottom corner, where a resize grip would be, is dragged. Puts the bullet's text back after. */
+const bulletGrows = {
+  name: 'a bullet grows with its text',
+  check: async page => {
+    const box = page.locator('#f-bullet-0'), was = await box.inputValue();
+    await box.scrollIntoViewIfNeeded();
+    const r = await box.boundingBox();
+    await page.mouse.move(r.x + r.width - 3, r.y + r.height - 3);
+    await page.mouse.down();
+    await page.mouse.move(r.x + r.width - 3, r.y + 8, { steps: 5 });
+    await page.mouse.up();
+    const measure = async text => {
+      await box.fill(text);
+      return box.evaluate(e => ({ inline: e.style.height, client: e.clientHeight, scroll: e.scrollHeight, line: parseFloat(getComputedStyle(e).lineHeight) }));
+    };
+    const short = await measure('Short.'), long = await measure('A bullet long enough to take several lines of its box. '.repeat(8));
+    await box.fill(was);
+    const problems = [];
+    if (long.inline) problems.push(`#f-bullet-0 has an inline height (${long.inline}), which outranks field-sizing`);
+    if (long.scroll > long.client + 1) problems.push(`#f-bullet-0 doesn't grow with its text: ${long.client}px tall, its text ${long.scroll}px`);
+    if (short.client >= 2 * short.line) problems.push(`#f-bullet-0 starts ${short.client}px tall, more than a line (${short.line}px)`);
+    return problems;
+  },
+};
 
 /** The editor's cards and its section index fit their boxes: the index's items each on one line, wrapping as a row. */
 const editorFits = [visible('.tide-section-pills'), fits('.tide-section-pills'), oneLine('.tide-section-pills button'),
-  fits('.tide-editor-pair > .tide-card'), fits('section[aria-labelledby="sec-bullets"]'), fits('.tide-sticky-save'), fits('.tide-page-head')];
+  fits('.tide-editor-main > .tide-section'), fits('.tide-sticky-save'), fits('.tide-page-head')];
 
 /** The first visible matches of `a` and `b` are the same width (within 2px) and start at the same x: one column. */
 const sameColumn = (a, b) => holds(`one column: ${a} / ${b}`, ([a, b]) => {
@@ -3104,20 +3152,20 @@ const pages = [
     rules: [noSidewaysScroll, visible('#tide-rail .tide-reader-sum'), visible('#tide-rail [role=tablist][aria-label="Beside the article"]')] },
   { name: 'article-actions-tab', route: '/articles/{vpnArticle}?side=actions', widths: [1920, 800],
     rules: [noSidewaysScroll, visible('#reader-panel .tide-action-ref')] },
-  // The article editor: a section index across the top, then the form as two columns of paired cards (Assessment beside
-  // Tags & ATT&CK, Bottom line beside Why it matters, Recommended beside Indicators, Bullets across both), and what
-  // readers get in the context rail, docked open from 1500px. Wider letters throughout, so each holds by construction.
+  // The article editor: a section index across the top, then the form as one column in the order the sent brief reads
+  // (Assessment, Bottom line, Bullets, Why it matters, Recommended, Screenshots, Indicators, then Tags & ATT&CK), its
+  // prose boxes a readable measure however wide the window, and what readers get in the context rail, docked open from
+  // 1500px. Wider letters throughout, so each holds by construction.
   { name: 'editor-rail', route: '/articles/{vpnArticle}', setup: wideFont, widths: [1920, 1600, 1500],
     rules: [noSidewaysScroll, visible('#tide-rail .tide-reader'), besides('#main-content', '#tide-rail'), attr('#tide-rail', 'role', null),
-      attr('#tide-rail', 'aria-label', 'Context · what readers get'), ...editorFits,
-      ...editorPairs.map(pair => [1600, sameLine(...pair)]),
-      [1600, besides(...editorPairs[0])], [1600, besides(...editorPairs[2])],
+      attr('#tide-rail', 'aria-label', 'Context · what readers get'), ...editorFits, editorReadingOrder, editorMeasure,
       fits('.tide-rail-body'), fits('#tide-rail .tide-reader'), fits('#tide-rail .tide-reader-head'), fits('#tide-rail .tide-tabbar')] },
-  // Below 1500px the rail is closed until asked for, and the form keeps its pairs where there's room for two columns;
-  // at 780 each card takes the width, one under another, and nothing scrolls sideways.
+  // Below 1500px the rail is closed until asked for, and the form is the same one column, nothing scrolling sideways.
   { name: 'editor-rail-shut', route: '/articles/{vpnArticle}', setup: wideFont, widths: [1440, 1000, 780],
-    rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), ...editorFits,
-      ...editorPairs.map(pair => [1440, sameLine(...pair)]), [901, hidden('.tide-ws-switch')]] },
+    rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), ...editorFits, editorReadingOrder, editorMeasure,
+      [901, hidden('.tide-ws-switch')]] },
+  // A bullet starts a line high and grows with its text, whatever was dragged at its corner.
+  { name: 'editor-bullet-grows', route: '/articles/{vpnArticle}', setup: wideFont, widths: [1920], rules: [bulletGrows] },
   // `]` opens it over the page there: a modal dialog with the preview in it, named for what it holds.
   { name: 'editor-rail-over', route: '/articles/{vpnArticle}', setup: toggleRail, widths: [1440, 780],
     rules: [noSidewaysScroll, visible('#tide-rail .tide-reader'), fits('.tide-rail-body'), focusIn('#tide-rail'), attr('#tide-rail', 'role', 'dialog'),
@@ -3147,7 +3195,7 @@ const pages = [
       [1000, oneLine('.tide-sticky-save .tide-autosave-note')], onTop('.tide-sticky-save .tide-autosave-note')] },
   { name: 'editor-phone-edit', route: '/articles/{vpnArticle}', setup: wideFont, widths: [780, 400],
     rules: [noSidewaysScroll, visible('.tide-ws-switch'), hidden('#tide-rail'), visible('section[aria-labelledby="sec-assessment"]'), fits('.tide-section-pills'),
-      stacked('.tide-editor-pair')] },
+      editorReadingOrder] },
   // The page reads the tab from ?view= (each tab with its count). The tabs are one row at every width: when wider fonts
   // don't leave room, the row scrolls sideways inside itself, so there's no fits() on it; noSidewaysScroll checks that the
   // page never does. The Escalated badge stays on the number's line, the title wrapping before them.
