@@ -215,8 +215,7 @@ public class PaletteEntryTests
         var dir = AppContext.BaseDirectory;
         while (!File.Exists(Path.Combine(dir, "Tide.sln"))) dir = Path.GetDirectoryName(dir)!;
         var js = File.ReadAllText(Path.Combine(dir, "src", "Tide.Web", "wwwroot", "js", "present.js"));
-        var map = js[(js.IndexOf("const keys = {", StringComparison.Ordinal) + 14)..];
-        map = map[..map.IndexOf('}', StringComparison.Ordinal)];
+        var map = System.Text.RegularExpressions.Regex.Match(js, @"const keys = \{([^}]*)\}").Groups[1].Value;
         var named = new Dictionary<string, string> { ["ArrowRight"] = "→", ["ArrowLeft"] = "←", ["Escape"] = "Esc" };
         var handled = System.Text.RegularExpressions.Regex.Matches(map, @"'?([^\s,:']+)'?\s*:").Select(m => m.Groups[1].Value)
             .Select(k => named.GetValueOrDefault(k, k.Length == 1 ? k.ToUpperInvariant() : k)).Distinct().ToList();

@@ -1291,10 +1291,8 @@ async function overLimitCancelled(page, demo) {
   await settle(page);
   await page.keyboard.press('Escape');   // an action the last page left open for the room
   await idle(page);
-  await toArticleSlide(page);
-  await page.keyboard.press(']');
+  await presenterRail(true)(page, demo);
   const rail = page.locator('#present-rail');
-  await rail.waitFor();
   await rail.locator('.tide-quick-add select[aria-label="Team"]').selectOption({ label: team });
   await rail.getByRole('textbox', { name: 'New action title' }).fill('Over the limit, then cancelled');
   await idle(page);

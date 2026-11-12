@@ -124,6 +124,10 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
         }
     }
 
+    // The team the quick add's select has chosen, as picking it would.
+    private static void QuickAddTeam(Present page, Guid team) =>
+        typeof(Present).GetField("_qaTeam", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(page, team);
+
     [Fact]
     public async Task AnActionAddedInTheMeeting_ToATeamThatWarnsAtItsLimit_AsksWhy_AndGoesAhead()
     {
@@ -137,9 +141,8 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
             await scope.ServiceProvider.GetRequiredService<ActionService>().CreateAsync(new ActionForm { Title = "At the limit", TeamId = team });
         }
         await using var r = await PresentHarness.Open(app, day);
-        var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
         r.Component.TypeQuickAddTitle(article, "Sweep the proxy logs");
-        typeof(Present).GetField("_qaTeam", flags)!.SetValue(r.Component, team);
+        QuickAddTeam(r.Component, team);
 
         // The add waits on the dialog: start it as a click would, and keep hold of it to wait for it once it's answered.
         Task adding = Task.CompletedTask;
@@ -175,7 +178,7 @@ public class MeetingActionsTests(TideApp app) : IClassFixture<TideApp>
         }
         await using var r = await PresentHarness.Open(app, day);
         r.Component.TypeQuickAddTitle(article, "Not after all");
-        typeof(Present).GetField("_qaTeam", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(r.Component, team);
+        QuickAddTeam(r.Component, team);
 
         Task adding = Task.CompletedTask;
         await r.Renderer.Dispatcher.InvokeAsync(() => { adding = r.Pressed(p => p.QuickAdd(article)); });

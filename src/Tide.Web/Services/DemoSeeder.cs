@@ -87,14 +87,12 @@ public static class DemoSeeder
     /// </summary>
     internal static void NotStale(string seededFor, DateOnly today)
     {
-        if (!DateOnly.TryParseExact(seededFor, IsoDay, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var day) || day == today) return;
+        if (seededFor == "1" || seededFor == Iso(today)) return;
         throw new InvalidOperationException(
             $"This demo database was seeded for {seededFor}, and today's brief is {Iso(today)}: its pages would show a day that's gone. Start on a fresh one (without REUSE).");
     }
 
-    private const string IsoDay = "yyyy-MM-dd";
-
-    private static string Iso(DateOnly day) => day.ToString(IsoDay, System.Globalization.CultureInfo.InvariantCulture);
+    private static string Iso(DateOnly day) => Tide.Web.Components.Shared.Badges.IsoDay(day);
 
     /// <summary>
     /// <c>Demo:TriageFiller</c> (none unless set): that many more new items, "Filler k001" onwards, older than the demo's
@@ -251,7 +249,7 @@ public static class DemoSeeder
             foreach (var a in db.Actions.Local.ToList())
             {
                 var at = new[] { a.StatusChangedAtUtc, a.RaisedOn is { } day ? clock.MeetingStart(day).ToUniversalTime() : null }
-                    .Concat(a.Events.Select(e => (DateTimeOffset?)e.AtUtc)).OfType<DateTimeOffset>().DefaultIfEmpty(a.CreatedAtUtc).Min();
+                    .Concat(a.Events.Select(e => (DateTimeOffset?)e.AtUtc)).OfType<DateTimeOffset>().Append(a.CreatedAtUtc).Min();
                 if (at < a.CreatedAtUtc) await db.Actions.Where(x => x.Id == a.Id).ExecuteUpdateAsync(u => u.SetProperty(x => x.CreatedAtUtc, at), ct);
             }
         }
