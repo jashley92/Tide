@@ -153,8 +153,15 @@ public sealed record ActionFilter(ActionView View = ActionView.Open, Guid? TeamI
 
     public ActionDue? Due { get; init; }
 
-    /// <summary>One status (the Actions page offers the open ones: Open, In progress, Blocked).</summary>
+    /// <summary>One status (the Actions page offers the open ones, and on Recently closed the closed ones).</summary>
     public ActionStatus? Status { get; init; }
+
+    /// <summary>How far back Recently closed reaches, in days (<c>closed=7</c>, from the board's closed strip): the last
+    /// <see cref="ActionService.ClosedListDays"/> when null, and never further.</summary>
+    public int? ClosedDays { get; init; }
+
+    /// <summary>Only the actions of the reader's teams (<c>on=myteams</c>): My teams' closed ones, from the board's strip.</summary>
+    public bool OnMyTeams { get; init; }
 
     /// <summary>An administrator's card rule shown as a filter: the actions it matches (the list's; the board matches
     /// its cards itself, to count each rule's).</summary>
@@ -420,7 +427,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     {
         RequireRead(user);
         await using var db = await dbs.CreateAsync(ct);
-        var q = InList(Narrow(db, db.Actions.AsNoTracking(), filter), filter.View);
+        var q = InList(Narrow(db, db.Actions.AsNoTracking(), filter), filter);
         var rows = await RowsAsync(db, q, ct);
         return filter.View == ActionView.Closed
             ? rows.OrderByDescending(r => r.ClosedDate).ThenByDescending(r => r.Number).ToList()
@@ -430,13 +437,16 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// <summary>How far back the Recently closed view reaches.</summary>
     public const int ClosedListDays = 90;
 
-    // The list's actions for a view: the open ones, or for Closed, those closed in the last ClosedListDays.
-    private static IQueryable<ActionItem> InList(IQueryable<ActionItem> q, ActionView view)
+    // The list's actions for a view: the open ones, or for Closed, those closed within its reach.
+    private static IQueryable<ActionItem> InList(IQueryable<ActionItem> q, ActionFilter filter)
     {
-        if (view != ActionView.Closed) return q.WhereOpen();
-        var since = DateTimeOffset.UtcNow.AddDays(-ClosedListDays);
+        if (filter.View != ActionView.Closed) return q.WhereOpen();
+        var since = ClosedListSince(filter.ClosedDays);
         return q.Where(a => a.ClosedAtUtc != null && a.ClosedAtUtc >= since);
     }
+
+    // How far back Recently closed reaches: the filter's days, a day to ClosedListDays (its longest, and its default).
+    private static DateTimeOffset ClosedListSince(int? days) => DateTimeOffset.UtcNow.AddDays(-Math.Clamp(days ?? ClosedListDays, 1, ClosedListDays));
 
     /// <summary>Rows on a page of the actions list.</summary>
     public const int ListPageSize = 50;
@@ -497,16 +507,17 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         RequireRead(user);
         await using var db = await dbs.CreateAsync(ct);
         var (me, held, today) = (user.UserId, filter.AssigneeId, clock.Today);
-        var closedSince = DateTimeOffset.UtcNow.AddDays(-ClosedListDays);
+        var closedSince = ClosedListSince(filter.ClosedDays);
         // The board's closed strip (within the closed list's 90 days, as its longest reach, BoardOlderDays, is); the list has none.
         var boardSince = closedDays is { } days ? BoardClosedSince(days) : DateTimeOffset.MaxValue;
+        var readSince = boardSince < closedSince ? boardSince : closedSince;
         // Which of the counted actions the board's view shows (the strip counts those).
         var (mineView, teamsView) = (filter.View == ActionView.Mine, filter.View == ActionView.MyTeams);
         var q = Narrow(db, db.Actions.AsNoTracking(), filter with { View = ActionView.Open, AssigneeId = null });
         if (rule is not null) q = WhereRule(q, rule);
         var open = ActionItem.OpenStatuses;
         // Each action once, with whether it's on one of the reader's teams (a membership is one row per team and person).
-        var rows = from a in q.WhereOpenOrClosedSinceUtc(closedSince)
+        var rows = from a in q.WhereOpenOrClosedSinceUtc(readSince)
                    join m in db.TeamMembers.Where(m => m.UserId == me) on a.TeamId equals m.TeamId into ms
                    from m in ms.DefaultIfEmpty()
                    let isHeld = held == null || (held == ActionFilter.Unassigned ? a.AssigneeId == null : a.AssigneeId == held)
@@ -561,7 +572,7 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     // The list's actions: the filter's, open (or for Closed, closed in the last 90 days), and its rule's.
     private async Task<IQueryable<ActionItem>> ListQuery(IAppDbContext db, ActionFilter filter, CancellationToken ct)
     {
-        var q = InList(Narrow(db, db.Actions.AsNoTracking(), filter), filter.View);
+        var q = InList(Narrow(db, db.Actions.AsNoTracking(), filter), filter);
         if (filter.RuleId is { } ruleId)
         {
             // A rule taken away meanwhile filters nothing out, as it no longer shows as a filter.
@@ -689,13 +700,13 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
                 q = q.Where(a => a.AssigneeId == user.UserId);
                 break;
             case ActionView.MyTeams:
-                var mine = db.TeamMembers.Where(m => m.UserId == user.UserId).Select(m => m.TeamId);
-                q = q.Where(a => mine.Contains(a.TeamId));
+                q = OnMyTeams(q);
                 break;
             case ActionView.Overdue:
                 q = q.Where(a => a.DueDate != null && a.DueDate < today);
                 break;
         }
+        if (filter.OnMyTeams) q = OnMyTeams(q);
         if (filter.TeamId is { } team) q = q.Where(a => a.TeamId == team);
         if (filter.Teams is { } side)
         {
@@ -742,6 +753,12 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
                 break;
         }
         return q;
+
+        IQueryable<ActionItem> OnMyTeams(IQueryable<ActionItem> actions)
+        {
+            var mine = db.TeamMembers.Where(m => m.UserId == user.UserId).Select(m => m.TeamId);
+            return actions.Where(a => mine.Contains(a.TeamId));
+        }
     }
 
     /// <summary>Everyone who holds an open action, by name, with how many: the Held by filter's people.</summary>

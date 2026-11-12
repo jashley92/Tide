@@ -151,7 +151,10 @@ An action is open while it's Open, In progress, Blocked or Tracking, and closed 
   one, or none.
 - **Closing** stamps `ClosedAtUtc` and `ClosedDate` (organization day) the first time it closes. Moving between closed
   statuses keeps them.
-- **Reopening** clears the outcome, its note and the closing times.
+- **Reopening** clears the outcome, its note and the closing times. The history keeps the line that closed it, with
+  its outcome and note. Besides the status control and the board, a closed action's rail on the list (Recently closed)
+  has **Reopen**, for whoever may move it: a move back to Open through `ActionMover` and `MoveAsync`, checked, refused
+  when it has moved since, and recorded as any move is.
 - **An outcome the action already has stays a choice** even if its kind's list no longer includes it
   (`OutcomesFor`), so an action closed before a kind's list narrowed keeps what it was closed with.
 - **Take it** assigns the action to the person and moves Open to In progress (`TakeAsync`).
@@ -918,7 +921,7 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
   anyone who can open Actions may keep up to 12 (`SavedViewService.MaxViews`), Viewers too, and no one sees or changes
   another's. A name is at most 60 characters, trimmed, and once per person whatever its case. The query keeps only
   the page's own parameters (`view`, `layout`, `group`, `rule`, `team`, `assignee`, `q`, `kind`, `priority`, `due`,
-  `status`, `parent`, `teams`, `raised`), each within its length (`SavedViewService.Parameters`), in that order;
+  `status`, `parent`, `teams`, `raised`, `closed`, `on`), each within its length (`SavedViewService.Parameters`), in that order;
   anything else is refused and `page` is dropped. A view is a shortcut, not a filter of its own: one that names a team
   or rule since retired opens the page as any such link does.
 - **Filters.** One bar for the list and the board (`FilterBar`; the filter is `ActionFilter`): the search box (title,
@@ -937,8 +940,10 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
   status, rule) and When (due), and gives a long list (held by, in a big team) a find box. It holds team (`team`); held by (`assignee`: you, nobody, or anyone holding an open action, with how many,
   from `HoldersAsync`; a Workload link sets it too); internal or external teams (`teams=internal|external`,
   `ActionFilter.Teams`); raised by (`raised=me`); kind (`kind`), priority (`priority`, any of P1 to P4: `priority=p1,p3`;
-  `ActionFilter.Priorities`), due (`due`, with `none` for no due date), status (`status`, the open ones) and, when an
-  administrator shows card rules as filters, the rule (`rule`, each with its count). Each is a chip while set, unless a
+  `ActionFilter.Priorities`), due (`due`, with `none` for no due date), status (`status`: the open ones, and on Recently closed the closed
+  ones) and, when an administrator shows card rules as filters, the rule (`rule`, each with its count). Recently closed
+  adds how far back (`closed=7` or `closed=30`, *Closed in the last 7 days*; `ActionFilter.ClosedDays`, never past its
+  90) and only your teams' (`on=myteams`, `ActionFilter.OnMyTeams`). Each is a chip while set, unless a
   pill says it. Held by stays when the view changes, except to Mine. Parent (`parent=12`, "Part of A-12": the parts
   of one action, from its page's link) is a chip only. They combine, and every filter, the view and the page are in the address.
   A filter change goes back to the first page; **Clear** removes every filter and the words, and keeps the view and
@@ -946,8 +951,12 @@ out of each kind and who (`CountsAsync`, `PeopleAsync`, `Administer` only).
 - **The list** is sorted, grouped and paged in the database, 50 a page (`ActionService.ListPageSize`). Group headings
   count every matching action in the group, and each rule offered as a filter is counted there too (`RuleCountsAsync`); the board counts them from its cards, once each time it's read.
 - **The board** loads every open card and caps each column on screen: its first 20 cards, then *Show N more*, 20 at a
-  time. A card moved into a column (by you or a colleague) stays in view. The closed columns reach back 7 days
-  (`BoardClosedDays`); *Show older*, under Done, takes them to 30 days (`BoardOlderDays`) for that visit.
+  time. A card moved into a column (by you or a colleague) stays in view. Closed actions aren't drawn: a strip under the
+  lanes counts what closed each way (Done, Cancelled, Not applicable) in the last 7 days (`BoardClosedDays`); *Show the
+  last 30 days* takes it to 30 (`BoardOlderDays`) for that visit. Each chip is a drop target that closes a card that
+  way, and a link to the actions it counts: Recently closed on the list at that status and reach, with the board's
+  filters (`ActionsBoard.ClosedLink`; from Mine held by you, from My teams `on=myteams`). The list shows what it always
+  shows that person, so the link never widens who sees an action.
 - **Today's team queue** (`TeamQueueAsync`): the person's teams' open actions that are theirs or nobody's, theirs
   first, up to 8, with *Take it*. Without `WriteArticles` it leads Today in place of the producers' step strip.
 - **Today's Escalated card** (`TeamQueue.Escalated`, read with the queue on its context; `EscalatedAsync` alone): the

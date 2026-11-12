@@ -195,6 +195,61 @@ const dropOnEachChip = {
   },
 };
 
+/**
+ * Each chip on the closed strip is a link as well as a drop target: to Recently closed on the list at its status and the
+ * strip's reach, named for what it shows, not itself draggable, and able to take focus from the keyboard.
+ */
+const chipsAreLinks = {
+  name: 'each closed chip links to the actions it counts',
+  check: page => page.evaluate(() => {
+    const problems = [];
+    for (const [status, key] of [['Done', 'done'], ['Cancelled', 'cancelled'], ['NotApplicable', 'notapplicable']]) {
+      const link = document.querySelector(`.tide-kstrip .tide-kchip[data-status="${status}"] a.tide-kchip-link`);
+      if (!link || !link.getBoundingClientRect().height) { problems.push(`the ${status} chip has no link shown`); continue; }
+      const q = new URL(link.href).searchParams;
+      if (q.get('view') !== 'closed' || q.get('layout') !== 'list' || q.get('status') !== key || !/^(7|30)$/.test(q.get('closed') ?? ''))
+        problems.push(`the ${status} chip links to ?${q}, not Recently closed at ${key} within the strip's reach`);
+      const name = link.getAttribute('aria-label') ?? '';
+      if (!/: \d+ closed in the last (7|30) days, show them$/.test(name)) problems.push(`the ${status} link is named "${name}"`);
+      if (link.getAttribute('draggable') !== 'false') problems.push(`the ${status} link can itself be dragged`);
+      if (link.tabIndex < 0) problems.push(`the ${status} link is out of the Tab order`);
+      link.focus();
+      if (document.activeElement !== link) problems.push(`the ${status} link can't take focus`);
+    }
+    return problems;
+  }),
+};
+
+/** A click on the Done chip opens Recently closed on the list, at Done within the strip's week: every row Done. */
+const chipLinkOpensTheList = {
+  name: 'a closed chip opens its actions on the list',
+  check: async page => {
+    await page.locator('.tide-kchip[data-status="Done"] a.tide-kchip-link').click();
+    try { await page.waitForURL(/view=closed/, { timeout: 5000 }); } catch { return ['a click on the Done chip went nowhere']; }
+    await page.locator('.tide-action-row, .tide-empty').first().waitFor({ timeout: 5000 }).catch(() => {});
+    return page.evaluate(() => {
+      const problems = [], q = new URL(location.href).searchParams;
+      if (q.get('layout') !== 'list' || q.get('status') !== 'done' || q.get('closed') !== '7') problems.push(`it opened ?${q}`);
+      const current = document.querySelector('[role=group][aria-label="Views"] [aria-current="page"], [role=group][aria-label="Views"] .active');
+      if (current && !/Recently closed/.test(current.textContent)) problems.push(`the ${current.textContent.trim()} tab is shown, not Recently closed`);
+      if (!/Closed in the last 7 days/.test(document.body.innerText)) problems.push('the reach isn\'t shown as a filter');
+      const rows = [...document.querySelectorAll('.tide-action-row')];
+      const other = rows.filter(r => !/\bDone\b/.test(r.innerText));
+      if (other.length) problems.push(`${other.length} of its ${rows.length} rows aren't Done`);
+      return problems;
+    });
+  },
+};
+
+/** A closed action's rail on the list offers Reopen (to whoever may move it: the demo's analyst), named for the action. */
+const reopenNamed = {
+  name: 'Reopen is named for the action',
+  check: page => page.evaluate(() => {
+    const name = document.querySelector('#tide-rail .tide-rail-reopen')?.getAttribute('aria-label') ?? '';
+    return /^Reopen A-\d+$/.test(name) ? [] : [`Reopen is named "${name}"`];
+  }),
+};
+
 const selectedAction = page => page.evaluate(() => {
   const rows = [...document.querySelectorAll('.tide-action-row')];
   return { at: rows.findIndex(r => r.classList.contains('selected')), focused: rows.indexOf(document.activeElement), row: new URL(location.href).searchParams.get('row') };
@@ -739,6 +794,53 @@ const underIsInert = {
   name: 'the top bar and the navigation are inert under the overlay',
   check: page => page.evaluate(() => ['.top-row', '.sidebar'].filter(s => document.querySelector(s)?.closest('[inert]') === null)
     .map(s => `${s} isn't inert while the overlay is open`)),
+};
+
+/** The sidebar's menu fits the window's height without scrolling (a short window tightens the links, not the list). */
+const navFits = {
+  name: "the sidebar's menu fits without scrolling",
+  check: page => page.$eval('ul.tide-nav', ul => ul.scrollHeight <= ul.clientHeight + 1 ? []
+    : [`the menu scrolls: ${ul.scrollHeight}px of ${ul.querySelectorAll('a').length} links in ${ul.querySelectorAll('.tide-nav-group').length} groups, in ${ul.clientHeight}px`]),
+};
+
+/** Every link in the sidebar is at least 24px tall (WCAG 2.5.8's target size), however short the window. */
+const navTargets = {
+  name: "the sidebar's links are at least 24px tall",
+  check: page => page.$$eval('#tide-nav-links a', links => {
+    const shown = links.filter(a => a.getBoundingClientRect().height > 0);
+    if (!shown.length) return ['no sidebar link is shown'];
+    return shown.filter(a => a.getBoundingClientRect().height < 24)
+      .map(a => `${a.getAttribute('href') || 'today'} is ${a.getBoundingClientRect().height.toFixed(1)}px tall`);
+  }),
+};
+
+/** Where the menu still scrolls (a very short window), its scrollbar is the thin one in the sidebar's colours, and the
+ *  current page's link is within the part of the menu that shows. */
+const navScrollsToActive = {
+  name: "the sidebar's menu scrolls thin, its current link in view",
+  check: page => page.$eval('ul.tide-nav', ul => {
+    const problems = [];
+    if (ul.scrollHeight <= ul.clientHeight + 1) problems.push(`the menu doesn't scroll at this height (${ul.scrollHeight}px in ${ul.clientHeight}px): the rule tests nothing`);
+    const width = getComputedStyle(ul).scrollbarWidth;
+    if (width !== 'thin') problems.push(`the menu's scrollbar-width is ${width}, not thin`);
+    const a = ul.querySelector('a.active, a[aria-current="page"]');
+    if (!a) return [...problems, 'no link is marked as the current page'];
+    const r = a.getBoundingClientRect(), box = ul.getBoundingClientRect();
+    if (r.top < box.top - 1 || r.bottom > box.bottom + 1) problems.push(`the current link (${a.getAttribute('href')}) is at ${Math.round(r.top)}-${Math.round(r.bottom)}px, outside the menu's ${Math.round(box.top)}-${Math.round(box.bottom)}px`);
+    if (window.scrollY !== 0) problems.push(`the page scrolled to ${window.scrollY}px`);
+    return problems;
+  }),
+};
+
+/** Setup: the sidebar collapsed to icons. */
+const collapseNav = async page => { await page.click('#nav-collapse-toggle'); await page.waitForTimeout(300); };
+
+/** Setup: the menu scrolled to its top, then the last page in it (Administration) opened by navigation, not a load. */
+const navigateToAdmin = async page => {
+  await page.$eval('ul.tide-nav', ul => { ul.scrollTop = 0; });
+  await page.evaluate(() => window.Blazor.navigateTo('admin'));
+  await page.waitForURL(/\/admin/);
+  await page.waitForTimeout(500);
 };
 
 /** Setup: every letter spaced wider, as a font wider than this machine's would set it (see selectCovered). */
@@ -2766,6 +2868,13 @@ const pages = [
   { name: 'today-rail-meeting', route: '/', setup: openMeeting, widths: [1920, 1500, 1440],
     rules: [visible('#tide-rail'), visible('#tide-rail #analyst'), oneLine('#tide-rail label[for="intro"]'), fits('#tide-rail section[aria-labelledby="meeting-h"]'), focusIn('#tide-rail #analyst'),
       ringOnFocus('#tide-rail #analyst, #tide-rail #intro, #tide-rail [data-submit]')] },
+  // The sidebar's menu: in a short window (852px tall, as on a laptop) all of it fits without scrolling, each link a
+  // target of 24px or more, wider letters and collapsed to icons too. Shorter still it scrolls, thinly, with the current
+  // page's link in view, on load and after navigating to it.
+  { name: 'nav-short', route: '/', setup: wideFont, widths: [[1920, 852], [1440, 852], [1440, 1080]], rules: [navFits, navTargets] },
+  { name: 'nav-short-collapsed', route: '/', setup: collapseNav, widths: [[1440, 852], [1440, 600]], rules: [navTargets] },
+  { name: 'nav-very-short', route: '/admin', widths: [[1440, 600], [1920, 500]], rules: [navTargets, navScrollsToActive] },
+  { name: 'nav-very-short-navigate', route: '/', setup: navigateToAdmin, widths: [[1440, 600]], rules: [navScrollsToActive] },
   // The top bar keeps each control in its own room, whatever the width and the fonts.
   { name: 'top-bar-today', route: '/', setup: wideFont, widths: [1920, 1100, 900, 780, 726, 700, 660, 641, 400],
     rules: [noSidewaysScroll, noOverlap('.top-row a, .top-row button, .top-row input'), fits('.top-row'),
@@ -2953,6 +3062,17 @@ const pages = [
   { name: 'actions-rail-list-keys', route: '/actions?view=open&layout=list', widths: [[1920, 1000]], rules: [actionKeys, railFollowsSelection, statusMenuByKeyboard] },
   // A card dragged with the mouse onto each chip asks how it closed.
   { name: 'actions-board-drop', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [dropOnEachChip] },
+  // Each chip is a link to the actions it counts as well as a drop target, and the strip still keeps to one row, with
+  // wider letters (LETTER_SPACING) too. A click on one opens Recently closed on the list at that status.
+  ...['', '-wide-letters'].map(suffix => ({
+    name: `actions-board-closed-links${suffix}`, route: '/actions?view=open&layout=board', setup: suffix ? wideFont : undefined,
+    widths: [[1920, 1080], [1440, 900], [1280, 800]],
+    rules: [noSidewaysScroll, oneRow('.tide-kstrip'), chipsAreDropTargets, chipsAreLinks, ringOnFocus('.tide-kchip-link')],
+  })),
+  { name: 'actions-board-closed-link-opens', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [chipLinkOpensTheList] },
+  // A closed action's rail on Recently closed offers Reopen beside Open, on one row, with wider letters.
+  { name: 'actions-rail-reopen', route: '/actions?view=closed&layout=list', setup: wideFont, widths: [[1920, 1000], [1600, 1000], [1500, 1000]],
+    rules: [noSidewaysScroll, visible('#tide-rail .tide-rail-reopen'), reopenNamed, oneRow('#tide-rail .tide-rail-buttons')] },
   // A sweep's query is read whole, in the wide column: its long lines wrap, so nothing scrolls sideways inside its box.
   { name: 'action-hunt', route: '/actions/{huntAction}', widths: [1920, 1440],
     rules: [noSidewaysScroll, visible('.tide-action-main .tide-hunt pre.tide-query'), fits('.tide-hunt pre.tide-query'),
