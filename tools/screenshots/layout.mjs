@@ -982,6 +982,51 @@ const articleSlide = n => async page => {
   }
 };
 
+/** Setup: wider letters, then the slides stepped through (from the title) to the first that shows `selector`. */
+const slideWith = selector => async page => {
+  await wideFont(page);
+  for (let i = 0; i < 12 && !(await page.locator(selector).count()); i++) {
+    await page.keyboard.press('ArrowRight');
+    await page.waitForTimeout(300);
+  }
+  await page.waitForTimeout(400);
+};
+
+/** Setup: on the dozen-indicator slide, `opener` pressed to open its card (`title` its heading), then the card closed by
+ *  `how`: 'Escape', or the name of its Close button. */
+const cardClosed = (opener, title, how) => async (page, demo) => {
+  await articleSlide(2)(page, demo);
+  await page.locator(opener).first().click();
+  await page.locator(title).waitFor();
+  await page.waitForTimeout(300);
+  if (how === 'Escape') await page.keyboard.press('Escape');
+  else await page.getByRole('button', { name: how }).click();
+  await page.locator(title).waitFor({ state: 'detached' });
+  await page.waitForTimeout(500);
+};
+
+/** Setup: on the opening note's slide, the presenter's `then` done in its strip: 'edit' (Edit pressed), 'escape' (Edit,
+ *  then Escape in the box) or 'keep' (Still current). */
+const noteStrip = then => async (page, demo) => {
+  await slideWith('.tide-slide-note')(page, demo);
+  const strip = page.locator('.tide-slide-presenter');
+  await strip.getByRole('button', { name: then === 'keep' ? 'Still current' : 'Edit', exact: true }).click();
+  if (then === 'escape') {
+    await page.locator('#slide-note-text').waitFor();
+    await page.locator('#slide-note-text').focus();
+    await page.keyboard.press('Escape');
+  }
+  await page.waitForTimeout(800);
+};
+
+/** Setup: on the numbers slide with one missing, `text` typed in its box and Enter pressed. */
+const numberEntered = text => async (page, demo) => {
+  await slideWith('.tide-slide-presenter input')(page, demo);
+  await page.locator('.tide-slide-presenter input').first().fill(text);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(900);
+};
+
 /** The meeting the present-people pages share: which one it is ("presenter/5"), and the browsers of its other people,
  *  kept open across a page's widths (each width opens only its own page) and closed when the next one is set up. */
 let meetingGuests = { key: '', contexts: [] };
@@ -1676,9 +1721,9 @@ const namesWhole = holds('hands\' names whole or not shown', () => {
   });
 });
 
-/** The text of each shown match of `selector` contrasts with what's behind it (the nearest box with a background) by
- *  at least `ratio` (WCAG's relative luminance; 4.5 is AA for body text). */
-const contrastAtLeast = (selector, ratio) => holds(`contrast at least ${ratio}:1: ${selector}`, ([selector, ratio]) => {
+/** The text of each shown match of `selector` (or its `pseudo`, '::placeholder' say) contrasts with what's behind it
+ *  (the nearest box with a background) by at least `ratio` (WCAG's relative luminance; 4.5 is AA for body text). */
+const contrastAtLeast = (selector, ratio, pseudo = null) => holds(`contrast at least ${ratio}:1: ${selector}${pseudo ?? ''}`, ([selector, ratio, pseudo]) => {
   const rgb = c => (c.match(/[\d.]+/g) ?? []).map(Number);
   const lum = ([r, g, b]) => [r, g, b].map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; })
     .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
@@ -1692,11 +1737,35 @@ const contrastAtLeast = (selector, ratio) => holds(`contrast at least ${ratio}:1
   const shown = [...document.querySelectorAll(selector)].filter(e => e.getBoundingClientRect().width > 0);
   if (!shown.length) return [`nothing shown matches ${selector}`];
   return shown.flatMap((e, i) => {
-    const fg = lum(rgb(getComputedStyle(e).color)), bg = lum(behind(e));
+    // A translucent colour is laid over what's behind it.
+    const [r0, g0, b0, a = 1] = rgb(getComputedStyle(e, pseudo).color), under = behind(e);
+    const color = [r0, g0, b0].map((v, k) => v * a + under[k] * (1 - a));
+    const fg = lum(color), bg = lum(under);
     const r = (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
-    return r + 0.005 >= ratio ? [] : [`${selector} #${i + 1}: ${getComputedStyle(e).color} on ${behind(e).join(',')} is ${r.toFixed(2)}:1`];
+    return r + 0.005 >= ratio ? [] : [`${selector}${pseudo ?? ''} #${i + 1}: ${getComputedStyle(e, pseudo).color} on ${under.join(',')} is ${r.toFixed(2)}:1`];
   });
-}, [selector, ratio]);
+}, [selector, ratio, pseudo]);
+
+/** A box's hint on the dark slide (its placeholder) reads: AA, in either theme. */
+const slidePlaceholdersReadable = contrastAtLeast('.tide-slide :is(input, textarea)[placeholder]', 4.5, '::placeholder');
+
+/** The first shown match of `a` and of `b` look alike in each of `props` (computed): controls side by side that match. */
+const sameLook = (a, b, props) => holds(`same ${props.join(', ')}: ${a} / ${b}`, ([a, b, props]) => {
+  const first = s => [...document.querySelectorAll(s)].find(e => e.getBoundingClientRect().width > 0);
+  const x = first(a), y = first(b);
+  if (!x || !y) return [`nothing shown matches ${!x ? a : b}`];
+  return props.flatMap(p => {
+    const v = getComputedStyle(x)[p], w = getComputedStyle(y)[p];
+    return v === w ? [] : [`${p}: ${v} on ${a}, ${w} on ${b}`];
+  });
+}, [a, b, props]);
+
+/** Each shown button saying `text` names what it's for in its accessible name, starting `name` (none shown holds: an
+ *  earlier page may have taken the demo's actions, and a test covers the name too). */
+const buttonsNamed = (text, name) => holds(`"${text}" buttons named "${name}…"`, ([text, name]) => {
+  const shown = [...document.querySelectorAll('button')].filter(b => b.textContent.trim() === text && b.getBoundingClientRect().width > 0);
+  return shown.filter(b => !(b.getAttribute('aria-label') ?? '').startsWith(name)).map(b => `a "${text}" button is named "${b.getAttribute('aria-label') ?? text}"`);
+}, [text, name]);
 
 /** The slide's "+N more" links (the CVEs', the indicators') read on the dark slide: AA. */
 const slideLinksReadable = contrastAtLeast('.tide-slide :is(.tide-slide-cve-more, .tide-slide-ioc-more)', 4.5);
@@ -3549,10 +3618,20 @@ const pages = [
   { name: 'trends', route: '/trends', widths: [1920], rules: [noSidewaysScroll, widerThan('.content', 1400)] },
   { name: 'slide-article', route: '/present/{today}', setup: toArticleSlide, widths: [1440, 1100, 900],
     rules: [
+      slidePlaceholdersReadable,
       visible('.tide-quick-add'),
       [1001, oneRow('.tide-quick-add')],
-      [1001, oneRow('.tide-reco li')],
+      [1001, oneRow('.tide-reco li:not(.is-raised)')],
+      // A line raised already shows the action it became (the sample's hotfix line is A-2), its controls in the Raise rows' columns.
+      visible('.tide-reco li.is-raised .tide-reco-done'), fits('.tide-reco'),
+      [1001, lineUp('.tide-reco li.is-raised .tide-action-assign > input', '.tide-slide-actlist .tide-action-assign > input')],
       [1001, oneRow('.tide-slide-actlist > li')],
+      // An other action's team and due stay readable beside its title (the title gives way); its controls look like the
+      // lines' (the date as dark as the selects; the same size of type); each Take it says which action.
+      notSqueezed('.tide-slide-actlist .tide-present-help'),
+      sameLook('.tide-slide .tide-action-assign > input', '.tide-slide .tide-action-assign > select', ['backgroundColor', 'color', 'fontSize']),
+      sameLook('.tide-reco .tide-action-assign > select', '.tide-slide-actlist .tide-action-assign > select', ['fontSize']),
+      buttonsNamed('Take it', 'Take A-'),
       [1001, lineUp('.tide-reco li > select:nth-of-type(1)', '.tide-slide-actlist .tide-action-assign > input')],
       [1001, lineUp('.tide-reco li > select:nth-of-type(2)', '.tide-slide-actlist .tide-action-assign > select')],
     ] },
@@ -3564,8 +3643,40 @@ const pages = [
       rules: [noSidewaysScroll, slideFits, fits('.tide-slide-body'), fits('.tide-present-top'),
         ...(chips === 0 ? [hidden('.tide-slide-iocsec')] : [fits('.tide-slide-iocs'), shownCount('.tide-slide-iocs .tide-slide-ioc', chips)]),
         ...(chips === 10 ? [visible('.tide-slide-iocs .tide-slide-ioc-more'), fits('.tide-slide-cves'), slideLinksReadable] : [])] })),
+  // The card a slide's "+N more" opened (the indicators', the CVEs') gives focus back to it as it closes, by Escape or
+  // its Close.
+  { name: 'slide-iocs-card-escape', route: '/present/{today}', setup: cardClosed('.tide-slide-ioc-more', '#present-iocs-title', 'Escape'), widths: [1920, 1440],
+    rules: [hidden('#present-iocs-title'), focusOn('button.tide-slide-ioc-more')] },
+  { name: 'slide-cves-card-close', route: '/present/{today}', setup: cardClosed('.tide-slide-cve-more:not(.tide-slide-ioc-more)', '#present-cves-title', 'Close the CVEs'), widths: [1920, 1440],
+    rules: [hidden('#present-cves-title'), focusOn('.tide-slide-cve-more:not(.tide-slide-ioc-more)')] },
+  { name: 'slide-cves-card-escape', route: '/present/{today}', setup: cardClosed('.tide-slide-cve-more:not(.tide-slide-ioc-more)', '#present-cves-title', 'Escape'), widths: [1440],
+    rules: [hidden('#present-cves-title'), focusOn('.tide-slide-cve-more:not(.tide-slide-ioc-more)')] },
   // The slide stays dark in the light theme too: its "+N more" links read on it in both.
   { name: 'slide-iocs-dozen-dark', route: '/present/{today}', setup: articleSlide(2), context: { theme: 'dark' }, widths: [1440], rules: [slideLinksReadable] },
+  // The footer names each slide (cut short as the room allows, the whole name in its title), on the title slide, which
+  // says what comes before the articles. Wider letters.
+  { name: 'slide-footer-names', route: '/present/{today}', setup: wideFont, widths: [1920, 1440, 1100, 900, 780],
+    rules: [noSidewaysScroll, visible('.tide-progress-name'), visible('.tide-agenda-first'), fits('.tide-progress'), fits('.tide-present-bottom'),
+      inWindow('.tide-present-bottom :is(button, select)'), slideFits] },
+  // The presenter deals with the day's loose ends on their slides (Demo:SlideFiller carries the opening note over): the
+  // note's Still current and Edit, and a missing number's box and Save, in the window, and the slide still fits.
+  { name: 'slide-note-presenter', route: '/present/{today}', setup: slideWith('.tide-slide-note'), widths: [1920, 1440, 1100, 900, 780],
+    rules: [noSidewaysScroll, visible('.tide-slide-presenter'), fits('.tide-slide-presenter'), inWindow('.tide-slide-presenter :is(button, input)'), slideFits] },
+  // Keyboard and focus in the presenter's strips: Edit puts focus in the note's box; Escape there cancels, back on Edit,
+  // still on the slide; Still current leaves focus on the slide's heading as the strip goes. A number that isn't one is
+  // marked on its box with why; Enter saves one, and focus goes to the slide's heading. Late: these change the demo's day.
+  { name: 'slide-note-edit-focus', route: '/present/{today}', setup: noteStrip('edit'), widths: [1440], rules: [focusOn('#slide-note-text')] },
+  { name: 'slide-note-escape', route: '/present/{today}', setup: noteStrip('escape'), widths: [1440],
+    rules: [hidden('#slide-note-text'), visible('.tide-slide-note'), focusIn('.tide-slide-presenter')] },
+  { name: 'slide-number-refused', route: '/present/{today}', setup: numberEntered('lots'), widths: [1440],
+    rules: [attr('.tide-slide-presenter input', 'aria-invalid', 'true'), visible('.tide-slide-presenter-error'), focusOn('.tide-slide-presenter input')] },
+  { name: 'slide-numbers-presenter', route: '/present/{today}', setup: slideWith('.tide-slide-presenter input'), widths: [1920, 1440, 1100, 900, 780],
+    rules: [noSidewaysScroll, visible('.tide-slide-presenter input'), fits('.tide-slide-presenter'), inWindow('.tide-slide-presenter :is(button, input)'), slideFits] },
+  // Still current, and a number entered with Enter: focus on the slide's heading as the strip goes. After the strips'
+  // other pages, as they change the demo's day (the note is kept, the number entered), and before the pages that change
+  // the note or the numbers themselves.
+  { name: 'slide-note-kept-focus', route: '/present/{today}', setup: noteStrip('keep'), widths: [1440], rules: [hidden('.tide-slide-presenter'), focusOn('.tide-slide-note h2')] },
+  { name: 'slide-number-saved', route: '/present/{today}', setup: numberEntered('7'), widths: [1440], rules: [hidden('.tide-slide-presenter'), focusOn('.tide-slide-mgroup h2')] },
   { name: 'metrics-grid', route: '/metrics?chart=group:alert-queue,group:vulnerability-sla&view=grid', widths: [1920, 1000, 700],
     rules: [noSidewaysScroll, visible('.tide-mc-cell'), visible('.tide-chart-band-warn'), oneRow('.tide-mc-cell-head'), [1800, widerThan('.content', 1400)]] },
   // Add on "Not on a brief yet", from the keyboard: the article leaves the card and focus stays in it, on the next

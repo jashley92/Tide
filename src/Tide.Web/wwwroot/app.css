@@ -798,11 +798,17 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
 .tide-agenda li { display: flex; gap: .8em; align-items: center; padding: .45em 0; border-bottom: 1px solid var(--tide-slide-line); }
 .tide-agenda li.done { opacity: .5; }
 .tide-agenda .n { color: var(--tide-slide-muted); width: 1.6em; text-align: right; font-variant-numeric: tabular-nums; }
+.tide-agenda .tide-kev { margin-left: auto; color: var(--tide-slide-threat); font-size: .75em; }
+.tide-agenda-first { margin: 1.2em auto 0; max-width: 60em; text-align: left; color: var(--tide-slide-muted); }
 .tide-present-bottom { display: flex; align-items: center; gap: 1em; padding: .6em 1.6em; border-top: 1px solid var(--tide-slide-line); font-size: .82em; color: var(--tide-slide-muted); }
-.tide-progress { flex: 1; display: flex; gap: 4px; }
-.tide-progress button { flex: 1; height: 6px; border: 0; border-radius: var(--tide-radius-xs); background: var(--tide-slide-track); padding: 0; }
-.tide-progress button.current { background: var(--tide-slide-accent); }
-.tide-progress button.done { background: var(--tide-slide-done); }
+/* The slides along the footer: a bar each, named under it (cut short as the room allows; the whole name is its title). */
+.tide-progress { flex: 1; display: flex; gap: 4px; min-width: 0; }
+.tide-progress button { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: .3em; border: 0; background: none; padding: 0; color: var(--tide-slide-muted); text-align: start; }
+.tide-progress button::before { content: ""; display: block; height: 6px; border-radius: var(--tide-radius-xs); background: var(--tide-slide-track); }
+.tide-progress button.current::before { background: var(--tide-slide-accent); }
+.tide-progress button.done::before { background: var(--tide-slide-done); }
+.tide-progress button.current { color: var(--tide-slide-text); font-weight: var(--tide-weight-semibold); }
+.tide-progress-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .85em; line-height: 1.2; }
 .tide-present-notes { position: fixed; right: 1.2em; bottom: 3.6em; width: min(420px, 90vw); background: var(--tide-slide-surface); border: 1px solid var(--tide-slide-line-strong); border-radius: var(--tide-radius-xl); padding: .8em; z-index: 10; box-shadow: 0 10px 30px var(--tide-shadow-strong); }
 .tide-present-notes textarea { width: 100%; min-height: 9em; background: var(--tide-slide-bg); color: var(--tide-slide-text); border: 1px solid var(--tide-slide-line-strong); border-radius: var(--tide-radius-md); padding: .5em; font-size: .9em; }
 .tide-present-help { color: var(--tide-slide-muted); font-size: .8em; }
@@ -843,7 +849,7 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
 }
 
 .tide-hand { display: inline-flex; align-items: center; gap: .3em; color: var(--tide-slide-warn); font-size: .85em; }
-.tide-progress button.hand { box-shadow: 0 -3px 0 var(--tide-slide-warn); }
+.tide-progress button.hand::before { box-shadow: 0 -3px 0 var(--tide-slide-warn); }
 .tide-presence-dot.is-away { opacity: .6; }
 .tide-presence-slide { position: absolute; right: -.4rem; bottom: -.35rem; min-width: .9rem; padding: 0 .15rem; font-size: .5rem; line-height: .9rem; text-align: center; border-radius: var(--tide-radius-pill); background: var(--tide-slide-surface); color: var(--tide-slide-text); border: 1px solid var(--tide-slide-line-strong); }
 /* Who is in the meeting and whose hands are up, in the top bar for everyone, after the title. Its least width is
@@ -1093,6 +1099,20 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-slide-note .tide-md li > ul, .tide-slide-note .tide-md li > ol { font-size: .85em; margin: .3em 0 .2em; }
 .tide-slide-note .tide-md ul ul { list-style-type: circle; }
 .tide-slide-note .tide-md p { margin: 0 0 .5em; }
+/* The presenter's own on a slide (a carried opening note, a number not entered): never in a follower's page. A framed
+   strip under what the room reads, in the slide's type, its controls wrapping as the room allows. */
+.tide-slide-presenter { margin-top: 1.2em; padding: .7em .9em; border: 1px dashed var(--tide-slide-line-strong); border-radius: var(--tide-radius-md); background: var(--tide-slide-surface); font-size: .85em; display: grid; gap: .5em; max-width: 46em; }
+.tide-slide-presenter-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5em .8em; }
+.tide-slide-presenter-flag { color: var(--tide-slide-warn); font-weight: var(--tide-weight-semibold); }
+.tide-slide-presenter-say { color: var(--tide-slide-muted); }
+.tide-slide-presenter-name { min-width: 0; overflow-wrap: anywhere; }
+.tide-slide-presenter .form-control { background-color: var(--tide-slide-bg); color: var(--tide-slide-text); border-color: var(--tide-slide-line-strong); }
+.tide-slide-presenter-number { width: 8em; }
+.tide-slide-presenter-error { color: var(--tide-slide-warn); }
+/* A number not entered yet: the room sees its dash, and says so under it (the presenter enters it from the strip). */
+.tide-mtile-missing { color: var(--tide-slide-muted); font-size: .85em; }
+/* A box's hint on the slide, dark in either theme: the slide's muted text, not the page's (AA on the slide). */
+.tide-slide :is(input, textarea)::placeholder { color: var(--tide-slide-muted); opacity: 1; }
 .tide-slide-open { width: 100%; border-collapse: collapse; font-size: .9em; }
 .tide-slide-open th { text-align: left; color: var(--tide-slide-muted); text-transform: uppercase; letter-spacing: .08em; font-size: .72em; font-weight: var(--tide-weight-semibold); padding: .3em .5em; }
 .tide-slide-open td { padding: .45em .5em; border-top: 1px solid var(--tide-border); vertical-align: top; }
@@ -1450,13 +1470,15 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-slide { --tide-ctl-1: 10em; --tide-ctl-2: 13em; --tide-ctl-3: 6em; --tide-ctl-gap: .6em; }
 @media (min-width: 1001px) {
     .tide-slide-actlist { display: grid; column-gap: var(--tide-ctl-gap);
-        grid-template-columns: minmax(0, max-content) auto minmax(0, 1fr) calc(var(--tide-ctl-1) + var(--tide-ctl-2) + var(--tide-ctl-3) + 2 * var(--tide-ctl-gap)); }
+        grid-template-columns: minmax(0, 3fr) auto minmax(0, 2fr) calc(var(--tide-ctl-1) + var(--tide-ctl-2) + var(--tide-ctl-3) + 2 * var(--tide-ctl-gap)); }
+    /* The title and its team and due share the room and wrap, rather than one squeezing the other out. */
+    .tide-slide-actlist .tide-action-ref-btn { white-space: normal; overflow-wrap: anywhere; text-align: start; }
     .tide-slide-actions .tide-slide-actlist > li { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: baseline; gap: 0 var(--tide-ctl-gap); position: relative; border-radius: var(--tide-radius-md); padding: .2em 0; }
     .tide-slide-actlist > li:has(> .tide-action-ref-btn):hover { background: color-mix(in srgb, var(--tide-slide-accent) 12%, transparent); }
     .tide-slide-actlist .tide-action-ref-btn::after { content: ""; position: absolute; inset: 0; }
     .tide-slide-actlist .tide-action-num-after { margin-left: 0; }
-    .tide-slide-actlist .tide-present-help { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .tide-slide-actlist .tide-action-assign { grid-column: 4; margin: 0; justify-self: end; align-self: center; position: relative; z-index: 1;
+    .tide-slide-actlist .tide-present-help { min-width: 0; overflow-wrap: anywhere; }
+    .tide-slide-actlist .tide-action-assign { grid-column: 4; margin: 0; justify-self: end; align-self: start; position: relative; z-index: 1;
         display: grid; grid-template-columns: var(--tide-ctl-1) var(--tide-ctl-2) var(--tide-ctl-3); column-gap: var(--tide-ctl-gap); }
     .tide-slide-actlist .tide-action-assign > .form-select, .tide-slide-actlist .tide-action-assign > .form-control, .tide-slide-actlist .tide-action-assign > .btn { width: 100%; }
 }
@@ -1465,8 +1487,20 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-reco li { display: grid; grid-template-columns: minmax(0, 1fr) var(--tide-ctl-1) var(--tide-ctl-2) var(--tide-ctl-3); column-gap: var(--tide-ctl-gap); row-gap: .4em; align-items: center; padding: .25em 0; border-bottom: 1px solid var(--tide-slide-line-strong); }
 .tide-reco li > .btn { justify-self: stretch; }
 .tide-reco .form-select { background-color: var(--tide-slide-surface); color: var(--tide-slide-text); border-color: var(--tide-slide-line-strong); font-size: .8em; }
+/* An action's controls on the slide (due date, holder): the slide's dark field in either theme, at the lines' size. */
+.tide-slide .tide-action-assign :is(.form-control, .form-select) { background-color: var(--tide-slide-surface); color: var(--tide-slide-text); border-color: var(--tide-slide-line-strong); font-size: .8em; color-scheme: dark; }
 .tide-reco .tide-reco-done { grid-column: 2 / -1; color: var(--tide-slide-muted); }
-@media (max-width: 1000px) { .tide-reco li { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .tide-reco .tide-reco-text { grid-column: 1 / -1; } .tide-reco .tide-reco-done { grid-column: 1 / -1; } }
+/* A line raised already: its words, and under them the action it became (number, status, holder); its date, holder and
+   Take it in the columns the Raise rows' kind, team and Raise take, so they line up with the other actions' below. */
+.tide-reco li.is-raised .tide-reco-done { grid-column: 1; grid-row: 2; }
+.tide-reco li.is-raised .tide-action-assign { grid-column: 2 / -1; grid-row: 1 / span 2; margin: 0; display: grid; grid-template-columns: var(--tide-ctl-1) var(--tide-ctl-2) var(--tide-ctl-3); column-gap: var(--tide-ctl-gap); }
+.tide-reco li.is-raised .tide-action-assign > * { width: 100%; }
+@media (max-width: 1000px) {
+    .tide-reco li { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .tide-reco .tide-reco-text { grid-column: 1 / -1; } .tide-reco .tide-reco-done { grid-column: 1 / -1; }
+    .tide-reco li.is-raised .tide-reco-done { grid-row: auto; }
+    .tide-reco li.is-raised .tide-action-assign { grid-column: 1 / -1; grid-row: auto; display: flex; flex-wrap: wrap; gap: .3em; }
+    .tide-reco li.is-raised .tide-action-assign > * { width: auto; }
+}
 
 /* ---- Intake: CVE chips, triage inbox, sources, stories ---- */
 .tide-cve a { color: inherit; text-decoration: none; }

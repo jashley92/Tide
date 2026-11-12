@@ -104,13 +104,16 @@ public static class DemoSeeder
 
     /// <summary>
     /// <c>Demo:SlideFiller=true</c>: a dozen indicators (a long hash and a long address among them) and a dozen CVEs on the
-    /// last article of today's brief, for the layout checks on a slide that holds many.
+    /// last article of today's brief, for the layout checks on a slide that holds many; and an opening note carried over
+    /// from the last brief and not yet looked at, for the presenter's Still current and Edit on its slide.
     /// </summary>
     private static async Task SlideFillerAsync(IAppDbContextFactory dbs, DateOnly today, CancellationToken ct)
     {
         await using var db = await dbs.CreateAsync(ct);
         var brief = await db.Briefs.Include(b => b.Items).FirstAsync(b => b.BriefDate == today, ct);
         var last = brief.Items.OrderBy(i => i.SortOrder).Last().ArticleId;
+        brief.TeamNote ??= "Payroll lures are up again: treat any request to change bank details as suspect.";
+        brief.TeamNoteReviewedAtUtc = null;
         db.ArticleIndicators.AddRange([
             new ArticleIndicator { ArticleId = last, Type = IndicatorType.FileHash, Value = "9f2c4e8a1b7d3f6e0a5c9b2d8e4f1a7c3b6d0e9f2a5c8b1d4e7f0a3c6b9d2e5f8a" },
             new ArticleIndicator { ArticleId = last, Type = IndicatorType.Url, Value = "https://payments-processor-status.example.com/portal/session/renew?ref=partner-notice-2026-11" },

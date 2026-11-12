@@ -5,11 +5,11 @@ using Tide.Domain.Enums;
 
 namespace Tide.Application.Briefs;
 
-/// <summary>A follow-up action raised from an article, as the team edition lists it.</summary>
 /// <summary>An action raised on an article, as an edition lists it. <see cref="Id"/>, <see cref="TeamId"/> and the
-/// assignee are for the meeting, which can hand it to someone; a preview leaves them out.</summary>
+/// assignee are for the meeting, which can hand it to someone; a preview leaves them out. <see cref="Recommendation"/> is
+/// the recommended line it was raised from, if any (<see cref="ActionItem.RecommendationLine"/>): the slide shows it there.</summary>
 public sealed record EditionAction(int Number, string Title, string TeamName, DateOnly? DueDate, ActionStatus Status,
-    Guid Id = default, Guid TeamId = default, string? AssigneeId = null, string? AssigneeName = null);
+    Guid Id = default, Guid TeamId = default, string? AssigneeId = null, string? AssigneeName = null, string? Recommendation = null);
 
 /// <summary>
 /// An article as an edition shows it: the parts the edition's ceiling lets through. <see cref="ShowWhy"/> is false when
@@ -79,7 +79,7 @@ public static class BriefEditions
         var rows = await db.Actions.AsNoTracking()
             .Where(a => a.ArticleId != null && ids.Contains(a.ArticleId.Value) && a.Status != ActionStatus.Cancelled)
             .OrderBy(a => a.Number)
-            .Select(a => new { ArticleId = a.ArticleId!.Value, Row = new EditionAction(a.Number, a.Title, a.Team!.Name, a.DueDate, a.Status, a.Id, a.TeamId, a.AssigneeId, a.AssigneeName) })
+            .Select(a => new { ArticleId = a.ArticleId!.Value, Row = new EditionAction(a.Number, a.Title, a.Team!.Name, a.DueDate, a.Status, a.Id, a.TeamId, a.AssigneeId, a.AssigneeName, a.RecommendationLine) })
             .ToListAsync(ct);
         return rows.ToLookup(r => r.ArticleId, r => r.Row);
     }
