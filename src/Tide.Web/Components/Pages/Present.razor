@@ -270,14 +270,14 @@ else
                                     var quiet = o.Row.QuietDays(_date, Clock.DayOf);
                                     <tr>
                                         <td><PriorityBadge Priority="o.Row.Priority" /> @ActionTitle(o.Row.Number, o.Row.Title) <EscalatedBadge At="o.Row.EscalatedSince" /></td>
-                                        <td>@o.Row.TeamName <span class="tide-present-help">&middot; @(o.NoOneToOwn ? "no one: the team has no members" : o.Row.AssigneeName ?? "nobody yet")</span></td>
+                                        <td>@o.Row.TeamName <span class="tide-present-help">&middot; @o.Holder</span></td>
                                         <td><span class="tide-slide-late">@o.Late</span>@if (ActionRow.QuietText(quiet) is { } waited) { <span class="tide-slide-waited">@waited</span> }</td>
-                                        <td class="tide-slide-next">@o.NextInTheRoom(quiet)</td>
+                                        <td><span class="tide-slide-next">@o.NextInTheRoom(quiet)</span></td>
                                     </tr>
                                 }
                             </tbody>
                         </table>
-                        <div class="tide-present-help mt-2">@_open.Rows.Count of @_open.Overdue overdue shown.@if (_readsTeam) { <text> </text><a href="actions?view=overdue">The rest are under Actions &gt; Overdue.</a> }</div>
+                        <div class="tide-present-help mt-2">@_open.Rows.Count of @_open.Overdue overdue shown.@if (_readsTeam) { @(" ")<a href="actions?view=overdue">The rest are under Actions &gt; Overdue.</a> }</div>
                     </div>
                 }
                 else if (_slide > NoteSlides && _slide <= NoteSlides + MetricsSlides)
@@ -621,7 +621,8 @@ else
                                             <ul>
                                                 @foreach (var r in g.Actions)
                                                 {
-                                                    <li>@ActionTitle(r.Number, r.Title) <span class="tide-present-help">@ActionService.StatusName(r.Status)@(r.DueDate is { } due ? " · due " + Ui.ShortDay(due) : "")</span></li>
+                                                    @* The status and the due date each kept on one line. *@
+                                                    <li>@ActionTitle(r.Number, r.Title) <span class="tide-present-help"><span class="text-nowrap">@ActionService.StatusName(r.Status)</span>@if (r.DueDate is { } due) { @(" · ")<span class="text-nowrap">due @Ui.ShortDay(due)</span> }</span></li>
                                                 }
                                             </ul>
                                         </div>
@@ -874,10 +875,12 @@ else
                                     </div>
                                 }
                             }
+                            @if (notRaised!.Count == 0) { <p class="tide-present-help">Nothing left to raise.</p> }
                         }
                         @if (!Presented)
                         {
                             <div class="tide-present-rail-sub">Not discussed (@undiscussed.Count)</div>
+                            @if (undiscussed.Count == 0) { <p class="tide-present-help">Every article was discussed.</p> }
                             @foreach (var item in undiscussed)
                             {
                                 var id = item.ArticleId;

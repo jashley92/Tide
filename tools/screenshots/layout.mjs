@@ -1864,6 +1864,23 @@ const slideFits = holds('the slide fits, or scrolls only at 80%', () => {
 
 // --- the wrap-up -------------------------------------------------------------------------------------------------------
 
+/** The slide's More pill, where it shows, covers none of `selector` that shows in the slide's body: it sits in the room
+ *  below the last line, not over it. */
+const pillClear = selector => holds(`the More pill covers none of ${selector}`, selector => {
+  const pill = document.querySelector('.tide-slide-more');
+  const p = pill?.getBoundingClientRect();
+  if (!p || p.width === 0 || p.height === 0) return [];
+  const body = document.querySelector('[data-slide-body]')?.getBoundingClientRect();
+  return [...document.querySelectorAll(selector)].flatMap(el => {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0 || (body && (r.bottom <= body.top || r.top >= body.bottom))) return [];
+    // Only the part that shows: what the body's scroll cuts off below it isn't covered.
+    const top = Math.max(r.top, body?.top ?? r.top), bottom = Math.min(r.bottom, body?.bottom ?? r.bottom);
+    const over = r.left < p.right && p.left < r.right && top < p.bottom && p.top < bottom;
+    return over ? [`the More pill (${Math.round(p.top)}-${Math.round(p.bottom)}px) covers "${el.textContent.trim().slice(0, 40)}"`] : [];
+  });
+}, selector);
+
 /** Setup: wider letters, on the wrap-up. 'presenter': this page, with no meeting, pressing End. 'follower': the dev
  *  analyst starts (or takes up) today's meeting from another browser the size of this page and goes to the wrap-up;
  *  this page joins as Pat, following. */
@@ -1893,7 +1910,8 @@ const wrapUp = as => async (page, demo) => {
  *  1400px, and the slide still fits. (Who is doing what is checked with actions in it on the presenter's page, early in
  *  the run: by the follower's, late, the pages before have changed today's brief and it may have none.) */
 const wrapUpRules = [noSidewaysScroll, slideFits, shownCount('.tide-wrap > .tide-wrap-list', 3), fits('.tide-wrap'), fits('.tide-wrap-list'),
-  notSqueezed('.tide-wrap-list[data-wrap="owners"] .tide-present-help'), [1400, oneRow('.tide-wrap')]];
+  notSqueezed('.tide-wrap-list[data-wrap="owners"] .tide-present-help'), [1400, oneRow('.tide-wrap')],
+  oneLine('.tide-wrap-list[data-wrap="owners"] .text-nowrap'), pillClear('.tide-wrap-item, .tide-wrap-item li, .tide-attendance li')];
 
 // --- an action beside the slide (Org:ActionBesideSlide, on for this run) -------------------------------------------
 
@@ -3933,9 +3951,10 @@ const pages = [
   { name: 'slide-number-saved', route: '/present/{today}', setup: numberEntered('7'), widths: [1440], rules: [hidden('.tide-slide-presenter'), focusOn('#present-rail')] },
   // The open actions slide: each action with how long it has waited and the one thing to do, in its columns.
   { name: 'slide-open-actions', route: '/present/{today}', setup: slideWith('.tide-slide-open'), widths: [1920, 1440, 1100, 780],
-    rules: [noSidewaysScroll, slideFits, fits('.tide-slide-body'), visible('.tide-slide-open .tide-slide-next'), notSqueezed('.tide-slide-open .tide-slide-late')] },
+    rules: [noSidewaysScroll, slideFits, fits('.tide-slide-body'), visible('.tide-slide-open .tide-slide-next'), notSqueezed('.tide-slide-open .tide-slide-late'),
+      [1100, oneLine('.tide-slide-open .tide-slide-next')]] },
   // The wrap-up, the presenter's (no meeting): three lists, with the rail beside them where it's docked.
-  { name: 'slide-wrap-presenter', route: '/present/{today}', setup: wrapUp('presenter'), widths: [1920, 1440, 1100, 780],
+  { name: 'slide-wrap-presenter', route: '/present/{today}', setup: wrapUp('presenter'), widths: [1920, [1920, 480], 1440, [1440, 420], 1100, 780],
     rules: [...wrapUpRules, visible('.tide-wrap-list[data-wrap="owners"] .tide-wrap-item li')] },
   // The presenter's rail: docked beside the slide from 1500px (the slide's column narrows, and the slide still fits in
   // it), over the slide below that, as a dialog, once `]` opens it; shut there by default. It holds the presenter's

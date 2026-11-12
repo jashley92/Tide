@@ -28,9 +28,10 @@ public class MeetingWrapUpTests
     public void WhoHasWhat_OfNoActions_IsEmpty() => WrapUp.WhoHasWhat([]).Should().BeEmpty();
 
     [Fact]
-    public void WhoHasWhat_KeepsTwoPeopleOfOneName_Apart() =>
-        WrapUp.WhoHasWhat([Act(1, "Network", "Sam"), Act(2, "Network", "Sam") with { AssigneeId = "dev:other-sam" }])
-            .Should().HaveCount(2);
+    public void WhoHasWhat_KeepsTwoPeopleOfOneName_Apart_NumberedOnlyThen() =>
+        WrapUp.WhoHasWhat([Act(3, "Network", "Sam") with { AssigneeId = "dev:other-sam" }, Act(1, "Network", "Sam"), Act(2, "Cyber Defense", "Sam"),
+                Act(4, "Network", "Alex")])
+            .Select(g => g.Who).Should().Equal("Sam · Cyber Defense", "Alex · Network", "Sam (1) · Network", "Sam (2) · Network");
 
     private static readonly DateOnly Day = new(2026, 11, 12);
 
@@ -69,5 +70,16 @@ public class MeetingWrapUpTests
         Open().NextInTheRoom(2).Should().Be("Ask for an update");
         Open(daysLate: 0).NextInTheRoom(0).Should().Be("Ask for an update", "escalated, not yet due");
         Open().NextInTheRoom(1).Should().Be("Agree a new due date", "late, but someone updated it lately");
+        Open(noOneToOwn: true).NextInTheRoom(9).Should().Be("Ask for an update", "someone holds it: it's theirs, whoever is on its team");
+        Open(noOneToOwn: true, status: ActionStatus.Blocked).NextInTheRoom(9).Should().Be("Ask what it's waiting on");
+    }
+
+    [Fact]
+    public void Holder_IsWhoeverHoldsIt_AsTheActionPageSays()
+    {
+        Open().Holder.Should().Be("Robin");
+        Open(noOneToOwn: true).Holder.Should().Be("Robin", "a holder is the holder, even on a team with no members");
+        Open(holder: null, noOneToOwn: true).Holder.Should().Be("no one: the team has no members");
+        Open(holder: null).Holder.Should().Be("nobody yet");
     }
 }

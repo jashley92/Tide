@@ -160,6 +160,14 @@ public class PresentWrapUpTests(TideApp app) : IClassFixture<TideApp>
             var actions = scope.ServiceProvider.GetRequiredService<ActionService>();
             var n = await actions.CreateAsync(new ActionForm { Title = title, Kind = ActionKind.IocSweep, Priority = Priority.P1, TeamId = team, DueDate = day.AddDays(-3) });
             id = (await actions.GetAsync(n))!.Action.Id;
+            // Held by someone not on its team (it has no members): theirs all the same, as the action page says.
+            var heldNumber = await actions.CreateAsync(new ActionForm { Title = "Wrap held sweep", Kind = ActionKind.IocSweep, Priority = Priority.P1, TeamId = team,
+                AssigneeId = "dev:tester", AssigneeName = "Tester", DueDate = day.AddDays(-2) });
+            var heldDb = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            await heldDb.Actions.Where(a => a.Number == heldNumber).ExecuteUpdateAsync(u => u.SetProperty(a => a.Status, ActionStatus.Blocked));
+            // Overdue on a RED article, above the team edition's ceiling: neither shown nor counted.
+            var red = await articles.CreateAsync("Wrap RED partner report", "Partner", null, TlpLevel.Red);
+            await actions.CreateAsync(new ActionForm { Title = "Wrap red rotation", TeamId = team, ArticleId = red, DueDate = day.AddDays(-4) });
 
             // Nothing has happened to it for six days before the brief's.
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -182,10 +190,42 @@ public class PresentWrapUpTests(TideApp app) : IClassFixture<TideApp>
         }
         var at = html.IndexOf("<table class=\"tide-slide-open\"", StringComparison.Ordinal);
         at.Should().BeGreaterThan(0, "the open actions slide");
-        var table = html[at..html.IndexOf("</table>", at, StringComparison.Ordinal)];
+        var table = System.Net.WebUtility.HtmlDecode(html[at..html.IndexOf("</table>", at, StringComparison.Ordinal)]);
         table.Should().Contain("<th scope=\"col\">Waited</th>").And.Contain("<th scope=\"col\">Next</th>");
         var row = table[table.IndexOf(title, StringComparison.Ordinal)..];
         row = row[..row.IndexOf("</tr>", StringComparison.Ordinal)];
-        row.Should().Contain("3 days late").And.Contain("no update for 6 days").And.Contain(mine.NextInTheRoom(6));
+        row.Should().Contain("3 days late").And.Contain("no update for 6 days").And.Contain(mine.NextInTheRoom(6))
+            .And.Contain("no one: the team has no members").And.Contain("Reassign to a team with members");
+
+        var held = table[table.IndexOf("Wrap held sweep", StringComparison.Ordinal)..];
+        held = held[..held.IndexOf("</tr>", StringComparison.Ordinal)];
+        held.Should().Contain("· Tester").And.Contain("Ask what it's waiting on").And.NotContain("no members").And.NotContain("Reassign");
+
+        html.Should().NotContain("Wrap red rotation").And.Contain("2 of 2 overdue shown. <a", "the RED one isn't counted, and the sentences are apart");
+    }
+
+    [Fact]
+    public async Task TheRailsChecklist_SaysWhenAListIsEmpty()
+    {
+        var day = DaysBack(36);
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+        {
+            var briefs = scope.ServiceProvider.GetRequiredService<BriefService>();
+            var brief = await briefs.GetOrStartAsync(day);
+            await briefs.AddArticleAsync(brief.Id, await scope.ServiceProvider.GetRequiredService<ArticleService>().CreateAsync("Wrap empty 36", "Vendor", null, TlpLevel.Clear));
+        }
+        await using var pat = await Open(app, day);
+        await Do(pat, p => p.StartMeeting());
+        await pat.Click(p => p.OnPresentKey("last"));
+        await pat.Click(p => p.OnPresentKey("prev"));
+        await pat.Click(p => p.OnPresentKey("discussed"));
+        await pat.Click(p => p.OnPresentKey("last"));
+        var html = await pat.Html();
+        var at = html.IndexOf("<aside id=\"present-rail\"", StringComparison.Ordinal);
+        at.Should().BeGreaterThan(0);
+        var rail = html[at..html.IndexOf("</aside>", at, StringComparison.Ordinal)];
+        rail.Should().Contain("Not raised yet (0)").And.Contain("Nothing left to raise.")
+            .And.Contain("Not discussed (0)").And.Contain("Every article was discussed.");
+        EndMeeting(app, day);
     }
 }

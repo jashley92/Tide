@@ -109,19 +109,25 @@ public sealed record ActionRow(Guid Id, int Number, string Title, ActionKind Kin
 public sealed record DeletedAction(Guid Id, int Number, string Title, string TeamName, ActionStatus Status, DateTimeOffset DeletedAtUtc,
     string? DeletedByName, string? Reason, bool ParentDeleted);
 
-/// <summary>An overdue action the meeting looks at again: how late it is, and whether its team has no members (so
-/// nobody sees it as theirs). <see cref="Tlp"/> is the TLP of the article it was raised from, if any: what it's marked at.</summary>
+/// <summary>An overdue action the meeting looks at again: how late it is, and whether nobody holds it and its team has no
+/// members (so nobody sees it as theirs). <see cref="Tlp"/> is the TLP of the article it was raised from, if any: what
+/// it's marked at.</summary>
 public sealed record OutstandingAction(ActionRow Row, int DaysLate, bool NoOneToOwn, TlpLevel? Tlp = null)
 {
     /// <summary>"3 days late", or "not yet due" for an escalated one that isn't (the meeting's and the email's words).</summary>
     public string Late => ActionSla.LateText(DaysLate) ?? "not yet due";
+
+    /// <summary>Who has it, as the action page says: whoever holds it; with nobody, why nobody sees it as theirs when its
+    /// team has no members, else "nobody yet".</summary>
+    public string Holder => Row.AssigneeId is not null ? Row.AssigneeName ?? Row.AssigneeId
+        : NoOneToOwn ? "no one: the team has no members" : "nobody yet";
 
     /// <summary>The one thing the meeting can do about it, the most pressing first: give a team with nobody in it someone,
     /// unblock it, find it a holder, or ask for an update; one updated since yesterday and still late gets a new due date.
     /// Said to the room, so it doesn't follow the action page's Next line (<see cref="ActionGuide.Next"/>), which depends on
     /// who is looking and offers that page's flows.</summary>
     public string NextInTheRoom(int quietDays) =>
-        NoOneToOwn ? "Reassign to a team with members"
+        Row.AssigneeId is null && NoOneToOwn ? "Reassign to a team with members"
         : Row.Status == ActionStatus.Blocked ? "Ask what it's waiting on"
         : Row.AssigneeId is null && !Row.TeamExternal ? "Find someone to take it"
         : quietDays >= 2 || DaysLate == 0 ? "Ask for an update"
@@ -129,7 +135,8 @@ public sealed record OutstandingAction(ActionRow Row, int DaysLate, bool NoOneTo
 }
 
 /// <summary>The overdue actions the meeting and the team email show (at most <see cref="ActionService.OutstandingSize"/>),
-/// and how many are overdue in all (those above the edition's ceiling counted, not named).</summary>
+/// and how many are overdue in all that the edition may show (those above its ceiling are neither named nor counted: the
+/// count would tell the room they exist).</summary>
 public sealed record OpenActionsReview(IReadOnlyList<OutstandingAction> Rows, int Overdue)
 {
     public static readonly OpenActionsReview None = new([], 0);
@@ -809,10 +816,10 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
     /// <summary>
     /// The overdue actions the meeting looks at again, as of <paramref name="asOf"/> (the brief's day), with any the
     /// escalation ladder flagged, overdue or not: the escalated first, then P1 and P2, then those on a team with no members
-    /// (nobody sees them as theirs), then the rest, longest overdue first. At most <see cref="OutstandingSize"/>, with the
-    /// full count. Other actions not yet due aren't listed. An action is held at
-    /// its article's TLP: one raised from an article above <paramref name="ceiling"/> (the team edition's) is counted but not
-    /// listed, as the brief leaves that article out with its actions.
+    /// that nobody holds (nobody sees them as theirs), then the rest, longest overdue first. At most
+    /// <see cref="OutstandingSize"/>, with the full count. Other actions not yet due aren't listed. An action is held at
+    /// its article's TLP: one raised from an article above <paramref name="ceiling"/> (the team edition's) is neither listed
+    /// nor counted, as the brief leaves that article out with its actions.
     /// </summary>
     public async Task<OpenActionsReview> OutstandingAsync(DateOnly asOf, TlpLevel ceiling, CancellationToken ct = default)
     {
@@ -835,12 +842,13 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
             .ToDictionaryAsync(a => a.Id, a => a.Tlp, ct);
         TlpLevel? TlpOf(ActionRow r) => r.ArticleId is { } id && tlps.TryGetValue(id, out var t) ? t : null;
         var nobodys = (await db.Teams.AsNoTracking().Where(NoOneToOwn).Select(t => t.Id).ToListAsync(ct)).ToHashSet();
-        var ranked = rows.Where(r => TlpOf(r) is not { } t || t <= ceiling)
-            .Select(r => new OutstandingAction(r, ActionSla.DaysLate(r.DueDate, asOf), nobodys.Contains(r.TeamId), TlpOf(r)))
+        var shown = rows.Where(r => TlpOf(r) is not { } t || t <= ceiling).ToList();
+        var ranked = shown
+            .Select(r => new OutstandingAction(r, ActionSla.DaysLate(r.DueDate, asOf), r.AssigneeId is null && nobodys.Contains(r.TeamId), TlpOf(r)))
             .OrderBy(o => o.Row.Escalated ? 0 : o.Row.Priority <= Priority.P2 ? 1 : o.NoOneToOwn ? 2 : 3)
             .ThenByDescending(o => o.DaysLate).ThenBy(o => o.Row.Number)
             .Take(OutstandingSize).ToList();
-        return new OpenActionsReview(ranked, rows.Count);
+        return ranked.Count == 0 ? OpenActionsReview.None : new OpenActionsReview(ranked, shown.Count);
     }
 
     /// <summary>A team nobody in TIDE owns work on: no members, and not external (an external team's reminders follow
