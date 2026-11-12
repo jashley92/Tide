@@ -876,13 +876,13 @@ let meetingGuests = { key: '', contexts: [] };
 const GUESTS = ['Olive', 'Robin', 'Sam', 'Lee', 'Kim', 'Ana', 'Max'];
 
 /**
- * Setup: a live meeting on today's brief with eight people in it and `hands` of them with a hand up, in order. `as`
- * 'presenter': this page (the dev analyst) starts it, or takes it up again, and seven others join in browsers of their
- * own. 'follower': the dev analyst presents from another browser, six others join, and this page joins as Pat,
+ * Setup: a live meeting on today's brief with `people` in it (eight unless said) and `hands` of them with a hand up, in
+ * order. `as` 'presenter': this page (the dev analyst) starts it, or takes it up again, and the others join in browsers
+ * of their own. 'follower': the dev analyst presents from another browser, the others join, and this page joins as Pat,
  * following. Wider letters, on the first article's slide.
  */
-const meetingOf = (as, hands) => async (page, demo) => {
-  const key = `${as}/${hands}`;
+const meetingOf = (as, hands, people = 8) => async (page, demo) => {
+  const key = `${as}/${hands}/${people}`;
   const browser = page.context().browser();
   const join = async who => {
     const { context, page: theirs } = await openPage(browser,
@@ -901,7 +901,7 @@ const meetingOf = (as, hands) => async (page, demo) => {
     const presenter = as === 'presenter' ? page : await join('');
     await start(presenter);
     await toArticleSlide(presenter);
-    for (const [i, who] of GUESTS.slice(0, as === 'presenter' ? 7 : 6).entries()) {
+    for (const [i, who] of GUESTS.slice(0, people - (as === 'presenter' ? 1 : 2)).entries()) {
       const theirs = await join(who);
       if (i >= hands) continue;
       await theirs.locator('.tide-present-people').getByRole('button', { name: 'Raise hand' }).click();
@@ -915,8 +915,8 @@ const meetingOf = (as, hands) => async (page, demo) => {
     await page.goto(`${page.url()}?as=Pat&roles=Viewer`, { waitUntil: 'networkidle' });
     await settle(page);
   }
-  await page.waitForFunction(hands => document.querySelector('.tide-present-here')?.textContent.startsWith('8 here')
-    && (document.querySelector('.tide-hands-n')?.textContent.trim() ?? String(document.querySelectorAll('.tide-present-people .tide-hands > li').length)) === String(hands), hands, { timeout: 15000 });
+  await page.waitForFunction(([hands, people]) => document.querySelector('.tide-present-here')?.textContent.startsWith(`${people} here`)
+    && (document.querySelector('.tide-hands-n')?.textContent.trim() ?? String(document.querySelectorAll('.tide-present-people .tide-hands > li').length)) === String(hands), [hands, people], { timeout: 15000 });
   await wideFont(page);
 };
 
@@ -925,6 +925,38 @@ const handsListOpen = async (page, demo) => {
   await meetingOf('presenter', 5)(page, demo);
   await page.locator('.tide-hands-btn').click();
   await page.locator('#present-hands').waitFor();
+};
+
+/** Setup: the list of hands opened, then Tab to its first Lower and Escape. */
+const handsListEscaped = async (page, demo) => {
+  await handsListOpen(page, demo);
+  await page.keyboard.press('Tab');
+  await page.waitForTimeout(200);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(500);
+};
+
+/** Setup: the list of hands opened, then a press on the slide, outside it. */
+const handsListPressedOutside = async (page, demo) => {
+  await handsListOpen(page, demo);
+  await page.mouse.click(40, 600);
+  await page.waitForTimeout(500);
+};
+
+/** Setup: the presenter opens the list of hands while one is up; that hand goes down, and then another goes up. The
+ *  list stays shut: it never opens without a click. */
+const handsListAfterEmpty = async (page, demo) => {
+  await meetingOf('presenter', 0, 3)(page, demo);
+  const [olive, robin] = meetingGuests.contexts.map(c => c.pages()[0]);
+  const hand = p => p.locator('.tide-present-people').getByRole('button', { name: /Raise hand|Lower hand/ }).click();
+  await hand(olive);
+  await page.locator('.tide-hands-btn').click();
+  await page.locator('#present-hands').waitFor();
+  await hand(olive);
+  await page.locator('.tide-hands-btn').waitFor({ state: 'detached' });
+  await hand(robin);
+  await page.locator('.tide-hands-btn').waitFor();
+  await page.waitForTimeout(500);
 };
 
 /** Setup: a toast shown while the rail is docked (the opening note saved; whatever the toast says, it's placed alike). */
@@ -1521,6 +1553,19 @@ const namesWhole = holds('hands\' names whole or not shown', () => {
     const whole = r.left >= box.left - 1 && r.right <= box.right + 1 && r.bottom <= box.bottom + 1 && n.scrollWidth <= n.clientWidth + 1;
     return out || whole ? [] : [`hand #${i + 1} ("${n.textContent}") is cut: ${Math.round(r.left)}–${Math.round(r.right)}px in ${Math.round(box.left)}–${Math.round(box.right)}px`];
   });
+});
+
+/** The present top bar's title is cut only when there's no room: who is here then has none to spare (its parts and
+ *  their gaps fill it). */
+const titleTakesRoom = holds('the title is cut only when there\'s no room', () => {
+  const title = document.querySelector('.tide-present-title > span:not(.tide-brand-mark)');
+  const people = document.querySelector('.tide-present-people');
+  if (!title || !people) return ['no title or people in the top bar'];
+  if (title.scrollWidth <= title.clientWidth + 1) return [];
+  const kids = [...people.children].filter(e => e.getBoundingClientRect().width > 0);
+  const used = kids.reduce((sum, e) => sum + e.getBoundingClientRect().width, 0) + parseFloat(getComputedStyle(people).columnGap || '0') * Math.max(0, kids.length - 1);
+  const spare = people.getBoundingClientRect().width - used;
+  return spare <= 2 ? [] : [`the title is cut by ${title.scrollWidth - title.clientWidth}px while who is here has ${Math.round(spare)}px to spare`];
 });
 
 /** The matches of `selector` (the top bar's title, people and tools) take at most `n` rows, by their tops. */
@@ -3132,12 +3177,22 @@ const pages = [
   // has them; the slide still fits between the two. Wider letters. Last of all: the meeting stays live after.
   ...['presenter', 'follower'].flatMap(as => [0, 2, 5].map(hands => (
     { name: `present-people-${as}-${hands}`, route: '/present/{today}', setup: meetingOf(as, hands), widths: [1920, 1440, 1100, 1000, 901, 900, 780],
-      rules: [noSidewaysScroll, fits('.tide-present-top'), fits('.tide-present-title'), fits('.tide-present-people'),
+      rules: [noSidewaysScroll, fits('.tide-present-top'), fits('.tide-present-title'), fits('.tide-present-people'), ...(hands ? [] : [titleTakesRoom]),
         inWindow('.tide-present-top :is(button, a, select)'), rowsAtMost('.tide-present-top > *', 2),
         visible('.tide-present-top .tide-present-people .tide-presence-dot'), shownCount('.tide-present-people .tide-presence-dot', 6), countWhole,
         ...(hands ? [visible('.tide-hands-n'), namesWhole] : [hidden('.tide-hands-btn')]),
         hidden('.tide-present-bottom .tide-presence'), hidden('.tide-present-bottom .tide-hands-btn'),
         inOrder('.tide-present-top', '.tide-slide', '.tide-present-bottom'), slideFits] }))),
+  // The title takes the room there is before it's cut: a
+  // meeting of three, no hands, as presenter and follower.
+  ...['presenter', 'follower'].map(as => (
+    { name: `present-title-room-${as}`, route: '/present/{today}', setup: meetingOf(as, 0, 3), widths: [1920, 1440],
+      rules: [titleTakesRoom, fits('.tide-present-top')] })),
+  // The list of hands closes as the shared popouts do: Escape (focus back on its count), a press outside; and it shuts
+  // when the last hand goes down, never opening again by itself.
+  { name: 'present-hands-escape', route: '/present/{today}', setup: handsListEscaped, widths: [1440], rules: [hidden('#present-hands'), focusOn('.tide-hands-btn')] },
+  { name: 'present-hands-outside', route: '/present/{today}', setup: handsListPressedOutside, widths: [1440], rules: [hidden('#present-hands')] },
+  { name: 'present-hands-emptied', route: '/present/{today}', setup: handsListAfterEmpty, widths: [1440], rules: [hidden('#present-hands'), attr('.tide-hands-btn', 'aria-expanded', 'false')] },
   // The presenter's list of hands, opened from the top bar: each hand in order with its Lower, and Clear all, in the window.
   { name: 'present-hands-list', route: '/present/{today}', setup: handsListOpen, widths: [1920, 1100, 901, 780],
     rules: [inWindow('#present-hands :is(button, li)'), shownCount('#present-hands li', 5), fits('#present-hands'), visible('#present-hands .tide-hands-clear')] },

@@ -694,10 +694,11 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 .tide-present a { color: var(--tide-slide-accent); }
 /* The top bar: the title, who is here, and the tools, on one row while they fit and on two when they don't (the tools
    go to the second), never off the window. The title and who is here start from their least width (the mark; the dots,
-   the count and the buttons) and share what's left, up to what they need; the tools keep their size. */
+   the count and the buttons); the title takes what is left first, up to its whole length, and who is here the rest (the
+   hands' names); the tools keep their size. */
 .tide-present-top { display: flex; flex-wrap: wrap; align-items: center; padding: .7em 1.6em; border-bottom: 1px solid var(--tide-slide-line); gap: .5em 1em; }
 .tide-present-top .tide-brand-mark { flex: none; width: 1.8em; height: 1.8em; font-size: .9em; }
-.tide-present-title { display: flex; align-items: center; gap: .7em; font-weight: var(--tide-weight-semibold); flex: 2 1 0; min-width: 1.62em; max-width: max-content; }
+.tide-present-title { display: flex; align-items: center; gap: .7em; font-weight: var(--tide-weight-semibold); flex: 1000 1 0; min-width: 1.62em; max-width: max-content; }
 .tide-present-title small { color: var(--tide-slide-muted); font-weight: var(--tide-weight-regular); }
 .tide-present-tools { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5em; align-items: center; flex: 0 1 auto; margin-left: auto; }
 /* The tools keep their words on one line. */
@@ -836,12 +837,12 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
    the hands' count. The hands' names follow the count in the room that's left, in order, each whole or not shown: one
    line that wraps, so a name that doesn't fit drops to a hidden second line (the first item, an empty <i> a line
    tall, lets even the first name go). The count opens the list. The presenter's dot is ringed in the accent, a raised hand's in the warning. */
-.tide-present-people { position: relative; display: flex; align-items: center; gap: .6em; flex: 1 1 0; }
+.tide-present-people { display: flex; align-items: center; gap: .6em; flex: 1 1 0; }
 .tide-present-people:not(:has(*)) { display: none; }
 .tide-present-people > * { flex: none; }
 .tide-present-people > .btn { white-space: nowrap; font-size: .8em; }
 .tide-present-here { white-space: nowrap; color: var(--tide-slide-muted); font-size: .8em; }
-.tide-present-people > .tide-hands-box { display: flex; flex: 1 1 0; }
+.tide-present-people > .tide-hands-box { position: relative; display: flex; flex: 1 1 0; }
 .tide-hands-btn { display: flex; align-items: center; gap: .5em; flex: 1 1 auto; min-width: 0; padding: 0; border: 0; background: none; color: var(--tide-slide-warn); text-align: start; }
 .tide-hands-count { flex: none; display: inline-flex; align-items: center; gap: .3em; padding: .15em .6em; border: 1px solid var(--tide-slide-warn); border-radius: var(--tide-radius-pill); font-size: .8em; font-weight: var(--tide-weight-semibold); line-height: 1.3; }
 .tide-hands-btn:hover .tide-hands-count, .tide-hands-btn[aria-expanded="true"] .tide-hands-count { background: var(--tide-slide-line); }
