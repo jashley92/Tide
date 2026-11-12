@@ -133,6 +133,9 @@ public class SmtpTests : IDisposable
         form.Bluf = "Patch today.";
         await articles.SaveAsync(form);
         await _db.Screenshots().AddAsync(id, [new ScreenshotUpload("shot.png", TestDb.Png)]);
+        form = ArticleForm.From((await articles.GetAsync(id))!);
+        form.Screenshots.Single().Tlp = TlpLevel.Clear;   // a new screenshot starts at AMBER: lowered on purpose
+        await articles.SaveAsync(form);
         var day = new DateOnly(2026, 10, 26);
         var brief = await _db.Briefs().GetOrStartAsync(day);
         await _db.Briefs().AddArticleAsync(brief.Id, id);

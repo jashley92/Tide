@@ -46,7 +46,7 @@
                     <TlpSelect @bind-Value="_tlp" Label="The article's TLP" />
                 </div>
             </div>
-            <div class="form-text">Private sources (an ISAC, a vendor portal) usually require TLP:AMBER or a licence. Set it now: screenshots take the article's marking.</div>
+            <div class="form-text">Private sources (an ISAC, a vendor portal) usually require TLP:AMBER or a licence. Set it now: bullets start at the article's marking, screenshots at TLP:AMBER or the article's if higher.</div>
             <div class="mt-3 d-flex gap-2">
                 <button type="submit" class="btn btn-primary" disabled="@_busy">Create and edit</button>
                 <button type="button" class="btn btn-outline-secondary" @onclick="() => _showNew = false">Cancel</button>
