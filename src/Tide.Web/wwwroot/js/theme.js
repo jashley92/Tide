@@ -41,7 +41,7 @@ window.tideNav = (function () {
     // (the nearest edge), on load and after each navigation (NavMenu calls this). Only the menu scrolls, never the page,
     // which scrollIntoView could also move.
     function reveal() {
-        var menu = document.querySelector('#tide-nav-links .tide-nav');
+        var nav = document.getElementById('tide-nav-links'), menu = nav && nav.querySelector('.tide-nav');
         var link = menu && menu.querySelector('a.active, a[aria-current="page"]');
         if (!link || menu.scrollHeight <= menu.clientHeight) return;
         var r = link.getBoundingClientRect(), box = menu.getBoundingClientRect();
