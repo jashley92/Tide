@@ -11,6 +11,7 @@
 @inject ToastService Toasts
 @inject IJSRuntime JS
 @inject OrgClock Clock
+@inject IUserDirectory Users
 @inject Tide.Application.Metrics.MetricsService MetricsSvc
 @inject ActionService ActionSvc
 @inject CveService CveSvc
@@ -81,7 +82,7 @@ else
     var notRaised = _slide == last && TeamEdition ? edition.Articles.Select(x => (x.Article, Lines: Unraised(x))).Where(x => x.Lines.Count > 0).ToList() : null;
     List<BriefItem> undiscussed = _slide == last && !Presented ? Undiscussed(edition) : [];
     <div id="present-root" class="tide-present @(RailDocked ? "has-rail" : "")">
-        <header class="tide-present-top">
+        <header class="tide-present-top" inert="@RailOver">
             <div class="tide-present-title">
                 <span class="tide-brand-mark" aria-hidden="true">T</span>
                 <span>@Clock.TeamName daily brief <small>&middot; @Ui.Day(_date)</small></span>
@@ -205,7 +206,7 @@ else
             var scrollKey = SlideKey(_slide);
             var scrollPaused = ScrollBackShown(scrollKey);
         }
-        <section class="tide-slide" aria-label="Slide @(_slide + 1) of @(last + 1)">
+        <section class="tide-slide" aria-label="Slide @(_slide + 1) of @(last + 1)" inert="@RailOver">
             <div class="tide-slide-body tide-scrollfade" @key="scrollKey" data-slide-body data-slide-key="@scrollKey" data-scroll-share="@ScrollShare" data-scroll-paused="@(scrollPaused ? "true" : null)">
             <div class="tide-slide-inner">
                 @if (_slide == 0)
@@ -692,8 +693,13 @@ else
             var railItem = railArticle is null ? null : ItemFor(railArticle.Article.Id);
             var onNumbers = _slide > NoteSlides && _slide <= NoteSlides + MetricsSlides;
             var railTiles = onNumbers ? MetricPlan[_slide - 1 - NoteSlides].Group?.Tiles ?? [] : [];
+            @if (RailOver)
+            {
+                @* Over the slide the rail is modal: the page under it is inert, behind a scrim that closes it on a click. *@
+                <div class="tide-present-scrim" @onclick="CloseRailFromScrim"></div>
+            }
             <aside id="present-rail" class="tide-present-rail @(RailDocked ? "is-docked" : "is-over")" tabindex="-1" @ref="_railBox"
-                   role="@(RailDocked ? null : "dialog")" aria-label="Presenter's controls">
+                   role="@(RailDocked ? null : "dialog")" aria-modal="@(RailOver ? "true" : null)" aria-label="Presenter's controls">
                 <div class="tide-present-rail-head">
                     <span>Presenter &middot; @(_slide == 0 ? "before you start" : _slide == last ? "before you end" : "this slide")</span>
                     <button type="button" class="btn btn-sm btn-outline-secondary" aria-label="Close the rail (])" title="Close the rail (])" @onclick="ToggleRail"><span class="tide-kbd">]</span></button>
@@ -711,7 +717,7 @@ else
                         @if (PresenterTools && FirstMissingSlide is { } missingAt)
                         {
                             <div class="tide-present-rail-row"><span class="tide-present-rail-warn" aria-hidden="true">!</span><span class="tide-present-rail-grow">@Ui.Plural(MissingNumbers, "number") missing</span>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => Move(missingAt)">Enter</button></div>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => ToMissingNumber(missingAt)">Enter</button></div>
                         }
                     </section>
                     @if (FirstUp is { } first)
@@ -723,10 +729,10 @@ else
                 {
                     <section aria-labelledby="rail-note-h">
                         <h3 id="rail-note-h">The note</h3>
-                        @if (PresenterTools && (_noteEditing || BriefService.TeamNoteCarriedOver(_brief)))
+                        @if (PresenterTools)
                         {
-                            @* The presenter's alone (never in a follower's page): the note carried from the last brief and not
-                               looked at since, kept as it is or edited here, through the brief's own save. *@
+                            @* The presenter's alone (never in a follower's page): the note edited here, through the brief's own
+                               save, and, carried from the last brief and not looked at since, kept as it is. *@
                             <div class="tide-slide-presenter">
                                 @if (_noteEditing)
                                 {
@@ -739,7 +745,7 @@ else
                                         <span class="tide-slide-presenter-say" id="slide-note-hint">Esc cancels. An empty note isn't saved here: it would take the slide away.</span>
                                     </div>
                                 }
-                                else
+                                else if (BriefService.TeamNoteCarriedOver(_brief))
                                 {
                                     <div class="tide-slide-presenter-row">
                                         <span class="tide-slide-presenter-flag"><span class="bi bi-clock-history" aria-hidden="true"></span> Not updated</span>
@@ -748,38 +754,41 @@ else
                                         <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="KeepOpeningNote">Still current</button>
                                     </div>
                                 }
+                                else
+                                {
+                                    <div class="tide-slide-presenter-row">
+                                        <span class="tide-slide-presenter-say">Current for this brief.</span>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@_busy" @ref="_noteEditButton" @onclick="EditOpeningNote">Edit</button>
+                                    </div>
+                                }
                             </div>
                         }
                         <p class="tide-present-help">Team edition only: it never goes company-wide.</p>
                     </section>
                 }
-                else if (onNumbers)
+                else if (onNumbers && (PresenterTools ? railTiles.Where(Missing).ToList() : []) is { Count: > 0 } missing)
                 {
                     <section aria-labelledby="rail-numbers-h">
                         <h3 id="rail-numbers-h">The numbers</h3>
-                        @{ var missing = PresenterTools ? railTiles.Where(Missing).ToList() : []; }
-                            @if (missing.Count > 0)
+                        @* The presenter's alone: a number not entered yet (the room sees a dash), entered here through the
+                           day's numbers' own save. *@
+                        <div class="tide-slide-presenter">
+                            <div class="tide-slide-presenter-say">@Ui.Plural(missing.Count, "number") missing. The room sees a dash until it's saved.</div>
+                            @foreach (var t in missing)
                             {
-                                @* The presenter's alone: a number not entered yet (the room sees a dash), entered here through the
-                                   day's numbers' own save. *@
-                                <div class="tide-slide-presenter">
-                                    <div class="tide-slide-presenter-say">@Ui.Plural(missing.Count, "number") missing. The room sees a dash until it's saved.</div>
-                                    @foreach (var t in missing)
-                                    {
-                                        var refused = _numberErrors.GetValueOrDefault(t.Metric.Id);
-                                        var errorId = $"slide-number-error-{t.Metric.Id:N}";
-                                        <div class="tide-slide-presenter-row" @key="t.Metric.Id">
-                                            <span class="tide-slide-presenter-name">@t.Metric.Name</span>
-                                            <input type="text" inputmode="decimal" class="form-control form-control-sm tide-slide-presenter-number" aria-label="@($"{t.Metric.Name} for {Ui.ShortDay(_date)}")"
-                                                   aria-invalid="@(refused is null ? null : "true")" aria-describedby="@(refused is null ? null : errorId)"
-                                                   value="@_numberDrafts.GetValueOrDefault(t.Metric.Id)" @oninput="e => _numberDrafts[t.Metric.Id] = e.Value?.ToString() ?? string.Empty"
-                                                   @onkeydown="e => NumberKey(e, t.Metric.Id)" />
-                                            <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="() => EnterMissingNumber(t.Metric.Id, _numberDrafts.GetValueOrDefault(t.Metric.Id) ?? string.Empty)">Save</button>
-                                            @if (refused is not null) { <span class="tide-slide-presenter-error" id="@errorId">@refused</span> }
-                                        </div>
-                                    }
+                                var refused = _numberErrors.GetValueOrDefault(t.Metric.Id);
+                                var errorId = $"slide-number-error-{t.Metric.Id:N}";
+                                <div class="tide-slide-presenter-row" @key="t.Metric.Id">
+                                    <span class="tide-slide-presenter-name">@t.Metric.Name</span>
+                                    <input type="text" inputmode="decimal" class="form-control form-control-sm tide-slide-presenter-number" aria-label="@($"{t.Metric.Name} for {Ui.ShortDay(_date)}")"
+                                           aria-invalid="@(refused is null ? null : "true")" aria-describedby="@(refused is null ? null : errorId)"
+                                           value="@_numberDrafts.GetValueOrDefault(t.Metric.Id)" @oninput="e => _numberDrafts[t.Metric.Id] = e.Value?.ToString() ?? string.Empty"
+                                           @onkeydown="e => NumberKey(e, t.Metric.Id)" @ref="_numberBoxes[t.Metric.Id]" />
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="() => EnterMissingNumber(t.Metric.Id, _numberDrafts.GetValueOrDefault(t.Metric.Id) ?? string.Empty)">Save</button>
+                                    @if (refused is not null) { <span class="tide-slide-presenter-error" id="@errorId">@refused</span> }
                                 </div>
                             }
+                        </div>
                     </section>
                 }
                 else if (railArticle is { } ra && TeamEdition)
@@ -847,7 +856,7 @@ else
                         @if (TeamEdition && CanRaise)
                         {
                             <div class="tide-present-rail-sub">Not raised yet (@notRaised!.Sum(x => x.Lines.Count))</div>
-                            @foreach (var (art, lines) in notRaised)
+                            @foreach (var (art, lines) in notRaised!)
                             {
                                 @foreach (var line in lines)
                                 {
@@ -904,7 +913,7 @@ else
                             }
                         }
                             @* Marked presented or sent from elsewhere while the meeting ran: it can still be ended. *@
-                            @if (_view is not null && CanEnd)
+                            @if (Presented && _view is not null && CanEnd)
                             {
                                 <div><button class="btn btn-primary mt-2" disabled="@_busy" @onclick="EndMeeting"><span class="bi bi-flag" aria-hidden="true"></span> End the meeting</button></div>
                             }
@@ -945,10 +954,11 @@ else
                             </button>
                             @if (room.People.Any(p => p.CanPresent && !room.IsPresenter(p.UserId)))
                             {
-                                <select class="form-select form-select-sm w-auto" aria-label="Hand presenting to" value="" @key="HandOffResets" @onchange="HandOff">
+                                <select class="form-select form-select-sm w-auto" aria-label="Hand presenting to" value="@(_handTo ?? "")" @key="HandOffResets" @onchange="ChooseHandOff">
                                     <option value="">Hand off to…</option>
                                     @foreach (var p in room.People.Where(p => p.CanPresent && !room.IsPresenter(p.UserId))) { <option value="@p.UserId">@p.Name</option> }
                                 </select>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(_handTo is null)" @onclick="ConfirmHandOff">Hand off</button>
                             }
                         </div>
                     </section>
@@ -963,7 +973,7 @@ else
             </aside>
         }
 
-        <footer class="tide-present-bottom">
+        <footer class="tide-present-bottom" inert="@RailOver">
             <button class="btn btn-sm btn-outline-secondary" disabled="@(_slide == 0 || Held)" @onclick="() => Move(_slide - 1)" aria-label="Previous slide"><span class="bi bi-chevron-left" aria-hidden="true"></span></button>
             <nav class="tide-progress" aria-label="Slides">
                 @for (var i = 0; i <= last; i++)
@@ -1134,6 +1144,8 @@ else
         try
         {
             if (!fresh) await ReadDay(day, date);
+            if (Day != day) return;
+            if (_canCreate && _people is null) _people = await Users.ListAsync();
             if (Day != day) return;
             Seen();   // the notes there already aren't news
             _qaTeam = _teams.FirstOrDefault()?.Id ?? Guid.Empty;
@@ -2342,6 +2354,15 @@ else
     /// <summary>Docked beside the slide (the slide's column narrows), rather than over it.</summary>
     private bool RailDocked => RailOpen && _railRoom;
 
+    /// <summary>The rail open over the slide: a modal dialog, the page under it inert.</summary>
+    private bool RailOver => RailOpen && !_railRoom;
+
+    /// <summary>A click on the scrim around the rail open over the slide: it closes, and focus goes back to Rail.</summary>
+    internal void CloseRailFromScrim()
+    {
+        if (RailOver) ToggleRail();
+    }
+
     /// <summary>] or Rail: the rail opens or shuts. Over the slide it's a dialog: it takes focus as it opens, and gives it
     /// back to Rail as it shuts.</summary>
     internal void ToggleRail()
@@ -2400,10 +2421,26 @@ else
 
     // Where focus goes once a slide's strip is drawn again: into the note's box, back to Edit, or to the slide's heading
     // as a strip goes (the note kept or saved, the last number entered); a number refused keeps its box.
-    private enum SlideFocus { None, NoteBox, NoteEdit, NoteHeading, NumbersHeading }
+    private enum SlideFocus { None, NoteBox, NoteEdit, NoteHeading, NumbersHeading, NumberBox }
 
     private SlideFocus _slideFocus;
     private ElementReference _noteBox, _noteEditButton, _noteHeading, _numbersHeading;
+    private readonly Dictionary<Guid, ElementReference> _numberBoxes = [];
+
+    /// <summary>The title's Enter beside "numbers missing": the first numbers slide with one, focus in its first box.</summary>
+    private async Task ToMissingNumber(int slide)
+    {
+        await Move(slide);
+        _slideFocus = SlideFocus.NumberBox;
+    }
+
+    // The first missing number's box on the numbers slide shown.
+    private ElementReference FirstNumberBox()
+    {
+        var onNumbers = _slide > NoteSlides && _slide <= NoteSlides + MetricsSlides;
+        var first = onNumbers ? MetricPlan[_slide - 1 - NoteSlides].Group?.Tiles.FirstOrDefault(Missing) : null;
+        return first is not null && _numberBoxes.TryGetValue(first.Metric.Id, out var box) ? box : default;
+    }
     private readonly Dictionary<Guid, string> _numberErrors = [];
 
     private async Task FocusOnSlideAsync()
@@ -2411,7 +2448,9 @@ else
         var to = _slideFocus switch
         {
             SlideFocus.NoteBox => _noteBox, SlideFocus.NoteEdit => _noteEditButton,
-            SlideFocus.NoteHeading => _noteHeading, SlideFocus.NumbersHeading => _numbersHeading, _ => default,
+            // Over the slide the rail is modal and the slide inert: focus stays in the rail, on the note's Edit or the rail itself.
+            SlideFocus.NoteHeading => RailOver ? _noteEditButton : _noteHeading, SlideFocus.NumbersHeading => RailOver ? _railBox : _numbersHeading,
+            SlideFocus.NumberBox => FirstNumberBox(), _ => default,
         };
         if (_slideFocus == SlideFocus.None || _busy) return;
         _slideFocus = SlideFocus.None;
@@ -2510,9 +2549,20 @@ else
         if (InCharge && _seat is not null && Meetings.Lock(_seat, _view?.Locked != true)) Refresh();
     }
 
-    internal void HandOff(ChangeEventArgs e)
+    // Who's chosen in "Hand off to…": handed the meeting only once Hand off is pressed.
+    private string? _handTo;
+
+    internal void ChooseHandOff(ChangeEventArgs e) => _handTo = e.Value is string to && to.Length > 0 ? to : null;
+
+    internal void ConfirmHandOff()
     {
-        if (!InCharge || _seat is null || e.Value is not string to || to.Length == 0) return;
+        if (_handTo is { } to) HandOff(to);
+    }
+
+    internal void HandOff(string to)
+    {
+        _handTo = null;
+        if (!InCharge || _seat is null || to.Length == 0) return;
         var name = _view?.People.FirstOrDefault(p => p.UserId == to)?.Name;
         if (!Meetings.HandTo(_seat, to))
         {
@@ -2568,8 +2618,20 @@ else
                 <select class="form-select form-select-sm" aria-label="Assign @Ui.ActionLabel(r.Number)" value="@(r.AssigneeId ?? "")" disabled="@_busy"
                         @key="AssignKey(r.Id)" @onchange="e => Assign(r, e.Value as string)">
                     <option value="">Nobody</option>
-                    @foreach (var member in MembersOf(r.TeamId)) { <option value="@member.UserId">@member.DisplayName</option> }
-                    @if (r.AssigneeId is { } held && MembersOf(r.TeamId).All(member => member.UserId != held)) { <option value="@held">@r.AssigneeName</option> }
+                    @{ var (members, others) = Assignable(r); }
+                    @if (members.Count > 0)
+                    {
+                        <optgroup label="@($"{r.TeamName} members")">
+                            @foreach (var (id, name) in members) { <option value="@id">@name</option> }
+                        </optgroup>
+                    }
+                    @if (others.Count > 0)
+                    {
+                        <optgroup label="@(members.Count > 0 ? "Everyone else" : "People")">
+                            @foreach (var (id, name) in others) { <option value="@id">@name</option> }
+                        </optgroup>
+                    }
+                    @if (r.AssigneeId is { } held && members.Concat(others).All(x => x.Id != held)) { <option value="@held">@r.AssigneeName</option> }
                 </select>
                 @if (r.AssigneeId != _me)
                 {
@@ -2885,6 +2947,18 @@ else
     // --- actions, given to someone at the meeting ----------------------------------------------------------------
 
     private IReadOnlyList<TeamMember> MembersOf(Guid teamId) => _teams.FirstOrDefault(t => t.Id == teamId)?.Members ?? [];
+
+    // Everyone known, for someone who may assign anyone (an analyst), as the action page offers them; null otherwise.
+    private IReadOnlyList<AppUser>? _people;
+
+    /// <summary>Who an action's Assign offers, as the action page's does: its team's members first, then, for an analyst,
+    /// everyone else.</summary>
+    private (List<(string Id, string Name)> Members, List<(string Id, string Name)> Others) Assignable(EditionAction r)
+    {
+        var members = MembersOf(r.TeamId).Select(m => (Id: m.UserId, Name: m.DisplayName)).OrderBy(x => x.Name).ToList();
+        var others = (_people ?? []).Where(p => members.All(m => m.Id != p.Sid)).Select(p => (Id: p.Sid, Name: p.DisplayName)).OrderBy(x => x.Name).ToList();
+        return (members, others);
+    }
 
     // Who can take or assign it, as ActionService.CanWorkAsync decides (and checks again): analysts any action, others
     // their own teams'.

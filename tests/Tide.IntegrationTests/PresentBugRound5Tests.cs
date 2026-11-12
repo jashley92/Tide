@@ -42,9 +42,9 @@ public class PresentBugRound5Tests(MeetingClockApp app) : IClassFixture<MeetingC
         robin.Component.ScrollPaused.Should().BeTrue();
 
         // Handed the meeting, Robin presents on the same slide, then hands it back without scrolling as a follower.
-        await Do(pat, p => p.HandOff(new ChangeEventArgs { Value = Robin.UserId }));
+        await Do(pat, p => p.HandOff(Robin.UserId));
         await Do(robin, p => p.Follow());
-        await Do(robin, p => p.HandOff(new ChangeEventArgs { Value = SignIn.Analyst.UserId }));
+        await Do(robin, p => p.HandOff(SignIn.Analyst.UserId));
 
         robin.Component.ScrollPaused.Should().BeFalse("they haven't scrolled by hand since they followed again");
         (await robin.Html()).Should().NotContain("tide-slide-back");
@@ -64,13 +64,13 @@ public class PresentBugRound5Tests(MeetingClockApp app) : IClassFixture<MeetingC
         await Do(robin, p => p.JoinIfLive());
 
         // Pat, following Robin, scrolls by hand; Robin hands the meeting back and Pat hands it on again.
-        await Do(pat, p => p.HandOff(new ChangeEventArgs { Value = Robin.UserId }));
+        await Do(pat, p => p.HandOff(Robin.UserId));
         await Do(robin, p => p.Follow());
         await Do(pat, p => p.OnSlideScrolled(0.3));
         pat.Component.ScrollPaused.Should().BeTrue();
-        await Do(robin, p => p.HandOff(new ChangeEventArgs { Value = SignIn.Analyst.UserId }));
+        await Do(robin, p => p.HandOff(SignIn.Analyst.UserId));
         await Do(pat, p => p.Follow());
-        await Do(pat, p => p.HandOff(new ChangeEventArgs { Value = Robin.UserId }));
+        await Do(pat, p => p.HandOff(Robin.UserId));
         await Do(robin, p => p.Follow());
 
         pat.Component.ScrollPaused.Should().BeFalse();
@@ -88,7 +88,7 @@ public class PresentBugRound5Tests(MeetingClockApp app) : IClassFixture<MeetingC
         await Do(robin, p => p.JoinIfLive());
         robin.Component.SharedPlace.Should().BeFalse();
 
-        await Do(pat, p => p.HandOff(new ChangeEventArgs { Value = Robin.UserId }));
+        await Do(pat, p => p.HandOff(Robin.UserId));
         await Do(robin, p => p.Follow());
         robin.Component.SharedPlace.Should().BeTrue("the meeting's place restarts at the top, but Robin's page is where it was");
         pat.Component.SharedPlace.Should().BeFalse();

@@ -116,7 +116,7 @@ public class PresentFollowerGateTests(TideApp app) : IClassFixture<TideApp>
         await Do(andy, p => p.ClearHand(null));
         await Do(andy, p => p.Summon());
         await Do(andy, p => p.ToggleLock());
-        await Do(andy, p => p.HandOff(new ChangeEventArgs { Value = Andy.UserId }));
+        await Do(andy, p => p.HandOff(Andy.UserId));
         await Do(andy, p => p.Raise(article, Line));
         await Do(andy, p => p.TypeQuickAddTitle(article, "Forged quick add"));
         await Do(andy, p => p.QuickAdd(article));

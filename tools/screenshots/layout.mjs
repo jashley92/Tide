@@ -1026,6 +1026,24 @@ const numberEntered = text => async (page, demo) => {
   await page.waitForTimeout(900);
 };
 
+/** Setup: the presenter's rail opened over the article's slide, then a click on the scrim beside it. */
+const railScrimClicked = async (page, demo) => {
+  await presenterRail(true)(page, demo);
+  await page.mouse.click(20, Math.round(page.viewportSize().height / 2));
+  await page.waitForTimeout(600);
+};
+
+/** Setup: wider letters, on the title slide with the presenter's rail open, then its Enter beside the numbers missing. */
+const missingNumberEntered = async page => {
+  await wideFont(page);
+  if (!(await page.locator('#present-rail').count())) {
+    await page.keyboard.press(']');
+    await page.locator('#present-rail').waitFor();
+  }
+  await page.locator('#present-rail').getByRole('button', { name: 'Enter', exact: true }).click();
+  await page.waitForTimeout(900);
+};
+
 /** Setup: wider letters, on the first article's slide; with `open`, the presenter's rail opened by its key (`]`). */
 const presenterRail = (open = false) => async page => {
   await wideFont(page);
@@ -1749,6 +1767,29 @@ const contrastAtLeast = (selector, ratio, pseudo = null) => holds(`contrast at l
 
 /** The presenter's rail's hints (its placeholders) read: AA, in either theme. */
 const railPlaceholdersReadable = contrastAtLeast('#present-rail :is(input, textarea)[placeholder]', 4.5, '::placeholder');
+
+/** Each visible list (select) in the presenter's rail is wide enough for its longest choice: none is cut off. */
+const railSelectsWhole = holds('the rail\'s lists show their longest choice whole', () =>
+  [...document.querySelectorAll('#present-rail select')].filter(el => el.getBoundingClientRect().width > 0).flatMap(el => {
+    const has = el.getBoundingClientRect().width;
+    el.style.width = 'max-content';
+    const needs = el.getBoundingClientRect().width;
+    el.style.width = '';
+    return needs > has + 1 ? [`${el.getAttribute('aria-label')}: ${Math.round(has)}px wide, its longest choice needs ${Math.round(needs)}px`] : [];
+  }));
+
+/** While the rail is open over the slide, the slide's keys aren't heard: an arrow doesn't move the slide. */
+const slideKeysHeld = {
+  name: 'the slide stays put while the rail is open over it',
+  check: async page => {
+    const before = await page.locator('[data-slide-key]').first().getAttribute('data-slide-key');
+    await page.evaluate(() => document.activeElement?.blur());
+    await page.keyboard.press('ArrowRight');
+    await page.waitForTimeout(500);
+    const after = await page.locator('[data-slide-key]').first().getAttribute('data-slide-key');
+    return before === after ? [] : [`the slide moved from ${before} to ${after}`];
+  },
+};
 
 /** The first shown match of `a` and of `b` look alike in each of `props` (computed): controls side by side that match. */
 const sameLook = (a, b, props) => holds(`same ${props.join(', ')}: ${a} / ${b}`, ([a, b, props]) => {
@@ -3626,22 +3667,31 @@ const pages = [
     rules: [attr('.tide-slide-presenter input', 'aria-invalid', 'true'), visible('.tide-slide-presenter-error'), focusOn('.tide-slide-presenter input')] },
   { name: 'slide-numbers-presenter', route: '/present/{today}', setup: slideWith('.tide-slide-presenter input'), widths: [1920, 1440, 1100, 900, 780],
     rules: [noSidewaysScroll, visible('.tide-slide-presenter input'), fits('.tide-slide-presenter'), inWindow('.tide-slide-presenter :is(button, input)'), slideFits] },
-  // Still current, and a number entered with Enter: focus on the slide's heading as the strip goes. After the strips'
+  // The title's Enter beside the numbers missing: the numbers slide, focus in the first missing number's box. Before the
+  // pages that enter it.
+  { name: 'present-rail-number-enter', route: '/present/{today}', setup: missingNumberEntered, widths: [1920, 1440],
+    rules: [focusOn('#present-rail input[inputmode="decimal"]')] },
+  // Still current, and a number entered with Enter, in the rail open over the slide (modal, the slide inert): the flag
+  // goes and focus stays in the rail, on the note's Edit, or on the rail once no number is left. After the strips'
   // other pages, as they change the demo's day (the note is kept, the number entered), and before the pages that change
   // the note or the numbers themselves.
-  { name: 'slide-note-kept-focus', route: '/present/{today}', setup: noteStrip('keep'), widths: [1440], rules: [hidden('.tide-slide-presenter'), focusOn('.tide-slide-note h2')] },
-  { name: 'slide-number-saved', route: '/present/{today}', setup: numberEntered('7'), widths: [1440], rules: [hidden('.tide-slide-presenter'), focusOn('.tide-slide-mgroup h2')] },
+  { name: 'slide-note-kept-focus', route: '/present/{today}', setup: noteStrip('keep'), widths: [1440], rules: [hidden('.tide-slide-presenter-flag'), focusOn('#present-rail .tide-slide-presenter button')] },
+  { name: 'slide-number-saved', route: '/present/{today}', setup: numberEntered('7'), widths: [1440], rules: [hidden('.tide-slide-presenter'), focusOn('#present-rail')] },
   // The presenter's rail: docked beside the slide from 1500px (the slide's column narrows, and the slide still fits in
   // it), over the slide below that, as a dialog, once `]` opens it; shut there by default. It holds the presenter's
   // controls (the quick add among them), and the slide none of them. Wider letters.
   { name: 'present-rail-docked', route: '/present/{today}', setup: presenterRail(), widths: [[1920, 1000], [1600, 900], [1500, 900]],
     rules: [noSidewaysScroll, visible('#present-rail'), besides('#present-rail', '.tide-slide'), fits('#present-rail'), slideFits,
       visible('#present-rail .tide-quick-add'), hidden('.tide-slide .tide-quick-add'), attr('#present-rail-toggle', 'aria-expanded', 'true'),
-      railPlaceholdersReadable, fits('#present-rail .tide-present-rail-raise'), fits('#present-rail .tide-action-assign'),
+      railPlaceholdersReadable, railSelectsWhole, fits('#present-rail .tide-present-rail-raise'), fits('#present-rail .tide-action-assign'),
       sameLook('#present-rail .tide-action-assign > input', '#present-rail .tide-action-assign > select', ['backgroundColor', 'color', 'fontSize']),
       buttonsNamed('Take it', 'Take A-')] },
   { name: 'present-rail-overlay', route: '/present/{today}', setup: presenterRail(true), widths: [1440, 1100, 780],
-    rules: [noSidewaysScroll, visible('#present-rail'), attr('#present-rail', 'role', 'dialog'), fits('#present-rail'), slideFits, visible('#present-rail .tide-quick-add')] },
+    rules: [noSidewaysScroll, visible('#present-rail'), attr('#present-rail', 'role', 'dialog'), attr('#present-rail', 'aria-modal', 'true'), fits('#present-rail'), slideFits,
+      visible('#present-rail .tide-quick-add'), visible('.tide-present-scrim'), railSelectsWhole, tabStaysIn('#present-rail', 25), tabStaysIn('#present-rail', 6, 'Shift+Tab'), slideKeysHeld] },
+  // A click on the scrim beside the rail open over the slide closes it, and focus goes back to Rail.
+  { name: 'present-rail-scrim', route: '/present/{today}', setup: railScrimClicked, widths: [1440],
+    rules: [hidden('#present-rail'), hidden('.tide-present-scrim'), focusOn('#present-rail-toggle')] },
   { name: 'present-rail-shut', route: '/present/{today}', setup: presenterRail(), widths: [1440, 780],
     rules: [hidden('#present-rail'), visible('#present-rail-toggle'), attr('#present-rail-toggle', 'aria-expanded', 'false'), hidden('.tide-slide .tide-quick-add'), slideFits] },
   { name: 'metrics-grid', route: '/metrics?chart=group:alert-queue,group:vulnerability-sla&view=grid', widths: [1920, 1000, 700],

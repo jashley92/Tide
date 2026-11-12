@@ -302,12 +302,13 @@ window.tidePresent = (function () {
     }
 
     function onKey(e) {
-        // The presenter's rail over the slide is a dialog: in it, ] and Escape close it (not while typing), and the slide's
-        // other keys aren't heard.
-        if (ref && !e.defaultPrevented && (e.key === ']' || e.key === 'Escape') && !e.ctrlKey && !e.metaKey && !e.altKey && !typing(e.target)
-            && e.target.closest && e.target.closest('#present-rail[role="dialog"]')) {
-            e.preventDefault();
-            ref.invokeMethodAsync('OnPresentKey', 'rail').catch(function () { });
+        // The presenter's rail open over the slide is a modal dialog: wherever focus is (in it, or dropped to the page), ]
+        // and Escape close it (not while typing), and the slide's other keys aren't heard; Tab is dialog.js's.
+        if (ref && document.querySelector('#present-rail[aria-modal="true"]')) {
+            if (!e.defaultPrevented && (e.key === ']' || e.key === 'Escape') && !e.ctrlKey && !e.metaKey && !e.altKey && !typing(e.target)) {
+                e.preventDefault();
+                ref.invokeMethodAsync('OnPresentKey', 'rail').catch(function () { });
+            }
             return;
         }
         if (!ref || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || typing(e.target) || inMenu(e.target)) return;

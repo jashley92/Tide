@@ -1512,6 +1512,11 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 .tide-present-rail-discussed { margin-top: auto; width: 100%; }
 .tide-present-rail-discussed.on { background: var(--tide-slide-ok); border-color: var(--tide-slide-ok); color: var(--tide-slide-bg); }
 .tide-present-rail-foot { color: var(--tide-slide-muted); }
+/* Open over the slide, the rail is modal: a scrim over the page under it, which closes it on a click. */
+.tide-present-scrim { position: fixed; inset: 0; z-index: 14; background: var(--tide-scrim); }
+/* Its lists take the rail's width, each on a line of its own, so a long team or kind ("Vulnerability Management") shows
+   whole; the box and the button beside them keep a row. */
+.tide-present-rail :is(.tide-present-rail-raise, .tide-quick-add, .tide-action-assign) > select { grid-column: 1 / -1; }
 
 /* ---- Intake: CVE chips, triage inbox, sources, stories ---- */
 .tide-cve a { color: inherit; text-decoration: none; }

@@ -187,20 +187,25 @@ the slide for the room (`LiveMeetings.Open`, `Show`), and edit its scorecard tag
 
 The slides are the room's: they show what's being discussed and none of the presenter's controls. The presenter's
 controls are in **the presenter's rail** beside the slide (docked from 1500px wide, over the slide below that; `]` or
-**Rail** opens and shuts it, and Escape shuts it over the slide). It holds, for the slide on screen:
+**Rail** opens and shuts it). Over the slide it's a modal dialog, as the context rail's overlay is: the page under it is
+inert behind a scrim, Tab stays in it, the slide's keys wait, and Escape, `]` or a click on the scrim shuts it and puts
+focus back on **Rail**. It holds, for the slide on screen:
 
 | Slide | The rail |
 |---|---|
-| Title | Ready to present? (the articles, an opening note not updated with Still current, a number missing with a way to it), and what comes first. |
-| Opening note | The note's Still current and Edit, while it's carried over from the last brief. |
-| Numbers | A box for each number not entered yet. |
-| An article | Its actions (Take it, holder, due date), its recommended lines to raise (kind, team, Raise), the quick add, a meeting note on it, and Mark discussed. |
+| Title | Ready to present? (the articles, an opening note not updated with Still current, a number missing with Enter, which goes to its box), and what comes first. |
+| Opening note | The note's Edit, and Still current while it's carried over from the last brief. |
+| Numbers | A box for each number not entered yet (nothing, once none is missing). |
+| An article | Its actions (Take it, holder, due date; the holder offered as on the action page: the team's members, then, for an analyst, everyone else), its recommended lines to raise (kind, team, Raise), the quick add, a meeting note on it, and Mark discussed. |
 | Wrap-up | What's not raised yet, the articles not discussed (tick to carry each to the next brief), attendance, and End the meeting. |
-| Any slide, in a meeting | The hands (lower one, or clear them all) and everyone's view (bring everyone here, lock everyone to my slide, hand off). |
+| Any slide, in a meeting | The hands (lower one, or clear them all) and everyone's view (bring everyone here, lock everyone to my slide, hand off: choose who, then **Hand off**). |
 
 The rail is drawn only on the presenting page (or, with no meeting, for someone who could present). It is never in a
 follower's page, whatever the follower may do elsewhere: **raising and working actions during the meeting is the
 presenter's, from the rail. Someone following, an analyst included, raises or works an action on the action pages.**
+Each of the presenter's steps checks it where it's handled, not only by what's drawn: the page must be presenting the
+meeting (or, with no meeting, be someone who could present). A follower's `D`, or any of the rail's steps sent by hand,
+changes nothing.
 
 ## The live meeting
 

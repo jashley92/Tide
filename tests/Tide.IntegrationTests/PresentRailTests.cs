@@ -1,6 +1,8 @@
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Tide.Application.Abstractions;
+using Tide.Application.Actions;
 using Tide.Application.Articles;
 using Tide.Application.Briefs;
 using Tide.Application.Metrics;
@@ -153,5 +155,104 @@ public class PresentRailTests(TideApp app) : IClassFixture<TideApp>
         await using var owner = await Open(app, day, Owner);
         await Do(owner, p => p.ToggleRail());
         (await owner.Html()).Should().NotContain("present-rail");
+    }
+
+    // The first article's slide: the one before the second's, which is before the wrap-up.
+    private static async Task FirstArticle(Rendered<Present> r)
+    {
+        await r.Click(p => p.OnPresentKey("last"));
+        await r.Click(p => p.OnPresentKey("prev"));
+        await r.Click(p => p.OnPresentKey("prev"));
+    }
+
+    [Fact]
+    public async Task OverTheSlide_TheRailIsModal_BehindAScrim_ThatClosesIt()
+    {
+        var day = await Day(214);
+        await using var pat = await Open(app, day);
+        await Do(pat, p => p.StartMeeting());
+        await pat.Click(p => p.OnRailRoom(false));   // a narrower window: shut, then opened over the slide
+        await Do(pat, p => p.ToggleRail());
+        var html = await pat.Html();
+        RailOf(html).Should().Contain("role=\"dialog\"").And.Contain("aria-modal=\"true\"");
+        html.Should().Contain("class=\"tide-present-scrim\"");
+        html.Should().Contain("<header class=\"tide-present-top\" inert").And.Contain("<footer class=\"tide-present-bottom\" inert");
+        html.Should().MatchRegex("<section class=\"tide-slide\"[^>]* inert");
+
+        await Do(pat, p => p.CloseRailFromScrim());
+        html = await pat.Html();
+        html.Should().NotContain("<aside id=\"present-rail\"").And.NotContain("tide-present-scrim").And.NotContain(" inert");
+
+        // Docked, nothing is held: the page beside it works as ever.
+        await pat.Click(p => p.OnRailRoom(true));
+        html = await pat.Html();
+        RailOf(html).Should().NotContain("aria-modal");
+        html.Should().NotContain("tide-present-scrim").And.NotContain(" inert");
+        EndMeeting(app, day);
+    }
+
+    [Fact]
+    public async Task Assign_OffersTheTeamsMembers_ThenEveryoneElse_AsTheActionPageDoes()
+    {
+        var day = await Day(215);
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+        {
+            await scope.ServiceProvider.GetRequiredService<IUserDirectory>().TouchAsync("dev:rail-asa", "Asa Assignee", null, null, "ActionOwner");
+            var briefs = scope.ServiceProvider.GetRequiredService<BriefService>();
+            var first = (await briefs.GetAsync(day))!.Items.OrderBy(i => i.SortOrder).First().ArticleId;
+            var team = (await scope.ServiceProvider.GetRequiredService<TeamService>().ListAsync()).First(t => !t.IsExternal).Id;
+            await scope.ServiceProvider.GetRequiredService<ActionService>().QuickAddAsync(first, "Rail assign", ActionKind.IocSweep, team, null, day);
+        }
+        await using var pat = await Open(app, day);
+        await FirstArticle(pat);
+        var rail = RailOf(await pat.Html());
+        rail.Should().Contain("aria-label=\"Assign A-").And.Contain(">Asa Assignee</option>", "an analyst may assign anyone, as on the action page");
+    }
+
+    [Fact]
+    public async Task TheWrapUp_HasOneEnd_InTheRail()
+    {
+        var day = await Day(216);
+        await using var pat = await Open(app, day);
+        await Do(pat, p => p.StartMeeting());
+        await pat.Click(p => p.OnPresentKey("last"));
+        var rail = RailOf(await pat.Html());
+        System.Text.RegularExpressions.Regex.Matches(rail, "End the meeting</button>").Count.Should().Be(1);
+        EndMeeting(app, day);
+    }
+
+    [Fact]
+    public async Task TheNote_KeepsAnEdit_OnceCurrent_AndTheNumbers_SayNothing_OnceNoneIsMissing()
+    {
+        var day = await Day(217);
+        await using var pat = await Open(app, day);
+        await pat.Click(p => p.OnPresentKey("next"));
+        await Do(pat, p => p.KeepOpeningNote());
+        RailOf(await pat.Html()).Should().Contain(">Edit</button>", "the note can still be changed once it's current").And.NotContain("Still current");
+
+        await pat.Click(p => p.OnPresentKey("next"));
+        RailOf(await pat.Html()).Should().Contain("rail-numbers-h");
+        Guid metric;
+        await using (var scope = SignedIn(app, SignIn.Analyst))
+            metric = (await scope.ServiceProvider.GetRequiredService<MetricsService>().GetDayAsync(day)).Groups
+                .Single(g => g.Group.Name == "Rail numbers").Tiles.Single().Metric.Id;
+        await Do(pat, p => p.EnterMissingNumber(metric, "4"));
+        RailOf(await pat.Html()).Should().NotContain("rail-numbers-h", "no empty heading with nothing to enter");
+    }
+
+    [Fact]
+    public async Task HandOff_WaitsForItsButton()
+    {
+        var day = await Day(218);
+        await using var pat = await Open(app, day);
+        await Do(pat, p => p.StartMeeting());
+        await using var robin = await Open(app, day, Robin);
+        await Do(robin, p => p.JoinIfLive());
+        await Do(pat, p => p.ChooseHandOff(new Microsoft.AspNetCore.Components.ChangeEventArgs { Value = Robin.UserId }));
+        app.Services.GetRequiredService<Tide.Web.Services.LiveMeetings>().Get(day)!.PresenterName.Should().Be("Tester", "choosing isn't handing off");
+        RailOf(await pat.Html()).Should().Contain(">Hand off</button>");
+        await Do(pat, p => p.ConfirmHandOff());
+        app.Services.GetRequiredService<Tide.Web.Services.LiveMeetings>().Get(day)!.PresenterName.Should().Be("Robin Analyst");
+        EndMeeting(app, day);
     }
 }
