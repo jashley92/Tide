@@ -166,6 +166,9 @@ public sealed record StackDetail(StackProduct Product, string? TeamName, IReadOn
 /// </summary>
 public sealed record StackCard(StackProduct Product, string? TeamName, IReadOnlyList<StackArticle> Others);
 
+/// <summary>A product in use that some articles are about (<see cref="StackService.RunByArticlesAsync"/>), and how many of them.</summary>
+public sealed record StackRun(StackProduct Product, int Articles);
+
 /// <summary>An article's products: those it's tagged with, and those it names but isn't tagged with (a suggestion).</summary>
 public sealed record ArticleStack(IReadOnlyList<StackProduct> Tagged, IReadOnlyList<StackProduct> Suggested);
 
@@ -530,6 +533,31 @@ public sealed partial class StackService(IAppDbContextFactory dbs, ICurrentUser 
         return articles.Where(a => tagged.Contains(a.Id) || Names(e, a.Words))
             .Select(a => (Article: new StackArticle(a.Id, a.Title, a.On, a.Status, tagged.Contains(a.Id)), a.Tlp))
             .OrderByDescending(h => h.Article.On).ToList();
+    }
+
+    /// <summary>
+    /// The products in use that any of <paramref name="articleIds"/> is about, found as a product's page finds its
+    /// articles: tagged with it, or naming it (in the title or the start of the bottom line). Each with how many of those
+    /// articles; most first, then by name. A retired product isn't run any more, so it's left out. An adversary's "We
+    /// run": profiles aren't linked to products, so this goes through the profile's articles.
+    /// </summary>
+    public async Task<IReadOnlyList<StackRun>> RunByArticlesAsync(IReadOnlyCollection<Guid> articleIds, CancellationToken ct = default)
+    {
+        RequireRead();
+        if (articleIds.Count == 0) return [];
+        await using var db = await dbs.CreateAsync(ct);
+        var products = await InUseAsync(db, ct);
+        if (products.Count == 0) return [];
+        var ids = articleIds.Distinct().ToList();
+        // Each product's articles among them: those naming it (matched in one pass, as Our stack's list does), then those tagged with it.
+        var mine = products.ToDictionary(p => p.Id, _ => new HashSet<Guid>());
+        var names = new StackNames(products.Select(Entry));
+        foreach (var a in await db.Articles.AsNoTracking().Where(a => ids.Contains(a.Id)).Select(a => new { a.Id, a.Title, Bluf = a.Bluf.Substring(0, SummaryStart) }).ToListAsync(ct))
+            foreach (var e in names.In(Words(a.Title, a.Bluf))) mine[e.Id].Add(a.Id);
+        foreach (var t in await db.ArticleProducts.AsNoTracking().Where(t => ids.Contains(t.ArticleId)).Select(t => new { t.ArticleId, t.ProductId }).ToListAsync(ct))
+            if (mine.TryGetValue(t.ProductId, out var tagged)) tagged.Add(t.ArticleId);
+        return products.Select(p => new StackRun(p, mine[p.Id].Count)).Where(r => r.Articles > 0)
+            .OrderByDescending(r => r.Articles).ThenByName(r => r.Product.Name).ToList();
     }
 
     /// <summary>An article's products, and those it names but isn't tagged with.</summary>

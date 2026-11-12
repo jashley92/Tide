@@ -3,7 +3,10 @@
 @attribute [Authorize(Policy = Policies.ReadTeamEdition)]
 @using Tide.Application.Adversaries
 @using Tide.Domain.Entities
+@using Tide.Application.Stack
+@using Tide.Web.Components.AdversaryRail
 @inject AdversaryService Adversaries
+@inject StackService Stack
 @inject Tide.Application.Detections.DetectionService Detections
 @inject ICurrentUser CurrentUser
 @inject NavigationManager Nav
@@ -17,12 +20,21 @@
    by, built as Our stack is. A profile's page is its timeline (the articles tagged with it or naming it, and their
    actions), the ATT&CK techniques across them (a Navigator layer to download), and its indicators. Articles that name
    it but aren't tagged are listed for an analyst to link; nothing is linked automatically. A colleague's change to a
-   profile, or to an article's tags, re-reads the page in place; the edit form keeps what's typed in it. *@
+   profile, or to an article's tags, re-reads the page in place; the edit form keeps what's typed in it.
+   The context rail: on the list, the selected profile (AdversaryRowRail), chosen as every list's row is (RowKeys, ?row=);
+   on a profile, its facts, what can be done to it, the articles to link, what we run that its articles are about and,
+   for analysts, the detection rules for its techniques. Both read what the profile's page reads, and neither shows the
+   profile's notes (AMBER): those stay in About it. *@
 
 <PageTitle>@(_detail?.Adversary.Name ?? "Adversaries") · TIDE</PageTitle>
 
 @if (Id is null)
 {
+    @* The rows the table shows (its filter, sort and page, as it tells them), and the selected one, for the list, its
+       keys and the rail. *@
+    var view = View;
+    var selectedAt = Selected;
+    var selectedRow = SelectedRow;
     <div class="tide-page-head">
         <div>
             <h1>Adversaries</h1>
@@ -54,7 +66,8 @@
     <div class="tide-card">
         <DataTable TItem="AdversaryRow" Items="Shown" Columns="Columns" Key="r => r.Adversary.Id" One="profile" Many="profiles" Caption="Adversaries" PageInAddress="true"
                    FilterLabel="Filter profiles" FilterPlaceholder="Filter by name, other name or MITRE id"
-                   RowClass="@(r => r.Adversary.IsRetired ? "tide-muted" : null)">
+                   RowClass="@(r => r.Adversary.IsRetired ? RetiredRowClass : RowClass)"
+                   Selected="r => r.Adversary.Id == selectedRow?.Adversary.Id" OnSelect="SelectRow" OnView="Viewed">
             <Toolbar>
                 @if (_list is not null)
                 {
@@ -80,7 +93,23 @@
                 <td>@(r.LastReported is { } d ? Ui.ShortDay(d) : "—")</td>
             </RowTemplate>
         </DataTable>
+        @if (view.Count > 0)
+        {
+            @* J/K and the arrows move the selected row, Enter opens the profile; the address names the row. *@
+            <RowKeys RowClass="@RowClass" Count="view.Count" Selected="selectedAt" SelectedChanged="SelectAt" OnOpen="OpenRow" Address="RowAddress" />
+        }
     </div>
+    @* The selected profile, in the context rail. *@
+    <ContextRail Title="@(selectedRow is { } chosen ? $"About {chosen.Adversary.Name}" : "About the selected profile")">
+        @if (selectedRow is { } row)
+        {
+            <AdversaryRowRail @ref="_rail" Row="row" OnChanged="ReadAgain" />
+        }
+        else
+        {
+            <section class="tide-card"><p class="small tide-muted mb-0">@(Shown is null ? "Loading…" : "Nothing is selected: no profile is shown.")</p></section>
+        }
+    </ContextRail>
 }
 else if (_detail is null)
 {
@@ -91,33 +120,16 @@ else
 {
     var p = _detail.Adversary;
     <nav aria-label="Breadcrumb" class="tide-crumbs"><a href="adversaries">Adversaries</a> &rsaquo; @p.Name</nav>
+    @* Its facts and what can be done to it are in the context rail; the page is its story. *@
     <div class="tide-page-head">
         <div>
-            <h1>@p.Name @if (p.Watched) { <Badge Tone="BadgeTone.Warn">Watched</Badge> } @if (p.IsRetired) { <Badge Tone="BadgeTone.Neutral">Retired</Badge> }</h1>
-            <div class="tide-sub">@p.Kind@(p.MitreId is { } m ? $" · MITRE {m}" : "")@(p.Motivation is { } mo ? $" · {mo}" : "")@(p.Sectors is { } se ? $" · {se}" : "")
-                · @_detail.BriefedThisQuarter brief@(_detail.BriefedThisQuarter == 1 ? "" : "s") this quarter
-                @if (_detail.Articles.Count > 0) { <text> · last reported @Ui.ShortDay(_detail.Articles[0].On)</text> }</div>
-            @if (_detail.MergedIntoName is { } into) { <div class="small">Merged into <a href="@($"adversaries/{p.MergedIntoId}")">@into</a>.</div> }
-        </div>
-        <div class="d-flex gap-2 flex-wrap">
-            @if (_detail.Techniques.Count > 0)
-            {
-                <a class="btn btn-outline-secondary btn-sm" href="@($"adversaries/{p.Id}/navigator.json")" download><span class="bi bi-grid-3x3" aria-hidden="true"></span> Navigator layer</a>
-            }
-            @if (_canWrite && !p.IsRetired)
-            {
-                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Watch(!p.Watched)">@(p.Watched ? "Stop watching" : "Watch in triage")</button>
-            }
-            @if (_canWrite)
-            {
-                <button class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Retire(!p.IsRetired)">@(p.IsRetired ? "Bring back" : "Retire")</button>
-            }
+            <h1>@p.Name @if (p.Watched) { <Badge Tone="BadgeTone.Warn">Watched</Badge> } @if (p.IsRetired) { <Badge Tone="BadgeTone.Neutral">@(p.MergedIntoId is null ? "Retired" : "Merged")</Badge> }</h1>
         </div>
     </div>
-    <div class="tide-today-grid">
+    <div class="tide-today-grid tide-adv-grid">
         <div>
             <section class="tide-card" aria-labelledby="adv-timeline-h">
-                <h2 id="adv-timeline-h">Timeline <span class="tide-count">(@_detail.Articles.Count articles · @_detail.Actions.Count actions · @_detail.Indicators indicators)</span></h2>
+                <h2 id="adv-timeline-h" tabindex="-1">Timeline <span class="tide-count">(@_detail.Articles.Count articles · @_detail.Actions.Count actions · @_detail.Indicators indicators)</span></h2>
                 @if (_detail.Articles.Count == 0) { <div class="small tide-muted">No articles yet.</div> }
                 <ul class="list-unstyled mb-0">
                     @foreach (var a in _detail.Articles)
@@ -212,6 +224,69 @@ else
             </section>
         </div>
     </div>
+    <ContextRail Title="@($"About {p.Name}")">
+        <section class="tide-card" aria-label="Facts">
+            <dl class="tide-facts tide-facts-side">
+                <div class="tide-fact"><dt>Kind</dt><dd>@p.Kind</dd></div>
+                <div class="tide-fact"><dt>MITRE id</dt><dd class="tide-data">@(p.MitreId ?? "—")</dd></div>
+                <div class="tide-fact"><dt>Motivation</dt><dd>@(p.Motivation ?? "—")</dd></div>
+                <div class="tide-fact"><dt>Sectors</dt><dd>@(p.Sectors ?? "—")</dd></div>
+                <div class="tide-fact tide-fact-wide"><dt>Reported</dt><dd>@Ui.Plural(_detail.BriefedThisQuarter, "brief") this quarter@(_detail.Articles.Count > 0 ? $" · last reported {Ui.ShortDay(_detail.Articles[0].On)}" : "")</dd></div>
+                @if (_detail.MergedIntoName is { } into)
+                {
+                    <div class="tide-fact tide-fact-wide"><dt>Merged into</dt><dd><a href="@($"adversaries/{p.MergedIntoId}")">@into</a></dd></div>
+                }
+            </dl>
+        </section>
+        @if (_detail.Techniques.Count > 0 || _canWrite)
+        {
+            <section class="tide-card" aria-labelledby="rail-do-h">
+                <h2 id="rail-do-h">Do</h2>
+                <div class="tide-stack-rail-buttons mt-0">
+                    @if (_canWrite && !p.IsRetired)
+                    {
+                        <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Watch(!p.Watched)">@(p.Watched ? "Stop watching" : "Watch in triage")</button>
+                    }
+                    @if (_detail.Techniques.Count > 0)
+                    {
+                        <a class="btn btn-outline-secondary btn-sm" href="@($"adversaries/{p.Id}/navigator.json")" download><span class="bi bi-grid-3x3" aria-hidden="true"></span> Navigator layer</a>
+                    }
+                    @if (_canWrite)
+                    {
+                        <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="() => Retire(!p.IsRetired)">@(p.IsRetired ? "Bring back" : "Retire")</button>
+                    }
+                </div>
+            </section>
+        }
+        @if (_canWrite && _detail.Untagged.Count is > 0 and var untagged)
+        {
+            @* The same articles the timeline's Tag button tags: the rail names a few and points there. *@
+            <section class="tide-card" aria-labelledby="rail-link-h">
+                <h2 id="rail-link-h">To link</h2>
+                <p class="small mb-2">@Ui.Plural(untagged, "article") @(untagged == 1 ? "names it but isn't" : "name it but aren't") tagged.</p>
+                <ul class="tide-rail-list">
+                    @foreach (var a in _detail.Untagged.Take(AdversaryRowRail.Shown))
+                    {
+                        <li><a class="tide-rail-list-title tide-stack-rail-link" href="@($"articles/{a.Id}")">@a.Title</a>
+                            <span class="tide-rail-list-meta">@Ui.ShortDay(a.On, Clock.Today)</span></li>
+                    }
+                </ul>
+                <a class="small tide-stack-rail-link" href="@($"adversaries/{p.Id}#adv-timeline-h")">Check and tag them in the timeline</a>
+            </section>
+        }
+        <AdversaryWeRun Runs="_runs" />
+        @if (_rules is not null && _detail.Techniques.Count > 0)
+        {
+            @* EP-79's rules for its techniques, for analysts once rules are imported, as the heat map outlines them. *@
+            var covered = _detail.Techniques.Count(t => _rules.GetValueOrDefault(t.Id) is { Enabled: > 0 });
+            <section class="tide-card" aria-labelledby="rail-hunting-h">
+                <h2 id="rail-hunting-h">Hunting</h2>
+                <p class="small mb-1">@covered of @Ui.Plural(_detail.Techniques.Count, "technique") in its articles @(covered == 1 ? "has" : "have") an enabled detection rule tagged.</p>
+                @if (_detail.Techniques.Count - covered is > 0 and var gaps) { <p class="small tide-muted mb-1">@gaps without one.</p> }
+                <a class="small tide-stack-rail-link" href="coverage">Coverage</a>
+            </section>
+        }
+    </ContextRail>
 }
 
 <ConfirmDialog @ref="_confirm" />
@@ -231,6 +306,8 @@ else
     protected override async Task OnParametersSetAsync()
     {
         _canWrite = CurrentUser.Has(Permission.WriteArticles);
+        if (Id is null) _selected = RowSelection.From(RowParam);
+        else _view = null;   // the list's table goes: its rows are told afresh when it's back
         // Another page of the list (?page=) is the same list, already read: only a profile, or the list after one, reads afresh.
         if (_loaded && Id is null && _shownId is null) return;
         _shownId = Id;
@@ -240,6 +317,7 @@ else
     private Guid? _shownId;
 
     private IReadOnlyDictionary<string, Tide.Application.Detections.TechniqueRules>? _rules;
+    private IReadOnlyList<StackRun>? _runs;
 
     private static string HeatCss(AdversaryTechnique t, Tide.Application.Detections.TechniqueRules? rules) =>
         (t.Articles >= 3 ? "h2" : t.Articles == 2 ? "h1" : "") + (rules is { Enabled: 0 } ? " tide-adv-gap" : "");
@@ -323,6 +401,7 @@ else
     private async Task Read(Guid id)
     {
         _detail = await Adversaries.GetAsync(id);
+        _runs = _detail is null ? null : await Stack.RunByArticlesAsync(_detail.Articles.Select(a => a.Id).ToList());
         // EP-79: each technique's rules, for analysts, once rules are imported.
         _rules = _detail is { Techniques.Count: > 0 } d && CurrentUser.Has(Permission.WriteArticles)
             ? await Detections.ForTechniquesAsync(d.Techniques.Select(t => t.Id)) : null;
@@ -334,6 +413,67 @@ else
         _list = await Adversaries.ListAsync(_showAll);
         Shown = _showAll ? _list : _list.Where(r => r.Articles > 0 || r.Adversary.Watched).ToList();
     }
+
+    // --- the selected row (RowSelection, RowKeys) and the rail ----------------------------------------------------------
+
+    /// <summary>The selected row's place on the page of the list shown, from 0 (?row=; RowSelection).</summary>
+    [SupplyParameterFromQuery(Name = RowSelection.Param)] public string? RowParam { get; set; }
+
+    /// <summary>The class every row of the list carries (RowKeys's RowClass).</summary>
+    private const string RowClass = "tide-adv-item", RetiredRowClass = RowClass + " tide-muted";
+
+    private IReadOnlyList<AdversaryRow>? _view;
+    private AdversaryRowRail? _rail;
+    private int _selected;
+
+    internal AdversaryRowRail? Rail => _rail;
+
+    /// <summary>The rows the table shows, in its order: its filter, sort and page (DataTable's OnView).</summary>
+    internal IReadOnlyList<AdversaryRow> View => _view ?? [];
+
+    /// <summary>The selected row's place among the rows shown.</summary>
+    internal int Selected => RowSelection.Clamp(_selected, View.Count);
+
+    /// <summary>The selected profile's row, or none when no profile is shown.</summary>
+    internal AdversaryRow? SelectedRow => View.Count > 0 ? View[Selected] : null;
+
+    internal void SelectAt(int at) => _selected = at;
+
+    // A row clicked or focused (or something in it): it's the selected one.
+    private void SelectRow(AdversaryRow row) => _selected = PlaceOf(View, row.Adversary.Id) ?? _selected;
+
+    // The table shows other rows (the list read again, a filter, a sort, another page): the selected profile stays
+    // selected wherever it now sits (watched, it moves up); one no longer shown gives way to the first row. The first
+    // rows told keep the place the address named.
+    private void Viewed(IReadOnlyList<AdversaryRow> view)
+    {
+        if (_view is not null) _selected = (SelectedRow is { } row ? PlaceOf(view, row.Adversary.Id) : null) ?? 0;
+        _view = view;
+    }
+
+    private static int? PlaceOf(IReadOnlyList<AdversaryRow> view, Guid id)
+    {
+        for (var i = 0; i < view.Count; i++) if (view[i].Adversary.Id == id) return i;
+        return null;
+    }
+
+    // Enter on the selected row: the profile's page.
+    internal void OpenRow(int at)
+    {
+        var view = View;
+        if (at < view.Count) Nav.NavigateTo($"adversaries/{view[at].Adversary.Id}");
+    }
+
+    // This history entry's address with the row selected (rows.js writes it in place, navigating nowhere).
+    private string RowAddress(int selected) => Nav.GetUriWithQueryParameter(RowSelection.Param, selected > 0 ? selected : null);
+
+    // After Watch in the rail: the list read again, the same profile still selected.
+    private async Task ReadAgain()
+    {
+        try { await ReadList(); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.For(ex)); }
+    }
+
 
     // The list: the profiles reported on or watched, or (ticked) every one. DataTable filters, sorts and shows them 100 at a time.
     internal IReadOnlyList<AdversaryRow>? Shown { get; private set; }

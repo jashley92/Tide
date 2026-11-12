@@ -131,6 +131,10 @@
     [Parameter] public Func<TItem, bool>? Selected { get; set; }
     [Parameter] public EventCallback<TItem> OnSelect { get; set; }
 
+    /// <summary>The rows shown, in order, each time they change (new rows, a filter, a sort, another page): for a page
+    /// whose selected row and its keys (RowKeys) follow what the table draws.</summary>
+    [Parameter] public EventCallback<IReadOnlyList<TItem>> OnView { get; set; }
+
     /// <summary>A few words after a group's heading and count ("2 have no owner"), or none.</summary>
     [Parameter] public Func<string, string?>? GroupNote { get; set; }
 
@@ -208,7 +212,7 @@
     private IReadOnlyList<TItem> _rows = [];   // every matching row, in order: _view is the first of them
     private readonly TypingPause _pause = new(DebounceMs);
 
-    protected override void OnParametersSet()
+    protected override Task OnParametersSetAsync()
     {
         if (!_started)
         {
@@ -232,6 +236,17 @@
         }
         if (PageInAddress) _page = AddressPage();
         Refresh();
+        return Tell();
+    }
+
+    private IReadOnlyList<TItem>? _told;
+
+    // OnView, when the rows shown are not the ones last told.
+    private Task Tell()
+    {
+        if (!OnView.HasDelegate || (_told is not null && _told.SequenceEqual(_view))) return Task.CompletedTask;
+        _told = _view;
+        return OnView.InvokeAsync(_view);
     }
 
     // The page in the address: ?page=3, else the first.
@@ -251,6 +266,7 @@
         {
             Refresh();
             StateHasChanged();
+            return Tell();
         });
     }
 
@@ -339,6 +355,7 @@
         if (ServerSide) await OnQuery.InvokeAsync(new TableQuery(_filter, _sort));
         else if (PageInAddress && wasPage > 1) Nav.NavigateTo(Nav.GetUriWithQueryParameter(PageParameter, (int?)null), replace: true);
         Refresh();
+        await Tell();
     }
 
     // A page's link: this address with ?page= (none for the first), the rest of the query as it is.
@@ -354,6 +371,7 @@
         _page = page;
         if (ServerSide) await OnQuery.InvokeAsync(new TableQuery(_filter, _sort, page));
         Refresh();
+        await Tell();
     }
 
     public void Dispose()
