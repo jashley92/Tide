@@ -741,6 +741,53 @@ const underIsInert = {
     .map(s => `${s} isn't inert while the overlay is open`)),
 };
 
+/** The sidebar's menu fits the window's height without scrolling (a short window tightens the links, not the list). */
+const navFits = {
+  name: "the sidebar's menu fits without scrolling",
+  check: page => page.$eval('ul.tide-nav', ul => ul.scrollHeight <= ul.clientHeight + 1 ? []
+    : [`the menu scrolls: ${ul.scrollHeight}px of ${ul.querySelectorAll('a').length} links in ${ul.querySelectorAll('.tide-nav-group').length} groups, in ${ul.clientHeight}px`]),
+};
+
+/** Every link in the sidebar is at least 24px tall (WCAG 2.5.8's target size), however short the window. */
+const navTargets = {
+  name: "the sidebar's links are at least 24px tall",
+  check: page => page.$$eval('#tide-nav-links a', links => {
+    const shown = links.filter(a => a.getBoundingClientRect().height > 0);
+    if (!shown.length) return ['no sidebar link is shown'];
+    return shown.filter(a => a.getBoundingClientRect().height < 24)
+      .map(a => `${a.getAttribute('href') || 'today'} is ${a.getBoundingClientRect().height.toFixed(1)}px tall`);
+  }),
+};
+
+/** Where the menu still scrolls (a very short window), its scrollbar is the thin one in the sidebar's colours, and the
+ *  current page's link is within the part of the menu that shows. */
+const navScrollsToActive = {
+  name: "the sidebar's menu scrolls thin, its current link in view",
+  check: page => page.$eval('ul.tide-nav', ul => {
+    const problems = [];
+    if (ul.scrollHeight <= ul.clientHeight + 1) problems.push(`the menu doesn't scroll at this height (${ul.scrollHeight}px in ${ul.clientHeight}px): the rule tests nothing`);
+    const width = getComputedStyle(ul).scrollbarWidth;
+    if (width !== 'thin') problems.push(`the menu's scrollbar-width is ${width}, not thin`);
+    const a = ul.querySelector('a.active, a[aria-current="page"]');
+    if (!a) return [...problems, 'no link is marked as the current page'];
+    const r = a.getBoundingClientRect(), box = ul.getBoundingClientRect();
+    if (r.top < box.top - 1 || r.bottom > box.bottom + 1) problems.push(`the current link (${a.getAttribute('href')}) is at ${Math.round(r.top)}-${Math.round(r.bottom)}px, outside the menu's ${Math.round(box.top)}-${Math.round(box.bottom)}px`);
+    if (window.scrollY !== 0) problems.push(`the page scrolled to ${window.scrollY}px`);
+    return problems;
+  }),
+};
+
+/** Setup: the sidebar collapsed to icons. */
+const collapseNav = async page => { await page.click('#nav-collapse-toggle'); await page.waitForTimeout(300); };
+
+/** Setup: the menu scrolled to its top, then the last page in it (Administration) opened by navigation, not a load. */
+const navigateToAdmin = async page => {
+  await page.$eval('ul.tide-nav', ul => { ul.scrollTop = 0; });
+  await page.evaluate(() => window.Blazor.navigateTo('admin'));
+  await page.waitForURL(/\/admin/);
+  await page.waitForTimeout(500);
+};
+
 /** Setup: every letter spaced wider, as a font wider than this machine's would set it (see selectCovered). */
 // LETTER_SPACING=.12em widens it further by hand, near what a Linux runner's fonts do.
 const wideFont = async page => { await page.addStyleTag({ content: `* { letter-spacing: ${process.env.LETTER_SPACING ?? '.07em'} !important; }` }); };
@@ -2715,6 +2762,13 @@ const pages = [
   { name: 'today-rail-meeting', route: '/', setup: openMeeting, widths: [1920, 1500, 1440],
     rules: [visible('#tide-rail'), visible('#tide-rail #analyst'), oneLine('#tide-rail label[for="intro"]'), fits('#tide-rail section[aria-labelledby="meeting-h"]'), focusIn('#tide-rail #analyst'),
       ringOnFocus('#tide-rail #analyst, #tide-rail #intro, #tide-rail [data-submit]')] },
+  // The sidebar's menu: in a short window (852px tall, as on a laptop) all of it fits without scrolling, each link a
+  // target of 24px or more, wider letters and collapsed to icons too. Shorter still it scrolls, thinly, with the current
+  // page's link in view, on load and after navigating to it.
+  { name: 'nav-short', route: '/', setup: wideFont, widths: [[1920, 852], [1440, 852], [1440, 1080]], rules: [navFits, navTargets] },
+  { name: 'nav-short-collapsed', route: '/', setup: collapseNav, widths: [[1440, 852], [1440, 600]], rules: [navTargets] },
+  { name: 'nav-very-short', route: '/admin', widths: [[1440, 600], [1920, 500]], rules: [navTargets, navScrollsToActive] },
+  { name: 'nav-very-short-navigate', route: '/', setup: navigateToAdmin, widths: [[1440, 600]], rules: [navScrollsToActive] },
   // The top bar keeps each control in its own room, whatever the width and the fonts.
   { name: 'top-bar-today', route: '/', setup: wideFont, widths: [1920, 1100, 900, 780, 726, 700, 660, 641, 400],
     rules: [noSidewaysScroll, noOverlap('.top-row a, .top-row button, .top-row input'), fits('.top-row'),
