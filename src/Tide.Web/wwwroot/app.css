@@ -762,6 +762,8 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
 .tide-slide-dock > button { pointer-events: auto; display: inline-flex; align-items: center; gap: .35em; padding: .3em .95em; border-radius: var(--tide-radius-pill); font-size: .8em; line-height: 1.3; box-shadow: 0 4px 14px var(--tide-shadow-strong); }
 .tide-slide-more { display: none !important; border: 1px solid var(--tide-slide-line-strong); background: var(--tide-slide-surface); color: var(--tide-slide-text); }
 .tide-slide:has(> .tide-slide-body.is-more-below) .tide-slide-more { display: inline-flex !important; }
+/* A slide that scrolls keeps a strip below its body for the pill, so the pill never sits over the last line it shows. */
+.tide-slide:has(> .tide-slide-body:is(.is-more-below, .is-more-above)) { padding-bottom: 2.4em; }
 .tide-slide-more:hover { border-color: var(--tide-slide-accent); color: var(--tide-slide-strong); }
 .tide-slide-back { border: 1px solid var(--tide-slide-accent); background: var(--tide-slide-accent); color: var(--tide-slide-on-accent); font-weight: var(--tide-weight-semibold); }
 .tide-slide-back:hover { background: var(--tide-slide-accent-hover); }
@@ -1119,6 +1121,21 @@ ul.tide-meeting-notes { padding-left: 1rem; margin: .2rem 0 0; }
 .tide-slide-open th { text-align: left; color: var(--tide-slide-muted); text-transform: uppercase; letter-spacing: .08em; font-size: .72em; font-weight: var(--tide-weight-semibold); padding: .3em .5em; }
 .tide-slide-open td { padding: .45em .5em; border-top: 1px solid var(--tide-border); vertical-align: top; }
 .tide-slide-open .tide-slide-late { color: var(--tide-threat); font-weight: var(--tide-weight-semibold); white-space: nowrap; }
+/* How long an open action has waited since its last update, under how late it is; and the one thing to do about it. */
+.tide-slide-open .tide-slide-waited { display: block; color: var(--tide-slide-muted); font-size: .85em; }
+.tide-slide-open .tide-slide-next { font-weight: var(--tide-weight-semibold); }
+/* Where the slide has the room, the thing to do reads on one line, and the action and who have it wrap instead. */
+@container (min-width: 1000px) { .tide-slide-open .tide-slide-next { white-space: nowrap; } }
+/* The wrap-up's three lists (not raised, who is doing what, not discussed): side by side where the slide has room for
+   them, one under another where it hasn't. Each item's words wrap within its column. */
+.tide-wrap { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15em), 1fr)); gap: .6em 2em; width: min(72em, 92cqw); margin: .6em auto 0; text-align: start; }
+.tide-wrap-list { min-width: 0; }
+.tide-wrap-list > .tide-slide-section { margin-top: 0; }
+.tide-wrap-item { margin-bottom: .5em; overflow-wrap: anywhere; }
+.tide-wrap-item > ul { margin: .2em 0 0; padding-left: 1.2em; font-size: .9em; }
+.tide-wrap-list[data-wrap="owners"] .tide-wrap-item > ul { list-style: none; padding-left: 0; }
+.tide-wrap-list[data-wrap="owners"] li { padding: .15em 0; }
+.tide-wrap-list[data-wrap="owners"] .tide-action-num { color: var(--tide-slide-muted); }
 .tide-tile-name { color: var(--tide-slide-muted); font-size: .85em; }
 .tide-tile-change { font-size: .85em; font-variant-numeric: tabular-nums; }
 .tide-slide .tide-trend-better { color: var(--tide-slide-ok); }

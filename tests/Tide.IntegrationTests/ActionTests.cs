@@ -48,7 +48,24 @@ public class ActionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Outstanding_LeavesOutAnActionRaisedFromAnArticleAboveTheCeiling_ButCountsIt()
+    public async Task Outstanding_AnActionSomeoneHolds_IsTheirs_EvenOnATeamWithNoMembers()
+    {
+        var empty = await Team("Fraud Operations");
+        var svc = _db.Actions();
+        var today = svc.Today;
+        var held = await svc.CreateAsync(new ActionForm { Title = "Held on an empty team", TeamId = empty, DueDate = today.AddDays(-2) });
+        await svc.CreateAsync(new ActionForm { Title = "Nobody's on an empty team", TeamId = empty, DueDate = today.AddDays(-2) });
+        var form = ActionForm.From((await svc.GetAsync(held))!.Action);
+        (form.AssigneeId, form.AssigneeName) = ("dev:sam", "Sam");
+        await svc.SaveAsync(form);
+
+        var rows = (await svc.OutstandingAsync(today, TlpLevel.AmberStrict)).Rows;
+        rows.Single(o => o.Row.Title == "Held on an empty team").NoOneToOwn.Should().BeFalse("Sam holds it, as the action page says");
+        rows.Single(o => o.Row.Title == "Nobody's on an empty team").NoOneToOwn.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Outstanding_LeavesOutAnActionRaisedFromAnArticleAboveTheCeiling_AndDoesntCountIt()
     {
         var team = await Team();
         var svc = _db.Actions();
@@ -61,7 +78,7 @@ public class ActionServiceTests : IDisposable
 
         var atTeam = await svc.OutstandingAsync(today, TlpLevel.AmberStrict);
         atTeam.Rows.Select(o => o.Row.Title).Should().BeEquivalentTo(new[] { "Reset partner keys", "Rotate the VPN cert" });
-        atTeam.Overdue.Should().Be(3, "the withheld one is counted, not named");
+        atTeam.Overdue.Should().Be(2, "the withheld one isn't counted either: the count would tell the room it exists");
         atTeam.Marking.Should().Be(TlpLevel.Amber, "an action is marked at its article's TLP");
 
         var atRed = await svc.OutstandingAsync(today, TlpLevel.Red);

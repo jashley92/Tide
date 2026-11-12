@@ -197,12 +197,7 @@
     private static string KindOf(ActionRow r) => ActionService.KindName(r.Kind);
 
     // "No update for 3 days": the organization's days since anything last happened to it; nothing within the day.
-    private string? Quiet(ActionRow r)
-    {
-        if (r.LastActivityUtc is not { } at) return null;
-        var days = Today.DayNumber - Clock.DayOf(at).DayNumber;
-        return days < 1 ? null : $"No update for {Ui.Plural(days, "day")}";
-    }
+    private string? Quiet(ActionRow r) => ActionRow.QuietText(r.QuietDays(Today, Clock.DayOf)) is { } quiet ? "N" + quiet[1..] : null;
     private string UrgencyOf(ActionRow r) => ActionSla.UrgencyName(r.Urgency(Today, Clock.Days));
 
     /// <summary>The rows a colleague's change just brought or changed, highlighted a moment (the page marks them).</summary>
