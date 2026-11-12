@@ -64,7 +64,8 @@ public class ActionsSavedViewTests(TideApp app) : IClassFixture<TideApp>
             var html = WebUtility.HtmlDecode(await r.Html());
             html.Should().Contain("aria-label=\"Saved views\"").And.Contain("aria-current=\"page\">Blocked list</a>")
                 .And.Contain(">Mine by kind</a>").And.NotContain("aria-current=\"page\">Mine by kind</a>");
-            html.Should().Contain("Blocked list: rename, move or delete", "each view's menu is named for it");
+            html.Should().Contain("Blocked list: rename, move later or delete", "each view's menu is named for it, and for what it offers")
+                .And.Contain("Mine by kind: rename, move earlier or delete", "the last can't move later");
         }
 
         await using (var r = await RenderAsync<ActionsBoard>(app, "/actions?view=open&layout=list&status=blocked&priority=p1", @as: who))

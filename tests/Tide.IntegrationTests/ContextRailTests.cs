@@ -73,10 +73,10 @@ public class ContextRailTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
-    public async Task EveryRealPage_ButToday_StillHasNoRail()
+    public async Task APageWithoutRailContent_HasNoRail()
     {
         var client = app.CreateClient();
-        foreach (var path in new[] { "/articles", "/actions", "/admin", "/briefs/2019-01-07", "/briefs/2019-01-07?tab=preview" })
+        foreach (var path in new[] { "/articles", "/admin", "/briefs/2019-01-07", "/briefs/2019-01-07?tab=preview" })
         {
             var html = await client.GetStringAsync(path);
             html.Should().Contain(Content, path);

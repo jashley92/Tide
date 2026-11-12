@@ -1,3 +1,4 @@
+@implements IAsyncDisposable
 @inject IJSRuntime JS
 @* Every filtered list's one filter bar (EP-87): the list's search box, its quick pills (presets of its filters, one click
    on or off), a chip for each other filter in force (choose it to change it, ✕ to remove it), "+ Filter" for the rest,
@@ -6,7 +7,7 @@
    filter, so that filter's chip isn't shown. On a page whose filters are links (Articles, the audit log) the chips and
    Clear are links.
    The menu from the keyboard: Enter, Space or the down arrow on + Filter opens it with focus on its first choice, the
-   arrows and Home/End move (filters.js), Esc closes it and focus goes back to + Filter, and Tab leaves it closed. *@
+   arrows and Home/End move (filters.js), Esc anywhere on the page closes it and focus goes back to + Filter (Popout), and Tab leaves it closed. *@
 <div class="tide-filterbar">
     @Search
     @if (Pills.Count > 0)
@@ -43,13 +44,13 @@
     }
     @if (InMenu.Count > 0)
     {
-        <div class="tide-filter-menu">
+        <div class="tide-filter-menu" @ref="_holder">
             <button type="button" class="tide-filter-add" aria-haspopup="menu" aria-expanded="@Ui.Aria(_open)" aria-controls="@(_open ? _id : null)"
                     @ref="_trigger" @onclick="Toggle"><span class="bi bi-plus-lg" aria-hidden="true"></span> @MenuLabel</button>
             @if (_open)
             {
                 <div class="tide-popover-backdrop" @onclick="() => Close(false)"></div>
-                <div class="tide-popover tide-popover-start tide-filter-pop" id="@_id" @ref="_pop" @onkeydown="Key">
+                <div class="tide-popover tide-popover-start tide-filter-pop" id="@_id" @ref="_pop">
                     @if (_step is null)
                     {
                         <div role="menu" aria-label="Add a filter">
@@ -182,7 +183,8 @@
     [Parameter] public EventCallback OnClear { get; set; }
 
     private readonly string _id = "filters-" + Guid.NewGuid().ToString("N")[..8];
-    private ElementReference _trigger, _pop;
+    private ElementReference _holder, _trigger, _pop;
+    private Popout? _popout;
     private bool _open, _focusPop, _focusTrigger;
     private FilterDef? _step;               // the filter whose options are shown; null for the list of filters
     private HashSet<string> _draft = [];    // a multi filter's ticks, applied together
@@ -276,13 +278,19 @@
         _focusTrigger = refocus;
     }
 
-    internal void Key(KeyboardEventArgs e)
+    /// <summary>Done with (Popout): Escape anywhere, a press or focus outside.</summary>
+    internal Task Dismissed()
     {
-        if (e.Key == "Escape") Close(true);
+        Close(false);
+        StateHasChanged();
+        return Task.CompletedTask;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // Placed before its first choice takes focus.
+        _popout ??= new Popout(JS, Dismissed);
+        await _popout.FollowAsync(_open, _holder, _trigger);
         if (_focusPop && _open)
         {
             _focusPop = false;
@@ -296,4 +304,6 @@
             await _trigger.TryFocusAsync(orGone: true);
         }
     }
+
+    public ValueTask DisposeAsync() => _popout?.DisposeAsync() ?? ValueTask.CompletedTask;
 }

@@ -694,10 +694,11 @@ html:has(.tide-section-pills) { scroll-padding-top: 6.5rem; }
 .tide-present a { color: var(--tide-slide-accent); }
 /* The top bar: the title, who is here, and the tools, on one row while they fit and on two when they don't (the tools
    go to the second), never off the window. The title and who is here start from their least width (the mark; the dots,
-   the count and the buttons) and share what's left, up to what they need; the tools keep their size. */
+   the count and the buttons); the title takes what is left first, up to its whole length, and who is here the rest (the
+   hands' names); the tools keep their size. */
 .tide-present-top { display: flex; flex-wrap: wrap; align-items: center; padding: .7em 1.6em; border-bottom: 1px solid var(--tide-slide-line); gap: .5em 1em; }
 .tide-present-top .tide-brand-mark { flex: none; width: 1.8em; height: 1.8em; font-size: .9em; }
-.tide-present-title { display: flex; align-items: center; gap: .7em; font-weight: var(--tide-weight-semibold); flex: 2 1 0; min-width: 1.62em; max-width: max-content; }
+.tide-present-title { display: flex; align-items: center; gap: .7em; font-weight: var(--tide-weight-semibold); flex: 1000 1 0; min-width: 1.62em; max-width: max-content; }
 .tide-present-title small { color: var(--tide-slide-muted); font-weight: var(--tide-weight-regular); }
 .tide-present-tools { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5em; align-items: center; flex: 0 1 auto; margin-left: auto; }
 /* The tools keep their words on one line. */
@@ -836,12 +837,12 @@ html:has(.tide-present), html:has(.tide-present) body { overflow: hidden; scroll
    the hands' count. The hands' names follow the count in the room that's left, in order, each whole or not shown: one
    line that wraps, so a name that doesn't fit drops to a hidden second line (the first item, an empty <i> a line
    tall, lets even the first name go). The count opens the list. The presenter's dot is ringed in the accent, a raised hand's in the warning. */
-.tide-present-people { position: relative; display: flex; align-items: center; gap: .6em; flex: 1 1 0; }
+.tide-present-people { display: flex; align-items: center; gap: .6em; flex: 1 1 0; }
 .tide-present-people:not(:has(*)) { display: none; }
 .tide-present-people > * { flex: none; }
 .tide-present-people > .btn { white-space: nowrap; font-size: .8em; }
 .tide-present-here { white-space: nowrap; color: var(--tide-slide-muted); font-size: .8em; }
-.tide-present-people > .tide-hands-box { display: flex; flex: 1 1 0; }
+.tide-present-people > .tide-hands-box { position: relative; display: flex; flex: 1 1 0; }
 .tide-hands-btn { display: flex; align-items: center; gap: .5em; flex: 1 1 auto; min-width: 0; padding: 0; border: 0; background: none; color: var(--tide-slide-warn); text-align: start; }
 .tide-hands-count { flex: none; display: inline-flex; align-items: center; gap: .3em; padding: .15em .6em; border: 1px solid var(--tide-slide-warn); border-radius: var(--tide-radius-pill); font-size: .8em; font-weight: var(--tide-weight-semibold); line-height: 1.3; }
 .tide-hands-btn:hover .tide-hands-count, .tide-hands-btn[aria-expanded="true"] .tide-hands-count { background: var(--tide-slide-line); }
@@ -1187,11 +1188,11 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
 .tide-filter-hint { margin: 0; color: var(--tide-text-muted); font-size: var(--tide-text-xs); }
 .tide-filter-foot { display: flex; justify-content: flex-end; align-items: center; gap: var(--tide-space-2); padding: .3rem .2rem .1rem; }
 .tide-filterbar-clear { padding: 0; font-size: var(--tide-text-sm); }
-/* On a phone the search box takes its own row, the pills scroll sideways in one, and the menu rises from the bottom. */
+/* On a phone the search box takes its own row, and the pills scroll sideways in one. The menu opens against + Filter
+   as every popout does (popout.js). */
 @media (max-width: 640px) {
     .tide-filterbar > .form-control, .tide-filterbar > .form-select { flex: 1 1 100%; max-width: none; }
     .tide-filterbar-pills { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; padding-bottom: 2px; scrollbar-width: thin; }
-    .tide-popover.tide-filter-pop { position: fixed; top: auto; left: .75rem; right: .75rem; bottom: .75rem; width: auto; max-height: 70vh; }
 }
 /* Four working columns sharing the width, then the narrow Closed column (ActionKanban); a narrower window scrolls the board. */
 .tide-kanban { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; align-items: stretch; }
@@ -1329,7 +1330,8 @@ a.tide-action-ref:hover, a.tide-action-ref:focus-visible { text-decoration: unde
 .tide-action-head { align-items: flex-start; }
 .tide-action-title { flex: 1 1 32rem; min-width: 0; }
 .tide-action-badges { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); margin-top: var(--tide-space-2); }
-.tide-action-due { font-size: var(--tide-text-sm); color: var(--tide-text-muted); }
+/* The due date and how it stands, one badge (SlaBadge WithDate): kept on one line. */
+.tide-action-due { white-space: nowrap; }
 .tide-action-who { display: flex; flex-wrap: wrap; gap: 0 var(--tide-space-2); }
 .tide-action-who .tide-handoff { overflow-wrap: anywhere; }
 .tide-action-do { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); }
@@ -1883,10 +1885,9 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
 
 /* Triage's "Attach to…" (AttachPicker): a combobox in the row, over the recent drafts and ready articles. */
 .tide-attach { position: relative; display: inline-flex; }
-.tide-attach-panel { position: absolute; top: calc(100% + var(--tide-space-1)); right: 0; z-index: 20;
+.tide-attach-panel { position: absolute; top: calc(100% + var(--tide-space-1)); left: 0; z-index: 20;
     width: min(var(--tide-width-xl), calc(100vw - 2 * var(--tide-space-4))); padding: var(--tide-space-2);
     border: 1px solid var(--tide-border-strong); border-radius: var(--tide-radius-lg); background: var(--tide-surface); box-shadow: 0 8px 24px var(--tide-shadow); }
-@media (max-width: 900px) { .tide-attach-panel { right: auto; left: 0; } }
 .tide-attach-list { list-style: none; margin: var(--tide-space-2) 0; padding: 0; max-height: 16rem; overflow-y: auto; }
 .tide-attach-list:empty { display: none; }
 .tide-attach-opt { display: flex; flex-direction: column; gap: 0; padding: var(--tide-space-1) var(--tide-space-2); border-radius: var(--tide-radius-sm); cursor: pointer; }
@@ -2382,10 +2383,12 @@ button.tide-chip-chosen:focus-visible { outline: 2px solid var(--tide-focus-ring
 .tide-rail { display: none; position: fixed; top: var(--tide-height-top); right: 0; bottom: 0; z-index: 1010; width: min(var(--tide-width-rail), 100%);
     flex-direction: column; background: var(--tide-surface); border-left: 1px solid var(--tide-border); box-shadow: -8px 0 24px var(--tide-shadow); }
 html[data-rail-over] .tide-rail { display: flex; z-index: 1025; }
-/* The overlay's backdrop: the rest of the window, top bar included, dimmed a little. Part of the rail, so a click on it
-   reaches the rail (theme.js closes it). */
-html[data-rail-over] .tide-rail::before { content: ""; position: fixed; inset: 0 min(var(--tide-width-rail), 100%) 0 0;
-    background: var(--tide-scrim); }
+/* The overlay's backdrop: everything in the window but the rail dimmed, the navigation and the top bar included. Two
+   parts of the rail, so a click on either reaches it (theme.js closes it): the window left of the rail, and the strip of
+   top bar above it (none on a phone, where the rail takes the whole height). */
+html[data-rail-over] .tide-rail::before, html[data-rail-over] .tide-rail::after { content: ""; position: fixed; background: var(--tide-scrim); }
+html[data-rail-over] .tide-rail::before { inset: 0 min(var(--tide-width-rail), 100%) 0 0; }
+html[data-rail-over] .tide-rail::after { top: 0; right: 0; width: min(var(--tide-width-rail), 100%); height: var(--tide-height-top); }
 .tide-rail:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: -2px; }
 .tide-rail-head { display: flex; align-items: center; justify-content: space-between; gap: var(--tide-space-2);
     padding: var(--tide-space-3) var(--tide-space-4); border-bottom: 1px solid var(--tide-border); }
@@ -2404,7 +2407,10 @@ html[data-rail-over] .tide-rail::before { content: ""; position: fixed; inset: 0
     }
 }
 /* On a phone the top bar scrolls with the page, so the overlay takes the whole window, over the top bar. */
-@media (max-width: 640.98px) { .tide-rail { top: 0; z-index: 1030; } }
+@media (max-width: 640.98px) {
+    .tide-rail { top: 0; z-index: 1030; }
+    html[data-rail-over] .tide-rail::after { content: none; }
+}
 @media print { .tide-rail, .tide-rail-toggle { display: none !important; } }
 
 /* ---- Search: an indicator or CVE lookup (Search.razor). The first line that answers it, "Seen with", the one list of
@@ -2573,8 +2579,9 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 /* The meeting's facts, as the action page's side column has its own (.tide-facts-side): when and who side by side. */
 .tide-meeting-facts { margin-bottom: var(--tide-space-3); }
 .tide-meeting-facts .tide-fact dd { font-size: var(--tide-text-sm); }
-/* The backdrop behind the open rail overlay: plainly a layer over the page, light or dark. */
-:root { --tide-scrim: rgba(15, 23, 42, .38); }
+/* The backdrop behind the open rail overlay: plainly a layer over the page, light or dark. Neutral, so it dims the dark
+   navigation as much as the light page. */
+:root { --tide-scrim: rgba(0, 0, 0, .38); }
 [data-bs-theme="dark"] { --tide-scrim: rgba(0, 0, 0, .6); }
 /* Toasts sit left of a docked rail, never over its buttons. */
 @media (min-width: 1500px) {
@@ -2776,6 +2783,23 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-rail-list-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-1) var(--tide-space-2); color: var(--tide-text-muted); font-size: var(--tide-text-xs); }
 /* ---- end Action page 3.5 ---- */
 
+/* ---- Action page 3.5b: the rest of the design ----
+   Also raised from it: the number first, the title over its team and due date, the status at the right. */
+.tide-rail-list > .tide-rail-raised { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: var(--tide-space-2); align-items: start; }
+/* Files: Add files in the heading's row. */
+.tide-files-head { display: flex; align-items: center; justify-content: space-between; gap: var(--tide-space-2); margin-bottom: var(--tide-space-2); }
+.tide-files-head > h2 { margin: 0; min-width: 0; }
+.tide-files-head > .btn { flex: none; white-space: nowrap; }
+/* While files are dragged over the page (paste-drop.js sets html[data-file-drag]): where they go, over the whole window. */
+.tide-page-drop { display: none; position: fixed; inset: var(--tide-space-3); z-index: 1040; pointer-events: none; align-items: center; justify-content: center;
+    gap: var(--tide-space-2); border: 2px dashed var(--tide-accent); border-radius: var(--tide-radius-xl); background: color-mix(in srgb, var(--tide-accent-soft) 85%, transparent);
+    color: var(--tide-text); font-weight: var(--tide-weight-semibold); }
+html[data-file-drag] .tide-page-drop { display: flex; }
+/* The hunt drawer: "What did it find?" under the query's buttons, with what closes it, records it or adds a screenshot. */
+.tide-hunt-found { margin-top: var(--tide-space-3); padding-top: var(--tide-space-3); border-top: 1px solid var(--tide-border); }
+.tide-hunt-found-h { font-size: var(--tide-text-sm); font-weight: var(--tide-weight-semibold); margin-bottom: var(--tide-space-2); }
+/* ---- end Action page 3.5b ---- */
+
 /* ---- Option E 3.3, the article editor: the form as pairs of cards, two columns where there's room for both and one
    under the other where there isn't (so it holds whatever the fonts make of each card), under a section index that
    says where each stands. "Why it matters" is marked while the company-wide edition would carry it, with its answers
@@ -2894,3 +2918,115 @@ a.tide-seen:focus-visible, .tide-lookup-query:focus-visible { outline: 2px solid
 .tide-lookup-travels { padding-left: 0; padding-right: 0; text-align: left; }
 .tide-lookup-sweep-do { display: flex; flex-wrap: wrap; gap: var(--tide-space-2); margin-top: var(--tide-space-1); }
 /* ---- end Search 3.6 ---- */
+
+/* ---- Our stack 3.7: a selected row, and the selected product in the context rail (its flat sections are Today 3.1's) ----
+   The selected row is marked as the Actions list's is (rows.js moves it). Beside the docked rail the page has about
+   873px. The table is laid out by its columns' shares of its width, not by its words, so it is the card's width
+   whatever the fonts: the headings and cells wrap, a word longer than its column breaks, and a CVE's chip wraps
+   between its parts (the id, the scores, KEV). So it never scrolls sideways. */
+.tide-stack-item.selected > td { background: var(--tide-accent-soft); }
+.tide-stack-item.selected > td:first-child { box-shadow: inset 3px 0 0 var(--tide-accent); }
+.tide-stack-item:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: -2px; }
+.tide-stack-table th { white-space: normal; }
+.tide-stack-table th, .tide-stack-table td { overflow-wrap: anywhere; }
+@media (min-width: 900.02px) {
+    .tide-stack-table { table-layout: fixed; width: 100%; }
+    .tide-stack-table th, .tide-stack-table td { padding-left: .45rem; padding-right: .45rem; }
+    .tide-stack-table th:nth-child(1) { width: 19%; }
+    .tide-stack-table th:nth-child(2) { width: 12%; }
+    .tide-stack-table th:nth-child(3) { width: 15%; }
+    .tide-stack-table th:nth-child(4) { width: 14%; }
+    .tide-stack-table th:nth-child(5) { width: 20%; }
+    .tide-stack-table th:nth-child(6), .tide-stack-table th:nth-child(7) { width: 10%; }
+    /* A flag ("Over 90 days ago") wraps in its column rather than reaching past it. */
+    .tide-stack-table td .tide-badge { white-space: normal; max-width: 100%; }
+}
+.tide-stack-table .tide-stack-now { min-width: 0; }
+.tide-stack-now .tide-chip { flex-wrap: wrap; white-space: nowrap; max-width: 100%; }
+/* Stacked, every row keeps its text clear of the left edge, where the selected row's accent is drawn. */
+@media (max-width: 900px) {
+    .tide-stack-table tr { padding-left: var(--tide-space-3); padding-right: var(--tide-space-2); }
+    .tide-stack-item.selected { background: var(--tide-accent-soft); box-shadow: inset 3px 0 0 var(--tide-accent); }
+    .tide-stack-item.selected > td { background: none; }
+    .tide-stack-item.selected > td:first-child { box-shadow: none; }
+}
+/* The rail: the facts two by two, the contact wrapping whole; Edit, Start an outreach and Mark checked on a row that
+   wraps; "today" after a check made today; a list's title, then its KEV flag or status at the row's end. */
+.tide-stack-rail-contact { overflow-wrap: anywhere; }
+.tide-stack-rail-today { color: var(--tide-accent-text); }
+/* Its links as the action links beside them (ActionRef): no underline until pointed at or focused. The Checked fact
+   takes focus after Mark checked, with the ring only from the keyboard. */
+a.tide-stack-rail-link { text-decoration: none; }
+a.tide-stack-rail-link:hover, a.tide-stack-rail-link:focus-visible { text-decoration: underline; }
+[data-rail-checked]:focus { outline: none; }
+[data-rail-checked]:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 2px; border-radius: var(--tide-radius-sm); }
+.tide-stack-rail-buttons { display: flex; flex-wrap: wrap; gap: var(--tide-space-2); margin-top: var(--tide-space-3); }
+.tide-stack-rail-item { display: flex; align-items: baseline; justify-content: space-between; gap: var(--tide-space-2); }
+.tide-stack-rail-item > .tide-rail-list-title { flex: 1 1 0; min-width: 0; }
+.tide-stack-rail-item > :not(.tide-rail-list-title) { flex: none; }
+/* ---- end Our stack 3.7 ---- */
+
+/* ---- Option E 3.9, autosave in the article editor's save bar: first in the bar, "All changes saved" or "Saved at 10:12"
+   in the colour of done; while something is unsaved, "Saving…" quietly, or why it held off (a marking, a sent brief, a
+   colleague's save) in the colour of a warning, wrapping within the bar rather than pushing it wider. ---- */
+.tide-sticky-save .tide-saved { color: var(--tide-ok); }
+.tide-autosave-note { font-size: .86rem; color: var(--tide-text-muted); min-width: 0; flex: 0 1 auto; }
+.tide-autosave-note.is-held { color: var(--tide-warn); }
+/* ---- end Option E 3.9 ---- */
+
+/* ---- Actions 3.4: the list's and board's selected action in the context rail (ActionRowRail), and the board's selected
+   card. From 1500px the rail docks beside the board too (it was an overlay there), and the board takes the rest of the
+   window; ] closes the rail and the board has the whole window again. ---- */
+@media (min-width: 1500px) {
+    main:has(.tide-board) > .tide-rail { --tide-rail-docks: 1; box-shadow: none; }
+    html:not([data-rail="closed"]) main:has(.tide-board) > .tide-rail { display: flex; }
+    html:not([data-rail="closed"]) main:has(.tide-board) > .content:has(+ .tide-rail) { max-width: calc(100% - var(--tide-width-rail)); }
+    html:not([data-rail="closed"]):has(main > .tide-rail):has(.tide-board) .tide-toasts { right: calc(var(--tide-width-rail) + var(--tide-space-4)); }
+}
+/* The selected card, as the design marks it: an accent ring (a card rule's colour stays on its left edge), inside the lane's
+   padding, so the lane never clips it. */
+.tide-kcard.selected { box-shadow: 0 0 0 2px var(--tide-accent); }
+.tide-kcard:focus-visible { outline: 2px solid var(--tide-focus-ring); outline-offset: 0; }
+/* The rail's Next note, its buttons on one line under it (wrapping when they must), and the hunt query read whole. */
+.tide-rail-next { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--tide-space-1) var(--tide-space-2); margin-bottom: var(--tide-space-3);
+    padding: var(--tide-space-2) var(--tide-space-3); border-radius: var(--tide-radius-lg); background: var(--tide-accent-soft); font-size: var(--tide-text-sm); }
+.tide-rail-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tide-space-2); }
+.tide-rail-buttons .tide-kbd { margin-left: var(--tide-space-1); }
+.tide-rail-buttons .tide-chip { margin: 0; max-width: 100%; overflow-wrap: anywhere; }
+.tide-rail-hunt { display: flex; flex-direction: column; gap: var(--tide-space-2); }
+.tide-rail-hunt > h2 { margin-bottom: 0; }
+.tide-rail-hunt pre.tide-query { margin: 0; min-height: 5rem; max-height: 14rem; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* A menu in the rail (the board's Move to) opens from its button's left edge, into the rail, never out past its edge. */
+.tide-rail .tide-menubutton-pop { right: auto; left: 0; }
+.tide-rail-links { display: flex; flex-wrap: wrap; gap: var(--tide-space-1) var(--tide-space-3); }
+/* The list's Kind column keeps to one line; its kind and priority under the title are for where the column folds away. */
+.tide-col-kind { white-space: nowrap; }
+.tide-action-kind { display: none; }
+/* Beside the docked rail, up to 1760px, the page has 820 to 1080px: the list stays a table with every view tab in view,
+   as the design has it. The tabs sit closer, the tools beside them and List or Board keep their icons (their words go to
+   screen readers and tooltips, as in a narrower window), and the table's cells sit closer, Kind and Progress wrapping.
+   Under 1600px the Kind column folds under each title, so the table fits with wider fonts too. */
+@media (min-width: 1500px) and (max-width: 1759.98px) {
+    html:not([data-rail="closed"]) main:has(> .tide-rail) {
+        & .tide-viewtool-text, & .tide-actions-layout .tide-tabbar-item > span:not(.bi) {
+            position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+        & .tide-actions-views .tide-tabbar-item { padding-left: .45rem; padding-right: .45rem; }
+        & .tide-table:has(.tide-action-row) > * > tr > :is(th, td) { padding-left: .4rem; padding-right: .4rem; }
+        & .tide-col-kind { white-space: normal; }
+        & .tide-col-progress { min-width: 0; }
+    }
+}
+@media (min-width: 1500px) and (max-width: 1599.98px) {
+    html:not([data-rail="closed"]) main:has(> .tide-rail) {
+        & .tide-table:has(.tide-action-row) > thead > tr > th:nth-child(2), & .tide-col-kind { display: none; }
+        & .tide-action-kind { display: block; }
+    }
+}
+/* Wherever the view row is short of room (beside the docked rail, or with fonts wider than this machine's), a view's
+   name wraps onto a second line inside its tab, its count kept whole, rather than the row scrolling: every view stays
+   in view by construction, not by pixels to spare. Under 641px the row has a line of its own and scrolls as before. */
+@media (min-width: 641px) {
+    .tide-actions-views .tide-tabbar-item { flex: 0 1 auto; white-space: normal; line-height: 1.15; }
+    .tide-actions-views .tide-tabbar-count { flex: none; white-space: nowrap; }
+}
+/* ---- end Actions 3.4 ---- */

@@ -83,7 +83,7 @@ public sealed class LibraryUseService(IAppDbContextFactory dbs, ICurrentUser use
     /// works actions, none for anyone else.</summary>
     public async Task<IReadOnlyList<WorkableAction>> WorkableAsync(CancellationToken ct = default)
     {
-        if (!user.Has(Permission.WriteArticles) && !user.Has(Permission.WorkActions)) return [];
+        if (!CanTry(user)) return [];
         await using var db = await dbs.CreateAsync(ct);
         var q = db.Actions.AsNoTracking().WhereOpen();
         if (!user.Has(Permission.WriteArticles))
@@ -94,6 +94,9 @@ public sealed class LibraryUseService(IAppDbContextFactory dbs, ICurrentUser use
         return await q.OrderByDescending(a => a.Number).Take(MaxWorkable)
             .Select(a => new WorkableAction(a.Id, a.Number, a.Title, a.Kind, a.Indicators.Any() || (a.Article != null && a.Article.Indicators.Any()))).ToListAsync(ct);
     }
+
+    /// <summary>Whether <paramref name="who"/> may try an entry on an action at all: an analyst, or someone who works actions.</summary>
+    public static bool CanTry(ICurrentUser who) => who.Has(Permission.WriteArticles) || who.Has(Permission.WorkActions);
 
     /// <summary>Whether an entry of <paramref name="kind"/> is tried on an action of <paramref name="action"/>'s kind: a
     /// saved query on a sweep or hunt, a template on an outreach action, a playbook on the kind it's for (or any).</summary>

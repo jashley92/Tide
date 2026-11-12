@@ -148,6 +148,11 @@ public sealed class Md : ComponentBase
     }
 }
 
+/// <summary>Whether an <see cref="SlaBadge"/> says the due date: not at all, in place of "Due soon" or "On track" for
+/// an action not yet late ("Due Tue Nov 10"; the tone still says which), or before how it stands ("Due Thu Nov 12 · due
+/// soon", "Due Mon Nov 9 · overdue · 3 days"), as an action's header has it.</summary>
+public enum SlaDate { None, Instead, Before }
+
 /// <summary>An action's standing against its due date: overdue, due soon, on track, met or missed.</summary>
 public sealed class SlaBadge : ComponentBase
 {
@@ -157,15 +162,17 @@ public sealed class SlaBadge : ComponentBase
     /// <summary>Today, for how late an overdue action is ("Overdue · 3 days"); without it, just "Overdue".</summary>
     [Parameter] public DateOnly? Today { get; set; }
 
-    /// <summary>Says when an action not yet late is due ("Due Tue Nov 10"), in place of "Due soon" or "On track"; the
-    /// tone still says which.</summary>
-    [Parameter] public bool ShowDate { get; set; }
+    /// <summary>Whether, and how, it says the due date.</summary>
+    [Parameter] public SlaDate Date { get; set; }
+
+    /// <summary>Classes for where it sits (<c>tide-action-due</c>).</summary>
+    [Parameter] public string? Class { get; set; }
 
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
         var text = State switch
         {
-            Application.Actions.SlaState.DueSoon or Application.Actions.SlaState.OnTrack when ShowDate && Due is { } due => "Due " + Ui.ShortDay(due),
+            Application.Actions.SlaState.DueSoon or Application.Actions.SlaState.OnTrack when Date == SlaDate.Instead && Due is { } due => "Due " + Ui.ShortDay(due),
             Application.Actions.SlaState.Overdue => "Overdue" + Application.Actions.ActionSla.Late(Due, Today) switch
             {
                 > 0 and var days => $" · {days} day{(days == 1 ? "" : "s")}",
@@ -192,8 +199,10 @@ public sealed class SlaBadge : ComponentBase
             Application.Actions.SlaState.OnTrack or Application.Actions.SlaState.Met => BadgeTone.Ok,
             _ => BadgeTone.Neutral,
         };
+        if (Date == SlaDate.Before && Due is { } on && State != Application.Actions.SlaState.NoDue)
+            text = $"Due {Ui.ShortDay(on)} · {char.ToLowerInvariant(text[0])}{text[1..]}";
         Badge.Write(b, tone, State == Application.Actions.SlaState.Overdue, text, icon,
-            Due is { } d ? "Due " + Ui.Day(d) : null);
+            Due is { } d ? "Due " + Ui.Day(d) : null, Class);
     }
 }
 

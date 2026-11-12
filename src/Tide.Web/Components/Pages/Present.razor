@@ -91,6 +91,7 @@ else
                 {
                     var raised = meeting.Hands.Select(h => h.UserId).ToHashSet();
                     var beyond = meeting.People.Skip(TopBarDots).ToList();
+                    var listOpen = HandsListOpen;   // read on every draw, so it shuts as the last hand goes down
                     <span class="tide-presence tide-presence-sm" role="status">
                         @foreach (var p in meeting.People.Take(TopBarDots))
                         {
@@ -119,13 +120,13 @@ else
                     @if (meeting.Hands.Count > 0)
                     {
                         var names = string.Join(", ", meeting.Hands.Select(h => h.Name));
-                        <div class="tide-hands-box">
-                            <button type="button" class="tide-hands-btn" aria-expanded="@Ui.Aria(_handsOpen)" aria-controls="present-hands"
+                        <div class="tide-hands-box" @ref="_handsHolder">
+                            <button type="button" class="tide-hands-btn" @ref="_handsButton" aria-expanded="@Ui.Aria(listOpen)" aria-controls="present-hands"
                                     aria-label="@($"{Ui.Plural(meeting.Hands.Count, "hand")} up: {names}")" title="@names" @onclick="ToggleHandsList">
                                 <span class="tide-hands-count"><span class="bi bi-hand-index-thumb" aria-hidden="true"></span><span class="tide-hands-n">@meeting.Hands.Count</span></span>
                                 <span class="tide-hands-names" aria-hidden="true"><i></i>@foreach (var h in meeting.Hands) { <span @key="h.UserId">@h.Name</span> }</span>
                             </button>
-                            @if (_handsOpen)
+                            @if (listOpen)
                             {
                                 <div class="tide-hands-pop" id="present-hands">
                                     <ol class="tide-hands" aria-label="Hands up, in order">
@@ -1027,6 +1028,7 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        await (_handsPopout ??= new Popout(JS, HandsListDismissed)).FollowAsync(HandsListOpen, _handsHolder, _handsButton);
         if (_focusEditTags)
         {
             // The tag panel closed: focus goes back to the button that opened it.
@@ -2081,10 +2083,23 @@ else
     /// <summary>How many people the top bar shows a dot for, before "+N".</summary>
     private const int TopBarDots = 5;
 
-    // The list of hands, opened from the top bar's count of them.
+    // The list of hands, opened from the top bar's count of them: a shared popout (Popout), so Escape (focus back on the
+    // count), a press outside it or Tab past it closes it as it does the other popouts.
     private bool _handsOpen;
+    private ElementReference _handsHolder, _handsButton;
+    private Popout? _handsPopout;
+
+    /// <summary>Whether the list of hands is open: only while there's a hand up. When the last one goes down it shuts, and
+    /// stays shut when the next goes up; it opens only from its button.</summary>
+    private bool HandsListOpen => _handsOpen &= _view?.Hands.Count > 0;
 
     internal void ToggleHandsList() => _handsOpen = !_handsOpen && _view?.Hands.Count > 0;
+
+    private Task HandsListDismissed() => InvokeAsync(() =>
+    {
+        _handsOpen = false;
+        StateHasChanged();
+    });
 
     internal void ClearHand(string? userId)
     {
@@ -2623,6 +2638,7 @@ else
         _live?.Dispose();
         if (_clock is not null) await _clock.DisposeAsync();
         await JS.StopAsync("tidePresent.stop");
+        if (_handsPopout is not null) await _handsPopout.DisposeAsync();
         _ref?.Dispose();
     }
 }

@@ -107,6 +107,33 @@ public class PresentTopBarPresenceTests(TideApp app) : IClassFixture<TideApp>
     }
 
     [Fact]
+    public async Task TheListOfHands_ShutsWhenTheLastHandGoesDown_AndDoesntOpenByItselfForTheNext()
+    {
+        var day = await TwoArticleBrief(app, 184, "Top bar list");
+        await using var pat = await Open(app, day);
+        await Do(pat, p => p.StartMeeting());
+        await using var owner = await Open(app, day, Owner);
+        await Do(owner, p => p.JoinIfLive());
+        await using var robin = await Open(app, day, Robin);
+        await Do(robin, p => p.JoinIfLive());
+
+        await Do(owner, p => p.ToggleHand());
+        await Do(pat, p => p.Follow());
+        await Do(pat, p => p.ToggleHandsList());
+        People(await pat.Html()).Should().Contain("id=\"present-hands\"");
+
+        await Do(owner, p => p.ToggleHand());
+        await Do(pat, p => p.Follow());
+        People(await pat.Html()).Should().NotContain("present-hands");
+        await Do(robin, p => p.ToggleHand());
+        await Do(pat, p => p.Follow());
+        var people = People(await pat.Html());
+        people.Should().Contain("1 hand up: Robin Analyst").And.Contain("aria-expanded=\"false\"").And.NotContain("id=\"present-hands\"", "it opens only when asked");
+
+        await Do(pat, p => p.EndMeeting());
+    }
+
+    [Fact]
     public async Task EightInTheMeeting_FiveDotsAndAPlusThree_AndTheCountSaysEight_WhileTheStatusNamesEveryone()
     {
         var day = await TwoArticleBrief(app, 183, "Top bar eight");

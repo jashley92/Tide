@@ -157,11 +157,12 @@ public partial class ArticleEditorTests(TideApp app) : IClassFixture<TideApp>
     [Fact]
     public async Task AColleaguesTag_DoesntWarnTheEditor_AndASaveThatWorksClearsAWarning()
     {
-        var id = await NewArticle();
+        var id = await NewArticle(a => a.WhyItMattersTlp = Domain.Enums.TlpLevel.Clear);
         await using var robin = await ComponentHarness.RenderAsync<Web.Components.Shared.ArticleEditorPanel>(app, $"/articles/{id}", new() { ["Id"] = id });
         await using var card = await ComponentHarness.RenderAsync<Web.Components.Shared.ArticleAdversaryCard>(app, $"/articles/{id}",
             new() { ["ArticleId"] = id, ["CanWrite"] = true });
-        await robin.Click(p => p.FocusFieldAsync(Application.Articles.ArticlePart.Bullets));   // an unsaved edit
+        // An unsaved edit that autosave holds for Save (a marking), so it's still unsaved when Sam's notice arrives.
+        await robin.Click(p => p.FixAsync(Application.Articles.ArticleFix.WhyItMattersAmber));
 
         await using (var sam = ComponentHarness.SignedIn(app, new ComponentHarness.SignIn("dev:sam", "Sam", "Analyst")))
         {

@@ -28,6 +28,45 @@ public class StackListScaleTests(ITestOutputHelper output)
         many.Should().BeLessThanOrEqualTo(10);
     }
 
+    /// <summary>The context rail reads only the selected product (its history and what's in triage naming it): the same
+    /// number of SQL commands however many products are on the list.</summary>
+    [Fact]
+    public async Task TheRail_ReadsOneProduct_InTheSameNumberOfCommands_HoweverManyProducts()
+    {
+        var (few, _) = await MeasureRailAsync(20);
+        var (many, ms) = await MeasureRailAsync(200);
+
+        output.WriteLine($"The rail's read, 200 products, {Articles} articles, {Items} new items: {many} commands, {ms} ms (best of 3)");
+        many.Should().Be(few, "the rail reads the selected product, not the list");
+        many.Should().BeLessThanOrEqualTo(10);
+    }
+
+    private static async Task<(int Commands, long Ms)> MeasureRailAsync(int products)
+    {
+        using var db = new TestDb();
+        db.User.Roles = new HashSet<AppRole> { AppRole.Analyst };
+        await SeedAsync(db, products);
+        var stack = db.Stack();
+        var id = (await stack.ListAsync()).First(r => r.Product.Name == Name(0)).Product.Id;
+        (await stack.InTriageAsync(id)).Should().NotBeEmpty("the seed's items name the product");   // warm, as above
+        await stack.GetAsync(id);
+
+        db.Commands.Reset();
+        await stack.GetAsync(id);
+        await stack.InTriageAsync(id);
+        var commands = db.Commands.Count;
+
+        var best = long.MaxValue;
+        for (var i = 0; i < 3; i++)
+        {
+            var sw = Stopwatch.StartNew();
+            await stack.GetAsync(id);
+            await stack.InTriageAsync(id);
+            best = Math.Min(best, sw.ElapsedMilliseconds);
+        }
+        return (commands, best);
+    }
+
     private static async Task<(int Commands, long Ms)> MeasureAsync(int products)
     {
         using var db = new TestDb();

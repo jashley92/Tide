@@ -8,6 +8,9 @@
 //
 // Each failure names the page, the width and the rule. Add a page or a rule below; README.md says how.
 
+import { writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { chromium } from 'playwright';
 import { openPage, pick, readDemo, settle, startTide, toArticleSlide } from './tide.mjs';
 
@@ -294,7 +297,7 @@ const kevPill = selector => ({
 
 /**
  * Closing a card keeps the person's place: from its Move menu by keyboard (`how` 'menu'), or dragged onto a chip while
- * focus was on it ('drag'), then the outcome dialog's button: focus lands in the card that was next in its lane.
+ * focus was on it ('drag') or after a click on it ('click-drag'), then the outcome dialog's button: focus lands in the card that was next in its lane.
  */
 const closeKeepsPlace = how => ({
   name: `after closing a card (${how}), focus is on the next card in its lane`,
@@ -307,6 +310,10 @@ const closeKeepsPlace = how => ({
       await page.keyboard.press('Enter');
       await card.getByRole('menuitem', { name: 'Cancelled' }).focus();
       await page.keyboard.press('Enter');
+    } else if (how === 'click-drag') {
+      // A click on the card itself (not a link or button in it) first, as the mouse selects one.
+      await card.locator('.tide-kcard-head').click({ position: { x: 4, y: 4 } });
+      await card.dragTo(page.locator('.tide-kchip[data-status="Cancelled"]'));
     } else {
       await card.locator('.tide-action-ref').focus();
       await card.dragTo(page.locator('.tide-kchip[data-status="Cancelled"]'));
@@ -595,25 +602,29 @@ const focusIn = selector => ({
   }, selector),
 });
 
-/** Tab pressed `times` from where focus is: it never lands outside `selector` (leaving the document for the browser's
- *  own controls, where focus is on <body>, is allowed). For an overlay that must hold focus, as a dialog does. Run last
- *  on its page: it moves focus. */
-const tabStaysIn = (selector, times) => ({
-  name: `Tab stays in: ${selector}`,
+/** `key` (Tab, or Shift+Tab) pressed `times` from where focus is: it never lands outside `selector`, nor on <body> (where
+ *  focus is once it has left the document for the browser's own controls): it wraps within, as a dialog's does. For an
+ *  overlay that must hold focus. Run last on its page: it moves focus. */
+const tabStaysIn = (selector, times, key = 'Tab') => ({
+  name: `${key} stays in: ${selector}`,
   check: async page => {
     const out = new Set();
     for (let i = 0; i < times; i++) {
-      await page.keyboard.press('Tab');
+      await page.keyboard.press(key);
       const where = await page.evaluate(selector => {
         const at = document.activeElement;
-        if (!at || at === document.body || at.closest(selector)) return null;
+        if (!at || at === document.body) return 'the page (<body>)';
+        if (at.closest(selector)) return null;
         return `${at.tagName.toLowerCase()} "${(at.getAttribute('aria-label') || at.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40)}"`;
       }, selector);
       if (where) out.add(where);
     }
-    return [...out].map(w => `Tab reached ${w}, outside ${selector}`);
+    return [...out].map(w => `${key} reached ${w}, outside ${selector}`);
   },
 });
+
+/** Tab and Shift+Tab each stay in `selector`, `times` presses apiece. Run last on its page. */
+const tabWraps = (selector, times) => [tabStaysIn(selector, times), tabStaysIn(selector, times, 'Shift+Tab')];
 
 /** No two visible matches of `selector` overlap: controls in a row that each keep their own room. */
 const noOverlap = selector => ({
@@ -665,20 +676,32 @@ const allBesides = (selector, other) => ({
 });
 
 /**
- * The open overlay's backdrop dims the page under it: the average brightness of a patch of the page left of the rail,
- * measured from screenshots with the rail closed and open, drops by at least `percent`. Run on a page whose setup opened
- * the overlay; it closes it, measures, and opens it again.
+ * The open overlay's backdrop dims everything under it: the average brightness of each patch, measured from screenshots
+ * with the rail closed and open, drops by at least `percent`. The patches: the page between the sidebar and the rail,
+ * and, with `all`, the left navigation, the top bar beside the rail and the strip of top bar above it, wherever each is
+ * shown. Run on a page whose setup opened the overlay; it closes it, measures, and opens it again.
  */
-const dims = percent => ({
-  name: `backdrop dims the page by ${percent}%`,
+const dims = (percent, all = false) => ({
+  name: `backdrop dims ${all ? 'everything under it' : 'the page'} by ${percent}%`,
   check: async page => {
-    // A patch of the page between the sidebar and the rail.
-    const left = await page.evaluate(() => {
-      const side = document.querySelector('.sidebar')?.getBoundingClientRect().right ?? 0;
-      return { side, rail: document.getElementById('tide-rail').getBoundingClientRect().left };
-    });
-    const clip = { x: left.side + 10, y: 300, width: Math.max(40, Math.min(200, left.rail - left.side - 20)), height: 200 };
-    const shot = async () => (await page.screenshot({ clip })).toString('base64');
+    const patches = await page.evaluate(all => {
+      const box = s => [...document.querySelectorAll(s)].map(e => e.getBoundingClientRect()).find(r => r.width > 0 && r.height > 0);
+      const side = box('.sidebar'), bar = box('.top-row'), rail = document.getElementById('tide-rail').getBoundingClientRect();
+      const left = side && side.right < rail.left ? side.right : 0;
+      const width = Math.max(40, Math.min(200, rail.left - left - 20));
+      const found = { 'the page': { x: left + 10, y: 300, width, height: 200 } };
+      if (!all) return found;
+      // A strip of the navigation's own colour, beside its links' text (which a backdrop of its colour would still dim).
+      if (side && side.width > 40 && side.right < rail.left) found['the left navigation'] = { x: side.right - 8, y: 300, width: 4, height: 200 };
+      if (bar && rail.top >= bar.bottom - 1) {
+        const h = Math.max(8, Math.min(30, bar.height - 10));
+        found['the top bar'] = { x: left + 10, y: bar.top + 5, width, height: h };
+        found['the top bar above the rail'] = { x: rail.left + 4, y: bar.top + 5, width: Math.max(20, Math.min(100, rail.width - 8)), height: h };
+      }
+      return found;
+    }, all);
+    const names = Object.keys(patches);
+    const shot = async () => Promise.all(names.map(async n => (await page.screenshot({ clip: patches[n] })).toString('base64')));
     await page.keyboard.press('Escape');
     await page.waitForTimeout(300);
     const closed = await shot();
@@ -688,7 +711,7 @@ const dims = percent => ({
     // Decoded in a page of its own: the browser reads PNGs, so no library is needed.
     const scratch = await page.context().newPage();
     try {
-      const [a, b] = await scratch.evaluate(async shots => Promise.all(shots.map(async s => {
+      const light = await scratch.evaluate(async shots => Promise.all(shots.map(async s => {
         const img = new Image();
         img.src = `data:image/png;base64,${s}`;
         await img.decode();
@@ -699,14 +722,24 @@ const dims = percent => ({
         let sum = 0;
         for (let i = 0; i < d.length; i += 4) sum += .2126 * d[i] + .7152 * d[i + 1] + .0722 * d[i + 2];
         return sum / (d.length / 4);
-      })), [closed, open]);
-      const drop = (a - b) / Math.max(a, 1) * 100;
-      return drop >= percent ? [] : [`the page under the open overlay is ${drop.toFixed(1)}% darker (${a.toFixed(0)} to ${b.toFixed(0)}), under ${percent}%`];
+      })), [...closed, ...open]);
+      return names.flatMap((n, i) => {
+        const [a, b] = [light[i], light[i + names.length]];
+        const drop = (a - b) / Math.max(a, 1) * 100;
+        return drop >= percent ? [] : [`${n} under the open overlay is ${drop.toFixed(1)}% darker (${a.toFixed(0)} to ${b.toFixed(0)}), under ${percent}%`];
+      });
     } finally {
       await scratch.close();
     }
   },
 });
+
+/** While the overlay is open, the top bar and the left navigation are inert: out of the tab order and unclickable. */
+const underIsInert = {
+  name: 'the top bar and the navigation are inert under the overlay',
+  check: page => page.evaluate(() => ['.top-row', '.sidebar'].filter(s => document.querySelector(s)?.closest('[inert]') === null)
+    .map(s => `${s} isn't inert while the overlay is open`)),
+};
 
 /** Setup: every letter spaced wider, as a font wider than this machine's would set it (see selectCovered). */
 // LETTER_SPACING=.12em widens it further by hand, near what a Linux runner's fonts do.
@@ -855,13 +888,13 @@ let meetingGuests = { key: '', contexts: [] };
 const GUESTS = ['Olive', 'Robin', 'Sam', 'Lee', 'Kim', 'Ana', 'Max'];
 
 /**
- * Setup: a live meeting on today's brief with eight people in it and `hands` of them with a hand up, in order. `as`
- * 'presenter': this page (the dev analyst) starts it, or takes it up again, and seven others join in browsers of their
- * own. 'follower': the dev analyst presents from another browser, six others join, and this page joins as Pat,
+ * Setup: a live meeting on today's brief with `people` in it (eight unless said) and `hands` of them with a hand up, in
+ * order. `as` 'presenter': this page (the dev analyst) starts it, or takes it up again, and the others join in browsers
+ * of their own. 'follower': the dev analyst presents from another browser, the others join, and this page joins as Pat,
  * following. Wider letters, on the first article's slide.
  */
-const meetingOf = (as, hands) => async (page, demo) => {
-  const key = `${as}/${hands}`;
+const meetingOf = (as, hands, people = 8) => async (page, demo) => {
+  const key = `${as}/${hands}/${people}`;
   const browser = page.context().browser();
   const join = async who => {
     const { context, page: theirs } = await openPage(browser,
@@ -880,7 +913,7 @@ const meetingOf = (as, hands) => async (page, demo) => {
     const presenter = as === 'presenter' ? page : await join('');
     await start(presenter);
     await toArticleSlide(presenter);
-    for (const [i, who] of GUESTS.slice(0, as === 'presenter' ? 7 : 6).entries()) {
+    for (const [i, who] of GUESTS.slice(0, people - (as === 'presenter' ? 1 : 2)).entries()) {
       const theirs = await join(who);
       if (i >= hands) continue;
       await theirs.locator('.tide-present-people').getByRole('button', { name: 'Raise hand' }).click();
@@ -894,8 +927,8 @@ const meetingOf = (as, hands) => async (page, demo) => {
     await page.goto(`${page.url()}?as=Pat&roles=Viewer`, { waitUntil: 'networkidle' });
     await settle(page);
   }
-  await page.waitForFunction(hands => document.querySelector('.tide-present-here')?.textContent.startsWith('8 here')
-    && (document.querySelector('.tide-hands-n')?.textContent.trim() ?? String(document.querySelectorAll('.tide-present-people .tide-hands > li').length)) === String(hands), hands, { timeout: 15000 });
+  await page.waitForFunction(([hands, people]) => document.querySelector('.tide-present-here')?.textContent.startsWith(`${people} here`)
+    && (document.querySelector('.tide-hands-n')?.textContent.trim() ?? String(document.querySelectorAll('.tide-present-people .tide-hands > li').length)) === String(hands), [hands, people], { timeout: 15000 });
   await wideFont(page);
 };
 
@@ -904,6 +937,38 @@ const handsListOpen = async (page, demo) => {
   await meetingOf('presenter', 5)(page, demo);
   await page.locator('.tide-hands-btn').click();
   await page.locator('#present-hands').waitFor();
+};
+
+/** Setup: the list of hands opened, then Tab to its first Lower and Escape. */
+const handsListEscaped = async (page, demo) => {
+  await handsListOpen(page, demo);
+  await page.keyboard.press('Tab');
+  await page.waitForTimeout(200);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(500);
+};
+
+/** Setup: the list of hands opened, then a press on the slide, outside it. */
+const handsListPressedOutside = async (page, demo) => {
+  await handsListOpen(page, demo);
+  await page.mouse.click(40, 600);
+  await page.waitForTimeout(500);
+};
+
+/** Setup: the presenter opens the list of hands while one is up; that hand goes down, and then another goes up. The
+ *  list stays shut: it never opens without a click. */
+const handsListAfterEmpty = async (page, demo) => {
+  await meetingOf('presenter', 0, 3)(page, demo);
+  const [olive, robin] = meetingGuests.contexts.map(c => c.pages()[0]);
+  const hand = p => p.locator('.tide-present-people').getByRole('button', { name: /Raise hand|Lower hand/ }).click();
+  await hand(olive);
+  await page.locator('.tide-hands-btn').click();
+  await page.locator('#present-hands').waitFor();
+  await hand(olive);
+  await page.locator('.tide-hands-btn').waitFor({ state: 'detached' });
+  await hand(robin);
+  await page.locator('.tide-hands-btn').waitFor();
+  await page.waitForTimeout(500);
 };
 
 /** Setup: a toast shown while the rail is docked (the opening note saved; whatever the toast says, it's placed alike). */
@@ -1121,6 +1186,310 @@ const addFormTakesFocus = {
   },
 };
 
+/** Where focus is, said for a failure. */
+const focusedOn = page => page.evaluate(() => {
+  const el = document.activeElement;
+  return !el || el === document.body ? 'the page body' : `<${el.tagName.toLowerCase()} class="${el.className}"> ${(el.innerText ?? '').trim().slice(0, 30)}`;
+});
+
+/**
+ * A popout that closes when it's done with: Escape anywhere on the page (with focus outside it too), a click outside it,
+ * or focus leaving it by Tab. `wrap` holds the popout and the button that opens it (`opener`); `panel` is the popout;
+ * `inside` is where focus is put for an Escape in it, and `bare` a part of it that takes no focus, pressed. Escape is the popout's alone: it leaves the reading pane (where
+ * there is one) as it was, and an Escape in it puts focus back on its button; a click outside leaves focus where it went.
+ */
+const popoutCloses = (label, { wrap, opener, panel, inside, bare }) => {
+  const pane = page => anyShown(page, '.tide-reading');
+  const open = async page => {
+    // One a rule before left open (it failed) goes, with the page as it was.
+    if (await anyShown(page, `${wrap} ${panel}`)) { await page.reload({ waitUntil: 'networkidle' }); await settle(page); }
+    await page.locator(`${wrap} ${opener}`).first().click();
+    await page.locator(`${wrap} ${panel}`).first().waitFor({ timeout: 5000 });
+    await page.waitForTimeout(400);
+  };
+  const stillOpen = async (page, how) => {
+    await page.waitForTimeout(700);
+    return (await anyShown(page, `${wrap} ${panel}`)) ? [`${label} is still open after ${how}`] : [];
+  };
+  const paneKept = async (page, was, how) => (await pane(page)) === was ? [] : [`${how} ${was ? 'closed' : 'opened'} the reading pane too`];
+  const onOpener = page => page.evaluate(sel => document.activeElement === document.querySelector(sel), `${wrap} ${opener}`);
+  return [
+    { name: `${label}: Escape with focus on the page closes it, and only it`, check: async page => {
+      const was = await pane(page);
+      await open(page);
+      // Focus left on the page while it's open: the body, where a removed control or a click on bare page leaves it.
+      await page.evaluate(() => document.activeElement?.blur());
+      await page.keyboard.press('Escape');
+      return [...await stillOpen(page, 'Escape with focus on the page'), ...await paneKept(page, was, 'that Escape')];
+    } },
+    { name: `${label}: Tab out of it closes it`, check: async page => {
+      await open(page);
+      for (let i = 0; i < 20 && await page.evaluate(sel => !!document.activeElement?.closest(sel), wrap); i++) await page.keyboard.press('Tab');
+      return stillOpen(page, 'Tab took focus out of it');
+    } },
+    { name: `${label}: a click outside closes it, focus staying there`, check: async page => {
+      await open(page);
+      // By the mouse at the heading, whatever is over it (a backdrop that hears the click is outside too).
+      const at = await page.locator('.tide-page-head h1').first().boundingBox();
+      await page.mouse.click(at.x + 10, at.y + at.height / 2);
+      const problems = await stillOpen(page, 'a click on the page heading');
+      if (await onOpener(page)) problems.push(`a click outside put focus back on its button`);
+      return problems;
+    } },
+    { name: `${label}: Escape in it closes it, focus back on its button`, check: async page => {
+      const was = await pane(page);
+      await open(page);
+      await page.locator(`${wrap} ${inside}`).first().focus();
+      await page.keyboard.press('Escape');
+      const problems = [...await stillOpen(page, 'Escape in it'), ...await paneKept(page, was, 'that Escape')];
+      if (!await onOpener(page)) problems.push(`Escape in it left focus on ${await focusedOn(page)}, not its button`);
+      return problems;
+    } },
+    // A press on a part of it that takes no focus (its background, a label, a hint): the browser moves focus to the
+    // nearest focusable element holding it, which mustn't count as leaving it. By mouse, and by a tap.
+    ...(bare ? ['mouse', 'touch'].map(by => ({ name: `${label}: a ${by} press inside it (${bare}) leaves it open`, check: async page => {
+      await open(page);
+      const part = page.locator(`${wrap} ${bare}`).first();
+      await part.scrollIntoViewIfNeeded();
+      const box = await part.boundingBox();
+      const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.className, [box.x + 3, box.y + 3]);
+      await pressAt(page, by, box.x + 3, box.y + 3);
+      await page.waitForTimeout(700);
+      return (await anyShown(page, `${wrap} ${panel}`)) ? [] : [`a ${by} press on ${bare} (${hit}) closed ${label}, focus going to ${await focusedOn(page)}`];
+    } })) : []),
+  ];
+};
+
+/** A mouse click, or a tap (touch, by the DevTools protocol, as a phone sends it), at x, y. */
+async function pressAt(page, by, x, y) {
+  if (by === 'mouse') return page.mouse.click(x, y);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, radiusX: 1, radiusY: 1 }] });   // a fine point: no snapping to a nearby control
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await cdp.detach();
+}
+
+/** Setup: a click on the first `opener`, and its `panel` drawn. */
+const openFirst = (opener, panel) => async page => {
+  await page.locator(opener).first().click();
+  await page.locator(panel).first().waitFor({ timeout: 5000 });
+};
+
+/** Every shown match of `selector` lies side to side inside the page: within the window, and clear of the sidebar
+ * beside it (from where <main> starts). */
+const insidePage = selector => ({
+  name: `inside the page: ${selector}`,
+  check: page => page.$$eval(selector, (els, selector) => {
+    const shown = els.map(e => e.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0);
+    if (!shown.length) return [`nothing shown matches ${selector}`];
+    const from = Math.max(0, document.querySelector('main')?.getBoundingClientRect().left ?? 0), to = document.documentElement.clientWidth;
+    return shown.filter(r => r.left < from - 0.5 || r.right > to + 0.5)
+      .map(r => `${selector} runs from x=${Math.round(r.left)} to ${Math.round(r.right)}px, outside the page (${Math.round(from)} to ${to}px)`);
+  }, selector),
+});
+
+/**
+ * Opening a popout (by a click on `opener`, as the mouse, a tap or Enter does) moves nothing and hides nothing:
+ * - the page doesn't scroll sideways, isn't wider than what shows of it (the body's clientWidth, without the scrollbar
+ *   or the gutter kept for it), and a sideways wheel or Shift+wheel over it afterwards still doesn't scroll it sideways;
+ * - the popout lies inside what shows of the window, top to bottom, and never over its button;
+ * - no part of it is cut off by a box it's drawn in: the middle of each edge of it, and each end of each item, is its own
+ *   (a hit test there finds it).
+ */
+const opensInPlace = (label, opener, panel) => ({
+  name: `${label} opens in place`,
+  check: async page => {
+    const button = page.locator(opener).first();
+    await button.scrollIntoViewIfNeeded();
+    const x0 = await page.evaluate(() => scrollX);
+    await button.click();
+    await page.locator(panel).first().waitFor({ timeout: 5000 });
+    await page.waitForTimeout(700);
+    const seen = await page.evaluate(([sel, opener]) => {
+      const el = [...document.querySelectorAll(sel)].find(e => e.getBoundingClientRect().height > 0);
+      const r = el.getBoundingClientRect(), b = document.querySelector(opener).getBoundingClientRect();
+      const de = document.documentElement;
+      const mine = (x, y) => el.contains(document.elementFromPoint(x, y));
+      // Just inside the middle of each edge (its corners are rounded off).
+      const mx = (r.left + r.right) / 2, my = (r.top + r.bottom) / 2;
+      const edges = [[r.left + 3, my], [r.right - 3, my], [mx, r.top + 3], [mx, r.bottom - 3]];
+      const items = [...el.querySelectorAll('[role=menuitem], [role=option], [role=menuitemradio], [role=menuitemcheckbox], .tide-profile-item, .tide-export-panel a')]
+        .map(i => [i, i.getBoundingClientRect()]).filter(([, ir]) => ir.height > 0 && ir.top >= r.top && ir.bottom <= r.bottom);
+      return {
+        x: scrollX, scrollWidth: de.scrollWidth, clientWidth: Math.min(de.clientWidth, document.body.clientWidth), clientHeight: de.clientHeight, top: r.top, bottom: r.bottom,
+        overOpener: r.left < b.right && r.right > b.left && r.top < b.bottom && r.bottom > b.top,
+        cutEdges: edges.filter(([x, y]) => !mine(x, y)).map(([x, y]) => { const e = document.elementFromPoint(x, y); return (e ? `${e.tagName.toLowerCase()}.${e.className}`.trim() : "nothing") + ` at ${Math.round(x)},${Math.round(y)}`; }),
+        cutItems: items.filter(([i, ir]) => ![[ir.left + 2, (ir.top + ir.bottom) / 2], [ir.right - 2, (ir.top + ir.bottom) / 2]]
+          .every(([x, y]) => i.contains(document.elementFromPoint(x, y)))).map(([i]) => i.innerText.trim().slice(0, 24)),
+      };
+    }, [panel, opener]);
+    const problems = [];
+    if (seen.x !== x0) problems.push(`opening it scrolled the page sideways ${Math.round(seen.x - x0)}px`);
+    if (seen.scrollWidth > seen.clientWidth) problems.push(`the page is ${seen.scrollWidth - seen.clientWidth}px wider than what shows of it`);
+    if (seen.top < -0.5 || seen.bottom > seen.clientHeight + 0.5)
+      problems.push(`it runs from y=${Math.round(seen.top)} to ${Math.round(seen.bottom)}px, outside the window (0 to ${seen.clientHeight}px)`);
+    if (seen.overOpener) problems.push('it covers its own button');
+    if (seen.cutEdges.length) problems.push(`${seen.cutEdges.length} of its edges are cut off or covered (by ${seen.cutEdges.join(", ")})`);
+    if (seen.cutItems.length) problems.push(`items cut off or covered: ${seen.cutItems.join(', ')}`);
+    // A sideways wheel, and Shift with the wheel, over the page heading.
+    const h = await page.locator('h1').first().boundingBox();
+    await page.mouse.move(h.x + 5, Math.max(5, h.y + h.height / 2));
+    await page.mouse.wheel(120, 0);
+    await page.keyboard.down('Shift');
+    await page.mouse.wheel(0, 120);
+    await page.keyboard.up('Shift');
+    await page.waitForTimeout(400);
+    const x1 = await page.evaluate(() => scrollX);
+    if (x1 !== x0) problems.push(`a sideways wheel then scrolled the page ${Math.round(x1 - x0)}px`);
+    return problems;
+  },
+});
+
+/** Where focus is: an element's text, or "the page body". */
+const focusName = page => page.evaluate(() => {
+  const el = document.activeElement;
+  return !el || el === document.body ? 'the page body' : (el.innerText || el.getAttribute('aria-label') || el.tagName).trim().slice(0, 40);
+});
+
+/** Delete in the entry's More menu asks first; Escape, or Cancel, leaves the entry with focus back on More. */
+const deleteCancelledFocusesMore = {
+  name: 'Delete cancelled: focus back on More',
+  check: async page => {
+    const problems = [];
+    for (const how of ['Escape', 'Cancel']) {
+      await page.locator('.tide-library-entry .tide-menubutton-btn').first().click();
+      await page.getByRole('menuitem', { name: 'Delete' }).click();
+      await page.locator('.tide-modal').waitFor({ timeout: 5000 });
+      await page.waitForTimeout(400);
+      if (how === 'Escape') await page.keyboard.press('Escape');
+      else await page.locator('.tide-modal').getByRole('button', { name: 'Cancel' }).click();
+      await page.locator('.tide-modal').waitFor({ state: 'detached', timeout: 5000 });
+      await page.waitForTimeout(600);
+      const now = await focusName(page);
+      if (now !== 'More') problems.push(`after ${how} focus is on ${now}, not More`);
+    }
+    return problems;
+  },
+};
+
+/** The palette opened (Ctrl+K) over the open + Filter, then closed: focus is back on + Filter. */
+/** Save view, its name typed and Enter pressed: saved, as a form is; its menu button is named for the items it offers. */
+const saveViewByEnter = {
+  name: 'Save view: Enter saves, and the menu is named for what it offers',
+  check: async page => {
+    await page.locator('#save-view').click();
+    await page.locator('#saved-view-name').waitFor({ timeout: 5000 });
+    await page.locator('#saved-view-name').fill('By Enter');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(1200);
+    const problems = [];
+    if (await anyShown(page, '.tide-modal')) return ['Enter in the Name box left the dialog open'];
+    const menu = page.locator('.tide-savedview', { hasText: 'By Enter' }).locator('.tide-savedview-menu');
+    if (!await menu.count()) return ['no saved view "By Enter" after Enter'];
+    const named = (await menu.innerText()).trim();
+    await menu.click();
+    await page.locator('.tide-savedview [role=menuitem]').first().waitFor({ timeout: 5000 });
+    const items = (await page.locator('.tide-savedview [role=menuitem]').allInnerTexts()).map(t => t.trim().toLowerCase());
+    const said = named.replace(/^By Enter: /, '').split(/, | or /);
+    if (said.join('|') !== items.join('|')) problems.push(`the menu button says "${named}" but the menu offers ${items.join(', ')}`);
+    await page.keyboard.press('Escape');
+    return problems;
+  },
+};
+
+const paletteGivesFocusBack = {
+  name: 'the palette over + Filter gives focus back to it',
+  check: async page => {
+    await page.locator('.tide-filter-menu .tide-filter-add').click();
+    await page.locator('.tide-filter-pop').waitFor({ timeout: 5000 });
+    await page.waitForTimeout(400);
+    await page.keyboard.press('Control+k');
+    await page.locator('[data-palette-input]').waitFor({ timeout: 5000 });
+    await page.waitForTimeout(400);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(800);
+    const now = await focusName(page);
+    return /Filter/.test(now) ? [] : [`focus is on ${now}, not + Filter`];
+  },
+};
+
+/** In each visible match of `row`, every cell's text starts at least `px` right of the row's left edge: clear of an
+ * accent drawn inside the row's edge. */
+const clearOfEdge = (row, px) => holds(`text clear of the edge: ${row}`, ([row, px]) => {
+  const rows = [...document.querySelectorAll(row)].filter(e => e.getBoundingClientRect().height > 0);
+  if (!rows.length) return [`nothing shown matches ${row}`];
+  return rows.flatMap(r => [...r.children].flatMap((cell, i) => {
+    const box = cell.getBoundingClientRect();
+    if (box.width === 0) return [];
+    const start = box.left + parseFloat(getComputedStyle(cell).paddingLeft) - r.getBoundingClientRect().left;
+    return start >= px ? [] : [`cell ${i + 1}'s text starts ${Math.round(start)}px from the row's edge, under its accent`];
+  }));
+}, [row, px]);
+
+/** Every visible link matching `selector` is drawn alike: the same colour and the same underline (or none). */
+const linksAlike = selector => holds(`links alike: ${selector}`, selector => {
+  const links = [...document.querySelectorAll(selector)].filter(e => e.getBoundingClientRect().height > 0);
+  if (links.length < 2) return [`fewer than two links shown match ${selector}`];
+  const look = a => { const s = getComputedStyle(a); return `${s.color} ${s.textDecorationLine}`; };
+  const first = look(links[0]);
+  return links.filter(a => look(a) !== first).map(a => `"${a.textContent.trim().slice(0, 40)}" is ${look(a)}, not ${first}`);
+}, selector);
+
+/** Setup: wider letters, then the rail's Mark checked pressed from the keyboard. */
+async function markCheckedFromRail(page) {
+  await wideFont(page);
+  await page.locator('#tide-rail').getByRole('button', { name: 'Mark checked' }).focus();
+  await page.keyboard.press('Enter');
+  await page.locator('#tide-rail').getByRole('button', { name: 'Mark checked' }).waitFor({ state: 'detached', timeout: 10000 });
+  await page.waitForTimeout(500);
+}
+
+/** Our stack's selected row, as the keys move it: J selects the next product (the row marked, focused and named in the
+ * address, the rail named for it and its sections read once it rests), K the one before, a click selects the row
+ * clicked, and Enter on the selected row opens the product's page. */
+const stackKeys = {
+  name: 'Our stack: J, K, a click and Enter',
+  check: async page => {
+    const problems = [];
+    const state = () => page.evaluate(() => {
+      const rows = [...document.querySelectorAll('.tide-stack-item')];
+      const at = rows.findIndex(r => r.classList.contains('selected'));
+      return {
+        at, count: rows.length, current: rows[at]?.getAttribute('aria-current'), focused: document.activeElement === rows[at],
+        name: rows[at]?.querySelector('td a')?.textContent.trim(), rail: document.querySelector('#tide-rail')?.getAttribute('aria-label'),
+        loaded: !!document.querySelector('#tide-rail #rail-articles-h') && !document.querySelector('#tide-rail').textContent.includes('Loading…'),
+        row: new URL(location.href).searchParams.get('row'),
+      };
+    });
+    const expect = async (at, why) => {
+      await page.waitForTimeout(600);
+      const s = await state();
+      if (s.at !== at) problems.push(`${why}: row ${s.at + 1} is selected, not row ${at + 1}`);
+      if (s.current !== 'true') problems.push(`${why}: the selected row has no aria-current`);
+      if (s.rail !== `About ${s.name}`) problems.push(`${why}: the rail is "${s.rail}", not About ${s.name}`);
+      if (!s.loaded) problems.push(`${why}: the rail's sections didn't load`);
+      if ((s.row ?? '0') !== String(at)) problems.push(`${why}: the address says row=${s.row}, not ${at}`);
+      return s;
+    };
+    if ((await state()).count < 3) return ['fewer than 3 products on the list'];
+    await page.keyboard.press('j');
+    if (!(await expect(1, 'J')).focused) problems.push('J: focus didn\'t follow the selected row');
+    await page.keyboard.press('j');
+    await expect(2, 'J again');
+    await page.keyboard.press('k');
+    await expect(1, 'K');
+    await page.locator('.tide-stack-item').nth(0).locator('td').nth(3).click();
+    const clicked = await expect(0, 'a click');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(800);
+    const heading = await page.locator('h1').first().textContent();
+    if (!new URL(page.url()).pathname.match(/\/stack\/[0-9a-f-]{36}$/) || !heading?.includes(clicked.name))
+      problems.push(`Enter on the selected row went to ${page.url()} ("${heading?.trim()}"), not ${clicked.name}'s page`);
+    return problems;
+  },
+};
+
 /** The first visible match of `selector` starts no lower than `px` from the top of the page: what a page is for isn't
  * pushed down by headings above it. */
 const startsAbove = (selector, px) => ({
@@ -1196,6 +1565,19 @@ const namesWhole = holds('hands\' names whole or not shown', () => {
     const whole = r.left >= box.left - 1 && r.right <= box.right + 1 && r.bottom <= box.bottom + 1 && n.scrollWidth <= n.clientWidth + 1;
     return out || whole ? [] : [`hand #${i + 1} ("${n.textContent}") is cut: ${Math.round(r.left)}–${Math.round(r.right)}px in ${Math.round(box.left)}–${Math.round(box.right)}px`];
   });
+});
+
+/** The present top bar's title is cut only when there's no room: who is here then has none to spare (its parts and
+ *  their gaps fill it). */
+const titleTakesRoom = holds('the title is cut only when there\'s no room', () => {
+  const title = document.querySelector('.tide-present-title > span:not(.tide-brand-mark)');
+  const people = document.querySelector('.tide-present-people');
+  if (!title || !people) return ['no title or people in the top bar'];
+  if (title.scrollWidth <= title.clientWidth + 1) return [];
+  const kids = [...people.children].filter(e => e.getBoundingClientRect().width > 0);
+  const used = kids.reduce((sum, e) => sum + e.getBoundingClientRect().width, 0) + parseFloat(getComputedStyle(people).columnGap || '0') * Math.max(0, kids.length - 1);
+  const spare = people.getBoundingClientRect().width - used;
+  return spare <= 2 ? [] : [`the title is cut by ${title.scrollWidth - title.clientWidth}px while who is here has ${Math.round(spare)}px to spare`];
 });
 
 /** The matches of `selector` (the top bar's title, people and tools) take at most `n` rows, by their tops. */
@@ -1485,25 +1867,14 @@ const overlayClosesBy = how => ({
 const railFilesTakeDropAndPaste = {
   name: 'the rail\'s Files box takes a drop and a paste',
   check: async page => {
-    const zone = page.locator('#tide-rail .tide-file-pick').first();
-    const id = await zone.getAttribute('id');
-    await page.evaluate(id => {
-      const dt = new DataTransfer();
-      dt.items.add(new File(['proxy log line'], 'rail-drop.log', { type: 'text/plain' }));
-      const el = document.getElementById(id);
-      el.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
-      el.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
-    }, id);
-    await page.waitForTimeout(1000);
-    await zone.focus();
-    await page.evaluate(id => {
-      const dt = new DataTransfer();
-      const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='), c => c.charCodeAt(0));
-      dt.items.add(new File([png], 'image.png', { type: 'image/png' }));
-      document.getElementById(id).dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
-    }, id);
-    await page.waitForTimeout(1000);
-    const pending = await page.locator('#tide-rail .tide-file-pending').innerText().catch(() => '');
+    const zone = '#tide-rail .tide-file-pick';
+    await fire(page, 'dragover', zone, [['rail-drop.log', 'text/plain']]);
+    await fire(page, 'drop', zone, [['rail-drop.log', 'text/plain']]);
+    await waitForPending(page, 'rail-drop.log');
+    await page.locator(zone).first().focus();
+    await fire(page, 'paste', zone, [['image.png', 'image/png']]);
+    await waitForPending(page, 'pasted-screenshot');
+    const pending = await pendingFiles(page);
     return [!pending.includes('rail-drop.log') && 'a dropped file isn\'t waiting in the rail', !pending.includes('pasted-screenshot') && 'a pasted image isn\'t waiting in the rail']
       .filter(Boolean);
   },
@@ -1514,8 +1885,432 @@ const railFilesTakeDropAndPaste = {
 const actionRailHolds = [visible('#tide-rail .tide-facts'), visible('#tide-rail #rail-article-h'), visible('#tide-rail #rail-raised-h'),
   visible('#tide-rail #files'), hidden('.content .tide-facts'), hidden('.content #files'), fits('.tide-rail-body'), fits('.tide-rail-body > *')];
 
+// --- the Actions list and board's context rail (option E 3.4) ----------------------------------------------------------
+
+/** The board's selected card: its place among the cards, the one with focus, its lane, and what the address names. */
+const selectedCard = page => page.evaluate(() => {
+  const cards = [...document.querySelectorAll('.tide-kcard')];
+  const on = cards.find(c => c.classList.contains('selected'));
+  return {
+    at: cards.indexOf(on), focused: cards.indexOf(document.activeElement), lane: on?.closest('.tide-kcol')?.dataset.status ?? null,
+    number: on?.querySelector('.tide-action-num')?.innerText.trim() ?? null, card: new URL(location.href).searchParams.get('card'),
+    many: on ? on.getAttribute('aria-current') === 'true' && on.tabIndex === 0 && cards.filter(c => c.tabIndex === 0).length === 1 : false,
+  };
+});
+
+/** The rail is named for the selected row or card ("About A-12"), so it follows the selection. */
+const railFollowsSelection = {
+  name: 'the rail is about the selected action',
+  check: page => page.evaluate(() => {
+    const on = document.querySelector('.tide-action-row.selected, .tide-kcard.selected');
+    const number = on?.querySelector('.tide-action-num')?.innerText.trim().replace(/\s+/g, '');
+    const label = document.getElementById('tide-rail')?.getAttribute('aria-label');
+    if (!on || !number) return ['nothing is selected'];
+    return label === `About ${number}` ? [] : [`the rail is "${label}", not about ${number}`];
+  }),
+};
+
+/**
+ * The board's keys: the selected card is the one tab stop, and J, K and the arrows move it within and across lanes, focus
+ * following and the address naming it (?card=); the rail follows.
+ */
+const boardKeys = {
+  name: 'J, K and the arrows move the selected card, within and across lanes',
+  check: async page => {
+    const problems = [];
+    const start = await selectedCard(page);
+    if (start.at < 0) return ['no card is selected'];
+    if (!start.many) problems.push('the selected card isn\'t the one tab stop (aria-current, tabindex 0)');
+    await page.locator('.tide-kcard.selected').focus();
+    const lanes = await page.$$eval('.tide-kcol', ls => ls.map(l => [l.dataset.status, l.querySelectorAll('.tide-kcard').length]));
+    for (const key of ['j', 'ArrowDown', 'k', 'ArrowUp', 'ArrowRight', 'ArrowLeft']) {
+      const before = await selectedCard(page);
+      await page.keyboard.press(key);
+      await page.waitForTimeout(500);
+      const now = await selectedCard(page);
+      const moved = now.at !== before.at;
+      const canMove = key === 'ArrowRight' ? lanes.some(([s, n], i) => n > 0 && i > lanes.findIndex(([l]) => l === before.lane))
+        : key === 'ArrowLeft' ? lanes.some(([s, n], i) => n > 0 && i < lanes.findIndex(([l]) => l === before.lane))
+          : ['j', 'ArrowDown'].includes(key) ? before.at < (await page.locator('.tide-kcard').count()) - 1 : before.at > 0;
+      if (canMove && !moved) problems.push(`${key} left card ${before.number} selected`);
+      if (['ArrowRight', 'ArrowLeft'].includes(key) && moved && now.lane === before.lane) problems.push(`${key} stayed in the ${now.lane} lane`);
+      if (now.focused !== now.at) problems.push(`after ${key} card ${now.number} is selected but focus is elsewhere`);
+      if (now.card !== now.number?.replace(/^A-/, '')) problems.push(`after ${key} the address says card=${now.card}, not ${now.number}`);
+      problems.push(...await railFollowsSelection.check(page));
+    }
+    return problems;
+  },
+};
+
+/** A click on a card (not on its links or buttons) selects it and gives it focus; the rail follows. */
+const clickSelectsCard = {
+  name: 'a click on a card selects it and focuses it',
+  check: async page => {
+    const cards = page.locator('.tide-kcard');
+    if (await cards.count() < 2) return ['fewer than two cards'];
+    const target = cards.nth(1);
+    const number = (await target.locator('.tide-action-num').innerText()).trim();
+    await target.locator('.tide-kcard-head').click({ position: { x: 4, y: 4 } });
+    await page.waitForTimeout(600);
+    const now = await selectedCard(page);
+    const problems = [];
+    if (now.number !== number) problems.push(`clicking ${number} left ${now.number} selected`);
+    if (now.focused !== now.at) problems.push(`clicking ${number} didn't give it focus`);
+    problems.push(...await railFollowsSelection.check(page));
+    return problems;
+  },
+};
+
+/** Setup: a new action nobody has, raised from the form, and the board opened on it (the demo's own unowned actions are
+ *  taken by the list's rules before this one runs). */
+async function newUnownedCard(page) {
+  const title = `Board take check ${Date.now().toString(36)}`;
+  await page.goto(new URL('/actions/new', page.url()).href, { waitUntil: 'networkidle' });
+  await settle(page);
+  await page.locator('#a-title').fill(title);
+  await page.locator('#a-team').selectOption({ index: 1 });
+  await page.waitForTimeout(300);
+  await page.getByRole('button', { name: 'Create action' }).click();
+  await page.waitForURL(/actions\/\d+/);
+  await page.goto(new URL(`/actions?view=open&layout=board&q=${encodeURIComponent(title)}`, page.url()).href, { waitUntil: 'networkidle' });
+}
+
+/** T on the selected card takes it on: the toast says so. */
+const boardTakeKey = {
+  name: 'T takes the selected card on',
+  check: async page => {
+    const number = (await page.locator('.tide-kcard.selected .tide-action-num').innerText()).trim();
+    await page.locator('.tide-kcard.selected').focus();
+    await page.keyboard.press('t');
+    try { await page.getByText(`You took ${number} on.`).waitFor({ timeout: 5000 }); } catch { return [`T on ${number} didn't take it on`]; }
+    await page.waitForTimeout(800);
+    const note = await page.locator('.tide-kcard.selected .tide-kcard-note').allInnerTexts();
+    return note.length ? [`the card ${number} the person took says "${note.join(' ').trim()}"`] : [];
+  },
+};
+
+/** Every tab of the row `selector` is wholly in view, the row not scrolling inside itself: all five views fit. */
+const everyTabShown = selector => ({
+  name: `every tab shown whole: ${selector}`,
+  check: page => page.$eval(selector, row => {
+    const r = row.getBoundingClientRect(), problems = [];
+    if (row.scrollWidth > row.clientWidth + 1) problems.push(`the tabs scroll inside their row (${row.scrollWidth - row.clientWidth}px more than it shows)`);
+    for (const t of row.children) {
+      const b = t.getBoundingClientRect();
+      if (b.left < r.left - 1 || b.right > r.right + 1) problems.push(`"${t.innerText.replace(/\s+/g, ' ').trim()}" is cut off`);
+    }
+    return problems;
+  }),
+});
+
+/** A table, not stacked rows: each heading shown sits over its column (its left edge within 2px of the first row's cell
+ *  in the same column), and the header row is shown at all. */
+const headingsOverColumns = {
+  name: 'the list\'s headings sit over their columns',
+  check: page => page.evaluate(() => {
+    const table = document.querySelector('.tide-table:has(.tide-action-row)');
+    const row = table?.querySelector('.tide-action-row');
+    if (!table || !row) return ['no list of actions'];
+    const shown = e => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0 && getComputedStyle(e).display !== 'none'; };
+    const ths = [...table.querySelectorAll(':scope > thead > tr > th')].filter(shown), tds = [...row.children].filter(shown);
+    if (!ths.length) return ['the header row isn\'t shown'];
+    if (getComputedStyle(table).display !== 'table') return ['the list is laid out as stacked rows, not a table'];
+    if (ths.length !== tds.length) return [`${ths.length} headings over ${tds.length} cells`];
+    return ths.flatMap((th, i) => Math.abs(th.getBoundingClientRect().left - tds[i].getBoundingClientRect().left) > 2
+      ? [`"${th.innerText.trim()}" starts at ${Math.round(th.getBoundingClientRect().left)}px, its column at ${Math.round(tds[i].getBoundingClientRect().left)}px`] : []);
+  }),
+};
+
+/** Setup: the demo's analyst put on the first team (on none, My teams opens All open for them), then the list opened. */
+async function analystOnATeam(page) {
+  await page.goto(new URL('/admin/teams', page.url()).href, { waitUntil: 'networkidle' });
+  await settle(page);
+  const pick = page.locator('select[aria-label^="Person to add to"]').first();
+  if (await pick.locator('option', { hasText: 'Dev Analyst' }).count()) {
+    await pick.selectOption({ label: 'Dev Analyst' });
+    await pick.locator('xpath=following::button[normalize-space()="Add"][1]').click();
+    await page.waitForTimeout(800);
+  }
+  await page.goto(new URL('/actions?view=open&layout=list', page.url()).href, { waitUntil: 'networkidle' });
+}
+
+/**
+ * "Open here by default" keeps the layout: the default set to My teams on the board, then All open on the list (the List
+ * tab pressed), then Actions from the sidebar and from a new tab: both open My teams on the board.
+ */
+const defaultKeepsLayout = {
+  name: 'Open here by default opens that tab in that layout, from the sidebar and a new tab',
+  check: async page => {
+    const problems = [];
+    const views = page.locator('[role=group][aria-label="Views"]');
+    const layoutTab = name => page.locator('.tide-actions-layout').getByRole('button', { name });
+    await views.getByRole('button', { name: /^My teams/ }).click();
+    await page.waitForTimeout(800);
+    await layoutTab(/Board/).click();
+    await page.waitForTimeout(800);
+    const star = page.locator('button#view-default');
+    if (await star.count()) { await star.click(); await page.waitForTimeout(800); }
+    await views.getByRole('button', { name: /^All open/ }).click();
+    await page.waitForTimeout(800);
+    await layoutTab(/List/).click();
+    await page.waitForTimeout(1000);
+    const opened = async (p, how) => {
+      const view = (await p.locator('[role=group][aria-label="Views"] [aria-pressed="true"]').innerText()).replace(/\s+/g, ' ').trim();
+      const layout = (await p.locator('.tide-actions-layout [aria-pressed="true"]').textContent()).trim();
+      if (!view.startsWith('My teams') || layout !== 'Board') problems.push(`${how} opened ${view} as the ${layout}, not My teams on the board`);
+    };
+    await page.locator('#tide-nav-links a[href="actions"]').first().click();
+    await page.waitForTimeout(1500);
+    await opened(page, "the sidebar's Actions");
+    const fresh = await page.context().newPage();
+    await fresh.goto(new URL('/actions', page.url()).href, { waitUntil: 'networkidle' });
+    await settle(fresh);
+    await opened(fresh, 'a new tab on /actions');
+    await fresh.close();
+    return problems;
+  },
+};
+
+/** After a card is closed by dragging it, the address names the card now selected (?card=), not the one that left. */
+const addressFollowsAfterClose = {
+  name: 'after a drag-close the address names the selected card',
+  check: async page => {
+    const lane = page.locator('.tide-kcol[data-status="Open"] .tide-kcard[draggable="true"]');
+    if (await lane.count() < 2) return ['the Open lane has fewer than two cards to move'];
+    const card = lane.first();
+    await card.locator('.tide-kcard-head').click({ position: { x: 4, y: 4 } });
+    await page.waitForTimeout(600);
+    await card.dragTo(page.locator('.tide-kchip[data-status="Cancelled"]'));
+    const confirm = page.getByRole('button', { name: 'Move to Cancelled' });
+    await confirm.waitFor({ timeout: 5000 });
+    await confirm.click();
+    await page.waitForTimeout(1500);
+    const now = await selectedCard(page);
+    return now.card === now.number?.replace(/^A-/, '') ? [] : [`the address says card=${now.card}, but ${now.number} is selected`];
+  },
+};
+
+/** The rail's time-in-column fact reads naturally: "In Open", "In progress", "Blocked", never "In In progress". */
+const columnFactWording = {
+  name: 'the rail says how long in its column without doubling "In"',
+  check: page => page.$$eval('#tide-rail .tide-facts dt', dts => {
+    const texts = dts.map(d => d.innerText.trim());
+    return texts.some(t => /^In In\b/i.test(t)) ? [`the fact reads "${texts.find(t => /^In In\b/i.test(t))}"`] : [];
+  }),
+};
+
+/** On the board, the rail puts "From the article" before the hunt query, as the board's design does. */
+const articleBeforeHunt = {
+  name: 'the board\'s rail: the article, then the hunt query',
+  check: page => page.evaluate(() => {
+    const a = document.querySelector('#tide-rail #rail-article-h'), h = document.querySelector('#tide-rail #rail-hunt-h');
+    if (!a || !h) return [`the rail has no ${!a ? 'article' : 'hunt query'}`];
+    return a.compareDocumentPosition(h) & Node.DOCUMENT_POSITION_FOLLOWING ? [] : ['the hunt query comes before the article'];
+  }),
+};
+
+/** The average brightness of `clip` on the page, from a screenshot decoded in a page of its own (as dims does, above). */
+async function luma(page, clip) {
+  const shot = (await page.screenshot({ clip })).toString('base64');
+  const scratch = await page.context().newPage();
+  try {
+    return await scratch.evaluate(async s => {
+      const img = new Image();
+      img.src = `data:image/png;base64,${s}`;
+      await img.decode();
+      const c = Object.assign(document.createElement('canvas'), { width: img.width, height: img.height }), g = c.getContext('2d');
+      g.drawImage(img, 0, 0);
+      const d = g.getImageData(0, 0, c.width, c.height).data;
+      let sum = 0;
+      for (let i = 0; i < d.length; i += 4) sum += .2126 * d[i] + .7152 * d[i + 1] + .0722 * d[i + 2];
+      return sum / (d.length / 4);
+    }, shot);
+  } finally {
+    await scratch.close();
+  }
+}
+
+/**
+ * With `open` (Save view, or a card's close asking how it closed) a modal is up: its backdrop covers the docked rail as it
+ * covers the page, dimming both (each at least 25% darker), and the rail is under it.
+ */
+const scrimCoversRail = open => ({
+  name: `the ${open} dialog's backdrop dims the docked rail`,
+  check: async page => {
+    const box = await page.locator('#tide-rail').boundingBox();
+    const rail = { x: box.x + 20, y: box.y + box.height - 220, width: box.width - 40, height: 180 };
+    const main = await page.locator('#main-content').boundingBox();
+    const content = { x: main.x + 20, y: 780, width: 200, height: 180 };
+    const before = [await luma(page, rail), await luma(page, content)];
+    if (open === 'Save view') await page.locator('#save-view').click();
+    else {
+      await page.locator('.tide-kcard[draggable="true"] .tide-kcard-move').first().click();
+      await page.locator('.tide-kcard-menu').getByRole('menuitem', { name: 'Cancelled' }).click();
+    }
+    await page.locator('.tide-modal-scrim').waitFor({ timeout: 5000 });
+    await page.waitForTimeout(400);
+    const after = [await luma(page, rail), await luma(page, content)];
+    const problems = [];
+    ['the rail', 'the page'].forEach((what, i) => {
+      const drop = (before[i] - after[i]) / Math.max(before[i], 1) * 100;
+      if (drop < 25) problems.push(`${what} is only ${drop.toFixed(0)}% darker under the dialog (${before[i].toFixed(0)} to ${after[i].toFixed(0)})`);
+    });
+    const above = await page.evaluate(() => {
+      const r = document.getElementById('tide-rail').getBoundingClientRect();
+      return !!document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest('#tide-rail');
+    });
+    if (above) problems.push('the rail is above the dialog\'s backdrop');
+    await page.keyboard.press('Escape');
+    return problems;
+  },
+});
+
+/** Enter on the selected card opens it. Run last on its page: it leaves it. */
+const boardEnterOpens = {
+  name: 'Enter opens the selected card',
+  check: async page => {
+    const number = (await page.locator('.tide-kcard.selected .tide-action-num').innerText()).trim().replace(/^A-/, '');
+    await page.locator('.tide-kcard.selected').focus();
+    await page.keyboard.press('Enter');
+    try { await page.waitForURL(new RegExp(`/actions/${number}$`), { timeout: 5000 }); return []; } catch { return [`Enter on A-${number} left the page at ${page.url()}`]; }
+  },
+};
+
+/**
+ * Escape with the rail's Move to menu open closes the menu and leaves the rail open; the next Escape closes the overlay.
+ * Run on a page whose setup opened the overlay.
+ */
+const escapeClosesTheMenuFirst = {
+  name: 'Escape closes the rail\'s Move menu before the rail',
+  check: async page => {
+    const button = page.locator('#tide-rail').getByRole('button', { name: /^Move A-\d+ to$/ });
+    if (!await button.count()) return ['the rail has no Move to'];
+    await button.focus();
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(400);
+    const problems = [];
+    if (!await page.evaluate(() => !!document.activeElement?.closest('#tide-rail [role="menu"]'))) problems.push('Move to didn\'t open its menu with focus in it');
+    const out = await page.evaluate(() => {
+      const m = document.querySelector('#tide-rail [role="menu"]')?.getBoundingClientRect(), r = document.querySelector('#tide-rail .tide-rail-body').getBoundingClientRect();
+      return m && (m.left < r.left - 1 || m.right > r.right + 1) ? `the menu (${Math.round(m.left)}–${Math.round(m.right)}px) runs out of the rail (${Math.round(r.left)}–${Math.round(r.right)}px)` : null;
+    });
+    if (out) problems.push(out);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(400);
+    if (await page.locator('#tide-rail [role="menu"]').count()) problems.push('Escape left the menu open');
+    if (!await anyShown(page, '#tide-rail')) problems.push('Escape in the menu closed the rail too');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(400);
+    if (await anyShown(page, '#tide-rail')) problems.push('a second Escape didn\'t close the rail');
+    return problems;
+  },
+};
+
+/** The selected card is wholly in view in its lane (which scrolls on its own), and has focus: a link to it lands on it. */
+const selectedCardInView = {
+  name: 'the selected card is in view in its lane, with focus',
+  check: page => page.evaluate(() => {
+    const card = document.querySelector('.tide-kcard.selected'), lane = card?.closest('.tide-kcol-cards');
+    if (!card || !lane) return ['no card is selected'];
+    const c = card.getBoundingClientRect(), l = lane.getBoundingClientRect(), problems = [];
+    if (c.top < l.top - 1 || c.bottom > l.bottom + 1) problems.push(`the selected card (${Math.round(c.top)}–${Math.round(c.bottom)}px) is out of its lane's view (${Math.round(l.top)}–${Math.round(l.bottom)}px)`);
+    if (document.activeElement !== card) problems.push('the selected card has no focus');
+    return problems;
+  }),
+};
+
+/**
+ * The rail's Move to → Cancelled, from the open overlay, asks how it closed: the dialog is usable (the overlay gives way to
+ * it), and Escape closes the dialog alone, the card staying where it was. Run on a page whose setup opened the overlay.
+ */
+const railMoveAsksFirst = {
+  name: "the rail's Move to a closed status asks first, and Escape closes only the dialog",
+  check: async page => {
+    const number = (await page.locator('.tide-kcard.selected .tide-action-num').innerText()).trim();
+    try { await page.locator('#tide-rail').getByRole('button', { name: /^Move A-\d+ to$/ }).click({ timeout: 5000 }); } catch { return [`the rail has no Move to for ${number}`]; }
+    try { await page.locator('#tide-rail').getByRole('menuitem', { name: 'Cancelled' }).click({ timeout: 5000 }); } catch { return ['Move to offers no Cancelled to choose']; }
+    const dialog = page.getByRole('dialog', { name: `Move ${number} to Cancelled` });
+    try { await dialog.waitFor({ timeout: 5000 }); } catch { return [`Move to Cancelled didn't ask how ${number} closed`]; }
+    const problems = [];
+    if (!await page.evaluate(() => !!document.activeElement?.closest('.tide-modal'))) problems.push('focus is outside the dialog');
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => problems.push('Escape left the dialog open'));
+    await page.waitForTimeout(500);
+    if (!await page.locator(`.tide-kcol[data-status="Open"] .tide-kcard:has(.tide-action-num:text-is("${number}"))`).count()) problems.push(`${number} left its lane`);
+    return problems;
+  },
+};
+
+/** The four lanes sit side by side on one row (their tops line up). */
+const lanesOnOneRow = {
+  name: 'the four lanes on one row',
+  check: page => page.evaluate(() => {
+    const tops = [...document.querySelectorAll('.tide-kcol')].map(l => Math.round(l.getBoundingClientRect().top));
+    return tops.length === 4 && Math.max(...tops) - Math.min(...tops) <= 1 ? [] : [`the lanes start at ${tops.join(', ')}px`];
+  }),
+};
+
+/** What the rail holds for the selected action on the list or the board. */
+const actionsRailHolds = [visible('#tide-rail [data-rail-next]'), visible('#tide-rail .tide-facts'), visible('#tide-rail #rail-activity-h'),
+  flat('#tide-rail .tide-rail-body > section'), fits('.tide-rail-body'), fits('.tide-rail-body > *'), railFollowsSelection];
+
 /** The action page's own column: its head, the tools and the query fit it, the query wrapping rather than scrolling. */
 const actionPageFits = [noSidewaysScroll, fits('.tide-action-head'), fits('.tide-drawer'), visible('.tide-feed')];
+
+/** A drag or paste event with `files` (and `text`, if given) fired at the first match of `selector`; whether the page took it. */
+const fire = (page, type, selector, files, text) => page.evaluate(([type, selector, files, text]) => {
+  const dt = new DataTransfer();
+  if (text) dt.setData('text/plain', text);
+  for (const [name, mime] of files) {
+    const bytes = mime === 'image/png'
+      ? Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='), c => c.charCodeAt(0))
+      : new TextEncoder().encode('proxy log line');
+    dt.items.add(new File([bytes], name, { type: mime }));
+  }
+  const el = selector === 'body' ? document.body : document.querySelector(selector);
+  const e = type === 'paste' ? new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt })
+    : new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt });
+  el.dispatchEvent(e);
+  return e.defaultPrevented;
+}, [type, selector, files, text]);
+
+/** What waits to be added in the rail's Files box. */
+const pendingFiles = page => page.locator('#tide-rail .tide-file-pending').innerText().catch(() => '');
+
+/** Waits (up to 5s) for `name` to be waiting in the rail's Files box; the rule then says whether it came. */
+const waitForPending = (page, name) => page.waitForFunction(name => document.querySelector('#tide-rail .tide-file-pending')?.textContent.includes(name), name,
+  { timeout: 5000 }).catch(() => { });
+
+/**
+ * Files go to the action's Files from anywhere on the page, as the design says ("Drop them anywhere on the page, or
+ * paste"): text pasted into a text field stays text there; a file dragged over the page shows the drop hint, and dropped
+ * on the page (not on a Files or comment box) waits in Files, the rail opening to show it where it was closed; an image
+ * pasted with nothing focused waits there too.
+ */
+const pageTakesFiles = {
+  name: 'files dropped on the page, or pasted with nothing focused, wait in Files',
+  check: async page => {
+    const problems = [];
+    await page.locator('#comment-new').focus();
+    if (await fire(page, 'paste', '#comment-new', [['image.png', 'image/png']], 'IOC 203.0.113.45')) problems.push('text pasted into the comment box was taken as a file');
+    await page.evaluate(() => document.activeElement?.blur());
+    if (!(await fire(page, 'dragover', '.tide-feed-head', [['page-drop.log', 'text/plain']]))) problems.push('a file dragged over the page isn\'t taken');
+    await page.waitForTimeout(100);
+    if (!(await anyShown(page, '.tide-page-drop'))) problems.push('no drop hint shows while a file is dragged over the page');
+    await fire(page, 'drop', '.tide-feed-head', [['page-drop.log', 'text/plain']]);
+    await waitForPending(page, 'page-drop.log');
+    if (await anyShown(page, '.tide-page-drop')) problems.push('the drop hint stays after the drop');
+    if (!(await anyShown(page, '#tide-rail .tide-file-pending'))) problems.push('the dropped file isn\'t shown waiting in the rail');
+    const dropped = await pendingFiles(page);
+    if (!dropped.includes('page-drop.log')) problems.push('a file dropped on the page isn\'t waiting in Files');
+    if (dropped.includes('image.png') || dropped.includes('pasted-screenshot')) problems.push('the comment box\'s pasted text left a file in Files');
+    await page.evaluate(() => document.activeElement?.blur());
+    await fire(page, 'paste', 'body', [['image.png', 'image/png']]);
+    await waitForPending(page, 'pasted-screenshot');
+    if (!(await pendingFiles(page)).includes('pasted-screenshot')) problems.push('an image pasted with nothing focused isn\'t waiting in Files');
+    return problems;
+  },
+};
 
 /** The middle of the first visible match of `selector` is the match itself (or inside it): nothing is drawn over it. */
 const onTop = selector => holds(`nothing over: ${selector}`, selector => {
@@ -1551,6 +2346,24 @@ const crowdedHead = async page => {
     row.insertAdjacentHTML('beforeend', '<span class="tide-presence-dot tide-presence-more">+3</span>');
   });
 };
+
+/** Setup: wider letters, then `edit` made in the editor and the pause for autosave waited out (a little over its 2s). */
+const autosaveAfter = edit => async page => {
+  await wideFont(page);
+  await edit(page);
+  await page.waitForTimeout(3500);
+};
+
+/** Setup: wider letters, then a word added to the article's sectors (it autosaves), and the pause waited out. */
+const autosaved = autosaveAfter(async page => {
+  const box = page.locator('#sectors');
+  await box.click();
+  await box.press('End');
+  await box.pressSequentially(', energy');
+});
+
+/** Setup: wider letters, then the article's marking changed (autosave holds it for Save), and the pause waited out. */
+const autosaveHeld = autosaveAfter(page => page.getByRole('combobox', { name: "The article's TLP" }).selectOption('Green'));
 
 /** Setup: wider letters, then the Edit | Preview switch set to Preview. */
 const showPreviewPane = async page => {
@@ -1650,6 +2463,138 @@ const libraryKeys = {
     return problems;
   },
 };
+
+/**
+ * A real file dragged from the desktop and dropped at (700, 500), through the browser's own input (CDP), where nothing on
+ * the page takes files: the browser doesn't open it, in this tab or another.
+ */
+const fileDropStays = {
+  name: 'a file dropped where nothing takes it doesn\'t open in the browser',
+  check: async page => {
+    const file = path.join(os.tmpdir(), 'tide-dropme.txt');
+    writeFileSync(file, 'dropped by the layout check');
+    const [before, tabs] = [page.url(), page.context().pages().length];
+    const cdp = await page.context().newCDPSession(page);
+    const data = { items: [], files: [file], dragOperationsMask: 1 };
+    for (const type of ['dragEnter', 'dragOver', 'drop']) await cdp.send('Input.dispatchDragEvent', { type, x: 700, y: 500, data });
+    await page.waitForTimeout(1500);
+    const problems = [];
+    if (page.url() !== before) problems.push(`the tab went to ${page.url()}`);
+    if (page.context().pages().length !== tabs) problems.push('the file opened in another tab');
+    await cdp.detach();
+    return problems;
+  },
+};
+
+/** Setup: wider letters, then a file dropped on the action page, waiting in Files (the rail opening for it below 1500px). */
+const fileStaged = async page => {
+  await wideFont(page);
+  await fire(page, 'drop', '.tide-feed-head', [['staged.log', 'text/plain']]);
+  await waitForPending(page, 'staged.log');
+};
+
+/** A file waiting in Files isn't dropped without a word: leaving the page by a link (`link`) asks first, and Stay stays,
+ *  the file still there. */
+const stagedFilesAsk = link => ({
+  name: 'leaving with a file waiting in Files asks first',
+  check: async page => {
+    const at = page.url();
+    await page.locator(link).first().click();
+    const leave = page.locator('.tide-modal[role="alertdialog"]');
+    if (!(await leave.waitFor({ timeout: 3000 }).then(() => true, () => false))) return ['leaving with a file waiting in Files didn\'t ask'];
+    await leave.getByRole('button', { name: 'Stay', exact: true }).click();
+    await page.waitForTimeout(300);
+    const problems = [];
+    if (page.url() !== at) problems.push(`Stay left the page for ${page.url()}`);
+    if (!(await pendingFiles(page)).includes('staged.log')) problems.push('Stay lost the file waiting in Files');
+    return problems;
+  },
+});
+
+/** A dialog opened from inside the open overlay (`how`: a rail link that asks before leaving, or Ctrl K's palette)
+ *  closes the overlay; Escape then closes the dialog, and focus is back on the Context button, not dropped on <body>. */
+const dialogFromOverlay = how => ({
+  name: `Escape from the ${how === 'link' ? 'leave dialog' : 'palette'} opened in the overlay: focus on Context`,
+  check: async page => {
+    if (how === 'link') await page.locator('#tide-rail .tide-rail-article-title').click();
+    else { await page.locator(railLink).first().focus(); await page.keyboard.press('Control+k'); }
+    const dialog = page.locator(how === 'link' ? '.tide-modal[role="alertdialog"]' : '.tide-palette');
+    if (!(await dialog.waitFor({ timeout: 3000 }).then(() => true, () => false))) return [`no ${how === 'link' ? 'leave dialog' : 'palette'} opened`];
+    await page.waitForTimeout(300);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(400);
+    const at = await page.evaluate(() => document.activeElement === document.body ? '<body>' : document.activeElement?.id || document.activeElement?.tagName);
+    return at === 'tide-rail-toggle' ? [] : [`focus is on ${at}, not the Context button`];
+  },
+});
+
+/** Write one by hand, typed and not left: the first real click on Add the query adds it (the button was enabled as the
+ *  text was typed, not only once the box lost focus). Changes the demo: run late. */
+const writtenQueryAddsOnFirstClick = {
+  name: 'Add the query works on the first click',
+  check: async page => {
+    const before = await page.locator('.tide-hunt pre.tide-query').count();
+    await page.locator('#hunt-write').click();
+    await page.locator('textarea[aria-label="Your query"]').click();
+    await page.keyboard.type('DeviceProcessEvents | where FileName == "php-fpm"');
+    const button = page.getByRole('button', { name: 'Add the query', exact: true });
+    await button.evaluate(b => b.scrollIntoView({ block: 'center' }));
+    const add = await button.boundingBox();
+    await page.mouse.click(add.x + add.width / 2, add.y + add.height / 2);
+    await page.waitForTimeout(1500);
+    const after = await page.locator('.tide-hunt pre.tide-query').count();
+    return after > before ? [] : ['the first click on Add the query added nothing'];
+  },
+};
+
+/** One way to add a query open at a time: opening another closes the first, and Escape closes the one open, focus back
+ *  on its button. */
+const oneAdderAtATime = {
+  name: 'one way to add a query open at a time; Escape closes it',
+  check: async page => {
+    const problems = [];
+    await page.locator('#hunt-write').click();
+    await page.locator('#hunt-pick').click();
+    await page.locator('#hunt-saved-picker').waitFor({ timeout: 3000 }).catch(() => { });
+    if (await anyShown(page, 'textarea[aria-label="Your query"]')) problems.push('Write one by hand stays open beside Add a saved query');
+    await page.locator('#hunt-add-iocs').click();
+    await page.waitForTimeout(300);
+    if (await anyShown(page, '#hunt-saved-picker')) problems.push('Add a saved query stays open beside Add indicators');
+    await page.locator('#hunt-indicators :is(textarea, input)').first().focus();
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+    if (await anyShown(page, '#hunt-indicators')) problems.push('Escape leaves Add indicators open');
+    const at = await page.evaluate(() => document.activeElement?.id);
+    if (at !== 'hunt-add-iocs') problems.push(`after Escape focus is on ${at || 'the page'}, not Add indicators`);
+    return problems;
+  },
+};
+
+/** "Also raised from it": each row leads with its number, its title beside it, and its status at the row's right. */
+const raisedRows = holds('raised-from-it rows: number first, status at the right', () => {
+  const rows = [...document.querySelectorAll('#tide-rail section[aria-labelledby="rail-raised-h"] li')].filter(li => li.getClientRects().length);
+  if (!rows.length) return ['no "Also raised from it" row is shown'];
+  return rows.flatMap((li, i) => {
+    const box = li.getBoundingClientRect();
+    const num = li.querySelector('.tide-action-num')?.getBoundingClientRect(), title = li.querySelector('a')?.getBoundingClientRect();
+    const status = [...li.querySelectorAll('.tide-badge')].at(-1)?.getBoundingClientRect();
+    if (!num || !title || !status) return [`row ${i + 1} lacks a number, a title or a status`];
+    const found = [];
+    if (!(num.right <= title.left + 1 && num.top < title.bottom && title.top < num.bottom)) found.push(`row ${i + 1}: the number isn't first, beside the title`);
+    if (box.right - status.right > 2 || status.left < title.left) found.push(`row ${i + 1}: the status isn't at the right (${Math.round(box.right - status.right)}px short)`);
+    return found;
+  });
+});
+
+/** The hunt drawer as designed: Write one by hand, Add a saved query and Add indicators beside Copy; "What did it find?"
+ *  under them, with Attach a screenshot. */
+const huntCopyRow = sameLine('.tide-hunt [data-copy-target]', '#hunt-write', '#hunt-pick', '#hunt-add-iocs');
+const huntFound = [visible('.tide-hunt-found > h3'), above('.tide-hunt [data-copy-target]', '.tide-hunt-found > h3'), visible('.tide-hunt-found [data-pick="files-input"]')];
+const huntAsDesigned = [huntCopyRow, ...huntFound];
+
+/** The header's badges: its kind, and its due date said with how it stands ("Due Thu Nov 12 · due soon"), one badge. */
+const actionHeadAsDesigned = [visible('.tide-action-badges .tide-action-head-kind'), says('.tide-action-badges .tide-action-due', '^Due \\w{3} \\w{3} \\d+ · '),
+  hidden('.tide-action-badges > .tide-badge-warn:not(.tide-action-due)')];
 
 /** Setup: wider letters, and the demo's "Every indicator sweep (XQL)" chosen from the list (it fills in from any action
  * with indicators, as the design shows it). */
@@ -1777,8 +2722,8 @@ const pages = [
   { name: 'today-note-cancelled', route: '/', setup: noteEdited('Cancel'), widths: [1920],
     rules: [focusOn('section[aria-labelledby="team-note-h"] button.tide-note-edit')] },
   // The open overlay's backdrop visibly dims the page under it, light and dark.
-  { name: 'today-scrim', route: '/', setup: toggleRail, widths: [1440, 780], rules: [dims(15)] },
-  { name: 'today-scrim-dark', route: '/', setup: darkWide, widths: [1440, 780], rules: [dims(15)] },
+  { name: 'today-scrim', route: '/', setup: toggleRail, widths: [1440, 780], rules: [dims(15, true)] },
+  { name: 'today-scrim-dark', route: '/', setup: darkWide, widths: [1440, 780], rules: [dims(15, true)] },
   { name: 'today-rail-closed', route: '/', setup: toggleRail, widths: [1920, 1500],
     rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), oneRow('.tide-steps'), fits('.tide-page-head')] },
   { name: 'today-rail-shut', route: '/', setup: wideFont, widths: [1440, 780],
@@ -1787,7 +2732,7 @@ const pages = [
   { name: 'today-rail-over', route: '/', setup: toggleRail, widths: [1440, 780, 400],
     rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), fits('.tide-rail-body'), fits('#tide-rail .tide-card'), focusIn('#tide-rail'),
       attr('#tide-rail', 'role', 'dialog'), attr('#tide-rail', 'aria-modal', 'true'), attr('#tide-rail', 'aria-label', 'Beside the brief'),
-      tabStaysIn('#tide-rail', 40)] },
+      underIsInert, ...tabWraps('#tide-rail', 40)] },
   // Another day's brief draws the same panel in its rail.
   { name: 'day-rail', route: '/briefs/{sent}', setup: wideFont, widths: [1920, 1500],
     rules: [noSidewaysScroll, visible('#tide-rail .tide-card[aria-labelledby="meeting-h"]'), besides('#main-content', '#tide-rail'), fits('.tide-page-head'), fits('#tide-rail .tide-card')] },
@@ -1833,6 +2778,15 @@ const pages = [
   // Someone who can't edit reads the preview as the page: one column with the Review card above it, not a narrow strip.
   { name: 'editor-viewer', route: '/articles/{vpnArticle}?roles=Viewer', setup: wideFont, widths: [1920, 1440, 780],
     rules: [noSidewaysScroll, visible('.tide-editor-side .tide-reader'), sameColumn('.tide-review-card', '.tide-editor-side'), fits('.tide-editor-side')] },
+  // Autosave in the save bar, first in it: "Saved at" after a pause in typing, or why it held off; the bar one row on a
+  // wide window, and wrapping within the window on a phone, its words whole.
+  { name: 'editor-autosaved', route: '/articles/{vpnArticle}', setup: autosaved, widths: [1920, 390],
+    rules: [noSidewaysScroll, visible('.tide-sticky-save .tide-autosave'), says('.tide-sticky-save .tide-autosave', /^Saved at \d{1,2}:\d\d [AP]M$/),
+      fits('.tide-sticky-save'), [1000, oneRow('.tide-sticky-save')], onTop('.tide-sticky-save .tide-autosave')] },
+  { name: 'editor-autosave-held', route: '/articles/{vpnArticle}', setup: autosaveHeld, widths: [1920, 390],
+    rules: [noSidewaysScroll, visible('.tide-sticky-save .tide-autosave-note'), says('.tide-sticky-save .tide-autosave-note', /Save to keep it\.$/),
+      fits('.tide-sticky-save'), fits('.tide-sticky-save .tide-autosave-note'), wordsWhole('.tide-sticky-save .tide-autosave-note'),
+      [1000, oneLine('.tide-sticky-save .tide-autosave-note')], onTop('.tide-sticky-save .tide-autosave-note')] },
   { name: 'editor-phone-edit', route: '/articles/{vpnArticle}', setup: wideFont, widths: [780, 400],
     rules: [noSidewaysScroll, visible('.tide-ws-switch'), hidden('#tide-rail'), visible('section[aria-labelledby="sec-assessment"]'), fits('.tide-section-pills'),
       stacked('.tide-editor-pair')] },
@@ -1880,8 +2834,47 @@ const pages = [
   ...['actions-board', 'actions-board-wide-letters'].map(name => ({
     name, route: '/actions?view=open&layout=board', setup: name.endsWith('letters') ? wider : undefined, widths: [[1920, 1080], [1440, 900], [780, 900]],
     rules: [noSidewaysScroll, fits('.tide-kanban'), visible('.tide-kcard'), oneRow('.tide-kcard-head'), fits('.tide-kcard-article'), kevPill('.tide-kcard .tide-kev'),
-      onFirstScreen('.tide-kstrip'), lanesFillTheHeight, chipsAreDropTargets, [1440, oneRow('.tide-kstrip')], [1800, widerThan('.content', 1400)]],
+      onFirstScreen('.tide-kstrip'), lanesFillTheHeight, chipsAreDropTargets, [1440, oneRow('.tide-kstrip')]],
   })),
+  // With the rail closed (]), the board takes the whole window again.
+  { name: 'actions-board-rail-closed', route: '/actions?view=open&layout=board', setup: toggleRail, widths: [[1920, 1080]],
+    rules: [noSidewaysScroll, hidden('#tide-rail'), widerThan('.content', 1400), lanesFillTheHeight] },
+  // The selected action is in the context rail, on the list and the board. From 1500px it's docked beside the page, which
+  // has about 873px at 1500: the list's table and the board's four lanes and closed strip still fit, nothing scrolls
+  // sideways, and the strip is on the first screen. Below 1500px it's closed until ] opens it over the page. Wider letters.
+  { name: 'actions-rail-list', route: '/actions?view=open&layout=list', setup: wideFont, widths: [[1920, 1000], [1680, 1000], [1600, 1000], [1500, 1000]],
+    rules: [noSidewaysScroll, visible('#tide-rail'), besides('#main-content', '#tide-rail'), visible('.tide-action-row.selected'), fits('.tide-dt-scroll'),
+      everyTabShown('[role=group][aria-label="Views"]'), headingsOverColumns, columnFactWording,
+      besideTheTabs('[role=group][aria-label="Views"]', '#view-default', '#save-view'),
+      visible('#tide-rail #rail-about-h'), ...actionsRailHolds] },
+  { name: 'actions-rail-board', route: '/actions?view=open&layout=board', setup: wideFont, widths: [[1920, 1000], [1600, 1000], [1500, 1000]],
+    rules: [noSidewaysScroll, visible('#tide-rail'), besides('.tide-board', '#tide-rail'), fits('.tide-kanban'), lanesOnOneRow, onFirstScreen('.tide-kstrip'),
+      lanesFillTheHeight, oneRow('.tide-kcard-head'), visible('.tide-kcard.selected'), hidden('#tide-rail #rail-about-h'), ...actionsRailHolds] },
+  ...['list', 'board'].map(layout => ({
+    name: `actions-rail-${layout}-narrow`, route: `/actions?view=open&layout=${layout}`, setup: wideFont, widths: [[1440, 900], [780, 900]],
+    rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), visible(layout === 'list' ? '.tide-action-row.selected' : '.tide-kcard.selected')],
+  })),
+  // Open over the page: what it holds, Tab held in it, and on the board Escape closing its Move menu before the rail.
+  ...['list', 'board'].map(layout => ({
+    name: `actions-rail-${layout}-overlay`, route: `/actions?view=open&layout=${layout}`, setup: toggleRail, widths: [[1440, 900], [780, 900]],
+    rules: [visible('#tide-rail'), ...actionsRailHolds, noSidewaysScroll, focusIn('#tide-rail'), attr('#tide-rail', 'role', 'dialog'),
+      ...(layout === 'board' ? [escapeClosesTheMenuFirst] : [tabStaysIn('#tide-rail', 30)])],
+  })),
+  { name: 'actions-rail-board-overlay-move', route: '/actions?view=open&layout=board', setup: toggleRail, widths: [[1440, 900]], rules: [railMoveAsksFirst] },
+  // The board's selection: the keys, a click, T and Enter. The list's keys and Status menu beside the docked rail.
+  { name: 'actions-board-keys', route: '/actions?view=open&layout=board', widths: [[1920, 1000], [1440, 900]], rules: [boardKeys, clickSelectsCard, boardEnterOpens] },
+  // A link to a card (?card=, the demo's sweep, low in the Open lane) lands on it: selected, in view and focused.
+  { name: 'actions-board-card-link', route: '/actions?view=open&layout=board&card={huntAction}', widths: [[1600, 1000], [1440, 900]],
+    rules: [selectedCardInView, railFollowsSelection, articleBeforeHunt, columnFactWording] },
+  { name: 'actions-board-card-link-a', route: '/actions?view=open&layout=board&card=A-{huntAction}', widths: [[1600, 1000]], rules: [selectedCardInView, railFollowsSelection] },
+  // A modal's backdrop covers the docked rail: Save view on the list, a card's close on the board.
+  ...['light', 'dark'].flatMap(theme => [['save', 'list', 'Save view'], ['close', 'board', 'close']].map(([name, layout, open]) => ({
+    name: `actions-rail-scrim-${name}-${theme}`, route: `/actions?view=open&layout=${layout}`, context: { theme }, widths: [[1920, 1000], [1600, 1000]],
+    rules: [scrimCoversRail(open)],
+  }))),
+
+  { name: 'actions-board-take-key', route: '/actions?view=open&layout=board', setup: newUnownedCard, widths: [[1600, 1000]], rules: [boardTakeKey] },
+  { name: 'actions-rail-list-keys', route: '/actions?view=open&layout=list', widths: [[1920, 1000]], rules: [actionKeys, railFollowsSelection, statusMenuByKeyboard] },
   // A card dragged with the mouse onto each chip asks how it closed.
   { name: 'actions-board-drop', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [dropOnEachChip] },
   // A sweep's query is read whole, in the wide column: its long lines wrap, so nothing scrolls sideways inside its box.
@@ -1897,19 +2890,32 @@ const pages = [
   // card: the query wraps, nothing scrolls sideways and Copy is on the first screen. Below 1500px it's closed until `]`
   // opens it over the page. A sweep (its query) and an action of another kind (its checklist).
   { name: 'action-rail-sweep', route: '/actions/{huntAction}', setup: wideFont, widths: [[1920, 1000], [1600, 1000], [1500, 1000]],
-    rules: [visible('#tide-rail'), ...actionRailHolds, ...actionPageFits, fits('.tide-hunt pre.tide-query'), onFirstScreen('.tide-hunt [data-copy-target]')] },
+    rules: [visible('#tide-rail'), ...actionRailHolds, ...actionPageFits, fits('.tide-hunt pre.tide-query'), onFirstScreen('.tide-hunt [data-copy-target]'),
+      ...huntAsDesigned, ...actionHeadAsDesigned, raisedRows, sameLine('#files-h', '#tide-rail .tide-files-head [data-pick]')] },
+  // Files from anywhere on the page: docked, and where the rail is closed until it opens over the page to show them.
+  { name: 'action-page-files', route: '/actions/{huntAction}', setup: wideFont, widths: [[1920, 1000], [1440, 900]], rules: [pageTakesFiles] },
+  // A file waiting in Files asks before the page is left; a dialog opened from the overlay gives focus back to Context.
+  { name: 'action-staged-leave', route: '/actions/{huntAction}', setup: fileStaged, widths: [[1920, 1000]], rules: [stagedFilesAsk('.sidebar a[href="triage"]')] },
+  { name: 'action-overlay-leave', route: '/actions/{huntAction}', setup: fileStaged, widths: [[1440, 900]], rules: [dialogFromOverlay('link')] },
+  { name: 'action-overlay-palette', route: '/actions/{huntAction}', setup: openRail, widths: [[1440, 900]], rules: [dialogFromOverlay('palette')] },
+  { name: 'action-hunt-adders', route: '/actions/{huntAction}', setup: wideFont, widths: [[1440, 900]], rules: [oneAdderAtATime] },
+  // A file dropped where nothing takes it stays put: on pages with no drop target, and for whoever can't add files.
+  ...[['drop-today', '/'], ['drop-triage', '/triage'], ['drop-action-viewer', '/actions/{huntAction}?as=dropviewer&roles=Viewer']].map(([name, route]) => (
+    { name, route, widths: [[1440, 900]], rules: [fileDropStays] })),
   { name: 'action-rail-other', route: '/actions/{detailAction}', setup: wideFont, widths: [[1920, 1000], [1500, 1000]],
     rules: [visible('#tide-rail'), visible('#tide-rail .tide-facts'), visible('#tide-rail #files'), hidden('.content #files'), fits('.tide-rail-body > *'),
       ...actionPageFits] },
   { name: 'action-rail-narrow', route: '/actions/{huntAction}', setup: wideFont, widths: [[1440, 900], [780, 900]],
-    rules: [hidden('#tide-rail'), visible('#tide-rail-toggle'), ...actionPageFits, fits('.tide-hunt pre.tide-query')] },
+    rules: [hidden('#tide-rail'), visible('#tide-rail-toggle'), ...actionPageFits, fits('.tide-hunt pre.tide-query'), ...actionHeadAsDesigned,
+      [1440, huntCopyRow], ...huntFound, hidden('.tide-page-drop')] },
   { name: 'action-rail-closed', route: '/actions/{huntAction}', setup: toggleRail, widths: [[1600, 1000]],
     rules: [hidden('#tide-rail'), widerThan('.tide-action-main', 1100), ...actionPageFits] },
   // Open over the page it's a modal dialog: named, the page dimmed behind it, Tab held in it; Escape, Close and a click
   // on the backdrop each close it and give focus back to the Context button; its Files box still takes a drop and a paste.
   { name: 'action-rail-overlay', route: '/actions/{huntAction}', setup: toggleRail, widths: [[1440, 900], [780, 900], [400, 800]],
     rules: [visible('#tide-rail'), ...actionRailHolds, noSidewaysScroll, focusIn('#tide-rail'), attr('#tide-rail', 'role', 'dialog'),
-      attr('#tide-rail', 'aria-modal', 'true'), attr('#tide-rail', 'aria-label', 'About this action'), [780, dims(15)], tabStaysIn('#tide-rail', 40)] },
+      attr('#tide-rail', 'aria-modal', 'true'), attr('#tide-rail', 'aria-label', 'About this action'), underIsInert, [780, dims(15, true)],
+      ...tabWraps('#tide-rail', 40)] },
   ...['Escape', 'Close', 'backdrop'].map(how => ({ name: `action-rail-overlay-${how.toLowerCase()}`, route: '/actions/{huntAction}', setup: toggleRail,
     widths: how === 'backdrop' ? [[1440, 900], [780, 900]] : [[1440, 900], [780, 900], [400, 800]], rules: [overlayClosesBy(how)] })),
   { name: 'action-rail-overlay-files', route: '/actions/{detailAction}', setup: toggleRail, widths: [[1440, 900]], rules: [railFilesTakeDropAndPaste] },
@@ -1966,6 +2972,43 @@ const pages = [
   // the list, and Escape closes the rail without closing the reading pane (or keeping it closed).
   { name: 'triage-rail-keys', route: `/triage?as=r1${run}`, setup: openRail, widths: [1440],
     rules: [visible('#tide-rail'), visible('.tide-reading'), railKeysStayInTheRail, escapeClosesTheRailOnly] },
+  // The decision's Attach to… (in the selected row, or under the reading pane where the pane shows) and the account
+  // menu close when done with, and their Escape is theirs alone: Triage's own (the reading pane's) doesn't hear it. A
+  // press on a part of one that takes no focus leaves it open. Signed in as someone of this run's own, as the pane's
+  // state is kept. The Attach panel stays inside the page, however narrow.
+  { name: 'triage-attach-popout', route: `/triage?as=a1${run}`, widths: [1440, 800],
+    rules: popoutCloses('Attach to…', { wrap: '.tide-triage-decide .tide-attach', opener: '> button', panel: '.tide-attach-panel', inside: 'input', bare: '.tide-attach-panel .form-text' }) },
+  { name: 'triage-attach-fits', route: '/triage', setup: openFirst('.tide-triage-decide .tide-attach > button', '.tide-attach-panel'),
+    widths: [1920, 1440, 1000, 800, 400], rules: [insidePage('.tide-attach-panel')] },
+  { name: 'triage-account-popout', route: `/triage?as=a2${run}`, widths: [1440, 800],
+    rules: popoutCloses('the account menu', { wrap: '.tide-profile', opener: '.tide-profile-btn', panel: '.tide-popover', inside: '.tide-popover button' }) },
+  { name: 'brief-export-popout', route: '/briefs/{today}', widths: [1440],
+    rules: popoutCloses('Export indicators', { wrap: '.tide-export', opener: '> button', panel: '.tide-export-panel', inside: '.tide-export-panel a', bare: '.tide-export-panel .tide-field-label' }) },
+  // The menu buttons and + Filter the same way: the Actions list's Status menu, + Filter there, and an action's More.
+  { name: 'actions-status-popout', route: '/actions?view=open&layout=list', widths: [1440],
+    rules: popoutCloses('the Status menu', { wrap: '.tide-table .tide-menubutton', opener: '.tide-menubutton-btn', panel: '.tide-menubutton-pop', inside: '[role=menuitem]' }) },
+  { name: 'actions-filter-popout', route: '/actions?view=open&layout=list', widths: [1440, 800],
+    rules: popoutCloses('+ Filter', { wrap: '.tide-filter-menu', opener: '.tide-filter-add', panel: '.tide-filter-pop', inside: '[role=menuitem]' }) },
+  { name: 'action-more-popout', route: '/actions/{huntAction}', widths: [1440],
+    rules: popoutCloses('the More menu', { wrap: '.tide-menubutton', opener: '.tide-menubutton-btn', panel: '.tide-menubutton-pop', inside: '[role=menuitem]' }) },
+  // Each popout opens in place on a narrow or short window: no sideways scroll, nothing wider than what shows, inside
+  // the window top to bottom (upward where there's more room above), never over its button, and nothing of it cut off.
+  ...[
+    ['triage', '/triage', 'Attach to…', '.tide-triage-decide .tide-attach > button', '.tide-attach-panel'],
+    ['account', '/triage', 'the account menu', '.tide-profile-btn', '.tide-profile .tide-popover'],
+    ['export', '/briefs/{today}', 'Export indicators', '.tide-export > button', '.tide-export-panel'],
+    ['status', '/actions?view=open&layout=list', 'the Status menu', '.tide-table .tide-menubutton-btn', '.tide-menubutton-pop'],
+    ['filter', '/actions?view=open&layout=list', '+ Filter', '.tide-filter-menu .tide-filter-add', '.tide-filter-pop'],
+    ['action-more', '/actions/{huntAction}', 'the More menu', '.tide-menubutton-btn', '.tide-menubutton-pop'],
+    ['library-more', '/library/queries', 'the entry’s More menu', '.tide-library-entry .tide-menubutton-btn', '.tide-menubutton-pop'],
+  ].map(([name, route, label, opener, panel]) => ({ name: `popout-in-place-${name}`, route, widths: [[1024, 900], [780, 900], [780, 380], [400, 800], [400, 330]],
+    rules: [opensInPlace(label, opener, panel)] })),
+  // Focus after a dialog opened from a popout: back on More once Delete is cancelled, and on + Filter after the palette.
+  { name: 'library-delete-focus', route: '/library/queries', widths: [1440], rules: [deleteCancelledFocusesMore] },
+  { name: 'palette-over-filter', route: '/actions?view=open&layout=list', widths: [1440], rules: [paletteGivesFocusBack] },
+  // Save view: Enter in its Name box saves it, and the new view's menu is named for what it offers. Someone of this
+  // run's own, so no one else's Actions shows the view.
+  { name: 'save-view-enter', route: `/actions?view=open&layout=list&as=sv${run}`, widths: [1440], rules: [saveViewByEnter] },
   // Triage's context rail: what TIDE knows about the selected item. From 1500px it's docked open beside the list and the
   // reading pane (triageBesideTheRail): for a covered report its coverage and story, for a covered group the other
   // reports with Attach all and Not the same, for a report naming a CVE its facts.
@@ -1993,7 +3036,8 @@ const pages = [
   // and give focus back to the Context button (and Escape leaves the reading pane alone: triage-rail-keys).
   { name: 'triage-rail-overlay', route: '/triage', setup: railOverOn('covered'), widths: [[1440, 900], [780, 900]],
     rules: [noSidewaysScroll, visible('#tide-rail'), ...triageRailFits, visible('#tide-rail #rail-covered-h'), focusIn('#tide-rail'),
-      attr('#tide-rail', 'role', 'dialog'), attr('#tide-rail', 'aria-label', 'What TIDE knows'), [780, dims(15)], tabStaysIn('#tide-rail', 30)] },
+      attr('#tide-rail', 'role', 'dialog'), attr('#tide-rail', 'aria-label', 'What TIDE knows'), underIsInert, [780, dims(15, true)],
+      ...tabWraps('#tide-rail', 30)] },
   ...['Escape', 'Close', 'backdrop'].map(how => ({ name: `triage-rail-overlay-${how.toLowerCase()}`, route: '/triage', setup: railOverOn('covered'),
     widths: [[1440, 900], [780, 900]], rules: [overlayClosesBy(how), visible('.tide-triage-row.selected')] })),
   // J and K pressed quickly land on the row they were pressed for: on the page (the selection isn't pulled back by a
@@ -2009,6 +3053,31 @@ const pages = [
     rules: [noSidewaysScroll, visible('.tide-table .tide-badge-off'), notInside('.tide-filterbar', '.tide-card'), visible('#stack-team'),
       says('.tide-filterbar .tide-dt-count', 'products · most pressing first'), [1000, says('.tide-stack-table thead th:nth-child(5)', '^Right now$')],
       fits('.tide-stack-list')] },
+  // Our stack's context rail: a row is selected, and the selected product is in the rail. From 1500px it's docked open
+  // beside the page, which has about 873px: the table fits beside it with no sideways scroll, and the rail's flat
+  // sections (facts, the buttons, in triage now, articles, open actions, notes) each fit the column. Below 1500px it's
+  // closed until `]` opens it over the page, where it's a modal dialog. The 780px stacked rows stay.
+  { name: 'stack-rail', route: '/stack', setup: wideFont, widths: [1920, 1600, 1500],
+    rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), besides('#main-content', '#tide-rail'), fits('.tide-stack-list'), fits('.tide-stack-table td'),
+      visible('.tide-stack-item.selected'), attr('.tide-stack-item.selected', 'aria-current', 'true'), attr('#tide-rail', 'role', null),
+      visible('#tide-rail .tide-rail-head kbd'), visible('#tide-rail-close'), flat('#tide-rail .tide-rail-body > section'),
+      fits('.tide-rail-body'), fits('#tide-rail .tide-rail-body > section'), fits('#tide-rail .tide-stack-rail-buttons'), fits('#tide-rail .tide-facts'),
+      visible('#tide-rail section[aria-labelledby="rail-triage-h"]'), visible('#tide-rail section[aria-labelledby="rail-articles-h"]'),
+      visible('#tide-rail section[aria-labelledby="rail-open-actions-h"]'), visible('#tide-rail section[aria-labelledby="rail-notes-h"]'),
+      linksAlike('#tide-rail .tide-rail-list a'),
+      ringOnFocus('#tide-rail .tide-stack-rail-buttons a, #tide-rail .tide-stack-rail-buttons button')] },
+  // Stacked on a narrow window, the selected row's accent sits clear of the text of each of its lines.
+  { name: 'stack-rail-stacked', route: '/stack', setup: wideFont, widths: [780, 641], rules: [clearOfEdge('.tide-stack-item.selected', 5)] },
+  { name: 'stack-rail-shut', route: '/stack', setup: wideFont, widths: [1440, 780],
+    rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), fits('.tide-stack-list'), visible('.tide-stack-item.selected'),
+      [901, fits('.tide-stack-table td')]] },
+  { name: 'stack-rail-closed', route: '/stack', setup: toggleRail, widths: [1920, 1500],
+    rules: [noSidewaysScroll, hidden('#tide-rail'), visible('#tide-rail-toggle'), fits('.tide-stack-list')] },
+  { name: 'stack-rail-over', route: '/stack', setup: toggleRail, widths: [1440, 780],
+    rules: [noSidewaysScroll, visible('#tide-rail .tide-card'), fits('.tide-rail-body'), fits('#tide-rail .tide-rail-body > section'), focusIn('#tide-rail'),
+      attr('#tide-rail', 'role', 'dialog'), attr('#tide-rail', 'aria-modal', 'true'), tabStaysIn('#tide-rail', 40)] },
+  // J and K move the selected row and the rail follows; a click selects; Enter opens the product.
+  { name: 'stack-keys', route: '/stack', widths: [1920, 1440], rules: [stackKeys] },
   // The Library: one header, the one search on the tab row beside the tabs, and the list high on the page; its findings,
   // tab by tab, for a search's words.
   { name: 'library', route: '/library/queries', setup: wideFonts, widths: [1920, 1440, 780],
@@ -2018,7 +3087,10 @@ const pages = [
       [1000, sameLine('.tide-library-entry h3', '.tide-library-entry [data-copy-target]')], [1440, reachesBottom('.tide-library-entry', 24)],
       visible('#sq-retired'), hidden('.form-switch #sq-retired')] },
   // The entry's More menu opens wholly in view: Retire and Delete aren't cut off by the scrolling detail panel.
-  { name: 'library-more', route: '/library/queries', setup: openEntryMore, widths: [1920, 1440], rules: [menuItemsVisible] },
+  { name: 'library-more', route: '/library/queries', setup: openEntryMore, widths: [1920, 1440, 780, 400], rules: [menuItemsVisible, insidePage('.tide-menubutton-pop')] },
+  // The entry's More menu closes when done with, as every popout does.
+  { name: 'library-more-popout', route: '/library/queries', widths: [1920, 1440, 780, 400],
+    rules: popoutCloses('the entry’s More menu', { wrap: '.tide-library-entry .tide-menubutton', opener: '.tide-menubutton-btn', panel: '.tide-menubutton-pop', inside: '[role=menuitem]' }) },
   { name: 'library-search', route: '/library/queries?q=sweep', setup: wideFonts, widths: [1440, 780], rules: [noSidewaysScroll, visible('#library-find'), visible('.tide-library-list')] },
   // The selected entry's context in the rail: docked and open from 1500px, with the list and the entry fitting beside
   // it (about 870px); closed below that until asked for, and never a sideways scroll. Wider letters (LETTER_SPACING).
@@ -2029,11 +3101,19 @@ const pages = [
   // Below 1500px the rail opens over the page as a dialog, holds what it holds there too, and Escape closes it.
   { name: 'library-rail-overlay', route: '/library/queries', setup: libraryOverlay, widths: [1440, 780],
     rules: [noSidewaysScroll, ...libraryRailHolds, attr('#tide-rail', 'role', 'dialog'), overlayClosesBy('Escape')] },
+  // Open over the Library, the page under it is dimmed and inert, and Tab and Shift+Tab wrap within the rail.
+  { name: 'library-rail-overlay-focus', route: '/library/queries', setup: libraryOverlay, widths: [1440, 780],
+    rules: [underIsInert, dims(15, true), ...tabWraps('#tide-rail', 30)] },
   // Each tab's entry has its rail (the demo has no open outreach action, so a template's isn't tried there).
   { name: 'library-rail-templates', route: '/library/templates', setup: wideFont, widths: [1920, 1500],
     rules: [visible('#tide-rail .tide-lib-facts'), visible('#tide-rail #lib-fills-h'), visible('#tide-rail #lib-used-h'), ...libraryFitsBesideRail.slice(0, 6), chipHasRoom, ...rowsTwoLines] },
   { name: 'library-rail-playbooks', route: '/library/playbooks', setup: wideFont, widths: [1920, 1500],
     rules: [visible('#tide-rail .tide-lib-facts'), visible('#tide-rail #lib-used-h'), ...libraryFitsBesideRail.slice(0, 6), chipHasRoom, ...rowsTwoLines] },
+  // Someone who works actions but has none open of the entry's kind (a new sign-in, in no team): Try it says so in its
+  // section, one short line within the rail, rather than the section going.
+  ...['queries', 'templates', 'playbooks'].map(tab => ({ name: `library-rail-none-${tab}`, route: `/library/${tab}?as=Nobody${run}&roles=ActionOwner`,
+    setup: wideFont, widths: [1920, 1440, 780], rules: [[1500, visible('#tide-rail #lib-try-h')], [1500, visible('#tide-rail .tide-lib-try-none')],
+      [1500, oneLine('#tide-rail .tide-lib-try-none', 2)], [1500, fits('#tide-rail .tide-lib-try')], hidden('#lib-try-action'), noSidewaysScroll] })),
   // Copy filled in puts exactly the preview on the clipboard.
   { name: 'library-rail-copy', route: '/library/queries', setup: everyIndicatorSweep, widths: [1920], context: clipboard,
     rules: [copiesExactly('[data-copy-target="lib-try-text"]', '#lib-try-text')] },
@@ -2056,7 +3136,7 @@ const pages = [
     rules: [hidden('#tide-rail'), widerThan('.content', 1100), ...searchPageFits] },
   { name: 'search-rail-overlay', route: '/search?q=203.0.113.45', setup: toggleRail, widths: [[1440, 900], [780, 900]], context: clipboard,
     rules: [visible('#tide-rail'), ...searchRailHolds(), noSidewaysScroll, focusIn('#tide-rail'), attr('#tide-rail', 'role', 'dialog'),
-      attr('#tide-rail', 'aria-label', 'Do something with it'), tabStaysIn('#tide-rail', 30),
+      attr('#tide-rail', 'aria-label', 'Do something with it'), underIsInert, ...tabWraps('#tide-rail', 30),
       copiesExactly('#tide-rail [data-copy-target="lookup-query"]', '#lookup-query')] },
   // A search for words has no rail, and its page is as before.
   { name: 'search-words', route: '/search?q=gateway', widths: [1920, 780], rules: [noSidewaysScroll, hidden('#tide-rail'), hidden('#tide-rail-toggle')] },
@@ -2099,8 +3179,17 @@ const pages = [
   // one of the demo's new items aside.
   { name: 'triage-click-shortlist', route: '/triage', setup: selectReport, widths: [1440], rules: [clickFocusesNextRow('Shortlist')] },
   { name: 'triage-click-dismiss', route: '/triage', setup: selectReport, widths: [1440], rules: [clickFocusesNextRow('Dismiss')] },
+  // Mark checked in the rail: the button goes (it's checked today), and focus goes to the Checked fact it changed, not to
+  // the page's body. Late, as it marks the demo's first product checked.
+  { name: 'stack-mark-checked', route: '/stack', setup: markCheckedFromRail, widths: [1920], rules: [focusIn('#tide-rail [data-rail-checked]')] },
   { name: 'actions-board-close-menu', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [closeKeepsPlace('menu')] },
   { name: 'actions-board-close-drag', route: '/actions?view=open&layout=board', widths: [[1440, 900]], rules: [closeKeepsPlace('drag')] },
+  // Last: it adds a query to the demo's sweep.
+  { name: 'action-hunt-write', route: '/actions/{huntAction}', widths: [[1440, 900]], rules: [writtenQueryAddsOnFirstClick] },
+  { name: 'actions-board-close-click-drag', route: '/actions?view=open&layout=board', widths: [[1600, 1000]], rules: [closeKeepsPlace('click-drag')] },
+  { name: 'actions-board-close-address', route: '/actions?view=open&layout=board', widths: [[1600, 1000]], rules: [addressFollowsAfterClose] },
+  // Last: it changes the demo analyst's default tab and layout.
+  { name: 'actions-default-layout', route: '/actions?view=open&layout=list', setup: analystOnATeam, widths: [[1600, 1000]], rules: [defaultKeepsLayout] },
   // A live meeting of eight, with none, two or five hands up, seen by the presenter and by someone following: who is
   // here and whose hands are up sit in the top bar. By construction, for any number of people and hands: the dots stop
   // at five and a "+N"; how many are here is always whole; the hands show as their count, then as many whole names as
@@ -2108,12 +3197,22 @@ const pages = [
   // has them; the slide still fits between the two. Wider letters. Last of all: the meeting stays live after.
   ...['presenter', 'follower'].flatMap(as => [0, 2, 5].map(hands => (
     { name: `present-people-${as}-${hands}`, route: '/present/{today}', setup: meetingOf(as, hands), widths: [1920, 1440, 1100, 1000, 901, 900, 780],
-      rules: [noSidewaysScroll, fits('.tide-present-top'), fits('.tide-present-title'), fits('.tide-present-people'),
+      rules: [noSidewaysScroll, fits('.tide-present-top'), fits('.tide-present-title'), fits('.tide-present-people'), ...(hands ? [] : [titleTakesRoom]),
         inWindow('.tide-present-top :is(button, a, select)'), rowsAtMost('.tide-present-top > *', 2),
         visible('.tide-present-top .tide-present-people .tide-presence-dot'), shownCount('.tide-present-people .tide-presence-dot', 6), countWhole,
         ...(hands ? [visible('.tide-hands-n'), namesWhole] : [hidden('.tide-hands-btn')]),
         hidden('.tide-present-bottom .tide-presence'), hidden('.tide-present-bottom .tide-hands-btn'),
         inOrder('.tide-present-top', '.tide-slide', '.tide-present-bottom'), slideFits] }))),
+  // The title takes the room there is before it's cut: a
+  // meeting of three, no hands, as presenter and follower.
+  ...['presenter', 'follower'].map(as => (
+    { name: `present-title-room-${as}`, route: '/present/{today}', setup: meetingOf(as, 0, 3), widths: [1920, 1440],
+      rules: [titleTakesRoom, fits('.tide-present-top')] })),
+  // The list of hands closes as the shared popouts do: Escape (focus back on its count), a press outside; and it shuts
+  // when the last hand goes down, never opening again by itself.
+  { name: 'present-hands-escape', route: '/present/{today}', setup: handsListEscaped, widths: [1440], rules: [hidden('#present-hands'), focusOn('.tide-hands-btn')] },
+  { name: 'present-hands-outside', route: '/present/{today}', setup: handsListPressedOutside, widths: [1440], rules: [hidden('#present-hands')] },
+  { name: 'present-hands-emptied', route: '/present/{today}', setup: handsListAfterEmpty, widths: [1440], rules: [hidden('#present-hands'), attr('.tide-hands-btn', 'aria-expanded', 'false')] },
   // The presenter's list of hands, opened from the top bar: each hand in order with its Lower, and Clear all, in the window.
   { name: 'present-hands-list', route: '/present/{today}', setup: handsListOpen, widths: [1920, 1100, 901, 780],
     rules: [inWindow('#present-hands :is(button, li)'), shownCount('#present-hands li', 5), fits('#present-hands'), visible('#present-hands .tide-hands-clear')] },

@@ -147,8 +147,13 @@ window.tideRail = (function () {
         // Only a dialog that's showing: the reconnect dialog is always in the markup, hidden until it's needed.
         var dialogUnder = !!r && Array.prototype.some.call(document.querySelectorAll('[role="dialog"], [role="alertdialog"]'),
             function (d) { return !r.contains(d) && d.getClientRects().length > 0; });
+        // A dialog opening over the page closes the overlay. Focus that was in it (or dropped to the body as it went) moves
+        // to the Context button first, so the dialog, when it closes, gives focus back there and not to the body.
+        var lost = dialogUnder && over() && (r.contains(document.activeElement) || document.activeElement === document.body);
         if (!r || dialogUnder) root.removeAttribute('data-rail-over');
         sync();
+        var btn = lost && toggleBtn();
+        if (btn) btn.focus();
     }
     // Blazor draws the button once, as closed; this keeps what it says right, and the page under the overlay inert:
     // on load, when a page with a rail starts, on each toggle, and when the window's width changes where the rail sits.
@@ -181,16 +186,31 @@ window.tideRail = (function () {
         window.tidePrefs.set('rail', close ? 'closed' : 'open');
         sync();
     }
+    // Opens the rail if it's closed, to show something that came to it (files dropped on the page). Docked, that isn't
+    // remembered: the person didn't choose it.
+    function show() {
+        if (!rail() || isOpen()) return;
+        if (!docks()) { setOver(true); return; }
+        root.removeAttribute('data-rail');
+        sync();
+    }
     // A page with a rail has started: an overlay left open on the page before doesn't open over this one.
     function start() {
         root.removeAttribute('data-rail-over');
         sync();
     }
     window.addEventListener('resize', function () { if (rail()) sync(); });
+    // Something in the closed rail asks to be seen (files that came to its Files box: paste-drop.js).
+    document.addEventListener('tide:reveal', function (e) {
+        var r = rail();
+        if (!r || !r.contains(e.target)) return;
+        show();
+        e.target.scrollIntoView({ block: 'nearest' });
+    });
     sync();
     // Whether the page has a rail, so "]" does something (the "?" list names the key only then).
     function has() { return !!rail(); }
-    return { toggle: toggle, start: start, over: over, has: has };
+    return { toggle: toggle, show: show, start: start, over: over, has: has };
 })();
 
 // Copies text to the clipboard (the Copy buttons on indicators). Returns whether it worked.
@@ -207,7 +227,10 @@ document.addEventListener('click', function (e) {
     // The Context button, and the rail's own Close (shown only while the rail is, so toggling closes it). A click on the
     // overlay's backdrop (drawn by the rail itself, beside it) closes it too.
     if (e.target.closest('#tide-rail-toggle, #tide-rail-close')) { window.tideRail.toggle(); return; }
-    if (e.target.id === 'tide-rail' && window.tideRail.over() && e.clientX < e.target.getBoundingClientRect().left) { window.tideRail.toggle(); return; }
+    if (e.target.id === 'tide-rail' && window.tideRail.over()) {
+        var box = e.target.getBoundingClientRect();
+        if (e.clientX < box.left || e.clientX > box.right || e.clientY < box.top || e.clientY > box.bottom) { window.tideRail.toggle(); return; }
+    }
     // Choosing a link closes the phone menu, so the page it opens is what you see.
     if (window.tideNav.isOpen() && e.target.closest('#tide-nav-links a')) window.tideNav.setOpen(false);
     // The circuit-disconnect modal: retry the connection, or reload when the server lost the session.

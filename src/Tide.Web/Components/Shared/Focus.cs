@@ -9,10 +9,11 @@ public static class Focus
     /// <summary>
     /// Focuses <paramref name="element"/>, doing nothing when the tab has gone or nothing is rendered interactively (a
     /// prerender or a test render); with <paramref name="orGone"/>, also when the element has left the page meanwhile.
+    /// With <paramref name="preventScroll"/> the page stays where it is (a popout placed in view already).
     /// </summary>
-    public static async Task TryFocusAsync(this ElementReference element, bool orGone = false)
+    public static async Task TryFocusAsync(this ElementReference element, bool orGone = false, bool preventScroll = false)
     {
-        try { await element.FocusAsync(); }
+        try { await element.FocusAsync(preventScroll); }
         catch (JSDisconnectedException) { /* the tab has gone */ }
         catch (InvalidOperationException) { /* not rendered interactively */ }
         catch (JSException) when (orGone) { /* not drawn after all */ }

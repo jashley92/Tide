@@ -51,14 +51,17 @@ public static class Shortcuts
             case "present":
                 groups.Add(Present);
                 break;
+            case "stack" when segments.Length == 1:
+                groups.Add(Stack);
+                break;
             // A tab that lists entries (the first, when the address names none).
             case LibraryTabs.Root when LibraryTabs.All.FirstOrDefault(t => segments.Length == 1 || t.Key.Equals(segments[1], StringComparison.OrdinalIgnoreCase)) is { Topic: not null }:
                 groups.Add(Library);
                 break;
             // The list or the board, as the address says (it always names its layout once the page has drawn).
             case "actions" when segments.Length == 1:
-                groups.Add(!relativePath.Contains("layout=list", StringComparison.OrdinalIgnoreCase) ? Board
-                    : canTake ? ActionsList : ActionsList with { Keys = [.. ActionsList.Keys.Where(k => k != TakeKey)] });
+                var group = !relativePath.Contains("layout=list", StringComparison.OrdinalIgnoreCase) ? Board : ActionsList;
+                groups.Add(canTake ? group : group with { Keys = [.. group.Keys.Where(k => k != TakeKey)] });
                 break;
             case "actions" when int.TryParse(segments[1], out _):
                 groups.Add(Screenshots);
@@ -114,6 +117,14 @@ public static class Shortcuts
         new(["Esc"], "Leave full screen, then close a zoomed screenshot"),
     ]);
 
+    private static readonly ShortcutGroup Stack = new("Our stack",
+    [
+        new(["↓", "↑"], "Next and previous product"),
+        new(["J"], "Next product", Letter: true),
+        new(["K"], "Previous product", Letter: true),
+        new(["Enter"], "Open the selected product"),
+    ]);
+
     private static readonly Shortcut TakeKey = new(["T"], "Take the selected action on, when it's yours to take", Letter: true);
 
     private static readonly ShortcutGroup ActionsList = new("Actions list",
@@ -128,6 +139,12 @@ public static class Shortcuts
 
     private static readonly ShortcutGroup Board = new("Actions board",
     [
+        new(["↓", "↑"], "Next and previous card, lane after lane"),
+        new(["J"], "Next card, on to the next lane at the end of one", Letter: true),
+        new(["K"], "Previous card", Letter: true),
+        new(["←", "→"], "On a card: the card beside it, in the next lane with cards"),
+        TakeKey,
+        new(["Enter"], "Open the selected card"),
         new(["Tab", "Enter"], "A card's Move button opens the columns it can go to; Enter on one moves it"),
         new(["Esc"], "Close the Move menu"),
     ]);
