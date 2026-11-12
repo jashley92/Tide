@@ -210,7 +210,9 @@ it reaches the company-wide edition only once someone lowers it (owner decision 
 
 **Route:** `/articles/{id}` · **Workflow:** [writing articles](../workflows/writing-articles.md)
 
-Section pills jump to each part of the article, and a sticky save bar sits along the bottom. Beside the editor is
+The form is one column, in the order the sent brief reads: Assessment, Bottom line, Bullets, Why it matters to us,
+Recommended actions, Screenshots, Indicators and CVEs, then Tags & ATT&CK. Section pills jump to each part of the
+article, and a sticky save bar sits along the bottom. Beside the editor is
 **what readers get**: the article as the team or company-wide edition carries it, with what that edition leaves out
 marked for the writer. Keys 1 and 2 switch the preview between the editions. On today's brief, a stepper ("4 of 5
 ‹ Previous Next ›") walks to the article before or after it, and J and K press it. Someone who can't write articles

@@ -1,5 +1,5 @@
-@* The article editor: an article's fields as pairs of cards, side by side where there's room (Assessment beside Tags &
-   ATT&CK, Bottom line beside Why it matters, Bullets across both, Recommended beside Indicators), under a section index
+@* The article editor: an article's fields as one column of cards in the order the sent brief reads (Assessment, Bottom
+   line, Bullets, Why it matters, Recommended, Screenshots, Indicators, then Tags & ATT&CK), under a section index
    (EditorSectionIndex) that says where each stands and takes you to it, and the sticky bar that saves, marks ready,
    discards or adds the article to today's brief (or says it's on it). It loads the article, keeps the edit version a save must match (a stale copy is refused),
    shows who else has it open, guards leaving with unsaved changes, and takes pasted or dropped screenshots.
@@ -95,10 +95,9 @@ else
         <div class="tide-editor-main">
             <EditorSectionIndex Items="IndexItems(checks, why)" OnJump="FocusAsync" />
 
-            @* The form as pairs of cards, side by side where there's room for both (app.css), one under the other where
-               there isn't: what it is beside how it's tagged, the bottom line beside why it matters to us, the bullets
-               across both, then what to do beside what to look for. *@
-            <div class="tide-editor-pair">
+            @* One column, in the order the sent brief reads (BriefRenderer): what it is, the bottom line (with the draft from the
+               sources that writes it), the bullets, why it matters to us, what to do, the screenshots, what to look for, and
+               last how it's tagged. The page's order is the reading order, so Tab and a screen reader follow it too. *@
             <section class="tide-card tide-section" aria-labelledby="sec-assessment">
                 <h2 id="sec-assessment" tabindex="-1" @ref="_heads[ArticlePart.Assessment]">Assessment</h2>
                 <div class="tide-assess-row">
@@ -200,59 +199,11 @@ else
                 }
             </section>
 
-            @* Scorecard tags, ATT&CK and the context, open beside the assessment. *@
-            <section class="tide-card tide-section" aria-labelledby="sec-tags">
-                <h2 id="sec-tags" tabindex="-1" @ref="_heads[ArticlePart.Tags]">Tags &amp; ATT&amp;CK</h2>
-                <h3 class="tide-subhead">Scorecard tags <span class="tide-tagpick-count">@Tide.Application.Scorecard.ScorecardTagSearch.Summary(_form.TagIds.Count)</span></h3>
-                <ScorecardTagPicker @ref="_tagPicker" Id="tags" Categories="_categories" Chosen="_form.TagIds" ReadOnly="!_canWrite" OnToggle="ToggleTag"
-                                    RetiredName="RetiredTagName" />
-
-                <h3 class="tide-subhead">ATT&amp;CK techniques</h3>
-                @foreach (var id in TechniquesInMatrixOrder())
-                {
-                    var t = AttackCatalog.Find(id);
-                    var gone = t is null ? AttackCatalog.Retired(id) : null;
-                    <span class="tide-chip tide-chip-technique @(t is null ? "tide-chip-retired" : "")"
-                          title="@(t is not null ? string.Join(", ", t.Tactics.Select(AttackMatrix.TacticName)) : gone is not null ? AttackCatalog.RetiredText(gone) : "Not in the ATT&CK catalog")">
-                        @if (t is not null)
-                        {
-                            <a href="@AttackMatrix.TechniqueUrl(t.Id)" target="_blank" rel="noopener noreferrer">@t.Id</a> @t.Name
-                            @if (_rules?.GetValueOrDefault(id) is { } rules) { <RuleCount Rules="rules" /> }
-                        }
-                        else
-                        {
-                            <span class="bi bi-exclamation-triangle" aria-hidden="true"></span>@id<span class="visually-hidden"> (no longer in ATT&amp;CK)</span>
-                        }
-                        @if (_canWrite)
-                        {
-                            <button type="button" aria-label="Remove @id" @onclick="() => RemoveTechnique(id)"><span class="bi bi-x" aria-hidden="true"></span></button>
-                        }
-                    </span>
-                }
-                @if (_form.TechniqueIds.Count == 0) { <p class="tide-muted small mb-2">None tagged.</p> }
-                @if (_canWrite)
-                {
-                    <div>
-                        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => _techniquesOpen = true">
-                            <span class="bi bi-diagram-3 me-1" aria-hidden="true"></span>@(_form.TechniqueIds.Count == 0 ? "Choose techniques" : "Edit techniques")
-                        </button>
-                    </div>
-                }
-
-                <h3 class="tide-subhead">Context</h3>
-                @* The adversary picker is the article's one place to tag threat actors; it saves as it tags, apart from the form. *@
-                <ArticleAdversaryCard ArticleId="_article.Id" CanWrite="_canWrite" />
-                <label class="tide-field-label mt-3" for="sectors">Sectors</label>
-                <input id="sectors" class="form-control form-control-sm" maxlength="500" readonly="@(!_canWrite)" placeholder="Financial services, healthcare" @bind="_form.Sectors" @bind:event="oninput" @bind:after="Touch" />
-            </section>
-            </div>
-
             @if (_canWrite)
             {
                 <DraftAssist ArticleId="Id" Form="_form" OnEdited="Touch" />
             }
 
-            <div class="tide-editor-pair">
             <section class="tide-card tide-section" aria-labelledby="sec-bluf">
                 <h2 id="sec-bluf" tabindex="-1" @ref="_heads[ArticlePart.BottomLine]">Bottom line</h2>
                 <textarea id="f-bluf" class="form-control tide-autogrow tide-grow-2" rows="2" maxlength="600" readonly="@(!_canWrite)" aria-label="Bottom line up front"
@@ -267,6 +218,42 @@ else
                             <button type="button" class="btn btn-link btn-sm p-0" @onclick="StartFromExcerpt">Start from this</button>
                         }
                     </div>
+                }
+            </section>
+
+            <section class="tide-card tide-section" aria-labelledby="sec-bullets">
+                <h2 id="sec-bullets" tabindex="-1" @ref="_heads[ArticlePart.Bullets]">Bullets <span class="tide-count">(@_form.Bullets.Count)</span></h2>
+                @foreach (var (b, i) in _form.Bullets.Select((b, i) => (b, i)).ToList())
+                {
+                    <div class="tide-bullet-row" @key="b">
+                        <span class="tide-dot">&bull;</span>
+                        <textarea id="f-bullet-@i" class="form-control form-control-sm tide-autogrow" rows="1" maxlength="2000" readonly="@(!_canWrite)" aria-label="Bullet @(i + 1)"
+                                  @bind="b.Text" @bind:event="oninput" @bind:after="Touch"></textarea>
+                        <TlpSelect Value="b.Tlp" ValueChanged="v => SetBulletTlp(b, v)" Floor="_form.Tlp" Label="This bullet's TLP" Disabled="@(!_canWrite)" />
+                        @if (_canWrite)
+                        {
+                            <div class="d-flex gap-1">
+                                <button type="button" class="tide-icon-btn" title="Move up" aria-label="Move bullet @(i + 1) up" disabled="@(i == 0)" @onclick="() => MoveBullet(i, -1)"><span class="bi bi-arrow-up" aria-hidden="true"></span></button>
+                                <button type="button" class="tide-icon-btn" title="Remove" aria-label="Remove bullet @(i + 1)" @onclick="() => RemoveBullet(b)"><span class="bi bi-trash3" aria-hidden="true"></span></button>
+                            </div>
+                        }
+                    </div>
+                }
+                @if (_canWrite)
+                {
+                    <div class="d-flex gap-2 mt-2 flex-wrap">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_form.Bullets.Count >= Article.MaxBullets)" @onclick="AddBullet"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add a bullet</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => _showPasteBullets = !_showPasteBullets"><span class="bi bi-list-ul" aria-hidden="true"></span> Paste several</button>
+                    </div>
+                    @if (_showPasteBullets)
+                    {
+                        <div class="mt-2">
+                            <textarea class="form-control form-control-sm tide-autogrow tide-grow-3" rows="5" aria-label="Lines to turn into bullets" placeholder="One bullet per line. Leading -, * or • is dropped."
+                                      @bind="_pasteBullets" @bind:event="oninput"></textarea>
+                            <button type="button" class="btn btn-primary btn-sm mt-2" @onclick="AddPastedBullets">Add as bullets</button>
+                        </div>
+                    }
+                    <div class="form-text">Markdown works: **bold**, _italic_, `code`, [text](https://link). Bare addresses are never made into links.</div>
                 }
             </section>
 
@@ -304,45 +291,16 @@ else
                 @* What we run, always open under the text it informs: tagging saves straight away; Mention adds to the text above. *@
                 <ArticleStackCard ArticleId="_article.Id" CanWrite="_canWrite" OnMention="MentionAsync" />
             </section>
-            </div>
 
-            @* The bullets across both columns, and the screenshots with them. *@
-            <section class="tide-card tide-section" aria-labelledby="sec-bullets">
-                <h2 id="sec-bullets" tabindex="-1" @ref="_heads[ArticlePart.Bullets]">Bullets <span class="tide-count">(@_form.Bullets.Count)</span></h2>
-                @foreach (var (b, i) in _form.Bullets.Select((b, i) => (b, i)).ToList())
-                {
-                    <div class="tide-bullet-row" @key="b">
-                        <span class="tide-dot">&bull;</span>
-                        <textarea id="f-bullet-@i" class="form-control form-control-sm tide-autogrow" rows="1" maxlength="2000" readonly="@(!_canWrite)" aria-label="Bullet @(i + 1)"
-                                  @bind="b.Text" @bind:event="oninput" @bind:after="Touch"></textarea>
-                        <TlpSelect Value="b.Tlp" ValueChanged="v => SetBulletTlp(b, v)" Floor="_form.Tlp" Label="This bullet's TLP" Disabled="@(!_canWrite)" />
-                        @if (_canWrite)
-                        {
-                            <div class="d-flex gap-1">
-                                <button type="button" class="tide-icon-btn" title="Move up" aria-label="Move bullet @(i + 1) up" disabled="@(i == 0)" @onclick="() => MoveBullet(i, -1)"><span class="bi bi-arrow-up" aria-hidden="true"></span></button>
-                                <button type="button" class="tide-icon-btn" title="Remove" aria-label="Remove bullet @(i + 1)" @onclick="() => RemoveBullet(b)"><span class="bi bi-trash3" aria-hidden="true"></span></button>
-                            </div>
-                        }
-                    </div>
-                }
-                @if (_canWrite)
-                {
-                    <div class="d-flex gap-2 mt-2 flex-wrap">
-                        <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_form.Bullets.Count >= Article.MaxBullets)" @onclick="AddBullet"><span class="bi bi-plus-lg" aria-hidden="true"></span> Add a bullet</button>
-                        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => _showPasteBullets = !_showPasteBullets"><span class="bi bi-list-ul" aria-hidden="true"></span> Paste several</button>
-                    </div>
-                    @if (_showPasteBullets)
-                    {
-                        <div class="mt-2">
-                            <textarea class="form-control form-control-sm tide-autogrow tide-grow-3" rows="5" aria-label="Lines to turn into bullets" placeholder="One bullet per line. Leading -, * or • is dropped."
-                                      @bind="_pasteBullets" @bind:event="oninput"></textarea>
-                            <button type="button" class="btn btn-primary btn-sm mt-2" @onclick="AddPastedBullets">Add as bullets</button>
-                        </div>
-                    }
-                    <div class="form-text">Markdown works: **bold**, _italic_, `code`, [text](https://link). Bare addresses are never made into links.</div>
-                }
+            <section class="tide-card tide-section" aria-labelledby="sec-rec">
+                <h2 id="sec-rec" tabindex="-1" @ref="_heads[ArticlePart.Recommended]">Recommended actions</h2>
+                <MarkdownToolbar For="f-rec" Label="Recommended actions" Disabled="!_canWrite" />
+                <textarea id="f-rec" class="form-control tide-autogrow tide-grow-3" rows="3" maxlength="8000" readonly="@(!_canWrite)" aria-label="Recommended actions"
+                          placeholder="e.g. - Hunt for the indicators in the SIEM (last 30 days)  - Patch the affected systems" @bind="_form.RecommendedActions" @bind:event="oninput" @bind:after="Touch"></textarea>
+            </section>
 
-                <h3 id="sec-shots" class="tide-subhead" tabindex="-1" @ref="_heads[ArticlePart.Screenshots]">Screenshots <span class="tide-count">(@_form.Screenshots.Count of @Article.MaxScreenshots)</span></h3>
+            <section class="tide-card tide-section" aria-labelledby="sec-shots">
+                <h2 id="sec-shots" tabindex="-1" @ref="_heads[ArticlePart.Screenshots]">Screenshots <span class="tide-count">(@_form.Screenshots.Count of @Article.MaxScreenshots)</span></h2>
                 @if (_canWrite)
                 {
                     <div id="shot-zone" class="tide-drop-zone">
@@ -376,14 +334,6 @@ else
                         }
                     </div>
                 }
-            </section>
-
-            <div class="tide-editor-pair">
-            <section class="tide-card tide-section" aria-labelledby="sec-rec">
-                <h2 id="sec-rec" tabindex="-1" @ref="_heads[ArticlePart.Recommended]">Recommended actions</h2>
-                <MarkdownToolbar For="f-rec" Label="Recommended actions" Disabled="!_canWrite" />
-                <textarea id="f-rec" class="form-control tide-autogrow tide-grow-3" rows="3" maxlength="8000" readonly="@(!_canWrite)" aria-label="Recommended actions"
-                          placeholder="e.g. - Hunt for the indicators in the SIEM (last 30 days)  - Patch the affected systems" @bind="_form.RecommendedActions" @bind:event="oninput" @bind:after="Touch"></textarea>
             </section>
 
             <section class="tide-card tide-section" aria-labelledby="sec-ind">
@@ -431,7 +381,52 @@ else
                     <IndicatorAdd @ref="_indicatorBox" Have="_form.Indicators" HaveCves="_form.Cves" Adding="AddIndicators" />
                 }
             </section>
-            </div>
+
+            @* Scorecard tags, ATT&CK and the context, open, last: the sent brief ends with its techniques. *@
+            <section class="tide-card tide-section" aria-labelledby="sec-tags">
+                <h2 id="sec-tags" tabindex="-1" @ref="_heads[ArticlePart.Tags]">Tags &amp; ATT&amp;CK</h2>
+                <h3 class="tide-subhead">Scorecard tags <span class="tide-tagpick-count">@Tide.Application.Scorecard.ScorecardTagSearch.Summary(_form.TagIds.Count)</span></h3>
+                <ScorecardTagPicker @ref="_tagPicker" Id="tags" Categories="_categories" Chosen="_form.TagIds" ReadOnly="!_canWrite" OnToggle="ToggleTag"
+                                    RetiredName="RetiredTagName" />
+
+                <h3 class="tide-subhead">ATT&amp;CK techniques</h3>
+                @foreach (var id in TechniquesInMatrixOrder())
+                {
+                    var t = AttackCatalog.Find(id);
+                    var gone = t is null ? AttackCatalog.Retired(id) : null;
+                    <span class="tide-chip tide-chip-technique @(t is null ? "tide-chip-retired" : "")"
+                          title="@(t is not null ? string.Join(", ", t.Tactics.Select(AttackMatrix.TacticName)) : gone is not null ? AttackCatalog.RetiredText(gone) : "Not in the ATT&CK catalog")">
+                        @if (t is not null)
+                        {
+                            <a href="@AttackMatrix.TechniqueUrl(t.Id)" target="_blank" rel="noopener noreferrer">@t.Id</a> @t.Name
+                            @if (_rules?.GetValueOrDefault(id) is { } rules) { <RuleCount Rules="rules" /> }
+                        }
+                        else
+                        {
+                            <span class="bi bi-exclamation-triangle" aria-hidden="true"></span>@id<span class="visually-hidden"> (no longer in ATT&amp;CK)</span>
+                        }
+                        @if (_canWrite)
+                        {
+                            <button type="button" aria-label="Remove @id" @onclick="() => RemoveTechnique(id)"><span class="bi bi-x" aria-hidden="true"></span></button>
+                        }
+                    </span>
+                }
+                @if (_form.TechniqueIds.Count == 0) { <p class="tide-muted small mb-2">None tagged.</p> }
+                @if (_canWrite)
+                {
+                    <div>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => _techniquesOpen = true">
+                            <span class="bi bi-diagram-3 me-1" aria-hidden="true"></span>@(_form.TechniqueIds.Count == 0 ? "Choose techniques" : "Edit techniques")
+                        </button>
+                    </div>
+                }
+
+                <h3 class="tide-subhead">Context</h3>
+                @* The adversary picker is the article's one place to tag threat actors; it saves as it tags, apart from the form. *@
+                <ArticleAdversaryCard ArticleId="_article.Id" CanWrite="_canWrite" />
+                <label class="tide-field-label mt-3" for="sectors">Sectors</label>
+                <input id="sectors" class="form-control form-control-sm" maxlength="500" readonly="@(!_canWrite)" placeholder="Financial services, healthcare" @bind="_form.Sectors" @bind:event="oninput" @bind:after="Touch" />
+            </section>
 
             <HistoryPanel Id="_article.Id" Version="_article.EditVersion" />
 
