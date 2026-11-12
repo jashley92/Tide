@@ -37,10 +37,23 @@ window.tideNav = (function () {
         var btn = document.getElementById('nav-menu-toggle');
         if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
     }
+    // In a window too short for the whole menu, it scrolls: the current page's link is scrolled into the part that shows
+    // (the nearest edge), on load and after each navigation (NavMenu calls this). Only the menu scrolls, never the page,
+    // which scrollIntoView could also move.
+    function reveal() {
+        var menu = document.querySelector('#tide-nav-links .tide-nav');
+        var link = menu && menu.querySelector('a.active, a[aria-current="page"]');
+        if (!link || menu.scrollHeight <= menu.clientHeight) return;
+        var r = link.getBoundingClientRect(), box = menu.getBoundingClientRect();
+        if (r.top < box.top) menu.scrollTop -= box.top - r.top;
+        else if (r.bottom > box.bottom) menu.scrollTop += r.bottom - box.bottom;
+    }
     // The prerendered page, before the circuit renders: the collapse button says what the page shows.
     syncCollapse();
+    reveal();
     return {
-        toggle: function () { apply(!collapsed()); }, collapsed: collapsed, isOpen: isOpen, setOpen: setOpen, start: syncCollapse
+        toggle: function () { apply(!collapsed()); }, collapsed: collapsed, isOpen: isOpen, setOpen: setOpen, reveal: reveal,
+        start: function () { syncCollapse(); reveal(); }
     };
 })();
 
