@@ -129,6 +129,8 @@ public class TriageDecisionTests(TideApp app) : IClassFixture<TideApp>
         At("tide-triage-promote").Should().BePositive();
         At("Shortlist <span").Should().BeGreaterThan(At("tide-triage-promote"));
         At("aria-label=\"Reason for dismissing it\"").Should().BeGreaterThan(At("Shortlist <span"), "Dismiss and its reason close the line");
+        At("Attach to&hellip;").Should().BeGreaterThan(At("Shortlist <span"), "Attach to… is on the line with the others")
+            .And.BeLessThan(At("aria-label=\"Reason for dismissing it\""));
         bar.IndexOf("Dismiss <span class=\"tide-kbd\">X</span>", StringComparison.Ordinal).Should().BeGreaterThan(bar.IndexOf("Reason for dismissing it", StringComparison.Ordinal));
     }
 
