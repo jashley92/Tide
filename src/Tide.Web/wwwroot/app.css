@@ -1556,6 +1556,9 @@ a.tide-filter-item { color: var(--tide-text); text-decoration: none; }
     .tide-present-action.is-beside .tide-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     /* Its status choices three to a row, as on a narrow screen, rather than one row wider than the column. */
     .tide-present-action.is-beside .tide-status-seg { display: grid; grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
+    /* The last row's choices share it, so no blank cell is left after them (seven: the seventh takes the whole row). */
+    .tide-present-action.is-beside .tide-status-opt:last-child:nth-child(3n + 1) { grid-column: 1 / -1; }
+    .tide-present-action.is-beside .tide-status-opt:last-child:nth-child(3n + 2) { grid-column: span 2; }
 }
 
 /* ---- Intake: CVE chips, triage inbox, sources, stories ---- */
