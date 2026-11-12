@@ -209,6 +209,12 @@ public class PresentActionsReviewTests(TideApp app) : IClassFixture<TideApp>
             (row.Stale, row.QuietDays).Should().Be((true, 3), "TIDE's escalation line on the day isn't an update");
             row.LastUpdate.Should().Be("raised by Tester");
             Clock.DayOf(row.Row.LastActivityUtc!.Value).Should().Be(Back(day, 3), "the action table's quiet text counts from the same update");
+
+            // Saved later than its history says it was raised (an import, the demo): its history counts, not the save.
+            await using (var scope = SignedIn(app, SignIn.Analyst))
+                await scope.ServiceProvider.GetRequiredService<AppDbContext>().Actions.Where(a => a.Number == number)
+                    .ExecuteUpdateAsync(u => u.SetProperty(a => a.CreatedAtUtc, DateTimeOffset.UtcNow));
+            (await Review(day)).Rows.Single(o => o.Row.Number == number).QuietDays.Should().Be(3);
         }
         finally { await Retire(); }
     }

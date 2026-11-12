@@ -127,11 +127,11 @@ public class NeedsUpdateTests
     [Fact]
     public void EachRow_SaysEveryReasonItIsThere()
     {
-        Act("a", daysLate: 3, quiet: 4, stale: true).Why.Should().Be("3 days late · quiet 4 business days");
-        Act("b", escalated: true).Why.Should().Be("escalated");
-        Act("c", ActionStatus.Blocked, quiet: 6, stale: true).Why.Should().Be("quiet 6 business days (Blocked)");
-        Act("d", daysLate: 1, quiet: 1).Why.Should().Be("1 day late", "quiet, but not past its limit");
-        Act("e", quiet: 1, stale: true).Why.Should().Be("quiet 1 business day");
+        Act("a", daysLate: 3, quiet: 4, stale: true).Reasons.Should().Equal("3 days late", "quiet 4 business days");
+        Act("b", escalated: true).Reasons.Should().Equal("escalated");
+        Act("c", ActionStatus.Blocked, quiet: 6, stale: true).Reasons.Should().Equal("quiet 6 business days (Blocked)");
+        Act("d", daysLate: 1, quiet: 1).Reasons.Should().Equal(["1 day late"], "quiet, but not past its limit");
+        Act("e", quiet: 1, stale: true).Reasons.Should().Equal("quiet 1 business day");
     }
 
     [Fact]

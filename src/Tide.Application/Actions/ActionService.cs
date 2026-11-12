@@ -135,9 +135,6 @@ public sealed record OutstandingAction(ActionRow Row, int DaysLate, bool NoOneTo
         Stale ? $"quiet {Words.Plural(QuietDays, "business day")}{(Row.Status == ActionStatus.Blocked ? " (Blocked)" : "")}" : null,
     }.OfType<string>()];
 
-    /// <summary><see cref="Reasons"/> in a line: "3 days late · quiet 4 business days".</summary>
-    public string Why => string.Join(" · ", Reasons);
-
     /// <summary>How pressing it is, for the meeting's order: escalated, then P1 and P2 overdue, then blocked and quiet too
     /// long, then the other overdue, then the others quiet too long.</summary>
     public int Pressing =>
@@ -878,10 +875,22 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         if (!Briefs.MeetingAccess.SeatedOn(user, meetings, asOf)) RequireRead(user);
         await using var db = await dbs.CreateAsync(ct);
         var (limits, days) = (clock.StaleLimits, clock.Days);
-        var open = await Rows(db, db.Actions.AsNoTracking().WhereOpen()).ToListAsync(ct);
-        var asked = open
-            .Select(r => (Row: r, Quiet: r.LastActivityUtc is { } at ? NeedsUpdate.QuietDays(clock.DayOf(at), asOf, days) : 0))
-            .Select(x => (x.Row, x.Quiet, Stale: NeedsUpdate.IsStale(x.Row.Status, x.Quiet, limits)))
+        // Every open action, with only what deciding and ranking take (the full row's many counts are read for the few
+        // shown). Its last update is the full row's (Rows): the later of its last comment and its last line by a person.
+        var open = await db.Actions.AsNoTracking().WhereOpen().Select(a => new
+        {
+            a.Id, a.Number, a.Kind, a.Priority, a.TeamId, a.AssigneeId, a.DueDate, a.Status, a.ArticleId, a.CreatedAtUtc, a.EscalatedForDue,
+            Commented = a.Comments.Max(c => (DateTimeOffset?)c.AtUtc),
+            Updated = a.Events.Where(e => e.ByName != ReminderService.EscalatedBy).Max(e => (DateTimeOffset?)e.AtUtc),
+        }).ToListAsync(ct);
+        var asked = open.Select(a =>
+            {
+                var last = new[] { a.Commented, a.Updated }.Max() ?? a.CreatedAtUtc;
+                var row = new ActionRow(a.Id, a.Number, "", a.Kind, a.Priority, a.TeamId, "", a.AssigneeId, null, a.DueDate, a.Status, ActionOutcome.None,
+                    null, a.ArticleId, null, null, 0, a.CreatedAtUtc, EscalatedForDue: a.EscalatedForDue, LastActivityUtc: last);
+                var quiet = NeedsUpdate.QuietDays(clock.DayOf(last), asOf, days);
+                return (Row: row, Quiet: quiet, Stale: NeedsUpdate.IsStale(a.Status, quiet, limits));
+            })
             .Where(x => x.Stale || x.Row.Escalated || x.Row.DueDate < asOf).ToList();
         if (asked.Count == 0) return OpenActionsReview.None;
         var (tlpOf, nobodys) = await HoldingAsync(db, asked.Select(x => x.Row), ct);
@@ -890,9 +899,11 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
                 tlpOf(x.Row)) { QuietDays = x.Quiet, Stale = x.Stale })
             .ToList();
         var ranked = shown.OrderBy(o => o.Pressing).ThenByDescending(o => o.Within).ThenBy(o => o.Row.Number).Take(OutstandingSize).ToList();
-        if (ranked.Count == 0) return OpenActionsReview.None;
-        var last = await LastUpdatesAsync(db, [.. ranked.Where(o => o.Stale).Select(o => o.Row)], ct);
-        return new OpenActionsReview([.. ranked.Select(o => last.TryGetValue(o.Row.Id, out var said) ? o with { LastUpdate = said } : o)], shown.Count);
+        var ids = ranked.Select(o => o.Row.Id).ToList();
+        var full = await Rows(db, db.Actions.AsNoTracking().Where(a => ids.Contains(a.Id))).ToDictionaryAsync(r => r.Id, ct);
+        var said = await LastUpdatesAsync(db, [.. ranked.Where(o => o.Stale).Select(o => o.Row)], ct);
+        return new OpenActionsReview([.. ranked.Where(o => full.ContainsKey(o.Row.Id))
+            .Select(o => o with { Row = full[o.Row.Id], LastUpdate = said.GetValueOrDefault(o.Row.Id) })], shown.Count);
     }
 
     // What each of these was last updated with, in short ("comment by Sam"): its latest comment or history line by a person,
@@ -1058,10 +1069,10 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
         a.Team!.IsExternal, a.HandedFromTeamId, 0, 0, null, a.EscalatedForDue, a.EscalatedAtUtc, false, a.StatusChangedAtUtc,
         // How its hunts went: hits anywhere, else a clean run, else not run (HuntResult's order); none without a query.
         a.Hunts.Max(h => (HuntResult?)h.Result),
-        // When a person last did something to it: the latest of its comments and its history, or when it was raised. TIDE's
-        // own lines (the escalation ladder's, a skipped reminder's) aren't updates.
-        (a.Comments.Max(c => (DateTimeOffset?)c.AtUtc) ?? a.CreatedAtUtc)
-            > (a.Events.Where(e => e.ByName != ReminderService.EscalatedBy).Max(e => (DateTimeOffset?)e.AtUtc) ?? a.CreatedAtUtc)
+        // When a person last did something to it: the latest of its comments and its history (raising it writes a line),
+        // or with neither, when it was saved. TIDE's own lines (the escalation ladder's, a skipped reminder's) aren't updates.
+        (a.Comments.Max(c => (DateTimeOffset?)c.AtUtc) ?? DateTimeOffset.MinValue)
+            > (a.Events.Where(e => e.ByName != ReminderService.EscalatedBy).Max(e => (DateTimeOffset?)e.AtUtc) ?? DateTimeOffset.MinValue)
             ? a.Comments.Max(c => (DateTimeOffset?)c.AtUtc)
             : a.Events.Where(e => e.ByName != ReminderService.EscalatedBy).Max(e => (DateTimeOffset?)e.AtUtc) ?? a.CreatedAtUtc)
         { RecommendationLine = a.RecommendationLine });
