@@ -27,7 +27,7 @@ public sealed class SavedViewService(IAppDbContextFactory dbs, ICurrentUser user
     public static readonly IReadOnlyList<(string Name, int Max)> Parameters =
     [
         ("view", 16), ("layout", 16), ("group", 16), ("rule", 36), ("team", 36), ("assignee", 256), ("q", 200), ("kind", 32),
-        ("priority", 32), ("due", 16), ("status", 32), ("parent", 10), ("teams", 16), ("raised", 16),
+        ("priority", 32), ("due", 16), ("status", 32), ("parent", 10), ("teams", 16), ("raised", 16), ("closed", 2), ("on", 16),
     ];
 
     /// <summary>The person's views, in their order.</summary>
