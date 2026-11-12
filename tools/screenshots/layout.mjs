@@ -868,6 +868,97 @@ const insideOf = (selector, box) => ({
   }, [selector, box]),
 });
 
+/** The meeting the present-people pages share: which one it is ("presenter/5"), and the browsers of its other people,
+ *  kept open across a page's widths (each width opens only its own page) and closed when the next one is set up. */
+let meetingGuests = { key: '', contexts: [] };
+
+/** The meeting's other people, by name. */
+const GUESTS = ['Olive', 'Robin', 'Sam', 'Lee', 'Kim', 'Ana', 'Max'];
+
+/**
+ * Setup: a live meeting on today's brief with `people` in it (eight unless said) and `hands` of them with a hand up, in
+ * order. `as` 'presenter': this page (the dev analyst) starts it, or takes it up again, and the others join in browsers
+ * of their own. 'follower': the dev analyst presents from another browser, the others join, and this page joins as Pat,
+ * following. Wider letters, on the first article's slide.
+ */
+const meetingOf = (as, hands, people = 8) => async (page, demo) => {
+  const key = `${as}/${hands}/${people}`;
+  const browser = page.context().browser();
+  const join = async who => {
+    const { context, page: theirs } = await openPage(browser,
+      { route: `/present/{today}${who ? `?as=${who}&roles=Viewer` : ''}`, viewport: { width: 1440, height: 900 } }, demo);
+    meetingGuests.contexts.push(context);
+    return theirs;
+  };
+  const start = async p => {
+    const button = p.getByRole('button', { name: 'Start the meeting' });
+    if (await button.count()) await button.click();
+    await p.locator('.tide-present-people').waitFor();
+  };
+  if (meetingGuests.key !== key) {
+    for (const c of meetingGuests.contexts) await c.close().catch(() => {});
+    meetingGuests = { key, contexts: [] };
+    const presenter = as === 'presenter' ? page : await join('');
+    await start(presenter);
+    await toArticleSlide(presenter);
+    for (const [i, who] of GUESTS.slice(0, people - (as === 'presenter' ? 1 : 2)).entries()) {
+      const theirs = await join(who);
+      if (i >= hands) continue;
+      await theirs.locator('.tide-present-people').getByRole('button', { name: 'Raise hand' }).click();
+      await theirs.locator('.tide-present-people').getByRole('button', { name: 'Lower hand' }).waitFor();
+    }
+  }
+  if (as === 'presenter') {
+    await start(page);
+    await toArticleSlide(page);
+  } else {
+    await page.goto(`${page.url()}?as=Pat&roles=Viewer`, { waitUntil: 'networkidle' });
+    await settle(page);
+  }
+  await page.waitForFunction(([hands, people]) => document.querySelector('.tide-present-here')?.textContent.startsWith(`${people} here`)
+    && (document.querySelector('.tide-hands-n')?.textContent.trim() ?? String(document.querySelectorAll('.tide-present-people .tide-hands > li').length)) === String(hands), [hands, people], { timeout: 15000 });
+  await wideFont(page);
+};
+
+/** Setup: the presenter's meeting with five hands up, and its list of hands opened from the top bar. */
+const handsListOpen = async (page, demo) => {
+  await meetingOf('presenter', 5)(page, demo);
+  await page.locator('.tide-hands-btn').click();
+  await page.locator('#present-hands').waitFor();
+};
+
+/** Setup: the list of hands opened, then Tab to its first Lower and Escape. */
+const handsListEscaped = async (page, demo) => {
+  await handsListOpen(page, demo);
+  await page.keyboard.press('Tab');
+  await page.waitForTimeout(200);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(500);
+};
+
+/** Setup: the list of hands opened, then a press on the slide, outside it. */
+const handsListPressedOutside = async (page, demo) => {
+  await handsListOpen(page, demo);
+  await page.mouse.click(40, 600);
+  await page.waitForTimeout(500);
+};
+
+/** Setup: the presenter opens the list of hands while one is up; that hand goes down, and then another goes up. The
+ *  list stays shut: it never opens without a click. */
+const handsListAfterEmpty = async (page, demo) => {
+  await meetingOf('presenter', 0, 3)(page, demo);
+  const [olive, robin] = meetingGuests.contexts.map(c => c.pages()[0]);
+  const hand = p => p.locator('.tide-present-people').getByRole('button', { name: /Raise hand|Lower hand/ }).click();
+  await hand(olive);
+  await page.locator('.tide-hands-btn').click();
+  await page.locator('#present-hands').waitFor();
+  await hand(olive);
+  await page.locator('.tide-hands-btn').waitFor({ state: 'detached' });
+  await hand(robin);
+  await page.locator('.tide-hands-btn').waitFor();
+  await page.waitForTimeout(500);
+};
+
 /** Setup: a toast shown while the rail is docked (the opening note saved; whatever the toast says, it's placed alike). */
 async function toastBesideRail(page) {
   await noteEdited(null)(page);
@@ -1435,6 +1526,75 @@ const clipboard = { permissions: ['clipboard-read', 'clipboard-write'] };
 
 /** A rule run in the page: `fn(arg)` returns what's wrong (nothing, when it holds). */
 const holds = (name, fn, arg) => ({ name, check: page => page.evaluate(fn, arg) });
+
+/** Each shown match of `selector` lies wholly within the window: nothing to scroll to, nothing cut off at its edge. */
+const inWindow = selector => holds(`wholly in the window: ${selector}`, selector =>
+  [...document.querySelectorAll(selector)].filter(e => e.getBoundingClientRect().width > 0).flatMap((e, i) => {
+    const r = e.getBoundingClientRect();
+    return r.left < -1 || r.right > innerWidth + 1 || r.top < -1 || r.bottom > innerHeight + 1
+      ? [`${selector} #${i + 1} ("${(e.getAttribute('aria-label') ?? e.textContent).trim().slice(0, 30)}") is at ${Math.round(r.left)}–${Math.round(r.right)}px of a ${innerWidth}px window`] : [];
+  }), selector);
+
+/** How many are here is shown, and whole. */
+const countWhole = holds('the count is shown, whole', () => {
+  const here = document.querySelector('.tide-present-here');
+  const r = here?.getBoundingClientRect();
+  if (!r || r.width === 0) return ['.tide-present-here isn\'t shown'];
+  return here.scrollWidth > here.clientWidth + 1 ? [`"${here.textContent}" is cut to ${Math.round(r.width)}px`] : [];
+});
+
+/** Each raised hand's name in the top bar is whole, or not shown at all (wrapped out of its one line): never cut. */
+const namesWhole = holds('hands\' names whole or not shown', () => {
+  const box = document.querySelector('.tide-hands-names')?.getBoundingClientRect();
+  if (!box) return ['.tide-hands-names isn\'t there'];
+  return [...document.querySelectorAll('.tide-hands-names > span')].flatMap((n, i) => {
+    const r = n.getBoundingClientRect();
+    const out = r.top >= box.bottom - 1 || r.width === 0;
+    const whole = r.left >= box.left - 1 && r.right <= box.right + 1 && r.bottom <= box.bottom + 1 && n.scrollWidth <= n.clientWidth + 1;
+    return out || whole ? [] : [`hand #${i + 1} ("${n.textContent}") is cut: ${Math.round(r.left)}–${Math.round(r.right)}px in ${Math.round(box.left)}–${Math.round(box.right)}px`];
+  });
+});
+
+/** The present top bar's title is cut only when there's no room: who is here then has none to spare (its parts and
+ *  their gaps fill it). */
+const titleTakesRoom = holds('the title is cut only when there\'s no room', () => {
+  const title = document.querySelector('.tide-present-title > span:not(.tide-brand-mark)');
+  const people = document.querySelector('.tide-present-people');
+  if (!title || !people) return ['no title or people in the top bar'];
+  if (title.scrollWidth <= title.clientWidth + 1) return [];
+  const kids = [...people.children].filter(e => e.getBoundingClientRect().width > 0);
+  const used = kids.reduce((sum, e) => sum + e.getBoundingClientRect().width, 0) + parseFloat(getComputedStyle(people).columnGap || '0') * Math.max(0, kids.length - 1);
+  const spare = people.getBoundingClientRect().width - used;
+  return spare <= 2 ? [] : [`the title is cut by ${title.scrollWidth - title.clientWidth}px while who is here has ${Math.round(spare)}px to spare`];
+});
+
+/** The matches of `selector` (the top bar's title, people and tools) take at most `n` rows, by their tops. */
+const rowsAtMost = (selector, n) => holds(`at most ${n} rows: ${selector}`, ([selector, n]) => {
+  const rows = [];
+  for (const e of document.querySelectorAll(selector)) {
+    const r = e.getBoundingClientRect();
+    if (r.width === 0) continue;
+    if (!rows.some(t => Math.abs(t - r.top) < r.height / 2)) rows.push(r.top);
+  }
+  return rows.length <= n ? [] : [`${selector}: ${rows.length} rows`];
+}, [selector, n]);
+
+/** Exactly `n` matches of `selector` are shown. */
+const shownCount = (selector, n) => holds(`${n} shown: ${selector}`, ([selector, n]) => {
+  const shown = [...document.querySelectorAll(selector)].filter(e => e.getBoundingClientRect().height > 0).length;
+  return shown === n ? [] : [`${shown} of ${selector} shown, not ${n}`];
+}, [selector, n]);
+
+
+/** The slide's body fits, shrunk (present.js's --tide-fit) to no less than 80%, and scrolls only once it's at 80%. */
+const slideFits = holds('the slide fits, or scrolls only at 80%', () => {
+  const body = document.querySelector('[data-slide-body]');
+  if (!body) return ['no slide body'];
+  const fit = parseFloat(getComputedStyle(body).getPropertyValue('--tide-fit') || '1');
+  const over = body.scrollHeight - body.clientHeight;
+  if (fit < 0.799) return [`the slide is shrunk to ${fit}, below 80%`];
+  return over > 1 && fit > 0.801 ? [`the slide's body is ${over}px too tall at ${fit}, and could shrink further`] : [];
+});
 
 /** Each item of the open menu is wholly visible: the point at each corner, just inside, is the item (or inside it),
  * not a box that clips it or something drawn over it. */
@@ -3010,6 +3170,32 @@ const pages = [
   { name: 'actions-board-close-address', route: '/actions?view=open&layout=board', widths: [[1600, 1000]], rules: [addressFollowsAfterClose] },
   // Last: it changes the demo analyst's default tab and layout.
   { name: 'actions-default-layout', route: '/actions?view=open&layout=list', setup: analystOnATeam, widths: [[1600, 1000]], rules: [defaultKeepsLayout] },
+  // A live meeting of eight, with none, two or five hands up, seen by the presenter and by someone following: who is
+  // here and whose hands are up sit in the top bar. By construction, for any number of people and hands: the dots stop
+  // at five and a "+N"; how many are here is always whole; the hands show as their count, then as many whole names as
+  // fit; and the tools never leave the window (the top bar takes a second row, at most, instead). The footer no longer
+  // has them; the slide still fits between the two. Wider letters. Last of all: the meeting stays live after.
+  ...['presenter', 'follower'].flatMap(as => [0, 2, 5].map(hands => (
+    { name: `present-people-${as}-${hands}`, route: '/present/{today}', setup: meetingOf(as, hands), widths: [1920, 1440, 1100, 1000, 901, 900, 780],
+      rules: [noSidewaysScroll, fits('.tide-present-top'), fits('.tide-present-title'), fits('.tide-present-people'), ...(hands ? [] : [titleTakesRoom]),
+        inWindow('.tide-present-top :is(button, a, select)'), rowsAtMost('.tide-present-top > *', 2),
+        visible('.tide-present-top .tide-present-people .tide-presence-dot'), shownCount('.tide-present-people .tide-presence-dot', 6), countWhole,
+        ...(hands ? [visible('.tide-hands-n'), namesWhole] : [hidden('.tide-hands-btn')]),
+        hidden('.tide-present-bottom .tide-presence'), hidden('.tide-present-bottom .tide-hands-btn'),
+        inOrder('.tide-present-top', '.tide-slide', '.tide-present-bottom'), slideFits] }))),
+  // The title takes the room there is before it's cut: a
+  // meeting of three, no hands, as presenter and follower.
+  ...['presenter', 'follower'].map(as => (
+    { name: `present-title-room-${as}`, route: '/present/{today}', setup: meetingOf(as, 0, 3), widths: [1920, 1440],
+      rules: [titleTakesRoom, fits('.tide-present-top')] })),
+  // The list of hands closes as the shared popouts do: Escape (focus back on its count), a press outside; and it shuts
+  // when the last hand goes down, never opening again by itself.
+  { name: 'present-hands-escape', route: '/present/{today}', setup: handsListEscaped, widths: [1440], rules: [hidden('#present-hands'), focusOn('.tide-hands-btn')] },
+  { name: 'present-hands-outside', route: '/present/{today}', setup: handsListPressedOutside, widths: [1440], rules: [hidden('#present-hands')] },
+  { name: 'present-hands-emptied', route: '/present/{today}', setup: handsListAfterEmpty, widths: [1440], rules: [hidden('#present-hands'), attr('.tide-hands-btn', 'aria-expanded', 'false')] },
+  // The presenter's list of hands, opened from the top bar: each hand in order with its Lower, and Clear all, in the window.
+  { name: 'present-hands-list', route: '/present/{today}', setup: handsListOpen, widths: [1920, 1100, 901, 780],
+    rules: [inWindow('#present-hands :is(button, li)'), shownCount('#present-hands li', 5), fits('#present-hands'), visible('#present-hands .tide-hands-clear')] },
 ];
 
 // --- the run -----------------------------------------------------------------------------------------------------------

@@ -81,6 +81,76 @@ else
                 <span>@Clock.TeamName daily brief <small>&middot; @Ui.Day(_date)</small></span>
                 @if (_past) { <span class="tide-present-help" title="This brief is being presented or recorded after its day">past day</span> }
             </div>
+            @* Who is here and whose hands are up, for the presenter and everyone following alike: the first few dots and "+N"
+               (a status region, so arrivals and hands are read out), how many are here, the hands as their count and then as
+               many whole names as fit, in the order they went up (a button: the list, where the presenter lowers one or
+               all). A follower's own Raise hand comes before the hands, which take the room that's left. With no meeting, who else has the brief open. *@
+            <div class="tide-present-people">
+                @if (_view is { } meeting)
+                {
+                    var raised = meeting.Hands.Select(h => h.UserId).ToHashSet();
+                    var beyond = meeting.People.Skip(TopBarDots).ToList();
+                    var listOpen = HandsListOpen;   // read on every draw, so it shuts as the last hand goes down
+                    <span class="tide-presence tide-presence-sm" role="status">
+                        @foreach (var p in meeting.People.Take(TopBarDots))
+                        {
+                            var away = meeting.Away(p);
+                            var up = raised.Contains(p.UserId);
+                            <span class="tide-presence-dot tide-avatar-@Ui.AvatarSwatch(p.UserId) @(away ? "is-away" : "") @(up ? "has-hand" : meeting.IsPresenter(p.UserId) ? "is-presenting" : "")" @key="p.UserId" title="@Says(meeting, p)" aria-hidden="true">
+                                @MainLayout.Initials(p.Name)
+                                @if (up) { <span class="tide-presence-edit bi bi-hand-index-thumb-fill"></span> }
+                                else if (away) { <span class="tide-presence-slide">@(p.Slide + 1)</span> }
+                            </span>
+                        }
+                        @if (beyond.Count > 0)
+                        {
+                            <span class="tide-presence-dot tide-presence-more" title="@string.Join(", ", beyond.Select(p => Says(meeting, p)))" aria-hidden="true">+@beyond.Count</span>
+                        }
+                        <span class="visually-hidden">In the meeting: @string.Join(", ", meeting.People.Select(p => Says(meeting, p))).</span>
+                    </span>
+                    <span class="tide-present-here" aria-hidden="true">@Here(meeting)</span>
+                    @if (!Presenting)
+                    {
+                        var mine = raised.Contains(_me);
+                        <button class="btn btn-sm @(mine ? "btn-primary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(mine)" @onclick="ToggleHand">
+                            <span class="bi bi-hand-index-thumb" aria-hidden="true"></span> @(mine ? "Lower hand" : "Raise hand")
+                        </button>
+                    }
+                    @if (meeting.Hands.Count > 0)
+                    {
+                        var names = string.Join(", ", meeting.Hands.Select(h => h.Name));
+                        <div class="tide-hands-box" @ref="_handsHolder">
+                            <button type="button" class="tide-hands-btn" @ref="_handsButton" aria-expanded="@Ui.Aria(listOpen)" aria-controls="present-hands"
+                                    aria-label="@($"{Ui.Plural(meeting.Hands.Count, "hand")} up: {names}")" title="@names" @onclick="ToggleHandsList">
+                                <span class="tide-hands-count"><span class="bi bi-hand-index-thumb" aria-hidden="true"></span><span class="tide-hands-n">@meeting.Hands.Count</span></span>
+                                <span class="tide-hands-names" aria-hidden="true"><i></i>@foreach (var h in meeting.Hands) { <span @key="h.UserId">@h.Name</span> }</span>
+                            </button>
+                            @if (listOpen)
+                            {
+                                <div class="tide-hands-pop" id="present-hands">
+                                    <ol class="tide-hands" aria-label="Hands up, in order">
+                                        @foreach (var h in meeting.Hands)
+                                        {
+                                            <li @key="h.UserId">
+                                                <span class="tide-hand-name">@h.Name</span>
+                                                @if (Presenting)
+                                                {
+                                                    <button type="button" class="btn btn-sm btn-outline-secondary" title="Lower @h.Name's hand" @onclick="() => ClearHand(h.UserId)">Lower</button>
+                                                }
+                                            </li>
+                                        }
+                                    </ol>
+                                    @if (Presenting && meeting.Hands.Count > 1) { <button type="button" class="btn btn-sm btn-outline-secondary tide-hands-clear" @onclick="() => ClearHand(null)">Clear all</button> }
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+                else
+                {
+                    <PresenceNote Place="@($"brief:{Ui.IsoDay(_date)}")" Editing="NoteDirty" Compact="true" />
+                }
+            </div>
             <div class="tide-present-tools">
                 @* Whom this page follows, as a pill among the tools: it takes no height from the slide. When there's something to
                    do (back to the presenter, take over) it holds that one button; it's a live region, so a change is read out. *@
@@ -680,60 +750,24 @@ else
             </nav>
             <button class="btn btn-sm btn-outline-secondary" disabled="@(_slide == last || Held)" @onclick="() => Move(_slide + 1)" aria-label="Next slide"><span class="bi bi-chevron-right" aria-hidden="true"></span></button>
             <span>@Elapsed</span>
-            @if (_view is { } meeting)
+            @* The presenter's controls over the room; who is here and the hands are in the top bar. *@
+            @if (_view is { } room && Presenting)
             {
-                <span class="tide-presence tide-presence-sm" role="status">
-                    @foreach (var p in meeting.People)
-                    {
-                        var away = meeting.Away(p);
-                        var up = meeting.Hands.Any(h => h.UserId == p.UserId);
-                        <span class="tide-presence-dot tide-avatar-@Ui.AvatarSwatch(p.UserId) @(away ? "is-away" : "")" @key="p.UserId" title="@Says(meeting, p)" aria-hidden="true">
-                            @MainLayout.Initials(p.Name)
-                            @if (up) { <span class="tide-presence-edit bi bi-hand-index-thumb-fill"></span> }
-                            else if (away) { <span class="tide-presence-slide">@(p.Slide + 1)</span> }
-                        </span>
-                    }
-                    <span class="visually-hidden">In the meeting: @string.Join(", ", meeting.People.Select(p => Says(meeting, p))).</span>
-                </span>
-                @if (Presenting)
+                @if (room.People.Any(room.Away))
                 {
-                    @if (meeting.Hands.Count > 0)
-                    {
-                        <span class="tide-hands">
-                            @foreach (var h in meeting.Hands)
-                            {
-                                <button class="btn btn-sm btn-outline-secondary" title="Lower @h.Name's hand" @onclick="() => ClearHand(h.UserId)"><span class="bi bi-hand-index-thumb" aria-hidden="true"></span> @h.Name <span class="bi bi-x" aria-hidden="true"></span></button>
-                            }
-                            @if (meeting.Hands.Count > 1) { <button class="btn btn-sm btn-link" @onclick="() => ClearHand(null)">Clear all</button> }
-                        </span>
-                    }
-                    @if (meeting.People.Any(meeting.Away))
-                    {
-                        <button class="btn btn-sm btn-outline-secondary" @onclick="Summon">Bring everyone here</button>
-                    }
-                    <button class="btn btn-sm @(meeting.Locked ? "btn-primary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(meeting.Locked)"
-                            title="@(meeting.Locked ? "Let everyone browse the slides again" : "Everyone follows your slide, and can't browse off")" @onclick="ToggleLock">
-                        <span class="bi @(meeting.Locked ? "bi-lock-fill" : "bi-unlock")" aria-hidden="true"></span> @(meeting.Locked ? "Unlock" : "Lock to me")
-                    </button>
-                    @if (meeting.People.Any(p => p.CanPresent && !meeting.IsPresenter(p.UserId)))
-                    {
-                        <select class="form-select form-select-sm w-auto" aria-label="Hand presenting to" value="" @key="HandOffResets" @onchange="HandOff">
-                            <option value="">Hand off to…</option>
-                            @foreach (var p in meeting.People.Where(p => p.CanPresent && !meeting.IsPresenter(p.UserId))) { <option value="@p.UserId">@p.Name</option> }
-                        </select>
-                    }
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="Summon">Bring everyone here</button>
                 }
-                else
+                <button class="btn btn-sm @(room.Locked ? "btn-primary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(room.Locked)"
+                        title="@(room.Locked ? "Let everyone browse the slides again" : "Everyone follows your slide, and can't browse off")" @onclick="ToggleLock">
+                    <span class="bi @(room.Locked ? "bi-lock-fill" : "bi-unlock")" aria-hidden="true"></span> @(room.Locked ? "Unlock" : "Lock to me")
+                </button>
+                @if (room.People.Any(p => p.CanPresent && !room.IsPresenter(p.UserId)))
                 {
-                    var mine = meeting.Hands.Any(h => h.UserId == _me);
-                    <button class="btn btn-sm @(mine ? "btn-primary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(mine)" @onclick="ToggleHand">
-                        <span class="bi bi-hand-index-thumb" aria-hidden="true"></span> @(mine ? "Lower hand" : "Raise hand")
-                    </button>
+                    <select class="form-select form-select-sm w-auto" aria-label="Hand presenting to" value="" @key="HandOffResets" @onchange="HandOff">
+                        <option value="">Hand off to…</option>
+                        @foreach (var p in room.People.Where(p => p.CanPresent && !room.IsPresenter(p.UserId))) { <option value="@p.UserId">@p.Name</option> }
+                    </select>
                 }
-            }
-            else
-            {
-                <PresenceNote Place="@($"brief:{Ui.IsoDay(_date)}")" Editing="NoteDirty" Compact="true" />
             }
             <span class="d-none d-md-inline"><span class="tide-kbd">&larr;</span> <span class="tide-kbd">&rarr;</span> move &middot; <span class="tide-kbd">Space</span> scroll, then next &middot; <span class="tide-kbd">F</span> full screen</span>
         </footer>
@@ -962,6 +996,7 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        await (_handsPopout ??= new Popout(JS, HandsListDismissed)).FollowAsync(HandsListOpen, _handsHolder, _handsButton);
         if (_focusEditTags)
         {
             // The tag panel closed: focus goes back to the button that opened it.
@@ -1146,7 +1181,8 @@ else
             case "first": Go(0); break;
             case "last": Go(LastSlide); break;
             case "close":
-                if (_zoom is not null) _zoom = null;
+                if (_handsOpen) _handsOpen = false;
+                else if (_zoom is not null) _zoom = null;
                 else if (CardOpen) await CloseCard();
                 else await CloseAction();
                 break;
@@ -2012,7 +2048,28 @@ else
         Refresh();
     }
 
-    private void ClearHand(string? userId)
+    /// <summary>How many people the top bar shows a dot for, before "+N".</summary>
+    private const int TopBarDots = 5;
+
+    // The list of hands, opened from the top bar's count of them: a shared popout (Popout), so Escape (focus back on the
+    // count), a press outside it or Tab past it closes it as it does the other popouts.
+    private bool _handsOpen;
+    private ElementReference _handsHolder, _handsButton;
+    private Popout? _handsPopout;
+
+    /// <summary>Whether the list of hands is open: only while there's a hand up. When the last one goes down it shuts, and
+    /// stays shut when the next goes up; it opens only from its button.</summary>
+    private bool HandsListOpen => _handsOpen &= _view?.Hands.Count > 0;
+
+    internal void ToggleHandsList() => _handsOpen = !_handsOpen && _view?.Hands.Count > 0;
+
+    private Task HandsListDismissed() => InvokeAsync(() =>
+    {
+        _handsOpen = false;
+        StateHasChanged();
+    });
+
+    internal void ClearHand(string? userId)
     {
         if (_seat is not null && Meetings.ClearHands(_seat, userId)) Refresh();
     }
@@ -2365,6 +2422,13 @@ else
         return p.Name + where + hand;
     }
 
+    /// <summary>How many are in the meeting, and how many aren't on the presenter's slide: short, so it's always whole.</summary>
+    private static string Here(LiveMeetingView m)
+    {
+        var away = m.People.Count(m.Away);
+        return away == 0 ? $"{m.People.Count} here" : $"{m.People.Count} here · {away} away";
+    }
+
     // --- actions, given to someone at the meeting ----------------------------------------------------------------
 
     private IReadOnlyList<TeamMember> MembersOf(Guid teamId) => _teams.FirstOrDefault(t => t.Id == teamId)?.Members ?? [];
@@ -2539,6 +2603,7 @@ else
         _live?.Dispose();
         if (_clock is not null) await _clock.DisposeAsync();
         await JS.StopAsync("tidePresent.stop");
+        if (_handsPopout is not null) await _handsPopout.DisposeAsync();
         _ref?.Dispose();
     }
 }
