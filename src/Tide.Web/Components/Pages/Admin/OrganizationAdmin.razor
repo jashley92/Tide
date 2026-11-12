@@ -9,7 +9,7 @@
 
 <PageTitle>Organization settings · TIDE</PageTitle>
 
-@* The time zone, meeting time and team name, saved in the app over the server's Org values (the installer's answers). *@
+@* The time zone, meeting time, team name and where a meeting's action opens, saved in the app over the server's Org values (the installer's answers). *@
 <div class="tide-page-head">
     <div>
         <h1 class="tide-admin-title">Organization settings</h1>
@@ -39,6 +39,14 @@
             <label class="tide-field-label" for="org-meeting">The brief meets at</label>
             <TimeBox Id="org-meeting" Class="tide-maxw-xs form-control form-control-sm" @bind-Value="_meeting" DescribedBy="org-meeting-help" />
             <div class="form-text" id="org-meeting-help">The brief-not-ready nudge stops at this time.</div>
+        </div>
+        <div class="col-12">
+            <div class="form-check">
+                <input id="org-beside" type="checkbox" class="form-check-input" @bind="ActionBeside" aria-describedby="org-beside-help" />
+                <label class="form-check-label" for="org-beside">In a meeting, an action opens beside the slide</label>
+            </div>
+            <div class="form-text" id="org-beside-help">The slide narrows so the room reads it and the action together; off, the action opens over the slide.
+                Try it in a rehearsal in the meeting room before turning it on.</div>
         </div>
     </div>
     <button type="button" class="btn btn-primary btn-sm mt-3" disabled="@_busy" @onclick="Save">Save</button>
@@ -113,6 +121,9 @@
     // The zone chosen (internal so a test can choose one).
     internal string Zone { get; set; } = "";
     private TimeOnly _meeting;
+
+    // Whether a meeting's action opens beside the slide (internal so a test can tick it).
+    internal bool ActionBeside { get; set; }
     private bool _busy;
 
     // The holidays from this year on, how many are older, and the latest year to copy to the next (when that's empty).
@@ -190,6 +201,7 @@
         _teamName = Clock.TeamName;
         Zone = Clock.Zone.Id;
         _meeting = Clock.MeetingTime;
+        ActionBeside = Clock.ActionBesideSlide;
         _zones = OperationalSettings.TimeZoneChoices(Zone);
         // A Windows id from the server (Eastern Standard Time) is shown as its IANA one, which is what's saved.
         if (!_zones.Any(z => z.Id == Zone) && TimeZoneInfo.TryConvertWindowsIdToIanaId(Zone, out var iana)) Zone = iana;
@@ -212,6 +224,7 @@
                 [OperationalSettings.TeamName] = _teamName,
                 [OperationalSettings.TimeZone] = Zone,
                 [OperationalSettings.MeetingTime] = _meeting.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture),
+                [OperationalSettings.ActionBesideSlide] = ActionBeside ? "true" : "false",
             });
             Load();
             Toasts.Show("Saved.");

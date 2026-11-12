@@ -20,6 +20,9 @@ public static class OperationalSettings
     public const string MeetingTime = "Org:MeetingTime";
     public const string TeamName = "Org:TeamName";
 
+    /// <summary>Whether a meeting's action opens beside the slide rather than over it. Off by default.</summary>
+    public const string ActionBesideSlide = "Org:ActionBesideSlide";
+
     public const string ReminderTime = "Notifications:ReminderTime";
     public const string DueSoon = "Notifications:DueSoon:Enabled";
     public const string Presenting = "Notifications:Presenting:Enabled";
@@ -106,6 +109,7 @@ public static class OperationalSettings
         [TimeZone] = Zone,
         [MeetingTime] = Time("The meeting time"),
         [TeamName] = Name,
+        [ActionBesideSlide] = Switch,
         [ReminderTime] = Time("The reminder time"),
         [DueSoon] = Switch,
         [Presenting] = Switch,
@@ -199,6 +203,7 @@ public static class OperationalSettings
         s.Use(TimeZone, v => o.TimeZone = v);
         s.Use(MeetingTime, v => o.MeetingTime = v);
         s.Use(TeamName, v => o.TeamName = v);
+        s.Use(ActionBesideSlide, v => o.ActionBesideSlide = bool.Parse(v));
     }
 
     internal static void Apply(SavedSettings s, ReminderOptions o)

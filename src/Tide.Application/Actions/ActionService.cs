@@ -370,6 +370,10 @@ public sealed record ActionDetail(ActionItem Action, ActionRow? Parent, IReadOnl
     /// <summary>The email waiting longest for a reply, or null (<see cref="OutreachState.Oldest"/>).</summary>
     public OutreachMessage? Waiting => new OutreachState(Action.Outreach, null).Oldest;
 
+    /// <summary>Read for a meeting, from an article above its ceiling (<see cref="ActionService.MeetingViewAsync"/>): only
+    /// its number and title are here; nothing else of it was read out.</summary>
+    public bool Withheld { get; init; }
+
     /// <summary>The other actions raised from its article, open first: not itself, and none in its <see cref="Lineage"/>
     /// (its parent and parts are shown there). Empty for whoever reads only this one action (a seated Visitor).</summary>
     public IReadOnlyList<ActionRow> RaisedWith { get; init; } = [];
@@ -969,6 +973,19 @@ public sealed class ActionService(IAppDbContextFactory dbs, ICurrentUser user, S
                 Next = g.Min(c => ActionItem.ClosedStatuses.Contains(c.Status) ? null : c.DueDate),
             })
             .ToListAsync(ct)).ToDictionary(g => g.Key, g => new PartsRollup(g.Total, g.Closed, g.Overdue, g.Next));
+
+    /// <summary>
+    /// An action as a meeting shows it, cut at the meeting's <paramref name="ceiling"/> (the team edition's): one raised from
+    /// an article above it is named, its number and title, as the Actions list names it (owner decision 2026-11-11), and
+    /// nothing more of it comes back (<see cref="ActionDetail.Withheld"/>). Read as <see cref="GetAsync"/> reads it.
+    /// </summary>
+    public async Task<ActionDetail?> MeetingViewAsync(int number, TlpLevel ceiling, CancellationToken ct = default)
+    {
+        var d = await GetAsync(number, ct);
+        if (d?.Action.Article is not { } article || article.Tlp <= ceiling) return d;
+        var named = new ActionItem { Id = d.Action.Id, Number = d.Action.Number, Title = d.Action.Title, TeamId = d.Action.TeamId, Status = d.Action.Status };
+        return new ActionDetail(named, null, [], CanWork: false, CanEditAll: false) { Withheld = true };
+    }
 
     public async Task<ActionDetail?> GetAsync(int number, CancellationToken ct = default)
     {

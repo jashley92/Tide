@@ -1055,6 +1055,13 @@ const presenterRail = (open = false) => async page => {
   await page.waitForTimeout(400);
 };
 
+/** This page starts today's meeting, or takes it up again (the dev analyst presented it last), and waits for it. */
+const startOrTakeUp = async p => {
+  const button = p.getByRole('button', { name: 'Start the meeting' });
+  if (await button.count()) await button.click();
+  await p.locator('.tide-present-people').waitFor();
+};
+
 /** The meeting the present-people pages share: which one it is ("presenter/5"), and the browsers of its other people,
  *  kept open across a page's widths (each width opens only its own page) and closed when the next one is set up. */
 let meetingGuests = { key: '', contexts: [] };
@@ -1077,16 +1084,11 @@ const meetingOf = (as, hands, people = 8) => async (page, demo) => {
     meetingGuests.contexts.push(context);
     return theirs;
   };
-  const start = async p => {
-    const button = p.getByRole('button', { name: 'Start the meeting' });
-    if (await button.count()) await button.click();
-    await p.locator('.tide-present-people').waitFor();
-  };
   if (meetingGuests.key !== key) {
     for (const c of meetingGuests.contexts) await c.close().catch(() => {});
     meetingGuests = { key, contexts: [] };
     const presenter = as === 'presenter' ? page : await join('');
-    await start(presenter);
+    await startOrTakeUp(presenter);
     await toArticleSlide(presenter);
     for (const [i, who] of GUESTS.slice(0, people - (as === 'presenter' ? 1 : 2)).entries()) {
       const theirs = await join(who);
@@ -1096,7 +1098,7 @@ const meetingOf = (as, hands, people = 8) => async (page, demo) => {
     }
   }
   if (as === 'presenter') {
-    await start(page);
+    await startOrTakeUp(page);
     await toArticleSlide(page);
   } else {
     await page.goto(`${page.url()}?as=Pat&roles=Viewer`, { waitUntil: 'networkidle' });
@@ -1858,6 +1860,128 @@ const slideFits = holds('the slide fits, or scrolls only at 80%', () => {
   const over = body.scrollHeight - body.clientHeight;
   if (fit < 0.799) return [`the slide is shrunk to ${fit}, below 80%`];
   return over > 1 && fit > 0.801 ? [`the slide's body is ${over}px too tall at ${fit}, and could shrink further`] : [];
+});
+
+// --- an action beside the slide (Org:ActionBesideSlide, on for this run) -------------------------------------------
+
+const BESIDE = '.tide-present-action.is-beside';
+
+/** What the room's screen shows of an action beside the slide: the slide's and the card's boxes, the slide's fit
+ *  (present.js's --tide-fit) and how far its body is scrolled (a fraction, as it's shared), and whether it scrolls. */
+const besideGeometry = beside => {
+  const box = s => document.querySelector(s)?.getBoundingClientRect();
+  const body = document.querySelector('[data-slide-body]');
+  const slide = box('#present-root > .tide-slide'), card = box(beside);
+  const range = body ? body.scrollHeight - body.clientHeight : 0;
+  return {
+    slide: slide && Math.round(slide.width), cardLeft: card && Math.round(card.left), card: card && Math.round(card.width),
+    fit: body ? parseFloat(getComputedStyle(body).getPropertyValue('--tide-fit') || '1') : null,
+    // A few pixels of range is the fit's rounding (present.js stops within half a percent), not a slide that scrolls.
+    scrolls: range > 8, at: range > 8 ? body.scrollTop / range : 0,
+  };
+};
+
+/**
+ * Setup: a live meeting with an action open beside the first article's slide. `as` 'presenter': this page presents
+ * (its rail as it starts: docked from 1500px) and opens the slide's first action. 'follower': the dev analyst presents
+ * from another browser the size of this page, with their rail shut, opens it and scrolls the slide by hand; this page
+ * joins as Pat, following, and keeps what the presenter's screen showed (window.presenterGeometry) to compare. Wider
+ * letters.
+ */
+const actionBeside = as => async (page, demo) => {
+  for (const c of meetingGuests.contexts) await c.close().catch(() => {});
+  meetingGuests = { key: `beside/${as}`, contexts: [] };
+  const present = async p => {
+    await startOrTakeUp(p);
+    await toArticleSlide(p);
+    // Unless the page before left one open for the room (over the slide, in a narrow window, it covers the slide's
+    // links): the first slide with an action on it, from this article's on and then from the title. The pages before
+    // may have changed today's running order; the open actions from earlier briefs have some, whatever the articles have.
+    const opener = p.locator('.tide-slide :is(.tide-action-ref-btn, .tide-action-open)');
+    for (let i = 0; i < 16 && !(await p.locator(BESIDE).count()) && !(await opener.count()); i++) {
+      await p.keyboard.press(i === 4 ? 'Home' : 'ArrowRight');
+      await p.waitForTimeout(300);
+    }
+    if (!(await p.locator(BESIDE).count())) await opener.first().click();
+    await p.locator(BESIDE).waitFor();
+    await p.waitForTimeout(600);
+  };
+  if (as === 'presenter') {
+    await wideFont(page);
+    await present(page);
+    return;
+  }
+  const { context, page: presenter } = await openPage(page.context().browser(), { route: '/present/{today}', viewport: page.viewportSize() }, demo);
+  meetingGuests.contexts.push(context);
+  await wideFont(presenter);
+  if (await presenter.locator('#present-rail.is-docked').count()) {
+    await presenter.keyboard.press(']');
+    await presenter.locator('#present-rail').waitFor({ state: 'detached' });
+  }
+  await present(presenter);
+  await page.goto(`${page.url()}?as=Pat&roles=Analyst`, { waitUntil: 'networkidle' });
+  await settle(page);
+  await wideFont(page);
+  await page.locator(BESIDE).waitFor();
+  await page.waitForTimeout(800);
+  // Scrolled by hand (the wheel), as the presenter would: what's shared with the room.
+  const body = presenter.locator('[data-slide-body]');
+  if (await body.evaluate(b => b.scrollHeight > b.clientHeight + 8)) {
+    // Up to the top first: the meeting keeps the last place shared on this slide (an earlier width's), and a scroll to
+    // where it already is isn't passed on again.
+    await body.hover();
+    await presenter.mouse.wheel(0, -2000);
+    await presenter.waitForTimeout(600);
+    await presenter.mouse.wheel(0, 240);
+    await presenter.waitForTimeout(800);
+    // The room follows within moments: waited for here, so the rule compares where each settled.
+    const at = await body.evaluate(b => b.scrollTop / (b.scrollHeight - b.clientHeight));
+    await page.waitForFunction(at => {
+      const b = document.querySelector('[data-slide-body]'), range = b.scrollHeight - b.clientHeight;
+      return range > 8 && Math.abs(b.scrollTop / range - at) < 0.03;
+    }, at, { timeout: 6000 }).catch(() => {});
+  }
+  const geometry = await presenter.evaluate(besideGeometry, BESIDE);
+  await page.evaluate(g => { window.presenterGeometry = g; }, geometry);
+};
+
+/** A follower's screen shows the action beside the slide as the presenter's does: the same slide and card widths, the
+ *  same fit, and the slide scrolled as far (a fraction). */
+const matchesPresenter = {
+  name: 'the slide, the card, the fit and the scroll as the presenter has them',
+  check: async page => {
+    const theirs = await page.evaluate(() => window.presenterGeometry), mine = await page.evaluate(besideGeometry, BESIDE);
+    if (!theirs) return ['the presenter\'s geometry wasn\'t kept'];
+    const off = [];
+    for (const k of ['slide', 'cardLeft', 'card']) if (Math.abs((mine[k] ?? -99) - (theirs[k] ?? 99)) > 1) off.push(`${k} ${mine[k]}px, the presenter's ${theirs[k]}px`);
+    if (Math.abs(mine.fit - theirs.fit) > 0.006) off.push(`fit ${mine.fit}, the presenter's ${theirs.fit}`);
+    if (mine.scrolls !== theirs.scrolls) off.push(`scrolls: ${mine.scrolls}, the presenter's ${theirs.scrolls}`);
+    else if (Math.abs(mine.at - theirs.at) > 0.03) off.push(`scrolled to ${mine.at.toFixed(2)}, the presenter's ${theirs.at.toFixed(2)}`);
+    return off;
+  },
+};
+
+/** Each of the action's facts beside the slide has room for its words (Due, Assignee, Team...): none narrower than 7em. */
+const besideFactsRoomy = holds('the action facts beside the slide have room', beside =>
+  [...document.querySelectorAll(`${beside} .tide-fact`)].flatMap((el, i) => {
+    const w = el.getBoundingClientRect().width, em = parseFloat(getComputedStyle(el).fontSize);
+    return w > 0 && w < 7 * em ? [`fact #${i + 1} ("${el.querySelector('dt')?.textContent}") is ${Math.round(w)}px wide`] : [];
+  }), BESIDE);
+
+/** The status choices beside the slide fill their rows: the last ends at the group's right edge, no blank cell after it. */
+const besideStatusFilled = holds('the action’s status choices fill their rows', beside => {
+  const seg = document.querySelector(`${beside} .tide-status-seg`);
+  if (!seg) return ['no status choices shown'];
+  const last = [...seg.children].at(-1).getBoundingClientRect(), box = seg.getBoundingClientRect();
+  return box.right - last.right > 3 ? [`the last choice ends ${Math.round(box.right - last.right)}px short of the row's end: a blank cell`] : [];
+}, BESIDE);
+
+/** The action opens over the slide, not beside it: a narrow window. */
+const actionOver = holds('the action is over the slide', () => {
+  const card = document.querySelector('.tide-present-action');
+  if (!card) return ['no action open'];
+  const slide = document.querySelector('#present-root > .tide-slide').getBoundingClientRect();
+  return getComputedStyle(card).position === 'fixed' && Math.round(slide.width) >= window.innerWidth - 2 ? [] : ['the action takes a column of its own'];
 });
 
 /** Each item of the open menu is wholly visible: the point at each corner, just inside, is the item (or inside it),
@@ -3850,6 +3974,19 @@ const pages = [
   // The presenter's list of hands, opened from the top bar: each hand in order with its Lower, and Clear all, in the window.
   { name: 'present-hands-list', route: '/present/{today}', setup: handsListOpen, widths: [1920, 1100, 901, 780],
     rules: [inWindow('#present-hands :is(button, li)'), shownCount('#present-hands li', 5), fits('#present-hands'), hidden('#present-hands button')] },
+  // An action opened beside the slide (Org:ActionBesideSlide, on for this run): from 1200px a column between the slide
+  // and the presenter's rail, as wide for a follower as for the presenter, whose slide, fit and scroll the follower's
+  // match; with the presenter's rail docked, slide, action and rail side by side; narrower, over the slide. Last: they
+  // leave an action open in today's meeting.
+  { name: 'present-beside-follower', route: '/present/{today}', setup: actionBeside('follower'), widths: [[1920, 1000], [1600, 900], 1440, 1200],
+    rules: [noSidewaysScroll, visible(BESIDE), besides(BESIDE, '#present-root > .tide-slide'), hidden('#present-rail'), fits(BESIDE),
+      inWindow(`${BESIDE} button`), besideFactsRoomy, besideStatusFilled, contrastAtLeast(`${BESIDE} .tide-fact :is(dt, dd)`, 4.5), oneLine(`${BESIDE} .tide-present-action-head .tide-present-help`), notSqueezed(`${BESIDE} .tide-present-action-head .btn`), slideFits, matchesPresenter] },
+  { name: 'present-beside-presenter', route: '/present/{today}', setup: actionBeside('presenter'), widths: [[1920, 1000], [1600, 900], [1500, 900]],
+    rules: [noSidewaysScroll, visible(BESIDE), visible('#present-rail.is-docked'), besides(BESIDE, '#present-root > .tide-slide'),
+      besides('#present-rail', BESIDE), fits(BESIDE), fits('#present-rail'), inWindow(`${BESIDE} button`), besideFactsRoomy, besideStatusFilled,
+      oneLine(`${BESIDE} .tide-present-action-head .tide-present-help`), notSqueezed(`${BESIDE} .tide-present-action-head .btn`), slideFits, widerThan('#present-root > .tide-slide', 559)] },
+  { name: 'present-beside-narrow', route: '/present/{today}', setup: actionBeside('presenter'), widths: [1100, 780],
+    rules: [noSidewaysScroll, actionOver, slideFits] },
 ];
 
 // --- the run -----------------------------------------------------------------------------------------------------------
@@ -3858,9 +3995,9 @@ const wanted = pick(pages, 'page');
 
 let server;
 try {
-  // Enough more new items for Triage to have a second page (the paging keys' rules), and a slide with a dozen
-  // indicators and CVEs (the slide's fit).
-  server = await startTide(['--Demo:TriageFiller=55', '--Demo:SlideFiller=true']);
+  // Enough more new items for Triage to have a second page (the paging keys' rules), a slide with a dozen indicators
+  // and CVEs (the slide's fit), and a meeting's action beside the slide (only the present-beside pages open one).
+  server = await startTide(['--Demo:TriageFiller=55', '--Demo:SlideFiller=true', '--Org:ActionBesideSlide=true']);
   const problems = await check(wanted, readDemo());
   if (problems.length) {
     console.error(`\n${problems.length} layout problem${problems.length === 1 ? '' : 's'}:`);

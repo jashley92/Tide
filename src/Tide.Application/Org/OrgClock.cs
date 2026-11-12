@@ -14,6 +14,10 @@ public sealed class OrgOptions
 
     /// <summary>The name shown in the header and on slides ("Cyber Threat Intelligence").</summary>
     public string TeamName { get; set; } = "Cyber Threat Intelligence";
+
+    /// <summary>Whether an action opened in a meeting shows beside the slide, which narrows for it, rather than over it.
+    /// Off by default: it's switched on after a rehearsal in the meeting room.</summary>
+    public bool ActionBesideSlide { get; set; }
 }
 
 /// <summary>
@@ -24,7 +28,7 @@ public sealed class OrgOptions
 /// </summary>
 public sealed class OrgClock : IDisposable
 {
-    private sealed record Snapshot(TimeZoneInfo Zone, TimeOnly MeetingTime, string TeamName);
+    private sealed record Snapshot(TimeZoneInfo Zone, TimeOnly MeetingTime, string TeamName, bool ActionBesideSlide);
 
     private readonly TimeProvider _time;
     private readonly IDisposable? _listening;
@@ -47,15 +51,23 @@ public sealed class OrgClock : IDisposable
         _listening = options.OnChange(o =>
         {
             try { _now = Read(o); }
-            catch (InvalidOperationException) { /* keep the last good settings */ }
+            catch (InvalidOperationException) { return; /* keep the last good settings */ }
+            Changed?.Invoke();
         });
     }
+
+    /// <summary>The settings changed (one saved in Administration): what shows them now (a meeting's action beside the
+    /// slide or over it) is drawn again. Raised on the thread that saved them.</summary>
+    public event Action? Changed;
 
     public void Dispose() => _listening?.Dispose();
 
     public TimeZoneInfo Zone => _now.Zone;
     public TimeOnly MeetingTime => _now.MeetingTime;
     public string TeamName => _now.TeamName;
+
+    /// <summary>Whether a meeting's action opens beside the slide (<see cref="OrgOptions.ActionBesideSlide"/>).</summary>
+    public bool ActionBesideSlide => _now.ActionBesideSlide;
 
     /// <summary>The working days, with the holidays as last loaded or saved.</summary>
     public WorkingDays Days => _days;
@@ -66,7 +78,7 @@ public sealed class OrgClock : IDisposable
     private static Snapshot Read(OrgOptions o) => new(
         FindZone(o.TimeZone),
         TimeOnly.TryParse(o.MeetingTime, System.Globalization.CultureInfo.InvariantCulture, out var t) ? t : new TimeOnly(10, 30),
-        string.IsNullOrWhiteSpace(o.TeamName) ? "Cyber Threat Intelligence" : o.TeamName.Trim());
+        string.IsNullOrWhiteSpace(o.TeamName) ? "Cyber Threat Intelligence" : o.TeamName.Trim(), o.ActionBesideSlide);
 
     public DateTimeOffset Now => TimeZoneInfo.ConvertTime(_time.GetUtcNow(), Zone);
 

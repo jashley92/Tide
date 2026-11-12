@@ -96,6 +96,7 @@ public static class SettingsCatalog
         new("Organization", "Time zone", OperationalSettings.TimeZone, EditedIn: OrganizationPage),
         new("Organization", "Brief meets at", OperationalSettings.MeetingTime, EditedIn: OrganizationPage),
         new("Organization", "Team name", OperationalSettings.TeamName, EditedIn: OrganizationPage),
+        new("Organization", "A meeting's action opens beside the slide", OperationalSettings.ActionBesideSlide, EditedIn: OrganizationPage),
 
         new("Reminders", "Reminder time", OperationalSettings.ReminderTime, EditedIn: TeamsPage),
         new("Reminders", "Due soon", OperationalSettings.DueSoon, EditedIn: TeamsPage),
