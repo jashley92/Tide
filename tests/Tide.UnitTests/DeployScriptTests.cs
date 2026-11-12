@@ -109,6 +109,8 @@ public partial class DeployScriptTests
             .Select((m, i) => (Path: m.Groups["path"].Value, Body: program[m.Index..(i + 1 < maps.Count ? maps[i + 1].Index : program.Length)]))
             .Where(x => x.Body.Contains(".AllowAnonymous()", StringComparison.Ordinal))
             .Select(x => x.Path)
+            // Under /demo/: mapped only in Development with Demo:Seed (the screenshot tool's), never on an installed site.
+            .Where(p => !p.StartsWith("/demo/", StringComparison.Ordinal))
             .ToList();
         anonymous.Should().Contain(["/health", "/health/live"]);
 
