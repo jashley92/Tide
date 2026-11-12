@@ -208,7 +208,7 @@ public class RecommendationSlideTests(TideApp app) : IClassFixture<TideApp>
             var at = html.IndexOf(start, StringComparison.Ordinal);
             return at < 0 ? "" : html[at..html.IndexOf(end, at, StringComparison.Ordinal)];
         }
-        return (Cut(html, "<ul class=\"tide-reco\"", "</ul>"), Cut(html, "<div class=\"tide-slide-actions\"", "<div class=\"tide-quick-add\""));
+        return (Cut(html, "<ul class=\"tide-reco\"", "</ul>"), Cut(html, "<div class=\"tide-slide-actions\"", "<aside id=\"present-rail\""));
     }
 
     private static async Task FirstArticle(Rendered<Present> r)
@@ -225,11 +225,12 @@ public class RecommendationSlideTests(TideApp app) : IClassFixture<TideApp>
         var byHand = await Raise(article, team, "Brief the service desk", null, Robin);   // Robin's: Tester can take it
         await using var pat = await Open(app, day);
         await FirstArticle(pat);
-        var (reco, others) = Slide(await pat.Html());
-        reco.Should().Contain("Apply the vendor hotfix to both gateways").And.Contain($"A-{linked}").And.Contain("Hunt for the indicators in VPN logs")
-            .And.Contain(" Raise</button>", "the line not raised yet");
-        others.Should().Contain($"A-{byHand}").And.NotContain($"A-{linked}", "listed once, against its line").And.Contain("Other actions")
-            .And.Contain($"aria-label=\"Take A-{byHand}\"", "Take it says which action");
+        var html = await pat.Html();
+        var (reco, others) = Slide(html);
+        reco.Should().Contain("Apply the vendor hotfix to both gateways").And.Contain($"A-{linked}").And.Contain("Hunt for the indicators in VPN logs");
+        html.Should().Contain("aria-label=\"Kind for: Hunt for the indicators in VPN logs\"", "the line not raised yet is raised from the rail");
+        others.Should().Contain($"A-{byHand}").And.NotContain($"A-{linked}", "listed once, against its line").And.Contain("Other actions");
+        html.Should().Contain($"aria-label=\"Take A-{byHand}\"", "Take it says which action (in the rail)");
     }
 
     [Fact]

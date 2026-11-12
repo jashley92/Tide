@@ -173,8 +173,8 @@ lands on the same one however many slides their page has loaded:
 | Opening note | `note` | The team's opening note. Team edition only, and only when it isn't blank. |
 | Metrics | `metrics:{group key}` | One slide per metric group: tiles and the group's chart. Team edition only. |
 | Open actions | `open` | Overdue actions to review. Team edition only. |
-| One per article | `article:{id}` | The article as the edition carries it. Screenshots zoom. Its recommended actions can be raised in one click. |
-| Wrap-up | `wrap` | Every recommended action not yet raised, who attended, and the undiscussed articles with a tick to carry each to the next brief. |
+| One per article | `article:{id}` | The article as the edition carries it. Screenshots zoom. Each recommended line shows the action it became; the article's other actions are listed below. |
+| Wrap-up | `wrap` | Every recommended action not yet raised, the actions raised, who attended, and the articles not marked discussed. |
 
 A page without a slide another has (the company-wide edition has no note) shows the title instead. The edition can be
 switched on screen; joining a live meeting switches to the team edition. Articles are ticked off as discussed
@@ -185,10 +185,22 @@ the slide for the room (`LiveMeetings.Open`, `Show`), and edit its scorecard tag
 (`PresentTagEditor`, through `ArticleService.SaveTagsAsync`, so the same stale-edit rule applies). Raising actions is on
 [actions-and-hunting.md](actions-and-hunting.md).
 
-An article slide's actions are one line each, title first: the whole title opens the action over the slide, its number
-follows, then its team and due date, then Take it, the assignee and the due date at the row's end. They share one set of
-control columns with the recommended lines above (kind over due date, team over assignee, Raise over Take it), so the
-boxes and buttons line up down the slide.
+The slides are the room's: they show what's being discussed and none of the presenter's controls. The presenter's
+controls are in **the presenter's rail** beside the slide (docked from 1500px wide, over the slide below that; `]` or
+**Rail** opens and shuts it, and Escape shuts it over the slide). It holds, for the slide on screen:
+
+| Slide | The rail |
+|---|---|
+| Title | Ready to present? (the articles, an opening note not updated with Still current, a number missing with a way to it), and what comes first. |
+| Opening note | The note's Still current and Edit, while it's carried over from the last brief. |
+| Numbers | A box for each number not entered yet. |
+| An article | Its actions (Take it, holder, due date), its recommended lines to raise (kind, team, Raise), the quick add, a meeting note on it, and Mark discussed. |
+| Wrap-up | What's not raised yet, the articles not discussed (tick to carry each to the next brief), attendance, and End the meeting. |
+| Any slide, in a meeting | The hands (lower one, or clear them all) and everyone's view (bring everyone here, lock to my slide, hand off). |
+
+The rail is drawn only on the presenting page (or, with no meeting, for someone who could present). It is never in a
+follower's page, whatever the follower may do elsewhere: **raising and working actions during the meeting is the
+presenter's, from the rail. Someone following, an analyst included, raises or works an action on the action pages.**
 
 ## The live meeting
 
@@ -243,7 +255,7 @@ What people in the meeting can do:
 |---|---|
 | Everyone in it | Follow the presenter's slide, browse off and come back (unless locked), show in the strip with the slide they're on, raise a hand on an article or the meeting (`Hand`). |
 | With `MeetingNotes` and the team edition (Analyst, Action owner, Viewer, Admin) | Take notes, each their own, against the article on screen as they began writing or the meeting as a whole (`MeetingService.AddNoteAsync`, at most 2,000 characters). A note begun on one article stays on it if the slide moves on before it's added, and the box says which article it's on. Edit or delete only their own. |
-| With `WorkActions` | Raise actions, from the quick add or a recommended line, each assigned to whoever raises it (they can hand it on) and for one of the security team's own teams: an external team's work is split off an action afterwards, so it has a parent to follow it up. Take or assign them (a team that warns at its limit asks why first, `OverLimitDialog`). The quick add's title is kept per article as it's typed, so a slide moved by the presenter doesn't lose it. An assignee the service turns away (they left the team a moment ago) is said in a toast and that row's list is drawn afresh (`Present.AssignResets`), as the due box is. |
+| The presenter, with `WorkActions` | Raise actions from the rail, from the quick add or a recommended line, each assigned to whoever raises it (they can hand it on) and for one of the security team's own teams: an external team's work is split off an action afterwards, so it has a parent to follow it up. Take or assign them (a team that warns at its limit asks why first, `OverLimitDialog`). The quick add's title is kept per article as it's typed, so a slide moved by the presenter doesn't lose it. An assignee the service turns away (they left the team a moment ago) is said in a toast and that row's list is drawn afresh (`Present.AssignResets`), as the due box is. |
 | The presenter | Bring everyone here (`Summon`), lock everyone to their slide (`Lock`), clear hands, open an action or card for the room, hand presenting to another analyst who's there (`HandTo`; one who left a moment ago is refused in a toast and the list goes back to "Hand off to…"), add someone who was in the room by name (`MeetingService.AddAttendeeAsync`), mark articles discussed, end the meeting. |
 | An analyst, once the presenter has been gone 30 seconds | Take over (`TakeOver`, `LiveMeetings.Grace`). A lock doesn't outlast a presenter who dropped out. |
 
